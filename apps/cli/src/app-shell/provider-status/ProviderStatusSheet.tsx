@@ -81,31 +81,34 @@ export function ProviderStatusSheet({
         return next;
       });
 
-      setStatusMessage(`Probing ${idToProbe}...`);
+      try {
+        const result = await probeSingleProvider(idToProbe, container);
 
-      const result = await probeSingleProvider(idToProbe, container);
-
-      setProbingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(idToProbe);
-        return next;
-      });
-
-      setLiveOverrides((prev) => {
-        const next = new Map(prev);
-        next.set(idToProbe, {
-          status: result.status,
-          latencyMs: result.latencyMs,
-          httpStatus: result.httpStatus,
-          evidence: result.evidence,
-          checkedAt: new Date().toISOString(),
+        setLiveOverrides((prev) => {
+          const next = new Map(prev);
+          next.set(idToProbe, {
+            status: result.status,
+            latencyMs: result.latencyMs,
+            httpStatus: result.httpStatus,
+            evidence: result.evidence,
+            checkedAt: new Date().toISOString(),
+          });
+          return next;
         });
-        return next;
-      });
 
-      setStatusMessage(
-        `Probed ${idToProbe}: ${result.status.toUpperCase()} (${result.latencyMs}ms)`,
-      );
+        setStatusMessage(
+          `Probed ${idToProbe}: ${result.status.toUpperCase()} (${result.latencyMs}ms)`,
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setStatusMessage(`Probe failed for ${idToProbe}: ${message.slice(0, 30)}`);
+      } finally {
+        setProbingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(idToProbe);
+          return next;
+        });
+      }
     },
     [container, selectedEntry?.id],
   );
@@ -131,23 +134,28 @@ export function ProviderStatusSheet({
       while (queue.length > 0) {
         const id = queue.shift();
         if (!id) break;
-        const res = await probeSingleProvider(id, container);
-        setProbingIds((prev) => {
-          const next = new Set(prev);
-          next.delete(id);
-          return next;
-        });
-        setLiveOverrides((prev) => {
-          const next = new Map(prev);
-          next.set(id, {
-            status: res.status,
-            latencyMs: res.latencyMs,
-            httpStatus: res.httpStatus,
-            evidence: res.evidence,
-            checkedAt: new Date().toISOString(),
+        try {
+          const res = await probeSingleProvider(id, container);
+          setLiveOverrides((prev) => {
+            const next = new Map(prev);
+            next.set(id, {
+              status: res.status,
+              latencyMs: res.latencyMs,
+              httpStatus: res.httpStatus,
+              evidence: res.evidence,
+              checkedAt: new Date().toISOString(),
+            });
+            return next;
           });
-          return next;
-        });
+        } catch {
+          // Failure recorded in health tracker
+        } finally {
+          setProbingIds((prev) => {
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+          });
+        }
       }
     });
 
@@ -331,27 +339,27 @@ export function ProviderStatusSheet({
 
       {/* Table Header */}
       <Box flexDirection="row" borderStyle="single" borderColor={palette.dim} paddingX={1}>
-        <Box width={14}>
+        <Box width={12}>
           <Text bold color={palette.dim}>
             STATUS
           </Text>
         </Box>
-        <Box width={22}>
+        <Box width={18}>
           <Text bold color={palette.dim}>
             PROVIDER
           </Text>
         </Box>
-        <Box width={10}>
+        <Box width={8}>
           <Text bold color={palette.dim}>
             LANE
           </Text>
         </Box>
-        <Box width={11}>
+        <Box width={9}>
           <Text bold color={palette.dim}>
             LATENCY
           </Text>
         </Box>
-        <Box width={16}>
+        <Box width={14}>
           <Text bold color={palette.dim}>
             CAPABILITIES
           </Text>
@@ -365,103 +373,111 @@ export function ProviderStatusSheet({
 
       {/* Rows */}
       <Box flexDirection="column">
-        {filteredEntries.map((entry, index) => {
-          const isSelected = index === selectedIndex;
-          const isProbing = probingIds.has(entry.id) || entry.status === "probing";
+        {filteredEntries.length === 0 ? (
+          <Box paddingY={1} paddingX={1}>
+            <Text color={palette.muted}>No providers found for this category.</Text>
+          </Box>
+        ) : (
+          filteredEntries.map((entry, index) => {
+            const isSelected = index === selectedIndex;
+            const isProbing = probingIds.has(entry.id) || entry.status === "probing";
 
-          let statusIcon = "● Ready";
-          let statusColor = palette.ok;
-          if (entry.disabled) {
-            statusIcon = "○ Disabled";
-            statusColor = palette.dim;
-          } else if (isProbing) {
-            statusIcon = "◌ Probing";
-            statusColor = palette.accent;
-          } else if (entry.status === "degraded") {
-            statusIcon = "▲ Degraded";
-            statusColor = palette.warn;
-          } else if (entry.status === "down") {
-            statusIcon = "✖ Offline";
-            statusColor = palette.dangerText;
-          } else if (entry.status === "unknown") {
-            statusIcon = "◌ Unknown";
-            statusColor = palette.muted;
-          }
+            let statusIcon = "● Ready";
+            let statusColor = palette.ok;
+            if (entry.disabled) {
+              statusIcon = "○ Disabled";
+              statusColor = palette.dim;
+            } else if (isProbing) {
+              statusIcon = "◌ Probing";
+              statusColor = palette.accent;
+            } else if (entry.status === "degraded") {
+              statusIcon = "▲ Degraded";
+              statusColor = palette.warn;
+            } else if (entry.status === "down") {
+              statusIcon = "✖ Offline";
+              statusColor = palette.dangerText;
+            } else if (entry.status === "unknown") {
+              statusIcon = "◌ Unknown";
+              statusColor = palette.muted;
+            }
 
-          const latencyText =
-            entry.latencyMs !== undefined
-              ? `${entry.latencyMs.toString().padStart(4, " ")}ms`
-              : "    --";
+            const latencyText =
+              entry.latencyMs !== undefined
+                ? `${entry.latencyMs.toString().padStart(4, " ")}ms`
+                : "    --";
 
-          return (
-            <MouseTarget
-              key={entry.id}
-              id={`provider-row:${entry.id}`}
-              onClick={() => {
-                setSelectedIndex(index);
-                void handleProbe(entry.id);
-              }}
-            >
-              <Box
-                flexDirection="row"
-                paddingX={1}
-                backgroundColor={isSelected ? "#1a2333" : undefined}
+            return (
+              <MouseTarget
+                key={entry.id}
+                id={`provider-row:${entry.id}`}
+                onClick={() => {
+                  setSelectedIndex(index);
+                  void handleProbe(entry.id);
+                }}
               >
-                {/* Cursor & Status */}
-                <Box width={14}>
-                  <Text color={statusColor} bold={isSelected}>
-                    {isSelected ? "> " : "  "}
-                    {statusIcon}
-                  </Text>
-                </Box>
+                <Box
+                  flexDirection="row"
+                  paddingX={1}
+                  backgroundColor={isSelected ? "#1a2333" : undefined}
+                >
+                  {/* Cursor & Status */}
+                  <Box width={12}>
+                    <Text color={statusColor} bold={isSelected}>
+                      {isSelected ? "> " : "  "}
+                      {statusIcon}
+                    </Text>
+                  </Box>
 
-                {/* Provider Name & active tag */}
-                <Box width={22}>
-                  <Text
-                    bold={entry.isActive || isSelected}
-                    color={entry.disabled ? palette.dim : palette.text}
-                  >
-                    {entry.name}
-                    {entry.isActive ? <Text color={palette.accent}> ★</Text> : null}
-                    {entry.recommended ? <Text color={palette.muted}> ▾</Text> : null}
-                  </Text>
-                </Box>
+                  {/* Provider Name & active tag */}
+                  <Box width={18}>
+                    <Text
+                      bold={entry.isActive || isSelected}
+                      color={entry.disabled ? palette.dim : palette.text}
+                    >
+                      {entry.name}
+                      {entry.isActive ? <Text color={palette.accent}> ★</Text> : null}
+                      {entry.recommended ? <Text color={palette.muted}> ▾</Text> : null}
+                    </Text>
+                  </Box>
 
-                {/* Lane */}
-                <Box width={10}>
-                  <Text color={palette.muted}>
-                    {entry.lane === "anime"
-                      ? "Anime"
-                      : entry.lane === "youtube"
-                        ? "YouTube"
-                        : "Movie"}
-                  </Text>
-                </Box>
+                  {/* Lane */}
+                  <Box width={8}>
+                    <Text color={palette.muted}>
+                      {entry.lane === "anime"
+                        ? "Anime"
+                        : entry.lane === "youtube"
+                          ? "YouTube"
+                          : "Movie"}
+                    </Text>
+                  </Box>
 
-                {/* Latency */}
-                <Box width={11}>
-                  <Text
-                    color={entry.latencyMs && entry.latencyMs > 2000 ? palette.warn : palette.muted}
-                  >
-                    {latencyText}
-                  </Text>
-                </Box>
+                  {/* Latency */}
+                  <Box width={9}>
+                    <Text
+                      color={
+                        entry.latencyMs && entry.latencyMs > 2000 ? palette.warn : palette.muted
+                      }
+                    >
+                      {latencyText}
+                    </Text>
+                  </Box>
 
-                {/* Capabilities */}
-                <Box width={16}>
-                  <Text color={palette.dim}>{entry.capabilities.slice(0, 2).join(" · ")}</Text>
-                </Box>
+                  {/* Capabilities */}
+                  <Box width={14}>
+                    <Text color={palette.dim}>{entry.capabilities.slice(0, 2).join(" · ")}</Text>
+                  </Box>
 
-                {/* Evidence / Reachability note */}
-                <Box flexGrow={1}>
-                  <Text color={isSelected ? palette.text : palette.muted} wrap="truncate">
-                    {entry.evidence ?? "Available"}
-                  </Text>
+                  {/* Evidence / Reachability note */}
+                  <Box flexGrow={1}>
+                    <Text color={isSelected ? palette.text : palette.muted} wrap="truncate">
+                      {entry.evidence ?? "Available"}
+                    </Text>
+                  </Box>
                 </Box>
-              </Box>
-            </MouseTarget>
-          );
-        })}
+              </MouseTarget>
+            );
+          })
+        )}
       </Box>
 
       {/* Selected Provider Details Box */}

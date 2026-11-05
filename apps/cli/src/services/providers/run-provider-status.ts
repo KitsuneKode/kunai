@@ -179,6 +179,7 @@ async function probeHttpProvider(
     const message = error instanceof Error ? error.message : String(error);
     const isTimeout =
       message.toLowerCase().includes("timeout") || message.toLowerCase().includes("aborted");
+    const isDnsNotFound = message.includes("ENOTFOUND");
     return {
       id: provider.id,
       name: provider.name,
@@ -186,7 +187,11 @@ async function probeHttpProvider(
       configured: true,
       status: "OFFLINE",
       latencyMs: isTimeout ? null : latencyMs,
-      notes: isTimeout ? "Probe timed out" : message.slice(0, 35),
+      notes: isTimeout
+        ? "Probe timed out"
+        : isDnsNotFound
+          ? "DNS unreachable (NXDOMAIN)"
+          : message.slice(0, 35),
     };
   }
 }
@@ -483,18 +488,20 @@ export function formatProviderStatusTable(
     (options.isTty ?? Boolean(process.stdout.isTTY)) && !options.noColor && !process.env.NO_COLOR;
 
   const colWidths = {
-    name: 18,
+    name: 20,
     category: 14,
     configured: 12,
     status: 14,
     latency: 10,
-    notes: 34,
+    notes: 38,
   };
 
   const pad = (str: string, width: number) => {
-    return str.length >= width
-      ? str.slice(0, width - 1) + " "
-      : str + " ".repeat(width - str.length);
+    if (str.length === width) return str;
+    if (str.length > width) {
+      return width > 4 ? `${str.slice(0, width - 4)}... ` : str.slice(0, width);
+    }
+    return str + " ".repeat(width - str.length);
   };
 
   const colorizeStatus = (status: ProviderStatusLevel, text: string) => {

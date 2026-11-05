@@ -262,9 +262,7 @@ function toSubtitleCandidates(
   return subtitles.flatMap((subtitle) => {
     if (!subtitle.src) return [];
     const language =
-      normalizeIsoLanguageCode(subtitle.lang ?? subtitle.label) ??
-      normalizeIsoLanguageCode("en") ??
-      "en";
+      normalizeIsoLanguageCode(subtitle.label) ?? normalizeIsoLanguageCode(subtitle.lang) ?? "en";
     return [
       {
         id: `subtitle:${HIANIME_PROVIDER_ID}:${Bun.hash(subtitle.src).toString(36)}`,
@@ -533,7 +531,10 @@ export const hianimeProviderModule: CoreProviderModule = {
       const subtitleLanguages = [
         ...new Set(
           requested.subtitles
-            .map((subtitle) => normalizeIsoLanguageCode(subtitle.lang ?? subtitle.label))
+            .map(
+              (subtitle) =>
+                normalizeIsoLanguageCode(subtitle.label) ?? normalizeIsoLanguageCode(subtitle.lang),
+            )
             .filter((language): language is string => Boolean(language)),
         ),
       ];

@@ -446,6 +446,56 @@ describe("hianime module resolve", () => {
     );
   });
 
+  test("correctly parses multi-language subtitle tracks even when upstream embed stamps lang: en on all tracks", async () => {
+    clearHianimeCachesForTest();
+    const MULTI_SUB_PAYLOAD = {
+      ...SUB_PAYLOAD,
+      subtitles: [
+        {
+          lang: "en",
+          label: "Arabic",
+          src: "https://hls2.aniwatchtv.uk/v/demo/sub/subs/ar.vtt",
+        },
+        {
+          lang: "en",
+          label: "English",
+          default: true,
+          src: "https://hls2.aniwatchtv.uk/v/demo/sub/subs/en.vtt",
+        },
+        {
+          lang: "en",
+          label: "French",
+          src: "https://hls2.aniwatchtv.uk/v/demo/sub/subs/fr.vtt",
+        },
+      ],
+    };
+
+    const multiSubRouter = (url: string) => {
+      if (url.endsWith("/mal/20/1/sub")) return embedPage(MULTI_SUB_PAYLOAD);
+      return happyRouter(url);
+    };
+
+    const result = await hianimeProviderModule.resolve(
+      {
+        title: { id: "naruto-1335", kind: "anime", title: "Naruto" },
+        episode: { episode: 1 },
+        mediaKind: "anime",
+        preferredAudioLanguage: "ja",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      },
+      stubContext(multiSubRouter),
+    );
+
+    expect(result.status).toBe("resolved");
+    expect(result.subtitles.map((sub) => [sub.label, sub.language])).toEqual([
+      ["Arabic", "ar"],
+      ["English", "en"],
+      ["French", "fr"],
+    ]);
+    expect(result.variants?.[0]?.subtitleLanguages).toEqual(["ar", "en", "fr"]);
+  });
+
   test("resolves dub through its own embed", async () => {
     clearHianimeCachesForTest();
     const result = await hianimeProviderModule.resolve(

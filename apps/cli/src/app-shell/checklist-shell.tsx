@@ -192,6 +192,11 @@ function ChecklistShell<T>({
               justifyContent="space-between"
             >
               <Box flexDirection="column" width={showSelectionCompanion ? listWidth : undefined}>
+                {filteredOptions.length === 0 ? (
+                  <Box paddingY={1}>
+                    <Text color={palette.muted}>No matching items found.</Text>
+                  </Box>
+                ) : null}
                 {windowStart > 0 && <Text color={palette.dim}> ▲ ...</Text>}
                 {visibleOptions.map((option) => {
                   const highlighted = option === selectedOption;

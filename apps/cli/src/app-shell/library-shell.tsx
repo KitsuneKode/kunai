@@ -508,6 +508,18 @@ function LibraryTab({
           </Text>
         </Box>
       ) : null}
+      {items.length === 0 && filterQuery.length > 0 ? (
+        <Box marginTop={1}>
+          <StateBlock
+            model={{
+              kind: "empty",
+              title: `No offline titles match "${filterQuery}"`,
+              detail: "Press Backspace to edit or Esc to clear the filter.",
+            }}
+            width={rowWidth}
+          />
+        </Box>
+      ) : null}
       {showScrollUp ? <Text color={palette.dim}> ▲ ...</Text> : null}
       {items.map((item) => {
         if (item.kind === "section") {
