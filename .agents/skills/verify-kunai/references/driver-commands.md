@@ -60,7 +60,7 @@ DO_NOT_TRACK=1 bun run agent:session -- do smoke "<enter>" --name s1    # same k
 DO_NOT_TRACK=1 bun run agent:session -- wait-for "Smoke" --name s1      # bounded; /re/ for regex
 DO_NOT_TRACK=1 bun run agent:session -- inspect queue --name s1         # history | queue | config | tables
 DO_NOT_TRACK=1 bun run agent:session -- relaunch --name s1              # real quit + reboot, same profile
-DO_NOT_TRACK=1 bun run agent:session -- report /tmp/ev --name s1        # frame + backend.json bundle
+DO_NOT_TRACK=1 bun run agent:session -- report /path/to/durable-evidence/session-s1 --name s1        # frame + backend.json bundle
 DO_NOT_TRACK=1 bun run agent:session -- stop --name s1                  # kill session, remove sandbox
 ```
 

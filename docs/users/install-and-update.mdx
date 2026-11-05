@@ -66,9 +66,11 @@ Android support is an experimental terminal preview for ARM64 and x64 Termux.
 The artifact targets Android 9 / API 28 or newer, but physical-device
 qualification is still pending. It is not a native Android app.
 
-### Published release installation
+### Public installer availability
 
-Published release versions install into Termux-owned storage:
+The latest published release, v0.3.0, does not include Android binaries.
+Use the candidate artifact route below for Android testing. The public installer
+route becomes available after a release publishes Android assets:
 
 ```sh
 pkg update
@@ -77,7 +79,7 @@ curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
 kunai --player vlc
 ```
 
-The installer detects Termux before generic Linux and selects
+The installer code detects Termux before generic Linux and selects
 `android-arm64-bionic` or `android-x64-bionic`. It installs under Termux-owned
 storage (`~/.local/share/kunai`), not shared `/sdcard`.
 
