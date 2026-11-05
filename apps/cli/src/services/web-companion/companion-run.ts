@@ -17,6 +17,7 @@ export class CompanionRunState {
   gatewayStop: (() => void) | null = null;
   private readonly work = new Map<WorkKind, AbortController>();
   private closed = false;
+  private mediaId: string | null = null;
 
   beginWork(kind: WorkKind, requestSignal?: AbortSignal) {
     this.work.get(kind)?.abort();
@@ -45,7 +46,20 @@ export class CompanionRunState {
     return pending;
   }
 
-  releaseMedia(): void {
+  /** Replacement owns a new opaque generation; stale pages cannot revoke it. */
+  startMedia(mediaId: string): void {
+    this.clearMedia();
+    this.mediaId = mediaId;
+  }
+
+  releaseMedia(mediaId: string): boolean {
+    if (mediaId !== this.mediaId) return false;
+    this.clearMedia();
+    return true;
+  }
+
+  private clearMedia(): void {
+    this.mediaId = null;
     this.work.get("media")?.abort();
     this.work.delete("media");
     this.gatewayStop?.();
@@ -56,7 +70,7 @@ export class CompanionRunState {
     this.closed = true;
     for (const controller of this.work.values()) controller.abort();
     this.work.clear();
-    this.releaseMedia();
+    this.clearMedia();
     this.gateway?.stop();
     this.gateway = null;
     this.catalog.clear();

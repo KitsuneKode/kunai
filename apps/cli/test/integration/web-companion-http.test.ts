@@ -29,7 +29,10 @@ test("real isolated companion container authenticates HTTP and releases all run 
   });
   try {
     expect(process.env.DO_NOT_TRACK).toBe("1");
-    const html = await (await fetch(origin)).text();
+    const page = await fetch(origin);
+    expect(page.headers.get("x-frame-options")).toBe("DENY");
+    expect(page.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+    const html = await page.text();
     expect(html).toContain('id="searchInput"');
     expect(html).not.toContain(secret);
     expect((await fetch(origin + "/api/status")).status).toBe(403);
@@ -47,9 +50,34 @@ test("real isolated companion container authenticates HTTP and releases all run 
       headers: { Origin: origin },
       body: JSON.stringify({ token: secret }),
     });
-    const cookie = auth.headers.get("set-cookie")!.split(";")[0]!;
-    expect(auth.headers.get("set-cookie")).toContain("HttpOnly; SameSite=Strict");
-    const response = await fetch(origin + "/api/status", { headers: { Cookie: cookie } });
+    expect(auth.headers.get("set-cookie")).toBeNull();
+    // A separate service on the same loopback host must not receive a cookie
+    // capable of authorizing API requests to this run.
+    const unrelated = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: (request) =>
+        Response.json({
+          cookie: request.headers.get("cookie"),
+          authorization: request.headers.get("authorization"),
+        }),
+    });
+    try {
+      const seen = await (await fetch(`http://127.0.0.1:${unrelated.port}/`)).json();
+      expect(seen).toEqual({ cookie: null, authorization: null });
+    } finally {
+      unrelated.stop(true);
+    }
+    expect(
+      (
+        await fetch(origin + "/api/status", {
+          headers: { Cookie: `kunai_companion_session=${secret}` },
+        })
+      ).status,
+    ).toBe(403);
+    const response = await fetch(origin + "/api/status", {
+      headers: { Authorization: `Bearer ${secret}` },
+    });
     expect(response.status).toBe(200);
     const status = await response.json();
     if (!isJsonObject(status) || !Array.isArray(status.providers) || !isJsonObject(status.playback))
@@ -62,7 +90,7 @@ test("real isolated companion container authenticates HTTP and releases all run 
     expect(
       (
         await fetch(origin + "/api/status", {
-          headers: { Cookie: cookie, Origin: "https://foreign.example.test" },
+          headers: { Authorization: `Bearer ${secret}`, Origin: "https://foreign.example.test" },
         })
       ).status,
     ).toBe(403);
@@ -76,8 +104,11 @@ test("real isolated companion container authenticates HTTP and releases all run 
       ).status,
     ).toBe(413);
     expect(
-      (await fetch(origin + "/proxy?url=https://example.test", { headers: { Cookie: cookie } }))
-        .status,
+      (
+        await fetch(origin + "/proxy?url=https://example.test", {
+          headers: { Authorization: `Bearer ${secret}` },
+        })
+      ).status,
     ).toBe(404);
     const work = run.beginWork("player");
     run.close();

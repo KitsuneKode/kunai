@@ -11,6 +11,7 @@ import {
 } from "@kunai/core";
 import type { Server } from "bun";
 
+import { browserSubtitleText } from "./browser-subtitles";
 import {
   parseDashTemplate,
   rewriteDashManifest,
@@ -137,6 +138,7 @@ type LiveSession = {
 };
 
 type LocalSession = {
+  readonly controller: AbortController;
   readonly media: LocalGatewayFile;
   readonly subtitle?: LocalGatewayFile;
 };
@@ -323,7 +325,7 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
     }, idleTimeoutMs);
   };
 
-  function keepAlive(response: Response): Response {
+  function keepAlive(response: Response, signal?: AbortSignal): Response {
     if (!response.body) return response;
     const reader = response.body.getReader();
     activeBodies++;
@@ -331,14 +333,30 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
     const finish = () => {
       if (finished) return;
       finished = true;
+      signal?.removeEventListener("abort", onAbort);
       reader.releaseLock();
       activeBodies--;
       resetIdle();
     };
+    let output: ReadableStreamDefaultController<Uint8Array>;
+    const onAbort = () => {
+      if (finished) return;
+      output.close();
+      void reader
+        .cancel()
+        .catch(() => {})
+        .finally(finish);
+    };
     const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        output = controller;
+        signal?.addEventListener("abort", onAbort, { once: true });
+        if (signal?.aborted) onAbort();
+      },
       async pull(controller) {
         try {
           const { done, value } = await reader.read();
+          if (finished || signal?.aborted) return;
           if (done) {
             finish();
             controller.close();
@@ -645,6 +663,26 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
         if (!url) return new Response("not found", { status: 404 });
         const upstream = await upstreamFetch(session, url, new Headers(), req.signal);
         if (upstream.kind !== "response") return refusedOrTimeout(upstream);
+        if (browserOrigin) {
+          const reader = upstream.response.body?.getReader();
+          if (!reader) return new Response("unsupported browser subtitle", { status: 422 });
+          try {
+            if (!upstream.response.ok) {
+              await reader.cancel();
+              return new Response("subtitle unavailable", { status: 502 });
+            }
+            const bytes = await readRestFromReader(reader, null, 1024 * 1024);
+            const text = browserSubtitleText(bytes);
+            if (text === null) return new Response("unsupported browser subtitle", { status: 422 });
+            return new Response(text, {
+              headers: { "content-type": "text/vtt; charset=utf-8", "cache-control": "no-store" },
+            });
+          } catch {
+            return new Response("unsupported browser subtitle", { status: 422 });
+          } finally {
+            reader.releaseLock();
+          }
+        }
         return new Response(upstream.response.body, {
           status: upstream.response.status,
           headers: passthroughResponseHeaders(upstream.response),
@@ -699,7 +737,9 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
         if (browserOrigin && requestOrigin && requestOrigin !== browserOrigin) {
           return new Response("forbidden", { status: 403 });
         }
-        const response = keepAlive(await handleRequest(req));
+        const local = localSessions.get(new URL(req.url).pathname.split("/")[2] ?? "");
+        const signal = local ? AbortSignal.any([req.signal, local.controller.signal]) : undefined;
+        const response = keepAlive(await handleRequest(req), signal);
         if (browserOrigin && requestOrigin === browserOrigin) {
           response.headers.set("Access-Control-Allow-Origin", browserOrigin);
           response.headers.append("Vary", "Origin");
@@ -712,13 +752,18 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
     },
   });
 
+  function revokeLocalSessions(): void {
+    for (const session of localSessions.values()) session.controller.abort();
+    localSessions.clear();
+  }
+
   function stop() {
     if (stopped) return;
     stopped = true;
     cancelIdle?.();
     cancelIdle = null;
     sessions.clear();
-    localSessions.clear();
+    revokeLocalSessions();
     server.stop(true);
   }
 
@@ -730,7 +775,7 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
       // One playback at a time: a new handoff revokes every prior token so a
       // stale player cannot keep pulling streams after the user moved on.
       sessions.clear();
-      localSessions.clear();
+      revokeLocalSessions();
       const token = mintToken();
       const normalized = normalizeStreamHttpHeaders({ ...input.headers });
       const allowedOrigins = new Set<string>();
@@ -793,14 +838,16 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
       signal?.throwIfAborted();
       if (stopped) throw new Error("stream gateway is stopped");
       sessions.clear();
-      localSessions.clear();
+      revokeLocalSessions();
       const token = mintToken();
-      localSessions.set(token, { media, subtitle });
+      const controller = new AbortController();
+      localSessions.set(token, { media, subtitle, controller });
       resetIdle();
       return {
         mediaUrl: `${gateway.baseUrl}/g/${token}/media`,
         subtitleUrls: subtitle ? [`${gateway.baseUrl}/g/${token}/sub/0`] : [],
         stop: () => {
+          controller.abort();
           localSessions.delete(token);
         },
       };

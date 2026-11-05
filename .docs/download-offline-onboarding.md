@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-29"
+lastReviewed: "2026-11-05"
 ---
 
 # Kunai — Download, Offline Library, And Onboarding
@@ -260,6 +260,13 @@ confirmation, and filesystem naming all consume it instead of re-deriving "is th
   title, including every Windows path-budget adjustment. Ordinary names remain unchanged;
   existing completed files are not renamed. A Windows directory too deep to retain identity
   is rejected with guidance to choose a shorter path.
+
+New enqueues resolve configured relative download directories against the
+current working directory and persist absolute output/temp paths. This keeps
+later playback independent of the launch directory. Existing relative records
+are not guessed or rewritten: the Android local-file gateway refuses them,
+because their original working directory was never recorded. Re-download to a
+known directory rather than serving a same-named file from another location.
 
 ## Download And Library Layout Ownership
 

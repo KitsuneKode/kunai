@@ -21,8 +21,7 @@ import {
 import { CompanionRunState } from "./companion-run";
 import {
   isCompanionApiPath,
-  readSessionToken,
-  sessionCookieHeader,
+  readCompanionCredential,
   validateCompanionRequestHost,
   validateCompanionRequestOrigin,
 } from "./companion-session";
@@ -119,8 +118,9 @@ export function createCompanionFetchHandler(input: {
 }): (request: Request) => Promise<Response> {
   const { container, run } = input;
   const managedPlayer = container.player.capabilities.observation === "managed";
-  const origin = `http://${input.bindHost}:${input.bindPort}`;
-  const expectedHost = `${input.bindHost}:${input.bindPort}`;
+  const boundUrl = new URL(`http://${input.bindHost}:${input.bindPort}`);
+  const origin = boundUrl.origin;
+  const expectedHost = boundUrl.host;
 
   const resolve = async (
     entry: CompanionCatalogEntry,
@@ -156,6 +156,8 @@ export function createCompanionFetchHandler(input: {
           "Cache-Control": "no-store",
           "Referrer-Policy": "no-referrer",
           "X-Content-Type-Options": "nosniff",
+          "Content-Security-Policy": "frame-ancestors 'none'; base-uri 'none'; object-src 'none'",
+          "X-Frame-Options": "DENY",
         },
       });
     if (path === "/manifest.json" && method === "GET")
@@ -170,7 +172,7 @@ export function createCompanionFetchHandler(input: {
       return json({ ok: true, service: "kunai-web-companion" });
     if (!isCompanionApiPath(path)) return new Response("Not found", { status: 404 });
     if (!validateCompanionRequestOrigin(request, origin)) return json({ error: "Forbidden" }, 403);
-    if (path !== "/api/session" && readSessionToken(request) !== input.runSecret)
+    if (path !== "/api/session" && readCompanionCredential(request) !== input.runSecret)
       return json({ error: "Forbidden" }, 403);
     if (
       (["/api/session", "/api/control", "/api/release"].includes(path) && method !== "POST") ||
@@ -183,11 +185,14 @@ export function createCompanionFetchHandler(input: {
         const parsed = z.object({ token: z.string() }).safeParse(await readCompanionBody(request));
         if (!parsed.success) return json({ error: "Invalid session" }, 400);
         if (parsed.data.token !== input.runSecret) return json({ error: "Forbidden" }, 403);
-        return json({ ok: true }, 200, { "Set-Cookie": sessionCookieHeader(input.runSecret) });
+        return json({ ok: true });
       }
       if (path === "/api/release") {
-        run.releaseMedia();
-        return json({ ok: true });
+        const parsed = z
+          .object({ mediaId: z.string().regex(/^[0-9a-f]{32}$/) })
+          .safeParse(await readCompanionBody(request));
+        if (!parsed.success) return json({ error: "Invalid media session" }, 400);
+        return json({ ok: true, released: run.releaseMedia(parsed.data.mediaId) });
       }
       if (path === "/api/status") {
         const disabled = new Set(container.config.disabledProviders ?? []);
@@ -359,7 +364,9 @@ export function createCompanionFetchHandler(input: {
           : run.catalog.getEpisode(id, season, number);
       if (!episode) return json({ error: "Choose an available episode first." }, 400);
       if (path === "/api/stream") {
-        run.releaseMedia();
+        const mediaId = url.searchParams.get("mediaId") ?? "";
+        if (!/^[0-9a-f]{32}$/.test(mediaId)) return json({ error: "Invalid media session" }, 400);
+        run.startMedia(mediaId);
         const work = run.beginWork("media", request.signal);
         const resolved = await resolve(entry, episode, work.signal);
         work.signal.throwIfAborted();

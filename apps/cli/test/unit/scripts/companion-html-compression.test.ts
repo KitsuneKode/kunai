@@ -28,7 +28,9 @@ test("release companion transform preserves markup, escaping and shipped interac
     });
     expect(build.success).toBe(true);
     const outputPath = join(temp, "companion.mjs");
-    await Bun.write(outputPath, await build.outputs[0]!.text());
+    const outputText = await build.outputs[0]!.text();
+    expect(outputText).toContain("gunzipSync");
+    await Bun.write(outputPath, outputText);
     const built: { renderWebCompanionHtml: (options?: { serviceName?: string }) => string } =
       await import(outputPath);
     const options = { serviceName: 'A<&>" service $& $$ $`' };

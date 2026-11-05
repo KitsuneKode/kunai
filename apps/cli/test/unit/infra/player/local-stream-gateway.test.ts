@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rename, rm } from "node:fs/promises";
+import { mkdtemp, rename, rm, truncate } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -135,4 +135,47 @@ test("cancelled asynchronous authorization cannot replace the current local toke
   controller.abort();
   await expect(stale).rejects.toMatchObject({ name: "AbortError" });
   expect(await (await fetch(current.mediaUrl)).text()).toBe("0123456789");
+});
+
+test("revoking a token terminates its open response and allows idle shutdown", async () => {
+  const { source } = await fixture();
+  const fileSize = 64 * 1024 * 1024;
+  await truncate(source.filePath, fileSize);
+  let idle: (() => void) | undefined;
+  const gateway = createStreamGateway({
+    timers: {
+      schedule: (callback) => {
+        idle = callback;
+        return () => {};
+      },
+    },
+  });
+  gateways.push(gateway);
+  const session = await gateway.registerLocalSession({ source: { ...source, fileSize } });
+  const response = await fetch(session.mediaUrl);
+  const reader = response.body!.getReader();
+  const first = await reader.read();
+  expect(first.done).toBe(false);
+  session.stop();
+  let received = first.value?.length ?? 0;
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      received += chunk.value.length;
+    }
+  } catch {
+    /* A revoked response may terminate with a transport error. */
+  }
+  expect(received).toBeLessThan(fileSize);
+  expect((await fetch(session.mediaUrl)).status).toBe(404);
+  idle?.();
+  expect(gateway.isStopped()).toBe(true);
+});
+
+test("existing relative artifact paths are refused rather than guessed against a new cwd", async () => {
+  const { source, gateway } = await fixture();
+  await expect(
+    gateway.registerLocalSession({ source: { ...source, filePath: "movie.mp4" } }),
+  ).rejects.toThrow("invalid local playback file");
 });

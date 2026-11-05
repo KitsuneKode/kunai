@@ -13,7 +13,6 @@ import { z } from "zod";
 
 import { createContainerFixture } from "../../../support/container-fixture";
 
-const origin = "http://127.0.0.1:4141";
 const secret = "a".repeat(32);
 const runs: CompanionRunState[] = [];
 afterEach(() => {
@@ -26,7 +25,7 @@ function deferred<T>() {
   });
   return { promise, resolve };
 }
-function fixture(detached = false) {
+function fixture(detached = false, bindPort = 4141) {
   const run = new CompanionRunState();
   runs.push(run);
   const requests: PlaybackResolveInput[] = [];
@@ -113,15 +112,19 @@ function fixture(detached = false) {
     run,
     runSecret: secret,
     bindHost: "127.0.0.1",
-    bindPort: 4141,
+    bindPort,
   });
   const request = (path: string, body?: string, headers: Record<string, string> = {}) => {
     const init: RequestInit = {
       method: body === undefined ? "GET" : "POST",
-      headers: { cookie: `kunai_companion_session=${secret}`, origin, ...headers },
+      headers: {
+        authorization: `Bearer ${secret}`,
+        origin: new URL(`http://127.0.0.1:${bindPort}`).origin,
+        ...headers,
+      },
     };
     if (body !== undefined) init.body = body;
-    return fetch(new Request(origin + path, init));
+    return fetch(new Request(`http://127.0.0.1:${bindPort}` + path, init));
   };
   const title = (lane: CompanionLane = "anime") =>
     run.catalog.put({
@@ -162,7 +165,9 @@ function fixture(detached = false) {
 test("browser release preserves selected opaque catalog identity", async () => {
   const f = fixture();
   const id = f.title("movies");
-  expect((await f.request("/api/release", "{}")).status).toBe(200);
+  expect(
+    (await f.request("/api/release", JSON.stringify({ mediaId: "b".repeat(32) }))).status,
+  ).toBe(200);
   expect((await f.request(`/api/episodes?id=${id}&lane=movies`)).status).toBe(200);
 });
 
@@ -205,7 +210,7 @@ test("a real fractional provider episode keeps its native identity through resol
   const id = f.title();
   const episodes = await f.request(`/api/episodes?id=${id}&lane=anime`);
   expect(episodes.status).toBe(200);
-  await f.request(`/api/stream?titleId=${id}&lane=anime&episode=12.5`);
+  await f.request(`/api/stream?titleId=${id}&lane=anime&episode=12.5&mediaId=${"b".repeat(32)}`);
   expect(f.requests[0]?.episode).toMatchObject({
     episode: 12.5,
     providerEpisodeIdentity: { value: "native-episode-12.5" },
@@ -248,9 +253,9 @@ test("release aborts pending browser resolution without allowing a late gateway"
   const f = fixture();
   const id = f.title("movies");
   const pending = f.delayResolve();
-  const request = f.request(`/api/stream?titleId=${id}&lane=movies`);
+  const request = f.request(`/api/stream?titleId=${id}&lane=movies&mediaId=${"b".repeat(32)}`);
   expect(f.requests).toHaveLength(1);
-  await f.request("/api/release", "{}");
+  await f.request("/api/release", JSON.stringify({ mediaId: "b".repeat(32) }));
   expect(f.requests[0]!.signal.aborted).toBe(true);
   pending.resolve({
     stream: { url: "https://media.example.test/movie.mp4", headers: {}, timestamp: 1 },
@@ -269,4 +274,43 @@ test("detached player status and stop do not imply control of the external app",
   expect((await f.request("/api/control", JSON.stringify({ action: "stop" }))).status).toBe(409);
   expect(f.getStopCount()).toBe(0);
   expect(f.run.playback.state).toBe("handed-off");
+});
+
+test("port 80 APIs accept their canonical origin and bootstrap sets no cookie", async () => {
+  const f = fixture(false, 80);
+  expect((await f.request("/api/status")).status).toBe(200);
+  const response = await f.request("/api/session", JSON.stringify({ token: secret }));
+  expect(response.status).toBe(200);
+  expect(response.headers.get("set-cookie")).toBeNull();
+  expect(
+    (
+      await f.request("/api/status", undefined, {
+        authorization: "",
+        cookie: `kunai_companion_session=${secret}`,
+      })
+    ).status,
+  ).toBe(403);
+});
+
+test("a stale page release cannot abort its successor media generation", async () => {
+  const f = fixture();
+  const id = f.title("movies");
+  const a = f.delayResolve();
+  const first = f.request(`/api/stream?titleId=${id}&lane=movies&mediaId=${"b".repeat(32)}`);
+  const b = f.delayResolve();
+  const second = f.request(`/api/stream?titleId=${id}&lane=movies&mediaId=${"c".repeat(32)}`);
+  expect(f.requests[0]!.signal.aborted).toBe(true);
+  await f.request("/api/release", JSON.stringify({ mediaId: "b".repeat(32) }));
+  expect(f.requests[1]!.signal.aborted).toBe(false);
+  expect((await f.request("/api/release", "{}")).status).toBe(400);
+  await f.request("/api/release", JSON.stringify({ mediaId: "c".repeat(32) }));
+  expect(f.requests[1]!.signal.aborted).toBe(true);
+  const resolved = {
+    stream: { url: "https://media.example.test/video.mp4", headers: {}, timestamp: 1 },
+    providerId: "series",
+  };
+  a.resolve(resolved);
+  b.resolve(resolved);
+  expect((await first).status).toBe(409);
+  expect((await second).status).toBe(409);
 });

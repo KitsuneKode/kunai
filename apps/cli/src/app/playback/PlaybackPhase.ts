@@ -139,6 +139,8 @@ import { createQueuePlaybackAttempt } from "@/app/playback/queue-playback-attemp
 import {
   isRecentPlaybackStreamFresh,
   recentPlaybackStreamKey,
+  recentPlaybackStreamKeyPrefix,
+  recentPlaybackStreamMatchesAudioPreference,
   recentPlaybackStreamMatchesProvider,
   restoreRecentPlaybackStream,
   type RecentPlaybackStreamProvenance,
@@ -1086,7 +1088,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       const deadStreamUrls = createDeadStreamUrlLedger();
       let consumedProviderSwitchSeq = providerSwitchSeqBeforeEpisodePicker;
       const invalidateRecentEpisodeStream = (targetEpisode: EpisodeInfo): void => {
-        recentEpisodeStreams.delete(recentPlaybackStreamKey(title.id, targetEpisode));
+        const prefix = recentPlaybackStreamKeyPrefix(title.id, targetEpisode);
+        for (const key of recentEpisodeStreams.keys()) {
+          if (key === prefix || key.startsWith(`${prefix}:`)) {
+            recentEpisodeStreams.delete(key);
+          }
+        }
       };
       const recentStreamMatchesPreferred = (
         recent: { readonly stream: StreamInfo },
@@ -1615,11 +1622,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           let streamProvenance: RecentPlaybackStreamProvenance = localPlayback ? "local" : "fresh";
           let consumedBundle: ReturnType<EpisodePrefetchHandle["takeReadyFor"]> = null;
           let prefetchWasPrepared = false;
-          const profileContext = {
-            overrides: stateManager.getState().playbackTrackPreferences,
-            mode: stateManager.getState().mode,
-            title,
-            config,
+          const getProfileContext = () => {
+            const state = stateManager.getState();
+            return { overrides: state.playbackTrackPreferences, mode: state.mode, title, config };
           };
 
           const buildPrefetchTarget = (
@@ -1627,16 +1632,17 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             providerId: string,
           ): EpisodePrefetchTarget => {
             const targetSelection = getPreferredStreamSelection(providerId, nextEpisodeIntent);
+            const liveProfileContext = getProfileContext();
             return {
               titleId: title.id,
               episode: nextEpisodeIntent,
               providerId,
               sourceId: targetSelection.sourceId ?? undefined,
               streamId: targetSelection.streamId ?? undefined,
-              audioPreference: playbackAudioPreference(profileContext),
-              qualityPreference: playbackQualityPreference(profileContext),
+              audioPreference: playbackAudioPreference(liveProfileContext),
+              qualityPreference: playbackQualityPreference(liveProfileContext),
               startupPriority: config.startupPriority,
-              subtitlePreference: playbackSubtitlePreference(profileContext),
+              subtitlePreference: playbackSubtitlePreference(liveProfileContext),
             };
           };
           if (sourceAuthority.kind === "local") {
@@ -1790,12 +1796,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             // This lets P-navigation reuse the exact same StreamInfo without any
             // provider resolve, cache lookup, or health check.
             if (!stream && !sourceRefreshDecision) {
-              const recentKey = recentPlaybackStreamKey(title.id, currentEpisode);
+              const liveAudioPref = playbackAudioPreference(getProfileContext());
+              const recentKey = recentPlaybackStreamKey(title.id, currentEpisode, liveAudioPref);
               const recent = recentEpisodeStreams.get(recentKey);
               if (
                 recent?.provenance !== "local" &&
                 recentPlaybackStreamMatchesProvider(recent, sourceProviderId, currentEpisode) &&
                 recentStreamMatchesPreferred(recent, sourceProviderId, currentEpisode) &&
+                recentPlaybackStreamMatchesAudioPreference(recent, liveAudioPref) &&
                 isRecentPlaybackStreamFresh(recent)
               ) {
                 const restored = restoreRecentPlaybackStream(recent);
@@ -1855,9 +1863,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   episode: currentEpisode,
                   mode: stateManager.getState().mode,
                   providerId: sourceProviderId,
-                  audioPreference: playbackAudioPreference(profileContext),
-                  subtitlePreference: playbackSubtitlePreference(profileContext),
-                  qualityPreference: playbackQualityPreference(profileContext),
+                  audioPreference: playbackAudioPreference(getProfileContext()),
+                  subtitlePreference: playbackSubtitlePreference(getProfileContext()),
+                  qualityPreference: playbackQualityPreference(getProfileContext()),
                   startupPriority: config.startupPriority,
                   favoriteSourceNames: config.favoriteSources,
                   selectedSourceId: currentPreferredStreamSelection.sourceId ?? undefined,
@@ -2373,8 +2381,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             stream = applyPreferredStreamSelection(
               stream,
               getPreferredStreamSelection(sourceProviderId, currentEpisode),
-              playbackQualityPreference(profileContext),
-              playbackSubtitlePreference(profileContext),
+              playbackQualityPreference(getProfileContext()),
+              playbackSubtitlePreference(getProfileContext()),
             );
           }
           if (!stream || resolveController.signal.aborted) {
@@ -2485,7 +2493,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           recordStartupMark("stream-prepared", preparedStream);
           stateManager.dispatch({ type: "SET_STREAM", stream: preparedStream });
 
-          const episodeKey = recentPlaybackStreamKey(title.id, currentEpisode);
+          const liveAudioPref = playbackAudioPreference(getProfileContext());
+          const episodeKey = recentPlaybackStreamKey(title.id, currentEpisode, liveAudioPref);
           if (streamProvenance === "local") {
             if (run.localPlaybackSource) {
               recentEpisodeStreams.set(episodeKey, {
@@ -2495,6 +2504,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 resolvedProviderId,
                 provenance: "local",
                 localPlaybackSource: run.localPlaybackSource,
+                audioPreference: liveAudioPref,
               });
             }
           } else {
@@ -2504,6 +2514,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               selectedProviderId: sourceProviderId,
               resolvedProviderId,
               provenance: streamProvenance,
+              audioPreference: liveAudioPref,
             });
           }
           if (recentEpisodeStreams.size > 5) {

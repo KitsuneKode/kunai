@@ -4,6 +4,10 @@ import { join } from "node:path";
 
 const BRIDGE_PATH = join(import.meta.dir, "../../../../assets/mpv/kunai-bridge.lua");
 
+function testWithLua(name: string, run: () => Promise<void>): void {
+  test.skipIf(!Bun.which("lua"))(name, run);
+}
+
 describe("kunai mpv bridge resume prompt", () => {
   test("resume prompt offers resume (Enter / middle-click) and dismiss (Esc / left-click)", () => {
     const source = readFileSync(BRIDGE_PATH, "utf8");
@@ -93,7 +97,7 @@ describe("kunai mpv bridge server and audio cycling", () => {
 // through the same parser used by both persistent and one-shot players.
 // Test registration must record missing Lua as a skip rather than a silent pass.
 // eslint-disable-next-line anti-slop/no-module-load-env-read
-test.skipIf(!Bun.which("lua"))(
+testWithLua(
   "embedded audio keys publish intent while startup and unknown tracks do not",
   async () => {
     const { parseMpvAudioIntent } = await import("@/infra/player/mpv-audio-intent");
@@ -149,6 +153,111 @@ assert(properties["user-data/kunai-audio-intent"]==nil,"unknown language invente
       id: 2,
       audioLanguageIntent: "ja",
     });
+  },
+);
+
+testWithLua(
+  "bridge do_cycle_audio aborts intent emission if same-URL file replacement occurs during cycle",
+  async () => {
+    const proc = Bun.spawn(["lua", "-", BRIDGE_PATH], {
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    proc.stdin.write(String.raw`
+local observers, keys, properties = {}, {}, {}
+local tracks = { {id=1,type="audio",lang="en",selected=true}, {id=2,type="audio",lang="ja",selected=false} }
+local playlist = { {id=1,filename="https://example.test/current.mkv",playing=true} }
+local current_path = "https://example.test/current.mkv"
+package.preload["mp.utils"] = function() return {format_json = function(v)
+  return string.format('{"id":%d,"language":%q,"path":%q,"revision":%d}', v.id,v.language,v.path,v.revision)
+end} end
+local replace_during_cycle = false
+local change_path_during_cycle = false
+local unload_during_cycle = false
+local replace_during_track_read = false
+local track_reads = 0
+mp = {
+  create_osd_overlay=function() return {update=function() end,remove=function() end} end,
+  observe_property=function(name,kind,callback) observers[name]=callback end,
+  register_event=function() end,
+  add_forced_key_binding=function(key,name,callback) keys[key]=callback end,
+  add_key_binding=function() end,
+  get_property_native=function(name,default)
+    if name=="track-list" then
+      track_reads = track_reads + 1
+      if replace_during_track_read and track_reads > 1 then
+        playlist = { {id=3,filename=current_path,playing=true} }
+      end
+      return tracks
+    end
+    if name=="playlist" then return playlist end
+    return default
+  end,
+  get_property=function(name,default)
+    if name=="path" then return current_path end
+    return default
+  end,
+  set_property=function(name,value) properties[name]=value end,
+  commandv=function(command,name)
+    if command=="cycle" and name=="audio" then
+      if replace_during_cycle then
+        playlist = { {id=2,filename="https://example.test/current.mkv",playing=true} }
+      end
+      if change_path_during_cycle then
+        current_path = "https://example.test/different.mkv"
+      end
+      if unload_during_cycle then
+        current_path = ""
+      end
+      tracks[1].selected=false; tracks[2].selected=true
+    end
+  end,
+}
+dofile(arg[1])
+replace_during_cycle = true
+keys.a()
+assert(properties["user-data/kunai-audio-intent"]==nil,"same-URL file replacement during cycle emitted intent")
+replace_during_cycle = false
+
+-- Path changed during cycle
+change_path_during_cycle = true
+tracks[1].selected=true; tracks[2].selected=false
+keys.a()
+assert(properties["user-data/kunai-audio-intent"]==nil,"path change during cycle emitted intent")
+change_path_during_cycle = false
+
+-- File unloaded during cycle
+current_path = "https://example.test/current.mkv"
+unload_during_cycle = true
+tracks[1].selected=true; tracks[2].selected=false
+keys.a()
+assert(properties["user-data/kunai-audio-intent"]==nil,"unloaded file during cycle emitted intent")
+unload_during_cycle = false
+
+-- A replacement while reading the selected tracks must also fail closed.
+current_path = "https://example.test/current.mkv"
+playlist = { {id=2,filename=current_path,playing=true} }
+tracks[1].selected=true; tracks[2].selected=false
+track_reads = 0; replace_during_track_read = true
+keys.a()
+assert(properties["user-data/kunai-audio-intent"]==nil,"replacement during track read emitted intent")
+replace_during_track_read = false
+
+-- Now with stable path and playlist entry id 2, cycle should succeed
+current_path = "https://example.test/current.mkv"
+playlist = { {id=2,filename="https://example.test/current.mkv",playing=true} }
+tracks[1].selected=true; tracks[2].selected=false
+keys.a()
+assert(properties["user-data/kunai-audio-intent"]~=nil,"stable cycle failed to emit intent")
+`);
+    proc.stdin.end();
+    const [exitCode, _stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
   },
 );
 
