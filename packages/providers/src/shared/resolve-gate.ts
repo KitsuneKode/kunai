@@ -198,8 +198,16 @@ export async function selectVerifiedStream<
       }
     }
 
+    // Derive practical hedge delay from timeout budget: if timeoutMs is too tight
+    // (e.g. <= hedgeDelayMs + 300ms), hedging won't finish before gate cutoff, so skip it.
+    const effectiveHedgeDelayMs = timeoutMs && timeoutMs <= hedgeDelayMs + 300 ? 0 : hedgeDelayMs;
+
     const currentAbort = new AbortController();
-    const onAbort = () => currentAbort.abort(parentSignal?.reason);
+    const nextAbort = new AbortController();
+    const onAbort = () => {
+      currentAbort.abort(parentSignal?.reason);
+      nextAbort.abort(parentSignal?.reason);
+    };
     parentSignal?.addEventListener("abort", onAbort, { once: true });
 
     const probeStream = (s: TStream, sig: AbortSignal) =>
@@ -210,66 +218,114 @@ export async function selectVerifiedStream<
         ...(timeoutMs === undefined ? null : { timeoutMs }),
       });
 
-    const currentPromise = probeStream(stream, currentAbort.signal);
-    let nextPromise: Promise<CandidateStreamVerdict> | undefined;
-    let nextAbort: AbortController | undefined;
-    let nextStarted = false;
-    let hedgeTimer: ReturnType<typeof setTimeout> | undefined;
+    type RacedProbeResult =
+      | { readonly which: "primary"; readonly verdict: CandidateStreamVerdict }
+      | { readonly which: "backup"; readonly verdict: CandidateStreamVerdict };
 
-    if (nextStream) {
+    const primaryPromise: Promise<RacedProbeResult> = probeStream(stream, currentAbort.signal).then(
+      (verdict) => ({ which: "primary", verdict }),
+      (err) => ({ which: "primary", verdict: { accepted: false, reason: String(err) } }),
+    );
+
+    let hedgeTimer: ReturnType<typeof setTimeout> | undefined;
+    let backupPromise: Promise<RacedProbeResult> | undefined;
+
+    if (nextStream && effectiveHedgeDelayMs > 0) {
       const hedgedStream = nextStream;
-      nextAbort = new AbortController();
       const nextSig = nextAbort.signal;
-      nextPromise = new Promise<CandidateStreamVerdict>((resolve) => {
+      backupPromise = new Promise<RacedProbeResult>((resolve) => {
         hedgeTimer = setTimeout(() => {
           hedgeTimer = undefined;
-          nextStarted = true;
           if (currentAbort.signal.aborted || parentSignal?.aborted) return;
-          probeStream(hedgedStream, nextSig).then(resolve, (err) =>
-            resolve({ accepted: false, reason: String(err) }),
+          probeStream(hedgedStream, nextSig).then(
+            (verdict) => resolve({ which: "backup", verdict }),
+            (err) =>
+              resolve({ which: "backup", verdict: { accepted: false, reason: String(err) } }),
           );
-        }, hedgeDelayMs);
+        }, effectiveHedgeDelayMs);
       });
     }
 
-    let verdict: CandidateStreamVerdict;
     try {
-      verdict = await currentPromise;
+      if (!nextStream || !backupPromise) {
+        const { verdict } = await primaryPromise;
+        if (parentSignal?.aborted) break;
+        if (verdict.accepted) {
+          return { accepted: true, stream, verified: verdict.verified, refusedHosts };
+        }
+        firstReason ??= verdict.reason;
+        if (host) refusedHosts.add(host);
+        streamIndex++;
+        continue;
+      }
+
+      const hedgedStream = nextStream;
+
+      // Race primary against the scheduled/running backup probe
+      const firstResult = await Promise.race([primaryPromise, backupPromise]);
+
+      if (firstResult.which === "primary") {
+        if (firstResult.verdict.accepted) {
+          nextAbort.abort();
+          return { accepted: true, stream, verified: firstResult.verdict.verified, refusedHosts };
+        }
+        firstReason ??= firstResult.verdict.reason;
+        if (host) refusedHosts.add(host);
+
+        // Primary rejected; wait for the backup if it was already launched
+        if (hedgeTimer) {
+          clearTimeout(hedgeTimer);
+          hedgeTimer = undefined;
+          nextAbort.abort();
+          streamIndex++;
+          continue;
+        }
+
+        const backupResult = await backupPromise;
+        if (parentSignal?.aborted) break;
+        const nextHost = streamHost(hedgedStream.url);
+        if (backupResult.verdict.accepted) {
+          return {
+            accepted: true,
+            stream: hedgedStream,
+            verified: backupResult.verdict.verified,
+            refusedHosts,
+          };
+        }
+        firstReason ??= backupResult.verdict.reason;
+        if (nextHost) refusedHosts.add(nextHost);
+        streamIndex = nextStreamIndex + 1;
+        continue;
+      } else {
+        // Backup finished first!
+        if (firstResult.verdict.accepted) {
+          currentAbort.abort();
+          // Ensure primary probe finishes tearing down without swallowing unhandled rejection
+          primaryPromise.catch(() => undefined);
+          return {
+            accepted: true,
+            stream: hedgedStream,
+            verified: firstResult.verdict.verified,
+            refusedHosts,
+          };
+        }
+        // Backup failed, await primary
+        const primaryResult = await primaryPromise;
+        if (parentSignal?.aborted) break;
+        if (primaryResult.verdict.accepted) {
+          return { accepted: true, stream, verified: primaryResult.verdict.verified, refusedHosts };
+        }
+        firstReason ??= primaryResult.verdict.reason;
+        if (host) refusedHosts.add(host);
+        const nextHost = streamHost(hedgedStream.url);
+        if (nextHost) refusedHosts.add(nextHost);
+        streamIndex = nextStreamIndex + 1;
+        continue;
+      }
     } finally {
       if (hedgeTimer) clearTimeout(hedgeTimer);
       parentSignal?.removeEventListener("abort", onAbort);
     }
-
-    if (parentSignal?.aborted) {
-      nextAbort?.abort();
-      break;
-    }
-
-    if (verdict.accepted) {
-      nextAbort?.abort();
-      return { accepted: true, stream, verified: verdict.verified, refusedHosts };
-    }
-
-    firstReason ??= verdict.reason;
-    if (host) refusedHosts.add(host);
-
-    if (nextStream && nextStarted && nextPromise) {
-      const nextVerdict = await nextPromise;
-      if (parentSignal?.aborted) break;
-
-      const nextHost = streamHost(nextStream.url);
-      if (nextVerdict.accepted) {
-        return { accepted: true, stream: nextStream, verified: nextVerdict.verified, refusedHosts };
-      }
-      firstReason ??= nextVerdict.reason;
-      if (nextHost) refusedHosts.add(nextHost);
-      streamIndex = nextStreamIndex + 1;
-      continue;
-    } else {
-      nextAbort?.abort();
-    }
-
-    streamIndex++;
   }
 
   return { accepted: false, reason: firstReason ?? "candidate has no stream url" };

@@ -83,6 +83,8 @@ export interface DirectStreamSourceOptions {
   readonly resolveGateTimeoutMs?: number;
   /** Optional delay in ms before hedging the next candidate probe if primary stalls (default: 2,000ms). */
   readonly resolveGateHedgeDelayMs?: number;
+  /** When true, allows hedging next candidate on the same host (default: false, avoiding CDN 429). */
+  readonly resolveGateAllowSameHostHedge?: boolean;
 }
 
 /**
@@ -241,10 +243,32 @@ export async function resolveDirectStreamSource(
           candidateIndex++;
           continue;
         }
-        const nextCandidate = probeOrder[candidateIndex + 1];
+        // Only hedge if nextCandidate is on a different host (or resolveGateAllowSameHostHedge is true), avoiding concurrent probes that trigger CDN 429
+        let nextCandidate: typeof candidate | undefined;
+        let nextCandidateIndex = -1;
+        const currentHost = candidate.url ? new URL(candidate.url).hostname : undefined;
+        for (let j = candidateIndex + 1; j < probeOrder.length; j++) {
+          const cand = probeOrder[j];
+          if (!cand?.url) continue;
+          const candHost = new URL(cand.url).hostname;
+          if (options.resolveGateAllowSameHostHedge || !candHost || candHost !== currentHost) {
+            nextCandidate = cand;
+            nextCandidateIndex = j;
+            break;
+          }
+        }
+
+        const effectiveHedgeDelayMs =
+          options.resolveGateTimeoutMs && options.resolveGateTimeoutMs <= hedgeDelayMs + 300
+            ? 0
+            : hedgeDelayMs;
 
         const currentAbort = new AbortController();
-        const onAbort = () => currentAbort.abort(context.signal?.reason);
+        const nextAbort = new AbortController();
+        const onAbort = () => {
+          currentAbort.abort(context.signal?.reason);
+          nextAbort.abort(context.signal?.reason);
+        };
         context.signal?.addEventListener("abort", onAbort, { once: true });
 
         const probeCandidate = (cand: typeof candidate, signal: AbortSignal) =>
@@ -257,106 +281,211 @@ export async function resolveDirectStreamSource(
               : { timeoutMs: options.resolveGateTimeoutMs }),
           });
 
-        const currentPromise = probeCandidate(candidate, currentAbort.signal);
+        type RacedProbeResult =
+          | { readonly which: "primary"; readonly verdict: CandidateStreamVerdict }
+          | { readonly which: "backup"; readonly verdict: CandidateStreamVerdict };
 
-        let nextPromise: Promise<CandidateStreamVerdict> | undefined;
-        let nextAbort: AbortController | undefined;
-        let nextStarted = false;
+        const primaryPromise: Promise<RacedProbeResult> = probeCandidate(
+          candidate,
+          currentAbort.signal,
+        ).then(
+          (verdict) => ({ which: "primary", verdict }),
+          (err) => ({ which: "primary", verdict: { accepted: false, reason: String(err) } }),
+        );
+
         let hedgeTimer: ReturnType<typeof setTimeout> | undefined;
+        let backupPromise: Promise<RacedProbeResult> | undefined;
 
-        if (nextCandidate && hedgeDelayMs > 0) {
-          nextAbort = new AbortController();
+        if (nextCandidate && effectiveHedgeDelayMs > 0) {
+          const hedgedCandidate = nextCandidate;
           const nextSig = nextAbort.signal;
-          nextPromise = new Promise<CandidateStreamVerdict>((resolve) => {
+          backupPromise = new Promise<RacedProbeResult>((resolve) => {
             hedgeTimer = setTimeout(() => {
               hedgeTimer = undefined;
-              nextStarted = true;
               if (currentAbort.signal.aborted || context.signal?.aborted) return;
-              probeCandidate(nextCandidate, nextSig).then(resolve, (err) =>
-                resolve({ accepted: false, reason: String(err) }),
+              probeCandidate(hedgedCandidate, nextSig).then(
+                (verdict) => resolve({ which: "backup", verdict }),
+                (err) =>
+                  resolve({ which: "backup", verdict: { accepted: false, reason: String(err) } }),
               );
-            }, hedgeDelayMs);
+            }, effectiveHedgeDelayMs);
           });
         }
 
-        let verdict: CandidateStreamVerdict;
         try {
-          verdict = await currentPromise;
+          if (!nextCandidate || !backupPromise) {
+            const { verdict } = await primaryPromise;
+            if (context.signal?.aborted) {
+              cancelled = true;
+              break;
+            }
+            if (verdict.accepted) {
+              selectedStream = candidate;
+              streamReachabilityVerified = verdict.verified;
+              gateFailure = undefined;
+              break;
+            }
+
+            refusedStreamIds.add(candidate.id);
+            const probe = verdict.probe;
+            const reason = verdict.reason;
+            gateFailure ??= {
+              providerId,
+              code: probe?.status === "timeout" ? "timeout" : "not-found",
+              message: `${label} selected stream is unreachable (${reason})`,
+              retryable: true,
+              at: context.now(),
+            };
+            emitTraceEvent(events, context, {
+              type: "source:failed",
+              providerId,
+              sourceId,
+              streamId: candidate.id,
+              message: `${label} resolve-gate probe failed`,
+              attributes: { reason, probe: probe?.status ?? "failed" },
+            });
+            candidateIndex++;
+            continue;
+          }
+
+          const hedgedCandidate = nextCandidate;
+          const firstResult = await Promise.race([primaryPromise, backupPromise]);
+
+          if (firstResult.which === "primary") {
+            if (firstResult.verdict.accepted) {
+              nextAbort.abort();
+              selectedStream = candidate;
+              streamReachabilityVerified = firstResult.verdict.verified;
+              gateFailure = undefined;
+              break;
+            }
+
+            refusedStreamIds.add(candidate.id);
+            const probe = firstResult.verdict.probe;
+            const reason = firstResult.verdict.reason;
+            gateFailure ??= {
+              providerId,
+              code: probe?.status === "timeout" ? "timeout" : "not-found",
+              message: `${label} selected stream is unreachable (${reason})`,
+              retryable: true,
+              at: context.now(),
+            };
+            emitTraceEvent(events, context, {
+              type: "source:failed",
+              providerId,
+              sourceId,
+              streamId: candidate.id,
+              message: `${label} resolve-gate probe failed`,
+              attributes: { reason, probe: probe?.status ?? "failed" },
+            });
+
+            if (hedgeTimer) {
+              clearTimeout(hedgeTimer);
+              hedgeTimer = undefined;
+              nextAbort.abort();
+              candidateIndex++;
+              continue;
+            }
+
+            const backupResult = await backupPromise;
+            if (context.signal?.aborted) {
+              cancelled = true;
+              break;
+            }
+            if (backupResult.verdict.accepted) {
+              selectedStream = hedgedCandidate;
+              streamReachabilityVerified = backupResult.verdict.verified;
+              gateFailure = undefined;
+              break;
+            }
+
+            refusedStreamIds.add(hedgedCandidate.id);
+            const nextProbe = backupResult.verdict.probe;
+            const nextReason = backupResult.verdict.reason;
+            gateFailure ??= {
+              providerId,
+              code: nextProbe?.status === "timeout" ? "timeout" : "not-found",
+              message: `${label} selected stream is unreachable (${nextReason})`,
+              retryable: true,
+              at: context.now(),
+            };
+            emitTraceEvent(events, context, {
+              type: "source:failed",
+              providerId,
+              sourceId,
+              streamId: hedgedCandidate.id,
+              message: `${label} resolve-gate probe failed`,
+              attributes: { reason: nextReason, probe: nextProbe?.status ?? "failed" },
+            });
+            candidateIndex = nextCandidateIndex + 1;
+            continue;
+          } else {
+            // Backup finished first!
+            if (firstResult.verdict.accepted) {
+              currentAbort.abort();
+              primaryPromise.catch(() => undefined);
+              selectedStream = hedgedCandidate;
+              streamReachabilityVerified = firstResult.verdict.verified;
+              gateFailure = undefined;
+              break;
+            }
+
+            refusedStreamIds.add(hedgedCandidate.id);
+            const nextProbe = firstResult.verdict.probe;
+            const nextReason = firstResult.verdict.reason;
+            gateFailure ??= {
+              providerId,
+              code: nextProbe?.status === "timeout" ? "timeout" : "not-found",
+              message: `${label} selected stream is unreachable (${nextReason})`,
+              retryable: true,
+              at: context.now(),
+            };
+            emitTraceEvent(events, context, {
+              type: "source:failed",
+              providerId,
+              sourceId,
+              streamId: hedgedCandidate.id,
+              message: `${label} resolve-gate probe failed`,
+              attributes: { reason: nextReason, probe: nextProbe?.status ?? "failed" },
+            });
+
+            const primaryResult = await primaryPromise;
+            if (context.signal?.aborted) {
+              cancelled = true;
+              break;
+            }
+            if (primaryResult.verdict.accepted) {
+              selectedStream = candidate;
+              streamReachabilityVerified = primaryResult.verdict.verified;
+              gateFailure = undefined;
+              break;
+            }
+
+            refusedStreamIds.add(candidate.id);
+            const primaryProbe = primaryResult.verdict.probe;
+            const primaryReason = primaryResult.verdict.reason;
+            gateFailure ??= {
+              providerId,
+              code: primaryProbe?.status === "timeout" ? "timeout" : "not-found",
+              message: `${label} selected stream is unreachable (${primaryReason})`,
+              retryable: true,
+              at: context.now(),
+            };
+            emitTraceEvent(events, context, {
+              type: "source:failed",
+              providerId,
+              sourceId,
+              streamId: candidate.id,
+              message: `${label} resolve-gate probe failed`,
+              attributes: { reason: primaryReason, probe: primaryProbe?.status ?? "failed" },
+            });
+            candidateIndex = nextCandidateIndex + 1;
+            continue;
+          }
         } finally {
           if (hedgeTimer) clearTimeout(hedgeTimer);
           context.signal?.removeEventListener("abort", onAbort);
         }
-
-        if (context.signal?.aborted) {
-          cancelled = true;
-          nextAbort?.abort();
-          break;
-        }
-
-        if (verdict.accepted) {
-          nextAbort?.abort();
-          selectedStream = candidate;
-          streamReachabilityVerified = verdict.verified;
-          gateFailure = undefined;
-          break;
-        }
-
-        refusedStreamIds.add(candidate.id);
-        const probe = verdict.probe;
-        const reason = verdict.reason;
-        gateFailure ??= {
-          providerId,
-          code: probe?.status === "timeout" ? "timeout" : "not-found",
-          message: `${label} selected stream is unreachable (${reason})`,
-          retryable: true,
-          at: context.now(),
-        };
-        emitTraceEvent(events, context, {
-          type: "source:failed",
-          providerId,
-          sourceId,
-          streamId: candidate.id,
-          message: `${label} resolve-gate probe failed`,
-          attributes: { reason, probe: probe?.status ?? "failed" },
-        });
-
-        if (nextCandidate && nextStarted && nextPromise) {
-          candidateIndex++;
-          const nextVerdict = await nextPromise;
-          if (context.signal?.aborted) {
-            cancelled = true;
-            break;
-          }
-          if (nextVerdict.accepted) {
-            selectedStream = nextCandidate;
-            streamReachabilityVerified = nextVerdict.verified;
-            gateFailure = undefined;
-            break;
-          }
-
-          refusedStreamIds.add(nextCandidate.id);
-          const nextProbe = nextVerdict.probe;
-          const nextReason = nextVerdict.reason;
-          gateFailure ??= {
-            providerId,
-            code: nextProbe?.status === "timeout" ? "timeout" : "not-found",
-            message: `${label} selected stream is unreachable (${nextReason})`,
-            retryable: true,
-            at: context.now(),
-          };
-          emitTraceEvent(events, context, {
-            type: "source:failed",
-            providerId,
-            sourceId,
-            streamId: nextCandidate.id,
-            message: `${label} resolve-gate probe failed`,
-            attributes: { reason: nextReason, probe: nextProbe?.status ?? "failed" },
-          });
-        } else {
-          nextAbort?.abort();
-        }
-
-        candidateIndex++;
       }
 
       // Cancellation outranks a partial gate failure. If the caller aborted, any

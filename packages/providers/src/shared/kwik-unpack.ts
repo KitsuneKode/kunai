@@ -62,7 +62,7 @@ export function unpackDeanEdwards(script: string): string | null {
   const wordCount = parseInt(wordCountStr, 10);
   const words = wordsStr.split("|");
 
-  if (radix < 2 || radix > 62 || isNaN(wordCount)) return null;
+  if (radix < 2 || radix > 62 || isNaN(wordCount) || words.length !== wordCount) return null;
 
   // Unescape quotes and slashes inside payload
   const payload = rawPayload.replace(/\\'/g, "'").replace(/\\"/g, '"').replace(/\\\\/g, "\\");

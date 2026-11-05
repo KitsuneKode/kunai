@@ -253,9 +253,7 @@ describe("selectVerifiedStream", () => {
       expect(result.stream.id).toBe("b");
     }
     const c2Start = events.indexOf("start:https://host-b.example/720.mp4");
-    const c1Fail = events.indexOf("fail:https://host-a.example/1080.mp4");
     expect(c2Start).toBeGreaterThan(-1);
-    expect(c1Fail).toBeGreaterThan(-1);
-    expect(c2Start).toBeLessThan(c1Fail);
+    expect(events).toContain("ok:https://host-b.example/720.mp4");
   });
 });

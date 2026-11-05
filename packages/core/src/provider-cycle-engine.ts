@@ -650,7 +650,9 @@ async function runProviderCycleRaced<TResolved>(args: {
         };
       }
 
-      if (inFlight.size === 0) launchNext();
+      if (inFlight.size < maxConcurrent && nextIndex < eligible.length) {
+        launchNext();
+      }
     }
 
     if (input.signal?.aborted) {
