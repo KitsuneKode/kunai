@@ -51,6 +51,11 @@ describe("unpackDeanEdwards", () => {
   test("returns null for non-packed strings", () => {
     expect(unpackDeanEdwards("console.log('not packed');")).toBeNull();
   });
+
+  test("returns null when words.length does not match wordCount", () => {
+    const packed = `eval(function(p,a,c,k,e,d){return p}('0 1',2,5,'only|two'.split('|')))`;
+    expect(unpackDeanEdwards(packed)).toBeNull();
+  });
 });
 
 describe("extractKwikStreamFromEmbed", () => {

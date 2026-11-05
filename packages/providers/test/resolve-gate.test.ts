@@ -218,17 +218,22 @@ describe("selectVerifiedStream", () => {
     expect(result.accepted).toBe(false);
   });
 
-  test("hedged multi-host walk starts candidate 2 when candidate 1 stalls", async () => {
+  test("hedged multi-host walk starts candidate 2 when candidate 1 stalls and aborts candidate 1 early", async () => {
     const events: string[] = [];
+    let hostAAborted = false;
     const context = {
       providerId: "test-provider",
       now: () => new Date().toISOString(),
       fetch: {
         runtime: "direct-http" as const,
-        fetch: async (url: string) => {
+        fetch: async (url: string, init?: RequestInit) => {
           events.push(`start:${url}`);
           if (url.includes("host-a.example")) {
-            await new Promise((resolve) => setTimeout(resolve, 40));
+            init?.signal?.addEventListener("abort", () => {
+              hostAAborted = true;
+              events.push(`aborted:${url}`);
+            });
+            await new Promise((resolve) => setTimeout(resolve, 80));
             events.push(`fail:${url}`);
             return new Response("gone", { status: 404 });
           }
@@ -239,6 +244,7 @@ describe("selectVerifiedStream", () => {
       },
     };
 
+    const start = Date.now();
     const result = await selectVerifiedStream({
       streams: [
         stream("a", "https://host-a.example/1080.mp4"),
@@ -247,13 +253,15 @@ describe("selectVerifiedStream", () => {
       context,
       hedgeDelayMs: 15,
     });
+    const elapsed = Date.now() - start;
 
     expect(result.accepted).toBe(true);
     if (result.accepted) {
       expect(result.stream.id).toBe("b");
     }
-    const c2Start = events.indexOf("start:https://host-b.example/720.mp4");
-    expect(c2Start).toBeGreaterThan(-1);
-    expect(events).toContain("ok:https://host-b.example/720.mp4");
+    // Must complete around hedgeDelay (15ms) + probe B (10ms) = ~25ms, well before candidate A (80ms)
+    expect(elapsed).toBeLessThan(70);
+    expect(hostAAborted).toBe(true);
+    expect(events).toContain("aborted:https://host-a.example/1080.mp4");
   });
 });

@@ -236,7 +236,10 @@ export async function selectVerifiedStream<
       backupPromise = new Promise<RacedProbeResult>((resolve) => {
         hedgeTimer = setTimeout(() => {
           hedgeTimer = undefined;
-          if (currentAbort.signal.aborted || parentSignal?.aborted) return;
+          if (currentAbort.signal.aborted || parentSignal?.aborted) {
+            resolve({ which: "backup", verdict: { accepted: false, reason: "cancelled" } });
+            return;
+          }
           probeStream(hedgedStream, nextSig).then(
             (verdict) => resolve({ which: "backup", verdict }),
             (err) =>
@@ -297,19 +300,20 @@ export async function selectVerifiedStream<
         streamIndex = nextStreamIndex + 1;
         continue;
       } else {
-        // Backup finished first!
-        if (firstResult.verdict.accepted) {
+        // Backup finished first! To abort the primary early, backup MUST have verified: true
+        // (a definitive reachable probe), avoiding soft accepts/timeouts from killing a viable primary.
+        if (firstResult.verdict.accepted && firstResult.verdict.verified) {
           currentAbort.abort();
-          // Ensure primary probe finishes tearing down without swallowing unhandled rejection
           primaryPromise.catch(() => undefined);
+          if (parentSignal?.aborted) break;
           return {
             accepted: true,
             stream: hedgedStream,
-            verified: firstResult.verdict.verified,
+            verified: true,
             refusedHosts,
           };
         }
-        // Backup failed, await primary
+        // Backup failed or only soft-accepted; wait for primary to settle definitively
         const primaryResult = await primaryPromise;
         if (parentSignal?.aborted) break;
         if (primaryResult.verdict.accepted) {
@@ -318,6 +322,15 @@ export async function selectVerifiedStream<
         firstReason ??= primaryResult.verdict.reason;
         if (host) refusedHosts.add(host);
         const nextHost = streamHost(hedgedStream.url);
+        if (firstResult.verdict.accepted) {
+          // Primary failed and backup was soft-accepted, so ship backup now
+          return {
+            accepted: true,
+            stream: hedgedStream,
+            verified: firstResult.verdict.verified,
+            refusedHosts,
+          };
+        }
         if (nextHost) refusedHosts.add(nextHost);
         streamIndex = nextStreamIndex + 1;
         continue;
@@ -347,7 +360,7 @@ export function dropRefusedStreams<TStream extends Pick<StreamCandidate, "url">>
   return streams.filter((stream) => !refusedHosts.has(streamHost(stream.url)));
 }
 
-function streamHost(url: string | undefined): string {
+export function streamHost(url: string | undefined): string {
   try {
     return new URL(url ?? "").host.toLowerCase();
   } catch {

@@ -341,7 +341,7 @@ describe("direct stream resolve gate", () => {
     expect(result.streamReachabilityVerified).toBe(true);
   });
 
-  test("hedged probe starts candidate 2 when candidate 1 stalls", async () => {
+  test("hedged probe skips same-host candidate by default", async () => {
     const events: string[] = [];
     const result = await resolveDirectStreamSource({
       providerId: "vidlink",
@@ -351,29 +351,63 @@ describe("direct stream resolve gate", () => {
       context: createContext(async (url) => {
         events.push(`start:${url}`);
         if (url.includes("1080")) {
-          // Stalls for 40ms before failing
-          await new Promise((resolve) => setTimeout(resolve, 40));
-          events.push(`fail:${url}`);
+          await new Promise((resolve) => setTimeout(resolve, 30));
           return new Response("gone", { status: 404 });
         }
-        // Candidate 2 responds in 10ms
+        return new Response("ok");
+      }),
+      fetchPayload: async () => THREE_STREAMS, // All on cdn.example
+      resolveGateProbe: true,
+      resolveGateHedgeDelayMs: 10,
+      // resolveGateAllowSameHostHedge omitted -> default false
+    });
+
+    expect(result.status).toBe("resolved");
+    // With same-host hedge skipped, 720.mp4 only starts after 1080.mp4 fails (sequential)
+    const c1Start = events.indexOf("start:https://cdn.example/1080.mp4");
+    const c2Start = events.indexOf("start:https://cdn.example/720.mp4");
+    expect(c1Start).toBe(0);
+    expect(c2Start).toBe(1);
+  });
+
+  test("hedged probe starts distinct-host candidate early and aborts slow primary", async () => {
+    const events: string[] = [];
+    let primaryAborted = false;
+    const start = Date.now();
+    const result = await resolveDirectStreamSource({
+      providerId: "vidlink",
+      host: "vidlink.pro",
+      label: "VidLink",
+      input: createInput(),
+      context: createContext(async (url, init) => {
+        events.push(`start:${url}`);
+        if (url.includes("cdn-a.example")) {
+          init?.signal?.addEventListener("abort", () => {
+            primaryAborted = true;
+            events.push(`aborted:${url}`);
+          });
+          await new Promise((resolve) => setTimeout(resolve, 80));
+          return new Response("gone", { status: 404 });
+        }
         await new Promise((resolve) => setTimeout(resolve, 10));
         events.push(`ok:${url}`);
         return new Response("ok");
       }),
-      fetchPayload: async () => THREE_STREAMS,
+      fetchPayload: async () => ({
+        streams: [
+          { url: "https://cdn-a.example/1080.mp4", qualityHint: "1080p" },
+          { url: "https://cdn-b.example/720.mp4", qualityHint: "720p" },
+        ],
+      }),
       resolveGateProbe: true,
       resolveGateHedgeDelayMs: 15,
-      resolveGateAllowSameHostHedge: true,
     });
+    const elapsed = Date.now() - start;
 
     expect(result.status).toBe("resolved");
-    expect(result.selectedStreamId).toBeTruthy();
-    const selected = result.streams.find((s) => s.id === result.selectedStreamId);
-    expect(selected?.url).toBe("https://cdn.example/720.mp4");
-    // Verify candidate 2 was launched and accepted before candidate 1 could finish
-    const c2Start = events.indexOf("start:https://cdn.example/720.mp4");
-    expect(c2Start).toBeGreaterThan(-1);
-    expect(events).toContain("ok:https://cdn.example/720.mp4");
+    expect(elapsed).toBeLessThan(70);
+    expect(primaryAborted).toBe(true);
+    expect(events).toContain("aborted:https://cdn-a.example/1080.mp4");
+    expect(events).toContain("ok:https://cdn-b.example/720.mp4");
   });
 });
