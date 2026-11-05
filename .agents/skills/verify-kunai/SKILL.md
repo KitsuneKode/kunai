@@ -23,7 +23,7 @@ description: Verify Kunai through real user actions and captured evidence. Use f
 
 | Tier                       | Command                                          | Proves                                                | Does not prove                                |
 | :------------------------- | :----------------------------------------------- | :---------------------------------------------------- | :-------------------------------------------- |
-| **L1 unit/integration**    | `bun run test:cli:file <path>`                   | Logic, contracts, and schema invariants               | That an interactive user can reach it         |
+| **L1 unit/integration**    | `bun run test:file <path>`                       | Logic, contracts, and schema invariants               | That an interactive user can reach it         |
 | **L2 in-process replay**   | `bun run agent:drive`                            | Shell wiring: real `AppRoot` + `SessionController`    | OS signals, TTY alt-screen, restart lifecycle |
 | **L3 held PTY session**    | `bun run agent:session`                          | Real `main.ts` in a held tmux PTY; signals, restart   | Provider reachability, real video decode      |
 | **L4 loopback mpv**        | `KUNAI_REAL_MPV=1` + `test/agent/real-mpv*`      | mpv decodes loopback media and Kunai records progress | External live provider reliability            |
