@@ -52,7 +52,7 @@ const EXCLUDED_DIRS = new Set(["archive", "node_modules", "provider-dossiers"]);
  * short and justified — every entry is a place the check cannot help.
  */
 const ALLOWED_MISSING: readonly RegExp[] = [
-  /^apps\/cli\/dist\//, // build output
+  /^apps\/(?:cli|mobile)\/dist\//, // generated app build output, absent on clean checkouts
   /(^|\/)\.prototypes\//, // gitignored local prototype harnesses
   /\.\.\./, // deliberately elided paths, e.g. packages/storage/.../x.ts
   /[*?]/, // globs
@@ -107,8 +107,8 @@ const CODE_PATH =
   /`((?:(?:apps|packages|scripts|archive)\/[A-Za-z0-9._/*?-]+|install\.(?:sh|ps1)))`/g;
 const MD_LINK = /\]\(([^)#\s]+\.(?:md|mdx|ts|tsx|json|yaml|yml|sh|ps1|html))(?:#[^)]*)?\)/g;
 
-function checkFile(absolute: string): Finding[] {
-  const relative = absolute.slice(ROOT.length + 1);
+export function checkFile(absolute: string, root = ROOT): Finding[] {
+  const relative = absolute.slice(root.length + 1);
   const findings: Finding[] = [];
 
   readFileSync(absolute, "utf8")
@@ -118,7 +118,7 @@ function checkFile(absolute: string): Finding[] {
 
       for (const [, target] of line.matchAll(CODE_PATH)) {
         if (!target || isAllowedMissing(target)) continue;
-        if (!existsSync(join(ROOT, target))) {
+        if (!existsSync(join(root, target))) {
           findings.push({ file: relative, target, line: index + 1 });
         }
       }
@@ -302,7 +302,7 @@ if (import.meta.main) {
     : [];
 
   const findings = [
-    ...files.flatMap(checkFile),
+    ...files.flatMap((absolute) => checkFile(absolute)),
     ...sourceFiles.flatMap(checkSourceFile),
     ...roadmapFindings,
   ];
