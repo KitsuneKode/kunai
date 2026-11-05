@@ -24,6 +24,7 @@ subtitle controls, and safer persistence, downloads and native installation.
 
 - Keep explicit native mpv audio-language choices for same-title restart and
   autoplay without overwriting saved defaults or accepting stale file events.
+  Normalize native language aliases before reconnect and session selection.
 
 - Add non-interactive 'kunai status' / 'kunai providers status' command to inspect live health, latency, and credentials across streaming, scraper, and debrid services.
 - Add direct magnet URI / torrent infohash stream resolution and playback routing via 'kunai play <magnet>' and '--debrid'.

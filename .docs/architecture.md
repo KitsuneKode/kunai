@@ -321,7 +321,11 @@ still reaches the normal stall deadline; explicit pause keeps stall clocks off.
 - keeps socket cleanup and final playback stats bounded after process exit
 
 Explicit embedded-audio cycling in the Kunai mpv bridge carries a separate
-intent payload. The IPC adapters validate its media identity and language;
+intent payload. The IPC adapters validate its media identity and language,
+canonicalizing language aliases such as `jpn`/`eng` to `ja`/`en` before reconnect
+and session readers consume them. Languages without a two-letter equivalent
+retain their valid three-letter tag. Saved `original`, `sub` and `dub` profile
+choices do not pass through this native-track normalization;
 ordinary startup/default audio observations do not become preferences.
 The bridge compares path and active playlist-entry identity before cycling and
 after reading the selected track, including same-URL file replacement. Accepted

@@ -23,11 +23,19 @@ export function parseMpvAudioIntent(
   const normalized = language.trim().toLowerCase().replaceAll("_", "-");
   if (!/^[a-z]{2,3}(?:-[a-z0-9]{2,8})*$/.test(normalized)) return null;
   if (["und", "zxx", "mul"].includes(normalized.split("-")[0] ?? "")) return null;
+  let canonicalLanguage: string;
+  try {
+    // Canonicalize aliases before both reconnect and session consumers see them.
+    // Keep legitimate three-letter languages without a two-letter equivalent.
+    canonicalLanguage = new Intl.Locale(normalized).toString().toLowerCase();
+  } catch {
+    return null;
+  }
   // Media paths authorize the observation locally; they never leave this boundary.
   return {
     type: "track-changed",
     trackType: "audio",
     id,
-    audioLanguageIntent: normalized,
+    audioLanguageIntent: canonicalLanguage,
   };
 }
