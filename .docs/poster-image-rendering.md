@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-15"
+lastReviewed: "2026-11-06"
 ---
 
 # Poster and terminal image output
@@ -84,6 +84,24 @@ were retired, and `jpeg-js` is test-support only.
 - **`none`**: Silent skip; UI shows “Poster unavailable” when appropriate.
 
 In Ink, browse and playback companion panes both render `placeholder` for **`kitty`** and **`text`**; only **`none`** (or missing URL while loading) shows the unavailable copy.
+
+## Search suggestion preview pane
+
+When typing in the search bar, the type-ahead suggestions band (`SearchSuggestionBand`) adapts to available width:
+
+- **Narrow / compact (`width < 70`)**: Standard single-column list with bottom selection cue (`Preview · Enter open`).
+- **Wide (`width >= 70`)**: Two-column layout. The left column lists search suggestions and the action prompt; the right column renders a dedicated series preview pane featuring a `MiniPosterTile` of the highlighted title's poster alongside its title, year, media type, and provenance badge.
+
+## Preview geometry scaling
+
+`resolvePreviewPosterGeometry` calculates portrait poster cells matching a 2:3 aspect ratio (`cols ≈ rows * 4/3` in half-block) adapted to terminal height:
+
+- **Ultra-tall / 1440p+ (`>= 52` rows)**: 20 rows × 27 columns (40×27 px in half-block).
+- **Large / fullscreen (`>= 42` rows)**: 16 rows × 21 columns (32×21 px in half-block).
+- **Medium-tall (`34` to `41` rows)**: 13 rows × 17 columns (26×17 px in half-block).
+- **Standard (`28` to `33` rows)**: 11 rows × 15 columns.
+- **Compact (`< 28` rows)**: 9 rows × 14 columns.
+  Posters align flush with metadata text in the preview rail (`justifyContent="flex-start"`).
 
 ## Source disk cache
 

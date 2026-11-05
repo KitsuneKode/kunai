@@ -3,6 +3,13 @@ import { describe, expect, test } from "bun:test";
 import { PREVIEW_POSTER_ROWS, resolvePreviewPosterGeometry } from "@/app-shell/browse-shell-view";
 
 describe("resolvePreviewPosterGeometry", () => {
+  test("returns 20 rows and 27 columns for ultra-tall / 1440p+ viewports (>= 52 rows)", () => {
+    const geometry = resolvePreviewPosterGeometry(55, 50);
+    expect(geometry.rows).toBe(20);
+    // 2:3 aspect ratio: 20 rows * 2 = 40px height, 40 * (2/3) ≈ 27 cols
+    expect(geometry.cols).toBe(27);
+  });
+
   test("returns 16 rows and 21 columns for large / fullscreen viewports (>= 42 rows)", () => {
     const geometry = resolvePreviewPosterGeometry(45, 50);
     expect(geometry.rows).toBe(16);

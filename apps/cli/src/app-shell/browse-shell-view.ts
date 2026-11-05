@@ -30,7 +30,9 @@ export function resolvePreviewPosterGeometry(
   previewWidth: number,
 ): PreviewPosterGeometry {
   let rows = PREVIEW_POSTER_ROWS;
-  if (viewportRows >= 42) {
+  if (viewportRows >= 52) {
+    rows = 20;
+  } else if (viewportRows >= 42) {
     rows = 16;
   } else if (viewportRows >= 34) {
     rows = 13;

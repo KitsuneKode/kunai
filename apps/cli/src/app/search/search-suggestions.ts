@@ -118,6 +118,7 @@ function watchedSuggestion(row: HistoryProgress): SearchSuggestion<SearchResult>
     badge: isFinished(row) ? "watched" : "continue",
     meta: [kindLabel(kind), ep ?? ""].filter(Boolean).join(" · "),
     recencyMs: epochMs(row.updatedAt),
+    posterUrl: row.posterUrl ?? undefined,
     value: searchResultFromHistory(row),
   };
 }
@@ -274,6 +275,7 @@ export function toCatalogSuggestions(
     id: `catalog:${result.id}`,
     title: chooseSearchResultTitle(result, titlePreference),
     source: "catalog",
+    posterUrl: result.posterPath ?? undefined,
     meta: result.commitQuery
       ? "YouTube query"
       : [
