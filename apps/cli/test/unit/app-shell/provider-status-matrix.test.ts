@@ -89,26 +89,44 @@ function createMockContainer(
         };
       },
     },
-    providerHealth: new Map([
-      [
-        "vidrock",
-        {
-          status: "healthy",
-          medianResolveMs: 350,
-          recentFailureRate: 0,
-          observations: 10,
+    providerHealth: (() => {
+      const healthMap = new Map<string, any>([
+        [
+          "vidrock",
+          {
+            providerId: "vidrock",
+            status: "healthy",
+            checkedAt: new Date().toISOString(),
+            medianResolveMs: 350,
+            recentFailureRate: 0,
+            observations: 10,
+          },
+        ],
+        [
+          "allmanga",
+          {
+            providerId: "allmanga",
+            status: "healthy",
+            checkedAt: new Date().toISOString(),
+            medianResolveMs: 650,
+            recentFailureRate: 0.05,
+            observations: 20,
+          },
+        ],
+      ]);
+      return {
+        get: (id: string) => healthMap.get(id),
+        set: (health: any) => healthMap.set(health.providerId, health),
+        list: () => Array.from(healthMap.values()),
+        delete: (id: string) => healthMap.delete(id),
+        deleteMany: (ids: readonly string[]) => {
+          let count = 0;
+          for (const id of ids) if (healthMap.delete(id)) count++;
+          return count;
         },
-      ],
-      [
-        "allmanga",
-        {
-          status: "healthy",
-          medianResolveMs: 650,
-          recentFailureRate: 0.05,
-          observations: 20,
-        },
-      ],
-    ]),
+        clearAll: () => healthMap.clear(),
+      };
+    })(),
   };
   // SAFETY: Mock test container providing only the fields consumed by buildProviderStatusMatrix
   return container as never;
