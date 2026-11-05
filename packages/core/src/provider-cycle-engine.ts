@@ -39,6 +39,12 @@ export interface RunProviderCycleInput<TResolved> extends ProviderCycleEngineOpt
   readonly titleId?: string;
   readonly allowTransientCandidateRetry?: boolean;
   /**
+   * Number of distinct servers that must produce offline network failures
+   * (e.g. ENOTFOUND) before the cycle concludes the machine's uplink is dead.
+   * Defaults to Math.max(2, Math.min(candidates.length, 3)).
+   */
+  readonly offlineEvidenceQuorum?: number;
+  /**
    * Maximum concurrent candidates running when hedged (hedgeDelayMs > 0).
    * Defaults to 2 to prevent connection storms.
    */
@@ -201,6 +207,9 @@ export async function runProviderCycle<TResolved>(
 
   let skippedQuarantined = 0;
   let attemptedCandidates = 0;
+  const offlineQuorum =
+    input.offlineEvidenceQuorum ??
+    Math.max(OFFLINE_EVIDENCE_QUORUM, Math.min(input.candidates.length, 3));
   // Offline evidence is corroborated across distinct servers before the walk
   // abandons the pool: one source's DNS failure can be a dead upstream domain,
   // not a dead uplink — miruro-style multi-mirror providers would otherwise
@@ -317,7 +326,7 @@ export async function runProviderCycle<TResolved>(
             };
           }
           offlineEvidenceServers.add(candidate.serverId ?? candidate.id);
-          if (offlineEvidenceServers.size >= OFFLINE_EVIDENCE_QUORUM) {
+          if (offlineEvidenceServers.size >= offlineQuorum) {
             return {
               attempts,
               events,
@@ -438,6 +447,9 @@ async function runProviderCycleRaced<TResolved>(args: {
   }
 
   let skippedQuarantined = 0;
+  const offlineQuorum =
+    input.offlineEvidenceQuorum ??
+    Math.max(OFFLINE_EVIDENCE_QUORUM, Math.min(input.candidates.length, 3));
   const offlineEvidenceServers = new Set<string>();
   const eligible = orderCycleCandidates(input.candidates).filter((candidate) => {
     const endpoint = candidate.serverId;
@@ -608,7 +620,7 @@ async function runProviderCycleRaced<TResolved>(args: {
           };
         }
         offlineEvidenceServers.add(entry.candidate.serverId ?? entry.candidate.id);
-        if (offlineEvidenceServers.size >= OFFLINE_EVIDENCE_QUORUM) {
+        if (offlineEvidenceServers.size >= offlineQuorum) {
           abortAll();
           return {
             attempts,

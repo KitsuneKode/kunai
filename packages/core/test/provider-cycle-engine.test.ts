@@ -312,6 +312,35 @@ test("runProviderCycle keeps cycling past a single dead domain to a live sibling
   expect(result.stopReason).toBe("resolved");
 });
 
+test("runProviderCycle continues past multiple dead domains when remaining candidates exist in larger pool", async () => {
+  const attempts: string[] = [];
+  const pool = [
+    { ...candidates[0]!, id: "source:m1", serverId: "m1", priority: 10 },
+    { ...candidates[1]!, id: "source:m2", serverId: "m2", priority: 20 },
+    { ...candidates[0]!, id: "source:m3", serverId: "m3", priority: 30 },
+  ];
+
+  const result = await runProviderCycle({
+    providerId: "allanime",
+    candidates: pool,
+    maxAttemptsPerCandidate: 1,
+    now: fixedClock(),
+    async resolveCandidate(candidate) {
+      attempts.push(candidate.id);
+      if (candidate.serverId === "m1" || candidate.serverId === "m2") {
+        throw new Error("getaddrinfo ENOTFOUND dead-mirror.example.invalid");
+      }
+      return { streamId: candidate.id };
+    },
+  });
+
+  // Multiple dead mirrors in a larger list must not kill the whole cycle
+  // prematurely when subsequent working mirrors exist.
+  expect(result.selected).toEqual({ streamId: "source:m3" });
+  expect(attempts).toEqual(["source:m1", "source:m2", "source:m3"]);
+  expect(result.stopReason).toBe("resolved");
+});
+
 test("runProviderCycle retries an offline-classified failure on the same server only once per verdict", async () => {
   const attempts: string[] = [];
 

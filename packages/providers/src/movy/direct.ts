@@ -673,6 +673,8 @@ export async function resolveMovyDirect(
     titleId: input.title.id,
     maxAttemptsPerCandidate: 1,
     candidateTimeoutMs,
+    hedgeDelayMs: 2_500,
+    maxConcurrentCandidates: 2,
     resolveCandidate: async (candidate, candidateContext) => {
       // SAFETY: serverId/lane were minted by this module's own lane roster
       // when the candidates were declared; a stray value resolves as a lane
