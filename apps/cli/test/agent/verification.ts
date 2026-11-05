@@ -140,6 +140,7 @@ export function assertKittyEvidenceSurvival(
   if (!existsSync(resultsPath)) {
     throw new Error(`Evidence survival failed: missing ${resultsPath}`);
   }
+  // SAFETY: results.json is emitted by kitty.ts matching the KittyRouteResult contract.
   const parsed = JSON.parse(readFileSync(resultsPath, "utf8")) as {
     results?: KittyRouteResult[];
   };
@@ -163,6 +164,7 @@ export function assertKittyEvidenceSurvival(
     if (!existsSync(cleanupPath)) {
       throw new Error(`Evidence survival failed: missing ${cleanupPath}`);
     }
+    // SAFETY: cleanup.json is emitted by kitty.ts recording teardown booleans.
     const cleanup = JSON.parse(readFileSync(cleanupPath, "utf8")) as {
       privateStateClean?: boolean;
       terminalExited?: boolean;

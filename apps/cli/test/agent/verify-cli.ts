@@ -61,6 +61,7 @@ async function main() {
       if (!dir) throw new Error("Pass --evidence DIR with the external bundle root");
       const resultsPath = join(resolve(dir), "results.json");
       if (!existsSync(resultsPath)) throw new Error(`Missing ${resultsPath}`);
+      // SAFETY: results.json is emitted by kitty.ts matching the results summary contract.
       const parsed = JSON.parse(await Bun.file(resultsPath).text()) as {
         results: { label: string; status: string; reason?: string }[];
       };
@@ -125,6 +126,7 @@ async function main() {
     }
 
     case "kitty-fixture": {
+      // SAFETY: Validated against SCENARIOS lookup table immediately below.
       const scenarioName = (positionals[1] ?? "interactive") as keyof typeof SCENARIOS;
       const scenarioPath = SCENARIOS[scenarioName];
       if (!scenarioPath || !existsSync(scenarioPath)) {
@@ -143,6 +145,7 @@ async function main() {
       );
       const code = await proc.exited;
       if (code !== 0) process.exit(code ?? 1);
+      // SAFETY: results.json is emitted by kitty.ts matching the results summary contract.
       const results = JSON.parse(await Bun.file(join(evidence, "results.json")).text()) as {
         results: { label: string; status: string }[];
       };

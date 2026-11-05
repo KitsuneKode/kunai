@@ -125,10 +125,12 @@ export function clearAllFacets<T>(state: FacetedFilterState<T>): FacetedFilterSt
   };
 }
 
-export function getActiveFacetCounts<T>(state: FacetedFilterState<T>): {
+export interface ActiveFacetCounts {
   readonly total: number;
   readonly byCategory: ReadonlyMap<string, number>;
-} {
+}
+
+export function getActiveFacetCounts<T>(state: FacetedFilterState<T>): ActiveFacetCounts {
   const byCategory = new Map<string, number>();
   let total = 0;
 
@@ -305,19 +307,19 @@ export function buildStreamFacetedCategories(
   return categories;
 }
 
+const LANGUAGE_NAMES: ReadonlyMap<string, string> = new Map([
+  ["en", "English"],
+  ["ja", "Japanese"],
+  ["es", "Spanish"],
+  ["fr", "French"],
+  ["de", "German"],
+  ["hi", "Hindi"],
+  ["ko", "Korean"],
+  ["it", "Italian"],
+  ["pt", "Portuguese"],
+  ["zh", "Chinese"],
+]);
+
 function formatLanguageLabel(code: string): string {
-  const map: Record<string, string> = {
-    en: "English",
-    ja: "Japanese",
-    es: "Spanish",
-    fr: "French",
-    de: "German",
-    hi: "Hindi",
-    ko: "Korean",
-    it: "Italian",
-    pt: "Portuguese",
-    zh: "Chinese",
-  };
-  const lower = code.toLowerCase();
-  return map[lower] ?? code.toUpperCase();
+  return LANGUAGE_NAMES.get(code.toLowerCase()) ?? code.toUpperCase();
 }
