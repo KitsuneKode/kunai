@@ -329,4 +329,24 @@ describe("runProviderCycle racing", () => {
     expect(result.stopReason).toBe("resolved");
     expect(tried).toEqual(["dead-mirror-1", "live-endpoint", "dead-mirror-2", "working"]);
   });
+
+  test("raced cycle with hedgeDelayMs continues past multiple dead domains when remaining candidates exist", async () => {
+    const tried: string[] = [];
+    const result = await runProviderCycle<string>({
+      providerId: "allanime",
+      hedgeDelayMs: 10,
+      candidates: candidates("dead1", "dead2", "live"),
+      resolveCandidate: async (candidate) => {
+        tried.push(candidate.id);
+        if (candidate.id === "dead1" || candidate.id === "dead2") {
+          throw new Error("getaddrinfo ENOTFOUND dead.example");
+        }
+        return "stream-live";
+      },
+    });
+
+    expect(result.selected).toBe("stream-live");
+    expect(result.stopReason).toBe("resolved");
+    expect(tried).toEqual(["dead1", "dead2", "live"]);
+  });
 });
