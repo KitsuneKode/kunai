@@ -84,7 +84,7 @@ import {
   buildBrowseDetailsSheetSeed,
   formatBrowseShellError,
   MIN_RESULTS_FOR_LOCAL_FILTER,
-  PREVIEW_POSTER_ROWS,
+  resolvePreviewPosterGeometry,
 } from "./browse-shell-view";
 import {
   CalendarDayStrip,
@@ -1392,13 +1392,14 @@ export function BrowseShell<T>({
     Boolean(selectedOption) &&
     (listFocused || idleFocused);
   const companionBesideList = showCompanion && wideBrowse && !mediumBrowse;
+  const previewPosterGeometry = resolvePreviewPosterGeometry(viewport.rows, previewWidth);
   const {
     poster,
     posterState: posterPreviewState,
     spinner: posterSpinner,
   } = usePosterPreview(settledOption?.previewImageUrl ?? undefined, {
-    rows: PREVIEW_POSTER_ROWS,
-    cols: Math.max(14, Math.min(20, previewWidth - 6)),
+    rows: previewPosterGeometry.rows,
+    cols: previewPosterGeometry.cols,
     enabled: Boolean(settledOption?.previewImageUrl),
     // `settledOption` already absorbs the rapid-navigation burst, so the poster
     // hook only needs a tiny guard rather than re-debouncing on top of it.
@@ -1421,9 +1422,9 @@ export function BrowseShell<T>({
     prefetchPosterSources(
       displayOptions.map((option) => option.previewImageUrl),
       boundedSelectedIndex,
-      { cols: Math.max(14, Math.min(20, previewWidth - 6)), variant: "detail" },
+      { cols: previewPosterGeometry.cols, variant: "detail" },
     );
-  }, [displayOptions, boundedSelectedIndex, previewWidth]);
+  }, [displayOptions, boundedSelectedIndex, previewPosterGeometry.cols]);
   const previewRailModel = isCalendarView
     ? buildCalendarPreviewRailModel(
         settledOption as BrowseShellOption<SearchResult> | undefined,
@@ -2536,7 +2537,7 @@ export function BrowseShell<T>({
                     poster={
                       navigating && suppressPosterWhileNavigating(poster) ? undefined : poster
                     }
-                    reserveRows={PREVIEW_POSTER_ROWS}
+                    reserveRows={previewPosterGeometry.rows}
                   />
                 ) : (
                   <DetailsSheetUI
