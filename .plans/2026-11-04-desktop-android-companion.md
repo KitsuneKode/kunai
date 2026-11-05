@@ -228,3 +228,13 @@ under `/home/kitsunekode/.t3/scratch/kunai-review-corrections-20261105/android-c
 and separate `apps/mobile` host proofs copied to `mobile-host-proof/` beside it.
 Both include SHA-256 manifests. Cross-compilation is not Android runtime or iOS
 hardware qualification. The final focused audio/witness suite passed 56 tests.
+
+### Hosted clean-checkout correction
+
+Hosted Docs build and Docs coverage at f0c522be3 both failed the path verifier
+before building: the generated mobile metadata file was present locally but
+absent on a fresh runner. A temporary-filesystem regression reproduces that
+absence while retaining a missing-source finding. Generated CLI/mobile dist
+outputs now share the narrow build-output exemption. Path checks, coverage,
+preflight and CLI typecheck pass; no application runtime or phone artifact
+changed in this follow-up.

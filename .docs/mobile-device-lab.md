@@ -151,7 +151,7 @@ command -v termux-am || command -v am
 
 Compare the file hash with the Android artifact entry in
 `mobile-build-meta.json`. Candidate verification must pin the exact git commit
-SHA (e.g. `aed24a230`) and verify all artifact SHA-256 hashes against
+SHA and verify all artifact SHA-256 hashes against the generated build output
 `apps/mobile/dist/mobile-build-meta.json`. Candidate artifacts are built from
 source and not fetched from public install URLs. Never execute from shared
 storage.
