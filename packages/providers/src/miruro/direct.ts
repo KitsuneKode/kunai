@@ -2424,6 +2424,8 @@ export const miruroProviderModule: CoreProviderModule = {
           input.startupPriority ?? "balanced",
           MIRURO_CANDIDATE_TIMEOUT_MS,
         ),
+        hedgeDelayMs: 2_500,
+        maxConcurrentCandidates: 2,
         // Every candidate goes through the same two pipe hosts — one region-wide
         // Cloudflare block means the rest will fail identically, so stop early.
         shouldStopAfterFailure: (failure) =>

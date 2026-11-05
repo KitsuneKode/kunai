@@ -215,8 +215,10 @@ export function ProviderStatusSheet({
 
   const handleResetHealth = useCallback(async () => {
     container.providerHealth.clearAll();
+    container.endpointHealth?.clearAll();
+    container.titleProviderHealth?.clearAll();
     setLiveOverrides(new Map());
-    setStatusMessage("Cleared provider health statistics.");
+    setStatusMessage("Cleared provider health, endpoint quarantine, and title health statistics.");
   }, [container]);
 
   useInput((input, key) => {

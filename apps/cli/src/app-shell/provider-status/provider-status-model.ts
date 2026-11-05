@@ -235,8 +235,6 @@ export async function probeSingleProvider(
   httpStatus?: number;
   evidence: string;
 }> {
-  // SAFETY: providerId is registered in providerRegistry matching ProviderId
-  const typedId = providerId as ProviderId;
   // SAFETY: key membership verified before indexed access
   const probeConfig = Object.hasOwn(PROVIDER_PROBE_ENDPOINTS, providerId)
     ? PROVIDER_PROBE_ENDPOINTS[providerId as keyof typeof PROVIDER_PROBE_ENDPOINTS]
@@ -276,18 +274,6 @@ export async function probeSingleProvider(
       evidence = `HTTP ${httpStatus} error (${latencyMs}ms)`;
     }
 
-    container.providerHealth.set({
-      providerId: typedId,
-      status,
-      checkedAt: new Date().toISOString(),
-      medianResolveMs: latencyMs,
-      observations: (container.providerHealth.get(typedId)?.observations ?? 0) + 1,
-      consecutiveFailures:
-        status === "healthy"
-          ? 0
-          : (container.providerHealth.get(typedId)?.consecutiveFailures ?? 0) + 1,
-    });
-
     return { status, latencyMs, httpStatus, evidence };
   } catch (err) {
     const latencyMs = Math.round(performance.now() - startTime);
@@ -297,14 +283,6 @@ export async function probeSingleProvider(
     const evidence = isTimeout
       ? `Connection timed out (>5000ms)`
       : `Network unreachable: ${errorMsg.slice(0, 30)}`;
-
-    container.providerHealth.set({
-      providerId: typedId,
-      status: "down",
-      checkedAt: new Date().toISOString(),
-      medianResolveMs: latencyMs,
-      consecutiveFailures: (container.providerHealth.get(typedId)?.consecutiveFailures ?? 0) + 1,
-    });
 
     return { status, latencyMs, evidence };
   }

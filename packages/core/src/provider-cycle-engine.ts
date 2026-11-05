@@ -13,12 +13,13 @@ import type {
 import { ProviderHttpError } from "@kunai/types";
 
 import { guardEndpointHealthAgainstCancellation } from "./provider-attempt-cancellation";
-import { isOfflineNetworkFailure } from "./provider-failure-classifier";
+import { isInterfaceOfflineError, isOfflineNetworkFailure } from "./provider-failure-classifier";
 
 export interface ProviderCycleEngineOptions {
   readonly maxAttemptsPerCandidate?: number;
   readonly candidateTimeoutMs?: number;
   readonly retryDelayMs?: number;
+  readonly maxConcurrentCandidates?: number;
 }
 
 export interface ProviderCycleCandidateContext {
@@ -37,6 +38,11 @@ export interface RunProviderCycleInput<TResolved> extends ProviderCycleEngineOpt
   readonly endpointHealth?: EndpointHealthPort;
   readonly titleId?: string;
   readonly allowTransientCandidateRetry?: boolean;
+  /**
+   * Maximum concurrent candidates running when hedged (hedgeDelayMs > 0).
+   * Defaults to 2 to prevent connection storms.
+   */
+  readonly maxConcurrentCandidates?: number;
   /**
    * When > 0, start the next candidate alongside the current one after this
    * delay and take whichever resolves first. Absent or <= 0 keeps the strictly
@@ -301,6 +307,15 @@ export async function runProviderCycle<TResolved>(
         }
 
         if (failure.failureClass === "candidate-network" && !failure.retryable) {
+          if (isInterfaceOfflineError(failure.message)) {
+            return {
+              attempts,
+              events,
+              stopReason: "network-offline",
+              fallbackRequested: false,
+              cancelled: false,
+            };
+          }
           offlineEvidenceServers.add(candidate.serverId ?? candidate.id);
           if (offlineEvidenceServers.size >= OFFLINE_EVIDENCE_QUORUM) {
             return {
@@ -311,6 +326,11 @@ export async function runProviderCycle<TResolved>(
               cancelled: false,
             };
           }
+        } else if (
+          failure.failureClass !== "candidate-network" &&
+          failure.failureClass !== "candidate-timeout"
+        ) {
+          offlineEvidenceServers.clear();
         }
 
         if (input.shouldStopAfterFailure?.(failure, candidate)) {
@@ -492,6 +512,8 @@ async function runProviderCycleRaced<TResolved>(args: {
   const onParentAbort = () => abortAll(input.signal?.reason);
   input.signal?.addEventListener("abort", onParentAbort, { once: true });
 
+  const maxConcurrent = input.maxConcurrentCandidates ?? 2;
+
   try {
     launchNext();
 
@@ -502,7 +524,7 @@ async function runProviderCycleRaced<TResolved>(args: {
       const racers: Array<Promise<Settled | "hedge">> = [...inFlight.values()].map(
         (entry) => entry.settled,
       );
-      if (nextIndex < eligible.length) {
+      if (nextIndex < eligible.length && inFlight.size < maxConcurrent) {
         racers.push(
           new Promise<"hedge">((resolve) => {
             hedgeTimer = setTimeout(() => resolve("hedge"), args.hedgeDelayMs);
@@ -514,7 +536,9 @@ async function runProviderCycleRaced<TResolved>(args: {
       if (hedgeTimer) clearTimeout(hedgeTimer);
 
       if (outcome === "hedge") {
-        launchNext();
+        if (inFlight.size < maxConcurrent) {
+          launchNext();
+        }
         continue;
       }
 
@@ -573,6 +597,16 @@ async function runProviderCycleRaced<TResolved>(args: {
       }
 
       if (failure.failureClass === "candidate-network" && !failure.retryable) {
+        if (isInterfaceOfflineError(failure.message)) {
+          abortAll();
+          return {
+            attempts,
+            events,
+            stopReason: "network-offline",
+            fallbackRequested: false,
+            cancelled: false,
+          };
+        }
         offlineEvidenceServers.add(entry.candidate.serverId ?? entry.candidate.id);
         if (offlineEvidenceServers.size >= OFFLINE_EVIDENCE_QUORUM) {
           abortAll();
@@ -584,6 +618,11 @@ async function runProviderCycleRaced<TResolved>(args: {
             cancelled: false,
           };
         }
+      } else if (
+        failure.failureClass !== "candidate-network" &&
+        failure.failureClass !== "candidate-timeout"
+      ) {
+        offlineEvidenceServers.clear();
       }
 
       // A provider-wide guard is not answered by hammering the rest of the
