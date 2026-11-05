@@ -23,6 +23,7 @@ import {
   parseHianimeSearchHtml,
   parseHianimeServersHtml,
   resolveHianimeEpisodeStreams,
+  loadHianimeEpisodeCatalogForTitle,
   resolveHianimeShow,
   runHianimeCurlWithRetry,
   fetchHianimeEpisodeCatalog,
@@ -942,6 +943,67 @@ describe("hianime module search and episodes", () => {
       providerEpisodeIdentity: { providerId: HIANIME_PROVIDER_ID, value: "22676" },
     });
     expect(options?.[0]?.label).toContain("Episode 1");
+  });
+
+  test("searches instead of trusting a foreign slug-numeric title id", async () => {
+    clearHianimeCachesForTest();
+    let listNumeric: string | undefined;
+    const context = stubContext((url) => {
+      if (url.includes("/search?")) {
+        return '<div class="film-detail"><h3 class="film-name"><a href="/naruto-1335" title="Naruto">x</a></h3></div>';
+      }
+      if (url.includes("/api/theme/episode/list/")) {
+        listNumeric = url.match(/\/list\/(\d+)/)?.[1] ?? undefined;
+        return jsonResponse({ status: true, html: EPISODES_HTML });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    const loaded = await loadHianimeEpisodeCatalogForTitle(
+      {
+        title: {
+          id: "naruto-3942",
+          kind: "anime",
+          title: "Naruto",
+          anilistId: "3942",
+        },
+      },
+      undefined,
+      context,
+    );
+    expect(loaded?.show.id).toBe("naruto-1335");
+    expect(listNumeric).toEqual("1335");
+  });
+
+  test("remaps stale provider-native slugs when episode list answers 500", async () => {
+    clearHianimeCachesForTest();
+    let badListCalls = 0;
+    const context = stubContext((url) => {
+      if (url.includes("/search?")) {
+        return '<div class="film-detail"><h3 class="film-name"><a href="/naruto-1335" title="Naruto">x</a></h3></div>';
+      }
+      if (url.includes("/api/theme/episode/list/3942")) {
+        badListCalls += 1;
+        return new Response("err", { status: 500 });
+      }
+      if (url.includes("/api/theme/episode/list/1335")) {
+        return jsonResponse({ status: true, html: EPISODES_HTML });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    const loaded = await loadHianimeEpisodeCatalogForTitle(
+      {
+        title: {
+          id: "anilist:20",
+          kind: "anime",
+          title: "Naruto",
+          externalIds: { providerNativeIds: { [HIANIME_PROVIDER_ID]: "naruto-3942" } },
+        },
+      },
+      undefined,
+      context,
+    );
+    expect(loaded?.show.id).toBe("naruto-1335");
+    expect(badListCalls).toBe(1);
   });
 
   test("caches title-query show slugs across resolves", async () => {

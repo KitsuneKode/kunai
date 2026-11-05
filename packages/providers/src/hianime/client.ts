@@ -7,10 +7,14 @@
  * curl/curl-impersonate — the same shape as the AniDB client.
  */
 
-import { isRelayedResponse, providerHttpErrorForStatus, relayLocalErrorCode } from "@kunai/types";
+import {
+  isRelayedResponse,
+  ProviderHttpError,
+  providerHttpErrorForStatus,
+  relayLocalErrorCode,
+} from "@kunai/types";
 import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
 
-import { ProviderHttpError } from "../runtime/fetch";
 import { scrubbedChildEnv } from "../shared/child-env";
 import {
   curlArgvHead,
@@ -307,6 +311,13 @@ export async function hianimeFetchText(
       if (response.ok) {
         const text = await response.text();
         if (!isCloudflareChallengeText(text)) return text;
+      } else if (response.status >= 500) {
+        throw providerHttpErrorForStatus({
+          status: response.status,
+          message: `hianime fetch HTTP ${response.status} from ${hianimeUrlLabel(url)}`,
+          providerId: HIANIME_PROVIDER_ID,
+          stage: "fetch-page",
+        });
       }
     } catch (error) {
       if (options.signal?.aborted === true) throw error;
@@ -398,15 +409,42 @@ export async function searchHianime(
   return parseHianimeSearchHtml(page);
 }
 
+/** Bare digits are HiAnime theme ids or foreign catalog ids — never episode-list keys alone. */
+function isBareNumericHianimeLookup(value: string | undefined): value is string {
+  const trimmed = value?.trim();
+  return Boolean(trimmed && /^\d+$/.test(trimmed));
+}
+
 function directHianimeShowFromInput(title: ProviderResolveInput["title"]): HianimeShow | null {
-  const native = title.externalIds?.providerNativeIds?.["hianime"];
-  const id = looksLikeHianimeShowId(native)
-    ? native
-    : looksLikeHianimeShowId(title.id)
-      ? title.id
-      : null;
-  if (!id) return null;
-  return { id, title: title.title || id };
+  const native = title.externalIds?.providerNativeIds?.["hianime"]?.trim();
+  if (looksLikeHianimeShowId(native)) {
+    return { id: native, title: title.title || native };
+  }
+  const id = title.id?.trim();
+  if (
+    looksLikeHianimeShowId(id) &&
+    !id.startsWith("anilist:") &&
+    !title.externalIds?.anilistId &&
+    !title.anilistId
+  ) {
+    return { id, title: title.title || id };
+  }
+  return null;
+}
+
+function hianimeSearchQueries(title: ProviderResolveInput["title"]): readonly string[] {
+  const queries = new Set<string>();
+  const display = title.title?.trim();
+  if (display) queries.add(display);
+  const native = title.externalIds?.providerNativeIds?.["hianime"]?.trim();
+  if (isBareNumericHianimeLookup(native)) queries.add(native);
+  const id = title.id?.trim();
+  if (isBareNumericHianimeLookup(id)) queries.add(id);
+  if (id?.startsWith("anilist:")) {
+    const anilist = id.slice("anilist:".length).trim();
+    if (anilist) queries.add(anilist);
+  }
+  return [...queries];
 }
 
 /** Cache key mirrors the match normalization in parsers: queries that match
@@ -418,23 +456,34 @@ function normalizeHianimeShowQuery(query: string): string {
     .trim();
 }
 
+export type ResolveHianimeShowOptions = {
+  /** Skip provider-native slug and search by title/numeric hints instead. */
+  readonly skipDirectNative?: boolean;
+};
+
 export async function resolveHianimeShow(
   input: { readonly title: ProviderResolveInput["title"] },
   signal?: AbortSignal,
   context?: ProviderRuntimeContext,
+  options: ResolveHianimeShowOptions = {},
 ): Promise<HianimeShow | null> {
-  const direct = directHianimeShowFromInput(input.title);
-  if (direct) return direct;
-  const query = input.title.title?.trim() ?? "";
-  if (!query) return null;
-  const key = normalizeHianimeShowQuery(query);
-  const cached = key ? showCache.get(key) : undefined;
-  if (cached) return cached;
-  const match = chooseHianimeSearchMatch(query, await searchHianime(query, signal, context));
-  // Cache hits only: a transient empty search must not poison later resolves,
-  // mirroring the episode catalog's never-cache-empty rule.
-  if (match && key) showCache.set(key, match);
-  return match;
+  if (!options.skipDirectNative) {
+    const direct = directHianimeShowFromInput(input.title);
+    if (direct) return direct;
+  }
+  const queries = hianimeSearchQueries(input.title);
+  if (queries.length === 0) return null;
+  for (const query of queries) {
+    const key = normalizeHianimeShowQuery(query);
+    const cached = key ? showCache.get(key) : undefined;
+    if (cached) return cached;
+    const match = chooseHianimeSearchMatch(query, await searchHianime(query, signal, context));
+    if (match) {
+      if (key) showCache.set(key, match);
+      return match;
+    }
+  }
+  return null;
 }
 
 export async function fetchHianimeEpisodeCatalog(
@@ -455,10 +504,28 @@ export async function fetchHianimeEpisodeCatalog(
 
   const numeric = hianimeNumericId(showId);
   if (numeric === null) return [];
-  const raw = await hianimeFetchText(`${HIANIME_BASE}/api/theme/episode/list/${numeric}`, {
-    signal,
-    context,
-  });
+  let raw: string;
+  try {
+    raw = await hianimeFetchText(`${HIANIME_BASE}/api/theme/episode/list/${numeric}`, {
+      signal,
+      context,
+    });
+  } catch (error) {
+    // A wrong numeric suffix (foreign slug) often 500s instead of 404 — treat as
+    // retryable so the caller can remap through search before giving up.
+    if (error instanceof ProviderHttpError && error.status === 500) {
+      throw new ProviderHttpError({
+        message: error.message,
+        providerId: HIANIME_PROVIDER_ID,
+        stage: "episode-catalog",
+        status: 500,
+        code: "provider-unavailable",
+        retryable: true,
+        cause: error,
+      });
+    }
+    throw error;
+  }
   let html: string;
   try {
     html = (JSON.parse(raw) as { html?: unknown }).html as string;
@@ -476,6 +543,30 @@ export async function fetchHianimeEpisodeCatalog(
     EPISODE_CATALOG_PERSIST_TTL_MS,
   );
   return entries;
+}
+
+/** Resolve show slug then episode catalog; remaps through search when list API 500s on a stale slug. */
+export async function loadHianimeEpisodeCatalogForTitle(
+  input: { readonly title: ProviderResolveInput["title"] },
+  signal?: AbortSignal,
+  context?: ProviderRuntimeContext,
+): Promise<{
+  readonly show: HianimeShow;
+  readonly catalog: readonly HianimeEpisodeEntry[];
+} | null> {
+  let show = await resolveHianimeShow(input, signal, context);
+  if (!show) return null;
+  try {
+    const catalog = await fetchHianimeEpisodeCatalog(show.id, signal, context);
+    return { show, catalog };
+  } catch (error) {
+    if (!(error instanceof ProviderHttpError) || error.status !== 500) throw error;
+    const remapped = await resolveHianimeShow(input, signal, context, { skipDirectNative: true });
+    if (!remapped || remapped.id === show.id) throw error;
+    show = remapped;
+    const catalog = await fetchHianimeEpisodeCatalog(show.id, signal, context);
+    return { show, catalog };
+  }
 }
 
 export async function fetchHianimeServers(

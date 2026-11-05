@@ -20,6 +20,7 @@ import type {
   YouTubeResultKind,
 } from "@kunai/types";
 
+import { selectVerifiedStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
 import { normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { formatDurationSeconds } from "./format-duration";
@@ -365,7 +366,21 @@ export async function resolveInvidious(
       confidence: stream.confidence,
     }));
 
-    const selectedStreamId = primaryStream.id;
+    const gated = await selectVerifiedStream({
+      streams: [primaryStream, ...streams.filter((stream) => stream.id !== primaryStream.id)].slice(
+        0,
+        3,
+      ),
+      context,
+      signal: context.signal,
+    });
+    if (!gated.accepted) {
+      return createExhaustedResult(input, context, INVIDIOUS_PROVIDER_ID, {
+        code: "not-found",
+        message: `Invidious stream is unreachable (${gated.reason})`,
+        retryable: true,
+      });
+    }
     const endedAt = context.now();
     emitTraceEvent(events, context, {
       type: "provider:success",
@@ -376,7 +391,7 @@ export async function resolveInvidious(
     return {
       status: "resolved",
       providerId: INVIDIOUS_PROVIDER_ID,
-      selectedStreamId,
+      selectedStreamId: gated.stream.id,
       sources: [
         {
           id: sourceId,
@@ -398,7 +413,7 @@ export async function resolveInvidious(
         title: input.title,
         episode: input.episode,
         providerId: INVIDIOUS_PROVIDER_ID,
-        streamId: selectedStreamId,
+        streamId: gated.stream.id,
         cacheHit: false,
         runtime: "direct-http",
         startedAt,

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 
 import {
   configureYoutubeProvider,
@@ -7,6 +7,7 @@ import {
   toYoutubeVideoCatalogId,
   youtubeProviderModule,
 } from "@kunai/providers/youtube";
+import { setInvidiousPlaybackFallbackEnabledForTest } from "@kunai/providers/youtube";
 import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
 
 const TEST_CONTEXT: ProviderRuntimeContext = {
@@ -37,6 +38,13 @@ function buildResolveInput(): ProviderResolveInput {
 // skip instead of a silent pass (#468).
 const hasYtDlp = () => Boolean(Bun.which("yt-dlp"));
 const ytdlpTest = test.skipIf(!hasYtDlp());
+
+beforeEach(() => {
+  setInvidiousPlaybackFallbackEnabledForTest(false);
+});
+afterEach(() => {
+  setInvidiousPlaybackFallbackEnabledForTest(true);
+});
 
 ytdlpTest("live quality choices keep their discovered exact format", async () => {
   const metadata = normalizeYtDlpVideoInfo(

@@ -190,9 +190,13 @@ export async function resolveDirectStreamSource(
       }
       const failure: ProviderFailure = {
         providerId,
-        code: "not-found",
-        message: `${label} returned no playable streams`,
-        retryable: false,
+        code: payload?.catalogAbsent ? "not-found" : payload ? "provider-unavailable" : "not-found",
+        message: payload?.catalogAbsent
+          ? `${label} returned no playable streams`
+          : payload
+            ? `${label} returned no playable streams (upstream CDN/manifest refusal)`
+            : `${label} returned no playable streams`,
+        retryable: Boolean(payload && !payload.catalogAbsent),
         at: context.now(),
       };
       failures.push(failure);

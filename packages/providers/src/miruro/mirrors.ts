@@ -70,7 +70,9 @@ export function parseMiruroStatusMirrors(page: unknown, heartbeat: unknown): Mir
     const groupName = group.name;
     const isMirrorsGroup =
       groupName === "mirrors" ||
-      (groupName != null && String(groupName).toLowerCase().includes("mirrors"));
+      (groupName !== null &&
+        groupName !== undefined &&
+        String(groupName).toLowerCase().includes("mirrors"));
     if (!isMirrorsGroup) continue;
     for (const monitor of group.monitorList) {
       if (!isRecord(monitor)) continue;
