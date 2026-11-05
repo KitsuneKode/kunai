@@ -1,5 +1,6 @@
 import type { Container } from "@/container";
 import type { ProviderLane } from "@/domain/types";
+import { resolveEffectiveProviderHealth } from "@/services/playback/provider-health-policy";
 import type { CoreProviderManifest } from "@kunai/core";
 import type { ProviderId } from "@kunai/types";
 
@@ -140,9 +141,11 @@ export function buildProviderStatusMatrix(
     const isActive = state.provider === id || activeProviderForLane === id;
     // SAFETY: provider id comes from registered provider metadata matching ProviderId
     const health = container.providerHealth.get(id as ProviderId);
+    const effectiveHealth = resolveEffectiveProviderHealth(health);
     const override = overrides.get(id);
 
-    let status: ProviderStatusEntry["status"] = override?.status ?? health?.status ?? "unknown";
+    let status: ProviderStatusEntry["status"] =
+      override?.status ?? effectiveHealth?.effectiveStatus ?? "unknown";
     if (disabled && status !== "probing") {
       status = "unknown";
     }
@@ -160,9 +163,24 @@ export function buildProviderStatusMatrix(
             ? `${Math.round((1 - health.recentFailureRate) * 100)}% reachability`
             : "";
         const obs = health.observations ? ` (${health.observations} checks)` : "";
-        evidence =
-          [rate, obs].filter(Boolean).join("") ||
-          (health.status === "healthy" ? "Operational" : health.status);
+        const rateAndObs = [rate, obs].filter(Boolean).join("");
+
+        if (effectiveHealth?.healedByTtl && effectiveHealth.stored) {
+          evidence = `Healed by TTL (was ${effectiveHealth.stored.status})${rate ? ` · ${rate}` : ""}`;
+        } else if (effectiveHealth?.effectiveStatus === "down") {
+          const failures =
+            health.consecutiveFailures !== undefined && health.consecutiveFailures > 0
+              ? `${health.consecutiveFailures} consecutive fails`
+              : "Consecutive resolve failures";
+          evidence = `${failures}${rate ? ` · ${rate}` : ""}`;
+        } else if (rateAndObs) {
+          evidence = rateAndObs;
+        } else {
+          evidence =
+            effectiveHealth?.effectiveStatus === "healthy"
+              ? "Operational"
+              : (effectiveHealth?.effectiveStatus ?? "Operational");
+        }
       } else if (id === "allmanga") {
         evidence = "Epoch 2965 verified (build 186)";
       } else if (id === "youtube") {

@@ -1,7 +1,7 @@
 import type { Container } from "@/container";
 import type { ProviderLane } from "@/domain/types";
 import { Box, Text, useInput } from "ink";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { MouseTarget } from "../mouse/MouseRegions";
 import { palette } from "../shell-theme";
@@ -33,6 +33,14 @@ export function ProviderStatusSheet({
   onClose,
   width = 96,
 }: ProviderStatusSheetProps) {
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   const initialTab: ProviderStatusTab =
     initialLane === "anime"
       ? "anime"
@@ -83,6 +91,7 @@ export function ProviderStatusSheet({
 
       try {
         const result = await probeSingleProvider(idToProbe, container);
+        if (!isMountedRef.current) return;
 
         setLiveOverrides((prev) => {
           const next = new Map(prev);
@@ -100,14 +109,17 @@ export function ProviderStatusSheet({
           `Probed ${idToProbe}: ${result.status.toUpperCase()} (${result.latencyMs}ms)`,
         );
       } catch (err) {
+        if (!isMountedRef.current) return;
         const message = err instanceof Error ? err.message : String(err);
         setStatusMessage(`Probe failed for ${idToProbe}: ${message.slice(0, 30)}`);
       } finally {
-        setProbingIds((prev) => {
-          const next = new Set(prev);
-          next.delete(idToProbe);
-          return next;
-        });
+        if (isMountedRef.current) {
+          setProbingIds((prev) => {
+            const next = new Set(prev);
+            next.delete(idToProbe);
+            return next;
+          });
+        }
       }
     },
     [container, selectedEntry?.id],
@@ -120,13 +132,13 @@ export function ProviderStatusSheet({
     setStatusMessage(`Probing all ${ids.length} providers...`);
     setProbingIds(new Set(ids));
 
-    for (const id of ids) {
-      setLiveOverrides((prev) => {
-        const next = new Map(prev);
+    setLiveOverrides((prev) => {
+      const next = new Map(prev);
+      for (const id of ids) {
         next.set(id, { status: "probing", evidence: "Probing..." });
-        return next;
-      });
-    }
+      }
+      return next;
+    });
 
     // Run probes with bounded concurrency of 3
     const queue = [...ids];
@@ -136,6 +148,7 @@ export function ProviderStatusSheet({
         if (!id) break;
         try {
           const res = await probeSingleProvider(id, container);
+          if (!isMountedRef.current) return;
           setLiveOverrides((prev) => {
             const next = new Map(prev);
             next.set(id, {
@@ -150,17 +163,21 @@ export function ProviderStatusSheet({
         } catch {
           // Failure recorded in health tracker
         } finally {
-          setProbingIds((prev) => {
-            const next = new Set(prev);
-            next.delete(id);
-            return next;
-          });
+          if (isMountedRef.current) {
+            setProbingIds((prev) => {
+              const next = new Set(prev);
+              next.delete(id);
+              return next;
+            });
+          }
         }
       }
     });
 
     await Promise.all(workers);
-    setStatusMessage(`Completed live probe of ${ids.length} providers.`);
+    if (isMountedRef.current) {
+      setStatusMessage(`Completed live probe of ${ids.length} providers.`);
+    }
   }, [container, filteredEntries]);
 
   const handleToggleDisabled = useCallback(async () => {

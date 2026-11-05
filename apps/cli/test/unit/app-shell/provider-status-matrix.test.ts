@@ -5,6 +5,7 @@ import {
   PROVIDER_PROBE_ENDPOINTS,
 } from "@/app-shell/provider-status/provider-status-model";
 import type { Container } from "@/container";
+import type { ProviderId } from "@kunai/types";
 
 function createMockContainer(
   overrides: {
@@ -171,6 +172,44 @@ describe("buildProviderStatusMatrix", () => {
     expect(youtube?.latencyMs).toBe(120);
     expect(youtube?.evidence).toBe("HTTP 200 OK (120ms)");
     expect(matrix.healthyCount).toBe(3);
+  });
+
+  test("down provider formats consecutive failures in evidence", () => {
+    const container = createMockContainer();
+    container.providerHealth.set({
+      // SAFETY: test fixture provider ID conforming to ProviderId
+      providerId: "vidrock" as ProviderId,
+      status: "down",
+      checkedAt: new Date().toISOString(),
+      consecutiveFailures: 5,
+      recentFailureRate: 0.3,
+      observations: 10,
+    });
+
+    const matrix = buildProviderStatusMatrix(container);
+    const vidrock = matrix.entries.find((e) => e.id === "vidrock");
+    expect(vidrock?.status).toBe("down");
+    expect(vidrock?.evidence).toContain("5 consecutive fails");
+    expect(vidrock?.evidence).toContain("70% reachability");
+  });
+
+  test("heals stale down provider by TTL", () => {
+    const container = createMockContainer();
+    const tenHoursAgo = new Date(Date.now() - 10 * 60 * 60 * 1000).toISOString();
+    container.providerHealth.set({
+      // SAFETY: test fixture provider ID conforming to ProviderId
+      providerId: "vidrock" as ProviderId,
+      status: "down",
+      checkedAt: tenHoursAgo,
+      consecutiveFailures: 5,
+      recentFailureRate: 0.2,
+      observations: 10,
+    });
+
+    const matrix = buildProviderStatusMatrix(container);
+    const vidrock = matrix.entries.find((e) => e.id === "vidrock");
+    expect(vidrock?.status).toBe("healthy");
+    expect(vidrock?.evidence).toContain("Healed by TTL (was down)");
   });
 });
 
