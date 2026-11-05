@@ -217,4 +217,45 @@ describe("selectVerifiedStream", () => {
 
     expect(result.accepted).toBe(false);
   });
+
+  test("hedged multi-host walk starts candidate 2 when candidate 1 stalls", async () => {
+    const events: string[] = [];
+    const context = {
+      providerId: "test-provider",
+      now: () => new Date().toISOString(),
+      fetch: {
+        runtime: "direct-http" as const,
+        fetch: async (url: string) => {
+          events.push(`start:${url}`);
+          if (url.includes("host-a.example")) {
+            await new Promise((resolve) => setTimeout(resolve, 40));
+            events.push(`fail:${url}`);
+            return new Response("gone", { status: 404 });
+          }
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          events.push(`ok:${url}`);
+          return new Response("ok", { status: 200 });
+        },
+      },
+    };
+
+    const result = await selectVerifiedStream({
+      streams: [
+        stream("a", "https://host-a.example/1080.mp4"),
+        stream("b", "https://host-b.example/720.mp4"),
+      ],
+      context,
+      hedgeDelayMs: 15,
+    });
+
+    expect(result.accepted).toBe(true);
+    if (result.accepted) {
+      expect(result.stream.id).toBe("b");
+    }
+    const c2Start = events.indexOf("start:https://host-b.example/720.mp4");
+    const c1Fail = events.indexOf("fail:https://host-a.example/1080.mp4");
+    expect(c2Start).toBeGreaterThan(-1);
+    expect(c1Fail).toBeGreaterThan(-1);
+    expect(c2Start).toBeLessThan(c1Fail);
+  });
 });

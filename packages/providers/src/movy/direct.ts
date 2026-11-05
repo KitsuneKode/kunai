@@ -474,6 +474,7 @@ async function resolveMovyLaneCandidate({
     context,
     signal,
     timeoutMs: gateTimeoutMs,
+    hedgeDelayMs: 2_000,
   });
   if (!selection.accepted) {
     throw createProviderCycleFailureError(candidate, {
@@ -823,6 +824,7 @@ export async function resolveMovyDirect(
     context,
     signal: context.signal,
     timeoutMs: probeTimeoutMs,
+    hedgeDelayMs: 2_000,
   });
 
   if (context.signal?.aborted) {

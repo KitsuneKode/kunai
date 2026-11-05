@@ -379,6 +379,7 @@ export const animeggProviderModule: CoreProviderModule = {
       ].slice(0, 3),
       context,
       signal: context.signal,
+      hedgeDelayMs: 2_000,
     });
     if (context.signal?.aborted) {
       return fail("cancelled", "AnimeGG resolve-gate probe was cancelled");

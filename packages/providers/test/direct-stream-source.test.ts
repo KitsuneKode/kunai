@@ -340,4 +340,41 @@ describe("direct stream resolve gate", () => {
     expect(result.streams.some((s) => s.url?.includes("720"))).toBe(false);
     expect(result.streamReachabilityVerified).toBe(true);
   });
+
+  test("hedged probe starts candidate 2 when candidate 1 stalls", async () => {
+    const events: string[] = [];
+    const result = await resolveDirectStreamSource({
+      providerId: "vidlink",
+      host: "vidlink.pro",
+      label: "VidLink",
+      input: createInput(),
+      context: createContext(async (url) => {
+        events.push(`start:${url}`);
+        if (url.includes("1080")) {
+          // Stalls for 40ms before failing
+          await new Promise((resolve) => setTimeout(resolve, 40));
+          events.push(`fail:${url}`);
+          return new Response("gone", { status: 404 });
+        }
+        // Candidate 2 responds in 10ms
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        events.push(`ok:${url}`);
+        return new Response("ok");
+      }),
+      fetchPayload: async () => THREE_STREAMS,
+      resolveGateProbe: true,
+      resolveGateHedgeDelayMs: 15,
+    });
+
+    expect(result.status).toBe("resolved");
+    expect(result.selectedStreamId).toBeTruthy();
+    const selected = result.streams.find((s) => s.id === result.selectedStreamId);
+    expect(selected?.url).toBe("https://cdn.example/720.mp4");
+    // Verify candidate 2 was launched before candidate 1 failed (hedged execution)
+    const c2Start = events.indexOf("start:https://cdn.example/720.mp4");
+    const c1Fail = events.indexOf("fail:https://cdn.example/1080.mp4");
+    expect(c2Start).toBeGreaterThan(-1);
+    expect(c1Fail).toBeGreaterThan(-1);
+    expect(c2Start).toBeLessThan(c1Fail);
+  });
 });

@@ -1273,6 +1273,7 @@ async function resolveRivestreamProviderCandidate({
     streams,
     context,
     timeoutMs: gateTimeoutMs,
+    hedgeDelayMs: 2_000,
   });
   if (!selection.accepted) {
     throw createProviderCycleFailureError(candidate, {

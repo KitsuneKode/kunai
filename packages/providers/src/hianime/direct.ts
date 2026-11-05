@@ -587,6 +587,7 @@ export const hianimeProviderModule: CoreProviderModule = {
         ].slice(0, 3),
         context,
         signal: context.signal,
+        hedgeDelayMs: 2_000,
       });
       if (context.signal?.aborted) {
         return createExhaustedResult(

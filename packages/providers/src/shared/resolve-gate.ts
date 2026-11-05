@@ -132,31 +132,144 @@ export async function selectVerifiedStream<
   context,
   signal,
   timeoutMs,
+  hedgeDelayMs,
 }: {
   readonly streams: readonly TStream[];
   readonly context: ProviderRuntimeContext;
   readonly signal?: AbortSignal;
   readonly timeoutMs?: number;
+  readonly hedgeDelayMs?: number;
 }): Promise<VerifiedStreamSelection<TStream>> {
   let firstReason: string | undefined;
   const refusedHosts = new Set<string>();
 
-  for (const stream of streams) {
-    const host = streamHost(stream.url);
-    if (host && refusedHosts.has(host)) continue;
+  // If hedging is not requested or there's only 1 stream, keep the simple sequential walk.
+  if (!hedgeDelayMs || hedgeDelayMs <= 0 || streams.length <= 1) {
+    for (const stream of streams) {
+      const host = streamHost(stream.url);
+      if (host && refusedHosts.has(host)) continue;
 
-    const verdict = await verifyCandidateStream({
-      stream,
-      context,
-      ...(signal === undefined ? null : { signal }),
-      ...(timeoutMs === undefined ? null : { timeoutMs }),
-    });
+      const verdict = await verifyCandidateStream({
+        stream,
+        context,
+        ...(signal === undefined ? null : { signal }),
+        ...(timeoutMs === undefined ? null : { timeoutMs }),
+      });
+      if (verdict.accepted) {
+        return { accepted: true, stream, verified: verdict.verified, refusedHosts };
+      }
+
+      firstReason ??= verdict.reason;
+      if (host) refusedHosts.add(host);
+    }
+
+    return { accepted: false, reason: firstReason ?? "candidate has no stream url" };
+  }
+
+  let streamIndex = 0;
+  const parentSignal = signal ?? context.signal;
+
+  while (streamIndex < streams.length) {
+    if (parentSignal?.aborted) {
+      break;
+    }
+    const stream = streams[streamIndex];
+    if (!stream) {
+      streamIndex++;
+      continue;
+    }
+    const host = streamHost(stream.url);
+    if (host && refusedHosts.has(host)) {
+      streamIndex++;
+      continue;
+    }
+
+    // Find next eligible stream on a distinct host to hedge
+    let nextStream: TStream | undefined;
+    let nextStreamIndex = -1;
+    for (let j = streamIndex + 1; j < streams.length; j++) {
+      const candidateStream = streams[j];
+      if (!candidateStream) continue;
+      const candidateHost = streamHost(candidateStream.url);
+      if (!candidateHost || (candidateHost !== host && !refusedHosts.has(candidateHost))) {
+        nextStream = candidateStream;
+        nextStreamIndex = j;
+        break;
+      }
+    }
+
+    const currentAbort = new AbortController();
+    const onAbort = () => currentAbort.abort(parentSignal?.reason);
+    parentSignal?.addEventListener("abort", onAbort, { once: true });
+
+    const probeStream = (s: TStream, sig: AbortSignal) =>
+      verifyCandidateStream({
+        stream: s,
+        context,
+        signal: sig,
+        ...(timeoutMs === undefined ? null : { timeoutMs }),
+      });
+
+    const currentPromise = probeStream(stream, currentAbort.signal);
+    let nextPromise: Promise<CandidateStreamVerdict> | undefined;
+    let nextAbort: AbortController | undefined;
+    let nextStarted = false;
+    let hedgeTimer: ReturnType<typeof setTimeout> | undefined;
+
+    if (nextStream) {
+      const hedgedStream = nextStream;
+      nextAbort = new AbortController();
+      const nextSig = nextAbort.signal;
+      nextPromise = new Promise<CandidateStreamVerdict>((resolve) => {
+        hedgeTimer = setTimeout(() => {
+          hedgeTimer = undefined;
+          nextStarted = true;
+          if (currentAbort.signal.aborted || parentSignal?.aborted) return;
+          probeStream(hedgedStream, nextSig).then(resolve, (err) =>
+            resolve({ accepted: false, reason: String(err) }),
+          );
+        }, hedgeDelayMs);
+      });
+    }
+
+    let verdict: CandidateStreamVerdict;
+    try {
+      verdict = await currentPromise;
+    } finally {
+      if (hedgeTimer) clearTimeout(hedgeTimer);
+      parentSignal?.removeEventListener("abort", onAbort);
+    }
+
+    if (parentSignal?.aborted) {
+      nextAbort?.abort();
+      break;
+    }
+
     if (verdict.accepted) {
+      nextAbort?.abort();
       return { accepted: true, stream, verified: verdict.verified, refusedHosts };
     }
 
     firstReason ??= verdict.reason;
     if (host) refusedHosts.add(host);
+
+    if (nextStream && nextStarted && nextPromise) {
+      const nextVerdict = await nextPromise;
+      if (parentSignal?.aborted) break;
+
+      const nextHost = streamHost(nextStream.url);
+      if (nextVerdict.accepted) {
+        return { accepted: true, stream: nextStream, verified: nextVerdict.verified, refusedHosts };
+      }
+      firstReason ??= nextVerdict.reason;
+      if (nextHost) refusedHosts.add(nextHost);
+      streamIndex = nextStreamIndex + 1;
+      continue;
+    } else {
+      nextAbort?.abort();
+    }
+
+    streamIndex++;
   }
 
   return { accepted: false, reason: firstReason ?? "candidate has no stream url" };
