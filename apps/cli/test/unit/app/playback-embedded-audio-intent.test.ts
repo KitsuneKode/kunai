@@ -14,6 +14,7 @@ import {
 } from "@/app/playback/recent-playback-stream";
 import { MANAGED_MPV_CAPABILITIES } from "@/domain/playback/player-capabilities";
 import { createInitialState, reduceState } from "@/domain/session/SessionState";
+import { parseMpvAudioIntent } from "@/infra/player/mpv-audio-intent";
 import type { PlayerOptions, PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 
 const title = { id: "audio-title", name: "Audio title", type: "series" as const };
@@ -198,10 +199,15 @@ test("PlaybackPhase execute-level autoplay advances to next episode with playbac
       const cycle = playCount;
       options.onGenerationActivated?.({ process: 1, cycle });
       if (playCount === 1) {
-        // Episode 1: emit explicit audio language intent "ja" during playback
+        // Exercise the mpv boundary as well as the autoplay session reader.
+        const nativeIntent = parseMpvAudioIntent(
+          JSON.stringify({ id: 2, language: "jpn", path: stream.url }),
+          stream.url,
+        );
+        if (!nativeIntent) throw new Error("Expected explicit mpv audio intent");
         options.onPlaybackEvent?.({
           generation: { process: 1, cycle },
-          event: { type: "track-changed", trackType: "audio", id: 2, audioLanguageIntent: "ja" },
+          event: nativeIntent,
         });
         // Returns natural EOF to trigger auto-next advance
         return {
