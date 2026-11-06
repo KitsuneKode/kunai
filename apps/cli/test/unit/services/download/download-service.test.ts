@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import * as nativeFs from "node:fs";
 import * as fsPromises from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve as resolvePath } from "node:path";
 
 import * as reservedCopy from "@/infra/fs/reserved-file-copy";
 import type { DiagnosticEventInput } from "@/services/diagnostics/diagnostic-event";
@@ -59,6 +59,33 @@ describe("DownloadService", () => {
     db.close();
     rmSync(tempDir, { recursive: true, force: true });
     mock.restore();
+  });
+
+  test("enqueue persists absolute paths for relative configured and explicit directories", async () => {
+    const relativeRoot = relative(process.cwd(), tempDir);
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: relativeRoot,
+    });
+    for (const outputDirectory of [undefined, join(relativeRoot, "explicit")]) {
+      const job = await service.enqueue({
+        title: {
+          id: `tmdb:relative-${outputDirectory ?? "default"}`,
+          type: "movie",
+          name: "Relative path",
+        },
+        stream: { url: "https://example.test/video.mp4", headers: {}, timestamp: 0 },
+        providerId: "fixture",
+        mode: "series",
+        outputDirectory,
+      });
+      expect(isAbsolute(job.outputPath)).toBe(true);
+      expect(isAbsolute(job.tempPath)).toBe(true);
+      expect(job.outputPath.startsWith(resolvePath(outputDirectory ?? relativeRoot))).toBe(true);
+      expect(repo.get(job.id)?.outputPath).toBe(job.outputPath);
+    }
   });
 
   async function completedRemovalFixture() {

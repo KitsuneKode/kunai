@@ -184,6 +184,7 @@ describe("mpv-ipc", () => {
       "filename",
       "media-title",
       "track-list",
+      "user-data/kunai-audio-intent",
       "sid",
       "sub-visibility",
       "avsync",

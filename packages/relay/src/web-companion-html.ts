@@ -6,7 +6,11 @@
 // - Standalone PWA manifest support, direct mobile app scheme launchers (VLC, Infuse, Outplayer)
 
 export function renderWebCompanionHtml(options: { readonly serviceName?: string } = {}): string {
-  const service = options.serviceName ?? "Kunai Web Companion";
+  const service = (options.serviceName ?? "Kunai Web Companion")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -245,6 +249,7 @@ export function renderWebCompanionHtml(options: { readonly serviceName?: string 
       position: relative;
       overflow: hidden;
     }
+    .card-video .poster-wrap { aspect-ratio: 16 / 9; }
     .poster-img {
       width: 100%;
       height: 100%;
@@ -358,24 +363,24 @@ export function renderWebCompanionHtml(options: { readonly serviceName?: string 
     }
     /* Sheet / Modal */
     .sheet-overlay {
-      position: fixed;
       inset: 0;
+      margin: auto auto 0;
+      padding: 0;
+      width: min(100%, 580px);
+      max-width: 100%;
+      max-height: 85dvh;
+      border: none;
+      background: transparent;
+      color: var(--text);
+    }
+    .sheet-overlay:modal { overscroll-behavior: contain; }
+    .sheet-overlay::backdrop {
       background: rgba(0, 0, 0, 0.75);
       backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      z-index: 100;
-      display: none;
-      justify-content: center;
-      align-items: flex-end;
+      overflow: hidden;
+      overscroll-behavior: contain;
     }
-    @media (min-width: 640px) {
-      .sheet-overlay {
-        align-items: center;
-      }
-    }
-    .sheet-overlay.active {
-      display: flex;
-    }
+    @media (min-width: 640px) { .sheet-overlay { margin: auto; } }
     .sheet {
       width: 100%;
       max-width: 580px;
@@ -570,32 +575,45 @@ export function renderWebCompanionHtml(options: { readonly serviceName?: string 
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
+    button, input, a { font-family: inherit; }
+    button { min-block-size: 44px; }
+    .card { text-align: left; width: 100%; color: var(--text); }
+    .poster-wrap { display: block; }
+    .search-clear, .close-btn { min-width: 44px; min-height: 44px; }
+    :where(button, input, a):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    button:disabled { opacity: 0.5; cursor: default; }
+    .status-badge { color: var(--text-dim); background: var(--bg-elevated); max-width: 65%; }
+    .pulse-dot { display: none; }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
   </style>
 </head>
 <body>
   <div id="app">
     <header>
       <div class="header-top">
-        <div class="brand">
+        <h1 class="brand">
           <span class="brand-icon">🦊</span>
           <span>Kunai <span class="brand-accent">Web</span></span>
-        </div>
-        <div class="status-badge" id="connStatus">
+        </h1>
+        <div class="status-badge" id="connStatus" role="status" aria-live="polite">
           <span class="pulse-dot"></span>
-          <span id="connText">Ready</span>
+          <span id="connText">Connecting…</span>
         </div>
       </div>
-      <div class="lane-tabs">
+      <nav class="lane-tabs" aria-label="Browse modes">
         <button class="tab-btn active" data-tab="anime">Anime</button>
-        <button class="tab-btn" data-tab="series">Shows & Movies</button>
+        <button class="tab-btn" data-tab="series">Shows</button>
+        <button class="tab-btn" data-tab="movies">Movies</button>
         <button class="tab-btn" data-tab="youtube">YouTube</button>
         <button class="tab-btn" data-tab="remote">Remote Control</button>
         <button class="tab-btn" data-tab="status">Providers</button>
-      </div>
+      </nav>
       <div class="search-wrap" id="searchBar">
         <span class="search-icon">⌕</span>
         <input
-          type="text"
+          type="search"
+          aria-label="Search titles"
+          maxlength="200"
           class="search-input"
           id="searchInput"
           placeholder="Search anime, movies, series..."
@@ -604,13 +622,13 @@ export function renderWebCompanionHtml(options: { readonly serviceName?: string 
           autocapitalize="off"
           spellcheck="false"
         />
-        <button class="search-clear" id="searchClear">×</button>
+        <button class="search-clear" id="searchClear" aria-label="Clear search">×</button>
       </div>
     </header>
 
     <main id="mainContent">
       <div class="grid" id="resultsGrid"></div>
-      <div class="empty-state" id="emptyState">
+      <div class="empty-state" id="emptyState" role="status">
         <div class="empty-icon">🌸</div>
         <div style="font-weight: 600; color: var(--text);">Ready to watch</div>
         <div style="font-size: 0.85rem;">Type a title above or tap a lane tab to browse.</div>
@@ -622,363 +640,397 @@ export function renderWebCompanionHtml(options: { readonly serviceName?: string 
     </main>
 
     <!-- Modal Sheet -->
-    <div class="sheet-overlay" id="sheetOverlay">
+    <dialog class="sheet-overlay" id="sheetOverlay" aria-labelledby="sheetTitle">
       <div class="sheet">
         <div class="sheet-header">
-          <div class="sheet-title" id="sheetTitle">Title</div>
-          <button class="close-btn" id="sheetClose">✕</button>
+          <h2 class="sheet-title" id="sheetTitle">Title</h2>
+          <button class="close-btn" id="sheetClose" aria-label="Close title" autofocus>✕</button>
         </div>
         <div class="sheet-body" id="sheetBody">
           <div class="video-wrap" id="videoWrap" style="display: none; position: relative;">
-            <video id="player" controls playsinline></video>
+            <video id="player" controls playsinline crossorigin="anonymous"></video>
             <div id="playerErrorOverlay" class="player-error-overlay" style="display: none;">
               <div style="font-size: 2rem; margin-bottom: 6px;">⚠️</div>
               <div style="font-weight: 700; font-size: 0.95rem; color: #fff;" id="playerErrorTitle">Playback Interrupted</div>
-              <div style="font-size: 0.8rem; color: var(--text-dim); margin-top: 4px; max-width: 290px;" id="playerErrorDetail">Direct browser stream dropped or codec unsupported. Try an external player or route via Relay Proxy:</div>
-              <div style="display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; justify-content: center;">
-                <button class="launch-btn primary" id="retryProxyBtn" style="padding: 6px 12px; font-size: 0.8rem;">🔄 Stream via Relay Proxy</button>
-                <a class="launch-btn" id="errVlcBtn" href="#" style="padding: 6px 12px; font-size: 0.8rem;">⚡ Open in VLC</a>
-                <a class="launch-btn" id="errInfuseBtn" href="#" style="padding: 6px 12px; font-size: 0.8rem;">🎬 Open in Infuse</a>
-              </div>
+              <div style="font-size: 0.8rem; color: var(--text-dim); margin-top: 4px; max-width: 290px;" id="playerErrorDetail">This browser could not decode the stream. Try Open in VLC or Play on this device.</div>
             </div>
           </div>
           <div class="launchers" id="launchersBar">
             <button class="launch-btn primary" id="streamBrowserBtn">▶ Stream in Browser</button>
-            <a class="launch-btn" id="openVlcBtn" href="#">⚡ Open in VLC</a>
-            <a class="launch-btn" id="openInfuseBtn" href="#">⚡ Open in Infuse</a>
-            <button class="launch-btn" id="castHostBtn" style="grid-column: span 2;">🖥️ Play on Desktop Terminal</button>
+            <a class="launch-btn" id="openVlcBtn" style="display: none;">⚡ Open in VLC</a>
+            <button class="launch-btn" id="castHostBtn" style="grid-column: span 2;">🖥️ Play on this device</button>
           </div>
-          <div style="font-weight: 600; font-size: 0.9rem; margin-top: 6px;" id="episodesHeading">Episodes</div>
+          <p id="sheetStatus" role="status" aria-live="polite"></p>
+          <h3 style="font-weight: 600; font-size: 0.9rem; margin-top: 6px;" id="episodesHeading">Episodes</h3>
           <div class="episodes-list" id="episodesList"></div>
         </div>
       </div>
-    </div>
+    </dialog>
   </div>
 
   <script>
     (function() {
+      "use strict";
       var activeTab = "anime";
-      var currentResults = [];
+      var queries = { anime: "", series: "", movies: "", youtube: "" };
       var activeItem = null;
-      var activeEpisode = 1;
-      var searchTimeout = null;
-
+      var activeEpisode = null;
+      var searchTimeout;
+      var searchVersion = 0;
+      var sheetVersion = 0;
+      var streamVersion = 0;
+      var viewVersion = 0;
+      var searchController;
+      var episodeController;
+      var streamController;
+      var activeMediaId = null;
+      var controlController;
+      var releasePromise = Promise.resolve();
+      var controls = [];
       var tabButtons = document.querySelectorAll(".tab-btn");
-      var searchInput = document.getElementById("searchInput");
-      var searchClear = document.getElementById("searchClear");
-      var searchBar = document.getElementById("searchBar");
-      var resultsGrid = document.getElementById("resultsGrid");
-      var emptyState = document.getElementById("emptyState");
-      var loadingState = document.getElementById("loadingState");
-      var sheetOverlay = document.getElementById("sheetOverlay");
-      var sheetClose = document.getElementById("sheetClose");
-      var sheetTitle = document.getElementById("sheetTitle");
-      var episodesList = document.getElementById("episodesList");
-      var streamBrowserBtn = document.getElementById("streamBrowserBtn");
-      var openVlcBtn = document.getElementById("openVlcBtn");
-      var openInfuseBtn = document.getElementById("openInfuseBtn");
-      var castHostBtn = document.getElementById("castHostBtn");
-      var videoWrap = document.getElementById("videoWrap");
-      var player = document.getElementById("player");
-
-      // Switch tab
-      tabButtons.forEach(function(btn) {
-        btn.addEventListener("click", function() {
-          tabButtons.forEach(function(b) { b.classList.remove("active"); });
-          btn.classList.add("active");
-          activeTab = btn.getAttribute("data-tab");
-          if (activeTab === "remote") {
-            renderRemoteView();
-          } else if (activeTab === "status") {
-            renderStatusView();
-          } else {
-            searchBar.style.display = "flex";
-            if (searchInput.value.trim().length > 0) {
-              performSearch(searchInput.value.trim());
-            } else {
-              resultsGrid.innerHTML = "";
-              emptyState.style.display = "flex";
-            }
-          }
-        });
-      });
-
-      searchInput.addEventListener("input", function() {
-        var query = searchInput.value.trim();
-        searchClear.style.display = query.length > 0 ? "block" : "none";
-        clearTimeout(searchTimeout);
-        if (query.length < 2) {
-          resultsGrid.innerHTML = "";
-          emptyState.style.display = "flex";
-          loadingState.style.display = "none";
-          return;
+      function el(id) { return document.getElementById(id); }
+      var searchInput = el("searchInput");
+      var resultsGrid = el("resultsGrid");
+      var emptyState = el("emptyState");
+      var loadingState = el("loadingState");
+      var sheet = el("sheetOverlay");
+      var episodesList = el("episodesList");
+      var player = el("player");
+      var browserButton = el("streamBrowserBtn");
+      var desktopButton = el("castHostBtn");
+      var vlcLink = el("openVlcBtn");
+      var sheetStatus = el("sheetStatus");
+      var reconnect = "Session expired. Reopen the companion URL printed by Kunai.";
+      function text(value, limit) { return typeof value === "string" ? value.slice(0, limit || 500) : ""; }
+      function node(tag, className, value) {
+        var element = document.createElement(tag);
+        if (className) element.className = className;
+        if (value !== undefined) element.textContent = String(value);
+        return element;
+      }
+      function button(label, callback, className) {
+        var element = node("button", className || "launch-btn", label);
+        element.type = "button";
+        element.addEventListener("click", callback);
+        return element;
+      }
+      function errorMessage(error) { return text(error && error.message) || "Request failed. Try again."; }
+      function failed(error) { return error && error.name === "AbortError"; }
+      function connection(message) { el("connText").textContent = message; }
+      async function responseData(response) {
+        if (response.status === 403) { credential = null; try { sessionStorage.removeItem("kunai-companion-credential"); } catch (_) {} connection(reconnect); throw new Error(reconnect); }
+        var data;
+        try { data = await response.json(); } catch (_) { throw new Error("Invalid server response. Try again."); }
+        if (!response.ok) throw new Error(text(data.error) || text(data.reason) || "Request failed. Try again.");
+        return data;
+      }
+      // Fragments are not sent to the server. Remove the one-time secret before
+      // any requests, media or external links can expose the current page URL.
+      var fragmentToken = new URLSearchParams(window.location.hash.slice(1)).get("token");
+      if (window.location.hash) history.replaceState(null, "", window.location.pathname + window.location.search);
+      var credential = fragmentToken;
+      if (credential === null) { try { credential = sessionStorage.getItem("kunai-companion-credential"); } catch (_) {} }
+      var authentication = (async function() {
+        if (!/^[a-f0-9]{32}$/.test(credential || "")) throw new Error(reconnect);
+        if (fragmentToken !== null) {
+          await responseData(await fetch("/api/session", {
+            method: "POST", credentials: "omit", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: credential })
+          }));
         }
-        searchTimeout = setTimeout(function() {
-          performSearch(query);
-        }, 320);
-      });
-
-      var playerErrorOverlay = document.getElementById("playerErrorOverlay");
-      var retryProxyBtn = document.getElementById("retryProxyBtn");
-      var errVlcBtn = document.getElementById("errVlcBtn");
-      var errInfuseBtn = document.getElementById("errInfuseBtn");
-
-      function hidePlayerError() {
-        if (playerErrorOverlay) playerErrorOverlay.style.display = "none";
+        try { sessionStorage.setItem("kunai-companion-credential", credential); } catch (_) {}
+        fragmentToken = null;
+      })();
+      authentication.catch(function(error) { credential = null; fragmentToken = null; connection(errorMessage(error)); });
+      async function api(path, options) {
+        await authentication;
+        if (!credential) throw new Error(reconnect);
+        if (options && options.signal && options.signal.aborted) throw new DOMException("Canceled", "AbortError");
+        var init = Object.assign({}, options || {}, { credentials: "omit" });
+        init.headers = Object.assign({}, init.headers || {}, { Authorization: "Bearer " + credential });
+        return responseData(await fetch(path, init));
       }
-
-      function showPlayerError(title, detail) {
-        if (!playerErrorOverlay) return;
-        playerErrorOverlay.style.display = "flex";
-        if (title) document.getElementById("playerErrorTitle").innerText = title;
-        if (detail) document.getElementById("playerErrorDetail").innerText = detail;
+      function post(path, body, signal) {
+        return api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: signal });
       }
-
-      player.addEventListener("playing", hidePlayerError);
-      player.addEventListener("error", function() {
-        showPlayerError("Stream Dropped", "Browser direct decode failed. Retry via Relay Proxy or open in VLC.");
-      });
-
-      searchClear.addEventListener("click", function() {
-        searchInput.value = "";
-        searchClear.style.display = "none";
-        resultsGrid.innerHTML = "";
-        emptyState.style.display = "flex";
-        searchInput.focus();
-      });
-
-      sheetClose.addEventListener("click", function() {
-        sheetOverlay.classList.remove("active");
+      function httpUrl(value, gateway) {
+        if (typeof value !== "string" || value.length > 8192) return "";
+        try {
+          var url = new URL(value, window.location.origin);
+          if (!/^https?:$/.test(url.protocol) || url.username || url.password) return "";
+          if (gateway && (url.protocol !== "http:" || url.hostname !== "127.0.0.1")) return "";
+          return url.href;
+        } catch (_) { return ""; }
+      }
+      function resetLaunchers() {
+        browserButton.disabled = true;
+        browserButton.onclick = null;
+        desktopButton.disabled = true;
+        vlcLink.removeAttribute("href");
+        vlcLink.style.display = "none";
         player.pause();
-        player.src = "";
-        hidePlayerError();
-        videoWrap.style.display = "none";
+        player.removeAttribute("src");
+        player.replaceChildren();
+        player.load();
+        el("videoWrap").style.display = "none";
+        el("playerErrorOverlay").style.display = "none";
+      }
+      function cancelStream() {
+        streamVersion++;
+        if (streamController) streamController.abort();
+        if (controlController) controlController.abort();
+        resetLaunchers();
+        // Serialize revocation before another resolution; server also guards
+        // canceled generations so late provider work cannot resurrect a URL.
+        var releasedId = activeMediaId;
+        activeMediaId = null;
+        if (releasedId) releasePromise = releasePromise.then(function() { return post("/api/release", { mediaId: releasedId }); }).catch(function(error) {
+          if (!failed(error)) connection(errorMessage(error));
+        });
+      }
+      function cleanupSheet() {
+        sheetVersion++;
+        if (episodeController) episodeController.abort();
+        if (activeItem) cancelStream();
+        activeItem = null;
+        activeEpisode = null;
+      }
+      sheet.addEventListener("close", function() { if (!sheet.open) cleanupSheet(); });
+      el("sheetClose").addEventListener("click", closeSheet);
+      function closeSheet() { cleanupSheet(); if (sheet.open) sheet.close(); }
+      player.addEventListener("error", function() {
+        if (!player.src) return;
+        el("playerErrorOverlay").style.display = "flex";
+        el("playerErrorDetail").textContent = "This browser could not decode the stream. Try Open in VLC or Play on this device.";
       });
-
-      function performSearch(query) {
+      player.addEventListener("playing", function() {
+        el("playerErrorOverlay").style.display = "none";
+        sheetStatus.textContent = "Playing in browser.";
+      });
+      function empty(message, retry) {
+        emptyState.replaceChildren(node("p", "", message));
+        if (retry) emptyState.appendChild(button("Retry", retry));
+        emptyState.style.display = "flex";
+        loadingState.style.display = "none";
+      }
+      function invalidateSearch() {
+        searchVersion++;
+        clearTimeout(searchTimeout);
+        if (searchController) searchController.abort();
+      }
+      async function performSearch(query) {
+        invalidateSearch();
+        var version = searchVersion;
+        var lane = activeTab;
+        resultsGrid.replaceChildren();
+        if (query.length < 2) { empty("Type at least two characters to search."); return; }
         emptyState.style.display = "none";
         loadingState.style.display = "flex";
-        resultsGrid.innerHTML = "";
-
-        fetch("/api/search?q=" + encodeURIComponent(query) + "&lane=" + encodeURIComponent(activeTab))
-          .then(function(r) { return r.json(); })
-          .then(function(data) {
-            loadingState.style.display = "none";
-            currentResults = data.results || [];
-            if (currentResults.length === 0) {
-              emptyState.style.display = "flex";
-              var otherLanes = [
-                { id: "anime", label: "🌸 Anime" },
-                { id: "movies", label: "🎬 Movies" },
-                { id: "series", label: "📺 Series" },
-                { id: "youtube", label: "▶ YouTube" },
-              ].filter(function(l) { return l.id !== activeTab; });
-
-              var chipsHtml = otherLanes.map(function(l) {
-                return '<button class="lane-chip" data-lane="' + l.id + '">' + l.label + '</button>';
-              }).join("");
-
-              emptyState.innerHTML =
-                '<div class="empty-icon">🔍</div>' +
-                '<div style="font-weight:700;color:var(--text);font-size:1.05rem;">No results in ' + activeTab.toUpperCase() + '</div>' +
-                '<div style="font-size:0.85rem;color:var(--text-dim);max-width:320px;">Could not find matches for "' + query + '". Try searching in another category:</div>' +
-                '<div class="lane-chips">' + chipsHtml + '</div>';
-
-              emptyState.querySelectorAll(".lane-chip").forEach(function(btn) {
-                btn.addEventListener("click", function() {
-                  var targetLane = btn.getAttribute("data-lane");
-                  if (targetLane) {
-                    activeTab = targetLane;
-                    tabs.forEach(function(t) {
-                      t.classList.toggle("active", t.getAttribute("data-tab") === activeTab);
-                    });
-                    performSearch(query);
-                  }
-                });
-              });
-              return;
-            }
-            renderResults(currentResults);
-          })
-          .catch(function() {
-            loadingState.style.display = "none";
-            emptyState.style.display = "flex";
-            emptyState.innerHTML = '<div class="empty-icon">⚠️</div><div style="font-weight:600;">Search failed</div><div style="font-size:0.85rem;">Check provider connection.</div>';
+        searchController = new AbortController();
+        try {
+          var data = await api("/api/search?q=" + encodeURIComponent(query.slice(0, 200)) + "&lane=" + lane, { signal: searchController.signal });
+          if (version !== searchVersion || lane !== activeTab) return;
+          loadingState.style.display = "none";
+          if (!Array.isArray(data.results)) throw new Error("Invalid search response.");
+          var items = data.results.slice(0, 60).filter(function(item) { return item && typeof item.id === "string" && typeof item.title === "string"; });
+          if (!items.length) { empty("No results in " + lane + ". Try another title or mode."); return; }
+          connection(items.length + " results");
+          items.forEach(function(item) {
+            var card = button("", function() { openItem(item); }, lane === "youtube" ? "card card-video" : "card");
+            var poster = node("span", "poster-wrap");
+            var posterUrl = httpUrl(item.posterUrl, false);
+            if (posterUrl) {
+              var image = node("img", "poster-img");
+              image.src = posterUrl; image.alt = ""; image.loading = "lazy"; image.referrerPolicy = "no-referrer";
+              image.addEventListener("error", function() { image.remove(); poster.appendChild(node("span", "poster-fallback", "🎬")); });
+              poster.appendChild(image);
+            } else poster.appendChild(node("span", "poster-fallback", "🎬"));
+            card.appendChild(poster);
+            var info = node("span", "card-info");
+            info.appendChild(node("span", "card-title", text(item.title, 300)));
+            var meta = node("span", "card-meta");
+            meta.appendChild(node("span", "", lane === "youtube" ? "Video" : (item.year ? String(item.year) : text(item.type, 30))));
+            meta.appendChild(node("span", "badge", text(item.providerId, 60) || lane));
+            info.appendChild(meta); card.appendChild(info); resultsGrid.appendChild(card);
           });
-      }
-
-      function renderResults(items) {
-        resultsGrid.innerHTML = "";
-        items.forEach(function(item, idx) {
-          var card = document.createElement("div");
-          card.className = "card";
-          var posterHtml = item.posterUrl
-            ? '<img class="poster-img" src="' + item.posterUrl + '" alt="" loading="lazy" />'
-            : '<div class="poster-fallback">🎬</div>';
-          card.innerHTML =
-            '<div class="poster-wrap">' + posterHtml + '</div>' +
-            '<div class="card-info">' +
-              '<div class="card-title">' + (item.title || item.name || "Untitled") + '</div>' +
-              '<div class="card-meta">' +
-                '<span>' + (item.year || item.type || "") + '</span>' +
-                '<span class="badge">' + (item.providerId || activeTab) + '</span>' +
-              '</div>' +
-            '</div>';
-          card.addEventListener("click", function() {
-            openItemSheet(item);
-          });
-          resultsGrid.appendChild(card);
-        });
-      }
-
-      function openItemSheet(item) {
-        activeItem = item;
-        activeEpisode = 1;
-        sheetTitle.innerText = item.title || item.name || "Title";
-        episodesList.innerHTML = '<div style="color:var(--text-muted);font-size:0.85rem;padding:8px;">Loading episodes...</div>';
-        sheetOverlay.classList.add("active");
-
-        fetch("/api/episodes?id=" + encodeURIComponent(item.id) + "&lane=" + encodeURIComponent(activeTab))
-          .then(function(r) { return r.json(); })
-          .then(function(data) {
-            var episodes = data.episodes || [];
-            if (episodes.length === 0) {
-              episodes = [{ number: 1, title: "Play Title" }];
-            }
-            renderEpisodes(episodes);
-            resolveAndSetupLaunchers(activeItem, activeEpisode);
-          })
-          .catch(function() {
-            renderEpisodes([{ number: 1, title: "Play Title" }]);
-            resolveAndSetupLaunchers(activeItem, activeEpisode);
-          });
-      }
-
-      function renderEpisodes(episodes) {
-        episodesList.innerHTML = "";
-        episodes.forEach(function(ep) {
-          var item = document.createElement("div");
-          item.className = "episode-item" + (ep.number === activeEpisode ? " active" : "");
-          item.innerHTML = '<span>Episode ' + ep.number + '</span><span style="color:var(--text-dim);font-size:0.8rem;">' + (ep.title || "") + '</span>';
-          item.addEventListener("click", function() {
-            document.querySelectorAll(".episode-item").forEach(function(el) { el.classList.remove("active"); });
-            item.classList.add("active");
-            activeEpisode = ep.number;
-            resolveAndSetupLaunchers(activeItem, activeEpisode);
-          });
-          episodesList.appendChild(item);
-        });
-      }
-
-      function resolveAndSetupLaunchers(item, ep) {
-        fetch("/api/stream?titleId=" + encodeURIComponent(item.id) + "&episode=" + ep + "&lane=" + encodeURIComponent(activeTab))
-          .then(function(r) { return r.json(); })
-          .then(function(data) {
-            var streamUrl = data.streamUrl || "";
-            if (streamUrl) {
-              var proxyStreamUrl = window.location.origin + "/proxy?url=" + encodeURIComponent(streamUrl);
-              openVlcBtn.href = "vlc://" + streamUrl;
-              openInfuseBtn.href = "infuse://x-callback-url/play?url=" + encodeURIComponent(streamUrl);
-              if (errVlcBtn) errVlcBtn.href = "vlc://" + streamUrl;
-              if (errInfuseBtn) errInfuseBtn.href = "infuse://x-callback-url/play?url=" + encodeURIComponent(streamUrl);
-
-              if (retryProxyBtn) {
-                retryProxyBtn.onclick = function() {
-                  hidePlayerError();
-                  player.src = proxyStreamUrl;
-                  player.load();
-                  player.play().catch(function() {
-                    showPlayerError("Proxy Connection Stalled", "Could not route through relay server.");
-                  });
-                };
-              }
-
-              streamBrowserBtn.onclick = function() {
-                hidePlayerError();
-                videoWrap.style.display = "block";
-                player.src = proxyStreamUrl;
-                player.play().catch(function() {
-                  showPlayerError("Playback Failed", "Tap below to retry via proxy or open directly in VLC:");
-                });
-              };
-
-              castHostBtn.onclick = function() {
-                fetch("/api/control", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ action: "play", titleId: item.id, episode: ep })
-                }).then(function() {
-                  alert("Playback command sent to desktop terminal!");
-                });
-              };
-            }
-          });
-      }
-
-      function renderRemoteView() {
-        searchBar.style.display = "none";
-        emptyState.style.display = "none";
-        loadingState.style.display = "none";
-        resultsGrid.innerHTML =
-          '<div class="remote-panel" style="grid-column: 1 / -1;">' +
-            '<div style="font-weight:700;font-size:1.1rem;margin-bottom:8px;">Desktop Terminal Remote</div>' +
-            '<div class="remote-dpad">' +
-              '<button class="remote-btn" id="seekBackBtn">⏪ -10s</button>' +
-              '<button class="remote-btn big" id="togglePlayBtn">⏯ Play</button>' +
-              '<button class="remote-btn" id="seekFwdBtn">⏩ +10s</button>' +
-              '<button class="remote-btn" id="volDownBtn">🔉 Vol -</button>' +
-              '<button class="remote-btn" id="subToggleBtn">💬 Subs</button>' +
-              '<button class="remote-btn" id="volUpBtn">🔊 Vol +</button>' +
-            '</div>' +
-          '</div>';
-
-        function sendCmd(cmd) {
-          fetch("/api/control", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: cmd })
-          });
+        } catch (error) {
+          if (version !== searchVersion || failed(error)) return;
+          empty(errorMessage(error), function() { performSearch(query); });
         }
-        document.getElementById("seekBackBtn")?.addEventListener("click", function() { sendCmd("seek-backward"); });
-        document.getElementById("togglePlayBtn")?.addEventListener("click", function() { sendCmd("toggle-pause"); });
-        document.getElementById("seekFwdBtn")?.addEventListener("click", function() { sendCmd("seek-forward"); });
-        document.getElementById("volDownBtn")?.addEventListener("click", function() { sendCmd("volume-down"); });
-        document.getElementById("volUpBtn")?.addEventListener("click", function() { sendCmd("volume-up"); });
-        document.getElementById("subToggleBtn")?.addEventListener("click", function() { sendCmd("toggle-subs"); });
       }
-
-      function renderStatusView() {
-        searchBar.style.display = "none";
-        emptyState.style.display = "none";
+      function updateQuery() {
+        invalidateSearch(); closeSheet();
+        var query = searchInput.value.slice(0, 200);
+        queries[activeTab] = query;
+        el("searchClear").style.display = query.length ? "block" : "none";
+        resultsGrid.replaceChildren();
         loadingState.style.display = "none";
-        resultsGrid.innerHTML = '<div style="grid-column: 1 / -1; padding: 12px; color: var(--text-dim);">Loading provider status...</div>';
-
-        fetch("/api/status")
-          .then(function(r) { return r.json(); })
-          .then(function(data) {
-            var providers = data.providers || [];
-            var rows = providers.map(function(p) {
-              var badgeColor = p.status === "operational" ? "#48bb78" : p.status === "degraded" ? "#ed8936" : "#e53e3e";
-              return '<tr>' +
-                '<td style="font-weight:600;color:var(--text);">' + p.name + '</td>' +
-                '<td>' + p.lane + '</td>' +
-                '<td><span style="color:' + badgeColor + ';font-weight:600;">● ' + p.status + '</span></td>' +
-                '<td>' + (p.latencyMs ? p.latencyMs + 'ms' : '—') + '</td>' +
-              '</tr>';
-            }).join("");
-
-            resultsGrid.innerHTML =
-              '<div style="grid-column: 1 / -1; overflow-x: auto;">' +
-                '<table class="status-table">' +
-                  '<thead><tr><th>Provider</th><th>Lane</th><th>Status</th><th>Latency</th></tr></thead>' +
-                  '<tbody>' + rows + '</tbody>' +
-                '</table>' +
-              '</div>';
-          })
-          .catch(function() {
-            resultsGrid.innerHTML = '<div style="grid-column: 1 / -1; padding: 12px; color: var(--accent);">Failed to load provider status.</div>';
-          });
+        if (query.trim().length < 2) empty("Type at least two characters to search.");
+        else searchTimeout = setTimeout(function() { performSearch(query.trim()); }, 320);
       }
+      searchInput.addEventListener("input", updateQuery);
+      el("searchClear").addEventListener("click", function() { searchInput.value = ""; updateQuery(); searchInput.focus(); });
+      tabButtons.forEach(function(tab) {
+        tab.addEventListener("click", function() {
+          invalidateSearch(); closeSheet(); viewVersion++;
+          activeTab = tab.getAttribute("data-tab");
+          tabButtons.forEach(function(item) { var chosen = item === tab; item.classList.toggle("active", chosen); item.setAttribute("aria-pressed", String(chosen)); });
+          resultsGrid.replaceChildren(); loadingState.style.display = "none"; emptyState.style.display = "none";
+          var catalog = Object.prototype.hasOwnProperty.call(queries, activeTab);
+          el("searchBar").style.display = catalog ? "flex" : "none";
+          if (catalog) {
+            searchInput.value = queries[activeTab];
+            el("searchClear").style.display = searchInput.value ? "block" : "none";
+            performSearch(searchInput.value.trim());
+          } else renderStatus(activeTab === "remote");
+        });
+      });
+      async function openItem(item) {
+        closeSheet();
+        activeItem = item;
+        activeEpisode = null;
+        var version = ++sheetVersion;
+        var lane = activeTab;
+        el("sheetTitle").textContent = text(item.title, 300);
+        sheetStatus.textContent = "";
+        resetLaunchers();
+        sheet.showModal();
+        await loadEpisodes(item, lane, version);
+      }
+      async function loadEpisodes(item, lane, version, season) {
+        if (season !== undefined) cancelStream();
+        if (episodeController) episodeController.abort();
+        episodeController = new AbortController();
+        episodesList.replaceChildren(node("p", "", "Loading episodes…"));
+        try {
+          var data = await api("/api/episodes?id=" + encodeURIComponent(item.id) + "&lane=" + lane + "&season=" + (season || 1), { signal: episodeController.signal });
+          if (version !== sheetVersion || activeItem !== item) return;
+          if (!Array.isArray(data.episodes)) throw new Error("Invalid episode response.");
+          var episodes = data.episodes.filter(function(ep) { return ep && Number.isFinite(ep.number) && ep.number > 0 && (ep.season === undefined || Number.isInteger(ep.season) && ep.season > 0); });
+          episodesList.replaceChildren();
+          var oldSeasons = el("seasonPicker");
+          if (oldSeasons) oldSeasons.remove();
+          if (Array.isArray(data.seasons) && data.seasons.length > 1) {
+            var picker = node("select"); picker.id = "seasonPicker"; picker.setAttribute("aria-label", "Season");
+            data.seasons.filter(function(value) { return Number.isInteger(value) && value > 0; }).forEach(function(value) {
+              var option = node("option", "", "Season " + value); option.value = String(value); picker.appendChild(option);
+            });
+            picker.value = String(episodes[0] && episodes[0].season || season || 1);
+            picker.addEventListener("change", function() { loadEpisodes(item, lane, version, Number(picker.value)); });
+            episodesList.before(picker);
+          }
+          if (!episodes.length) { episodesList.appendChild(node("p", "", "No playable episodes returned.")); return; }
+          episodes.forEach(function(ep) {
+            var label = lane === "movies" || lane === "youtube" ? "Play Title" : (ep.season ? "Season " + ep.season + " · " : "") + "Episode " + ep.number;
+            var row = button(label + (ep.title && ep.title !== "Play Title" ? " · " + text(ep.title, 300) : ""), function() { selectEpisode(item, ep, lane); }, "episode-item");
+            row.setAttribute("aria-pressed", "false");
+            row.addEventListener("click", function() { episodesList.children && Array.from(episodesList.children).forEach(function(child) { child.classList.toggle("active", child === row); child.setAttribute("aria-pressed", String(child === row)); }); });
+            episodesList.appendChild(row);
+          });
+          episodesList.children[0].classList.add("active");
+          episodesList.children[0].setAttribute("aria-pressed", "true");
+          selectEpisode(item, episodes[0], lane);
+        } catch (error) {
+          if (version !== sheetVersion || failed(error)) return;
+          episodesList.replaceChildren(node("p", "", errorMessage(error)), button("Retry episodes", function() { loadEpisodes(item, lane, version, season); }));
+        }
+      }
+      async function selectEpisode(item, episode, lane) {
+        cancelStream();
+        activeEpisode = episode;
+        var mediaId = crypto.randomUUID().replaceAll("-", "");
+        activeMediaId = mediaId;
+        var version = streamVersion;
+        var titleVersion = sheetVersion;
+        desktopButton.disabled = !controls.includes("play");
+        sheetStatus.textContent = "Resolving episode…";
+        streamController = new AbortController();
+        var signal = streamController.signal;
+        try {
+          await releasePromise;
+          if (version !== streamVersion) return;
+          var data = await api("/api/stream?titleId=" + encodeURIComponent(item.id) + "&episode=" + episode.number + "&season=" + (episode.season || 1) + "&lane=" + lane + "&mediaId=" + mediaId, { signal: signal });
+          if (version !== streamVersion || titleVersion !== sheetVersion) return;
+          var url = httpUrl(data.streamUrl, true);
+          if (!data.ok || !url) { sheetStatus.textContent = text(data.reason) || "Browser stream unavailable. Use Play on this device."; return; }
+          vlcLink.href = "vlc://" + url;
+          vlcLink.style.display = "flex";
+          var subtitles = Array.isArray(data.subtitleUrls) ? data.subtitleUrls.slice(0, 20).map(function(value) { return httpUrl(value, true); }).filter(Boolean) : [];
+          browserButton.disabled = data.browserPlayable !== true;
+          sheetStatus.textContent = data.browserPlayable === true ? "Stream ready. Choose a player." : text(data.reason) || "Browser format unsupported. Open in VLC or play on this device.";
+          browserButton.onclick = async function() {
+            if (version !== streamVersion || browserButton.disabled) return;
+            el("videoWrap").style.display = "block";
+            player.src = url;
+            player.replaceChildren();
+            subtitles.forEach(function(subtitle, index) {
+              var track = node("track"); track.src = subtitle; track.kind = "subtitles"; track.label = "Subtitle " + (index + 1);
+              track.addEventListener("error", function() { if (version === streamVersion) sheetStatus.textContent = "A subtitle could not load in this browser. Try another track or Play on this device."; });
+              player.appendChild(track);
+            });
+            try { await player.play(); } catch (_) {
+              if (version === streamVersion) sheetStatus.textContent = "Browser playback did not start. Try the video controls, Open in VLC or Play on this device.";
+            }
+          };
+        } catch (error) {
+          if (version === streamVersion && !failed(error)) {
+            sheetStatus.textContent = errorMessage(error) + " You can also try Play on this device.";
+            episodesList.appendChild(button("Retry stream", function() { if (activeItem === item) selectEpisode(item, episode, lane); }));
+          }
+        }
+      }
+      desktopButton.addEventListener("click", async function() {
+        if (!activeItem || !activeEpisode || desktopButton.disabled) return;
+        var version = sheetVersion;
+        var stream = streamVersion;
+        desktopButton.disabled = true;
+        controlController = new AbortController();
+        sheetStatus.textContent = "Starting local player…";
+        try {
+          var data = await post("/api/control", { action: "play", titleId: activeItem.id, episode: activeEpisode.number, season: activeEpisode.season || 1, lane: activeTab }, controlController.signal);
+          if (version !== sheetVersion || stream !== streamVersion) return;
+          if (!data.ok) throw new Error(text(data.error) || "Player did not accept playback.");
+          sheetStatus.textContent = "Playback accepted by the local player. Check Remote Control for current state.";
+        } catch (error) { if (version === sheetVersion && stream === streamVersion && !failed(error)) sheetStatus.textContent = errorMessage(error); }
+        finally { if (version === sheetVersion && stream === streamVersion) desktopButton.disabled = !controls.includes("play"); }
+      });
+      async function renderStatus(remote) {
+        var version = viewVersion;
+        resultsGrid.replaceChildren(node("p", "", "Loading local status…"));
+        try {
+          var data = await api("/api/status");
+          if (version !== viewVersion) return;
+          controls = Array.isArray(data.controls) ? data.controls : [];
+          resultsGrid.replaceChildren();
+          var panel = node("div", "remote-panel"); panel.style.gridColumn = "1 / -1";
+          if (remote) {
+            panel.appendChild(node("h2", "", "Local player"));
+            var state = data.playback || {};
+            panel.appendChild(node("p", "", "State: " + text(state.state, 40) + (state.title ? " · " + text(state.title, 300) : "")));
+            if (state.error) panel.appendChild(node("p", "", text(state.error)));
+            if (controls.includes("stop")) panel.appendChild(button(state.state === "starting" ? "Cancel startup" : "Stop playback", async function() {
+              try { var result = await post("/api/control", { action: "stop" }); if (!result.ok) throw new Error(text(result.error) || "Stop was not accepted."); if (version === viewVersion) renderStatus(true); }
+              catch (error) { if (version === viewVersion) panel.appendChild(node("p", "", errorMessage(error))); }
+            }));
+            panel.appendChild(node("p", "", "Pause, seek, volume, subtitles and next episode are unavailable here. Use the player controls."));
+          } else {
+            panel.appendChild(node("h2", "", "Configured providers"));
+            panel.appendChild(node("p", "", "Health is unknown until an actual search or stream is attempted."));
+            (Array.isArray(data.providers) ? data.providers : []).slice(0, 100).forEach(function(provider) {
+              panel.appendChild(node("p", "", text(provider.name, 100) + " · " + text(provider.lane, 30) + " · " + (provider.enabled ? "enabled" : "disabled") + " · health unknown"));
+            });
+          }
+          panel.appendChild(button("Refresh status", function() { renderStatus(remote); }));
+          resultsGrid.appendChild(panel);
+        } catch (error) {
+          if (version === viewVersion) { resultsGrid.replaceChildren(); empty(errorMessage(error), function() { renderStatus(remote); }); }
+        }
+      }
+      resetLaunchers();
+      api("/api/status").then(function(data) {
+        controls = Array.isArray(data.controls) ? data.controls : [];
+        connection("Connected locally");
+        if (activeItem && activeEpisode) desktopButton.disabled = !controls.includes("play");
+      }).catch(function(error) { connection(errorMessage(error)); });
     })();
   </script>
 </body>

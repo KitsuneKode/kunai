@@ -1,285 +1,71 @@
 ---
 name: verify-kunai
-description: Verify Kunai through real user actions and captured evidence. Use for terminal UX bugs, missing clicks/previews, search or playback regressions, visual inspection, and end-to-end qualification. Drive AppRoot replay, a held PTY, or isolated Kitty; inspect PNGs as well as text and SQLite/config. For live providers require explicit opt-in, pin each provider, and witness decoded mpv video through IPC and a frame capture. Never equate a probe, screenshot file, accepted key, or green fixture with successful live playback.
+description: Verify Kunai through real user actions and captured evidence. Use for terminal UX bugs, missing clicks/previews, search or playback regressions, visual inspection, companion security contracts, and end-to-end qualification. Drive AppRoot replay, a held PTY, or isolated Kitty; inspect PNGs as well as text and SQLite/config. For live providers require explicit opt-in, pin each provider, and witness decoded mpv video through IPC and a frame capture. Never equate a probe, screenshot file, accepted key, or green fixture with successful live playback.
 ---
 
 # Verify Kunai
 
-**A claim is verified only when it cites captured evidence.** Every drive
-records frames, inputs and backend state. Cite the frame, image or table row
-that proves the claim. AppRoot replay supports `--verify-citation` for text;
-Kitty requires image inspection plus its captured text/backend. If the evidence
-is absent, report "not verified" — never "should work".
+**A claim is verified only when it cites captured evidence.** Every verification drive records rendered frames, user inputs, and backend SQLite/config state. You must cite the literal frame text, image file, or database row that proves the claim.
 
-## The loop
+- AppRoot replay supports `--verify-citation` for mechanical verification against captured evidence.
+- Kitty runs require direct image inspection of `decoded-frame.png` in addition to text/backend logs.
+- If evidence is absent or a prerequisite fails, report **"not verified"** with the exact blocker — never "should work".
 
-1. **Route.** Find the owning code through `.docs/feature-map.md`, read the
-   handler and its real callee, and pick rows from
-   [references/scenarios.md](references/scenarios.md) — the happy path **and**
-   the reverse or failure case. One happy path never verifies a feature.
-2. **Pick the lowest tier that can answer the question** (table below).
-3. **Drive one transition at a time** — wait for the surface you are about to
-   type into, act, then wait for the next.
-4. **Witness twice** — the frame says it, and the backend (SQLite, config)
-   agrees. A frame alone can be a deferred write or a silent no-op.
-5. **Doctor** before the first drive and again after any surprising failure.
-   Preflight: `bun run agent:verify -- doctor` or `bun run agent:kitty -- --doctor`.
-   Owned Kitty also self-checks surface + privacy immediately after launch.
-6. **Confirm evidence survival** after cleanup — `bun run agent:verify -- evidence --evidence DIR`.
-   Profile disposal must not delete external proof artifacts.
-7. **Report** with the template at the bottom, including what you did not
-   cover.
+## The Loop
 
-## Launch, doctor, drive, evidence, cleanup
+1. **Route**: Find owning code via `.docs/feature-map.md`. Inspect the real handler, then choose test cases from [references/scenarios.md](references/scenarios.md) — both the happy path **and** the reverse or failure case. One path alone never verifies a feature.
+2. **Select Tier**: Choose the lowest tier capable of answering the question (see tier matrix below).
+3. **Doctor**: Run `bun run agent:verify -- doctor` or `bun run agent:kitty -- --doctor` before the first graphical drive and after a surprising failure. Confirm the owned surface, mode/provider, font and artwork after launch; host preflight alone does not verify rendering.
+4. **Drive Transitions**: Drive one transition at a time; wait for the targeted surface before acting.
+5. **Witness Twice**: Require dual confirmation: the UI frame reflects the change, and the backend (SQLite, `config.json`, or player IPC) commits it.
+6. **Check Survival**: After cleanup, run `bun run agent:verify -- evidence --evidence DIR`. Inspect the actual retained PNG, text and backend witnesses as well; the helper passing is not proof of their contents or completeness.
+7. **Report**: Use the standard report template, recording the exact candidate git SHA, dirty tree state, and any unverified gates.
 
-For visual, font, image-protocol and pointer reports, use the
-[Kitty loop](references/kitty-visual.md). Kitty's text dump omits the actual
-graphics; open the PNG with the image viewer before judging layout or artwork.
-Capture before acting, derive coordinates from that fresh frame, perform one
-transition, then capture again and inspect the backend. Do not approve a PNG
-merely because its file exists. Do not use a desktop-wide screenshot when an
-owned-window capture is available.
+## Tier Selection Matrix
 
-`bun run agent:kitty` creates its own Kitty socket, profile and evidence bundle.
-It never attaches to a user's ordinary terminal or profile. Fixture runs are
-the default; `--live` is required for real providers, and `--matrix --live`
-enumerates the production roster serially. Other providers are disabled per
-route so a fallback cannot make a failed provider appear healthy. See the
-reference for exact commands and limitations.
+| Tier                       | Command                                          | Proves                                                | Does not prove                                |
+| :------------------------- | :----------------------------------------------- | :---------------------------------------------------- | :-------------------------------------------- |
+| **L1 unit/integration**    | `bun run test:file <path>`                       | Logic, contracts, and schema invariants               | That an interactive user can reach it         |
+| **L2 in-process replay**   | `bun run agent:drive`                            | Shell wiring: real `AppRoot` + `SessionController`    | OS signals, TTY alt-screen, restart lifecycle |
+| **L3 held PTY session**    | `bun run agent:session`                          | Real `main.ts` in a held tmux PTY; signals, restart   | Provider reachability, real video decode      |
+| **L4 loopback mpv**        | `KUNAI_REAL_MPV=1` + `test/agent/real-mpv*`      | mpv decodes loopback media and Kunai records progress | External live provider reliability            |
+| **L5 live & Kitty visual** | `bun run agent:kitty` (`--live --provider <id>`) | Real terminal graphics, font rendering, decoded video | Native OS click delivery, physical phones     |
 
-Every non-matrix `--live` recipe must pass `--provider <production-id>`.
-The CLI and session helper reject an absent pin; the helper also requires the
-production roster so it can disable every other provider before launching.
+L2 and L3 execute against fixture providers and mock media with zero network dependency.
+L3 requires `tmux` (Linux/macOS). A missing tool is an explicit skip, and **a skip is not a pass**.
 
-Doctor before driving: confirm the owned window renders, the expected provider
-and mode are visible, fonts and artwork are legible, and cleanup/privacy checks
-are available. Run `bun run agent:verify -- doctor` (or `bun run agent:kitty -- --doctor`)
-for a read-only host preflight; Kitty runs also print `doctor: healthy owned Kitty …`
-after the window is ready. A missing display, screenshot capability, provider, or real mpv
-is an explicit prerequisite failure, never a pass. A dead launch is a harness
-failure; capture its stderr before attempting product fixes. Confirm a focused
-test command actually reports the requested files: an unmatched path can be
-ignored while other tests still pass.
+## Deep References
 
-For mouse coverage use both the measured-region regression suite and Kitty
-mouse-protocol injection. These prove application routing, not OS pointer
-delivery. A native mouse claim requires a real desktop input backend, an owned
-window, a fresh screenshot and an observed result. Ghostty's separate platform
-automation may be used for compatibility checks; its text export is not a PNG.
+Run driver commands from `apps/cli` (or use `bun run --cwd apps/cli`).
+Read only the references needed for the selected tier:
 
-Small models can read a bounded feature's source and propose a recipe or
-classify redacted results. Keep one coordinator in charge of desktop input,
-profiles, cleanup and final image inspection. Do not run multiple live drivers
-against one window, delegate visual judgment to a text-only worker, invent
-model/provider settings, or increase agent count just because models are cheap.
+- **Driver commands**: [references/driver-commands.md](references/driver-commands.md) — exact replay/PTY flags, settings/queue recipes and failure capture.
+- **Feature recipes**: [features/README.md](features/README.md) — search/browse, palette/settings, playback, filters and queue journeys. Verify each advertised entrypoint against current source before driving it.
+- **CLI Wiring & Scenarios**: [references/scenarios.md](references/scenarios.md) — Audio intent (startup vs explicit choice, same-URL reconnect, prefetch isolation, previous-episode reuse), relative download path containment, revoked in-flight transfers, queue operations, and debounced config persistence.
+- **Companion Contracts**: [references/companion-contract.md](references/companion-contract.md) — Host validation, port 80 normalization, foreign Origin rejection, loopback cookie isolation, explicit session authentication, stale page/media session release, 1000+ episode catalogs, and WebVTT browser tracks.
+- **Kitty Visual & Desktop Driving**: [references/kitty-visual.md](references/kitty-visual.md) — Multi-monitor Hyprland safety rules (placing test windows on laptop `eDP-1` workspace 9 while keeping user focused on `DP-3`), Lua rule handles in `_G`, decoded video verification, and cleanup.
+- **Release Candidate Integrity**: [references/release-candidates.md](references/release-candidates.md) — Pinned candidate HEAD, dirty tree tracking, provider declaration → production loader → registry verification pipeline, and unintegrated branch isolation.
+- **Physical Phone Qualification**: [references/mobile-phone.md](references/mobile-phone.md) — Physical Android (Termux) and iOS qualification checklists, version/commit pinning, VLC/mpv-android/chooser handoffs, and rollback.
 
-## Which tier answers what
+## Core Verification Rules
 
-| Tier                      | Command                                                | Proves                                                               | Does not prove                                                       |
-| ------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| L1 unit/integration tests | `bun run test`                                         | Logic and contracts                                                  | That a user can reach it                                             |
-| L2 in-process replay      | `bun run agent:drive`                                  | Wiring: real `AppRoot` + `SessionController`, ~1–3 s                 | Startup, TTY, signals, quit/relaunch                                 |
-| L3 held tmux session      | `bun run agent:session`                                | The real `main.ts` in a real PTY; relaunch, signals, setup           | Provider reachability, real playback                                 |
-| L4 real mpv               | `KUNAI_REAL_MPV=1` + `test/agent/real-mpv*`            | mpv decodes and Kunai records progress                               | Live providers                                                       |
-| L5 live / device          | `bun run test:live:*`, a physical phone                | Today's upstream and hardware                                        | Anything reproducible — date it, it rots                             |
-| Kitty visual / live       | `bun run agent:kitty` (explicit `--live` / `--matrix`) | Real terminal rendering, PNGs, input routes; optional real mpv video | Native OS click delivery, physical phones, automatic visual approval |
+1. **Isolate Storage Roots**: Always execute with `DO_NOT_TRACK=1` and `storageRootEnv`. Never touch `~/.config/kunai` or live SQLite databases. The credential backend must remain `file`.
+2. **Never Enable Analytics**: Seeded profiles decline analytics; dispose checks verify `installId` remains empty. Any test minting an `installId` fails as a contract violation.
+3. **Persist Evidence Outside `/tmp`**: Write all verification bundles, frames, and transcripts to a durable path (e.g. `/home/kitsunekode/.t3/scratch/kunai-agy-verification-<date>-<tag>/`).
+4. **Cite or Retract**: Every verified claim must quote verbatim text or values from captured frames, IPC responses, or database rows.
+5. **Delegate with one desktop owner**: A small-model worker may inspect a bounded feature and propose or execute isolated replay tests. Supply exact file ownership, commands, acceptance evidence and current provider/model settings. Only the coordinator drives graphical windows and reviews PNGs; dependent rechecks use the integrated candidate.
+6. **No Synthetic Regex Substitutes**: Test against real rendered output and actual backend rows; never write tests that merely regex-match source code or assert solely on file counts.
 
-L2 and L3 run against fixture providers and a fixture catalog: zero network.
-L3 needs `tmux` (Linux/macOS). A missing tool is a skip, and **a skip is not a
-pass** — say which tier you could not run.
+## Report Template
 
-## Helpers (root shortcuts)
-
-```sh
-bun run verify:kunai:doctor              # Kitty/tmux preflight (no launch)
-bun run verify:kunai:l2-smoke            # fixture search → play → post-play (L2)
-bun run verify:kunai:kitty-fixture       # doctor + interactive Kitty scenario + survival check
-cd apps/cli && bun run agent:verify -- evidence --evidence /tmp/your-bundle
-cd apps/cli && bun run agent:verify -- citation --bundle /tmp/ev --citation "Smoke Movie"
-```
-
-Periodic map upkeep: Cursor `/maintain-verification-skill` against this skill directory.
-
-## Quickstart
-
-```sh
-cd apps/cli
-
-# Search, open the first result, play it with fake mpv, show frame + history:
-bun run agent:drive -- \
-  --mpv fake \
-  --evidence /tmp/kunai-evidence \
-  --show frame,history,journal \
-  --keys smoke "<enter>" "<wait:Smoke>" "<enter>" "<wait:Post-play>"
-```
-
-That boots, types `smoke`, searches, waits for results, selects (resolve →
-play), waits for post-play, prints the frame, the history table and the
-journal, and writes a bundle (transcript, frames, per-step DB deltas).
-
-## `agent:drive` (L2)
-
-`--keys` consumes every following non-flag token, so put it last:
-
-- plain tokens type text (`smoke` types s-m-o-k-e)
-- named keys: `<enter> <esc> <up> <down> <left> <right> <tab> <space>
-  <backspace> <ctrlC>`
-- `<wait:TEXT>` — pause until a frame contains TEXT; `<wait:/re/>` waits on a
-  regex (`[\s\S]` spans lines)
-- `<wait-config:key=value>` — pause until the debounced write lands in
-  `config.json`, not just in the frame
-
-| Flag                      | Meaning                                                                         |
-| ------------------------- | ------------------------------------------------------------------------------- |
-| `--show a,b`              | `frame,keys,history,queue,config,tables,delta,journal` (default `frame,tables`) |
-| `--wait-for TEXT`         | after the keys, wait for a frame (`/re/` for regex)                             |
-| `--evidence DIR`          | write the bundle — keep it outside any profile                                  |
-| `--verify-citation TEXT`  | nonzero exit unless TEXT is in the captured evidence                            |
-| `--seed onboarded\|fresh` | profile seed (default `onboarded`)                                              |
-| `--providers smoke\|none` | fixture providers (default `smoke`)                                             |
-| `--mpv fake\|none`        | PATH-shim fake mpv (default `none`)                                             |
-| `--fake-mpv-mode M`       | `normal \| fail-pre-loaded \| hold`                                             |
-| `--width N` / `--rows N`  | terminal size (default 100×30)                                                  |
-| `--set-env K=V`           | extra env for the run (repeatable)                                              |
-
-`--show keys` lists the `[key]` hints the current frame advertises — read it
-before writing a key plan for an unfamiliar surface. `--seed fresh` writes no
-config, but the setup wizard only runs on a real TTY: use L3 for onboarding.
-
-## `agent:session` (L3)
-
-```sh
-cd apps/cli
-bun run agent:session -- start --name s1                 # tmux + real main.ts + fresh sandbox
-bun run agent:session -- doctor --name s1                # health check — run before driving
-bun run agent:session -- see --name s1                   # the rendered pane (--raw keeps colour)
-bun run agent:session -- keys --name s1                  # [key] hints the pane advertises
-bun run agent:session -- do smoke "<enter>" --name s1    # same key vocabulary as agent:drive
-bun run agent:session -- wait-for "Smoke" --name s1      # bounded; /re/ for regex
-bun run agent:session -- inspect queue --name s1         # history | queue | config | tables
-bun run agent:session -- relaunch --name s1              # real quit + reboot, same profile
-bun run agent:session -- report /tmp/ev --name s1        # frame + backend.json bundle
-bun run agent:session -- stop --name s1                  # kill session, remove sandbox
-```
-
-`start` also takes `--seed fresh` (the real setup wizard), `--no-fake-mpv`,
-`--width/--rows`, `--command "--offline"` (extra `main.ts` args) and
-`--keep-profile`. The session outlives each command through a sidecar file, so
-separate invocations keep driving the same app — like a user leaving it open.
-
-`doctor` prints `healthy <name> · <surface> · credential backend file` when
-the pane is alive, shows recognised interactive chrome, uses contained storage
-paths and the file credential backend, and has minted no analytics install id.
-It does **not** prove provider reachability, playback, or that every handler
-is attached.
-
-## Recipes
-
-Enqueue survives relaunch and explicit restore (L3):
-
-```sh
-bun run agent:session -- start --name q1
-bun run agent:session -- do smoke "<enter>" --name q1
-bun run agent:session -- wait-for "Smoke" --name q1
-bun run agent:session -- do q --name q1
-bun run agent:session -- inspect queue --name q1          # row present
-bun run agent:session -- relaunch --name q1
-bun run agent:session -- do / --name q1
-bun run agent:session -- wait-for "Command palette" --name q1
-bun run agent:session -- do queue --name q1
-bun run agent:session -- wait-for "/up-next" --name q1
-bun run agent:session -- do "<enter>" --name q1           # Up Next surface
-bun run agent:session -- do r --name q1                   # explicit restore after restart
-bun run agent:session -- inspect queue --name q1          # still there
-bun run agent:session -- stop --name q1
-```
-
-A settings toggle persists (L2, one shot):
-
-```sh
-bun run agent:drive -- \
-  --show config --verify-citation '"footerHints": "minimal"' \
-  --keys "/" "<wait:command>" settings "<enter>" \
-         "<wait:Usage analytics>" "<down>" "<enter>" \
-         "<wait:Minimal>" "<down>" "<enter>" \
-         "<wait-config:footerHints=minimal>"
-```
-
-Real mpv (L4): with `mpv` and `ffmpeg` on PATH, `KUNAI_REAL_MPV=1` makes the
-harness mint a short mp4, serve it on `127.0.0.1`, point the fixture stream at
-it through `KUNAI_SMOKE_MEDIA_BASE`, and wrap mpv with `--vo=null --ao=null`.
-Proof is two witnesses: mpv's own IPC `time-pos` advancing **and** Kunai's
-`history_progress` row (`test/agent/real-mpv.test.ts`).
-
-## Rules — each one has been broken before
-
-1. **Never touch the real profile.** No `KUNAI_CONFIG_DIR`, no real
-   `~/.config/kunai`. The drivers isolate HOME/XDG/APPDATA **and** force the
-   file credential backend — OS vaults are account-wide, so a new HOME does
-   not isolate them. The L3 launcher refuses overrides of either. Need extra
-   env? Pass `--set-env`; never export globals.
-2. **Analytics stays off.** Seeded profiles decline it, and `dispose()` fails
-   the run if an `installId` appears. A key plan that toggles the analytics
-   row is caught by that check — that is the intended outcome.
-3. **Cite or retract.** Every claim ends with the quoted frame line or table
-   row, re-checked with `--verify-citation`.
-4. **One transition at a time.** A rendered frame does not prove its input
-   handlers are attached; bursting keys across a surface change drops them. If
-   fast input or paste drops keys, keep that as a separate reproduction — a
-   slower retry that passes does not fix the product bug.
-5. **Identify the source.** Fixture `smoke` matches `Smoke Movie`, `Smoke Series`,
-   `Smoke Anime`, `Return To Shell` and friends; other queries correctly return
-   nothing. Production Kitty runs require `--live`; their upstream failures
-   stay failures, with no fake provider replacement or automatic retry storm.
-6. **Deferred writes are real.** The frame can claim a toggle ~300 ms before
-   `config.json` commits it. Wait with `<wait-config:…>` before concluding
-   "persisted" or "no-op".
-7. **Name the tier.** Fixture, real terminal, compiled binary, real mpv, live
-   provider and physical device are different claims. A local pass says
-   nothing about hosted Windows or macOS; a VLC-open event proves a handoff,
-   not playback.
-
-## When something fails
-
-- Capture first: `--show journal` / `transcript.md` (L2) or `report <dir>`
-  (L3), into a directory outside the profile, before any cleanup.
-- Run `doctor`. If unhealthy, relaunch that named session once and recheck. If
-  the same failure returns, stop and record the blocker — do not repeat inputs
-  or raise timeouts.
-- A `wait-for` timeout prints its label; re-run with `--show frame` at each
-  prefix of the key plan to see where the flow actually went.
-- A frame that says the right thing while config/tables stay unchanged is a
-  deferred write or a silent no-op — wait on the backend before concluding.
-- Dispose/unwind timeouts usually mean an overlay is still open (the driver
-  already sends Esc, Esc, Ctrl+C); a persistent hang is a real shutdown bug.
-- Stop only the session you started — never kill every tmux session — and
-  confirm its sidecar is gone and your evidence survived.
-
-## Report template
-
-```md
-**Verified** — <behaviour>, <tier>, revision <sha>
+```markdown
+**Verified** — <behaviour>, <tier>, candidate <sha> (dirty: <true|false>)
 
 - Drive: `<exact command or key plan>`
 - Frame: "<quoted line>" (`--verify-citation` ✓)
-- Backend: <table/config row that agrees>
-- Reverse case: <what was undone/failed and what the frame + backend showed>
+- Backend: `<table/config row that agrees>`
+- Reverse case: `<how action was undone and observed>`
+- Failure case: `<how boundary or error case was handled>`
 
 **Not verified** — <what was out of reach and why: tier missing, live-only, device-only>
 ```
-
-## Files
-
-- Feature map (pstack): [features/README.md](features/README.md)
-- L2 driver + session API: `apps/cli/test/agent/agent-driver.ts`
-- Replay CLI: `apps/cli/test/agent/drive.ts` (`bun run agent:drive`)
-- tmux driver + CLI: `apps/cli/test/agent/tmux-session.ts`, `apps/cli/test/agent/session.ts`
-- Backend inspector: `apps/cli/test/agent/profile-inspector.ts`
-- Evidence + citation check: `apps/cli/test/agent/evidence.ts`
-- Key decoder: `apps/cli/test/agent/keys.ts`
-- Real-mpv tier: `apps/cli/test/agent/real-mpv.ts`, `apps/cli/test/agent/real-mpv.test.ts`
-- Wiring scenarios: `apps/cli/test/agent/wiring.test.ts`
-- Kitty driver and serial scenarios/matrix: `apps/cli/test/agent/kitty-session.ts`, `apps/cli/test/agent/kitty.ts`
-- Verification helpers + CLI: `apps/cli/test/agent/verification.ts`, `apps/cli/test/agent/verify-cli.ts` (`bun run agent:verify`)
-- Bundled Kitty scenarios: `apps/cli/test/agent/scenario-interactive.json`, `scenario-playback-*.json`
-- Visual and provider coverage map: [Kitty verification](references/kitty-visual.md)

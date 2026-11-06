@@ -172,3 +172,23 @@ test("intro skips and stalls cannot manufacture observed playback time", () => {
 test("an unknown prior sample earns no credit across an IPC gap", () => {
   expect(observedPlaybackAdvanceMs(null, 120, 0, 45000)).toBe(0);
 });
+
+test("one-second observation windows count coarse clock updates but cannot turn a seek into sustained playback", () => {
+  let credited = 0;
+  let previous = 0;
+  const positions = [0, 1, 2, 2, 2, 38, 39, 40];
+  for (let i = 0; i < positions.length; i++) {
+    credited += observedPlaybackAdvanceMs(previous, positions[i]!, i * 1000, (i + 1) * 1000);
+    previous = positions[i]!;
+  }
+  // Three stalled windows add zero, and the intro jump contributes one window.
+  expect(credited).toBe(5_000);
+  expect(() =>
+    playbackProgressProof(
+      0,
+      40,
+      { w: 1920, h: 1080 },
+      { elapsedMs: 8_000, advancingMs: credited, minimumSeconds: 45 },
+    ),
+  ).toThrow();
+});

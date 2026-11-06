@@ -12,4 +12,4 @@
                                 YouTube
                                   Search and play from YouTube
  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-   [enter] confirm  [↑↓] choose  [b] back  [s] recommended  [S] finish defaults                                                     Setup
+   [enter] confirm  [↑↓] choose  [b] back  [s] recommended  [S] review defaults                                                     Setup

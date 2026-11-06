@@ -5,6 +5,7 @@ import type {
 } from "@/domain/types";
 import { isJsonObject, isJsonNumber, isJsonString } from "@kunai/types";
 
+import { parseMpvAudioIntent } from "./mpv-audio-intent";
 import type { MpvIpcSession } from "./mpv-ipc";
 import { applyObservedPropertySample, type PlayerStatsState } from "./mpv-stats";
 import type { PersistentSubtitleManager } from "./persistent-subtitle-manager";
@@ -37,6 +38,9 @@ export type PersistentMpvPropertyRouterDeps = {
   getActiveCycle(): PersistentMpvPropertyCycle | null;
   getIpcSession(): MpvIpcSession | null;
   getCurrentOptions(): PersistentMpvPropertyOptions;
+  /** Current authorized path; replacement generations must finish loading first. */
+  getAudioIntentMediaPath?(): string | null;
+  onAudioIntent?(language: string): void;
   subtitleManager: PersistentSubtitleManager;
   notifyMpvActionRequest(action: MpvRequestedAction): void;
   finishResumeChoiceWait(choice: "resume" | "start"): void;
@@ -113,6 +117,20 @@ export class PersistentMpvPropertyRouter {
       const choice = typeof value === "string" ? value : "";
       if (choice === "resume" || choice === "start") {
         this.deps.finishResumeChoiceWait(choice);
+      }
+      return;
+    }
+
+    if (name === "user-data/kunai-audio-intent") {
+      const event = parseMpvAudioIntent(
+        isJsonString(value) ? value : undefined,
+        this.deps.getAudioIntentMediaPath?.() ?? null,
+      );
+      if (event) {
+        if (event.audioLanguageIntent) {
+          this.deps.onAudioIntent?.(event.audioLanguageIntent);
+        }
+        this.deps.getCurrentOptions().onPlaybackEvent?.(event);
       }
       return;
     }

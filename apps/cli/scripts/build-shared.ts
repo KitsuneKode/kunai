@@ -13,6 +13,8 @@ import { join, resolve } from "node:path";
 import { isJsonString } from "@kunai/types";
 import type { BunPlugin } from "bun";
 
+import { companionHtmlCompressionPlugin } from "./companion-html-compression";
+
 export type BunBuildMetafile = NonNullable<Awaited<ReturnType<typeof Bun.build>>["metafile"]>;
 export type BunBuildOptions = NonNullable<Parameters<typeof Bun.build>[0]>;
 
@@ -113,7 +115,11 @@ export function releaseBuildBaseOptions(
     // Kunai reads KUNAI_* and other process.env at runtime — never inline the
     // build machine's environment into published artifacts.
     env: "disable",
-    plugins: [reactDevtoolsStubPlugin(root), cliVersionManifestPlugin(root)],
+    plugins: [
+      reactDevtoolsStubPlugin(root),
+      cliVersionManifestPlugin(root),
+      companionHtmlCompressionPlugin(),
+    ],
     metafile: true,
     tsconfig: join(root, "tsconfig.json"),
   };

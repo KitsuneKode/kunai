@@ -29,11 +29,13 @@ describe("HandoffPlayerService", () => {
   test("cancelling a headered handoff releases its gateway and never reports acceptance", async () => {
     const controller = new AbortController();
     const gateway = getSharedStreamGateway();
+    let mediaUrl = "";
     const player = new HandoffPlayerService({
       target: "vlc",
       runtime: {
         ...runtime(),
-        spawn: () => {
+        spawn: (argv) => {
+          mediaUrl = argv[argv.indexOf("-d") + 1]!;
           controller.abort();
           return { exited: Promise.resolve(0) };
         },
@@ -50,7 +52,8 @@ describe("HandoffPlayerService", () => {
           },
         ),
       ).rejects.toMatchObject({ name: "AbortError" });
-      expect(gateway.isStopped()).toBe(true);
+      expect(gateway.isStopped()).toBe(false);
+      expect((await fetch(mediaUrl)).status).toBe(404);
       // Cancelling this request must not poison the service's next handoff.
       const retry = await player.play(STREAM, { url: STREAM.url, displayTitle: "Retry" });
       expect(retry.handoff?.accepted).toBe(true);
@@ -91,7 +94,7 @@ describe("HandoffPlayerService", () => {
       onPlaybackEvent: ({ event }) => events.push(event.type),
     });
 
-    expect(player.capabilities).toBe(DETACHED_HANDOFF_CAPABILITIES);
+    expect(player.capabilities).toEqual({ ...DETACHED_HANDOFF_CAPABILITIES, localFiles: true });
     expect(result).toEqual({
       watchedSeconds: 0,
       duration: 0,
@@ -288,7 +291,7 @@ describe("HandoffPlayerService", () => {
     );
   });
 
-  test("fails local playback explicitly", async () => {
+  test("rejects a missing local file before launching", async () => {
     const player = new HandoffPlayerService({ target: "mpv", runtime: runtime() });
     const source = {
       kind: "local",
@@ -301,7 +304,7 @@ describe("HandoffPlayerService", () => {
     } satisfies LocalPlaybackSource;
 
     expect(player.playLocal({ source })).rejects.toMatchObject({
-      reason: "local-source-unsupported",
+      reason: "local-source-unavailable",
     });
   });
 });

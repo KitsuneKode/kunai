@@ -60,12 +60,12 @@ const SCREEN_ORDER: readonly Screen[] = [
 ];
 
 const SCREEN_CONTEXT: Record<Screen, string> = {
-  deps: "welcome",
+  deps: "Welcome to Kunai",
   mode: "what you watch",
   language: "language",
   library: "playback & downloads",
   analytics: "usage ping",
-  done: "ready",
+  done: "review",
 };
 
 /**
@@ -823,7 +823,7 @@ function buildFooter(
         { key: "↑↓", label: "choose" },
         ...back,
         { key: "s", label: "recommended" },
-        { key: "S", label: "finish defaults" },
+        { key: "S", label: "review defaults" },
       ];
     case "language":
       // tab and ↑↓ are named in the screen body, right where they act; the
@@ -833,7 +833,7 @@ function buildFooter(
         { key: "tab", label: "profile" },
         { key: "←→", label: "audio / subs" },
         { key: "a", label: "copy to all" },
-        { key: "S", label: "finish defaults" },
+        { key: "S", label: "review defaults" },
         ...back,
       ];
     case "library":
@@ -842,7 +842,7 @@ function buildFooter(
         { key: "↑↓", label: "choose" },
         { key: "enter", label: "next" },
         { key: "s", label: "recommended" },
-        { key: "S", label: "finish defaults" },
+        { key: "S", label: "review defaults" },
         ...back,
       ];
     case "analytics":
@@ -854,7 +854,7 @@ function buildFooter(
       ];
     case "done":
       return [
-        { key: "enter", label: "start watching" },
+        { key: "enter", label: "save & start" },
         { key: "b", label: "change something" },
       ];
   }

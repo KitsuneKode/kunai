@@ -69,6 +69,7 @@ export async function runMobileApplication(input: {
   }
 
   const nextRunCount = current.hostProofRuns + 1;
+  let handoffCommitted = false;
   try {
     input.environment.signal?.throwIfAborted();
     await input.environment.terminal.render([
@@ -122,13 +123,20 @@ export async function runMobileApplication(input: {
       hostProofRuns: nextRunCount,
       lastResult: "handoff-accepted",
     });
-    input.environment.signal?.throwIfAborted();
-    await input.environment.terminal.render([
-      "VLC handoff was accepted. Playback progress cannot be observed.",
-    ]);
-    input.environment.signal?.throwIfAborted();
+    handoffCommitted = true;
+
+    try {
+      await input.environment.terminal.render([
+        "VLC handoff was accepted. Playback progress cannot be observed.",
+      ]);
+    } catch {
+      // Terminal render failure after accepted handoff still succeeds the handoff run.
+    }
     return { code: 0, reason: "handoff" };
   } catch {
+    if (handoffCommitted) {
+      return { code: 0, reason: "handoff" };
+    }
     if (input.environment.signal?.aborted) {
       try {
         await input.environment.state.commit({

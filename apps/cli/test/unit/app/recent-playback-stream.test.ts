@@ -3,6 +3,8 @@ import { describe, expect, test } from "bun:test";
 import {
   isRecentPlaybackStreamFresh,
   recentPlaybackStreamKey,
+  recentPlaybackStreamKeyPrefix,
+  recentPlaybackStreamMatchesAudioPreference,
   recentPlaybackStreamMatchesProvider,
   restoreRecentPlaybackStream,
   type RecentPlaybackStreamRecord,
@@ -42,8 +44,43 @@ describe("recent playback stream", () => {
     });
   });
 
-  test("keys streams by title and 1-based episode identity", () => {
+  test("keys streams by title and 1-based episode identity, including audio preference", () => {
     expect(recentPlaybackStreamKey("tmdb:1396", { season: 2, episode: 7 })).toBe("tmdb:1396:2:7");
+    expect(recentPlaybackStreamKey("tmdb:1396", { season: 2, episode: 7 }, "ja")).toBe(
+      "tmdb:1396:2:7:audio=ja",
+    );
+    expect(recentPlaybackStreamKey("tmdb:1396", { season: 2, episode: 7 }, "en")).toBe(
+      "tmdb:1396:2:7:audio=en",
+    );
+    expect(recentPlaybackStreamKeyPrefix("tmdb:1396", { season: 2, episode: 7 })).toBe(
+      "tmdb:1396:2:7",
+    );
+  });
+
+  test("matches audio preference only when identical", () => {
+    const recentJa: RecentPlaybackStreamRecord = {
+      stream,
+      episode: { season: 1, episode: 2 },
+      selectedProviderId: "vidking",
+      resolvedProviderId: "vidking",
+      provenance: "fresh",
+      audioPreference: "ja",
+    };
+
+    expect(recentPlaybackStreamMatchesAudioPreference(recentJa, "ja")).toBe(true);
+    expect(recentPlaybackStreamMatchesAudioPreference(recentJa, "JA ")).toBe(true);
+    expect(recentPlaybackStreamMatchesAudioPreference(recentJa, "en")).toBe(false);
+    expect(recentPlaybackStreamMatchesAudioPreference(recentJa, undefined)).toBe(false);
+
+    const recentNoAudio: RecentPlaybackStreamRecord = {
+      stream,
+      episode: { season: 1, episode: 2 },
+      selectedProviderId: "vidking",
+      resolvedProviderId: "vidking",
+      provenance: "fresh",
+    };
+    expect(recentPlaybackStreamMatchesAudioPreference(recentNoAudio, undefined)).toBe(true);
+    expect(recentPlaybackStreamMatchesAudioPreference(recentNoAudio, "ja")).toBe(false);
   });
 
   test("does not reuse a recent stream for a different provider-native episode at the same UI index", () => {

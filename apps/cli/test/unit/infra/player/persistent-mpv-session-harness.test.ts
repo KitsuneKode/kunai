@@ -6,6 +6,7 @@ import { LOCAL_HLS_DEMUXER_LAVF_OPTIONS } from "@/infra/player/mpv-stream-http-h
 import type { PersistentMpvSessionRuntime } from "@/infra/player/persistent-mpv-runtime";
 import { PersistentMpvSession } from "@/infra/player/PersistentMpvSession";
 import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
+import { DEFAULT_CONFIG } from "@/services/persistence/ConfigService";
 
 import { waitUntil } from "../../../support/wait-until";
 
@@ -954,6 +955,88 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
     await playbackResult;
   });
 
+  test("in-process reconnect reconstructs alang from explicit native audio intent rather than stale initial options", async () => {
+    const harness = createHarness();
+    const events: PlayerPlaybackEvent[] = [];
+    const session = await PersistentMpvSession.create({
+      stream: createStream({ url: "https://video.example/reconnect-audio.m3u8" }),
+      options: {
+        displayTitle: "Episode 1",
+        primarySubtitle: null,
+        audioPreference: "en",
+        onPlaybackEvent: (event) => events.push(event),
+      },
+      kitsuneConfig: {
+        ...DEFAULT_CONFIG,
+        mpvInProcessStreamReconnect: true,
+        mpvInProcessStreamReconnectMaxAttempts: 3,
+        mpvKunaiScriptOpts: {},
+      },
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+
+    harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+    await flushAsyncWork();
+
+    // Startup audio observation must not become user intent
+    harness.callbacks().onPropertyUpdate({
+      name: "user-data/kunai-track-changed",
+      value: "audio:1",
+      observedAt: 5_000,
+    });
+    await flushAsyncWork();
+
+    // Explicit native audio cycle produces explicit language intent
+    harness.callbacks().onPropertyUpdate({
+      name: "user-data/kunai-audio-intent",
+      value: JSON.stringify({
+        id: 2,
+        language: "ja",
+        path: "https://video.example/reconnect-audio.m3u8",
+      }),
+      observedAt: 10_000,
+    });
+    await flushAsyncWork();
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "track-changed",
+        trackType: "audio",
+        id: 2,
+        audioLanguageIntent: "ja",
+      }),
+    );
+
+    // Reliable progress sample and network state so reconnect triggers
+    harness.callbacks().onPropertyUpdate({ name: "duration", value: 600, observedAt: 14_000 });
+    harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 100, observedAt: 15_000 });
+    harness
+      .callbacks()
+      .onPropertyUpdate({ name: "demuxer-via-network", value: true, observedAt: 16_000 });
+    harness.callbacks().onPropertyUpdate({
+      name: "demuxer-cache-state",
+      value: { "fw-bytes": 0 },
+      observedAt: 17_000,
+    });
+    await flushAsyncWork();
+
+    // Network drop triggers in-process reconnect
+    harness.callbacks().onEndFile({ reason: "error", observedAt: 18_000 });
+    await flushAsyncWork();
+    harness.callbacks().onFileLoaded?.({ observedAt: 18_100 });
+    await flushAsyncWork();
+
+    const reconnectLoad = harness.commands.find(
+      (cmd) => cmd[0] === "loadfile" && cmd[1] === "https://video.example/reconnect-audio.m3u8",
+    );
+    expect(reconnectLoad?.[4]).toMatchObject({ start: "100", alang: "ja" });
+
+    const playbackResult = session.waitForCurrentPlayback();
+    harness.callbacks().onEndFile({ reason: "quit", observedAt: 18_200 });
+    await playbackResult;
+  });
+
   test("an in-process reconnect on a live stream never seeks back to the drop position", async () => {
     // Nulling the loadfile `start` was not enough: the completion step issued its own
     // absolute seek, which on a live broadcast lands in the DVR window or fails.
@@ -1855,3 +1938,84 @@ test.each(["es", "de"])(
     }
   },
 );
+
+test("embedded audio intent belongs only to the loaded playback generation", async () => {
+  const harness = createHarness();
+  const events: PlayerPlaybackEvent[] = [];
+  const session = await PersistentMpvSession.create({
+    stream: createStream(),
+    options: {
+      displayTitle: "Episode",
+      primarySubtitle: null,
+      onPlaybackEvent: (event) => events.push(event),
+    },
+    // SAFETY: the harness supplies the player runtime and required options.
+    kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+    onControlReady: () => {},
+    runtime: harness.runtime,
+  });
+  const send = (path: string, language: string) =>
+    harness.callbacks().onPropertyUpdate({
+      name: "user-data/kunai-audio-intent",
+      value: JSON.stringify({ id: 2, language, path }),
+      observedAt: 1,
+    });
+  send("https://video.example/retired.m3u8", "en");
+  expect(events.filter((event) => event.type === "track-changed")).toEqual([]);
+  harness.callbacks().onFileLoaded?.({ observedAt: 2 });
+  await flushAsyncWork();
+  send("https://video.example/episode-1.m3u8", "ja");
+  expect(events.filter((event) => event.type === "track-changed")).toEqual([
+    { type: "track-changed", trackType: "audio", id: 2, audioLanguageIntent: "ja" },
+  ]);
+  harness.callbacks().onEndFile({ reason: "eof", observedAt: 3 });
+  await flushAsyncWork();
+  events.length = 0;
+  const next = session.play(createStream({ url: "https://video.example/next.m3u8" }), {
+    displayTitle: "Next",
+    primarySubtitle: null,
+    onPlaybackEvent: (event) => events.push(event),
+  });
+  await flushAsyncWork();
+  send("https://video.example/episode-1.m3u8", "fr");
+  send("https://video.example/next.m3u8", "fr");
+  expect(events.filter((event) => event.type === "track-changed")).toEqual([]);
+  harness.callbacks().onFileLoaded?.({ observedAt: 4 });
+  await flushAsyncWork();
+  send("https://video.example/episode-1.m3u8", "fr");
+  expect(events.filter((event) => event.type === "track-changed")).toEqual([]);
+  send("https://video.example/next.m3u8", "en");
+  expect(events.filter((event) => event.type === "track-changed")).toEqual([
+    { type: "track-changed", trackType: "audio", id: 2, audioLanguageIntent: "en" },
+  ]);
+  harness.endProcess();
+  await next;
+});
+
+test("first-file explicit audio intent survives an already-completed file-loaded event", async () => {
+  const harness = createHarness();
+  const events: PlayerPlaybackEvent[] = [];
+  await PersistentMpvSession.create({
+    stream: createStream(),
+    options: {
+      displayTitle: "First file",
+      primarySubtitle: null,
+      onPlaybackEvent: (event) => events.push(event),
+    },
+    // SAFETY: the harness supplies the player runtime; only reconnect settings are read.
+    kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+    onControlReady: () => {},
+    runtime: harness.runtime,
+  });
+  // The file loaded before the IPC connection existed: no file-loaded callback
+  // will arrive. A native explicit key still authorizes the current argv path.
+  harness.callbacks().onPropertyUpdate({
+    name: "user-data/kunai-audio-intent",
+    value: JSON.stringify({ id: 2, language: "ja", path: "https://video.example/episode-1.m3u8" }),
+    observedAt: 1,
+  });
+  expect(events.filter((event) => event.type === "track-changed")).toEqual([
+    { type: "track-changed", trackType: "audio", id: 2, audioLanguageIntent: "ja" },
+  ]);
+  harness.endProcess();
+});

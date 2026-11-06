@@ -38,16 +38,22 @@ hosted, device or release signoff.
       and compound genre removal. The Kitty witness excludes intro skips and
       missing IPC intervals. Offline title-group actions now share the existing
       router, preserving diagnostics and repairing metadata before shelf refresh.
-      The original 3120 KiB cap is restored; the measured bundle is 3,193,265
-      bytes (1,615 bytes below it). Forced tests and the native/docs builds pass;
-      these checks do not qualify live providers or physical devices.
+      The companion batch held the earlier 3210 KiB cap and compresses its
+      embedded page at build time. Updated base `8aef24d41` raises the inherited
+      cap to 3245 KiB; review that increase independently and rerun the complete
+      build for exact candidate bytes. Earlier 3120/3210 KiB measurements
+      describe older trees and are not current qualification evidence.
 
-- [ ] Persist explicit embedded mpv audio-language changes across autoplay.
-      Provider audio picks already set session preferences; the native `a`
-      branch only cycles mpv's current file and its track-change hook currently
-      records diagnostics without updating the session language.
+- [ ] Integrate and qualify the [desktop, Android and companion batch](2026-11-04-desktop-android-companion.md).
+      It implements session-only native audio intent across same-title restart
+      and autoplay, verified local-file handoff and authenticated companion
+      consumers. Hosted integration and physical-device evidence remain open.
 
-- [ ] Reconcile the provider audit branch now integrated into PR #676. Preserve
+- [x] Integrate the provider owner's source through the updated #676 base
+      `fix/kitty-verification-pointer-20261028` at `eb6f43546` into #677.
+      The earlier separate-branch prerequisite is superseded.
+
+- [ ] Qualify the integrated provider candidate. Preserve
       its YouTube format ordering and VidRock concurrency fixes; qualify
       recommended-tier promotions with captured playback evidence rather than
       manifest flags. The review corrections cover per-file cache policies,
@@ -75,13 +81,15 @@ hosted, device or release signoff.
 
 ## 2. Functional Android and mobile distribution
 
-- [ ] Finish cancellation, shutdown, output bounds and deadline handling for
-      Android player launch; prove cleanup and a subsequent successful retry.
+- [ ] Integrate Android launch and token-lifecycle repairs, then qualify them on
+      hardware. Automated regressions cover cancellation, replacement, late
+      failures, bounded launch output and retry without revoking a successor.
 - [ ] Review the complete Termux install, update, rollback and uninstall route,
       architecture selection, executable storage and actionable doctor output.
 - [ ] Audit download directory defaults, path overrides, permissions, free-space
       failures, interrupted downloads and offline playback on each platform.
-      Do not advertise Android local-file handoff until it is implemented.
+      Local-file handoff is implemented in the November batch; physical Android
+      decoding, background behavior and storage qualification remain pending.
 - [ ] Trace Android YouTube/yt-dlp limitations and define a working handoff
       contract before lifting refusals. Preserve exact format/client choices,
       request headers, subtitles and the provider probe gate.
@@ -194,6 +202,133 @@ hosted, device or release signoff.
 - [ ] Record remaining work after 0.4.0: manga/comic reading, expanded YouTube
       channels/trending/recommendations, live TV/sports and other larger features.
       These are not prerequisites for the stabilized watching release.
+
+## 6. Launch acceptance bar — 2026-11-06
+
+The maintainer's goal is a system above 9.5/10. Treat that as a quality target,
+not a score inferred from unit-test counts or a promise of provider uptime.
+Pass every critical gate below before advertising the corresponding platform.
+An unresolved security, playback or data-loss defect blocks that platform;
+averaging stronger areas cannot cancel it out. Virality is a growth hypothesis,
+not a release acceptance criterion or a guaranteed outcome.
+
+### Reliability and verification
+
+- [ ] Close reproduced provider-review gaps before promotion: malformed HLS
+      soft-acceptance, skipped same-host qualities after a failed hedge,
+      dormant direct-helper hedging, unconnected faceted controls, broken
+      verification flags and missing-artifact false passes. Apply fixes through
+      the provider owner and the integrated candidate, preserving both branches.
+- [ ] Replace fragile hedge wall-clock assertions with controlled timers,
+      deferred probes and explicit ordering. Confirm tests fail when the
+      protected behavior is deliberately removed. Retain privacy, cancellation,
+      installer and platform coverage; remove only demonstrated duplicates or
+      unused experimental support, with its intended home recorded.
+- [ ] Predeclare a live matrix spanning movie, series, anime and YouTube,
+      including representative titles, known-working controls and honest
+      missing-title cases. Record every attempt and provider identity. Report
+      first-choice success, fallback recovery and catalog absence separately;
+      retain failures rather than selecting only successful examples.
+- [ ] For recommended routes, capture at least 45 seconds of sustained decoded
+      playback and inspect a real frame, audio and subtitles. Add a ten-minute
+      soak per supported mode with seek, next/back, reconnect and resume cases.
+      These are pending qualification targets, not current measurements.
+- [ ] Bind hosted checks, review scope, live evidence and distribution hashes
+      to one integrated candidate. Cross-compilation, old approval and a
+      successful HTTP probe remain separate evidence tiers.
+
+### Installation, performance and usability
+
+- [ ] Verify clean install, first launch, missing-player recovery, update,
+      rollback and removal for every advertised OS/architecture. Publish exact
+      support tiers: tested, experimental or unsupported. An untested target
+      must not inherit another platform's qualification.
+- [ ] Run a first-use walkthrough with a fresh user: choose platform, install,
+      find a title, start playback and recover from one unavailable source.
+      Record prerequisites, steps, download size and time to first decoded
+      frame. Simplify the steps users actually get stuck on before launch.
+- [ ] Measure cold/warm startup, search latency, first decoded frame, memory,
+      CPU and artifact sizes on named devices. Record median/tail observations
+      and sample counts separately from fixture timing. Agree budgets before
+      qualification, preserve the current release size cap and reduce measured
+      duplication before importing a larger provider/UI graph.
+- [ ] Reach every advertised control through the real keyboard/mouse/touch
+      route, including mode switching, previews, filters, quality, subtitles,
+      offline playback and recovery. Include narrow screens, reduced motion,
+      readable focus, empty results and delayed/stale responses.
+
+### Mobile and companion route without a new native Kunai app
+
+- [ ] Qualify the full Android CLI in Termux with VLC, mpv-android and chooser,
+      including headered streams, sidecars, offline files, backgrounding and
+      returning to the shell. Provide one current install route after Android
+      assets are published, plus a separately named candidate route beforehand.
+- [ ] Qualify the Android-hosted companion in that phone's browser. It already
+      reuses the CLI catalog and playback services; full home/history/queue/
+      download/settings parity is additional work, not implied by search/play.
+- [ ] Retain the approved iOS experimental host-preview label until its physical
+      pass. Full iPhone watching without a new native app is a separate browser
+      companion milestone; the a-Shell proof has no search/providers.
+- [ ] Design and qualify cross-device pairing before promising desktop-to-phone
+      access. Current `kunai serve` binds loopback and serves the same device.
+      Specify private addressing/HTTPS, explicit expiring pairing, revocation,
+      trusted origins, per-session media capabilities and browser codec refusal.
+      Keep published relay traffic metadata-only. This checklist does not
+      authorize exposing the existing service on all network interfaces.
+
+Current browser constraints inform that milestone: Chrome gates public-site
+requests to local devices behind secure-context permissions
+([Chrome guidance](https://developer.chrome.com/blog/local-network-access)).
+iOS media presentation and autoplay policies require real Safari qualification
+([WebKit guidance](https://webkit.org/blog/6784/new-video-policies-for-ios/)).
+Use feature detection and an explicit Play action, then test actual codecs,
+subtitles, seek and suspend/resume on the user's phones.
+
+### Launch and later TV route
+
+- [ ] Record a short real walkthrough after qualification: search, preview,
+      play, language/subtitles, recovery, resume/offline and Android handoff.
+      Use authorized media and an isolated profile. Link the demonstrated
+      candidate and give each platform a clear install call to action.
+- [ ] Align README, GitHub About, docs, install page and social preview with the
+      same supported features and limits. Measure first-play completion,
+      successful recovery and voluntary feedback; preserve opt-in analytics.
+      Stars, forks and traffic are outcomes to observe, not substitutes for
+      successful watching or numbers to promise.
+- [ ] Investigate TV only after desktop/mobile launch. First test a browser
+      companion on a named TV with remote-control focus, Back behavior,
+      subtitles, codec support and session pairing; reuse the existing core.
+      Samsung's documented web engines vary by model year
+      ([specifications](https://developer.samsung.com/smarttv/develop/specifications/web-engine-specifications.html)).
+      Web-app API support does not itself qualify the consumer TV browser.
+      Keep model-specific failures explicit; no universal TV compatibility,
+      dedicated TV app, store submission or Chromecast delivery is promised.
+
+## Startup and first-use follow-up — 2026-11-06
+
+The current setup pass leads with capabilities, exposes customization versus
+reviewing recommendations, and labels the final write explicitly. Preserve
+the six-screen behavior and consent/abort/restore contracts while evaluating
+the remaining first-use flow with fresh users.
+
+Linux/Bun 1.4.4 measurements on fresh isolated profiles with a warm filesystem
+cache recorded a median **252 ms** to the existing shell-mounted diagnostic
+(five real held PTYs, range 249–265 ms). This milestone follows Ink render
+invocation; it is not exact first paint or time to video. Evidence lives in
+`/home/kitsunekode/.t3/scratch/kunai-startup-onboarding-20261106/startup/`.
+
+- [ ] Profile populated-history upgrades, returning-user startup, cold storage,
+      Windows/macOS and long-session memory before setting startup budgets.
+- [ ] Evaluate a lightweight short-command entry path. A source `--help`
+      prototype reduced median command time from 116.67 ms to 17.10 ms across
+      nine runs with identical output; it is not implemented and does not
+      improve interactive shell startup. Preserve the sole desktop entrypoint.
+- [ ] Narrow provider barrel imports only after whole-graph measurement and
+      coordination with the provider owner. Existing adapter imports already
+      run concurrently; an extra lazy wrapper alone does not isolate them.
+- [ ] Preserve the bundle cap. The current single-file build does not split
+      runtime code merely because it uses dynamic imports. Do not trade a
+      measured dependency or migration check for an unmeasured latency claim.
 
 ## Evidence and completion rule
 

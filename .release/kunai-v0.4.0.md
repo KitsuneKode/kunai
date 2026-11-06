@@ -5,6 +5,9 @@ subtitle controls, and safer persistence, downloads and native installation.
 
 ### Highlights
 
+- Make first-run setup easier to scan with feature-first dependency rows,
+  clearer customize/review actions and a final **save & start** confirmation.
+  Reviewing defaults leaves analytics consent unchanged.
 - Keep search history, type-ahead requests and suggestions scoped to the active
   mode and provider. Cancel stale requests and submit the latest input even
   when typing and Enter arrive in the same frame.
@@ -19,6 +22,10 @@ subtitle controls, and safer persistence, downloads and native installation.
   consistent Shift+F fallback action, with accurate attempt and loading states.
 
 ### Playback and providers
+
+- Keep explicit native mpv audio-language choices for same-title restart and
+  autoplay without overwriting saved defaults or accepting stale file events.
+  Normalize native language aliases before reconnect and session selection.
 
 - Add non-interactive 'kunai status' / 'kunai providers status' command to inspect live health, latency, and credentials across streaming, scraper, and debrid services.
 - Add direct magnet URI / torrent infohash stream resolution and playback routing via 'kunai play <magnet>' and '--debrid'.
@@ -119,6 +126,19 @@ subtitle controls, and safer persistence, downloads and native installation.
   checksum manifests and attestations through the protected release workflow.
 - Improve Windows helper discovery and verified provisioning, exact winget
   guidance, Flatpak mpv discovery and installer wording.
+- Add a same-device `kunai serve` companion preview with explicit per-run
+  credentials, mode-specific search, real episode selection and guarded
+  browser/player actions. Keep credentials out of loopback cookies and media
+  URLs. Scope media release to its generation so a stale page cannot revoke a
+  successor. Preserve selected-season retries and long episode catalogs.
+  Browser subtitle delivery validates WebVTT, converts ordinary SRT and reports
+  unsupported tracks. LAN access and full shell parity remain outside this preview.
+- Serve verified Android offline files and subtitle sidecars through revocable
+  loopback sessions with byte-range support. Revocation cancels open local
+  transfers; late failures cannot revoke a newer handoff. Persist new download
+  paths as absolute locations even when the configured directory is relative.
+  Compress the embedded companion at build time
+  without changing its HTML or increasing the bundle limit.
 - Add experimental Android Termux targets and guarded external-player handoff.
   This is not a supported full mobile application; accepted OS handoff does not
   prove decoded playback, progress, completion or autoplay.

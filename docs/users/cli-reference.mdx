@@ -70,6 +70,35 @@ To stay readable, `pretty` shortens very long context values and says how much i
 left out. `--format jsonl` and `--format markdown` always print them in full.
 Events come from the local cache database; nothing is uploaded.
 
+## Local web companion
+
+```sh
+kunai serve                  # local browser interface, port 4141
+kunai serve --port 8080       # choose another local port
+```
+
+Open the full URL printed by Kunai once to authenticate the browser. It works
+on the device running Kunai and binds to `127.0.0.1`; LAN access is not
+supported. Keep the printed URL private, and stop Kunai with Ctrl+C to end the
+session. `kunai web` is an alias.
+
+The experimental companion searches anime, series, movies and YouTube, offers
+available episodes, and resolves through Kunai's configured providers. Search
+queries stay separate for each mode. Choose browser playback for compatible
+streams, Open in VLC, or Play on this device for Kunai's configured player.
+Some codecs and manifests cannot play in a browser; yt-dlp-only streams need
+the on-device player. A failed browser launch leaves the external-player
+choices available.
+
+Stop cancels pending resolution or managed playback. Pause, seek, volume,
+subtitle switching and next-episode controls belong to the player and are not
+remote controls in this preview. On Android, an accepted external launch is
+shown as a handoff, not proof of playback or completion. Closing the browser
+media view releases its stream; it does not stop an independent player.
+
+This surface does not yet replace all shell features. Physical Android and
+iOS qualification remains a separate release check.
+
 ## Shell completions
 
 `kunai completion <shell>` prints a completion script for `bash`, `zsh`, `fish`,
@@ -141,6 +170,10 @@ More: [Share links](/docs/users/share-links).
 Android handoff reports launch acceptance only. Kunai cannot observe external
 progress, completion, EOF, track changes, or player controls, so it does not
 infer history progress, autoplay, or queue acknowledgement from the intent.
+Verified offline files use a revocable loopback URL for external playback;
+Kunai must stay running to serve them. Explicit embedded-audio choices in the
+desktop mpv session can carry to subsequent episodes when track-language
+metadata is available. They do not change saved language settings.
 
 ## Providers
 

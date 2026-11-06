@@ -200,6 +200,18 @@ export class PersistentMpvSession {
     getActiveCycle: () => this.activeCycle,
     getIpcSession: () => this.ipcSession,
     getCurrentOptions: () => this.currentCycleOptions(),
+    getAudioIntentMediaPath: () =>
+      this.activeCycle?.acceptPlaybackProperties &&
+      // The argv-loaded first file may finish loading before IPC subscribes.
+      // This process has no retired file then; the explicit bridge payload must
+      // still match its path. Replacements require their own file-loaded owner.
+      (this.cycleGeneration.cycle === 1 ||
+        (this.loadedFileGeneration && this.isGenerationCurrent(this.loadedFileGeneration)))
+        ? this.playbackStream.url
+        : null,
+    onAudioIntent: (language) => {
+      this.updateAudioPreference(language);
+    },
     subtitleManager: this.subtitleManager,
     notifyMpvActionRequest: (action) => this.currentCycleOptions().onMpvActionRequest?.(action),
     finishResumeChoiceWait: (choice) => {
@@ -578,6 +590,11 @@ export class PersistentMpvSession {
     this.currentOptions = { ...this.currentOptions, autoSkipEnabled: enabled };
     this.clearSkipPromptState();
     void this.handleSegmentSkipProgress(this.currentOptions);
+  }
+
+  updateAudioPreference(audioPreference: string): void {
+    if (!this.activeCycle) return;
+    this.currentOptions = { ...this.currentOptions, audioPreference };
   }
 
   waitForCurrentPlayback(): Promise<PlaybackResult> {

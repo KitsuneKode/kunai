@@ -50,6 +50,9 @@ import {
   joinMpvScriptOpts,
   toYoutubeSubtitlePreferenceTokens,
 } from "@kunai/providers/youtube";
+import { isJsonString } from "@kunai/types";
+
+import { parseMpvAudioIntent } from "./infra/player/mpv-audio-intent";
 
 export { shouldApplyStartAtSeek };
 export { isLocalHlsManifestPlaybackUrl } from "@/infra/player/mpv-playback-url";
@@ -356,6 +359,11 @@ async function launchMpvInner(
     ipcSession = await openMpvIpcSession({
       endpoint: ipcEndpoint,
       onPropertyUpdate: ({ name, value, observedAt }) => {
+        if (name === "user-data/kunai-audio-intent") {
+          const event = parseMpvAudioIntent(isJsonString(value) ? value : undefined, opts.url);
+          if (event) emitPlaybackEvent(event);
+          return;
+        }
         applyObservedPropertySample(stats, { name, value, observedAt });
         if (stats.latestIpcSample) {
           watchdog.observe(stats.latestIpcSample);

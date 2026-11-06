@@ -1,9 +1,9 @@
 # setup-6-done · medium (100×34)
-   ready                                                                                setup 6⁄6
+   review                                                                               setup 6⁄6
  ──────────────────────────────────────────────────────────────────────────────────────────────────
 
           ❀
-          You're all set
+          Review your setup
           Shows & movies first · every profile stays editable
 
           ✓ Shows language        Original audio · English subtitles
@@ -19,4 +19,4 @@
             type a title, or /discover · /calendar · /random
             press / any time for commands
  ──────────────────────────────────────────────────────────────────────────────────────────────────
-   [enter] start watching  [b] change something                                             Setup
+   [enter] save & start  [b] change something                                               Setup

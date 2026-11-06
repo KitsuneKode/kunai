@@ -66,6 +66,12 @@ Android support is an experimental terminal preview for ARM64 and x64 Termux.
 The artifact targets Android 9 / API 28 or newer, but physical-device
 qualification is still pending. It is not a native Android app.
 
+### Public installer availability
+
+The latest published release, v0.3.0, does not include Android binaries.
+Use the candidate artifact route below for Android testing. The public installer
+route becomes available after a release publishes Android assets:
+
 ```sh
 pkg update
 pkg install curl termux-am
@@ -73,11 +79,48 @@ curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
 kunai --player vlc
 ```
 
-The installer detects Termux before generic Linux and selects
+The installer code detects Termux before generic Linux and selects
 `android-arm64-bionic` or `android-x64-bionic`. It installs under Termux-owned
-storage, not shared `/sdcard`. Install VLC or mpv-android separately as an
-Android app. Use `--player auto` for the chooser, `--player vlc`, or
-`--player mpv`.
+storage (`~/.local/share/kunai`), not shared `/sdcard`.
+
+### Candidate artifact route (testing & qualification)
+
+Unpublished releases (such as 0.4.0 candidate builds or commit `aed24a230`) are
+**not** hosted on public install URLs. To qualify a candidate release:
+
+1. Record `git rev-parse HEAD` and `git status --short` in the trusted checkout.
+2. Build the full CLI for your phone architecture (ARM64 shown):
+   ```sh
+   bun run --cwd apps/cli scripts/build-binaries.ts --only android-arm64
+   ```
+   The executable is `apps/cli/dist/bin/kunai-android-arm64`. The build also
+   writes `SHA256SUMS` in that directory. Use `--only android-x64` for x86-64.
+3. Transfer the executable and its trusted checksum to Termux. Shared Downloads
+   may be used for transfer; copy the executable into private Termux storage.
+4. In Termux, compare `sha256sum` with the trusted build digest, then run:
+   ```sh
+   mkdir -p "$HOME/.local/bin"
+   cp "$HOME/storage/downloads/kunai-android-arm64" "$HOME/.local/bin/kunai-candidate"
+   chmod 700 "$HOME/.local/bin/kunai-candidate"
+   sha256sum "$HOME/.local/bin/kunai-candidate"
+   "$HOME/.local/bin/kunai-candidate" --version
+   "$HOME/.local/bin/kunai-candidate" --player vlc
+   ```
+   Shared storage requires Termux's `termux-setup-storage` permission step.
+   Verify the digest before executing. Keep the installed release available
+   while testing the separately named candidate.
+
+This is the full CLI from `apps/cli`. The Node bundle under `apps/mobile/dist/`
+is a separate host proof with no search or providers; its
+`mobile-build-meta.json` does not describe this CLI executable.
+
+### Player selection and subtitle handoff
+
+Install VLC or mpv-android separately as an Android app. Kunai supports:
+
+- `--player auto`: Invokes the Android system chooser. External subtitles cannot be passed via the chooser and Kunai refuses that combination.
+- `--player vlc`: Explicit intent to `org.videolan.vlc`, with `subtitles_location` extra.
+- `--player mpv`: Explicit intent to `is.xyz.mpv`, with `subs` extra.
 
 Streams that need headers, cookies, or external subtitles play through a
 per-playback loopback gateway: Kunai serves the stream on `127.0.0.1` under an
@@ -87,19 +130,45 @@ and DASH BaseURLs, segment lists, and standard segment templates use the same
 guarded connection, including redirects and range requests.
 External subtitles ride the gateway and arrive as `subtitles_location` (VLC) or
 `subs` (mpv-android) extras, and deferred locators materialize into a served
-manifest. Select `--player vlc` or `--player mpv` for external subtitles;
-the Android chooser cannot pass them and Kunai refuses that combination.
+manifest. Select `--player vlc` or `--player mpv` for external subtitles.
 Idle shutdown waits for an active stream to finish. Shell exit stops the gateway.
 Blocked playlist URLs stay on a local refusal route, and every route requires
 the session token.
 
+Completed offline files and their optional subtitle sidecars also use a
+revocable loopback URL. VLC or mpv-android can read those bytes without direct
+access to Termux's private download directory. Keep Kunai running while the
+external player uses that URL. Missing or changed files are refused; replacing
+the handoff or exiting Kunai revokes the previous URL.
+
 Still refused, with an explanation instead of a broken launch: yt-dlp-only
-streams, local files, and non-HTTP schemes. DRM, malformed DASH, alternative
+streams and non-HTTP remote schemes. DRM, malformed DASH, alternative
 BaseURLs, unknown segment variables, and external DASH resources are not
 supported; the gateway returns a short refusal instead of forwarding them.
 Headered, subtitled, and deferred streams are covered by unit and contract tests
 but still need a physical-device
-pass before they graduate from preview. iOS is not supported.
+pass before they graduate from preview. Launch acceptance does not prove that
+VLC or mpv-android decoded the video. iOS is not supported by this CLI route.
+
+### Rollback and removal
+
+- **Binary rollback**:
+  ```sh
+  kunai rollback --list
+  kunai rollback --to <version>
+  ```
+- **Uninstall**:
+  ```sh
+  kunai uninstall
+  kunai uninstall --purge   # removes ~/.local/share/kunai and ~/.config/kunai
+  ```
+- **Candidate executable removal**: Remove only `$HOME/.local/bin/kunai-candidate`. It shares the normal CLI profile unless you explicitly isolate the storage roots; removing the executable preserves that profile.
+
+For a touch interface on the same device, run `kunai serve` and open the URL it
+prints in that device's browser. This local companion is experimental and does
+not expose Kunai to other devices on your network. See the
+[CLI reference](/docs/users/cli-reference#local-web-companion) for its current
+controls and browser playback limits.
 
 </Tab>
 <Tab value="Windows">

@@ -22,4 +22,4 @@
                                                                         Russian
                               Use the language the title was made in
  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-   [enter] next  [tab] profile  [←→] audio / subs  [a] copy to all  [S] finish defaults  [b] back                                   Setup
+   [enter] next  [tab] profile  [←→] audio / subs  [a] copy to all  [S] review defaults  [b] back                                   Setup
