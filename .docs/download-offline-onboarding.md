@@ -43,10 +43,16 @@ Layering rule: UI asks services for capability/state; services do not render UI.
 ## Setup Wizard Behavior
 
 Six screens, in order: dependencies, mode, language, playback/downloads &
-accounts, usage ping, done. Implementation is
+accounts, usage ping, review. Implementation is
 `apps/cli/src/app-shell/setup-shell.tsx`; the write map is
 `runSetupWizard` in `apps/cli/src/app-shell/workflows/setup-workflows.ts`.
 
+- **The welcome screen names capabilities before tools.** Dependency rows show
+  video playback, YouTube/downloads, media tools, anime search, artwork and
+  history/offline storage alongside their detected tools or paths. Enter opens
+  customization; `S` opens the final review with remaining recommendations.
+  The final action is labelled **save & start** because configuration is not
+  committed before that action.
 - **Every control hydrates from the live config.** `wizardInitialStateFromConfig`
   reads mode, language, playback toggles, download enablement and quality,
   `sync.<tracker>.enabled`, and the presence provider. A rerun therefore shows
@@ -58,8 +64,8 @@ accounts, usage ping, done. Implementation is
   recommendation, playback to all on, quality to 1080p. Standing decisions (account links, downloads
   enablement, presence) have no recommendation other than what the user already
   has, so `s` never flips one.
-- **`S` accepts every remaining recommendation and finishes.** On the consent
-  screen it stops instead of passing through.
+- **`S` accepts every remaining recommendation and opens review.** On the consent
+  screen it records a decline and advances to review; it never grants consent.
 - **`esc`/`q` discard.** Free from the first screen, because nothing has been
   decided; past it they ask once and a second press confirms. Any other key
   stands the prompt down and is consumed.

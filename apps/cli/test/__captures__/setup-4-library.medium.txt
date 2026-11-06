@@ -17,4 +17,4 @@
             ○ TMDB
             ○ Discord presence
  ──────────────────────────────────────────────────────────────────────────────────────────────────
-   [space] toggle  [↑↓] choose  [enter] next  [s] recommended  [S] finish defaults  [b] backSetup
+   [space] toggle  [↑↓] choose  [enter] next  [s] recommended  [S] review defaults  [b] backSetup

@@ -5,6 +5,9 @@ subtitle controls, and safer persistence, downloads and native installation.
 
 ### Highlights
 
+- Make first-run setup easier to scan with feature-first dependency rows,
+  clearer customize/review actions and a final **save & start** confirmation.
+  Reviewing defaults leaves analytics consent unchanged.
 - Keep search history, type-ahead requests and suggestions scoped to the active
   mode and provider. Cancel stale requests and submit the latest input even
   when typing and Enter arrive in the same frame.

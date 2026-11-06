@@ -23,4 +23,4 @@
    Use the language the title was made in
  ──────────────────────────────────────────────────────────────────────
    [enter] next  [tab] profile  [←→] audio / subs               Setup
-   [a] copy to all  [S] finish defaults  [b] back
+   [a] copy to all  [S] review defaults  [b] back
