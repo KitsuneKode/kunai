@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-28"
+lastReviewed: "2026-11-06"
 ---
 
 # Kunai — Testing Strategy
@@ -10,6 +10,11 @@ lastReviewed: "2026-10-28"
 Use this doc when adding tests, refactoring code to improve testability, or deciding what kind of test belongs to a change.
 
 The goal is not "more tests" in the abstract. The goal is confident, maintainable tests that catch real regressions without turning the repo into a flaky lab.
+
+Compiled-binary autoplay smokes identify playback processes by their
+`--input-ipc-server` argument and require episode-load events to share that
+single PID. Capability discovery can also spawn short mpv hardware probes;
+retain those diagnostic events in the trace when checking playback reuse.
 
 ## Repo Test Layout
 
