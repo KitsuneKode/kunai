@@ -357,7 +357,8 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // November 3 terminal provider status table and direct debrid magnet play routing added 23 KiB.
 // November 4 Invidious secondary direct YouTube provider and multi-language resilience added 3.4 KiB.
 // November 5 shadcn-style faceted filter pills, modal, and filter model added 3.7 KiB (3,301,079 bytes).
-export const NPM_BUNDLE_BUDGET_KB = 3_230;
+// November 6 mpv socket auto-reconnection, debounced resize wipe, hwaccel probe, and shell completions added 13 KiB (3,314,356 bytes).
+export const NPM_BUNDLE_BUDGET_KB = 3_245;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
