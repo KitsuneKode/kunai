@@ -48,7 +48,7 @@ describe("SiteFooter", () => {
       "https://github.com/KitsuneKode/run-cli",
       "https://github.com/KitsuneKode/nvchad-themes",
       "https://jsquestionslab.kitsunekode.in",
-      "https://yt-ddp.kitsunekode.in",
+      "https://github.com/KitsuneKode/kuwai",
     ]) {
       expect(html).toContain(`href="${href}"`);
     }

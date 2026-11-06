@@ -39,7 +39,14 @@ describe("workshop list", () => {
 
   test("names the projects the maintainer asked to feature", () => {
     const repos = workshop.map((project) => project.repo);
-    for (const wanted of ["nvchad-themes", "sweep", "kittymux", "run-cli", "js-questions-lab"]) {
+    for (const wanted of [
+      "nvchad-themes",
+      "sweep",
+      "kittymux",
+      "run-cli",
+      "js-questions-lab",
+      "kuwai",
+    ]) {
       expect(repos).toContain(wanted);
     }
     expect(repos).not.toContain("arche");

@@ -25,7 +25,7 @@
     "@kunai/types": "workspace:*",
     "@tabler/icons-react": "catalog:web",
     "@vercel/analytics": "^2.0.1",
-    "@vercel/speed-insights": "^2.0.0",
+    "@vercel/speed-insights": "^2.1.0",
     "class-variance-authority": "catalog:web",
     "clsx": "catalog:web",
     "fumadocs-core": "catalog:web",

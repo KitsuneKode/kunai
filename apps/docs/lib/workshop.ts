@@ -15,7 +15,7 @@
 
 const OWNER = "https://github.com/KitsuneKode";
 
-export type WorkshopKind = "CLI" | "Web app" | "Editor themes" | "Terminal tool";
+export type WorkshopKind = "CLI" | "Web app" | "Editor themes" | "Terminal tool" | "Desktop shell";
 
 export type WorkshopProject = {
   /** The GitHub repository name under KitsuneKode. */
@@ -43,6 +43,33 @@ function defineProject(
 
 export const workshop: readonly WorkshopProject[] = [
   defineProject({
+    repo: "js-questions-lab",
+    name: "JS Questions Lab",
+    kind: "Web app",
+    tagline:
+      "Interactive JavaScript interview practice with runnable snippets and an event-loop visualiser.",
+    language: "TypeScript",
+    siteUrl: "https://jsquestionslab.kitsunekode.in",
+    siteLabel: "jsquestionslab.kitsunekode.in",
+    preview: {
+      image: "/workshop/js-questions-lab.webp",
+      alt: "JS Questions Lab interactive interview runner and event-loop visualiser",
+    },
+  }),
+  defineProject({
+    repo: "sweep",
+    name: "sweep",
+    kind: "CLI",
+    tagline:
+      "Safe, fast artifact cleanup for any project tree: node_modules, dist, .next and target, with hard guardrails.",
+    language: "TypeScript",
+    siteUrl: "https://sweep.kitsunekode.in",
+    preview: {
+      image: "/workshop/sweep-demo.gif",
+      alt: "sweep fast project artifact cleanup terminal demonstration",
+    },
+  }),
+  defineProject({
     repo: "nvchad-themes",
     name: "NvChad Themes",
     kind: "Editor themes",
@@ -55,19 +82,6 @@ export const workshop: readonly WorkshopProject[] = [
     },
   }),
   defineProject({
-    repo: "sweep",
-    name: "sweep",
-    kind: "CLI",
-    tagline:
-      "Safe, fast artifact cleanup for any project tree: node_modules, dist, .next and target, with hard guardrails.",
-    language: "TypeScript",
-    siteUrl: "https://sweep.kitsunekode.in",
-    preview: {
-      image: "/workshop/sweep-site.png",
-      alt: "sweep website social preview: safe project artifact cleanup",
-    },
-  }),
-  defineProject({
     repo: "kittymux",
     name: "kittymux",
     kind: "Terminal tool",
@@ -75,8 +89,20 @@ export const workshop: readonly WorkshopProject[] = [
     language: "Python",
     siteUrl: "https://kittymux.kitsunekode.in",
     preview: {
-      image: "/workshop/kittymux-site.png",
-      alt: "kittymux website social preview: workspaces for kitty",
+      image: "/workshop/kittymux-screenshot.png",
+      alt: "kittymux workspace management and multi-agent HUD",
+    },
+  }),
+  defineProject({
+    repo: "kuwai",
+    name: "kuwai",
+    kind: "Desktop shell",
+    tagline:
+      "Hyprland session and rice shell with dynamic island, notifications, lock, and liquid glass styling.",
+    language: "QML",
+    preview: {
+      image: "/workshop/kuwai-rice.png",
+      alt: "kuwai desktop rice with dynamic island, notifications, and dark liquid glass",
     },
   }),
   defineProject({
@@ -89,33 +115,6 @@ export const workshop: readonly WorkshopProject[] = [
     preview: {
       image: "/workshop/run-cli.webp",
       alt: "run-cli project preview from its repository",
-    },
-  }),
-  defineProject({
-    repo: "js-questions-lab",
-    name: "JS Questions Lab",
-    kind: "Web app",
-    tagline:
-      "Interactive JavaScript interview practice with runnable snippets and an event-loop visualiser.",
-    language: "TypeScript",
-    siteUrl: "https://jsquestionslab.kitsunekode.in",
-    siteLabel: "jsquestionslab.kitsunekode.in",
-    preview: {
-      image: "/workshop/jsquestionslab-project.png",
-      alt: "JS Questions Lab repository preview from GitHub",
-    },
-  }),
-  defineProject({
-    repo: "yt-playlist-dedupe",
-    name: "yt-playlist-dedupe",
-    kind: "CLI",
-    tagline: "A safe Bun CLI that scans a single YouTube playlist and removes duplicate videos.",
-    language: "TypeScript",
-    siteUrl: "https://yt-ddp.kitsunekode.in",
-    siteLabel: "yt-ddp.kitsunekode.in",
-    preview: {
-      code: "Playlist → Review → Deduplicate\n\nKeep the videos you want.\nLeave duplicates behind.",
-      label: "YouTube playlist tools",
     },
   }),
 ];
