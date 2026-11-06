@@ -18,6 +18,7 @@
  */
 
 export const MIRURO_KNOWN_PIPE_BASE_URLS = [
+  "https://www.miruro.cx",
   "https://www.miruro.bz",
   "https://www.miruro.ru",
   "https://www.miruro.to",
@@ -29,11 +30,11 @@ export const MIRURO_STATUS_HEARTBEAT_URL =
   "https://status.miruro.com/api/status-page/heartbeat/miruro";
 
 /**
- * Only `miruro.<tld>` names are accepted from the status page. It is a remote
- * document, and a name that is not one of Miruro's own hosts must never become a
- * place Kunai sends requests.
+ * Only `miruro.<tld>` and `anivault.<tld>` names are accepted from the status page.
+ * It is a remote document, and a name that is not one of Miruro's own hosts must never
+ * become a place Kunai sends requests.
  */
-const MIRROR_NAME = /^miruro\.[a-z]{2,12}$/;
+const MIRROR_NAME = /^(?:miruro\.[a-z]{2,12}|anivault\.[a-z]{2,12})$/;
 
 /** In the status page's "mirrors" group, but serves a landing page with no pipe. */
 const NON_PIPE_MIRRORS = new Set(["miruro.com"]);
@@ -65,7 +66,14 @@ export function parseMiruroStatusMirrors(page: unknown, heartbeat: unknown): Mir
 
   const mirrors: MiruroMirrorStatus[] = [];
   for (const group of page.publicGroupList) {
-    if (!isRecord(group) || group.name !== "mirrors" || !Array.isArray(group.monitorList)) continue;
+    if (!isRecord(group) || !Array.isArray(group.monitorList)) continue;
+    const groupName = group.name;
+    const isMirrorsGroup =
+      groupName === "mirrors" ||
+      (groupName !== null &&
+        groupName !== undefined &&
+        String(groupName).toLowerCase().includes("mirrors"));
+    if (!isMirrorsGroup) continue;
     for (const monitor of group.monitorList) {
       if (!isRecord(monitor)) continue;
       const name = typeof monitor.name === "string" ? monitor.name.trim().toLowerCase() : "";

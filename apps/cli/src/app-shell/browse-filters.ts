@@ -125,6 +125,9 @@ function canApplyTypeFilterAtBrowse<T>(
   wanted: BrowseResultTypeFilter,
 ): boolean {
   if (wanted === "all") return true;
+  if (wanted === "live") {
+    return options.some((option) => option.localFilterFacts?.liveStatus !== undefined);
+  }
   if (wanted === "video" || wanted === "short" || wanted === "playlist" || wanted === "channel") {
     return options.some((option) => option.localFilterFacts?.resultKind !== undefined);
   }
@@ -246,6 +249,9 @@ function getOptionTypeFilterMatch<T>(
 ): boolean {
   if (wanted === "all") return true;
   const facts = option.localFilterFacts;
+  if (wanted === "live") {
+    return facts?.liveStatus === "live";
+  }
   if (wanted === "video" || wanted === "short" || wanted === "playlist" || wanted === "channel") {
     return facts?.resultKind === wanted;
   }

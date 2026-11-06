@@ -17,7 +17,9 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { ProviderResolveFailureError } from "@kunai/core";
 import { probeStreamReachability } from "@kunai/providers";
+import type { ProviderResolveResult } from "@kunai/types";
 
 import {
   createProviderSmokeProfile,
@@ -28,11 +30,14 @@ import {
 } from "./provider-smoke";
 import {
   buildReleaseProviderRouteCases,
+  buildReleaseProviderDiagnosticCases,
   resolveReleaseAnimeSearchTitle,
   type ReleaseProviderRouteCase,
 } from "./release-provider-routes";
 import {
   buildReleaseProviderSignoff,
+  buildReleaseAvailabilityDiagnostic,
+  isReleaseProviderSignoffAcceptable,
   classifyReleaseSignoffFailure,
   redactVolatileSignoffText,
   type ReleaseProviderSignoffRoute,
@@ -82,7 +87,11 @@ function requireProvider(
 async function resolveRoute(
   routeCase: ReleaseProviderRouteCase,
   container: Awaited<ReturnType<typeof import("@/container").createContainer>>,
-): Promise<ReleaseProviderSignoffRoute> {
+): Promise<{
+  route: ReleaseProviderSignoffRoute;
+  failureCodes: readonly string[];
+  catalogAbsenceObserved: boolean;
+}> {
   const startedAt = Date.now();
   const language =
     routeCase.lane === "anime"
@@ -97,6 +106,7 @@ async function resolveRoute(
   let successfulProvider: string | null = null;
   let streamUrl: string | null = null;
   let streamHeaders: Record<string, string> | undefined;
+  let providerResult: ProviderResolveResult | undefined;
 
   try {
     // The anime lane must prove the configured default can FIND the title
@@ -127,6 +137,7 @@ async function resolveRoute(
       },
     });
     failureCodes = resolved.result.failures.map((failure) => failure.code);
+    providerResult = resolved.result;
     streamCandidates = resolved.result.streams.length;
     streamUrl = resolved.stream?.url ?? null;
     streamHeaders = resolved.stream?.headers;
@@ -137,6 +148,7 @@ async function resolveRoute(
           routeCase.configuredProvider)
         : null;
   } catch (error) {
+    if (error instanceof ProviderResolveFailureError) providerResult = error.result;
     resolveError = error;
     const recovered = providerSmokeError(error);
     failureCodes = recovered.failureCodes ?? [];
@@ -169,8 +181,10 @@ async function resolveRoute(
         ? redactVolatileSignoffText(String(resolveError))
         : null;
 
-  return {
+  const route: ReleaseProviderSignoffRoute = {
     lane: routeCase.lane,
+    targetId: routeCase.lane === "anime" ? `search:${routeCase.searchQuery}` : routeCase.title.id,
+    targetTitle: routeCase.lane === "anime" ? routeCase.expectedTitle : routeCase.title.name,
     configuredProvider: routeCase.configuredProvider,
     successfulProvider,
     resolved,
@@ -183,6 +197,18 @@ async function resolveRoute(
       failureCodes,
     }),
     durationMs: Date.now() - startedAt,
+  };
+  return {
+    route,
+    failureCodes,
+    catalogAbsenceObserved:
+      providerResult?.trace.events?.some(
+        (event) =>
+          event.providerId === routeCase.configuredProvider &&
+          event.attributes?.catalogAbsent === true &&
+          event.attributes?.httpStatus === 200 &&
+          event.attributes?.responseKind === "json-null",
+      ) ?? false,
   };
 }
 
@@ -210,7 +236,16 @@ if (process.env.KUNAI_LIVE_RELEASE_SIGNOFF !== "1") {
 
   const routes: ReleaseProviderSignoffRoute[] = [];
   for (const routeCase of cases) {
-    routes.push(await resolveRoute(routeCase, container));
+    routes.push((await resolveRoute(routeCase, container)).route);
+  }
+  const diagnostics = [];
+  for (const diagnosticCase of buildReleaseProviderDiagnosticCases(
+    { provider: container.config.provider, animeProvider: container.config.animeProvider },
+    container.engine.getProviderIds(),
+  )) {
+    diagnostics.push(
+      buildReleaseAvailabilityDiagnostic(await resolveRoute(diagnosticCase, container)),
+    );
   }
 
   const signoff = buildReleaseProviderSignoff({
@@ -218,15 +253,10 @@ if (process.env.KUNAI_LIVE_RELEASE_SIGNOFF !== "1") {
     commitSha: readCommitSha(),
     version: readPackageVersion(),
     routes,
+    diagnostics,
   });
 
-  const ok = signoff.routes.every(
-    (route) =>
-      route.resolved &&
-      route.streamReachable === true &&
-      route.failureClass === null &&
-      route.successfulProvider === route.configuredProvider,
-  );
+  const ok = isReleaseProviderSignoffAcceptable(signoff, Date.now());
 
   const report = {
     ok,
@@ -237,6 +267,7 @@ if (process.env.KUNAI_LIVE_RELEASE_SIGNOFF !== "1") {
     commitSha: signoff.commitSha,
     version: signoff.version,
     routes: signoff.routes,
+    diagnostics: signoff.diagnostics,
   };
 
   printJson(report);

@@ -12,7 +12,7 @@ describe("buildYoutubeSubtitlePreferencePlan", () => {
       mpvSlang: "en,eng,en.*,eng.*",
       ytdlpSubLangs: "all",
       preferLanguage: "en",
-      statusHint: "YouTube subtitles · prefer English · all tracks attached",
+      statusHint: "YouTube subtitles · prefer English · tracks requested",
     });
   });
 
@@ -27,7 +27,7 @@ describe("buildYoutubeSubtitlePreferencePlan", () => {
       mpvSlang: "orig",
       ytdlpSubLangs: "all",
       preferLanguage: "original",
-      statusHint: "YouTube subtitles · prefer original · all tracks attached",
+      statusHint: "YouTube subtitles · prefer original · tracks requested",
     });
   });
 
@@ -35,7 +35,7 @@ describe("buildYoutubeSubtitlePreferencePlan", () => {
     expect(buildYoutubeSubtitlePreferencePlan(undefined)).toMatchObject({
       mpvSlang: null,
       ytdlpSubLangs: "all",
-      statusHint: "YouTube subtitles · all tracks attached",
+      statusHint: "YouTube subtitles · tracks requested",
     });
   });
 });

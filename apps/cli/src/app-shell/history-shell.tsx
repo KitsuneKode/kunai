@@ -4,6 +4,7 @@ import React from "react";
 import { compactProgressBar } from "./format/bar";
 import type { HistoryView } from "./history-view";
 import { useRailPoster } from "./hooks/use-rail-poster";
+import { MouseTarget } from "./mouse/MouseRegions";
 import { ClaudeTabRow } from "./primitives/ClaudeTabRow";
 import { buildMediaListRowColumns, computeMediaListRowLayout } from "./primitives/list-row-layout";
 import { ListRow } from "./primitives/ListRow";
@@ -23,12 +24,20 @@ export function HistoryShell({
   listWidth,
   rowWidth,
   pendingDelete = null,
+  onRowClick,
+  onSelectTab,
+  onSelectTypeFilter,
+  onWheel,
 }: {
   readonly view: HistoryView;
   readonly columns: number;
   readonly listWidth: number;
   readonly rowWidth: number;
   readonly pendingDelete?: HistoryDeletePending | null;
+  readonly onRowClick?: (index: number) => void;
+  readonly onSelectTab?: (index: number) => void;
+  readonly onSelectTypeFilter?: (index: number) => void;
+  readonly onWheel?: (direction: "up" | "down") => void;
 }) {
   const railWidth = 32;
   const railGap = 2;
@@ -73,6 +82,7 @@ export function HistoryShell({
             hint={effectiveListWidth >= 100 ? "⇥ Tab · ⇧⇥ cycles tabs" : undefined}
             maxWidth={effectiveListWidth}
             dense
+            pointer={onSelectTab ? { id: "history:tab", select: onSelectTab } : undefined}
           />
           <ClaudeTabRow
             labels={view.typeFilterLabels}
@@ -80,6 +90,9 @@ export function HistoryShell({
             hint={effectiveListWidth >= 100 ? "←→ type" : undefined}
             maxWidth={effectiveListWidth}
             dense
+            pointer={
+              onSelectTypeFilter ? { id: "history:type", select: onSelectTypeFilter } : undefined
+            }
           />
         </Box>
       )}
@@ -143,9 +156,8 @@ export function HistoryShell({
             const statusLabel = progress
               ? `${compactProgressBar(progress.percentage)} ${Math.round(progress.percentage)}%`
               : row.statusLabel;
-            return (
+            const rowNode = (
               <ListRow
-                key={`${row.titleId}-${item.flatIndex}`}
                 selected={selected}
                 rowWidth={effectiveRowWidth}
                 flexColumnIndex={rowLayout.flexColumnIndex}
@@ -159,6 +171,23 @@ export function HistoryShell({
                   layout: rowLayout,
                 })}
               />
+            );
+            if (!onRowClick && !onWheel) {
+              return (
+                <React.Fragment key={`${row.titleId}-${item.flatIndex}`}>{rowNode}</React.Fragment>
+              );
+            }
+            return (
+              <MouseTarget
+                key={`${row.titleId}-${item.flatIndex}`}
+                id={`history:row:${item.flatIndex}`}
+                active={Boolean(onRowClick)}
+                flexShrink={0}
+                onWheel={onWheel}
+                onClick={() => onRowClick?.(item.flatIndex)}
+              >
+                {rowNode}
+              </MouseTarget>
             );
           })}
           {view.showScrollDown ? <Text color={palette.dim}> ▼ ...</Text> : null}

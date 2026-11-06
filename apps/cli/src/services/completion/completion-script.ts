@@ -16,7 +16,13 @@ export function isCompletionShell(value: string): value is CompletionShell {
 }
 
 /** Flags handled by an earlier, more specific `case` arm in the generated scripts. */
-const SPECIALISED_VALUE_FLAGS = new Set(["-t", "--type", "--download-path", "--mpv-log-file"]);
+const SPECIALISED_VALUE_FLAGS = new Set([
+  "-t",
+  "--type",
+  "--download-path",
+  "--mpv-log-file",
+  "--hwdec",
+]);
 
 /**
  * Value-taking flags that have no better completion than "expect a value".
@@ -35,6 +41,13 @@ function allFlags(): readonly string[] {
 /** `--type` is the one flag with a closed value set worth completing. */
 const TYPE_VALUES = ["movie", "tv"] as const;
 
+const HWDEC_VALUES = ["default", "auto-safe", "no"] as const;
+
+/** zsh `case` pattern: every value-taking flag token. */
+function zshValueFlagPattern(): string {
+  return [...VALUE_FLAGS].sort().join("|");
+}
+
 function bashScript(): string {
   return `# kunai bash completion. Install:
 #   kunai completion bash > /etc/bash_completion.d/kunai
@@ -48,8 +61,12 @@ _kunai_complete() {
   case "$prev" in
     -t|--type)
       COMPREPLY=( $(compgen -W "${TYPE_VALUES.join(" ")}" -- "$cur") ); return ;;
-    --download-path|--mpv-log-file)
+    --download-path)
       COMPREPLY=( $(compgen -d -- "$cur") ); return ;;
+    --mpv-log-file)
+      COMPREPLY=( $(compgen -f -- "$cur") ); return ;;
+    --hwdec)
+      COMPREPLY=( $(compgen -W "${HWDEC_VALUES.join(" ")}" -- "$cur") ); return ;;
     completion)
       COMPREPLY=( $(compgen -W "${COMPLETION_SHELLS.join(" ")}" -- "$cur") ); return ;;
     ${valueFlags().join("|")})
@@ -73,19 +90,41 @@ function zshScript(): string {
 # or append to ~/.zshrc:
 #   eval "$(kunai completion zsh)"
 _kunai() {
-  local -a subcommands flags shells types
+  local -a subcommands flags shells types hwdecs
   subcommands=(${CLI_SUBCOMMANDS.map((c) => `'${c}'`).join(" ")})
   flags=(${allFlags()
     .map((f) => `'${f}'`)
     .join(" ")})
   shells=(${COMPLETION_SHELLS.map((s) => `'${s}'`).join(" ")})
   types=(${TYPE_VALUES.map((t) => `'${t}'`).join(" ")})
+  hwdecs=(${HWDEC_VALUES.map((h) => `'${h}'`).join(" ")})
 
   case "\${words[CURRENT-1]}" in
     -t|--type) _describe 'type' types; return ;;
-    --download-path|--mpv-log-file) _files -/; return ;;
+    --download-path) _files -/; return ;;
+    --mpv-log-file) _files; return ;;
+    --hwdec) _describe 'hwdec' hwdecs; return ;;
     completion) _describe 'shell' shells; return ;;
   esac
+
+  # After a value for any VALUE_FLAGS token, do not offer another flag until the
+  # user starts a new word that looks like a flag.
+  local i
+  i=CURRENT
+  while (( i > 2 )); do
+    i=$((i - 1))
+    local w="\${words[i]}"
+    if [[ "$w" == -* ]]; then
+      case "$w" in
+        ${zshValueFlagPattern()})
+          if (( i < CURRENT - 1 )) && [[ "\${words[CURRENT]}" != -* ]]; then
+            return
+          fi
+          ;;
+      esac
+      break
+    fi
+  done
 
   if (( CURRENT == 2 )) && [[ "\${words[CURRENT]}" != -* ]]; then
     _describe 'subcommand' subcommands
@@ -110,10 +149,11 @@ function fishScript(): string {
     `complete -c kunai -s t -l type -x -a "${TYPE_VALUES.join(" ")}"`,
     `complete -c kunai -l download-path -r -F`,
     `complete -c kunai -l mpv-log-file -r -F`,
+    `complete -c kunai -l hwdec -x -a "${HWDEC_VALUES.join(" ")}"`,
   ];
   for (const flag of allFlags()) {
     if (flag === "-t" || flag === "--type") continue;
-    if (flag === "--download-path" || flag === "--mpv-log-file") continue;
+    if (flag === "--download-path" || flag === "--mpv-log-file" || flag === "--hwdec") continue;
     const takesValue = VALUE_FLAGS.has(flag);
     const spec = flag.startsWith("--") ? `-l ${flag.slice(2)}` : `-s ${flag.slice(1)}`;
     lines.push(`complete -c kunai ${spec}${takesValue ? " -x" : ""}`);
@@ -122,6 +162,8 @@ function fishScript(): string {
 }
 
 function powershellScript(): string {
+  const valueFlagList = [...VALUE_FLAGS].map((f) => `'${f}'`).join(", ");
+  const hwdecList = HWDEC_VALUES.map((h) => `'${h}'`).join(", ");
   return `# kunai PowerShell completion. Install:
 #   kunai completion powershell | Out-String | Invoke-Expression
 # or persist it:
@@ -135,13 +177,31 @@ Register-ArgumentCompleter -Native -CommandName kunai -ScriptBlock {
     .join(", ")})
   $shells = @(${COMPLETION_SHELLS.map((s) => `'${s}'`).join(", ")})
   $types = @(${TYPE_VALUES.map((t) => `'${t}'`).join(", ")})
+  $hwdecs = @(${hwdecList})
+
+  $valueFlags = @(${valueFlagList})
 
   $elements = $commandAst.CommandElements
+  if ($elements.Count -ge 3) {
+    $prev = $elements[$elements.Count - 2].ToString()
+    $prevPrev = $elements[$elements.Count - 3].ToString()
+    if ($valueFlags -contains $prevPrev -and $prev -notlike '-*' -and -not $wordToComplete.StartsWith('-')) {
+      return
+    }
+  }
+
   $previous = if ($elements.Count -ge 2) { $elements[$elements.Count - 2].ToString() } else { '' }
 
   $candidates = switch ($previous) {
     '-t' { $types }
     '--type' { $types }
+    '--hwdec' { $hwdecs }
+    '--download-path' {
+      Get-ChildItem -Path ($wordToComplete + '*') -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+    }
+    '--mpv-log-file' {
+      Get-ChildItem -Path ($wordToComplete + '*') -File -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+    }
     'completion' { $shells }
     default {
       if ($elements.Count -le 2 -and -not $wordToComplete.StartsWith('-')) { $subcommands } else { $flags }

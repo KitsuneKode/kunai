@@ -4,7 +4,7 @@ name: Provider matrix (opt-in live)
 # Stores a redacted matrix JSON artifact with healthy / provider-drift /
 # environment-network / harness-failure classifications.
 # Optional mode `release-signoff` writes ReleaseProviderSignoff schema evidence
-# for default movie/series/anime routes (artifact: release-provider-signoff.json).
+# for four controls plus catalog diagnostics (artifact: release-provider-signoff.json).
 
 on:
   workflow_dispatch:
@@ -160,10 +160,16 @@ jobs:
             `Version: \`${report.version}\``,
             `Commit: \`${report.commitSha}\``,
             ``,
-            `| Lane | Configured | Successful | Resolved | Reachable | Failure | Duration |`,
-            `| --- | --- | --- | --- | --- | --- | --- |`,
+            `| Lane | Control | Configured | Successful | Resolved | Reachable | Failure | Duration |`,
+            `| --- | --- | --- | --- | --- | --- | --- | --- |`,
             ...(report.routes ?? []).map((row) =>
-              `| ${row.lane} | ${row.configuredProvider} | ${row.successfulProvider ?? "—"} | ${row.resolved} | ${row.streamReachable} | ${row.failureClass ?? "—"} | ${row.durationMs}ms |`,
+              `| ${row.lane} | ${row.targetTitle} (${row.targetId}) | ${row.configuredProvider} | ${row.successfulProvider ?? "—"} | ${row.resolved} | ${row.streamReachable} | ${row.failureClass ?? "—"} | ${row.durationMs}ms |`,
+            ),
+            ``,
+            `| Diagnostic | Provider | Status | Verified absence | Reachable | Failure |`,
+            `| --- | --- | --- | --- | --- | --- |`,
+            ...(report.diagnostics ?? []).map((row) =>
+              `| ${row.targetTitle} (${row.targetId}) | ${row.provider} | ${row.status} | ${row.verifiedNotFound} | ${row.streamReachable} | ${row.failureClass ?? "—"} |`,
             ),
           ];
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join("\n")}\n`);

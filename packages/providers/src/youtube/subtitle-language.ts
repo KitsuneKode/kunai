@@ -64,7 +64,7 @@ export function buildYoutubeSubtitlePreferencePlan(
       mpvSlang: null,
       ytdlpSubLangs: "all",
       preferLanguage: null,
-      statusHint: "YouTube subtitles · all tracks attached",
+      statusHint: "YouTube subtitles · tracks requested",
     };
   }
   if (raw === "none") {
@@ -80,7 +80,7 @@ export function buildYoutubeSubtitlePreferencePlan(
       mpvSlang: null,
       ytdlpSubLangs: "all",
       preferLanguage: null,
-      statusHint: "YouTube subtitles · all tracks attached",
+      statusHint: "YouTube subtitles · tracks requested",
     };
   }
   if (raw === "original") {
@@ -88,7 +88,7 @@ export function buildYoutubeSubtitlePreferencePlan(
       mpvSlang: "orig",
       ytdlpSubLangs: "all",
       preferLanguage: "original",
-      statusHint: "YouTube subtitles · prefer original · all tracks attached",
+      statusHint: "YouTube subtitles · prefer original · tracks requested",
     };
   }
 
@@ -98,7 +98,7 @@ export function buildYoutubeSubtitlePreferencePlan(
     mpvSlang: buildMpvSlangVariants(iso1),
     ytdlpSubLangs: "all",
     preferLanguage: iso1,
-    statusHint: `YouTube subtitles · prefer ${display} · all tracks attached`,
+    statusHint: `YouTube subtitles · prefer ${display} · tracks requested`,
   };
 }
 

@@ -13,6 +13,12 @@ import {
   type PlatformInstall,
 } from "@/infra/os/install-commands";
 import { discoverMpvInvocation } from "@/infra/player/mpv-discovery";
+import {
+  emptyMpvHardwareAccelProbe,
+  probeMpvHardwareAcceleration,
+  type MpvHardwareAccelProbe,
+  type MpvHwaccelProbeDeps,
+} from "@/infra/player/mpv-hwaccel-probe";
 import { redactDiagnosticValue, resolveRedactionHomeDir } from "@/services/diagnostics/redaction";
 import { resolveAnidbCurl } from "@kunai/providers";
 import { getKunaiPaths } from "@kunai/storage";
@@ -78,6 +84,8 @@ export interface CapabilitySnapshot {
    */
   readonly curl: CurlCapability;
   readonly image: ImageCapability;
+  /** mpv `--hwdec=help` + a one-frame `auto-safe` smoke render; empty when mpv is missing. */
+  readonly mpvHardwareAccel: MpvHardwareAccelProbe;
   readonly issues: readonly CapabilityIssue[];
 }
 
@@ -100,7 +108,10 @@ function capabilityFingerprint(snapshot: CapabilitySnapshot): string {
     .sort()
     .join(",");
   const curlBits = `${snapshot.curl.present ? "1" : "0"}:${snapshot.curl.profile ?? "plain"}`;
-  return `mpv:${snapshot.mpv ? "1" : "0"}:${snapshot.mpvRequired ? "required" : "optional"}|ffprobe:${snapshot.ffprobe ? "1" : "0"}|ytDlp:${snapshot.ytDlp ? "1" : "0"}|curl:${curlBits}|image:${snapshot.image.renderer}|terminal:${snapshot.image.terminal}|issues:${issueBits}`;
+  const hw =
+    `${snapshot.mpvHardwareAccel.drivers.join("+")}|` +
+    `${snapshot.mpvHardwareAccel.autoSafeOk ? "1" : "0"}:${snapshot.mpvHardwareAccel.autoSafeDriver}`;
+  return `mpv:${snapshot.mpv ? "1" : "0"}:${snapshot.mpvRequired ? "required" : "optional"}|ffprobe:${snapshot.ffprobe ? "1" : "0"}|ytDlp:${snapshot.ytDlp ? "1" : "0"}|curl:${curlBits}|image:${snapshot.image.renderer}|terminal:${snapshot.image.terminal}|hw:${hw}|issues:${issueBits}`;
 }
 
 async function loadCapabilityNoticeState(): Promise<CapabilityNoticeState | null> {
@@ -166,6 +177,10 @@ export async function probeCapabilities(
     readTextFile?: (path: string) => string | null;
     /** Platform seam for Windows-only curl-impersonate paths. Injected by tests. */
     platform?: NodeJS.Platform;
+    /** mpv hwdec probe seam — defaults to spawning mpv; tests inject a stub. */
+    probeMpvHardwareAcceleration?: (deps: MpvHwaccelProbeDeps) => MpvHardwareAccelProbe;
+    /** Whether to run full mpv hwaccel probe (defaults to false on launch to avoid blocking on drivers). */
+    probeMpvHwaccel?: boolean;
   } = {},
 ): Promise<CapabilitySnapshot> {
   const requireYtDlp = options.requireYtDlp ?? false;
@@ -218,6 +233,18 @@ export async function probeCapabilities(
     profile: resolvedCurl?.profile ?? null,
   };
   const image = detectImageCapability();
+  const runMpvHwaccelProbe = options.probeMpvHardwareAcceleration ?? probeMpvHardwareAcceleration;
+  const shouldProbeHwaccel =
+    options.probeMpvHwaccel ?? options.probeMpvHardwareAcceleration !== undefined;
+  const mpvHardwareAccel =
+    mpv && shouldProbeHwaccel
+      ? runMpvHwaccelProbe({
+          which,
+          ...(options.exists && { exists: options.exists }),
+          platform,
+          detectImageCapability: () => image,
+        })
+      : emptyMpvHardwareAccelProbe(image);
 
   if (requireMpv && !mpv) {
     issues.push({
@@ -319,6 +346,7 @@ export async function probeCapabilities(
     ytDlp,
     curl,
     image,
+    mpvHardwareAccel,
     issues,
   };
 }

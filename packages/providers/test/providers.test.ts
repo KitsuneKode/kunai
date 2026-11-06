@@ -1411,6 +1411,7 @@ test("miruro pipe requests cover every official mirror", () => {
   // earlier "miruro.tv/.to are TLS-dead" reading came from a network whose
   // reachability to them flaps.
   expect(createMiruroPipeRequestUrls("payload")).toEqual([
+    "https://www.miruro.cx/api/secure/pipe?e=payload",
     "https://www.miruro.bz/api/secure/pipe?e=payload",
     "https://www.miruro.ru/api/secure/pipe?e=payload",
     "https://www.miruro.to/api/secure/pipe?e=payload",

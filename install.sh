@@ -1107,17 +1107,37 @@ create_activation_reclaim_claim() {
 	printf '%s' "$claim_path"
 }
 
+first_activation_quarantine() {
+	local lock_path="$1" quarantine raw
+	for quarantine in "${lock_path}.quarantine."*; do
+		[[ -f "$quarantine" ]] || continue
+		raw="$(cat "$quarantine" 2>/dev/null || true)"
+		if read_activation_lock "$raw" && activation_lock_owner_is_stale; then
+			rm -f "$quarantine"
+			continue
+		fi
+		printf '%s\n' "$quarantine"
+		return 0
+	done
+	return 1
+}
+
 restore_activation_quarantine() {
-	local quarantine_path="$1" lock_path="$2"
+	local quarantine_path="$1" lock_path="$2" attempt=0
 	# A hard link is an exclusive restore: it can never overwrite a canonical
 	# path created by a newer owner while reclamation was being validated.
-	if ln "$quarantine_path" "$lock_path" 2>/dev/null; then
-		rm -f "$quarantine_path"
-		return 0
-	fi
-	# EEXIST means a newer canonical owner won and must be preserved. Any
-	# hard-link failure while canonical is absent is fail-closed: the observed
-	# owner remains in quarantine and this contender must not activate.
+	while ((attempt < 10)); do
+		if ln "$quarantine_path" "$lock_path" 2>/dev/null; then
+			rm -f "$quarantine_path"
+			return 0
+		fi
+		# If canonical is present, an in-flight contender may have created it and
+		# will back off once it observes the quarantine file. Retry briefly.
+		[[ ! -e "$lock_path" ]] && return 1
+		attempt=$((attempt + 1))
+		activation_lock_sleep 5
+	done
+	# After retry budget, preserve the newer canonical owner if still present.
 	[[ -e "$lock_path" ]] && return 0
 	return 1
 }
@@ -1212,9 +1232,9 @@ acquire_activation_lock() {
 			return 1
 		fi
 		attempted=1
-		if [[ -n "$(first_activation_reclaim_claim "$lock_path")" ]]; then
+		if [[ -n "$(first_activation_reclaim_claim "$lock_path")" || -n "$(first_activation_quarantine "$lock_path")" ]]; then
 			if (($(activation_lock_now_ms) >= deadline)); then
-				err "Activation reclamation is already in progress for version $version"
+				err "Activation reclamation or quarantine is already in progress for version $version"
 				return 1
 			fi
 			activation_lock_poll_until "$deadline" || continue
@@ -1225,7 +1245,7 @@ acquire_activation_lock() {
 			umask 077
 			printf '%s\n' "$activation_record" >"$lock_path"
 		) 2>/dev/null; then
-			if [[ -z "$(first_activation_reclaim_claim "$lock_path")" ]]; then
+			if [[ -z "$(first_activation_reclaim_claim "$lock_path")" && -z "$(first_activation_quarantine "$lock_path")" ]]; then
 				return 0
 			fi
 			release_activation_lock "$lock_path" "$ACTIVATION_LOCK_OWNER_ID"

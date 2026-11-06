@@ -1,9 +1,9 @@
 name: Package channels
 
-# Render and publish the Homebrew formula, Scoop manifest, and AUR kunai-bin
-# package from the published GitHub Release. Every renderer is pure: it reads
-# the release tag plus SHA256SUMS.archives and writes deterministic channel
-# files, so the artifact uploaded below can be diffed against a local render.
+# Render and publish the Homebrew formula, Scoop manifest, AUR kunai-bin
+# package, and WinGet manifests from the published GitHub Release. Every renderer
+# is pure: it reads the release tag plus SHA256SUMS.archives and writes deterministic
+# channel files, so the artifact uploaded below can be diffed against a local render.
 
 on:
   release:
@@ -57,6 +57,26 @@ jobs:
             --license .channels-src/LICENSE \
             --out dist/channels
           find dist/channels -type f -print | sort
+
+      - name: Validate rendered channel files
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          WINGET_DIR="dist/channels/winget/manifests/k/KitsuneKode/Kunai/${VERSION}"
+          for f in \
+            "dist/channels/Formula/kunai.rb" \
+            "dist/channels/bucket/kunai.json" \
+            "dist/channels/aur/kunai-bin/PKGBUILD" \
+            "dist/channels/aur/kunai-bin/.SRCINFO" \
+            "$WINGET_DIR/KitsuneKode.Kunai.yaml" \
+            "$WINGET_DIR/KitsuneKode.Kunai.installer.yaml" \
+            "$WINGET_DIR/KitsuneKode.Kunai.locale.en-US.yaml"; do
+            if [ ! -s "$f" ]; then
+              echo "::error::Missing or empty channel file: $f"
+              exit 1
+            fi
+          done
+          echo "Verified Homebrew, Scoop, AUR, and WinGet manifest outputs."
 
       - name: Upload rendered channels
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
@@ -143,3 +163,55 @@ jobs:
           git add PKGBUILD .SRCINFO
           git commit -m "kunai ${TAG}"
           git push origin HEAD
+
+      - name: WinGet publish skipped — no token
+        if: ${{ env.WINGET_TOKEN == '' && env.PACKAGE_CHANNELS_TOKEN == '' }}
+        env:
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+          PACKAGE_CHANNELS_TOKEN: ${{ secrets.PACKAGE_CHANNELS_TOKEN }}
+        run: echo "::notice::Neither WINGET_TOKEN nor PACKAGE_CHANNELS_TOKEN is set; skipping winget-pkgs PR submission."
+
+      - name: Publish WinGet manifests to winget-pkgs
+        if: ${{ env.WINGET_TOKEN != '' || env.PACKAGE_CHANNELS_TOKEN != '' }}
+        env:
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN || secrets.PACKAGE_CHANNELS_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          WINGET_SRC="dist/channels/winget/manifests/k/KitsuneKode/Kunai/${VERSION}"
+          echo "Publishing WinGet manifests for Kunai ${VERSION}..."
+
+          export GH_TOKEN="${WINGET_TOKEN}"
+          rm -rf .channels-push/winget-pkgs
+
+          # Fork microsoft/winget-pkgs if not already forked, and clone fork
+          if ! gh repo fork microsoft/winget-pkgs --clone=true .channels-push/winget-pkgs --remote=true; then
+            git clone --depth 1 "https://x-access-token:${WINGET_TOKEN}@github.com/KitsuneKode/winget-pkgs.git" .channels-push/winget-pkgs
+          fi
+
+          cd .channels-push/winget-pkgs
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          BRANCH="kunai-${VERSION}"
+          git checkout -B "$BRANCH"
+
+          TARGET_DIR="manifests/k/KitsuneKode/Kunai/${VERSION}"
+          mkdir -p "$TARGET_DIR"
+          cp -r "../../${WINGET_SRC}/"* "$TARGET_DIR/"
+
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "::notice::winget-pkgs fork already carries Kunai ${VERSION}; nothing to push."
+            exit 0
+          fi
+
+          git add "$TARGET_DIR"
+          git commit -m "New version: KitsuneKode.Kunai version ${VERSION}"
+          git push -u origin "$BRANCH" --force
+
+          gh pr create \
+            --repo microsoft/winget-pkgs \
+            --title "New version: KitsuneKode.Kunai version ${VERSION}" \
+            --body "Update KitsuneKode.Kunai to version ${VERSION}" \
+            --head "$(gh api user --jq .login):$BRANCH" \
+            --base master || echo "::warning::PR may already exist or could not be created."

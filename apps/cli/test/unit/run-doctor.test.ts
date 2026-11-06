@@ -6,7 +6,8 @@ import { join } from "node:path";
 import { CURL_INSTALL, MPV_INSTALL, YT_DLP_INSTALL } from "@/infra/os/install-commands";
 import { getInstallLayoutPaths } from "@/services/update/native-installer/install-layout";
 import { runDoctor, type RunDoctorOptions } from "@/services/update/run-doctor";
-import type { CapabilitySnapshot } from "@/ui";
+
+import { capabilitySnapshotFixture } from "../harness/capability-snapshot-fixture";
 
 const FIXED_DATE = "2026-07-21T10:00:00.000Z";
 const made: string[] = [];
@@ -17,13 +18,8 @@ afterEach(async () => {
   }
 });
 
-function emptyCapabilities(): CapabilitySnapshot {
-  return {
-    mpv: true,
-    mpvRequired: true,
-    ffprobe: true,
-    ytDlp: true,
-    curl: { present: true, impersonates: true, profile: "chrome150" },
+function emptyCapabilities() {
+  return capabilitySnapshotFixture({
     image: {
       terminal: "unknown",
       protocol: "none",
@@ -31,8 +27,7 @@ function emptyCapabilities(): CapabilitySnapshot {
       available: false,
       reason: "test",
     },
-    issues: [],
-  };
+  });
 }
 
 async function makeLayout() {

@@ -23,7 +23,6 @@ import { kickassanimeProviderModule } from "../src/kickassanime/direct";
 import { miruroProviderModule } from "../src/miruro/direct";
 import { movyProviderModule } from "../src/movy/direct";
 import { rivestreamProviderModule } from "../src/rivestream/direct";
-import { videasyProviderModule } from "../src/videasy/index";
 import { vidlinkProviderModule } from "../src/vidlink/direct";
 import { vidrockProviderModule } from "../src/vidrock/direct";
 import { youtubeProviderModule } from "../src/youtube/index";
@@ -124,12 +123,6 @@ interface ProbeSpec {
 // probe row is invisible on the status board. Guarded below so importing this
 // list never runs the sweep itself.
 export const PROBES: readonly ProbeSpec[] = [
-  {
-    id: "videasy",
-    module: videasyProviderModule,
-    frontDoor: "https://api.videasy.to",
-    input: MOVIE_INPUT,
-  },
   {
     id: "vidlink",
     module: vidlinkProviderModule,

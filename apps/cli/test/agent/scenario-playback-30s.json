@@ -1,0 +1,11 @@
+{
+  "argv": ["-i", "youtube:aqz-KE-bpKQ"],
+  "steps": [
+    { "type": "decoded" },
+    { "type": "capture", "value": "hud-30s" },
+    { "type": "seek", "seconds": 25 },
+    { "type": "sleep", "ms": 3000 },
+    { "type": "capture", "value": "hud-after-seek" },
+    { "type": "key", "value": "q" }
+  ]
+}

@@ -157,3 +157,47 @@ test("a constrained parent cannot squeeze suggestion rows into each other", () =
     h.unmount();
   }
 });
+
+test("wide suggestion surface renders right-hand series preview pane with poster tile", () => {
+  const model = buildSuggestionBand({
+    query: "game",
+    local: [],
+    remotePending: false,
+    remote: [
+      {
+        id: "got",
+        title: "Game of Thrones",
+        meta: "2011 · Series",
+        source: "catalog",
+        posterUrl: "https://image.tmdb.org/t/p/w342/got.jpg",
+        rating: 8.4,
+        overview: "Nine noble families fight for control over the lands of Westeros.",
+        value: {
+          id: "got",
+          title: "Game of Thrones",
+          type: "series",
+          posterUrl: "https://image.tmdb.org/t/p/w342/got.jpg",
+          rating: 8.4,
+          overview: "Nine noble families fight for control over the lands of Westeros.",
+        },
+      },
+    ],
+  });
+  const h = render(<SearchSuggestionBand model={model} selectedIndex={0} width={100} />, {
+    columns: 100,
+    rows: 30,
+  });
+  try {
+    const frame = stripAnsi(h.lastFrame());
+    expect(frame).toContain("Suggestions · ↑↓ move · Esc dismiss");
+    expect(frame).toContain("Game of Thrones");
+    expect(frame).toContain("2011 · Series");
+    expect(frame).toContain("Preview · Enter open · Ctrl+O details");
+    expect(frame).toContain("8.4 ★");
+    expect(frame).toContain("Nine noble families");
+    // Initials tile GO renders when poster image is loading or unresolvable in headless test
+    expect(frame).toContain("GO");
+  } finally {
+    h.unmount();
+  }
+});

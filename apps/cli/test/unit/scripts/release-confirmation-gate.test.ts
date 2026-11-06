@@ -16,6 +16,7 @@ import {
   type ReleaseGateEvidenceDocument,
   type ReleaseGateName,
 } from "../../../../../scripts/release-gate-evidence";
+import { releaseAvailabilityFixture } from "../../helpers/release-signoff";
 import {
   buildReleaseProviderSignoff,
   type ReleaseProviderSignoffRoute,
@@ -34,6 +35,8 @@ function baseRoutes(
   return [
     {
       lane: "movie",
+      targetId: "27205",
+      targetTitle: "Inception",
       configuredProvider: "videasy",
       successfulProvider: "videasy",
       resolved: true,
@@ -44,7 +47,22 @@ function baseRoutes(
       ...overrides.movie,
     },
     {
+      lane: "movie",
+      targetId: "550",
+      targetTitle: "Fight Club",
+      configuredProvider: "videasy",
+      successfulProvider: "videasy",
+      resolved: true,
+      streamCandidates: 1,
+      streamReachable: true,
+      failureClass: null,
+      durationMs: 100,
+      ...overrides.movie,
+    },
+    {
       lane: "series",
+      targetId: "299167",
+      targetTitle: "Dutton Ranch",
       configuredProvider: "videasy",
       successfulProvider: "videasy",
       resolved: true,
@@ -56,6 +74,8 @@ function baseRoutes(
     },
     {
       lane: "anime",
+      targetId: "search:Onigiri",
+      targetTitle: "Onigiri",
       configuredProvider: "allanime",
       successfulProvider: "allanime",
       resolved: true,
@@ -115,6 +135,7 @@ function validInput(overrides: Partial<ReleaseConfirmationInput> = {}): ReleaseC
     nowMs: NOW_MS,
     packageVersion: version,
     providerEvidence: buildReleaseProviderSignoff({
+      diagnostics: releaseAvailabilityFixture(),
       generatedAt: "2026-07-21T06:00:00.000Z",
       commitSha,
       version,
@@ -194,6 +215,19 @@ describe("evaluateReleaseConfirmation", () => {
     ).toThrow(/older than 24h|stale|fresh/i);
   });
 
+  test("rejects legacy provider signoff even when its controls otherwise pass", () => {
+    const input = validInput();
+    const legacy = { ...input.providerEvidence, schemaVersion: 1 };
+    // SAFETY: Simulate a legacy artifact entering the runtime confirmation boundary.
+    const providerEvidence = legacy as ReleaseConfirmationInput["providerEvidence"];
+    expect(() =>
+      evaluateReleaseConfirmation({
+        ...input,
+        providerEvidence,
+      }),
+    ).toThrow(/schemaVersion/i);
+  });
+
   test("rejects missing provider lane", () => {
     const input = validInput();
     expect(() =>
@@ -201,7 +235,7 @@ describe("evaluateReleaseConfirmation", () => {
         ...input,
         providerEvidence: {
           ...input.providerEvidence,
-          routes: baseRoutes().slice(0, 2),
+          routes: baseRoutes().slice(0, 3),
         },
       }),
     ).toThrow(/missing.*lane|lane: anime/i);

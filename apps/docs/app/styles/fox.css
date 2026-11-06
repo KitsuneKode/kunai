@@ -374,8 +374,10 @@ a:focus-visible .kunai-nav-title .kunai-fox {
   transition: transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.kunai-roamer__fox:hover {
-  transform: scale(1.08);
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .kunai-roamer__fox:hover {
+    transform: scale(1.08);
+  }
 }
 
 /* While she walks, the legs are the animation: `KunaiFoxWalker` is posed every
@@ -489,10 +491,40 @@ a:focus-visible .kunai-nav-title .kunai-fox {
   opacity: 1;
 }
 
+.kunai-roamer--docked {
+  inset: auto max(0.5rem, env(safe-area-inset-right)) max(0.5rem, env(safe-area-inset-bottom)) auto;
+  will-change: auto;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  /* She is not rendered at all under reduced motion — see the component. This
-     is only a floor in case the query flips after mount. */
-  .kunai-roamer {
-    display: none;
+  .kunai-roamer *,
+  .kunai-roamer *::before,
+  .kunai-roamer *::after {
+    animation: none;
+    transition: none;
   }
+}
+
+.kunai-roamer[data-paused="true"] * {
+  animation-play-state: paused;
+}
+
+.kunai-roamer__dismiss {
+  position: absolute;
+  inset-inline-end: 0;
+  inset-block-end: calc(100% - 0.5rem);
+  display: grid;
+  place-items: center;
+  min-inline-size: 44px;
+  min-block-size: 44px;
+  pointer-events: auto;
+  border: 1px solid var(--kunai-line);
+  border-radius: 50%;
+  background: var(--kunai-surface);
+  color: var(--color-fd-foreground);
+  cursor: pointer;
+}
+.kunai-roamer__dismiss:focus-visible {
+  outline: 2px solid var(--color-fd-primary);
+  outline-offset: 3px;
 }

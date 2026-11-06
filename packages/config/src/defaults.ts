@@ -42,11 +42,11 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // has rotted — api.videasy.to (the provider's TMDB-mirror DB and legacy
   // endpoint host) no longer resolves at DNS, so title-metadata enrichment
   // depends on the mirror chain. The wings stream endpoints on
-  // api.speedracelight.com answered CF 502 from 2026-09-21 and every player
-  // host (player.videasy.to, cineby.at, cineplay.to) is unreachable — Videasy
-  // stays registered and last in the order so an upstream revival needs no
-  // code change.
-  provider: "vidlink",
+  // Series automatic lane (2026-11-04): VidRock leads. VidRock provides 5 live server
+  // lanes with AES-256-GCM encryption, sub-7s latency, and verified multi-language audio/subs.
+  // Rivestream follows (eleven-service local cycle behind Citadel). Movy follows (16 geo-lanes,
+  // multi-language). VidLink and Videasy sit at the tail as fallbacks.
+  provider: "vidrock",
   // HiAnime leads the anime lane. AniDB was removed from the production roster
   // when anidb.app began redirecting to an unrelated site (HTTP 302 to
   // anilab.so, 2026-10-24); ani-cli had already moved to HiAnime (c99221d).
@@ -56,31 +56,28 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // `createProviderPrioritySnapshot` prepends `provider` to this array, so it
   // holds the *rest* of the order — not the lane default. Rivestream leads the
   // rest (eleven-service local cycle behind the shared resolve gate, so one
-  // dead mirror costs a candidate, not the lane); VidRock follows (multi-lane
-  // AES-GCM payloads behind the direct-stream gate). Movy is named explicitly
-  // ahead of Videasy: unlisted it floated to the very end, behind a provider
-  // whose upstream is gone, while its own aggregator still resolves. Videasy
-  // stays named and last rather than floating: its session/turnstile path and
-  // rotted `videasy.to` domain make it the fallback, not the lead — registered,
-  // not removed.
-  providerPriority: ["rivestream", "vidrock", "movy", "videasy"],
+  // dead mirror costs a candidate, not the lane); Movy follows (16 geo-lanes,
+  // multi-language). VidLink sits at the tail. Videasy was retired from production
+  // in revision 8 due to defunct upstream services.
+  providerPriority: ["rivestream", "movy", "vidlink"],
   // Ordering, not an allowlist: every registered anime module stays reachable.
   // `createProviderPrioritySnapshot` prepends `animeProvider`, so this array
   // holds the *rest* of the order and must not repeat the lane default.
   // KickAssAnime leads the rest (own catalog, own site, own CDN, soft VTT
-  // subs); AnimeGG follows (multi-rung MP4, hardsubbed). AllAnime precedes
-  // Miruro at the tail — its `/api/secure/pipe` route is gone from their
-  // shipped bundle (2026-10-13) but the module stays registered for revival.
-  animeProviderPriority: ["kickassanime", "animegg", "allanime", "miruro"],
+  // subs); AnimeGG follows (multi-rung MP4, hardsubbed). Miruro precedes
+  // AllAnime now that its .cx mirror is active.
+  animeProviderPriority: ["kickassanime", "animegg", "miruro", "allanime"],
   // Bump alongside any lane-default change above; see `providerDefaultsRevision`.
   // Revision 3 leads with VidLink + HiAnime and covers both lanes.
   // Revision 4 reorders dead/degraded tails: Movy is named before Videasy in
   // the series lane and AllAnime precedes AniDB in the anime lane.
   // Revision 5 demoted Miruro and AniDB behind AllAnime while both stayed live.
   // Revision 6 retires AniDB from production and drops it from shipped defaults.
-  providerDefaultsRevision: 6,
+  // Revision 7 leads with VidRock, promotes Miruro with active .cx mirror, and adds Invidious to YouTube priority.
+  // Revision 8 retires Videasy from production and drops it from shipped defaults.
+  providerDefaultsRevision: 8,
   disabledProviders: [],
-  youtubeProviderPriority: ["youtube"],
+  youtubeProviderPriority: ["youtube", "invidious"],
   youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },
   youtubeMetadata: { extractorArgs: DEFAULT_YOUTUBE_EXTRACTOR_ARGS },
   wyzieApiKey: "",
@@ -110,6 +107,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   mpvKunaiScriptOpts: {},
   mpvInProcessStreamReconnect: true,
   mpvInProcessStreamReconnectMaxAttempts: MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS,
+  mpvHwdec: "default",
   discoverShowOnStartup: false,
   discoverMode: "auto",
   discoverItemLimit: 24,

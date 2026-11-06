@@ -282,7 +282,10 @@ export const allmangaProviderModule: CoreProviderModule = {
     }
     if (!showId) {
       const rawId = input.title.id.replace(/^allanime:/, "").trim();
-      const anilistId = input.title.externalIds?.anilistId ?? input.title.anilistId;
+      const anilistId =
+        /^anilist:(\d+)$/.exec(rawId)?.[1] ??
+        input.title.externalIds?.anilistId ??
+        input.title.anilistId;
       return createExhaustedResult(input, context, ALLANIME_PROVIDER_ID, {
         code: "unsupported-title",
         message: anilistId
@@ -650,6 +653,8 @@ export const allmangaProviderModule: CoreProviderModule = {
             startupPriority,
             ALLMANGA_CANDIDATE_TIMEOUT_MS,
           ),
+          hedgeDelayMs: 2_500,
+          maxConcurrentCandidates: 2,
           resolveCandidate: async (candidate, cycleContext) => {
             const stream = streams.find((item) => item.id === candidate.streamId);
             if (!stream?.url && !stream?.deferredLocator) {

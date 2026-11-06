@@ -14,11 +14,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { BrowseShell } from "@/app-shell/browse-shell";
+import { toCatalogSuggestions } from "@/app/search/search-suggestions";
 import type { SearchSuggestion } from "@/domain/search/suggestion-engine";
 import type { SearchResult } from "@/domain/types";
 import React, { act } from "react";
 
-import { render } from "../../harness/render-capture";
+import { render, stripAnsi } from "../../harness/render-capture";
 import { applyStorageRootEnv } from "../../helpers/storage-env";
 
 // BrowseShell reads search-history.json on every local-corpus pass — the file
@@ -83,6 +84,58 @@ async function type(handle: ReturnType<typeof render>, text: string): Promise<vo
 }
 
 describe("browse shell suggestion band", () => {
+  test("YouTube query suggestions run a search instead of selecting a synthetic video", async () => {
+    const searches: string[] = [];
+    const submitted: string[] = [];
+    const handle = render(
+      <BrowseShell
+        mode="youtube"
+        provider="youtube"
+        placeholder="Search"
+        commands={[]}
+        suggestionDebounceMs={0}
+        loadLocalSuggestions={() => []}
+        onSuggest={async () =>
+          toCatalogSuggestions(
+            [
+              {
+                ...searchResult("yt:suggest:lofi music", "lofi music"),
+                commitQuery: "lofi music",
+                resolvedLane: "youtube",
+              },
+            ],
+            "romaji",
+          )
+        }
+        onSearch={async (query) => {
+          searches.push(query);
+          return { options: [], subtitle: "0 results" };
+        }}
+        onResolve={() => {}}
+        onSubmit={(value) => submitted.push(value.id)}
+        onCancel={() => {}}
+      />,
+      { columns: 100, rows: 40 },
+    );
+    try {
+      await type(handle, "lo");
+      await act(async () => {
+        await nextMacrotask();
+      });
+      expect(stripAnsi(handle.lastFrame())).toContain("lofi music");
+      await act(async () => {
+        handle.stdin.enqueue(["\x1b[B"]);
+      });
+      await act(async () => {
+        handle.stdin.enqueue(["\r"]);
+      });
+      expect(submitted).toEqual([]);
+      expect(searches).toEqual(["lofi music"]);
+    } finally {
+      handle.unmount();
+    }
+  });
+
   test("band renders local + catalog rows under the field after ~2 chars", async () => {
     const handle = render(
       <BrowseShell
@@ -109,7 +162,7 @@ describe("browse shell suggestion band", () => {
       { columns: 100, rows: 40 },
     );
     try {
-      expect(handle.lastFrame()).not.toContain("Dune Patrol");
+      expect(stripAnsi(handle.lastFrame())).not.toContain("Dune Patrol");
 
       await type(handle, "du");
       // One more boundary: the debounce-0 timer fires during the first yield,
@@ -117,7 +170,7 @@ describe("browse shell suggestion band", () => {
       await act(async () => {
         await nextMacrotask();
       });
-      const frame = handle.lastFrame();
+      const frame = stripAnsi(handle.lastFrame());
       expect(frame).toContain("From your list");
       expect(frame).toContain("Dune Patrol");
       expect(frame).toContain("Catalog");
@@ -154,12 +207,12 @@ describe("browse shell suggestion band", () => {
     );
     try {
       await type(handle, "du");
-      expect(handle.lastFrame()).toContain("Dune Patrol");
+      expect(stripAnsi(handle.lastFrame())).toContain("Dune Patrol");
 
       await act(async () => {
         handle.stdin.enqueue(["\x1b[B"]); // ↓ into the band
       });
-      expect(handle.lastFrame()).toMatch(/▌.*Dune Patrol/s);
+      expect(stripAnsi(handle.lastFrame())).toMatch(/▌.*Dune Patrol/s);
 
       await act(async () => {
         handle.stdin.enqueue(["\r"]);
@@ -197,7 +250,7 @@ describe("browse shell suggestion band", () => {
     );
     try {
       await type(handle, "du");
-      expect(handle.lastFrame()).toContain("Dune Patrol");
+      expect(stripAnsi(handle.lastFrame())).toContain("Dune Patrol");
 
       await act(async () => {
         handle.stdin.enqueue(["\r"]);
@@ -228,14 +281,14 @@ describe("browse shell suggestion band", () => {
     );
     try {
       await type(handle, "du");
-      expect(handle.lastFrame()).toContain("Dune Patrol");
+      expect(stripAnsi(handle.lastFrame())).toContain("Dune Patrol");
 
       await pressEscape(handle); // Esc — band only, query survives
-      expect(handle.lastFrame()).not.toContain("Dune Patrol");
-      expect(handle.lastFrame()).toContain("du");
+      expect(stripAnsi(handle.lastFrame())).not.toContain("Dune Patrol");
+      expect(stripAnsi(handle.lastFrame())).toContain("du");
 
       await type(handle, "n"); // next keystroke → band returns
-      expect(handle.lastFrame()).toContain("Dune Patrol");
+      expect(stripAnsi(handle.lastFrame())).toContain("Dune Patrol");
     } finally {
       handle.unmount();
     }
@@ -266,7 +319,7 @@ describe("browse shell suggestion band", () => {
       await type(handle, "n");
       // The keystroke edited the draft (band re-scored, highlight cleared) —
       // the band never captured the field.
-      const frame = handle.lastFrame();
+      const frame = stripAnsi(handle.lastFrame());
       expect(frame).toContain("dun");
       expect(frame).not.toMatch(/▌.*Dune Patrol/s);
     } finally {

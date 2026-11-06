@@ -1,15 +1,16 @@
 import { useEffect, useRef } from "react";
 
-import { undisplayPlacementsKeepCache } from "./image-pane";
-import { useShellDimensions } from "./use-viewport-policy";
+import { undisplayPlacementsForViewportResize } from "./image-pane";
+import { useSettledShellDimensions } from "./use-viewport-policy";
 
 /**
- * Clears Kitty/Ghostty poster placements when the terminal settles to new
- * dimensions. Keeps source bytes + chafa text cache warm; drops Kitty cache
- * entries so dead imageIds are not resurrected after d=A.
+ * Clears poster placements when the terminal settles to new dimensions (shrink
+ * immediately, grow after debounce — same timing as
+ * `useDebouncedViewportPolicy`). Avoids wiping on every raw resize during a drag.
+ * Kitty paths use per-slot `d=I` deletes when possible; others use a global wipe.
  */
 export function useTerminalResizeCleanup(): void {
-  const { cols, rows } = useShellDimensions();
+  const { cols, rows } = useSettledShellDimensions();
   const settledRef = useRef({ cols, rows });
 
   useEffect(() => {
@@ -17,6 +18,6 @@ export function useTerminalResizeCleanup(): void {
       return;
     }
     settledRef.current = { cols, rows };
-    undisplayPlacementsKeepCache();
+    undisplayPlacementsForViewportResize();
   }, [cols, rows]);
 }

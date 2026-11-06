@@ -549,7 +549,9 @@ function applyLocalSearchFilters(
   let filtered = results;
   if (localKeys.has("type") && intent.filters.type && intent.filters.type !== "all") {
     const type = intent.filters.type;
-    if (isResultKind(type)) {
+    if (type === "live") {
+      filtered = filtered.filter((result) => result.liveStatus === "live");
+    } else if (isResultKind(type)) {
       // Only narrow by content shape when the result set actually carries shape
       // facts; otherwise skip the dimension instead of emptying every row.
       if (results.some((result) => typeof result.resultKind === "string")) {

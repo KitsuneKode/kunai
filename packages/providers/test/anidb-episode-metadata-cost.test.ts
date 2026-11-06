@@ -58,8 +58,8 @@ function stubAnidbFetch(officialBody: string): string[] {
           data: {
             Media: {
               streamingEpisodes: [
-                { title: "The Beginning", thumbnail: "https://img.example/ep-1.jpg" },
-                { title: "The Journey", thumbnail: "https://img.example/ep-2.jpg" },
+                { title: "Episode 1 - The Beginning", thumbnail: "https://img.example/ep-1.jpg" },
+                { title: "Episode 2 - The Journey", thumbnail: "https://img.example/ep-2.jpg" },
               ],
             },
           },

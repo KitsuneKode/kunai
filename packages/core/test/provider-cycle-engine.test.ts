@@ -64,7 +64,8 @@ test("runProviderCycle retries a timed out candidate before moving to the next o
     async resolveCandidate(candidate) {
       attempts.push(candidate.id);
       if (candidate.serverId === "kiwi") {
-        await Bun.sleep(20);
+        // Only the engine's deadline may finish this deliberately stuck source.
+        await new Promise<void>(() => {});
       }
       return { streamId: candidate.id };
     },
@@ -92,7 +93,7 @@ test("allowTransientCandidateRetry grants an attempt beyond the normal budget", 
     now: fixedClock(),
     async resolveCandidate(candidate) {
       attempts.push(candidate.id);
-      await Bun.sleep(20);
+      await new Promise<void>(() => {});
       return { streamId: candidate.id };
     },
   });
@@ -144,7 +145,7 @@ test("transient retries wait by default instead of re-firing instantly", async (
     now: fixedClock(),
     async resolveCandidate(candidate) {
       startedAt.push(Date.now());
-      await Bun.sleep(20);
+      await new Promise<void>(() => {});
       return { streamId: candidate.id };
     },
   });
@@ -308,6 +309,35 @@ test("runProviderCycle keeps cycling past a single dead domain to a live sibling
   // not a dead uplink — the next server must still get its attempt.
   expect(result.selected).toEqual({ streamId: "source:telli" });
   expect(attempts).toEqual(["source:kiwi", "source:telli"]);
+  expect(result.stopReason).toBe("resolved");
+});
+
+test("runProviderCycle continues past multiple dead domains when remaining candidates exist in larger pool", async () => {
+  const attempts: string[] = [];
+  const pool = [
+    { ...candidates[0]!, id: "source:m1", serverId: "m1", priority: 10 },
+    { ...candidates[1]!, id: "source:m2", serverId: "m2", priority: 20 },
+    { ...candidates[0]!, id: "source:m3", serverId: "m3", priority: 30 },
+  ];
+
+  const result = await runProviderCycle({
+    providerId: "allanime",
+    candidates: pool,
+    maxAttemptsPerCandidate: 1,
+    now: fixedClock(),
+    async resolveCandidate(candidate) {
+      attempts.push(candidate.id);
+      if (candidate.serverId === "m1" || candidate.serverId === "m2") {
+        throw new Error("getaddrinfo ENOTFOUND dead-mirror.example.invalid");
+      }
+      return { streamId: candidate.id };
+    },
+  });
+
+  // Multiple dead mirrors in a larger list must not kill the whole cycle
+  // prematurely when subsequent working mirrors exist.
+  expect(result.selected).toEqual({ streamId: "source:m3" });
+  expect(attempts).toEqual(["source:m1", "source:m2", "source:m3"]);
   expect(result.stopReason).toBe("resolved");
 });
 

@@ -9,21 +9,16 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { SetupShell } from "@/app-shell/setup-shell";
-import type { CapabilitySnapshot } from "@/ui";
 import { Box } from "ink";
 import React from "react";
 
+import { capabilitySnapshotFixture } from "./capability-snapshot-fixture";
 import { CAPTURE_WIDTHS, render, stripAnsi, type CaptureWidth } from "./render-capture";
 
 const CAPTURE_DIR = path.join(import.meta.dir, "..", "__captures__");
 export const SETUP_ROWS = 34;
 
-const READY: CapabilitySnapshot = {
-  mpv: true,
-  mpvRequired: true,
-  ffprobe: true,
-  ytDlp: true,
-  curl: { present: true, impersonates: true, profile: "chrome150" },
+const READY = capabilitySnapshotFixture({
   image: {
     terminal: "ghostty",
     protocol: "kitty",
@@ -31,8 +26,15 @@ const READY: CapabilitySnapshot = {
     available: true,
     reason: "capture fixture",
   },
-  issues: [],
-};
+  mpvHardwareAccel: {
+    probed: true,
+    hwdecHelp: "",
+    drivers: [],
+    autoSafeOk: false,
+    autoSafeDriver: "",
+    terminalGraphics: "kitty-native · ghostty",
+  },
+});
 
 export const SETUP_SCREENS = ["deps", "mode", "language", "library", "analytics", "done"] as const;
 

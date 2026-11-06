@@ -405,7 +405,7 @@ export function buildPlaybackControlSummary(stream: StreamInfo | null): Playback
       showSourceControl: false,
       showQualityControl: false,
       showMediaTrackControl: false,
-      summary: "direct stream",
+      summary: stream?.isLive || stream?.liveStatus === "live" ? "● LIVE" : "direct stream",
     };
   }
 
@@ -432,7 +432,9 @@ export function buildPlaybackControlSummary(stream: StreamInfo | null): Playback
   const languageChoiceCount =
     audioLanguages.length + hardSubLanguages.length + softSubtitleLanguages.length;
 
+  const isLive = Boolean(stream.isLive || stream.liveStatus === "live");
   const detail = [
+    isLive ? "● LIVE" : null,
     sourceCount > 0 ? `${sourceCount} source${sourceCount === 1 ? "" : "s"}` : null,
     qualityLabels.length > 0 ? `quality ${formatList(qualityLabels)}` : null,
     audioLanguages.length > 0 ? `audio ${formatList(audioLanguages)}` : null,

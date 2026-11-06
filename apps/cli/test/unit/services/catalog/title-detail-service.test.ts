@@ -199,7 +199,9 @@ describe("TitleDetailService — TMDB movie", () => {
       return null;
     });
 
-    const detail = await fetchTitleDetail("tmdb:550", "movie");
+    const detail = await fetchTitleDetail("tmdb:550", "movie", undefined, {
+      externalIds: { youtubeId: "aqz-KE-bpKQ" },
+    });
 
     expect(detail.id).toBe("tmdb:550");
     expect(detail.type).toBe("movie");

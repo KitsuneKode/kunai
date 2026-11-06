@@ -85,6 +85,13 @@ describe("resampleRgba", () => {
     const resampled = resampleRgba(image, 1, 1);
     expect(Array.from(resampled.slice(0, 3))).toEqual([128, 128, 128]);
   });
+
+  test("returns original rgba buffer untouched when dimensions match", () => {
+    const raw = new Uint8Array([10, 20, 30, 255]);
+    const image = { width: 1, height: 1, rgba: raw };
+    const resampled = resampleRgba(image, 1, 1);
+    expect(resampled).toBe(raw);
+  });
 });
 
 describe("buildHalfBlockOutput", () => {
@@ -136,5 +143,22 @@ describe("buildHalfBlockOutput", () => {
     const output = buildHalfBlockOutput(image, OPTIONS);
     expect(output).not.toContain(UPPER_HALF_BLOCK);
     expect(output).toContain(" ");
+  });
+
+  test("odd pixel height leaves bottom pixel transparent without stretching rows", () => {
+    const image = {
+      width: 1,
+      height: 3,
+      rgba: new Uint8Array([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255]),
+    };
+    const output = buildHalfBlockOutput(image, { size: "1x2", maxRows: 2, debug: false });
+    const lines = output.trimEnd().split("\n");
+    expect(lines).toHaveLength(2);
+    // Line 1 contains red foreground and green background
+    expect(lines[0]).toContain("255;0;0m");
+    expect(lines[0]).toContain("0;255;0m");
+    // Line 2 contains blue foreground and transparent background (49m)
+    expect(lines[1]).toContain("0;0;255m");
+    expect(lines[1]).toContain("\x1b[49m");
   });
 });

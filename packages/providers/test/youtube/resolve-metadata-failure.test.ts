@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import {
   configureYoutubeProvider,
   normalizeYtDlpVideoInfo,
+  setInvidiousPlaybackFallbackEnabledForTest,
   toYoutubeVideoCatalogId,
   youtubeProviderModule,
 } from "@kunai/providers/youtube";
@@ -53,7 +54,12 @@ function resolveYoutube(input: ProviderResolveInput) {
   return resolve(input, TEST_CONTEXT);
 }
 
+beforeEach(() => {
+  setInvidiousPlaybackFallbackEnabledForTest(false);
+});
+
 afterEach(() => {
+  setInvidiousPlaybackFallbackEnabledForTest(true);
   configureYoutubeProvider({});
 });
 

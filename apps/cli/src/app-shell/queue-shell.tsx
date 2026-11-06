@@ -110,7 +110,17 @@ export function QueueShell({
       />
       {view.state === "empty" ? (
         <StateBlock
-          model={{ kind: "empty", title: "Nothing queued", detail: view.emptyHint }}
+          model={{
+            kind: "empty",
+            title: "Nothing queued",
+            detail:
+              view.emptyHint ||
+              "Browse titles and press / → Add to queue to build your watch list.",
+            actions: [
+              { id: "browse", label: "Browse popular titles", shortcut: "Esc" },
+              { id: "commands", label: "Open command palette", shortcut: "/", tone: "muted" },
+            ],
+          }}
           width={rowWidth}
         />
       ) : (

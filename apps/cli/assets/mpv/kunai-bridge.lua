@@ -1129,6 +1129,13 @@ mp.add_forced_key_binding("A", "kunai-cycle-audio-shift", do_cycle_audio, { repe
 mp.add_forced_key_binding("d", "kunai-cycle-audio-alt", do_cycle_audio, { repeatable = false })
 mp.add_forced_key_binding("D", "kunai-cycle-audio-alt-shift", do_cycle_audio, { repeatable = false })
 
+-- Up Next queue:
+local function do_queue()
+	mp.osd_message("Kunai · Opening Up Next…", 2)
+	signal("up-next")
+end
+mp.add_forced_key_binding("ctrl+q", "kunai-queue", do_queue, { repeatable = false })
+
 -- Same episode: re-resolve the stream URL (cache bust) and resume from the saved position.
 mp.add_key_binding("ctrl+r", "kunai-refresh", do_refresh, { repeatable = false })
 

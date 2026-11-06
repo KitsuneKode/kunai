@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26"
+lastReviewed: "2026-11-06T13:42:00Z"
 ---
 
 # mpv in-process stream reconnect (persistent session)
@@ -26,7 +26,14 @@ startup, same-URL replay, normal replacement, and both enabled/disabled baseline
 
 ## When it runs
 
-1. **`network-read-dead`** (from `playback-watchdog`): demuxer reports network + underrun + `raw-input-rate === 0` while paused-for-cache, sustained for ~8s. Fires at most once per stall incident from the watchdog; **reconnect attempts** are still capped per cycle.
+1. **`network-read-dead`** (from `playback-watchdog`): demuxer reports network + underrun + `raw-input-rate === 0`, sustained for ~8s, regardless of `paused-for-cache`. Fires at most once per stall incident from the watchdog; **reconnect attempts** are still capped per cycle.
+
+Startup, every replacement and same-URL reconnect use the same file-local cache
+profile. YouTube disables cache pause and uses its bounded 10-second/48-MiB
+readahead; recorded non-YouTube media restores cache pause and the balanced
+60-second/200-MiB profile. Fast startup and live broadcasts keep their existing
+smaller profiles. Reconnect options and local-HLS protocol whitelists are composed
+once, so no option silently replaces another.
 
 An explicit user pause or `idle-active` suspends the watchdog clocks.
 `core-idle` alone does not: mpv can report it while waiting for network cache,
@@ -53,8 +60,33 @@ If reconnect **fails** or limits are hit, the cycle ends and the usual `Playback
   against a URL that is not coming back. (`PersistentMpvSession.create` bounds a
   raw injected config at a higher structural ceiling — that path is for the test
   harness and the compiled smoke, not for user configuration.)
-- **Backoff** after a failed `loadfile`: exponential from a base delay, capped (see `PersistentMpvSession` constants). Prevents hammering a dead CDN.
+- **Backoff** after a failed `loadfile`: jittered exponential
+  `base * 2 ** (attempt - 2) * (0.5 + random())`, capped (see `PersistentMpvSession`).
+  The first attempt does not wait. Prevents hammering a dead CDN.
 - **`reconnectInFlight`**: serializes overlapping reconnect work.
+
+## IPC transport reopen
+
+If the IPC socket closes or errors while mpv is still running (`exitCode === null`),
+the session opens a new connection to the same endpoint and restores the Lua
+user-data subscriptions. It does not treat that drop as a dead player. The wait
+before each attempt is the same jittered backoff, including the first attempt,
+and gives up after six failures. An intentional `close()` does not reopen.
+
+## Progress stall after a reload
+
+A same-URL `loadfile` that already ran, followed by another progress stall
+(not `network-read-dead`), stops the file and asks the shell to refresh the
+source. The cycle result is `suspectedDeadStream`, so playback re-resolves
+instead of reloading the same URL again.
+
+## A/V sync
+
+The session observes `avsync`. When absolute drift stays above 300ms across at
+least three samples and at least 300ms of observed time (bypassed while paused,
+seeking, reconnecting, live streams, or when a resync seek is already in flight),
+it seeks to the current position to resync with a 5-second cooldown. A sample inside the
+limit clears the run.
 
 ## Configuration (`~/.config/kunai/config.json`)
 

@@ -645,7 +645,8 @@ export function SetupShell({
     }
   });
 
-  const pointer: SetupPointerActions = {
+  const pointerRef = React.useRef<SetupPointerActions | null>(null);
+  pointerRef.current = {
     pick(field, value) {
       if (viewport.tooSmall || rechecking) return;
       if (confirmingAbort) {
@@ -659,7 +660,20 @@ export function SetupShell({
       }
       const index = Number(value);
       if (!Number.isInteger(index) || index < 0) return;
+      if (field === "deps" && index < depRows.length) {
+        if (depIdx === index) {
+          setShowFix((current) => !current);
+        } else {
+          setDepIdx(index);
+        }
+        return;
+      }
+      if (field === "analytics" && (index === 0 || index === 1)) {
+        setAnalyticsIdx(index);
+        return;
+      }
       if (field === "mode" && index < MODE_OPTIONS.length) setModeIdx(index);
+
       if (field === "library" && index < 8) {
         if (libraryIdx === index) toggle();
         else setLibraryIdx(index);
@@ -703,6 +717,14 @@ export function SetupShell({
       else if (key === "d") setShowFix((current) => !current);
     },
   };
+
+  const pointer = React.useMemo<SetupPointerActions>(
+    () => ({
+      pick: (field, value) => pointerRef.current?.pick(field, value),
+      action: (key) => pointerRef.current?.action(key),
+    }),
+    [],
+  );
 
   const footer = buildFooter(screen, {
     hasFix: Boolean(depRows[depIdx]?.fix),

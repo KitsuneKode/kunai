@@ -49,7 +49,7 @@ export function PreviewRail({
           framed placeholder tile (initials centred in a poster-shaped frame) so it
           reads as "art pending" instead of two letters floating in empty space. */}
       {hasPosterImage ? (
-        <Box minHeight={reserveRows} justifyContent="center">
+        <Box minHeight={reserveRows} width={bodyWidth} justifyContent="flex-start">
           <PosterOutput poster={poster} />
         </Box>
       ) : (

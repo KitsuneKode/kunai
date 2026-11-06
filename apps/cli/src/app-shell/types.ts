@@ -4,6 +4,7 @@ import type { PlaybackProblem } from "@/domain/playback/playback-problem";
 import type { PostPlayState } from "@/domain/playback/post-play-state";
 import type { ReleaseFilter, WatchFilter } from "@/domain/search/SearchIntent";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
+import type { YouTubeLiveStatus } from "@kunai/types";
 
 import type { ResolvedAppCommand, AppCommandId } from "./commands";
 
@@ -26,6 +27,7 @@ export type ShellAction =
   | "settings"
   | "theme"
   | "providers"
+  | "provider-status"
   | "presence"
   | "analytics"
   | "analytics-show"
@@ -356,6 +358,7 @@ export type BrowseIdleContextLoader = () => Promise<BrowseIdleContext | undefine
 export type BrowseLocalFilterFacts = {
   readonly mediaType?: "movie" | "series";
   readonly resultKind?: "video" | "short" | "playlist" | "channel";
+  readonly liveStatus?: YouTubeLiveStatus;
   readonly isAnime?: boolean;
   readonly downloaded?: boolean;
   readonly watched?: WatchFilter;
@@ -497,6 +500,7 @@ export function toShellAction(commandId: AppCommandId): ShellAction {
     case "settings":
     case "theme":
     case "providers":
+    case "provider-status":
     case "presence":
     case "analytics":
     case "analytics-show":

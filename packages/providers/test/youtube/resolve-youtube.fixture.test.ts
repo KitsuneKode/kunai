@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 
 import {
   configureYoutubeProvider,
@@ -7,6 +7,7 @@ import {
   toYoutubeVideoCatalogId,
   youtubeProviderModule,
 } from "@kunai/providers/youtube";
+import { setInvidiousPlaybackFallbackEnabledForTest } from "@kunai/providers/youtube";
 import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
 
 const TEST_CONTEXT: ProviderRuntimeContext = {
@@ -37,6 +38,35 @@ function buildResolveInput(): ProviderResolveInput {
 // skip instead of a silent pass (#468).
 const hasYtDlp = () => Boolean(Bun.which("yt-dlp"));
 const ytdlpTest = test.skipIf(!hasYtDlp());
+
+beforeEach(() => {
+  setInvidiousPlaybackFallbackEnabledForTest(false);
+});
+afterEach(() => {
+  setInvidiousPlaybackFallbackEnabledForTest(true);
+});
+
+ytdlpTest("live quality choices keep their discovered exact format", async () => {
+  const metadata = normalizeYtDlpVideoInfo(
+    {
+      id: FIXTURE_VIDEO_ID,
+      title: "Live fixture",
+      is_live: true,
+      formats: [
+        { format_id: "live1080", height: 1080, vcodec: "avc1", acodec: "mp4a" },
+        { format_id: "live480", height: 480, vcodec: "avc1", acodec: "mp4a" },
+      ],
+    },
+    FIXTURE_VIDEO_ID,
+  );
+  configureYoutubeProvider({ metadataCache: { get: () => metadata, set: () => {} } });
+  const resolve = youtubeProviderModule.resolve;
+  if (!resolve) throw new Error("YouTube provider resolve adapter is not configured");
+  const result = await resolve({ ...buildResolveInput(), qualityPreference: "480p" }, TEST_CONTEXT);
+  const selected = result.streams.find((stream) => stream.id === result.selectedStreamId);
+  expect(selected?.metadata?.formatId).toBe("live480");
+  expect(selected?.metadata?.ytdlFormat).toBe("live480");
+});
 
 describe("resolveYoutube", () => {
   test("configureYoutubeProvider replaces previous runtime config", () => {

@@ -13,6 +13,7 @@ import {
   type PlaybackGeneration,
 } from "@/domain/playback/playback-generation";
 import { MANAGED_MPV_CAPABILITIES } from "@/domain/playback/player-capabilities";
+import { sanitizeTerminalText } from "@/domain/text-display";
 import type { PlaybackResult, StreamInfo } from "@/domain/types";
 import type { Logger } from "@/infra/logger/Logger";
 import type { Tracer } from "@/infra/tracer/Tracer";
@@ -271,7 +272,7 @@ export class PlayerServiceImpl implements PlayerService {
     publish({ type: "launching-player" });
     const presentation = this.deps.presentation ?? nonInteractivePlayerPresentation;
     if (!presentation.isInteractiveShellMounted()) {
-      process.stderr.write(`Starting playback: ${options.displayTitle}\n`);
+      process.stderr.write(`Starting playback: ${sanitizeTerminalText(options.displayTitle)}\n`);
       process.stderr.write(
         playbackStream.subtitle
           ? "Subtitle attached before playback.\n"
@@ -654,6 +655,7 @@ export class PlayerServiceImpl implements PlayerService {
       mpv: {
         ...this.deps.mpv,
         startupPriority: this.deps.config.startupPriority,
+        hwdec: this.deps.mpv?.hwdec ?? this.deps.config.mpvHwdec,
       },
     });
 
@@ -736,6 +738,7 @@ export class PlayerServiceImpl implements PlayerService {
         mpv: {
           ...this.deps.mpv,
           startupPriority: this.deps.config.startupPriority,
+          hwdec: this.deps.mpv?.hwdec ?? this.deps.config.mpvHwdec,
         },
       });
     } finally {
@@ -803,6 +806,7 @@ export class PlayerServiceImpl implements PlayerService {
         mpv: {
           ...this.deps.mpv,
           startupPriority: this.deps.config.startupPriority,
+          hwdec: this.deps.mpv?.hwdec ?? this.deps.config.mpvHwdec,
         },
         kitsuneConfig: this.deps.config.getRaw(),
         onControlReady: (control) => this.setActiveControlFor(generation, control),
@@ -963,13 +967,14 @@ export class PlayerServiceImpl implements PlayerService {
 }
 
 function formatLocalPlaybackTitle(source: LocalPlaybackSource): string {
+  const cleanTitle = sanitizeTerminalText(source.titleName);
   const { positionLabel, kindLabel } = presentMedia({
-    title: source.titleName,
+    title: cleanTitle,
     mediaKind: source.mediaKind,
     season: source.season,
     episode: source.episode,
   });
-  return `${source.titleName}  ·  ${positionLabel ?? kindLabel}  ·  local`;
+  return `${cleanTitle}  ·  ${positionLabel ?? kindLabel}  ·  local`;
 }
 
 function safeUrlHost(url: string | null | undefined): string | null {

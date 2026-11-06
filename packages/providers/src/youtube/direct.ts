@@ -33,6 +33,7 @@ import {
   invidiousGetPlaylist,
   invidiousSearch,
 } from "./invidious-client";
+import { fetchInvidiousPlaybackFallback } from "./invidious-playback-streams";
 import { YOUTUBE_PROVIDER_ID, youtubeManifest } from "./manifest";
 import { mapInvidiousSearchResults, mapPipedSearchResults } from "./map-search-result";
 import { classifyYoutubeMetadataFailure } from "./metadata-failure";
@@ -47,11 +48,7 @@ import type {
   YoutubeVideoMetadata,
 } from "./youtube-metadata";
 import { createYoutubeMetadataService } from "./youtube-metadata-service";
-import {
-  buildExactYtdlFormatSelector,
-  buildYtdlFormatSelector,
-  defaultYtdlPlaybackFormat,
-} from "./yt-dlp-metadata";
+import { buildExactYtdlFormatSelector, buildYtdlFormatSelector } from "./yt-dlp-metadata";
 import { parseYoutubePlayerClients, withYoutubePlayerClient } from "./ytdl-options";
 
 export { YOUTUBE_PROVIDER_ID, youtubeManifest };
@@ -316,14 +313,18 @@ async function listYoutubeEpisodes(
         preferredInstanceUrl: globalYoutubeConfig.invidiousInstanceUrl,
         signal: context.signal,
       });
-      return (playlist.videos ?? []).map((video, index) => ({
-        index: video.index ?? index + 1,
-        label: `#${video.index ?? index + 1}${video.lengthSeconds ? ` · ${formatDurationSeconds(video.lengthSeconds)}` : ""}`,
-        name: video.title,
-        detail: video.title,
-        totalEpisodeCount: playlist.videoCount ?? playlist.videos?.length,
-        externalIds: video.videoId ? { youtubeId: video.videoId } : undefined,
-      }));
+      return (playlist.videos ?? []).map((video, index) => {
+        const thumbUrl = video.videoId ? youtubeThumbnailUrl(video.videoId) : undefined;
+        return {
+          index: video.index ?? index + 1,
+          label: `#${video.index ?? index + 1}${video.lengthSeconds ? ` · ${formatDurationSeconds(video.lengthSeconds)}` : ""}`,
+          name: video.title,
+          detail: video.title,
+          totalEpisodeCount: playlist.videoCount ?? playlist.videos?.length,
+          externalIds: video.videoId ? { youtubeId: video.videoId } : undefined,
+          artwork: thumbUrl ? { thumbnailUrl: thumbUrl, posterUrl: thumbUrl } : undefined,
+        };
+      });
     } catch {
       // The public instance pool is thin — fall through to local yt-dlp.
     }
@@ -340,13 +341,17 @@ async function listYoutubeEpisodes(
         signal: context.signal,
       });
       const channelVideos = channel.latestVideos ?? channel.videos ?? [];
-      return channelVideos.map((video, index) => ({
-        index: index + 1,
-        label: `#${index + 1}${video.lengthSeconds ? ` · ${formatDurationSeconds(video.lengthSeconds)}` : ""}`,
-        name: video.title,
-        detail: video.title,
-        externalIds: video.videoId ? { youtubeId: video.videoId } : undefined,
-      }));
+      return channelVideos.map((video, index) => {
+        const thumbUrl = video.videoId ? youtubeThumbnailUrl(video.videoId) : undefined;
+        return {
+          index: index + 1,
+          label: `#${index + 1}${video.lengthSeconds ? ` · ${formatDurationSeconds(video.lengthSeconds)}` : ""}`,
+          name: video.title,
+          detail: video.title,
+          externalIds: video.videoId ? { youtubeId: video.videoId } : undefined,
+          artwork: thumbUrl ? { thumbnailUrl: thumbUrl, posterUrl: thumbUrl } : undefined,
+        };
+      });
     } catch {
       // The public instance pool is thin — fall through to local yt-dlp.
     }
@@ -395,12 +400,14 @@ async function listYoutubeEpisodesViaYtdlp(
         const entry = JSON.parse(trimmed) as { id?: string; title?: string; duration?: number };
         if (!entry.id || !entry.title) continue;
         const index = episodes.length + 1;
+        const thumbUrl = entry.id ? youtubeThumbnailUrl(entry.id) : undefined;
         episodes.push({
           index,
           label: `#${index}${entry.duration ? ` · ${formatDurationSeconds(entry.duration)}` : ""}`,
           name: entry.title,
           detail: entry.title,
           externalIds: { youtubeId: entry.id },
+          artwork: thumbUrl ? { thumbnailUrl: thumbUrl, posterUrl: thumbUrl } : undefined,
         });
       } catch {
         // skip malformed line
@@ -607,9 +614,7 @@ async function resolveYoutube(
           ytdlFormat:
             mappedFormats.length > 0
               ? buildExactYtdlFormatSelector(entry.formatId, entry.hasAudio)
-              : isLive
-                ? defaultYtdlPlaybackFormat()
-                : buildYtdlFormatSelector(entry.label),
+              : buildYtdlFormatSelector(entry.label),
           formatId: mappedFormats.length > 0 ? entry.formatId : undefined,
           // Read back by the player so each lane asks yt-dlp for its own client
           // rather than the global default.
@@ -651,6 +656,70 @@ async function resolveYoutube(
       input.preferredSubtitleLanguage,
     );
 
+    const invidiousFallback = await fetchInvidiousPlaybackFallback(videoId, cachePolicy, {
+      preferredInstanceUrl: globalYoutubeConfig.invidiousInstanceUrl,
+      signal: context.signal,
+    });
+    const mergedStreams = invidiousFallback ? [...streams, ...invidiousFallback.streams] : streams;
+    const mergedSubtitles = invidiousFallback
+      ? [...subtitles, ...invidiousFallback.subtitles]
+      : subtitles;
+    const mergedSources = invidiousFallback
+      ? [
+          ...lanes.map((lane, laneIndex) => ({
+            id: lane.sourceId,
+            providerId: YOUTUBE_PROVIDER_ID,
+            kind: "provider-api" as const,
+            label: lane.label,
+            host: "youtube.com",
+            status: laneIndex === 0 ? ("selected" as const) : ("available" as const),
+            confidence: 0.95 - laneIndex * 0.05,
+            requiresRuntime: "direct-http" as const,
+            cachePolicy,
+            metadata: {
+              sourceDetail: `Extractor connection method${lane.client ? ` (${lane.client})` : ""}; same video. Format availability can differ; playback is checked by mpv.`,
+            },
+          })),
+          {
+            id: invidiousFallback.source.id,
+            providerId: YOUTUBE_PROVIDER_ID,
+            kind: "provider-api" as const,
+            label: invidiousFallback.source.label,
+            host: "invidious.io",
+            status: "available" as const,
+            confidence: 0.85,
+            requiresRuntime: "direct-http" as const,
+            cachePolicy,
+            metadata: {
+              sourceDetail:
+                "Proxied DASH/HLS from Invidious when googlevideo or yt-dlp cipher paths fail at playback.",
+            },
+          },
+        ]
+      : lanes.map((lane, laneIndex) => ({
+          id: lane.sourceId,
+          providerId: YOUTUBE_PROVIDER_ID,
+          kind: "provider-api" as const,
+          label: lane.label,
+          host: "youtube.com",
+          status: laneIndex === 0 ? ("selected" as const) : ("available" as const),
+          confidence: 0.95 - laneIndex * 0.05,
+          requiresRuntime: "direct-http" as const,
+          cachePolicy,
+          metadata: {
+            sourceDetail: `Extractor connection method${lane.client ? ` (${lane.client})` : ""}; same video. Format availability can differ; playback is checked by mpv.`,
+          },
+        }));
+
+    if (invidiousFallback) {
+      emitTraceEvent(events, context, {
+        type: "ladder:fallback",
+        providerId: YOUTUBE_PROVIDER_ID,
+        message: `Attached ${invidiousFallback.streams.length} Invidious direct stream(s) for googlevideo failover`,
+        attributes: { streamCount: invidiousFallback.streams.length },
+      });
+    }
+
     const endedAt = context.now();
     emitTraceEvent(events, context, {
       type: "provider:success",
@@ -662,23 +731,10 @@ async function resolveYoutube(
       status: "resolved",
       providerId: YOUTUBE_PROVIDER_ID,
       selectedStreamId,
-      sources: lanes.map((lane, laneIndex) => ({
-        id: lane.sourceId,
-        providerId: YOUTUBE_PROVIDER_ID,
-        kind: "provider-api" as const,
-        label: lane.label,
-        host: "youtube.com",
-        status: laneIndex === 0 ? ("selected" as const) : ("available" as const),
-        confidence: 0.95 - laneIndex * 0.05,
-        requiresRuntime: "direct-http" as const,
-        cachePolicy,
-        metadata: {
-          sourceDetail: `Extractor connection method${lane.client ? ` (${lane.client})` : ""}; same video. Format availability can differ; playback is checked by mpv.`,
-        },
-      })),
-      streams,
+      sources: mergedSources,
+      streams: mergedStreams,
       variants: variants.length > 0 ? variants : undefined,
-      subtitles,
+      subtitles: mergedSubtitles,
       cachePolicy,
       trace: createResolveTrace({
         title: input.title,

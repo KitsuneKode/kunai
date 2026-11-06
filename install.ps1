@@ -1066,23 +1066,46 @@ function New-ActivationReclaimClaim([string]$LockPath, [string]$OwnerId, [byte[]
   return $claimPath
 }
 
-function Restore-ActivationQuarantine([string]$QuarantinePath, [string]$LockPath) {
-  try {
-    # Hard-link creation is exclusive and therefore cannot overwrite a newer
-    # canonical owner that won after the quarantine rename.
-    New-Item -ItemType HardLink -Path $LockPath -Target $QuarantinePath -ErrorAction Stop | Out-Null
-    Remove-Item -LiteralPath $QuarantinePath -Force -ErrorAction SilentlyContinue
-    return $true
-  }
-  catch {
-    if (Test-Path -LiteralPath $LockPath) {
-      # Preserve the quarantine for diagnostics when another owner already won.
-      return $false
+function Get-ActivationQuarantines([string]$LockPath) {
+  $directory = Split-Path -Parent $LockPath
+  $leaf = Split-Path -Leaf $LockPath
+  if (-not (Test-Path -LiteralPath $directory)) { return @() }
+  $quarantines = [System.Collections.Generic.List[string]]::new()
+  foreach ($item in @(Get-ChildItem -LiteralPath $directory -Filter "$leaf.quarantine.*" -File -ErrorAction SilentlyContinue)) {
+    $state = Read-ActivationLockState $item.FullName
+    if ($null -ne $state -and $null -ne $state.Content -and (Test-ActivationOwnerStale $state.Content)) {
+      Remove-Item -LiteralPath $item.FullName -Force -ErrorAction SilentlyContinue
+      continue
     }
-    # With no canonical successor, fail closed rather than abandoning a valid
-    # observed owner in quarantine and allowing activation to overlap it.
-    throw
+    $quarantines.Add($item.FullName)
   }
+  return @($quarantines | Sort-Object)
+}
+
+function Restore-ActivationQuarantine([string]$QuarantinePath, [string]$LockPath) {
+  for ($attempt = 0; $attempt -lt 10; $attempt++) {
+    try {
+      # Hard-link creation is exclusive and therefore cannot overwrite a newer
+      # canonical owner that won after the quarantine rename.
+      New-Item -ItemType HardLink -Path $LockPath -Target $QuarantinePath -ErrorAction Stop | Out-Null
+      Remove-Item -LiteralPath $QuarantinePath -Force -ErrorAction SilentlyContinue
+      return $true
+    }
+    catch {
+      if (Test-Path -LiteralPath $LockPath) {
+        if ($attempt + 1 -lt 10) {
+          Start-Sleep -Milliseconds 5
+          continue
+        }
+        # Preserve the quarantine for diagnostics when another owner already won.
+        return $false
+      }
+      # With no canonical successor, fail closed rather than abandoning a valid
+      # observed owner in quarantine and allowing activation to overlap it.
+      throw
+    }
+  }
+  return (Test-Path -LiteralPath $LockPath)
 }
 
 function Move-ActivationLockToQuarantine(
@@ -1218,9 +1241,9 @@ function Acquire-ActivationLock([string]$Ver, [string]$LockPath) {
       throw "Activation lock held$detail while activating version $Ver"
     }
     $attempted = $true
-    if (@(Get-ActivationReclaimClaims $LockPath).Count -gt 0) {
+    if (@(Get-ActivationReclaimClaims $LockPath).Count -gt 0 -or @(Get-ActivationQuarantines $LockPath).Count -gt 0) {
       if ($timer.ElapsedMilliseconds -ge $ActivationLockTimeoutMs) {
-        throw "Activation reclamation is already in progress for version $Ver"
+        throw "Activation reclamation or quarantine is already in progress for version $Ver"
       }
       Wait-ActivationLockPoll $timer
       continue
@@ -1236,7 +1259,7 @@ function Acquire-ActivationLock([string]$Ver, [string]$LockPath) {
       $stream.Write($bytes, 0, $bytes.Length)
       $stream.Flush()
       $stream.Dispose()
-      if (@(Get-ActivationReclaimClaims $LockPath).Count -eq 0) { return $ownerId }
+      if (@(Get-ActivationReclaimClaims $LockPath).Count -eq 0 -and @(Get-ActivationQuarantines $LockPath).Count -eq 0) { return $ownerId }
       Release-ActivationLock $LockPath $ownerId
       continue
     }

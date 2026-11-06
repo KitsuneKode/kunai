@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26"
+lastReviewed: "2026-10-29"
 ---
 
 # Playback Source Inventory Contract
@@ -142,7 +142,9 @@ Source and quality pickers must read from cached inventory.
   selected an audio/mirror lane must not become an explicit first-rung choice: HiAnime
   consumes its sub/dub pin before quality selection, and AnimeGG ignores the matching
   active-mirror pin when ranking that mirror's qualities. An explicit stream id still
-  chooses the exact rung.
+  chooses the exact rung. Shared direct resolvers probe that rung first; if it
+  is refused, fallback candidates still pass the same resolve gate and the
+  refused rung is removed from the shipped inventory.
 - Quality change: select the chosen stream or variant without recomputing inventory.
 - Subtitle change: select from `subtitles` or a separately cached subtitle list; do not refetch unrelated streams.
 - Tracks merges session-attached `subtitleList` tracks into the view alongside provider
@@ -309,6 +311,11 @@ resolve, while keeping the inventory available for turning subtitles on again.
 Hardcoded subtitles remain a property of the video and cannot be removed by mpv.
 
 ## Interactive subtitle inventory ownership
+
+A YouTube extraction preference requests tracks; it does not establish that
+mpv attached or selected them. Before a live observation or resolved inventory,
+the watching status is informational. Native selection, visibility and Off
+remain authoritative once observed.
 
 An external subtitle picker selection queries the current mpv track list and
 selects an existing matching external track by ID. If the URL is not attached,

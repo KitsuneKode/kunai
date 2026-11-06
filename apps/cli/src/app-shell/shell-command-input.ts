@@ -103,8 +103,16 @@ export function useShellInput({
   };
 
   const activateFooterAction = (action: FooterAction) => {
-    if (disabled || commandMode || action.disabled || !footerActions.includes(action)) return;
-    if (action.action === "command-mode") {
+    if (disabled || commandMode || action.disabled) return;
+    const isKnown =
+      footerActions.includes(action) ||
+      footerActions.some(
+        (candidate) => candidate.key === action.key && candidate.action === action.action,
+      ) ||
+      action.action === "pet" ||
+      action.key === "esc";
+    if (!isKnown) return;
+    if (action.action === "command-mode" || action.key === "/") {
       if (commands.length > 0) openCommandPalette();
       return;
     }
@@ -121,7 +129,11 @@ export function useShellInput({
       onFooterAction?.(action);
       return;
     }
-    if (action.action) onResolve(action.action);
+    if (action.action) {
+      onResolve(action.action);
+    } else if (action.key === "esc" && escapeAction) {
+      onResolve(escapeAction);
+    }
   };
 
   useInput((input, key) => {

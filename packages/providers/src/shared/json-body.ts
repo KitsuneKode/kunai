@@ -17,8 +17,14 @@
  * the one place that has the raw body; callers branch on the domain value
  * (`if (!data?.stream)`) instead of trusting a cast.
  */
-export async function readJsonObjectBody<T>(response: Response): Promise<T | null> {
+export async function readJsonObjectBody<T>(
+  response: Response,
+  onJsonNull?: () => void,
+): Promise<T | null> {
   const body: unknown = await response.json();
+  // Observability for APIs whose explicit null is catalog absence. Scalars and
+  // malformed bodies cannot supply that evidence; callers also check status.
+  if (body === null) onJsonNull?.();
   if (body === null || !(body instanceof Object)) return null;
   // SAFETY: `instanceof Object` proves a JSON-parsed non-null object/array; the
   // caller's `T` describes fields it knows the endpoint may carry.

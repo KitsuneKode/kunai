@@ -14,6 +14,7 @@
     "test:live:mobile-host-proof": "bun test/live/device-host-proof.ts"
   },
   "devDependencies": {
+    "@kitsunekode/kunai": "workspace:*",
     "@types/bun": "catalog:",
     "@types/node": "catalog:",
     "typescript": "catalog:"

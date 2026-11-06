@@ -343,6 +343,18 @@ describe("buildMovyCycleCandidates", () => {
     expect(paris).toBeDefined();
     expect(Math.min(...candidates.map((c) => c.priority ?? 0))).toBe(paris?.priority ?? -1);
   });
+
+  test("preferredAudioLanguage promotes matching language lane ahead of default order", () => {
+    const hindiCandidates = buildMovyCycleCandidates(MOVY_LANES, undefined, "hi");
+    const delhi = hindiCandidates.find((c) => c.serverId === "delhi");
+    expect(delhi).toBeDefined();
+    expect(Math.min(...hindiCandidates.map((c) => c.priority ?? 0))).toBe(delhi?.priority ?? -1);
+
+    const germanCandidates = buildMovyCycleCandidates(MOVY_LANES, undefined, "de");
+    const munich = germanCandidates.find((c) => c.serverId === "munich");
+    expect(munich).toBeDefined();
+    expect(Math.min(...germanCandidates.map((c) => c.priority ?? 0))).toBe(munich?.priority ?? -1);
+  });
 });
 
 describe("movy seed cache — untrusted envelope", () => {

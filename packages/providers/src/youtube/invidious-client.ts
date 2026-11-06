@@ -66,6 +66,8 @@ export type InvidiousPlaylistVideo = {
 
 export type InvidiousClientOptions = {
   readonly preferredInstanceUrl?: string;
+  /** False keeps draft-query requests on the explicitly configured instance. */
+  readonly allowInstanceFallback?: boolean;
   readonly signal?: AbortSignal;
 };
 
@@ -82,6 +84,18 @@ export async function invidiousSearch(
     `/api/v1/search?${params.toString()}`,
     options,
   );
+}
+
+export async function invidiousGetSearchSuggestions(
+  query: string,
+  options: InvidiousClientOptions = {},
+): Promise<readonly string[]> {
+  const params = new URLSearchParams({ q: query });
+  const data = await requestInvidiousJson<{ readonly suggestions?: readonly string[] }>(
+    `/api/v1/search/suggestions?${params.toString()}`,
+    options,
+  );
+  return data?.suggestions ?? [];
 }
 
 export async function invidiousGetPlaylist(
@@ -113,6 +127,14 @@ export async function invidiousGetChannelVideos(
   return requestInvidiousJson(`/api/v1/channels/${encodeURIComponent(channelId)}`, options);
 }
 
+export type InvidiousAdaptiveFormat = {
+  readonly audioTrack?: { readonly id?: string };
+  readonly language?: string;
+  readonly type?: string;
+  readonly qualityLabel?: string;
+  readonly url?: string;
+};
+
 /** Full video payload including related/recommended videos for post-play rails. */
 export type InvidiousVideoDetails = {
   readonly type?: string;
@@ -128,6 +150,15 @@ export type InvidiousVideoDetails = {
   readonly liveStatus?: string;
   readonly isShort?: boolean;
   readonly url?: string;
+  readonly dashUrl?: string;
+  readonly hlsUrl?: string;
+  readonly adaptiveFormats?: readonly InvidiousAdaptiveFormat[];
+  readonly formatStreams?: readonly unknown[];
+  readonly captions?: readonly {
+    readonly label?: string;
+    readonly language_code?: string;
+    readonly url?: string;
+  }[];
   readonly videoThumbnails?: InvidiousSearchVideo["videoThumbnails"];
   readonly recommendedVideos?: readonly InvidiousRecommendedVideo[];
 };
@@ -170,6 +201,7 @@ async function requestInvidiousJson<T>(
 ): Promise<T> {
   const instance = await pickInvidiousInstance({
     preferredInstanceUrl: options.preferredInstanceUrl,
+    allowInstanceFallback: options.allowInstanceFallback,
     signal: options.signal,
   });
   if (options.signal?.aborted) {
@@ -191,7 +223,7 @@ async function requestInvidiousJson<T>(
     }
     return (await response.json()) as T;
   } catch (error) {
-    if (options.signal?.aborted) throw error;
+    if (options.signal?.aborted || options.allowInstanceFallback === false) throw error;
     markInvidiousInstanceFailure(instance);
     if (attempt >= 2) throw error;
     return requestInvidiousJson<T>(path, options, attempt + 1);

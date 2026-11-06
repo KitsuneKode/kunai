@@ -130,3 +130,38 @@ test("relay app answers malformed provider ids with 400 instead of throwing", as
   });
   expect(response.status).toBe(400);
 });
+
+test("relay app serves web companion HTML and manifest", async () => {
+  const htmlRes = await handleRelayRequest(new Request("https://relay.test/"), {
+    authorization: localLoopbackAuthorization,
+  });
+  expect(htmlRes.status).toBe(200);
+  expect(htmlRes.headers.get("Content-Type")).toContain("text/html");
+  const html = await htmlRes.text();
+  expect(html).toContain("Kunai");
+  expect(html).toContain("Web");
+
+  const manifestRes = await handleRelayRequest(new Request("https://relay.test/manifest.json"), {
+    authorization: localLoopbackAuthorization,
+  });
+  expect(manifestRes.status).toBe(200);
+  expect(manifestRes.headers.get("Content-Type")).toContain("application/manifest+json");
+  const manifest = await manifestRes.json();
+  expect(manifest.short_name).toBe("Kunai");
+
+  const statusRes = await handleRelayRequest(new Request("https://relay.test/api/status"), {
+    authorization: localLoopbackAuthorization,
+  });
+  expect(statusRes.status).toBe(200);
+  const statusBody = await statusRes.json();
+  expect(statusBody.ok).toBe(true);
+  expect(Array.isArray(statusBody.providers)).toBe(true);
+});
+
+test("relay server adheres to metadata-only architecture and rejects media proxy", async () => {
+  const res = await handleRelayRequest(
+    new Request("https://relay.test/proxy?url=https://example.com/video.mp4"),
+    { authorization: localLoopbackAuthorization },
+  );
+  expect(res.status).toBe(404);
+});

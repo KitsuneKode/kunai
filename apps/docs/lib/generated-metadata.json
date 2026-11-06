@@ -1,9 +1,8 @@
 {
   "version": "0.4.0",
   "cliVersion": "0.4.0",
-  "commandCount": 85,
+  "commandCount": 86,
   "providerIds": [
-    "videasy",
     "vidlink",
     "vidrock",
     "rivestream",
@@ -16,27 +15,6 @@
     "youtube"
   ],
   "providers": [
-    {
-      "id": "videasy",
-      "displayName": "Videasy",
-      "description": "Registered movies/series adapter; source and subtitle inventory vary by title",
-      "domain": "videasy.to",
-      "recommended": false,
-      "mediaKinds": ["movie", "series"],
-      "capabilities": ["source-resolve", "subtitle-resolve", "multi-source", "quality-ranked"],
-      "notes": [
-        "2026-07-16: active stream API is api.speedracelight.com (player.videasy.to / cineby.at).",
-        "2026-08-26: the api.wingsdatabase.com seed mirror was removed — NXDOMAIN on public resolvers; the surviving apex does not serve /seed. db.wingsdatabase.com still resolves and stays listed.",
-        "2026-11: api.videasy.to / db.videasy.to went NXDOMAIN — the TMDB-format catalog moved to db.wingsdatabase.com/3 (verified /search/multi + /movie external_ids). VIDEASY_DB_BASES walks live-first.",
-        "2026-07-16: Cineby server catalog labels (Yoru/Neon/Sage/Jett/…) map to /cdn /neon2 /ym /jett /… routes.",
-        "2026-07-18: Inventory UI order matches cineby Servers (Yoru first). Resolve Phase A is Yoru → Cypher → Neon → Sage → Jett → Breach → Vyse; localized servers stay Phase B.",
-        "2026-07-18: Resolve-gate always segment-probes HLS before accepting a candidate; definitive-dead CDNs fail over instead of hanging.",
-        "2026-09-12: Resolve-gate no longer attests streamReachabilityVerified — the probe's 200 did not survive to mpv on signed CDN URLs (#361), so downstream checks re-probe rather than trust a false green for 5m.",
-        "2026-07-11: stream sources-with-title routes on api.videasy.to remain route-dead (404).",
-        "bc-frontend is the default Videasy client profile; stream/API origin/referer follow cineby.at (seed already did).",
-        "Do not mark browser-safe because local decrypt/runtime behavior is required."
-      ]
-    },
     {
       "id": "vidlink",
       "displayName": "VidLink",
@@ -56,7 +34,7 @@
       "displayName": "VidRock",
       "description": "Backup source for movies and series with direct video files",
       "domain": "vidrock.net",
-      "recommended": false,
+      "recommended": true,
       "mediaKinds": ["movie", "series"],
       "capabilities": ["source-resolve", "multi-source", "quality-ranked"],
       "notes": [
@@ -85,7 +63,7 @@
       "displayName": "Movy",
       "description": "Movies and series via a multi-lane source aggregator",
       "domain": "movy.sx",
-      "recommended": false,
+      "recommended": true,
       "mediaKinds": ["movie", "series"],
       "capabilities": ["source-resolve", "subtitle-resolve", "quality-ranked", "multi-source"],
       "notes": [
@@ -100,7 +78,7 @@
       "displayName": "AllManga",
       "description": "Anime episodes in sub and dub — the ani-cli parity source",
       "domain": "mkissa.to",
-      "recommended": false,
+      "recommended": true,
       "mediaKinds": ["anime"],
       "capabilities": ["search", "episode-list", "source-resolve", "subtitle-resolve", "multi-source"],
       "notes": [
@@ -313,6 +291,12 @@
       "label": "Providers",
       "aliases": ["providers", "provider-settings", "default-provider"],
       "description": "Switch the session provider or set defaults and priority"
+    },
+    {
+      "id": "provider-status",
+      "label": "Provider Status",
+      "aliases": ["provider-status", "providers-status", "status"],
+      "description": "Inspect live global provider reachability, latency, and capability matrix"
     },
     {
       "id": "presence",
@@ -883,6 +867,16 @@
       "short": "",
       "long": "--mpv-log-file",
       "description": "Write the mpv log to a file"
+    },
+    {
+      "short": "",
+      "long": "--hwdec",
+      "description": "Hardware video decode: default | auto-safe | no"
+    },
+    {
+      "short": "",
+      "long": "--no-hwdec",
+      "description": "Shortcut for --hwdec no"
     },
     {
       "short": "",

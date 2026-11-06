@@ -268,6 +268,8 @@ export async function openAnimeEpisodeListPicker(
       value: episode.index,
       label: markCurrentLabel(episode.label, episode.index === currentEpisode),
       detail: episode.detail,
+      previewImageUrl:
+        episode.previewImageUrl ?? episode.artwork?.thumbnailUrl ?? episode.artwork?.posterUrl,
     })),
   });
 }

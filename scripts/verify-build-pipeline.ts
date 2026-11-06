@@ -22,9 +22,9 @@ const DIST = join(CLI_ROOT, "dist");
 const NPM_BUNDLE = join(DIST, "kunai.js");
 const LINUX_GLIBC_BIN = join(DIST, "bin/kunai-linux-x64");
 
-const argv = process.argv.slice(2);
-const prMode = argv.includes("--pr");
-const allTargets = argv.includes("--all-targets") || process.env.KUNAI_VERIFY_ALL_BINARIES === "1";
+const argv = new Set(process.argv.slice(2));
+const prMode = argv.has("--pr");
+const allTargets = argv.has("--all-targets") || process.env.KUNAI_VERIFY_ALL_BINARIES === "1";
 
 const MIN_DISK_BYTES = 1024 * 1024 * 1024;
 const WARN_DISK_BYTES = 2 * MIN_DISK_BYTES;
@@ -129,11 +129,7 @@ function hostBinaryPath(): string {
 }
 
 async function main(): Promise<void> {
-  if (
-    allTargets &&
-    process.env.KUNAI_VERIFY_ALL_BINARIES !== "1" &&
-    !argv.includes("--all-targets")
-  ) {
+  if (allTargets && process.env.KUNAI_VERIFY_ALL_BINARIES !== "1" && !argv.has("--all-targets")) {
     console.error(
       "[verify:build-pipeline] set KUNAI_VERIFY_ALL_BINARIES=1 or pass --all-targets for the full 8-target build.",
     );

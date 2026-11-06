@@ -8,8 +8,6 @@ import type {
   ProviderArtworkInfo,
   ProviderEpisodeOption,
   ProviderFailure,
-  ProviderResolveInput,
-  ProviderRuntimeContext,
   ProviderSearchResult,
   ProviderSourceCandidate,
   ProviderTraceEvent,
@@ -34,10 +32,9 @@ import { finalizeCycleSourceInventory } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
 import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import {
-  fetchHianimeEpisodeCatalog,
   HIANIME_SUPPORTED_SERVER,
+  loadHianimeEpisodeCatalogForTitle,
   resolveHianimeEpisodeStreams,
-  resolveHianimeShow,
   searchHianime,
   type HianimeAudioMode,
   type HianimeStreamFailureCode,
@@ -75,6 +72,7 @@ export {
   decodeHianimeEmbedPage,
   resolveHianimeEpisodeStreams,
   resolveHianimeShow,
+  loadHianimeEpisodeCatalogForTitle,
   runHianimeCurlWithRetry,
   searchHianime,
   splitCurlHttpTrailer,
@@ -264,9 +262,7 @@ function toSubtitleCandidates(
   return subtitles.flatMap((subtitle) => {
     if (!subtitle.src) return [];
     const language =
-      normalizeIsoLanguageCode(subtitle.lang ?? subtitle.label) ??
-      normalizeIsoLanguageCode("en") ??
-      "en";
+      normalizeIsoLanguageCode(subtitle.label) ?? normalizeIsoLanguageCode(subtitle.lang) ?? "en";
     return [
       {
         id: `subtitle:${HIANIME_PROVIDER_ID}:${Bun.hash(subtitle.src).toString(36)}`,
@@ -290,14 +286,6 @@ type HianimeModeResolutionSubtitles = readonly {
   readonly isDefault?: boolean;
   readonly src: string;
 }[];
-
-async function resolveShowId(
-  input: { readonly title: ProviderResolveInput["title"] },
-  signal?: AbortSignal,
-  context?: ProviderRuntimeContext,
-): Promise<string | null> {
-  return (await resolveHianimeShow(input, signal, context))?.id ?? null;
-}
 
 /**
  * Allowlist: a failure code added later must opt into retries explicitly
@@ -339,14 +327,14 @@ export const hianimeProviderModule: CoreProviderModule = {
   },
 
   async listEpisodes(input, context): Promise<readonly ProviderEpisodeOption[] | null> {
-    const showId = await resolveShowId(input, context.signal, context);
-    if (!showId) return null;
-    let catalog: Awaited<ReturnType<typeof fetchHianimeEpisodeCatalog>>;
+    let loaded: Awaited<ReturnType<typeof loadHianimeEpisodeCatalogForTitle>>;
     try {
-      catalog = await fetchHianimeEpisodeCatalog(showId, context.signal, context);
+      loaded = await loadHianimeEpisodeCatalogForTitle(input, context.signal, context);
     } catch {
       return null;
     }
+    if (!loaded) return null;
+    const { catalog } = loaded;
     if (catalog.length === 0) return [];
     return catalog.map((entry): ProviderEpisodeOption => ({
       index: entry.number,
@@ -393,8 +381,8 @@ export const hianimeProviderModule: CoreProviderModule = {
     });
 
     try {
-      const show = await resolveHianimeShow(input, context.signal, context);
-      if (!show) {
+      const loaded = await loadHianimeEpisodeCatalogForTitle(input, context.signal, context);
+      if (!loaded) {
         return createExhaustedResult(
           input,
           context,
@@ -407,8 +395,7 @@ export const hianimeProviderModule: CoreProviderModule = {
           { cachePolicy, events, failures, startedAt },
         );
       }
-
-      const catalog = await fetchHianimeEpisodeCatalog(show.id, context.signal, context);
+      const { show, catalog } = loaded;
       if (catalog.length === 0) {
         return createExhaustedResult(
           input,
@@ -544,7 +531,10 @@ export const hianimeProviderModule: CoreProviderModule = {
       const subtitleLanguages = [
         ...new Set(
           requested.subtitles
-            .map((subtitle) => normalizeIsoLanguageCode(subtitle.lang ?? subtitle.label))
+            .map(
+              (subtitle) =>
+                normalizeIsoLanguageCode(subtitle.label) ?? normalizeIsoLanguageCode(subtitle.lang),
+            )
             .filter((language): language is string => Boolean(language)),
         ),
       ];
@@ -597,6 +587,7 @@ export const hianimeProviderModule: CoreProviderModule = {
         ].slice(0, 3),
         context,
         signal: context.signal,
+        hedgeDelayMs: 2_000,
       });
       if (context.signal?.aborted) {
         return createExhaustedResult(

@@ -234,9 +234,12 @@ export function resolveVidlinkDirect(
         resolveInput.title.id,
       );
 
-      const data = await readJsonObjectBody<{ stream?: VidlinkStream }>(response);
+      let catalogAbsent = false;
+      const data = await readJsonObjectBody<{ stream?: VidlinkStream }>(response, () => {
+        catalogAbsent = response.status === 200;
+      });
       const stream = data?.stream;
-      if (!stream) return null;
+      if (!stream) return catalogAbsent ? { streams: [], catalogAbsent: true } : null;
 
       const streams: DirectStreamInput[] = [];
       const manifestSubtitles: DirectSubtitleInput[] = [];

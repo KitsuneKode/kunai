@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-27"
+lastReviewed: "2026-10-28"
 ---
 
 # Kunai — Testing Strategy
@@ -596,7 +596,7 @@ Best target for:
 - bug reproductions that need a narrated, reviewable artifact instead of a
   boolean
 
-Two drivers share one sandbox model (seeded throwaway profile via
+The replay and held-session drivers share one sandbox model (seeded throwaway profile via
 storage-root env, fixture providers + fixture search, optional fake-mpv shim,
 `ProfileInspector` reading SQLite/config directly):
 
@@ -613,6 +613,36 @@ storage-root env, fixture providers + fixture search, optional fake-mpv shim,
   `capture-pane` — the actual rendered screen — and `relaunch` is a
   first-class verb (quit, reboot the same profile, prove state survived).
   Linux/macOS only; tmux missing is a loud failure, not a skip-pass.
+
+`bun run --cwd apps/cli agent:kitty --evidence /tmp/kunai-visual-NEW` adds an
+isolated graphical-terminal loop: a private Kitty socket/window, numbered PNG
+and text captures, SQLite witnesses and owned cleanup. The default fixture
+scenario exercises the commands footer. A JSON scenario supplies keyboard,
+text, mouse-protocol, expected-frame and decoded-playback steps. Inspect the
+PNG before approving visuals; text dumps cannot prove fonts or graphics.
+Mouse protocol injection proves the application's input route, not native OS
+pointer delivery. Native desktop clicks need a separate input backend and
+fresh measured coordinates against the owned window.
+
+`--matrix --live` explicitly opts into a serial live pass over the production
+roster, with other providers disabled per route. It covers movie, series,
+anime and YouTube sample targets. Each successful playback observation requires
+advancing mpv IPC time, positive video dimensions and a video-frame PNG, with
+visual review still pending. The machine status `playback-progress-observed`
+does not establish moving decoded picture: an attached cover can satisfy the
+clock/dimensions check. Upstream failures remain failures; they cannot
+be replaced by fixtures or another provider. This short qualification is not
+a soak test, physical-device evidence, or every-source/quality/subtitle proof.
+The normal test suite does not launch Kitty or contact these providers.
+The operational recipe is in the repository's `verify-kunai` skill.
+
+Setup failures dispose the isolated profile before returning an error. SIGINT
+and SIGTERM abort the active route, await its shared cleanup promise, and write
+cleanup/results records before exit. Unconfirmed child exit retains the profile.
+The owned foreground command records its PID before executing Kunai, so startup
+cancellation can terminate it before Kitty remote control becomes ready. Missing
+PID discovery is unconfirmed cleanup, even when the terminal process has exited.
+Signal regressions use a separate command child, not the terminal PID as a proxy.
 
 Wait predicates share a grammar: text is a literal substring unless wrapped in
 `/…/`, which compiles a RegExp (`[\s\S]` spans lines). `keys` (or

@@ -27,3 +27,4 @@ export * from "./vidlink/manifest";
 export * from "./vidrock/direct";
 export * from "./vidrock/manifest";
 export * from "./youtube";
+export * from "./debrid";

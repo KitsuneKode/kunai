@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
+import {
+  playbackLanguageProfile,
+  playbackQualityPreference,
+  playbackSubtitlePreference,
+} from "@/app/playback/playback-profile-context";
+import { resolveSessionConfigOverrides } from "@/app/session/session-overrides";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { ConfigServiceImpl } from "@/services/persistence/ConfigServiceImpl";
 import { DEFAULT_CONFIG, type ConfigStore } from "@/services/persistence/ConfigStore";
@@ -85,33 +91,33 @@ describe("ConfigServiceImpl", () => {
 
   test("normalizes provider priority lists on load and update", async () => {
     const store = new MemoryConfigStore({
-      providerPriority: [" vidking ", "rivestream", "vidking", ""],
+      providerPriority: [" movy ", "rivestream", "movy", ""],
       animeProviderPriority: [" miruro ", "allanime", "miruro"],
     });
     const service = await ConfigServiceImpl.load(store);
 
-    expect(service.providerPriority).toEqual(["videasy", "rivestream"]);
+    expect(service.providerPriority).toEqual(["movy", "rivestream"]);
     expect(service.animeProviderPriority).toEqual(["miruro", "allanime"]);
 
     await service.update({
-      providerPriority: ["vidlink", " vidking ", "vidlink"],
+      providerPriority: ["vidlink", " movy ", "vidlink"],
       animeProviderPriority: ["allanime", " miruro "],
     });
     await service.save();
 
-    expect((await store.load()).providerPriority).toEqual(["vidlink", "videasy"]);
+    expect((await store.load()).providerPriority).toEqual(["vidlink", "movy"]);
     expect((await store.load()).animeProviderPriority).toEqual(["allanime", "miruro"]);
   });
 
   test("normalizes the disabled-providers list on load and update", async () => {
     const store = new MemoryConfigStore({
       // SAFETY: deliberately poisoned JSON shape — validates the non-string guard.
-      disabledProviders: [" videasy ", "videasy", "", 42 as never],
+      disabledProviders: [" movy ", "movy", "", 42 as never],
     });
     const service = await ConfigServiceImpl.load(store);
 
-    expect(service.disabledProviders).toEqual(["videasy"]);
-    expect(service.getRaw().disabledProviders).toEqual(["videasy"]);
+    expect(service.disabledProviders).toEqual(["movy"]);
+    expect(service.getRaw().disabledProviders).toEqual(["movy"]);
 
     await service.update({ disabledProviders: [" miruro ", "anidb", "miruro"] });
     await service.save();
@@ -570,29 +576,29 @@ describe("ConfigServiceImpl", () => {
     test("leaves a deliberate series provider pick alone but stamps the revision", async () => {
       const store = new MemoryConfigStore({
         provider: "rivestream",
-        providerPriority: ["vidlink", "videasy"],
+        providerPriority: ["vidlink", "movy"],
       });
       const service = await ConfigServiceImpl.load(store);
 
       expect(service.provider).toBe("rivestream");
-      expect(service.providerPriority).toEqual(["vidlink", "videasy"]);
+      expect(service.providerPriority).toEqual(["vidlink", "movy"]);
       expect(service.getRaw().providerDefaultsRevision).toBe(
         DEFAULT_CONFIG.providerDefaultsRevision,
       );
     });
 
-    test("leaves a reordered series list headed by videasy alone", async () => {
+    test("maps a reordered series list headed by videasy to the live default after retirement", async () => {
       const store = new MemoryConfigStore({
         provider: "videasy",
         providerPriority: ["vidlink", "rivestream"],
       });
       const service = await ConfigServiceImpl.load(store);
 
-      expect(service.provider).toBe("videasy");
+      expect(service.provider).toBe("vidrock");
       expect(service.providerPriority).toEqual(["vidlink", "rivestream"]);
     });
 
-    test("does not re-migrate a stamped config whose user re-picked videasy", async () => {
+    test("heals a stamped config that still names the retired videasy adapter", async () => {
       const store = new MemoryConfigStore({
         provider: "videasy",
         providerPriority: ["rivestream", "vidlink"],
@@ -601,7 +607,7 @@ describe("ConfigServiceImpl", () => {
       await ConfigServiceImpl.load(store);
 
       const persisted = await store.load();
-      expect(persisted.provider).toBe("videasy");
+      expect(persisted.provider).toBe("vidrock");
       expect(persisted.providerPriority).toEqual(["rivestream", "vidlink"]);
     });
 
@@ -651,13 +657,13 @@ describe("ConfigServiceImpl", () => {
     test("leaves a revision-3 series list the user reordered alone", async () => {
       const store = new MemoryConfigStore({
         provider: "vidlink",
-        providerPriority: ["vidrock", "rivestream", "videasy"],
+        providerPriority: ["vidrock", "rivestream", "movy"],
         providerDefaultsRevision: 3,
       });
       const service = await ConfigServiceImpl.load(store);
 
       expect(service.provider).toBe("vidlink");
-      expect(service.providerPriority).toEqual(["vidrock", "rivestream", "videasy"]);
+      expect(service.providerPriority).toEqual(["vidrock", "rivestream", "movy"]);
     });
 
     test("moves a revision-3 HiAnime anime pair to the current defaults", async () => {
@@ -734,6 +740,61 @@ describe("youtubeMetadata normalization", () => {
 });
 
 describe("session overrides", () => {
+  test("explicit settings reset clears transient launch choices too", async () => {
+    const store = new MemoryConfigStore(structuredClone(DEFAULT_CONFIG));
+    const service = await ConfigServiceImpl.load(store);
+    service.applySessionOverrides(
+      resolveSessionConfigOverrides(
+        { zen: true, minimal: true, offline: true, quality: "480p", subtitle: "none" },
+        service,
+      ),
+    );
+    await service.reset();
+    expect(service.offlineMode).toBe(DEFAULT_CONFIG.offlineMode);
+    expect(service.youtubeLanguageProfile).toEqual(DEFAULT_CONFIG.youtubeLanguageProfile);
+    expect(service.movieLanguageProfile).toEqual(DEFAULT_CONFIG.movieLanguageProfile);
+    expect(service.zenMode).toBe(DEFAULT_CONFIG.zenMode);
+  });
+  test("launch preferences reach every playback reader without becoming persisted defaults", async () => {
+    const store = new MemoryConfigStore(structuredClone(DEFAULT_CONFIG));
+    const service = await ConfigServiceImpl.load(store);
+    const before = service.getRaw();
+    service.applySessionOverrides(
+      resolveSessionConfigOverrides(
+        { zen: false, minimal: false, offline: true, quality: "480p", subtitle: "none" },
+        service,
+      ),
+    );
+    const cases = [
+      { mode: "anime", title: { type: "series", isAnime: true }, profile: "animeLanguageProfile" },
+      { mode: "series", title: { type: "series" }, profile: "seriesLanguageProfile" },
+      { mode: "series", title: { type: "movie" }, profile: "movieLanguageProfile" },
+      { mode: "youtube", title: { type: "movie" }, profile: "youtubeLanguageProfile" },
+    ] as const;
+    for (const { mode, title, profile } of cases) {
+      const context = { mode, title, config: service };
+      expect(playbackLanguageProfile(context)).toBe(service[profile]);
+      expect(playbackQualityPreference(context)).toBe("480p");
+      expect(playbackSubtitlePreference(context)).toBe("none");
+    }
+    expect(service.seriesLanguageProfile.quality).toBe("480p");
+    expect(service.offlineMode).toBe(true);
+    await service.save();
+    const persisted = await store.load();
+    expect(persisted.youtubeLanguageProfile).toEqual(before.youtubeLanguageProfile);
+    expect(persisted.movieLanguageProfile).toEqual(before.movieLanguageProfile);
+    expect(persisted.animeLanguageProfile).toEqual(before.animeLanguageProfile);
+    expect(persisted.seriesLanguageProfile).toEqual(before.seriesLanguageProfile);
+    expect(persisted.offlineMode).toBe(before.offlineMode);
+    await service.update({
+      youtubeLanguageProfile: { ...before.youtubeLanguageProfile, quality: "720p" },
+      offlineMode: false,
+    });
+    expect(service.youtubeLanguageProfile.quality).toBe("720p");
+    expect(service.offlineMode).toBe(false);
+    expect(service.movieLanguageProfile.quality).toBe("480p");
+  });
+
   test("a session override never reaches the persisted config file", async () => {
     const store = new MemoryConfigStore();
     const service = await ConfigServiceImpl.load(store);
@@ -879,10 +940,12 @@ describe("ConfigServiceImpl untrusted-shape hardening", () => {
       expect(service.animeProviderPriority).toEqual([
         "kickassanime",
         "animegg",
-        "allanime",
         "miruro",
+        "allanime",
       ]);
-      expect((await store.load()).providerDefaultsRevision).toBe(6);
+      expect((await store.load()).providerDefaultsRevision).toBe(
+        DEFAULT_CONFIG.providerDefaultsRevision,
+      );
     });
 
     test("normalizes anidb away on update as well as load", async () => {
@@ -894,6 +957,49 @@ describe("ConfigServiceImpl untrusted-shape hardening", () => {
 
       expect(service.animeProvider).toBe("hianime");
       expect(service.animeProviderPriority).toEqual(["allanime"]);
+    });
+  });
+
+  describe("ConfigServiceImpl untrusted-shape hardening > retired production provider: videasy", () => {
+    test("maps an explicit series selection and strips the id from custom priority", async () => {
+      const store = new MemoryConfigStore({
+        provider: "videasy",
+        providerPriority: ["rivestream", "videasy", "movy"],
+      });
+      const service = await ConfigServiceImpl.load(store);
+
+      expect(service.provider).toBe("vidrock");
+      expect(service.providerPriority).toEqual(["rivestream", "movy"]);
+    });
+
+    test("removes a retired disable entry without disabling vidrock", async () => {
+      const store = new MemoryConfigStore({
+        disabledProviders: ["videasy"],
+      });
+      const service = await ConfigServiceImpl.load(store);
+
+      expect(service.disabledProviders).toEqual([]);
+      expect(service.provider).toBe("vidrock");
+    });
+
+    test("drops title pins that still point at videasy", async () => {
+      const store = new MemoryConfigStore({
+        titleProviderPreferences: { "tmdb:550": "videasy", "tmdb:1399": "rivestream" },
+      });
+      const service = await ConfigServiceImpl.load(store);
+
+      expect(service.titleProviderPreferences).toEqual({ "tmdb:1399": "rivestream" });
+    });
+
+    test("normalizes videasy away on update as well as load", async () => {
+      const service = await ConfigServiceImpl.load(new MemoryConfigStore({}));
+      await service.update({
+        provider: "videasy",
+        providerPriority: ["videasy", "movy"],
+      });
+
+      expect(service.provider).toBe("vidrock");
+      expect(service.providerPriority).toEqual(["movy"]);
     });
   });
 });

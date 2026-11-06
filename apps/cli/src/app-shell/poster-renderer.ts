@@ -36,7 +36,12 @@ const APP_SHELL_SIXEL_MAX_BYTES = 256 * 1024;
 let nextId = 1;
 function allocId(): number {
   const id = nextId;
-  nextId = (nextId % 65534) + 1;
+  if (nextId >= 0xfffffe) {
+    nextId = 1;
+    deleteAllTerminalImages();
+  } else {
+    nextId++;
+  }
   return id;
 }
 

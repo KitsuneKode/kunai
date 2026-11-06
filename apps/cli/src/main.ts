@@ -55,7 +55,13 @@ import {
   type ShutdownRuntime,
 } from "@/app/session/shutdown-coordinator";
 import { bindShutdownRequestHandler } from "@/app/session/shutdown-request";
-import { buildCliHelpText, CliUsageError, parseCliArgs, type CliArgs } from "@/cli-args";
+import {
+  buildCliHelpText,
+  CliUsageError,
+  parseCliArgs,
+  type CliArgs,
+  VALUE_FLAGS,
+} from "@/cli-args";
 import { createContainer, disposeContainer } from "@/container";
 import { detectPlayerPlatform, resolvePlayerMode } from "@/domain/playback/player-choice";
 import {
@@ -614,11 +620,29 @@ async function maybeRunAutoCleanupDownloads(
 export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   process.title = "kunai";
 
+  // Fast path: --help / -h / --version / -v handled before any maintenance or debrid resolution.
+  if (argv.length === 1) {
+    if (argv[0] === "--version" || argv[0] === "-v") {
+      const { formatVersionLine } = await import("./services/update/version-display");
+      process.stdout.write(`${await formatVersionLine(KUNAI_VERSION)}\n`);
+      return;
+    }
+    if (argv[0] === "--help" || argv[0] === "-h") {
+      process.stdout.write(buildHelpText());
+      return;
+    }
+  }
+
   // `kunai upgrade` / `kunai uninstall` / `kunai doctor` / `kunai rollback` —
   // channel-aware maintenance. Handled before the shell boots so they can run
   // standalone (binary self-replace).
+  if (argv[0] === "serve" || argv[0] === "web") {
+    const { runServeCommand } = await import("./services/web-companion/run-serve-command");
+    process.exit(await runServeCommand(argv.slice(1)));
+  }
   if (argv[0] === "doctor") {
     const { runDoctor } = await import("./services/update/run-doctor");
+
     process.exit(
       await runDoctor({
         json: argv.includes("--json"),
@@ -675,6 +699,80 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
         noColor: Boolean(process.env.NO_COLOR),
       }),
     );
+  }
+  if (
+    argv[0] === "status" ||
+    (argv[0] === "providers" && argv[1] === "status") ||
+    argv.includes("--status") ||
+    argv.includes("--providers-status")
+  ) {
+    const { runProviderStatusCommand } = await import("./services/providers/run-provider-status");
+    const statusArgs =
+      argv[0] === "providers" && argv[1] === "status" ? argv.slice(2) : argv.slice(1);
+    process.exit(
+      await runProviderStatusCommand(statusArgs, {
+        isTty: Boolean(process.stdout.isTTY),
+        noColor: Boolean(process.env.NO_COLOR),
+      }),
+    );
+  }
+  const serviceIdx = argv.indexOf("--service");
+  const candidateService = serviceIdx >= 0 ? argv[serviceIdx + 1] : undefined;
+  const normalizedService = candidateService?.toLowerCase();
+  if (serviceIdx >= 0) {
+    if (candidateService === undefined || candidateService.startsWith("-")) {
+      process.stderr.write("kunai: --service expected a value\n");
+      process.exit(2);
+    }
+    if (normalizedService !== "real-debrid" && normalizedService !== "all-debrid") {
+      process.stderr.write(
+        `kunai: invalid --service "${candidateService}" — must be "real-debrid" or "all-debrid"\n`,
+      );
+      process.exit(2);
+    }
+  }
+  const serviceArg: "real-debrid" | "all-debrid" | undefined =
+    normalizedService === "real-debrid" || normalizedService === "all-debrid"
+      ? normalizedService
+      : undefined;
+
+  const debridIdx = argv.indexOf("--debrid");
+  const debridArg = debridIdx >= 0 ? argv[debridIdx + 1] : undefined;
+
+  const nonFlagTokens: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i];
+    if (!token) continue;
+    if (VALUE_FLAGS.has(token)) {
+      i += 1;
+      continue;
+    }
+    if (token.startsWith("-")) {
+      continue;
+    }
+    nonFlagTokens.push(token);
+  }
+
+  let candidateMagnet: string | undefined;
+  if (nonFlagTokens[0] === "play" && nonFlagTokens[1]) {
+    candidateMagnet = nonFlagTokens[1];
+  } else if (nonFlagTokens[0] && nonFlagTokens[0] !== "play") {
+    candidateMagnet = nonFlagTokens[0];
+  } else if (debridArg !== undefined && !debridArg.startsWith("-")) {
+    candidateMagnet = debridArg;
+  }
+
+  if (candidateMagnet) {
+    const { isMagnetOrTorrentHash, runPlayMagnetCommand } =
+      await import("./services/debrid/run-play-magnet");
+    if (isMagnetOrTorrentHash(candidateMagnet)) {
+      process.exit(
+        await runPlayMagnetCommand(candidateMagnet, {
+          dryRun: argv.includes("--dry-run"),
+          service: serviceArg,
+        }),
+      );
+    }
   }
 
   // Best-effort: clear the running Kunai binary's own Windows self-replace backup.
@@ -798,7 +896,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       "kunai: this command needs an interactive terminal.\n" +
         "Nothing was started. Pipe-aware routes that do work without a TTY:\n" +
         "  kunai --help | --version | --dry-run\n" +
-        "  kunai doctor | kunai diagnostics | kunai completion | kunai upgrade --check\n" +
+        "  kunai doctor | kunai status | kunai diagnostics | kunai completion | kunai upgrade --check\n" +
         "  kunai --support-bundle\n",
     );
     process.exitCode = 1;
@@ -1390,6 +1488,14 @@ function setupSignalHandlers(): void {
   // Kunai is gone. `exit` is synchronous and always runs — SIGKILL them here.
   process.on("exit", () => {
     try {
+      if (process.stdout.isTTY) {
+        process.stdout.write(
+          "\x1b\\\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l\x1b[?25h\x1b[?1049l\x1b_Ga=d,d=A;\x1b\\",
+        );
+      }
+      if (process.stdin.isTTY && "setRawMode" in process.stdin) {
+        process.stdin.setRawMode(false);
+      }
       globalContainer?.downloadService.killActiveProcessesSync();
       globalContainer?.player.killActiveMpvProcessesSync();
     } catch {
@@ -1417,6 +1523,16 @@ function setupSignalHandlers(): void {
 }
 
 export async function startCli(argv = process.argv.slice(2)): Promise<void> {
+  // Fast trampoline: exit immediately for single-flag --version / -v and --help / -h
+  // before installing process signal handlers, memory watchdogs, or event-loop monitors.
+  if (
+    argv.length === 1 &&
+    (argv[0] === "--version" || argv[0] === "-v" || argv[0] === "--help" || argv[0] === "-h")
+  ) {
+    await runCli(argv);
+    return;
+  }
+
   setupSignalHandlers();
   // Always-on memory safety net: a separate-thread watchdog that SIGKILLs a
   // runaway even when the main event loop is jammed (the closed-terminal case).

@@ -61,6 +61,8 @@ function episodeTransitionLoadingLabel(action: PlaybackControlAction): string | 
       return "Kunai · Toggling Sub / Dub…";
     case "switch-title":
       return "Kunai · Switching title…";
+    case "up-next":
+      return "Kunai · Opening Up Next…";
     default:
       return null;
   }

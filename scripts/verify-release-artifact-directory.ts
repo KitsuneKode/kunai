@@ -164,7 +164,8 @@ function parseCliArgs(argv: readonly string[]): {
   let skipVersionSmoke = false;
 
   for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i]!;
+    const arg = argv[i];
+    if (!arg) continue;
     if (arg === "--expected-version") {
       expectedVersion = argv[++i];
       continue;

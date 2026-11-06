@@ -1,11 +1,17 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  buildChannelFileMap,
+  nixSriSha256FromHex,
   parseSumsFile,
   renderHomebrewFormula,
+  renderNixFlake,
   renderPkgbuild,
   renderScoopManifest,
   renderSrcinfo,
+  renderWingetInstallerManifest,
+  renderWingetLocaleManifest,
+  renderWingetVersionManifest,
 } from "../../../../../scripts/packaging/render-channels";
 
 // The real v0.3.0 SHA256SUMS.archives — channel renderers must reproduce these
@@ -25,6 +31,30 @@ const channel = { version: "0.3.0", tag: "v0.3.0" };
 const DL = "https://github.com/KitsuneKode/kunai/releases/download/v0.3.0";
 
 const sums = parseSumsFile(SUMS_V030);
+
+describe("nixSriSha256FromHex", () => {
+  test("maps a lowercase hex digest to SRI sha256-base64 form", () => {
+    expect(
+      nixSriSha256FromHex("b1bc0eb2c8e04138c5713031986b79dcc28f9680e4dc025b59fecc748adc13bf"),
+    ).toBe("sha256-sbwOssjgQTjFcTAxmGt53MKPloDk3AJbWf7MdIrcE78=");
+  });
+});
+
+describe("renderNixFlake", () => {
+  const flake = renderNixFlake(channel, sums);
+
+  test("declares fetchurl sources with SRI hashes for each Unix archive", () => {
+    expect(flake).toContain('description = "');
+    expect(flake).toContain("fetchurl");
+    expect(flake).toContain("dontStrip = true;");
+    expect(flake).toContain("dontFixup = true;");
+    expect(flake).toContain('url = "${base}/${tag}/${archive}"');
+    expect(flake).toContain('archive = "kunai-linux-x64.tar.gz"');
+    expect(flake).toContain(
+      `hash = "${nixSriSha256FromHex(sums.get("kunai-linux-x64.tar.gz") ?? "")}"`,
+    );
+  });
+});
 
 describe("parseSumsFile", () => {
   test("maps every archive name to its sha256", () => {
@@ -152,10 +182,121 @@ describe("renderPkgbuild + renderSrcinfo", () => {
   });
 });
 
+describe("renderWingetVersionManifest", () => {
+  const manifest = renderWingetVersionManifest(channel);
+
+  test("declares version manifest fields and matching version", () => {
+    expect(manifest).toContain("PackageIdentifier: KitsuneKode.Kunai");
+    expect(manifest).toContain(`PackageVersion: ${channel.version}`);
+    expect(manifest).toContain("DefaultLocale: en-US");
+    expect(manifest).toContain("ManifestType: version");
+    expect(manifest).toContain("ManifestVersion: 1.9.0");
+    assertValidYaml(manifest);
+  });
+});
+
+describe("renderWingetInstallerManifest", () => {
+  const manifest = renderWingetInstallerManifest(channel, sums);
+
+  test("configures zip portable installers for x64 and arm64", () => {
+    expect(manifest).toContain("PackageIdentifier: KitsuneKode.Kunai");
+    expect(manifest).toContain(`PackageVersion: ${channel.version}`);
+    expect(manifest).toContain("InstallerType: zip");
+    expect(manifest).toContain("NestedInstallerType: portable");
+    expect(manifest).toContain("Commands:\n  - kunai");
+    expect(manifest).toContain("UpgradeBehavior: install");
+    expect(manifest).toContain("ManifestType: installer");
+    expect(manifest).toContain("ManifestVersion: 1.9.0");
+
+    // x64 installer assertions
+    expect(manifest).toContain("Architecture: x64");
+    expect(manifest).toContain("RelativeFilePath: kunai-windows-x64.exe");
+    expect(manifest).toContain("PortableCommandAlias: kunai");
+    expect(manifest).toContain(`InstallerUrl: ${DL}/kunai-windows-x64.zip`);
+    expect(manifest).toContain(
+      "InstallerSha256: B857E3C28C4BFFFFDF75A1250A0D343FC4A4C703469CE6B94C79B2429D2AD0AA",
+    );
+
+    // arm64 installer assertions
+    expect(manifest).toContain("Architecture: arm64");
+    expect(manifest).toContain("RelativeFilePath: kunai-windows-arm64.exe");
+    expect(manifest).toContain(`InstallerUrl: ${DL}/kunai-windows-arm64.zip`);
+    expect(manifest).toContain(
+      "InstallerSha256: B814BEE6F7BAFA814AEF875C57E21A5775B3FD7D74FF4CEE5DFA446C457E5A25",
+    );
+
+    assertValidYaml(manifest);
+  });
+});
+
+describe("renderWingetLocaleManifest", () => {
+  const manifest = renderWingetLocaleManifest(channel);
+
+  test("declares metadata, publisher, license, and tags", () => {
+    expect(manifest).toContain("PackageIdentifier: KitsuneKode.Kunai");
+    expect(manifest).toContain(`PackageVersion: ${channel.version}`);
+    expect(manifest).toContain("PackageLocale: en-US");
+    expect(manifest).toContain("Publisher: KitsuneKode");
+    expect(manifest).toContain("PackageName: Kunai");
+    expect(manifest).toContain("License: MIT");
+    expect(manifest).toContain(
+      "ShortDescription: Terminal-first streaming CLI for anime, series, and movies, played in mpv",
+    );
+    expect(manifest).toContain("Moniker: kunai");
+    expect(manifest).toContain(
+      "Tags:\n  - anime\n  - cli\n  - mpv\n  - streaming\n  - terminal\n  - video",
+    );
+    expect(manifest).toContain("ManifestType: defaultLocale");
+    expect(manifest).toContain("ManifestVersion: 1.9.0");
+
+    assertValidYaml(manifest);
+  });
+});
+
+function assertValidYaml(yaml: string): void {
+  expect(yaml).not.toContain("\t");
+  const lines = yaml.split(/\r?\n/);
+  for (const line of lines) {
+    if (!line.trim() || line.trim().startsWith("#")) continue;
+    const leadingSpaces = line.search(/\S|$/);
+    expect(leadingSpaces % 2).toBe(0);
+    const trimmed = line.trim();
+    const isKeyValue = /^[\w.-]+:\s*.*$/.test(trimmed);
+    const isListItem = /^-\s+.*$/.test(trimmed);
+    expect(isKeyValue || isListItem).toBe(true);
+  }
+}
+
+describe("buildChannelFileMap", () => {
+  const map = buildChannelFileMap(channel, sums, LICENSE_SHA);
+
+  test("generates entries for Homebrew, Scoop, AUR, Nix flake, and all 3 WinGet manifests", () => {
+    expect(map["Formula/kunai.rb"]).toBeDefined();
+    expect(map["bucket/kunai.json"]).toBeDefined();
+    expect(map["aur/kunai-bin/PKGBUILD"]).toBeDefined();
+    expect(map["aur/kunai-bin/.SRCINFO"]).toBeDefined();
+    expect(map["nix/flake.nix"]).toBeDefined();
+
+    const wingetPrefix = `winget/manifests/k/KitsuneKode/Kunai/${channel.version}`;
+    expect(map[`${wingetPrefix}/KitsuneKode.Kunai.yaml`]).toBeDefined();
+    expect(map[`${wingetPrefix}/KitsuneKode.Kunai.installer.yaml`]).toBeDefined();
+    expect(map[`${wingetPrefix}/KitsuneKode.Kunai.locale.en-US.yaml`]).toBeDefined();
+  });
+});
+
 describe("render failures", () => {
   test("a missing sums entry fails closed rather than emitting a wrong hash", () => {
     const missing = new Map(sums);
     missing.delete("kunai-windows-x64.zip");
     expect(() => renderScoopManifest(channel, missing)).toThrow("kunai-windows-x64.zip");
+    expect(() => renderWingetInstallerManifest(channel, missing)).toThrow("kunai-windows-x64.zip");
+  });
+
+  test("a missing arm64 sums entry fails closed in winget installer manifest", () => {
+    const missing = new Map(sums);
+    missing.delete("kunai-windows-arm64.zip");
+    expect(() => renderWingetInstallerManifest(channel, missing)).toThrow(
+      "kunai-windows-arm64.zip",
+    );
   });
 });

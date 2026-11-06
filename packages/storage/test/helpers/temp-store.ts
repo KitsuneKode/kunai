@@ -65,7 +65,14 @@ export function createTempStoreRegistry(): TempStoreRegistry {
       // returns "database is locked" and, passed no argument, reports success
       // anyway. Retrying the `rmSync` does not help: nothing frees the handle
       // later, so the close has to genuinely happen first.
-      Bun.gc(true);
+      //
+      // On Windows, file handles lock the directory until collected. POSIX unlinks
+      // open files immediately, so running full GC across every test on Linux/macOS
+      // causes massive unnecessary CPU starvation under parallel suites.
+      if (process.platform === "win32") {
+        Bun.gc(true);
+      }
+      const closeErrors: unknown[] = [];
       for (const database of dbs.splice(0)) {
         // A suite may already have closed one; teardown must still finish.
         try {
@@ -74,12 +81,19 @@ export function createTempStoreRegistry(): TempStoreRegistry {
           // than a blanket `any` on the handle.
           (database as unknown as { clearQueryCache?: () => void }).clearQueryCache?.();
           database.close(true);
-        } catch {
-          // already closed
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (!/closed/i.test(message)) {
+            closeErrors.push(error);
+          }
         }
       }
       for (const dir of dirs.splice(0)) {
         rmSync(dir, { recursive: true, force: true });
+      }
+      if (closeErrors.length > 0) {
+        if (closeErrors.length === 1) throw closeErrors[0];
+        throw new AggregateError(closeErrors, "Failed to close one or more temp SQLite databases");
       }
     },
   };

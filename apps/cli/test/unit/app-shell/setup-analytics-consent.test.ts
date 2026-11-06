@@ -10,6 +10,7 @@ import type { Container } from "@/container";
 import { getKunaiPaths } from "@/services/storage/storage-read-models";
 import { DEFAULT_CONFIG } from "@kunai/config";
 
+import { capabilitySnapshotFixture } from "../../harness/capability-snapshot-fixture";
 import { applyStorageRootEnv } from "../../helpers/storage-env";
 
 // A completing run now writes a restore point beside the real config, so this
@@ -50,11 +51,7 @@ function fakeContainer(overrides: Partial<Parameters<typeof runSetupWizard>[0]["
       },
       save: async () => undefined,
     },
-    capabilitySnapshot: {
-      mpv: true,
-      ffprobe: true,
-      ytDlp: true,
-      curl: { present: true, impersonates: true, profile: "chrome150" },
+    capabilitySnapshot: capabilitySnapshotFixture({
       image: {
         terminal: "unknown",
         protocol: "none",
@@ -62,8 +59,7 @@ function fakeContainer(overrides: Partial<Parameters<typeof runSetupWizard>[0]["
         available: false,
         reason: "test fixture",
       },
-      issues: [],
-    },
+    }),
     usageAnalytics: {
       consentPatch: (choice: "enabled" | "disabled") =>
         choice === "enabled"

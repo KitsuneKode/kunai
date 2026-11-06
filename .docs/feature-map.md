@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26"
+lastReviewed: "2026-11-02"
 ---
 
 # Feature Map
@@ -38,6 +38,7 @@ cli-args.ts → main.ts → container/ → app/bootstrap → app/session (Sessio
 | Bootstrap, first run, `--setup`                                     | `apps/cli/src/app/bootstrap/*`                                            | [download-offline-onboarding.md](./download-offline-onboarding.md)                                          |
 | `--open` / `kunai://` protocol                                      | `apps/cli/src/domain/share/*`, `app/bootstrap/resolve-share-target.ts`    | [share-links.md](./share-links.md)                                                                          |
 | Container / DI wiring                                               | `apps/cli/src/container/*` (`container.ts` is a barrel)                   | [architecture.md](./architecture.md)                                                                        |
+| Web companion / serve command                                       | `apps/cli/src/services/web-companion/*`                                   | [runtime-boundary-map.md](./runtime-boundary-map.md#provider-relay-ownership)                               |
 | Mobile terminal host proof                                          | `apps/mobile/src/entry.ts`, `application/*`, `runtime/{android,ashell}/*` | [mobile-terminal-runtime.md](./mobile-terminal-runtime.md) · [mobile-device-lab.md](./mobile-device-lab.md) |
 
 ## Shell (Ink)
@@ -108,6 +109,7 @@ callbacks. See [features/pointer-controls.md](./features/pointer-controls.md).
 | Playback rules (pure, no I/O)              | `apps/cli/src/domain/playback/*` — progress/completion policy, problem classification, local streams            | [architecture.md](./architecture.md)                                             |
 | Source selection (pure)                    | `apps/cli/src/domain/playback-source/*` — `SourceSelectionEngine`, offline availability                         | [playback-source-inventory-contract.md](./playback-source-inventory-contract.md) |
 | Entry auto-play decision (Enter vs menu)   | `apps/cli/src/app-shell/title-control/smart-auto-launch.ts`                                                     | [ux-architecture.md](./ux-architecture.md)                                       |
+| Debrid magnet playback                     | `apps/cli/src/services/debrid/*`                                                                                | [architecture.md](./architecture.md)                                             |
 
 ## Library and personal state
 

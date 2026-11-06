@@ -4,6 +4,7 @@ import {
   buildPersistentLoadfileOptions,
   DEFAULT_MPV_YTDL_FORMAT,
   LIVE_DEMUXER_LAVF_OPTIONS,
+  LOCAL_HLS_DEMUXER_LAVF_OPTIONS,
 } from "@/infra/player/mpv-stream-http-headers";
 import { buildMpvArgs } from "@/mpv";
 import { DEFAULT_CONFIG, DEFAULT_YOUTUBE_EXTRACTOR_ARGS } from "@kunai/config";
@@ -169,7 +170,7 @@ describe("live streams on the persistent session", () => {
       },
     );
     expect(options.start).toBe("900");
-    expect(options["demuxer-readahead-secs"]).toBeUndefined();
+    expect(options["demuxer-readahead-secs"]).toBe("10");
   });
 
   test("the loadfile format fallback matches the provider default", () => {
@@ -211,14 +212,13 @@ describe("demuxer-lavf-o composition", () => {
     const options = buildPersistentLoadfileOptions(LOCAL_HLS, 0, {}, { isLive: true });
     const value = options["demuxer-lavf-o"] ?? "";
     expect(value).toContain("reconnect_max_retries=5");
-    expect(value).toContain("protocol_whitelist=[file,tcp,tls,https,http,crypto,data]");
+    expect(value).toContain(LOCAL_HLS_DEMUXER_LAVF_OPTIONS);
   });
 
-  test("a non-live local-HLS loadfile still carries the whitelist alone", () => {
+  test("a non-live local-HLS loadfile carries reconnect and whitelist together", () => {
     const options = buildPersistentLoadfileOptions(LOCAL_HLS, 0, {}, { isLive: false });
-    expect(options["demuxer-lavf-o"]).toBe(
-      "protocol_whitelist=[file,tcp,tls,https,http,crypto,data]",
-    );
+    expect(options["demuxer-lavf-o"]).toContain("reconnect_delay_max=10");
+    expect(options["demuxer-lavf-o"]).toContain(LOCAL_HLS_DEMUXER_LAVF_OPTIONS);
   });
 
   test("a remote live loadfile carries the reconnect ladder and no whitelist", () => {

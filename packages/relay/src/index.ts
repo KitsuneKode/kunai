@@ -6,3 +6,4 @@ export * from "./handler";
 export * from "./registry";
 export * from "./resolve-relay-config";
 export * from "./types";
+export * from "./web-companion-html";

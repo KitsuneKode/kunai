@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-27"
+lastReviewed: "2026-10-28"
 ---
 
 # Kunai — Runtime Architecture
@@ -241,6 +241,11 @@ Production resolution is browserless by default:
 5. Legacy Playwright interception remains quarantined under `.archive/legacy/` and is not imported by the active runtime.
 
 ### `mpv` flow
+
+Backward seeks reset the watchdog's progress baseline to the new position,
+including seeks whose transient `seeking` flag falls between samples. Advancing
+below the old position is healthy playback. A genuinely stationary position
+still reaches the normal stall deadline; explicit pause keeps stall clocks off.
 
 `apps/cli/src/mpv.ts`:
 

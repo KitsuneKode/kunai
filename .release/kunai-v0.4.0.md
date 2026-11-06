@@ -11,13 +11,30 @@ subtitle controls, and safer persistence, downloads and native installation.
 - Preview the selected title from suggestions and command-palette title rows.
   Use YouTube artwork and video identity without mixing in anime or TMDB data.
 - Make mouse and keyboard controls agree across Browse, Library, Up Next,
-  Tracks, Settings and setup. Guard unavailable actions, show press feedback,
-  and cancel clicks when overlays or moved targets invalidate them.
+  History, Notifications, Checklist, Guide, Downloads, Tracks, Settings,
+  Pickers, Footers and setup. Guard unavailable actions, show press feedback,
+  and cancel clicks when overlays or moved targets invalidate them. Keep visible
+  home actions selectable after an empty discovery response.
 - Recover from failed playback through visible provider controls and a
   consistent Shift+F fallback action, with accurate attempt and loading states.
 
 ### Playback and providers
 
+- Add non-interactive 'kunai status' / 'kunai providers status' command to inspect live health, latency, and credentials across streaming, scraper, and debrid services.
+- Add direct magnet URI / torrent infohash stream resolution and playback routing via 'kunai play <magnet>' and '--debrid'.
+- Integrate Real-Debrid and AllDebrid clients with candidate stream health
+  verification gates, and preserve metadata-only architecture boundaries on the
+  relay server.
+- Keep mixed catalog identities on their catalog detail route and treat resolved
+  YouTube metadata as optional enrichment. Preserve fractional episode metadata
+  and prefer actual episode titles over numbered placeholders.
+- Avoid false stall warnings after a backward seek. Apply transient launch
+  quality, language and offline choices through their actual config readers
+  without changing saved defaults.
+- Restore direct-ID YouTube titles, artwork and video details after resolve;
+  describe subtitle requests without claiming mpv already attached tracks.
+  Bridge explicit AniList IDs before AllManga native episode lookup, and use
+  explicit episode numbers when enriching sparse or reversed streaming lists.
 - Preserve exact YouTube format IDs through quality selection and the options
   passed to yt-dlp. Quality changes retain the active client; client changes
   retain a compatible format; Auto returns to automatic selection. Deduplicate
@@ -48,6 +65,9 @@ subtitle controls, and safer persistence, downloads and native installation.
 
 ### Search and terminal interaction
 
+- Click Browse footer actions and home shortcuts. Home rows select on the first
+  click and open on the second; changing the title or episode cancels the
+  earlier click.
 - Keep home shortcuts and search suggestions in the active mode even when
   hundreds of newer titles belong to another mode. Reject stale home refreshes
   and update favourite previews after both toggle directions.

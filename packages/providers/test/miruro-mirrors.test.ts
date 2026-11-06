@@ -167,6 +167,7 @@ describe("miruroPipeBaseUrls", () => {
 
     // miruro.to is reported down, so it drops behind the rest.
     expect(miruroPipeBaseUrls({ fetchImpl, now: 2_000 })).toEqual([
+      "https://www.miruro.cx",
       "https://www.miruro.bz",
       "https://www.miruro.ru",
       "https://www.miruro.tv",

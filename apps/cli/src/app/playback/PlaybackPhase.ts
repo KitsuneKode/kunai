@@ -209,6 +209,7 @@ import {
 } from "@/domain/playback/provider-resolve-copy";
 import { decideSoftFallbackOnResolve } from "@/domain/playback/soft-fallback-preference-policy";
 import type { DecodedTrackSelection } from "@/domain/playback/track-capabilities";
+import { providerPriorityForLane } from "@/domain/provider-lane";
 import { formatQueueEntryLabel } from "@/domain/queue/queue-entry-label";
 import { episodeRequestFlags } from "@/domain/session/SessionState";
 import type {
@@ -266,6 +267,7 @@ import {
   resolveEffectiveProviderHealth,
 } from "@/services/playback/provider-health-policy";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
+import { readResolvedYoutubeTitleDetail } from "@/services/youtube/youtube-title-detail";
 import {
   mergeSubtitleTracks,
   resolveSubtitlesByTmdbId,
@@ -636,6 +638,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     return describeMpvPlayerEvent(event);
   }
 
+  /** Orchestrate resolve, guarded player handoff and post-play routing; cancellation returns control to the shell. */
   async execute(title: TitleInfo, context: PhaseContext): Promise<PhaseResult<PlaybackOutcome>> {
     const { container } = context;
     PlaybackPhase.lateSubtitleInflight.clear();
@@ -806,6 +809,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       const initialAnimeEpisodes = skipRemotePreparation
         ? undefined
         : await this.getAnimeEpisodeOptions({
+            context,
             title,
             mode: stateManager.getState().mode,
             provider,
@@ -1471,7 +1475,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           const watchedEntries = historyRepository.listByTitleIdentity(historyTitleLookup);
           const playbackMode = stateManager.getState().mode;
-          const isAnimePlayback = playbackMode === "anime";
+          const isAnimePlayback =
+            playbackMode === "anime" || usesProviderNativeEpisodeCatalog(playbackMode, title.id);
           const episodeLoadCache = new Map<
             string,
             Promise<Awaited<ReturnType<typeof fetchEpisodes>>>
@@ -1501,6 +1506,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             sourceAuthority.kind === "local"
               ? Promise.resolve(undefined)
               : this.getAnimeEpisodeOptions({
+                  context,
                   title,
                   mode: playbackMode,
                   provider: sourceAuthority.provider,
@@ -2382,6 +2388,25 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   successfulProviderId: resolvedProviderId,
                 })
               : { successfulProviderId: sourceProviderId, nextEpisodeProviderId: sourceProviderId };
+
+          if (providerHandoff.successfulProviderId === "youtube") {
+            // Provider resolve has now populated its metadata cache. Adopt it
+            // into both the rendered session and the title persisted below.
+            const detail = readResolvedYoutubeTitleDetail(
+              title,
+              resolveController.signal,
+              stateManager.getState().titleDetail,
+            );
+            if (detail?.videoMeta) {
+              title = applyCatalogDetailToTitle(title, detail);
+              stateManager.dispatch({
+                type: "SET_TITLE_DETAIL",
+                titleId: title.id,
+                titleType: detail.type,
+                detail,
+              });
+            }
+          }
 
           // Await timing — stream resolve takes much longer so this is nearly free.
           // If IntroDB timed out and returned null, schedule a background retry that
@@ -3482,6 +3507,11 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             }
           }
 
+          if (playbackControlAction === "up-next") {
+            container.stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: { type: "queue" } });
+            continue;
+          }
+
           if (playbackControlAction === "cycle-audio") {
             const streams = preparedStream.providerResolveResult?.streams ?? [];
             const resumePos = toHistoryTimestamp(
@@ -3492,22 +3522,95 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             const currentStream = streams.find(
               (s) => s.id === preparedStream.providerResolveResult?.selectedStreamId,
             );
-            const currentPresentation =
-              currentStream?.presentation ??
-              (currentStream?.audioLanguages?.includes("en") ? "dub" : "sub");
-            const targetPresentation = currentPresentation === "dub" ? "sub" : "dub";
 
-            const matchingStream = streams.find((s) => {
-              if (s.presentation) {
-                return s.presentation === targetPresentation;
+            // 1. Gather all unique audio languages across available streams
+            const distinctAudioLanguages: string[] = [];
+            for (const s of streams) {
+              for (const lang of s.audioLanguages ?? []) {
+                if (lang && !distinctAudioLanguages.includes(lang)) {
+                  distinctAudioLanguages.push(lang);
+                }
               }
-              if (targetPresentation === "dub") {
-                return s.audioLanguages?.includes("en");
+            }
+
+            let matchingStream: (typeof streams)[number] | undefined;
+
+            if (distinctAudioLanguages.length > 1) {
+              const currentLang = currentStream?.audioLanguages?.[0];
+              const currentIndex = currentLang ? distinctAudioLanguages.indexOf(currentLang) : -1;
+              const nextIndex = (currentIndex + 1) % distinctAudioLanguages.length;
+              const targetLang = distinctAudioLanguages[nextIndex];
+              if (targetLang) {
+                // Prefer preserving current stream quality if possible
+                matchingStream =
+                  streams.find(
+                    (s) =>
+                      s.audioLanguages?.includes(targetLang) &&
+                      s.qualityLabel === currentStream?.qualityLabel,
+                  ) ?? streams.find((s) => s.audioLanguages?.includes(targetLang));
               }
-              return s.audioLanguages?.includes("ja") || !s.audioLanguages?.includes("en");
-            });
+            } else {
+              // 2. Binary presentation switch (sub <-> dub)
+              const currentPresentation =
+                currentStream?.presentation ??
+                (currentStream?.audioLanguages?.includes("en") ? "dub" : "sub");
+              const targetPresentation = currentPresentation === "dub" ? "sub" : "dub";
+
+              matchingStream = streams.find((s) => {
+                if (s.presentation) {
+                  return s.presentation === targetPresentation;
+                }
+                if (targetPresentation === "dub") {
+                  return s.audioLanguages?.includes("en");
+                }
+                return s.audioLanguages?.includes("ja") || !s.audioLanguages?.includes("en");
+              });
+
+              if (!matchingStream && container.stateManager.getState().mode === "anime") {
+                const state = container.stateManager.getState();
+                const nextProfile = {
+                  ...state.animeLanguageProfile,
+                  audio: targetPresentation as "sub" | "dub",
+                };
+                container.stateManager.dispatch({
+                  type: "UPDATE_LANGUAGE_PROFILE",
+                  kind: "anime",
+                  profile: nextProfile,
+                });
+                container.stateManager.dispatch({
+                  type: "SET_SESSION_TRACK_PREFERENCES",
+                  preferences: { audio: targetPresentation },
+                });
+                await container.config.update({ animeLanguageProfile: nextProfile });
+                await container.config.save();
+                if (resolvedProviderId) {
+                  const { invalidateTitlePlaybackCaches } =
+                    await import("@/app/playback/playback-title-cache-invalidation");
+                  await invalidateTitlePlaybackCaches({
+                    cacheStore: container.cacheStore,
+                    sourceInventory: container.sourceInventory,
+                    providerId: resolvedProviderId,
+                    providerManifest: container.providerRegistry.getManifest(resolvedProviderId),
+                    title,
+                    mode: state.mode,
+                    config: container.config.getRaw(),
+                    episodes: [currentEpisode],
+                    cancelReason: "audio-mode-switch",
+                  });
+                }
+                run.pendingStart = startEpisodeNavigation({ targetResumeSeconds: resumePos });
+                continue;
+              }
+            }
 
             if (matchingStream) {
+              const nextAudio = matchingStream.audioLanguages?.[0] ?? matchingStream.presentation;
+              if (nextAudio) {
+                container.stateManager.dispatch({
+                  type: "SET_SESSION_TRACK_PREFERENCES",
+                  preferences: { audio: nextAudio },
+                });
+              }
               const nextSelection: StreamSelectionIntent = {
                 sourceId: matchingStream.sourceId ?? null,
                 streamId: matchingStream.id,
@@ -4958,6 +5061,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   }
 
   private async getAnimeEpisodeOptions({
+    context,
     title,
     mode,
     provider,
@@ -4965,6 +5069,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     languages,
     signal,
   }: {
+    context?: PhaseContext;
     title: TitleInfo;
     mode: import("../../domain/types").ShellMode;
     provider: import("../../services/providers/Provider").Provider | undefined;
@@ -4981,7 +5086,14 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       return cache.get(cacheKey);
     }
 
-    const result = await this.loadAnimeEpisodeOptions(title, mode, provider, languages, signal);
+    const result = await this.loadAnimeEpisodeOptions(
+      title,
+      mode,
+      provider,
+      languages,
+      signal,
+      context,
+    );
     // Never cache a failed/aborted load: a cancelled resolve would otherwise
     // pin the episode picker to its 1-entry fallback for the whole session.
     if (cacheKey && result !== undefined) {
@@ -4996,31 +5108,71 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     provider: import("../../services/providers/Provider").Provider | undefined,
     languages: EpisodeCatalogLanguagePreferences,
     signal?: AbortSignal,
+    context?: PhaseContext,
   ): Promise<readonly EpisodePickerOption[] | undefined> {
-    if (
-      (mode !== "anime" && mode !== "youtube") ||
-      title.type !== "series" ||
-      !provider?.listEpisodes
-    ) {
+    if ((mode !== "anime" && mode !== "youtube") || title.type !== "series") {
       return undefined;
     }
 
-    try {
-      // Same language context `resolve` gets. Omitting it made AllAnime's
-      // `resolveAnimeAudioIntent` fall back to sub, so dub users browsed a sub
-      // episode list and then played dub — mismatched counts and labels.
-      return (
-        (await provider.listEpisodes(
+    if (mode === "youtube") {
+      if (!provider?.listEpisodes) return undefined;
+      try {
+        return (
+          (await provider.listEpisodes(
+            {
+              title,
+              audioPreference: languages.audioPreference,
+              subtitlePreference: languages.subtitlePreference,
+            },
+            signal,
+          )) ?? undefined
+        );
+      } catch {
+        return undefined;
+      }
+    }
+
+    // Anime mode: walk configured provider priority chain if primary returns empty or fails
+    const container = context?.container;
+    const configRaw = container?.config.getRaw();
+    const primaryId = provider?.metadata.id ?? container?.stateManager.getState().provider;
+    const priority = configRaw ? providerPriorityForLane(configRaw, "anime") : [];
+    const candidateIds = Array.from(new Set([primaryId, ...priority])).filter((id): id is string =>
+      Boolean(id),
+    );
+
+    if (candidateIds.length === 0 && provider?.listEpisodes) {
+      candidateIds.push(provider.metadata.id);
+    }
+
+    for (const id of candidateIds) {
+      if (signal?.aborted) return undefined;
+      const candidate =
+        id === provider?.metadata.id ? provider : container?.providerRegistry.get(id);
+      if (!candidate?.listEpisodes) continue;
+
+      try {
+        const episodes = await candidate.listEpisodes(
           {
             title,
             audioPreference: languages.audioPreference,
             subtitlePreference: languages.subtitlePreference,
           },
           signal,
-        )) ?? undefined
-      );
-    } catch {
-      return undefined;
+        );
+        if (episodes && episodes.length > 0) {
+          return episodes;
+        }
+      } catch (error) {
+        if (signal?.aborted) return undefined;
+        container?.logger.debug("Anime episode listing failed on candidate provider", {
+          providerId: id,
+          titleId: title.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
+
+    return undefined;
   }
 }

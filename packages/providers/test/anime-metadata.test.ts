@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 
 import {
   allMangaEpisodeMetadataCacheKey,
@@ -9,6 +9,7 @@ import {
   formatAnimeEpisodeLabel,
   getSeededEpisodeMetadata,
   mergeMiruroPipeEpisodeMetadata,
+  mergeExternalEpisodeMetadataInto,
   parseAllMangaEpisodeNumber,
   pipeEpisodeMetadataTitleCoverage,
   seedEpisodeMetadataFromProvider,
@@ -21,6 +22,99 @@ afterEach(() => {
 });
 
 describe("anime metadata helpers", () => {
+  test("external real episode names replace seeded placeholders without overriding native names", () => {
+    const seeded = new Map<number, AnimeEpisodeMetadata>([
+      [1, { number: 1, title: "Episode 1", source: "allmanga" }],
+      [2, { number: 2, title: "Native title", source: "allmanga" }],
+    ]);
+    mergeExternalEpisodeMetadataInto(
+      seeded,
+      new Map([
+        [1, { number: 1, title: "Run", source: "anilist" }],
+        [2, { number: 2, title: "Longer external title", source: "anilist" }],
+      ]),
+    );
+    expect(seeded.get(1)?.title).toBe("Run");
+    expect(seeded.get(2)?.title).toBe("Native title");
+  });
+  test("fractional AllManga episodes retain their own title and artwork", () => {
+    const episode = { index: 13, label: "Episode 12.5", detail: "Source episode 12.5" };
+    const metadata = new Map<number, AnimeEpisodeMetadata>([
+      [
+        12,
+        {
+          number: 12,
+          title: "Main episode",
+          thumbnail: "https://img.example/12.jpg",
+          source: "anilist",
+        },
+      ],
+      [
+        12.5,
+        {
+          number: 12.5,
+          title: "Special",
+          thumbnail: "https://img.example/12-5.jpg",
+          source: "anilist",
+        },
+      ],
+    ]);
+    expect(parseAllMangaEpisodeNumber(episode)).toBe(12.5);
+    const [enriched] = enrichEpisodeOptionsWithAnimeMetadata(
+      [episode],
+      metadata,
+      parseAllMangaEpisodeNumber,
+    );
+    expect(enriched?.name).toBe("Special");
+    expect(enriched?.artwork?.thumbnailUrl).toBe("https://img.example/12-5.jpg");
+  });
+
+  test("a short real title wins over an episode-number placeholder in either merge order", () => {
+    for (const [current, next] of [
+      ["Episode 1", "Run"],
+      ["Run", "Episode 1"],
+    ]) {
+      const metadata = new Map<number, AnimeEpisodeMetadata>([
+        [1, { number: 1, title: next, source: "anilist" }],
+      ]);
+      expect(
+        enrichEpisodeOptionsWithAnimeMetadata(
+          [{ index: 1, label: "Episode 1", name: current }],
+          metadata,
+        )[0]?.name,
+      ).toBe("Run");
+    }
+  });
+  test("sparse or reversed streaming rows keep their explicit episode identity", async () => {
+    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: {
+            Media: {
+              streamingEpisodes: [
+                {
+                  title: "Episode 130 - Scent of Danger",
+                  thumbnail: "https://img.example/130.jpg",
+                },
+                { title: "Episode 129 - The Adventure", thumbnail: "https://img.example/129.jpg" },
+                { title: "Unnumbered trailer", thumbnail: "https://img.example/trailer.jpg" },
+              ],
+            },
+          },
+        }),
+        { headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    try {
+      const metadata = await fetchAnimeEpisodeMetadataByNumber({ anilistId: "21" });
+      expect([...metadata.keys()].sort((a, b) => a - b)).toEqual([129, 130]);
+      expect(metadata.get(130)?.title).toBe("Scent of Danger");
+      expect(metadata.get(130)?.thumbnail).toBe("https://img.example/130.jpg");
+      expect(metadata.get(1)).toBeUndefined();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
   test("formatAnimeEpisodeLabel adds filler badge", () => {
     expect(formatAnimeEpisodeLabel(1, "Ryomen Sukuna", { filler: true })).toBe(
       "Episode 1 · Ryomen Sukuna · Filler",

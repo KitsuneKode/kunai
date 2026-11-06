@@ -143,7 +143,7 @@ test("projectPlaybackSubtitleState exposes active mpv attachment separately from
   });
 });
 
-test("projectPlaybackSubtitleState describes YouTube subtitle preference with all tracks attached", () => {
+test("YouTube extraction preferences do not claim attachment before mpv confirms a track", () => {
   const youtubeStream: StreamInfo = {
     url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
     headers: {},
@@ -152,9 +152,9 @@ test("projectPlaybackSubtitleState describes YouTube subtitle preference with al
   };
 
   expect(projectPlaybackSubtitleState(youtubeStream, "en")).toMatchObject({
-    kind: "available",
-    label: "YouTube subtitles · prefer English · all tracks attached",
-    tone: "success",
+    kind: "late-lookup-pending",
+    label: "YouTube subtitles · prefer English · tracks requested",
+    tone: "info",
   });
   expect(projectPlaybackSubtitleState(youtubeStream, "none")).toMatchObject({
     kind: "disabled",

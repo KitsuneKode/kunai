@@ -419,3 +419,23 @@ test("parseArgs folds --dub into audio and rejects it combined with --audio", ()
     /--dub and --audio are mutually exclusive/,
   );
 });
+
+test("parseArgs parses and validates --service option", () => {
+  const rd = parseArgs(["--service", "real-debrid", "-S", "Dune"]);
+  expect(rd.service).toBe("real-debrid");
+
+  const ad = parseArgs(["-S", "Dune", "--service", "all-debrid"]);
+  expect(ad.service).toBe("all-debrid");
+
+  expect(() => parseArgs(["--service", "premiumize"])).toThrow(/invalid --service "premiumize"/);
+  expect(() => parseArgs(["--service", "--dry-run"])).toThrow(/--service expected a value/);
+});
+
+test("parseArgs parses and validates --hwdec and --no-hwdec", () => {
+  expect(parseArgs(["--hwdec", "auto-safe"]).mpv.hwdec).toBe("auto-safe");
+  expect(parseArgs(["--hwdec", "no"]).mpv.hwdec).toBe("no");
+  expect(parseArgs(["--hwdec", "default"]).mpv.hwdec).toBe("default");
+  expect(parseArgs(["--no-hwdec"]).mpv.hwdec).toBe("no");
+  expect(() => parseArgs(["--hwdec", "nvdec"])).toThrow(/invalid --hwdec "nvdec"/);
+  expect(() => parseArgs(["--hwdec", "--dry-run"])).toThrow(/--hwdec expected a value/);
+});

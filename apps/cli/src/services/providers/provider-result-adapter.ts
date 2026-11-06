@@ -118,7 +118,8 @@ function selectPreferredStream(
 }
 
 export function subtitleCandidateToTrack(candidate: SubtitleCandidate): SubtitleTrack {
-  const normalizedLang = normalizeIsoLanguageCode(candidate.language);
+  const normalizedFromLabel = normalizeIsoLanguageCode(candidate.label);
+  const normalizedLang = normalizedFromLabel ?? normalizeIsoLanguageCode(candidate.language);
   const displayName = normalizedLang
     ? subtitleLanguageDisplayName(normalizedLang)
     : candidate.label;

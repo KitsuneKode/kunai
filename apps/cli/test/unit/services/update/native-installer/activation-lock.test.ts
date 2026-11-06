@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import * as fsPromises from "node:fs/promises";
 import { chmod, mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from "node:fs/promises";
@@ -70,6 +71,20 @@ const CONTENTION_ACQUIRE_TIMEOUT_MS =
   (process.platform === "win32" ? 15_000 : 8_000);
 /** Bun per-test ceiling for the eight-process test; only a real hang reaches it. */
 const CONTENTION_TEST_TIMEOUT_MS = process.platform === "win32" ? 60_000 : 30_000;
+
+function liveActivationLock(pid: number, ownerId: string): string {
+  return `${JSON.stringify({
+    schemaVersion: 1,
+    scope: "activation",
+    pid,
+    version: "1.0.0",
+    execPath: process.execPath,
+    ownerId,
+    acquiredAt: new Date().toISOString(),
+    hostname: hostname().toLowerCase(),
+    processStartId: null,
+  })}\n`;
+}
 
 function impossibleProcessStartId(): string {
   if (process.platform === "win32") return "windows-ticks:0";
@@ -947,16 +962,107 @@ describe("activation lock quarantine restore", () => {
     expect(existsSync(quarantinePath)).toBe(true);
   });
 
-  test("a quarantine that exists but cannot link still fails", async () => {
+  test("drops a non-stale quarantine when a live canonical owner already exists", async () => {
     const root = await makeRoot();
-    // The destination parent is absent, so link() fails ENOENT while the
-    // quarantine itself exists — the retry budget expires and the error
-    // propagates rather than being swallowed as a lost race.
-    const lockPath = join(root, "missing-parent", "lock");
-    const quarantinePath = join(root, "lock.quarantine.stuck");
-    await writeFile(quarantinePath, '{"schemaVersion":1}', "utf8");
+    const lockPath = join(root, "lock");
+    const quarantinePath = join(root, "lock.quarantine.residue");
+    const canonical = liveActivationLock(process.pid, "canonical-owner");
+    await writeFile(lockPath, canonical, "utf8");
+    await writeFile(quarantinePath, liveActivationLock(process.pid, "leftover"), "utf8");
 
-    await expect(__testing.restoreQuarantinedLock(quarantinePath, lockPath)).rejects.toThrow();
+    await __testing.restoreQuarantinedLock(quarantinePath, lockPath);
+
+    expect(await readFile(lockPath, "utf8")).toBe(canonical);
+    expect(existsSync(quarantinePath)).toBe(false);
+  });
+
+  test("a leftover quarantine beside a live canonical owner does not block acquire", async () => {
+    const layout = await makeLayout();
+    const path = activationLockPath(layout);
+    const holder = await tryAcquireActivationLock(layout, "1.0.0");
+    expect(holder.acquired).toBe(true);
+    if (!holder.acquired) return;
+
+    const quarantinePath = `${path}.quarantine.residue.${randomUUID()}`;
+    await writeFile(quarantinePath, liveActivationLock(process.pid, "leftover-residue"), "utf8");
+
+    const blocked = await tryAcquireActivationLock(layout, "2.0.0", {
+      timeoutMs: RETAIN_TEST_TIMEOUT_MS,
+      pollMs: 5,
+    });
+    expect(blocked).toEqual({ acquired: false, holderPid: process.pid });
+    expect(existsSync(quarantinePath)).toBe(false);
+
+    await holder.release();
+    const next = await tryAcquireActivationLock(layout, "2.0.0", {
+      timeoutMs: RECLAIM_TEST_TIMEOUT_MS,
+      pollMs: 5,
+    });
+    expect(next.acquired).toBe(true);
+    expect(existsSync(quarantinePath)).toBe(false);
+    if (next.acquired) await next.release();
+  });
+
+  test("treats an active in-flight quarantine as contention rather than admitting a second owner", async () => {
+    const layout = await makeLayout();
+    const path = activationLockPath(layout);
+    // Live owner is currently quarantined
+    const quarantinePath = `${path}.quarantine.owner1.${randomUUID()}`;
+    await writeFile(
+      quarantinePath,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        scope: "activation",
+        pid: process.pid,
+        version: "1.0.0",
+        execPath: process.execPath,
+        ownerId: "owner1",
+        acquiredAt: new Date().toISOString(),
+        hostname: hostname().toLowerCase(),
+        processStartId: null,
+      })}\n`,
+    );
+
+    // Contender 3 tries to acquire lock while quarantine is active
+    const contender = await tryAcquireActivationLock(layout, "2.0.0", {
+      timeoutMs: 30,
+      pollMs: 5,
+    });
+
+    expect(contender.acquired).toBe(false);
+    expect(existsSync(path)).toBe(false);
     expect(existsSync(quarantinePath)).toBe(true);
+
+    await rm(quarantinePath, { force: true });
+  });
+
+  test("cleans up stale quarantined locks from dead owners", async () => {
+    const layout = await makeLayout();
+    const path = activationLockPath(layout);
+    const quarantinePath = `${path}.quarantine.dead.${randomUUID()}`;
+    await writeFile(
+      quarantinePath,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        scope: "activation",
+        pid: 2_147_483_646,
+        version: "1.0.0",
+        execPath: "/tmp/dead",
+        ownerId: "dead-owner",
+        acquiredAt: "2020-01-01T00:00:00.000Z",
+        hostname: hostname().toLowerCase(),
+        processStartId: null,
+      })}\n`,
+    );
+
+    const contender = await tryAcquireActivationLock(layout, "2.0.0", {
+      timeoutMs: RECLAIM_TEST_TIMEOUT_MS,
+      pollMs: 5,
+      processStartIdLookup: () => null,
+    });
+
+    expect(contender.acquired).toBe(true);
+    expect(existsSync(quarantinePath)).toBe(false);
+    if (contender.acquired) await contender.release();
   });
 });

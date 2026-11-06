@@ -21,6 +21,7 @@ export type PlaybackControlAction =
   | "previous"
   | "cycle-source"
   | "cycle-audio"
+  | "up-next"
   | "back-to-search";
 
 export type PlaybackPickerAction = Extract<
@@ -38,7 +39,14 @@ export type PlaybackPickerAction = Extract<
  */
 export type MpvRequestedAction = Extract<
   PlaybackControlAction,
-  "next" | "previous" | "pick-quality" | "pick-source" | "refresh" | "cycle-source" | "cycle-audio"
+  | "next"
+  | "previous"
+  | "pick-quality"
+  | "pick-source"
+  | "refresh"
+  | "cycle-source"
+  | "cycle-audio"
+  | "up-next"
 >;
 
 export type PlaybackStreamSelection = {

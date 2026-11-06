@@ -216,8 +216,20 @@ async function restoreQuarantinedLock(
     } catch (error) {
       const code = errorCode(error);
       if (code === "EEXIST") {
-        // A new canonical owner won. Keep the quarantine for diagnostics rather
-        // than ever replacing or deleting that owner.
+        // A live canonical owner already holds the name. The quarantine is
+        // residue from the lost race, not an in-flight reclaim: leaving it
+        // makes the next acquire treat it as contention and wait out the
+        // timeout. An unreadable or stale canonical file is still retried and
+        // then kept, so a half-written winner is not discarded.
+        const canonical = await readActivationLock(lockPath);
+        if (canonical.content && ownerState(canonical.content) === "active") {
+          await rm(quarantinePath, { force: true });
+          return;
+        }
+        if (attempt + 1 < RESTORE_TRANSIENT_ATTEMPTS) {
+          await (io.pause ?? Bun.sleep)(5);
+          continue;
+        }
         return;
       }
       if (code !== "ENOENT" && !isContentionCode(code) && !isPermissionCode(code)) throw error;
@@ -370,6 +382,57 @@ async function listReclaimClaims(
   return claims.sort();
 }
 
+function quarantinePrefix(path: string): string {
+  return `${path}.quarantine.`;
+}
+
+async function listQuarantinedLocks(
+  path: string,
+  deadlineAt: number = Number.POSITIVE_INFINITY,
+  processStartIdLookup: ProcessStartIdLookup = processStartId,
+): Promise<string[]> {
+  const prefix = quarantinePrefix(path);
+  const fallbackNames: string[] = [];
+  const names = await readdir(dirname(path)).catch(() => fallbackNames);
+  const quarantines: string[] = [];
+  for (const name of names) {
+    const qPath = join(dirname(path), name);
+    if (!qPath.startsWith(prefix)) continue;
+    const lock = await readActivationLock(qPath);
+    const qStat = await stat(qPath).catch(() => null);
+    if (lock.content) {
+      const state = ownerState(
+        lock.content,
+        Math.max(0, deadlineAt - Date.now()),
+        processStartIdLookup,
+      );
+      if (state === "stale") {
+        await rm(qPath, { force: true }).catch(() => {});
+        continue;
+      }
+    } else if (qStat !== null && Date.now() - qStat.mtimeMs >= DEFAULT_CORRUPT_GRACE_MS) {
+      await rm(qPath, { force: true }).catch(() => {});
+      continue;
+    }
+    quarantines.push(qPath);
+  }
+  return quarantines.sort();
+}
+
+/** True when the canonical path is held by a process that is still this host's owner. */
+async function canonicalLockHasLiveOwner(
+  path: string,
+  deadlineAt: number,
+  processStartIdLookup: ProcessStartIdLookup,
+): Promise<boolean> {
+  const canonical = await readActivationLock(path);
+  if (!canonical.content) return false;
+  return (
+    ownerState(canonical.content, Math.max(0, deadlineAt - Date.now()), processStartIdLookup) ===
+    "active"
+  );
+}
+
 async function createReclaimClaim(path: string, ownerId: string, raw: string): Promise<string> {
   const claimPath = `${reclaimClaimPrefix(path)}${ownerId}`;
   const tempPath = `${reclaimClaimTempPrefix(path)}${ownerId}.${randomUUID()}`;
@@ -515,14 +578,31 @@ async function tryAcquireActivationLockFromFilesystem(
     if (attempted && Date.now() >= deadlineAt) {
       return holderPid === undefined ? { acquired: false } : { acquired: false, holderPid };
     }
-    attempted = true;
-    if ((await listReclaimClaims(path, deadlineAt, processStartIdLookup)).length > 0) {
+    const claims = await listReclaimClaims(path, deadlineAt, processStartIdLookup);
+    let quarantines = await listQuarantinedLocks(path, deadlineAt, processStartIdLookup);
+    if (
+      quarantines.length > 0 &&
+      (await canonicalLockHasLiveOwner(path, deadlineAt, processStartIdLookup))
+    ) {
+      // The canonical file already has a live owner. Leftover quarantine
+      // files are residue from a lost reclaim, not an in-flight rename.
+      // Treating them as contention stalls this loop for the whole timeout
+      // even after that owner leaves.
+      for (const quarantinePath of quarantines) {
+        await rm(quarantinePath, { force: true }).catch(() => {});
+      }
+      quarantines = [];
+    }
+    if (claims.length > 0 || quarantines.length > 0) {
       if (!(await sleepForRetry())) return { acquired: false, holderPid };
       continue;
     }
     try {
       await writeFile(path, contentRaw, { flag: "wx", mode: 0o600 });
-      if ((await listReclaimClaims(path, deadlineAt, processStartIdLookup)).length === 0) {
+      if (
+        (await listReclaimClaims(path, deadlineAt, processStartIdLookup)).length === 0 &&
+        (await listQuarantinedLocks(path, deadlineAt, processStartIdLookup)).length === 0
+      ) {
         return acquiredResult();
       }
       await quarantineForRelease(path, ownerId);
@@ -603,4 +683,4 @@ export async function withActivationLock<T>(
   }
 }
 
-export const __testing = { restoreQuarantinedLock };
+export const __testing = { restoreQuarantinedLock, listQuarantinedLocks };

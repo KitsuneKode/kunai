@@ -41,6 +41,7 @@ export function selectReadyStream(
      * Ignored when the user pinned stream/source/quality or uses quality-first.
      */
     readonly preferProviderReadyOrder?: boolean;
+    readonly preferredAudioLanguage?: string;
   },
 ): { readonly selected: StreamCandidate; readonly decision: ProviderSelectionDecision } {
   const startupPriority = input.startupPriority ?? "balanced";
@@ -51,12 +52,36 @@ export function selectReadyStream(
         ? stream.sourceId === input.preferredSourceId
         : false,
   );
+
+  const requestedAudioLang = input.preferredAudioLanguage?.trim().toLowerCase();
+  const audioMatchingStreams =
+    requestedAudioLang && requestedAudioLang !== "original"
+      ? streams.filter((stream) => {
+          if (
+            stream.audioLanguages?.some(
+              (lang) =>
+                lang.toLowerCase().split("-")[0] === requestedAudioLang ||
+                lang.toLowerCase() === requestedAudioLang,
+            )
+          ) {
+            return true;
+          }
+          if (requestedAudioLang === "en" || requestedAudioLang === "dub") {
+            return stream.presentation === "dub";
+          }
+          if (requestedAudioLang === "ja" || requestedAudioLang === "sub") {
+            return stream.presentation === "sub";
+          }
+          return false;
+        })
+      : [];
+  const candidatePool = audioMatchingStreams.length > 0 ? audioMatchingStreams : streams;
   const favoritePriority = new Map(
     (input.favoriteSourceNames ?? []).map((sourceName, index) => [sourceName, index]),
   );
   const favorite =
     favoritePriority.size > 0
-      ? [...streams]
+      ? [...candidatePool]
           .filter((stream) =>
             favoritePriority.has(
               normalizeSourceName(stream.serverName ?? stream.flavorLabel ?? stream.sourceId ?? ""),
@@ -76,7 +101,7 @@ export function selectReadyStream(
           })[0]
       : undefined;
   const normalizedQualityPreference = normalizeQualityPreferenceToken(input.qualityPreference);
-  const ordered = [...streams].sort(
+  const ordered = [...candidatePool].sort(
     (left, right) => (right.qualityRank ?? 0) - (left.qualityRank ?? 0),
   );
   // Prefer the *best* matching quality (not the first includes hit), so "1080"
@@ -97,7 +122,7 @@ export function selectReadyStream(
     preferredQuality ??
     // "fast" and provider-ready order keep streams[0] ranking.
     // balanced/quality-first pick max rank unless preferProviderReadyOrder is set.
-    (startupPriority === "fast" || useProviderReadyOrder ? streams[0] : ordered[0]);
+    (startupPriority === "fast" || useProviderReadyOrder ? candidatePool[0] : ordered[0]);
 
   if (!selected) throw new Error("No ready stream candidates");
 

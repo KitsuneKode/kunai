@@ -1,6 +1,6 @@
 import { noteForExternalOpenFailure } from "@/app-shell/external-open-fallback";
 import { resolveHistorySelectionLaunch } from "@/app-shell/history-selection-launch";
-import { useLineEditor } from "@/app-shell/line-editor";
+import { useLineEditor, type LineEditorKey } from "@/app-shell/line-editor";
 import { buildQueueRestoreDeps, buildQueueRestoreStatus } from "@/app-shell/queue-restore";
 import { forceCloseRootContent, getRootContentSession } from "@/app-shell/root-content-state";
 import {
@@ -67,6 +67,8 @@ import { resolveCommandContext, resolveCommands, type ResolvedAppCommand } from 
 import { diagnosticsVisibleRows } from "./diagnostics-dashboard-model";
 import { sanitizeTerminalText } from "./shell-text";
 
+const HISTORY_MOUSE_CONFIRM_KEY: LineEditorKey = { return: true };
+
 /** The ContextStrip line drawn above the panel, inside the content area. */
 const DIAGNOSTICS_CONTEXT_STRIP_ROWS = 1;
 
@@ -123,7 +125,9 @@ import { GuideShell } from "./guide-shell";
 import { HistoryShell } from "./history-shell";
 import {
   buildHistoryView,
+  HISTORY_TABS,
   historyTabFromLegacy,
+  HISTORY_TYPE_FILTERS,
   type HistoryTab,
   type HistoryTypeFilter,
 } from "./history-view";
@@ -174,6 +178,7 @@ import {
   type HistoryPickerOptionsContext,
   sortProvidersByConfigPriority,
 } from "./panel-data";
+import { ProviderStatusSheet } from "./provider-status/ProviderStatusSheet";
 import { createQueuePosterResolver } from "./queue-poster-resolver";
 import { QueueShell } from "./queue-shell";
 import type { QueueViewRow } from "./queue-view";
@@ -217,7 +222,7 @@ import {
   PalettePointerContext,
   PaletteTitleMatchesProvider,
 } from "./shell-command-ui";
-import { ContextStrip, ShellFooter, ViewportResizeGate } from "./shell-primitives";
+import { ContextStrip, MouseTarget, ShellFooter, ViewportResizeGate } from "./shell-primitives";
 import { palette } from "./shell-theme";
 import { tracksNavigationColumns } from "./tracks-panel-layout";
 import {
@@ -361,6 +366,7 @@ function HelpShell({
   highlightedIndex,
   footerActions,
   onClose,
+  onActivate,
 }: {
   /** Scope-filtered help sections for the surface beneath the overlay. */
   sections: readonly HelpSection[];
@@ -373,6 +379,7 @@ function HelpShell({
   highlightedIndex: number;
   footerActions: readonly FooterAction[];
   onClose: () => void;
+  onActivate?: (action: FooterAction) => void;
 }) {
   const tabs = sections.length > 0 ? sections.map((section) => section.group) : HELP_TABS;
   const sectionByGroup = useMemo(
@@ -432,7 +439,7 @@ function HelpShell({
       <Box flexDirection="column" paddingX={1} marginTop={1}>
         <Box flexDirection="row" flexWrap="nowrap">
           <Text color={palette.accent} bold>
-            {"❀ Help"}
+            {"⚘ Help"}
           </Text>
           <Text color={palette.muted}>{`  ·  ${scopeLabel}`}</Text>
         </Box>
@@ -440,12 +447,14 @@ function HelpShell({
         {/* Tab strip */}
         <Box flexDirection="row" marginTop={1} marginBottom={0} flexWrap="wrap">
           {tabs.map((tab) => (
-            <Box key={tab} marginRight={3} flexDirection="column">
-              <Text color={safeActiveTab === tab ? palette.accent : palette.dim}>{tab}</Text>
-              {safeActiveTab === tab ? (
-                <Text color={palette.accent}>{"─".repeat(tab.length)}</Text>
-              ) : null}
-            </Box>
+            <MouseTarget key={tab} id={`help:tab:${tab}`} active onClick={() => setActiveTab(tab)}>
+              <Box marginRight={3} flexDirection="column">
+                <Text color={safeActiveTab === tab ? palette.accent : palette.dim}>{tab}</Text>
+                {safeActiveTab === tab ? (
+                  <Text color={palette.accent}>{"─".repeat(tab.length)}</Text>
+                ) : null}
+              </Box>
+            </MouseTarget>
           ))}
         </Box>
         {/* Tab content — two dense columns */}
@@ -465,6 +474,7 @@ function HelpShell({
       <ShellFooter
         taskLabel="Tab/Shift+Tab sections · Esc or ? closes"
         actions={footerActions}
+        onActivate={onActivate}
         mode="detailed"
         commandMode={commandMode}
         companionHint
@@ -941,6 +951,10 @@ export function RootOverlayShell({
    * other.
    */
   const resolveOverlayPaletteAction = (action: ShellAction) => {
+    if (action === "quit") {
+      cancelRootOverlay(overlay, container.stateManager);
+      return;
+    }
     if (ROOT_OVERLAY_NAV_COMMANDS.has(action)) {
       if (action === "notifications" && !container.featureFlags.attentionInbox) {
         container.stateManager.dispatch({
@@ -1004,15 +1018,13 @@ export function RootOverlayShell({
     highlightedIndex,
     titleMatches,
     palettePointer,
+    activateFooterAction,
   } = useShellInput({
     footerActions,
     commands,
-    // The settings surface owns `/` itself — its footer advertises it as
-    // search. Without disabling here, one keystroke opened the palette AND
-    // armed the settings filter (both handlers see commandMode=false on the
-    // same event), and closing the palette left a phantom focused search.
-    disabled: overlay.type === "settings",
-    escapeAction: null,
+    // The settings and provider_status surfaces own their input.
+    disabled: overlay.type === "settings" || overlay.type === "provider_status",
+    escapeAction: "quit",
     localTitles: () => collectLocalTitleEntries(container),
     onTitlePick: (entry) => pickPaletteTitle(container, entry),
     onResolve: resolveOverlayPaletteAction,
@@ -1029,7 +1041,10 @@ export function RootOverlayShell({
 
   const overlayPanelKind = resolveOverlayPanelKind(overlay.type);
   const overlayDedicatedShell =
-    overlay.type === "history" || overlay.type === "queue" || overlay.type === "downloads";
+    overlay.type === "history" ||
+    overlay.type === "queue" ||
+    overlay.type === "downloads" ||
+    overlay.type === "provider_status";
   const overlayHostChromeRows = getOverlayHostChromeRows({
     commandMode,
     dedicatedShell: overlayDedicatedShell,
@@ -1234,9 +1249,11 @@ export function RootOverlayShell({
         );
         return undefined;
       })
-      .catch((error: unknown) => {
+      .catch((error: Error | { readonly message?: string }) => {
         if (!cancelled) {
-          setHistoryError(error instanceof Error ? error.message : String(error));
+          setHistoryError(
+            error instanceof Error ? error.message : (error?.message ?? String(error)),
+          );
         }
       })
       .finally(() => {
@@ -1515,11 +1532,11 @@ export function RootOverlayShell({
       });
       return;
     }
-    if (!awaited && mountedKind !== "browse") {
-      // launch-playback only resolves on browse — on active playback, a
-      // picker, or an idle slot nobody consumes it, so claiming would leave
+    if (!awaited && mountedKind !== "browse" && mountedKind !== "playback") {
+      // launch-playback only resolves on browse or playback — on
+      // a picker or an idle slot nobody consumes it, so claiming would leave
       // the row in-flight forever. Keep it pending and say where it plays.
-      setOverlayStatus("Queue play from the search screen or the post-play menu");
+      setOverlayStatus("Queue play from the search screen or during playback");
       return;
     }
     const played = resolveQueueRowPlaySelection(
@@ -1539,6 +1556,13 @@ export function RootOverlayShell({
     if (played.status === "claimed" && !awaited) {
       const episode = episodeInfoFromQueuePlaybackLaunch(played.launch);
       const launchTitle = titleInfoFromQueuePlaybackLaunch(played.launch);
+      if (mountedKind === "playback") {
+        container.playerControl.switchToTitlePlayback(
+          { title: launchTitle, episode },
+          "queue-play-from-playback",
+        );
+        return;
+      }
       forceCloseRootContent<BrowseShellResult<SearchResult>>(
         episode
           ? { type: "launch-playback", launch: { title: launchTitle, episode } }
@@ -1547,12 +1571,49 @@ export function RootOverlayShell({
     }
   };
 
+  const onConfirmHistorySelection = (
+    selection: RootHistorySelection | null,
+    options?: { readonly sourceOverride?: "local" | "stream" },
+  ) => {
+    if (selection) {
+      void import("@/services/continuation/continuation-diagnostics").then(
+        ({ recordContinuationSourceResolution }) =>
+          recordContinuationSourceResolution(container, {
+            surface: "history",
+            selection,
+            preference: continueSourcePreference,
+            override: options?.sourceOverride,
+            resolved: selection.localJobId ? "local" : "stream",
+          }),
+      );
+    }
+    const awaited = hasPendingRootHistorySelection();
+    resolveRootHistorySelection(selection);
+    if (selection) {
+      if (!awaited && getRootContentSession()?.kind !== "browse") {
+        setOverlayStatus("Play it from the search screen");
+        return;
+      }
+      container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+      if (!awaited) {
+        void resolveHistorySelectionLaunch(container, selection, "history").then((launch) =>
+          launch
+            ? forceCloseRootContent<BrowseShellResult<SearchResult>>({
+                type: "launch-playback",
+                launch,
+              })
+            : false,
+        );
+      }
+    }
+  };
+
   useInput((input, key) => {
     if (commandMode) {
       return;
     }
 
-    if (overlay.type === "settings") {
+    if (overlay.type === "settings" || overlay.type === "provider_status") {
       return;
     }
 
@@ -1759,48 +1820,7 @@ export function RootOverlayShell({
           pendingDelete: historyPendingDelete,
           setPendingDelete: setHistoryPendingDelete,
           onHistoryMutated,
-          onConfirmSelection: (selection, options) => {
-            if (selection) {
-              void import("@/services/continuation/continuation-diagnostics").then(
-                ({ recordContinuationSourceResolution }) =>
-                  recordContinuationSourceResolution(container, {
-                    surface: "history",
-                    selection,
-                    preference: continueSourcePreference,
-                    override: options?.sourceOverride,
-                    resolved: selection.localJobId ? "local" : "stream",
-                  }),
-              );
-            }
-            // Only the palette route awaits this. Opened directly from another
-            // overlay there is no resolver, so the selection used to vanish and
-            // the overlay simply closed. Fall back to the same launch channel
-            // the inbox uses, via the shared resolver so both routes align the
-            // provider lane and record the source decision identically.
-            const awaited = hasPendingRootHistorySelection();
-            resolveRootHistorySelection(selection);
-            if (selection) {
-              // launch-playback resolves only on browse — delivered to a
-              // playback or picker session it would be a foreign result the
-              // phase loop cannot read, silently dropping the pick.
-              if (!awaited && getRootContentSession()?.kind !== "browse") {
-                setOverlayStatus("Play it from the search screen");
-                return;
-              }
-              container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
-              if (!awaited) {
-                void resolveHistorySelectionLaunch(container, selection, "history").then(
-                  (launch) =>
-                    launch
-                      ? forceCloseRootContent<BrowseShellResult<SearchResult>>({
-                          type: "launch-playback",
-                          launch,
-                        })
-                      : false,
-                );
-              }
-            }
-          },
+          onConfirmSelection: onConfirmHistorySelection,
         }) === "handled"
       ) {
         return;
@@ -2306,6 +2326,7 @@ export function RootOverlayShell({
         <ShellFooter
           taskLabel="x cancel/remove · r retry · Esc closes"
           actions={footerActions}
+          onActivate={activateFooterAction}
           mode="detailed"
           commandMode={commandMode}
           companionHint
@@ -2324,6 +2345,27 @@ export function RootOverlayShell({
             initialView={overlay.view ?? "library"}
           />
         </RootContentSuspension>
+        {commandMode ? (
+          <CommandPalette
+            input={commandInput}
+            cursor={commandCursor}
+            commands={commands}
+            highlightedIndex={highlightedIndex}
+          />
+        ) : null}
+      </Box>,
+    );
+  }
+
+  if (overlay.type === "provider_status") {
+    return wrapWithLayout(
+      <Box flexDirection="column" flexGrow={1} alignItems="center">
+        <ProviderStatusSheet
+          container={container}
+          initialLane={overlay.initialLane}
+          width={overlayLayout.contentColumns}
+          onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
+        />
         {commandMode ? (
           <CommandPalette
             input={commandInput}
@@ -2375,6 +2417,32 @@ export function RootOverlayShell({
           columns={overlayLayout.contentColumns}
           selectedIndex={notificationsView.selectedIndex}
           unreadCount={notificationUnreadCount}
+          onRowClick={(_index, row) => {
+            if (row.dedupKey === notificationsView.selectedRow?.dedupKey) {
+              setNotificationActionDedupKey(row.dedupKey);
+            } else {
+              setNotificationsState((prev) => ({
+                ...prev,
+                selectedDedupKey: row.dedupKey,
+              }));
+            }
+          }}
+          onWheel={(direction) => {
+            const nextIdx = Math.max(
+              0,
+              Math.min(
+                notificationsView.rows.length - 1,
+                notificationsView.selectedIndex + (direction === "down" ? 1 : -1),
+              ),
+            );
+            const target = notificationsView.rows[nextIdx];
+            if (target) {
+              setNotificationsState((prev) => ({
+                ...prev,
+                selectedDedupKey: target.dedupKey,
+              }));
+            }
+          }}
         />
         {commandMode ? (
           <CommandPalette
@@ -2395,6 +2463,7 @@ export function RootOverlayShell({
             tab: notificationsState.tab,
             paginated: notificationsView.totalPages > 1,
           })}
+          onActivate={activateFooterAction}
           mode="detailed"
           commandMode={commandMode}
           terminalWidth={cols}
@@ -2484,6 +2553,7 @@ export function RootOverlayShell({
           // press or a disarm — notifications-footer pattern.
           taskLabel={queueConfirm?.prompt ?? overlayStatus ?? "Up Next"}
           actions={queueFooterActions()}
+          onActivate={activateFooterAction}
           mode="detailed"
           commandMode={commandMode}
           terminalWidth={cols}
@@ -2520,6 +2590,53 @@ export function RootOverlayShell({
           listWidth={listWidth}
           rowWidth={rowWidth}
           pendingDelete={historyPendingDelete}
+          onRowClick={(flatIndex) => {
+            if (flatIndex === selectedIndex) {
+              handleHistoryOverlayInput("", HISTORY_MOUSE_CONFIRM_KEY, {
+                container,
+                historyView,
+                historySelections,
+                historyPickerContext,
+                selectedIndex: flatIndex,
+                sourceChoiceTitleId: historySourceChoiceTitleId,
+                sourcePreference: continueSourcePreference,
+                setSourceChoiceTitleId: setHistorySourceChoiceTitleId,
+                setHistoryTypeFilter,
+                setHistoryTab,
+                setSelectedIndex,
+                setOverlayStatus: (status) => setOverlayStatus(status),
+                onRedraw,
+                pendingDelete: historyPendingDelete,
+                setPendingDelete: setHistoryPendingDelete,
+                onHistoryMutated,
+                onConfirmSelection: onConfirmHistorySelection,
+              });
+            } else {
+              setSelectedIndex(flatIndex);
+            }
+          }}
+          onSelectTab={(tabIdx) => {
+            const nextTab = HISTORY_TABS[tabIdx];
+            if (nextTab) {
+              setHistoryTab(nextTab);
+              setSelectedIndex(0);
+            }
+          }}
+          onSelectTypeFilter={(filterIdx) => {
+            const nextFilter = HISTORY_TYPE_FILTERS[filterIdx];
+            if (nextFilter) {
+              setHistoryTypeFilter(nextFilter);
+              setSelectedIndex(0);
+            }
+          }}
+          onWheel={(direction) => {
+            setSelectedIndex((c) =>
+              Math.max(
+                0,
+                Math.min(historyView.flatRows.length - 1, c + (direction === "down" ? 1 : -1)),
+              ),
+            );
+          }}
         />
         {commandMode ? (
           <CommandPalette
@@ -2540,6 +2657,7 @@ export function RootOverlayShell({
                 : "History"
           }
           actions={historyFooterActions()}
+          onActivate={activateFooterAction}
           mode="detailed"
           commandMode={commandMode}
           terminalWidth={cols}
@@ -2575,6 +2693,7 @@ export function RootOverlayShell({
         highlightedIndex={highlightedIndex}
         footerActions={footerActions}
         onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
+        onActivate={activateFooterAction}
       />,
     );
   }
@@ -2624,6 +2743,7 @@ export function RootOverlayShell({
         footerActions={footerActions}
         statusNote={overlayStatus}
         onActivate={activateGuideRow}
+        onFooterAction={activateFooterAction}
       />,
       titleMatches,
     );
@@ -2716,6 +2836,7 @@ export function RootOverlayShell({
             { key: "/", label: "commands", action: "command-mode" as const },
             { key: "esc", label: "back", action: "quit" as const },
           ]}
+          onActivate={activateFooterAction}
           mode="detailed"
           commandMode={commandMode}
           companionHint
@@ -2758,6 +2879,68 @@ export function RootOverlayShell({
         overlay={overlayPanel}
         width={overlayLayout.contentColumns}
         maxLinesOverride={maxLines}
+        onOptionClick={(_index, option) => {
+          if (overlay.type === "provider_picker") {
+            const idx = filteredProviderOptions.findIndex((opt) => opt.value === option.value);
+            if (idx >= 0) {
+              if (selectedIndex === idx) {
+                void (async () => {
+                  await applyProviderPickerSelection({
+                    container,
+                    pickedProviderId: option.value,
+                    reason: "provider-picker-switch",
+                  });
+                })();
+                container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+              } else {
+                setSelectedIndex(idx);
+              }
+            }
+          } else if (
+            overlay.type === "season_picker" ||
+            overlay.type === "episode_picker" ||
+            overlay.type === "subtitle_picker" ||
+            overlay.type === "recommendation_picker"
+          ) {
+            const idx = filteredGenericPickerOptions.findIndex((opt) => opt.value === option.value);
+            if (idx >= 0) {
+              if (pickerSelectedIndex === idx && overlay.id) {
+                container.stateManager.dispatch({
+                  type: "RESOLVE_PICKER",
+                  id: overlay.id,
+                  value: option.value,
+                });
+              } else {
+                setSelectedIndex(idx);
+              }
+            }
+          }
+        }}
+        onWheel={(direction) => {
+          if (overlay.type === "diagnostics") {
+            setScrollIndex((current) =>
+              direction === "down"
+                ? Math.min(Math.max(lines.length - maxLines, 0), current + 3)
+                : Math.max(0, current - 3),
+            );
+          } else if (isRootMediaPickerOverlay(overlay) && overlay.id) {
+            container.stateManager.dispatch({
+              type: "MOVE_PICKER_SELECTION",
+              id: overlay.id,
+              delta: direction === "down" ? 1 : -1,
+            });
+          } else {
+            const count =
+              overlay.type === "provider_picker"
+                ? filteredProviderOptions.length
+                : filteredGenericPickerOptions.length;
+            if (count > 0) {
+              setSelectedIndex((current) =>
+                direction === "down" ? (current + 1) % count : (current - 1 + count) % count,
+              );
+            }
+          }
+        }}
       />
 
       {commandMode ? (
@@ -2785,6 +2968,7 @@ export function RootOverlayShell({
                   : "Esc closes"
         }
         actions={footerActions}
+        onActivate={activateFooterAction}
         mode="detailed"
         commandMode={commandMode}
         companionHint

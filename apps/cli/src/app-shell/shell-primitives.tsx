@@ -15,7 +15,7 @@ const MINIMAL_FOOTER_ACTION_LIMIT = 4;
 const DETAILED_FOOTER_ACTION_LIMIT = 5;
 const DETAILED_FOOTER_VISIBLE_LIMIT = 4;
 
-export { TRANSIENT_ROW_SLOTS };
+export { MouseTarget, TRANSIENT_ROW_SLOTS };
 
 /** Reserved row under AppHeader — always occupies layout budget even when empty. */
 export function TransientRowSlot({
@@ -214,13 +214,9 @@ export function Footer({
             return (
               <MouseTarget
                 id={`${footerId}:footer:${action.key}:${action.action ?? "hint"}:${action.label}`}
-                active={Boolean(onActivate && action.action && !action.disabled)}
-                onClick={
-                  onActivate && action.action && !action.disabled
-                    ? () => onActivate(action)
-                    : undefined
-                }
-                feedback={Boolean(onActivate && action.action && !action.disabled)}
+                active={Boolean(onActivate && !action.disabled)}
+                onClick={onActivate && !action.disabled ? () => onActivate(action) : undefined}
+                feedback={Boolean(onActivate && !action.disabled)}
                 key={`${action.key}-${action.label}`}
               >
                 <Box marginRight={index === visibleActions.length - 1 ? 0 : 2} marginBottom={1}>

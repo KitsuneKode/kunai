@@ -21,6 +21,7 @@ function buildContext(
     endpointHealth?: EndpointHealthPort;
     /** Status override per host substring; defaults to the happy-path stub. */
     statuses?: Record<string, number>;
+    apiBody?: string;
   } = {},
 ) {
   const fetchImpl = async (url: string, init: RequestInit = {}) => {
@@ -35,6 +36,7 @@ function buildContext(
       return new Response(JSON.stringify({ result: "ENCRYPTED" }), { status: 200 });
     }
     if (url.includes("vidlink.pro/api/b")) {
+      if (options.apiBody !== undefined) return new Response(options.apiBody, { status: 200 });
       return new Response(
         JSON.stringify({
           stream: {
@@ -379,9 +381,28 @@ describe("vidlink enc-dec persistent cache (#205)", () => {
 
     expect(result.status).toBe("exhausted");
     expect(result.streams).toEqual([]);
+    expect(result.healthDelta).toBeUndefined();
+    expect(
+      result.trace.events?.some(
+        (event) => event.attributes?.catalogAbsent === true && event.attributes?.httpStatus === 200,
+      ),
+    ).toBe(true);
     expect(result.failures.map((failure) => failure.message).join(" ")).not.toContain(
       "is not an object",
     );
+  });
+
+  test("scalar, empty-object and HTTP errors cannot claim literal catalog absence", async () => {
+    for (const options of [
+      { apiBody: '"unavailable"' },
+      { apiBody: "{}" },
+      { apiBody: "null", statuses: { "vidlink.pro": 404 } },
+    ]) {
+      const result = await resolveVidlinkDirect(INPUT, buildContext(undefined, options));
+      expect(result.trace.events?.some((event) => event.attributes?.catalogAbsent === true)).toBe(
+        false,
+      );
+    }
   });
 });
 

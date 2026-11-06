@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-24"
+lastReviewed: "2026-10-29"
 ---
 
 # Provider: VidRock
@@ -58,6 +58,12 @@ An isolated, bounded October 24 TMDB 550 movie resolve produced two adaptive Aut
 rows plus 1080/800/720/534/360/266 HLS rows, with no sidecar subtitles. Discovery
 reported nine populated lane names. The probe succeeded with the current headers;
 this is resolve evidence on one Linux host, not a decoded-frame playback test.
+
+Server lanes are processed concurrently; HLS inventory reads retain their
+8-second per-lane abort signal. A successfully decrypted lane remains counted
+even if its playlist fetch fails or its HLS host is unavailable. Only a set in
+which every ciphertext fails decryption raises the non-retryable key-rotation
+alarm. Mixed delivery and decryption failures cannot claim a global GCM failure.
 
 ## Failure modes
 

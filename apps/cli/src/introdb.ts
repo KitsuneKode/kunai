@@ -43,8 +43,7 @@ export async function fetchPlaybackTimingMetadataDetailed(opts: {
   }
   if (
     !isUsableTmdbId(tmdbId) ||
-    (type === "series" &&
-      (!Number.isInteger(season) || season! < 0 || !Number.isInteger(episode) || episode! < 1))
+    (type === "series" && (!isValidSeason(season) || !isValidEpisode(episode)))
   ) {
     return { metadata: null, failureClass: "identity-missing" };
   }
@@ -88,8 +87,7 @@ export async function fetchPlaybackTimingMetadataDetailed(opts: {
     // schema leaves them optional/nullable: absent is fine, a different
     // episode is somebody else's skip window.
     if (
-      !Number.isSafeInteger(payload.tvdb_id) ||
-      payload.tvdb_id! <= 0 ||
+      !isValidTvdbId(payload.tvdb_id) ||
       payload.type !== (type === "movie" ? "movie" : "tv") ||
       "versions" in body ||
       "episodes" in body ||
@@ -145,8 +143,8 @@ function normalizeSegment(value: unknown): PlaybackTimingSegment | null {
   const endMs = toOptionalInt(entry.end_ms);
   // v4 documents `end_ms: 0` as "no segment"; a segment ending at 0 is empty.
   if (
-    (entry.start_ms != null && startMs === null) ||
-    (entry.end_ms != null && endMs === null) ||
+    (entry.start_ms !== null && entry.start_ms !== undefined && startMs === null) ||
+    (entry.end_ms !== null && entry.end_ms !== undefined && endMs === null) ||
     (startMs === null && endMs === null) ||
     endMs === 0 ||
     (startMs !== null && endMs !== null && endMs <= startMs)
@@ -157,4 +155,19 @@ function normalizeSegment(value: unknown): PlaybackTimingSegment | null {
 
 function toOptionalInt(value: unknown): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+function isValidSeason(season: number | undefined): boolean {
+  if (season === undefined) return false;
+  return Number.isInteger(season) && season >= 0;
+}
+
+function isValidEpisode(episode: number | undefined): boolean {
+  if (episode === undefined) return false;
+  return Number.isInteger(episode) && episode >= 1;
+}
+
+function isValidTvdbId(tvdbId: number | undefined): boolean {
+  if (tvdbId === undefined) return false;
+  return Number.isSafeInteger(tvdbId) && tvdbId > 0;
 }

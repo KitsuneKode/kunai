@@ -111,9 +111,13 @@ you run `bun run --cwd apps/docs generate`.
 Locked chords worth calling out:
 
 - `Tab` cycles browse catalog mode (series / anime / YouTube).
-- Provider fallback during playback is `⇧F` (`Shift+F`). Bare `f` is not bound.
+- `a` cycles embedded audio tracks when mpv has alternatives; otherwise it asks Kunai to switch provider audio. Provider audio choices carry into autoplay; embedded mpv track changes apply to the current file.
+- `ctrl+q` in mpv opens Up Next in the Kunai terminal while playback continues. Return to the terminal to inspect the queue or choose another title or episode.
+- `k` opens quality selection during playback.
+- `o` (or `/source`) opens source selection during playback.
 - During playback, live `m` opens the title control menu. The memory panel is
   `/memory`, not a competing bare-key binding.
+- Provider fallback during playback is `⇧F` (`Shift+F`). Bare `f` is not bound.
 
 ## Reporting Problems
 

@@ -3,7 +3,11 @@ import type { ShellMode, TitleInfo } from "@/domain/types";
 import type { KitsuneConfig, MediaLanguageProfile } from "@/services/persistence/ConfigService";
 
 export type PlaybackProfileContextInput = {
-  readonly overrides?: { readonly subtitle?: string; readonly quality?: string };
+  readonly overrides?: {
+    readonly audio?: string;
+    readonly subtitle?: string;
+    readonly quality?: string;
+  };
   readonly mode: ShellMode;
   readonly title: Pick<TitleInfo, "type"> | null;
   readonly config: Pick<

@@ -265,4 +265,88 @@ describe("runProviderCycle racing", () => {
 
     expect(result.stopReason).toBe("all-quarantined");
   });
+
+  test("maxConcurrentCandidates caps simultaneous in-flight candidates", async () => {
+    let currentInFlight = 0;
+    let maxObservedInFlight = 0;
+
+    await runProviderCycle<string>({
+      providerId: "videasy",
+      hedgeDelayMs: 10,
+      maxConcurrentCandidates: 2,
+      candidates: candidates("c1", "c2", "c3", "c4"),
+      resolveCandidate: async (candidate) => {
+        currentInFlight++;
+        maxObservedInFlight = Math.max(maxObservedInFlight, currentInFlight);
+        await sleep(50);
+        currentInFlight--;
+        if (candidate.id === "c4") return "stream-c4";
+        throw new Error("fail");
+      },
+    });
+
+    expect(maxObservedInFlight).toBeLessThanOrEqual(2);
+  });
+
+  test("interface offline error halts cycle immediately", async () => {
+    const tried: string[] = [];
+    const result = await runProviderCycle<string>({
+      providerId: "videasy",
+      hedgeDelayMs: 50,
+      candidates: candidates("c1", "c2", "c3"),
+      resolveCandidate: async (candidate) => {
+        tried.push(candidate.id);
+        throw new Error("connect ENETUNREACH 1.2.3.4");
+      },
+    });
+
+    expect(result.stopReason).toBe("network-offline");
+    expect(tried).toEqual(["c1"]);
+  });
+
+  test("non-offline responses reset offline evidence so dead mirrors do not falsely trip offline", async () => {
+    const tried: string[] = [];
+    const result = await runProviderCycle<string>({
+      providerId: "videasy",
+      candidates: candidates("dead-mirror-1", "live-endpoint", "dead-mirror-2", "working"),
+      maxAttemptsPerCandidate: 1,
+      resolveCandidate: async (candidate) => {
+        tried.push(candidate.id);
+        if (candidate.id === "dead-mirror-1") {
+          throw new Error("getaddrinfo ENOTFOUND dead1.example");
+        }
+        if (candidate.id === "live-endpoint") {
+          throw new Error("HTTP 404 Not Found");
+        }
+        if (candidate.id === "dead-mirror-2") {
+          throw new Error("getaddrinfo ENOTFOUND dead2.example");
+        }
+        return "stream-working";
+      },
+    });
+
+    expect(result.selected).toBe("stream-working");
+    expect(result.stopReason).toBe("resolved");
+    expect(tried).toEqual(["dead-mirror-1", "live-endpoint", "dead-mirror-2", "working"]);
+  });
+
+  test("raced cycle with hedgeDelayMs continues past multiple dead domains when remaining candidates exist", async () => {
+    const tried: string[] = [];
+    const result = await runProviderCycle<string>({
+      providerId: "allanime",
+      hedgeDelayMs: 10,
+      candidates: candidates("dead1", "dead2", "live"),
+      resolveCandidate: async (candidate) => {
+        tried.push(candidate.id);
+        if (candidate.id === "dead1" || candidate.id === "dead2") {
+          throw new Error("getaddrinfo ENOTFOUND dead.example");
+        }
+        return "stream-live";
+      },
+    });
+
+    expect(result.selected).toBe("stream-live");
+    expect(result.stopReason).toBe("resolved");
+    expect(tried).toEqual(["dead1", "dead2", "live"]);
+  });
 });

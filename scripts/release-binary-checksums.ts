@@ -31,7 +31,12 @@ export function parseSha256sums(content: string): readonly ReleaseBinaryChecksum
     if (!match) {
       throw new Error(`invalid SHA256SUMS line: ${line}`);
     }
-    assets.push({ sha256: match[1]!, name: match[2]! });
+    const sha256 = match[1];
+    const name = match[2];
+    if (!sha256 || !name) {
+      throw new Error(`invalid SHA256SUMS line: ${line}`);
+    }
+    assets.push({ sha256, name });
   }
   return assets;
 }

@@ -8,9 +8,10 @@ import {
   providerSmokeProfilePayload,
   resolveProviderSmokeStream,
 } from "./provider-smoke";
+import { directSmokeArgs } from "./smoke-argv";
 
 const profile = createProviderSmokeProfile("rivestream");
-const args = process.argv.slice(1);
+const args = directSmokeArgs(process.argv);
 
 const season = Number(args[0] ?? "1");
 const episode = Number(args[1] ?? "1");

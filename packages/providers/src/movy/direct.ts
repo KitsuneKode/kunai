@@ -264,6 +264,11 @@ const LANE_AUDIO_LABELS = {
   french: "fr",
   german: "de",
   japanese: "ja",
+  korean: "ko",
+  italian: "it",
+  portuguese: "pt",
+  russian: "ru",
+  arabic: "ar",
 };
 
 function movySourceProtocol(source: MovySourceRow): "hls" | "dash" | "mp4" {
@@ -469,6 +474,7 @@ async function resolveMovyLaneCandidate({
     context,
     signal,
     timeoutMs: gateTimeoutMs,
+    hedgeDelayMs: 2_000,
   });
   if (!selection.accepted) {
     throw createProviderCycleFailureError(candidate, {
@@ -498,9 +504,29 @@ async function resolveMovyLaneCandidate({
 export function buildMovyCycleCandidates(
   lanes: readonly MovyLane[],
   preferredSourceId?: string,
+  preferredAudioLanguage?: string,
 ): readonly ProviderCycleCandidate[] {
+  const requestedLang = normalizeIsoLanguageCode(preferredAudioLanguage);
   return lanes.map((lane, index) => {
     const sourceId = providerInventorySourceId(MOVY_PROVIDER_ID, lane);
+    let priority = index;
+    if (sourceId === preferredSourceId) {
+      priority = index - 10_000;
+    } else if (requestedLang && requestedLang !== "original") {
+      const laneLang =
+        lane === "munich" || lane === "berlin"
+          ? "de"
+          : lane === "delhi"
+            ? "hi"
+            : lane === "paris"
+              ? "fr"
+              : lane === "cancun"
+                ? "es"
+                : undefined;
+      if (laneLang === requestedLang) {
+        priority = index - 1_000;
+      }
+    }
     return {
       id: `candidate:${sourceId}`,
       providerId: MOVY_PROVIDER_ID,
@@ -508,7 +534,7 @@ export function buildMovyCycleCandidates(
       serverId: lane,
       label: `Movy ${lane}`,
       nativeLabel: lane,
-      priority: sourceId === preferredSourceId ? index - 10_000 : index,
+      priority,
       metadata: { lane, sourceHost: "api.wecollege.net" },
     };
   });
@@ -614,7 +640,11 @@ export async function resolveMovyDirect(
     imdbId: input.title.imdbId ?? "",
   };
 
-  const cycleCandidates = buildMovyCycleCandidates(MOVY_LANES, input.preferredSourceId);
+  const cycleCandidates = buildMovyCycleCandidates(
+    MOVY_LANES,
+    input.preferredSourceId,
+    input.preferredAudioLanguage,
+  );
   const sourceInventorySeeds = buildMovySourceInventoryCandidates(cycleCandidates, cachePolicy);
 
   emitTraceEvent(events, context, {
@@ -644,6 +674,8 @@ export async function resolveMovyDirect(
     titleId: input.title.id,
     maxAttemptsPerCandidate: 1,
     candidateTimeoutMs,
+    hedgeDelayMs: 2_500,
+    maxConcurrentCandidates: 2,
     resolveCandidate: async (candidate, candidateContext) => {
       // SAFETY: serverId/lane were minted by this module's own lane roster
       // when the candidates were declared; a stray value resolves as a lane
@@ -773,6 +805,7 @@ export async function resolveMovyDirect(
     qualityPreference: input.qualityPreference,
     preferredStreamId: input.preferredStreamId,
     preferredSourceId: input.preferredSourceId,
+    preferredAudioLanguage: input.preferredAudioLanguage,
   });
 
   // Resolve gate: the chosen stream is probed with its own headers before any
@@ -791,6 +824,7 @@ export async function resolveMovyDirect(
     context,
     signal: context.signal,
     timeoutMs: probeTimeoutMs,
+    hedgeDelayMs: 2_000,
   });
 
   if (context.signal?.aborted) {

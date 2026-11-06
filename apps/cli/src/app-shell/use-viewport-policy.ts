@@ -146,14 +146,30 @@ export function useDebouncedViewportPolicy(
   kind: ShellViewportKind,
   options: { forceCompact?: boolean; zen?: boolean } = {},
 ): ShellViewportPolicy {
+  const settled = useSettledShellDimensions();
+  return getShellViewportPolicy(kind, settled.cols, settled.rows, {
+    ...options,
+    terminalProfile: getShellTerminalProfile(),
+  });
+}
+
+/**
+ * Raw terminal dimensions from Ink, settled the same way as
+ * `useDebouncedViewportPolicy`: shrink applies immediately; grow-only resizes
+ * wait for {@link __testing.RESIZE_DEBOUNCE_MS}.
+ */
+export function useSettledShellDimensions(): ViewportDimensions {
   const { cols, rows } = useShellDimensions();
   const [settled, setSettled] = useState({ cols, rows });
+  const settledRef = useRef(settled);
+  settledRef.current = settled;
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (cols === settled.cols && rows === settled.rows) return;
+    const currentSettled = settledRef.current;
+    if (cols === currentSettled.cols && rows === currentSettled.rows) return;
 
-    if (shouldSettleViewportImmediately(settled, { cols, rows })) {
+    if (shouldSettleViewportImmediately(currentSettled, { cols, rows })) {
       if (timerRef.current) {
         clearTimeout(timerRef.current);
         timerRef.current = null;
@@ -171,12 +187,9 @@ export function useDebouncedViewportPolicy(
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [cols, rows, settled]);
+  }, [cols, rows]);
 
-  return getShellViewportPolicy(kind, settled.cols, settled.rows, {
-    ...options,
-    terminalProfile: getShellTerminalProfile(),
-  });
+  return settled;
 }
 
 export const __testing = {

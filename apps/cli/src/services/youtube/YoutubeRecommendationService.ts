@@ -126,6 +126,7 @@ async function loadChannelUploadResults(
 function mergeUnique(
   batches: readonly (readonly ProviderSearchResult[])[],
   excludeVideoId: string | null,
+  maxItems: number = MAX_ITEMS,
 ): SearchResult[] {
   const seen = new Set<string>();
   if (excludeVideoId) seen.add(toYoutubeVideoCatalogId(excludeVideoId));
@@ -135,7 +136,7 @@ function mergeUnique(
       if (seen.has(item.id)) continue;
       seen.add(item.id);
       out.push(providerResultToSearchResult(item));
-      if (out.length >= MAX_ITEMS) return out;
+      if (out.length >= maxItems) return out;
     }
   }
   return out;
@@ -149,7 +150,9 @@ export async function loadYoutubeRecommendations(input: {
   readonly title: TitleInfo;
   readonly historySeeds?: readonly YoutubeRecommendationHistorySeed[];
   readonly signal?: AbortSignal;
+  readonly limit?: number;
 }): Promise<readonly SearchResult[]> {
+  const maxItems = input.limit ?? MAX_ITEMS;
   const preferredInstanceUrl = getYoutubeProviderConfig().invidiousInstanceUrl;
   const videoId = resolveVideoId(input.title);
   const excludeVideoId = videoId;
@@ -170,13 +173,13 @@ export async function loadYoutubeRecommendations(input: {
 
   // Prefer related first so a full related set does not pay channel fan-out under
   // the post-play auto-continue budget.
-  let merged = mergeUnique([related], excludeVideoId);
-  if (merged.length >= MAX_ITEMS) return merged;
+  let merged = mergeUnique([related], excludeVideoId, maxItems);
+  if (merged.length >= maxItems) return merged;
   if (input.signal?.aborted) return merged;
 
   const channelId = resolveChannelId(input.title, authorId);
   const sameChannel =
-    channelId && merged.length < MAX_ITEMS
+    channelId && merged.length < maxItems
       ? await loadChannelUploadResults(
           channelId,
           preferredInstanceUrl,
@@ -184,13 +187,13 @@ export async function loadYoutubeRecommendations(input: {
           excludeVideoId,
         )
       : [];
-  merged = mergeUnique([related, sameChannel], excludeVideoId);
-  if (merged.length >= MAX_ITEMS) return merged;
+  merged = mergeUnique([related, sameChannel], excludeVideoId, maxItems);
+  if (merged.length >= maxItems) return merged;
   if (input.signal?.aborted) return merged;
 
   const historyChannelIds = channelIdsFromHistory(input.historySeeds ?? [], channelId);
   const historyChannelBatches =
-    historyChannelIds.length > 0 && merged.length < MAX_ITEMS
+    historyChannelIds.length > 0 && merged.length < maxItems
       ? (
           await Promise.all(
             historyChannelIds.map((historyChannelId) =>
@@ -205,7 +208,7 @@ export async function loadYoutubeRecommendations(input: {
         ).filter((batch) => batch.length > 0)
       : [];
 
-  merged = mergeUnique([related, sameChannel, ...historyChannelBatches], excludeVideoId);
+  merged = mergeUnique([related, sameChannel, ...historyChannelBatches], excludeVideoId, maxItems);
   if (merged.length > 0) return merged;
 
   const trending = await invidiousGetTrending({
@@ -214,7 +217,7 @@ export async function loadYoutubeRecommendations(input: {
   })
     .then((items) => mapInvidiousTrendingVideos([...items]))
     .catch(() => [] as readonly ProviderSearchResult[]);
-  return mergeUnique([trending], excludeVideoId);
+  return mergeUnique([trending], excludeVideoId, maxItems);
 }
 
 /** YouTube trending for `/trending` in youtube shell mode. */

@@ -191,6 +191,7 @@ export class PersistentMpvPropertyRouter {
     refresh: "refresh",
     "cycle-source": "cycle-source",
     "cycle-audio": "cycle-audio",
+    "up-next": "up-next",
   };
 
   private handleKunaiRequest(value: unknown): void {

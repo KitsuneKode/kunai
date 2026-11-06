@@ -25,7 +25,7 @@ test.skipIf(process.platform === "win32")(
   "Linux release version check treats hostile input as data",
   () => {
     const step = workflow.jobs.candidate?.steps?.find(
-      (step) => step.name === "Check dispatch version matches package.json",
+      (item) => item.name === "Check dispatch version matches package.json",
     );
     if (!step?.run) throw new Error("missing release version-check step");
     const bash = Bun.which("bash");

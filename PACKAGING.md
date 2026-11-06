@@ -48,13 +48,16 @@ ROOT="$PWD" && (cd apps/cli && bun pm pack --ignore-scripts --quiet --filename "
 - [ ] **YouTube cookie safety documented** — `cookiesFromBrowser` / absolute `cookiesFile`; never paste contents; review redacted bundles; no DRM bypass claim
 - [ ] **Download path docs are platform-accurate** — default download directory matches storage path resolution on Linux/macOS/Windows
 - [ ] **Package channels rendered** — `package-channels.yml` (release `published`
-      or manual dispatch) renders `Formula/kunai.rb`, `bucket/kunai.json`, and
-      `aur/kunai-bin/{PKGBUILD,.SRCINFO}` from `SHA256SUMS.archives` and uploads
+      or manual dispatch) renders `Formula/kunai.rb`, `bucket/kunai.json`,
+      `aur/kunai-bin/{PKGBUILD,.SRCINFO}`, and WinGet v1.9.0 multi-manifests
+      (`KitsuneKode.Kunai.yaml`, `KitsuneKode.Kunai.installer.yaml`,
+      `KitsuneKode.Kunai.locale.en-US.yaml`) from `SHA256SUMS.archives` and uploads
       them as `package-channels-<tag>`; publishing needs secrets
-      `PACKAGE_CHANNELS_TOKEN` (Homebrew/Scoop pushes) and `AUR_SSH_PRIVATE_KEY`
-      (AUR push), plus the `KitsuneKode/homebrew-tap`, `KitsuneKode/scoop-bucket`,
-      and AUR `kunai-bin` repos — each publish step skips with a notice when its
-      secret is absent (see [RELEASING.md](RELEASING.md#package-channels-homebrew-scoop-aur))
+      `PACKAGE_CHANNELS_TOKEN` (Homebrew/Scoop pushes), `AUR_SSH_PRIVATE_KEY`
+      (AUR push), and `WINGET_TOKEN` (WinGet PR submission), plus the
+      `KitsuneKode/homebrew-tap`, `KitsuneKode/scoop-bucket`, and AUR `kunai-bin`
+      repos — each publish step skips with a notice when its secret is absent
+      (see [RELEASING.md](RELEASING.md#package-channels-homebrew-scoop-aur-winget))
 - [ ] **GitHub Release assets** — exact 18-file native set is present (`bun run scripts/verify-github-release-assets.ts` with full attestation repository/source arguments for byte verification); upload uses `fail_on_unmatched_files: true`
 - [ ] **musl archive evidence** — x64 and arm64 Alpine cells install the exact
       preserved `.tar.gz` through production `install.sh`, record archive

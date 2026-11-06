@@ -1,18 +1,14 @@
 import { expect, test } from "bun:test";
 
 import { SetupShell, type SetupPrefs } from "@/app-shell/setup-shell";
-import type { CapabilitySnapshot } from "@/ui";
 import { Box } from "ink";
 import React from "react";
 
+import { capabilitySnapshotFixture } from "../../harness/capability-snapshot-fixture";
+import { stripAnsi } from "../../harness/render-capture";
 import { renderWithPointer } from "../../support/pointer-render";
 
-const ready: CapabilitySnapshot = {
-  mpv: true,
-  mpvRequired: true,
-  ffprobe: true,
-  ytDlp: true,
-  curl: { present: true, impersonates: true, profile: "chrome150" },
+const ready = capabilitySnapshotFixture({
   image: {
     terminal: "unknown",
     protocol: "none",
@@ -20,8 +16,7 @@ const ready: CapabilitySnapshot = {
     available: false,
     reason: "fixture",
   },
-  issues: [],
-};
+});
 
 test("setup pointer chooses a media profile and language, goes back, and never grants consent", () => {
   let prefs: SetupPrefs | undefined;
@@ -58,6 +53,29 @@ test("setup pointer chooses a media profile and language, goes back, and never g
   }
 });
 
+test("setup pointer can click dependency rows and select analytics options", () => {
+  const h = renderWithPointer(<SetupShell snapshot={ready} finish={() => {}} />, {
+    columns: 120,
+    rows: 45,
+  });
+  try {
+    // Clicking dependency row 0
+    h.click("setup:deps:0");
+    expect(h.lastFrame()).toContain("Let's get you watching");
+    // Advance to mode, language, library, analytics
+    h.click("setup:action:enter");
+    h.click("setup:action:enter");
+    h.click("setup:action:enter");
+    h.click("setup:action:enter");
+    expect(h.lastFrame()).toContain("Help Kunai know it's being used");
+    // Click on Keep it off
+    h.click("setup:analytics:1");
+    expect(h.lastFrame()).toContain("Keep it off");
+  } finally {
+    h.unmount();
+  }
+});
+
 test.each([
   [72, 24],
   [100, 30],
@@ -71,7 +89,7 @@ test.each([
   );
   try {
     for (let step = 0; step < 6; step++) {
-      expect(h.lastFrame()).toContain(`setup ${step + 1}⁄6`);
+      expect(stripAnsi(h.lastFrame())).toContain(`setup ${step + 1}⁄6`);
       const regions = h.dispatcher
         .debugRegions()
         .filter((region) => region.id.startsWith("setup:"));
@@ -81,7 +99,7 @@ test.each([
           rows - 3,
         );
       }
-      if (step === 3) expect(h.lastFrame()).toContain("Discord presence");
+      if (step === 3) expect(stripAnsi(h.lastFrame())).toContain("Discord presence");
       if (step === 4) h.click("setup:action:s");
       else if (step < 5) h.click("setup:action:enter");
     }

@@ -1,7 +1,7 @@
 /**
- * Pure package-channel renderers: Homebrew formula, Scoop manifest, and the
- * AUR `kunai-bin` PKGBUILD + .SRCINFO, all derived from a release tag and the
- * published `SHA256SUMS.archives` file.
+ * Pure package-channel renderers: Homebrew formula, Scoop manifest, AUR
+ * `kunai-bin` PKGBUILD + .SRCINFO, Nix flake, and WinGet v1.9.0 multi-manifests, all
+ * derived from a release tag and the published `SHA256SUMS.archives` file.
  *
  * Asset names are read from `RELEASE_BINARY_TARGETS` (the source of truth the
  * release workflow publishes from), so a rename there fails here loudly rather
@@ -11,6 +11,7 @@
  *      [--license <path>] --out <dir>
  */
 
+import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -20,6 +21,17 @@ import { RELEASE_BINARY_TARGETS } from "../../apps/cli/src/services/update/platf
 const GITHUB_RELEASE_DOWNLOAD = "https://github.com/KitsuneKode/kunai/releases/download";
 const HOMEPAGE = "https://kunai.kitsunekode.in";
 const DESCRIPTION = "Terminal-first streaming CLI for anime, series, and movies, played in mpv";
+
+const WINGET_PACKAGE_IDENTIFIER = "KitsuneKode.Kunai";
+const WINGET_PUBLISHER = "KitsuneKode";
+const WINGET_PUBLISHER_URL = "https://github.com/KitsuneKode";
+const WINGET_SUPPORT_URL = "https://github.com/KitsuneKode/kunai/issues";
+const WINGET_PACKAGE_NAME = "Kunai";
+const WINGET_LICENSE_URL = "https://raw.githubusercontent.com/KitsuneKode/kunai/main/LICENSE";
+const WINGET_COMMAND = "kunai";
+const WINGET_DEFAULT_LOCALE = "en-US";
+const WINGET_SCHEMA_VERSION = "1.9.0";
+const WINGET_TAGS = ["anime", "cli", "mpv", "streaming", "terminal", "video"] as const;
 
 export type ChannelVersion = {
   /** Bare semver, e.g. `0.3.0`. */
@@ -46,6 +58,17 @@ export function parseSumsFile(text: string): SumsMap {
     sums.set(name.trim(), sha.toLowerCase());
   }
   return sums;
+}
+
+/**
+ * Nix `fetchurl` fixed-output `hash` uses SRI: `sha256-` + standard base64 of the
+ * raw 32-byte archive digest (from the published hex in SHA256SUMS.archives).
+ */
+export function nixSriSha256FromHex(hexLower: string): string {
+  if (!/^[0-9a-f]{64}$/.test(hexLower)) {
+    throw new Error(`[render-channels] expected 64-char lowercase hex sha256, got ${hexLower}`);
+  }
+  return `sha256-${Buffer.from(hexLower, "hex").toString("base64")}`;
 }
 
 function target(id: string) {
@@ -245,6 +268,143 @@ export function renderSrcinfo(input: AurRenderInput): string {
   return lines.join("\n");
 }
 
+export function renderWingetVersionManifest(channel: ChannelVersion): string {
+  return `# yaml-language-server: $schema=https://aka.ms/winget-manifest.version.${WINGET_SCHEMA_VERSION}.schema.json
+
+PackageIdentifier: ${WINGET_PACKAGE_IDENTIFIER}
+PackageVersion: ${channel.version}
+DefaultLocale: ${WINGET_DEFAULT_LOCALE}
+ManifestType: version
+ManifestVersion: ${WINGET_SCHEMA_VERSION}
+`;
+}
+
+export function renderWingetInstallerManifest(channel: ChannelVersion, sums: SumsMap): string {
+  return `# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.${WINGET_SCHEMA_VERSION}.schema.json
+
+PackageIdentifier: ${WINGET_PACKAGE_IDENTIFIER}
+PackageVersion: ${channel.version}
+InstallerType: zip
+NestedInstallerType: portable
+Commands:
+  - ${WINGET_COMMAND}
+UpgradeBehavior: install
+Installers:
+  - Architecture: x64
+    NestedInstallerFiles:
+      - RelativeFilePath: ${windowsX64.archiveEntryName}
+        PortableCommandAlias: ${WINGET_COMMAND}
+    InstallerUrl: ${assetUrl(channel, windowsX64.archiveName)}
+    InstallerSha256: ${sumFor(sums, windowsX64.archiveName).toUpperCase()}
+  - Architecture: arm64
+    NestedInstallerFiles:
+      - RelativeFilePath: ${windowsArm64.archiveEntryName}
+        PortableCommandAlias: ${WINGET_COMMAND}
+    InstallerUrl: ${assetUrl(channel, windowsArm64.archiveName)}
+    InstallerSha256: ${sumFor(sums, windowsArm64.archiveName).toUpperCase()}
+ManifestType: installer
+ManifestVersion: ${WINGET_SCHEMA_VERSION}
+`;
+}
+
+export function renderWingetLocaleManifest(channel: ChannelVersion): string {
+  const tagsFormatted = WINGET_TAGS.map((tag) => `  - ${tag}`).join("\n");
+  return `# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.${WINGET_SCHEMA_VERSION}.schema.json
+
+PackageIdentifier: ${WINGET_PACKAGE_IDENTIFIER}
+PackageVersion: ${channel.version}
+PackageLocale: ${WINGET_DEFAULT_LOCALE}
+Publisher: ${WINGET_PUBLISHER}
+PublisherUrl: ${WINGET_PUBLISHER_URL}
+PublisherSupportUrl: ${WINGET_SUPPORT_URL}
+PackageName: ${WINGET_PACKAGE_NAME}
+PackageUrl: ${HOMEPAGE}
+License: MIT
+LicenseUrl: ${WINGET_LICENSE_URL}
+ShortDescription: ${DESCRIPTION}
+Description: ${DESCRIPTION}
+Moniker: ${WINGET_COMMAND}
+Tags:
+${tagsFormatted}
+ManifestType: defaultLocale
+ManifestVersion: ${WINGET_SCHEMA_VERSION}
+`;
+}
+
+type NixSystem = "aarch64-darwin" | "x86_64-darwin" | "aarch64-linux" | "x86_64-linux";
+
+type NixArchiveBinding = {
+  readonly nixSystem: NixSystem;
+  readonly targetId: string;
+};
+
+const NIX_ARCHIVE_BINDINGS: readonly NixArchiveBinding[] = [
+  { nixSystem: "aarch64-darwin", targetId: "darwin-arm64" },
+  { nixSystem: "x86_64-darwin", targetId: "darwin-x64" },
+  { nixSystem: "aarch64-linux", targetId: "linux-arm64" },
+  { nixSystem: "x86_64-linux", targetId: "linux-x64" },
+] as const;
+
+export function renderNixFlake(channel: ChannelVersion, sums: SumsMap): string {
+  const base = GITHUB_RELEASE_DOWNLOAD;
+  const tag = channel.tag;
+  const version = channel.version;
+
+  const perSystem = NIX_ARCHIVE_BINDINGS.map(({ nixSystem, targetId }) => {
+    const t = target(targetId);
+    const shaHex = sumFor(sums, t.archiveName);
+    const sriHash = nixSriSha256FromHex(shaHex);
+    return `        "${nixSystem}" = rec {
+          archive = "${t.archiveName}";
+          pname = "kunai";
+          version = "${version}";
+          src = pkgs.fetchurl {
+            url = "\${base}/\${tag}/\${archive}";
+            hash = "${sriHash}";
+          };
+          kunai = pkgs.stdenvNoCC.mkDerivation {
+            inherit pname version src;
+            dontBuild = true;
+            dontStrip = true;
+            dontFixup = true;
+            installPhase = ''
+              mkdir -p $out/bin
+              install -m0755 ${t.archiveEntryName} $out/bin/kunai
+            '';
+          };
+        };`;
+  }).join("\n");
+
+  const systemsList = NIX_ARCHIVE_BINDINGS.map((b) => `"${b.nixSystem}"`).join(" ");
+
+  return `{
+  description = "${DESCRIPTION}";
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  };
+
+  outputs = { self, nixpkgs }:
+    let
+      base = "${base}";
+      tag = "${tag}";
+      systems = [ ${systemsList} ];
+      forSystem = system: let
+        pkgs = import nixpkgs { inherit system; };
+        per = {
+${perSystem}
+        };
+      in per.\${system};
+    in
+    nixpkgs.lib.genAttrs systems (system: {
+      packages.default = (forSystem system).kunai;
+      packages.kunai = (forSystem system).kunai;
+      defaultPackage = (forSystem system).kunai;
+    });
+}
+`;
+}
+
 // ---------------------------------------------------------------------------
 // CLI
 
@@ -279,6 +439,21 @@ function parseArgs(argv: readonly string[]): RenderCliArgs {
   return { version, sumsPath, licensePath: args["--license"], outDir };
 }
 
+export function buildChannelFileMap(channel: ChannelVersion, sums: SumsMap, licenseSha256: string) {
+  const aurInput: AurRenderInput = { channel, sums, licenseSha256 };
+  const wingetDir = `winget/manifests/k/KitsuneKode/Kunai/${channel.version}`;
+  return {
+    "Formula/kunai.rb": renderHomebrewFormula(channel, sums),
+    "bucket/kunai.json": renderScoopManifest(channel, sums),
+    "aur/kunai-bin/PKGBUILD": renderPkgbuild(aurInput),
+    "aur/kunai-bin/.SRCINFO": renderSrcinfo(aurInput),
+    "nix/flake.nix": renderNixFlake(channel, sums),
+    [`${wingetDir}/KitsuneKode.Kunai.yaml`]: renderWingetVersionManifest(channel),
+    [`${wingetDir}/KitsuneKode.Kunai.installer.yaml`]: renderWingetInstallerManifest(channel, sums),
+    [`${wingetDir}/KitsuneKode.Kunai.locale.en-US.yaml`]: renderWingetLocaleManifest(channel),
+  } satisfies Record<string, string>;
+}
+
 function main(): void {
   const { version, sumsPath, licensePath, outDir } = parseArgs(Bun.argv.slice(2));
   const bare = version.replace(/^v/, "");
@@ -288,13 +463,7 @@ function main(): void {
     ? createHash("sha256").update(readFileSync(licensePath)).digest("hex")
     : "SKIP";
 
-  const aurInput: AurRenderInput = { channel, sums, licenseSha256 };
-  const files = {
-    "Formula/kunai.rb": renderHomebrewFormula(channel, sums),
-    "bucket/kunai.json": renderScoopManifest(channel, sums),
-    "aur/kunai-bin/PKGBUILD": renderPkgbuild(aurInput),
-    "aur/kunai-bin/.SRCINFO": renderSrcinfo(aurInput),
-  };
+  const files = buildChannelFileMap(channel, sums, licenseSha256);
   for (const [rel, content] of Object.entries(files)) {
     const dest = join(outDir, rel);
     mkdirSync(join(dest, ".."), { recursive: true });

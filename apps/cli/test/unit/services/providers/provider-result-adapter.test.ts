@@ -31,6 +31,18 @@ describe("provider result adapter", () => {
     expect(track.display).toBe("Portuguese");
   });
 
+  test("corrects subtitle language when label identifies a distinct language from candidate.language", () => {
+    const track = subtitleCandidateToTrack(
+      makeSubtitleCandidate({
+        language: "en",
+        label: "Arabic",
+      }),
+    );
+
+    expect(track.language).toBe("ar");
+    expect(track.display).toBe("Arabic");
+  });
+
   test("honors exact stream selection before provider default", () => {
     const stream = providerResolveResultToStreamInfo({
       result: makeResolveResult(),

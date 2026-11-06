@@ -129,12 +129,21 @@ function metadataCacheKey(
   return `${ids.anilistId ?? ""}|${ids.malId ?? ""}|${pass}`;
 }
 
+/** Recognize number-only labels that may be replaced by a real episode name. */
+function isEpisodeTitlePlaceholder(title: string | undefined): boolean {
+  return /^(?:episode|ep\.?)\s+\d+(?:\.\d+)?$/i.test(title?.trim() ?? "");
+}
+
+/** Prefer actual episode names to numbered placeholders, then retain the more descriptive name. */
 function pickLongerTitle(
   current: string | undefined,
   next: string | undefined,
 ): string | undefined {
   if (!next?.trim()) return current;
   if (!current?.trim()) return next.trim();
+  if (isEpisodeTitlePlaceholder(current) !== isEpisodeTitlePlaceholder(next)) {
+    return isEpisodeTitlePlaceholder(current) ? next.trim() : current;
+  }
   return next.trim().length > current.trim().length ? next.trim() : current;
 }
 
@@ -263,10 +272,16 @@ async function fetchAniListStreamingEpisodes(
       };
     };
     const rows = payload.data?.Media?.streamingEpisodes ?? [];
-    rows.forEach((row, index) => {
-      const number = index + 1;
+    rows.forEach((row) => {
+      // AniList streaming links can be sparse or newest-first. Array position
+      // is not episode identity and must never label episode 1 with episode 130.
+      const title = row.title?.trim() ?? "";
+      const match = /^(?:episode|ep\.?)\s+(\d+(?:\.\d+)?)\s*(?:[-–:]\s*(.*))?$/i.exec(title);
+      if (!match) return;
+      const number = Number(match[1]);
+      if (!Number.isFinite(number) || number <= 0) return;
       mergeEpisodeMetadata(episodes, number, {
-        title: row.title?.trim() || undefined,
+        title: match[2]?.trim() || undefined,
         thumbnail: row.thumbnail?.trim() || undefined,
         source: "anilist",
       });
@@ -367,7 +382,8 @@ export async function fetchAnimeEpisodeMetadataByNumber(
 /**
  * Fill gaps in `target` from an external source. Provider-native values win
  * field by field: the provider knows its own catalog, the external source is
- * only there for what the provider does not carry.
+ * only there for what the provider does not carry. A number-only episode title
+ * counts as missing when the external source supplies a real name.
  */
 export function mergeExternalEpisodeMetadataInto(
   target: Map<number, AnimeEpisodeMetadata>,
@@ -381,7 +397,9 @@ export function mergeExternalEpisodeMetadataInto(
     }
     target.set(number, {
       number,
-      title: existing.title ?? meta.title,
+      title: isEpisodeTitlePlaceholder(existing.title)
+        ? pickLongerTitle(existing.title, meta.title)
+        : (existing.title ?? meta.title),
       synopsis: existing.synopsis ?? meta.synopsis,
       airDate: existing.airDate ?? meta.airDate,
       thumbnail: existing.thumbnail ?? meta.thumbnail,
@@ -392,11 +410,12 @@ export function mergeExternalEpisodeMetadataInto(
   }
 }
 
+/** Read native episode identity for metadata lookup, preserving specials such as 12.5. */
 export function parseAllMangaEpisodeNumber(episode: ProviderEpisodeOption): number {
   const fromDetail = episode.detail?.replace(/^Source episode\s+/i, "").trim();
   const raw = fromDetail || episode.label.replace(/^Episode\s+/i, "").trim();
   const parsed = Number.parseFloat(raw);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : episode.index;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : episode.index;
 }
 
 export function formatAnimeEpisodeLabel(

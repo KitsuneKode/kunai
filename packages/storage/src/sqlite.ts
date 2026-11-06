@@ -69,7 +69,16 @@ export function openKunaiDatabase(path: string, options: OpenDatabaseOptions = {
 
       if (options.wal !== false) {
         try {
-          db.exec("PRAGMA journal_mode = WAL");
+          const requested = db
+            .query<{ journal_mode: string }, []>("PRAGMA journal_mode = WAL")
+            .get();
+          // WAL commit with synchronous=FULL fsyncs the log on every transaction.
+          // NORMAL stays durable across process crashes (the WAL is still
+          // checkpointed) without that per-commit fsync. DELETE mode keeps FULL:
+          // NORMAL there can tear a database on power loss.
+          if (requested?.journal_mode === "wal") {
+            db.exec("PRAGMA synchronous = NORMAL");
+          }
         } catch {
           // WAL needs POSIX advisory locks the filesystem may not have —
           // %APPDATA% on OneDrive/SMB mounts rejects it outright. Rollback

@@ -133,14 +133,15 @@ export async function runSetupWizard({
   // widened the type instead of checking the literal. Probing is also the only
   // option now — app-shell may not import the provider package, so it cannot ask
   // AniDB which curl builds it can drive.
-  const snapshot = container.capabilitySnapshot ?? (await probeCapabilities());
+  const snapshot =
+    container.capabilitySnapshot ?? (await probeCapabilities({ probeMpvHwaccel: true }));
 
   const defaultDownloadPath = join(dirname(getKunaiPaths().dataDbPath), "downloads");
   const { result } = runSetupFlow(snapshot, {
     downloadPath: current.downloadPath || defaultDownloadPath,
     // `[r]` re-probes rather than making the user quit and relaunch after
     // installing something in another pane.
-    onRecheck: () => probeCapabilities(),
+    onRecheck: () => probeCapabilities({ probeMpvHwaccel: true }),
     // The controls start from what is actually configured, so completing the
     // wizard rewrites only what the screens showed (#228).
     initial: wizardInitialStateFromConfig(current, snapshot.ytDlp),

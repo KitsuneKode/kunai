@@ -27,6 +27,7 @@ export const MPV_OBSERVED_PROPERTIES = [
   "track-list",
   "sid",
   "sub-visibility",
+  "avsync",
 ] as const;
 
 export const MPV_INITIAL_PROPERTIES = ["playback-time", "duration", "percent-pos"] as const;
@@ -61,6 +62,11 @@ export type MpvIpcSessionOptions = {
   onEndFile: EndFileHandler;
   onFileLoaded?: FileLoadedHandler;
   onCommandResult?: (result: MpvIpcCommandResult) => void;
+  /**
+   * Fired once when the socket closes or errors without `close()`. The mpv
+   * process may still be alive; the caller can open a replacement session.
+   */
+  onTransportLost?: (reason: string) => void;
   closeTimers?: MpvIpcCloseTimers;
   commandTimers?: MpvIpcCloseTimers;
 };
@@ -184,6 +190,7 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
   const pendingCommands = new Map<number, PendingCommand>();
   let nextRequestId = 1;
   let closed = false;
+  let intentionalClose = false;
   let closePromise: Promise<void> | null = null;
   let bufferValue = "";
   let bufferedBytes = 0;
@@ -213,6 +220,7 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
     writes.length = 0;
     queuedBytes = 0;
     drainPending(error, timedOutRequestId);
+    if (!intentionalClose) options.onTransportLost?.(error);
   };
 
   const flushWrites = (sock: Bun.Socket<SocketState>) => {
@@ -265,14 +273,18 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
           bufferedBytes = 0;
           const parsed = parseMpvIpcLine(line);
           if (parsed) {
-            dispatchMessage(
-              parsed,
-              requestIds,
-              pendingCommands,
-              options.onPropertyUpdate,
-              options.onEndFile,
-              options.onFileLoaded,
-            );
+            try {
+              dispatchMessage(
+                parsed,
+                requestIds,
+                pendingCommands,
+                options.onPropertyUpdate,
+                options.onEndFile,
+                options.onFileLoaded,
+              );
+            } catch {
+              // Handler failures must not break the socket parser loop
+            }
           }
           offset = end;
         }
@@ -393,6 +405,7 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
       }
 
       closePromise = (async () => {
+        intentionalClose = true;
         markClosed("session closed");
         if (socket.readyState !== 1) return;
         await new Promise<void>((resolve) => {

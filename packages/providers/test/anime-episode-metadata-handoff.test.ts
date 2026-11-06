@@ -90,8 +90,8 @@ describe("AllManga episode metadata handoff", () => {
             data: {
               Media: {
                 streamingEpisodes: [
-                  { title: "AniList ep 1", thumbnail: null },
-                  { title: "AniList ep 2", thumbnail: null },
+                  { title: "Episode 1 - AniList ep 1", thumbnail: null },
+                  { title: "Episode 2 - AniList ep 2", thumbnail: null },
                 ],
               },
             },

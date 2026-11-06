@@ -59,6 +59,7 @@ export const PALETTE_WORKFLOW_ACTIONS: ReadonlySet<ShellAction> = new Set([
   "theme",
   "watch",
   "providers",
+  "provider-status",
   "playlists",
   "report-issue",
   "clear-cache",
@@ -213,6 +214,10 @@ export async function dispatchPaletteCommand(
   }
   if (action === "providers" || action === "provider") {
     return workflows.runAction("providers", container);
+  }
+  if (action === "provider-status") {
+    await workflows.openOverlay(container, { type: "provider_status" });
+    return "handled";
   }
   if (action === "up-next") return openRootQueueSelection(container, workflows);
   if (action === "playlists" || action === "playlist") {

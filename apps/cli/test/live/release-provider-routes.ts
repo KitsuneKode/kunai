@@ -48,7 +48,13 @@ export function buildReleaseProviderRouteCases(
       lane: "movie",
       configuredProvider: config.provider,
       mode: "series",
-      title: { id: "438631", type: "movie", name: "Dune", year: "2021" },
+      title: { id: "27205", type: "movie", name: "Inception", year: "2010" },
+    },
+    {
+      lane: "movie",
+      configuredProvider: config.provider,
+      mode: "series",
+      title: { id: "550", type: "movie", name: "Fight Club", year: "1999" },
     },
     {
       lane: "series",
@@ -66,6 +72,22 @@ export function buildReleaseProviderRouteCases(
       expectedTitle: "Onigiri",
       season: 1,
       episode: 1,
+    },
+  ];
+}
+
+/** Observe the known catalog gap separately from the required playback controls. */
+export function buildReleaseProviderDiagnosticCases(
+  config: { readonly provider: string; readonly animeProvider: string },
+  productionProviderIds: readonly string[],
+): readonly Extract<ReleaseProviderRouteCase, { readonly mode: "series" }>[] {
+  buildReleaseProviderRouteCases(config, productionProviderIds);
+  return [
+    {
+      lane: "movie",
+      configuredProvider: config.provider,
+      mode: "series",
+      title: { id: "438631", type: "movie", name: "Dune", year: "2021" },
     },
   ];
 }
@@ -119,11 +141,10 @@ export async function resolveReleaseAnimeSearchTitle(
     );
   }
   const normalizedExpected = normalizeTitle(route.expectedTitle);
-  const selected =
-    results.find((result) => normalizeTitle(result.title) === normalizedExpected) ?? results[0];
+  const selected = results.find((result) => normalizeTitle(result.title) === normalizedExpected);
   if (!selected) {
     throw new Error(
-      `Default anime provider "${route.configuredProvider}" returned no selectable result`,
+      `Default anime provider "${route.configuredProvider}" returned no exact title for "${route.expectedTitle}"`,
     );
   }
   return titleInfoFromSearchResult(selected, selected.title);

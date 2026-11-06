@@ -53,6 +53,10 @@ export type CliArgs = {
   openUrl?: string;
   installProtocolHandler: boolean;
   dryRun: boolean;
+  status?: boolean;
+  providersStatus?: boolean;
+  debrid?: string;
+  service?: "real-debrid" | "all-debrid";
   help: boolean;
   version: boolean;
   initialRoute?: "recommendation" | "calendar" | "random";
@@ -70,6 +74,10 @@ USAGE
   kunai -i anilist:21        Open a known AniList id (anime lane)
   kunai -a                   Start in anime mode
   kunai -y                   Start in YouTube mode
+  kunai status               Display provider & debrid service health table
+  kunai play <magnet>        Stream a magnet link via configured debrid service
+  kunai serve                Start the web companion & mobile streaming server
+
 
 LAUNCH
   -S, --search <query>       Search for a title on launch
@@ -110,6 +118,8 @@ mpv
       --mpv-clean            Ignore your mpv config for this run
       --no-user-mpv-config   Same, explicit
       --mpv-log-file <path>  Write the mpv log to a file
+      --hwdec <mode>         Hardware video decode: default | auto-safe | no
+      --no-hwdec             Shortcut for --hwdec no
 
 PATHS & INTEGRATION
       --download-path <dir>  Override the download directory
@@ -156,6 +166,9 @@ export const CLI_SUBCOMMANDS: readonly string[] = [
   "upgrade",
   "rollback",
   "doctor",
+  "status",
+  "providers",
+  "play",
   "uninstall",
   "diagnostics",
   "completion",
@@ -208,10 +221,16 @@ export const KNOWN_FLAGS: ReadonlySet<string> = new Set([
   "--handoff-url",
   "--install-protocol-handler",
   "--dry-run",
+  "--status",
+  "--providers-status",
+  "--debrid",
+  "--service",
   "--mpv-debug",
   "--mpv-clean",
   "--no-user-mpv-config",
   "--mpv-log-file",
+  "--hwdec",
+  "--no-hwdec",
   "--player",
   "-h",
   "--help",
@@ -241,7 +260,10 @@ export const VALUE_FLAGS: ReadonlySet<string> = new Set([
   "--download-path",
   "--open",
   "--handoff-url",
+  "--debrid",
+  "--service",
   "--mpv-log-file",
+  "--hwdec",
   "--player",
   "--to",
 ]);
@@ -280,6 +302,10 @@ type CommanderCliOptions = {
   readonly open?: string;
   readonly installProtocolHandler?: boolean;
   readonly dryRun?: boolean;
+  readonly status?: boolean;
+  readonly providersStatus?: boolean;
+  readonly debrid?: string;
+  readonly service?: string;
   readonly mpvDebug?: boolean;
   readonly mpvClean?: boolean;
   /**
@@ -290,6 +316,7 @@ type CommanderCliOptions = {
    */
   readonly userMpvConfig?: boolean;
   readonly mpvLogFile?: string;
+  readonly hwdec?: string | boolean;
   readonly player?: string;
   readonly help?: boolean;
   readonly version?: boolean;
@@ -335,10 +362,16 @@ function createCliCommand(): Command {
     .option("--handoff-url <url>")
     .option("--install-protocol-handler")
     .option("--dry-run")
+    .option("--status")
+    .option("--providers-status")
+    .option("--debrid <magnet>")
+    .option("--service <service>")
     .option("--mpv-debug")
     .option("--mpv-clean")
     .option("--no-user-mpv-config")
     .option("--mpv-log-file <path>")
+    .option("--hwdec <mode>")
+    .option("--no-hwdec")
     .option("--player <player>")
     .option("-h, --help")
     .option("-v, --version")
@@ -601,6 +634,32 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
   }
   args.installProtocolHandler = Boolean(options.installProtocolHandler);
   args.dryRun = Boolean(options.dryRun);
+  args.status = Boolean(options.status || options.providersStatus);
+  args.providersStatus = Boolean(options.providersStatus);
+  args.debrid = options.debrid;
+  if (options.service !== undefined) {
+    const service = options.service.toLowerCase();
+    if (service !== "real-debrid" && service !== "all-debrid") {
+      throw new CliUsageError(
+        `invalid --service "${options.service}" — must be "real-debrid" or "all-debrid"`,
+      );
+    }
+    args.service = service;
+  }
+  const rawHwdec =
+    options.hwdec !== undefined && options.hwdec !== false && options.hwdec !== true
+      ? options.hwdec.toLowerCase()
+      : undefined;
+  if (
+    rawHwdec !== undefined &&
+    rawHwdec !== "default" &&
+    rawHwdec !== "auto-safe" &&
+    rawHwdec !== "no"
+  ) {
+    throw new CliUsageError(
+      `invalid --hwdec "${options.hwdec}" — must be "default", "auto-safe", or "no"`,
+    );
+  }
   args.mpv = {
     ...(options.mpvDebug ? { debug: true } : {}),
     ...(options.mpvClean ? { clean: true } : {}),
@@ -609,6 +668,11 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
     // key to read. Only an explicit `false` counts; unset must stay unset.
     ...(options.userMpvConfig === false ? { noUserConfig: true } : {}),
     ...(options.mpvLogFile ? { logFile: options.mpvLogFile } : {}),
+    ...(rawHwdec === "default" || rawHwdec === "auto-safe" || rawHwdec === "no"
+      ? { hwdec: rawHwdec }
+      : options.hwdec === false
+        ? { hwdec: "no" }
+        : {}),
   };
   args.player = parsePlayerChoice(options.player);
   args.help = Boolean(options.help);

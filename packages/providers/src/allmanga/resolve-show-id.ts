@@ -30,6 +30,7 @@ export function clearAllMangaAnilistBridgeCacheForTest(): void {
 export function looksLikeAllMangaOpaqueShowId(showId: string): boolean {
   const normalized = showId.replace(/^allanime:/, "").trim();
   if (!normalized) return false;
+  if (/^(?:anilist|mal|tmdb|imdb|youtube):/.test(normalized)) return false;
   return !/^\d+$/.test(normalized);
 }
 
@@ -45,7 +46,10 @@ export async function resolveAllMangaShowId(
   context: ProviderRuntimeContext,
 ): Promise<string | null> {
   const rawId = input.title.id.replace(/^allanime:/, "").trim();
-  const anilistId = input.title.externalIds?.anilistId ?? input.title.anilistId ?? undefined;
+  const anilistId =
+    /^anilist:(\d+)$/.exec(rawId)?.[1] ??
+    input.title.externalIds?.anilistId ??
+    input.title.anilistId;
   const providerId = context.providerId ?? "allanime";
 
   const storedNative = input.title.externalIds?.providerNativeIds?.[providerId];
