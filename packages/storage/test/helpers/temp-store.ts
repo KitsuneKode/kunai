@@ -65,7 +65,13 @@ export function createTempStoreRegistry(): TempStoreRegistry {
       // returns "database is locked" and, passed no argument, reports success
       // anyway. Retrying the `rmSync` does not help: nothing frees the handle
       // later, so the close has to genuinely happen first.
-      Bun.gc(true);
+      //
+      // On Windows, file handles lock the directory until collected. POSIX unlinks
+      // open files immediately, so running full GC across every test on Linux/macOS
+      // causes massive unnecessary CPU starvation under parallel suites.
+      if (process.platform === "win32") {
+        Bun.gc(true);
+      }
       for (const database of dbs.splice(0)) {
         // A suite may already have closed one; teardown must still finish.
         try {
