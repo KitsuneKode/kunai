@@ -68,6 +68,30 @@ describe("runMobileApplication", () => {
     expect(fake.committedStates.at(-1)?.lastResult).toBe("cancelled");
   });
 
+  test("preserves handoff-accepted state even if signal aborts after handoff commit", async () => {
+    const fake = new FakeMobileEnvironment();
+    const controller = new AbortController();
+    fake.choices.push({ kind: "selected", value: "continue" });
+    fake.handoffResult = { kind: "accepted", launcher: "test" };
+    fake.renderHook = (lines) => {
+      // Late abort while rendering completion copy after handoff was already committed
+      if (lines.some((line) => line.includes("VLC handoff was accepted"))) {
+        controller.abort();
+        throw new Error("aborted during terminal render");
+      }
+    };
+    const result = await runMobileApplication({
+      argv: HOST_PROOF_ARGS,
+      version: "test",
+      environment: {
+        ...fake.environment,
+        signal: controller.signal,
+      },
+    });
+    expect(result).toEqual({ code: 0, reason: "handoff" });
+    expect(fake.committedStates.at(-1)?.lastResult).toBe("handoff-accepted");
+  });
+
   test("renders help and version without loading state or contacting adapters", async () => {
     for (const [argv, copy] of [
       [["--help"], "Usage: kunai-mobile"],

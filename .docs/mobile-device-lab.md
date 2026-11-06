@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-05"
+lastReviewed: "2026-11-06"
 ---
 
 # Mobile device lab
@@ -322,7 +322,10 @@ tester_media_url='https://tester-owned.example/video.m3u8'
 ```
 
 Repeat the Android cancellation, success, quote/backslash, and invalid-URL
-cases. After success, failure, and Ctrl+C, `.runtime` must contain no
+cases. Note that on iOS, Ctrl+C traps `INT` in the shell launcher, terminating
+with exit 130 and cleaning all transport files without updating `mobile-state.json`
+(unlike Android Node where Ctrl+C cancels the active abort signal and records
+`cancelled` in state). After success, failure, and Ctrl+C, `.runtime` must contain no
 `argv-count`, `argv-*`, curl request/response, terminal-answer, or player-URL
 transport file. An app switch or `openurl` return code alone is not playback.
 
