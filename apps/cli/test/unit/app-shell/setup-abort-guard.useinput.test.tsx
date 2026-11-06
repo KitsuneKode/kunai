@@ -113,7 +113,7 @@ test("[s] applies the screen's recommendation, not wherever the cursor sits (#23
 
     handle.stdin.enqueue("S"); // accept the rest and review
     expect(results).toHaveLength(0);
-    expect(handle.lastFrame()).toContain("You're all set");
+    expect(handle.lastFrame()).toContain("Review your setup");
     handle.stdin.enqueue("\r");
     expect(results).toHaveLength(1);
     expect(results[0]?.result).toBe("defaults");
@@ -128,11 +128,11 @@ test("every pre-consent screen exposes the safe remaining-defaults shortcut", ()
   try {
     handle.stdin.enqueue("\r"); // -> mode
     expect(handle.lastFrame()).toContain("[S]");
-    expect(handle.lastFrame()).toContain("finish defaults");
+    expect(handle.lastFrame()).toContain("review defaults");
 
     handle.stdin.enqueue("\r"); // -> language
     expect(handle.lastFrame()).toContain("[S]");
-    expect(handle.lastFrame()).toContain("finish defaults");
+    expect(handle.lastFrame()).toContain("review defaults");
   } finally {
     handle.unmount();
   }
@@ -239,7 +239,7 @@ test("accept-all on a fresh install asks for no account and no presence (#232)",
   try {
     handle.stdin.enqueue("S");
     expect(results).toHaveLength(0);
-    expect(handle.lastFrame()).toContain("You're all set");
+    expect(handle.lastFrame()).toContain("Review your setup");
     handle.stdin.enqueue("\r");
     expect(results).toHaveLength(1);
     expect(results[0]?.result).toBe("defaults");

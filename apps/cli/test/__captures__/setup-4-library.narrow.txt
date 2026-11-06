@@ -18,4 +18,4 @@
      ○ Discord presence
  ──────────────────────────────────────────────────────────────────────
    [space] toggle  [↑↓] choose  [enter] next  [s] recommended   Setup
-   [S] finish defaults  [b] back
+   [S] review defaults  [b] back

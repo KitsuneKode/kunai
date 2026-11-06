@@ -27,6 +27,15 @@ export const MODE_OPTIONS = [
 
 export const DOWNLOAD_QUALITIES = ["1080p", "best", "720p", "480p"] as const;
 
+const DEPENDENCY_FEATURES = new Map([
+  ["mpv", "Video playback"],
+  ["yt-dlp", "YouTube & downloads"],
+  ["ffmpeg", "Media tools"],
+  ["curl-impersonate", "Anime search"],
+  ["posters", "Title artwork"],
+  ["storage", "History & offline"],
+]);
+
 function stateGlyph(state: ScopedDependencyRow["state"]): string {
   if (state === "ok") return "✓";
   if (state === "blocking") return "✗";
@@ -64,19 +73,11 @@ export function DependencyScreen({
   /** Columns available inside the frame, from `setupContentWidth`. */
   readonly contentWidth?: number;
 }) {
-  // Budget the columns against the box, not the terminal. Overflowing rows do
-  // not truncate in Ink — they wrap, which breaks alignment and inserts blank
-  // lines between rows. The role column collapses first: it is the least
-  // load-bearing of the three, and `01-shell-footer-contract.md` says to hide
-  // supporting text before the thing being decided.
+  // Lead with what the feature does; keep the tool and its detected state in
+  // the supporting column. Both columns share the actual container budget.
   const PREFIX = 4;
-  const nameWidth = 18;
-  const ROLE_WIDTH = 20;
-  const MIN_DETAIL = 24;
-  // Derived from what actually fits, not a round number: the role column earns
-  // its place only once name and detail both have room.
-  const roleWidth = contentWidth >= PREFIX + nameWidth + MIN_DETAIL + ROLE_WIDTH ? ROLE_WIDTH : 0;
-  const detailWidth = Math.max(MIN_DETAIL, contentWidth - PREFIX - nameWidth - roleWidth - 1);
+  const nameWidth = Math.min(22, Math.max(12, Math.floor((contentWidth - PREFIX) * 0.4)));
+  const detailWidth = Math.max(1, contentWidth - PREFIX - nameWidth);
   const still = reducedMotionEnabled();
   // The petal belongs where the work is. It used to bloom on the *consent*
   // screen, under text the user was reading, while this screen — the only one
@@ -98,9 +99,11 @@ export function DependencyScreen({
         </Text>
       </Box>
       <Box marginBottom={1} flexDirection="column">
-        <Text color={palette.muted}>Kunai finds playable streams and hands them to mpv.</Text>
+        <Text color={palette.muted}>Search movies, shows, anime and YouTube.</Text>
         <Text color={palette.muted}>
-          {rechecking ? "Checking this machine again…" : "Here's what's on this machine."}
+          {rechecking
+            ? "Checking this machine again…"
+            : "Review defaults now, or customize each step."}
         </Text>
       </Box>
 
@@ -118,13 +121,16 @@ export function DependencyScreen({
                     {` ${stateGlyph(row.state)} `}
                   </Text>
                   <Text color={row.state === "ok" ? palette.text : palette.textDim}>
-                    {pad(row.name, nameWidth)}
+                    {pad(DEPENDENCY_FEATURES.get(row.id) ?? row.name, nameWidth)}
                   </Text>
-                  <Text color={palette.dim}>{pad(row.detail, detailWidth)}</Text>
-                  {roleWidth > 0 ? <Text> </Text> : null}
-                  {roleWidth > 0 ? (
-                    <Text color={palette.dim}>{pad(row.role, roleWidth)}</Text>
-                  ) : null}
+                  <Text color={palette.dim}>
+                    {pad(
+                      row.id === "storage" || row.id === "posters"
+                        ? row.detail
+                        : `${row.name} · ${row.detail}`,
+                      detailWidth,
+                    )}
+                  </Text>
                 </Box>
                 {isSelected && row.consequence ? (
                   <Box paddingLeft={4}>
@@ -151,10 +157,10 @@ export function DependencyScreen({
 
 export function dependencyFooter(hasFix: boolean): readonly FooterKey[] {
   return [
-    { key: "enter", label: "continue" },
+    { key: "enter", label: "customize" },
     ...(hasFix ? [{ key: "d", label: "how to fix" }] : []),
     { key: "r", label: "recheck" },
-    { key: "S", label: "remaining defaults" },
+    { key: "S", label: "review defaults" },
     // The one destructive key the grammar names. Deeper screens rely on the
     // two-press guard; here quitting has cost nothing yet, so it is safe to show.
     { key: "esc", label: "quit" },
@@ -457,7 +463,7 @@ export function DoneScreen({
             {STATIC_PETAL}
           </Text>
           <Text color={palette.text} bold>
-            You're all set
+            Review your setup
           </Text>
           <Text color={palette.muted}>{headline}</Text>
         </Box>
