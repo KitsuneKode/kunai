@@ -2,9 +2,37 @@ import { describe, expect, test } from "bun:test";
 
 import {
   countAffectedTasks,
+  hasGlobalBlastFiles,
   needsFullRun,
   runAffectedOrFull,
 } from "../../../../../scripts/ci-affected-run";
+
+describe("hasGlobalBlastFiles", () => {
+  test("identifies root config files as global blast", () => {
+    expect(hasGlobalBlastFiles(["bunfig.toml"])).toBe(true);
+    expect(hasGlobalBlastFiles(["turbo.json"])).toBe(true);
+    expect(hasGlobalBlastFiles(["package.json"])).toBe(true);
+    expect(hasGlobalBlastFiles(["bun.lock"])).toBe(true);
+    expect(hasGlobalBlastFiles(["tsconfig.base.json"])).toBe(true);
+    expect(hasGlobalBlastFiles(["LICENSE"])).toBe(true);
+    expect(hasGlobalBlastFiles([".oxlintrc.json"])).toBe(true);
+    expect(hasGlobalBlastFiles([".oxfmtrc.json"])).toBe(true);
+  });
+
+  test("identifies root tooling and workflow directories as global blast", () => {
+    expect(hasGlobalBlastFiles(["scripts/ci-affected-run.ts"])).toBe(true);
+    expect(hasGlobalBlastFiles(["tools/oxlint/rule.js"])).toBe(true);
+    expect(hasGlobalBlastFiles([".github/workflows/ci.yml"])).toBe(true);
+    expect(hasGlobalBlastFiles(["patches/some.patch"])).toBe(true);
+  });
+
+  test("does not flag ordinary workspace files or doc files as global blast", () => {
+    expect(hasGlobalBlastFiles(["apps/cli/src/main.ts"])).toBe(false);
+    expect(hasGlobalBlastFiles(["apps/mobile/src/entry.ts"])).toBe(false);
+    expect(hasGlobalBlastFiles(["packages/storage/src/index.ts"])).toBe(false);
+    expect(hasGlobalBlastFiles(["README.md"])).toBe(false);
+  });
+});
 
 describe("needsFullRun", () => {
   // Zero is the only vacuous case: `--affected` that selected nothing exits 0
@@ -13,16 +41,21 @@ describe("needsFullRun", () => {
     expect(needsFullRun(0)).toBe(true);
   });
 
-  test("one selected task is a real signal, however small", () => {
+  test("one selected task is a real signal when no global blast files changed", () => {
     // The affected set is a statement about blast radius, not about whether the
     // task ran. Treating "small" as "vacuous" would reintroduce the bug for
     // single-package PRs, which are the common case.
-    expect(needsFullRun(1)).toBe(false);
+    expect(needsFullRun(1, false)).toBe(false);
   });
 
-  test("a larger selection is never vacuous", () => {
-    expect(needsFullRun(2)).toBe(false);
-    expect(needsFullRun(51)).toBe(false);
+  test("a larger selection is never vacuous when no global blast files changed", () => {
+    expect(needsFullRun(2, false)).toBe(false);
+    expect(needsFullRun(51, false)).toBe(false);
+  });
+
+  test("forces full run if any global blast file changed, even with selected tasks", () => {
+    expect(needsFullRun(1, true)).toBe(true);
+    expect(needsFullRun(5, true)).toBe(true);
   });
 });
 
@@ -56,11 +89,12 @@ describe("runAffectedOrFull", () => {
     expect(messages.join("")).toContain("Running the full graph");
   });
 
-  test("a real selection stays on --affected", () => {
+  test("a real selection stays on --affected when no global blast files changed", () => {
     const calls: { readonly args: readonly string[] }[] = [];
 
     runAffectedOrFull("test", [], process.env, {
       countTasks: () => 4,
+      getChangedFiles: () => ["apps/mobile/src/entry.ts"],
       runTurbo: (_task, args) => {
         calls.push({ args });
         return 0;
@@ -71,12 +105,34 @@ describe("runAffectedOrFull", () => {
     expect(calls[0]?.args).toEqual(["--affected"]);
   });
 
+  test("forces full run if a global blast file changed alongside package tasks", () => {
+    const calls: { readonly args: readonly string[] }[] = [];
+    const messages: string[] = [];
+
+    runAffectedOrFull("test", ["--summarize"], process.env, {
+      countTasks: () => 2,
+      getChangedFiles: () => ["apps/mobile/src/entry.ts", "bunfig.toml"],
+      runTurbo: (_task, args) => {
+        calls.push({ args });
+        return 0;
+      },
+      log: (message) => messages.push(message),
+    });
+
+    expect(calls[0]?.args).toEqual(["--summarize"]);
+    expect(calls[0]?.args).not.toContain("--affected");
+    expect(messages.join("")).toContain(
+      "root configuration or global tooling changed (bunfig.toml)",
+    );
+  });
+
   test("passthrough arguments survive both branches, in order", () => {
     const affected: { readonly args: readonly string[] }[] = [];
     const full: { readonly args: readonly string[] }[] = [];
 
     runAffectedOrFull("test", ["--summarize"], process.env, {
       countTasks: () => 3,
+      getChangedFiles: () => [],
       runTurbo: (_t, args) => {
         affected.push({ args });
         return 0;
@@ -85,6 +141,7 @@ describe("runAffectedOrFull", () => {
     });
     runAffectedOrFull("test", ["--summarize"], process.env, {
       countTasks: () => 0,
+      getChangedFiles: () => [],
       runTurbo: (_t, args) => {
         full.push({ args });
         return 0;

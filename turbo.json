@@ -7,7 +7,7 @@
   // dependency-only change (bun install after a catalog bump, no package file
   // touched) replays a cached `build` that still embeds the old versions —
   // same stale-green class as hazard #2, and release jobs use turbo cache.
-  "globalDependencies": ["bun.lock", "package.json", "patches/*.patch"],
+  "globalDependencies": ["bun.lock", "bunfig.toml", "LICENSE", "package.json", "patches/*.patch", "tsconfig.base.json"],
   // Privacy controls must reach installed-binary and shell checks in strict mode.
   "globalPassThroughEnv": ["DO_NOT_TRACK"],
   "tasks": {
