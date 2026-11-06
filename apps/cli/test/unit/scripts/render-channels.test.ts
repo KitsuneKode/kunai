@@ -43,9 +43,11 @@ describe("nixSriSha256FromHex", () => {
 describe("renderNixFlake", () => {
   const flake = renderNixFlake(channel, sums);
 
-  test("declares fetchzip sources with SRI hashes for each Unix archive", () => {
+  test("declares fetchurl sources with SRI hashes for each Unix archive", () => {
     expect(flake).toContain('description = "');
-    expect(flake).toContain("fetchzip");
+    expect(flake).toContain("fetchurl");
+    expect(flake).toContain("dontStrip = true;");
+    expect(flake).toContain("dontFixup = true;");
     expect(flake).toContain('url = "${base}/${tag}/${archive}"');
     expect(flake).toContain('archive = "kunai-linux-x64.tar.gz"');
     expect(flake).toContain(

@@ -358,14 +358,15 @@ export function renderNixFlake(channel: ChannelVersion, sums: SumsMap): string {
           archive = "${t.archiveName}";
           pname = "kunai";
           version = "${version}";
-          src = pkgs.fetchzip {
+          src = pkgs.fetchurl {
             url = "\${base}/\${tag}/\${archive}";
             hash = "${narHash}";
-            stripRoot = false;
           };
           kunai = pkgs.stdenvNoCC.mkDerivation {
             inherit pname version src;
             dontBuild = true;
+            dontStrip = true;
+            dontFixup = true;
             installPhase = ''
               mkdir -p $out/bin
               install -m0755 ${t.archiveEntryName} $out/bin/kunai

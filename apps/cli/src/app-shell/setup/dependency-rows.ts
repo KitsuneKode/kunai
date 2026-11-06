@@ -79,10 +79,10 @@ export function buildDependencyRows(
     id: "mpv-hwaccel",
     name: "mpv hwdec",
     scope: "always",
-    state: !snapshot.mpv ? "ok" : hw.autoSafeOk ? "ok" : "degraded",
+    state: !snapshot.mpv ? "degraded" : hw.autoSafeOk ? "ok" : "degraded",
     role: "playback · GPU decode",
     detail: !snapshot.mpv
-      ? "skipped — mpv not on PATH"
+      ? "not available — mpv not found on PATH"
       : [
           hw.drivers.length
             ? `help lists: ${hw.drivers.join(", ")}`

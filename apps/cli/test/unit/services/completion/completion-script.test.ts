@@ -75,7 +75,7 @@ describe("renderCompletionScript", () => {
 
   test("zsh does not offer flags while completing a value-taking flag argument", () => {
     const script = renderCompletionScript("zsh");
-    expect(script).toContain("if (( i < CURRENT - 1 )); then");
+    expect(script).toContain('if (( i < CURRENT - 1 )) && [[ "${words[CURRENT]}" != -* ]]; then');
     expect(script).toContain("return");
     expect(script).toContain("--hwdec) _describe 'hwdec' hwdecs");
     expect(script).toContain("default");
@@ -86,7 +86,9 @@ describe("renderCompletionScript", () => {
   test("powershell suppresses flag completion when the previous token consumed a value", () => {
     const script = renderCompletionScript("powershell");
     expect(script).toContain("$valueFlags = @(");
-    expect(script).toContain("if ($valueFlags -contains $prevPrev -and $prev -notlike '-*')");
+    expect(script).toContain(
+      "if ($valueFlags -contains $prevPrev -and $prev -notlike '-*' -and -not $wordToComplete.StartsWith('-'))",
+    );
     expect(script).toContain("return");
     expect(script).toContain("'--hwdec' { $hwdecs }");
     expect(script).toContain("Get-ChildItem -Path ($wordToComplete + '*') -Directory");

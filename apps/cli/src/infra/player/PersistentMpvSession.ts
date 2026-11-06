@@ -295,7 +295,11 @@ export class PersistentMpvSession {
   private sourceReresolveEscalated = false;
   private ipcReconnectAttempt = 0;
   private ipcReconnectInFlight = false;
+  private ipcReconnectPendingReason: string | null = null;
+  private isPaused = false;
   private avsyncOverLimitSamples = 0;
+  private avsyncDriftFirstObservedAt = 0;
+  private lastAvsyncResyncAt = 0;
   private avsyncResyncInFlight = false;
   private pendingInProcessReconnect: {
     seekSeconds: number;
@@ -1682,9 +1686,16 @@ export class PersistentMpvSession {
         this.scheduleIpcReconnect(reason);
       },
       onPropertyUpdate: ({ name, value, observedAt }) => {
+        if (name === "pause") {
+          this.isPaused = value === true;
+        }
         if (name === "avsync") {
-          if (isJsonNumber(value) && Number.isFinite(value)) this.noteAvsyncDrift(value);
-          else this.avsyncOverLimitSamples = 0;
+          if (isJsonNumber(value) && Number.isFinite(value)) {
+            this.noteAvsyncDrift(value, observedAt);
+          } else {
+            this.avsyncOverLimitSamples = 0;
+            this.avsyncDriftFirstObservedAt = 0;
+          }
         }
         this.propertyRouter.handlePropertyUpdate({ name, value, observedAt });
       },
@@ -1737,15 +1748,44 @@ export class PersistentMpvSession {
     void session.send(["observe_property", 203, "pause"], 1_000);
   }
 
-  private noteAvsyncDrift(driftSeconds: number): void {
+  private noteAvsyncDrift(driftSeconds: number, observedAt: number = Date.now() / 1000): void {
     if (Math.abs(driftSeconds) <= AVSYNC_DRIFT_LIMIT_SECONDS) {
       this.avsyncOverLimitSamples = 0;
+      this.avsyncDriftFirstObservedAt = 0;
       return;
     }
+    // Ignore drift while paused, seeking, reconnecting, live streams, or when resync is in flight
+    if (
+      this.isPaused ||
+      this.reconnectInFlight ||
+      this.playbackStream?.isLive ||
+      this.avsyncResyncInFlight ||
+      this.retired ||
+      !this.ipcSession
+    ) {
+      this.avsyncOverLimitSamples = 0;
+      this.avsyncDriftFirstObservedAt = 0;
+      return;
+    }
+    const now = Date.now();
+    // Cooldown: at least 5 seconds between resync seeks to prevent resync churn
+    if (now - this.lastAvsyncResyncAt < 5_000) {
+      return;
+    }
+    if (this.avsyncDriftFirstObservedAt === 0) {
+      this.avsyncDriftFirstObservedAt = observedAt;
+    }
     this.avsyncOverLimitSamples += 1;
-    if (this.avsyncOverLimitSamples < AVSYNC_DRIFT_SAMPLES_REQUIRED) return;
+    // Require drift sustained across at least 3 samples AND at least 300ms (0.3s)
+    if (
+      this.avsyncOverLimitSamples < AVSYNC_DRIFT_SAMPLES_REQUIRED ||
+      observedAt - this.avsyncDriftFirstObservedAt < 0.3
+    ) {
+      return;
+    }
     this.avsyncOverLimitSamples = 0;
-    if (this.avsyncResyncInFlight || this.retired || !this.ipcSession) return;
+    this.avsyncDriftFirstObservedAt = 0;
+    this.lastAvsyncResyncAt = now;
     const position = this.currentPositionSeconds;
     if (position <= 0) return;
     this.avsyncResyncInFlight = true;
@@ -1756,8 +1796,12 @@ export class PersistentMpvSession {
   }
 
   private scheduleIpcReconnect(reason: string): void {
-    if (this.retired || this.ipcReconnectInFlight) return;
+    if (this.retired) return;
     if (this.mpv === null || this.mpv.exitCode !== null) return;
+    if (this.ipcReconnectInFlight) {
+      this.ipcReconnectPendingReason = reason;
+      return;
+    }
     void this.reconnectIpc(reason);
   }
 
@@ -1822,12 +1866,17 @@ export class PersistentMpvSession {
       }
     } finally {
       this.ipcReconnectInFlight = false;
+      const pending = this.ipcReconnectPendingReason;
+      this.ipcReconnectPendingReason = null;
+      if (pending && !this.retired && this.mpv !== null && this.mpv.exitCode === null) {
+        this.scheduleIpcReconnect(pending);
+      }
     }
   }
 
   /**
-   * Same-URL reload already ran and playback stalled again. Ask the shell to
-   * re-resolve the provider stream, then end this file so that resolve can load.
+   * Same-URL reload already ran and playback stalled again. End this file with
+   * suspectedDeadStream so that PlaybackPhase can re-resolve with proper auto-recover caps.
    */
   private async escalateProgressStallToSourceReresolve(): Promise<void> {
     if (this.sourceReresolveEscalated || this.retired) return;
@@ -1840,7 +1889,6 @@ export class PersistentMpvSession {
       attempt: this.reconnectTryCount,
       detail: "progress-stall-after-reload",
     });
-    this.currentCycleOptions().onMpvActionRequest?.("refresh");
     const stopped = await this.ipcSession?.send(["stop"], 1_000);
     if (this.retired || this.activeCycle !== active) return;
     if (!stopped?.ok) {
@@ -1982,7 +2030,6 @@ export class PersistentMpvSession {
         this.clearPendingFileLoadIf(reconnectLoadId, reconnectGeneration);
         throw new Error(loadResult.error ?? "loadfile failed");
       }
-      this.inProcessReloadCompleted = true;
       if (!this.isGenerationCurrent(reconnectGeneration)) return false;
 
       this.reconnectBackoffUntilMs = 0;
@@ -2049,6 +2096,7 @@ export class PersistentMpvSession {
         attempt: this.reconnectTryCount,
         detail: spec.trigger,
       });
+      this.inProcessReloadCompleted = true;
     } catch (error) {
       if (!isCurrent()) return;
       const message = error instanceof Error ? error.message : String(error);

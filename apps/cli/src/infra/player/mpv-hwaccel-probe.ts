@@ -131,7 +131,6 @@ export function probeMpvHardwareAcceleration(
     cmd: [
       ...invocation.argv,
       "--no-config",
-      "--really-quiet",
       "--no-terminal",
       "--vo=null",
       "--ao=null",
@@ -141,7 +140,7 @@ export function probeMpvHardwareAcceleration(
     ],
     stdout: "ignore",
     stderr: "pipe",
-    timeout: 12_000,
+    timeout: 3_000,
   });
   const errText = decodeSyncOutput(autoSafe.stderr);
   const autoSafeOk = autoSafe.exitCode === 0;

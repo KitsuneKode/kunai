@@ -1387,7 +1387,7 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
       await waitUntil(() => harness.commands.some((command) => command[0] === "stop"), {
         label: "source re-resolve stop",
       });
-      expect(actions).toEqual(["refresh"]);
+      expect(actions).toEqual([]);
       harness.callbacks().onEndFile({ reason: "stop", observedAt: 6 });
       expect(await playback).toMatchObject({ suspectedDeadStream: true });
     } finally {

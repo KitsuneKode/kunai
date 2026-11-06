@@ -179,6 +179,8 @@ export async function probeCapabilities(
     platform?: NodeJS.Platform;
     /** mpv hwdec probe seam — defaults to spawning mpv; tests inject a stub. */
     probeMpvHardwareAcceleration?: (deps: MpvHwaccelProbeDeps) => MpvHardwareAccelProbe;
+    /** Whether to run full mpv hwaccel probe (defaults to false on launch to avoid blocking on drivers). */
+    probeMpvHwaccel?: boolean;
   } = {},
 ): Promise<CapabilitySnapshot> {
   const requireYtDlp = options.requireYtDlp ?? false;
@@ -232,14 +234,17 @@ export async function probeCapabilities(
   };
   const image = detectImageCapability();
   const runMpvHwaccelProbe = options.probeMpvHardwareAcceleration ?? probeMpvHardwareAcceleration;
-  const mpvHardwareAccel = mpv
-    ? runMpvHwaccelProbe({
-        which,
-        ...(options.exists && { exists: options.exists }),
-        platform,
-        detectImageCapability: () => image,
-      })
-    : emptyMpvHardwareAccelProbe(image);
+  const shouldProbeHwaccel =
+    options.probeMpvHwaccel ?? options.probeMpvHardwareAcceleration !== undefined;
+  const mpvHardwareAccel =
+    mpv && shouldProbeHwaccel
+      ? runMpvHwaccelProbe({
+          which,
+          ...(options.exists && { exists: options.exists }),
+          platform,
+          detectImageCapability: () => image,
+        })
+      : emptyMpvHardwareAccelProbe(image);
 
   if (requireMpv && !mpv) {
     issues.push({

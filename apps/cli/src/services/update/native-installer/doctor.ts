@@ -475,7 +475,7 @@ export async function buildDoctorReport(input: BuildDoctorReportInput = {}): Pro
     input.probeCapabilities ??
     (async () => {
       const { probeCapabilities } = await import("@/ui");
-      return probeCapabilities();
+      return probeCapabilities({ probeMpvHwaccel: true });
     });
 
   const manifest = await inspectManifest();

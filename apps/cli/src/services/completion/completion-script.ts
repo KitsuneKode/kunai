@@ -117,7 +117,7 @@ _kunai() {
     if [[ "$w" == -* ]]; then
       case "$w" in
         ${zshValueFlagPattern()})
-          if (( i < CURRENT - 1 )); then
+          if (( i < CURRENT - 1 )) && [[ "\${words[CURRENT]}" != -* ]]; then
             return
           fi
           ;;
@@ -185,7 +185,7 @@ Register-ArgumentCompleter -Native -CommandName kunai -ScriptBlock {
   if ($elements.Count -ge 3) {
     $prev = $elements[$elements.Count - 2].ToString()
     $prevPrev = $elements[$elements.Count - 3].ToString()
-    if ($valueFlags -contains $prevPrev -and $prev -notlike '-*') {
+    if ($valueFlags -contains $prevPrev -and $prev -notlike '-*' -and -not $wordToComplete.StartsWith('-')) {
       return
     }
   }

@@ -118,7 +118,7 @@ let liveTrailerProcess: MpvChildProcess | null = null;
 function spawnTrailerMpv(argv: readonly string[], target: string): boolean {
   if (liveTrailerProcess && liveTrailerProcess.exitCode === null) {
     try {
-      terminateProcessTree(liveTrailerProcess, "SIGTERM", {
+      terminateProcessTree(liveTrailerProcess, "SIGKILL", {
         detached: process.platform !== "win32",
       });
     } catch {
