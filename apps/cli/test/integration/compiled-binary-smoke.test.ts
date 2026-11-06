@@ -157,10 +157,22 @@ describeBinary("compiled linux binary smoke", () => {
     const fileLoaded = result.evidence.filter((row) => row.type === "file-loaded");
     expect(loadfiles.length).toBeGreaterThanOrEqual(1);
     expect(fileLoaded.length).toBeGreaterThanOrEqual(2);
+    // Startup also spawns mpv for hardware diagnostics. Count playback
+    // invocations by their IPC endpoint and bind both episodes to that PID.
     const pids = new Set(
-      result.evidence.filter((row) => row.type === "spawn").map((row) => row.pid),
+      result.evidence
+        .filter(
+          (row) =>
+            row.type === "spawn" &&
+            Array.isArray(row.argv) &&
+            row.argv.some((arg) => String(arg).startsWith("--input-ipc-server=")),
+        )
+        .map((row) => row.pid),
     );
     expect(pids.size).toBe(1);
+    for (const row of [...loadfiles, ...fileLoaded]) {
+      expect(pids.has(row.pid)).toBe(true);
+    }
   });
 
   test("failed-handoff restores exact row to pending with failure", async () => {
