@@ -40,6 +40,9 @@ export interface SearchSuggestion<TValue = unknown> {
   /** Epoch ms used only as the ordering tiebreak — higher is more recent. */
   readonly recencyMs?: number;
   readonly commitQuery?: string;
+  readonly posterUrl?: string;
+  readonly rating?: number;
+  readonly overview?: string;
   readonly value?: TValue;
 }
 

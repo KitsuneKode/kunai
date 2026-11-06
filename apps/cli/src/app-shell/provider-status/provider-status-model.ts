@@ -1,5 +1,6 @@
 import type { Container } from "@/container";
 import type { ProviderLane } from "@/domain/types";
+import { resolveEffectiveProviderHealth } from "@/services/playback/provider-health-policy";
 import type { CoreProviderManifest } from "@kunai/core";
 import type { ProviderId } from "@kunai/types";
 
@@ -76,7 +77,7 @@ export const PROVIDER_PROBE_ENDPOINTS = {
     headers: { "User-Agent": "Mozilla/5.0" },
   },
   animegg: {
-    url: "https://animegg.org",
+    url: "https://www.animegg.org",
     headers: { "User-Agent": "Mozilla/5.0" },
   },
   miruro: {
@@ -140,9 +141,11 @@ export function buildProviderStatusMatrix(
     const isActive = state.provider === id || activeProviderForLane === id;
     // SAFETY: provider id comes from registered provider metadata matching ProviderId
     const health = container.providerHealth.get(id as ProviderId);
+    const effectiveHealth = resolveEffectiveProviderHealth(health);
     const override = overrides.get(id);
 
-    let status: ProviderStatusEntry["status"] = override?.status ?? health?.status ?? "unknown";
+    let status: ProviderStatusEntry["status"] =
+      override?.status ?? effectiveHealth?.effectiveStatus ?? "unknown";
     if (disabled && status !== "probing") {
       status = "unknown";
     }
@@ -160,9 +163,24 @@ export function buildProviderStatusMatrix(
             ? `${Math.round((1 - health.recentFailureRate) * 100)}% reachability`
             : "";
         const obs = health.observations ? ` (${health.observations} checks)` : "";
-        evidence =
-          [rate, obs].filter(Boolean).join("") ||
-          (health.status === "healthy" ? "Operational" : health.status);
+        const rateAndObs = [rate, obs].filter(Boolean).join("");
+
+        if (effectiveHealth?.healedByTtl && effectiveHealth.stored) {
+          evidence = `Healed by TTL (was ${effectiveHealth.stored.status})${rate ? ` · ${rate}` : ""}`;
+        } else if (effectiveHealth?.effectiveStatus === "down") {
+          const failures =
+            health.consecutiveFailures !== undefined && health.consecutiveFailures > 0
+              ? `${health.consecutiveFailures} consecutive fails`
+              : "Consecutive resolve failures";
+          evidence = `${failures}${rate ? ` · ${rate}` : ""}`;
+        } else if (rateAndObs) {
+          evidence = rateAndObs;
+        } else {
+          evidence =
+            effectiveHealth?.effectiveStatus === "healthy"
+              ? "Operational"
+              : (effectiveHealth?.effectiveStatus ?? "Operational");
+        }
       } else if (id === "allmanga") {
         evidence = "Epoch 2965 verified (build 186)";
       } else if (id === "youtube") {
@@ -217,8 +235,6 @@ export async function probeSingleProvider(
   httpStatus?: number;
   evidence: string;
 }> {
-  // SAFETY: providerId is registered in providerRegistry matching ProviderId
-  const typedId = providerId as ProviderId;
   // SAFETY: key membership verified before indexed access
   const probeConfig = Object.hasOwn(PROVIDER_PROBE_ENDPOINTS, providerId)
     ? PROVIDER_PROBE_ENDPOINTS[providerId as keyof typeof PROVIDER_PROBE_ENDPOINTS]
@@ -258,18 +274,6 @@ export async function probeSingleProvider(
       evidence = `HTTP ${httpStatus} error (${latencyMs}ms)`;
     }
 
-    container.providerHealth.set({
-      providerId: typedId,
-      status,
-      checkedAt: new Date().toISOString(),
-      medianResolveMs: latencyMs,
-      observations: (container.providerHealth.get(typedId)?.observations ?? 0) + 1,
-      consecutiveFailures:
-        status === "healthy"
-          ? 0
-          : (container.providerHealth.get(typedId)?.consecutiveFailures ?? 0) + 1,
-    });
-
     return { status, latencyMs, httpStatus, evidence };
   } catch (err) {
     const latencyMs = Math.round(performance.now() - startTime);
@@ -279,14 +283,6 @@ export async function probeSingleProvider(
     const evidence = isTimeout
       ? `Connection timed out (>5000ms)`
       : `Network unreachable: ${errorMsg.slice(0, 30)}`;
-
-    container.providerHealth.set({
-      providerId: typedId,
-      status: "down",
-      checkedAt: new Date().toISOString(),
-      medianResolveMs: latencyMs,
-      consecutiveFailures: (container.providerHealth.get(typedId)?.consecutiveFailures ?? 0) + 1,
-    });
 
     return { status, latencyMs, evidence };
   }

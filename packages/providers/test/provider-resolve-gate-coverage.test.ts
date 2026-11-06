@@ -26,9 +26,11 @@ const PROVIDER_SRC = join(import.meta.dir, "../src");
  * test, so deriving this from it means a new module cannot ship without being
  * scanned here — the previous hand-maintained list silently missed four.
  */
-const PRODUCTION_PROVIDERS = PROBES.map((probe) =>
-  probe.id === "allanime" ? "allmanga" : probe.id,
-);
+const PRODUCTION_PROVIDERS = PROBES.map((probe) => {
+  if (probe.id === "allanime") return "allmanga";
+  if (probe.id === "invidious") return "youtube";
+  return probe.id;
+});
 
 /**
  * A provider may only appear here with a reason that is about the *runtime*,

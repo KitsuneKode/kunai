@@ -238,3 +238,19 @@ absence while retaining a missing-source finding. Generated CLI/mobile dist
 outputs now share the narrow build-output exemption. Path checks, coverage,
 preflight and CLI typecheck pass; no application runtime or phone artifact
 changed in this follow-up.
+
+### Base integration — 2026-11-06
+
+PR #677 now incorporates base branch `fix/kitty-verification-pointer-20261028`
+at `eb6f43546`, including the provider owner's intervening work. The verification
+skill was the sole textual conflict: retain the concise companion/mobile/audio
+references and add the base's doctor, feature-map and evidence-survival routes.
+The survival helper remains a diagnostic; inspect the retained PNG, text and
+backend artifacts before claiming qualification.
+
+This supersedes the earlier separate-branch prerequisite for this candidate.
+Provider findings reported at `97c0b85db` need rechecking against the integrated
+source. Neither the earlier #677 checks nor historical playback captures qualify
+this new combination. The base also brings its bundle-budget change from
+3210 to 3230 KiB; integration alone does not approve that change as a performance
+improvement. Integrated runtime, live playback and phone signoff remain open.

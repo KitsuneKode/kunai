@@ -3,7 +3,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import { isAbsolute, join, normalize, resolve, sep } from "node:path";
 
 import { writeAtomicText } from "@/infra/fs/atomic-write";
-import { getKunaiPaths } from "@kunai/storage";
+import { getKunaiPaths } from "@kunai/storage/paths";
 
 import { withActivationLock, type ActivationLockOptions } from "./native-installer/activation-lock";
 import { getInstallLayoutPaths, type InstallLayoutPaths } from "./native-installer/install-layout";

@@ -168,7 +168,7 @@ export function buildProviderResolveProblem({
     : "diagnostics";
   const streamAction: PlaybackProblemAction = hasStreamCandidates ? "pick-stream" : tryNextAction;
 
-  if (attempts.some((attempt) => hasOfflineSignature(attempt.failure))) {
+  if (attempts.length > 0 && attempts.every((attempt) => hasOfflineSignature(attempt.failure))) {
     return {
       stage: "provider-resolve",
       severity: "blocking",

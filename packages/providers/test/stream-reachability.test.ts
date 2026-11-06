@@ -727,6 +727,39 @@ describe("stream reachability", () => {
       expect(probe.definitive).toBe(true);
     }
   });
+
+  test("rejects an HLS manifest lacking the #EXTM3U header as definitive unreachable", async () => {
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/challenge.m3u8",
+      fetchImpl: async () => response(200, "<!DOCTYPE html><html><body>Captcha</body></html>"),
+      timeoutMs: 100,
+    });
+
+    expect(probe.status).toBe("unreachable");
+    if (probe.status === "unreachable") {
+      expect(probe.reason).toContain("HTML challenge or error page");
+      expect(probe.definitive).toBe(true);
+    }
+    expect(isStreamReachableForResolve(probe)).toBe(false);
+  });
+
+  test("rejects progressive stream endpoint returning text/html as definitive unreachable", async () => {
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/video.mp4",
+      fetchImpl: async () =>
+        response(200, "<html>Just a moment...</html>", {
+          "content-type": "text/html; charset=UTF-8",
+        }),
+      timeoutMs: 100,
+    });
+
+    expect(probe.status).toBe("unreachable");
+    if (probe.status === "unreachable") {
+      expect(probe.reason).toContain("HTML challenge or error page");
+      expect(probe.definitive).toBe(true);
+    }
+    expect(isStreamReachableForResolve(probe)).toBe(false);
+  });
 });
 
 describe("isGuardedPlatformFetch", () => {

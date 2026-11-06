@@ -83,17 +83,31 @@ export function parseFirstHlsMediaSegmentPath(manifestText: string): string | nu
   return null;
 }
 
+function httpUrlOrNull(raw: string, manifestUrl: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  let url: URL;
+  try {
+    url = new URL(trimmed, manifestUrl);
+  } catch {
+    return null;
+  }
+  return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null;
+}
+
 export function absolutizeHostRootHlsManifest(manifestText: string, manifestUrl: string): string {
-  const origin = new URL(manifestUrl).origin;
   return manifestText
     .split(/\r?\n/)
     .map((line) => {
       const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) return line;
-      if (trimmed.startsWith("/") && !trimmed.startsWith("//")) {
-        return `${origin}${trimmed}`;
+      if (!trimmed) return line;
+      if (trimmed.startsWith("#")) {
+        return line.replace(/URI="([^"]*)"/gi, (full, uri: string) => {
+          const safe = httpUrlOrNull(uri, manifestUrl);
+          return safe ? `URI="${safe}"` : full.replace(uri, "");
+        });
       }
-      return line;
+      return httpUrlOrNull(trimmed, manifestUrl) ?? "";
     })
     .join("\n");
 }

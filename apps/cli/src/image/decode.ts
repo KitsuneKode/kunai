@@ -249,9 +249,24 @@ export function decodePng(bytes: Uint8Array): DecodedImage {
   const chunks = readPngChunks(bytes, view);
   if (chunks.idat.length === 0) throw new Error("PNG has no IDAT data");
 
+  const MAX_DECODED_PIXELS = 4096 * 4096;
+  const pixels = header.width * header.height;
+  if (
+    header.width < 1 ||
+    header.height < 1 ||
+    !Number.isSafeInteger(pixels) ||
+    pixels > MAX_DECODED_PIXELS
+  ) {
+    throw new Error("PNG dimensions exceed the decode ceiling");
+  }
+
   const sampleStep = header.bitDepth === 16 ? 2 : 1;
   const bytesPerPixel = channels * sampleStep;
-  const inflated = new Uint8Array(inflateSync(chunks.idat));
+  const expected = pixels * bytesPerPixel + header.height;
+  const inflated = new Uint8Array(inflateSync(chunks.idat, { maxOutputLength: expected }));
+  if (inflated.byteLength !== expected) {
+    throw new Error("PNG IDAT size does not match IHDR");
+  }
   const samples = unfilterScanlines(inflated, header.width, header.height, bytesPerPixel);
 
   return {

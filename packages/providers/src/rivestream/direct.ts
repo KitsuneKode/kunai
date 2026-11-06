@@ -506,6 +506,8 @@ export const rivestreamProviderModule: CoreProviderModule = {
         titleId: input.title.id,
         maxAttemptsPerCandidate: 1,
         candidateTimeoutMs,
+        hedgeDelayMs: 2_500,
+        maxConcurrentCandidates: 2,
         // Every service is fetched through the same www.rivestream.app front
         // door — a block there repeats identically for the rest, so stop
         // early. Endpoint-scoped refusals name one service's own stream CDN,
@@ -1271,6 +1273,7 @@ async function resolveRivestreamProviderCandidate({
     streams,
     context,
     timeoutMs: gateTimeoutMs,
+    hedgeDelayMs: 2_000,
   });
   if (!selection.accepted) {
     throw createProviderCycleFailureError(candidate, {
@@ -1298,7 +1301,7 @@ async function resolveRivestreamProviderCandidate({
  * code: the engine kills the whole attempt before the candidate bound fires and
  * the trace records nothing attributable.
  */
-export const RIVESTREAM_CANDIDATE_TIMEOUT_MS = 10_000;
+export const RIVESTREAM_CANDIDATE_TIMEOUT_MS = 6_000;
 
 /**
  * Budget for the resolve-gate probe.
@@ -1313,7 +1316,7 @@ export const RIVESTREAM_CANDIDATE_TIMEOUT_MS = 10_000;
  * Kept well below {@link RIVESTREAM_CANDIDATE_TIMEOUT_MS} so the probe cannot
  * eat the budget its own candidate needs.
  */
-export const RIVESTREAM_RESOLVE_GATE_TIMEOUT_MS = 6_000;
+export const RIVESTREAM_RESOLVE_GATE_TIMEOUT_MS = 3_500;
 
 function extractRivestreamCaptions(
   data: RivestreamSourceResponse["data"],

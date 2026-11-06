@@ -1404,6 +1404,7 @@ export class DownloadService {
             throw new DownloadRemovalError(
               "Download destination changed; existing file and job record preserved",
             );
+          const parentDir = dirname(job.outputPath);
           const paths = new Set([
             job.outputPath,
             job.subtitlePath,
@@ -1411,7 +1412,11 @@ export class DownloadService {
             resolveThumbnailArtifactPath(job.outputPath),
             resolveOfflinePosterArtifactPath(job),
           ]);
-          for (const path of paths) if (path) rmSync(path, { force: true });
+          for (const path of paths) {
+            if (path && (path === job.outputPath || dirname(path) === parentDir)) {
+              rmSync(path, { force: true });
+            }
+          }
         } catch (cause) {
           if (cause instanceof DownloadRemovalError) throw cause;
           throw new DownloadRemovalError(

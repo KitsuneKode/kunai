@@ -15,9 +15,11 @@ description: Verify Kunai through real user actions and captured evidence. Use f
 
 1. **Route**: Find owning code via `.docs/feature-map.md`. Inspect the real handler, then choose test cases from [references/scenarios.md](references/scenarios.md) — both the happy path **and** the reverse or failure case. One path alone never verifies a feature.
 2. **Select Tier**: Choose the lowest tier capable of answering the question (see tier matrix below).
-3. **Drive Transitions**: Drive one transition at a time; wait for the targeted surface before acting.
-4. **Witness Twice**: Require dual confirmation: the UI frame reflects the change, and the backend (SQLite, `config.json`, or player IPC) commits it.
-5. **Report**: Use the standard report template, recording the exact candidate git SHA, dirty tree state, and any unverified gates.
+3. **Doctor**: Run `bun run agent:verify -- doctor` or `bun run agent:kitty -- --doctor` before the first graphical drive and after a surprising failure. Confirm the owned surface, mode/provider, font and artwork after launch; host preflight alone does not verify rendering.
+4. **Drive Transitions**: Drive one transition at a time; wait for the targeted surface before acting.
+5. **Witness Twice**: Require dual confirmation: the UI frame reflects the change, and the backend (SQLite, `config.json`, or player IPC) commits it.
+6. **Check Survival**: After cleanup, run `bun run agent:verify -- evidence --evidence DIR`. Inspect the actual retained PNG, text and backend witnesses as well; the helper passing is not proof of their contents or completeness.
+7. **Report**: Use the standard report template, recording the exact candidate git SHA, dirty tree state, and any unverified gates.
 
 ## Tier Selection Matrix
 
@@ -38,6 +40,7 @@ Run driver commands from `apps/cli` (or use `bun run --cwd apps/cli`).
 Read only the references needed for the selected tier:
 
 - **Driver commands**: [references/driver-commands.md](references/driver-commands.md) — exact replay/PTY flags, settings/queue recipes and failure capture.
+- **Feature recipes**: [features/README.md](features/README.md) — search/browse, palette/settings, playback, filters and queue journeys. Verify each advertised entrypoint against current source before driving it.
 - **CLI Wiring & Scenarios**: [references/scenarios.md](references/scenarios.md) — Audio intent (startup vs explicit choice, same-URL reconnect, prefetch isolation, previous-episode reuse), relative download path containment, revoked in-flight transfers, queue operations, and debounced config persistence.
 - **Companion Contracts**: [references/companion-contract.md](references/companion-contract.md) — Host validation, port 80 normalization, foreign Origin rejection, loopback cookie isolation, explicit session authentication, stale page/media session release, 1000+ episode catalogs, and WebVTT browser tracks.
 - **Kitty Visual & Desktop Driving**: [references/kitty-visual.md](references/kitty-visual.md) — Multi-monitor Hyprland safety rules (placing test windows on laptop `eDP-1` workspace 9 while keeping user focused on `DP-3`), Lua rule handles in `_G`, decoded video verification, and cleanup.

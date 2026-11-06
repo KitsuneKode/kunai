@@ -17,6 +17,7 @@
     "./miruro": "./src/miruro/direct.ts",
     "./rivestream": "./src/rivestream/direct.ts",
     "./videasy": "./src/videasy/index.ts",
+    "./videasy/flavors": "./src/videasy/flavors.ts",
     "./vidlink": "./src/vidlink/direct.ts",
     "./movy": "./src/movy/direct.ts",
     "./vidrock": "./src/vidrock/direct.ts",

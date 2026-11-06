@@ -48,9 +48,11 @@ hosted, device or release signoff.
       and autoplay, verified local-file handoff and authenticated companion
       consumers. Hosted integration and physical-device evidence remain open.
 
-- [ ] Integrate the separate provider audit branch through an accurately based
-      PR. On 2026-11-06, `test-kitty-providers` had no open PR; #676 still named
-      `fix/kitty-verification-pointer-20261028`, not that provider branch. Preserve
+- [x] Integrate the provider owner's source through the updated #676 base
+      `fix/kitty-verification-pointer-20261028` at `eb6f43546` into #677.
+      The earlier separate-branch prerequisite is superseded.
+
+- [ ] Qualify the integrated provider candidate. Preserve
       its YouTube format ordering and VidRock concurrency fixes; qualify
       recommended-tier promotions with captured playback evidence rather than
       manifest flags. The review corrections cover per-file cache policies,

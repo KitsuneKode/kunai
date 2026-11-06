@@ -13,6 +13,7 @@ import { Box, Text } from "ink";
 import React from "react";
 
 import { MouseTarget } from "./mouse/MouseRegions";
+import { MiniPosterTile } from "./primitives/MiniPosterTile";
 import { measureColumns, sanitizeTerminalText, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 
@@ -146,6 +147,13 @@ export function SearchSuggestionBand<TValue>({
     Math.max(0, model.rows.length - capacity),
   );
   const visibleRows = model.rows.slice(start, start + capacity);
+  const showPreviewPane = Boolean(selected) && contentWidth >= 66;
+  const previewWidth = showPreviewPane
+    ? Math.min(34, Math.max(22, Math.floor(contentWidth * 0.35)))
+    : 0;
+  const listWidth = showPreviewPane ? Math.max(20, contentWidth - previewWidth - 2) : contentWidth;
+  const posterUrl = selected?.posterUrl;
+
   return (
     <Box
       flexDirection="column"
@@ -160,68 +168,131 @@ export function SearchSuggestionBand<TValue>({
       <Text color={palette.textDim} wrap="truncate">
         {truncateLine("Suggestions · ↑↓ move · Esc dismiss", contentWidth)}
       </Text>
-      {visibleRows.map((row, index) => {
-        switch (row.kind) {
-          case "header":
-            return (
-              <Text key={`h:${row.label}`} color={palette.muted} wrap="truncate">
-                {truncateLine(`${start > 0 && index === 0 ? "↑ " : ""}${row.label}`, contentWidth)}
-              </Text>
-            );
-          case "item":
-            return (
-              <MouseTarget
-                key={`i:${row.item.suggestion.id}`}
-                id={`browse:suggestion:${row.item.suggestion.id}`}
-                active={pointerActive}
-                onClick={() => onSelect?.(row.item)}
-              >
-                <SuggestionRow
-                  item={row.item}
-                  selected={row.item.suggestion === selected}
-                  rowWidth={contentWidth}
-                />
-              </MouseTarget>
-            );
-          case "skeleton":
-            return (
-              <Text key={`s:${row.skeletonIndex}`} color={palette.muted} wrap="truncate">
+      <Box flexDirection="row" flexGrow={1} width={contentWidth} overflow="hidden">
+        <Box
+          flexDirection="column"
+          width={showPreviewPane ? listWidth : contentWidth}
+          overflow="hidden"
+        >
+          {visibleRows.map((row, index) => {
+            switch (row.kind) {
+              case "header":
+                return (
+                  <Text key={`h:${row.label}`} color={palette.muted} wrap="truncate">
+                    {truncateLine(
+                      `${start > 0 && index === 0 ? "↑ " : ""}${row.label}`,
+                      showPreviewPane ? listWidth : contentWidth,
+                    )}
+                  </Text>
+                );
+              case "item":
+                return (
+                  <MouseTarget
+                    key={`i:${row.item.suggestion.id}`}
+                    id={`browse:suggestion:${row.item.suggestion.id}`}
+                    active={pointerActive}
+                    onClick={() => onSelect?.(row.item)}
+                  >
+                    <SuggestionRow
+                      item={row.item}
+                      selected={row.item.suggestion === selected}
+                      rowWidth={showPreviewPane ? listWidth : contentWidth}
+                    />
+                  </MouseTarget>
+                );
+              case "skeleton":
+                return (
+                  <Text key={`s:${row.skeletonIndex}`} color={palette.muted} wrap="truncate">
+                    {truncateLine(
+                      `  ${"░".repeat(SKELETON_WIDTHS[row.skeletonIndex % SKELETON_WIDTHS.length] ?? 18)}`,
+                      showPreviewPane ? listWidth : contentWidth,
+                    )}
+                  </Text>
+                );
+              case "hint":
+                return (
+                  <Text key={`hint:${row.label}`} color={palette.muted} wrap="truncate">
+                    {truncateLine(row.label, showPreviewPane ? listWidth : contentWidth)}
+                  </Text>
+                );
+            }
+          })}
+          {selected ? (
+            <Box flexDirection="column" height={3}>
+              <Text color={palette.accent} wrap="truncate">
                 {truncateLine(
-                  `  ${"░".repeat(SKELETON_WIDTHS[row.skeletonIndex % SKELETON_WIDTHS.length] ?? 18)}`,
-                  contentWidth,
+                  selected.value !== undefined
+                    ? "Preview · Enter open · Ctrl+O details"
+                    : "Preview · Enter search",
+                  showPreviewPane ? listWidth : contentWidth,
                 )}
               </Text>
-            );
-          case "hint":
-            return (
-              <Text key={`hint:${row.label}`} color={palette.muted} wrap="truncate">
-                {truncateLine(row.label, contentWidth)}
+              <Text color={palette.text} wrap="truncate">
+                {truncateLine(selected.title, showPreviewPane ? listWidth : contentWidth)}
               </Text>
-            );
-        }
-      })}
-      {selected ? (
-        <Box flexDirection="column" height={3}>
-          <Text color={palette.accent} wrap="truncate">
-            {truncateLine(
-              selected.value !== undefined
-                ? "Preview · Enter open · Ctrl+O details"
-                : "Preview · Enter search",
-              contentWidth,
-            )}
-          </Text>
-          <Text color={palette.text} wrap="truncate">
-            {truncateLine(selected.title, contentWidth)}
-          </Text>
-          <Text color={palette.textDim} wrap="truncate">
-            {truncateLine(
-              [selected.meta, selected.badge].filter(Boolean).join(" · ") ||
-                (selected.value !== undefined ? "Title suggestion" : "Previous search"),
-              contentWidth,
-            )}
-          </Text>
+              <Text color={palette.textDim} wrap="truncate">
+                {truncateLine(
+                  [selected.meta, selected.badge].filter(Boolean).join(" · ") ||
+                    (selected.value !== undefined ? "Title suggestion" : "Previous search"),
+                  showPreviewPane ? listWidth : contentWidth,
+                )}
+              </Text>
+            </Box>
+          ) : null}
         </Box>
-      ) : null}
+        {showPreviewPane && selected ? (
+          <Box
+            flexDirection="row"
+            width={previewWidth}
+            borderLeft={true}
+            borderStyle="single"
+            borderColor={palette.line}
+            paddingLeft={1}
+            overflow="hidden"
+          >
+            <Box
+              minHeight={5}
+              minWidth={8}
+              alignItems="flex-start"
+              justifyContent="flex-start"
+              marginRight={1}
+            >
+              <MiniPosterTile
+                url={posterUrl}
+                title={selected.title}
+                rows={5}
+                cols={8}
+                enabled={Boolean(posterUrl)}
+              />
+            </Box>
+            <Box flexDirection="column" flexGrow={1} overflow="hidden">
+              <Text color={palette.text} bold wrap="truncate">
+                {truncateLine(selected.title, Math.max(1, previewWidth - 11))}
+              </Text>
+              <Text color={palette.accent} wrap="truncate">
+                {truncateLine(
+                  selected.meta ?? (selected.value !== undefined ? "Catalog" : "Search"),
+                  Math.max(1, previewWidth - 11),
+                )}
+              </Text>
+              {selected.rating !== undefined ? (
+                <Text color={palette.ok} wrap="truncate">
+                  {selected.rating.toFixed(1)} ★
+                </Text>
+              ) : selected.badge ? (
+                <Text color={palette.dim} wrap="truncate">
+                  {truncateLine(selected.badge, Math.max(1, previewWidth - 11))}
+                </Text>
+              ) : null}
+              {selected.overview ? (
+                <Text color={palette.textDim} wrap="truncate">
+                  {truncateLine(selected.overview, Math.max(1, previewWidth - 11))}
+                </Text>
+              ) : null}
+            </Box>
+          </Box>
+        ) : null}
+      </Box>
     </Box>
   );
 }

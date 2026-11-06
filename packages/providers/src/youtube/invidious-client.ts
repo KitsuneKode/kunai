@@ -127,6 +127,14 @@ export async function invidiousGetChannelVideos(
   return requestInvidiousJson(`/api/v1/channels/${encodeURIComponent(channelId)}`, options);
 }
 
+export type InvidiousAdaptiveFormat = {
+  readonly audioTrack?: { readonly id?: string };
+  readonly language?: string;
+  readonly type?: string;
+  readonly qualityLabel?: string;
+  readonly url?: string;
+};
+
 /** Full video payload including related/recommended videos for post-play rails. */
 export type InvidiousVideoDetails = {
   readonly type?: string;
@@ -142,6 +150,15 @@ export type InvidiousVideoDetails = {
   readonly liveStatus?: string;
   readonly isShort?: boolean;
   readonly url?: string;
+  readonly dashUrl?: string;
+  readonly hlsUrl?: string;
+  readonly adaptiveFormats?: readonly InvidiousAdaptiveFormat[];
+  readonly formatStreams?: readonly unknown[];
+  readonly captions?: readonly {
+    readonly label?: string;
+    readonly language_code?: string;
+    readonly url?: string;
+  }[];
   readonly videoThumbnails?: InvidiousSearchVideo["videoThumbnails"];
   readonly recommendedVideos?: readonly InvidiousRecommendedVideo[];
 };

@@ -45,6 +45,7 @@ function isRootOwnedOverlay(overlay: OverlayState | null | undefined): overlay i
     overlay?.type === "downloads" ||
     overlay?.type === "library" ||
     overlay?.type === "provider_picker" ||
+    overlay?.type === "provider_status" ||
     overlay?.type === "history" ||
     overlay?.type === "queue" ||
     overlay?.type === "notifications" ||

@@ -199,6 +199,17 @@ describe("playback problem model", () => {
     expect(toErrorScenario(problem)).toEqual({ kind: "network-offline" });
   });
 
+  test("mixed failures where only one attempt failed DNS do not declare global network-offline", () => {
+    const problem = buildProviderResolveProblem({
+      attempts: [
+        { failure: { message: "getaddrinfo ENOTFOUND dead-mirror.test" } },
+        { failure: { code: "not-found", message: "Catalog title not found" } },
+      ],
+    });
+
+    expect(problem.cause).not.toBe("network-offline");
+  });
+
   test("does not offer try-next-provider when every compatible provider already ran", () => {
     const problem = buildProviderResolveProblem({
       attempts: [{ failure: { code: "rate-limited", message: "429 from upstream" } }],

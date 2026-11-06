@@ -19,6 +19,8 @@ export type MpvTerminationResult = {
   signal: NodeJS.Signals | null;
 };
 
+const isDetachedSupported = process.platform !== "win32";
+
 const activeProcesses = new Set<MpvKillableProcess>();
 
 export function registerMpvProcess(process: MpvKillableProcess): () => void {
@@ -35,7 +37,7 @@ export function registerMpvProcess(process: MpvKillableProcess): () => void {
 export function killActiveMpvProcessesSync(): void {
   for (const process of activeProcesses) {
     // Tree kill: mpv's ytdl_hook yt-dlp child must not outlive this sweep.
-    terminateProcessTree(process, "SIGKILL");
+    terminateProcessTree(process, "SIGKILL", { detached: isDetachedSupported });
   }
   activeProcesses.clear();
 }
@@ -65,7 +67,7 @@ export async function terminateMpvProcess(
       sleep(timeoutMs).then(() => undefined),
     ]);
 
-  terminateProcessTree(process, "SIGTERM");
+  terminateProcessTree(process, "SIGTERM", { detached: isDetachedSupported });
 
   const gracefulCode = await waitForExit(options.gracefulTimeoutMs ?? 1_500);
   if (gracefulCode !== undefined) {
@@ -76,7 +78,7 @@ export async function terminateMpvProcess(
     };
   }
 
-  terminateProcessTree(process, "SIGKILL");
+  terminateProcessTree(process, "SIGKILL", { detached: isDetachedSupported });
 
   const forcedCode = await waitForExit(options.forceTimeoutMs ?? 1_000);
   return {

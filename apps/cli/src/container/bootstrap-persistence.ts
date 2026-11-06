@@ -287,7 +287,7 @@ export async function bootstrapPersistence(
   const cacheStore = new SqliteCacheStoreImpl(new StreamCacheRepository(cacheDb));
   const recommendationCache = new RecommendationCacheRepository(cacheDb);
   const providerHealth = new ProviderHealthRepository(cacheDb);
-  const { listDeprecatedVidkingEndpoints } = await import("@kunai/providers/videasy");
+  const { listDeprecatedVidkingEndpoints } = await import("@kunai/providers/videasy/flavors");
   const endpointHealth = new ProviderEndpointHealthService(
     new ProviderEndpointHealthRepository(cacheDb),
     () => new Date(),

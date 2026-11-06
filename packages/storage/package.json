@@ -6,6 +6,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./paths": "./src/paths.ts",
     "./testing": "./test/helpers/temp-store.ts"
   },
   "scripts": {

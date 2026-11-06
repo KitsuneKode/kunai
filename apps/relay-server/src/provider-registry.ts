@@ -7,7 +7,6 @@ import {
   vidrockProviderModule,
   miruroProviderModule,
   rivestreamProviderModule,
-  videasyProviderModule,
   vidlinkProviderModule,
 } from "@kunai/providers";
 import { buildProviderRelayRegistry } from "@kunai/relay";
@@ -21,7 +20,6 @@ import { buildProviderRelayRegistry } from "@kunai/relay";
  * list against the relayable production modules.
  */
 export const relayProviderModules = [
-  videasyProviderModule,
   vidlinkProviderModule,
   vidrockProviderModule,
   rivestreamProviderModule,

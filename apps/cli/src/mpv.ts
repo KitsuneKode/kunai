@@ -151,6 +151,7 @@ export async function launchMpv(opts: {
       stdout: stdio,
       stderr: stdio,
       env: scrubbedChildEnv(),
+      detached: !opts.attach && process.platform !== "win32",
     });
     const unregisterMpv = registerMpvProcess(mpv);
     try {
@@ -795,6 +796,9 @@ export function buildMpvArgs(
   }
   if (config?.mpv?.logFile) {
     args.push(`--log-file=${config.mpv.logFile}`);
+  }
+  if (config?.mpv?.hwdec && config.mpv.hwdec !== "default") {
+    args.push(`--hwdec=${config.mpv.hwdec}`);
   }
   if (ipcPath) args.push(`--input-ipc-server=${ipcPath}`);
   if (config?.scriptPath) args.push(`--script=${config.scriptPath}`);

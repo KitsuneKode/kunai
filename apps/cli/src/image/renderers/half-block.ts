@@ -58,6 +58,9 @@ export function resampleRgba(
   targetWidth: number,
   targetHeight: number,
 ): Uint8Array {
+  if (image.width === targetWidth && image.height === targetHeight) {
+    return image.rgba;
+  }
   const output = new Uint8Array(targetWidth * targetHeight * 4);
   const xRatio = image.width / targetWidth;
   const yRatio = image.height / targetHeight;
@@ -120,9 +123,10 @@ export function buildHalfBlockOutput(image: DecodedImage, options: ImageRenderOp
   // Two vertical pixels per cell row is what makes the half-block trick work.
   const fitted = fitDimensions(image, spec.columns, cellRows * 2);
   // An odd pixel height would leave a half-painted final row, so round up to a
-  // whole cell and let the bottom pixel fall through as transparent.
+  // whole cell and let the bottom pixel fall through as transparent without
+  // vertically stretching or blurring the image pixels.
   const pixelHeight = fitted.height + (fitted.height % 2);
-  const resampled = resampleRgba(image, fitted.width, pixelHeight);
+  const resampled = resampleRgba(image, fitted.width, fitted.height);
 
   const lines: string[] = [];
   for (let y = 0; y < pixelHeight; y += 2) {
@@ -131,8 +135,9 @@ export function buildHalfBlockOutput(image: DecodedImage, options: ImageRenderOp
     let activeBottom: Rgb | null | undefined;
 
     for (let x = 0; x < fitted.width; x += 1) {
-      const top = pixelAt(resampled, fitted.width, x, y);
-      const bottom = y + 1 < pixelHeight ? pixelAt(resampled, fitted.width, x, y + 1) : TRANSPARENT;
+      const top = y < fitted.height ? pixelAt(resampled, fitted.width, x, y) : TRANSPARENT;
+      const bottom =
+        y + 1 < fitted.height ? pixelAt(resampled, fitted.width, x, y + 1) : TRANSPARENT;
 
       if (top === null && bottom === null) {
         if (activeTop !== undefined || activeBottom !== undefined) {

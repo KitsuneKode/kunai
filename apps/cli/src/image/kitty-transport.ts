@@ -12,7 +12,7 @@
 // our filesystem.
 
 import { createHash } from "node:crypto";
-import { unlink } from "node:fs/promises";
+import { unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deflateSync } from "node:zlib";
@@ -91,7 +91,7 @@ const TEMP_FILE_SWEEP_MS = 30_000;
 const runtime = {
   tmpdir: (): string => tmpdir(),
   writeFile: async (path: string, data: Uint8Array): Promise<void> => {
-    await Bun.write(path, data);
+    await writeFile(path, data, { flag: "wx", mode: 0o600 });
   },
   removeFile: async (path: string): Promise<void> => {
     await unlink(path);

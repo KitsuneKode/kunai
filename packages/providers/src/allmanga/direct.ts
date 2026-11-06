@@ -653,6 +653,8 @@ export const allmangaProviderModule: CoreProviderModule = {
             startupPriority,
             ALLMANGA_CANDIDATE_TIMEOUT_MS,
           ),
+          hedgeDelayMs: 2_500,
+          maxConcurrentCandidates: 2,
           resolveCandidate: async (candidate, cycleContext) => {
             const stream = streams.find((item) => item.id === candidate.streamId);
             if (!stream?.url && !stream?.deferredLocator) {

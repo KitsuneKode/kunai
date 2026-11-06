@@ -7,9 +7,12 @@ import {
 } from "../src/retired-production-providers";
 
 describe("retired production providers", () => {
-  test("anidb is retired from the live roster but remains a known id", () => {
+  test("anidb and videasy are retired from the live roster but remain known ids", () => {
     expect(isRetiredProductionProviderId("anidb")).toBe(true);
     expect(isRetiredProductionProviderId(" AniDB ")).toBe(true);
+    expect(isRetiredProductionProviderId("videasy")).toBe(true);
+    expect(isRetiredProductionProviderId(" Videasy ")).toBe(true);
+    expect(isRetiredProductionProviderId("vidrock")).toBe(false);
     expect(isRetiredProductionProviderId("hianime")).toBe(false);
   });
 
@@ -27,6 +30,22 @@ describe("retired production providers", () => {
 
     expect(normalized.animeProvider).toBe("hianime");
     expect(normalized.animeProviderPriority).toEqual(["kickassanime", "miruro"]);
+  });
+
+  test("maps an explicit series lane selection off a retired id", () => {
+    const normalized = normalizeRetiredProductionProviderFields({
+      animeProvider: DEFAULT_CONFIG.animeProvider,
+      animeProviderPriority: [...DEFAULT_CONFIG.animeProviderPriority],
+      provider: "videasy",
+      providerPriority: ["rivestream", "videasy", "movy"],
+      youtubeProvider: DEFAULT_CONFIG.youtubeProvider,
+      youtubeProviderPriority: [...DEFAULT_CONFIG.youtubeProviderPriority],
+      disabledProviders: [],
+      titleProviderPreferences: {},
+    });
+
+    expect(normalized.provider).toBe("vidrock");
+    expect(normalized.providerPriority).toEqual(["rivestream", "movy"]);
   });
 
   test("drops a retired id from disabledProviders without touching live providers", () => {

@@ -37,11 +37,16 @@ function mpvFrameBudget(): number {
   return Number(process.env.KUNAI_MPV_FRAMES ?? "30") || 30;
 }
 
+function mpvTimeoutMs(): number {
+  return Number(process.env.KUNAI_MPV_TIMEOUT_MS ?? "30000") || 30000;
+}
+
 function mpvOnPath(): boolean {
   return Bun.which("mpv") !== null;
 }
 
 const frames = mpvFrameBudget();
+const timeoutMs = mpvTimeoutMs();
 
 type MpvFixture = {
   title: TitleInfo;
@@ -79,14 +84,14 @@ const FIXTURES = new Map<string, MpvFixture>([
   [
     "vidrock",
     {
-      title: { id: "550", type: "movie", name: "Fight Club" },
+      title: { id: "27205", type: "movie", name: "Inception" },
       mode: "series",
     },
   ],
   [
     "movy",
     {
-      title: { id: "550", type: "movie", name: "Fight Club" },
+      title: { id: "27205", type: "movie", name: "Inception" },
       mode: "series",
     },
   ],
@@ -185,8 +190,18 @@ if (!stream?.url) {
   process.exit(1);
 }
 
-const mpvArgs = buildMpvPlaybackVerifyArgs({ url: stream.url, headers: stream.headers, frames });
-const mpv = await verifyStreamPlaysInMpv({ url: stream.url, headers: stream.headers, frames });
+const mpvArgs = buildMpvPlaybackVerifyArgs({
+  url: stream.url,
+  headers: stream.headers,
+  frames,
+  timeoutMs,
+});
+const mpv = await verifyStreamPlaysInMpv({
+  url: stream.url,
+  headers: stream.headers,
+  frames,
+  timeoutMs,
+});
 // Never log credential material: Cookie / signature values stay in the spawned
 // argv only. The report carries the redacted shape for review.
 const redactedMpvArgs = redactMpvArgsForLog(mpvArgs);

@@ -45,14 +45,81 @@ import { spawnSync } from "node:child_process";
 type TurboDryRun = { readonly tasks?: readonly unknown[] };
 
 /**
- * Whether an `--affected` selection is too small to prove anything.
- *
- * Zero is the only vacuous case. One selected task is a real signal, even if it
- * is a small one — the affected set is a statement about blast radius, not
- * about whether the task ran.
+ * Patterns matching files whose modification can alter global toolchains,
+ * configurations, or scripts, requiring the full graph to run even if
+ * `--affected` selects a small subset of workspace packages.
  */
-export function needsFullRun(affectedTaskCount: number): boolean {
-  return affectedTaskCount === 0;
+export const GLOBAL_BLAST_PATTERNS = [
+  /^\.github\//,
+  /^scripts\//,
+  /^tools\//,
+  /^patches\//,
+  /^bunfig\.toml$/,
+  /^turbo\.json$/,
+  /^package\.json$/,
+  /^bun\.lock$/,
+  /^tsconfig(?:\.[^/]+)?\.json$/,
+  /^\.oxlintrc(?:\.[^/]+)?\.json$/,
+  /^\.oxfmtrc(?:\.[^/]+)?\.json$/,
+  /^LICENSE$/,
+] as const;
+
+export function hasGlobalBlastFiles(changedFiles: readonly string[]): boolean {
+  return changedFiles.some((file) => {
+    const normalized = file.replaceAll("\\", "/").replace(/^\.\//, "");
+    return GLOBAL_BLAST_PATTERNS.some((pattern) => pattern.test(normalized));
+  });
+}
+
+/**
+ * Query git for changed files compared against PR base or merge base.
+ * Falls back gracefully to empty array if git is unavailable.
+ */
+export function getChangedFiles(
+  env: NodeJS.ProcessEnv = process.env,
+  gitRunner: (args: readonly string[]) => { stdout?: string; status?: number | null } = (args) =>
+    spawnSync("git", [...args], { encoding: "utf8", env }),
+): string[] {
+  const candidateBases = [
+    env.TURBO_SCM_BASE,
+    env.GITHUB_BASE_REF ? `origin/${env.GITHUB_BASE_REF}` : undefined,
+    env.GITHUB_BASE_REF,
+    "origin/main",
+    "HEAD~1",
+  ].filter((b): b is string => Boolean(b) && String(b).length > 0);
+
+  for (const base of candidateBases) {
+    const diff = gitRunner(["diff", "--name-only", "--diff-filter=ACMR", `${base}...HEAD`]);
+    if (diff.status === 0 && Boolean(diff.stdout)) {
+      const files = String(diff.stdout)
+        .split("\n")
+        .map((f) => f.trim())
+        .filter((f) => f.length > 0);
+      if (files.length > 0) return files;
+    }
+  }
+
+  const status = gitRunner(["status", "--porcelain"]);
+  if (status.status === 0 && Boolean(status.stdout)) {
+    const files = String(status.stdout)
+      .split("\n")
+      .map((line) => line.slice(3).trim())
+      .filter((f) => f.length > 0);
+    if (files.length > 0) return files;
+  }
+
+  return [];
+}
+
+/**
+ * Whether an `--affected` selection is too small or global blast invalidates it.
+ *
+ * Zero is the vacuous case. A positive selection alongside global blast files
+ * (root configs, global tools/scripts) also requires a full run to prevent
+ * partial-run false passes.
+ */
+export function needsFullRun(affectedTaskCount: number, hasGlobalBlast = false): boolean {
+  return affectedTaskCount === 0 || hasGlobalBlast;
 }
 
 /** How many tasks `--affected` selects for `task`. Never throws. */
@@ -104,6 +171,7 @@ function runTurbo(
 export type CiAffectedRunDeps = {
   readonly countTasks: (task: string, passthrough: readonly string[]) => number;
   readonly runTurbo: (task: string, args: readonly string[]) => number;
+  readonly getChangedFiles?: () => readonly string[];
   readonly log?: (message: string) => void;
 };
 
@@ -116,16 +184,25 @@ export function runAffectedOrFull(
   const countTasks = deps?.countTasks ?? ((t, p) => countAffectedTasks(t, p, env));
   const run = deps?.runTurbo ?? ((t, a) => runTurbo(t, a, env));
   const log = deps?.log ?? ((message: string) => process.stdout.write(message));
+  const changedFiles = (deps?.getChangedFiles ?? (() => getChangedFiles(env)))();
+  const globalBlast = hasGlobalBlastFiles(changedFiles);
 
   const selected = countTasks(task, passthrough);
-  if (!needsFullRun(selected)) {
+  if (!needsFullRun(selected, globalBlast)) {
     log(`ci-affected-run: ${selected} affected task(s) for \`${task}\`; running affected only.\n`);
     return run(task, ["--affected", ...passthrough]);
   }
-  log(
-    `ci-affected-run: no workspace package is affected by this change, so \`${task}\` ` +
-      `--affected would run zero tasks and report success. Running the full graph.\n`,
-  );
+  if (globalBlast) {
+    const blastFiles = changedFiles.filter((f) => hasGlobalBlastFiles([f]));
+    log(
+      `ci-affected-run: root configuration or global tooling changed (${blastFiles.join(", ")}). Running the full graph.\n`,
+    );
+  } else {
+    log(
+      `ci-affected-run: no workspace package is affected by this change, so \`${task}\` ` +
+        `--affected would run zero tasks and report success. Running the full graph.\n`,
+    );
+  }
   return run(task, [...passthrough]);
 }
 

@@ -309,15 +309,15 @@ describe("release provider route derivation", () => {
   });
   test("derives signoff providers from production defaults", () => {
     const cases = buildReleaseProviderRouteCases(DEFAULT_CONFIG, [
-      "vidlink",
+      "vidrock",
       "hianime",
       "anidb",
       "youtube",
     ]);
     expect(cases.map((route) => [route.lane, route.configuredProvider])).toEqual([
-      ["movie", "vidlink"],
-      ["movie", "vidlink"],
-      ["series", "vidlink"],
+      ["movie", "vidrock"],
+      ["movie", "vidrock"],
+      ["series", "vidrock"],
       ["anime", "hianime"],
     ]);
   });

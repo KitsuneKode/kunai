@@ -17,11 +17,23 @@ const OFFLINE_NETWORK_PATTERNS = [
   "err_name_not_resolved",
 ] as const;
 
+/** Machine-level interface failures — network is down or unreachable locally. */
+const INTERFACE_OFFLINE_PATTERNS = [
+  "enetunreach",
+  "network is unreachable",
+  "err_internet_disconnected",
+] as const;
+
 export function isOfflineNetworkFailure(
   failure: Pick<ProviderFailure, "code" | "message">,
 ): boolean {
   const message = failure.message.toLowerCase();
   return OFFLINE_NETWORK_PATTERNS.some((pattern) => message.includes(pattern));
+}
+
+export function isInterfaceOfflineError(message: string): boolean {
+  const lower = message.toLowerCase();
+  return INTERFACE_OFFLINE_PATTERNS.some((pattern) => lower.includes(pattern));
 }
 
 export function classifyProviderFailure(failure: unknown): ProviderFailureClassification {

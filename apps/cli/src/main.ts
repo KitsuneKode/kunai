@@ -620,6 +620,19 @@ async function maybeRunAutoCleanupDownloads(
 export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   process.title = "kunai";
 
+  // Fast path: --help / -h / --version / -v handled before any maintenance or debrid resolution.
+  if (argv.length === 1) {
+    if (argv[0] === "--version" || argv[0] === "-v") {
+      const { formatVersionLine } = await import("./services/update/version-display");
+      process.stdout.write(`${await formatVersionLine(KUNAI_VERSION)}\n`);
+      return;
+    }
+    if (argv[0] === "--help" || argv[0] === "-h") {
+      process.stdout.write(buildHelpText());
+      return;
+    }
+  }
+
   // `kunai upgrade` / `kunai uninstall` / `kunai doctor` / `kunai rollback` —
   // channel-aware maintenance. Handled before the shell boots so they can run
   // standalone (binary self-replace).
@@ -1475,6 +1488,14 @@ function setupSignalHandlers(): void {
   // Kunai is gone. `exit` is synchronous and always runs — SIGKILL them here.
   process.on("exit", () => {
     try {
+      if (process.stdout.isTTY) {
+        process.stdout.write(
+          "\x1b\\\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l\x1b[?25h\x1b[?1049l\x1b_Ga=d,d=A;\x1b\\",
+        );
+      }
+      if (process.stdin.isTTY && "setRawMode" in process.stdin) {
+        process.stdin.setRawMode(false);
+      }
       globalContainer?.downloadService.killActiveProcessesSync();
       globalContainer?.player.killActiveMpvProcessesSync();
     } catch {
@@ -1502,6 +1523,16 @@ function setupSignalHandlers(): void {
 }
 
 export async function startCli(argv = process.argv.slice(2)): Promise<void> {
+  // Fast trampoline: exit immediately for single-flag --version / -v and --help / -h
+  // before installing process signal handlers, memory watchdogs, or event-loop monitors.
+  if (
+    argv.length === 1 &&
+    (argv[0] === "--version" || argv[0] === "-v" || argv[0] === "--help" || argv[0] === "-h")
+  ) {
+    await runCli(argv);
+    return;
+  }
+
   setupSignalHandlers();
   // Always-on memory safety net: a separate-thread watchdog that SIGKILLs a
   // runaway even when the main event loop is jammed (the closed-terminal case).

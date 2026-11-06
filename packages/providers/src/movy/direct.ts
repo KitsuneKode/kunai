@@ -474,6 +474,7 @@ async function resolveMovyLaneCandidate({
     context,
     signal,
     timeoutMs: gateTimeoutMs,
+    hedgeDelayMs: 2_000,
   });
   if (!selection.accepted) {
     throw createProviderCycleFailureError(candidate, {
@@ -673,6 +674,8 @@ export async function resolveMovyDirect(
     titleId: input.title.id,
     maxAttemptsPerCandidate: 1,
     candidateTimeoutMs,
+    hedgeDelayMs: 2_500,
+    maxConcurrentCandidates: 2,
     resolveCandidate: async (candidate, candidateContext) => {
       // SAFETY: serverId/lane were minted by this module's own lane roster
       // when the candidates were declared; a stray value resolves as a lane
@@ -821,6 +824,7 @@ export async function resolveMovyDirect(
     context,
     signal: context.signal,
     timeoutMs: probeTimeoutMs,
+    hedgeDelayMs: 2_000,
   });
 
   if (context.signal?.aborted) {

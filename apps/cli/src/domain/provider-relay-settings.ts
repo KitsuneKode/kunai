@@ -16,7 +16,6 @@ export const RELAY_CAPABLE_PROVIDER_OPTIONS = [
   { value: "hianime", label: "HiAnime" },
   { value: "kickassanime", label: "KickAssAnime" },
   { value: "miruro", label: "Miruro" },
-  { value: "videasy", label: "Videasy" },
   { value: "vidlink", label: "VidLink" },
   { value: "rivestream", label: "Rivestream" },
   { value: "movy", label: "Movy" },

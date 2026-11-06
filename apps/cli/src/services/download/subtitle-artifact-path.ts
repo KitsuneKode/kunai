@@ -15,7 +15,7 @@ function normalizedMime(value: string | null): string | null {
 function extFromSubtitleUrl(subtitleUrl: string): string | null {
   try {
     const name = decodeURIComponent(new URL(subtitleUrl).pathname.split("/").pop() ?? "");
-    const match = extname(name).match(/\.(srt|vtt|ssa|ass)$/i);
+    const match = extname(name).match(/\.(srt|vtt)$/i);
     if (!match?.[1]) return null;
     return `.${match[1].toLowerCase()}`;
   } catch {

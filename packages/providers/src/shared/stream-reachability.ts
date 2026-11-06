@@ -395,6 +395,22 @@ async function probeHlsManifest(
     return master.result;
   }
 
+  const trimmedMaster = master.text.trim().toLowerCase();
+  if (trimmedMaster.startsWith("<!doctype html") || trimmedMaster.startsWith("<html")) {
+    return {
+      status: "unreachable",
+      reason: "HLS manifest returned HTML challenge or error page",
+      definitive: true,
+    };
+  }
+  if (!/^\s*#EXTM3U(?:\s|$)/.test(master.text)) {
+    return {
+      status: "unreachable",
+      reason: "HLS manifest missing #EXTM3U header",
+      definitive: false,
+    };
+  }
+
   let mediaPlaylistUrl = url;
   let mediaPlaylistText = master.text;
 
@@ -423,6 +439,21 @@ async function probeHlsManifest(
     );
     if (variant.status !== "ok") {
       return variant.result;
+    }
+    const trimmedVariant = variant.text.trim().toLowerCase();
+    if (trimmedVariant.startsWith("<!doctype html") || trimmedVariant.startsWith("<html")) {
+      return {
+        status: "unreachable",
+        reason: "HLS media playlist returned HTML challenge or error page",
+        definitive: true,
+      };
+    }
+    if (!/^\s*#EXTM3U(?:\s|$)/.test(variant.text)) {
+      return {
+        status: "unreachable",
+        reason: "HLS media playlist missing #EXTM3U header",
+        definitive: false,
+      };
     }
     mediaPlaylistText = variant.text;
   }
@@ -669,6 +700,14 @@ async function probeHttpStatus(
     }
     const response = outcome.response;
     if (healthyStatus(response.status)) {
+      const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+      if (contentType.includes("text/html")) {
+        return {
+          status: "unreachable",
+          reason: "stream endpoint returned HTML challenge or error page",
+          definitive: true,
+        };
+      }
       return { status: "reachable" };
     }
     if (options.method === "HEAD" && (response.status === 403 || response.status === 405)) {

@@ -14,6 +14,7 @@ import {
   mergeKitsuneConfig,
   normalizeRetiredProductionProviderFields,
   retiredProductionProviderFieldsChanged,
+  type MpvHwdec,
   type PrePlayConfirmMode,
 } from "@kunai/config";
 import { migrateLegacyProviderId } from "@kunai/providers";
@@ -264,10 +265,12 @@ export class ConfigServiceImpl implements ConfigService {
         loaded.youtubeProvider,
         DEFAULT_CONFIG.youtubeProvider,
       ),
-      youtubeProviderPriority: normalizeProviderIdList(
-        loaded.youtubeProviderPriority,
-        DEFAULT_CONFIG.youtubeProviderPriority,
-      ),
+      youtubeProviderPriority: shouldMigrateInheritedYoutubeDefaults(loaded)
+        ? [...DEFAULT_CONFIG.youtubeProviderPriority]
+        : normalizeProviderIdList(
+            loaded.youtubeProviderPriority,
+            DEFAULT_CONFIG.youtubeProviderPriority,
+          ),
       youtubeLanguageProfile: normalizeLanguageProfile(
         loaded.youtubeLanguageProfile ?? DEFAULT_CONFIG.youtubeLanguageProfile,
       ),
@@ -725,6 +728,10 @@ export class ConfigServiceImpl implements ConfigService {
 
   get mpvInProcessStreamReconnectMaxAttempts(): number {
     return this.config.mpvInProcessStreamReconnectMaxAttempts;
+  }
+
+  get mpvHwdec(): MpvHwdec {
+    return this.config.mpvHwdec ?? "default";
   }
 
   get presenceProvider(): PresenceProvider {
@@ -1261,6 +1268,13 @@ const INHERITED_ANIME_DEFAULTS: readonly {
     animeProvider: "hianime",
     priorities: [["kickassanime", "animegg", "allanime", "miruro", "anidb"]],
   },
+  // Revision 6 demoted Miruro behind AllAnime while its pipe was broken.
+  // Revision 7 restores Miruro ahead of AllAnime with its active .cx mirror.
+  {
+    revision: 6,
+    animeProvider: "hianime",
+    priorities: [["kickassanime", "animegg", "allanime", "miruro"]],
+  },
 ];
 
 function retiredProductionProviderFieldSlice(
@@ -1295,6 +1309,14 @@ function shouldMigrateInheritedAnimeDefaults(loaded: Partial<KitsuneConfig>): bo
       loaded.animeProvider === inherited.animeProvider &&
       inherited.priorities.some((list) => sameProviderList(list, priority)),
   );
+}
+
+function shouldMigrateInheritedYoutubeDefaults(loaded: Partial<KitsuneConfig>): boolean {
+  const revision = readProviderDefaultsRevision(loaded);
+  if (revision >= CURRENT_PROVIDER_DEFAULTS_REVISION) return false;
+  const list = loaded.youtubeProviderPriority;
+  if (list === undefined) return true;
+  return sameProviderList(["youtube"], list);
 }
 
 function sameProviderList(
@@ -1343,6 +1365,31 @@ const INHERITED_SERIES_DEFAULTS: readonly {
     revision: 3,
     provider: "vidlink",
     priorities: [["rivestream", "vidrock", "videasy"]],
+  },
+  // Revision 4-6 led with VidLink and priorities ["rivestream", "vidrock", "movy", "videasy"].
+  // VidLink returning null causes latency penalties on searches.
+  // Revision 7 leads with VidRock (5 server lanes, sub-7s, AES-256-GCM, multi-audio).
+  {
+    revision: 4,
+    provider: "vidlink",
+    priorities: [["rivestream", "vidrock", "movy", "videasy"]],
+  },
+  {
+    revision: 5,
+    provider: "vidlink",
+    priorities: [["rivestream", "vidrock", "movy", "videasy"]],
+  },
+  {
+    revision: 6,
+    provider: "vidlink",
+    priorities: [["rivestream", "vidrock", "movy", "videasy"]],
+  },
+  // Revision 7 led with VidRock and priorities ["rivestream", "movy", "vidlink", "videasy"].
+  // Revision 8 retires Videasy from production and drops it from shipped defaults.
+  {
+    revision: 7,
+    provider: "vidrock",
+    priorities: [["rivestream", "movy", "vidlink", "videasy"]],
   },
 ];
 
