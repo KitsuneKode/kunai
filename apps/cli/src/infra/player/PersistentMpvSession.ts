@@ -738,6 +738,7 @@ export class PersistentMpvSession {
       stdout: "ignore",
       stderr: "ignore",
       env: scrubbedChildEnv(),
+      detached: process.platform !== "win32",
     });
     this.mpv = proc;
     this.mpvUnregister = registerMpvProcess(proc);

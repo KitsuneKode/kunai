@@ -70,6 +70,7 @@ import { ensureSessionProviderMatchesLane } from "@/domain/session/session-displ
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import { countLabel } from "@/domain/text-display";
 import type { SearchResult, ShellMode, TitleInfo } from "@/domain/types";
+import { terminateProcessTree } from "@/infra/os/process-tree";
 import { discoverMpvInvocation } from "@/infra/player/mpv-discovery";
 import { isAllowedMpvUrl } from "@/infra/player/mpv-playback-url";
 import { registerMpvProcess, type MpvChildProcess } from "@/infra/player/mpv-process-registry";
@@ -117,7 +118,9 @@ let liveTrailerProcess: MpvChildProcess | null = null;
 function spawnTrailerMpv(argv: readonly string[], target: string): boolean {
   if (liveTrailerProcess && liveTrailerProcess.exitCode === null) {
     try {
-      liveTrailerProcess.kill("SIGTERM");
+      terminateProcessTree(liveTrailerProcess, "SIGTERM", {
+        detached: process.platform !== "win32",
+      });
     } catch {
       // Already gone between the liveness check and the kill.
     }
@@ -126,6 +129,7 @@ function spawnTrailerMpv(argv: readonly string[], target: string): boolean {
     stdout: "ignore",
     stderr: "ignore",
     stdin: "ignore",
+    detached: process.platform !== "win32",
   });
   liveTrailerProcess = proc;
   const unregister = registerMpvProcess(proc);

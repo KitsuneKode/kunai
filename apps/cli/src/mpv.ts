@@ -148,6 +148,7 @@ export async function launchMpv(opts: {
       stdout: stdio,
       stderr: stdio,
       env: scrubbedChildEnv(),
+      detached: !opts.attach && process.platform !== "win32",
     });
     const unregisterMpv = registerMpvProcess(mpv);
     try {
