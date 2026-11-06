@@ -267,20 +267,25 @@ jobs:
       # metadata service, so the binary is present but never invoked. Without
       # it those tests used to report a vacuous pass (#468).
       # Pinned version + sha256 with actions/cache stops external release outages
-      # and rate-limiting from failing CI runs.
-      - name: Cache yt-dlp binary
+      # and rate-limiting from failing CI runs. The cache stores in ~/.cache/yt-dlp
+      # (runner-owned, safe for actions/cache restoration), copies into /usr/local/bin,
+      # and asserts the expected sha256 digest on every run.
+      - name: Cache yt-dlp archive
         id: yt-dlp-cache
         uses: actions/cache@v5
         with:
-          path: /usr/local/bin/yt-dlp
+          path: ~/.cache/yt-dlp/yt-dlp
           key: yt-dlp-2026.10.26-e51e69e89489f199530f13d32a4342da3ddb2cf34842f364603a066db05afbf3
 
-      - name: Install yt-dlp (present-only; never invoked by tests)
-        if: steps.yt-dlp-cache.outputs.cache-hit != 'true'
+      - name: Provision yt-dlp binary (present-only; never invoked by tests)
         run: |
-          sudo curl -sSfL https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.26/yt-dlp -o /usr/local/bin/yt-dlp
-          echo "e51e69e89489f199530f13d32a4342da3ddb2cf34842f364603a066db05afbf3  /usr/local/bin/yt-dlp" | sha256sum -c -
-          sudo chmod +x /usr/local/bin/yt-dlp
+          mkdir -p "$HOME/.cache/yt-dlp"
+          if [ "${{ steps.yt-dlp-cache.outputs.cache-hit }}" != 'true' ] || [ ! -f "$HOME/.cache/yt-dlp/yt-dlp" ]; then
+            curl -sSfL https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.26/yt-dlp -o "$HOME/.cache/yt-dlp/yt-dlp"
+          fi
+          echo "e51e69e89489f199530f13d32a4342da3ddb2cf34842f364603a066db05afbf3  $HOME/.cache/yt-dlp/yt-dlp" | sha256sum -c -
+          sudo cp "$HOME/.cache/yt-dlp/yt-dlp" /usr/local/bin/yt-dlp
+          sudo chmod 0755 /usr/local/bin/yt-dlp
           yt-dlp --version
 
       - name: Test (affected on PR, full when nothing is affected)
