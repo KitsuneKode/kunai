@@ -146,6 +146,7 @@ jobs:
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: fmt
+          skip-turbo-cache: "true"
 
       - name: Format check (affected on PR, full when nothing is affected)
         if: github.event_name == 'pull_request'
@@ -184,6 +185,7 @@ jobs:
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: lint
+          skip-turbo-cache: "true"
 
       - name: Lint (affected on PR, full when nothing is affected)
         if: github.event_name == 'pull_request'
@@ -224,6 +226,7 @@ jobs:
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: typecheck
+          skip-turbo-cache: "true"
 
       - name: Typecheck (affected on PR, full when nothing is affected)
         if: github.event_name == 'pull_request'
@@ -257,14 +260,26 @@ jobs:
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: test
+          skip-turbo-cache: "true"
 
       # YouTube-provider resolve tests gate on `Bun.which("yt-dlp")` — the
       # resolve path requires the binary even though every test injects its
       # metadata service, so the binary is present but never invoked. Without
       # it those tests used to report a vacuous pass (#468).
+      # Pinned version + sha256 with actions/cache stops external release outages
+      # and rate-limiting from failing CI runs.
+      - name: Cache yt-dlp binary
+        id: yt-dlp-cache
+        uses: actions/cache@v5
+        with:
+          path: /usr/local/bin/yt-dlp
+          key: yt-dlp-2026.10.26-e51e69e89489f199530f13d32a4342da3ddb2cf34842f364603a066db05afbf3
+
       - name: Install yt-dlp (present-only; never invoked by tests)
+        if: steps.yt-dlp-cache.outputs.cache-hit != 'true'
         run: |
-          sudo curl -sSfL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+          sudo curl -sSfL https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.26/yt-dlp -o /usr/local/bin/yt-dlp
+          echo "e51e69e89489f199530f13d32a4342da3ddb2cf34842f364603a066db05afbf3  /usr/local/bin/yt-dlp" | sha256sum -c -
           sudo chmod +x /usr/local/bin/yt-dlp
           yt-dlp --version
 
@@ -637,7 +652,7 @@ jobs:
 
   build-cli:
     name: Build CLI + npm pack guard
-    needs: [changes, typecheck]
+    needs: changes
     if: github.event_name == 'push' || needs.changes.outputs.cli == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -730,7 +745,7 @@ jobs:
 
   build-binaries:
     name: Build linux binaries
-    needs: [changes, typecheck]
+    needs: changes
     if: needs.changes.outputs.cli == 'true' || needs.changes.outputs.installer == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -742,7 +757,7 @@ jobs:
           filter: blob:none
       - uses: ./.github/actions/setup-bun-monorepo
         with:
-          turbo-cache-prefix: binaries
+          turbo-cache-prefix: build
 
       - name: Build linux binaries (glibc + musl)
         run: >-
