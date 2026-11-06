@@ -71,7 +71,7 @@ export function ProjectCard({
   const primaryUrl = project.siteUrl ?? project.repoUrl;
 
   return (
-    <article className="kunai-surface-shell group/card has-[a:focus-visible]:ring-ring relative flex w-full flex-col transition-[border-color,box-shadow,transform] duration-180 ease-[var(--ease-out)] hover:-translate-y-0.5 hover:border-[color-mix(in_oklab,var(--kunai-accent)_32%,transparent)] active:scale-[0.98] active:duration-140 has-[a:focus-visible]:ring-2">
+    <article className="kunai-surface-shell group/card has-[a:focus-visible]:ring-ring relative flex w-full flex-col transition-[border-color,box-shadow,transform] duration-180 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-0.5 hover:border-[color-mix(in_oklab,var(--kunai-accent)_32%,transparent)] active:scale-[0.98] active:duration-140 has-[a:focus-visible]:ring-2 motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100">
       <div className="kunai-surface-shell__inner flex h-full flex-col gap-4 p-5">
         <WorkshopPreview project={project} />
         <header className="flex items-start gap-3">
