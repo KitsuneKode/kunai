@@ -1,19 +1,14 @@
 import { expect, test } from "bun:test";
 
 import { SetupShell, type SetupPrefs } from "@/app-shell/setup-shell";
-import type { CapabilitySnapshot } from "@/ui";
 import { Box } from "ink";
 import React from "react";
 
+import { capabilitySnapshotFixture } from "../../harness/capability-snapshot-fixture";
 import { stripAnsi } from "../../harness/render-capture";
 import { renderWithPointer } from "../../support/pointer-render";
 
-const ready: CapabilitySnapshot = {
-  mpv: true,
-  mpvRequired: true,
-  ffprobe: true,
-  ytDlp: true,
-  curl: { present: true, impersonates: true, profile: "chrome150" },
+const ready = capabilitySnapshotFixture({
   image: {
     terminal: "unknown",
     protocol: "none",
@@ -21,8 +16,7 @@ const ready: CapabilitySnapshot = {
     available: false,
     reason: "fixture",
   },
-  issues: [],
-};
+});
 
 test("setup pointer chooses a media profile and language, goes back, and never grants consent", () => {
   let prefs: SetupPrefs | undefined;

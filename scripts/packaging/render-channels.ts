@@ -1,6 +1,6 @@
 /**
  * Pure package-channel renderers: Homebrew formula, Scoop manifest, AUR
- * `kunai-bin` PKGBUILD + .SRCINFO, and WinGet v1.9.0 multi-manifests, all
+ * `kunai-bin` PKGBUILD + .SRCINFO, Nix flake, and WinGet v1.9.0 multi-manifests, all
  * derived from a release tag and the published `SHA256SUMS.archives` file.
  *
  * Asset names are read from `RELEASE_BINARY_TARGETS` (the source of truth the
@@ -11,6 +11,7 @@
  *      [--license <path>] --out <dir>
  */
 
+import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -57,6 +58,17 @@ export function parseSumsFile(text: string): SumsMap {
     sums.set(name.trim(), sha.toLowerCase());
   }
   return sums;
+}
+
+/**
+ * Nix `fetchzip` fixed-output `hash` uses SRI: `sha256-` + standard base64 of the
+ * raw 32-byte digest (from the published hex in SHA256SUMS.archives).
+ */
+export function nixSriSha256FromHex(hexLower: string): string {
+  if (!/^[0-9a-f]{64}$/.test(hexLower)) {
+    throw new Error(`[render-channels] expected 64-char lowercase hex sha256, got ${hexLower}`);
+  }
+  return `sha256-${Buffer.from(hexLower, "hex").toString("base64")}`;
 }
 
 function target(id: string) {
@@ -319,6 +331,79 @@ ManifestVersion: ${WINGET_SCHEMA_VERSION}
 `;
 }
 
+type NixSystem = "aarch64-darwin" | "x86_64-darwin" | "aarch64-linux" | "x86_64-linux";
+
+type NixArchiveBinding = {
+  readonly nixSystem: NixSystem;
+  readonly targetId: string;
+};
+
+const NIX_ARCHIVE_BINDINGS: readonly NixArchiveBinding[] = [
+  { nixSystem: "aarch64-darwin", targetId: "darwin-arm64" },
+  { nixSystem: "x86_64-darwin", targetId: "darwin-x64" },
+  { nixSystem: "aarch64-linux", targetId: "linux-arm64" },
+  { nixSystem: "x86_64-linux", targetId: "linux-x64" },
+] as const;
+
+export function renderNixFlake(channel: ChannelVersion, sums: SumsMap): string {
+  const base = GITHUB_RELEASE_DOWNLOAD;
+  const tag = channel.tag;
+  const version = channel.version;
+
+  const perSystem = NIX_ARCHIVE_BINDINGS.map(({ nixSystem, targetId }) => {
+    const t = target(targetId);
+    const shaHex = sumFor(sums, t.archiveName);
+    const narHash = nixSriSha256FromHex(shaHex);
+    return `        "${nixSystem}" = rec {
+          archive = "${t.archiveName}";
+          pname = "kunai";
+          version = "${version}";
+          src = pkgs.fetchzip {
+            url = "\${base}/\${tag}/\${archive}";
+            hash = "${narHash}";
+            stripRoot = false;
+          };
+          kunai = pkgs.stdenvNoCC.mkDerivation {
+            inherit pname version src;
+            dontBuild = true;
+            installPhase = ''
+              mkdir -p $out/bin
+              install -m0755 ${t.archiveEntryName} $out/bin/kunai
+            '';
+          };
+        };`;
+  }).join("\n");
+
+  const systemsList = NIX_ARCHIVE_BINDINGS.map((b) => `"${b.nixSystem}"`).join(" ");
+
+  return `{
+  description = "${DESCRIPTION}";
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  };
+
+  outputs = { self, nixpkgs }:
+    let
+      base = "${base}";
+      tag = "${tag}";
+      systems = [ ${systemsList} ];
+      forSystem = system: let
+        pkgs = import nixpkgs { inherit system; };
+        per = {
+${perSystem}
+        };
+      in per.\${system};
+    in
+    nixpkgs.lib.genAttrs systems (system: {
+      packages.default = (forSystem system).kunai;
+      packages.kunai = (forSystem system).kunai;
+      defaultPackage = (forSystem system).kunai;
+    });
+}
+`;
+}
+
 // ---------------------------------------------------------------------------
 // CLI
 
@@ -361,6 +446,7 @@ export function buildChannelFileMap(channel: ChannelVersion, sums: SumsMap, lice
     "bucket/kunai.json": renderScoopManifest(channel, sums),
     "aur/kunai-bin/PKGBUILD": renderPkgbuild(aurInput),
     "aur/kunai-bin/.SRCINFO": renderSrcinfo(aurInput),
+    "nix/flake.nix": renderNixFlake(channel, sums),
     [`${wingetDir}/KitsuneKode.Kunai.yaml`]: renderWingetVersionManifest(channel),
     [`${wingetDir}/KitsuneKode.Kunai.installer.yaml`]: renderWingetInstallerManifest(channel, sums),
     [`${wingetDir}/KitsuneKode.Kunai.locale.en-US.yaml`]: renderWingetLocaleManifest(channel),

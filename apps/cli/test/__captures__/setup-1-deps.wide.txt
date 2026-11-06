@@ -8,6 +8,7 @@
                               Here's what's on this machine.
 
                               ▌ ✓ mpv               found on PATH                         playback
+                                △ mpv hwdec         no vaapi/nvdec/videotoolbox/d3d11va … playback · GPU deco…
                                 ✓ yt-dlp            found on PATH                         youtube · downloads
                                 ✓ ffmpeg            found on PATH                         quality · downloads
                                 ✓ curl-impersonate  matching chrome150                    anime search

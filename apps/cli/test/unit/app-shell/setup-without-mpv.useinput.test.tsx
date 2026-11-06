@@ -6,17 +6,16 @@ import {
   MPV_INSTALL,
   resolveInstallCommand,
 } from "@/infra/os/install-commands";
-import type { CapabilitySnapshot } from "@/ui";
 import React from "react";
 
+import { capabilitySnapshotFixture } from "../../harness/capability-snapshot-fixture";
 import { render } from "../../harness/render-capture";
 
-const MISSING_MPV: CapabilitySnapshot = {
+const MISSING_MPV = capabilitySnapshotFixture({
   mpv: false,
   mpvRequired: true,
   ffprobe: false,
   ytDlp: true,
-  curl: { present: true, impersonates: true, profile: "chrome150" },
   image: {
     terminal: "unknown",
     protocol: "none",
@@ -33,7 +32,7 @@ const MISSING_MPV: CapabilitySnapshot = {
       remediation: buildRemediationLines(MPV_INSTALL),
     },
   ],
-};
+});
 
 test("setup advances when mpv is missing", () => {
   // Missing mpv degrades rather than blocks: browsing, the watchlist, and the

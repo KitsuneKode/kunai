@@ -72,4 +72,24 @@ describe("renderCompletionScript", () => {
     expect(renderCompletionScript("fish")).toContain("complete -c kunai");
     expect(renderCompletionScript("powershell")).toContain("-CommandName kunai");
   });
+
+  test("zsh does not offer flags while completing a value-taking flag argument", () => {
+    const script = renderCompletionScript("zsh");
+    expect(script).toContain("if (( i < CURRENT - 1 )); then");
+    expect(script).toContain("return");
+    expect(script).toContain("--hwdec) _describe 'hwdec' hwdecs");
+    expect(script).toContain("default");
+    expect(script).toContain("auto-safe");
+    expect(script).toContain("no");
+  });
+
+  test("powershell suppresses flag completion when the previous token consumed a value", () => {
+    const script = renderCompletionScript("powershell");
+    expect(script).toContain("$valueFlags = @(");
+    expect(script).toContain("if ($valueFlags -contains $prevPrev -and $prev -notlike '-*')");
+    expect(script).toContain("return");
+    expect(script).toContain("'--hwdec' { $hwdecs }");
+    expect(script).toContain("Get-ChildItem -Path ($wordToComplete + '*') -Directory");
+    expect(script).toContain("Get-ChildItem -Path ($wordToComplete + '*') -File");
+  });
 });

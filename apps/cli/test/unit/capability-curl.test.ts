@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
+import { detectImageCapability } from "@/image";
+import {
+  emptyMpvHardwareAccelProbe,
+  type MpvHwaccelProbeDeps,
+} from "@/infra/player/mpv-hwaccel-probe";
 import { __testing, probeCapabilities } from "@/ui";
 
 /**
@@ -16,6 +21,8 @@ function pathWith(...commands: readonly string[]) {
     which: (command: string) => (commands.includes(command) ? `/usr/bin/${command}` : null),
     listPathEntries: () => commands,
     canExecuteCurlInvocation: () => true,
+    probeMpvHardwareAcceleration: (deps: MpvHwaccelProbeDeps) =>
+      emptyMpvHardwareAccelProbe(deps.detectImageCapability?.() ?? detectImageCapability()),
   };
 }
 
@@ -35,8 +42,15 @@ function windowsPathWith(...commands: readonly string[]) {
     },
     listPathEntries: () => commands,
     canExecuteCurlInvocation: () => true,
+    probeMpvHardwareAcceleration: (deps: MpvHwaccelProbeDeps) =>
+      emptyMpvHardwareAccelProbe(deps.detectImageCapability?.() ?? detectImageCapability()),
   };
 }
+
+const stubMpvHwaccel = {
+  probeMpvHardwareAcceleration: (deps: MpvHwaccelProbeDeps) =>
+    emptyMpvHardwareAccelProbe(deps.detectImageCapability?.() ?? detectImageCapability()),
+};
 
 describe("probeCapabilities — curl for the default anime provider", () => {
   test("does not report desktop mpv as required for detached playback", async () => {
@@ -152,6 +166,7 @@ describe("probeCapabilities — curl for the default anime provider", () => {
         path.includes("chrome150")
           ? '"%~dp0curl-impersonate.exe" --compressed --impersonate "chrome150" %*'
           : '"%~dp0curl-impersonate.exe" --compressed --impersonate "chrome116" %*',
+      ...stubMpvHwaccel,
     });
 
     expect(snapshot.curl).toMatchObject({
@@ -172,6 +187,7 @@ describe("probeCapabilities — curl for the default anime provider", () => {
         path.includes("chrome150")
           ? '"%~dp0curl-impersonate.exe" --compressed --impersonate "chrome150" %*'
           : null,
+      ...stubMpvHwaccel,
     });
 
     expect(snapshot.curl.profile).toBe("chrome150");
@@ -191,6 +207,7 @@ describe("probeCapabilities — curl for the default anime provider", () => {
       which: (command) => (command === "curl_chrome150" ? "/usr/bin/curl_chrome150" : null),
       listPathEntries: () => ["curl_chrome150"],
       canExecuteCurlInvocation: () => false,
+      ...stubMpvHwaccel,
     });
 
     expect(snapshot.curl.present).toBe(true);
@@ -213,6 +230,7 @@ describe("probeCapabilities — curl for the default anime provider", () => {
         spawned.push(invocation);
         return true;
       },
+      ...stubMpvHwaccel,
     });
 
     expect(spawned[0]?.path).toBe(backendPath);
