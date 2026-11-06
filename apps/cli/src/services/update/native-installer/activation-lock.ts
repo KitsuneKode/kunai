@@ -216,15 +216,20 @@ async function restoreQuarantinedLock(
     } catch (error) {
       const code = errorCode(error);
       if (code === "EEXIST") {
-        // If an in-flight contender created the canonical path while quarantine was active,
-        // it will observe this quarantine and back off. Give visibility a short retry
-        // window before giving up.
+        // A live canonical owner already holds the name. The quarantine is
+        // residue from the lost race, not an in-flight reclaim: leaving it
+        // makes the next acquire treat it as contention and wait out the
+        // timeout. An unreadable or stale canonical file is still retried and
+        // then kept, so a half-written winner is not discarded.
+        const canonical = await readActivationLock(lockPath);
+        if (canonical.content && ownerState(canonical.content) === "active") {
+          await rm(quarantinePath, { force: true });
+          return;
+        }
         if (attempt + 1 < RESTORE_TRANSIENT_ATTEMPTS) {
           await (io.pause ?? Bun.sleep)(5);
           continue;
         }
-        // A new canonical owner won or held the name across retries. Keep the quarantine
-        // for diagnostics rather than ever replacing or deleting that owner.
         return;
       }
       if (code !== "ENOENT" && !isContentionCode(code) && !isPermissionCode(code)) throw error;
@@ -414,6 +419,20 @@ async function listQuarantinedLocks(
   return quarantines.sort();
 }
 
+/** True when the canonical path is held by a process that is still this host's owner. */
+async function canonicalLockHasLiveOwner(
+  path: string,
+  deadlineAt: number,
+  processStartIdLookup: ProcessStartIdLookup,
+): Promise<boolean> {
+  const canonical = await readActivationLock(path);
+  if (!canonical.content) return false;
+  return (
+    ownerState(canonical.content, Math.max(0, deadlineAt - Date.now()), processStartIdLookup) ===
+    "active"
+  );
+}
+
 async function createReclaimClaim(path: string, ownerId: string, raw: string): Promise<string> {
   const claimPath = `${reclaimClaimPrefix(path)}${ownerId}`;
   const tempPath = `${reclaimClaimTempPrefix(path)}${ownerId}.${randomUUID()}`;
@@ -559,10 +578,22 @@ async function tryAcquireActivationLockFromFilesystem(
     if (attempted && Date.now() >= deadlineAt) {
       return holderPid === undefined ? { acquired: false } : { acquired: false, holderPid };
     }
+    const claims = await listReclaimClaims(path, deadlineAt, processStartIdLookup);
+    let quarantines = await listQuarantinedLocks(path, deadlineAt, processStartIdLookup);
     if (
-      (await listReclaimClaims(path, deadlineAt, processStartIdLookup)).length > 0 ||
-      (await listQuarantinedLocks(path, deadlineAt, processStartIdLookup)).length > 0
+      quarantines.length > 0 &&
+      (await canonicalLockHasLiveOwner(path, deadlineAt, processStartIdLookup))
     ) {
+      // The canonical file already has a live owner. Leftover quarantine
+      // files are residue from a lost reclaim, not an in-flight rename.
+      // Treating them as contention stalls this loop for the whole timeout
+      // even after that owner leaves.
+      for (const quarantinePath of quarantines) {
+        await rm(quarantinePath, { force: true }).catch(() => {});
+      }
+      quarantines = [];
+    }
+    if (claims.length > 0 || quarantines.length > 0) {
       if (!(await sleepForRetry())) return { acquired: false, holderPid };
       continue;
     }

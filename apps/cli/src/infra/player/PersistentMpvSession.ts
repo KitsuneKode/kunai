@@ -23,6 +23,7 @@ import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { resolveTuning } from "@/services/persistence/tuning";
 import { checkStreamPreflight } from "@/services/playback/stream-health-check";
 import { MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS } from "@kunai/config";
+import { isJsonNumber } from "@kunai/types";
 
 import { whichLive } from "../os/which";
 import {
@@ -33,7 +34,7 @@ import {
 } from "./kunai-mpv-bridge";
 import { discoverMpvInvocation } from "./mpv-discovery";
 import { computeInProcessReconnectSeek } from "./mpv-in-process-reconnect";
-import type { MpvIpcSession } from "./mpv-ipc";
+import type { MpvIpcSession, MpvIpcSessionOptions } from "./mpv-ipc";
 import { openMpvIpcSession, waitForMpvIpcEndpoint } from "./mpv-ipc";
 import {
   createMpvIpcEndpoint,
@@ -90,6 +91,18 @@ export {
 
 const IN_PROCESS_RECONNECT_BASE_BACKOFF_MS = 1_800;
 const IN_PROCESS_RECONNECT_MAX_BACKOFF_MS = 16_000;
+/** Socket reopen budget while mpv itself is still running. */
+const IPC_TRANSPORT_RECONNECT_MAX_ATTEMPTS = 6;
+const AVSYNC_DRIFT_LIMIT_SECONDS = 0.3;
+const AVSYNC_DRIFT_SAMPLES_REQUIRED = 3;
+
+/**
+ * Jittered exponential backoff: `base * 2 ** (attempt - 2) * (0.5 + Math.random())`.
+ * Attempt 1 is half the base, so a dropped local socket does not retry in a tight loop.
+ */
+function jitteredExponentialBackoffMs(baseMs: number, attempt: number): number {
+  return baseMs * 2 ** (attempt - 2) * (0.5 + Math.random());
+}
 
 /**
  * Upper bound on a reconnect budget handed to `create` in a raw config object.
@@ -277,6 +290,13 @@ export class PersistentMpvSession {
   private reconnectTryCount = 0;
   private reconnectBackoffUntilMs = 0;
   private reconnectInFlight = false;
+  /** A same-URL reload was accepted. A later progress stall re-resolves instead. */
+  private inProcessReloadCompleted = false;
+  private sourceReresolveEscalated = false;
+  private ipcReconnectAttempt = 0;
+  private ipcReconnectInFlight = false;
+  private avsyncOverLimitSamples = 0;
+  private avsyncResyncInFlight = false;
   private pendingInProcessReconnect: {
     seekSeconds: number;
     shouldSeek: boolean;
@@ -713,6 +733,14 @@ export class PersistentMpvSession {
         event.stallKind === "network-read-dead"
       ) {
         void this.handleNetworkReadDeadReconnect();
+      } else if (
+        event.type === "stream-stalled" &&
+        event.stallKind !== "network-read-dead" &&
+        this.inProcessReloadCompleted &&
+        !this.reconnectInFlight &&
+        !this.sourceReresolveEscalated
+      ) {
+        void this.escalateProgressStallToSourceReresolve();
       }
     };
     this.watchdog = (this.runtime.createPlaybackWatchdog ?? createPlaybackWatchdog)(
@@ -779,50 +807,7 @@ export class PersistentMpvSession {
 
       let openedIpcSession: MpvIpcSession;
       try {
-        openedIpcSession = await this.runtime.openIpcSession({
-          endpoint: this.ipcEndpoint,
-          onPropertyUpdate: ({ name, value, observedAt }) => {
-            this.propertyRouter.handlePropertyUpdate({ name, value, observedAt });
-          },
-          onEndFile: ({ reason, fileError, observedAt }) => {
-            void this.handlePlaybackEnded(reason, observedAt, fileError);
-          },
-          onFileLoaded: () => {
-            const pending = this.pendingFileLoad;
-            // mpv's file-loaded carries no identity. Without a pending owner it
-            // belongs to a load nobody is waiting for, so it must do nothing.
-            if (!pending) return;
-            this.pendingFileLoad = null;
-            if (!this.isGenerationCurrent(pending.generation)) return;
-            this.loadedFileGeneration = pending.generation;
-
-            void this.ipcSession?.send(["set_property", "user-data/kunai-loading", ""], 300);
-            const reconnect = this.pendingInProcessReconnect;
-            if (reconnect) {
-              this.pendingInProcessReconnect = null;
-              if (!this.isGenerationCurrent(reconnect.generation)) return;
-              void this.finishInProcessReconnectAfterLoad(reconnect);
-              return;
-            }
-            this.drainPendingReadyWork();
-          },
-          onCommandResult: (result) => {
-            if (result.ok) return;
-            const command = String(result.command[0] ?? "unknown");
-            this.currentCycleOptions().onPlaybackEvent?.({
-              type: "ipc-command-failed",
-              command,
-              error: result.error,
-            });
-            if (result.error === "timeout" && !isSubtitleIpcCommand(command)) {
-              this.currentCycleOptions().onPlaybackEvent?.({
-                type: "ipc-stalled",
-                command,
-                error: result.error,
-              });
-            }
-          },
-        });
+        openedIpcSession = await this.runtime.openIpcSession(this.ipcSessionOptions());
       } catch (error) {
         const totalMs = Date.now() - ipcBootstrapStarted;
         const message = error instanceof Error ? error.message : String(error);
@@ -851,13 +836,7 @@ export class PersistentMpvSession {
 
       this.currentCycleOptions().onPlaybackEvent?.({ type: "ipc-connected" });
       this.currentCycleOptions().onPlaybackEvent?.({ type: "opening-stream" });
-
-      // Observe user-data properties written by the kunai Lua script so that
-      // key presses inside the mpv window are routed back to the app.
-      void this.ipcSession.send(["observe_property", 200, "user-data/kunai-request"], 1_000);
-      void this.ipcSession.send(["observe_property", 201, "user-data/kunai-resume-choice"], 1_000);
-      void this.ipcSession.send(["observe_property", 202, "user-data/kunai-track-changed"], 1_000);
-      void this.ipcSession.send(["observe_property", 203, "pause"], 1_000);
+      this.restoreIpcSubscriptions(this.ipcSession);
     }
     this.queueReadyWork(this.initialOptions, { armFallback: false });
     this.armReadyWorkFallback(
@@ -953,6 +932,9 @@ export class PersistentMpvSession {
     this.reconnectTryCount = 0;
     this.reconnectBackoffUntilMs = 0;
     this.reconnectInFlight = false;
+    this.inProcessReloadCompleted = false;
+    this.sourceReresolveEscalated = false;
+    this.avsyncOverLimitSamples = 0;
     this.pendingInProcessReconnect = null;
     this.currentPositionSeconds = 0;
     this.skippedSegments = new Set<string>();
@@ -1617,8 +1599,9 @@ export class PersistentMpvSession {
     // end-file(stop) before the replacement's file-loaded, so it must not
     // retire the new load or resolve the watch cycle. Error/EOF reconnects
     // already ended their old file; genuine reload errors and user close
-    // still follow normal teardown.
+    // still follow normal teardown. A source re-resolve stop is not that reload.
     if (
+      !this.sourceReresolveEscalated &&
       reason === "stop" &&
       !this.retired &&
       this.reconnectInFlight &&
@@ -1664,6 +1647,7 @@ export class PersistentMpvSession {
         : (active.stats.lastNonZeroSample?.durationSeconds ?? 0);
 
     const shouldTryReconnect =
+      !this.sourceReresolveEscalated &&
       this.mpvInProcessStreamReconnectEnabled &&
       this.mpvInProcessStreamReconnectMaxAttempts > 0 &&
       this.reconnectTryCount < this.mpvInProcessStreamReconnectMaxAttempts &&
@@ -1680,7 +1664,180 @@ export class PersistentMpvSession {
     }
 
     this.activeCycle = null;
+    if (this.sourceReresolveEscalated) {
+      active.resolve({
+        ...result,
+        suspectedDeadStream: true,
+        endReason: result.endReason === "eof" ? "error" : result.endReason,
+      });
+      return;
+    }
     active.resolve(result);
+  }
+
+  private ipcSessionOptions(): MpvIpcSessionOptions {
+    return {
+      endpoint: this.ipcEndpoint,
+      onTransportLost: (reason) => {
+        this.scheduleIpcReconnect(reason);
+      },
+      onPropertyUpdate: ({ name, value, observedAt }) => {
+        if (name === "avsync") {
+          if (isJsonNumber(value) && Number.isFinite(value)) this.noteAvsyncDrift(value);
+          else this.avsyncOverLimitSamples = 0;
+        }
+        this.propertyRouter.handlePropertyUpdate({ name, value, observedAt });
+      },
+      onEndFile: ({ reason, fileError, observedAt }) => {
+        void this.handlePlaybackEnded(reason, observedAt, fileError);
+      },
+      onFileLoaded: () => {
+        const pending = this.pendingFileLoad;
+        // mpv's file-loaded carries no identity. Without a pending owner it
+        // belongs to a load nobody is waiting for, so it must do nothing.
+        if (!pending) return;
+        this.pendingFileLoad = null;
+        if (!this.isGenerationCurrent(pending.generation)) return;
+        this.loadedFileGeneration = pending.generation;
+
+        void this.ipcSession?.send(["set_property", "user-data/kunai-loading", ""], 300);
+        const reconnect = this.pendingInProcessReconnect;
+        if (reconnect) {
+          this.pendingInProcessReconnect = null;
+          if (!this.isGenerationCurrent(reconnect.generation)) return;
+          void this.finishInProcessReconnectAfterLoad(reconnect);
+          return;
+        }
+        this.drainPendingReadyWork();
+      },
+      onCommandResult: (result) => {
+        if (result.ok) return;
+        const command = String(result.command[0] ?? "unknown");
+        this.currentCycleOptions().onPlaybackEvent?.({
+          type: "ipc-command-failed",
+          command,
+          error: result.error,
+        });
+        if (result.error === "timeout" && !isSubtitleIpcCommand(command)) {
+          this.currentCycleOptions().onPlaybackEvent?.({
+            type: "ipc-stalled",
+            command,
+            error: result.error,
+          });
+        }
+      },
+    };
+  }
+
+  /** Lua user-data subscriptions. Re-sent after every IPC reopen. */
+  private restoreIpcSubscriptions(session: MpvIpcSession): void {
+    void session.send(["observe_property", 200, "user-data/kunai-request"], 1_000);
+    void session.send(["observe_property", 201, "user-data/kunai-resume-choice"], 1_000);
+    void session.send(["observe_property", 202, "user-data/kunai-track-changed"], 1_000);
+    void session.send(["observe_property", 203, "pause"], 1_000);
+  }
+
+  private noteAvsyncDrift(driftSeconds: number): void {
+    if (Math.abs(driftSeconds) <= AVSYNC_DRIFT_LIMIT_SECONDS) {
+      this.avsyncOverLimitSamples = 0;
+      return;
+    }
+    this.avsyncOverLimitSamples += 1;
+    if (this.avsyncOverLimitSamples < AVSYNC_DRIFT_SAMPLES_REQUIRED) return;
+    this.avsyncOverLimitSamples = 0;
+    if (this.avsyncResyncInFlight || this.retired || !this.ipcSession) return;
+    const position = this.currentPositionSeconds;
+    if (position <= 0) return;
+    this.avsyncResyncInFlight = true;
+    const session = this.ipcSession;
+    void session.send(["seek", position, "absolute"], 1_000).finally(() => {
+      this.avsyncResyncInFlight = false;
+    });
+  }
+
+  private scheduleIpcReconnect(reason: string): void {
+    if (this.retired || this.ipcReconnectInFlight) return;
+    if (this.mpv === null || this.mpv.exitCode !== null) return;
+    void this.reconnectIpc(reason);
+  }
+
+  /**
+   * The socket died while mpv is still running. Reopen the same endpoint and
+   * put the user-data subscriptions back, instead of leaving control dead
+   * until the process exits.
+   */
+  private async reconnectIpc(reason: string): Promise<void> {
+    if (this.ipcReconnectInFlight || this.retired) return;
+    if (this.mpv === null || this.mpv.exitCode !== null) return;
+    this.ipcReconnectInFlight = true;
+    try {
+      while (!this.retired && this.mpv !== null && this.mpv.exitCode === null) {
+        this.ipcReconnectAttempt += 1;
+        if (this.ipcReconnectAttempt > IPC_TRANSPORT_RECONNECT_MAX_ATTEMPTS) return;
+        const delayMs = Math.min(
+          this.reconnectMaxBackoffMs,
+          jitteredExponentialBackoffMs(this.reconnectBaseBackoffMs, this.ipcReconnectAttempt),
+        );
+        const sleepDeadline = Date.now() + delayMs;
+        while (Date.now() < sleepDeadline) {
+          if (this.retired || this.mpv === null || this.mpv.exitCode !== null) return;
+          await Bun.sleep(Math.min(50, Math.max(1, sleepDeadline - Date.now())));
+        }
+        if (this.retired || this.mpv === null || this.mpv.exitCode !== null) return;
+        try {
+          const opened = await this.runtime.openIpcSession(this.ipcSessionOptions());
+          if (this.retired || this.mpv === null || this.mpv.exitCode !== null) {
+            await opened.close().catch(() => {});
+            return;
+          }
+          const previous = this.ipcSession;
+          this.ipcSession = opened;
+          void previous?.close().catch(() => {});
+          this.restoreIpcSubscriptions(opened);
+          this.ipcReconnectAttempt = 0;
+          this.currentCycleOptions().onPlaybackEvent?.({ type: "ipc-connected" });
+          dbg("mpv-ipc", "ipc-transport-reconnected", { reason });
+          return;
+        } catch (error) {
+          dbg("mpv-ipc", "ipc-transport-reconnect-failed", {
+            reason,
+            attempt: this.ipcReconnectAttempt,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    } finally {
+      this.ipcReconnectInFlight = false;
+    }
+  }
+
+  /**
+   * Same-URL reload already ran and playback stalled again. Ask the shell to
+   * re-resolve the provider stream, then end this file so that resolve can load.
+   */
+  private async escalateProgressStallToSourceReresolve(): Promise<void> {
+    if (this.sourceReresolveEscalated || this.retired) return;
+    const active = this.activeCycle;
+    if (!active) return;
+    this.sourceReresolveEscalated = true;
+    this.currentCycleOptions().onPlaybackEvent?.({
+      type: "mpv-in-process-reconnect",
+      phase: "failed",
+      attempt: this.reconnectTryCount,
+      detail: "progress-stall-after-reload",
+    });
+    this.currentCycleOptions().onMpvActionRequest?.("refresh");
+    const stopped = await this.ipcSession?.send(["stop"], 1_000);
+    if (this.retired || this.activeCycle !== active) return;
+    if (!stopped?.ok) {
+      this.activeCycle = null;
+      const result = finalizePlaybackResult(active.stats, { socketPathCleanedUp: false });
+      active.resolve({
+        ...result,
+        suspectedDeadStream: true,
+        endReason: result.endReason === "eof" ? "error" : result.endReason,
+      });
+    }
   }
 
   private async handleNetworkReadDeadReconnect(): Promise<void> {
@@ -1736,7 +1893,10 @@ export class PersistentMpvSession {
     const nextAttempt = this.reconnectTryCount + 1;
     const backoffBefore =
       nextAttempt > 1
-        ? Math.min(this.reconnectMaxBackoffMs, this.reconnectBaseBackoffMs * 2 ** (nextAttempt - 2))
+        ? Math.min(
+            this.reconnectMaxBackoffMs,
+            jitteredExponentialBackoffMs(this.reconnectBaseBackoffMs, nextAttempt),
+          )
         : 0;
     if (backoffBefore > 0) {
       const sleepDeadline = Date.now() + backoffBefore;
@@ -1808,6 +1968,7 @@ export class PersistentMpvSession {
         this.clearPendingFileLoadIf(reconnectLoadId, reconnectGeneration);
         throw new Error(loadResult.error ?? "loadfile failed");
       }
+      this.inProcessReloadCompleted = true;
       if (!this.isGenerationCurrent(reconnectGeneration)) return false;
 
       this.reconnectBackoffUntilMs = 0;
@@ -1821,7 +1982,7 @@ export class PersistentMpvSession {
         Date.now() +
         Math.min(
           this.reconnectMaxBackoffMs,
-          this.reconnectBaseBackoffMs * 2 ** (this.reconnectTryCount - 1),
+          jitteredExponentialBackoffMs(this.reconnectBaseBackoffMs, this.reconnectTryCount + 1),
         );
       opts.onPlaybackEvent?.({
         type: "mpv-in-process-reconnect",

@@ -1243,6 +1243,158 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
     harness.callbacks().onEndFile({ reason: "quit", observedAt: 99_000 });
     await playbackResult;
   });
+
+  test("a dropped IPC socket reopens while mpv is still alive and restores subscriptions", async () => {
+    let opens = 0;
+    const harness = createHarness();
+    const opened = harness.runtime.openIpcSession.bind(harness.runtime);
+    harness.runtime.openIpcSession = async (options) => {
+      opens += 1;
+      return opened(options);
+    };
+    const events: PlayerPlaybackEvent[] = [];
+    const session = await PersistentMpvSession.create({
+      stream: createStream(),
+      options: {
+        displayTitle: "Episode 1",
+        primarySubtitle: null,
+        onPlaybackEvent: (event) => events.push(event),
+      },
+      // SAFETY: this fixture only supplies the reconnect tuning the reopen path reads.
+      kitsuneConfig: {
+        mpvInProcessStreamReconnect: false,
+        tuningOverrides: { mpvReconnectBaseBackoffMs: 100, mpvReconnectMaxBackoffMs: 100 },
+      } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    expect(opens).toBe(1);
+    harness.callbacks().onTransportLost?.("socket error");
+    await waitUntil(() => opens === 2, { label: "ipc session reopened" });
+    const requestObserves = harness.commands.filter(
+      (command) => command[0] === "observe_property" && command[2] === "user-data/kunai-request",
+    );
+    expect(requestObserves).toHaveLength(2);
+    expect(events.filter((event) => event.type === "ipc-connected").length).toBeGreaterThanOrEqual(
+      2,
+    );
+    expect(session.isAlive()).toBe(true);
+    harness.endProcess();
+    await session.close();
+  });
+
+  test("a dropped IPC socket stays down once mpv has exited", async () => {
+    let opens = 0;
+    const harness = createHarness();
+    const opened = harness.runtime.openIpcSession.bind(harness.runtime);
+    harness.runtime.openIpcSession = async (options) => {
+      opens += 1;
+      return opened(options);
+    };
+    const session = await PersistentMpvSession.create({
+      stream: createStream(),
+      options: { displayTitle: "Episode 1", primarySubtitle: null },
+      // SAFETY: partial config pins reconnect off; the fixture only checks a dead process.
+      kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    harness.endProcess(0);
+    harness.callbacks().onTransportLost?.("session closed");
+    await flushAsyncWork();
+    expect(opens).toBe(1);
+    await session.close();
+  });
+
+  test("avsync drift past 300ms over several samples seeks to the current position", async () => {
+    const harness = createHarness();
+    const session = await PersistentMpvSession.create({
+      stream: createStream(),
+      options: { displayTitle: "Episode 1", primarySubtitle: null },
+      // SAFETY: partial config pins reconnect off; this fixture only drives avsync samples.
+      kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 42, observedAt: 1 });
+    harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.5, observedAt: 2 });
+    harness.callbacks().onPropertyUpdate({ name: "avsync", value: -0.41, observedAt: 3 });
+    await flushAsyncWork();
+    expect(harness.commands.some((command) => command[0] === "seek")).toBe(false);
+    harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.35, observedAt: 4 });
+    await flushAsyncWork();
+    expect(harness.commands).toContainEqual(["seek", 42, "absolute"]);
+    harness.endProcess();
+    await session.close();
+  });
+
+  test("a progress stall after an in-process reload re-resolves the source", async () => {
+    const loadRequested = Promise.withResolvers<void>();
+    const completed = Promise.withResolvers<void>();
+    const harness = createHarness({
+      beforeSend(command) {
+        if (command[0] === "loadfile") loadRequested.resolve();
+      },
+    });
+    let emitWatchdog!: (event: PlayerPlaybackEvent) => void;
+    harness.runtime.createPlaybackWatchdog = (emit) => {
+      emitWatchdog = emit;
+      return { observe() {}, stop() {}, reset() {} };
+    };
+    const actions: string[] = [];
+    const session = await PersistentMpvSession.create({
+      stream: createStream(),
+      options: {
+        displayTitle: "Episode 1",
+        primarySubtitle: null,
+        onMpvActionRequest: (action) => actions.push(action),
+        onPlaybackEvent(event) {
+          if (event.type === "mpv-in-process-reconnect" && event.phase === "complete") {
+            completed.resolve();
+          }
+        },
+      },
+      // SAFETY: this fixture only supplies the reconnect and script options it exercises.
+      kitsuneConfig: {
+        mpvInProcessStreamReconnect: true,
+        mpvInProcessStreamReconnectMaxAttempts: 1,
+        mpvKunaiScriptOpts: "",
+      } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    try {
+      harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+      emitWatchdog({ type: "stream-stalled", secondsWithoutProgress: 12 });
+      await flushAsyncWork();
+      expect(actions).toEqual([]);
+      expect(harness.commands.some((command) => command[0] === "stop")).toBe(false);
+
+      harness.callbacks().onPropertyUpdate({ name: "duration", value: 600, observedAt: 2 });
+      harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 100, observedAt: 3 });
+      emitWatchdog({
+        type: "stream-stalled",
+        stallKind: "network-read-dead",
+        secondsWithoutProgress: 8,
+      });
+      await loadRequested.promise;
+      harness.callbacks().onEndFile({ reason: "stop", observedAt: 4 });
+      harness.callbacks().onFileLoaded?.({ observedAt: 5 });
+      await completed.promise;
+
+      const playback = session.waitForCurrentPlayback();
+      emitWatchdog({ type: "stream-stalled", secondsWithoutProgress: 12 });
+      await waitUntil(() => harness.commands.some((command) => command[0] === "stop"), {
+        label: "source re-resolve stop",
+      });
+      expect(actions).toEqual(["refresh"]);
+      harness.callbacks().onEndFile({ reason: "stop", observedAt: 6 });
+      expect(await playback).toMatchObject({ suspectedDeadStream: true });
+    } finally {
+      harness.endProcess();
+      await session.close();
+    }
+  });
 });
 
 test("persistent Off survives late subtitles and a new file carries its own language choice", async () => {

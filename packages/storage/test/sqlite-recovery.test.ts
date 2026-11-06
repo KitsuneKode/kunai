@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { openKunaiDatabaseWithCorruptionRecovery } from "../src/sqlite";
+import { openKunaiDatabase, openKunaiDatabaseWithCorruptionRecovery } from "../src/sqlite";
 
 test("a healthy exclusive lock never quarantines durable data", () => {
   const dir = mkdtempSync(join(tmpdir(), "kunai-sqlite-contention-"));
@@ -74,6 +74,35 @@ test("quarantines a corrupt database file and opens a fresh one", () => {
     // `rmSync` then hits an open SQLite handle — EBUSY on Windows, which
     // replaces the real assertion failure with a confusing teardown error.
     db?.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("WAL databases use synchronous NORMAL", () => {
+  const dir = mkdtempSync(join(tmpdir(), "kunai-sqlite-synchronous-"));
+  const db = openKunaiDatabase(join(dir, "data.sqlite"));
+  try {
+    expect(db.query<{ journal_mode: string }, []>("PRAGMA journal_mode").get()?.journal_mode).toBe(
+      "wal",
+    );
+    // 1 = NORMAL. FULL (2) would fsync the WAL on every commit.
+    expect(db.query<{ synchronous: number }, []>("PRAGMA synchronous").get()?.synchronous).toBe(1);
+  } finally {
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("rollback journals keep synchronous FULL", () => {
+  const dir = mkdtempSync(join(tmpdir(), "kunai-sqlite-synchronous-delete-"));
+  const db = openKunaiDatabase(join(dir, "data.sqlite"), { wal: false });
+  try {
+    expect(db.query<{ journal_mode: string }, []>("PRAGMA journal_mode").get()?.journal_mode).toBe(
+      "delete",
+    );
+    expect(db.query<{ synchronous: number }, []>("PRAGMA synchronous").get()?.synchronous).toBe(2);
+  } finally {
+    db.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });

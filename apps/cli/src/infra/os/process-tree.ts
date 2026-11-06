@@ -7,7 +7,8 @@ import { spawnSync } from "node:child_process";
  * after Kunai is gone.
  *
  * Two mechanisms, one per platform:
- * - Windows: `taskkill /pid /T /F` walks the whole tree (in-box everywhere).
+ * - Windows: `taskkill /pid /T` walks the tree. SIGTERM omits `/F` so the
+ *   process can exit cleanly; SIGKILL is the later force (`/F`).
  * - POSIX: `kill(-pid)` reaches the process group — but only when the child
  *   was spawned `detached` (group leader). For shared-group children a
  *   `pkill -P` sweep hits direct descendants instead; grandchildren below
@@ -19,6 +20,13 @@ export type TreeKillableProcess = {
   readonly pid?: number;
   kill(signal?: string | number): void;
 };
+
+/** `taskkill` argv for one tree signal. SIGTERM stays graceful; SIGKILL forces. */
+export function windowsTaskkillArgs(pid: number, signal: NodeJS.Signals): readonly string[] {
+  const args = ["/pid", String(pid), "/T"];
+  if (signal === "SIGKILL") args.push("/F");
+  return args;
+}
 
 function descendantsSweep(pid: number, signal: string): void {
   try {
@@ -39,8 +47,11 @@ export function terminateProcessTree(
   if (process.platform === "win32") {
     if (pid !== undefined && pid > 0) {
       try {
-        spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" });
-        return;
+        spawnSync("taskkill", [...windowsTaskkillArgs(pid, signal)], { stdio: "ignore" });
+        // A force kill is done. A graceful one still delivers the signal to the
+        // direct child: `taskkill` without `/F` only posts WM_CLOSE, which a
+        // console mpv can ignore.
+        if (signal === "SIGKILL") return;
       } catch {
         // Fall through to the direct kill.
       }
