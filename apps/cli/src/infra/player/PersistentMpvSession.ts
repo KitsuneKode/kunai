@@ -1773,7 +1773,21 @@ export class PersistentMpvSession {
     try {
       while (!this.retired && this.mpv !== null && this.mpv.exitCode === null) {
         this.ipcReconnectAttempt += 1;
-        if (this.ipcReconnectAttempt > IPC_TRANSPORT_RECONNECT_MAX_ATTEMPTS) return;
+        if (this.ipcReconnectAttempt > IPC_TRANSPORT_RECONNECT_MAX_ATTEMPTS) {
+          const dead = this.ipcSession;
+          this.ipcSession = null;
+          void dead?.close().catch(() => {});
+          this.currentCycleOptions().onPlaybackEvent?.({
+            type: "ipc-command-failed",
+            command: "reconnect",
+            error: "ipc-transport-reconnect-exhausted",
+          });
+          dbg("mpv-ipc", "ipc-transport-reconnect-exhausted", {
+            reason,
+            attempts: this.ipcReconnectAttempt - 1,
+          });
+          return;
+        }
         const delayMs = Math.min(
           this.reconnectMaxBackoffMs,
           jitteredExponentialBackoffMs(this.reconnectBaseBackoffMs, this.ipcReconnectAttempt),

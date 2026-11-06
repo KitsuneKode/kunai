@@ -161,12 +161,15 @@ export function useDebouncedViewportPolicy(
 export function useSettledShellDimensions(): ViewportDimensions {
   const { cols, rows } = useShellDimensions();
   const [settled, setSettled] = useState({ cols, rows });
+  const settledRef = useRef(settled);
+  settledRef.current = settled;
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (cols === settled.cols && rows === settled.rows) return;
+    const currentSettled = settledRef.current;
+    if (cols === currentSettled.cols && rows === currentSettled.rows) return;
 
-    if (shouldSettleViewportImmediately(settled, { cols, rows })) {
+    if (shouldSettleViewportImmediately(currentSettled, { cols, rows })) {
       if (timerRef.current) {
         clearTimeout(timerRef.current);
         timerRef.current = null;
@@ -184,7 +187,7 @@ export function useSettledShellDimensions(): ViewportDimensions {
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [cols, rows, settled]);
+  }, [cols, rows]);
 
   return settled;
 }
