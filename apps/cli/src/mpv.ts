@@ -788,6 +788,9 @@ export function buildMpvArgs(
   if (config?.mpv?.logFile) {
     args.push(`--log-file=${config.mpv.logFile}`);
   }
+  if (config?.mpv?.hwdec && config.mpv.hwdec !== "default") {
+    args.push(`--hwdec=${config.mpv.hwdec}`);
+  }
   if (ipcPath) args.push(`--input-ipc-server=${ipcPath}`);
   if (config?.scriptPath) args.push(`--script=${config.scriptPath}`);
   // A persistent session always carries the ytdl guard, even when it launches on

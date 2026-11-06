@@ -870,6 +870,16 @@
     },
     {
       "short": "",
+      "long": "--hwdec",
+      "description": "Hardware video decode: default | auto-safe | no"
+    },
+    {
+      "short": "",
+      "long": "--no-hwdec",
+      "description": "Shortcut for --hwdec no"
+    },
+    {
+      "short": "",
       "long": "--download-path",
       "description": "Override the download directory"
     },

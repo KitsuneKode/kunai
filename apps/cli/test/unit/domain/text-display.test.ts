@@ -34,6 +34,12 @@ test("sanitizeTerminalText strips an OSC ended by the string terminator", () => 
   ).toBe("xclicky");
 });
 
+test("sanitizeTerminalText strips Kitty APC and Sixel DCS command strings", () => {
+  expect(sanitizeTerminalText(`prefix${ESC}_Ga=d,d=A;${ESC}\\suffix`)).toBe("prefixsuffix");
+  expect(sanitizeTerminalText(`prefix${ESC}Pq"1;1;1#0;2;0;0;0${ESC}\\suffix`)).toBe("prefixsuffix");
+  expect(sanitizeTerminalText(`prefix${ESC}_Gf=100;AAAA${BEL}suffix`)).toBe("prefixsuffix");
+});
+
 test("sanitizeTerminalText handles many unterminated OSC introducers", () => {
   const hostile = `${ESC}]`.repeat(20_000);
   expect(sanitizeTerminalText(`a${hostile}b`)).toBe("ab");

@@ -24,6 +24,9 @@ export type AnalyticsPreference = "unset" | "enabled" | "disabled";
 export type DiscoverMode = "auto" | "unified" | "anime-only" | "series-only";
 export type RecoveryMode = "guided" | "fallback-first" | "manual";
 
+/** Hardware video decoding mode: "default" (mpv default/conf), "auto-safe" (safe hardware acceleration), "no" (software only). */
+export type MpvHwdec = "default" | "auto-safe" | "no";
+
 /** Runtime tuning override bag; CLI tuning module resolves typed values. */
 export type ConfigTuningOverrides = Partial<Record<string, number>>;
 
@@ -131,6 +134,7 @@ export interface KitsuneConfig {
   mpvKunaiScriptOpts: Record<string, string>;
   mpvInProcessStreamReconnect: boolean;
   mpvInProcessStreamReconnectMaxAttempts: number;
+  mpvHwdec?: MpvHwdec;
   presenceProvider: PresenceProvider;
   presencePrivacy: PresencePrivacy;
   presenceDiscordClientId: string;

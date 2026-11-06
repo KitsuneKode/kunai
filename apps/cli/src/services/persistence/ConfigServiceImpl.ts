@@ -14,6 +14,7 @@ import {
   mergeKitsuneConfig,
   normalizeRetiredProductionProviderFields,
   retiredProductionProviderFieldsChanged,
+  type MpvHwdec,
   type PrePlayConfirmMode,
 } from "@kunai/config";
 import { migrateLegacyProviderId } from "@kunai/providers";
@@ -727,6 +728,10 @@ export class ConfigServiceImpl implements ConfigService {
 
   get mpvInProcessStreamReconnectMaxAttempts(): number {
     return this.config.mpvInProcessStreamReconnectMaxAttempts;
+  }
+
+  get mpvHwdec(): MpvHwdec {
+    return this.config.mpvHwdec ?? "default";
   }
 
   get presenceProvider(): PresenceProvider {

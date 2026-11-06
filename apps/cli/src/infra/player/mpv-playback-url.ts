@@ -24,9 +24,20 @@ export function isLocalHlsManifestPlaybackUrl(url: string): boolean {
 }
 
 export function isYoutubeWatchUrl(url: string): boolean {
-  return /(?:youtube\.com\/watch|youtu\.be\/|youtube\.com\/live\/|youtube\.com\/shorts\/)/i.test(
-    url.trim(),
-  );
+  let parsed: URL;
+  try {
+    parsed = new URL(url.trim());
+  } catch {
+    return false;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+  const host = parsed.hostname.toLowerCase();
+  if (host !== "youtu.be" && host !== "youtube.com" && !host.endsWith(".youtube.com")) {
+    return false;
+  }
+  if (host === "youtu.be") return true;
+  const path = parsed.pathname;
+  return path === "/watch" || path.startsWith("/live/") || path.startsWith("/shorts/");
 }
 
 /** Files admitted by the explicit local authority are validated before handoff, not by HTTP. */

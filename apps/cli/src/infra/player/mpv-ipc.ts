@@ -265,14 +265,18 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
           bufferedBytes = 0;
           const parsed = parseMpvIpcLine(line);
           if (parsed) {
-            dispatchMessage(
-              parsed,
-              requestIds,
-              pendingCommands,
-              options.onPropertyUpdate,
-              options.onEndFile,
-              options.onFileLoaded,
-            );
+            try {
+              dispatchMessage(
+                parsed,
+                requestIds,
+                pendingCommands,
+                options.onPropertyUpdate,
+                options.onEndFile,
+                options.onFileLoaded,
+              );
+            } catch {
+              // Handler failures must not break the socket parser loop
+            }
           }
           offset = end;
         }

@@ -28,21 +28,25 @@ export function runBackgroundTask(input: BackgroundTaskInput): void {
   }
 
   task.catch((error: unknown) => {
-    const failureContext = {
-      ...normalizeErrorForDiagnostics(error),
-      ...contextWithoutPromotedFields(input.context),
-    };
+    try {
+      const failureContext = {
+        ...normalizeErrorForDiagnostics(error),
+        ...contextWithoutPromotedFields(input.context),
+      };
 
-    if (input.diagnostics) {
-      input.diagnostics.record(buildBackgroundTaskFailureEvent(input, failureContext));
-      return;
+      if (input.diagnostics) {
+        input.diagnostics.record(buildBackgroundTaskFailureEvent(input, failureContext));
+        return;
+      }
+
+      input.logger?.warn("Background task failed", {
+        task: input.task,
+        category: input.category,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } catch {
+      // Diagnostic recording must never generate an unhandled rejection
     }
-
-    input.logger?.warn("Background task failed", {
-      task: input.task,
-      category: input.category,
-      error: error instanceof Error ? error.message : String(error),
-    });
   });
 }
 

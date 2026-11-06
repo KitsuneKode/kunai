@@ -15,8 +15,7 @@ import { shouldApplyStartAtSeek } from "./mpv-start-seek";
  */
 export const DEFAULT_MPV_YTDL_FORMAT = "bv*+ba/b/ba";
 
-export const LOCAL_HLS_DEMUXER_LAVF_OPTIONS =
-  "protocol_whitelist=[file,tcp,tls,https,http,crypto,data]";
+export const LOCAL_HLS_DEMUXER_LAVF_OPTIONS = "protocol_whitelist=[file,tcp,tls,https,http,crypto]";
 
 /**
  * mpv's `--alang`/`--slang` take language codes, but Kunai's audio setting is a

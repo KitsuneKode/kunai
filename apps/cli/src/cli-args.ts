@@ -118,6 +118,8 @@ mpv
       --mpv-clean            Ignore your mpv config for this run
       --no-user-mpv-config   Same, explicit
       --mpv-log-file <path>  Write the mpv log to a file
+      --hwdec <mode>         Hardware video decode: default | auto-safe | no
+      --no-hwdec             Shortcut for --hwdec no
 
 PATHS & INTEGRATION
       --download-path <dir>  Override the download directory
@@ -227,6 +229,8 @@ export const KNOWN_FLAGS: ReadonlySet<string> = new Set([
   "--mpv-clean",
   "--no-user-mpv-config",
   "--mpv-log-file",
+  "--hwdec",
+  "--no-hwdec",
   "--player",
   "-h",
   "--help",
@@ -259,6 +263,7 @@ export const VALUE_FLAGS: ReadonlySet<string> = new Set([
   "--debrid",
   "--service",
   "--mpv-log-file",
+  "--hwdec",
   "--player",
   "--to",
 ]);
@@ -311,6 +316,7 @@ type CommanderCliOptions = {
    */
   readonly userMpvConfig?: boolean;
   readonly mpvLogFile?: string;
+  readonly hwdec?: string | boolean;
   readonly player?: string;
   readonly help?: boolean;
   readonly version?: boolean;
@@ -364,6 +370,8 @@ function createCliCommand(): Command {
     .option("--mpv-clean")
     .option("--no-user-mpv-config")
     .option("--mpv-log-file <path>")
+    .option("--hwdec <mode>")
+    .option("--no-hwdec")
     .option("--player <player>")
     .option("-h, --help")
     .option("-v, --version")
@@ -638,6 +646,20 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
     }
     args.service = service;
   }
+  const rawHwdec =
+    options.hwdec !== undefined && options.hwdec !== false && options.hwdec !== true
+      ? options.hwdec.toLowerCase()
+      : undefined;
+  if (
+    rawHwdec !== undefined &&
+    rawHwdec !== "default" &&
+    rawHwdec !== "auto-safe" &&
+    rawHwdec !== "no"
+  ) {
+    throw new CliUsageError(
+      `invalid --hwdec "${options.hwdec}" — must be "default", "auto-safe", or "no"`,
+    );
+  }
   args.mpv = {
     ...(options.mpvDebug ? { debug: true } : {}),
     ...(options.mpvClean ? { clean: true } : {}),
@@ -646,6 +668,11 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
     // key to read. Only an explicit `false` counts; unset must stay unset.
     ...(options.userMpvConfig === false ? { noUserConfig: true } : {}),
     ...(options.mpvLogFile ? { logFile: options.mpvLogFile } : {}),
+    ...(rawHwdec === "default" || rawHwdec === "auto-safe" || rawHwdec === "no"
+      ? { hwdec: rawHwdec }
+      : options.hwdec === false
+        ? { hwdec: "no" }
+        : {}),
   };
   args.player = parsePlayerChoice(options.player);
   args.help = Boolean(options.help);

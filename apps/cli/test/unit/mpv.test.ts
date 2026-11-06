@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 
 import { needsMpvNetworkPreflight } from "@/infra/player/mpv-playback-url";
+import { LOCAL_HLS_DEMUXER_LAVF_OPTIONS } from "@/infra/player/mpv-stream-http-headers";
 import {
   buildMpvArgs,
   collectAdditionalSubtitleTracks,
@@ -33,7 +34,7 @@ test("buildMpvArgs whitelists HTTPS for local materialized HLS playlists", () =>
   // replaces it. Emitting it alone silently dropped every reconnect hint.
   const lavf = args.filter((arg) => arg.startsWith("--demuxer-lavf-o="));
   expect(lavf).toHaveLength(1);
-  expect(lavf[0]).toContain("protocol_whitelist=[file,tcp,tls,https,http,crypto,data]");
+  expect(lavf[0]).toContain(LOCAL_HLS_DEMUXER_LAVF_OPTIONS);
   expect(lavf[0]).toContain("reconnect=1");
 });
 
@@ -122,6 +123,29 @@ test("buildMpvArgs debug mode does not pass unsupported term-msg-level", () => {
   );
   expect(args).toContain("--msg-level=all=v");
   expect(args.some((arg) => arg.startsWith("--term-msg-level"))).toBe(false);
+});
+
+test("buildMpvArgs emits --hwdec when configured and omits on default", () => {
+  const autoSafe = buildMpvArgs(
+    { url: "https://cdn.example/s.m3u8", headers: {}, subtitle: null, displayTitle: "T" },
+    null,
+    { mpv: { hwdec: "auto-safe" } },
+  );
+  expect(autoSafe).toContain("--hwdec=auto-safe");
+
+  const noHwdec = buildMpvArgs(
+    { url: "https://cdn.example/s.m3u8", headers: {}, subtitle: null, displayTitle: "T" },
+    null,
+    { mpv: { hwdec: "no" } },
+  );
+  expect(noHwdec).toContain("--hwdec=no");
+
+  const defaultHwdec = buildMpvArgs(
+    { url: "https://cdn.example/s.m3u8", headers: {}, subtitle: null, displayTitle: "T" },
+    null,
+    { mpv: { hwdec: "default" } },
+  );
+  expect(defaultHwdec.some((arg) => arg.startsWith("--hwdec="))).toBe(false);
 });
 
 test("buildMpvArgs passes --script-opts when scriptOpts is set", () => {

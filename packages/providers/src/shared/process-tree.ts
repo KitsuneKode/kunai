@@ -16,6 +16,21 @@ export type TreeKillableProcess = {
   kill(signal?: string | number): void;
 };
 
+function descendantsSweep(pid: number, signal: string | number): void {
+  try {
+    // Direct children only; `-P` resolves PPID at match time so a dead parent
+    // first would re-parent the grandchildren out from under the sweep.
+    Bun.spawnSync({
+      cmd: ["pkill", `-${signal}`, "-P", String(pid)],
+      stdout: "ignore",
+      stderr: "ignore",
+      stdin: "ignore",
+    });
+  } catch {
+    // pkill absent on minimal containers — the direct kill still lands.
+  }
+}
+
 export function terminateProcessTree(
   proc: TreeKillableProcess,
   signal: string | number = "SIGKILL",
@@ -59,6 +74,8 @@ export function terminateProcessTree(
       // Leader gone but no group? Fall through to the direct kill.
     }
   }
+
+  if (pid !== undefined && pid > 0) descendantsSweep(pid, signal);
   try {
     proc.kill(signal);
   } catch {

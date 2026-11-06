@@ -73,4 +73,22 @@ describe("hls-manifest helpers", () => {
       shouldMaterializeHlsManifest("https://light.goldweather.net/token/index.m3u8", relativeOnly),
     ).toBe(false);
   });
+
+  test("neutralizes non-http protocols and sanitizes key URIs", () => {
+    const malicious = [
+      "#EXTM3U",
+      '#EXT-X-KEY:METHOD=AES-128,URI="file:///etc/passwd"',
+      '#EXT-X-KEY:METHOD=AES-128,URI="https://cdn.example/key.bin"',
+      "file:///etc/shadow",
+      "data:text/plain;base64,AAAA",
+      "/safe/segment.ts",
+    ].join("\n");
+
+    const result = absolutizeHostRootHlsManifest(malicious, "https://cdn.example/stream.m3u8");
+    expect(result).not.toContain("file:///etc/passwd");
+    expect(result).toContain('URI="https://cdn.example/key.bin"');
+    expect(result).not.toContain("file:///etc/shadow");
+    expect(result).not.toContain("data:text/plain");
+    expect(result).toContain("https://cdn.example/safe/segment.ts");
+  });
 });
