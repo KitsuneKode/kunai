@@ -19,7 +19,7 @@ describe("probeMpvHardwareAcceleration", () => {
     const spawned: { cmd: readonly string[] }[] = [];
     const result = probeMpvHardwareAcceleration({
       which: (c) => (c === "mpv" ? "/usr/bin/mpv" : null),
-      spawnSync: ((opts: { cmd: readonly string[] }) => {
+      spawnSync: (opts) => {
         spawned.push({ cmd: opts.cmd });
         const joined = opts.cmd.join(" ");
         if (joined.includes("--hwdec=help")) {
@@ -37,7 +37,7 @@ describe("probeMpvHardwareAcceleration", () => {
           };
         }
         throw new Error(`unexpected spawn: ${joined}`);
-      }) as typeof Bun.spawnSync,
+      },
       detectImageCapability: () => ghosttyKitty,
     });
 

@@ -71,12 +71,27 @@ function parseAutoSafeDriver(stderr: string): string {
   return token;
 }
 
+export type MpvSyncSpawnResult = {
+  readonly exitCode: number | null;
+  readonly stdout?: Uint8Array | undefined;
+  readonly stderr?: Uint8Array | undefined;
+};
+
+export type MpvSyncSpawnFn = (options: {
+  cmd: string[];
+  stdout?: "pipe" | "ignore";
+  stderr?: "pipe" | "ignore";
+  timeout?: number;
+}) => MpvSyncSpawnResult;
+
+const defaultSpawnSync: MpvSyncSpawnFn = (options) => Bun.spawnSync(options);
+
 export type MpvHwaccelProbeDeps = {
   readonly which?: (command: string) => string | null;
   readonly exists?: (path: string) => boolean;
   readonly platform?: NodeJS.Platform;
   readonly detectImageCapability?: () => ImageCapability;
-  readonly spawnSync?: typeof Bun.spawnSync;
+  readonly spawnSync?: MpvSyncSpawnFn;
 };
 
 function decodeSyncOutput(chunk: Uint8Array | undefined): string {
@@ -87,7 +102,7 @@ function decodeSyncOutput(chunk: Uint8Array | undefined): string {
 export function probeMpvHardwareAcceleration(
   deps: MpvHwaccelProbeDeps = {},
 ): MpvHardwareAccelProbe {
-  const spawnSync = deps.spawnSync ?? Bun.spawnSync;
+  const spawnSync = deps.spawnSync ?? defaultSpawnSync;
   const detect = deps.detectImageCapability ?? detectImageCapability;
   const image = detect();
 
