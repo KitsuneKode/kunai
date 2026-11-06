@@ -26,6 +26,14 @@ const READY = capabilitySnapshotFixture({
     available: true,
     reason: "capture fixture",
   },
+  mpvHardwareAccel: {
+    probed: true,
+    hwdecHelp: "",
+    drivers: [],
+    autoSafeOk: false,
+    autoSafeDriver: "",
+    terminalGraphics: "kitty-native · ghostty",
+  },
 });
 
 export const SETUP_SCREENS = ["deps", "mode", "language", "library", "analytics", "done"] as const;

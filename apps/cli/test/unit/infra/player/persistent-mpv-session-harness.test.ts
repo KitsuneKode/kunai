@@ -1316,14 +1316,26 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
       onControlReady: () => {},
       runtime: harness.runtime,
     });
-    harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 42, observedAt: 1 });
-    harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.5, observedAt: 2 });
-    harness.callbacks().onPropertyUpdate({ name: "avsync", value: -0.41, observedAt: 3 });
+    harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 42, observedAt: 1000 });
+    harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.5, observedAt: 1000 });
+    harness.callbacks().onPropertyUpdate({ name: "avsync", value: -0.41, observedAt: 1100 });
+    // Third sample inside 300ms window (< 300ms elapsed) must not trigger seek
+    harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.35, observedAt: 1200 });
     await flushAsyncWork();
     expect(harness.commands.some((command) => command[0] === "seek")).toBe(false);
-    harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.35, observedAt: 4 });
+
+    // After >= 300ms observed elapsed time (1350 - 1000 = 350ms), seek is issued
+    harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.35, observedAt: 1350 });
     await flushAsyncWork();
     expect(harness.commands).toContainEqual(["seek", 42, "absolute"]);
+
+    // While seeking, avsync drift is ignored even if drift is high
+    harness.callbacks().onPropertyUpdate({ name: "seeking", value: true, observedAt: 20000 });
+    harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.5, observedAt: 20000 });
+    harness.callbacks().onPropertyUpdate({ name: "avsync", value: 0.5, observedAt: 20500 });
+    await flushAsyncWork();
+    expect(harness.commands.filter((c) => c[0] === "seek")).toHaveLength(1);
+
     harness.endProcess();
     await session.close();
   });
@@ -1388,6 +1400,73 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
         label: "source re-resolve stop",
       });
       expect(actions).toEqual([]);
+      harness.callbacks().onEndFile({ reason: "stop", observedAt: 6 });
+      expect(await playback).toMatchObject({ suspectedDeadStream: true });
+    } finally {
+      harness.endProcess();
+      await session.close();
+    }
+  });
+
+  test("a second network-read-dead stall after the in-process budget is spent escalates to source re-resolve", async () => {
+    const loadRequested = Promise.withResolvers<void>();
+    const completed = Promise.withResolvers<void>();
+    const harness = createHarness({
+      beforeSend(command) {
+        if (command[0] === "loadfile") loadRequested.resolve();
+      },
+    });
+    let emitWatchdog!: (event: PlayerPlaybackEvent) => void;
+    harness.runtime.createPlaybackWatchdog = (emit) => {
+      emitWatchdog = emit;
+      return { observe() {}, stop() {}, reset() {} };
+    };
+    const session = await PersistentMpvSession.create({
+      stream: createStream(),
+      options: {
+        displayTitle: "Episode 1",
+        primarySubtitle: null,
+        onPlaybackEvent(event) {
+          if (event.type === "mpv-in-process-reconnect" && event.phase === "complete") {
+            completed.resolve();
+          }
+        },
+      },
+      // SAFETY: this fixture only supplies the reconnect options it exercises.
+      kitsuneConfig: {
+        mpvInProcessStreamReconnect: true,
+        mpvInProcessStreamReconnectMaxAttempts: 1,
+        mpvKunaiScriptOpts: "",
+      } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    try {
+      harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+      harness.callbacks().onPropertyUpdate({ name: "duration", value: 600, observedAt: 2 });
+      harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 100, observedAt: 3 });
+
+      // First network-read-dead: reloads via same-URL reconnect within budget
+      emitWatchdog({
+        type: "stream-stalled",
+        stallKind: "network-read-dead",
+        secondsWithoutProgress: 8,
+      });
+      await loadRequested.promise;
+      harness.callbacks().onEndFile({ reason: "stop", observedAt: 4 });
+      harness.callbacks().onFileLoaded?.({ observedAt: 5 });
+      await completed.promise;
+
+      // Second network-read-dead: attempt budget (1) is exhausted, must escalate to source re-resolve
+      const playback = session.waitForCurrentPlayback();
+      emitWatchdog({
+        type: "stream-stalled",
+        stallKind: "network-read-dead",
+        secondsWithoutProgress: 8,
+      });
+      await waitUntil(() => harness.commands.some((command) => command[0] === "stop"), {
+        label: "exhausted reconnect escalation stop",
+      });
       harness.callbacks().onEndFile({ reason: "stop", observedAt: 6 });
       expect(await playback).toMatchObject({ suspectedDeadStream: true });
     } finally {

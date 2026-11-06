@@ -61,8 +61,8 @@ export function parseSumsFile(text: string): SumsMap {
 }
 
 /**
- * Nix `fetchzip` fixed-output `hash` uses SRI: `sha256-` + standard base64 of the
- * raw 32-byte digest (from the published hex in SHA256SUMS.archives).
+ * Nix `fetchurl` fixed-output `hash` uses SRI: `sha256-` + standard base64 of the
+ * raw 32-byte archive digest (from the published hex in SHA256SUMS.archives).
  */
 export function nixSriSha256FromHex(hexLower: string): string {
   if (!/^[0-9a-f]{64}$/.test(hexLower)) {
@@ -353,14 +353,14 @@ export function renderNixFlake(channel: ChannelVersion, sums: SumsMap): string {
   const perSystem = NIX_ARCHIVE_BINDINGS.map(({ nixSystem, targetId }) => {
     const t = target(targetId);
     const shaHex = sumFor(sums, t.archiveName);
-    const narHash = nixSriSha256FromHex(shaHex);
+    const sriHash = nixSriSha256FromHex(shaHex);
     return `        "${nixSystem}" = rec {
           archive = "${t.archiveName}";
           pname = "kunai";
           version = "${version}";
           src = pkgs.fetchurl {
             url = "\${base}/\${tag}/\${archive}";
-            hash = "${narHash}";
+            hash = "${sriHash}";
           };
           kunai = pkgs.stdenvNoCC.mkDerivation {
             inherit pname version src;

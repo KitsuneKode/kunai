@@ -79,23 +79,25 @@ export function buildDependencyRows(
     id: "mpv-hwaccel",
     name: "mpv hwdec",
     scope: "always",
-    state: !snapshot.mpv ? "degraded" : hw.autoSafeOk ? "ok" : "degraded",
+    state: !snapshot.mpv ? "degraded" : !hw.probed ? "ok" : hw.autoSafeOk ? "ok" : "degraded",
     role: "playback · GPU decode",
     detail: !snapshot.mpv
       ? "not available — mpv not found on PATH"
-      : [
-          hw.drivers.length
-            ? `help lists: ${hw.drivers.join(", ")}`
-            : "no vaapi/nvdec/videotoolbox/d3d11va in --hwdec=help",
-          hw.autoSafeOk
-            ? hw.autoSafeDriver
-              ? `auto-safe ok (${hw.autoSafeDriver})`
-              : "auto-safe ok"
-            : "auto-safe probe failed",
-          `terminal graphics: ${hw.terminalGraphics}`,
-        ].join(" · "),
+      : !hw.probed
+        ? `probe skipped (run kunai doctor to verify) · terminal graphics: ${hw.terminalGraphics}`
+        : [
+            hw.drivers.length
+              ? `help lists: ${hw.drivers.join(", ")}`
+              : "no vaapi/nvdec/videotoolbox/d3d11va in --hwdec=help",
+            hw.autoSafeOk
+              ? hw.autoSafeDriver
+                ? `auto-safe ok (${hw.autoSafeDriver})`
+                : "auto-safe ok"
+              : "auto-safe probe failed",
+            `terminal graphics: ${hw.terminalGraphics}`,
+          ].join(" · "),
     fix: null,
-    ...(snapshot.mpv && !hw.autoSafeOk
+    ...(snapshot.mpv && hw.probed && !hw.autoSafeOk
       ? {
           consequence:
             "`--hwdec=auto-safe` did not initialize cleanly; playback may use software decode.",

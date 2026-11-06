@@ -8,6 +8,8 @@ export const MPV_GPU_HW_DECODER_IDS = ["vaapi", "nvdec", "videotoolbox", "d3d11v
 export type MpvGpuHwDecoderId = (typeof MPV_GPU_HW_DECODER_IDS)[number];
 
 export type MpvHardwareAccelProbe = {
+  /** Whether the hardware acceleration probe actually ran against mpv. */
+  readonly probed: boolean;
   /** Raw stdout/stderr from `mpv --hwdec=help` (may be empty if mpv missing). */
   readonly hwdecHelp: string;
   /** Subset of GPU-oriented backends mentioned in the help output. */
@@ -40,6 +42,7 @@ export function terminalGraphicsLabel(image: ImageCapability): string {
 /** Probe fields when mpv is absent or we skip spawning (tests). */
 export function emptyMpvHardwareAccelProbe(image: ImageCapability): MpvHardwareAccelProbe {
   return {
+    probed: false,
     hwdecHelp: "",
     drivers: [],
     autoSafeOk: false,
@@ -147,6 +150,7 @@ export function probeMpvHardwareAcceleration(
   const autoSafeDriver = autoSafeOk ? parseAutoSafeDriver(errText) : "";
 
   return {
+    probed: true,
     hwdecHelp: helpOut.trim(),
     drivers,
     autoSafeOk,

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-06"
+lastReviewed: "2026-11-06T13:42:00Z"
 ---
 
 # mpv in-process stream reconnect (persistent session)
@@ -82,8 +82,10 @@ instead of reloading the same URL again.
 
 ## A/V sync
 
-The session observes `avsync`. When the absolute drift stays above 300ms for
-three samples, it seeks to the current position to resync. A sample inside the
+The session observes `avsync`. When absolute drift stays above 300ms across at
+least three samples and at least 300ms of observed time (bypassed while paused,
+seeking, reconnecting, live streams, or when a resync seek is already in flight),
+it seeks to the current position to resync with a 5-second cooldown. A sample inside the
 limit clears the run.
 
 ## Configuration (`~/.config/kunai/config.json`)

@@ -297,6 +297,7 @@ export class PersistentMpvSession {
   private ipcReconnectInFlight = false;
   private ipcReconnectPendingReason: string | null = null;
   private isPaused = false;
+  private isSeeking = false;
   private avsyncOverLimitSamples = 0;
   private avsyncDriftFirstObservedAt = 0;
   private lastAvsyncResyncAt = 0;
@@ -939,6 +940,10 @@ export class PersistentMpvSession {
     this.inProcessReloadCompleted = false;
     this.sourceReresolveEscalated = false;
     this.avsyncOverLimitSamples = 0;
+    this.avsyncDriftFirstObservedAt = 0;
+    this.lastAvsyncResyncAt = 0;
+    this.isPaused = false;
+    this.isSeeking = false;
     this.pendingInProcessReconnect = null;
     this.currentPositionSeconds = 0;
     this.skippedSegments = new Set<string>();
@@ -1689,6 +1694,9 @@ export class PersistentMpvSession {
         if (name === "pause") {
           this.isPaused = value === true;
         }
+        if (name === "seeking") {
+          this.isSeeking = value === true;
+        }
         if (name === "avsync") {
           if (isJsonNumber(value) && Number.isFinite(value)) {
             this.noteAvsyncDrift(value, observedAt);
@@ -1748,7 +1756,7 @@ export class PersistentMpvSession {
     void session.send(["observe_property", 203, "pause"], 1_000);
   }
 
-  private noteAvsyncDrift(driftSeconds: number, observedAt: number = Date.now() / 1000): void {
+  private noteAvsyncDrift(driftSeconds: number, observedAt: number = Date.now()): void {
     if (Math.abs(driftSeconds) <= AVSYNC_DRIFT_LIMIT_SECONDS) {
       this.avsyncOverLimitSamples = 0;
       this.avsyncDriftFirstObservedAt = 0;
@@ -1757,6 +1765,7 @@ export class PersistentMpvSession {
     // Ignore drift while paused, seeking, reconnecting, live streams, or when resync is in flight
     if (
       this.isPaused ||
+      this.isSeeking ||
       this.reconnectInFlight ||
       this.playbackStream?.isLive ||
       this.avsyncResyncInFlight ||
@@ -1776,18 +1785,18 @@ export class PersistentMpvSession {
       this.avsyncDriftFirstObservedAt = observedAt;
     }
     this.avsyncOverLimitSamples += 1;
-    // Require drift sustained across at least 3 samples AND at least 300ms (0.3s)
+    // Require drift sustained across at least 3 samples AND at least 300ms
     if (
       this.avsyncOverLimitSamples < AVSYNC_DRIFT_SAMPLES_REQUIRED ||
-      observedAt - this.avsyncDriftFirstObservedAt < 0.3
+      observedAt - this.avsyncDriftFirstObservedAt < 300
     ) {
       return;
     }
+    const position = this.currentPositionSeconds;
+    if (position <= 0) return;
     this.avsyncOverLimitSamples = 0;
     this.avsyncDriftFirstObservedAt = 0;
     this.lastAvsyncResyncAt = now;
-    const position = this.currentPositionSeconds;
-    if (position <= 0) return;
     this.avsyncResyncInFlight = true;
     const session = this.ipcSession;
     void session.send(["seek", position, "absolute"], 1_000).finally(() => {
@@ -1907,6 +1916,9 @@ export class PersistentMpvSession {
       !this.mpvInProcessStreamReconnectEnabled ||
       this.mpvInProcessStreamReconnectMaxAttempts <= 0
     ) {
+      if (!this.sourceReresolveEscalated) {
+        void this.escalateProgressStallToSourceReresolve();
+      }
       return;
     }
     const active = this.activeCycle;
@@ -1925,6 +1937,12 @@ export class PersistentMpvSession {
         reason: "backoff-or-limit-or-in-flight",
         attempt: this.reconnectTryCount,
       });
+      if (
+        this.reconnectTryCount >= this.mpvInProcessStreamReconnectMaxAttempts &&
+        !this.sourceReresolveEscalated
+      ) {
+        void this.escalateProgressStallToSourceReresolve();
+      }
     }
   }
 
