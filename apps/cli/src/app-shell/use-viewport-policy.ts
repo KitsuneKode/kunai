@@ -146,6 +146,19 @@ export function useDebouncedViewportPolicy(
   kind: ShellViewportKind,
   options: { forceCompact?: boolean; zen?: boolean } = {},
 ): ShellViewportPolicy {
+  const settled = useSettledShellDimensions();
+  return getShellViewportPolicy(kind, settled.cols, settled.rows, {
+    ...options,
+    terminalProfile: getShellTerminalProfile(),
+  });
+}
+
+/**
+ * Raw terminal dimensions from Ink, settled the same way as
+ * `useDebouncedViewportPolicy`: shrink applies immediately; grow-only resizes
+ * wait for {@link __testing.RESIZE_DEBOUNCE_MS}.
+ */
+export function useSettledShellDimensions(): ViewportDimensions {
   const { cols, rows } = useShellDimensions();
   const [settled, setSettled] = useState({ cols, rows });
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -173,10 +186,7 @@ export function useDebouncedViewportPolicy(
     };
   }, [cols, rows, settled]);
 
-  return getShellViewportPolicy(kind, settled.cols, settled.rows, {
-    ...options,
-    terminalProfile: getShellTerminalProfile(),
-  });
+  return settled;
 }
 
 export const __testing = {

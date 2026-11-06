@@ -2,10 +2,10 @@ import { describe, expect, test } from "bun:test";
 
 import { SetupShell } from "@/app-shell/setup-shell";
 import { AnalyticsScreen } from "@/app-shell/setup/AnalyticsScreen";
-import type { CapabilitySnapshot } from "@/ui";
 import React from "react";
 
 import packageJson from "../../../package.json" with { type: "json" };
+import { capabilitySnapshotFixture } from "../../harness/capability-snapshot-fixture";
 import { captureFrame, render } from "../../harness/render-capture";
 
 /**
@@ -19,12 +19,7 @@ function frame(selectedIndex = 0): string {
   });
 }
 
-const READY: CapabilitySnapshot = {
-  mpv: true,
-  mpvRequired: true,
-  ffprobe: true,
-  ytDlp: true,
-  curl: { present: true, impersonates: true, profile: "chrome150" },
+const READY = capabilitySnapshotFixture({
   image: {
     terminal: "ghostty",
     protocol: "kitty",
@@ -32,8 +27,7 @@ const READY: CapabilitySnapshot = {
     available: true,
     reason: "test fixture",
   },
-  issues: [],
-};
+});
 
 /** The whole shell, driven to the consent screen, so the frame is included. */
 function consentFrameInShell(): string {

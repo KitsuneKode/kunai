@@ -23,6 +23,8 @@ import { beginInstallTransaction } from "@/services/update/native-installer/tran
 import { writeInstalledVersionMetadata } from "@/services/update/native-installer/version-metadata";
 import type { CapabilitySnapshot } from "@/ui";
 
+import { capabilitySnapshotFixture } from "../../../../harness/capability-snapshot-fixture";
+
 const FIXED_DATE = "2026-07-21T10:00:00.000Z";
 const made: string[] = [];
 
@@ -33,12 +35,7 @@ afterEach(async () => {
 });
 
 function emptyCapabilities(overrides: Partial<CapabilitySnapshot> = {}): CapabilitySnapshot {
-  return {
-    mpv: true,
-    mpvRequired: true,
-    ffprobe: true,
-    ytDlp: true,
-    curl: { present: true, impersonates: true, profile: "chrome150" },
+  return capabilitySnapshotFixture({
     image: {
       terminal: "unknown",
       protocol: "none",
@@ -46,9 +43,8 @@ function emptyCapabilities(overrides: Partial<CapabilitySnapshot> = {}): Capabil
       available: false,
       reason: "test",
     },
-    issues: [],
     ...overrides,
-  };
+  });
 }
 
 async function makeRoot() {

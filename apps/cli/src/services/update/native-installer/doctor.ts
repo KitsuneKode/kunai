@@ -706,6 +706,25 @@ export function formatDoctorReportText(report: DoctorReport): string {
     // so `curl=ok` on its own was a misleading line in a health report.
     `  mpv=${report.dependencies.mpv ? "ok" : "missing"} yt-dlp=${report.dependencies.ytDlp ? "ok" : "missing"} ffprobe=${report.dependencies.ffprobe ? "ok" : "missing"} curl=${describeCurl(report.dependencies.curl)}`,
   );
+  {
+    const hw = report.dependencies.mpvHardwareAccel;
+    const terminalGfx = hw.terminalGraphics;
+    if (report.dependencies.mpv) {
+      const listed = hw.drivers.length ? hw.drivers.join(", ") : "none detected in help";
+      const autoSafe =
+        hw.autoSafeOk && hw.autoSafeDriver
+          ? `ok (${hw.autoSafeDriver})`
+          : hw.autoSafeOk
+            ? "ok"
+            : "failed or unavailable";
+      lines.push(`  terminal-graphics=${terminalGfx}`);
+      lines.push(`  mpv-hwdec-help: ${listed}`);
+      lines.push(`  mpv-hwdec-auto-safe=${autoSafe}`);
+    } else {
+      lines.push(`  terminal-graphics=${terminalGfx}`);
+      lines.push("  mpv-hwdec=(skipped — mpv not on PATH)");
+    }
+  }
   lines.push("");
   lines.push("Storage");
   for (const store of report.storage) {

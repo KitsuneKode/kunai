@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { buildDependencyRows, selectStartupIssueRows } from "@/app-shell/setup/dependency-rows";
+import { detectImageCapability } from "@/image";
 import {
   buildRemediationLines,
   CURL_IMPERSONATE_INSTALL,
@@ -10,9 +11,23 @@ import {
   resolveInstallCommand,
   YT_DLP_INSTALL,
 } from "@/infra/os/install-commands";
+import {
+  emptyMpvHardwareAccelProbe,
+  type MpvHwaccelProbeDeps,
+} from "@/infra/player/mpv-hwaccel-probe";
 import { probeCapabilities } from "@/ui";
 
-const NOTHING = { which: () => null, listPathEntries: () => [], exists: () => false };
+const STUB_MPV_HWACCEL = {
+  probeMpvHardwareAcceleration: (deps: MpvHwaccelProbeDeps) =>
+    emptyMpvHardwareAccelProbe(deps.detectImageCapability?.() ?? detectImageCapability()),
+};
+
+const NOTHING = {
+  which: () => null,
+  listPathEntries: () => [],
+  exists: () => false,
+  ...STUB_MPV_HWACCEL,
+};
 
 async function bareSnapshot() {
   return probeCapabilities(NOTHING);
@@ -163,6 +178,7 @@ describe("buildDependencyRows", () => {
       which: () => null,
       listPathEntries: () => [],
       requireMpv: false,
+      ...STUB_MPV_HWACCEL,
     });
     const row = buildDependencyRows(snapshot).find((candidate) => candidate.id === "mpv");
 
@@ -191,6 +207,7 @@ describe("buildDependencyRows", () => {
       which: (command) => (command === "curl" ? "/usr/bin/curl" : null),
       listPathEntries: () => ["curl"],
       canExecuteCurlInvocation: () => true,
+      ...STUB_MPV_HWACCEL,
     });
     const row = buildDependencyRows(plain).find((r) => r.id === "curl-impersonate");
     expect(row?.state).toBe("degraded");
@@ -200,6 +217,7 @@ describe("buildDependencyRows", () => {
       which: (command) => `/usr/bin/${command}`,
       listPathEntries: () => ["curl", "curl_chrome150"],
       canExecuteCurlInvocation: () => true,
+      ...STUB_MPV_HWACCEL,
     });
     const ok = buildDependencyRows(impersonating).find((r) => r.id === "curl-impersonate");
     expect(ok?.state).toBe("ok");
@@ -213,6 +231,7 @@ describe("buildDependencyRows", () => {
       which: (command) => `/usr/bin/${command}`,
       listPathEntries: () => ["curl", "curl_chrome150"],
       canExecuteCurlInvocation: () => false,
+      ...STUB_MPV_HWACCEL,
     });
     const row = buildDependencyRows(broken).find((r) => r.id === "curl-impersonate");
     expect(row?.state).toBe("degraded");
@@ -271,6 +290,7 @@ describe("selectStartupIssueRows", () => {
       which: (command) => `/usr/bin/${command}`,
       listPathEntries: () => ["curl", "curl_chrome150"],
       canExecuteCurlInvocation: () => true,
+      ...STUB_MPV_HWACCEL,
     });
     const selected = selectStartupIssueRows(buildDependencyRows(healthy), {
       mode: "anime",
