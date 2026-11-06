@@ -276,6 +276,8 @@ export function toCatalogSuggestions(
     title: chooseSearchResultTitle(result, titlePreference),
     source: "catalog",
     posterUrl: result.posterPath ?? undefined,
+    rating: result.rating ?? undefined,
+    overview: result.overview ? result.overview : undefined,
     meta: result.commitQuery
       ? "YouTube query"
       : [

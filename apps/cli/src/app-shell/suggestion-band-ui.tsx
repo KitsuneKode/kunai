@@ -251,33 +251,42 @@ export function SearchSuggestionBand<TValue>({
             overflow="hidden"
           >
             <Box
-              minHeight={4}
-              minWidth={6}
-              alignItems="center"
-              justifyContent="center"
+              minHeight={5}
+              minWidth={8}
+              alignItems="flex-start"
+              justifyContent="flex-start"
               marginRight={1}
             >
               <MiniPosterTile
                 url={posterUrl}
                 title={selected.title}
-                rows={4}
-                cols={6}
+                rows={5}
+                cols={8}
                 enabled={Boolean(posterUrl)}
               />
             </Box>
             <Box flexDirection="column" flexGrow={1} overflow="hidden">
               <Text color={palette.text} bold wrap="truncate">
-                {truncateLine(selected.title, Math.max(1, previewWidth - 9))}
+                {truncateLine(selected.title, Math.max(1, previewWidth - 11))}
               </Text>
               <Text color={palette.accent} wrap="truncate">
                 {truncateLine(
                   selected.meta ?? (selected.value !== undefined ? "Catalog" : "Search"),
-                  Math.max(1, previewWidth - 9),
+                  Math.max(1, previewWidth - 11),
                 )}
               </Text>
-              {selected.badge ? (
+              {selected.rating !== undefined ? (
+                <Text color={palette.ok} wrap="truncate">
+                  {selected.rating.toFixed(1)} ★
+                </Text>
+              ) : selected.badge ? (
                 <Text color={palette.dim} wrap="truncate">
-                  {truncateLine(selected.badge, Math.max(1, previewWidth - 9))}
+                  {truncateLine(selected.badge, Math.max(1, previewWidth - 11))}
+                </Text>
+              ) : null}
+              {selected.overview ? (
+                <Text color={palette.textDim} wrap="truncate">
+                  {truncateLine(selected.overview, Math.max(1, previewWidth - 11))}
                 </Text>
               ) : null}
             </Box>

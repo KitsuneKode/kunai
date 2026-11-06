@@ -41,6 +41,8 @@ export interface SearchSuggestion<TValue = unknown> {
   readonly recencyMs?: number;
   readonly commitQuery?: string;
   readonly posterUrl?: string;
+  readonly rating?: number;
+  readonly overview?: string;
   readonly value?: TValue;
 }
 
