@@ -29,6 +29,7 @@ export const DOWNLOAD_QUALITIES = ["1080p", "best", "720p", "480p"] as const;
 
 const DEPENDENCY_FEATURES = new Map([
   ["mpv", "Video playback"],
+  ["mpv-hwaccel", "Hardware decoding"],
   ["yt-dlp", "YouTube & downloads"],
   ["ffmpeg", "Media tools"],
   ["curl-impersonate", "Anime search"],

@@ -107,6 +107,7 @@
     "apps/mobile": {
       "name": "@kunai/mobile",
       "devDependencies": {
+        "@kitsunekode/kunai": "workspace:*",
         "@types/bun": "catalog:",
         "@types/node": "catalog:",
         "typescript": "catalog:",

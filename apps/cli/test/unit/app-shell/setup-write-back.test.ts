@@ -24,6 +24,7 @@ import { getKunaiPaths } from "@/services/storage/storage-read-models";
 import { DEFAULT_CONFIG } from "@kunai/config";
 import { act } from "react";
 
+import { capabilitySnapshotFixture } from "../../harness/capability-snapshot-fixture";
 import { render } from "../../harness/render-capture";
 import { applyStorageRootEnv } from "../../helpers/storage-env";
 
@@ -107,11 +108,7 @@ function fakeContainer(
       },
       save: async () => undefined,
     },
-    capabilitySnapshot: {
-      mpv: true,
-      ffprobe: true,
-      ytDlp: true,
-      curl: { present: true, impersonates: true, profile: "chrome150" },
+    capabilitySnapshot: capabilitySnapshotFixture({
       image: {
         terminal: "unknown",
         protocol: "none",
@@ -119,8 +116,7 @@ function fakeContainer(
         available: false,
         reason: "test fixture",
       },
-      issues: [],
-    },
+    }),
     usageAnalytics: {
       consentPatch: (choice: "enabled" | "disabled") =>
         choice === "enabled"

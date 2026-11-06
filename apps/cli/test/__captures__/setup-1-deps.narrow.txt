@@ -8,6 +8,7 @@
    Review defaults now, or customize each step.
 
    ▌ ✓ Video playback        mpv · found on PATH
+     △ Hardware decoding     mpv hwdec · no vaapi/nvdec/videotoolbox…
      ✓ YouTube & downloads   yt-dlp · found on PATH
      ✓ Media tools           ffmpeg · found on PATH
      ✓ Anime search          curl-impersonate · matching chrome150

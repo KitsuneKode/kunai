@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { recordPosterFetch } from "./diagnostics/render-trace";
 import {
   getKittyPlacement,
+  listKittyPlacementSlots,
   releaseKittyImageId,
   releaseKittySlot,
   setKittyPlacementEvictFn,
@@ -69,12 +70,35 @@ export function releasePosterPlacement(slot: KittyPlacementSlot): void {
 }
 
 /**
+ * Kitty-only: undisplay every active placement (`d=I` per slot) without `d=A`.
+ * Keeps source bytes + chafa cache; drops Kitty cache entries for touched ids.
+ */
+export function undisplayKittyPlacementsBySlotKeepCache(): void {
+  if (runtime.detectImageCapability().renderer !== "kitty-native") return;
+  for (const slot of listKittyPlacementSlots()) {
+    releaseKittySlot(slot);
+  }
+}
+
+/**
  * Clear terminal Kitty placements but keep source bytes and chafa text cache.
  * Kitty cache entries are dropped so the next fetch re-uploads (d=A invalidated them).
  */
 export function undisplayPlacementsKeepCache(): void {
   deleteAllTerminalImages();
   dropAllKittyCacheEntries();
+}
+
+/**
+ * Resize cleanup: prefer per-slot Kitty deletes when the terminal still reports
+ * Kitty graphics; otherwise fall back to a global wipe (Sixel / half-block).
+ */
+export function undisplayPlacementsForViewportResize(): void {
+  if (runtime.detectImageCapability().renderer === "kitty-native") {
+    undisplayKittyPlacementsBySlotKeepCache();
+    return;
+  }
+  undisplayPlacementsKeepCache();
 }
 
 export function clearRenderedPosterImages(): void {

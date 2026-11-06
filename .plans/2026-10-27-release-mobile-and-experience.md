@@ -38,10 +38,11 @@ hosted, device or release signoff.
       and compound genre removal. The Kitty witness excludes intro skips and
       missing IPC intervals. Offline title-group actions now share the existing
       router, preserving diagnostics and repairing metadata before shelf refresh.
-      The source now enforces a 3210 KiB cap. The November companion batch keeps
-      that cap and compresses its embedded page at build time; rerun the complete
-      build for exact candidate bytes. Earlier 3120 KiB measurements describe an
-      older tree and are not current qualification evidence.
+      The companion batch held the earlier 3210 KiB cap and compresses its
+      embedded page at build time. Updated base `8aef24d41` raises the inherited
+      cap to 3245 KiB; review that increase independently and rerun the complete
+      build for exact candidate bytes. Earlier 3120/3210 KiB measurements
+      describe older trees and are not current qualification evidence.
 
 - [ ] Integrate and qualify the [desktop, Android and companion batch](2026-11-04-desktop-android-companion.md).
       It implements session-only native audio intent across same-title restart

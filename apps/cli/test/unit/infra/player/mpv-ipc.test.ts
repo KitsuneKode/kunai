@@ -187,6 +187,7 @@ describe("mpv-ipc", () => {
       "user-data/kunai-audio-intent",
       "sid",
       "sub-visibility",
+      "avsync",
     ]);
   });
 

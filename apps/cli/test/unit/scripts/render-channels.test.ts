@@ -2,8 +2,10 @@ import { describe, expect, test } from "bun:test";
 
 import {
   buildChannelFileMap,
+  nixSriSha256FromHex,
   parseSumsFile,
   renderHomebrewFormula,
+  renderNixFlake,
   renderPkgbuild,
   renderScoopManifest,
   renderSrcinfo,
@@ -29,6 +31,28 @@ const channel = { version: "0.3.0", tag: "v0.3.0" };
 const DL = "https://github.com/KitsuneKode/kunai/releases/download/v0.3.0";
 
 const sums = parseSumsFile(SUMS_V030);
+
+describe("nixSriSha256FromHex", () => {
+  test("maps a lowercase hex digest to SRI sha256-base64 form", () => {
+    expect(
+      nixSriSha256FromHex("b1bc0eb2c8e04138c5713031986b79dcc28f9680e4dc025b59fecc748adc13bf"),
+    ).toBe("sha256-sbwOssjgQTjFcTAxmGt53MKPloDk3AJbWf7MdIrcE78=");
+  });
+});
+
+describe("renderNixFlake", () => {
+  const flake = renderNixFlake(channel, sums);
+
+  test("declares fetchzip sources with SRI hashes for each Unix archive", () => {
+    expect(flake).toContain('description = "');
+    expect(flake).toContain("fetchzip");
+    expect(flake).toContain('url = "${base}/${tag}/${archive}"');
+    expect(flake).toContain('archive = "kunai-linux-x64.tar.gz"');
+    expect(flake).toContain(
+      `hash = "${nixSriSha256FromHex(sums.get("kunai-linux-x64.tar.gz") ?? "")}"`,
+    );
+  });
+});
 
 describe("parseSumsFile", () => {
   test("maps every archive name to its sha256", () => {
@@ -244,11 +268,12 @@ function assertValidYaml(yaml: string): void {
 describe("buildChannelFileMap", () => {
   const map = buildChannelFileMap(channel, sums, LICENSE_SHA);
 
-  test("generates entries for Homebrew, Scoop, AUR, and all 3 WinGet manifests", () => {
+  test("generates entries for Homebrew, Scoop, AUR, Nix flake, and all 3 WinGet manifests", () => {
     expect(map["Formula/kunai.rb"]).toBeDefined();
     expect(map["bucket/kunai.json"]).toBeDefined();
     expect(map["aur/kunai-bin/PKGBUILD"]).toBeDefined();
     expect(map["aur/kunai-bin/.SRCINFO"]).toBeDefined();
+    expect(map["nix/flake.nix"]).toBeDefined();
 
     const wingetPrefix = `winget/manifests/k/KitsuneKode/Kunai/${channel.version}`;
     expect(map[`${wingetPrefix}/KitsuneKode.Kunai.yaml`]).toBeDefined();

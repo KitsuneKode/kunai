@@ -72,6 +72,20 @@ const CONTENTION_ACQUIRE_TIMEOUT_MS =
 /** Bun per-test ceiling for the eight-process test; only a real hang reaches it. */
 const CONTENTION_TEST_TIMEOUT_MS = process.platform === "win32" ? 60_000 : 30_000;
 
+function liveActivationLock(pid: number, ownerId: string): string {
+  return `${JSON.stringify({
+    schemaVersion: 1,
+    scope: "activation",
+    pid,
+    version: "1.0.0",
+    execPath: process.execPath,
+    ownerId,
+    acquiredAt: new Date().toISOString(),
+    hostname: hostname().toLowerCase(),
+    processStartId: null,
+  })}\n`;
+}
+
 function impossibleProcessStartId(): string {
   if (process.platform === "win32") return "windows-ticks:0";
   if (process.platform === "darwin") return "darwin-ps:impossible";
@@ -946,6 +960,47 @@ describe("activation lock quarantine restore", () => {
 
     expect(await readFile(lockPath, "utf8")).toContain('"winner":true');
     expect(existsSync(quarantinePath)).toBe(true);
+  });
+
+  test("drops a non-stale quarantine when a live canonical owner already exists", async () => {
+    const root = await makeRoot();
+    const lockPath = join(root, "lock");
+    const quarantinePath = join(root, "lock.quarantine.residue");
+    const canonical = liveActivationLock(process.pid, "canonical-owner");
+    await writeFile(lockPath, canonical, "utf8");
+    await writeFile(quarantinePath, liveActivationLock(process.pid, "leftover"), "utf8");
+
+    await __testing.restoreQuarantinedLock(quarantinePath, lockPath);
+
+    expect(await readFile(lockPath, "utf8")).toBe(canonical);
+    expect(existsSync(quarantinePath)).toBe(false);
+  });
+
+  test("a leftover quarantine beside a live canonical owner does not block acquire", async () => {
+    const layout = await makeLayout();
+    const path = activationLockPath(layout);
+    const holder = await tryAcquireActivationLock(layout, "1.0.0");
+    expect(holder.acquired).toBe(true);
+    if (!holder.acquired) return;
+
+    const quarantinePath = `${path}.quarantine.residue.${randomUUID()}`;
+    await writeFile(quarantinePath, liveActivationLock(process.pid, "leftover-residue"), "utf8");
+
+    const blocked = await tryAcquireActivationLock(layout, "2.0.0", {
+      timeoutMs: RETAIN_TEST_TIMEOUT_MS,
+      pollMs: 5,
+    });
+    expect(blocked).toEqual({ acquired: false, holderPid: process.pid });
+    expect(existsSync(quarantinePath)).toBe(false);
+
+    await holder.release();
+    const next = await tryAcquireActivationLock(layout, "2.0.0", {
+      timeoutMs: RECLAIM_TEST_TIMEOUT_MS,
+      pollMs: 5,
+    });
+    expect(next.acquired).toBe(true);
+    expect(existsSync(quarantinePath)).toBe(false);
+    if (next.acquired) await next.release();
   });
 
   test("treats an active in-flight quarantine as contention rather than admitting a second owner", async () => {

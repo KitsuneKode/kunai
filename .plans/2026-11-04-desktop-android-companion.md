@@ -254,3 +254,11 @@ source. Neither the earlier #677 checks nor historical playback captures qualify
 this new combination. The base also brings its bundle-budget change from
 3210 to 3230 KiB; integration alone does not approve that change as a performance
 improvement. Integrated runtime, live playback and phone signoff remain open.
+
+The next base update, `8aef24d41`, adds hardware-decoding diagnostics, resize
+cleanup, packaging/completion changes and player/lock recovery. Its three setup
+capture conflicts are resolved by regenerating from the combined renderer,
+retaining the feature-first welcome and adding the hardware-decoding row.
+Its inherited bundle cap is 3245 KiB. Earlier startup timings, capture sets,
+build receipts and hosted checks remain tied to their recorded source; they
+do not qualify these new startup probes or recovery paths.

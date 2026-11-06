@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-29"
+lastReviewed: "2026-11-06"
 ---
 
 # mpv in-process stream reconnect (persistent session)
@@ -60,8 +60,31 @@ If reconnect **fails** or limits are hit, the cycle ends and the usual `Playback
   against a URL that is not coming back. (`PersistentMpvSession.create` bounds a
   raw injected config at a higher structural ceiling — that path is for the test
   harness and the compiled smoke, not for user configuration.)
-- **Backoff** after a failed `loadfile`: exponential from a base delay, capped (see `PersistentMpvSession` constants). Prevents hammering a dead CDN.
+- **Backoff** after a failed `loadfile`: jittered exponential
+  `base * 2 ** (attempt - 2) * (0.5 + random())`, capped (see `PersistentMpvSession`).
+  The first attempt does not wait. Prevents hammering a dead CDN.
 - **`reconnectInFlight`**: serializes overlapping reconnect work.
+
+## IPC transport reopen
+
+If the IPC socket closes or errors while mpv is still running (`exitCode === null`),
+the session opens a new connection to the same endpoint and restores the Lua
+user-data subscriptions. It does not treat that drop as a dead player. The wait
+before each attempt is the same jittered backoff, including the first attempt,
+and gives up after six failures. An intentional `close()` does not reopen.
+
+## Progress stall after a reload
+
+A same-URL `loadfile` that already ran, followed by another progress stall
+(not `network-read-dead`), stops the file and asks the shell to refresh the
+source. The cycle result is `suspectedDeadStream`, so playback re-resolves
+instead of reloading the same URL again.
+
+## A/V sync
+
+The session observes `avsync`. When the absolute drift stays above 300ms for
+three samples, it seeks to the current position to resync. A sample inside the
+limit clears the run.
 
 ## Configuration (`~/.config/kunai/config.json`)
 

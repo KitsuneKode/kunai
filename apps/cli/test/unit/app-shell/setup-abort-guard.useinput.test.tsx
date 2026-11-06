@@ -6,21 +6,16 @@ import {
   type SetupInitialState,
   type SetupPrefs,
 } from "@/app-shell/setup-shell";
-import type { CapabilitySnapshot } from "@/ui";
 import React from "react";
 
+import { capabilitySnapshotFixture } from "../../harness/capability-snapshot-fixture";
 import { render, stripAnsi } from "../../harness/render-capture";
 
 // The capture harness cannot deliver a lone escape byte in a form Ink's
 // useInput resolves (see #227's own verification notes), so these drive `q`,
 // which now routes through the identical requestAbort path as esc.
 
-const READY: CapabilitySnapshot = {
-  mpv: true,
-  mpvRequired: true,
-  ffprobe: true,
-  ytDlp: true,
-  curl: { present: true, impersonates: true, profile: "chrome150" },
+const READY = capabilitySnapshotFixture({
   image: {
     terminal: "unknown",
     protocol: "none",
@@ -28,8 +23,7 @@ const READY: CapabilitySnapshot = {
     available: false,
     reason: "test fixture",
   },
-  issues: [],
-};
+});
 
 const BASE_INITIAL: SetupInitialState = {
   mode: "series",
