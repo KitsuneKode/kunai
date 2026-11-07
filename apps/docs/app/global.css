@@ -19,7 +19,7 @@
 @import "./styles/timeline.css";
 @import "./styles/charts.css";
 @import "tw-animate-css";
-@import "shadcn/tailwind.css";
+@import "./styles/vendor/shadcn-tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
 

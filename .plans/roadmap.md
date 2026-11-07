@@ -31,6 +31,10 @@ so it is not re-derived — not because it is scheduled.
 
 Current execution: [watching release candidate](./2026-10-22-watching-release-candidate.md)
 
+Remaining maintainer requests, including Android distribution, the real Kitty
+inspection, navbar interaction, SEO and the recording walkthrough, are tracked
+in [release, mobile and experience work](./2026-10-27-release-mobile-and-experience.md).
+
 Watching UX follow-up: [first-run, playback, Tracks and shell coherence](./2026-10-23-watching-ux-coherence.md).
 Watching capability recovery: [provider inventories, playback truth and discoverable controls](./2026-10-24-watching-capability-recovery.md).
 Integration and test safety: [analytics isolation, review reconciliation and checkout recovery](./2026-10-25-integration-and-test-safety.md).
