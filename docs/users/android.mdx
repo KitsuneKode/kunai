@@ -1,0 +1,73 @@
+---
+title: Android (Termux)
+description: Run Kunai's terminal watching route in Termux, hand video to VLC or mpv-android, and understand the 0.4.0 preview and device-testing limits.
+---
+
+<ScopeCallout variant="beta" title="0.4.0 watching route: device qualification pending">
+  Android uses the real Kunai CLI and an external player. It is not a native Android app. The code
+  and automated contracts are implemented; a physical-device pass is still required. A source
+  version or staged release does not make binaries public. Check the published assets before
+  installing.
+</ScopeCallout>
+
+Android watching runs in **Termux**, with VLC or mpv-android installed as a
+separate Android app. Search, provider resolution and source choices come from
+the CLI. This is different from the small Node-based host proof in `apps/mobile`.
+The iOS route remains an [experimental a-Shell/VLC preview](/docs/users/mobile-preview).
+
+## Install after Android assets are published
+
+Use Termux from one official source and keep its packages and plugins from the
+same signing source. The installer selects the Android Bionic target before
+generic Linux; do not install a Linux glibc binary into Termux.
+
+Once the [published release](https://github.com/KitsuneKode/kunai/releases/latest)
+includes the Android asset for your architecture:
+
+```sh
+pkg update
+pkg install curl termux-am
+curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
+kunai --version
+kunai doctor
+kunai --player vlc
+```
+
+Keep the executable in Termux-owned storage. Shared `/sdcard` storage is for
+transfer, not execution. The artifact floor is Android 9 / API 28; ARM64 and x64
+builds do not establish physical-device compatibility by themselves.
+
+## Search and hand off playback
+
+Choose series/movies or anime in the shell, search, select a title and episode,
+then choose a source. Use `--player vlc` or `--player mpv` to select an installed
+player explicitly. `--player auto` uses Android's chooser.
+
+For supported streams that need provider headers or cookies, a per-playback
+gateway binds only to `127.0.0.1`. It forwards the verified candidate request
+and rewrites supported HLS/DASH resources under a session token. Keep the
+Termux process running while the external player reads from that gateway;
+leaving Kunai stops it.
+
+External subtitles require an explicit player: VLC receives
+`subtitles_location`, and mpv-android receives `subs`. The chooser cannot carry
+these extras, so Kunai refuses that combination rather than dropping subtitles.
+See [installation limits](/docs/users/install-and-update) for unsupported
+manifest forms, DRM, local files and yt-dlp-only streams.
+
+## What the terminal can observe
+
+An accepted handoff means Android accepted the player request. It does not mean
+video decoded. Detached playback has no mpv IPC progress, pause, seek or EOF
+observation; Kunai must not invent a watched position or completion from it.
+Use the external player's controls and return to Termux to choose another item.
+
+Before calling this route device-qualified, test the installer and doctor,
+search-to-player flow, both explicit players and chooser cancellation,
+headered playback, subtitles, return-to-terminal behavior and gateway shutdown
+on a physical ARM64 phone. The remaining checklist is
+[GitHub issue #631](https://github.com/KitsuneKode/kunai/issues/631).
+
+The 0.4.0 scope includes this Android watching route and the separate
+iOS host preview. A phone web UI, native store apps and full iOS search/provider
+support are later work.
