@@ -6,7 +6,8 @@ import {
   type WorkshopProject,
 } from "@/lib/workshop";
 import { IconArrowUpRight, IconBrandGithub, IconStar } from "@tabler/icons-react";
-import Image from "next/image";
+
+import { WorkshopPreview } from "./workshop-preview";
 
 /**
  * "Also from the workshop": the maintainer's other original projects.
@@ -46,6 +47,16 @@ function monogram(name: string): string {
 function formatUpdated(iso: string): string {
   const date = new Date(`${iso}T00:00:00Z`);
   if (Number.isNaN(date.getTime())) return iso;
+  const currentYear = new Date().getUTCFullYear();
+  const pushYear = date.getUTCFullYear();
+  if (pushYear !== currentYear) {
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      timeZone: "UTC",
+    });
+  }
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
@@ -60,24 +71,9 @@ export function ProjectCard({
   const primaryUrl = project.siteUrl ?? project.repoUrl;
 
   return (
-    <article className="kunai-surface-shell group/card has-[a:focus-visible]:ring-ring relative flex w-full flex-col transition-[border-color,box-shadow] duration-200 ease-[var(--ease-out)] hover:border-[color-mix(in_oklab,var(--kunai-accent)_32%,transparent)] has-[a:focus-visible]:ring-2">
+    <article className="kunai-surface-shell group/card has-[a:focus-visible]:ring-ring relative flex w-full flex-col transition-[border-color,box-shadow,transform] duration-180 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-0.5 hover:border-[color-mix(in_oklab,var(--kunai-accent)_32%,transparent)] active:scale-[0.98] active:duration-140 has-[a:focus-visible]:ring-2 motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100">
       <div className="kunai-surface-shell__inner flex h-full flex-col gap-4 p-5">
-        <div className="kunai-workshop-preview">
-          {"image" in project.preview ? (
-            <Image
-              src={project.preview.image}
-              alt={project.preview.alt}
-              width={640}
-              height={344}
-              sizes="(max-width: 639px) 90vw, (max-width: 1023px) 45vw, 340px"
-            />
-          ) : (
-            <div className="kunai-workshop-preview__terminal">
-              <span>{project.preview.label}</span>
-              <pre>{project.preview.code}</pre>
-            </div>
-          )}
-        </div>
+        <WorkshopPreview project={project} />
         <header className="flex items-start gap-3">
           <span
             aria-hidden="true"
@@ -103,12 +99,12 @@ export function ProjectCard({
           </div>
           <IconArrowUpRight
             aria-hidden="true"
-            className="text-fd-muted-foreground size-4 shrink-0 transition-transform duration-150 ease-[var(--ease-out)] group-hover/card:translate-x-0.5 group-hover/card:-translate-y-0.5"
+            className="text-fd-muted-foreground size-4 shrink-0 transition-transform duration-180 ease-[var(--ease-out)] group-hover/card:translate-x-0.5 group-hover/card:-translate-y-0.5"
             stroke={1.5}
           />
         </header>
 
-        <p className="text-fd-muted-foreground m-0 text-sm leading-6 text-pretty">
+        <p className="text-fd-muted-foreground m-0 line-clamp-3 text-sm leading-6 text-pretty">
           {project.tagline}
         </p>
 
@@ -117,7 +113,7 @@ export function ProjectCard({
           {facts.stars !== null ? (
             <span className="text-fd-muted-foreground inline-flex items-center gap-1 tabular-nums">
               <IconStar className="size-3.5" stroke={1.5} aria-hidden="true" />
-              {facts.stars}
+              {new Intl.NumberFormat("en-US").format(facts.stars)}
               <span className="sr-only"> stars</span>
             </span>
           ) : null}
