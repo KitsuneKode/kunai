@@ -155,7 +155,7 @@
     "release:publish:check": "bun run scripts/publish-npm-release.ts",
     "verify:dependency-patches": "bun run scripts/verify-dependency-patches.mjs",
     "ci:preflight": "bun run lint:anti-slop:baseline && bun run verify:doc-paths && bun run verify:doc-frontmatter && bun run fmt:root:check",
-    "audit:dependencies": "bun audit"
+    "audit:dependencies": "bun run scripts/audit-dependencies.ts"
   },
   "dependencies": {
     "typescript": "catalog:"
@@ -179,6 +179,9 @@
     "hono": "^4.13.11",
     "ip-address": "^10.7.4",
     "mdast-util-to-markdown": "2.1.2",
+    "minimatch": "11.0.8",
+    "qs": "6.17.1",
+    "systeminformation": "5.33.19",
     "undici": "^7.30.1",
     "ws": "^8.21.0"
   },
