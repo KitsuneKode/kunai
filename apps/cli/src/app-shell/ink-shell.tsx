@@ -1468,7 +1468,7 @@ export async function launchSessionApp(container: Container) {
         exitOnCtrlC: false,
         alternateScreen: true,
         // SAFETY: MouseSplitStdin implements the readable/read/setRawMode/isTTY
-        // subset Ink's stdin contract calls — verified against ink 7.x source.
+        // subset Ink's stdin contract calls — verified against ink 8 source.
         stdin: (mouseSession?.stdin ?? process.stdin) as NodeJS.ReadStream,
         // Ink invokes this before writing the frame. The manager defers its paint
         // to the next task, so sixel lands after the frame rather than inside it.

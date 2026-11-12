@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-27T12:42:26Z"
+lastReviewed: "2026-11-12"
 ---
 
 # Kunai — Repo Infrastructure
@@ -47,13 +47,16 @@ or `next` tags.
 The October 26 refresh checks every production-workspace direct dependency against
 its registry stable tag. Bun 1.4.4 and TypeScript 7.0.2 are already current;
 Bun's runtime floor, package-manager declaration, types and CI setup agree.
-Ink 8.0.0 was tested (6,638 CLI unit tests passed) but not adopted: its bundle
-was 3,189,750 bytes, above the unchanged 3,170,304-byte cap. Ink 7.1.1 remains
-until a separate runtime-preserving optimization qualifies the upgrade.
-Oxlint/plugins 1.89.0 also require a separate React Compiler migration: the CLI
-reports existing render-time ref and effect patterns as errors. Keep the 1.74.0
-pair until those lifecycle changes are independently qualified; no rules or
-baselines were disabled to make the upgrade pass. Oxfmt is updated to 0.74.0. Research
+The October 26 measurement of Ink 8.0.0 was 3,189,750 bytes, above the
+3,170,304-byte cap of that day, so 7.1.1 stayed. Oxlint 1.89 was deferred in
+the same note because new React compiler rules failed the existing shell.
+
+November 12 adopts Ink 8.0.0. On this tree the development bundle is 3,181,968
+bytes with 7.1.1 and 3,206,087 bytes with 8.0.0. The ratchet moves from 3_120
+to 3_144 KiB so the previous ~13 KiB of headroom remains; see
+`NPM_BUNDLE_BUDGET_KB`. Oxlint and `@oxlint/plugins` are 1.93.0 and oxfmt is
+0.78.0. The React compiler rules that fail the shell stay off until a dedicated
+pass (`.docs/lint-policy.md`). The anti-slop baseline was not edited. Research
 workspaces and unpublished Kunai platform packages are not registry-updated.
 
 Changesets 3 requires the matching v2 action (pinned by commit), renamed
