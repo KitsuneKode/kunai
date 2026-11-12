@@ -178,7 +178,7 @@
     "fumadocs-ui": "catalog:web",
     "hono": "^4.13.11",
     "ip-address": "^10.7.4",
-    "mdast-util-to-markdown": "2.1.2",
+    "mdast-util-to-markdown": "2.2.3",
     "minimatch": "11.0.8",
     "qs": "6.17.1",
     "systeminformation": "5.33.19",
