@@ -30,12 +30,14 @@ const KITTY_QUERY = "_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\\";
  * exact `4` — a substring test would also match `14` or `40`.
  */
 export function parseDeviceAttributes(reply: string): TerminalGraphicsSupport {
+  // oxlint-disable-next-line eslint/no-control-regex -- the terminal reply contains a literal ESC
   const da1 = /\[\?([0-9;]*)c/.exec(reply);
   const sixel = da1?.[1] ? da1[1].split(";").includes("4") : false;
 
   // Kitty answers `ESC _ G i=31;OK ESC \`. Any `;OK` response to our id counts;
   // an error response (`;EBADF` and friends) means the protocol is understood
   // but the payload was rejected, which still proves support.
+  // oxlint-disable-next-line eslint/no-control-regex -- the terminal reply contains a literal ESC
   const kittyGraphics = /_G[^]*;(OK|E[A-Z]+)/.test(reply);
 
   return { sixel, kittyGraphics };
@@ -143,6 +145,7 @@ export async function probeTerminalGraphics(
         buffer += typeof chunk === "string" ? chunk : chunk.toString("latin1");
         // The DA1 reply terminates the exchange; replies can arrive split
         // across reads, so only settle once the terminator is present.
+        // oxlint-disable-next-line eslint/no-control-regex -- the terminal reply contains a literal ESC
         if (/\[\?[0-9;]*c/.test(buffer)) {
           finish(parseDeviceAttributes(buffer));
         }

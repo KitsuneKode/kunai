@@ -36,7 +36,13 @@
     "unicorn/no-array-for-each": "off",
     "unicorn/no-array-sort": "off",
     "unicorn/no-array-reverse": "off",
-    "unicorn/consistent-function-scoping": "off"
+    "unicorn/consistent-function-scoping": "off",
+
+    "react/set-state-in-effect": "off",
+    "react/refs": "off",
+    "react/purity": "off",
+    "react/immutability": "off",
+    "react/globals": "off"
   },
   "overrides": [
     {

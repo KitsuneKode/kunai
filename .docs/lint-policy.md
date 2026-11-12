@@ -102,8 +102,12 @@ The vendored plugin is **not** added to `ignorePatterns`: it lints clean
 under the repo's own rules, and ignoring it while lint-staged still handed
 its files to oxlint failed the hook with "No files found to lint".
 
-`oxlint` is pinned to `1.74.0` (not `^`) so it matches `@oxlint/plugins`
-exactly — the JS plugin API is version-coupled. 1.79 adds
-`react(set-state-in-effect)`, which flags a pre-existing cascading-render bug
-in `apps/docs/components/home/terminal-simulator.tsx`; that is worth fixing on
-its own branch, not as a side effect of installing a lint plugin.
+`oxlint` and `@oxlint/plugins` stay on the same exact version — the JS
+plugin API is version-coupled. They are `1.93.0`. `oxfmt` is `0.78.0`.
+
+`react/set-state-in-effect`, `react/refs`, `react/purity`,
+`react/immutability`, and `react/globals` are off. Oxlint 1.79 promoted them
+into `correctness`, and they flag the shell's existing synchronization
+(viewport, playback mount, offscreen freeze, demo harnesses). Those findings
+are real and belong in a dedicated pass. Turning the rules on in the same
+change as the version bump would either fail lint or paper over the shell.
