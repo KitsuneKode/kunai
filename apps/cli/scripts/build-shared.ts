@@ -352,10 +352,16 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  * NPM_PACK_PACKED_BUDGET_BYTES / NPM_PACK_UNPACKED_BUDGET_BYTES, which this
  * change does not touch and which the exact-tarball verification added in #166
  * has since made stricter.
+ *
+ * Raised from 3_120 to 3_144 on 2026-11-12 for Ink 8. The same minified build
+ * on this tree is 3,181,968 bytes with Ink 7.1.1 and 3,206,087 bytes with Ink
+ * 8.0.0 (+24,119). Ink 8 swaps in react-reconciler 0.34 and drops the separate
+ * scheduler dependency. 3_144 KiB leaves 13,369 bytes, the same headroom 7.1.1
+ * had under 3_120. The public launcher pack budgets are unchanged.
  */
 // October 22 provider/timing/consent/mouse integration measured 3,185,739 bytes.
-// 3120 KiB leaves 9,141 bytes; public launcher budgets below are unchanged.
-export const NPM_BUNDLE_BUDGET_KB = 3_120;
+// Ink 8 on 2026-11-12 measured 3,206,087 bytes; 3144 KiB leaves 13,369 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_144;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
