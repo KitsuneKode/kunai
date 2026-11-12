@@ -115,9 +115,9 @@ export function subscribeStdoutResize(stdout: ResizeSource, onNext: ResizeSubscr
 }
 
 export function useShellDimensions(): ViewportDimensions {
-  // Ink 8 types stdout as a generic writable stream. A real TTY still carries
-  // columns/rows and emits "resize"; the harness streams do too.
   const { stdout } = useStdout();
+  // SAFETY: Ink 8 types this stream as NodeJS.WritableStream, which drops
+  // columns/rows. A TTY and the render harness still expose both and emit "resize".
   const source = stdout as NodeJS.WritableStream & ResizeSource;
   const [size, setSize] = useState<ViewportDimensions>(() => readStdoutDimensions(source));
 
