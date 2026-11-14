@@ -219,7 +219,7 @@ export function getProviderResolveWaitPresentation(input: {
     return {
       message: input.stageDetail ? `${input.stageDetail} · ${classified.title}` : classified.title,
       tone: "warning",
-      footerTask: `Playback bootstrap  ·  ${fallbackHint}q / Esc cancel`,
+      footerTask: `Starting playback  ·  ${fallbackHint}q / Esc cancel`,
     };
   }
 
@@ -227,7 +227,7 @@ export function getProviderResolveWaitPresentation(input: {
     return {
       message: input.stageDetail ? `${input.stageDetail} · Issue: ${issue}` : `Issue: ${issue}`,
       tone: "warning",
-      footerTask: `Playback bootstrap  ·  ${fallbackHint}q / Esc cancel`,
+      footerTask: `Starting playback  ·  ${fallbackHint}q / Esc cancel`,
     };
   }
 
@@ -251,14 +251,14 @@ export function getProviderResolveWaitPresentation(input: {
     return {
       message: slowMessage,
       tone: "info",
-      footerTask: `Playback bootstrap  ·  ${fallbackHint}q / Esc cancel`,
+      footerTask: `Starting playback  ·  ${fallbackHint}q / Esc cancel`,
     };
   }
 
   return {
-    message: input.stageDetail ?? "Preparing playback context…",
+    message: input.stageDetail ?? "Preparing playback…",
     tone: "info",
-    footerTask: `Playback bootstrap  ·  ${fallbackHint}q / Esc cancel`,
+    footerTask: `Starting playback  ·  ${fallbackHint}q / Esc cancel`,
   };
 }
 
