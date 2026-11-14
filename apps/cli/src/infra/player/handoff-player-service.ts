@@ -66,6 +66,7 @@ export class HandoffPlaybackError extends Error {
 export class HandoffPlayerService implements PlayerService {
   readonly capabilities = DETACHED_HANDOFF_CAPABILITIES;
   private shuttingDown = false;
+  private readonly shutdown = new AbortController();
   private readonly target: DetachedPlayerTarget;
   private readonly runtime: AndroidIntentRuntime;
 
@@ -79,7 +80,10 @@ export class HandoffPlayerService implements PlayerService {
 
   async play(stream: StreamInfo, options: PlayerOptions): Promise<PlaybackResult> {
     if (this.shuttingDown) throw new HandoffPlaybackError("player-shutting-down");
-    if (options.abortSignal?.aborted) throw new DOMException("playback aborted", "AbortError");
+    const signal = options.abortSignal
+      ? AbortSignal.any([options.abortSignal, this.shutdown.signal])
+      : this.shutdown.signal;
+    if (signal.aborted) throw new DOMException("playback aborted", "AbortError");
 
     // A deferred locator becomes an in-memory MPD the gateway can serve; when
     // it is expired or unknown the plan reports deferred-source as before.
@@ -123,43 +127,49 @@ export class HandoffPlayerService implements PlayerService {
       throw new HandoffPlaybackError("unsupported-stream", plan.blockers);
     }
 
-    let url = plan.url;
-    let subtitleExtras: readonly string[] = [];
-    if (needsGateway) {
-      const gateway = getSharedStreamGateway();
-      const session = gateway.registerSession({
-        url: document ? undefined : stream.url,
-        headers: stream.headers,
-        subtitles,
-        document,
+    try {
+      signal.throwIfAborted();
+      let url = plan.url;
+      let subtitleExtras: readonly string[] = [];
+      if (needsGateway) {
+        const gateway = getSharedStreamGateway();
+        const session = gateway.registerSession({
+          url: document ? undefined : stream.url,
+          headers: stream.headers,
+          subtitles,
+          document,
+        });
+        url = session.mediaUrl;
+        subtitleExtras = session.subtitleUrls;
+      }
+
+      const launched = await launchAndroidIntent({
+        target: plan.player,
+        url,
+        subtitles: subtitleExtras,
+        runtime: this.runtime,
+        signal,
       });
-      url = session.mediaUrl;
-      subtitleExtras = session.subtitleUrls;
-    }
+      if (!launched.ok) {
+        throw new HandoffPlaybackError(launched.reason, [], launched.detail);
+      }
 
-    const launched = await launchAndroidIntent({
-      target: plan.player,
-      url,
-      subtitles: subtitleExtras,
-      runtime: this.runtime,
-    });
-    if (!launched.ok) {
-      await deferredCleanup?.();
+      return Object.freeze({
+        watchedSeconds: 0,
+        duration: 0,
+        endReason: "unknown",
+        resultSource: "handoff",
+        handoff: Object.freeze({
+          accepted: true,
+          player: plan.player,
+          launcher: launched.launcher,
+        }),
+      });
+    } catch (error) {
       if (needsGateway) stopSharedStreamGateway();
-      throw new HandoffPlaybackError(launched.reason, [], launched.detail);
+      await deferredCleanup?.();
+      throw error;
     }
-
-    return Object.freeze({
-      watchedSeconds: 0,
-      duration: 0,
-      endReason: "unknown",
-      resultSource: "handoff",
-      handoff: Object.freeze({
-        accepted: true,
-        player: plan.player,
-        launcher: launched.launcher,
-      }),
-    });
   }
 
   async releasePersistentSession(): Promise<void> {}
@@ -168,6 +178,7 @@ export class HandoffPlayerService implements PlayerService {
 
   beginShutdown(): void {
     this.shuttingDown = true;
+    this.shutdown.abort(new DOMException("playback aborted", "AbortError"));
     stopSharedStreamGateway();
   }
 

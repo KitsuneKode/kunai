@@ -48,7 +48,6 @@
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
-    "shadcn": "^4.22.1",
     "tailwindcss": "catalog:web",
     "typescript": "catalog:"
   },

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-27T12:42:26Z"
+lastReviewed: "2026-10-28"
 ---
 
 # Kunai — Repo Infrastructure
@@ -69,11 +69,19 @@ Root `overrides` dedupe known transitive drift (`@types/node`, `fumadocs-core`,
 `fumadocs-ui`). Fumadocs still pulls Radix + `lucide-react` transitively; do not
 re-catalog those as direct docs deps — docs UI uses Base UI + Tabler.
 
-`braces@3.0.3` retains a tracked Bun depth-limit patch. Shared CI setup
-checks the installed shadcn glob path and the Changesets 3 migration away from
-`braces` after frozen install with
-`bun run verify:dependency-patches`; [patch maintenance](../patches/README.md)
-records provenance, compatibility, and removal criteria.
+The docs build consumes a licensed local copy of shadcn's stylesheet under
+`apps/docs/app/styles/vendor/`, preserving its data-state/orientation variants.
+It no longer installs the component-generation CLI solely for a CSS import.
+The removed CLI tree included the unpatched `deepmerge` advisory, vulnerable
+`qs`, and the last `braces`/`micromatch` consumer. No advisory was suppressed.
+The old braces patch and consumer verifier were archived under
+`.archive/dependency-patches/2026-10-28-braces/`; the root patch binding was
+removed only after the entire locked consumer graph disappeared.
+
+`bun run verify:dependency-patches` now rejects reintroduction of that retired
+locked graph and checks installed Changesets config/git manifests still use
+picomatch. [Dependency verification](../patches/README.md) records this policy.
+A future generator dependency or stylesheet update needs fresh qualification.
 
 `bun run audit:dependencies` checks the complete locked workspace tree against
 current registry advisories. The PR release guard runs it before installation,

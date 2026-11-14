@@ -4,7 +4,7 @@ import { DETACHED_HANDOFF_CAPABILITIES } from "@/domain/playback/player-capabili
 import type { StreamInfo } from "@/domain/types";
 import type { AndroidIntentRuntime } from "@/infra/player/android-intent-launcher";
 import { HandoffPlaybackError, HandoffPlayerService } from "@/infra/player/handoff-player-service";
-import { stopSharedStreamGateway } from "@/infra/player/stream-gateway";
+import { getSharedStreamGateway, stopSharedStreamGateway } from "@/infra/player/stream-gateway";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 import { registerAllMangaAkDeferredDescriptor } from "@kunai/providers";
 
@@ -26,6 +26,55 @@ function runtime(exitCode = 0, stderr = ""): AndroidIntentRuntime {
 }
 
 describe("HandoffPlayerService", () => {
+  test("cancelling a headered handoff releases its gateway and never reports acceptance", async () => {
+    const controller = new AbortController();
+    const gateway = getSharedStreamGateway();
+    const player = new HandoffPlayerService({
+      target: "vlc",
+      runtime: {
+        ...runtime(),
+        spawn: () => {
+          controller.abort();
+          return { exited: Promise.resolve(0) };
+        },
+      },
+    });
+    try {
+      await expect(
+        player.play(
+          { ...STREAM, headers: { Referer: "https://provider.example/" } },
+          {
+            url: STREAM.url,
+            displayTitle: "Example",
+            abortSignal: controller.signal,
+          },
+        ),
+      ).rejects.toMatchObject({ name: "AbortError" });
+      expect(gateway.isStopped()).toBe(true);
+      // Cancelling this request must not poison the service's next handoff.
+      const retry = await player.play(STREAM, { url: STREAM.url, displayTitle: "Retry" });
+      expect(retry.handoff?.accepted).toBe(true);
+    } finally {
+      stopSharedStreamGateway();
+    }
+  });
+
+  test("shutdown cancels an in-flight launch rather than returning accepted", async () => {
+    const player = new HandoffPlayerService({
+      target: "vlc",
+      runtime: {
+        ...runtime(),
+        spawn: () => {
+          player.beginShutdown();
+          return { exited: Promise.resolve(0) };
+        },
+      },
+    });
+    await expect(
+      player.play(STREAM, { url: STREAM.url, displayTitle: "Example" }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+  });
+
   test("advertises detached capabilities and returns only accepted handoff evidence", async () => {
     const player = new HandoffPlayerService({ target: "vlc", runtime: runtime() });
     const events: string[] = [];

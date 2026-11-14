@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import type { DetachedPlayerTarget } from "@/domain/playback/player-choice";
 import {
   launchAndroidIntent,
+  defaultAndroidIntentRuntime,
   resolveAndroidIntentCommand,
   type AndroidIntentRuntime,
 } from "@/infra/player/android-intent-launcher";
@@ -141,6 +142,119 @@ describe("Android intent command resolution", () => {
 });
 
 describe("Android intent launch", () => {
+  test("the native runtime kills an aborted launcher process", async () => {
+    const controller = new AbortController();
+    const process = defaultAndroidIntentRuntime.spawn(
+      [globalThis.process.execPath, "-e", 'console.log("ready"); setInterval(() => {}, 1000000)'],
+      { signal: controller.signal },
+    );
+    const reader = process.stdout?.getReader();
+    try {
+      expect(new TextDecoder().decode((await reader?.read())?.value)).toContain("ready");
+      controller.abort();
+      expect(await process.exited).not.toBe(0);
+    } finally {
+      controller.abort();
+      await reader?.cancel();
+      reader?.releaseLock();
+      await process.exited;
+    }
+  });
+
+  test("an already cancelled request never spawns", async () => {
+    let spawned = false;
+    await expect(
+      launchAndroidIntent({
+        target: "vlc",
+        url: URL,
+        signal: AbortSignal.abort(),
+        runtime: runtime({
+          commands: { am: "/system/bin/am" },
+          onSpawn: () => {
+            spawned = true;
+          },
+        }),
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(spawned).toBe(false);
+  });
+
+  test("cancellation during spawn cannot report an accepted handoff", async () => {
+    const controller = new AbortController();
+    await expect(
+      launchAndroidIntent({
+        target: "vlc",
+        url: URL,
+        signal: controller.signal,
+        runtime: runtime({
+          commands: { am: "/system/bin/am" },
+          onSpawn: () => controller.abort(),
+        }),
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  test("a launcher deadline bounds both process exit and open output pipes", async () => {
+    let deadline: (() => void) | undefined;
+    let cleared = false;
+    let cancelled = false;
+    let pipe: ReadableStreamDefaultController<Uint8Array> | undefined;
+    const exit = Promise.withResolvers<number>();
+    const attempt = launchAndroidIntent({
+      target: "vlc",
+      url: URL,
+      timers: {
+        setTimeout(callback, delayMs) {
+          expect(delayMs).toBe(10_000);
+          deadline = callback;
+          return 1;
+        },
+        clearTimeout: () => {
+          cleared = true;
+        },
+      },
+      runtime: {
+        which: () => "/system/bin/am",
+        spawn: () => ({
+          exited: exit.promise,
+          stdout: new ReadableStream<Uint8Array>({
+            start: (controller) => {
+              pipe = controller;
+            },
+            cancel: () => {
+              cancelled = true;
+            },
+          }),
+        }),
+      },
+    });
+    // Drive the deadline directly: no sleeps and no reliance on a test timeout.
+    deadline?.();
+    exit.resolve(0);
+    if (!deadline) pipe?.close();
+    expect(await attempt).toMatchObject({
+      ok: false,
+      reason: "launch-rejected",
+      detail: "Android player launch timed out",
+    });
+    expect(cleared).toBe(true);
+    expect(cancelled).toBe(true);
+  });
+
+  test("excessive launcher output is refused even when the child exits zero", async () => {
+    expect(
+      await launchAndroidIntent({
+        target: "vlc",
+        url: URL,
+        runtime: runtime({ commands: { am: "/system/bin/am" }, stdout: "x".repeat(65_537) }),
+      }),
+    ).toMatchObject({
+      ok: false,
+      reason: "launch-rejected",
+      detail: "Android launcher output exceeded 64 KiB",
+    });
+  });
+
   test("passes a metacharacter-rich URL as one opaque argv value", async () => {
     const commands: string[][] = [];
     const result = await launchAndroidIntent({
