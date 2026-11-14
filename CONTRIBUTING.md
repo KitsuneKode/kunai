@@ -110,6 +110,8 @@ Commit the generated file in `.changeset/`.
 ## Commit and PR guidance
 
 - Keep PRs focused on one thing — a bug fix, a feature, a doc update.
+- For a bug fix, reproduce the failure before editing and include the regression
+  evidence. Separate local tests from live-provider and physical-device checks.
 - Explain the "why" in the PR description, not just the "what".
 - Include test updates when behavior changes.
 - For release-relevant work, ensure a changeset is present.
