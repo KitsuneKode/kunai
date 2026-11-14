@@ -3,10 +3,11 @@ import { KunaiFoxPatrol } from "@/components/brand/kunai-fox-patrol";
 import { codeMetadata } from "@/lib/code-metadata";
 import { docsGithubIssuesUrl, docsGithubRepoUrl } from "@/lib/docs-github";
 import { SUPPORT_PATH } from "@/lib/support";
-import { workshop } from "@/lib/workshop";
+import { workshop, type WorkshopProject } from "@/lib/workshop";
 import Link from "next/link";
 
 import { FooterWordmark } from "./footer-wordmark";
+import { ProjectLinkPreview } from "./project-link-preview";
 
 // Copyright follows the deployed server's year, never the viewer's clock.
 const COPYRIGHT_YEAR = new Date().getUTCFullYear();
@@ -29,6 +30,7 @@ type FooterLink = {
   readonly href: string;
   readonly label: string;
   readonly external?: boolean;
+  readonly project?: WorkshopProject;
 };
 
 const DOCS_LINKS: readonly FooterLink[] = [
@@ -71,9 +73,11 @@ const ECOSYSTEM_LINKS: readonly FooterLink[] = workshop.map((project) => ({
   href: project.siteUrl ?? project.repoUrl,
   label: project.name,
   external: true,
+  project,
 }));
 
 function FooterLinkItem({ link }: { readonly link: FooterLink }) {
+  if (link.project) return <ProjectLinkPreview project={link.project} />;
   const className =
     "text-fd-muted-foreground hover:text-fd-foreground text-sm transition-colors duration-150";
   if (link.external) {
