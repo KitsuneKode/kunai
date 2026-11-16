@@ -10,6 +10,7 @@ import {
   type CalendarDay,
   type CalendarTypeTab,
 } from "./calendar-ui.model";
+import { MouseTarget } from "./mouse/MouseRegions";
 import { ClaudeTabRow } from "./primitives/ClaudeTabRow";
 import { buildCalendarRowColumns, computeCalendarRowLayout } from "./primitives/list-row-layout";
 import { ListRow } from "./primitives/ListRow";
@@ -41,6 +42,7 @@ export function CalendarDayStrip({
   narrow = false,
   maxWidth,
   dense = false,
+  onSelectDay,
 }: {
   days: readonly CalendarDay[];
   selectedDayKey: string | null;
@@ -49,6 +51,8 @@ export function CalendarDayStrip({
   maxWidth?: number;
   /** Short terminals: collapse vertical margins so the list keeps its rows. */
   dense?: boolean;
+  /** Tabs and day chips navigate immediately. A click does not open a title. */
+  onSelectDay?: (dayKey: string) => void;
 }) {
   const { windowDays, hasPrev, hasNext } = windowCalendarDayStrip(days, selectedDayKey, narrow);
   const showHint = maxWidth === undefined || maxWidth >= 92;
@@ -72,11 +76,18 @@ export function CalendarDayStrip({
         const background = isSelected ? palette.accentFill : isToday ? palette.warnFill : undefined;
         const foreground = isSelected || isToday ? palette.text : palette.textDim;
         return (
-          <Box key={day.key} marginRight={1}>
-            <Text backgroundColor={background} color={foreground} bold={isSelected || isToday}>
-              {` ${day.label} `}
-            </Text>
-          </Box>
+          <MouseTarget
+            key={day.key}
+            id={`calendar:day:${day.key}`}
+            active={Boolean(onSelectDay)}
+            onClick={() => onSelectDay?.(day.key)}
+          >
+            <Box marginRight={1}>
+              <Text backgroundColor={background} color={foreground} bold={isSelected || isToday}>
+                {` ${day.label} `}
+              </Text>
+            </Box>
+          </MouseTarget>
         );
       })}
       <Text color={palette.dim}>{hasNext ? " ›" : "  "}</Text>
@@ -94,11 +105,13 @@ export function CalendarTypeTabs({
   compact,
   maxWidth,
   dense = false,
+  onSelectTab,
 }: {
   activeTab: CalendarTypeTab;
   compact: boolean;
   maxWidth?: number;
   dense?: boolean;
+  onSelectTab?: (tab: CalendarTypeTab) => void;
 }) {
   if (compact) return null;
   const labels = CALENDAR_TYPE_TABS.map((tab) => (tab === "TV" ? "Series" : tab));
@@ -110,6 +123,17 @@ export function CalendarTypeTabs({
       hint={maxWidth === undefined || maxWidth >= 100 ? "⇥ Tab cycles type" : undefined}
       maxWidth={maxWidth}
       dense={dense}
+      pointer={
+        onSelectTab
+          ? {
+              id: "calendar:type",
+              select: (index) => {
+                const tab = CALENDAR_TYPE_TABS[index];
+                if (tab) onSelectTab(tab);
+              },
+            }
+          : undefined
+      }
     />
   );
 }

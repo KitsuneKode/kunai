@@ -1,8 +1,10 @@
 import { Box, Text } from "ink";
-import React from "react";
+import React, { useRef } from "react";
 
 import { mapPosterPreviewState } from "./browse-preview-rail";
 import { useRailPoster } from "./hooks/use-rail-poster";
+import { MouseTarget } from "./mouse/MouseRegions";
+import { pointerClickIntent } from "./mouse/pointer-activation";
 import type { NotificationRow, NotificationsView } from "./notifications-view";
 import { ListRow } from "./primitives/ListRow";
 import {
@@ -57,11 +59,17 @@ export function NotificationsShell({
   columns,
   selectedIndex,
   unreadCount,
+  pointer,
 }: {
   readonly view: NotificationsView;
   readonly columns: number;
   readonly selectedIndex: number;
   readonly unreadCount: number;
+  readonly pointer?: {
+    readonly selectRow: (dedupKey: string) => void;
+    readonly activateRow: (dedupKey: string) => void;
+    readonly scroll: (direction: "up" | "down") => void;
+  };
 }) {
   const showRail = shouldRenderPreviewRail({ columns, hasModel: view.rail !== null });
   const { poster, posterState, spinner } = useRailPoster(view.rail?.preview.posterUrl, {
@@ -116,18 +124,39 @@ export function NotificationsShell({
       </Box>
     ) : undefined;
 
+  const priorRow = useRef<string | null>(null);
   const list = view.isEmpty ? (
     <StateBlock model={{ kind: "empty", title: view.emptyTitle }} width={listWidth} />
   ) : (
     <Box flexDirection="column">
       {view.rows.map((row, index) => (
-        <ListRow
+        <MouseTarget
           key={row.dedupKey}
-          selected={index === selectedIndex}
-          columns={rowColumns(row)}
-          rowWidth={listWidth}
-          flexColumnIndex={1}
-        />
+          id={`notifications:row:${row.dedupKey}`}
+          active={Boolean(pointer)}
+          onWheel={(direction) => pointer?.scroll(direction)}
+          onClick={() => {
+            if (!pointer) return;
+            const click = pointerClickIntent(
+              priorRow.current,
+              row.dedupKey,
+              index === selectedIndex,
+            );
+            priorRow.current = click.priorKey;
+            if (click.intent === "select") {
+              pointer.selectRow(row.dedupKey);
+              return;
+            }
+            pointer.activateRow(row.dedupKey);
+          }}
+        >
+          <ListRow
+            selected={index === selectedIndex}
+            columns={rowColumns(row)}
+            rowWidth={listWidth}
+            flexColumnIndex={1}
+          />
+        </MouseTarget>
       ))}
     </Box>
   );

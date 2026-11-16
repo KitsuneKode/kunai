@@ -66,6 +66,7 @@ import {
   type BrowseFocusZoneContext,
   type BrowseFocusZoneEvent,
 } from "./browse-focus-zone";
+import { setBrowseAtHome, subscribeBrowseHome } from "./browse-home-request";
 import { buildBrowseIdleReturnLoopModel, resolveIdleRowAction } from "./browse-idle-actions";
 import { setBrowseIdleRefreshListener } from "./browse-idle-context";
 import {
@@ -128,6 +129,7 @@ import {
 } from "./layout-policy";
 import { reducedMotionEnabled } from "./motion-policy";
 import { MouseTarget, useMouseEnabled, useMouseRegion } from "./mouse/MouseRegions";
+import { pointerClickIntent } from "./mouse/pointer-activation";
 import type { BrowseOverlay } from "./overlay-panel";
 import { OverlayPanel } from "./overlay-panel";
 import { takePaletteTitleLaunch } from "./palette-title-launch";
@@ -570,6 +572,7 @@ export function BrowseShell<T>({
     reset: resetCalendar,
     cycleType: cycleCalendarType,
     setDayFilter: setCalendarDayFilter,
+    setTypeTab: setCalendarTypeTab,
   } = calendar;
 
   /**
@@ -620,6 +623,90 @@ export function BrowseShell<T>({
     setFocusZone("query");
     leaveCalendarSurface();
   }, [leaveCalendarSurface]);
+
+  const atBrowseHome =
+    !commandMode &&
+    activeOverlay === null &&
+    query.trim() === "" &&
+    searchState === "idle" &&
+    calendarRoute === undefined &&
+    options.length === 0 &&
+    !filterModeOpen &&
+    resultFilter.length === 0;
+
+  useEffect(() => {
+    setBrowseAtHome(atBrowseHome);
+  }, [atBrowseHome]);
+
+  useEffect(() => {
+    return subscribeBrowseHome(() => {
+      if (atBrowseHome) return null;
+      const snapshot = {
+        query,
+        options,
+        selectedIndex,
+        searchState,
+        lastSearchedQuery,
+        errorMessage,
+        emptyMessage,
+        resultSubtitle,
+        activeFilterBadges,
+        searchWarnings,
+        resultFilter,
+        filterModeOpen,
+        focusZone,
+        calendarRoute,
+        calendarTypeTab,
+        calendarDayFilter,
+      };
+      setCommandMode(false);
+      setActiveOverlay(null);
+      setQuery("");
+      clearResults();
+      return () => {
+        setCommandMode(false);
+        setActiveOverlay(null);
+        setQuery(snapshot.query);
+        setOptions(snapshot.options);
+        setSelectedIndex(snapshot.selectedIndex);
+        setSearchState(snapshot.searchState);
+        setLastSearchedQuery(snapshot.lastSearchedQuery);
+        setErrorMessage(snapshot.errorMessage);
+        setEmptyMessage(snapshot.emptyMessage);
+        setResultSubtitle(snapshot.resultSubtitle);
+        setActiveFilterBadges(snapshot.activeFilterBadges);
+        setSearchWarnings(snapshot.searchWarnings);
+        setResultFilter(snapshot.resultFilter);
+        setFilterModeOpen(snapshot.filterModeOpen);
+        setFocusZone(snapshot.focusZone);
+        setCalendarTypeTab(snapshot.calendarTypeTab);
+        setCalendarDayFilter(snapshot.calendarDayFilter);
+        setCalendarRoute(snapshot.calendarRoute);
+      };
+    });
+  }, [
+    activeFilterBadges,
+    atBrowseHome,
+    calendarDayFilter,
+    calendarRoute,
+    calendarTypeTab,
+    clearResults,
+    emptyMessage,
+    errorMessage,
+    filterModeOpen,
+    focusZone,
+    lastSearchedQuery,
+    options,
+    query,
+    resultFilter,
+    resultSubtitle,
+    searchState,
+    searchWarnings,
+    selectedIndex,
+    setCalendarDayFilter,
+    setCalendarTypeTab,
+    setQuery,
+  ]);
 
   // Snapshot title entries once per open — the matcher stays a pure in-memory
   // index against this list, so a keystroke never hits storage.
@@ -1071,6 +1158,8 @@ export function BrowseShell<T>({
   const pointerActive =
     !rootContentSuspended && !activeOverlay && !commandMode && !viewport.tooSmall;
   const priorPointerSelection = useRef<{ index: number; value: T } | null>(null);
+  const priorCalendarPointer = useRef<string | null>(null);
+  const priorSuggestionPointer = useRef<string | null>(null);
   useEffect(() => {
     const prior = priorPointerSelection.current;
     if (
@@ -2244,6 +2333,25 @@ export function BrowseShell<T>({
                 maxRows={suggestionMaxRows}
                 selectedIndex={boundedSuggestionIndex}
                 width={innerWidth}
+                onRowClick={
+                  pointerActive
+                    ? (itemIndex) => {
+                        const item = suggestionBandModel.items[itemIndex];
+                        if (!item) return;
+                        const click = pointerClickIntent(
+                          priorSuggestionPointer.current,
+                          item.suggestion.id,
+                          boundedSuggestionIndex === itemIndex,
+                        );
+                        priorSuggestionPointer.current = click.priorKey;
+                        if (click.intent === "select") {
+                          setSuggestionIndex(itemIndex);
+                          return;
+                        }
+                        commitSuggestion(item);
+                      }
+                    : undefined
+                }
               />
             ) : null}
           </>
@@ -2270,6 +2378,16 @@ export function BrowseShell<T>({
               compact={compact}
               maxWidth={listWidth}
               dense={denseChrome}
+              onSelectTab={
+                pointerActive
+                  ? (tab) => {
+                      priorPointerSelection.current = null;
+                      setCalendarTypeTab(tab);
+                      setCalendarDayFilter(null);
+                      setSelectedIndex(0);
+                    }
+                  : undefined
+              }
             />
             <CalendarDayStrip
               days={calendarDays}
@@ -2277,6 +2395,22 @@ export function BrowseShell<T>({
               narrow={viewport.breakpoint === "narrow"}
               maxWidth={listWidth}
               dense={denseChrome}
+              onSelectDay={
+                pointerActive
+                  ? (dayKey) => {
+                      priorPointerSelection.current = null;
+                      const targetOption = calendarOptionsForDay(dayKey)[0] ?? null;
+                      calendarKeyboardCursorRef.current = {
+                        dayKey,
+                        optionIndex: 0,
+                        option: targetOption,
+                      };
+                      setCalendarDayFilter(dayKey);
+                      setSelectedIndex(0);
+                      dispatchFocusZone({ type: "focus-list" });
+                    }
+                  : undefined
+              }
             />
           </Box>
         ) : null}
@@ -2340,25 +2474,61 @@ export function BrowseShell<T>({
                 ? visibleCalendarRows.map((row) => {
                     const selected = row.optionIndex === boundedSelectedIndex;
                     return (
-                      <CalendarScheduleRow
+                      <MouseTarget
                         key={`${row.option.label}-${row.optionIndex}-${row.timeLabel}`}
-                        option={row.option}
-                        selected={selected}
-                        rowWidth={rowWidth}
-                        timeLabel={row.timeLabel}
-                        episodeCode={row.episodeCode}
-                        statusLabel={row.statusLabel}
-                        statusColor={row.statusColor}
-                        statusDim={row.statusDim}
-                        statusGlyph={row.statusGlyph}
-                        showDayHeader={row.showDayHeader}
-                        dayHeaderLabel={row.dayHeaderLabel}
-                        weekTag={row.weekTag}
-                        showForYouHeader={false}
-                        showForYouHeaderOnce={row.showForYouHeaderOnce}
-                        isNew={row.isNew}
-                        tracked={row.tracked}
-                      />
+                        id={`calendar:row:${row.optionIndex}`}
+                        active={pointerActive}
+                        onWheel={(direction) => {
+                          const dayKey =
+                            calendarKeyboardCursorRef.current.dayKey ?? calendarDayFilter;
+                          const length = calendarOptionsForDay(dayKey ?? "").length;
+                          const current = calendarKeyboardCursorRef.current.optionIndex;
+                          if (direction === "up" ? current <= 0 : current >= length - 1) return;
+                          priorCalendarPointer.current = null;
+                          moveCalendarRowFromInput(direction === "up" ? -1 : 1);
+                        }}
+                        onClick={() => {
+                          const option = displayOptions[row.optionIndex];
+                          if (!option) return;
+                          const rowKey = String(row.optionIndex);
+                          const click = pointerClickIntent(
+                            priorCalendarPointer.current,
+                            rowKey,
+                            selected && listFocused,
+                          );
+                          priorCalendarPointer.current = click.priorKey;
+                          if (click.intent === "select") {
+                            calendarKeyboardCursorRef.current = {
+                              dayKey: calendarDayFilter,
+                              optionIndex: row.optionIndex,
+                              option,
+                            };
+                            dispatchFocusZone({ type: "focus-list" });
+                            setSelectedIndex(row.optionIndex);
+                            return;
+                          }
+                          onSubmit(option.value);
+                        }}
+                      >
+                        <CalendarScheduleRow
+                          option={row.option}
+                          selected={selected}
+                          rowWidth={rowWidth}
+                          timeLabel={row.timeLabel}
+                          episodeCode={row.episodeCode}
+                          statusLabel={row.statusLabel}
+                          statusColor={row.statusColor}
+                          statusDim={row.statusDim}
+                          statusGlyph={row.statusGlyph}
+                          showDayHeader={row.showDayHeader}
+                          dayHeaderLabel={row.dayHeaderLabel}
+                          weekTag={row.weekTag}
+                          showForYouHeader={false}
+                          showForYouHeaderOnce={row.showForYouHeaderOnce}
+                          isNew={row.isNew}
+                          tracked={row.tracked}
+                        />
+                      </MouseTarget>
                     );
                   })
                 : visibleOptions.map((option, index) => {
@@ -2731,7 +2901,7 @@ export function BrowseShell<T>({
         return (
           <ShellFooter
             taskLabel={
-              mouseEnabled && pointerActive && !isCalendarView && displayOptions.length > 0
+              mouseEnabled && pointerActive && displayOptions.length > 0
                 ? "Click to select · click selection to open"
                 : browseTaskLabel
             }

@@ -2,6 +2,7 @@ import { Box, Text } from "ink";
 import React from "react";
 
 import { composeHeader } from "../format/header";
+import { MouseTarget } from "../mouse/MouseRegions";
 import { measureColumns, truncateLine } from "../shell-text";
 import { APP_LABEL, palette } from "../shell-theme";
 
@@ -22,6 +23,7 @@ export const AppHeader = React.memo(function AppHeader({
   statusColor = palette.ok,
   size,
   width,
+  onHome,
 }: {
   brand?: string;
   destination: string;
@@ -30,6 +32,8 @@ export const AppHeader = React.memo(function AppHeader({
   statusColor?: string;
   size?: string;
   width?: number;
+  /** Click the fox to go home, or back to the screen you left. Same as ⌃G. */
+  onHome?: () => void;
 }) {
   const h = composeHeader({ brand, destination, context, status, size });
 
@@ -53,9 +57,11 @@ export const AppHeader = React.memo(function AppHeader({
   return (
     <Box justifyContent="space-between">
       <Box flexShrink={1}>
-        <Text bold color={palette.text} wrap="truncate-end">
-          {h.brand}
-        </Text>
+        <MouseTarget id="header:home" active={Boolean(onHome)} onClick={() => onHome?.()}>
+          <Text bold color={palette.text} wrap="truncate-end">
+            {h.brand}
+          </Text>
+        </MouseTarget>
         <Text color={palette.dim}>{"  ·  "}</Text>
         <Text bold color={palette.bg} backgroundColor={palette.text} wrap="truncate-end">
           {h.pill}

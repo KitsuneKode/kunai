@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-24"
+lastReviewed: "2026-11-09"
 ---
 
 # Terminal pointer controls
@@ -37,16 +37,22 @@ activation are separate transitions. This supplements the existing keyboard path
 
 These controls depend on the session-owned mouse facade and suspension-aware
 registry in `apps/cli/src/app-shell/mouse/`. They require a compatible TTY and
-respect `KUNAI_NO_MOUSE=1`. Screen readers, physical terminal emulators, mobile
-touch gestures and player-window controls need separate qualification.
+respect `KUNAI_NO_MOUSE=1`. Screen readers, physical terminal emulators, and
+mobile touch gestures need separate qualification. The mpv window keeps mpv's
+own mouse.
 
 ## Remaining qualification and scope
 
-The implemented slice covers Browse search/results, Library titles/tabs, Up Next,
-Tracks, Settings, setup choices, shared frame footers and command-palette rows. Downloads inside Library release input when covered, but
-this does not add click controls to every download action. Calendar, history,
-notifications and player-window controls retain their existing input
-contracts and need separate pointer work before claiming parity.
+The implemented slice covers Browse search/results, the schedule (day chips and
+type tabs navigate immediately; a title row selects, then opens), suggestion
+rows, Library titles/tabs, Up Next, Tracks, Settings, setup choices, shared
+frame footers, command-palette rows, History tabs and rows, Notifications rows,
+and download rows. A download click never deletes or aborts: the first click
+selects, and the second click plays a finished file or retries a failed one.
+The mpv window itself is not a Kunai surface — its mouse stays with mpv.
+The header fox (`🦊 Kunai`) and `⌃G` toggle. Away from home they remember the
+browse view and any open panels, then leave. On the idle home they put that
+place back. Leaving playback still does not resume the video.
 
 The isolated terminal fixture runs prove routing and persisted state. Physical
 Windows/macOS terminal emulators, multiplexers, accessibility and Android touch
@@ -103,4 +109,5 @@ The type-ahead suggestion band is a bounded, separately filled surface with a
 window that follows keyboard selection and a three-line preview of already-loaded
 title metadata. Its border, heading and preview are counted in the browse layout
 budget. Query history advertises search; title rows advertise opening and details.
-This does not add pointer activation to suggestion rows.
+Suggestion rows use the same select-then-commit rule as Enter. The first click
+highlights the row. The second click opens a title or runs the saved search.

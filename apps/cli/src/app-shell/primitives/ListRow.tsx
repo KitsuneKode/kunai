@@ -45,6 +45,10 @@ export const ListRow = React.memo(function ListRow({
   return (
     <Box
       width={rowWidth}
+      // The column widths are already budgeted to rowWidth. A pointer wrapper
+      // (MouseTarget is a row-direction Box) must not flex-shrink the row and
+      // re-truncate every column a second time.
+      flexShrink={0}
       backgroundColor={selected ? palette.accentFill : undefined}
       flexDirection="row"
       overflow="hidden"

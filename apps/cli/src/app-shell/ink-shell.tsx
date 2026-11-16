@@ -41,6 +41,13 @@ import {
   ANALYTICS_NOTICE_VISIBLE_MS,
 } from "./AnalyticsDisclosureBanner";
 import { useBrowseDestinationLabel } from "./browse-destination";
+import {
+  clearBrowseHomeReturn,
+  isBrowseAtHome,
+  leaveForBrowseHome,
+  pushBrowseHomeReturn,
+  returnFromBrowseHome,
+} from "./browse-home-request";
 import { CapabilityIssueStrip } from "./CapabilityIssueStrip";
 import { dispatchAppCommand } from "./command-router";
 import { setContextualTipListener } from "./contextual-tips";
@@ -54,7 +61,7 @@ import {
   clearInteractiveShellMounted,
   markInteractiveShellMounted,
 } from "./interactive-shell-state";
-import { helpSectionsForScope } from "./keybindings";
+import { helpSectionsForScope, matchBinding } from "./keybindings";
 import {
   getPickerChromeRows,
   getPickerLayout,
@@ -84,6 +91,8 @@ import { resolveHeaderDestination } from "./resolve-header-destination";
 import { RootContentBody } from "./root-content-shell";
 import {
   clearRootContentSession,
+  forceCloseRootContent,
+  getRootContentSession,
   mountRootContent,
   resolveRootContentFromSession,
   useRootContentSession,
@@ -123,6 +132,7 @@ import { selectTransientRow } from "./transient-row";
 import {
   toShellAction,
   type FooterAction,
+  type PlaybackShellResult,
   type ShellAction,
   type ShellFooterMode,
   type ShellStatusTone,
@@ -1251,6 +1261,39 @@ export function AppRoot({ container }: { container: Container }) {
     onCommandAction("search");
   }, [onCommandAction]);
 
+  const goHome = useCallback(() => {
+    const kind = getRootContentSession()?.kind;
+    if (kind === "playback" || kind === "loading") {
+      onCommandAction("search");
+      return;
+    }
+    if (kind === "post-playback") {
+      forceCloseRootContent<PlaybackShellResult>("search");
+      return;
+    }
+
+    const overlays = stateManager.getState().activeModals.slice();
+    if (overlays.length === 0 && isBrowseAtHome()) {
+      returnFromBrowseHome();
+      return;
+    }
+
+    clearBrowseHomeReturn();
+    leaveForBrowseHome();
+    if (overlays.length > 0) {
+      stateManager.dispatch({ type: "CLOSE_ALL_OVERLAYS" });
+      pushBrowseHomeReturn(() => {
+        for (const overlay of overlays) {
+          stateManager.dispatch({ type: "OPEN_OVERLAY", overlay });
+        }
+      });
+    }
+  }, [onCommandAction, stateManager]);
+
+  useInput((input, key) => {
+    if (matchBinding("global", input, key)?.id === "home") goHome();
+  });
+
   const onExitDone = useCallback(
     () => requestAppShutdown({ reason: "shell-quit", exitCode: 0 }),
     [],
@@ -1362,6 +1405,7 @@ export function AppRoot({ container }: { container: Container }) {
     >
       {/* Single canonical header: brand · destination pill · crumb · status · size */}
       <AppHeader
+        onHome={goHome}
         destination={headerDestination}
         context={rootStatusSummary.crumb}
         status={

@@ -12,6 +12,7 @@ import type { ScoredSuggestion, SuggestionBandModel } from "@/domain/search/sugg
 import { Box, Text } from "ink";
 import React from "react";
 
+import { MouseTarget } from "./mouse/MouseRegions";
 import { measureColumns, sanitizeTerminalText, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 
@@ -122,11 +123,14 @@ export function SearchSuggestionBand<TValue>({
   selectedIndex = -1,
   width,
   maxRows = 12,
+  onRowClick,
 }: {
   readonly model: SuggestionBandModel<TValue>;
   readonly selectedIndex?: number;
   readonly width: number;
   readonly maxRows?: number;
+  /** First click selects. A second click on that row commits it, the same as Enter. */
+  readonly onRowClick?: (itemIndex: number) => void;
 }) {
   const selected = model.items[selectedIndex]?.suggestion;
   const contentWidth = Math.max(1, width - 4);
@@ -163,15 +167,23 @@ export function SearchSuggestionBand<TValue>({
                 {truncateLine(`${start > 0 && index === 0 ? "↑ " : ""}${row.label}`, contentWidth)}
               </Text>
             );
-          case "item":
+          case "item": {
+            const itemIndex = model.items.indexOf(row.item);
             return (
-              <SuggestionRow
+              <MouseTarget
                 key={`i:${row.item.suggestion.id}`}
-                item={row.item}
-                selected={row.item.suggestion === selected}
-                rowWidth={contentWidth}
-              />
+                id={`suggest:${row.item.suggestion.id}`}
+                active={Boolean(onRowClick)}
+                onClick={() => onRowClick?.(itemIndex)}
+              >
+                <SuggestionRow
+                  item={row.item}
+                  selected={row.item.suggestion === selected}
+                  rowWidth={contentWidth}
+                />
+              </MouseTarget>
             );
+          }
           case "skeleton":
             return (
               <Text key={`s:${row.skeletonIndex}`} color={palette.muted} wrap="truncate">
