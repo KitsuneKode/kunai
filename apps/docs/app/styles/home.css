@@ -229,7 +229,11 @@
   font-family: inherit;
   font-size: 0.95rem;
   width: 100%;
-  outline: none;
+}
+
+.palette-search-input:focus-visible {
+  outline: 2px solid var(--kunai-accent);
+  outline-offset: 2px;
 }
 
 .palette-list {
@@ -261,10 +265,16 @@
 /* Selection moves with the arrow keys, so it must not animate or move anything:
    a transform here ran on every keypress, and the old 3px border-left shifted the
    text beside it. The marker is an inset shadow, which takes no space. */
-.palette-item:hover,
 .palette-item.is-selected {
   background: var(--kunai-surface);
   box-shadow: inset 2px 0 0 var(--kunai-accent);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .palette-item:hover {
+    background: var(--kunai-surface);
+    box-shadow: inset 2px 0 0 var(--kunai-accent);
+  }
 }
 
 .palette-item:active {
@@ -436,12 +446,14 @@
     border-color 200ms var(--kunai-ease-out),
     box-shadow 200ms var(--kunai-ease-out);
 }
-.kunai-home .prose pre:hover,
-.kunai-home .fd-codeblock:hover {
-  border-color: color-mix(in oklab, var(--kunai-accent) 24%, var(--kunai-line));
-  box-shadow:
-    0 4px 24px color-mix(in oklab, var(--kunai-accent) 4%, transparent),
-    0 4px 20px rgba(0, 0, 0, 0.3);
+@media (hover: hover) and (pointer: fine) {
+  .kunai-home .prose pre:hover,
+  .kunai-home .fd-codeblock:hover {
+    border-color: color-mix(in oklab, var(--kunai-accent) 24%, var(--kunai-line));
+    box-shadow:
+      0 4px 24px color-mix(in oklab, var(--kunai-accent) 4%, transparent),
+      0 4px 20px rgba(0, 0, 0, 0.3);
+  }
 }
 
 /* Premium Tables (home only — docs tables scoped above) */
@@ -476,9 +488,11 @@
 .kunai-home table tr:last-child td {
   border-bottom: none;
 }
-.kunai-home table tr:hover td {
-  color: var(--color-fd-foreground);
-  background: color-mix(in oklab, var(--kunai-surface-strong) 40%, transparent);
+@media (hover: hover) and (pointer: fine) {
+  .kunai-home table tr:hover td {
+    color: var(--color-fd-foreground);
+    background: color-mix(in oklab, var(--kunai-surface-strong) 40%, transparent);
+  }
 }
 
 /* Quick Install Section */
@@ -528,10 +542,16 @@
     background-color 200ms var(--kunai-ease-out);
   cursor: pointer;
 }
-.os-tab-button:hover {
-  color: var(--color-fd-foreground);
-  border-color: var(--kunai-line);
-  background-color: var(--kunai-surface-strong);
+.os-tab-button:active {
+  background-color: var(--kunai-surface);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .os-tab-button:hover {
+    color: var(--color-fd-foreground);
+    border-color: var(--kunai-line);
+    background-color: var(--kunai-surface-strong);
+  }
 }
 /* Selected, not primary: accent text on the accent fill (7.9:1). A filled gradient here
    competed with the one primary action per view, and its white label measured 3.6:1. */
@@ -637,9 +657,11 @@
     box-shadow var(--kunai-duration-ui) var(--kunai-ease-out);
 }
 
-.kunai-hero-install .kunai-code-row:hover {
-  border-color: color-mix(in oklab, var(--kunai-accent) 24%, var(--kunai-line));
-  box-shadow: var(--kunai-shadow-sm);
+@media (hover: hover) and (pointer: fine) {
+  .kunai-hero-install .kunai-code-row:hover {
+    border-color: color-mix(in oklab, var(--kunai-accent) 24%, var(--kunai-line));
+    box-shadow: var(--kunai-shadow-sm);
+  }
 }
 
 .kunai-hero-install__os {
@@ -771,9 +793,11 @@
     border-color 150ms var(--kunai-ease-out);
 }
 
-.kunai-proof-row a:hover {
-  color: var(--color-fd-foreground);
-  border-bottom-color: color-mix(in oklab, var(--kunai-accent) 50%, transparent);
+@media (hover: hover) and (pointer: fine) {
+  .kunai-proof-row a:hover {
+    color: var(--color-fd-foreground);
+    border-bottom-color: color-mix(in oklab, var(--kunai-accent) 50%, transparent);
+  }
 }
 
 /* ── Terminal preset row ───────────────────────────────────────────────────
@@ -834,9 +858,11 @@
     border-color 150ms var(--kunai-ease-out);
 }
 
-.kunai-other-paths__links a:hover {
-  color: var(--color-fd-foreground);
-  border-bottom-color: color-mix(in oklab, var(--kunai-accent) 50%, transparent);
+@media (hover: hover) and (pointer: fine) {
+  .kunai-other-paths__links a:hover {
+    color: var(--color-fd-foreground);
+    border-bottom-color: color-mix(in oklab, var(--kunai-accent) 50%, transparent);
+  }
 }
 
 @media (max-width: 767.98px) {

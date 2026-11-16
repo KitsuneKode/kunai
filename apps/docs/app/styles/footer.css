@@ -83,9 +83,14 @@
   transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.group\/card:hover .kunai-workshop-preview img,
 .group\/card:focus-within .kunai-workshop-preview img {
   transform: scale(1.03);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .group\/card:hover .kunai-workshop-preview img {
+    transform: scale(1.03);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

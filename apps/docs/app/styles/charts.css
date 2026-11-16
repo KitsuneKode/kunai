@@ -220,10 +220,12 @@ table.kunai-chart td {
   transition: background-color var(--dur-press) var(--ease-out);
 }
 
-table.kunai-chart tr.kunai-chart-row:hover td,
-table.kunai-chart tr.kunai-chart-row:hover th {
-  color: inherit;
-  background-color: color-mix(in oklab, var(--kunai-chart-series) 8%, transparent);
+@media (hover: hover) and (pointer: fine) {
+  table.kunai-chart tr.kunai-chart-row:hover td,
+  table.kunai-chart tr.kunai-chart-row:hover th {
+    color: inherit;
+    background-color: color-mix(in oklab, var(--kunai-chart-series) 8%, transparent);
+  }
 }
 
 /*
