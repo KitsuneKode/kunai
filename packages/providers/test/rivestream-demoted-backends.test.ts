@@ -12,9 +12,9 @@ import {
   rivestreamProviderModule,
 } from "../src/rivestream/direct";
 
-// Live discovery as returned by rivestream.app on 2026-10-14 (Breaking Bad
-// S01E01 smoke): apogee/vanguard 403, mirage→solstice empty, primevids 403,
-// citadel working.
+// Discovery order from the 2026-10-14 Breaking Bad smoke. primevids returned
+// sources again on 2026-11-12, so it keeps its discovery slot. savannah,
+// prometheus, quasar, and solstice stay demoted.
 const LIVE_SERVICES = [
   "apogee",
   "vanguard",
@@ -43,6 +43,7 @@ describe("rivestream dead-backend prune", () => {
       "ignite",
       "tampa",
       "meridian",
+      "primevids",
       "citadel",
       "apollo",
       "asiacloud",
@@ -50,7 +51,6 @@ describe("rivestream dead-backend prune", () => {
       "prometheus",
       "quasar",
       "solstice",
-      "primevids",
     ]);
   });
 
@@ -69,23 +69,23 @@ describe("rivestream dead-backend prune", () => {
   });
 
   test("matching is case-insensitive; discovery casing is upstream-controlled", () => {
-    expect(isRivestreamDemotedBackend("PrimeVids")).toBe(true);
+    expect(isRivestreamDemotedBackend("Prometheus")).toBe(true);
     expect(isRivestreamDemotedBackend("CITADEL")).toBe(false);
-    expect(demoteRivestreamDeadBackends(["citadel", "PrimeVids"])).toEqual([
+    expect(demoteRivestreamDeadBackends(["citadel", "Prometheus"])).toEqual([
       "citadel",
-      "PrimeVids",
+      "Prometheus",
     ]);
   });
 
   test("an explicitly pinned demoted source still outranks the order", () => {
-    const providers = demoteRivestreamDeadBackends(["citadel", "primevids"]);
+    const providers = demoteRivestreamDeadBackends(["citadel", "prometheus"]);
     const pinned = buildRivestreamCycleCandidates(providers, undefined, undefined).find(
-      (candidate) => candidate.serverId === "primevids",
+      (candidate) => candidate.serverId === "prometheus",
     );
     const order = [...buildRivestreamCycleCandidates(providers, pinned?.sourceId, undefined)]
       .sort((a, b) => a.priority - b.priority)
       .map((candidate) => String(candidate.serverId));
-    expect(order[0]).toBe("primevids");
+    expect(order[0]).toBe("prometheus");
   });
 
   test("the static fallback carries no demoted backend", () => {
@@ -122,12 +122,12 @@ describe("rivestream demoted-backend prefetch", () => {
         runtime: "direct-http",
         fetch: async (input) => {
           const url = String(input);
-          if (url.includes("VideoProviderServices")) {
-            return jsonResponse({ data: ["citadel", "savannah", "primevids"] });
+          if (url.includes("/api/providers")) {
+            return jsonResponse({ data: ["citadel", "savannah", "prometheus"] });
           }
-          if (url.includes("backendfetch")) {
-            requestedServices.push(new URL(url).searchParams.get("service") ?? "");
-            if (url.includes("service=citadel")) {
+          if (url.includes("/api/provider?")) {
+            requestedServices.push(new URL(url).searchParams.get("provider") ?? "");
+            if (url.includes("provider=citadel")) {
               return jsonResponse({
                 data: {
                   sources: [{ url: "https://cdn.example/video.mp4", quality: "1080" }],

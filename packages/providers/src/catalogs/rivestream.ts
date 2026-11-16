@@ -1,15 +1,10 @@
+import { RIVESTREAM_STATIC_PROVIDER_SERVICES } from "../rivestream/direct";
 import { RIVESTREAM_PROVIDER_ID } from "../rivestream/manifest";
 import type { KnownCatalogEntry } from "../shared/known-catalog";
 import { providerInventorySourceId } from "../shared/source-inventory";
 
-export const RIVESTREAM_FALLBACK_SERVICES = [
-  "flowcast",
-  "asiacloud",
-  "primevids",
-  "hindicast",
-  "guru",
-  "ophim",
-] as const;
+/** Same list resolve uses when discovery is down, so the catalog cannot name dead hosts. */
+export const RIVESTREAM_FALLBACK_SERVICES = RIVESTREAM_STATIC_PROVIDER_SERVICES;
 
 const NARUTO_ROSTER = [
   "Naruto",

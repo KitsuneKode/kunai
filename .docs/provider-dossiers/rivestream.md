@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-24"
+lastReviewed: "2026-11-12"
 ---
 
 # Provider: Rivestream
@@ -12,13 +12,14 @@ lastReviewed: "2026-10-24"
 - **Media kinds:** Movies, TV Series.
 - **Search support:** Yes. API based.
 - **Episode catalog support:** Yes.
-- **Stream resolve support:** Yes. Uses MurmurHash + a custom `cArray` salt to generate a `secretKey` for API authorization.
+- **Stream resolve support:** Yes. Discovery is `GET https://scrapper.rivestream.app/api/providers`. Sources are `GET /api/provider?provider=&id=` plus `season` and `episode` for series. The live Watch bundle does not send `secretKey`. `www.rivestream.app/api/backendfetch` hangs. Referer stays `https://www.rivestream.app/`. `primevids` and `citadel` add a `cb` cache-buster.
 - **Language/audio/subtitle model:** Relies heavily on external service node names multiplexed with quality (e.g., `FlowCast (1080)`).
 - **Server/source model:** Aggregator. Pulls from various underlying hosting providers.
 - **Quality model:** Standard HLS and direct `.mp4`.
 - **Thumbnail/poster support:** Yes. Backend fetch provides VTT/BIF files for the player seek-bar.
-- **Known failure modes:** `cArray` salt rotation breaks the MurmurHash `secretKey` generation, resulting in 401 Unauthorized errors.
-- **Demoted backends (2026-10-14):** `savannah`, `prometheus`, `quasar`, and `solstice` return no sources for titles other mirrors serve, and `primevids` answers 403. They trail the service cycle as a last resort (`RIVESTREAM_DEMOTED_BACKENDS`) and are skipped by prefetch — the cycle stops at the first working mirror (e.g. citadel) without spending an attempt on them. Nothing is dropped: a recovered backend still resolves when everything ahead fails.
+- **Known failure modes:** `GET /api/providers` sometimes never answers. Discovery is capped at 1.5s and then the static list is used, so a hung directory cannot consume the 12s attempt. Prefetch opens only the next healthy service; later names are fetched when the cycle reaches them. A timeout or an unscoped block on `GET /api/provider` stops the walk: every name shares that front door, and continuing repeats the hang. `generateSecretKey` remains a canary; the scraper requests do not use it.
+- **Demoted backends:** `savannah`, `prometheus`, `quasar`, and `solstice` return no sources for titles other mirrors serve. They trail the service cycle as a last resort (`RIVESTREAM_DEMOTED_BACKENDS`) and are skipped by prefetch. `primevids` answered 403 on 2026-10-14 and returned sources for Breaking Bad and Inception on 2026-11-12, so it is back in discovery order. Nothing is dropped: a recovered backend still resolves when everything ahead fails.
+- **Static fallback (2026-11-12):** the live `/api/providers` list with `prometheus` left out because it is demoted. `apogee` is first. Confirmed source-bearing names that day included `apogee` and `primevids` on both a movie and a series; several other names reset under parallel load and were not demoted for that.
 
 ## User-Facing Capabilities
 

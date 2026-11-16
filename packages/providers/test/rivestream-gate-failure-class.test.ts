@@ -43,10 +43,10 @@ function contextWithDeadCdn(
       runtime: "direct-http" as const,
       fetch: async (input: string) => {
         const url = String(input);
-        if (url.includes("VideoProviderServices")) {
+        if (url.includes("/api/providers")) {
           return new Response(JSON.stringify(SERVICES), { status: 200 });
         }
-        if (url.includes("backendfetch")) {
+        if (url.includes("/api/provider?")) {
           return new Response(JSON.stringify(SOURCE_RESPONSE), { status: 200 });
         }
         if (url.includes(".m3u8")) {

@@ -135,8 +135,10 @@ try {
   if (staticBuildIds.length === 0) {
     notes.push("could not read a buildId from the live bundle (obfuscation changed shape)");
   } else if (!staticBuildIds.includes(ALLMANGA_CRYPTO_PROFILE.buildId)) {
-    failures.push(
-      `live bundle ships buildId ${staticBuildIds.join("/")}, profile pins ${ALLMANGA_CRYPTO_PROFILE.buildId}`,
+    // The raw string table also holds call-count markers (build 189's scan
+    // sees "127"). Bootstrap 200 is the failure condition.
+    notes.push(
+      `static scan did not see pinned buildId ${ALLMANGA_CRYPTO_PROFILE.buildId} among ${staticBuildIds.join("/")}; bootstrap decides`,
     );
   }
 } catch (error) {

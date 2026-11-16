@@ -12,7 +12,7 @@ import { readJsonObjectBody } from "../shared/json-body";
  * path — and as of ani-cli `a6ac602` (v5) there is no upstream AllAnime path at
  * all to check parity against. Live mkissa:
  * - ships a rotating `buildId` (`81` → `119` → `140` → `166` → `171` → `177`
- *   → `181`)
+ *   → `181` → `189`)
  *   plus four base64 mask fragments in the app chunk
  * - boots keys via `GET /client-crypto/v1/bootstrap?buildId=&k=` with
  *   `x-build-id` + HMAC `x-aa-boot`
@@ -47,8 +47,16 @@ import { readJsonObjectBody } from "../shared/json-body";
  * `chunks/Cs-j4hUW.js`, verified by a live bootstrap 200 + GraphQL episode
  * round-trip) keeps the same wire scheme and re-rolls `envXor` to `82`;
  * `v:1`/`omitEmptyLane:false` persist. The episode query template did not
- * change this rotation, so {@link ALLMANGA_QUERY_HASH} carried over — verify
- * that on the next rotation, do not assume it.
+ * change that rotation, so {@link ALLMANGA_QUERY_HASH} carried over.
+ *
+ * The build-189 profile (extracted 2026-11-12 from `chunks/DmW2_MRj.js`,
+ * verified by a live bootstrap 200 on epoch 2966) re-rolls every derivation
+ * constant, the boot prefix, the join to `|`, and the boot field order to
+ * `epoch|lane|group|host|buildId`. `envXor` is `12` and is still not applied:
+ * the raw mask bootstraps, and XORing it returns `invalid_boot_token`. The
+ * desktop episode document hash did not change. GET automatic persisted
+ * queries now miss with that hash, so episode resolve POSTs the document in
+ * `episode-query.ts` once before calling the miss drift.
  *
  * Everything that rotates therefore lives in one {@link ALLMANGA_CRYPTO_PROFILE}
  * object, so the next rotation is a single replacement that cannot be applied
@@ -59,9 +67,9 @@ import { readJsonObjectBody } from "../shared/json-body";
  * read the constants back out of the obfuscated chunk — is in
  * [the AllManga dossier](../../../../.docs/provider-dossiers/allmanga.md).
  *
- * The episode persisted-query hash rotates with the app build — it changed
- * again for 177 and is re-hashed from the chunk's query template on every
- * rotation (see the dossier).
+ * The episode persisted-query hash can rotate with the app build. It changed
+ * for 177 and is re-hashed from the chunk's query template on every rotation
+ * (see the dossier). Build 189 kept the desktop hash.
  */
 
 /** A part of the `x-aa-boot` second-HMAC message, in upstream's order. */
@@ -90,20 +98,20 @@ export type AllMangaCryptoProfile = {
 };
 
 /**
- * Live profile, extracted from `cdn.mkissa.net/all/mk/_app/immutable/chunks/Cs-j4hUW.js`
- * on 2026-10-19 and confirmed by a successful bootstrap (HTTP 200, epoch 2963)
- * plus a persisted-query episode round-trip (`aaReq` accepted).
+ * Live profile, extracted from `cdn.mkissa.net/all/mk/_app/immutable/chunks/DmW2_MRj.js`
+ * on 2026-11-12 and confirmed by a successful bootstrap (HTTP 200, epoch 2966).
+ * The next epoch in the grace window answered `403 invalid_boot_token`.
  */
 export const ALLMANGA_CRYPTO_PROFILE: AllMangaCryptoProfile = {
-  buildId: "181",
-  saltMul: 60,
-  saltAdd: 175,
-  fragMul: 44,
-  fragAdd: 1,
-  bootPrefix: "UZQjku7:",
-  bootJoin: ":",
-  bootParts: ["buildId", "group", "host", "epoch", "lane"],
-  maskFragments: ["Yh7GkKY7p1E=", "GhmFaOUHEGk=", "prExpp5kt+4=", "FSm6Hdvb+S4="],
+  buildId: "189",
+  saltMul: 175,
+  saltAdd: 202,
+  fragMul: 129,
+  fragAdd: 61,
+  bootPrefix: "iGmNgPGdi:",
+  bootJoin: "|",
+  bootParts: ["epoch", "lane", "group", "host", "buildId"],
+  maskFragments: ["pF98Ab2CCc0=", "gEhpQrtSn+M=", "oPeHj9dBNTU=", "7XcuzKoXhgs="],
 };
 
 export const ALLMANGA_BUILD_ID = ALLMANGA_CRYPTO_PROFILE.buildId;
@@ -112,9 +120,11 @@ export const ALLMANGA_BUILD_ID = ALLMANGA_CRYPTO_PROFILE.buildId;
  * sha256 of the episode persisted-query document, which rotates with the app
  * build. It is a true persisted query: the text is never sent, so a stale hash
  * comes back as `PersistedQueryNotFound` and every resolve returns no streams.
- * Recover it by re-hashing the document in the crypto chunk (the builder's
- * name rotates with the build — `iK`/`Dj`/`…` — find the template containing
- * `episode(` and expand its `Oi`/`Kt`/`Zr()` fragments; see the dossier).
+ * Recover it by re-hashing the desktop document in the crypto chunk (the
+ * builder's name rotates — find the template containing `episode(` and expand
+ * its fragments; see the dossier). The text itself is `ALLMANGA_EPISODE_QUERY`
+ * in `episode-query.ts`. Build 189 kept this hash, but GET no longer hits the
+ * automatic persisted query, so a miss is not by itself drift.
  */
 export const ALLMANGA_QUERY_HASH =
   "670bbf38d0868f446e2346c1e956ca2c40c416e733ca248fd54e04f1c8b99145";
@@ -148,8 +158,8 @@ export type AllMangaCryptoMaterial = {
 };
 
 /**
- * Last-known-good material when bootstrap fails (epoch 2963, build 181),
- * captured from a live bootstrap on 2026-10-19. It must be derived under the
+ * Last-known-good material when bootstrap fails (epoch 2966, build 189),
+ * captured from a live bootstrap on 2026-11-12. It must be derived under the
  * same profile as {@link ALLMANGA_CRYPTO_PROFILE}: a key left over from an
  * older build is not a degraded fallback, it is a guaranteed decrypt failure.
  * `allmanga.test.ts` pins that relationship.
@@ -159,8 +169,8 @@ export type AllMangaCryptoMaterial = {
  * that quietly runs on a fallback two epochs old looks exactly like a dead
  * provider.
  */
-export const ALLMANGA_KEY_HEX = "5ce91c85a5aa5a2a670c553daf07a8a5ab730508692106a9e7fbb519dd219ae1";
-export const ALLMANGA_EPOCH = 2963;
+export const ALLMANGA_KEY_HEX = "7bfc7526152985c7b7acda8b5cad3ecfbc68b0785db480d89384447dee6c5af6";
+export const ALLMANGA_EPOCH = 2966;
 
 export const BUNDLED_ALLMANGA_CRYPTO: AllMangaCryptoMaterial = {
   keyHex: ALLMANGA_KEY_HEX,

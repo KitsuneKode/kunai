@@ -9,6 +9,7 @@ import type {
 } from "@kunai/types";
 
 import { safeAllMangaHostname } from "../src/allmanga/direct";
+import { ALLMANGA_EPISODE_QUERY } from "../src/allmanga/episode-query";
 import {
   clearAllMangaAnilistBridgeCacheForTest,
   isCatalogIdPassedAsShowId,
@@ -330,7 +331,7 @@ describe("buildAllMangaAaReq", () => {
 describe("AllManga crypto material (mkissa bootstrap)", () => {
   const partBBytes = Array.from({ length: 32 }, (_, index) => index + 1);
   const PART_B = Buffer.from(partBBytes).toString("base64");
-  const EXPECTED_KEY_HEX = "fdced1c500d2803581c49f3996bbeb48b860aef2b985118bf605d1b44906ea4e";
+  const EXPECTED_KEY_HEX = "5e211454f2b9b5c5733c01000c7b1ae5318ac1dd7b70be3a747461e4161915c6";
   const PLAIN_SOURCE_JSON = JSON.stringify({
     data: {
       episode: {
@@ -354,8 +355,10 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     let apiCallCount = 0;
     let bootstrapFetchCount = 0;
     let bootstrapHeaders: Headers | undefined;
+    const postBodies: string[] = [];
     globalThis.fetch = (async (input, init) => {
       const url = String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
       if (url.includes("/client-crypto/v1/bootstrap")) {
         bootstrapFetchCount += 1;
         bootstrapHeaders = new Headers(init?.headers);
@@ -374,7 +377,9 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
           { status: 200, headers: { "content-type": "application/json" } },
         );
       }
-      if (url.includes("variables=")) {
+      const isEpisodePost = method === "POST" && url.includes("api.mkissa.net/api");
+      if (url.includes("variables=") || isEpisodePost) {
+        if (isEpisodePost && typeof init?.body === "string") postBodies.push(init.body);
         const body =
           options.apiResponses[Math.min(apiCallCount, options.apiResponses.length - 1)] ?? "{}";
         apiCallCount += 1;
@@ -391,6 +396,9 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
       },
       get bootstrapHeaders() {
         return bootstrapHeaders;
+      },
+      get postBodies() {
+        return postBodies;
       },
       [Symbol.dispose]() {
         globalThis.fetch = originalFetch;
@@ -424,7 +432,7 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     expect(material?.buildId).toBe(ALLMANGA_CRYPTO_PROFILE.buildId);
     expect(site.bootstrapHeaders?.get("x-build-id")).toBe(ALLMANGA_CRYPTO_PROFILE.buildId);
     expect(site.bootstrapHeaders?.get("x-aa-boot")).toBe(
-      "7f1f320f9cabf04a839d62d201af090d968031a0f9eaca20b157782d33ad6935",
+      "0d07dd32f2883e6912611b28d252ce1ef03e71aaf497b26039547808d1a7b696",
     );
     expect(site.bootstrapHeaders?.get("origin")).toBe("https://mkissa.to");
     expect(site.bootstrapHeaders?.get("referer")).toBe("https://mkissa.to/");
@@ -434,23 +442,23 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     expect(site.bootstrapFetchCount).toBe(1);
   });
 
-  test("matches independent build-181 derivation and boot-token vectors", () => {
-    expect(hashBuildId("181").toString("hex")).toBe(
-      "9ed31652a7ea266bbefa3f724e83c602579ad61b6eaaef227eb3f632074a86cb",
+  test("matches independent build-189 derivation and boot-token vectors", () => {
+    expect(hashBuildId("189").toString("hex")).toBe(
+      "fb4111e6be0cd5ab7bc09876cf95653a825029ff4f14ecba03d9a90ed6a47dc3",
     );
-    expect(deriveMaskKey("181").toString("hex")).toBe(
-      "fcccd2c105d4873d88ce94359bb5e458a972bde6ac930693ef1fcaa85418f56e",
+    expect(deriveMaskKey("189").toString("hex")).toBe(
+      "5f231750f7bfb2cd7a360a0c017515f52098d2c96e66a9226d6e7af80b070ae6",
     );
-    expect(deriveKeyFromPartB(PART_B, "181").toString("hex")).toBe(EXPECTED_KEY_HEX);
+    expect(deriveKeyFromPartB(PART_B, "189").toString("hex")).toBe(EXPECTED_KEY_HEX);
     expect(
       buildAllMangaBootToken({
-        buildId: "181",
+        buildId: "189",
         epoch: 6900,
         keyGroup: "mkissa",
         refererHost: "mkissa.to",
         contentLane: "k7",
       }),
-    ).toBe("7f1f320f9cabf04a839d62d201af090d968031a0f9eaca20b157782d33ad6935");
+    ).toBe("0d07dd32f2883e6912611b28d252ce1ef03e71aaf497b26039547808d1a7b696");
   });
 
   test("bundled fallback key is derived under the pinned profile", () => {
@@ -458,8 +466,8 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     // a guaranteed decrypt failure. This is what made the 140 -> 171 rotation
     // fail silently: the buildId moved and the bundled key did not.
     // `livePartB` is the partB the live bootstrap actually returned on
-    // 2026-10-19 (build 181, epoch 2963), so it must derive ALLMANGA_KEY_HEX.
-    const livePartB = "oCXORKB+3RfvwsEINLJM/QIBuO7FsgA6COR/sYk5b48=";
+    // 2026-11-12 (build 189, epoch 2966), so it must derive ALLMANGA_KEY_HEX.
+    const livePartB = "JN9iduKWNwrNmtCHXdgrOpzwYrEz0in6/uo+heVrUBA=";
     expect(deriveKeyFromPartB(livePartB, ALLMANGA_CRYPTO_PROFILE.buildId).toString("hex")).toBe(
       ALLMANGA_KEY_HEX,
     );
@@ -575,8 +583,8 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     expect(thrown).toBeInstanceOf(AllMangaQueryDriftError);
     expect((thrown as Error).message).toContain("query hash");
     // Drift is not a crypto-material problem and not transient: no
-    // re-bootstrap, and no retry budget spent on an identical request.
-    expect(site.apiCallCount).toBe(1);
+    // re-bootstrap. GET misses, one POST of the desktop document also misses.
+    expect(site.apiCallCount).toBe(2);
     expect(site.bootstrapFetchCount).toBe(1);
   });
 
@@ -619,8 +627,37 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     expect(thrown).toBeInstanceOf(AllMangaQueryDriftError);
     // SAFETY: the instanceof check above proves this is an Error.
     expect((thrown as Error).message).toContain("PersistedQueryNotFound");
-    expect(site.apiCallCount).toBe(1);
+    expect(site.apiCallCount).toBe(2);
     expect(site.bootstrapFetchCount).toBe(1);
+  });
+
+  test("posts the desktop episode document when GET automatic persisted queries miss", async () => {
+    using site = mockCryptoSiteFetch({
+      apiResponses: ['{"errors":[{"message":"PersistedQueryNotFound"}]}', PLAIN_SOURCE_JSON],
+    });
+
+    const links = await resolveWithSiteSources();
+
+    expect(links.length).toBeGreaterThan(0);
+    expect(site.apiCallCount).toBe(2);
+    expect(site.bootstrapFetchCount).toBe(1);
+    expect(site.postBodies).toHaveLength(1);
+    const posted = JSON.parse(site.postBodies[0] ?? "{}") as {
+      query?: string;
+      variables?: Record<string, unknown>;
+      extensions?: { persistedQuery?: { sha256Hash?: string }; k?: string };
+    };
+    expect(posted.query).toBe(ALLMANGA_EPISODE_QUERY);
+    expect(posted.variables).toEqual({
+      showId: "show-1",
+      translationType: "sub",
+      episodeString: "1",
+    });
+    expect(posted.extensions?.persistedQuery?.sha256Hash).toBe(ALLMANGA_QUERY_HASH);
+    expect(posted.extensions?.k).toBe("k7");
+    expect(createHash("sha256").update(ALLMANGA_EPISODE_QUERY).digest("hex")).toBe(
+      ALLMANGA_QUERY_HASH,
+    );
   });
 
   test("backs off on API rate limiting instead of failing", async () => {

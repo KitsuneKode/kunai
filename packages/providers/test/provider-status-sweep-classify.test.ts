@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { classify } from "../scripts/provider-status-sweep";
+import { classify, composeStatusNote } from "../scripts/provider-status-sweep";
 
 /**
  * The daily sweep commits statuses straight to the docs site — a misread here
@@ -44,6 +44,21 @@ describe("provider-status-sweep classify", () => {
 
   test("exhausted with reachable upstream is degraded", () => {
     expect(classify(200, "exhausted", 0, "not-found").status).toBe("degraded");
+  });
+
+  test("a classified note keeps the provider's own failure text", () => {
+    expect(
+      composeStatusNote(
+        "upstream up but resolve exhausted",
+        "Videasy wings-hdmovie did not produce a playable source",
+      ),
+    ).toBe(
+      "upstream up but resolve exhausted — Videasy wings-hdmovie did not produce a playable source",
+    );
+  });
+
+  test("an empty class note is the failure text", () => {
+    expect(composeStatusNote("", "yt-dlp is required")).toBe("yt-dlp is required");
   });
 
   test("unclassified resolve status falls through to degraded with the status in the note", () => {

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-22"
+lastReviewed: "2026-11-12"
 ---
 
 # Provider: AllManga / AllAnime
@@ -12,7 +12,7 @@ lastReviewed: "2026-10-22"
 - **Runtime class:** Direct HTTP GraphQL + decoded source APIs. No browser should be needed on the hot path.
 - **Reference implementation:** Local ani-cli checkout at `~/Projects/osc/ani-cli` — historical only: ani-cli v5 (2026-08-01) moved to anidb.app and deleted its AllAnime code, so the live mkissa JS chunk is the sole source of truth now.
 - **Production module:** `packages/providers/src/allmanga/*`.
-- **Current status (2026-10-22):** The pinned build181 bootstrap/crypto probe returns HTTP200. Full stream resolution in the local production-provider sweep stopped at CAPTCHA, so bootstrap success is not playback qualification. Episode resolve requires `aaReq` AES-GCM attestation and the current rotating key.
+- **Current status (2026-11-12):** The pinned build 189 bootstrap returns HTTP 200 on epoch 2966. Build 181 answers `unknown_build_id`. GET of the still-current episode hash returns `PersistedQueryNotFound`; the client POSTs the desktop document once, and that POST is accepted up to the `NEED_CAPTCHA` gate. Bootstrap success is not playback qualification. Episode resolve requires `aaReq` AES-GCM attestation and the current rotating key.
 
 ## Current Evidence
 
@@ -29,7 +29,8 @@ Current Kunai flow, derived from the live mkissa chunk (ani-cli v5 no longer imp
 
 ```text
 episode GraphQL persisted GET + aaReq + x-build-id
-  -> "tobeparsed" AES-256-GCM payload (rotated hex key, build id 181, 7-day epochs)
+  -> on PersistedQueryNotFound, one POST of the desktop episode document
+  -> "tobeparsed" AES-256-GCM payload (rotated hex key, build id 189, 7-day epochs)
   -> decoded source names + encoded API paths (or direct https embeds)
   -> per-source API fetch on allanime.day
   -> mp4 / HLS candidates, or deferred Ak DASH descriptor with separate video/audio
@@ -95,7 +96,7 @@ The experiment generated a temporary MPD from one selected video representation 
 ## Known
 
 - Search/catalog uses GraphQL with the provider referer; historical successful probes above are dated evidence.
-- The AES-256-GCM `tobeparsed` decode path and build181 bootstrap are pinned. The October 22 bootstrap succeeds; full resolve remains separately blocked in that sweep. AES-CTR must not be restored (see `.docs/providers.md`).
+- The AES-256-GCM `tobeparsed` decode path and build 189 bootstrap are pinned (epoch 2966, chunk `DmW2_MRj.js`). The November 12 bootstrap succeeds; a captcha-gated network still stops before a probed stream. AES-CTR must not be restored (see `.docs/providers.md`).
 - Source APIs can return valid data that is not a single HLS/mp4 URL.
 - Returning only the `Ak` video URL would be wrong because audio is separate.
 - `rawUrls` is adapted into an opaque deferred DASH descriptor containing both selected video and audio representations; subtitles remain attached. Deterministic coverage is in `packages/providers/test/allmanga.test.ts`. This implementation does not establish current live playback.
@@ -103,7 +104,7 @@ The experiment generated a temporary MPD from one selected video representation 
 ## Recovering a build rotation
 
 Upstream rotates the client crypto roughly monthly
-(`81` → `119` → `140` → `166` → `171` → `177` → `181`). The _derivation_
+(`81` → `119` → `140` → `166` → `171` → `177` → `181` → `189`). The _derivation_
 constants move together — build id, salts, fragment offsets, mask fragments,
 key, epoch — and a partial update fails exactly like a total one, so recover
 those as a set. The persisted-query hash rotates on its own schedule and can be
@@ -112,7 +113,7 @@ resolve returns zero streams, so check both. Done 2026-09-08 for `140` → `166`
 2026-10-13 for `171` → `177` (two intermediate builds `172`–`176` never made it
 into the tree — probing `166`–`174` returned `unknown_build_id` while `177`
 answered `invalid_boot_token`, bracketing the live generation before the chunk
-was read), and 2026-10-19 for `177` → `181`.
+was read), 2026-10-19 for `177` → `181`, and 2026-11-12 for `181` → `189`.
 
 **Read the failure first — the endpoint says which half is stale.**
 
@@ -129,7 +130,7 @@ Scanning build ids until the answer flips from `unknown_build_id` to
 **Then re-extract from the crypto chunk.** It is the chunk under
 `cdn.mkissa.net/all/mk/_app/immutable/chunks/` containing both `buildId` and
 `client-crypto` (`BVxTyUEI.js` on 2026-09-08, `RD7DzHLl.js` on 2026-10-13,
-`Cs-j4hUW.js` on 2026-10-19); reach it by crawling `_app/immutable/entry/app.*.js`.
+`Cs-j4hUW.js` on 2026-10-19, `DmW2_MRj.js` on 2026-11-12); reach it by crawling `_app/immutable/entry/app.*.js`.
 Strings are 3-character fragments in a rotated table, so nothing greps out as a
 literal — and **every symbol name in this section rotates with the build**, so
 find them by shape, not by name. On build 177 the pieces were: `tu()` returns
@@ -169,24 +170,36 @@ Historic name map for orientation: 140/166 called the table `Xc`, the accessor
 is the boot payload field order and rotates independently of the separator;
 build 140 signed `group.host.lane.buildId.epoch`, build 166 signed
 `group:lane:epoch:host:buildId`, build 177 signs `group/lane/host/buildId/epoch`,
-build 181 signs `buildId:group:host:epoch:lane` joined by `:`.
+build 181 signs `buildId:group:host:epoch:lane` joined by `:`, and build 189
+signs `epoch|lane|group|host|buildId` joined by `|`.
 
-**The persisted query hash rotates too**, and separately. It is a true persisted
-query — the document is never sent — so a stale hash returns
-`PersistedQueryNotFound` and every resolve yields zero streams. Rebuild it by
+On build 189 the string table is `tu`, the accessor is `za(e) = tu()[e - 196]`,
+and the wrappers are `Lt(e, t) = za(t - 334)` and `Wt(e, t) = za(t - 144)`. The
+rotator is the `push/shift` IIFE immediately before `const so=`, target checksum
+`809856`, which matched after 242 rotations. `envXor` re-rolled to `12` and is
+still not ported: the raw mask bootstraps. The build id is `Wt(423, 525)` →
+`"189"`.
+
+**The persisted query hash rotates too**, and separately. GET sends only the
+hash. A stale hash returns `PersistedQueryNotFound`. On build 189 the desktop
+hash did not change, and GET of that hash still missed, so Kunai POSTs the
+exact desktop document once (`episode-query.ts`) with the same extensions. A
+second `PersistedQueryNotFound` is drift. Rebuild the document by
 expanding the episode query template — find the builder whose body contains
 `episode(` (named `iK` on 140, `Dj` on 177 and 181) and expand its fragments
 (`Oi`, `Kt`, `Zr()`, and their children `Hd`, `Hs`, `ku`→`Ka`→`fR`/`dp`→`mR`/`up`;
 on 181 the children are `St`, `Gt`, `GS`, `Qz`, `en`, `Eu` — conditionals take
 `[true,false]` argument sets), then take `sha256` of the result with the
 mobile-only `$qat` lines omitted — the pinned hash is the desktop variant.
-Build 181 kept the episode template byte-identical to 177, so the hash did not
-rotate; verify by resolving rather than assuming.
+Build 181 kept the episode template byte-identical to 177, and build 189 kept
+that same desktop hash (`Bj(true, true, false)`, 2552 bytes). Do not pin the
+mobile hash. Verify by hashing the extracted document, not by retyping it.
 
 Confirm the whole chain live before landing: bootstrap must answer `200` with a
-`partB`, the episode GET must return `"tobeparsed"` rather than an
-`AA_CRYPTO_*` or `PersistedQueryNotFound` error, and the resolved URL must
-decode — `mpv --no-config --vo=null --ao=null --frames=2`. On 2026-09-08 that
+`partB`. Episode GET may return `PersistedQueryNotFound` even with the current
+hash; the POST of the desktop document must then execute (a captcha body means
+the query was accepted). A probed URL still has to decode before a resolve may
+succeed — `mpv --no-config --vo=null --ao=null --frames=2`. On 2026-09-08 that
 chain produced h264 1920x1080 with `alang=jpn` audio from `video.wixstatic.com`.
 
 `NEED_CAPTCHA` after a few rapid resolves is upstream rate limiting, not a
