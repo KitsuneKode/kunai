@@ -217,12 +217,12 @@ describe("provider cycling correctness", () => {
     if (!resolveStream) throw new Error("rivestream module must expose resolve");
 
     const requested: string[] = [];
-    const context = {
+    const context: ProviderRuntimeContext = {
       providerId: "rivestream",
       now: () => "2026-11-12T00:00:00.000Z",
       fetch: {
         runtime: "direct-http",
-        fetch: (async (url: string | URL | Request) => {
+        fetch: async (url) => {
           const href = String(url);
           requested.push(href);
           if (href.includes("/api/providers")) {
@@ -243,9 +243,9 @@ describe("provider cycling correctness", () => {
           return jsonResponse({
             data: [{ url: "https://cdn.example/healthy/1080/index.m3u8", quality: "1080" }],
           });
-        }) as NonNullable<ProviderRuntimeContext["fetch"]>["fetch"],
+        },
       },
-    } as unknown as ProviderRuntimeContext;
+    };
 
     const result = await resolveStream(buildInput(), context);
     expect(result.status).toBe("exhausted");

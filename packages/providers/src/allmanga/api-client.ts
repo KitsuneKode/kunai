@@ -756,6 +756,23 @@ export function isAllMangaPersistedQueryNotFound(rawText: string): boolean {
   return rawText.includes("PersistedQueryNotFound");
 }
 
+/** Variables of the desktop episode-sources document. */
+type AllMangaEpisodeQueryVariables = {
+  readonly showId: string;
+  readonly translationType: "sub" | "dub";
+  readonly episodeString: string;
+};
+
+/** Extensions posted with that document: persisted-query hash, lane, and aaReq. */
+type AllMangaEpisodeQueryExtensions = {
+  readonly persistedQuery: {
+    readonly version: 1;
+    readonly sha256Hash: string;
+  };
+  readonly k: string;
+  readonly aaReq: string;
+};
+
 /**
  * GET automatic persisted queries miss on build 189 even when the hash is
  * current. Upstream falls back to POST of the desktop document with the same
@@ -767,8 +784,8 @@ async function postEpisodeQueryDocument(opts: {
   readonly referer: string;
   readonly ua: string;
   readonly buildId: string;
-  readonly vars: Record<string, unknown>;
-  readonly extensions: Record<string, unknown>;
+  readonly vars: AllMangaEpisodeQueryVariables;
+  readonly extensions: AllMangaEpisodeQueryExtensions;
   readonly signal?: AbortSignal;
 }): Promise<string> {
   const { context, apiUrl, referer, ua, buildId, vars, extensions, signal } = opts;
@@ -910,7 +927,7 @@ export async function resolveEpisodeSources(opts: {
     }
 
     if (isAllMangaPersistedQueryNotFound(rawText)) {
-      const extensions = {
+      const extensions: AllMangaEpisodeQueryExtensions = {
         persistedQuery: { version: 1, sha256Hash: material.queryHash },
         k: material.contentLane,
         aaReq,

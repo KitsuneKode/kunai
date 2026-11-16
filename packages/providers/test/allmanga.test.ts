@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { createCipheriv, createDecipheriv, createHash } from "node:crypto";
 
-import type {
-  ProviderResolveInput,
-  ProviderResolveResult,
-  ProviderRuntimeContext,
-  ProviderTitleBridgePort,
+import {
+  isJsonObject,
+  isJsonString,
+  type ProviderResolveInput,
+  type ProviderResolveResult,
+  type ProviderRuntimeContext,
+  type ProviderTitleBridgePort,
 } from "@kunai/types";
 
 import { safeAllMangaHostname } from "../src/allmanga/direct";
@@ -328,6 +330,17 @@ describe("buildAllMangaAaReq", () => {
   });
 });
 
+type PostedEpisodeDocument = {
+  readonly query: string | undefined;
+  readonly variables: {
+    readonly showId: string | undefined;
+    readonly translationType: string | undefined;
+    readonly episodeString: string | undefined;
+  };
+  readonly sha256Hash: string | undefined;
+  readonly k: string | undefined;
+};
+
 describe("AllManga crypto material (mkissa bootstrap)", () => {
   const partBBytes = Array.from({ length: 32 }, (_, index) => index + 1);
   const PART_B = Buffer.from(partBBytes).toString("base64");
@@ -379,7 +392,7 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
       }
       const isEpisodePost = method === "POST" && url.includes("api.mkissa.net/api");
       if (url.includes("variables=") || isEpisodePost) {
-        if (isEpisodePost && typeof init?.body === "string") postBodies.push(init.body);
+        if (isEpisodePost && isJsonString(init?.body)) postBodies.push(init.body);
         const body =
           options.apiResponses[Math.min(apiCallCount, options.apiResponses.length - 1)] ?? "{}";
         apiCallCount += 1;
@@ -631,6 +644,49 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     expect(site.bootstrapFetchCount).toBe(1);
   });
 
+  function readPostedEpisodeDocument(raw: string): PostedEpisodeDocument {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = undefined;
+    }
+    if (!isJsonObject(parsed)) {
+      return {
+        query: undefined,
+        variables: { showId: undefined, translationType: undefined, episodeString: undefined },
+        sha256Hash: undefined,
+        k: undefined,
+      };
+    }
+    const variables = isJsonObject(parsed.variables) ? parsed.variables : undefined;
+    const extensions = isJsonObject(parsed.extensions) ? parsed.extensions : undefined;
+    const persistedQuery =
+      extensions !== undefined && isJsonObject(extensions.persistedQuery)
+        ? extensions.persistedQuery
+        : undefined;
+    return {
+      query: isJsonString(parsed.query) ? parsed.query : undefined,
+      variables: {
+        showId:
+          variables !== undefined && isJsonString(variables.showId) ? variables.showId : undefined,
+        translationType:
+          variables !== undefined && isJsonString(variables.translationType)
+            ? variables.translationType
+            : undefined,
+        episodeString:
+          variables !== undefined && isJsonString(variables.episodeString)
+            ? variables.episodeString
+            : undefined,
+      },
+      sha256Hash:
+        persistedQuery !== undefined && isJsonString(persistedQuery.sha256Hash)
+          ? persistedQuery.sha256Hash
+          : undefined,
+      k: extensions !== undefined && isJsonString(extensions.k) ? extensions.k : undefined,
+    };
+  }
+
   test("posts the desktop episode document when GET automatic persisted queries miss", async () => {
     using site = mockCryptoSiteFetch({
       apiResponses: ['{"errors":[{"message":"PersistedQueryNotFound"}]}', PLAIN_SOURCE_JSON],
@@ -642,19 +698,15 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     expect(site.apiCallCount).toBe(2);
     expect(site.bootstrapFetchCount).toBe(1);
     expect(site.postBodies).toHaveLength(1);
-    const posted = JSON.parse(site.postBodies[0] ?? "{}") as {
-      query?: string;
-      variables?: Record<string, unknown>;
-      extensions?: { persistedQuery?: { sha256Hash?: string }; k?: string };
-    };
+    const posted = readPostedEpisodeDocument(site.postBodies[0] ?? "{}");
     expect(posted.query).toBe(ALLMANGA_EPISODE_QUERY);
     expect(posted.variables).toEqual({
       showId: "show-1",
       translationType: "sub",
       episodeString: "1",
     });
-    expect(posted.extensions?.persistedQuery?.sha256Hash).toBe(ALLMANGA_QUERY_HASH);
-    expect(posted.extensions?.k).toBe("k7");
+    expect(posted.sha256Hash).toBe(ALLMANGA_QUERY_HASH);
+    expect(posted.k).toBe("k7");
     expect(createHash("sha256").update(ALLMANGA_EPISODE_QUERY).digest("hex")).toBe(
       ALLMANGA_QUERY_HASH,
     );
