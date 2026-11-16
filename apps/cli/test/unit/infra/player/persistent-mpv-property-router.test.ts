@@ -207,6 +207,64 @@ describe("PersistentMpvPropertyRouter", () => {
     expect(commands).toContainEqual(["set_property", "user-data/kunai-request", ""]);
   });
 
+  test("accepts explicit embedded audio language only for the loaded file", () => {
+    const events: unknown[] = [];
+    const audioIntents: string[] = [];
+    let accepting = true;
+    const router = new PersistentMpvPropertyRouter({
+      getActiveCycle: () => null,
+      getIpcSession: () => null,
+      getCurrentOptions: () => ({
+        displayTitle: "Episode",
+        primarySubtitle: null,
+        onPlaybackEvent: (event) => events.push(event),
+      }),
+      getAudioIntentMediaPath: () => (accepting ? "https://example.test/current.mkv" : null),
+      onAudioIntent: (lang) => audioIntents.push(lang),
+      subtitleManager: new PersistentSubtitleManager(),
+      notifyMpvActionRequest: () => {},
+      finishResumeChoiceWait: () => {},
+      handleResumeSeekFromMpv: async () => {},
+      handleCopyShareFromMpv: async () => {},
+      onSkipRequestFromMpv: async () => {},
+      setCurrentPositionSeconds: () => {},
+      maybeRearmSkippedSegmentsOnBackwardSeek: () => {},
+      getCurrentPositionSeconds: () => 0,
+      maybeEmitPlaybackProgress: () => {},
+      handleSegmentSkipProgress: async () => {},
+      fireNearEofIfNeeded: () => {},
+      observeWatchdog: () => {},
+    });
+
+    const send = (payload: import("@kunai/types").JsonValue) =>
+      router.handlePropertyUpdate({
+        name: "user-data/kunai-audio-intent",
+        value: JSON.stringify(payload),
+        observedAt: 1,
+      });
+    send({ id: 2, language: "JA", path: "https://example.test/current.mkv" });
+    expect(events).toEqual([
+      { type: "track-changed", trackType: "audio", id: 2, audioLanguageIntent: "ja" },
+    ]);
+    expect(audioIntents).toEqual(["ja"]);
+    events.length = 0;
+    audioIntents.length = 0;
+    const rejectedPayloads: import("@kunai/types").JsonValue[] = [
+      { id: 2, language: "en", path: "https://example.test/retired.mkv" },
+      { id: 0, language: "en", path: "https://example.test/current.mkv" },
+      { id: 2, language: "und", path: "https://example.test/current.mkv" },
+      { id: 2, language: "zxx", path: "https://example.test/current.mkv" },
+      { id: 2, language: "mul", path: "https://example.test/current.mkv" },
+      { id: 2, path: "https://example.test/current.mkv" },
+      { id: 2, language: "English dub", path: "https://example.test/current.mkv" },
+      { id: 2, language: "en", path: "https://example.test/current.mkv", extra: "x".repeat(9000) },
+    ];
+    for (const payload of rejectedPayloads) send(payload);
+    accepting = false;
+    send({ id: 2, language: "en", path: "https://example.test/current.mkv" });
+    expect(events).toEqual([]);
+  });
+
   test("emits track-changed for well-formed ids and drops malformed values", () => {
     const { ipc, commands } = createFakeIpc();
     const events: unknown[] = [];

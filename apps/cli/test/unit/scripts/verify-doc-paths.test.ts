@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { checkRoadmap } from "../../../../../scripts/verify-doc-paths";
+import { checkFile, checkRoadmap } from "../../../../../scripts/verify-doc-paths";
 
 /**
  * `checkRoadmap` is pure over its two inputs: the roadmap text and the names
@@ -68,4 +71,21 @@ describe("checkRoadmap", () => {
     expect(findings).toHaveLength(1);
     expect(findings[0]?.file).toBe(".plans/099-foo.md");
   });
+});
+
+test("clean-checkout docs may cite generated mobile artifacts but still reject missing source files", () => {
+  const root = mkdtempSync(join(tmpdir(), "kunai-doc-paths-clean-"));
+  try {
+    mkdirSync(join(root, ".docs"));
+    const doc = join(root, ".docs/mobile.md");
+    writeFileSync(
+      doc,
+      "Verify the generated `apps/mobile/dist/mobile-build-meta.json` after building.\nSee `apps/mobile/src/missing.ts`.\n",
+    );
+    expect(checkFile(doc, root)).toEqual([
+      { file: join(".docs", "mobile.md"), target: "apps/mobile/src/missing.ts", line: 2 },
+    ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

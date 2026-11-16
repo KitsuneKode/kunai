@@ -13,4 +13,4 @@
        Search and play from YouTube
  ──────────────────────────────────────────────────────────────────────
    [enter] confirm  [↑↓] choose  [b] back  [s] recommended      Setup
-   [S] finish defaults
+   [S] review defaults

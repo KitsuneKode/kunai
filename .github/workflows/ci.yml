@@ -464,10 +464,9 @@ jobs:
       github.event_name == 'push' ||
       needs.changes.outputs.cli == 'true' ||
       needs.changes.outputs.installer == 'true'
-    # Apple Silicon deliberately, not `macos-13`/Intel. `macos-14` is the arm64
-    # runner, and darwin-arm64 is the majority Mac target — an Intel-only leg
-    # would green-light the binary most Mac users actually download.
-    runs-on: macos-14
+    # Keep parity on Apple Silicon. macos-14 retired on November 2, 2026;
+    # macos-15 is the supported arm64 label (Intel uses macos-15-intel).
+    runs-on: macos-15
     # Blocking, for the same reason the Windows leg is. Before this job, macOS
     # had no CI coverage at all: `release.yml` smokes the darwin binaries, but
     # that is release time, so every macOS regression stayed invisible on main

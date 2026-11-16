@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-02"
+lastReviewed: "2026-11-04"
 ---
 
 # Feature Map
@@ -31,15 +31,15 @@ cli-args.ts → main.ts → container/ → app/bootstrap → app/session (Sessio
 
 ## Launch surface
 
-| Feature                                                             | Owned by                                                                  | Docs                                                                                                        |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Flag parsing (33 flags)                                             | `apps/cli/src/cli-args.ts`, re-exported as `main.ts` `parseArgs()`        | `docs/users/cli-reference.mdx` (generated from `--help`)                                                    |
-| Modes: `-a` anime, `-y` youtube, `-m` minimal, `-z` zen, `-q` quick | `apps/cli/src/app/session/*`                                              | [.plans/kunai-execution-passes-and-cli-modes.md](../.plans/kunai-execution-passes-and-cli-modes.md)         |
-| Bootstrap, first run, `--setup`                                     | `apps/cli/src/app/bootstrap/*`                                            | [download-offline-onboarding.md](./download-offline-onboarding.md)                                          |
-| `--open` / `kunai://` protocol                                      | `apps/cli/src/domain/share/*`, `app/bootstrap/resolve-share-target.ts`    | [share-links.md](./share-links.md)                                                                          |
-| Container / DI wiring                                               | `apps/cli/src/container/*` (`container.ts` is a barrel)                   | [architecture.md](./architecture.md)                                                                        |
-| Web companion / serve command                                       | `apps/cli/src/services/web-companion/*`                                   | [runtime-boundary-map.md](./runtime-boundary-map.md#provider-relay-ownership)                               |
-| Mobile terminal host proof                                          | `apps/mobile/src/entry.ts`, `application/*`, `runtime/{android,ashell}/*` | [mobile-terminal-runtime.md](./mobile-terminal-runtime.md) · [mobile-device-lab.md](./mobile-device-lab.md) |
+| Feature                                                             | Owned by                                                                            | Docs                                                                                                        |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Flag parsing (33 flags)                                             | `apps/cli/src/cli-args.ts`, re-exported as `main.ts` `parseArgs()`                  | `docs/users/cli-reference.mdx` (generated from `--help`)                                                    |
+| Modes: `-a` anime, `-y` youtube, `-m` minimal, `-z` zen, `-q` quick | `apps/cli/src/app/session/*`                                                        | [.plans/kunai-execution-passes-and-cli-modes.md](../.plans/kunai-execution-passes-and-cli-modes.md)         |
+| Bootstrap, first run, `--setup`                                     | `apps/cli/src/app/bootstrap/*`                                                      | [download-offline-onboarding.md](./download-offline-onboarding.md)                                          |
+| `--open` / `kunai://` protocol                                      | `apps/cli/src/domain/share/*`, `app/bootstrap/resolve-share-target.ts`              | [share-links.md](./share-links.md)                                                                          |
+| Container / DI wiring                                               | `apps/cli/src/container/*` (`container.ts` is a barrel)                             | [architecture.md](./architecture.md)                                                                        |
+| Web companion / serve command                                       | `apps/cli/src/services/web-companion/*`, `packages/relay/src/web-companion-html.ts` | [architecture.md](./architecture.md#local-web-companion)                                                    |
+| Mobile terminal host proof                                          | `apps/mobile/src/entry.ts`, `application/*`, `runtime/{android,ashell}/*`           | [mobile-terminal-runtime.md](./mobile-terminal-runtime.md) · [mobile-device-lab.md](./mobile-device-lab.md) |
 
 ## Shell (Ink)
 
@@ -94,22 +94,24 @@ callbacks. See [features/pointer-controls.md](./features/pointer-controls.md).
 
 ## Playback
 
-| Feature                                    | Owned by                                                                                                        | Docs                                                                             |
-| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Playback state machine                     | `apps/cli/src/app/playback/PlaybackPhase.ts`                                                                    | [architecture.md](./architecture.md)                                             |
-| mpv launch + IPC (socket / named pipe)     | `apps/cli/src/infra/player/*`, `apps/cli/src/mpv.ts`                                                            | [quickstart.md](./quickstart.md)                                                 |
-| Android detached handoff + stream gateway  | `apps/cli/src/infra/player/handoff-player-service.ts`, `stream-gateway.ts`, `android-intent-launcher.ts`        | [architecture.md](./architecture.md)                                             |
-| DASH manifest + template routes            | `apps/cli/src/infra/player/dash-gateway-manifest.ts`, `manifest-prefix.ts`                                      | [architecture.md](./architecture.md)                                             |
-| Persistent session + autoplay              | `apps/cli/src/infra/player/PersistentMpvSession.ts`                                                             | [mpv-in-process-reconnect.md](./mpv-in-process-reconnect.md)                     |
-| Intro/credits auto-skip (IntroDB, AniSkip) | `apps/cli/src/aniskip.ts`, `apps/cli/src/introdb.ts`                                                            | [playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md)               |
-| Timing sources and merge                   | `apps/cli/src/infra/timing/*` — `PlaybackTimingAggregator` merges IntroDB, AniSkip, and provider-native timings | [playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md)               |
-| Subtitles                                  | `apps/cli/src/subtitle.ts`                                                                                      | [playback-source-inventory-contract.md](./playback-source-inventory-contract.md) |
-| Recovery / fallback / `/recover`           | `apps/cli/src/domain/recovery/*`                                                                                | [debugging-map.md](./debugging-map.md)                                           |
-| Post-playback actions                      | `apps/cli/src/app/post-play/*`                                                                                  | [ux-architecture.md](./ux-architecture.md)                                       |
-| Playback rules (pure, no I/O)              | `apps/cli/src/domain/playback/*` — progress/completion policy, problem classification, local streams            | [architecture.md](./architecture.md)                                             |
-| Source selection (pure)                    | `apps/cli/src/domain/playback-source/*` — `SourceSelectionEngine`, offline availability                         | [playback-source-inventory-contract.md](./playback-source-inventory-contract.md) |
-| Entry auto-play decision (Enter vs menu)   | `apps/cli/src/app-shell/title-control/smart-auto-launch.ts`                                                     | [ux-architecture.md](./ux-architecture.md)                                       |
-| Debrid magnet playback                     | `apps/cli/src/services/debrid/*`                                                                                | [architecture.md](./architecture.md)                                             |
+| Feature                                    | Owned by                                                                                                                              | Docs                                                                             |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Playback state machine                     | `apps/cli/src/app/playback/PlaybackPhase.ts`                                                                                          | [architecture.md](./architecture.md)                                             |
+| mpv launch + IPC (socket / named pipe)     | `apps/cli/src/infra/player/*`, `apps/cli/src/mpv.ts`                                                                                  | [quickstart.md](./quickstart.md)                                                 |
+| Android detached handoff + stream gateway  | `apps/cli/src/infra/player/handoff-player-service.ts`, `stream-gateway.ts`, `android-intent-launcher.ts`                              | [architecture.md](./architecture.md)                                             |
+| Android verified offline-file serving      | `apps/cli/src/infra/player/local-gateway-file.ts`, `stream-gateway.ts`                                                                | [architecture.md](./architecture.md#android-detached-player-flow)                |
+| Explicit embedded audio intent             | `apps/cli/assets/mpv/kunai-bridge.lua`, `apps/cli/src/infra/player/mpv-audio-intent.ts`, `apps/cli/src/app/playback/PlaybackPhase.ts` | [architecture.md](./architecture.md#mpv-flow)                                    |
+| DASH manifest + template routes            | `apps/cli/src/infra/player/dash-gateway-manifest.ts`, `manifest-prefix.ts`                                                            | [architecture.md](./architecture.md)                                             |
+| Persistent session + autoplay              | `apps/cli/src/infra/player/PersistentMpvSession.ts`                                                                                   | [mpv-in-process-reconnect.md](./mpv-in-process-reconnect.md)                     |
+| Intro/credits auto-skip (IntroDB, AniSkip) | `apps/cli/src/aniskip.ts`, `apps/cli/src/introdb.ts`                                                                                  | [playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md)               |
+| Timing sources and merge                   | `apps/cli/src/infra/timing/*` — `PlaybackTimingAggregator` merges IntroDB, AniSkip, and provider-native timings                       | [playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md)               |
+| Subtitles                                  | `apps/cli/src/subtitle.ts`                                                                                                            | [playback-source-inventory-contract.md](./playback-source-inventory-contract.md) |
+| Recovery / fallback / `/recover`           | `apps/cli/src/domain/recovery/*`                                                                                                      | [debugging-map.md](./debugging-map.md)                                           |
+| Post-playback actions                      | `apps/cli/src/app/post-play/*`                                                                                                        | [ux-architecture.md](./ux-architecture.md)                                       |
+| Playback rules (pure, no I/O)              | `apps/cli/src/domain/playback/*` — progress/completion policy, problem classification, local streams                                  | [architecture.md](./architecture.md)                                             |
+| Source selection (pure)                    | `apps/cli/src/domain/playback-source/*` — `SourceSelectionEngine`, offline availability                                               | [playback-source-inventory-contract.md](./playback-source-inventory-contract.md) |
+| Entry auto-play decision (Enter vs menu)   | `apps/cli/src/app-shell/title-control/smart-auto-launch.ts`                                                                           | [ux-architecture.md](./ux-architecture.md)                                       |
+| Debrid magnet playback                     | `apps/cli/src/services/debrid/*`                                                                                                      | [architecture.md](./architecture.md)                                             |
 
 ## Library and personal state
 

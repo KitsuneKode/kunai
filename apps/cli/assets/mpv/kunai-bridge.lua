@@ -1076,9 +1076,58 @@ local function has_multiple_internal_audio_tracks()
 	return count > 1
 end
 
+local function get_playback_identity()
+	local path = mp.get_property("path", "")
+	if path == "" then
+		return nil
+	end
+	local pl = mp.get_property_native("playlist", {})
+	local entry_id = nil
+	if type(pl) == "table" then
+		for _, entry in ipairs(pl) do
+			if type(entry) == "table" and (entry.playing or entry.current) then
+				entry_id = entry.id
+				break
+			end
+		end
+	end
+	return { path = path, entry_id = entry_id }
+end
+
+local function same_playback_identity(before, after)
+	return before and after and before.path == after.path and before.entry_id == after.entry_id
+end
+
+local audio_intent_revision = 0
+
 local function do_cycle_audio()
 	if has_multiple_internal_audio_tracks() then
+		local before = get_playback_identity()
+		if not before then
+			return
+		end
 		mp.commandv("cycle", "audio")
+		local after = get_playback_identity()
+		if not same_playback_identity(before, after) then
+			return
+		end
+		-- Only this explicit key action carries intent. Property observers above
+		-- also run at startup/default selection and must never save a preference.
+		for _, track in ipairs(mp.get_property_native("track-list", {})) do
+			if track.type == "audio" and track.selected and track.lang then
+				if not same_playback_identity(before, get_playback_identity()) then
+					return
+				end
+				audio_intent_revision = audio_intent_revision + 1
+				mp.set_property("user-data/kunai-audio-intent", require("mp.utils").format_json({
+					id = track.id,
+					language = track.lang,
+					path = after.path,
+					revision = audio_intent_revision,
+				}))
+				break
+			end
+		end
 		return
 	end
 	mp.set_property("user-data/kunai-loading", "Kunai · Toggling Sub / Dub…")

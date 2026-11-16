@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-29"
+lastReviewed: "2026-11-06"
 ---
 
 # Kunai — Repo Infrastructure
@@ -164,6 +164,13 @@ Bun store cache, per-job `.turbo` cache prefixes, `TURBO_SCM_BASE` on PRs, and
 `TURBO_TOKEN` / `TURBO_TEAM` for remote Turbo cache. The README CI badge points
 at `.github/workflows/ci.yml`, which runs the Linux test job plus blocking
 Windows (`windows-cli`) and macOS (`macos-cli`) legs.
+
+The macOS parity job and the release's `darwin-arm64` native smoke use
+`macos-15` (Apple Silicon). The separate `darwin-x64` smoke uses
+`macos-15-intel`. GitHub retired the former `macos-14` runner on November 2,
+2026; a job rejected before allocation provides no platform qualification.
+Runner retirement and replacement labels are documented in
+[GitHub's retirement notice](https://github.blog/changelog/2026-10-01-github-actions-macos-14-runner-image-retirement/).
 
 ### Checkout is caller-owned
 
