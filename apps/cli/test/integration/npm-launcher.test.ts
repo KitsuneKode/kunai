@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import {
   chmodSync,
   copyFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -14,6 +15,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { removeTempDir } from "../support/remove-temp-dir";
+import { waitUntil } from "../support/wait-until";
 
 /**
  * The npm `bin` launcher must run under plain Node.
@@ -375,17 +377,31 @@ signalTest("dies by the same signal as the child, giving 128+n", async () => {
     ["SIGINT", 130],
     ["SIGHUP", 129],
   ] as const) {
+    const readyFile = join(workDir, `ready-${signal}`);
     const child = Bun.spawn({
       cmd: ["node", launcher],
-      env: { ...process.env, PATH: noBunPath },
+      env: {
+        ...process.env,
+        PATH: noBunPath,
+        KUNAI_LAUNCHER_READY_FILE: readyFile,
+      },
       stdout: "ignore",
       stderr: "ignore",
     });
-    // The launcher registers its handlers synchronously in main(); there is no
-    // readiness artifact to poll, so this is a bounded grace, not a sleep for
-    // correctness. 400ms flaked on loaded runners — 1.5s matches the sibling
-    // process-shutdown test's mount budget.
-    await Bun.sleep(1_500);
+    // The file is written after `process.on` for the forwarded signals. Killing
+    // before that races Node's startup and is how the old fixed sleep flaked.
+    await waitUntil(() => existsSync(readyFile), {
+      label: `${signal} handlers registered`,
+      timeoutMs: 5_000,
+      tick: async (ms) => {
+        if (child.exitCode !== null) {
+          throw new Error(
+            `launcher exited ${child.exitCode} before registering ${signal} handlers`,
+          );
+        }
+        await Bun.sleep(ms);
+      },
+    });
     process.kill(child.pid, signal);
     // Re-raising while a handler is still registered makes Node run the handler
     // instead of terminating — the launcher removes it first, and this pins that.
