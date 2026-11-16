@@ -18,7 +18,7 @@ export async function createContainer(options?: ContainerOptions): Promise<Conta
     cacheDb: persistence.cacheDb,
     downloadResolveAbort: null,
   };
-  const services = bootstrapServices({
+  const services = await bootstrapServices({
     options,
     persistence,
     providers,

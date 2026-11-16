@@ -93,6 +93,19 @@ describe("release build shared options", () => {
     expect(npmBundleBuildOptions(root, { minify: false }).minify).toBe(false);
   });
 
+  test("externalizes xmldom from the unpublished dev bundle but not compiled binaries", () => {
+    const bundlePlugins = npmBundleBuildOptions(root, { minify: true }).plugins ?? [];
+    const binaryPlugins =
+      compileBinaryBuildOptions(root, {
+        triple: "bun-linux-x64",
+        outfile: "/tmp/kunai",
+      }).plugins ?? [];
+    expect(bundlePlugins.some((plugin) => plugin.name === "kunai-npm-bundle-externals")).toBe(true);
+    expect(binaryPlugins.some((plugin) => plugin.name === "kunai-npm-bundle-externals")).toBe(
+      false,
+    );
+  });
+
   test.each(["direct", "symlinked", "hardlinked-manifest"] as const)(
     "embeds only the CLI version through a %s root, preserving other manifests and runtime env",
     async (rootKind) => {
@@ -215,8 +228,8 @@ describe("release build shared options", () => {
     // Pinned on purpose: raising the ratchet has to be a deliberate edit with a
     // documented measurement in build-shared.ts, not a number that drifts up
     // whenever a bundle grows.
-    expect(NPM_BUNDLE_BUDGET_KB).toBe(3_120);
-    expect(() => assertNpmBundleBudget(3_194_880)).not.toThrow();
-    expect(() => assertNpmBundleBudget(3_194_881)).toThrow("budget 3120 KiB");
+    expect(NPM_BUNDLE_BUDGET_KB).toBe(3_045);
+    expect(() => assertNpmBundleBudget(3_118_080)).not.toThrow();
+    expect(() => assertNpmBundleBudget(3_118_081)).toThrow("budget 3045 KiB");
   });
 });

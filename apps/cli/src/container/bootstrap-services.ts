@@ -13,7 +13,6 @@ import {
   processStartId,
 } from "../infra/os/process-owner-identity";
 import { whichLive } from "../infra/os/which";
-import { HandoffPlayerService } from "../infra/player/handoff-player-service";
 import type { PlayerPresentationPort } from "../infra/player/player-presentation-port";
 import { PlayerControlServiceImpl } from "../infra/player/PlayerControlServiceImpl";
 import { PlayerServiceImpl } from "../infra/player/PlayerServiceImpl";
@@ -83,12 +82,12 @@ export type ServicesBootstrap = Omit<
   | "playbackResolveWork"
 >;
 
-export function bootstrapServices(input: {
+export async function bootstrapServices(input: {
   readonly options?: ContainerOptions;
   readonly persistence: PersistenceBootstrap;
   readonly providers: ProviderBootstrap;
   readonly disposeHandles: ContainerDisposeHandles;
-}): ServicesBootstrap {
+}): Promise<ServicesBootstrap> {
   const { options, persistence, providers, disposeHandles } = input;
   const { logger, tracer, sessionId } = persistence.core;
   const { engine: _engine, providerRegistry, playbackResolveWork } = providers;
@@ -150,7 +149,9 @@ export function bootstrapServices(input: {
   };
   const player =
     playerMode.kind === "android-handoff"
-      ? new HandoffPlayerService({ target: playerMode.target })
+      ? new (await import("../infra/player/handoff-player-service")).HandoffPlayerService({
+          target: playerMode.target,
+        })
       : new PlayerServiceImpl({
           logger,
           tracer,
