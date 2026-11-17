@@ -13,6 +13,7 @@
  */
 
 import { companionFallbackGlyph, type CompanionMode } from "./companion-policy";
+import { companionFlavorEnabled } from "./decoration-policy";
 
 export type KannaMoment = "empty" | "error" | "done";
 
@@ -78,7 +79,7 @@ export function momentForStateKind(kind: string): KannaMoment | null {
  * that is stable for the life of the surface, and renders whatever comes back.
  */
 export function companionLineFor(kind: string, mode: CompanionMode, pick: number): string | null {
-  if (mode === "off") return null;
+  if (!companionFlavorEnabled() || mode === "off") return null;
   const moment = momentForStateKind(kind);
   return moment === null ? null : kannaLine(moment, pick);
 }
@@ -106,7 +107,7 @@ export type KannaDoneKind = keyof typeof KANNA_DONE_PICKS;
 
 /** The `done` line for a completion kind, or null when the companion is off. */
 export function kannaDoneLine(kind: KannaDoneKind, mode: CompanionMode): string | null {
-  if (mode === "off") return null;
+  if (!companionFlavorEnabled() || mode === "off") return null;
   return kannaLine("done", KANNA_DONE_PICKS[kind]);
 }
 

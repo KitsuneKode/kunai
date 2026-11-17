@@ -1,3 +1,5 @@
+import { plainDecorationsActive } from "./decoration-policy";
+
 /** `0`/`false` read as "not requested", the same way `KUNAI_PET` and `KUNAI_POSTER` do. */
 const OFF_VALUES = new Set(["0", "false", "off", "no"]);
 
@@ -16,5 +18,7 @@ function requested(value: string | undefined): boolean {
  * stops cycling.
  */
 export function reducedMotionEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return requested(env.KUNAI_REDUCED_MOTION) || requested(env.NO_MOTION);
+  return (
+    plainDecorationsActive(env) || requested(env.KUNAI_REDUCED_MOTION) || requested(env.NO_MOTION)
+  );
 }

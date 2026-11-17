@@ -5,6 +5,8 @@ import { Box, Text, useInput } from "ink";
 import React from "react";
 
 import type { AppCommandId, ResolvedAppCommand } from "./commands";
+import { decorationGlyphs } from "./decoration-policy";
+import { SectionSeparator } from "./decoration-ui";
 import { isHardGlobalQuit, routeShellInput } from "./input-router";
 import { useRootContentSuspended } from "./RootContentSuspension";
 import { useShellInput } from "./shell-command-input";
@@ -257,7 +259,9 @@ export function InputField({
       </Box>
       <Box marginTop={1} flexDirection="column">
         <Box paddingX={1}>
-          <Text color={focus ? palette.accent : palette.dim}>{focus ? "⌕ " : "› "}</Text>
+          <Text color={focus ? palette.accent : palette.dim}>
+            {focus ? `${decorationGlyphs().search} ` : "› "}
+          </Text>
           <LineEditorText
             value={value}
             cursor={editor.cursor}
@@ -267,11 +271,11 @@ export function InputField({
             ghostSuffix={ghostSuffix}
           />
         </Box>
-        <Box>
-          <Text color={focus ? palette.accent : palette.dim} dimColor>
-            {"─".repeat(Math.max(4, fieldWidth))}
-          </Text>
-        </Box>
+        <SectionSeparator
+          width={fieldWidth}
+          ruleWidth={Math.max(4, fieldWidth)}
+          color={palette.dim}
+        />
       </Box>
       {renderedHint ? (
         <Box marginTop={1}>

@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { terminalPostersEnabled } from "../decoration-policy";
 import type { PosterResult } from "../poster-types";
 import { truncateLine, wrapText } from "../shell-text";
 import { palette } from "../shell-theme";
@@ -39,7 +40,7 @@ export function PreviewRail({
 }) {
   const facts = visiblePreviewFacts(model.facts).slice(0, 4);
   const posterLabel = getPreviewPosterLabel(model);
-  const hasPosterImage = poster !== undefined && poster.kind !== "none";
+  const hasPosterImage = terminalPostersEnabled() && poster !== undefined && poster.kind !== "none";
   const bodyWidth = Math.max(16, width - 2);
   const overviewLines = model.overview ? wrapText(model.overview, bodyWidth, 3) : [];
   return (
@@ -48,11 +49,11 @@ export function PreviewRail({
           artwork resolves. The real poster renders borderless; the fallback is a
           framed placeholder tile (initials centred in a poster-shaped frame) so it
           reads as "art pending" instead of two letters floating in empty space. */}
-      {hasPosterImage ? (
+      {terminalPostersEnabled() && hasPosterImage ? (
         <Box minHeight={reserveRows} justifyContent="center">
           <PosterOutput poster={poster} />
         </Box>
-      ) : (
+      ) : terminalPostersEnabled() ? (
         <Box
           minHeight={reserveRows}
           width={bodyWidth}
@@ -72,7 +73,7 @@ export function PreviewRail({
             </Text>
           )}
         </Box>
-      )}
+      ) : null}
       <Box marginTop={1} flexDirection="column">
         <Text color={palette.text} bold wrap="truncate">
           {truncateLine(model.title, bodyWidth)}

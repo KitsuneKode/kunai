@@ -89,9 +89,9 @@ LAUNCH
       --setup                Run the setup wizard
 
 DISPLAY
-  -m, --minimal              Minimal chrome
-  -z, --zen                  Zen mode (bare, ani-cli-style)
-  -q, --quick                Quick layout
+  -m, --minimal              Plain chrome for screen readers (no emoji, rules, mascot)
+  -z, --zen                  Single-column layout; implies --minimal
+  -q, --quick                Auto-pick the first search result (same as --jump 1)
       --jump <n>             Auto-pick the n-th search result (1-based, with -S)
 
 PLAYBACK PICKS (this run only — config.json untouched)
@@ -637,7 +637,6 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
   if (warnings.length > 0) {
     console.warn(`kunai: ${warnings.join("; ")}`);
   }
-  const shellChrome: ShellChrome =
-    args.minimal || args.zen ? "minimal" : args.quick ? "quick" : "default";
+  const shellChrome: ShellChrome = args.minimal || args.zen ? "minimal" : "default";
   return { ...args, shellChrome };
 }

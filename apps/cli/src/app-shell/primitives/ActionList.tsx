@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { listSelectionPrefix } from "../decoration-policy";
 import { padColumnsEnd, truncateLine } from "../shell-text";
 import { hotkeyLabel, palette } from "../shell-theme";
 import {
@@ -30,7 +31,7 @@ function ActionRow({
   const detailWidth = Math.max(10, width - 24);
   return (
     <Box>
-      <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
+      <Text color={selected ? palette.accent : palette.dim}>{listSelectionPrefix(selected)}</Text>
       <Text color={disabled ? palette.dim : toneColor(row.tone)} bold={!disabled}>
         {padColumnsEnd(truncateLine(row.label, 18), 18)}
       </Text>

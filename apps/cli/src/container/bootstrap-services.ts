@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { ActivePlaybackCheckpoint } from "@/services/continuation/active-playback-checkpoint";
 
 import { setCompanionPreferenceSource } from "../app-shell/companion-policy";
+import { setPlainDecorationSource } from "../app-shell/decoration-policy";
 import { isInteractiveShellMounted } from "../app-shell/interactive-shell-state";
 import { detectPlayerPlatform, resolvePlayerMode } from "../domain/playback/player-choice";
 import { shouldRecoverQueueOwner } from "../domain/queue/queue-owner-recovery";
@@ -168,6 +169,7 @@ export function bootstrapServices(input: {
   // and the settings row take effect on the next render — no restart, and no
   // separate state to drift out of sync with config.json.
   setCompanionPreferenceSource(() => config.companionPet);
+  setPlainDecorationSource(() => config.minimalMode);
   const connectivity = new Connectivity(() => config.offlineMode);
   const notificationSinkRegistry = new NotificationSinkRegistry();
   notificationSinkRegistry.register(

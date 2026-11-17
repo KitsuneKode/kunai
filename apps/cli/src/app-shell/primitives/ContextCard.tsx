@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { listSelectionPrefix } from "../decoration-policy";
 import { palette } from "../shell-theme";
 import {
   buildContextCardTile,
@@ -32,7 +33,7 @@ export function ContextCard({
 
   return (
     <Box width={width} flexDirection="row">
-      <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
+      <Text color={selected ? palette.accent : palette.dim}>{listSelectionPrefix(selected)}</Text>
       <Text color={palette.accent}>{tile.padEnd(2).slice(0, 2)}</Text>
       <Text color={palette.dim}> </Text>
       <Box flexDirection="column" width={textWidth}>

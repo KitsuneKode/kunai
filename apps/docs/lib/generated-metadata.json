@@ -812,17 +812,17 @@
     {
       "short": "-m",
       "long": "--minimal",
-      "description": "Minimal chrome"
+      "description": "Plain chrome for screen readers (no emoji, rules, mascot)"
     },
     {
       "short": "-z",
       "long": "--zen",
-      "description": "Zen mode (bare, ani-cli-style)"
+      "description": "Single-column layout; implies --minimal"
     },
     {
       "short": "-q",
       "long": "--quick",
-      "description": "Quick layout"
+      "description": "Auto-pick the first search result (same as --jump 1)"
     },
     {
       "short": "",
@@ -1092,7 +1092,7 @@
       "id": "player-fallback",
       "scope": "player",
       "group": "In the player",
-      "keys": "⇧F",
+      "keys": "Shift+F",
       "label": "Switch to another provider (fallback)",
       "tier": "core",
       "order": 60
@@ -1128,7 +1128,7 @@
       "id": "quit",
       "scope": "global",
       "group": "Global",
-      "keys": "⌃C",
+      "keys": "Ctrl+C",
       "label": "Quit",
       "tier": "core",
       "order": 100
@@ -1200,7 +1200,7 @@
       "id": "browse-trending",
       "scope": "browse",
       "group": "While browsing",
-      "keys": "⌃T",
+      "keys": "Ctrl+T",
       "label": "Reload trending results",
       "tier": "surface",
       "order": 260
@@ -1209,7 +1209,7 @@
       "id": "browse-filter",
       "scope": "browse",
       "group": "While browsing",
-      "keys": "⌃F",
+      "keys": "Ctrl+F",
       "label": "Narrow loaded results",
       "tier": "surface",
       "order": 270
@@ -1344,7 +1344,7 @@
       "id": "player-refresh",
       "scope": "player",
       "group": "In the player",
-      "keys": "⌃R",
+      "keys": "Ctrl+R",
       "label": "Refresh the stream (same episode)",
       "tier": "surface",
       "order": 410
@@ -1389,7 +1389,7 @@
       "id": "post-fallback",
       "scope": "postPlayback",
       "group": "After playback",
-      "keys": "⇧F",
+      "keys": "Shift+F",
       "label": "Switch to another provider (fallback)",
       "tier": "surface",
       "order": 530

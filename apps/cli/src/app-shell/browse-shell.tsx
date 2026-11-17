@@ -106,6 +106,8 @@ import { sortCalendarOptions } from "./calendar-view";
 import type { AppCommandId, ResolvedAppCommand } from "./commands";
 import { momentForBrowseEmpty } from "./companion-moment";
 import { CompanionHost } from "./CompanionHost";
+import { listSelectionPrefix, terminalPostersEnabled } from "./decoration-policy";
+import { SectionSeparator } from "./decoration-ui";
 import { DetailsSheetUI } from "./details-pane-ui";
 import {
   buildBrowseDetailsPanel,
@@ -2257,11 +2259,7 @@ export function BrowseShell<T>({
           <Text color={palette.dim}>Query changed · Press Enter to refresh results</Text>
         ) : null}
 
-        <Box marginTop={1}>
-          <Text color={palette.dim} dimColor>
-            {"─".repeat(innerWidth)}
-          </Text>
-        </Box>
+        <SectionSeparator width={innerWidth} marginTop={1} color={palette.dim} />
 
         {isCalendarView && calendarDays.length > 0 && !ultraCompact ? (
           <Box flexDirection="column">
@@ -2460,7 +2458,11 @@ export function BrowseShell<T>({
                     // the overlay manager immediately. reserveRows keeps the slot
                     // stable while the settled poster replaces it.
                     poster={
-                      navigating && suppressPosterWhileNavigating(poster) ? undefined : poster
+                      !terminalPostersEnabled()
+                        ? undefined
+                        : navigating && suppressPosterWhileNavigating(poster)
+                          ? undefined
+                          : poster
                     }
                     reserveRows={PREVIEW_POSTER_ROWS}
                   />
@@ -2588,7 +2590,7 @@ export function BrowseShell<T>({
                     backgroundColor={row.focused ? palette.accentFill : undefined}
                     color={row.focused ? palette.text : palette.muted}
                   >
-                    {row.focused ? <Text color={palette.accent}>{"▌ "}</Text> : "  "}
+                    {listSelectionPrefix(row.focused)}
                     <Text color={row.glyphColor}>{row.glyph}</Text>{" "}
                     <Text color={row.focused ? palette.text : palette.textDim} bold={row.focused}>
                       {row.title}

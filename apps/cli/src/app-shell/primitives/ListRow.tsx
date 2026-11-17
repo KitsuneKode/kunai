@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { decorationGlyphs } from "../decoration-policy";
 import { padColumnsEnd, padColumnsStart, truncateLine } from "../shell-text";
 import { palette } from "../shell-theme";
 import type { ListRowColumn } from "./ListRow.model";
@@ -25,7 +26,7 @@ function listRowColumnWidths(
 
 export const ListRow = React.memo(function ListRow({
   selected,
-  marker = "▌",
+  marker = decorationGlyphs().listCursor,
   columns,
   rowWidth,
   flexColumnIndex = 0,

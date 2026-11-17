@@ -2,6 +2,7 @@ import type { TitleDetail } from "@/domain/catalog/title-detail";
 import { Box, Text } from "ink";
 import React from "react";
 
+import { SectionSeparator } from "./decoration-ui";
 import type { DetailsPanelData, DetailsPanelSecondary } from "./details-panel";
 import {
   buildDetailCastLines,
@@ -257,11 +258,7 @@ export function DetailsPaneUI({
 
 /** Separator drawn between sections of the detail sheet. */
 function SectionDivider({ width }: { readonly width: number }) {
-  return (
-    <Box marginTop={1}>
-      <Text color={palette.line}>{"─".repeat(Math.max(2, width))}</Text>
-    </Box>
-  );
+  return <SectionSeparator width={width} color={palette.line} />;
 }
 
 /** One labelled fact row: muted label + text value. */

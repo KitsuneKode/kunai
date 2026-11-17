@@ -1,6 +1,7 @@
 import type { LineEditorKey } from "@/app-shell/line-editor";
 import type { AppCommandId } from "@/domain/session/command-registry";
 
+import { decorationGlyphs } from "./decoration-policy";
 import type { FooterAction, ShellAction } from "./types";
 
 /**
@@ -1075,9 +1076,10 @@ export function commandBackedBindingsForScope(scope: KeyScope): readonly KeyBind
 
 /** Human-readable chord using locked glyphs: ⇧ Shift, ⌃ Ctrl. */
 export function formatChord(chord: KeyChord): string {
+  const g = decorationGlyphs();
   const modifiers: string[] = [];
-  if (chord.ctrl) modifiers.push("⌃");
-  if (chord.shift) modifiers.push("⇧");
+  if (chord.ctrl) modifiers.push(g.chordCtrl);
+  if (chord.shift) modifiers.push(g.chordShift);
   const base = chord.named
     ? (NAMED_LABELS[chord.named] ?? chord.named)
     : formatPrintable(chord.input ?? "", modifiers.length > 0 || chord.meta === true);

@@ -1,3 +1,4 @@
+import { plainDecorationsActive } from "./decoration-policy";
 import {
   formatNewSinceVisitLine,
   formatReadyForYouNowMeta,
@@ -230,7 +231,7 @@ export function buildBrowseIdleReturnLoopModel(
     // content in front of them instead of leaving a bare search form.
     rows.push({
       id: "trending",
-      glyph: "✧",
+      glyph: plainDecorationsActive() ? "*" : "\u2727",
       glyphColor: palette.accent,
       title: "Trending this week",
       meta: "see what's popular",

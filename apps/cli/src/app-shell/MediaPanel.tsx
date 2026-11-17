@@ -12,6 +12,8 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { decorationGlyphs, terminalPostersEnabled } from "./decoration-policy";
+import { SectionSeparator } from "./decoration-ui";
 import type { KittyPlacementSlot } from "./kitty-placement-registry";
 import type { MediaPanelFact, MediaPanelMiniCard, MediaPanelModel } from "./media-panel-model";
 import { MiniPosterTile } from "./primitives/MiniPosterTile";
@@ -46,17 +48,7 @@ function miniCardPlacementSlot(
 // ── Section divider (── label ──) ──────────────────────────────────────────
 
 function SectionLabel({ label, width }: { readonly label: string; readonly width: number }) {
-  const text = label.toLowerCase();
-  const sideLen = Math.max(0, width - measureColumns(text) - 2);
-  const left = Math.min(2, sideLen);
-  const right = Math.max(0, sideLen - left);
-  return (
-    <Box marginTop={1} flexDirection="row" flexWrap="nowrap">
-      <Text color={palette.lineSoft}>{"─".repeat(left)}</Text>
-      <Text color={palette.muted}> {text} </Text>
-      <Text color={palette.lineSoft}>{"─".repeat(right)}</Text>
-    </Box>
-  );
+  return <SectionSeparator width={width} label={label} />;
 }
 
 // ── Poster slot (the single Kitty image budget) ────────────────────────────
@@ -201,8 +193,8 @@ export const MediaPanel = React.memo(function MediaPanel({
   railWidth,
   active = true,
   placementSlot,
-  allowKitty = true,
-  allowSixel = true,
+  allowKitty = terminalPostersEnabled(),
+  allowSixel = terminalPostersEnabled(),
 }: {
   readonly model: MediaPanelModel;
   readonly railWidth: number;
@@ -242,7 +234,7 @@ export const MediaPanel = React.memo(function MediaPanel({
 
       {/* Header: badge + title + secondary line */}
       <Box marginTop={1}>
-        <Text color={palette.accent}>{`❀ ${model.kindBadge}`}</Text>
+        <Text color={palette.accent}>{`${decorationGlyphs().sakura} ${model.kindBadge}`}</Text>
       </Box>
       <Text color={palette.text} bold>
         {truncateLine(model.title, innerWidth)}

@@ -44,6 +44,7 @@ import { useBrowseDestinationLabel } from "./browse-destination";
 import { CapabilityIssueStrip } from "./CapabilityIssueStrip";
 import { dispatchAppCommand } from "./command-router";
 import { setContextualTipListener } from "./contextual-tips";
+import { SectionSeparator } from "./decoration-ui";
 import { recordRender } from "./diagnostics/render-trace";
 import { createDismissTimerRegistry } from "./dismiss-timer-registry";
 import { startDownloadStatusMonitor } from "./download-status-monitor";
@@ -2298,7 +2299,7 @@ function StatsShell({
       )}
 
       <Box marginTop={1} flexDirection="column">
-        <Text color={palette.dim}>{"─".repeat(Math.max(0, Math.min(innerWidth, cols - 4)))}</Text>
+        <SectionSeparator width={Math.max(0, Math.min(innerWidth, cols - 4))} color={palette.dim} />
         {copiedFlash ? (
           <Box marginTop={1}>
             <Text color={copiedFlash.startsWith("Copied") ? palette.ok : palette.dangerText}>
