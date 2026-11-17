@@ -50,7 +50,6 @@ export {
   deriveMaskKey,
   getLastAllMangaRotationSignal,
   hashBuildId,
-  resetAllMangaRotationSignalForTest,
   type AllMangaBootPart,
   type AllMangaCryptoMaterial,
   type AllMangaCryptoProfile,
@@ -673,29 +672,6 @@ export async function gqlPost(
     });
     if (!response.ok) return null;
     return response.json();
-  } catch {
-    return null;
-  }
-}
-
-export async function gqlRaw(
-  context: ProviderRuntimeContext,
-  apiUrl: string,
-  referer: string,
-  ua: string,
-  query: string,
-  vars: Record<string, unknown>,
-  signal?: AbortSignal,
-): Promise<string | null> {
-  try {
-    const response = await providerFetch(context, apiUrl, {
-      method: "POST",
-      signal: createTimeoutSignal(signal, 20_000),
-      headers: { "Content-Type": "application/json", Referer: referer, "User-Agent": ua },
-      body: JSON.stringify({ query, variables: vars }),
-    });
-    if (!response.ok) return null;
-    return response.text();
   } catch {
     return null;
   }

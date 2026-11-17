@@ -2,7 +2,7 @@ import type { TitleDetail } from "@/domain/catalog/title-detail";
 import { Box, Text } from "ink";
 import React from "react";
 
-import type { DetailsPanelData, DetailsPanelSecondary } from "./details-panel";
+import type { DetailsPanelData } from "./details-panel";
 import {
   buildDetailCastLines,
   buildDetailFactRows,
@@ -18,43 +18,7 @@ import { PosterOutput } from "./SixelPosterPane";
 import type { ShellPanelLine } from "./types";
 import { usePosterPreview } from "./use-poster-preview";
 
-type SeriesStateKey = NonNullable<DetailsPanelSecondary["seriesState"]>;
-
-const SERIES_STATE_COLORS: Record<SeriesStateKey, string> = {
-  airing: palette.muted,
-  ended: palette.ok,
-  complete: palette.milestoneText,
-  upcoming: palette.muted,
-};
-
-const SERIES_STATE_LABELS: Record<SeriesStateKey, string> = {
-  airing: "◉ airing",
-  ended: "✦ ended",
-  complete: "✦ you finished this",
-  upcoming: "upcoming",
-};
-
-function SecondaryZoneShimmer() {
-  return (
-    <Box flexDirection="column" marginTop={1}>
-      <Text dimColor>{"░".repeat(28)}</Text>
-      <Text dimColor>{"░".repeat(20)}</Text>
-      <Text dimColor>{"░".repeat(24)}</Text>
-    </Box>
-  );
-}
-
 const DETAIL_FACT_LABEL_WIDTH = 10;
-
-function FactRow({ label, value, width }: { label: string; value: string; width: number }) {
-  const labelWidth = Math.min(DETAIL_FACT_LABEL_WIDTH, Math.max(6, label.length + 1));
-  return (
-    <Box>
-      <Text color={palette.dim}>{padColumnsEnd(truncateLine(label, labelWidth), labelWidth)} </Text>
-      <Text color={palette.text}>{truncateLine(value, width - labelWidth - 3)}</Text>
-    </Box>
-  );
-}
 
 function sheetLineColor(tone: ShellPanelLine["tone"]): string {
   if (!tone || tone === "neutral") return palette.text;
@@ -143,109 +107,6 @@ export function DetailsSheetUI({
             {clampedScroll < maxScroll ? "▼ scroll" : ""}
           </Text>
         ) : null}
-      </Box>
-    </Box>
-  );
-}
-
-export function DetailsPaneUI({
-  data,
-  width = 36,
-  posterRows = 10,
-  posterCols = 22,
-}: {
-  data: DetailsPanelData;
-  width?: number;
-  posterRows?: number;
-  posterCols?: number;
-}) {
-  const { primary, secondary } = data;
-  const { poster, spinner } = usePosterPreview(primary.posterPath ?? undefined, {
-    rows: posterRows,
-    cols: posterCols,
-    enabled: Boolean(primary.posterPath),
-    debounceMs: 90,
-    variant: "detail",
-    placementSlot: "details-primary",
-  });
-  const seriesState = secondary?.seriesState ?? null;
-  const seriesStateColor = seriesState ? SERIES_STATE_COLORS[seriesState] : palette.dim;
-
-  return (
-    <Box flexDirection="row" width={width}>
-      <Box width={1} marginRight={1}>
-        <Text color={seriesStateColor}>{"│"}</Text>
-      </Box>
-      <Box flexDirection="column" flexGrow={1}>
-        <Box marginBottom={1}>
-          {poster.kind !== "none" ? (
-            <PosterOutput poster={poster} />
-          ) : primary.posterPath && spinner ? (
-            <SakuraPetal mode="loading" />
-          ) : (
-            // No poster URL, a cache hit still painting, or a failed fetch — the
-            // initials block is the honest resting state. A spinner that never
-            // resolves reads as a hang.
-            <PosterInitialBlock title={primary.title} width={8} height={4} />
-          )}
-        </Box>
-        <Text bold>{truncateLine(primary.title, width - 4)}</Text>
-        <Text color={palette.dim}>
-          {[primary.type, primary.year, ...(primary.genres?.slice(0, 2) ?? [])]
-            .filter(Boolean)
-            .join(" · ")}
-        </Text>
-        <Box marginTop={1}>
-          {primary.synopsis ? (
-            <Text color={palette.dim}>{truncateAtWord(primary.synopsis, (width - 4) * 3)}</Text>
-          ) : (
-            <Text color={palette.dim} dimColor>
-              No synopsis available
-            </Text>
-          )}
-        </Box>
-
-        {secondary === null ? (
-          <SecondaryZoneShimmer />
-        ) : (
-          <Box flexDirection="column" marginTop={1}>
-            {secondary.seriesState && (
-              <Text color={SERIES_STATE_COLORS[secondary.seriesState]}>
-                {SERIES_STATE_LABELS[secondary.seriesState]}
-                {secondary.nextAirDate ? `  ·  ${secondary.nextAirDate}` : ""}
-              </Text>
-            )}
-            {secondary.seasonLabel || secondary.totalEpisodes !== undefined ? (
-              <FactRow
-                label="Season"
-                value={
-                  [
-                    secondary.seasonLabel,
-                    secondary.totalEpisodes !== undefined
-                      ? `${secondary.totalEpisodes} eps`
-                      : undefined,
-                    secondary.watchedEpisodes !== undefined
-                      ? `${secondary.watchedEpisodes} watched`
-                      : undefined,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ") || "—"
-                }
-                width={width - 4}
-              />
-            ) : null}
-            {secondary.providers && secondary.providers.length > 0 ? (
-              <FactRow label="Provider" value={secondary.providers.join(" · ")} width={width - 4} />
-            ) : null}
-            {secondary.subtitleLanguages && secondary.subtitleLanguages.length > 0 ? (
-              <FactRow
-                label="Sub"
-                value={secondary.subtitleLanguages.join(" · ")}
-                width={width - 4}
-              />
-            ) : null}
-          </Box>
-        )}
       </Box>
     </Box>
   );

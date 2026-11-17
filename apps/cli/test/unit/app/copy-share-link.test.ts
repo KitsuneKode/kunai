@@ -1,10 +1,10 @@
 import { expect, mock, test } from "bun:test";
 
+import { parsePlaybackTargetRef } from "@/domain/share/playback-target-ref";
 import {
   buildShareLinkArtifactsForContext,
   copyShareLinkForContext,
-} from "@/app/bootstrap/copy-share-link";
-import { parsePlaybackTargetRef } from "@/domain/share/playback-target-ref";
+} from "@/infra/share/copy-share-link";
 
 test("copyShareLinkForContext encodes and copies a catalog-anchored URL", async () => {
   const copyToClipboard = mock(async (_text: string) => true);

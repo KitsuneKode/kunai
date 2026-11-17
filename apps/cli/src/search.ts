@@ -28,14 +28,6 @@ export type SearchResult = {
   externalIds?: { readonly tmdbId?: string };
 };
 
-export type SearchService = {
-  readonly id: string;
-  readonly name: string;
-  readonly description: string;
-  readonly compatibleProviders: readonly string[];
-  search(query: string): Promise<SearchResult[]>;
-};
-
 // db.videasy.to is the same TMDB-format API that powers Cineplay + Videasy.
 // No API key needed. Response is identical to TMDB /search/multi.
 
@@ -385,23 +377,3 @@ function classifyRecordAnime(r: Record<string, unknown>): boolean {
 function readString(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
-
-// ── Search service registry ───────────────────────────────────────────────────
-//
-// Named service objects so the UI and error messages know which endpoint
-// failed. API providers own their own search() and
-// don't appear here — this registry is for shared-endpoint providers only.
-
-export const TMDB_SERVICE: SearchService = {
-  id: "tmdb",
-  name: "TMDB / Videasy",
-  description: "TMDB proxy (db.videasy.to) — movies, series, no API key",
-  compatibleProviders: [],
-  search: searchVideasy,
-};
-
-export const SEARCH_SERVICES: readonly SearchService[] = [TMDB_SERVICE];
-
-export const SEARCH_SERVICE_MAP: Readonly<Record<string, SearchService>> = Object.fromEntries(
-  SEARCH_SERVICES.map((s) => [s.id, s]),
-);

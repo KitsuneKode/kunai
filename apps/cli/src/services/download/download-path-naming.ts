@@ -293,10 +293,3 @@ function componentBudget(input: {
     maxUtf16: Math.max(16, longest - Math.ceil(overrun / variableCount)),
   };
 }
-
-export const __testing = {
-  MAX_COMPONENT_BYTES,
-  WINDOWS_MAX_PATH,
-  WINDOWS_PATH_RESERVE,
-  truncateToLimits,
-};

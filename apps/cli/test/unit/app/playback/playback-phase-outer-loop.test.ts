@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import { shouldOfferAutoAdvance } from "@/app/playback/playback-advance";
 import {
   canAutoContinueIntoRecommendation,
   isNearEndVoluntaryQuit,
 } from "@/app/playback/playback-postplay-policy";
 import { createPlaybackSessionState } from "@/app/playback/playback-session-controller";
+import { shouldOfferAutoAdvance } from "@/app/playback/policies/auto-advance-policy";
 import {
   explainAutoplayBlockReason,
   resolveAutoplayAdvanceEpisode,

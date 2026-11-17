@@ -19,10 +19,6 @@ export async function persistSettingsDraft(
   await applySettingsToRuntime({ container, next: patch });
 }
 
-export function shouldDebouncePersist(kind: string): boolean {
-  return kind === "reorder";
-}
-
 /** A draft is a UI snapshot, never permission to overwrite every config key. */
 export function settingsDraftPatch(
   next: KitsuneConfig,

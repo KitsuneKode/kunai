@@ -60,7 +60,7 @@ export interface VideoMeta {
 // The `-i/--id` placeholder name and its recognisers live in `@kunai/core`
 // beside the rest of the title-identity vocabulary: storage has to refuse to
 // persist a placeholder over a real name, and it cannot import CLI domain code.
-export { directIdTitleName, isDirectIdTitleName, isPlaceholderTitleName } from "@kunai/core";
+export { directIdTitleName, isPlaceholderTitleName } from "@kunai/core";
 
 export interface TitleInfo {
   readonly id: string;

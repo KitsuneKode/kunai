@@ -13,11 +13,3 @@ import { getKunaiPaths } from "@kunai/storage";
 export function kunaiConfigDir(): string {
   return getKunaiPaths().configDir;
 }
-
-export function kunaiCacheDir(): string {
-  return getKunaiPaths().cacheDir;
-}
-
-export function kunaiDataDir(): string {
-  return getKunaiPaths().dataDir;
-}

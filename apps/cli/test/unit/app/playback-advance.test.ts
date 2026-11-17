@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { evaluateAutoAdvanceNextUp, shouldOfferAutoAdvance } from "@/app/playback/playback-advance";
+import {
+  evaluateAutoAdvanceNextUp,
+  shouldOfferAutoAdvance,
+} from "@/app/playback/policies/auto-advance-policy";
 import type { QueueEntry } from "@kunai/storage";
 
 const guards = {

@@ -53,8 +53,6 @@ const PASCAL_CASE_TS_ALLOWLIST = new Set<string>([
   "infra/player/PlayerControlServiceImpl.ts",
   "infra/player/PlayerService.ts",
   "infra/player/PlayerServiceImpl.ts",
-  "infra/shell/ShellService.ts",
-  "infra/shell/ShellServiceImpl.ts",
   "infra/storage/FileStorage.ts",
   "infra/storage/StorageService.ts",
   "infra/timing/AniSkipTimingSource.ts",
@@ -67,9 +65,7 @@ const PASCAL_CASE_TS_ALLOWLIST = new Set<string>([
   "infra/work/WorkControlServiceImpl.ts",
   "services/attention/AttentionRefreshScheduler.ts",
   "services/attention/AttentionRefreshWorker.ts",
-  "services/attention/FollowedTitleService.ts",
   "services/attention/RefreshBudgetPolicy.ts",
-  "services/attention/ReleaseAvailabilityService.ts",
   "services/background/BackgroundWorkScheduler.ts",
   "services/catalog/CatalogDiscoveryService.ts",
   "services/catalog/CatalogIdentityService.ts",
@@ -158,7 +154,6 @@ const PASCAL_CASE_TS_ALLOWLIST = new Set<string>([
 /** Existing kebab-case `.tsx` files outside PascalCase / *-shell / *-ui naming (migration allowlist). */
 const TSX_NAMING_ALLOWLIST = new Set([
   "app-shell/library-title-detail.tsx",
-  "app-shell/offscreen-freeze.tsx",
   "app-shell/overlay-layout-context.tsx",
   "app-shell/overlay-panel.tsx",
   "app-shell/overlay-picker-row.tsx",
@@ -167,7 +162,6 @@ const TSX_NAMING_ALLOWLIST = new Set([
   "app-shell/shell-command-mode.tsx",
   "app-shell/shell-frame.tsx",
   "app-shell/shell-primitives.tsx",
-  "app-shell/skeleton.tsx",
 ]);
 
 const ROOT_TS_ALLOWLIST = new Set([
@@ -178,7 +172,6 @@ const ROOT_TS_ALLOWLIST = new Set([
   "aniskip.ts",
   "introdb.ts",
   "logger.ts",
-  "menu.ts",
   "mpv.ts",
   "search.ts",
   "session-flow.ts",

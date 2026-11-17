@@ -178,8 +178,3 @@ export function useDebouncedViewportPolicy(
     terminalProfile: getShellTerminalProfile(),
   });
 }
-
-export const __testing = {
-  RESIZE_DEBOUNCE_MS,
-  shouldSettleViewportImmediately,
-};
