@@ -1,11 +1,32 @@
 ---
 status: current
-lastReviewed: "2026-10-08"
+lastReviewed: "2026-10-28"
 ---
 
 # Mobile terminal runtime
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
+
+## 0.4.0 route boundary
+
+The accepted 0.4.0 scope is Android watching plus an experimental iOS host
+preview. Android watching uses `apps/cli/src/main.ts`, the Bionic binary and
+the Android intent/loopback gateway in `apps/cli/src/infra/player/`. It has
+the CLI's catalog and provider flow; it is not the Node host proof below.
+The public route is [Android (Termux)](../docs/users/android.mdx).
+The gateway carries the verified candidate's headers and cookies. External
+subtitles require an explicit VLC or mpv-android target; the chooser rejects
+that combination. Local files and yt-dlp-only streams remain unsupported.
+
+The private `apps/mobile` application remains the iOS a-Shell/VLC preview
+and a separate Android Node host proof. Neither host proof has search or
+providers. Desktop/Node tests and accepted intents do not qualify physical
+phone playback. Android CLI device qualification remains in issue #631;
+the two host-proof artifact sets use the separate device lab below.
+Phone web UI, native store apps and full iOS search/provider support are
+outside 0.4.0. Version staging does not make artifacts public.
+
+## Host proof
 
 Kunai's mobile preview is a private application under
 [`apps/mobile`](../apps/mobile/). It reuses a small TypeScript application core

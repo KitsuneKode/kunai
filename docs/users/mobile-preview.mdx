@@ -1,6 +1,6 @@
 ---
 title: Mobile preview
-description: What the experimental Kunai mobile terminal host proof is, what it deliberately is not, and how to run it on Android (Termux) and iOS (a-Shell) if you want to help qualify it.
+description: Run the experimental iOS a-Shell/VLC host proof, distinguish it from Android watching, and understand the remaining physical-device checks.
 ---
 
 <ScopeCallout variant="beta" title="Preview, not a supported app">
@@ -9,7 +9,16 @@ description: What the experimental Kunai mobile terminal host proof is, what it 
   Physical-device qualification is pending.
 </ScopeCallout>
 
-Kunai's mobile work is a **capability preview**, not a supported app. There is no search, no catalog, no provider picker, no install or update path, and no playback monitoring. The preview exists to prove the terminal runtime and the VLC handoff on real hardware before anything else is built on top of it.
+For **Android watching**, use the [Termux CLI route](/docs/users/android).
+It has the CLI's search and provider flow. The Node Android artifact described
+below is a separate host-testing program, not the Android watching application.
+
+For **iOS**, this a-Shell/VLC host proof is the 0.4.0 preview scope. It has no
+search, catalog or provider resolution. It is built from source, not installed
+through the desktop installer or Android npm packages. Native store apps and
+full iOS watching are not part of 0.4.0.
+
+This host proof is a **capability preview**, not a supported app. There is no search, no catalog, no provider picker, no install or update path, and no playback monitoring. The preview exists to prove the terminal runtime and the VLC handoff on real hardware before anything else is built on top of it.
 
 If that sounds like your kind of experiment, read on. If you wanted the actual app, [Getting started](/docs/users/getting-started) is the supported path.
 
