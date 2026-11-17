@@ -34,7 +34,8 @@ plain non-interactive output instead of the shell.
   symbols, no decorative emoji or mascot lines, no full-width box-drawing
   rules, no terminal poster graphics, and forced reduced motion for loaders.
   Information and keyboard reachability stay the same; only decoration drops.
-  **`TERM=dumb`** gets the same ASCII glyph table even without `-m`. If minimal
+  An interactive session with **`TERM=dumb`** gets the same ASCII glyph table
+  even without `-m`. If minimal
   mode still blocks you, tell us — that is the feedback we most want.
 - **Color contrast.** The palette is fixed by the app theme rather than
   reading terminal color preferences, and low-vision contrast has not been

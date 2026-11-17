@@ -20,8 +20,11 @@ export function isDumbTerminal(env: NodeJS.ProcessEnv = process.env): boolean {
 }
 
 /** Plain glyphs, no mascot lines, no full-width rules, no terminal posters. */
-export function plainDecorationsActive(env: NodeJS.ProcessEnv = process.env): boolean {
-  return minimalModeSource() || isDumbTerminal(env);
+export function plainDecorationsActive(
+  env: NodeJS.ProcessEnv = process.env,
+  stdout: { readonly isTTY?: boolean } = process.stdout,
+): boolean {
+  return minimalModeSource() || (isDumbTerminal(env) && stdout.isTTY === true);
 }
 
 export function terminalPostersEnabled(env: NodeJS.ProcessEnv = process.env): boolean {

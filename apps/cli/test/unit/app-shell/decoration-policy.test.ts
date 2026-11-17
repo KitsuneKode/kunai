@@ -23,7 +23,8 @@ describe("decoration-policy", () => {
     setPlainDecorationSource(() => true);
     expect(plainDecorationsActive({ TERM: "xterm-256color" })).toBe(true);
     setPlainDecorationSource(() => false);
-    expect(plainDecorationsActive({ TERM: "dumb" })).toBe(true);
+    expect(plainDecorationsActive({ TERM: "dumb" }, { isTTY: true })).toBe(true);
+    expect(plainDecorationsActive({ TERM: "dumb" }, { isTTY: false })).toBe(false);
   });
 
   test("ASCII glyphs in plain mode", () => {
