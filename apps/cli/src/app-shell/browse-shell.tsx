@@ -115,7 +115,13 @@ import {
   type DetailsPanelData,
 } from "./details-panel";
 import { buildDetailsSheet } from "./details-sheet.model";
-import { useCalendarRoute, type CalendarRouteRequest } from "./hooks/use-calendar-route";
+import {
+  calendarSessionStatusForTransition,
+  useCalendarRoute,
+  type CalendarRouteKind,
+  type CalendarRouteRequest,
+  type CalendarSessionStatus,
+} from "./hooks/use-calendar-route";
 import { useCalendarState } from "./hooks/use-calendar-state";
 import { SUGGESTION_DEBOUNCE_MS, useSearchSuggestions } from "./hooks/use-search-suggestions";
 import { undisplayPlacementsKeepCache } from "./image-pane";
@@ -234,6 +240,7 @@ export function BrowseShell<T>({
   onSearch,
   onLoadCalendar,
   onCalendarAccepted,
+  onCalendarStatus,
   onLoadDiscovery,
   onLoadRecommendations,
   settings,
@@ -283,6 +290,12 @@ export function BrowseShell<T>({
     request: CalendarRouteRequest,
     response: BrowseShellSearchResponse<T>,
   ) => void;
+  /**
+   * The session-wide search status the calendar route implies. Success is
+   * reported through `onCalendarAccepted`; this carries the rest: a load
+   * starting, and a load that failed or was abandoned before it settled.
+   */
+  onCalendarStatus?: (status: CalendarSessionStatus) => void;
   onLoadDiscovery?: () => Promise<BrowseShellSearchResponse<T>>;
   onLoadRecommendations?: () => Promise<BrowseShellSearchResponse<T>>;
   settings?: KitsuneConfig;
@@ -489,6 +502,15 @@ export function BrowseShell<T>({
   });
   const calendarRouteKind = calendarRouteState.state.kind;
   const calendarRoutePending = calendarRouteKind === "loading" || calendarRouteKind === "retrying";
+  const calendarStatusRef = useRef(onCalendarStatus);
+  calendarStatusRef.current = onCalendarStatus;
+  const previousCalendarRouteKindRef = useRef<CalendarRouteKind | null>(null);
+  useEffect(() => {
+    const previous = previousCalendarRouteKindRef.current;
+    previousCalendarRouteKindRef.current = calendarRouteKind;
+    const status = calendarSessionStatusForTransition(previous, calendarRouteKind);
+    if (status) calendarStatusRef.current?.(status);
+  }, [calendarRouteKind]);
 
   useEffect(() => {
     if (!loadIdleContext) return;
@@ -2766,6 +2788,7 @@ export function openBrowseShell<T>({
   onSearch,
   onLoadCalendar,
   onCalendarAccepted,
+  onCalendarStatus,
   onLoadDiscovery,
   onLoadRecommendations,
   settings,
@@ -2808,6 +2831,12 @@ export function openBrowseShell<T>({
     request: CalendarRouteRequest,
     response: BrowseShellSearchResponse<T>,
   ) => void;
+  /**
+   * The session-wide search status the calendar route implies. Success is
+   * reported through `onCalendarAccepted`; this carries the rest: a load
+   * starting, and a load that failed or was abandoned before it settled.
+   */
+  onCalendarStatus?: (status: CalendarSessionStatus) => void;
   onLoadDiscovery?: () => Promise<BrowseShellSearchResponse<T>>;
   onLoadRecommendations?: () => Promise<BrowseShellSearchResponse<T>>;
   settings?: KitsuneConfig;
@@ -2866,6 +2895,7 @@ export function openBrowseShell<T>({
         onSearch={onSearch}
         onLoadCalendar={onLoadCalendar}
         onCalendarAccepted={onCalendarAccepted}
+        onCalendarStatus={onCalendarStatus}
         onLoadDiscovery={onLoadDiscovery}
         onLoadRecommendations={onLoadRecommendations}
         settings={settings}

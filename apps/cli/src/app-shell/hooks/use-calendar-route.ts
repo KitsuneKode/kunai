@@ -44,6 +44,31 @@ export type CalendarRouteState<T> =
       readonly message: string;
     };
 
+export type CalendarRouteKind = CalendarRouteState<unknown>["kind"];
+
+/** What the session's search status should say about the calendar route. */
+export type CalendarSessionStatus = "loading" | "idle";
+
+/**
+ * The session search status a route transition implies, or null when it implies
+ * none. The header reads the session status, so every way a load ends has to
+ * reach it: success already goes through `onAccepted` (which marks it ready),
+ * and a failure or a load abandoned before it settled — closing the calendar
+ * mid-load aborts the request — lands here. Both say "idle", not "error": the
+ * calendar shows its own failure, and a session "error" means a bootstrap
+ * search failed, which blocks the next bootstrap run.
+ */
+export function calendarSessionStatusForTransition(
+  previous: CalendarRouteKind | null,
+  next: CalendarRouteKind,
+): CalendarSessionStatus | null {
+  if (previous === next) return null;
+  if (next === "loading" || next === "retrying") return "loading";
+  if (next === "error") return "idle";
+  if (next === "inactive" && (previous === "loading" || previous === "retrying")) return "idle";
+  return null;
+}
+
 /**
  * User-facing failure copy. Source errors carry URLs, tokens, and stack noise;
  * the surface gets one bounded sentence and the detail continues through

@@ -667,6 +667,11 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               emptyMessage: bundle.emptyMessage,
             };
           },
+          // Every non-success end of a calendar load reaches the session here,
+          // so the header's "Searching…" cannot outlive the request.
+          onCalendarStatus: (status) => {
+            stateManager.dispatch({ type: "SET_SEARCH_STATE", state: status });
+          },
           // The single acceptance commit point: the hook calls this only after
           // mounted / current / not-aborted checks, so no superseded or cancelled
           // schedule response can write global state, diagnostics, or the subtitle.
@@ -1052,6 +1057,11 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         });
         recordCliStartupMilestone(diagnosticsService, "browse-mounted");
         const outcome = await outcomePromise;
+        // An unmount aborts any calendar load still in flight and reports
+        // nothing, so a "loading" left behind belongs to no request.
+        if (stateManager.getState().searchState === "loading") {
+          stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "idle" });
+        }
 
         // Leaving the calendar surface — stamp the visit so the next open marks
         // only releases that aired since now as "new". Done at this close event

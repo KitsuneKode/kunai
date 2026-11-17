@@ -60,6 +60,8 @@ subtitle controls, and safer persistence, downloads and native installation.
   reduced-motion behavior and settled-work status reporting.
 - Sanitize untrusted terminal text, including OSC sequences terminated by the
   string terminator, without damaging normal Unicode titles.
+- Return the header to ready when the release schedule fails to load or is
+  closed mid-load, instead of reporting "Searching…" for the rest of the session.
 
 ### State safety and privacy
 
