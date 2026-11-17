@@ -11,7 +11,7 @@
 // spawns it, forwards signals, and mirrors the child's exit status.
 
 import { spawn } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, realpathSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -206,6 +206,19 @@ function runLauncher() {
   const FORWARDED_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"];
   for (const signal of FORWARDED_SIGNALS) {
     process.on(signal, () => forwardSignal(signal));
+  }
+
+  // Test hook only. Written after the handlers exist so the signal suite can
+  // wait on a file instead of guessing how long Node takes to start.
+  const readyFile = process.env.KUNAI_LAUNCHER_READY_FILE;
+  // The child is already running, so a bad path must not throw: that would kill
+  // the launcher and orphan the child. The suite times out instead.
+  if (readyFile) {
+    try {
+      writeFileSync(readyFile, "ready\n");
+    } catch {
+      // Test-only signal; never let it affect a real run.
+    }
   }
 
   child.on("exit", (code, signal) => {

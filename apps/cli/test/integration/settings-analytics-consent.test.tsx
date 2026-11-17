@@ -101,14 +101,25 @@ async function waitUntil(predicate: () => boolean, message: string): Promise<voi
 }
 
 /**
- * The settings save is debounced, so this waits out the debounce rather than
- * polling a condition. Kept as a sleep for that reason, but sized above the
- * debounce with headroom instead of sitting just past it.
+ * The shell debounce and `ConfigService.save()` both arm real timers before
+ * the write hits disk. Poll the file. A fixed sleep returns early on a slow
+ * disk and burns 1.5s when the write already landed.
  */
-async function waitForDelayedSettingsSave(): Promise<void> {
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 1_500));
+async function waitForPersistedConfig(
+  loadConfig: () => Promise<ConfigServiceImpl>,
+  predicate: (raw: ReturnType<ConfigServiceImpl["getRaw"]>) => boolean,
+  label: string,
+): Promise<ConfigServiceImpl> {
+  let loaded: ConfigServiceImpl | undefined;
+  await sharedWaitUntil(() => loaded !== undefined && predicate(loaded.getRaw()), {
+    label,
+    tick: async (ms) => {
+      loaded = await loadConfig();
+      if (!predicate(loaded.getRaw())) await Bun.sleep(ms);
+    },
   });
+  if (!loaded) throw new Error(label);
+  return loaded;
 }
 
 test("Settings enable and an unrelated save preserve one install id on disk", async () => {
@@ -144,9 +155,11 @@ test("Settings enable and an unrelated save preserve one install id on disk", as
     const derivedId = config.getRaw().installId;
     expect(derivedId).toMatch(UUID_PATTERN);
 
-    await waitForDelayedSettingsSave();
-
-    const afterEnable = await profile.loadConfig();
+    const afterEnable = await waitForPersistedConfig(
+      profile.loadConfig,
+      (raw) => raw.analytics === "enabled" && raw.installId === derivedId,
+      "enabled analytics never reached disk",
+    );
     expect(afterEnable.getRaw().analytics).toBe("enabled");
     expect(afterEnable.getRaw().installId).toBe(derivedId);
 
@@ -165,9 +178,11 @@ test("Settings enable and an unrelated save preserve one install id on disk", as
       () => config.getRaw().footerHints === "minimal",
       "Settings never persisted the unrelated footer preference",
     );
-    await waitForDelayedSettingsSave();
-
-    const afterUnrelatedSave = await profile.loadConfig();
+    const afterUnrelatedSave = await waitForPersistedConfig(
+      profile.loadConfig,
+      (raw) => raw.footerHints === "minimal" && raw.installId === derivedId,
+      "unrelated settings save never reached disk",
+    );
     expect(afterUnrelatedSave.getRaw().footerHints).toBe("minimal");
     expect(afterUnrelatedSave.getRaw().analytics).toBe("enabled");
     expect(afterUnrelatedSave.getRaw().installId).toBe(derivedId);
