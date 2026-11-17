@@ -1,9 +1,5 @@
-import { join } from "node:path";
-
-import type { KunaiPaths } from "@kunai/storage";
-
-import { writeAtomicSecretJson } from "../../infra/fs/atomic-write";
 import type { CredentialSpawn, CredentialVaultDeps, CredentialVaultPort } from "./credential-vault";
+import { CREDENTIAL_VAULT_PROBE_KEY } from "./credential-vault";
 
 const SPAWN_TIMEOUT_MS = 5_000;
 /** secret-tool can stall when the daemon is absent but the CLI exists. */
@@ -13,6 +9,22 @@ const SECRET_SERVICE_PROBE_TIMEOUT_MS = 3_000;
 // secret scanners even though it names the vault entry, not a credential.
 const VAULT_SERVICE = "kunai";
 const SERVICE_ATTRS = ["service", VAULT_SERVICE];
+const PROBE_VALUE = "0";
+
+/**
+ * `sync-tokens.json` marker — not a vault implementation. Forced `file` and
+ * native fallbacks route tracker tokens through `realSyncTokenFileIo` instead.
+ */
+const FILE_BACKEND: CredentialVaultPort = {
+  backend: "file",
+  async get() {
+    return undefined;
+  },
+  async set() {
+    throw new Error("file credential backend uses sync-tokens.json");
+  },
+  async delete() {},
+};
 
 async function defaultSpawn(
   argv: readonly string[],
@@ -43,39 +55,25 @@ async function defaultSpawn(
   }
 }
 
-/**
- * File backend — owner-only JSON map under the config dir. This is the
- * fallback lane and carries the same guarantees `sync-tokens.json` had
- * (0600 / user-only ACL); it is plaintext at rest by definition.
- */
-function fileVault(paths: KunaiPaths): CredentialVaultPort {
-  const file = join(paths.configDir, "secrets.json");
+/** secret-tool: exit 1 means "not found" only with an empty stderr stream. */
+function secretToolAbsent(out: {
+  readonly exitCode: number;
+  readonly stderr: string;
+  readonly timedOut: boolean;
+}): boolean {
+  return out.exitCode === 1 && !out.timedOut && out.stderr.trim() === "";
+}
 
-  async function readAll(): Promise<Record<string, string>> {
-    try {
-      const raw = await Bun.file(file).json();
-      if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-      return raw as Record<string, string>;
-    } catch {
-      return {};
-    }
-  }
-
-  return {
-    backend: "file",
-    async get(key) {
-      return (await readAll())[key];
-    },
-    async set(key, value) {
-      await writeAtomicSecretJson(file, { ...(await readAll()), [key]: value });
-    },
-    async delete(key) {
-      const all = await readAll();
-      if (!(key in all)) return;
-      delete all[key];
-      await writeAtomicSecretJson(file, all);
-    },
-  };
+function secretToolFault(
+  out: { readonly exitCode: number; readonly stderr: string; readonly timedOut: boolean },
+  op: string,
+): Error {
+  const detail = out.timedOut
+    ? "timeout"
+    : out.stderr.trim()
+      ? `exit ${out.exitCode}: ${out.stderr.trim()}`
+      : `exit ${out.exitCode}`;
+  return new Error(`secret-tool ${op} failed (${detail})`);
 }
 
 /**
@@ -93,12 +91,8 @@ function secretServiceVault(spawn: CredentialSpawn): CredentialVaultPort {
         SECRET_SERVICE_PROBE_TIMEOUT_MS,
       );
       if (out.exitCode === 0) return out.stdout.replace(/\n$/, "");
-      // exit 1 is the documented not-found; any other failure — including a
-      // killed spawn — is a daemon fault and must not read as "absent".
-      if (out.exitCode === 1 && !out.timedOut) return undefined;
-      throw new Error(
-        `secret-tool lookup failed (${out.timedOut ? "timeout" : `exit ${out.exitCode}`})`,
-      );
+      if (secretToolAbsent(out)) return undefined;
+      throw secretToolFault(out, "lookup");
     },
     async set(key, value) {
       const out = await spawn(
@@ -106,12 +100,12 @@ function secretServiceVault(spawn: CredentialSpawn): CredentialVaultPort {
         value,
         SPAWN_TIMEOUT_MS,
       );
-      if (out.exitCode !== 0) throw new Error(`secret-tool store failed (${out.exitCode})`);
+      if (out.exitCode !== 0 || out.timedOut) throw secretToolFault(out, "store");
     },
     async delete(key) {
-      // secret-tool exits non-zero when the entry was already absent —
-      // deletion is idempotent, so that is a success, not a failure.
-      await spawn(["secret-tool", "clear", ...attrs(key)], "", SPAWN_TIMEOUT_MS);
+      const out = await spawn(["secret-tool", "clear", ...attrs(key)], "", SPAWN_TIMEOUT_MS);
+      if (out.exitCode === 0 || secretToolAbsent(out)) return;
+      throw secretToolFault(out, "clear");
     },
   };
 }
@@ -163,34 +157,48 @@ function keychainVault(spawn: CredentialSpawn): CredentialVaultPort {
   };
 }
 
+const WINRT_VAULT_LOAD =
+  "[Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime] | Out-Null";
+
+function wincredScript(body: string): string {
+  return `${WINRT_VAULT_LOAD}; ${body}`;
+}
+
+function wincredNotFound(out: {
+  readonly exitCode: number;
+  readonly stderr: string;
+  readonly timedOut: boolean;
+}): boolean {
+  return out.exitCode === 1 && !out.timedOut && out.stderr.trim() === "";
+}
+
 /**
- * Windows Credential Manager via WinRT `PasswordVault` through `pwsh`
- * (`-NoProfile -NonInteractive -Command`). The secret arrives on stdin and is
- * read inside the script — `cmdkey` is not used because it cannot store
- * arbitrary secrets for arbitrary targets.
+ * Windows Credential Manager via WinRT `PasswordVault` through Windows
+ * PowerShell 5.1 (`powershell.exe -NoProfile -NonInteractive -Command`).
+ * pwsh cannot load the WinRT PasswordVault type — only 5.1 is probed here.
  */
 function wincredVault(spawn: CredentialSpawn, shell: string): CredentialVaultPort {
   const run = (script: string, input: string) =>
-    // The probe resolved this binary (pwsh preferred, powershell fallback):
-    // spawning the resolved path instead of a bare name keeps the backend
-    // working on inbox PowerShell 5.1 machines with no pwsh installed.
-    spawn([shell, "-NoProfile", "-NonInteractive", "-Command", script], input, SPAWN_TIMEOUT_MS);
+    spawn(
+      [shell, "-NoProfile", "-NonInteractive", "-Command", wincredScript(script)],
+      input,
+      SPAWN_TIMEOUT_MS,
+    );
+  const quote = (s: string) => s.replace(/'/g, "''");
   return {
     backend: "wincred",
     async get(key) {
       const out = await run(
         [
           `$v = New-Object Windows.Security.Credentials.PasswordVault`,
-          `try { $c = $v.Retrieve('${VAULT_SERVICE}', '${key.replace(/'/g, "''")}'); $c.RetrievePassword(); [Console]::Out.Write($c.Password) } catch { exit 1 }`,
+          `try { $c = $v.Retrieve('${VAULT_SERVICE}', '${quote(key)}'); $c.RetrievePassword(); [Console]::Out.Write($c.Password) } catch { exit 1 }`,
         ].join("; "),
         "",
       );
       if (out.exitCode === 0) return out.stdout;
-      // The script exits 1 from its own catch — the documented not-found.
-      // Anything else (or a killed spawn) is a vault fault, not "absent".
-      if (out.exitCode === 1 && !out.timedOut) return undefined;
+      if (wincredNotFound(out)) return undefined;
       throw new Error(
-        `PasswordVault Retrieve failed (${out.timedOut ? "timeout" : `exit ${out.exitCode}`})`,
+        `PasswordVault Retrieve failed (${out.timedOut ? "timeout" : out.stderr.trim() || `exit ${out.exitCode}`})`,
       );
     },
     async set(key, value) {
@@ -198,27 +206,108 @@ function wincredVault(spawn: CredentialSpawn, shell: string): CredentialVaultPor
         [
           `$pw = [Console]::In.ReadToEnd()`,
           `$v = New-Object Windows.Security.Credentials.PasswordVault`,
-          `$c = New-Object Windows.Security.Credentials.PasswordCredential('${VAULT_SERVICE}', '${key.replace(/'/g, "''")}', $pw)`,
+          `try { $v.Remove($v.Retrieve('${VAULT_SERVICE}', '${quote(key)}')) } catch {}`,
+          `$c = New-Object Windows.Security.Credentials.PasswordCredential('${VAULT_SERVICE}', '${quote(key)}', $pw)`,
           `$v.Add($c)`,
         ].join("; "),
         value,
       );
-      if (out.exitCode !== 0) throw new Error("PasswordVault Add failed");
+      if (out.exitCode !== 0 || out.timedOut) throw new Error("PasswordVault Add failed");
     },
     async delete(key) {
       const out = await run(
         [
           `$v = New-Object Windows.Security.Credentials.PasswordVault`,
-          `try { $v.Remove($v.Retrieve('${VAULT_SERVICE}', '${key.replace(/'/g, "''")}')) } catch { }`,
+          `try { $v.Remove($v.Retrieve('${VAULT_SERVICE}', '${quote(key)}')) } catch { exit 1 }`,
         ].join("; "),
         "",
       );
-      if (out.exitCode !== 0) throw new Error("PasswordVault Remove failed");
+      if (out.exitCode === 0) return;
+      if (wincredNotFound(out)) return;
+      throw new Error("PasswordVault Remove failed");
     },
   };
 }
 
-/** Probe: does the platform's CLI backend answer? Absent CLI → absent backend. */
+async function probeSecretService(spawn: CredentialSpawn): Promise<boolean> {
+  const attrs = [...SERVICE_ATTRS, "key", CREDENTIAL_VAULT_PROBE_KEY];
+  const clear = await spawn(
+    ["secret-tool", "clear", ...attrs],
+    "",
+    SECRET_SERVICE_PROBE_TIMEOUT_MS,
+  );
+  if (clear.exitCode !== 0 && !secretToolAbsent(clear) && !clear.timedOut) return false;
+  const stored = await spawn(
+    ["secret-tool", "store", "--label", "kunai probe", ...attrs],
+    PROBE_VALUE,
+    SECRET_SERVICE_PROBE_TIMEOUT_MS,
+  );
+  if (stored.exitCode !== 0 || stored.timedOut) return false;
+  const got = await spawn(["secret-tool", "lookup", ...attrs], "", SECRET_SERVICE_PROBE_TIMEOUT_MS);
+  if (got.exitCode !== 0 || got.stdout.replace(/\n$/, "") !== PROBE_VALUE) return false;
+  const removed = await spawn(
+    ["secret-tool", "clear", ...attrs],
+    "",
+    SECRET_SERVICE_PROBE_TIMEOUT_MS,
+  );
+  return removed.exitCode === 0 || secretToolAbsent(removed);
+}
+
+async function probeKeychain(spawn: CredentialSpawn): Promise<boolean> {
+  const key = CREDENTIAL_VAULT_PROBE_KEY;
+  await spawn(
+    ["security", "delete-generic-password", "-s", VAULT_SERVICE, "-a", key],
+    "",
+    SPAWN_TIMEOUT_MS,
+  );
+  const stored = await spawn(
+    ["security", "add-generic-password", "-U", "-s", VAULT_SERVICE, "-a", key, "-w", PROBE_VALUE],
+    "",
+    SPAWN_TIMEOUT_MS,
+  );
+  if (stored.exitCode !== 0) return false;
+  const got = await spawn(
+    ["security", "find-generic-password", "-s", VAULT_SERVICE, "-a", key, "-w"],
+    "",
+    SPAWN_TIMEOUT_MS,
+  );
+  if (got.exitCode !== 0 || got.stdout.replace(/\n$/, "") !== PROBE_VALUE) return false;
+  const removed = await spawn(
+    ["security", "delete-generic-password", "-s", VAULT_SERVICE, "-a", key],
+    "",
+    SPAWN_TIMEOUT_MS,
+  );
+  return removed.exitCode === 0 || removed.stderr.includes("could not be found");
+}
+
+async function probeWincred(spawn: CredentialSpawn, shell: string): Promise<boolean> {
+  const key = CREDENTIAL_VAULT_PROBE_KEY;
+  const script = wincredScript(
+    [
+      `$v = New-Object Windows.Security.Credentials.PasswordVault`,
+      `try { $v.Remove($v.Retrieve('${VAULT_SERVICE}', '${key}')) } catch {}`,
+      `$pw = [Console]::In.ReadToEnd()`,
+      `$c = New-Object Windows.Security.Credentials.PasswordCredential('${VAULT_SERVICE}', '${key}', $pw)`,
+      `$v.Add($c)`,
+      `$r = $v.Retrieve('${VAULT_SERVICE}', '${key}')`,
+      `$r.RetrievePassword()`,
+      `if ($r.Password -ne $pw) { exit 2 }`,
+      `$v.Remove($r)`,
+    ].join("; "),
+  );
+  const out = await spawn(
+    [shell, "-NoProfile", "-NonInteractive", "-Command", script],
+    PROBE_VALUE,
+    SPAWN_TIMEOUT_MS,
+  );
+  return out.exitCode === 0 && !out.timedOut;
+}
+
+function resolveWindowsShell(which: (cmd: string) => string | null): string | null {
+  return which("powershell") ?? which("powershell.exe") ?? null;
+}
+
+/** Probe: can the platform CLI store and read back a throwaway secret? */
 async function probeBackend(
   backend: "keychain" | "wincred" | "secret-service",
   deps: CredentialVaultDeps,
@@ -228,30 +317,27 @@ async function probeBackend(
   try {
     if (backend === "secret-service") {
       if (!which("secret-tool")) return undefined;
-      // A lookup on a nonexistent key exercises the daemon round-trip; exit 1
-      // (not found) still proves the service answered. A killed spawn does not.
-      // Backend selection must follow the bounded probe result. A separate
-      // short race can hide existing native entries behind an empty file vault
-      // when a healthy daemon is slow (for example while unlocking at login).
-      const out = await spawn(
-        ["secret-tool", "lookup", ...SERVICE_ATTRS, "key", "__probe__"],
-        "",
-        SECRET_SERVICE_PROBE_TIMEOUT_MS,
-      );
-      return out.exitCode <= 1 && !out.timedOut ? secretServiceVault(spawn) : undefined;
+      return (await probeSecretService(spawn)) ? secretServiceVault(spawn) : undefined;
     }
     if (backend === "keychain") {
-      return which("security") ? keychainVault(spawn) : undefined;
+      if (!which("security")) return undefined;
+      return (await probeKeychain(spawn)) ? keychainVault(spawn) : undefined;
     }
     if (backend === "wincred") {
-      const shell = which("pwsh") ?? which("powershell");
-      return shell ? wincredVault(spawn, shell) : undefined;
+      const shell = resolveWindowsShell(which);
+      if (!shell) return undefined;
+      return (await probeWincred(spawn, shell)) ? wincredVault(spawn, shell) : undefined;
     }
   } catch {
     return undefined;
   }
   return undefined;
 }
+
+export type CreateCredentialVaultResult = {
+  readonly vault: CredentialVaultPort;
+  readonly fallbackReason?: string;
+};
 
 /**
  * Pick the vault backend: `KUNAI_CREDENTIAL_BACKEND` env override first
@@ -261,22 +347,28 @@ async function probeBackend(
  */
 export async function createCredentialVault(
   deps: CredentialVaultDeps,
-): Promise<CredentialVaultPort> {
+): Promise<CreateCredentialVaultResult> {
   const env = deps.env ?? process.env;
+  let fallbackReason: string | undefined;
+  const onFallback = (backend: CredentialVaultPort["backend"], reason: string) => {
+    fallbackReason = reason;
+    deps.onFallback?.(backend, reason);
+  };
+
   const forced = env["KUNAI_CREDENTIAL_BACKEND"];
-  if (forced === "file") return fileVault(deps.paths);
+  if (forced === "file") return { vault: FILE_BACKEND };
   if (forced === "secret-service" || forced === "keychain" || forced === "wincred") {
     const picked = await probeBackend(forced, deps);
-    if (picked) return picked;
-    deps.onFallback?.("file", `forced backend ${forced} unavailable`);
-    return fileVault(deps.paths);
+    if (picked) return { vault: picked };
+    onFallback("file", `forced backend ${forced} unavailable`);
+    return { vault: FILE_BACKEND, fallbackReason };
   }
 
   const platform = deps.platform ?? process.platform;
   const wanted =
     platform === "darwin" ? "keychain" : platform === "win32" ? "wincred" : "secret-service";
   const picked = await probeBackend(wanted, deps);
-  if (picked) return picked;
-  deps.onFallback?.("file", `${wanted} backend unavailable on ${platform}`);
-  return fileVault(deps.paths);
+  if (picked) return { vault: picked };
+  onFallback("file", `${wanted} backend unavailable on ${platform}`);
+  return { vault: FILE_BACKEND, fallbackReason };
 }

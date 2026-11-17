@@ -27,6 +27,7 @@ export function buildDiagnosticsPanelInput(
     developerMode: Boolean(container.debugTracePath),
     memorySamples,
     capabilitySnapshot: container.capabilitySnapshot,
+    credentialStoreStatus: container.credentialStoreStatus,
     youtubeProbe: options.youtubeProbe,
     downloadSummary: {
       active: container.downloadService.listActive(200).length,

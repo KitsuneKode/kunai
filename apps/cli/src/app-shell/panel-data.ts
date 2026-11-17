@@ -23,6 +23,10 @@ import type { RuntimeMemorySample } from "@/services/diagnostics/runtime-memory"
 import { resolveDownloadFeatureState } from "@/services/download/DownloadFeature";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import {
+  formatCredentialStoreDetail,
+  type CredentialStoreStatus,
+} from "@/services/persistence/credential-vault";
+import {
   formatProviderHealthBadge,
   formatProviderHealthPickerLabelSuffix,
   resolveEffectiveProviderHealth,
@@ -73,10 +77,12 @@ export function buildAboutPanelLines({
   config,
   state,
   capabilitySnapshot,
+  credentialStoreStatus,
 }: {
   config: KitsuneConfig;
   state: SessionState;
   capabilitySnapshot?: CapabilitySnapshot | null;
+  credentialStoreStatus?: CredentialStoreStatus | null;
 }): readonly ShellPanelLine[] {
   const capabilityLine =
     capabilitySnapshot && capabilitySnapshot.issues.length > 0
@@ -126,6 +132,18 @@ export function buildAboutPanelLines({
       detail: capabilityLine,
       tone: capabilitySnapshot?.issues.length ? "warning" : "success",
     },
+    ...(credentialStoreStatus
+      ? [
+          {
+            label: "Credentials",
+            detail: formatCredentialStoreDetail(credentialStoreStatus),
+            tone:
+              credentialStoreStatus.tokenStore === "vault"
+                ? ("success" as const)
+                : ("warning" as const),
+          },
+        ]
+      : []),
     {
       label: "Privacy",
       detail: "Diagnostics stay local unless you explicitly export or share them.",
@@ -137,6 +155,7 @@ export type DiagnosticsPanelLineInput = {
   state: SessionState;
   recentEvents: readonly DiagnosticEvent[];
   capabilitySnapshot?: CapabilitySnapshot | null;
+  credentialStoreStatus?: CredentialStoreStatus | null;
   downloadSummary?: {
     active: number;
     completed: number;
@@ -160,6 +179,7 @@ export function buildDiagnosticsPanelLines({
   state,
   recentEvents,
   capabilitySnapshot,
+  credentialStoreStatus,
   downloadSummary,
   releaseSummary,
   releaseDiagnostics,
@@ -191,6 +211,7 @@ export function buildDiagnosticsPanelLines({
     state,
     recentEvents,
     capabilitySnapshot,
+    credentialStoreStatus,
     providers,
     getProviderHealth,
     youtubeProbe,
@@ -208,6 +229,7 @@ function buildDiagnosticsSupplementalLines({
   state,
   recentEvents,
   capabilitySnapshot,
+  credentialStoreStatus,
   providers,
   getProviderHealth,
   youtubeProbe,
@@ -216,12 +238,20 @@ function buildDiagnosticsSupplementalLines({
   state: SessionState;
   recentEvents: readonly DiagnosticEvent[];
   capabilitySnapshot?: CapabilitySnapshot | null;
+  credentialStoreStatus?: CredentialStoreStatus | null;
   providers?: readonly ProviderMetadata[];
   getProviderHealth?: (providerId: ProviderId) => ProviderHealth | undefined;
   youtubeProbe?: YoutubeDiagnosticsProbe | null;
   memorySamples?: readonly RuntimeMemorySample[];
 }): ShellPanelLine[] {
   const lines: ShellPanelLine[] = [];
+  if (credentialStoreStatus) {
+    lines.push({
+      label: "Credentials",
+      detail: formatCredentialStoreDetail(credentialStoreStatus),
+      tone: credentialStoreStatus.tokenStore === "vault" ? "success" : "warning",
+    });
+  }
   const providerMemoryLines =
     providers && getProviderHealth
       ? buildProviderMemoryPanelLines({

@@ -180,26 +180,28 @@ Two things about the v3 write path are easy to get wrong, and both were:
 ## Privacy
 
 Tokens live in the OS credential vault when one is reachable — macOS Keychain
-(`security`), Windows Credential Manager (`pwsh` PasswordVault), or Linux
-Secret Service (`secret-tool`), probed once per launch in that order with
-`KUNAI_CREDENTIAL_BACKEND` as an override. One vault entry per tracker
-(`anilist.tokens`, `tmdb.tokens`) holds the credential JSON blob. On machines
-with no keyring — headless Linux without a Secret Service daemon — a `file`
-backend keeps the old guarantee: `configDir/secrets.json` written atomically
-with owner-only permissions. Linux waits for the bounded Secret Service probe
-(up to three seconds) before selecting a backend. A separate short fallback
-timer must not redirect a slow but healthy keyring to a different credential
-store. The first launch on a vault-capable machine
-migrates `sync-tokens.json` write → read-back → compare → delete, restart-safe
-and idempotent. Token-store mutations stay serialized. Native vault patches
-write or delete only the explicitly targeted tracker key, without reading or
-rewriting the other tracker. Malformed or unavailable unrelated credentials
-therefore remain untouched during connect and disconnect. An explicit clear
-still removes both trackers. Full-set reads propagate vault access failures;
-the file backend retains its read/merge/write path. The
-same vault lane holds `videasy.sessionToken`,
-which is scrubbed from `config.json` at the persistence boundary while the
-in-memory config keeps serving it.
+(`security`), Windows Credential Manager (Windows PowerShell 5.1 `PasswordVault`;
+not PowerShell 7), or Linux Secret Service (`secret-tool`), each probed with a
+short store → read-back → delete round-trip on a throwaway key so a broken dbus
+session cannot masquerade as “not found”. `KUNAI_CREDENTIAL_BACKEND` overrides
+selection (`file` forces the plaintext lane for tests). One vault entry per
+tracker (`anilist.tokens`, `tmdb.tokens`) holds the credential JSON blob. When
+no native vault works, the `file` backend marker routes tracker tokens through
+`configDir/sync-tokens.json` (owner-only, as before) — there is no
+`secrets.json` lane. Linux waits up to three seconds on the probe before
+falling back. The first launch on a vault-capable machine migrates
+`sync-tokens.json` write → read-back → compare → delete; any store failure
+leaves migration **pending** and keeps **sync-tokens.json** as the token store
+for that session so reconnect still works. Token-store mutations stay
+serialized. Native vault patches write or delete only the explicitly targeted
+tracker key, without reading or rewriting the other tracker. Malformed or
+unavailable unrelated credentials therefore remain untouched during connect and
+disconnect. An explicit clear still removes both trackers. Full-set reads
+propagate vault access failures. The About and Diagnostics overlays report
+`Credentials: <backend> (<reason>)` when a fallback or pending migration applies.
+The same vault lane holds `videasy.sessionToken`, which is scrubbed from
+`config.json` at the persistence boundary while the in-memory config keeps
+serving it.
 
 Dead-letter diagnostics are bounded (64-char code, 256-char detail) and never
 contain payload JSON, since an unparseable row is the likeliest to hold

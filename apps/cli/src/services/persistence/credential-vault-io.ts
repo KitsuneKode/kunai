@@ -4,7 +4,11 @@ import { join } from "node:path";
 import type { KunaiPaths } from "@kunai/storage";
 
 import { dbg } from "../../logger";
-import { CREDENTIAL_KEYS, type CredentialVaultPort } from "./credential-vault";
+import {
+  CREDENTIAL_KEYS,
+  type CredentialStoreStatus,
+  type CredentialVaultPort,
+} from "./credential-vault";
 import type { SyncTokenFileIo, SyncTokens } from "./SyncTokenStore";
 
 /**
@@ -63,6 +67,31 @@ export function vaultSyncTokenFileIo(vault: CredentialVaultPort): SyncTokenFileI
   };
 }
 
+export type MigrateSyncTokensResult = "skipped" | "complete" | "pending";
+
+export function shouldUseVaultTokenStore(
+  vault: CredentialVaultPort,
+  migration: MigrateSyncTokensResult,
+): boolean {
+  return vault.backend !== "file" && migration !== "pending";
+}
+
+export function resolveCredentialStoreStatus(input: {
+  readonly vault: CredentialVaultPort;
+  readonly migration: MigrateSyncTokensResult;
+  readonly vaultFallbackReason?: string;
+}): CredentialStoreStatus {
+  const { vault, migration, vaultFallbackReason } = input;
+  const tokenStore = shouldUseVaultTokenStore(vault, migration) ? "vault" : "sync-tokens.json";
+  let reason: string | undefined;
+  if (vault.backend === "file") {
+    reason = vaultFallbackReason;
+  } else if (migration === "pending") {
+    reason = "vault migration pending";
+  }
+  return { vaultBackend: vault.backend, tokenStore, reason };
+}
+
 /**
  * Move the plaintext `sync-tokens.json` into the vault.
  *
@@ -75,17 +104,18 @@ export function vaultSyncTokenFileIo(vault: CredentialVaultPort): SyncTokenFileI
 export async function migrateSyncTokensToVault(options: {
   readonly paths: KunaiPaths;
   readonly vault: CredentialVaultPort;
-}): Promise<void> {
-  if (options.vault.backend === "file") return; // file backend gains nothing
+}): Promise<MigrateSyncTokensResult> {
+  if (options.vault.backend === "file") return "skipped";
   const file = join(options.paths.configDir, "sync-tokens.json");
   let plaintext: SyncTokens;
   try {
     plaintext = JSON.parse(await readFile(file, "utf8")) as SyncTokens;
   } catch {
-    return; // absent or unreadable — nothing to migrate
+    return "complete"; // absent or unreadable — nothing to migrate
   }
 
   let migrated = false;
+  let pending = false;
   for (const [slot, key] of [
     ["anilist", CREDENTIAL_KEYS.anilistTokens],
     ["tmdb", CREDENTIAL_KEYS.tmdbTokens],
@@ -97,6 +127,7 @@ export async function migrateSyncTokensToVault(options: {
       await options.vault.set(key, blob);
       if ((await options.vault.get(key)) !== blob) {
         dbg("credential-vault", `vault read-back mismatch for ${key}; plaintext kept`);
+        pending = true;
         continue;
       }
       // Only now may the plaintext go.
@@ -104,10 +135,12 @@ export async function migrateSyncTokensToVault(options: {
       migrated = true;
     } catch {
       dbg("credential-vault", `vault write failed for ${key}; plaintext kept`);
+      pending = true;
     }
   }
 
-  if (!migrated) return;
+  if (!migrated && !pending) return "complete";
+  if (!migrated) return "pending";
   if (!plaintext.anilist && !plaintext.tmdb) {
     await rm(file, { force: true }).catch(() => {});
   } else {
@@ -115,4 +148,5 @@ export async function migrateSyncTokensToVault(options: {
     const { writeAtomicSecretJson } = await import("../../infra/fs/atomic-write");
     await writeAtomicSecretJson(file, plaintext).catch(() => {});
   }
+  return pending ? "pending" : "complete";
 }

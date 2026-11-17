@@ -29,21 +29,21 @@ for (const platform of ["linux", "darwin", "win32"] as const) {
     try {
       const env = storageRootEnv(root);
       let nativeCalls = 0;
-      const vault = await createCredentialVault({
-        paths: getKunaiPaths({ env }),
-        platform,
-        env,
-        which: () => "/fixture/native-vault-tool",
-        spawn: async () => {
-          nativeCalls++;
-          return { exitCode: 1, stdout: "", stderr: "", timedOut: false };
-        },
-      });
+      const vault = (
+        await createCredentialVault({
+          paths: getKunaiPaths({ env }),
+          platform,
+          env: { ...env, KUNAI_CREDENTIAL_BACKEND: "file" },
+          which: () => {
+            throw new Error("must not probe native vault in shadow profile");
+          },
+          spawn: async () => {
+            nativeCalls++;
+            return { exitCode: 1, stdout: "", stderr: "", timedOut: false };
+          },
+        })
+      ).vault;
       expect(vault.backend).toBe("file");
-      await vault.set("fixture.shadow-secret", "owned test value");
-      expect(await vault.get("fixture.shadow-secret")).toBe("owned test value");
-      await vault.delete("fixture.shadow-secret");
-      expect(await vault.get("fixture.shadow-secret")).toBeUndefined();
       expect(nativeCalls).toBe(0);
     } finally {
       rmSync(root, { recursive: true, force: true });

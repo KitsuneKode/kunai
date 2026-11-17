@@ -73,9 +73,12 @@ import { ResolveTraceSink } from "../services/diagnostics/ResolveTraceSink";
 import type { ConfigService } from "../services/persistence/ConfigService";
 import { ConfigServiceImpl } from "../services/persistence/ConfigServiceImpl";
 import { ConfigStoreImpl } from "../services/persistence/ConfigStoreImpl";
+import type { CredentialStoreStatus } from "../services/persistence/credential-vault";
 import { createCredentialVault } from "../services/persistence/credential-vault-backends";
 import {
   migrateSyncTokensToVault,
+  resolveCredentialStoreStatus,
+  shouldUseVaultTokenStore,
   vaultSyncTokenFileIo,
 } from "../services/persistence/credential-vault-io";
 import { SqliteCacheStoreImpl } from "../services/persistence/SqliteCacheStoreImpl";
@@ -162,6 +165,7 @@ export type PersistenceBootstrap = {
   readonly statsService: StatsService;
   readonly statsFormatter: StatsFormatter;
   readonly syncTokenStore: SyncTokenStore;
+  readonly credentialStoreStatus: CredentialStoreStatus;
   readonly syncService: SyncService;
   readonly syncReconciliationRepository: SyncReconciliationRepository;
   readonly syncAuthAvailability: SyncAuthAvailability;
@@ -398,10 +402,12 @@ export async function bootstrapPersistence(
   const queueService = new QueueService(queueRepository, sessionId);
   const statsService = new StatsService(dataDb);
   const statsFormatter = new StatsFormatter();
-  const credentialVault = await createCredentialVault({
-    paths,
-    onFallback: (backend, reason) => dbg("credential-vault", `using ${backend} backend: ${reason}`),
-  });
+  const { vault: credentialVault, fallbackReason: vaultFallbackReason } =
+    await createCredentialVault({
+      paths,
+      onFallback: (backend, reason) =>
+        dbg("credential-vault", `using ${backend} backend: ${reason}`),
+    });
   const config = await ConfigServiceImpl.load(configStore, credentialVault);
 
   // Theme applies here, once, before any frame renders: `KUNAI_THEME` is a
@@ -436,12 +442,23 @@ export async function bootstrapPersistence(
     tmdb: tmdbAuth.availability,
   };
 
-  await migrateSyncTokensToVault({ paths, vault: credentialVault });
+  const migration = await migrateSyncTokensToVault({ paths, vault: credentialVault });
+  const credentialStoreStatus = resolveCredentialStoreStatus({
+    vault: credentialVault,
+    migration,
+    vaultFallbackReason,
+  });
+  dbg("credential-vault", "credential store", {
+    vaultBackend: credentialStoreStatus.vaultBackend,
+    tokenStore: credentialStoreStatus.tokenStore,
+    migration,
+    reason: credentialStoreStatus.reason,
+  });
   const syncTokenStore = new SyncTokenStore(
     paths,
-    credentialVault.backend === "file"
-      ? realSyncTokenFileIo
-      : vaultSyncTokenFileIo(credentialVault),
+    shouldUseVaultTokenStore(credentialVault, migration)
+      ? vaultSyncTokenFileIo(credentialVault)
+      : realSyncTokenFileIo,
   );
   const anilistAdapter = new AniListAdapter(syncTokenStore, undefined, anilistAuth);
   const tmdbAdapter = new TmdbAdapter(syncTokenStore, tmdbAuth.apiKey ?? "");
@@ -497,6 +514,7 @@ export async function bootstrapPersistence(
     statsService,
     statsFormatter,
     syncTokenStore,
+    credentialStoreStatus,
     syncService,
     syncReconciliationRepository,
     syncAuthAvailability,
