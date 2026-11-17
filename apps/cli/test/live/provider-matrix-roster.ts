@@ -15,6 +15,8 @@ export type MatrixEntry = {
    * normal smoke's, so playback mode simply swaps the command.
    */
   readonly playbackCommand?: readonly string[];
+  /** Fixture the playback command exercises, when it differs from `fixture`. */
+  readonly playbackFixture?: string;
 };
 
 export const MATRIX: readonly MatrixEntry[] = [
@@ -45,6 +47,7 @@ export const MATRIX: readonly MatrixEntry[] = [
     playbackCommand: ["bun", "test/live/mpv-playback.smoke.ts", "movy"],
     media: "movie",
     fixture: "Inception",
+    playbackFixture: "Fight Club",
   },
   {
     provider: "videasy",

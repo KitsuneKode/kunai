@@ -13,7 +13,7 @@ lastReviewed: "2026-11-12"
 - **Date:** 2026-11-12.
 - **REA:** `rea` CLI **not** on PATH; REA MCP **not** connected. No `rea setup` or engine installs. Bundle work is curl + ripgrep on public HTML/JS only.
 - **Constraints:** No video segments, no Turnstile/Anubis bypass, no token harvest, no decryptors. Metadata GET/HEAD only where noted.
-- **Kunai fingerprint set:** `api.speedracelight.com`, `player.videasy.to`, `vidlink.pro`, `enc-dec.app`, `vidrock.net`, `sub.vdrk.site`, `rivestream.app` / `backend.rivestream.app`, `secretKey`, `backendfetch`, `www.movy.sx`, `api.wecollege.net`, `db.wecollege.net`, OpenSSL `Salted__`.
+- **Kunai fingerprint set:** `api.speedracelight.com`, `player.videasy.to`, `vidlink.pro`, `enc-dec.app`, `vidrock.net`, `sub.vdrk.site`, `rivestream.app` / `backend.rivestream.app` / `scrapper.rivestream.app`, `secretKey`, `backendfetch`, `www.movy.sx`, `api.wecollege.net`, `db.wecollege.net`, OpenSSL `Salted__`. `scrapper.rivestream.app` was added on 2026-11-17. A recheck of the captured pages and bundles found it only in Rivestream's own bundle, so no negative result below changes.
 
 Labels below separate **observations** (fetched artifacts), **inferences**, and **unknowns** (including REA gaps).
 

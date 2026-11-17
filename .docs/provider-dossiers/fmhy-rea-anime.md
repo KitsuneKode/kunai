@@ -239,7 +239,7 @@ Priority site. The app was not readable.
 
 ### https://miruro.cx/
 
-**HTTP 200.** Homepage env literals: `PUBLIC_URL` `https://miruro.cx`, `PUBLIC_STRMCX_ORIGIN` `https://strm.cx`, `PUBLIC_PROXY_A` `https://s1.keeply.top/`, `PUBLIC_PROXY_B` `https://s2.keeply.top/`. `PUBLIC_PROXY_OBF_KEY` is present; the value is omitted. Quoted provider names include `sun`, `bee`, `hop`, `kiwi`, `knob`, `bun`, `cog`. The word `pipe` is not a quoted string in this homepage. That is unknown coverage of the pipe route, not a finding that the route is gone. Hostname `miruro.cx` plus `bee` / `kiwi` match the live module. **Score: mirror.**
+**HTTP 200.** Homepage env literals: `PUBLIC_URL` `https://miruro.cx`, `PUBLIC_STRMCX_ORIGIN` `https://strm.cx`, `PUBLIC_PROXY_A` `https://s1.keeply.top/`, `PUBLIC_PROXY_B` `https://s2.keeply.top/`. `PUBLIC_PROXY_OBF_KEY` is present; the value is omitted. Quoted provider names include `sun`, `bee`, `hop`, `kiwi`, `knob`, `bun`, `cog`. The word `pipe` is not a quoted string in this homepage. That is unknown coverage of the pipe route, not a finding that the route is gone. The shipped Miruro provider does not list `miruro.cx` among its pipe hosts (`packages/providers/src/miruro/mirrors.ts`). Shared provider names `bee` and `kiwi` do not establish the same backend. Whether `miruro.cx` serves the shipped Miruro backend is unknown. **Score: mirror, pending that check.**
 
 ### https://mkissa.to/
 
@@ -255,7 +255,8 @@ Priority site. The app was not readable.
 - **New catalogs, media unknown:** AniLight `GET https://api.anilight.live/api/search`, Anidap `GET /api/anime/search`, Anixo `db.anixo.buzz` cards, NekoWatch `GET /api/home?v=2`, Animesuge `getinfo` (status only). None of those bodies contained a media file.
 - **HiAnime skin lane:** Anistream’s watch bundle builds `https://zokoanime.video/stream/ani/<id>/<ep>/<sub|dub>`. The same file builds other embeds, so the site is not only that skin.
 - **Named, not skinned:** NekoWatch’s registry includes the keys `miruro` and `mkissa`. The captured player chunk that has a URL points at ani.pm.
-- **Not the three backends:** Animesuge, ani.pm, Animex, Gotaku (no host), Anidap’s upstream list, Anixo’s embed host. Anidap’s `aniwatchtv.site` and `allanime.uns.bio` strings are related vocabulary and different hosts.
+- **No overlap observed:** Animesuge, ani.pm, Animex, Anidap’s upstream list, and Anixo’s embed host showed none of the three backends’ hosts. That is an observation about the captured strings, not proof that none of them proxies one. Anidap’s `aniwatchtv.site` and `allanime.uns.bio` strings are related vocabulary on different hosts.
+- **Unknown:** Gotaku. Its bundle is obfuscated and its embed host was not found, so its backend is not established either way.
 - **Unreadable:** animepahe (Cloudflare 403). Anikoto’s FMHY primary (`anikototv.to`) does not resolve. The old apnshare verdict does not transfer.
 
 ## Follow-ups

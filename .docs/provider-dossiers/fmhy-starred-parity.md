@@ -47,7 +47,7 @@ These are the drifts the dossiers already name. Each one has one repair, and tha
 
 Cross-cutting, in the order they should be tried when a user says "providers are broken":
 
-1. **Read the failure class.** `blocked` is Cloudflare or a captcha (`cloudflare-bypass-strategy.md`: which curl, 2xx challenge vs 4xx, then impersonate-build drift vs IP reputation). A 403 on the media URL with a good API response is Referer or an expired signed URL, and the fix is the header set passed to mpv.
+1. **Read the failure class.** `blocked` is Cloudflare or a captcha (`cloudflare-bypass-strategy.md`: which curl, 2xx challenge vs 4xx, then impersonate-build drift vs IP reputation). A 403 on the media URL with a good API response is a Referer problem or an expired signed URL. For Referer, fix the header set passed to mpv. For an expired URL, resolve a fresh one; headers cannot renew a signature.
 2. **Separate empty from dead.** VidLink's `null` and Movy's per-lane 500 are empty titles or empty lanes. AllManga `unknown_build_id` is a dead contract. A Rivestream timeout on `scrapper.rivestream.app` is the shared front door, not one server name.
 3. **Rotate the whole secret, not one field.** AllManga profile, VidRock key, Movy seed. Rivestream's scraper request has no salt.
 4. **Requalify on the signoff titles** after the contract change. A green unit run can be a turbo cache hit. Live scripts are opt-in.

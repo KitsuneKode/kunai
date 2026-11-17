@@ -159,6 +159,7 @@ async function runMatrixEntry(entry: MatrixEntry): Promise<MatrixResult> {
   const playback = playbackModeEnabled() && entry.playbackCommand !== undefined;
   const evidence: EvidenceKind = playback ? "playback" : "reachability";
   const command = playback ? (entry.playbackCommand ?? entry.command) : entry.command;
+  const fixture = playback ? (entry.playbackFixture ?? entry.fixture) : entry.fixture;
   const { stdout, stderr, exitCode, timedOut } = await runLiveSmoke(command);
   const parsed = parseSmokePayload(stdout, stderr);
 
@@ -166,7 +167,7 @@ async function runMatrixEntry(entry: MatrixEntry): Promise<MatrixResult> {
     const result = {
       provider: entry.provider,
       media: entry.media,
-      fixture: entry.fixture,
+      fixture,
       ok: false,
       exitCode,
       streamResolved: null,
@@ -199,7 +200,7 @@ async function runMatrixEntry(entry: MatrixEntry): Promise<MatrixResult> {
   const result = {
     provider: entry.provider,
     media: entry.media,
-    fixture: entry.fixture,
+    fixture,
     ok: exitCode === 0 && parsed.ok === true,
     exitCode,
     streamResolved: booleanOrNull(parsed.streamResolved),

@@ -15,6 +15,7 @@ import {
 import type {
   CachePolicy,
   ProviderCycleCandidate,
+  ProviderCycleFailure,
   ProviderFailure,
   ProviderResolveInput,
   ProviderRuntimeContext,
@@ -494,6 +495,9 @@ export const rivestreamProviderModule: CoreProviderModule = {
         candidateTimeoutMs,
         RIVESTREAM_RESOLVE_GATE_TIMEOUT_MS,
       );
+      // Candidates whose /api/provider request came back. A timeout after that
+      // point is the service's own manifest or stream, not the shared front door.
+      const frontDoorAnswered = new Set<string>();
       const cycleResult = await runProviderCycle({
         providerId: RIVESTREAM_PROVIDER_ID,
         candidates: cycleCandidates,
@@ -507,15 +511,9 @@ export const rivestreamProviderModule: CoreProviderModule = {
         titleId: input.title.id,
         maxAttemptsPerCandidate: 1,
         candidateTimeoutMs,
-        // Every service is fetched through the same scrapper.rivestream.app front
-        // door. A block or a timeout there repeats for every later name, and
-        // walking them spends the attempt before the next provider can start.
-        // Endpoint-scoped refusals name one service's own stream CDN, not the
-        // shared front door: stopping on them forfeits every untried service
-        // to a single dead mirror.
-        shouldStopAfterFailure: (failure) =>
-          failure.failureClass === "candidate-timeout" ||
-          (failure.failureClass === "candidate-blocked" && failure.endpointScoped !== true),
+        // One shared front door: see shouldStopRivestreamWalk.
+        shouldStopAfterFailure: (failure, candidate) =>
+          shouldStopRivestreamWalk(failure, frontDoorAnswered.has(candidate.id)),
         resolveCandidate: async (candidate, candidateContext) => {
           const provider = String(candidate.serverId ?? candidate.metadata?.provider ?? "");
           if (!provider) {
@@ -531,7 +529,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
           // than failing a candidate the cycle chose to try. The on-demand
           // request binds the candidate signal so it does not outlive the
           // attempt; shared prefetch requests stay on the parent signal.
-          const sourceDataPromise =
+          const sourceDataPromise = (
             prefetchedSources.get(provider) ??
             fetchRivestreamSourceData({
               context,
@@ -541,7 +539,11 @@ export const rivestreamProviderModule: CoreProviderModule = {
               season,
               episode,
               signal: candidateContext.signal,
-            });
+            })
+          ).then((data) => {
+            frontDoorAnswered.add(candidate.id);
+            return data;
+          });
 
           try {
             return await resolveRivestreamProviderCandidate({
@@ -949,6 +951,23 @@ function fetchRivestreamSourceData(opts: {
   );
 }
 
+/**
+ * Whether one failure should end the whole Rivestream walk.
+ *
+ * Every service goes through the same scrapper.rivestream.app front door, so a
+ * timeout or an unscoped block there repeats for every later name. A timeout
+ * after the front door answered belongs to that service's manifest or stream
+ * probe, and the next service can still work. An endpoint-scoped refusal names
+ * one service's own stream CDN, so it never ends the walk.
+ */
+export function shouldStopRivestreamWalk(
+  failure: ProviderCycleFailure,
+  frontDoorAnswered: boolean,
+): boolean {
+  if (failure.failureClass === "candidate-timeout") return !frontDoorAnswered;
+  return failure.failureClass === "candidate-blocked" && failure.endpointScoped !== true;
+}
+
 /** Warm the front of the walk so the first servers settle before later ones are opened. */
 function prefetchRivestreamServiceCandidates(opts: {
   readonly candidates: readonly ProviderCycleCandidate[];
@@ -960,7 +979,10 @@ function prefetchRivestreamServiceCandidates(opts: {
 }): Map<string, Promise<RivestreamSourceResponse>> {
   const { candidates, input, context, tmdbId, season, episode } = opts;
   const prefetched = new Map<string, Promise<RivestreamSourceResponse>>();
-  for (const candidate of candidates) {
+  // Same order the cycle walks, so a pinned source is the one warmed rather
+  // than racing a second request against the first array entry.
+  const walkOrder = [...candidates].sort((left, right) => left.priority - right.priority);
+  for (const candidate of walkOrder) {
     const provider = String(candidate.serverId ?? candidate.metadata?.provider ?? "");
     if (!provider || prefetched.has(provider)) continue;
     // A quarantined mirror is skipped by the cycle, so firing its request here
