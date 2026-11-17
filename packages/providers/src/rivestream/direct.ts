@@ -92,8 +92,12 @@ const RIVESTREAM_PREFETCH_WINDOW = 1;
  * One hung `GET /api/provider` is the shared front door, not one bad name.
  * Kept short so a dead scraper costs one try and the engine can move on,
  * while a healthy name (sub-second on 2026-11-12) still fits.
+ *
+ * Must stay under the clamped candidate timeout (4.8s on fast). The cycle
+ * timer raises the same failure class for a slow CDN probe; only this
+ * deadline's rejection is marked as the shared front door.
  */
-const RIVESTREAM_SOURCE_TIMEOUT_MS = 3_500;
+export const RIVESTREAM_SOURCE_TIMEOUT_MS = 3_500;
 /**
  * Last-resort list for when service discovery is unreachable.
  *
@@ -495,9 +499,6 @@ export const rivestreamProviderModule: CoreProviderModule = {
         candidateTimeoutMs,
         RIVESTREAM_RESOLVE_GATE_TIMEOUT_MS,
       );
-      // Candidates whose /api/provider request came back. A timeout after that
-      // point is the service's own manifest or stream, not the shared front door.
-      const frontDoorAnswered = new Set<string>();
       const cycleResult = await runProviderCycle({
         providerId: RIVESTREAM_PROVIDER_ID,
         candidates: cycleCandidates,
@@ -511,9 +512,10 @@ export const rivestreamProviderModule: CoreProviderModule = {
         titleId: input.title.id,
         maxAttemptsPerCandidate: 1,
         candidateTimeoutMs,
-        // One shared front door: see shouldStopRivestreamWalk.
-        shouldStopAfterFailure: (failure, candidate) =>
-          shouldStopRivestreamWalk(failure, frontDoorAnswered.has(candidate.id)),
+        // One shared front door: see shouldStopRivestreamWalk. The cycle timer
+        // stamps `candidate-timeout` on a slow CDN probe too, so the class alone
+        // must not end the walk.
+        shouldStopAfterFailure: (failure) => shouldStopRivestreamWalk(failure),
         resolveCandidate: async (candidate, candidateContext) => {
           const provider = String(candidate.serverId ?? candidate.metadata?.provider ?? "");
           if (!provider) {
@@ -529,7 +531,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
           // than failing a candidate the cycle chose to try. The on-demand
           // request binds the candidate signal so it does not outlive the
           // attempt; shared prefetch requests stay on the parent signal.
-          const sourceDataPromise = (
+          const sourceDataPromise =
             prefetchedSources.get(provider) ??
             fetchRivestreamSourceData({
               context,
@@ -539,11 +541,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
               season,
               episode,
               signal: candidateContext.signal,
-            })
-          ).then((data) => {
-            frontDoorAnswered.add(candidate.id);
-            return data;
-          });
+            });
 
           try {
             return await resolveRivestreamProviderCandidate({
@@ -557,6 +555,9 @@ export const rivestreamProviderModule: CoreProviderModule = {
               cachePolicy,
               sourceDataPromise,
               signal: candidateContext.signal,
+              // The candidate signal aborts for both a user cancel and the
+              // cycle's own timer. Only the caller's signal is a user cancel.
+              cancelSignal: context.signal,
               gateTimeoutMs,
             });
           } catch (error) {
@@ -952,20 +953,57 @@ function fetchRivestreamSourceData(opts: {
 }
 
 /**
+ * Timeouts of `GET /api/provider` — the shared scraper — not of a later CDN probe.
+ *
+ * The cycle engine stamps `candidate-timeout` on whichever step was still
+ * running when its own timer fired. Identity on the failure object is the
+ * only way the stop predicate can tell those apart: the class is the same.
+ */
+const rivestreamScraperTimeouts = new WeakSet<ProviderCycleFailure>();
+
+function isRivestreamScraperTimeout(failure: ProviderCycleFailure): boolean {
+  return rivestreamScraperTimeouts.has(failure);
+}
+
+function isRivestreamScraperFetchTimeout(
+  error: Error,
+  cancelSignal: AbortSignal | undefined,
+): boolean {
+  // A user cancel aborts the in-flight scraper fetch too. That is the
+  // engine's cancellation, not a hung front door.
+  if (cancelSignal?.aborted && isAbortError(error)) return false;
+  return isRivestreamAbortOrTimeoutError(error);
+}
+
+function rivestreamScraperTimeoutFailure(
+  candidate: ProviderCycleCandidate,
+  provider: string,
+  at: string,
+): ProviderCycleFailureError {
+  const error = createProviderCycleFailureError(candidate, {
+    failureClass: "candidate-timeout",
+    message: `Rivestream scraper timed out fetching ${provider}`,
+    retryable: true,
+    at,
+  });
+  rivestreamScraperTimeouts.add(error.failure);
+  return error;
+}
+
+/**
  * Whether one failure should end the whole Rivestream walk.
  *
  * Every service goes through the same scrapper.rivestream.app front door, so a
- * timeout or an unscoped block there repeats for every later name. A timeout
- * after the front door answered belongs to that service's manifest or stream
+ * timeout marked on that `GET /api/provider` repeats for every later name. A
+ * `candidate-timeout` from the cycle timer is one service's manifest or stream
  * probe, and the next service can still work. An endpoint-scoped refusal names
  * one service's own stream CDN, so it never ends the walk.
  */
-export function shouldStopRivestreamWalk(
-  failure: ProviderCycleFailure,
-  frontDoorAnswered: boolean,
-): boolean {
-  if (failure.failureClass === "candidate-timeout") return !frontDoorAnswered;
-  return failure.failureClass === "candidate-blocked" && failure.endpointScoped !== true;
+export function shouldStopRivestreamWalk(failure: ProviderCycleFailure): boolean {
+  return (
+    isRivestreamScraperTimeout(failure) ||
+    (failure.failureClass === "candidate-blocked" && failure.endpointScoped !== true)
+  );
 }
 
 /** Warm the front of the walk so the first servers settle before later ones are opened. */
@@ -1095,6 +1133,7 @@ async function resolveRivestreamProviderCandidate({
   cachePolicy,
   sourceDataPromise,
   signal,
+  cancelSignal,
   gateTimeoutMs,
 }: {
   readonly candidate: ProviderCycleCandidate;
@@ -1104,6 +1143,8 @@ async function resolveRivestreamProviderCandidate({
   readonly cachePolicy: CachePolicy;
   readonly sourceDataPromise: Promise<RivestreamSourceResponse>;
   readonly signal?: AbortSignal;
+  /** The caller's signal. The candidate signal also aborts for the cycle timer. */
+  readonly cancelSignal?: AbortSignal;
   /** Sized against the clamped candidate timeout, never the raw constant. */
   readonly gateTimeoutMs: number;
 }): Promise<RivestreamResolvedCandidate> {
@@ -1111,7 +1152,15 @@ async function resolveRivestreamProviderCandidate({
   const audioSubtitle = inferRivestreamAudioSubtitle(provider);
   const sourceId =
     candidate.sourceId ?? providerInventorySourceId(RIVESTREAM_PROVIDER_ID, provider);
-  const sourceData = await sourceDataPromise;
+  let sourceData: RivestreamSourceResponse;
+  try {
+    sourceData = await sourceDataPromise;
+  } catch (error) {
+    if (error instanceof Error && isRivestreamScraperFetchTimeout(error, cancelSignal)) {
+      throw rivestreamScraperTimeoutFailure(candidate, provider, context.now());
+    }
+    throw error;
+  }
   const rawSources = getRivestreamRawSources(sourceData.data);
   if (rawSources.length === 0) {
     throw createProviderCycleFailureError(candidate, {

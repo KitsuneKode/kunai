@@ -25,24 +25,20 @@ function failure(
 }
 
 describe("shouldStopRivestreamWalk", () => {
-  test("a timeout before the front door answered ends the walk", () => {
-    expect(shouldStopRivestreamWalk(failure("candidate-timeout"), false)).toBe(true);
-  });
-
-  test("a timeout after the front door answered lets the next service run", () => {
-    // A stalled manifest or stream probe on one service says nothing about
-    // the shared scraper, which already responded.
-    expect(shouldStopRivestreamWalk(failure("candidate-timeout"), true)).toBe(false);
+  test("an unmarked candidate-timeout does not end the walk", () => {
+    // The cycle timer uses this class for a slow CDN probe. Only a failure
+    // marked when GET /api/provider itself times out stops the walk.
+    expect(shouldStopRivestreamWalk(failure("candidate-timeout"))).toBe(false);
   });
 
   test("an unscoped block ends the walk; an endpoint-scoped one does not", () => {
-    expect(shouldStopRivestreamWalk(failure("candidate-blocked"), true)).toBe(true);
-    expect(shouldStopRivestreamWalk(failure("candidate-blocked", true), true)).toBe(false);
+    expect(shouldStopRivestreamWalk(failure("candidate-blocked"))).toBe(true);
+    expect(shouldStopRivestreamWalk(failure("candidate-blocked", true))).toBe(false);
   });
 
   test("an empty or unparsable service keeps walking", () => {
-    expect(shouldStopRivestreamWalk(failure("candidate-empty"), true)).toBe(false);
-    expect(shouldStopRivestreamWalk(failure("candidate-parse"), true)).toBe(false);
+    expect(shouldStopRivestreamWalk(failure("candidate-empty"))).toBe(false);
+    expect(shouldStopRivestreamWalk(failure("candidate-parse"))).toBe(false);
   });
 });
 
