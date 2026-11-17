@@ -1,1 +1,0 @@
-Before: idle header always showed ready even when offline or mpv missing.
