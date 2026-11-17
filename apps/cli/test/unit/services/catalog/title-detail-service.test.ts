@@ -15,6 +15,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { ARTWORK_PREFERENCE, episodeThumbKey, mergeArtwork } from "@/domain/catalog/title-detail";
 import { initLogger } from "@/logger";
 import {
+  bindTitleDetailCrosswalk,
   clearTitleDetailCache,
   fetchTitleDetail,
   peekTitleDetail,
@@ -145,6 +146,12 @@ function anilistMediaPayload(overrides: Record<string, unknown> = {}): Record<st
 
 type RouteHandler = (url: string) => Response | null;
 
+// Restores run in afterEach, not only at the end of each test: a test that
+// throws before its own `restore()` used to leave this 404-everything fetch
+// installed for every later file in the process. In a serial run that broke
+// unrelated suites (all of the stream gateway's), which looked like time-rot.
+const pendingFetchRestores: Array<() => void> = [];
+
 function mockFetch(handler: RouteHandler): () => void {
   const original = globalThis.fetch;
   globalThis.fetch = mock(async (input: string | URL | Request, _init?: RequestInit) => {
@@ -155,9 +162,11 @@ function mockFetch(handler: RouteHandler): () => void {
     return new Response(JSON.stringify({ status: 404 }), { status: 404 });
   }) as unknown as typeof fetch;
 
-  return () => {
+  const restore = () => {
     globalThis.fetch = original;
   };
+  pendingFetchRestores.push(restore);
+  return restore;
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -173,9 +182,14 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 beforeEach(() => {
   clearTitleDetailCache();
+  // The crosswalk is module state bound by whichever container booted last.
+  // These tests own their catalog answers, so they start with none bound.
+  bindTitleDetailCrosswalk(undefined);
 });
 
 afterEach(() => {
+  // Newest first, so nested mocks unwind to the fetch this test started with.
+  while (pendingFetchRestores.length > 0) pendingFetchRestores.pop()?.();
   clearTitleDetailCache();
   // The tmdb-proxy host breakers are module state — a stubbed 5xx/transport
   // failure must not carry into the next test.

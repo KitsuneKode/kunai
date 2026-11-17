@@ -1,3 +1,5 @@
+import { afterEach } from "bun:test";
+
 function configureTestEnvironment(): void {
   /** Block xdg-open / browser spawns during `bun test` unless a test opts out explicitly. */
   process.env.KUNAI_DISABLE_EXTERNAL_URL ??= "1";
@@ -9,3 +11,32 @@ function configureTestEnvironment(): void {
 }
 
 configureTestEnvironment();
+
+const nativeFetch = globalThis.fetch;
+
+/**
+ * A test that replaces `globalThis.fetch` must put it back before it ends.
+ * A leaked fake answers every later request in the process — in a serial run
+ * that is every later test file — so the failure surfaces far from its cause.
+ * It once broke 53 unrelated tests and kept the weekly time-rot sweep red for
+ * six weeks while looking like clock drift. This fails the leaking test itself
+ * and restores the real fetch so nothing downstream inherits it.
+ */
+function failTestsThatLeakFetch(): void {
+  afterEach(() => {
+    if (globalThis.fetch === nativeFetch) return;
+    globalThis.fetch = nativeFetch;
+    throw new Error(
+      "This test left globalThis.fetch replaced. Restore it in afterEach (or a finally block) so a failing assertion cannot leak the mock into later tests.",
+    );
+  });
+}
+
+// The preload is also loaded by plain `bun` children (the privacy preload test
+// spawns one). They inherit NODE_ENV, so only registering tells them apart:
+// outside the runner `afterEach` throws, and there is no test to guard.
+try {
+  failTestsThatLeakFetch();
+} catch {
+  // Not under `bun test`.
+}
