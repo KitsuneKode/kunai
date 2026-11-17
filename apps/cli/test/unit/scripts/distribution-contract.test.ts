@@ -195,7 +195,7 @@ describe("release workflow candidate-before-publication contract", () => {
   const metadata = () => extractWorkflowJob(release, "metadata");
 
   test("PR release guard rejects vulnerable locked dependencies", () => {
-    expect(rootPackage.scripts["audit:dependencies"]).toBe("bun audit");
+    expect(rootPackage.scripts["audit:dependencies"]).toBe("bun run scripts/audit-dependencies.ts");
     const guard = readFileSync(join(REPO_ROOT, ".github/workflows/release-guard.yml"), "utf8");
     const job = extractWorkflowJob(guard, "guard");
     expect(job).toContain("bun run audit:dependencies");
