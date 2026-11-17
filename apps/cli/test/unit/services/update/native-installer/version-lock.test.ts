@@ -10,6 +10,7 @@ import {
   lifecycleGuardPath,
 } from "@/services/update/native-installer/install-layout";
 import {
+  cleanupStaleLocks,
   inspectVersionLock,
   lifecycleLockPath,
   lockCurrentVersion,
@@ -573,6 +574,40 @@ describe("version lock inspection", () => {
     expect(acquire.acquired).toBe(false);
     expect(existsSync(`${lockPath}.claim`)).toBe(true);
 
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("the stale-lock sweep leaves a fresh empty claim alone, and the lock it guards", async () => {
+    const { root, layout } = await makeLayout();
+    const lockPath = join(layout.locksDir, "4.0.2.lock");
+    const deadLock = `${JSON.stringify({
+      pid: 2_147_483_646,
+      version: "4.0.2",
+      execPath: "/tmp/not-a-real-kunai",
+      acquiredAt: "2020-01-01T00:00:00.000Z",
+    })}\n`;
+    await writeFile(lockPath, deadLock);
+    // A reaper has created its claim but not yet written its pid.
+    await writeFile(`${lockPath}.claim`, "");
+
+    await cleanupStaleLocks(layout);
+
+    expect(existsSync(`${lockPath}.claim`)).toBe(true);
+    expect(await readFile(lockPath, "utf8")).toBe(deadLock);
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("an empty claim with a future mtime is treated as abandoned, not mid-write", async () => {
+    const { root, layout } = await makeLayout();
+    const claimPath = join(layout.locksDir, "4.0.3.lock.claim");
+    await writeFile(claimPath, "");
+    const future = new Date(Date.now() + 3_600_000);
+    await utimes(claimPath, future, future);
+
+    await cleanupStaleLocks(layout);
+
+    expect(existsSync(claimPath)).toBe(false);
     await rm(root, { recursive: true, force: true });
   });
 

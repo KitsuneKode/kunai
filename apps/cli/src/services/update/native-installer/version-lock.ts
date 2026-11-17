@@ -96,7 +96,13 @@ async function isLockStale(path: string): Promise<boolean> {
 /** True once a file has been unreadable for longer than a write can take. */
 async function isPastCorruptGrace(path: string): Promise<boolean> {
   const metadata = await stat(path).catch(() => null);
-  return metadata === null || Date.now() - metadata.mtimeMs >= LIFECYCLE_CORRUPT_GRACE_MS;
+  if (metadata === null) return true;
+  const age = Date.now() - metadata.mtimeMs;
+  // A clearly-future mtime (clock skew, NFS, NTP stepping back) must not
+  // stretch the grace to the length of the skew; nobody is mid-write for that
+  // long. A fresh file's mtime can sit a fraction of a millisecond ahead of
+  // Date.now(), so only skew beyond the grace itself counts as abandoned.
+  return age >= LIFECYCLE_CORRUPT_GRACE_MS || age < -LIFECYCLE_CORRUPT_GRACE_MS;
 }
 
 function isModernLifecycleContent(content: VersionLockContent): boolean {
@@ -385,6 +391,10 @@ export async function cleanupStaleLocks(layout: InstallLayoutPaths): Promise<voi
       const claimPath = join(layout.locksDir, entry);
       const claimRaw = (await readFile(claimPath, "utf8").catch(() => "")).trim();
       const claimPid = Number.parseInt(claimRaw, 10);
+      // An empty claim is a reaper between its `wx` create and its write — the
+      // same mid-write grace the acquire path honours, or the sweep reopens
+      // the double-acquire it closed.
+      if (!Number.isSafeInteger(claimPid) && !(await isPastCorruptGrace(claimPath))) continue;
       if (!Number.isSafeInteger(claimPid) || !isProcessAlive(claimPid)) {
         // Re-read before deleting — a live reaper may have recycled the name.
         const confirmRaw = (await readFile(claimPath, "utf8").catch(() => "")).trim();
