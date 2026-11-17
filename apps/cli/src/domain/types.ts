@@ -10,15 +10,18 @@ import type {
   ProviderExternalIds,
   ProviderLanguageEvidence,
   ProviderEpisodeIdentity,
+  ProviderLane,
   ProviderReleaseInfo,
   ProviderResolveResult as SharedProviderResolveResult,
   ResolveTrace as SharedResolveTrace,
+  YouTubeLiveStatus,
+  YouTubeResultKind,
 } from "@kunai/types";
 
 import type { CalendarItem } from "./calendar/calendar-item";
 import type { QueuePlaybackIntent } from "./queue/queue-playback-intent";
 
-export type { SharedResolveTrace };
+export type { ProviderLane, SharedResolveTrace, YouTubeLiveStatus, YouTubeResultKind };
 export type { CalendarItem };
 export type { MediaPreference, MediaPreferenceKind } from "./media/media-preferences";
 export type {
@@ -34,9 +37,6 @@ export type { QueuePlaybackIntent };
 
 export type ContentType = "movie" | "series";
 export type ShellMode = "series" | "anime" | "youtube";
-export type ProviderLane = "anime" | "series" | "youtube";
-export type YouTubeLiveStatus = "none" | "live" | "upcoming" | "post_live";
-export type YouTubeResultKind = "video" | "short" | "playlist" | "channel";
 
 /**
  * YouTube/video metadata captured from the originating {@link SearchResult} at

@@ -1,3 +1,11 @@
+import {
+  isNotificationKind,
+  NOTIFICATION_KINDS,
+  type NotificationKind,
+} from "@/domain/notifications/notification-kinds";
+
+export { isNotificationKind, NOTIFICATION_KINDS, type NotificationKind };
+
 /**
  * One glyph per kind, and none of them a filled dot.
  *
@@ -10,7 +18,7 @@
  * Kept to thin, single-width geometry: heavy arrows (⬇ ⬆) sit visually louder
  * than the titles they annotate and render inconsistently across terminal fonts.
  */
-export const NOTIFICATION_KIND_GLYPH: Record<string, string> = {
+export const NOTIFICATION_KIND_GLYPH: Record<NotificationKind, string> = {
   "new-episode": "✦",
   "download-complete": "✓",
   "download-failed": "⚠",
@@ -20,7 +28,7 @@ export const NOTIFICATION_KIND_GLYPH: Record<string, string> = {
   "provider-health": "⊘",
 };
 
-export const NOTIFICATION_KIND_LABEL: Record<string, string> = {
+export const NOTIFICATION_KIND_LABEL: Record<NotificationKind, string> = {
   "new-episode": "New episode",
   "download-complete": "Download complete",
   "download-failed": "Download failed",
@@ -33,9 +41,9 @@ export const NOTIFICATION_KIND_LABEL: Record<string, string> = {
 export function notificationKindGlyph(kind: string): string {
   // Unknown kinds fall back to a small ring, not a filled dot: the filled dot
   // is the unread marker and must stay unique to it.
-  return NOTIFICATION_KIND_GLYPH[kind] ?? "◇";
+  return isNotificationKind(kind) ? NOTIFICATION_KIND_GLYPH[kind] : "◇";
 }
 
 export function notificationKindLabel(kind: string): string {
-  return NOTIFICATION_KIND_LABEL[kind] ?? "Notification";
+  return isNotificationKind(kind) ? NOTIFICATION_KIND_LABEL[kind] : "Notification";
 }

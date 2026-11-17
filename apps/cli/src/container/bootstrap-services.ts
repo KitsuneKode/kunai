@@ -187,7 +187,8 @@ export function bootstrapServices(input: {
     sinks: {
       deliverActive: (records) => {
         for (const record of records) {
-          notificationSinkRegistry.deliver(mapRecordToSinkDelivery(record));
+          const delivery = mapRecordToSinkDelivery(record);
+          if (delivery) notificationSinkRegistry.deliver(delivery);
         }
       },
       dismiss: (dedupKey) => {
