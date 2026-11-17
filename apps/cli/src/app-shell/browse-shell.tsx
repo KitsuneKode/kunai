@@ -639,6 +639,12 @@ export function BrowseShell<T>({
   }, [atBrowseHome]);
 
   useEffect(() => {
+    return () => {
+      setBrowseAtHome(false);
+    };
+  }, []);
+
+  useEffect(() => {
     return subscribeBrowseHome(() => {
       if (atBrowseHome) return null;
       const snapshot = {

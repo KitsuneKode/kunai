@@ -134,7 +134,10 @@ export function NotificationsShell({
           key={row.dedupKey}
           id={`notifications:row:${row.dedupKey}`}
           active={Boolean(pointer)}
-          onWheel={(direction) => pointer?.scroll(direction)}
+          onWheel={(direction) => {
+            priorRow.current = null;
+            pointer?.scroll(direction);
+          }}
           onClick={() => {
             if (!pointer) return;
             const click = pointerClickIntent(

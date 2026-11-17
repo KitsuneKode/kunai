@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-09"
+lastReviewed: "2026-11-17"
 ---
 
 # Terminal pointer controls
@@ -50,9 +50,21 @@ frame footers, command-palette rows, History tabs and rows, Notifications rows,
 and download rows. A download click never deletes or aborts: the first click
 selects, and the second click plays a finished file or retries a failed one.
 The mpv window itself is not a Kunai surface — its mouse stays with mpv.
-The header fox (`🦊 Kunai`) and `⌃G` toggle. Away from home they remember the
+The header fox (`🦊 Kunai`) and `⌃G` go home. Away from home they remember the
 browse view and any open panels, then leave. On the idle home they put that
-place back. Leaving playback still does not resume the video.
+place back. A root picker (episode list, download confirm, checklist, Stats)
+closes on home the same way as post-playback — the mounted session settles with
+its cancel fallback. Browse clears its home flag on unmount so a stale “at home”
+never blocks home after browse is gone.
+
+During loading or playback the fox uses the same select-then-commit rule as row
+clicks: the first click only arms a transient warning; the second fox click or
+`⌃G` stops and leaves. Any other key disarms. `⌃G` alone still goes home in one
+step. Leaving playback still does not resume the video.
+
+History, notifications and download rows relinquish pointer hits while the
+command palette is open, like browse. Wheel scroll on those lists clears the
+remembered first-click row, matching downloads.
 
 The isolated terminal fixture runs prove routing and persisted state. Physical
 Windows/macOS terminal emulators, multiplexers, accessibility and Android touch

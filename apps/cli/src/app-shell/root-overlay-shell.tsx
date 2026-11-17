@@ -1844,7 +1844,7 @@ export function RootOverlayShell({
         refresh();
         return;
       }
-      if (input === "g" && row) {
+      if (input === "g" && !key.ctrl && row) {
         const undoBefore = container.sessionUndo?.captureQueue();
         setQueueConfirm(null);
         container.queueService.moveToTop(row.id);
@@ -1856,7 +1856,7 @@ export function RootOverlayShell({
         refresh();
         return;
       }
-      if (input === "G" && row) {
+      if (input === "G" && !key.ctrl && row) {
         const undoBefore = container.sessionUndo?.captureQueue();
         setQueueConfirm(null);
         container.queueService.moveToBottom(row.id);
@@ -2377,26 +2377,30 @@ export function RootOverlayShell({
           columns={overlayLayout.contentColumns}
           selectedIndex={notificationsView.selectedIndex}
           unreadCount={notificationUnreadCount}
-          pointer={{
-            selectRow: (dedupKey) => {
-              setNotificationsState((state) => ({ ...state, selectedDedupKey: dedupKey }));
-            },
-            activateRow: (dedupKey) => {
-              runNotificationAction(dedupKey);
-            },
-            scroll: (direction) => {
-              const rows = notificationsView.rows;
-              if (rows.length === 0) return;
-              const current = Math.max(0, notificationsView.selectedIndex);
-              const next =
-                direction === "up"
-                  ? Math.max(0, current - 1)
-                  : Math.min(rows.length - 1, current + 1);
-              const dedupKey = rows[next]?.dedupKey;
-              if (!dedupKey) return;
-              setNotificationsState((state) => ({ ...state, selectedDedupKey: dedupKey }));
-            },
-          }}
+          pointer={
+            commandMode
+              ? undefined
+              : {
+                  selectRow: (dedupKey) => {
+                    setNotificationsState((state) => ({ ...state, selectedDedupKey: dedupKey }));
+                  },
+                  activateRow: (dedupKey) => {
+                    runNotificationAction(dedupKey);
+                  },
+                  scroll: (direction) => {
+                    const rows = notificationsView.rows;
+                    if (rows.length === 0) return;
+                    const current = Math.max(0, notificationsView.selectedIndex);
+                    const next =
+                      direction === "up"
+                        ? Math.max(0, current - 1)
+                        : Math.min(rows.length - 1, current + 1);
+                    const dedupKey = rows[next]?.dedupKey;
+                    if (!dedupKey) return;
+                    setNotificationsState((state) => ({ ...state, selectedDedupKey: dedupKey }));
+                  },
+                }
+          }
         />
         {commandMode ? (
           <CommandPalette
@@ -2542,54 +2546,60 @@ export function RootOverlayShell({
           listWidth={listWidth}
           rowWidth={rowWidth}
           pendingDelete={historyPendingDelete}
-          pointer={{
-            selectRow: (index) => {
-              setHistoryPendingDelete(null);
-              setSelectedIndex(index);
-            },
-            activateRow: (index) => {
-              setHistoryPendingDelete(null);
-              setSelectedIndex(index);
-              handleHistoryOverlayInput(
-                "",
-                { return: true },
-                {
-                  container,
-                  historyView,
-                  historySelections,
-                  historyPickerContext,
-                  selectedIndex: index,
-                  sourceChoiceTitleId: historySourceChoiceTitleId,
-                  sourcePreference: continueSourcePreference,
-                  setSourceChoiceTitleId: setHistorySourceChoiceTitleId,
-                  setHistoryTypeFilter,
-                  setHistoryTab,
-                  setSelectedIndex,
-                  setOverlayStatus: (status) => setOverlayStatus(status),
-                  onRedraw,
-                  pendingDelete: null,
-                  setPendingDelete: setHistoryPendingDelete,
-                  onHistoryMutated,
-                  onConfirmSelection: onConfirmHistorySelection,
-                },
-              );
-            },
-            selectTab: (index) => {
-              setHistoryTab(() => historyTabAt(index));
-            },
-            selectType: (index) => {
-              setHistoryTypeFilter(() => historyTypeFilterAt(index));
-              setSelectedIndex(0);
-            },
-            scroll: (direction) => {
-              setHistoryPendingDelete(null);
-              const count = historyView.flatRows.length;
-              if (count === 0) return;
-              setSelectedIndex((current) =>
-                direction === "up" ? Math.max(0, current - 1) : Math.min(count - 1, current + 1),
-              );
-            },
-          }}
+          pointer={
+            commandMode
+              ? undefined
+              : {
+                  selectRow: (index) => {
+                    setHistoryPendingDelete(null);
+                    setSelectedIndex(index);
+                  },
+                  activateRow: (index) => {
+                    setHistoryPendingDelete(null);
+                    setSelectedIndex(index);
+                    handleHistoryOverlayInput(
+                      "",
+                      { return: true },
+                      {
+                        container,
+                        historyView,
+                        historySelections,
+                        historyPickerContext,
+                        selectedIndex: index,
+                        sourceChoiceTitleId: historySourceChoiceTitleId,
+                        sourcePreference: continueSourcePreference,
+                        setSourceChoiceTitleId: setHistorySourceChoiceTitleId,
+                        setHistoryTypeFilter,
+                        setHistoryTab,
+                        setSelectedIndex,
+                        setOverlayStatus: (status) => setOverlayStatus(status),
+                        onRedraw,
+                        pendingDelete: null,
+                        setPendingDelete: setHistoryPendingDelete,
+                        onHistoryMutated,
+                        onConfirmSelection: onConfirmHistorySelection,
+                      },
+                    );
+                  },
+                  selectTab: (index) => {
+                    setHistoryTab(() => historyTabAt(index));
+                  },
+                  selectType: (index) => {
+                    setHistoryTypeFilter(() => historyTypeFilterAt(index));
+                    setSelectedIndex(0);
+                  },
+                  scroll: (direction) => {
+                    setHistoryPendingDelete(null);
+                    const count = historyView.flatRows.length;
+                    if (count === 0) return;
+                    setSelectedIndex((current) =>
+                      direction === "up"
+                        ? Math.max(0, current - 1)
+                        : Math.min(count - 1, current + 1),
+                    );
+                  },
+                }
+          }
         />
         {commandMode ? (
           <CommandPalette

@@ -80,6 +80,23 @@ describe("selectTransientRow", () => {
     expect(selectTransientRow({ ...EMPTY, weeklyDigestLine: "digest" })?.text).toBe("digest");
   });
 
+  test("armed fox home confirm outranks undo and toasts but not alerts", () => {
+    const confirm = selectTransientRow({
+      ...EMPTY,
+      homePointerConfirm: "Click again or press ⌃G to stop and go home",
+      undoLine: { text: "added to queue · z undo", tone: "info" },
+    });
+    expect(confirm?.text).toContain("⌃G");
+    expect(confirm?.tone).toBe("warning");
+
+    const alert = selectTransientRow({
+      ...EMPTY,
+      alert: { text: "playback failed", tone: "error" },
+      homePointerConfirm: "Click again",
+    });
+    expect(alert?.text).toBe("playback failed");
+  });
+
   test("undo strip outranks a regular toast and the standing decorations", () => {
     const row = selectTransientRow({
       ...EMPTY,

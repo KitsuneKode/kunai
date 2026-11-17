@@ -162,7 +162,10 @@ export function HistoryShell({
                 key={rowKey}
                 id={`history:row:${rowKey}`}
                 active={Boolean(pointer)}
-                onWheel={(direction) => pointer?.scroll(direction)}
+                onWheel={(direction) => {
+                  priorRow.current = null;
+                  pointer?.scroll(direction);
+                }}
                 onClick={() => {
                   if (!pointer) return;
                   const click = pointerClickIntent(priorRow.current, rowKey, selected);

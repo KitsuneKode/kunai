@@ -70,6 +70,7 @@ import {
 } from "./layout-policy";
 import { startMouseSession } from "./mouse/mouse-session";
 import { MouseDispatchProvider } from "./mouse/MouseRegions";
+import { pointerClickIntent } from "./mouse/pointer-activation";
 import {
   createNotificationQueueState,
   NOTIFICATION_TOAST_TTL_MS,
@@ -95,6 +96,7 @@ import {
   getRootContentSession,
   mountRootContent,
   resolveRootContentFromSession,
+  settleRootContentSessionWithFallback,
   useRootContentSession,
 } from "./root-content-state";
 import { getRootOwnedOverlay, resolveRootShellSurface } from "./root-shell-state";
@@ -111,6 +113,11 @@ import {
 } from "./shell-command-model";
 import { CommandPalette } from "./shell-command-ui";
 import { InputField } from "./shell-frame";
+import {
+  HOME_POINTER_ARM_KEY,
+  PLAYBACK_HOME_POINTER_CONFIRM,
+  resolveShellHomeNavigation,
+} from "./shell-home-navigation";
 import { LocalSection, ResizeBlocker, ShellFooter, TransientRowSlot } from "./shell-primitives";
 import { clearShellScreenArtifacts } from "./shell-screen-clear";
 import { getWindowStart, padColumnsEnd, truncateLine, wrapText } from "./shell-text";
@@ -1261,37 +1268,80 @@ export function AppRoot({ container }: { container: Container }) {
     onCommandAction("search");
   }, [onCommandAction]);
 
-  const goHome = useCallback(() => {
-    const kind = getRootContentSession()?.kind;
-    if (kind === "playback" || kind === "loading") {
-      onCommandAction("search");
-      return;
-    }
-    if (kind === "post-playback") {
-      forceCloseRootContent<PlaybackShellResult>("search");
-      return;
-    }
+  const homePointerPrior = useRef<string | null>(null);
+  const [homePointerConfirm, setHomePointerConfirm] = useState<string | null>(null);
 
+  const clearHomePointerConfirm = useCallback(() => {
+    homePointerPrior.current = null;
+    setHomePointerConfirm(null);
+  }, []);
+
+  const applyShellHome = useCallback(() => {
     const overlays = stateManager.getState().activeModals.slice();
-    if (overlays.length === 0 && isBrowseAtHome()) {
-      returnFromBrowseHome();
-      return;
-    }
-
-    clearBrowseHomeReturn();
-    leaveForBrowseHome();
-    if (overlays.length > 0) {
-      stateManager.dispatch({ type: "CLOSE_ALL_OVERLAYS" });
-      pushBrowseHomeReturn(() => {
-        for (const overlay of overlays) {
-          stateManager.dispatch({ type: "OPEN_OVERLAY", overlay });
+    const nav = resolveShellHomeNavigation({
+      rootKind: getRootContentSession()?.kind ?? null,
+      overlayCount: overlays.length,
+      browseAtHome: isBrowseAtHome(),
+    });
+    switch (nav.kind) {
+      case "stop-playback-search":
+        onCommandAction("search");
+        return;
+      case "close-post-playback":
+        forceCloseRootContent<PlaybackShellResult>("search");
+        return;
+      case "close-picker":
+        settleRootContentSessionWithFallback();
+        return;
+      case "toggle-browse-return":
+        returnFromBrowseHome();
+        return;
+      case "leave-for-browse":
+        clearBrowseHomeReturn();
+        leaveForBrowseHome();
+        if (overlays.length > 0) {
+          stateManager.dispatch({ type: "CLOSE_ALL_OVERLAYS" });
+          pushBrowseHomeReturn(() => {
+            for (const overlay of overlays) {
+              stateManager.dispatch({ type: "OPEN_OVERLAY", overlay });
+            }
+          });
         }
-      });
     }
   }, [onCommandAction, stateManager]);
 
+  const goHomeFromKeyboard = useCallback(() => {
+    clearHomePointerConfirm();
+    applyShellHome();
+  }, [applyShellHome, clearHomePointerConfirm]);
+
+  const goHomeFromPointer = useCallback(() => {
+    const kind = getRootContentSession()?.kind;
+    if (kind === "playback" || kind === "loading") {
+      const click = pointerClickIntent(homePointerPrior.current, HOME_POINTER_ARM_KEY, true);
+      homePointerPrior.current = click.priorKey;
+      if (click.intent === "select") {
+        setHomePointerConfirm(PLAYBACK_HOME_POINTER_CONFIRM);
+        return;
+      }
+      clearHomePointerConfirm();
+      applyShellHome();
+      return;
+    }
+    clearHomePointerConfirm();
+    applyShellHome();
+  }, [applyShellHome, clearHomePointerConfirm]);
+
+  useEffect(() => {
+    clearHomePointerConfirm();
+  }, [rootContent?.kind, clearHomePointerConfirm]);
+
   useInput((input, key) => {
-    if (matchBinding("global", input, key)?.id === "home") goHome();
+    const homeBinding = matchBinding("global", input, key)?.id === "home";
+    if (homePointerConfirm && !homeBinding) {
+      clearHomePointerConfirm();
+    }
+    if (homeBinding) goHomeFromKeyboard();
   });
 
   const onExitDone = useCallback(
@@ -1405,7 +1455,7 @@ export function AppRoot({ container }: { container: Container }) {
     >
       {/* Single canonical header: brand · destination pill · crumb · status · size */}
       <AppHeader
-        onHome={goHome}
+        onHome={goHomeFromPointer}
         destination={headerDestination}
         context={rootStatusSummary.crumb}
         status={
@@ -1432,6 +1482,7 @@ export function AppRoot({ container }: { container: Container }) {
             streakAtRiskAlert,
             weeklyDigestLine,
             tipLine,
+            homePointerConfirm,
           });
           if (!transient) return null;
           return (
