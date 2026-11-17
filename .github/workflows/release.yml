@@ -475,7 +475,7 @@ jobs:
           # Intel-only, so without this entry darwin-arm64 would ship on a
           # checksum alone.
           - id: darwin-arm64
-            runner: macos-14
+            runner: macos-15
             binary: kunai-darwin-arm64
 
     steps:

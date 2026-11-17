@@ -171,12 +171,13 @@
     "turbo": "catalog:repo"
   },
   "overrides": {
+    "@hono/node-server": "2.1.8",
     "@types/node": "catalog:",
     "body-parser": "^2.4.0",
     "fast-uri": "^3.1.9",
     "fumadocs-core": "catalog:web",
     "fumadocs-ui": "catalog:web",
-    "hono": "^4.13.11",
+    "hono": "4.13.18",
     "ip-address": "^10.7.4",
     "mdast-util-to-markdown": "2.2.3",
     "minimatch": "11.0.8",
