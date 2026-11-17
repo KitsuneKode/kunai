@@ -72,7 +72,10 @@ function cliVersionManifestPlugin(root: string): BunPlugin {
  * Keep the unpublished dev bundle slim: Android handoff DASH parsing pulls in
  * `@xmldom/xmldom`, which is large but already a declared runtime dependency.
  * `bun run start` resolves it from node_modules; compiled binaries still bundle
- * it because this plugin is npm-bundle-only.
+ * it because this plugin is npm-bundle-only. A copied `dist/kunai.js` run
+ * outside this workspace (e.g. with `bun --no-install`) fails with
+ * "Cannot find module '@xmldom/xmldom'"; the file is unpublished, so that is
+ * accepted.
  */
 function npmBundleExternalDependencyPlugin(): BunPlugin {
   return {
@@ -379,8 +382,10 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // Lowered from 3_120 on 2026-11-17 after externalizing `@xmldom/xmldom` from
 // `dist/kunai.js` (npm-bundle-only build plugin). The DASH gateway still parses
 // MPDs at runtime from node_modules; compiled binaries unchanged and still bundle
-// xmldom. Measured `dist/kunai.js` is 3,086,849 bytes; 3_045 leaves 31,231
-// bytes (~30.5 KiB) of headroom. Public launcher budgets below are unchanged.
+// xmldom. Measured `dist/kunai.js` is 3,086,729 bytes; 3_045 leaves 31,351
+// bytes (~30.6 KiB) of headroom. Public launcher budgets below are unchanged.
+// For app code this is looser, not tighter: headroom went from ~9 KiB to
+// ~30.6 KiB. Spend it on measured changes, not as a new floor to ratchet from.
 export const NPM_BUNDLE_BUDGET_KB = 3_045;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
