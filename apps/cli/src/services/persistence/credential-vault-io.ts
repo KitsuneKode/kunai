@@ -9,7 +9,7 @@ import {
   type CredentialStoreStatus,
   type CredentialVaultPort,
 } from "./credential-vault";
-import type { SyncTokenFileIo, SyncTokens } from "./SyncTokenStore";
+import { realSyncTokenFileIo, type SyncTokenFileIo, type SyncTokens } from "./SyncTokenStore";
 
 /**
  * `SyncTokenFileIo` over the credential vault: each tracker is one vault entry
@@ -80,16 +80,127 @@ export function resolveCredentialStoreStatus(input: {
   readonly vault: CredentialVaultPort;
   readonly migration: MigrateSyncTokensResult;
   readonly vaultFallbackReason?: string;
+  readonly tokenStoreFaultReason?: string;
 }): CredentialStoreStatus {
-  const { vault, migration, vaultFallbackReason } = input;
-  const tokenStore = shouldUseVaultTokenStore(vault, migration) ? "vault" : "sync-tokens.json";
+  const { vault, migration, vaultFallbackReason, tokenStoreFaultReason } = input;
+  const tokenStore =
+    tokenStoreFaultReason || !shouldUseVaultTokenStore(vault, migration)
+      ? "sync-tokens.json"
+      : "vault";
   let reason: string | undefined;
   if (vault.backend === "file") {
     reason = vaultFallbackReason;
+  } else if (tokenStoreFaultReason) {
+    reason = tokenStoreFaultReason;
   } else if (migration === "pending") {
     reason = "vault migration pending";
   }
   return { vaultBackend: vault.backend, tokenStore, reason };
+}
+
+function mergeSyncTokenPatch(current: SyncTokens, patch: SyncTokens): SyncTokens {
+  const anilist = Object.hasOwn(patch, "anilist") ? patch.anilist : current.anilist;
+  const tmdb = Object.hasOwn(patch, "tmdb") ? patch.tmdb : current.tmdb;
+  if (anilist !== undefined && tmdb !== undefined) return { anilist, tmdb };
+  if (anilist !== undefined) return { anilist };
+  if (tmdb !== undefined) return { tmdb };
+  return {};
+}
+
+// oxlint-disable-next-line anti-slop/no-unknown-parameters -- vault faults arrive as thrown values of any shape; stringified at the degradation boundary.
+function formatVaultFault(error: unknown, backend: CredentialVaultPort["backend"]): string {
+  const detail = error instanceof Error ? error.message : String(error);
+  const lane =
+    backend === "secret-service"
+      ? "keyring"
+      : backend === "keychain"
+        ? "Keychain"
+        : backend === "wincred"
+          ? "Credential Manager"
+          : "vault";
+  return `${lane} write failed: ${detail}`;
+}
+
+/**
+ * Vault-backed tracker tokens with a session-local fallback to
+ * `sync-tokens.json` when native get/set/delete faults after boot.
+ */
+export function vaultSyncTokenFileIoWithFileFallback(
+  paths: KunaiPaths,
+  vault: CredentialVaultPort,
+  onDegrade: (reason: string) => void,
+): SyncTokenFileIo {
+  const vaultIo = vaultSyncTokenFileIo(vault);
+  const tokenPath = join(paths.configDir, "sync-tokens.json");
+  let useFile = false;
+
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- native vault methods throw opaque platform errors; narrowed when surfacing status.
+  const degrade = async (error: unknown, tokens?: SyncTokens) => {
+    if (useFile) return;
+    useFile = true;
+    onDegrade(formatVaultFault(error, vault.backend));
+    dbg("credential-vault", "tracker token store degraded to sync-tokens.json", {
+      backend: vault.backend,
+      error,
+    });
+    if (tokens !== undefined) {
+      await realSyncTokenFileIo.writeTokens(tokenPath, tokens).catch(() => {});
+    }
+  };
+
+  return {
+    async readTokens(path: string) {
+      if (useFile) return realSyncTokenFileIo.readTokens(path);
+      try {
+        return await vaultIo.readTokens(path);
+      } catch (error) {
+        await degrade(error);
+        try {
+          return await realSyncTokenFileIo.readTokens(path);
+        } catch {
+          return {};
+        }
+      }
+    },
+    async writeTokens(path: string, tokens: SyncTokens) {
+      if (useFile) return realSyncTokenFileIo.writeTokens(path, tokens);
+      try {
+        await vaultIo.writeTokens(path, tokens);
+      } catch (error) {
+        await degrade(error, tokens);
+        await realSyncTokenFileIo.writeTokens(path, tokens);
+      }
+    },
+    async patchTokens(path: string, patch: SyncTokens) {
+      const filePatch = realSyncTokenFileIo.patchTokens;
+      const vaultPatch = vaultIo.patchTokens;
+      if (useFile) {
+        await filePatch?.(path, patch);
+        return;
+      }
+      if (!vaultPatch) {
+        await filePatch?.(path, patch);
+        return;
+      }
+      try {
+        await vaultPatch(path, patch);
+      } catch (error) {
+        let current: SyncTokens = {};
+        try {
+          current = await vaultIo.readTokens(path);
+        } catch {
+          try {
+            current = await realSyncTokenFileIo.readTokens(path);
+          } catch {
+            /* empty */
+          }
+        }
+        const merged = mergeSyncTokenPatch(current, patch);
+        await degrade(error, merged);
+        await realSyncTokenFileIo.writeTokens(path, merged);
+      }
+    },
+  };
 }
 
 /**

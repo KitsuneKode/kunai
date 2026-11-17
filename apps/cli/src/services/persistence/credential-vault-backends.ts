@@ -9,7 +9,6 @@ const SECRET_SERVICE_PROBE_TIMEOUT_MS = 3_000;
 // secret scanners even though it names the vault entry, not a credential.
 const VAULT_SERVICE = "kunai";
 const SERVICE_ATTRS = ["service", VAULT_SERVICE];
-const PROBE_VALUE = "0";
 
 /**
  * `sync-tokens.json` marker — not a vault implementation. Forced `file` and
@@ -229,85 +228,57 @@ function wincredVault(spawn: CredentialSpawn, shell: string): CredentialVaultPor
   };
 }
 
+/** Read-only: lookup the probe key — exit 0 or honest not-found means the daemon answered. */
 async function probeSecretService(spawn: CredentialSpawn): Promise<boolean> {
   const attrs = [...SERVICE_ATTRS, "key", CREDENTIAL_VAULT_PROBE_KEY];
-  const clear = await spawn(
-    ["secret-tool", "clear", ...attrs],
-    "",
-    SECRET_SERVICE_PROBE_TIMEOUT_MS,
-  );
-  if (clear.exitCode !== 0 && !secretToolAbsent(clear) && !clear.timedOut) return false;
-  const stored = await spawn(
-    ["secret-tool", "store", "--label", "kunai probe", ...attrs],
-    PROBE_VALUE,
-    SECRET_SERVICE_PROBE_TIMEOUT_MS,
-  );
-  if (stored.exitCode !== 0 || stored.timedOut) return false;
-  const got = await spawn(["secret-tool", "lookup", ...attrs], "", SECRET_SERVICE_PROBE_TIMEOUT_MS);
-  if (got.exitCode !== 0 || got.stdout.replace(/\n$/, "") !== PROBE_VALUE) return false;
-  const removed = await spawn(
-    ["secret-tool", "clear", ...attrs],
-    "",
-    SECRET_SERVICE_PROBE_TIMEOUT_MS,
-  );
-  return removed.exitCode === 0 || secretToolAbsent(removed);
+  const out = await spawn(["secret-tool", "lookup", ...attrs], "", SECRET_SERVICE_PROBE_TIMEOUT_MS);
+  if (out.timedOut) return false;
+  if (out.exitCode === 0) return true;
+  return secretToolAbsent(out);
 }
 
+/** Read-only: find the probe key — "could not be found" means Keychain answered. */
 async function probeKeychain(spawn: CredentialSpawn): Promise<boolean> {
   const key = CREDENTIAL_VAULT_PROBE_KEY;
-  await spawn(
-    ["security", "delete-generic-password", "-s", VAULT_SERVICE, "-a", key],
-    "",
-    SPAWN_TIMEOUT_MS,
-  );
-  const stored = await spawn(
-    ["security", "add-generic-password", "-U", "-s", VAULT_SERVICE, "-a", key, "-w", PROBE_VALUE],
-    "",
-    SPAWN_TIMEOUT_MS,
-  );
-  if (stored.exitCode !== 0) return false;
-  const got = await spawn(
+  const out = await spawn(
     ["security", "find-generic-password", "-s", VAULT_SERVICE, "-a", key, "-w"],
     "",
     SPAWN_TIMEOUT_MS,
   );
-  if (got.exitCode !== 0 || got.stdout.replace(/\n$/, "") !== PROBE_VALUE) return false;
-  const removed = await spawn(
-    ["security", "delete-generic-password", "-s", VAULT_SERVICE, "-a", key],
+  if (out.timedOut) return false;
+  if (out.exitCode === 0) return true;
+  return out.exitCode === 44 || out.stderr.includes("could not be found");
+}
+
+/** Read-only: retrieve the probe key — not-found means WinRT PasswordVault works. */
+async function probeWincred(spawn: CredentialSpawn, shell: string): Promise<boolean> {
+  const key = CREDENTIAL_VAULT_PROBE_KEY;
+  const out = await spawn(
+    [
+      shell,
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      wincredScript(
+        [
+          `$v = New-Object Windows.Security.Credentials.PasswordVault`,
+          `try { $c = $v.Retrieve('${VAULT_SERVICE}', '${key}'); $c.RetrievePassword(); exit 0 } catch { exit 1 }`,
+        ].join("; "),
+      ),
+    ],
     "",
     SPAWN_TIMEOUT_MS,
   );
-  return removed.exitCode === 0 || removed.stderr.includes("could not be found");
-}
-
-async function probeWincred(spawn: CredentialSpawn, shell: string): Promise<boolean> {
-  const key = CREDENTIAL_VAULT_PROBE_KEY;
-  const script = wincredScript(
-    [
-      `$v = New-Object Windows.Security.Credentials.PasswordVault`,
-      `try { $v.Remove($v.Retrieve('${VAULT_SERVICE}', '${key}')) } catch {}`,
-      `$pw = [Console]::In.ReadToEnd()`,
-      `$c = New-Object Windows.Security.Credentials.PasswordCredential('${VAULT_SERVICE}', '${key}', $pw)`,
-      `$v.Add($c)`,
-      `$r = $v.Retrieve('${VAULT_SERVICE}', '${key}')`,
-      `$r.RetrievePassword()`,
-      `if ($r.Password -ne $pw) { exit 2 }`,
-      `$v.Remove($r)`,
-    ].join("; "),
-  );
-  const out = await spawn(
-    [shell, "-NoProfile", "-NonInteractive", "-Command", script],
-    PROBE_VALUE,
-    SPAWN_TIMEOUT_MS,
-  );
-  return out.exitCode === 0 && !out.timedOut;
+  if (out.timedOut) return false;
+  if (out.exitCode === 0) return true;
+  return wincredNotFound(out);
 }
 
 function resolveWindowsShell(which: (cmd: string) => string | null): string | null {
   return which("powershell") ?? which("powershell.exe") ?? null;
 }
 
-/** Probe: can the platform CLI store and read back a throwaway secret? */
+/** Probe: does the platform CLI answer a read-only lookup on the probe key? */
 async function probeBackend(
   backend: "keychain" | "wincred" | "secret-service",
   deps: CredentialVaultDeps,

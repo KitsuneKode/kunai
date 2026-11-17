@@ -79,7 +79,7 @@ import {
   migrateSyncTokensToVault,
   resolveCredentialStoreStatus,
   shouldUseVaultTokenStore,
-  vaultSyncTokenFileIo,
+  vaultSyncTokenFileIoWithFileFallback,
 } from "../services/persistence/credential-vault-io";
 import { SqliteCacheStoreImpl } from "../services/persistence/SqliteCacheStoreImpl";
 import { StorageMaintenanceService } from "../services/persistence/StorageMaintenanceService";
@@ -454,10 +454,16 @@ export async function bootstrapPersistence(
     migration,
     reason: credentialStoreStatus.reason,
   });
+  const useVaultTokenStore = shouldUseVaultTokenStore(credentialVault, migration);
   const syncTokenStore = new SyncTokenStore(
     paths,
-    shouldUseVaultTokenStore(credentialVault, migration)
-      ? vaultSyncTokenFileIo(credentialVault)
+    useVaultTokenStore
+      ? vaultSyncTokenFileIoWithFileFallback(paths, credentialVault, (reason: string) => {
+          Object.assign(credentialStoreStatus, {
+            tokenStore: "sync-tokens.json" as const,
+            reason,
+          });
+        })
       : realSyncTokenFileIo,
   );
   const anilistAdapter = new AniListAdapter(syncTokenStore, undefined, anilistAuth);

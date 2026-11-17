@@ -181,9 +181,10 @@ Two things about the v3 write path are easy to get wrong, and both were:
 
 Tokens live in the OS credential vault when one is reachable — macOS Keychain
 (`security`), Windows Credential Manager (Windows PowerShell 5.1 `PasswordVault`;
-not PowerShell 7), or Linux Secret Service (`secret-tool`), each probed with a
-short store → read-back → delete round-trip on a throwaway key so a broken dbus
-session cannot masquerade as “not found”. `KUNAI_CREDENTIAL_BACKEND` overrides
+not PowerShell 7), or Linux Secret Service (`secret-tool`), each probed at boot
+with a single read-only lookup on a throwaway key (honest not-found counts as
+healthy; a dbus fault with stderr does not). Round-trip write verification runs
+on first real use and in CI, not every launch. `KUNAI_CREDENTIAL_BACKEND` overrides
 selection (`file` forces the plaintext lane for tests). One vault entry per
 tracker (`anilist.tokens`, `tmdb.tokens`) holds the credential JSON blob. When
 no native vault works, the `file` backend marker routes tracker tokens through
@@ -192,7 +193,9 @@ no native vault works, the `file` backend marker routes tracker tokens through
 falling back. The first launch on a vault-capable machine migrates
 `sync-tokens.json` write → read-back → compare → delete; any store failure
 leaves migration **pending** and keeps **sync-tokens.json** as the token store
-for that session so reconnect still works. Token-store mutations stay
+for that session so reconnect still works. A native vault fault on tracker
+get/set/delete during the session degrades to **sync-tokens.json** for the rest
+of that run without dropping the token being saved. Token-store mutations stay
 serialized. Native vault patches write or delete only the explicitly targeted
 tracker key, without reading or rewriting the other tracker. Malformed or
 unavailable unrelated credentials therefore remain untouched during connect and

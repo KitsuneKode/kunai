@@ -16,6 +16,7 @@ import {
   resolveCredentialStoreStatus,
   shouldUseVaultTokenStore,
   vaultSyncTokenFileIo,
+  vaultSyncTokenFileIoWithFileFallback,
 } from "@/services/persistence/credential-vault-io";
 import {
   realSyncTokenFileIo,
@@ -57,37 +58,46 @@ function argvTouchesProbe(argv: readonly string[]): boolean {
   );
 }
 
+function assertBootProbeOnly(spawned: readonly (readonly string[])[]): void {
+  const probeSpawns = spawned.filter((argv) => argvTouchesProbe(argv));
+  expect(probeSpawns.length).toBe(1);
+  for (const argv of probeSpawns) {
+    expect(argv.includes("store")).toBe(false);
+    expect(argv.includes("add-generic-password")).toBe(false);
+    expect(argv.includes("clear")).toBe(false);
+    expect(argv.includes("delete-generic-password")).toBe(false);
+    expect(argv.some((part) => part.includes("Add(") || part.includes("$v.Add"))).toBe(false);
+    expect(argv.some((part) => part.includes("Remove("))).toBe(false);
+  }
+}
+
 function keychainProbeSpawn(onLive?: CredentialSpawn): CredentialSpawn {
   return async (argv, input, timeoutMs) => {
     if (!argvTouchesProbe(argv)) {
       return onLive ? onLive(argv, input, timeoutMs) : spawnNotFound;
     }
-    if (argv.includes("delete-generic-password")) {
+    if (argv.includes("find-generic-password")) {
       return { exitCode: 44, stdout: "", stderr: "could not be found", timedOut: false };
     }
-    if (argv.includes("add-generic-password")) return spawnOk;
-    if (argv.includes("find-generic-password")) return { ...spawnOk, stdout: "0\n" };
-    return spawnNotFound;
+    throw new Error(`unexpected probe mutation: ${argv.join(" ")}`);
   };
 }
 
 function wincredProbeSpawn(onLive?: CredentialSpawn): CredentialSpawn {
   return async (argv, input, timeoutMs) => {
-    if (argvTouchesProbe(argv)) return spawnOk;
+    if (argvTouchesProbe(argv)) return spawnNotFound;
     return onLive ? onLive(argv, input, timeoutMs) : spawnNotFound;
   };
 }
 
-/** Scripted secret-tool probe round-trip for backend selection tests. */
+/** Scripted secret-tool read-only probe for backend selection tests. */
 function secretServiceProbeSpawn(onLive?: CredentialSpawn): CredentialSpawn {
   return async (argv, input, timeoutMs) => {
     if (!argv.includes(CREDENTIAL_VAULT_PROBE_KEY)) {
       return onLive ? onLive(argv, input, timeoutMs) : spawnNotFound;
     }
-    if (argv.includes("store")) return spawnOk;
-    if (argv.includes("lookup")) return { ...spawnOk, stdout: "0\n" };
-    if (argv.includes("clear")) return spawnNotFound;
-    return spawnNotFound;
+    if (argv.includes("lookup")) return spawnNotFound;
+    throw new Error(`unexpected probe mutation: ${argv.join(" ")}`);
   };
 }
 
@@ -334,15 +344,17 @@ describe("createCredentialVault backend selection", () => {
     expect(fallbackReason).toContain("secret-service");
   });
 
-  test("dbus fault on secret-tool store fails the probe and selects file fallback", async () => {
+  test("dbus fault on secret-tool lookup fails the probe and selects file fallback", async () => {
     const fallbacks: string[] = [];
+    const spawned: string[][] = [];
     const { vault } = await createCredentialVault({
       paths: fakePaths(dir),
       platform: "linux",
       env: {},
       which: (cmd) => (cmd === "secret-tool" ? "/usr/bin/secret-tool" : null),
-      spawn: async (argv) =>
-        argv.includes("store") && argv.includes(CREDENTIAL_VAULT_PROBE_KEY)
+      spawn: async (argv) => {
+        spawned.push([...argv]);
+        return argv.includes("lookup") && argv.includes(CREDENTIAL_VAULT_PROBE_KEY)
           ? {
               exitCode: 1,
               stdout: "",
@@ -350,11 +362,13 @@ describe("createCredentialVault backend selection", () => {
                 "Cannot autolaunch D-Bus session without a $DISPLAY for the default D-Bus session bus",
               timedOut: false,
             }
-          : spawnNotFound,
+          : spawnNotFound;
+      },
       onFallback: (backend) => fallbacks.push(backend),
     });
     expect(vault.backend).toBe("file");
     expect(fallbacks).toEqual(["file"]);
+    assertBootProbeOnly(spawned);
   });
 
   test("a probe killed at its deadline selects file fallback with a notice", async () => {
@@ -382,7 +396,7 @@ describe("createCredentialVault backend selection", () => {
     expect(await store.load()).toEqual({ anilist: { accessToken: "file-lane", userId: 1 } });
   });
 
-  test("secret-service backend is picked when secret-tool round-trips the probe key", async () => {
+  test("secret-service backend is picked when secret-tool answers the read-only probe", async () => {
     const spawned: string[][] = [];
     const { vault } = await createCredentialVault({
       paths: fakePaths(dir),
@@ -395,9 +409,72 @@ describe("createCredentialVault backend selection", () => {
       },
     });
     expect(vault.backend).toBe("secret-service");
-    expect(
-      spawned.some((argv) => argv.includes("store") && argv.includes(CREDENTIAL_VAULT_PROBE_KEY)),
-    ).toBe(true);
+    assertBootProbeOnly(spawned);
+    expect(spawned[0]).toEqual([
+      "secret-tool",
+      "lookup",
+      "service",
+      "kunai",
+      "key",
+      CREDENTIAL_VAULT_PROBE_KEY,
+    ]);
+  });
+
+  test.each([
+    ["linux", "secret-service", "secret-tool", secretServiceProbeSpawn],
+    ["darwin", "keychain", "security", keychainProbeSpawn],
+    ["win32", "wincred", "powershell", wincredProbeSpawn],
+  ] as const)(
+    "boot probe on %s performs one spawn and no vault writes",
+    async (
+      platform: "linux" | "darwin" | "win32",
+      backend: "secret-service" | "keychain" | "wincred",
+      cli: string,
+      probeSpawn: typeof secretServiceProbeSpawn,
+    ) => {
+      const spawned: string[][] = [];
+      const { vault } = await createCredentialVault({
+        paths: fakePaths(dir),
+        platform,
+        env: { KUNAI_CREDENTIAL_BACKEND: backend },
+        which: (cmd) => {
+          if (cmd === cli) return `/usr/bin/${cli}`;
+          if (platform === "win32" && (cmd === "powershell" || cmd === "powershell.exe"))
+            return "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+          return null;
+        },
+        spawn: async (argv, input, timeoutMs) => {
+          spawned.push([...argv]);
+          return probeSpawn()(argv, input, timeoutMs);
+        },
+      });
+      expect(vault.backend).toBe(backend);
+      assertBootProbeOnly(spawned);
+    },
+  );
+
+  test("runtime vault set fault degrades to sync-tokens.json and keeps the token", async () => {
+    const vault = fakeVault({
+      set: async () => {
+        throw new Error("store exit 1");
+      },
+    });
+    let degradedReason: string | undefined;
+    const status = resolveCredentialStoreStatus({ vault, migration: "complete" });
+    const store = new SyncTokenStore(
+      fakePaths(dir),
+      vaultSyncTokenFileIoWithFileFallback(fakePaths(dir), vault, (reason: string) => {
+        degradedReason = reason;
+        Object.assign(status, { tokenStore: "sync-tokens.json", reason });
+      }),
+    );
+    await store.patchAniList({ accessToken: "saved-anyway", userId: 1 });
+    expect(await store.load()).toEqual({ anilist: { accessToken: "saved-anyway", userId: 1 } });
+    expect(JSON.parse(await readFile(join(dir, "sync-tokens.json"), "utf8"))).toEqual({
+      anilist: { accessToken: "saved-anyway", userId: 1 },
+    });
+    expect(degradedReason).toContain("keyring write failed");
+    expect(status.tokenStore).toBe("sync-tokens.json");
   });
 });
 
@@ -515,7 +592,7 @@ describe("vault read failures abort mutations", () => {
     const seen: string[][] = [];
     const spawn: CredentialSpawn = async (argv) => {
       seen.push([...argv]);
-      return argvTouchesProbe(argv) ? spawnOk : spawnNotFound;
+      return argvTouchesProbe(argv) ? spawnNotFound : spawnNotFound;
     };
     const { vault } = await createCredentialVault({
       paths: fakePaths(dir),
