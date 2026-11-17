@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-27T12:42:26Z"
+lastReviewed: "2026-11-12"
 ---
 
 # Kunai — Repo Infrastructure
@@ -84,6 +84,14 @@ are declared as devDependencies, and the docs/tooling graph has its own exposure
 An audit result identifies affected installed packages; it does not by itself
 prove an application exploit. Current versions, dependency paths and verification
 results belong in the release qualification record.
+
+`minimatch` 11.0.8, `qs` 6.17.1, `systeminformation` 5.33.19, `hono` 4.13.18,
+and `@hono/node-server` 2.1.8 are overridden because those are the patched
+releases and the parents have not moved. The MCP SDK accepts
+`@hono/node-server` 2.x, so the 1.x advisories are fixed by the override, not
+ignored. One advisory stays ignored in `scripts/audit-dependencies.ts` because
+it has no safe upgrade: `GHSA-gcqx-w48m-w2h4` (`deepmerge` 4.3.1, no patched
+release). A new advisory still fails the guard.
 
 Dependency fixes use compatible upstream stable releases and targeted catalog or
 override floors. Update a parent package when its supported newer release removes
