@@ -453,6 +453,36 @@ describe("buildRootStatusSummary", () => {
     expect(summary.alert?.tone).toBe("info");
   });
 
+  test("reports offline instead of ready when the network is down", () => {
+    const state = createInitialState("vidking", "hianime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+    const summary = buildRootStatusSummary({
+      state,
+      currentViewLabel: "browse",
+      rootStatus: "ready",
+      networkAvailable: false,
+    });
+    expect(summary.header).toEqual({ label: "offline", tone: "warning" });
+  });
+
+  test("reports mpv missing instead of ready when mpv is absent", () => {
+    const state = createInitialState("vidking", "hianime", {
+      anime: { audio: "original", subtitle: "en" },
+      series: { audio: "original", subtitle: "none" },
+      movie: { audio: "original", subtitle: "en" },
+    });
+    const summary = buildRootStatusSummary({
+      state,
+      currentViewLabel: "browse",
+      rootStatus: "idle",
+      mpvAvailable: false,
+    });
+    expect(summary.header).toEqual({ label: "mpv missing", tone: "warning" });
+  });
+
   test("surfaces offline mode and local playback in the header crumb", () => {
     const base = createInitialState("vidking", "hianime", {
       anime: { audio: "original", subtitle: "en" },

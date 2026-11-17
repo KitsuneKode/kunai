@@ -2188,7 +2188,7 @@ export function BrowseShell<T>({
                   commandMode
                     ? undefined
                     : suggestionBandVisible && suggestionBandModel.rows.length > 0
-                      ? "↓ suggestions · → complete · esc dismiss · ↵ search"
+                      ? "Enter to search · ↑↓ suggestions · Esc dismiss"
                       : displayOptions.length === 0
                         ? canFocusIdleRows
                           ? "Type a title · ↓ for you now · / commands"
@@ -2524,7 +2524,7 @@ export function BrowseShell<T>({
                 detail: errorMessage ?? "Something went wrong while loading results.",
                 actions: [
                   { id: "retry", label: "Retry search", shortcut: "Enter" },
-                  { id: "clear", label: "Clear and start over", shortcut: "Esc", tone: "muted" },
+                  { id: "clear", label: "Clear query", shortcut: "Esc", tone: "muted" },
                 ],
               }}
               width={Math.min(innerWidth, 72)}
@@ -2667,6 +2667,7 @@ export function BrowseShell<T>({
                 ...(onFollowSelected ? ["browse-follow"] : []),
               ]
             : []),
+          "help",
         ];
         const allBrowseFooterActions: readonly FooterAction[] = [
           {
@@ -2677,10 +2678,9 @@ export function BrowseShell<T>({
           },
           {
             key: "↑↓",
-            label: listFocused
-              ? "navigate · ↑↓ ends → search"
-              : idleFocused
-                ? "navigate · ↑↓ ends → search"
+            label:
+              listFocused || idleFocused
+                ? "navigate · [esc] search"
                 : canFocusIdleRows || options.length > 0
                   ? "navigate · ↓ leave search"
                   : "navigate",
@@ -2700,6 +2700,7 @@ export function BrowseShell<T>({
               "browse-queue": "up-next",
               "browse-watchlist": "bookmark",
               "browse-follow": "follow",
+              help: "help",
             },
             overrides: {
               "browse-mode": {

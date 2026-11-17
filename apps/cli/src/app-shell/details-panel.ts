@@ -163,6 +163,13 @@ export function resolveBrowseDetailsSecondary<T>(
 const LOCAL_FACT_LABELS = new Set(["Local progress", "Offline"]);
 const RELEASE_FACT_LABELS = new Set(["Release", "Watch history"]);
 const MANAGEMENT_FACT_LABELS = new Set(["Watchlist", "Favourite", "Release follow", "Up Next"]);
+/** Provider diagnostics stay in the details overlay and debug flows, not browse sheets. */
+const DETAILS_DIAGNOSTIC_LABELS = new Set([
+  "Metadata source",
+  "Provider detail page",
+  "Image source",
+  "Popularity",
+]);
 
 export type BrowseDetailsPanel = {
   title: string;
@@ -199,6 +206,7 @@ export function buildBrowseDetailsPanel<T>(
     (fact) =>
       !LOCAL_FACT_LABELS.has(fact.label) &&
       !MANAGEMENT_FACT_LABELS.has(fact.label) &&
+      !DETAILS_DIAGNOSTIC_LABELS.has(fact.label) &&
       fact.label !== "Poster" &&
       fact.label !== "Rating",
   );

@@ -31,7 +31,7 @@ function job(patch: Partial<DownloadJobRecord> & Pick<DownloadJobRecord, "id">):
 describe("buildDownloadManagerLayout", () => {
   test.each([
     [72, false, 72],
-    [100, false, 100],
+    [100, true, 66],
     [140, true, 106],
   ] as const)("download layout at %d columns", (columns, showRail, expectedListWidth) => {
     const layout = buildDownloadManagerLayout(columns);
@@ -49,8 +49,8 @@ describe("buildDownloadManagerLayout", () => {
   });
 
   test("the rail appears exactly at the documented width threshold", () => {
-    expect(buildDownloadManagerLayout(123).showRail).toBe(false);
-    expect(buildDownloadManagerLayout(124).showRail).toBe(true);
+    expect(buildDownloadManagerLayout(99).showRail).toBe(false);
+    expect(buildDownloadManagerLayout(100).showRail).toBe(true);
   });
 
   test("a degenerate width still yields a usable, non-negative list", () => {

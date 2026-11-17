@@ -96,7 +96,8 @@ test("helpSections groups every binding under a labelled group", () => {
   const sections = helpSections();
   expect(sections.length).toBeGreaterThan(0);
   const total = sections.reduce((sum, section) => sum + section.items.length, 0);
-  expect(total).toBe(KEYBINDINGS.length);
+  const legacyHidden = KEYBINDINGS.filter((binding) => binding.label.includes("(legacy")).length;
+  expect(total).toBe(KEYBINDINGS.length - legacyHidden);
   for (const section of sections) {
     expect(section.group.length).toBeGreaterThan(0);
     for (const item of section.items) {

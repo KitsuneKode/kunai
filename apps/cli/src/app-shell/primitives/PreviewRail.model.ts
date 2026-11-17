@@ -40,9 +40,12 @@ export function visiblePreviewFacts(facts: readonly PreviewFact[]): readonly Pre
   );
 }
 
+/** Minimum terminal width before the compact preview rail replaces the details sheet. */
+export const PREVIEW_RAIL_MIN_COLUMNS = 100;
+
 export function shouldRenderPreviewRail(input: {
   readonly columns: number;
   readonly hasModel: boolean;
 }): boolean {
-  return input.hasModel && input.columns >= 124;
+  return input.hasModel && input.columns >= PREVIEW_RAIL_MIN_COLUMNS;
 }

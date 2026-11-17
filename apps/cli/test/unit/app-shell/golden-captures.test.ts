@@ -110,12 +110,14 @@ describe("PR 4 capture width budget", () => {
     }
   });
 
-  test("narrow and medium downloads carry no rail-only facts", async () => {
-    for (const width of ["narrow", "medium"] as const) {
-      const content = await readFile(path.join(CAPTURE_DIR, `downloads.${width}.txt`), "utf8");
-      // "Status" is a rail-only fact label; list rows show a bare state chip.
-      expect(content, `downloads.${width} must not render the rail`).not.toContain("Status");
-    }
+  test("narrow downloads carry no rail-only facts", async () => {
+    const content = await readFile(path.join(CAPTURE_DIR, "downloads.narrow.txt"), "utf8");
+    expect(content, "downloads.narrow must not render the rail").not.toContain("Status");
+  });
+
+  test("medium downloads at the rail threshold show the companion rail", async () => {
+    const content = await readFile(path.join(CAPTURE_DIR, "downloads.medium.txt"), "utf8");
+    expect(content).toContain("Status");
   });
 
   test("wide downloads show the selected-job rail and canonical position labels", async () => {
@@ -136,7 +138,7 @@ describe("PR 4 capture width budget", () => {
       // Narrow truncates the title column, so only the widths that can show the
       // whole label are asserted on it. What matters at every width is that the
       // synthetic S01E01 never appears.
-      if (width !== "narrow") expect(movieLine).toContain("Movie");
+      if (width === "wide") expect(movieLine).toContain("Movie");
     }
   });
 

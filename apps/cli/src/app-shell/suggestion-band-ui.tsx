@@ -113,7 +113,7 @@ export function getSuggestionBandRowCount<TValue>(
 ): number {
   if (model.rows.length === 0) return 0;
   const previewRows = model.items[selectedIndex] ? 3 : 0;
-  return Math.min(model.rows.length, Math.max(1, maxRows - 3 - previewRows)) + 3 + previewRows;
+  return Math.min(model.rows.length, Math.max(1, maxRows - 2 - previewRows)) + 2 + previewRows;
 }
 
 /** Anchored, bounded surface. Selection previews only already-fetched metadata. */
@@ -132,7 +132,7 @@ export function SearchSuggestionBand<TValue>({
   const contentWidth = Math.max(1, width - 4);
   const rowCount = getSuggestionBandRowCount(model, selectedIndex, maxRows);
   if (rowCount === 0) return null;
-  const capacity = rowCount - 3 - (selected ? 3 : 0);
+  const capacity = rowCount - 2 - (selected ? 3 : 0);
   const selectedRow = selected
     ? model.rows.findIndex((row) => row.kind === "item" && row.item.suggestion === selected)
     : -1;
@@ -152,9 +152,6 @@ export function SearchSuggestionBand<TValue>({
       backgroundColor={palette.surface}
       paddingX={1}
     >
-      <Text color={palette.textDim} wrap="truncate">
-        {truncateLine("Suggestions · ↑↓ move · Esc dismiss", contentWidth)}
-      </Text>
       {visibleRows.map((row, index) => {
         switch (row.kind) {
           case "header":

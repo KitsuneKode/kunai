@@ -947,6 +947,12 @@ export function AppRoot({ container }: { container: Container }) {
   );
   const playbackIsLocal = isLocalPlaybackStream(state.stream);
   const networkAvailable = useConnectivityOnline(container.connectivity);
+  const mpvAvailable =
+    container.capabilitySnapshot === null
+      ? undefined
+      : container.capabilitySnapshot.mpvRequired
+        ? container.capabilitySnapshot.mpv
+        : true;
   const rootStatusSummaryInput = useMemo(
     () => ({
       currentViewLabel,
@@ -959,6 +965,7 @@ export function AppRoot({ container }: { container: Container }) {
       newEpisodeNotificationCount,
       offlineMode: container.config.offlineMode,
       networkAvailable,
+      mpvAvailable,
       playbackIsLocal,
       playbackProblem: state.playbackProblem,
       autoplaySessionPaused: state.autoplaySessionPaused,
@@ -980,6 +987,7 @@ export function AppRoot({ container }: { container: Container }) {
       newEpisodeNotificationCount,
       container.config.offlineMode,
       networkAvailable,
+      mpvAvailable,
       playbackIsLocal,
       state.playbackProblem,
       state.autoplaySessionPaused,
@@ -1006,6 +1014,7 @@ export function AppRoot({ container }: { container: Container }) {
       newEpisodeNotificationCount,
       offlineMode: container.config.offlineMode,
       networkAvailable,
+      mpvAvailable,
       playbackIsLocal,
       providerRegistry: container.providerRegistry,
     }),
@@ -1025,6 +1034,7 @@ export function AppRoot({ container }: { container: Container }) {
           newEpisodeNotificationCount: rootStatusSummaryInput.newEpisodeNotificationCount,
           offlineMode: rootStatusSummaryInput.offlineMode,
           networkAvailable: rootStatusSummaryInput.networkAvailable,
+          mpvAvailable: rootStatusSummaryInput.mpvAvailable,
           playbackIsLocal: rootStatusSummaryInput.playbackIsLocal,
           providerRegistry: container.providerRegistry,
         }),
@@ -1616,7 +1626,9 @@ function ListShell<T>({
     showCompanion: showSelectionCompanion,
   } = pickerLayout;
   const showCompanion =
-    showSelectionCompanion && !shouldHideCompanionForCommandPalette(commandMode);
+    showSelectionCompanion &&
+    !shouldHideCompanionForCommandPalette(commandMode) &&
+    filteredOptions.length > 0;
   const selectedLabel = selectedOption?.label ?? "Nothing selected";
   const selectedDetail =
     selectedOption?.detail ??

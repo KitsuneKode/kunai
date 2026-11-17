@@ -2406,29 +2406,29 @@ async function handleWatchlist(container: Container): Promise<"handled"> {
 
     type WlAction = { type: "select"; titleId: string; title: string } | { type: "back" };
 
-    const options: ShellOption<WlAction>[] = [
-      ...items.map((item) => {
-        const progress = progressMap.get(item.titleId);
-        const nextEp = nextEpisodeMap.get(item.titleId);
-        const newCount = newEpisodeMap.get(item.titleId);
-        const newBadge = newCount ? `+${newCount} new` : null;
-        const nextBadge = nextEp ? `→ ${nextEp}` : null;
-        const detail = [item.mediaKind, progress ?? "not started", nextBadge, newBadge]
-          .filter(Boolean)
-          .join("  ·  ");
-        return {
-          value: { type: "select" as const, titleId: item.titleId, title: item.title },
-          label: newCount ? `${item.title}  ·  +${newCount} new` : item.title,
-          detail,
-        };
-      }),
-      { value: { type: "back" as const }, label: "Back" },
-    ];
+    const options: ShellOption<WlAction>[] = items.map((item) => {
+      const progress = progressMap.get(item.titleId);
+      const nextEp = nextEpisodeMap.get(item.titleId);
+      const newCount = newEpisodeMap.get(item.titleId);
+      const newBadge = newCount ? `+${newCount} new` : null;
+      const nextBadge = nextEp ? `→ ${nextEp}` : null;
+      const detail = [item.mediaKind, progress ?? "not started", nextBadge, newBadge]
+        .filter(Boolean)
+        .join("  ·  ");
+      return {
+        value: { type: "select" as const, titleId: item.titleId, title: item.title },
+        label: newCount ? `${item.title}  ·  +${newCount} new` : item.title,
+        detail,
+      };
+    });
+    if (items.length > 0) {
+      options.push({ value: { type: "back" as const }, label: "Back" });
+    }
 
     const subtitle =
       items.length > 0
         ? `${items.length} title${items.length === 1 ? "" : "s"}`
-        : "Nothing in your watchlist yet. Add titles from search results via /wl.";
+        : "Press w on a title or use /watchlist";
 
     const picked = await chooseFromListShell({
       title: "Watchlist",

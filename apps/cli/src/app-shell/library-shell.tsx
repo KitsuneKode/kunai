@@ -23,6 +23,7 @@ import {
 import { ListRow } from "@/app-shell/primitives/ListRow";
 import { MediaListShell } from "@/app-shell/primitives/MediaListShell";
 import {
+  PREVIEW_RAIL_MIN_COLUMNS,
   shouldRenderPreviewRail,
   type PreviewFact,
   type PreviewRailModel,
@@ -408,7 +409,7 @@ function LibraryTab({
       !loading &&
       !loadError &&
       Boolean(entries) &&
-      (viewport.columns ?? 80) >= 124,
+      (viewport.columns ?? 80) >= PREVIEW_RAIL_MIN_COLUMNS,
   });
 
   if (loading) {

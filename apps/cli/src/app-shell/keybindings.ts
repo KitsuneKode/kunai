@@ -1245,10 +1245,15 @@ export function footerHints(scope: KeyScope, max?: number): readonly KeyHint[] {
 }
 
 /** Group a set of bindings into help sections, preserving first-seen group order. */
+function isLegacyHelpBinding(binding: KeyBinding): boolean {
+  return binding.label.includes("(legacy");
+}
+
 function groupHelpSections(bindings: readonly KeyBinding[]): readonly HelpSection[] {
   const order: string[] = [];
   const byGroup = new Map<string, KeyHint[]>();
   for (const binding of bindings) {
+    if (isLegacyHelpBinding(binding)) continue;
     if (!byGroup.has(binding.group)) {
       byGroup.set(binding.group, []);
       order.push(binding.group);

@@ -1,0 +1,4 @@
+After header status:
+  network down -> offline (warning)
+  mpv absent -> mpv missing (warning)
+  healthy idle -> ready (success)

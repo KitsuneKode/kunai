@@ -9,7 +9,11 @@
 import { formatMediaItemCount, presentMedia } from "@/domain/media/media-presentation";
 import type { DownloadJobRecord } from "@/services/storage/storage-read-models";
 
-import type { PreviewPosterState, PreviewRailModel } from "./primitives/PreviewRail.model";
+import {
+  PREVIEW_RAIL_MIN_COLUMNS,
+  type PreviewPosterState,
+  type PreviewRailModel,
+} from "./primitives/PreviewRail.model";
 
 /**
  * Gap between the list and the companion rail. This is not a free parameter: it
@@ -26,7 +30,7 @@ const DOWNLOAD_MANAGER_RAIL_WIDTH = 32;
  * Minimum content width that can seat a list plus a rail without squeezing the
  * list below usability. Shared with `shouldRenderPreviewRail`.
  */
-const DOWNLOAD_MANAGER_RAIL_MIN_COLUMNS = 124;
+const DOWNLOAD_MANAGER_RAIL_MIN_COLUMNS = PREVIEW_RAIL_MIN_COLUMNS;
 
 export type DownloadManagerLayout = {
   readonly columns: number;
