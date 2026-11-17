@@ -1,6 +1,7 @@
 import { openExternalUrl } from "@/infra/shell/open-external-url";
 
 import type { SyncTokenStore } from "../persistence/SyncTokenStore";
+import { decideAniListProgressWrite, type AniListListStatus } from "./anilist-progress-policy";
 import { resolveAniListAuth, type AniListAuthResolution } from "./auth-contract";
 import { startLoopbackServer, type LoopbackResult, type LoopbackServer } from "./oauth-loopback";
 import type { TrackerOperation } from "./operations";
@@ -177,6 +178,21 @@ interface MediaListEntryResponse {
 
 interface MediaEntryLookupResponse {
   data?: { Media?: { id: number; mediaListEntry?: { id: number } | null } | null };
+  errors?: readonly AniListGraphQlError[];
+}
+
+interface ProgressLookupResponse {
+  data?: {
+    Media?: {
+      id: number;
+      episodes?: number | null;
+      mediaListEntry?: {
+        id: number;
+        status?: AniListListStatus | null;
+        progress?: number | null;
+      } | null;
+    } | null;
+  };
   errors?: readonly AniListGraphQlError[];
 }
 
@@ -412,14 +428,40 @@ export class AniListAdapter implements SyncAdapter {
     operation: Extract<TrackerOperation, { kind: "progress:set" }>,
     deadline: RequestDeadline,
   ): Promise<SyncOutcome> {
+    // The operation describes one episode; the list status describes the title.
+    // Read the entry and the episode count first so the write can tell the two
+    // apart (see `decideAniListProgressWrite`).
+    const lookup = await this.gql<ProgressLookupResponse>(
+      `query ProgressFor($mediaId: Int) {
+        Media(id: $mediaId) { id episodes mediaListEntry { id status progress } }
+      }`,
+      { mediaId: operation.target.anilistId },
+      deadline,
+    );
+    // "Could not check" is not "nothing there": a blind write is exactly the
+    // demotion this lookup exists to prevent.
+    const lookupFailure = outcomeForGraphQlErrors(lookup.errors);
+    if (lookupFailure) return lookupFailure;
+    const media = lookup.data?.Media;
+    if (!media) return syncFailed("entry-state-unknown", "remote", "lookup returned no media");
+
+    const entry = media.mediaListEntry;
+    const decision = decideAniListProgressWrite({
+      progress: operation.progress,
+      episodeFinished: operation.status === "completed",
+      totalEpisodes: media.episodes ?? null,
+      remote: entry ? { status: entry.status ?? null, progress: entry.progress ?? 0 } : null,
+    });
+    if (!decision.write) return syncOk(decision.reason);
+
     const res = await this.gql<MediaListEntryResponse>(
       `mutation SaveProgress($mediaId: Int, $status: MediaListStatus, $progress: Int) {
         SaveMediaListEntry(mediaId: $mediaId, status: $status, progress: $progress) { id }
       }`,
       {
         mediaId: operation.target.anilistId,
-        status: operation.status === "completed" ? "COMPLETED" : "CURRENT",
-        progress: operation.progress,
+        status: decision.status,
+        progress: decision.progress,
       },
       deadline,
     );

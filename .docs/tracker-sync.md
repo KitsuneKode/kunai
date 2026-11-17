@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-15"
+lastReviewed: "2026-11-18"
 ---
 
 # Tracker Sync
@@ -79,6 +79,22 @@ is dead-lettered before any request, because no retry can make it succeed.
 AniList progress is **cour-relative**. Cour 2 episode 3 is absolute 27, and
 sending 27 would jump the entry 24 episodes ahead — so an absolute-only number
 resolves to nothing rather than being guessed at.
+
+A progress operation describes **one episode**; AniList's list status describes
+**the title**. The adapter reads the entry and the episode count first, and
+`decideAniListProgressWrite` (`services/sync/anilist-progress-policy.ts`)
+decides the write:
+
+- `COMPLETED` only when the finished episode is the title's last. An unknown
+  episode count (still airing, unannounced) never completes a title.
+- A title already `COMPLETED` on AniList is not written — re-watching an early
+  episode would otherwise demote it to `CURRENT` and wind progress back.
+- `REPEATING` stays `REPEATING` while progress advances, and completes at the
+  last episode.
+- Progress never moves backward: an entry already at or past the episode is
+  left alone unless this write completes the title.
+
+A skipped write is `ok` with the reason as detail, so the row completes.
 
 ## Delivery
 
@@ -323,7 +339,8 @@ AniList reports application-level problems inside the envelope, often with a 200
 | status 429                                | rate-limited, using AniList's wait                                           |
 | anything else                             | retry — a wrong retry costs one request, a wrong dead-letter loses the write |
 
-Both membership writes read before they write, and the read is classified too.
+Both membership writes and the progress write read before they write, and the
+read is classified too.
 An unreadable lookup refuses rather than guessing: removing from a watchlist
 used to report _success_ when the lookup was rejected, and `ToggleFavourite` is
 a flip rather than a set, so firing it blind turns a redelivery into a flip-flop.
