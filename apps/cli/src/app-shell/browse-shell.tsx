@@ -1515,7 +1515,7 @@ export function BrowseShell<T>({
         return;
       }
 
-      // `z` undoes the action named on the strip — sheet keys (w/q/d above)
+      // `z` undoes the action named on the strip — sheet keys (w/u/d above)
       // are journaled, so undo works with the details sheet open too.
       if (input === "z" && !key.ctrl && !key.meta && onUndo) {
         onUndo();

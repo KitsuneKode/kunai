@@ -161,6 +161,8 @@ import {
 import {
   isOverlayCancelActive,
   shouldHandleOverlayEscape,
+  isOverlayListBackKey,
+  rootOverlayAcceptsTypedFilter,
   shouldHistoryOverlayAcceptFilterInput,
 } from "./overlay-input-safety";
 import { OverlayLayoutProvider, type OverlayLayoutValue } from "./overlay-layout-context";
@@ -1680,13 +1682,28 @@ export function RootOverlayShell({
       }
       return;
     }
-    if (isListBackKey(input, key)) {
+    const overlayFilterQuery = isRootMediaPickerOverlay(overlay)
+      ? (overlay.filterQuery ?? "")
+      : filterQuery;
+    const overlayAcceptsTypedFilter = rootOverlayAcceptsTypedFilter({
+      overlay,
+      notificationPlayConfirm: Boolean(notificationPlayConfirm),
+      notificationActionDedupKey,
+      pendingDelete: historyPendingDelete,
+      sourceChoiceTitleId: historySourceChoiceTitleId,
+    });
+    if (
+      isOverlayListBackKey(input, key, {
+        acceptsTypedFilter: overlayAcceptsTypedFilter,
+        filterQuery: overlayFilterQuery,
+      })
+    ) {
       const backAction = resolveOverlayBackStack({
         cancelActive: shouldHandleOverlayEscape({
           overlay,
           pickerFilterQuery,
         }),
-        filterQuery: isRootMediaPickerOverlay(overlay) ? (overlay.filterQuery ?? "") : filterQuery,
+        filterQuery: overlayFilterQuery,
         confirmationActive:
           (overlay.type === "notifications" &&
             Boolean(notificationPlayConfirm || notificationActionDedupKey)) ||

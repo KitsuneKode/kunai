@@ -1,3 +1,6 @@
+import { isListBackKey } from "./input-router";
+import type { LineEditorKey } from "./line-editor";
+import { isRootChoiceOverlay } from "./root-overlay-model";
 import type { RootOwnedOverlay } from "./root-shell-state";
 import type { HistoryDeletePending } from "./use-history-overlay-input";
 
@@ -36,4 +39,48 @@ export function shouldHandleOverlayEscape(input: {
   readonly pickerFilterQuery: string;
 }): boolean {
   return isOverlayCancelActive(input);
+}
+
+/** Overlays where printable keys feed the shared line-editor filter before list chords. */
+export function rootOverlayAcceptsTypedFilter(input: {
+  readonly overlay: RootOwnedOverlay;
+  readonly notificationPlayConfirm?: boolean;
+  readonly notificationActionDedupKey?: string | null;
+  readonly pendingDelete?: HistoryDeletePending | null;
+  readonly sourceChoiceTitleId?: string | null;
+}): boolean {
+  if (!isRootChoiceOverlay(input.overlay)) return false;
+  if (input.overlay.type === "settings") return false;
+  if (
+    input.overlay.type === "notifications" &&
+    (input.notificationPlayConfirm || input.notificationActionDedupKey)
+  ) {
+    return false;
+  }
+  if (input.overlay.type === "history") {
+    return shouldHistoryOverlayAcceptFilterInput({
+      overlayType: "history",
+      pendingDelete: input.pendingDelete ?? null,
+      sourceChoiceTitleId: input.sourceChoiceTitleId ?? null,
+    });
+  }
+  return true;
+}
+
+/**
+ * Esc always participates in the overlay back stack. Bare `q` matches only when
+ * the surface has no type-to-filter field, or the filter is empty (first back step).
+ */
+export function isOverlayListBackKey(
+  input: string,
+  key: LineEditorKey,
+  context: {
+    readonly acceptsTypedFilter: boolean;
+    readonly filterQuery: string;
+  },
+): boolean {
+  if (!isListBackKey(input, key)) return false;
+  if (key.escape) return true;
+  if (!context.acceptsTypedFilter) return true;
+  return context.filterQuery.length === 0;
 }

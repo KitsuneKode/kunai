@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-27T11:48:19Z"
+lastReviewed: "2026-11-17"
 ---
 
 # Kunai Release Reliability Gate
@@ -518,8 +518,8 @@ Run these when notifications, queue recovery, history, recommendations, download
 - press `Enter` on a recoverable queue notice and confirm pending items restore without autoplay
 - press `a` on a notice and confirm explicit action rows can be selected or escaped without side effects
 - press `x` on a notice and confirm it is dismissed
-- press `q` in `/history` and confirm the selected title is queued without replacing playback
-- press `q` on a search/recommendation row and confirm the selected title is queued without opening playback
+- press `u` in `/history` and confirm the selected title is queued without replacing playback
+- press `u` on a search/recommendation row and confirm the selected title is queued without opening playback
 - after an episode ends with a recommendation rail visible, press `1` and confirm the pick is queued while the post-playback panel stays open
 - after an episode ends with a recommendation rail visible, press `i`, open Details, and confirm no provider or download diagnostics are emitted
 - from that same recommendation action panel, choose Download then Back/Cancel and confirm no provider resolution or download job is created
