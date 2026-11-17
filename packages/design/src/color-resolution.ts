@@ -243,11 +243,17 @@ function isWindowsEnv(env: TerminalColorEnv): boolean {
   return env.WT_SESSION !== undefined || env.ConEmuANSI !== undefined;
 }
 
+function noColorActive(env: TerminalColorEnv): boolean {
+  const value = env.NO_COLOR;
+  return value !== undefined && value.length > 0;
+}
+
 export function detectTerminalColorLevel(env: TerminalColorEnv = currentEnv()): TerminalColorLevel {
+  if (noColorActive(env)) return "none";
   const forced = env.FORCE_COLOR;
   if (forced === "3") return "truecolor";
   if (forced === "2") return "256";
-  if (forced === "0" || env.NO_COLOR !== undefined) return "none";
+  if (forced === "0") return "none";
   if (forced === "1") return "16";
   if ((env.TERM ?? "").toLowerCase() === "dumb") return "none";
 

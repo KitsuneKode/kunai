@@ -16,4 +16,5 @@
     ✓ data & cache      ~/.local/share/kunai     history · offline
  ──────────────────────────────────────────────────────────────────────
    [enter] continue  [r] recheck  [S] remaining defaults        Setup
+
    [esc] quit

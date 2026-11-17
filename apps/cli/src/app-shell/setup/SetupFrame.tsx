@@ -87,7 +87,7 @@ function FrameBar({
 
 export function FooterKeys({ parts }: { readonly parts: readonly FooterKey[] }) {
   return (
-    <Box columnGap={2} rowGap={0} flexWrap="wrap">
+    <Box columnGap={2} rowGap={1} flexWrap="wrap">
       {parts.map(({ key, label }) => (
         <React.Fragment key={key}>
           <SetupTarget field="action" value={key}>
@@ -271,8 +271,8 @@ export function ToggleRow({
     <Box backgroundColor={selected ? palette.accentFill : undefined}>
       <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
       <Text color={glyphColor}>{glyph}</Text>
-      <Box flexDirection="column" flexShrink={1}>
-        <Text color={palette.text} bold={selected}>
+      <Box flexDirection="column" flexShrink={1} flexGrow={1}>
+        <Text color={palette.text} bold={selected} wrap="truncate-end">
           {label}
         </Text>
         {selected ? (

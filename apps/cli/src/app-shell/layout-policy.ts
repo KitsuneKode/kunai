@@ -173,6 +173,11 @@ export const ROOT_CHROME_ROWS = 4;
 /** Always reserve one line under AppHeader for transient alerts/toasts. */
 export const TRANSIENT_ROW_SLOTS = 1;
 
+/** Row budget for content mounted under AppRoot (setup, stats, browse body). */
+export function getRootContentRowBudget(terminalRows: number): number {
+  return Math.max(1, terminalRows - ROOT_CHROME_ROWS - TRANSIENT_ROW_SLOTS);
+}
+
 /** Horizontal padding/margins consumed by the overlay host (cols - 8). */
 export const OVERLAY_FRAME_COLS = 8;
 

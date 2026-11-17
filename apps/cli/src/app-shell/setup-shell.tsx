@@ -24,7 +24,7 @@ import { useInput } from "ink";
 import React, { useState } from "react";
 
 import packageJson from "../../package.json" with { type: "json" };
-import { ROOT_HORIZONTAL_PADDING } from "./layout-policy";
+import { getRootContentRowBudget, ROOT_HORIZONTAL_PADDING } from "./layout-policy";
 import { useFrameTick } from "./primitives/SakuraPetal";
 import { mountRootContent } from "./root-content-state";
 import { AnalyticsScreen, ANALYTICS_ON_INDEX, ANALYTICS_OFF_INDEX } from "./setup/AnalyticsScreen";
@@ -239,7 +239,8 @@ export function SetupShell({
   // Columns only. The frame takes its height from its container via flexGrow —
   // sizing to `stdout.rows` is what pushed the footer off the bottom of the
   // screen, because setup mounts inside the app shell's box, not the terminal.
-  const { cols, rows } = useShellDimensions();
+  const { cols, rows: terminalRows } = useShellDimensions();
+  const contentRows = getRootContentRowBudget(terminalRows);
   // Setup is inside AppRoot, whose side padding also consumes columns.
   const frameWidth = Math.max(0, cols - ROOT_HORIZONTAL_PADDING * 2);
   // Same policy the gate below renders against. While it is too small the
@@ -715,7 +716,7 @@ export function SetupShell({
       <ViewportResizeGate kind="picker" message="Resize terminal to run setup">
         <SetupFrame
           width={frameWidth}
-          rows={rows}
+          rows={contentRows}
           context={SCREEN_CONTEXT[screen]}
           step={screenIdx}
           totalSteps={SCREEN_ORDER.length}
@@ -767,7 +768,7 @@ export function SetupShell({
           {screen === "analytics" ? <AnalyticsScreen selectedIndex={analyticsIdx} /> : null}
           {screen === "done" ? (
             <DoneScreen
-              compact={rows < 30}
+              compact={contentRows < 30}
               contentWidth={setupContentWidth(frameWidth)}
               headline={describeChoice(buildPrefs(analyticsDecision))}
               summary={summaryLines(buildPrefs(analyticsDecision))}

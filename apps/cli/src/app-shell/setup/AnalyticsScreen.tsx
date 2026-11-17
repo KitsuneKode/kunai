@@ -14,7 +14,7 @@ import React from "react";
 import packageJson from "../../../package.json" with { type: "json" };
 import { palette } from "../shell-theme";
 import { Box, Text } from "../ShellInk";
-import { ChoiceRow, ScreenTitle } from "./SetupFrame";
+import { ChoiceRow, ScreenTitle, SetupTerminalRowsContext } from "./SetupFrame";
 
 /** "Turn it on" leads. Index is load-bearing — see the input handler. */
 export const ANALYTICS_ON_INDEX = 0;
@@ -32,6 +32,9 @@ const OPTIONS = [
 ];
 
 export function AnalyticsScreen({ selectedIndex }: { readonly selectedIndex: number }) {
+  const contentRows = React.useContext(SetupTerminalRowsContext);
+  const showPayloadPreview = contentRows >= 24;
+
   return (
     <Box flexDirection="column">
       <ScreenTitle
@@ -51,23 +54,31 @@ export function AnalyticsScreen({ selectedIndex }: { readonly selectedIndex: num
         ))}
       </Box>
 
-      <Box flexDirection="column" marginTop={1}>
-        <Text color={palette.muted}>Privacy first, by construction</Text>
-        <Box paddingLeft={2} flexDirection="column">
-          <Text color={palette.text}>
-            {`{ "installId": "<sha256 of a local id>", "version": "${packageJson.version}",`}
-          </Text>
-          <Text color={palette.text}>
-            {`  "os": "${process.platform}", "arch": "${process.arch}", "ts": 0 }`}
-          </Text>
-          <Text color={palette.dim}>
-            Never: titles · queries · providers · URLs · paths · your IP
-          </Text>
-          <Text color={palette.dim}>
-            The raw id never leaves this machine. Off in /settings deletes it.
+      {showPayloadPreview ? (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={palette.muted}>Privacy first, by construction</Text>
+          <Box paddingLeft={2} flexDirection="column">
+            <Text color={palette.text}>
+              {`{ "installId": "<sha256 of a local id>", "version": "${packageJson.version}",`}
+            </Text>
+            <Text color={palette.text}>
+              {`  "os": "${process.platform}", "arch": "${process.arch}", "ts": 0 }`}
+            </Text>
+            <Text color={palette.dim}>
+              Never: titles · queries · providers · URLs · paths · your IP
+            </Text>
+            <Text color={palette.dim}>
+              The raw id never leaves this machine. Off in /settings deletes it.
+            </Text>
+          </Box>
+        </Box>
+      ) : (
+        <Box marginTop={1}>
+          <Text color={palette.dim} wrap="truncate">
+            One ping a day when on — never titles, queries, URLs, or paths.
           </Text>
         </Box>
-      </Box>
+      )}
     </Box>
   );
 }

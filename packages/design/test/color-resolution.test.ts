@@ -3,9 +3,15 @@ import { describe, expect, test } from "bun:test";
 import { detectTerminalColorLevel, resolveDesignTokens } from "../src/color-resolution";
 
 describe("@kunai/design color level none", () => {
-  test("NO_COLOR (any value) selects none", () => {
+  test("NO_COLOR (non-empty) selects none and beats FORCE_COLOR", () => {
     expect(detectTerminalColorLevel({ NO_COLOR: "1", TERM: "xterm-256color" })).toBe("none");
-    expect(detectTerminalColorLevel({ NO_COLOR: "", COLORTERM: "truecolor" })).toBe("none");
+    expect(detectTerminalColorLevel({ NO_COLOR: "1", FORCE_COLOR: "3", TERM: "xterm" })).toBe(
+      "none",
+    );
+  });
+
+  test("empty NO_COLOR is ignored per no-color.org", () => {
+    expect(detectTerminalColorLevel({ NO_COLOR: "", COLORTERM: "truecolor" })).toBe("truecolor");
   });
 
   test("FORCE_COLOR=0 and TERM=dumb select none", () => {

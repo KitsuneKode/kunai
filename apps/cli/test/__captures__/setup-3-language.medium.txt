@@ -18,4 +18,5 @@
           Use the language the title was made in
  ──────────────────────────────────────────────────────────────────────────────────────────────────
    [enter] next  [tab] profile  [←→] audio / subs  [a] copy to all  [S] finish defaults     Setup
+
    [b] back

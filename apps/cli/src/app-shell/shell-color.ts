@@ -18,7 +18,7 @@ export function terminalEmitsColor(): boolean {
   return getTerminalColorLevel() !== "none";
 }
 
-/** Call once before mounting Ink so chalk non-colour styles honour NO_COLOR. */
+/** Prime the colour-level cache before mounting Ink; chalk 5.x does not read NO_COLOR itself. */
 export function primeShellColorEnvironment(): void {
   getTerminalColorLevel();
 }

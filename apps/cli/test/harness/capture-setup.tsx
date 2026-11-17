@@ -8,7 +8,10 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { ROOT_HORIZONTAL_PADDING } from "@/app-shell/layout-policy";
+import { AppHeader } from "@/app-shell/primitives/AppHeader";
 import { SetupShell } from "@/app-shell/setup-shell";
+import { TransientRowSlot } from "@/app-shell/shell-primitives";
 import type { CapabilitySnapshot } from "@/ui";
 import { Box } from "ink";
 import React from "react";
@@ -36,30 +39,72 @@ const READY: CapabilitySnapshot = {
 
 export const SETUP_SCREENS = ["deps", "mode", "language", "library", "analytics", "done"] as const;
 
-export function setupFrameAt(step: number, columns: number, rows = SETUP_ROWS): string {
-  // The analytics consent screen prints this machine's `process.platform` and
-  // `process.arch` into the payload preview — true at runtime, but it makes a
-  // committed capture host-dependent. Pin a canonical pair for the render so a
-  // capture written on linux/x64 verifies byte-for-byte on a macOS runner.
+function withPinnedProcessPlatform<T>(run: () => T): T {
   const platformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
   const archDescriptor = Object.getOwnPropertyDescriptor(process, "arch");
   Object.defineProperty(process, "platform", { value: "linux" });
   Object.defineProperty(process, "arch", { value: "x64" });
   try {
-    const handle = render(
-      <Box width={columns} paddingX={1} flexDirection="column">
-        <SetupShell snapshot={READY} finish={() => {}} downloadPath="~/.local/share/kunai" />
-      </Box>,
-      { columns, rows },
-    );
-    for (let i = 0; i < step; i += 1) handle.stdin.enqueue("\r");
-    const frame = stripAnsi(handle.lastFrame()).replace(/\s+$/, "");
-    handle.unmount();
-    return frame;
+    return run();
   } finally {
     if (platformDescriptor) Object.defineProperty(process, "platform", platformDescriptor);
     if (archDescriptor) Object.defineProperty(process, "arch", archDescriptor);
   }
+}
+
+function driveSetupFrame(
+  step: number,
+  columns: number,
+  rows: number,
+  tree: React.ReactElement,
+  extraKeys = "",
+): string {
+  return withPinnedProcessPlatform(() => {
+    const handle = render(tree, { columns, rows });
+    for (let i = 0; i < step; i += 1) handle.stdin.enqueue("\r");
+    for (const char of extraKeys) handle.stdin.enqueue(char);
+    const frame = stripAnsi(handle.lastFrame()).replace(/\s+$/, "");
+    handle.unmount();
+    return frame;
+  });
+}
+
+/** Same layout budget as `AppRoot`: header, transient row, then the wizard. */
+export function setupFrameWithAppChromeAt(
+  step: number,
+  columns: number,
+  rows: number,
+  extraKeys = "",
+): string {
+  const innerWidth = Math.max(0, columns - ROOT_HORIZONTAL_PADDING * 2);
+  return driveSetupFrame(
+    step,
+    columns,
+    rows,
+    <Box width={columns} height={rows} flexDirection="column" paddingX={ROOT_HORIZONTAL_PADDING}>
+      <AppHeader destination="Setup" width={innerWidth} />
+      <TransientRowSlot width={Math.max(36, columns - 8)} />
+      <Box marginTop={1} flexDirection="column" flexGrow={1}>
+        <SetupShell snapshot={READY} finish={() => {}} downloadPath="~/.local/share/kunai" />
+      </Box>
+    </Box>,
+    extraKeys,
+  );
+}
+
+export function setupFrameAt(step: number, columns: number, rows = SETUP_ROWS): string {
+  // The analytics consent screen prints this machine's `process.platform` and
+  // `process.arch` into the payload preview — true at runtime, but it makes a
+  // committed capture host-dependent. Pin a canonical pair for the render so a
+  // capture written on linux/x64 verifies byte-for-byte on a macOS runner.
+  return driveSetupFrame(
+    step,
+    columns,
+    rows,
+    <Box width={columns} paddingX={1} flexDirection="column">
+      <SetupShell snapshot={READY} finish={() => {}} downloadPath="~/.local/share/kunai" />
+    </Box>,
+  );
 }
 
 if (import.meta.main) {

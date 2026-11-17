@@ -12,7 +12,13 @@ import { truncateLine } from "../shell-text";
 import { palette } from "../shell-theme";
 import { Box, Text } from "../ShellInk";
 import type { ScopedDependencyRow } from "./dependency-rows";
-import { ChoiceRow, ScreenTitle, ToggleRow, type FooterKey } from "./SetupFrame";
+import {
+  ChoiceRow,
+  ScreenTitle,
+  SetupTerminalRowsContext,
+  ToggleRow,
+  type FooterKey,
+} from "./SetupFrame";
 import { SetupTarget } from "./SetupPointer";
 
 export const MODE_OPTIONS = [
@@ -323,9 +329,18 @@ export function LibraryScreen({
   readonly ytDlpReady: boolean;
   readonly downloadPath: string;
 }) {
+  const contentRows = React.useContext(SetupTerminalRowsContext);
+  const tight = contentRows < 20;
+
   return (
     <Box flexDirection="column">
-      <ScreenTitle text="Playback, downloads & accounts" sub="Change these later in Settings." />
+      {tight ? (
+        <Text color={palette.text} bold>
+          Playback, downloads & accounts
+        </Text>
+      ) : (
+        <ScreenTitle text="Playback, downloads & accounts" sub="Change these later in Settings." />
+      )}
       <Box flexDirection="column">
         <SetupTarget field="library" value="0">
           <ToggleRow
@@ -354,9 +369,11 @@ export function LibraryScreen({
         </SetupTarget>
       </Box>
 
-      <Box marginTop={0} marginBottom={0}>
-        <Text color={palette.muted}>Playback feel</Text>
-      </Box>
+      {tight ? null : (
+        <Box marginTop={0} marginBottom={0}>
+          <Text color={palette.muted}>Playback feel</Text>
+        </Box>
+      )}
       <Box flexDirection="column">
         <SetupTarget field="library" value="2">
           <ToggleRow
@@ -384,9 +401,11 @@ export function LibraryScreen({
         </SetupTarget>
       </Box>
 
-      <Box marginTop={0} marginBottom={0}>
-        <Text color={palette.muted}>While we're here</Text>
-      </Box>
+      {tight ? null : (
+        <Box marginTop={0} marginBottom={0}>
+          <Text color={palette.muted}>While we're here</Text>
+        </Box>
+      )}
       <Box flexDirection="column">
         <SetupTarget field="library" value="5">
           <ToggleRow
