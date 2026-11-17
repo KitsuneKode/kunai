@@ -73,9 +73,15 @@ export function AnalyticsScreen({ selectedIndex }: { readonly selectedIndex: num
           </Box>
         </Box>
       ) : (
-        <Box marginTop={1}>
+        // Short terminal: still name the exact fields at the moment of consent,
+        // just without the JSON layout. "Never titles…" alone says what is not
+        // sent, not what is.
+        <Box marginTop={1} flexDirection="column">
+          <Text color={palette.text} wrap="truncate">
+            Sends: installId (hashed) · version · os · arch · ts
+          </Text>
           <Text color={palette.dim} wrap="truncate">
-            One ping a day when on — never titles, queries, URLs, or paths.
+            Never: titles · queries · URLs · paths · your IP
           </Text>
         </Box>
       )}
