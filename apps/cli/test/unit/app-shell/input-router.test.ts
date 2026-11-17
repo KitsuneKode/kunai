@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 
 import {
+  isListBackKey,
   routeShellInput,
   routeOverlayInput,
   resolveSurfaceTitleControlInput,
@@ -52,6 +53,20 @@ test("playback surface slash opens command palette", () => {
 
 test("overlay route maps escape to close", () => {
   expect(routeOverlayInput("", { escape: true }, { overlayOpen: true })).toEqual({
+    owner: "overlay",
+    command: "close",
+  });
+});
+
+test("isListBackKey treats bare q like escape and ignores modified q", () => {
+  expect(isListBackKey("", { escape: true })).toBe(true);
+  expect(isListBackKey("q", {})).toBe(true);
+  expect(isListBackKey("q", { ctrl: true })).toBe(false);
+  expect(isListBackKey("q", { meta: true })).toBe(false);
+});
+
+test("overlay route maps bare q to close", () => {
+  expect(routeOverlayInput("q", {}, { overlayOpen: true })).toEqual({
     owner: "overlay",
     command: "close",
   });

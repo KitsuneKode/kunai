@@ -119,6 +119,7 @@ import { useCalendarRoute, type CalendarRouteRequest } from "./hooks/use-calenda
 import { useCalendarState } from "./hooks/use-calendar-state";
 import { SUGGESTION_DEBOUNCE_MS, useSearchSuggestions } from "./hooks/use-search-suggestions";
 import { undisplayPlacementsKeepCache } from "./image-pane";
+import { isListBackKey } from "./input-router";
 import { resolveBrowseBindingEffect, resolveKeybinding } from "./keybinding-runtime";
 import { buildFooterActionsFromBindings } from "./keybindings";
 import {
@@ -1521,7 +1522,7 @@ export function BrowseShell<T>({
         return;
       }
 
-      if (key.escape) {
+      if (isListBackKey(input, key)) {
         closeOverlay();
         return;
       }
@@ -1564,7 +1565,7 @@ export function BrowseShell<T>({
           );
           return;
         }
-        if (input.toLowerCase() === "q" && selectedOption && onQueueSelected) {
+        if (input.toLowerCase() === "u" && selectedOption && onQueueSelected) {
           runMutationWithFeedback(
             () => onQueueSelected(selectedOption.value),
             `Queued ${selectedOption.label}`,
@@ -1671,7 +1672,7 @@ export function BrowseShell<T>({
       const highlightedSuggestion =
         boundedSuggestionIndex >= 0 ? suggestionBandModel.items[boundedSuggestionIndex] : undefined;
 
-      if (key.escape) {
+      if (isListBackKey(input, key)) {
         setSuggestionDismissedQuery(query);
         setSuggestionIndex(-1);
         return;
@@ -1910,7 +1911,7 @@ export function BrowseShell<T>({
       moveCalendarDayFromInput(1);
       return;
     }
-    if (key.escape) {
+    if (isListBackKey(input, key)) {
       if (isCalendarView) {
         clearResults();
         return;

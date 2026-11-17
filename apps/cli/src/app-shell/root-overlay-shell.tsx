@@ -128,6 +128,7 @@ import {
   type HistoryTypeFilter,
 } from "./history-view";
 import { routeOverlayInput } from "./input-router";
+import { isListBackKey } from "./input-router";
 import { helpSections, helpSectionsForScope, type HelpSection, type KeyScope } from "./keybindings";
 import {
   getOverlayContentViewport,
@@ -1602,7 +1603,7 @@ export function RootOverlayShell({
       };
       const inSubtitleGrid = tracksNav.focusedPane === "options" && navCtx.gridColumns > 1;
 
-      if (key.escape) {
+      if (isListBackKey(input, key)) {
         const backAction = resolveOverlayBackStack({
           nestedPaneActive: tracksNav.focusedPane === "options",
           pickerOverlay: true,
@@ -1679,7 +1680,7 @@ export function RootOverlayShell({
       }
       return;
     }
-    if (key.escape) {
+    if (isListBackKey(input, key)) {
       const backAction = resolveOverlayBackStack({
         cancelActive: shouldHandleOverlayEscape({
           overlay,

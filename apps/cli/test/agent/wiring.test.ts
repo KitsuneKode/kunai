@@ -92,17 +92,17 @@ describe("agent wiring · settings toggle", () => {
 });
 
 describe("agent wiring · queue", () => {
-  it("q enqueues the highlighted result; x removes it in Up Next", async () => {
+  it("u enqueues the highlighted result; x removes it in Up Next", async () => {
     await withSession("wiring-queue", {}, async (s) => {
       await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
 
       s.press("movie", K.enter);
       await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
 
-      // `q` on the highlighted row — advertised as "up next" in the footer.
+      // `u` on the highlighted row — advertised as "up next" in the footer.
       const before = s.inspect().queue().length;
-      s.press("q");
-      await s.waitForBackend((i) => i.queue().length === before + 1, "playlist_queue +1 after q");
+      s.press("u");
+      await s.waitForBackend((i) => i.queue().length === before + 1, "playlist_queue +1 after u");
       const queued = s.inspect().queue();
       expect(queued.at(-1)?.title_id).toBe("tmdb:smoke-movie-1");
 
@@ -131,7 +131,7 @@ describe("agent wiring · queue", () => {
 });
 
 describe("agent wiring · session undo", () => {
-  it("q → strip offers z → z restores playlist_queue exactly", async () => {
+  it("u → strip offers z → z restores playlist_queue exactly", async () => {
     await withSession("wiring-undo-queue", {}, async (s) => {
       await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
 
@@ -139,10 +139,10 @@ describe("agent wiring · session undo", () => {
       await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
 
       const baseline = s.inspect().queue();
-      s.press("q");
+      s.press("u");
       await s.waitForBackend(
         (i) => i.queue().length === baseline.length + 1,
-        "playlist_queue +1 after q",
+        "playlist_queue +1 after u",
       );
       // The affordance is a frame claim AND a DB fact: strip advertises z
       // while the row sits committed underneath it.
@@ -171,12 +171,12 @@ describe("agent wiring · session undo", () => {
 
       s.press("movie", K.enter);
       await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
-      s.press("q");
+      s.press("u");
       await s.waitForBackend((i) => i.queue().length === 1, "queued");
       // Consume the add's undo affordance so the remove is what z pops.
       s.press("z");
       await s.waitForBackend((i) => i.queue().length === 0, "add undone");
-      s.press("q");
+      s.press("u");
       await s.waitForBackend((i) => i.queue().length === 1, "queued again");
 
       s.press("Q");

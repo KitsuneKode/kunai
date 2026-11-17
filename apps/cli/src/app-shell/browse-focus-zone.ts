@@ -1,7 +1,7 @@
 // Pure focus-zone reducer for browse shell
 //
 // Zones: query (default text) → list (bare hotkeys) → filter (local narrow) → idle
-// Printable keys edit text only in query/filter; list owns i/enter/q/d without
+// Printable keys edit text only in query/filter; list owns i/enter/u/d without
 // leaking keystrokes into the search box.
 
 export type BrowseFocusZone = "query" | "filter" | "list" | "idle";
@@ -57,7 +57,7 @@ export function browseFocusZoneReducer(
       return zone;
     case "arrow-up":
       // The list is a closed loop — both edges wrap in BrowseShell rather than
-      // exiting here, so Esc stays the single list → query gesture.
+      // exiting here, so Esc/q stays the single list → query gesture.
       if (zone === "filter") return "query";
       if (zone === "idle") return "query";
       if (zone === "query" && ctx.hasResults) return "list";

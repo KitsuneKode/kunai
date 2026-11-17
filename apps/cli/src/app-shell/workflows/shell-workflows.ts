@@ -2838,7 +2838,7 @@ async function handleUpNext(container: Container): Promise<ShellWorkflowResult> 
     const subtitle =
       all.length > 0
         ? `${status.unplayedCount} up next · ${all.length - status.unplayedCount} played${staleNote}`
-        : "Up Next is empty. Press q while browsing, or /playlist-add during playback.";
+        : "Up Next is empty. Press u while browsing, or /playlist-add during playback.";
 
     const firstUnplayedId = all.find((i) => !i.playedAt)?.id;
 

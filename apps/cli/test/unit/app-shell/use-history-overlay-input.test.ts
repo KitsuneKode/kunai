@@ -90,7 +90,7 @@ describe("handleHistoryOverlayInput", () => {
     };
 
     const result = handleHistoryOverlayInput(
-      "q",
+      "u",
       {},
       {
         // SAFETY: deliberately partial test stub — the test only exercises the members it defines.

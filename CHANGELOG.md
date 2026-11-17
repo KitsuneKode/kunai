@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **Browse and History shortcuts:** `u` adds the highlighted title to Up Next (was `q`). Bare `q` on list surfaces now means back, same as Esc; it does not quit the app or stop playback. Ctrl+Q and other modified chords are unchanged.
+
 ## v0.4.0
 
 A focused watching update: clearer search and recovery, accurate source and

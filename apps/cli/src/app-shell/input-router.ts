@@ -42,8 +42,14 @@ export type SurfaceTitleControlContext = ShellInputRouteContext & {
   readonly browseListReady?: boolean;
 };
 
-function isReservedSurfaceChord(input: string, key: LineEditorKey): boolean {
+/** Esc, or bare `q` — same back gesture as lazygit/htop/less (never Ctrl/Meta+Q). */
+export function isListBackKey(input: string, key: LineEditorKey): boolean {
   if (key.escape) return true;
+  return input === "q" && !key.ctrl && !key.meta;
+}
+
+function isReservedSurfaceChord(input: string, key: LineEditorKey): boolean {
+  if (isListBackKey(input, key)) return true;
   if (input === "/" && !key.ctrl && !key.meta) return true;
   if (input === "?" && !key.ctrl && !key.meta) return true;
   return false;
@@ -117,7 +123,7 @@ export function isHardGlobalQuit(input: string, key: LineEditorKey): boolean {
 }
 
 function resolveOverlayInputCommand(input: string, key: LineEditorKey): OverlayInputCommand | null {
-  if (key.escape) return "close";
+  if (isListBackKey(input, key)) return "close";
   if (input === "?" && !key.ctrl && !key.meta) return "help";
   if (input === "[" || (key.shift && key.upArrow)) return "page-up";
   if (input === "]" || (key.shift && key.downArrow)) return "page-down";
