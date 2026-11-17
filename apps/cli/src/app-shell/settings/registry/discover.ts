@@ -4,8 +4,8 @@ import { DISCOVER_ITEM_LIMIT_OPTIONS, DISCOVER_MODE_OPTIONS } from "./shared";
 export function discoverSettingsRows(_ctx: SettingsRegistryContext): SettingRowDef[] {
   return [
     {
-      kind: "section",
-      id: "section:discover",
+      kind: "subheading",
+      id: "subheading:discover",
       label: "Discover",
       detail: "Home recommendations, /random, and startup discover tray",
     },

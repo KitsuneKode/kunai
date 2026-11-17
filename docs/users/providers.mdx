@@ -217,7 +217,7 @@ will not offer to resume a broadcast from a saved position; a live stream has no
 fixed position to return to. Opening a premiere that has not started tells you so
 instead of handing mpv a stream that cannot play yet.
 
-**SponsorBlock** is off unless you set `youtubeMetadata.sponsorblockRemove` in Settings › YouTube (for example `sponsor,intro`). That value is forwarded to yt-dlp / mpv. There is no shipped default category list.
+**SponsorBlock** is off unless you set `youtubeMetadata.sponsorblockRemove` in Settings › Sources › YouTube (for example `sponsor,intro`). That value is forwarded to yt-dlp / mpv. There is no shipped default category list.
 
 Forwarding SponsorBlock options does not establish that segment removal works
 during streaming. Kunai makes no ad-free or Premium-equivalent playback promise.
@@ -232,7 +232,7 @@ still checked by mpv. Video-only formats use yt-dlp's best audio choice.
 
 ### Cookie safety (age-restricted / members)
 
-Optional keys under `youtubeMetadata` in `~/.config/kunai/config.json` (also editable from `/settings` → YouTube):
+Optional keys under `youtubeMetadata` in `~/.config/kunai/config.json` (also editable from `/settings` → Sources → YouTube):
 
 | Key                  | Safe usage                                                                                                                                                                                             |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -406,7 +406,7 @@ bun run dev:relay            # listens on http://127.0.0.1:8787
 
 ### Pointing Kunai at your relay
 
-Set the origin and token in any one of three places (`/settings` → Provider Relay, `config.json`, or the environment) and keep `fallbackToDirect` on so Kunai degrades to direct fetches when the relay is unreachable and the provider is not geo-blocked.
+Set the origin and token in any one of three places (`/settings` → Sources → Provider relay, `config.json`, or the environment) and keep `fallbackToDirect` on so Kunai degrades to direct fetches when the relay is unreachable and the provider is not geo-blocked.
 
 ```json
 {

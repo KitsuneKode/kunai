@@ -45,9 +45,9 @@ export function presenceSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
   const status = resolvePresenceStatus(ctx.config, ctx.presenceSnapshot);
   return [
     {
-      kind: "section",
-      id: "section:presence",
-      label: "Presence",
+      kind: "subheading",
+      id: "subheading:presence",
+      label: "Discord Presence",
       detail: "Discord status integration",
     },
     {

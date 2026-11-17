@@ -1,30 +1,29 @@
 import type { SettingRowDef, SettingsRegistryContext } from "../types";
-import { appearanceSettingsRows } from "./appearance";
-import { discoverSettingsRows } from "./discover";
 import { generalSettingsRows } from "./general";
-import { languageSettingsRows } from "./language";
 import { playbackSettingsRows } from "./playback";
 import { presenceSettingsRows } from "./presence";
+import { privacySettingsRows } from "./privacy";
 import { providerSettingsRows } from "./providers";
 import { relaySettingsRows } from "./relay";
-import { storageSettingsRows } from "./storage";
 import { syncSettingsRows } from "./sync";
-import { updateSettingsRows } from "./updates";
 import { youtubeSettingsRows } from "./youtube";
 
 export function buildSettingsRegistry(ctx: SettingsRegistryContext): SettingRowDef[] {
   return [
     ...generalSettingsRows(ctx),
-    ...appearanceSettingsRows(ctx),
-    ...discoverSettingsRows(ctx),
     ...providerSettingsRows(ctx),
     ...relaySettingsRows(ctx),
     ...youtubeSettingsRows(ctx),
-    ...languageSettingsRows(ctx),
     ...playbackSettingsRows(ctx),
-    ...presenceSettingsRows(ctx),
+    {
+      kind: "section",
+      id: "section:accounts",
+      label: "Accounts & Sync",
+      tabLabel: "Accounts",
+      detail: "AniList and TMDB tracker sync, plus local Discord Rich Presence",
+    },
     ...syncSettingsRows(ctx),
-    ...updateSettingsRows(ctx),
-    ...storageSettingsRows(ctx),
+    ...presenceSettingsRows(ctx),
+    ...privacySettingsRows(ctx),
   ];
 }

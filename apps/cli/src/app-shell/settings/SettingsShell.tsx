@@ -3,15 +3,13 @@ import { getDesignThemeName, setDesignTheme } from "@kunai/design";
 import { useInput } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { buildSettingsPage } from "./build-page";
+import { buildSettingsPage, resolveSettingsInitialLocation } from "./build-page";
 import { buildSettingsSubmenuView } from "./build-submenu";
 import { SettingsFooter } from "./components/SettingsFooter";
 import { handleSettingsKey, type SettingsKeyResult } from "./controller";
-import { isSettingVisible } from "./gates";
-import { clampSelectedIndex, firstSelectableRowIndex } from "./navigation";
+import { clampSelectedIndex } from "./navigation";
 import { createSettingsDraftWriter } from "./persist";
 import { handleSettingsPointer } from "./pointer";
-import { buildSettingsRegistry } from "./registry";
 import { buildSettingsRegistryContext } from "./registry-context";
 import { settingsEqual } from "./settings-equal";
 import { SettingsOverlay } from "./SettingsOverlay";
@@ -44,21 +42,14 @@ export function SettingsShell({
   const [state, setState] = useState<SettingsUiState>(() => {
     const base = createSettingsUiState(container.config.getRaw());
     const ctx = buildSettingsRegistryContext(container, base.draft);
-    let activeSectionIndex = 0;
-    if (initialSectionId) {
-      const sections = buildSettingsRegistry(ctx)
-        .filter((row) => isSettingVisible(row, ctx))
-        .filter((row) => row.kind === "section");
-      const idx = sections.findIndex((row) => row.id === initialSectionId);
-      activeSectionIndex = idx >= 0 ? idx : 0;
-    }
-    // Row 0 is the section header (not focusable). Land on the first real setting
-    // so the highlight is visible and Down doesn't skip past it.
-    const page = buildSettingsPage(ctx, { activeSectionIndex });
+    const { activeSectionIndex, selectedIndex } = resolveSettingsInitialLocation(
+      ctx,
+      initialSectionId,
+    );
     return {
       ...base,
       activeSectionIndex,
-      selectedIndex: firstSelectableRowIndex(page),
+      selectedIndex,
     };
   });
 

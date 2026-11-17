@@ -46,7 +46,7 @@ export const CONFIG_METADATA = [
   },
   {
     key: "companionPet",
-    label: "Kanna the companion",
+    label: "Mascot & tips",
     section: "general",
     effect: "immediate",
     privacy: "local",

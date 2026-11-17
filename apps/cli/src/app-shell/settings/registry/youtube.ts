@@ -25,8 +25,8 @@ function mergeYoutubeField(
 export function youtubeSettingsRows(_ctx: SettingsRegistryContext): SettingRowDef[] {
   return [
     {
-      kind: "section",
-      id: "section:youtube",
+      kind: "subheading",
+      id: "subheading:youtube",
       label: "YouTube",
       detail: "Metadata search, cookies, and SponsorBlock for the YouTube provider lane",
       configKeys: ["youtubeMetadata"],

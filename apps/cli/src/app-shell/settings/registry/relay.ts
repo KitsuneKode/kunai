@@ -13,8 +13,8 @@ import type { SettingRowDef, SettingsRegistryContext } from "../types";
 export function relaySettingsRows(ctx: SettingsRegistryContext): SettingRowDef[] {
   return [
     {
-      kind: "section",
-      id: "section:relay",
+      kind: "subheading",
+      id: "subheading:relay",
       label: "Provider relay",
       detail: "User-owned RPC relay for geo-blocked provider metadata; playback stays direct",
       configKeys: ["providerRelay"],

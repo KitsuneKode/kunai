@@ -1,6 +1,7 @@
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
 import { isSettingVisible } from "./gates";
+import { firstSelectableRowIndex } from "./navigation";
 import { describeProviderOrder } from "./provider-order";
 import { buildSettingsRegistry } from "./registry";
 import type {
@@ -9,6 +10,28 @@ import type {
   SettingRowDef,
   SettingsRegistryContext,
 } from "./types";
+
+const TAB_HINT_RESERVE = 20;
+const TAB_SEGMENT_GAP = 2;
+const TAB_ACTIVE_PADDING = 2;
+
+const LEGACY_SECTION_TARGETS = new Map<string, string>([
+  ["section:appearance", "theme"],
+  ["section:discover", "subheading:discover"],
+  ["section:providers", "subheading:providers"],
+  ["section:provider-toggles", "subheading:provider-toggles"],
+  ["section:relay", "subheading:relay"],
+  ["section:youtube", "subheading:youtube"],
+  ["section:language", "subheading:language"],
+  ["section:offline-continuation", "subheading:offline-continuation"],
+  ["section:presence", "subheading:presence"],
+  ["section:sync", "subheading:sync"],
+  ["section:updates", "subheading:updates"],
+  ["section:storage", "subheading:storage"],
+  ["section:danger-zone", "subheading:storage"],
+  ["section:advanced", "subheading:advanced"],
+  ["section:analytics", "subheading:analytics"],
+]);
 
 function envBadgeFor(def: SettingRowDef): string | undefined {
   if (def.kind === "text" && def.envOverride && process.env[def.envOverride]?.trim()) {
@@ -27,6 +50,7 @@ function disabledReasonFor(def: SettingRowDef): string | undefined {
 function valueSummaryFor(def: SettingRowDef, config: KitsuneConfig): string {
   switch (def.kind) {
     case "section":
+    case "subheading":
       return "";
     case "boolean":
       return def.read(config) ? "on" : "off";
@@ -61,7 +85,12 @@ function valueSummaryFor(def: SettingRowDef, config: KitsuneConfig): string {
 }
 
 function labelFor(def: SettingRowDef, _config: KitsuneConfig): string {
-  if (def.kind === "section" || def.kind === "status" || def.kind === "action") {
+  if (
+    def.kind === "section" ||
+    def.kind === "subheading" ||
+    def.kind === "status" ||
+    def.kind === "action"
+  ) {
     return def.label;
   }
   if (
@@ -98,6 +127,97 @@ export function listSettingsSectionLabels(ctx: SettingsRegistryContext): readonl
     .map((row) => row.label);
 }
 
+function tabStripRequiredWidth(labels: readonly string[]): number {
+  if (labels.length === 0) return 0;
+  return (
+    labels.reduce((sum, label) => sum + label.length, 0) +
+    (labels.length - 1) * TAB_SEGMENT_GAP +
+    TAB_ACTIVE_PADDING
+  );
+}
+
+export function listSettingsTabLabels(
+  ctx: SettingsRegistryContext,
+  maxWidth: number,
+  hasHint: boolean,
+): readonly string[] {
+  const sections = buildSettingsRegistry(ctx).filter(
+    (row): row is Extract<SettingRowDef, { kind: "section" }> =>
+      isSettingVisible(row, ctx) && row.kind === "section",
+  );
+  const full = sections.map((section) => section.label);
+  const tabBudget = maxWidth - (hasHint ? TAB_HINT_RESERVE : 0);
+  if (tabBudget >= tabStripRequiredWidth(full)) {
+    return full;
+  }
+  return sections.map((section) => section.tabLabel ?? section.label);
+}
+
+function isFocusableSettingRow(row: BuiltSettingsRow): boolean {
+  return row.def.kind !== "section" && row.def.kind !== "subheading" && row.def.kind !== "status";
+}
+
+export type SettingsInitialLocation = {
+  readonly activeSectionIndex: number;
+  readonly selectedIndex: number;
+};
+
+export function resolveSettingsInitialLocation(
+  ctx: SettingsRegistryContext,
+  initialSectionId?: string,
+): SettingsInitialLocation {
+  if (!initialSectionId) {
+    const page = buildSettingsPage(ctx, { activeSectionIndex: 0 });
+    return { activeSectionIndex: 0, selectedIndex: firstSelectableRowIndex(page) };
+  }
+
+  const targetId = LEGACY_SECTION_TARGETS.get(initialSectionId) ?? initialSectionId;
+  const visible = buildSettingsRegistry(ctx).filter((row) => isSettingVisible(row, ctx));
+
+  let currentSectionIndex = -1;
+  let targetSectionIndex = 0;
+  let foundTarget = false;
+
+  for (const row of visible) {
+    if (row.kind === "section") {
+      currentSectionIndex += 1;
+    }
+    if (row.id === targetId) {
+      targetSectionIndex = Math.max(0, currentSectionIndex);
+      foundTarget = true;
+      break;
+    }
+  }
+
+  if (!foundTarget) {
+    const page = buildSettingsPage(ctx, { activeSectionIndex: 0 });
+    return { activeSectionIndex: 0, selectedIndex: firstSelectableRowIndex(page) };
+  }
+
+  const page = buildSettingsPage(ctx, { activeSectionIndex: targetSectionIndex });
+  const targetIndex = page.rows.findIndex((row) => row.def.id === targetId);
+  if (targetIndex < 0 || page.rows[targetIndex]?.def.kind === "section") {
+    return { activeSectionIndex: targetSectionIndex, selectedIndex: firstSelectableRowIndex(page) };
+  }
+
+  if (page.rows[targetIndex]?.def.kind === "subheading") {
+    for (let i = targetIndex + 1; i < page.rows.length; i += 1) {
+      const candidate = page.rows[i];
+      if (!candidate) break;
+      if (candidate.def.kind === "section" || candidate.def.kind === "subheading") break;
+      if (isFocusableSettingRow(candidate)) {
+        return { activeSectionIndex: targetSectionIndex, selectedIndex: i };
+      }
+    }
+    return { activeSectionIndex: targetSectionIndex, selectedIndex: firstSelectableRowIndex(page) };
+  }
+
+  const targetRow = page.rows[targetIndex];
+  const selectedIndex =
+    targetRow && isFocusableSettingRow(targetRow) ? targetIndex : firstSelectableRowIndex(page);
+  return { activeSectionIndex: targetSectionIndex, selectedIndex };
+}
+
 function sliceRowsForSection(
   rows: readonly BuiltSettingsRow[],
   sectionIndex: number,
@@ -122,13 +242,13 @@ export function buildSettingsPage(
   const defById = new Map<string, SettingRowDef>();
 
   for (const def of defs) {
-    if (search && def.kind !== "section") {
+    if (search && def.kind !== "section" && def.kind !== "subheading") {
       const haystack = `${def.id} ${def.label} ${def.detail ?? ""}`.toLowerCase();
       if (!haystack.includes(search)) continue;
     }
     const built = buildRow(def, ctx.config);
     rows.push(built);
-    if (def.kind !== "section") {
+    if (def.kind !== "section" && def.kind !== "subheading") {
       rowById.set(def.id, built);
       defById.set(def.id, def);
     }
@@ -137,13 +257,22 @@ export function buildSettingsPage(
   if (search) {
     const withSections: BuiltSettingsRow[] = [];
     let lastSection: BuiltSettingsRow | null = null;
+    let lastSubheading: BuiltSettingsRow | null = null;
     for (const row of rows) {
       if (row.def.kind === "section") {
         lastSection = row;
+        lastSubheading = null;
+        continue;
+      }
+      if (row.def.kind === "subheading") {
+        lastSubheading = row;
         continue;
       }
       if (lastSection && !withSections.some((r) => r.def.id === lastSection?.def.id)) {
         withSections.push(lastSection);
+      }
+      if (lastSubheading && !withSections.some((r) => r.def.id === lastSubheading?.def.id)) {
+        withSections.push(lastSubheading);
       }
       withSections.push(row);
     }

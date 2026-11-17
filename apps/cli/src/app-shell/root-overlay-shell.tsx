@@ -973,13 +973,15 @@ export function RootOverlayShell({
                   ? { type: "notifications" as const }
                   : action === "downloads"
                     ? { type: "downloads" as const }
-                    : action === "settings" || action === "presence"
+                    : action === "settings"
                       ? { type: "settings" as const }
-                      : action === "about"
-                        ? { type: "about" as const }
-                        : action === "guide"
-                          ? { type: "guide" as const }
-                          : { type: "help" as const };
+                      : action === "presence"
+                        ? { type: "settings" as const, initialSectionId: "subheading:presence" }
+                        : action === "about"
+                          ? { type: "about" as const }
+                          : action === "guide"
+                            ? { type: "guide" as const }
+                            : { type: "help" as const };
       if ((isRootMediaPickerOverlay(overlay) || overlay.type === "tracks_panel") && overlay.id) {
         container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
       }

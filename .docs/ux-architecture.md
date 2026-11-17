@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26"
+lastReviewed: "2026-11-17"
 ---
 
 # Kunai — UX Architecture
@@ -161,10 +161,9 @@ live. The contract:
 - **once-ever.** Each tip id shows at most once, then never again. The seen
   set lives in `config.json` (`seenTips`, next to `tipsEnabled`), persisted
   before the line renders so a crash can only cost a tip, never repeat one.
-- **dismissible.** The Settings → "Shortcut tips" boolean turns the feature
-  off entirely without burning the seen set; "Every shortcut tip" lists the
-  whole catalog, marks what already showed, and lets a shown tip be re-armed
-  deliberately.
+- **dismissible.** The Settings → General → "Shortcut tips" boolean turns the
+  feature off entirely without burning the seen set; "Reset tips" clears `seenTips`
+  so previously shown tips can teach once more.
 - **lowest priority.** Tips render on the same transient row as alerts,
   toasts, streaks, and digest — last in line, so a coaching line can never
   displace feedback about something that just happened.
