@@ -682,7 +682,7 @@ export const LoadingShell = React.memo(function LoadingShell({
           ? "Playback"
           : state.cancellable
             ? waitPresentation.footerTask
-            : "Playback bootstrap"
+            : "Starting playback"
       }
       footerActions={footerActions}
       footerMode={state.footerMode ?? "detailed"}

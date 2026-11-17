@@ -1,5 +1,9 @@
 {
   "$schema": "https://v2-10-0.turborepo.dev/schema.json",
+  // Installed turbo treats this as opt-in. Leaving it off keeps the managed
+  // AGENTS.md block from coming back; that block told agents to read turbo's
+  // bundled docs and to preserve itself.
+  "agentGuidance": false,
   // Generated build metadata can contain checkout paths; local artifacts must
   // stay with their worktree. Remote cache configuration is independent.
   "cacheDir": ".turbo/cache",
