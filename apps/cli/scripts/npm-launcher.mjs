@@ -211,7 +211,15 @@ function runLauncher() {
   // Test hook only. Written after the handlers exist so the signal suite can
   // wait on a file instead of guessing how long Node takes to start.
   const readyFile = process.env.KUNAI_LAUNCHER_READY_FILE;
-  if (readyFile) writeFileSync(readyFile, "ready\n");
+  // The child is already running, so a bad path must not throw: that would kill
+  // the launcher and orphan the child. The suite times out instead.
+  if (readyFile) {
+    try {
+      writeFileSync(readyFile, "ready\n");
+    } catch {
+      // Test-only signal; never let it affect a real run.
+    }
+  }
 
   child.on("exit", (code, signal) => {
     if (signal) {
