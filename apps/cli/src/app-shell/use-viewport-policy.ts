@@ -116,9 +116,12 @@ export function subscribeStdoutResize(stdout: ResizeSource, onNext: ResizeSubscr
 
 export function useShellDimensions(): ViewportDimensions {
   const { stdout } = useStdout();
-  const [size, setSize] = useState<ViewportDimensions>(() => readStdoutDimensions(stdout));
+  // SAFETY: Ink 8 types this stream as NodeJS.WritableStream, which drops
+  // columns/rows. A TTY and the render harness still expose both and emit "resize".
+  const source = stdout as NodeJS.WritableStream & ResizeSource;
+  const [size, setSize] = useState<ViewportDimensions>(() => readStdoutDimensions(source));
 
-  useEffect(() => subscribeStdoutResize(stdout, setSize), [stdout]);
+  useEffect(() => subscribeStdoutResize(source, setSize), [source]);
 
   return size;
 }
