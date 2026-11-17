@@ -1696,6 +1696,7 @@ export function RootOverlayShell({
       isOverlayListBackKey(input, key, {
         acceptsTypedFilter: overlayAcceptsTypedFilter,
         filterQuery: overlayFilterQuery,
+        lettersAreCommands: overlay.type === "history",
       })
     ) {
       const backAction = resolveOverlayBackStack({

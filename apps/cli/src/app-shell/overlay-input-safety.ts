@@ -68,8 +68,9 @@ export function rootOverlayAcceptsTypedFilter(input: {
 }
 
 /**
- * Esc always participates in the overlay back stack. Bare `q` matches only when
- * the surface has no type-to-filter field, or the filter is empty (first back step).
+ * Esc always participates in the overlay back stack. Bare `q` backs out where
+ * nothing can be typed, and on letter-command overlays (History) while the
+ * filter is empty; in pure type-to-filter pickers it is always a filter letter.
  */
 export function isOverlayListBackKey(
   input: string,
@@ -77,10 +78,20 @@ export function isOverlayListBackKey(
   context: {
     readonly acceptsTypedFilter: boolean;
     readonly filterQuery: string;
+    /**
+     * The overlay also binds bare letters as commands (History: u/m/w), so its
+     * filter can never start with those letters anyway. There `q` is one more
+     * command: back, while the filter is empty.
+     */
+    readonly lettersAreCommands?: boolean;
   },
 ): boolean {
   if (!isListBackKey(input, key)) return false;
   if (key.escape) return true;
   if (!context.acceptsTypedFilter) return true;
-  return context.filterQuery.length === 0;
+  if (context.lettersAreCommands) return context.filterQuery.length === 0;
+  // A pure type-to-filter picker owns every printable key, `q` included — even
+  // on an empty filter, or no filter could ever start with "q" ("Queen's
+  // Gambit"). Esc is the way out there.
+  return false;
 }

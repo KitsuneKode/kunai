@@ -35,7 +35,7 @@ describe("overlay input safety", () => {
     ).toBe(false);
   });
 
-  test("bare q defers to the filter editor while provider picker filter text is non-empty", () => {
+  test("bare q always types in a type-to-filter overlay; Esc is the way out", () => {
     const overlay = {
       type: "provider_picker",
       currentProvider: "allanime",
@@ -45,7 +45,28 @@ describe("overlay input safety", () => {
     expect(isOverlayListBackKey("q", {}, { acceptsTypedFilter: true, filterQuery: "v" })).toBe(
       false,
     );
-    expect(isOverlayListBackKey("q", {}, { acceptsTypedFilter: true, filterQuery: "" })).toBe(true);
+    // Empty filter too: otherwise no filter could start with "q".
+    expect(isOverlayListBackKey("q", {}, { acceptsTypedFilter: true, filterQuery: "" })).toBe(
+      false,
+    );
+    expect(isOverlayListBackKey("q", {}, { acceptsTypedFilter: false, filterQuery: "" })).toBe(
+      true,
+    );
+    // History binds letters as commands, so q is "back" there while the filter is empty.
+    expect(
+      isOverlayListBackKey(
+        "q",
+        {},
+        { acceptsTypedFilter: true, filterQuery: "", lettersAreCommands: true },
+      ),
+    ).toBe(true);
+    expect(
+      isOverlayListBackKey(
+        "q",
+        {},
+        { acceptsTypedFilter: true, filterQuery: "fr", lettersAreCommands: true },
+      ),
+    ).toBe(false);
     expect(
       isOverlayListBackKey("", { escape: true }, { acceptsTypedFilter: true, filterQuery: "v" }),
     ).toBe(true);

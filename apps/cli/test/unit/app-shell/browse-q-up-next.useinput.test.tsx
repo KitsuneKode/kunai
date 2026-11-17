@@ -221,6 +221,34 @@ describe("root overlay list-back vs filter typing", () => {
     }
   });
 
+  test("provider picker starts a filter with q instead of closing", async () => {
+    const fixture = rootOverlayContainer();
+    const state = createInitialState("vidking", "videasy", LANGUAGE_PROFILES);
+    const handle = render(
+      <RootOverlayShell
+        overlay={{ type: "provider_picker", currentProvider: "videasy", lane: "series" }}
+        state={state}
+        container={fixture.container}
+        onRedraw={() => {}}
+      />,
+      { columns: 120, rows: 40 },
+    );
+
+    try {
+      await waitUntil(() => stripAnsi(handle.lastFrame() ?? "").includes("Videasy"), {
+        label: "provider overlay",
+      });
+      fixture.dispatches.length = 0;
+      handle.stdin.enqueue(["q"]);
+      await waitUntil(() => stripAnsi(handle.lastFrame() ?? "").includes("Filter: q"), {
+        label: "filter q",
+      });
+      expect(fixture.dispatches).toEqual([]);
+    } finally {
+      handle.unmount();
+    }
+  });
+
   test("help overlay backs out on bare q", async () => {
     const fixture = rootOverlayContainer();
     const state = createInitialState("vidking", "videasy", LANGUAGE_PROFILES);

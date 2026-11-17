@@ -22,9 +22,10 @@ visibly different.
   filter fields, use `/help` so `?` can still be typed normally.
 - `Esc` (and bare `q` on list surfaces that are not typing in a search/filter field)
   closes the top overlay or picker first; in post-playback it returns to
-  previous results. On browse lists and filterable overlays, bare `q` matches
-  that back behavior when the filter is empty. While filter or search text is
-  active, `q` types like any other letter. Active playback `q` still stops
+  previous results. Bare `q` matches that back behavior on browse lists and on
+  History while its filter is empty. In type-to-filter pickers (provider,
+  episode, season, subtitle, recommendations) `q` is always a filter letter, so
+  a filter can start with "q"; use Esc there. Active playback `q` still stops
   playback; post-play and setup `q` still quit when those surfaces own focus.
 - `Ctrl+C` is the hard global exit.
 - Text inputs keep terminal editing behavior. Printable keys type text unless
