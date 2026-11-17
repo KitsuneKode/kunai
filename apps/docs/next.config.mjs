@@ -48,7 +48,7 @@ const turbopackRoot = (() => {
 /** @type {import('next').NextConfig} */
 const config = {
   reactStrictMode: true,
-  // `next dev` otherwise rewrites apps/docs/AGENTS.md with a block that sends
+  // `next dev` otherwise rewrites this app's AGENTS.md (gitignored) with a block that sends
   // agents into next's own node_modules docs. false makes dev strip that block.
   agentRules: false,
   // fumadocs-mdx loads source.config via dynamic import(url.href); keep it out of
