@@ -9,6 +9,7 @@ import { kannaLinesFor } from "@/app-shell/kanna-voice";
 import { StateBlock } from "@/app-shell/primitives/StateBlock";
 import React from "react";
 
+import { SETUP_SCREENS, setupFrameAt } from "../../harness/capture-setup";
 import { captureFrame } from "../../harness/render-capture";
 
 afterEach(() => {
@@ -37,5 +38,16 @@ describe("minimal plain render", () => {
       { columns: 72, rows: 24 },
     );
     expect(frame).toContain("No results yet");
+  });
+
+  test("every setup step under plain mode has no emoji, mascot, rules or fancy cursor", () => {
+    // Setup is the first screen a screen-reader user meets; -m must cover it.
+    setPlainDecorationSource(() => true);
+    SETUP_SCREENS.forEach((name, step) => {
+      const frame = setupFrameAt(step, 64);
+      expect({ name, emoji: EMOJI_OR_MASCOT.test(frame) }).toEqual({ name, emoji: false });
+      expect({ name, rule: LONG_BOX_RULE.test(frame) }).toEqual({ name, rule: false });
+      expect({ name, cursor: frame.includes("▌") }).toEqual({ name, cursor: false });
+    });
   });
 });

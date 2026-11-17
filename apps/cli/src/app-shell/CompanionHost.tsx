@@ -4,6 +4,7 @@ import React from "react";
 import { poseForMoment, type CompanionMoment } from "./companion-moment";
 import { companionMode } from "./companion-policy";
 import { CompanionPet } from "./CompanionPet";
+import { companionFlavorEnabled } from "./decoration-policy";
 
 /**
  * The one place a companion is drawn.
@@ -43,6 +44,8 @@ export function CompanionHost({
   readonly marginRight?: number;
 }) {
   if (moment === null || companionMode() === "off") return null;
+  // Minimal / plain mode: no mascot. Same null return — no box, no margin.
+  if (!companionFlavorEnabled()) return null;
 
   return (
     <Box marginTop={marginTop} marginBottom={marginBottom} marginRight={marginRight}>

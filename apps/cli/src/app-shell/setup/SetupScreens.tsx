@@ -7,6 +7,11 @@ import { Box, Text } from "ink";
 import React from "react";
 
 import { CompanionHost } from "../CompanionHost";
+import {
+  companionFlavorEnabled,
+  decorationGlyphs,
+  listSelectionPrefix,
+} from "../decoration-policy";
 import { reducedMotionEnabled } from "../motion-policy";
 import { BLOOM_FRAMES, STATIC_PETAL } from "../primitives/SakuraPetal";
 import { truncateLine } from "../shell-text";
@@ -28,9 +33,10 @@ export const MODE_OPTIONS = [
 export const DOWNLOAD_QUALITIES = ["1080p", "best", "720p", "480p"] as const;
 
 function stateGlyph(state: ScopedDependencyRow["state"]): string {
-  if (state === "ok") return "✓";
-  if (state === "blocking") return "✗";
-  return "△";
+  const g = decorationGlyphs();
+  if (state === "ok") return g.statusSuccess;
+  if (state === "blocking") return g.statusError;
+  return g.warnTriangle;
 }
 
 function stateColor(state: ScopedDependencyRow["state"]): string {
@@ -90,9 +96,11 @@ export function DependencyScreen({
   return (
     <Box flexDirection="column">
       <Box marginBottom={1}>
-        <Text color={rechecking ? palette.accent : palette.ok} bold>
-          {petal}
-        </Text>
+        {companionFlavorEnabled() ? (
+          <Text color={rechecking ? palette.accent : palette.ok} bold>
+            {petal}
+          </Text>
+        ) : null}
         <Text color={palette.text} bold>
           {"  Let's get you watching"}
         </Text>
@@ -111,7 +119,7 @@ export function DependencyScreen({
             <Box key={row.id} flexDirection="column">
               <Box backgroundColor={isSelected ? palette.accentFill : undefined}>
                 <Text color={isSelected ? palette.accent : palette.dim}>
-                  {isSelected ? "▌" : " "}
+                  {isSelected ? decorationGlyphs().listCursor : " "}
                 </Text>
                 <Text color={stateColor(row.state)} bold>
                   {` ${stateGlyph(row.state)} `}
@@ -219,7 +227,7 @@ function LanguageColumn({
                     : palette.dim
               }
             >
-              {i === index ? "▌ " : "  "}
+              {listSelectionPrefix(i === index)}
             </Text>
             <Text
               color={i === index ? palette.text : palette.textDim}
@@ -265,7 +273,9 @@ export function LanguageScreen({
           return (
             <SetupTarget key={lane.value} field="lane" value={lane.value}>
               <Box backgroundColor={active ? palette.accentFill : undefined}>
-                <Text color={active ? palette.accent : palette.dim}>{active ? "▌ " : "  "}</Text>
+                <Text color={active ? palette.accent : palette.dim}>
+                  {listSelectionPrefix(active)}
+                </Text>
                 <Text color={active ? palette.text : palette.muted} bold={active}>
                   {lane.label}
                 </Text>
@@ -461,7 +471,7 @@ export function DoneScreen({
         {[...summary, ...outstanding].map((line) => (
           <Box key={line.label}>
             <Text color={line.ok ? palette.ok : palette.warn} bold>
-              {line.ok ? "✓ " : "△ "}
+              {`${line.ok ? decorationGlyphs().statusSuccess : decorationGlyphs().warnTriangle} `}
             </Text>
             <Text color={palette.text}>{pad(line.label, 22)}</Text>
             <Text color={palette.muted}>
