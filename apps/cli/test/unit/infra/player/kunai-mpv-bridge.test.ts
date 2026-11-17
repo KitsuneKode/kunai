@@ -88,3 +88,15 @@ describe("kunai mpv bridge server and audio cycling", () => {
     expect(source).toContain("has_multiple_internal_audio_tracks");
   });
 });
+
+describe("kunai mpv bridge media keys", () => {
+  test("hardware NEXT/PREV keys drive episode next/previous, not mpv's playlist", () => {
+    const source = readFileSync(BRIDGE_PATH, "utf8");
+    expect(source).toContain(
+      'mp.add_forced_key_binding("NEXT", "kunai-next-media", do_next, { repeatable = false })',
+    );
+    expect(source).toContain(
+      'mp.add_forced_key_binding("PREV", "kunai-prev-media", do_previous, { repeatable = false })',
+    );
+  });
+});

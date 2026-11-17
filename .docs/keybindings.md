@@ -2,7 +2,7 @@
 title: Kunai CLI Keybindings
 description: Screen-by-screen keybinding map for the Kunai terminal shell.
 status: current
-lastReviewed: "2026-10-24"
+lastReviewed: "2026-11-17"
 ---
 
 # Kunai CLI Keybindings
@@ -117,6 +117,7 @@ These keys are available while `mpv` is active and the shell is supervising it.
 | `Shift+S`   | Stop playback and return to search                                                   |
 | `n`         | Next episode, starting from the beginning with mpv resume prompt when applicable     |
 | `p`         | Previous episode, starting from the beginning with mpv resume prompt when applicable |
+| Media keys  | Hardware next/previous keys do the same as `n` / `p` (bound in the mpv bridge)       |
 | `a`         | Pause/resume autoplay for the current chain                                          |
 | `u`         | Pause/resume autoskip for the current title/session                                  |
 | `e`         | Open episode picker without changing episode until selection is confirmed            |
