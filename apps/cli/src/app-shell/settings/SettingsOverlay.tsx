@@ -1,4 +1,3 @@
-import { Box, Text } from "ink";
 import React from "react";
 
 import { MouseTarget } from "../mouse/MouseRegions";
@@ -6,6 +5,7 @@ import { PickerOptionRow } from "../overlay-picker-row";
 import { ClaudeTabRow } from "../primitives/ClaudeTabRow";
 import { StateBlock } from "../primitives/StateBlock";
 import { palette } from "../shell-theme";
+import { Box, Text } from "../ShellInk";
 import { listSettingsSectionLabels } from "./build-page";
 import { buildSettingsSubmenuView } from "./build-submenu";
 import { SettingRowBoolean } from "./components/SettingRowBoolean";

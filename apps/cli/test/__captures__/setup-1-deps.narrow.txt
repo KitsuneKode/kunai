@@ -10,7 +10,8 @@
     ✓ mpv               found on PATH            playback
     ✓ yt-dlp            found on PATH            youtube · downloads
     ✓ ffmpeg            found on PATH            quality · downloads
-    ✓ curl-impersonate  matching chrome150       anime search
+    ✓ curl-impersonate  matching chrome150       anime search (optio…
+
     ✓ posters           kitty-native · ghostty   artwork
     ✓ data & cache      ~/.local/share/kunai     history · offline
  ──────────────────────────────────────────────────────────────────────

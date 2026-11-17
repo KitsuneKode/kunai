@@ -1,10 +1,11 @@
 import type { Container } from "@/container";
-import { Box, Text, useInput } from "ink";
+import { useInput } from "ink";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import { mountRootContent } from "./root-content-state";
 import { ShellFooter, ViewportResizeGate } from "./shell-primitives";
 import { palette } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 import { useShellDimensions } from "./use-viewport-policy";
 import { connectNamedTracker, type TrackerConnectOutcome } from "./workflows/tracker-connect";
 

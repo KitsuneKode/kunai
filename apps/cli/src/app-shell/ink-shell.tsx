@@ -33,7 +33,7 @@ import { peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import { listReadyEpisodes } from "@/services/offline/offline-episode-index";
 import { presenceStatusDetail } from "@/services/presence/presence-status-line";
 import { providerEpisodeIdentitiesEqual } from "@kunai/types";
-import { Box, Text, render, useInput } from "ink";
+import { render, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -91,6 +91,7 @@ import {
 import { getRootOwnedOverlay, resolveRootShellSurface } from "./root-shell-state";
 import { buildRootStatusSummary, type SyncHealth } from "./root-status-summary";
 import { EPISODE_PICKER_SWITCH_SEASON, openSessionPicker } from "./session-picker";
+import { primeShellColorEnvironment } from "./shell-color";
 import {
   getCommandAutocompleteTarget,
   getCommandMatches,
@@ -106,6 +107,7 @@ import { LocalSection, ResizeBlocker, ShellFooter, TransientRowSlot } from "./sh
 import { clearShellScreenArtifacts } from "./shell-screen-clear";
 import { getWindowStart, padColumnsEnd, truncateLine, wrapText } from "./shell-text";
 import { palette, statusColor } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 import { sixelOverlayManager } from "./sixel-overlay";
 import { PosterOutput } from "./SixelPosterPane";
 import {
@@ -1433,6 +1435,7 @@ export function AppRoot({ container }: { container: Container }) {
  * Launches the persistent state-driven app shell.
  */
 export async function launchSessionApp(container: Container) {
+  primeShellColorEnvironment();
   if (rootShellInk && rootShellExitPromise) {
     return rootShellExitPromise;
   }

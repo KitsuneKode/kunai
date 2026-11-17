@@ -48,10 +48,11 @@ import {
   formatDownloadRemovalFeedback,
 } from "@/services/download/download-removal";
 import type { HistoryProgress } from "@/services/storage/storage-read-models";
-import { Box, Text, useInput } from "ink";
+import { useInput } from "ink";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 import { useRootContentSuspended } from "./RootContentSuspension";
+import { Box, Text } from "./ShellInk";
 
 type TabId = "library" | "queue";
 

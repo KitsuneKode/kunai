@@ -1,7 +1,7 @@
 import type { ThemePalette } from "./theme-types";
 import { tokens as rawTokens, type TokenName } from "./tokens";
 
-export type TerminalColorLevel = "truecolor" | "256" | "16";
+export type TerminalColorLevel = "truecolor" | "256" | "16" | "none";
 export type TerminalColorEnv = Record<string, string | undefined>;
 export type ResolvedHeatRamp = readonly [string, string, string, string, string];
 export type ResolvedTokenValue = string | ResolvedHeatRamp;
@@ -247,8 +247,9 @@ export function detectTerminalColorLevel(env: TerminalColorEnv = currentEnv()): 
   const forced = env.FORCE_COLOR;
   if (forced === "3") return "truecolor";
   if (forced === "2") return "256";
+  if (forced === "0" || env.NO_COLOR !== undefined) return "none";
   if (forced === "1") return "16";
-  if (forced === "0" || env.NO_COLOR !== undefined) return "16";
+  if ((env.TERM ?? "").toLowerCase() === "dumb") return "none";
 
   if (TRUECOLOR_HINTS.test(env.COLORTERM ?? "")) return "truecolor";
 
@@ -271,7 +272,7 @@ function resolveColorToken(
   value: string | readonly string[],
   level: TerminalColorLevel,
 ): ResolvedTokenValue {
-  if (level === "truecolor") {
+  if (level === "truecolor" || level === "none") {
     // SAFETY: TokenValue and ResolvedTokenValue share the same shape, so
     // passing the raw value through at truecolor is honest.
     return value as ResolvedTokenValue;
@@ -295,7 +296,7 @@ export function resolveDesignTokens(
   // The curated fallback tables describe the brand palette only. Other themes
   // degrade mechanically so a themed accent never leaks the brand rose onto a
   // 256- or 16-colour terminal.
-  if (level !== "truecolor" && palette !== rawTokens) {
+  if (level !== "truecolor" && level !== "none" && palette !== rawTokens) {
     return degradePalette(palette, level);
   }
   const resolved = Object.fromEntries(

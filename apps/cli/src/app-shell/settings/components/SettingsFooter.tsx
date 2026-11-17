@@ -1,7 +1,7 @@
-import { Text } from "ink";
 import React from "react";
 
 import { palette } from "../../shell-theme";
+import { Text } from "../../ShellInk";
 import { settingsEqual } from "../settings-equal";
 import type { SettingsUiState } from "../types";
 

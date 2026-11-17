@@ -1,6 +1,6 @@
 # library-populated · medium (100×45)
 
- Library   Downloads Tab switch
+[ Library ]  Downloads Tab switch
 
 downloads on · runway: title opt-in
 

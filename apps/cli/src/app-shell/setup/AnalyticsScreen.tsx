@@ -9,11 +9,11 @@
 // reading to make a privacy decision, while the screen that actually probes the
 // machine had none. `design-system.md` warns against exactly that.
 
-import { Box, Text } from "ink";
 import React from "react";
 
 import packageJson from "../../../package.json" with { type: "json" };
 import { palette } from "../shell-theme";
+import { Box, Text } from "../ShellInk";
 import { ChoiceRow, ScreenTitle } from "./SetupFrame";
 
 /** "Turn it on" leads. Index is load-bearing — see the input handler. */

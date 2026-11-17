@@ -1,8 +1,8 @@
-import { Box, Text } from "ink";
 import React from "react";
 
 import { padColumnsEnd, padColumnsStart, truncateLine } from "../shell-text";
 import { palette } from "../shell-theme";
+import { Box, Text } from "../ShellInk";
 import type { ListRowColumn } from "./ListRow.model";
 
 const MARKER_WIDTH = 2;

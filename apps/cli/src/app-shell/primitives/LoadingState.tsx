@@ -1,9 +1,9 @@
-import { Box, Text } from "ink";
 import React from "react";
 
 import { reducedMotionEnabled } from "../motion-policy";
 import { useIsInsideOverlay } from "../overlay-layout-context";
 import { palette } from "../shell-theme";
+import { Box, Text } from "../ShellInk";
 import { STATIC_PETAL } from "./SakuraPetal";
 
 const BUSY_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];

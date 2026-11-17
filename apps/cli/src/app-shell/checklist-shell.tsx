@@ -11,8 +11,10 @@ import { getWindowStart, truncateLine } from "@/app-shell/shell-text";
 import { palette } from "@/app-shell/shell-theme";
 import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
-import { Box, Text, useInput } from "ink";
+import { useInput } from "ink";
 import React, { useEffect, useMemo, useRef, useState } from "react";
+
+import { Box, Text } from "./ShellInk";
 
 export type ListOption<T> = {
   value: T;

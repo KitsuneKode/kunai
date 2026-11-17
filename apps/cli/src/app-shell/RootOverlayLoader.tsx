@@ -1,11 +1,12 @@
 import type { Container } from "@/container";
 import type { SessionState } from "@/domain/session/SessionState";
-import { Box, Text, useInput } from "ink";
+import { useInput } from "ink";
 import React, { useEffect, useState } from "react";
 
 import { cancelRootOverlay } from "./cancel-root-overlay";
 import type { RootOwnedOverlay } from "./root-shell-state";
 import { palette } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 
 type RootOverlayModule = typeof import("./root-overlay-shell");
 

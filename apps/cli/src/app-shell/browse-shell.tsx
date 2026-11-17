@@ -27,7 +27,7 @@ import {
   refreshSearchHistory,
   subscribeSearchHistory,
 } from "@/services/persistence/search-history";
-import { Box, Text, useInput, type DOMElement } from "ink";
+import { useInput, type DOMElement } from "ink";
 import React, {
   useCallback,
   useEffect,
@@ -162,6 +162,7 @@ import { getCommandLabel, InputField } from "./shell-frame";
 import { ContextStrip, ResizeBlocker, ShellFooter, selectFooterActions } from "./shell-primitives";
 import { getWindowStart, measureColumns, sanitizeTerminalText } from "./shell-text";
 import { palette } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 import { getSuggestionBandRowCount, SearchSuggestionBand } from "./suggestion-band-ui";
 import {
   toShellAction,

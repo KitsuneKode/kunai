@@ -4,10 +4,11 @@ import { truncateLine } from "@/app-shell/shell-text";
 import { palette } from "@/app-shell/shell-theme";
 import { useShellDimensions } from "@/app-shell/use-viewport-policy";
 import { encodeQrMatrix, renderQrHalfBlocks } from "@/domain/share/qr-code";
-import { Box, Text, useInput } from "ink";
+import { useInput } from "ink";
 import React, { useMemo } from "react";
 
 import { MouseTarget } from "./mouse/MouseRegions";
+import { Box, Text } from "./ShellInk";
 
 export function buildTerminalShareQr(url: string): string | null {
   try {

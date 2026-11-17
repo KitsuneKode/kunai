@@ -1,7 +1,7 @@
-import { Box, Text } from "ink";
 import React from "react";
 
 import { palette } from "../../shell-theme";
+import { Box, Text } from "../../ShellInk";
 import type { BuiltSettingsRow } from "../types";
 
 export const SettingRowSubmenu = React.memo(function SettingRowSubmenu({

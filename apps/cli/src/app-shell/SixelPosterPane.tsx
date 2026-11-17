@@ -1,8 +1,9 @@
-import { Box, measureElement, Text } from "ink";
+import { measureElement } from "ink";
 import type { DOMElement } from "ink";
 import React, { useEffect, useRef } from "react";
 
 import type { PosterResult } from "./poster-types";
+import { Box, Text } from "./ShellInk";
 import { sixelOverlayManager } from "./sixel-overlay";
 
 /**

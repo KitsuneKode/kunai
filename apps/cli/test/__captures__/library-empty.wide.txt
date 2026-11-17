@@ -1,6 +1,6 @@
 # library-empty · wide (140×45)
 
- Library   Downloads Tab switch
+[ Library ]  Downloads Tab switch
 
 downloads on · runway: title opt-in
 

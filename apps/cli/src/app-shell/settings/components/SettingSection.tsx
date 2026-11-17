@@ -1,8 +1,8 @@
-import { Box, Text } from "ink";
 import React from "react";
 
 import { SectionGroup } from "../../primitives/SectionGroup";
 import { palette, semanticToneColor } from "../../shell-theme";
+import { Box, Text } from "../../ShellInk";
 import type { SectionLayout } from "../layouts";
 import type { BuiltSettingsRow } from "../types";
 

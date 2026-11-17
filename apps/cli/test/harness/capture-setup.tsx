@@ -36,7 +36,7 @@ const READY: CapabilitySnapshot = {
 
 export const SETUP_SCREENS = ["deps", "mode", "language", "library", "analytics", "done"] as const;
 
-export function setupFrameAt(step: number, columns: number): string {
+export function setupFrameAt(step: number, columns: number, rows = SETUP_ROWS): string {
   // The analytics consent screen prints this machine's `process.platform` and
   // `process.arch` into the payload preview — true at runtime, but it makes a
   // committed capture host-dependent. Pin a canonical pair for the render so a
@@ -50,7 +50,7 @@ export function setupFrameAt(step: number, columns: number): string {
       <Box width={columns} paddingX={1} flexDirection="column">
         <SetupShell snapshot={READY} finish={() => {}} downloadPath="~/.local/share/kunai" />
       </Box>,
-      { columns, rows: SETUP_ROWS },
+      { columns, rows },
     );
     for (let i = 0; i < step; i += 1) handle.stdin.enqueue("\r");
     const frame = stripAnsi(handle.lastFrame()).replace(/\s+$/, "");

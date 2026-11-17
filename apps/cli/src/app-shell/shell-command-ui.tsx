@@ -1,6 +1,5 @@
 import { getLineEditorViewport, splitCursor } from "@/app-shell/line-editor";
 import type { LocalTitleEntry, LocalTitleMatch } from "@/domain/palette/local-title-index";
-import { Box, Text } from "ink";
 import React from "react";
 
 import type { ResolvedAppCommand } from "./commands";
@@ -15,6 +14,7 @@ import {
 } from "./shell-command-model";
 import { getWindowStart, measureColumns, padColumnsEnd, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 import { useShellDimensions } from "./use-viewport-policy";
 
 export function LineEditorText({

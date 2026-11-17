@@ -1,9 +1,9 @@
-import { Box, Text } from "ink";
 import React from "react";
 
 import { composeHeader } from "../format/header";
 import { measureColumns, truncateLine } from "../shell-text";
 import { APP_LABEL, palette } from "../shell-theme";
+import { Box, Text } from "../ShellInk";
 
 /**
  * The single canonical header. Owns brand · destination pill · context · status

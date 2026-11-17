@@ -20,7 +20,7 @@ import {
   SUBTITLE_PREFERENCE_OPTIONS,
 } from "@/domain/media/media-preferences";
 import type { CapabilitySnapshot } from "@/ui";
-import { Box, Text, useInput } from "ink";
+import { useInput } from "ink";
 import React, { useState } from "react";
 
 import packageJson from "../../package.json" with { type: "json" };
@@ -44,6 +44,7 @@ import {
 } from "./setup/SetupScreens";
 import { ViewportResizeGate } from "./shell-primitives";
 import { palette } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 import { useDebouncedViewportPolicy, useShellDimensions } from "./use-viewport-policy";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -714,6 +715,7 @@ export function SetupShell({
       <ViewportResizeGate kind="picker" message="Resize terminal to run setup">
         <SetupFrame
           width={frameWidth}
+          rows={rows}
           context={SCREEN_CONTEXT[screen]}
           step={screenIdx}
           totalSteps={SCREEN_ORDER.length}
@@ -861,6 +863,7 @@ function summaryLines(prefs: SetupPrefs): readonly SummaryLine[] {
   }
   lines.push({
     ok: prefs.downloadsEnabled,
+    neutral: !prefs.downloadsEnabled,
     label: prefs.downloadsEnabled ? "Downloads on" : "Downloads off",
     detail: prefs.downloadsEnabled ? prefs.downloadQuality : "stream-only · change in /settings",
   });
@@ -869,17 +872,20 @@ function summaryLines(prefs: SetupPrefs): readonly SummaryLine[] {
   );
   lines.push({
     ok: skips.length > 0,
+    neutral: skips.length === 0,
     label: skips.length > 0 ? "Auto-skip" : "Auto-skip off",
     detail: skips.length > 0 ? skips.join(" and ") : "nothing skipped",
   });
   lines.push({
     ok: prefs.autoNext,
+    neutral: !prefs.autoNext,
     label: prefs.autoNext ? "Autoplay on" : "Autoplay off",
     detail: prefs.autoNext ? "next episode rolls on" : "stops after each episode",
   });
   if (prefs.analyticsChoice !== "unchanged") {
     lines.push({
       ok: prefs.analyticsChoice === "enabled",
+      neutral: prefs.analyticsChoice !== "enabled",
       label: prefs.analyticsChoice === "enabled" ? "Usage ping on" : "Usage ping off",
       detail: "change any time in /settings",
     });

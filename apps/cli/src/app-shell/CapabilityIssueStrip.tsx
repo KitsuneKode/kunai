@@ -20,12 +20,12 @@
 // make one key mean two things. The full list lives behind `kunai doctor`.
 
 import type { CapabilitySnapshot } from "@/ui";
-import { Box, Text } from "ink";
 import React from "react";
 
 import { buildDependencyRows, selectStartupIssueRows } from "./setup/dependency-rows";
 import { sanitizeTerminalText } from "./shell-text";
 import { palette } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 
 /** At most this many rows, so the strip can never push the shell off screen. */
 const MAX_ROWS = 3;

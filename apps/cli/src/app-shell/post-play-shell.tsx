@@ -14,7 +14,6 @@ import type { TitleDetail } from "@/domain/catalog/title-detail";
 import { contentKindHasEpisodes, type ContentKind } from "@/domain/media/content-kind";
 import type { PostPlayState } from "@/domain/playback/post-play-state";
 import type { ContentType, VideoMeta } from "@/domain/types";
-import { Box, Text } from "ink";
 import React from "react";
 
 import { buildMediaPanel } from "./media-panel-model";
@@ -33,6 +32,7 @@ import { SakuraPetal } from "./primitives/SakuraPetal";
 import { ViewportResizeGate } from "./shell-primitives";
 import { measureColumns, padColumnsEnd, sanitizeTerminalText, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 import { PosterOutput } from "./SixelPosterPane";
 import type { PlaybackRecommendationRailItem } from "./types";
 import { usePosterPreview } from "./use-poster-preview";

@@ -10,7 +10,7 @@
 // z-ordering for free.
 // =============================================================================
 
-import { Box, Text, measureElement, type DOMElement } from "ink";
+import { measureElement, type DOMElement } from "ink";
 import {
   createContext,
   useContext,
@@ -23,6 +23,7 @@ import {
 
 import { useRootContentSuspended } from "../RootContentSuspension";
 import { palette } from "../shell-theme";
+import { Box, Text } from "../ShellInk";
 import type { MouseEvent } from "./terminal-mouse";
 
 export type MouseRect = {

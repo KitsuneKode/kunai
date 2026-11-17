@@ -1,9 +1,9 @@
-import { Text } from "ink";
 import React from "react";
 
 import { companionPetPath } from "./companion-assets";
 import { companionFallbackGlyph, companionMode, type CompanionPose } from "./companion-policy";
 import { MiniPosterTile } from "./primitives/MiniPosterTile";
+import { Text } from "./ShellInk";
 
 type CompanionPetProps = {
   readonly pose?: CompanionPose;

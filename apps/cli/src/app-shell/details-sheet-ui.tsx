@@ -1,10 +1,10 @@
-import { Box, Text } from "ink";
 import React from "react";
 
 import type { DetailsSheetModel } from "./details-sheet.model";
 import { wrapSynopsis } from "./details-view";
 import { PosterInitialBlock } from "./poster-initial-block";
 import { palette } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 import { PosterOutput } from "./SixelPosterPane";
 import { usePosterPreview } from "./use-poster-preview";
 

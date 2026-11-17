@@ -1,10 +1,10 @@
 import { CELL_ASPECT } from "@/image/renderers/sixel";
-import { Text } from "ink";
 import React from "react";
 
 import type { KittyPlacementSlot } from "../kitty-placement-registry";
 import { sanitizeTerminalText } from "../shell-text";
 import { palette } from "../shell-theme";
+import { Text } from "../ShellInk";
 import { PosterOutput } from "../SixelPosterPane";
 import { usePosterPreview } from "../use-poster-preview";
 

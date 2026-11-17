@@ -1,7 +1,6 @@
-import { Text } from "ink";
-
 import { truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
+import { Text } from "./ShellInk";
 
 export function PickerOptionRow({
   label,

@@ -1,7 +1,7 @@
-import { Text } from "ink";
 import React from "react";
 
 import { palette } from "../shell-theme";
+import { Text } from "../ShellInk";
 
 const BOOLEAN_SWITCH_WIDTH = 8;
 

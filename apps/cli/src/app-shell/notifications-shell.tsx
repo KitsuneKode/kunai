@@ -1,4 +1,3 @@
-import { Box, Text } from "ink";
 import React from "react";
 
 import { mapPosterPreviewState } from "./browse-preview-rail";
@@ -18,6 +17,7 @@ import { shouldRenderPreviewRail } from "./primitives/PreviewRail.model";
 import { SectionGroup } from "./primitives/SectionGroup";
 import { StateBlock } from "./primitives/StateBlock";
 import { palette } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 import type { ShellStatusTone } from "./types";
 
 const RAIL_WIDTH = 32;

@@ -16,7 +16,7 @@ import type {
   DownloadIntentItem,
 } from "@/services/download/DownloadIntentService";
 import type { MediaKind } from "@kunai/types";
-import { Box, Text, useInput } from "ink";
+import { useInput } from "ink";
 import React, { useCallback, useMemo, useState } from "react";
 
 import {
@@ -30,6 +30,7 @@ import type { PreviewRailModel } from "./primitives/PreviewRail.model";
 import { mountRootContent } from "./root-content-state";
 import { truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 import { usePosterPreview } from "./use-poster-preview";
 
 /** Fixed poster geometry. Deliberately independent of the draft profile. */

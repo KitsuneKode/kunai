@@ -9,11 +9,11 @@
 // =============================================================================
 
 import type { ScoredSuggestion, SuggestionBandModel } from "@/domain/search/suggestion-engine";
-import { Box, Text } from "ink";
 import React from "react";
 
 import { measureColumns, sanitizeTerminalText, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 
 const GRAPHEMES = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 const MARKER_WIDTH = 2;

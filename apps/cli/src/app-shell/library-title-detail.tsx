@@ -33,10 +33,11 @@ import {
 } from "@/services/offline/offline-library";
 import { routeOfflineLibraryGroupAction } from "@/services/offline/offline-library-action-router";
 import type { DownloadJobRecord } from "@/services/storage/storage-read-models";
-import { Box, Text, useInput } from "ink";
+import { useInput } from "ink";
 import React, { useMemo, useState } from "react";
 
 import { useRootContentSuspended } from "./RootContentSuspension";
+import { Box, Text } from "./ShellInk";
 
 type DetailRow =
   | { readonly kind: "episode"; readonly entry: OfflineLibraryEntry; readonly flatIndex: number }

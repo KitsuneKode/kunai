@@ -1,8 +1,8 @@
-import { Box, Text } from "ink";
 import React from "react";
 
 import { sanitizeTerminalText } from "./shell-text";
 import { palette } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 
 export function PosterInitialBlock({
   title,

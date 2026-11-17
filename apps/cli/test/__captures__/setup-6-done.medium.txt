@@ -10,9 +10,9 @@
           ✓ Movies language       Original audio · English subtitles
           ✓ Anime language        Original audio · English subtitles
           ✓ YouTube language      Original audio · English subtitles
-          △ Downloads off         stream-only · change in /settings
-          △ Auto-skip off         nothing skipped
-          △ Autoplay off          stops after each episode
+          ○ Downloads off         stream-only · change in /settings
+          ○ Auto-skip off         nothing skipped
+          ○ Autoplay off          stops after each episode
           ✓ Usage ping on         change any time in /settings
 
           Try these first

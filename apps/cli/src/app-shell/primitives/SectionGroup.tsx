@@ -1,7 +1,7 @@
-import { Box, Text } from "ink";
 import React from "react";
 
 import { palette } from "../shell-theme";
+import { Box, Text } from "../ShellInk";
 
 /** Uppercase section label with an inline trailing rule (Sakura systems shelf bands).
  *  The rule sits on the SAME line as the label; an optional `tag` shows quiet

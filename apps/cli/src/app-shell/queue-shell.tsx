@@ -1,4 +1,4 @@
-import { Box, Text, useInput } from "ink";
+import { useInput } from "ink";
 import React, { useEffect, useRef } from "react";
 
 import { useRailPoster } from "./hooks/use-rail-poster";
@@ -12,6 +12,7 @@ import { StateBlock } from "./primitives/StateBlock";
 import type { QueueView, QueueViewRow } from "./queue-view";
 import { getWindowStart } from "./shell-text";
 import { palette } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 
 function QueueRow({
   row,

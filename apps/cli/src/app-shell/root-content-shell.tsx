@@ -2,7 +2,6 @@ import type { Container } from "@/container";
 import { toErrorScenario } from "@/domain/playback/playback-problem";
 import type { SessionState } from "@/domain/session/SessionState";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
-import { Box } from "ink";
 import React from "react";
 
 import { buildPlaybackFailureWaterfall } from "./playback-failure-waterfall";
@@ -15,6 +14,7 @@ import type { RootOwnedOverlay } from "./root-shell-state";
 import { ErrorShell, RootIdleShell } from "./root-status-shells";
 import { RootContentSuspension } from "./RootContentSuspension";
 import { RootOverlayLoader } from "./RootOverlayLoader";
+import { Box } from "./ShellInk";
 
 export type RootContentRendererContext = {
   readonly container: Container;

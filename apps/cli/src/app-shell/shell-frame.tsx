@@ -1,7 +1,7 @@
 import { useLineEditor, type LineEditorKey } from "@/app-shell/line-editor";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
 import type { LocalTitleEntry } from "@/domain/palette/local-title-index";
-import { Box, Text, useInput } from "ink";
+import { useInput } from "ink";
 import React from "react";
 
 import type { AppCommandId, ResolvedAppCommand } from "./commands";
@@ -17,6 +17,7 @@ import { CommandPalette, LineEditorText } from "./shell-command-ui";
 import { ShellFooter } from "./shell-primitives";
 import { measureColumns, truncateLine } from "./shell-text";
 import { palette, statusColor } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 import type { FooterAction, ShellAction, ShellFooterMode, ShellStatus } from "./types";
 import { useShellDimensions } from "./use-viewport-policy";
 

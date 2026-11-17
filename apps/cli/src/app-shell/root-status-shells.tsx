@@ -2,7 +2,7 @@ import { resolveContentKind, showsEpisodeLabel } from "@/domain/media/content-ki
 import type { ErrorScenario } from "@/domain/playback/playback-problem";
 import type { SessionState } from "@/domain/session/SessionState";
 import { measureColumns, truncateLine } from "@/domain/text-display";
-import { Box, Text, useInput } from "ink";
+import { useInput } from "ink";
 import React from "react";
 
 import { extractErrorDebugExcerpt } from "./error-debug-excerpt";
@@ -11,6 +11,7 @@ import { buildErrorRows, type ErrorRow, type ErrorRowTone } from "./playback-err
 import type { PlaybackFailureWaterfallModel } from "./playback-failure-waterfall";
 import { SakuraLoader } from "./SakuraLoader";
 import { palette } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 import { useShellDimensions } from "./use-viewport-policy";
 
 export type { ErrorScenario } from "@/domain/playback/playback-problem";
