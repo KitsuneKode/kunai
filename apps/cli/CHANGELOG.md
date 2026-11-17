@@ -92,7 +92,8 @@ subtitle controls, and safer persistence, downloads and native installation.
 - Strengthen native update, rollback and activation locking on Linux, macOS and
   Windows. Verify archive contents, size bounds and both transport/payload
   checksums before activation; malformed or failed downloads leave the active
-  installation intact.
+  installation intact. Two concurrent installs or updates can no longer both
+  take the same version lock.
 - Keep the npm launcher separate from native platform payloads. Synchronize all
   ten optional platform-package versions and preserve exact candidate bytes,
   checksum manifests and attestations through the protected release workflow.

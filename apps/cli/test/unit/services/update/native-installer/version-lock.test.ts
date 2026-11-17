@@ -10,6 +10,7 @@ import {
   lifecycleGuardPath,
 } from "@/services/update/native-installer/install-layout";
 import {
+  cleanupStaleLocks,
   inspectVersionLock,
   lifecycleLockPath,
   lockCurrentVersion,
@@ -534,6 +535,60 @@ describe("version lock inspection", () => {
     expect(acquire.acquired).toBe(true);
     if (acquire.acquired) await acquire.release();
 
+    await rm(root, { recursive: true, force: true });
+  });
+
+  async function writeDeadLock(lockPath: string): Promise<void> {
+    await writeFile(
+      lockPath,
+      `${JSON.stringify({
+        pid: 2_147_483_646,
+        version: "4.0.0",
+        execPath: "/tmp/not-a-real-kunai",
+        acquiredAt: "2020-01-01T00:00:00.000Z",
+      })}\n`,
+    );
+  }
+
+  test("a claim created but not yet written belongs to a live reaper", async () => {
+    // Exclusive create makes the claim file before its pid is written. A
+    // contender that reads in between sees an empty claim. Treating that as a
+    // dead reaper deleted the live claim, and two reapers both took the lock.
+    const { root, layout } = await makeLayout();
+    const lockPath = join(layout.locksDir, "4.0.0.lock");
+    await writeDeadLock(lockPath);
+    await writeFile(`${lockPath}.claim`, "");
+
+    const result = await tryAcquireVersionLock(layout, "4.0.0");
+
+    expect(result.acquired).toBe(false);
+    expect(existsSync(`${lockPath}.claim`)).toBe(true);
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("an unwritten claim old enough to be abandoned is reclaimed", async () => {
+    const { root, layout } = await makeLayout();
+    const lockPath = join(layout.locksDir, "4.0.0.lock");
+    await writeDeadLock(lockPath);
+    await writeFile(`${lockPath}.claim`, "");
+    const longAgo = new Date(Date.now() - 60 * 60 * 1000);
+    await utimes(`${lockPath}.claim`, longAgo, longAgo);
+
+    const result = await tryAcquireVersionLock(layout, "4.0.0");
+
+    expect(result.acquired).toBe(true);
+    if (result.acquired) await result.release();
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("the stale-lock sweep leaves a claim that is still being written", async () => {
+    const { root, layout } = await makeLayout();
+    const claimPath = join(layout.locksDir, "4.0.0.lock.claim");
+    await writeFile(claimPath, "");
+
+    await cleanupStaleLocks(layout);
+
+    expect(existsSync(claimPath)).toBe(true);
     await rm(root, { recursive: true, force: true });
   });
 

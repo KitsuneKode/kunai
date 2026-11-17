@@ -77,6 +77,26 @@ const statOrNull = (p: string) => {
   }
 };
 
+/** How long a claim may sit without a pid before its reaper is presumed dead between create and write. */
+const UNWRITTEN_CLAIM_GRACE_MS = 30_000;
+
+/**
+ * Whether a reaper still owns a `<lock>.claim` file.
+ *
+ * The claim is created with an exclusive open and its pid is written after, so
+ * a contender can read it empty. An empty or partial claim is a live reaper in
+ * that gap, not a dead one: deleting it let two reapers rewrite the same lock
+ * and both report it acquired. It counts as abandoned only once it is older
+ * than a reaper could take to write a pid.
+ */
+function isClaimHeld(claimPath: string, claimRaw: string): boolean {
+  const claimPid = Number.parseInt(claimRaw, 10);
+  if (Number.isSafeInteger(claimPid)) return isProcessAlive(claimPid);
+  const claimStat = statOrNull(claimPath);
+  if (claimStat === null) return false;
+  return Date.now() - claimStat.mtimeMs < UNWRITTEN_CLAIM_GRACE_MS;
+}
+
 /**
  * Alive holders are never stale. Dead-PID and unreadable/invalid lock files
  * are immediately reclaimable (aligned with inspectVersionLock "stale").
@@ -216,10 +236,13 @@ export async function tryAcquireVersionLock(
         claimHeld = true;
       } catch {
         const claimRaw = (await readFile(claimPath, "utf8").catch(() => "")).trim();
-        const claimPid = Number.parseInt(claimRaw, 10);
-        if (Number.isSafeInteger(claimPid) && isProcessAlive(claimPid)) {
+        if (isClaimHeld(claimPath, claimRaw)) {
           // A live reaper owns the claim — let it finish.
-          return { acquired: false, holderPid: claimPid };
+          const claimPid = Number.parseInt(claimRaw, 10);
+          return {
+            acquired: false,
+            holderPid: Number.isSafeInteger(claimPid) ? claimPid : undefined,
+          };
         }
         // A dead reaper left its claim behind. Re-read before deleting: a live
         // reaper may have recycled the name in between — removing a live claim
@@ -370,8 +393,7 @@ export async function cleanupStaleLocks(layout: InstallLayoutPaths): Promise<voi
     if (entry.endsWith(".claim")) {
       const claimPath = join(layout.locksDir, entry);
       const claimRaw = (await readFile(claimPath, "utf8").catch(() => "")).trim();
-      const claimPid = Number.parseInt(claimRaw, 10);
-      if (!Number.isSafeInteger(claimPid) || !isProcessAlive(claimPid)) {
+      if (!isClaimHeld(claimPath, claimRaw)) {
         // Re-read before deleting — a live reaper may have recycled the name.
         const confirmRaw = (await readFile(claimPath, "utf8").catch(() => "")).trim();
         if (confirmRaw === claimRaw) {
