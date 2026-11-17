@@ -78,16 +78,25 @@ const statOrNull = (p: string) => {
 };
 
 /**
- * Alive holders are never stale. Dead-PID and unreadable/invalid lock files
- * are immediately reclaimable (aligned with inspectVersionLock "stale").
+ * Alive holders are never stale. Dead-PID locks are reclaimable at once;
+ * unreadable ones once past the 250 ms mid-write grace.
  */
 async function isLockStale(path: string): Promise<boolean> {
   const content = await readLockContent(path);
   if (content) {
     return !isProcessAlive(content.pid);
   }
-  // Unreadable/invalid: reclaim immediately (matches inspect "stale").
-  return true;
+  // Unreadable/invalid. `writeFile(…, { flag: "wx" })` creates the file empty
+  // and fills it a moment later, so a fresh unreadable lock is usually a live
+  // contender mid-write: reclaiming it would let two processes hold the lock.
+  // Same grace the lifecycle lock uses; past it, the file is genuinely torn.
+  return isPastCorruptGrace(path);
+}
+
+/** True once a file has been unreadable for longer than a write can take. */
+async function isPastCorruptGrace(path: string): Promise<boolean> {
+  const metadata = await stat(path).catch(() => null);
+  return metadata === null || Date.now() - metadata.mtimeMs >= LIFECYCLE_CORRUPT_GRACE_MS;
 }
 
 function isModernLifecycleContent(content: VersionLockContent): boolean {
@@ -220,6 +229,11 @@ export async function tryAcquireVersionLock(
         if (Number.isSafeInteger(claimPid) && isProcessAlive(claimPid)) {
           // A live reaper owns the claim — let it finish.
           return { acquired: false, holderPid: claimPid };
+        }
+        if (!Number.isSafeInteger(claimPid) && !(await isPastCorruptGrace(claimPath))) {
+          // An empty claim is a reaper between its `wx` create and its write,
+          // not a dead one. Deleting it would put two reapers in the lock.
+          return { acquired: false, holderPid: judgedContent?.pid };
         }
         // A dead reaper left its claim behind. Re-read before deleting: a live
         // reaper may have recycled the name in between — removing a live claim

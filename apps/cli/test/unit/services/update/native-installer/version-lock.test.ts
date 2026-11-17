@@ -518,10 +518,13 @@ describe("version lock inspection", () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  test("young corrupt lock is inspect-stale and immediately reclaimable", async () => {
+  test("a corrupt lock past the write window is inspect-stale and reclaimable", async () => {
     const { root, layout } = await makeLayout();
     const lockPath = join(layout.locksDir, "3.1.4.lock");
     await writeFile(lockPath, "{not-valid-json\n");
+    // Older than the 250 ms mid-write grace: a crash left it, nobody is writing.
+    const past = new Date(Date.now() - 5_000);
+    await utimes(lockPath, past, past);
 
     const inspection = await inspectVersionLock(layout, "3.1.4");
     expect(inspection).toMatchObject({
@@ -533,6 +536,42 @@ describe("version lock inspection", () => {
     const acquire = await tryAcquireVersionLock(layout, "3.1.4");
     expect(acquire.acquired).toBe(true);
     if (acquire.acquired) await acquire.release();
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("a just-created empty lock is a contender mid-write, not reclaimable", async () => {
+    // `writeFile(…, { flag: "wx" })` creates the file empty, then fills it. A
+    // reader in that gap must not treat the holder as dead.
+    const { root, layout } = await makeLayout();
+    const lockPath = join(layout.locksDir, "3.1.5.lock");
+    await writeFile(lockPath, "");
+
+    const acquire = await tryAcquireVersionLock(layout, "3.1.5");
+    expect(acquire.acquired).toBe(false);
+    expect(await readFile(lockPath, "utf8")).toBe("");
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("an empty claim is a reaper mid-write, so a second reaper backs off", async () => {
+    const { root, layout } = await makeLayout();
+    const lockPath = join(layout.locksDir, "4.0.1.lock");
+    await writeFile(
+      lockPath,
+      `${JSON.stringify({
+        pid: 2_147_483_646,
+        version: "4.0.1",
+        execPath: "/tmp/not-a-real-kunai",
+        acquiredAt: "2020-01-01T00:00:00.000Z",
+      })}\n`,
+    );
+    // Another reaper has created its claim but not yet written its pid.
+    await writeFile(`${lockPath}.claim`, "");
+
+    const acquire = await tryAcquireVersionLock(layout, "4.0.1");
+    expect(acquire.acquired).toBe(false);
+    expect(existsSync(`${lockPath}.claim`)).toBe(true);
 
     await rm(root, { recursive: true, force: true });
   });
