@@ -17,6 +17,12 @@ import type { ContentType, VideoMeta } from "@/domain/types";
 import { Box, Text } from "ink";
 import React from "react";
 
+import {
+  decorationGlyphs,
+  decorativeBorderStyle,
+  listSelectionPrefix,
+  plainDecorationsActive,
+} from "./decoration-policy";
 import { buildMediaPanel } from "./media-panel-model";
 import { MediaPanel } from "./MediaPanel";
 import {
@@ -145,7 +151,7 @@ function ActionRows({
         return (
           <Box key={action.id} flexDirection="row" flexWrap="nowrap">
             <Text color={isSelected ? palette.accent : palette.dim}>
-              {isSelected ? "▌ " : "  "}
+              {listSelectionPrefix(isSelected)}
             </Text>
             <Text color={isSelected ? palette.text : palette.textDim} bold={isSelected}>
               {label}
@@ -167,11 +173,12 @@ function GroupLabel({ label, width }: { readonly label: string; readonly width: 
   const sideLen = Math.max(0, width - label.length - 2);
   const left = Math.floor(sideLen / 2);
   const right = Math.max(0, sideLen - left);
+  const rules = !plainDecorationsActive();
   return (
     <Box marginTop={1} marginBottom={0} flexDirection="row" flexWrap="nowrap">
-      <Text color={palette.lineSoft}>{"─".repeat(left)}</Text>
+      {rules ? <Text color={palette.lineSoft}>{"─".repeat(left)}</Text> : null}
       <Text color={palette.muted}> {label} </Text>
-      <Text color={palette.lineSoft}>{"─".repeat(right)}</Text>
+      {rules ? <Text color={palette.lineSoft}>{"─".repeat(right)}</Text> : null}
     </Box>
   );
 }
@@ -200,7 +207,7 @@ function DiscoveryCard({
   const posterCols = Math.max(8, width - 4);
   return (
     <Box
-      borderStyle="single"
+      borderStyle={decorativeBorderStyle("single")}
       borderColor={palette.lineSoft}
       paddingX={1}
       paddingY={0}
@@ -322,12 +329,19 @@ function initialsOf(title: string): string {
  * at the same position — announced itself as something coming next, and a
  * queue head looked like the next episode of what just played.
  */
-const NEXT_UP_HERO_HEADINGS: Record<PostPlayNextUpHero["kind"], string> = {
-  resume: "▶ RESUME",
-  "next-episode": "▶ UP NEXT",
-  "next-season": "▶ NEXT SEASON",
-  queue: "▶ FROM QUEUE",
-};
+function nextUpHeroHeading(kind: PostPlayNextUpHero["kind"]): string {
+  const mark = decorationGlyphs().playMark;
+  switch (kind) {
+    case "resume":
+      return `${mark} RESUME`;
+    case "next-episode":
+      return `${mark} UP NEXT`;
+    case "next-season":
+      return `${mark} NEXT SEASON`;
+    default:
+      return `${mark} FROM QUEUE`;
+  }
+}
 
 function NextUpHeroCard({
   hero,
@@ -370,7 +384,7 @@ function NextUpHeroCard({
   ].join(" · ");
   return (
     <Box
-      borderStyle="round"
+      borderStyle={decorativeBorderStyle("round")}
       borderColor={palette.accent}
       flexDirection="column"
       width={width}
@@ -378,7 +392,7 @@ function NextUpHeroCard({
       marginTop={1}
     >
       <Text color={palette.accent} bold>
-        {NEXT_UP_HERO_HEADINGS[hero.kind]}
+        {nextUpHeroHeading(hero.kind)}
       </Text>
       <Box flexDirection="row" marginTop={1}>
         <Box width={posterCols} minHeight={posterRows} justifyContent="center" alignItems="center">

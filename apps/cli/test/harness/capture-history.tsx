@@ -37,20 +37,27 @@ const entries: [string, HistoryProgress][] = [
   ],
 ];
 
-const view = buildHistoryView({
-  entries,
-  tab: "continue",
-  filterQuery: "",
-  selectedIndex: 0,
-  maxVisible: 12,
-  narrow: false,
-  // Pinned past the seeded dates: a real clock ages every "ago" label and
-  // turns the committed capture red on a calendar boundary.
-  context: { now: Date.parse("2026-09-27T10:00:00.000Z") },
-});
+function historyView() {
+  return buildHistoryView({
+    entries,
+    tab: "continue",
+    filterQuery: "",
+    selectedIndex: 0,
+    maxVisible: 12,
+    narrow: false,
+    // Pinned past the seeded dates: a real clock ages every "ago" label and
+    // turns the committed capture red on a calendar boundary.
+    context: { now: Date.parse("2026-09-27T10:00:00.000Z") },
+  });
+}
 
 export function historyContinueNode() {
-  return <HistoryShell view={view} columns={140} listWidth={96} rowWidth={92} />;
+  return <HistoryShell view={historyView()} columns={140} listWidth={96} rowWidth={92} />;
+}
+
+/** Wide enough that the Tab chord hint is on screen (it hides under 100 columns). */
+export function historyWideNode() {
+  return <HistoryShell view={historyView()} columns={140} listWidth={120} rowWidth={110} />;
 }
 
 if (import.meta.main) {

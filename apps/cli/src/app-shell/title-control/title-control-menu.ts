@@ -1,3 +1,5 @@
+import { decorationGlyphs } from "@/app-shell/decoration-policy";
+
 import type { TitleControlAction, TitleControlContext } from "./title-control-actions";
 import { buildTitleControlActions } from "./title-control-actions";
 
@@ -85,7 +87,7 @@ export function titleControlMenuOptions(
       options.push({
         value:
           group.id === "providers-data" ? "__expand-providers-data__" : "__expand-this-title__",
-        label: `▸ ${group.label}`,
+        label: `${decorationGlyphs().disclosure} ${group.label}`,
         detail: `${enabledCount} more`,
       });
       continue;

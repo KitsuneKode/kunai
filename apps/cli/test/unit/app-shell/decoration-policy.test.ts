@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import {
+  alignedStatusMark,
   decorationGlyphs,
   EMOJI_OR_MASCOT,
   plainDecorationsActive,
@@ -33,6 +34,24 @@ describe("decoration-policy", () => {
     expect(g.listCursor).toBe(">");
     expect(stateBlockGlyph("success")).toBe("ok");
     expect(reducedMotionEnabled({})).toBe(true);
+  });
+
+  test("plain status marks share a column width", () => {
+    setPlainDecorationSource(() => true);
+    const g = decorationGlyphs();
+    const success = alignedStatusMark(g.statusSuccess);
+    const warn = alignedStatusMark(g.warnTriangle);
+    const error = alignedStatusMark(g.statusError);
+    expect(success.length).toBe(warn.length);
+    expect(success.length).toBe(error.length);
+    expect(success.startsWith("ok")).toBe(true);
+    expect(warn.startsWith("!")).toBe(true);
+  });
+
+  test("rich status marks stay one cell", () => {
+    const g = decorationGlyphs();
+    expect(alignedStatusMark(g.statusSuccess)).toBe("✓");
+    expect(alignedStatusMark(g.warnTriangle)).toBe("△");
   });
 
   test("rich glyphs by default", () => {

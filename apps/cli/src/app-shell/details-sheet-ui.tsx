@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { decorationGlyphs } from "./decoration-policy";
 import type { DetailsSheetModel } from "./details-sheet.model";
 import { wrapSynopsis } from "./details-view";
 import { PosterInitialBlock } from "./poster-initial-block";
@@ -140,7 +141,8 @@ export function DetailsSheet({
       {model.seasons.items.length > 0 ? (
         <Box flexDirection="column" marginTop={1}>
           <Text color={palette.accent}>
-            {seasonsExpanded ? "▾" : "▸"} {model.seasons.items.length} seasons (s)
+            {seasonsExpanded ? "▾" : decorationGlyphs().disclosure} {model.seasons.items.length}{" "}
+            seasons (s)
           </Text>
           {seasonsExpanded
             ? model.seasons.items.map((season) => (
@@ -157,7 +159,9 @@ export function DetailsSheet({
       {model.links.items.length > 0 || model.trailerUrl ? (
         <Box flexDirection="column" marginTop={1}>
           <SectionLabel>Links</SectionLabel>
-          {model.trailerUrl ? <Text color={palette.accent}>▶ trailer (t)</Text> : null}
+          {model.trailerUrl ? (
+            <Text color={palette.accent}>{`${decorationGlyphs().playMark} trailer (t)`}</Text>
+          ) : null}
           {model.links.items.length > 0 ? (
             <Text color={palette.muted}>
               {model.links.items.map((link) => link.label).join(" · ")}
@@ -169,7 +173,7 @@ export function DetailsSheet({
       {/* Actions footer */}
       <Box marginTop={1}>
         <Text color={palette.dim}>
-          ▶ play · + queue · w follow · d download · e episodes
+          {`${decorationGlyphs().playMark} play · + queue · w follow · d download · e episodes`}
           {model.trailerUrl ? " · t trailer" : ""}
           {model.links.items.length > 0 ? " · l links" : ""} · esc
         </Text>

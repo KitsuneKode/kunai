@@ -2,6 +2,7 @@ import { Box, Text } from "ink";
 import React from "react";
 
 import { mapPosterPreviewState } from "./browse-preview-rail";
+import { decorationGlyphs } from "./decoration-policy";
 import { useRailPoster } from "./hooks/use-rail-poster";
 import type { NotificationRow, NotificationsView } from "./notifications-view";
 import { ListRow } from "./primitives/ListRow";
@@ -33,7 +34,7 @@ function toneColor(tone: ShellStatusTone): string {
 function rowColumns(row: NotificationRow): readonly ListRowColumn[] {
   return [
     {
-      text: row.unread ? `● ${row.glyph}` : `  ${row.glyph}`,
+      text: row.unread ? `${decorationGlyphs().statusInfo} ${row.glyph}` : `  ${row.glyph}`,
       width: 4,
       color: row.unread ? toneColor(row.tone) : palette.dim,
       dim: !row.unread,

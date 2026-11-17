@@ -14,6 +14,7 @@ import type { TitleDetail } from "@/domain/catalog/title-detail";
 import type { ContentKind } from "@/domain/media/content-kind";
 import type { ContentType, VideoMeta } from "@/domain/types";
 
+import { decorationGlyphs } from "./decoration-policy";
 import { resolveEpisodeThumbUrl, resolveSeasonAwarePosterUrl } from "./media-art";
 import type { ShellStatus } from "./types";
 
@@ -347,7 +348,7 @@ function buildVideoPanel(ctx: MediaPanelContext): MediaPanelModel {
   if (posted) facts.push({ label: "posted", value: posted });
   if (length) facts.push({ label: "length", value: length });
   if (meta?.liveStatus === "live") {
-    facts.push({ label: "live", value: "● live", tone: "error" });
+    facts.push({ label: "live", value: `${decorationGlyphs().statusInfo} live`, tone: "error" });
   } else if (meta?.liveStatus === "upcoming") {
     facts.push({ label: "live", value: "◷ upcoming", tone: "warning" });
   } else if (meta?.liveStatus === "post_live") {

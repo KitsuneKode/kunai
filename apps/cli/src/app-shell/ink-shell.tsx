@@ -44,6 +44,7 @@ import { useBrowseDestinationLabel } from "./browse-destination";
 import { CapabilityIssueStrip } from "./CapabilityIssueStrip";
 import { dispatchAppCommand } from "./command-router";
 import { setContextualTipListener } from "./contextual-tips";
+import { decorationGlyphs } from "./decoration-policy";
 import { SectionSeparator } from "./decoration-ui";
 import { recordRender } from "./diagnostics/render-trace";
 import { createDismissTimerRegistry } from "./dismiss-timer-registry";
@@ -1821,7 +1822,12 @@ function ListShell<T>({
                 {visibleOptions.map((option) => {
                   const selected = option === selectedOption;
                   const isConfirmed = confirmed && selected;
-                  const itemPrefix = isConfirmed ? "✓" : selected ? "▌" : " ";
+                  const glyphs = decorationGlyphs();
+                  const itemPrefix = isConfirmed
+                    ? glyphs.statusSuccess
+                    : selected
+                      ? glyphs.listCursor
+                      : " ";
                   // Availability and consequence have to be legible before the
                   // pick. An unavailable row used to look identical to a live
                   // one, and a row that discards data looked like a row that

@@ -7,6 +7,7 @@
 
 import type { ErrorScenario } from "@/domain/playback/playback-problem";
 
+import { decorationGlyphs } from "./decoration-policy";
 import type { ErrorDebugExcerpt } from "./error-debug-excerpt";
 import type { PlaybackFailureWaterfallModel } from "./playback-failure-waterfall";
 import { sanitizeTerminalText, truncateLine, wrapText } from "./shell-text";
@@ -30,24 +31,28 @@ export function rowText(input: ErrorRow): string {
 }
 
 function scenarioRows(scenario: ErrorScenario): readonly ErrorRow[] {
+  const glyphs = decorationGlyphs();
   switch (scenario.kind) {
     case "provider-timeout":
       return [
-        row(`✗  timed out after ${scenario.elapsedSec}s`, "danger"),
+        row(`${glyphs.failMark}  timed out after ${scenario.elapsedSec}s`, "danger"),
         row(scenario.providerName, "dim"),
         row("r retry · /fallback for another provider", "dim"),
       ];
     case "stream-broken":
       return [
-        row("✗  stream interrupted", "danger"),
+        row(`${glyphs.failMark}  stream interrupted`, "danger"),
         row(`attempt ${scenario.attempt} of ${scenario.maxAttempts}`, "dim"),
         row("r retry · /recover to refresh the stream", "dim"),
       ];
     case "network-offline":
-      return [row("○  offline", "dim"), row("/library for downloaded titles", "accent")];
+      return [
+        row(`${glyphs.waitingMark}  offline`, "dim"),
+        row("/library for downloaded titles", "accent"),
+      ];
     case "provider-session":
       return [
-        row(`●  ${scenario.providerName} session required`, "danger"),
+        row(`${glyphs.statusInfo}  ${scenario.providerName} session required`, "danger"),
         row("/settings · add Videasy session token", "dim"),
         row("/fallback for another provider", "dim"),
       ];
@@ -64,7 +69,12 @@ function waterfallRows(model: PlaybackFailureWaterfallModel): readonly ErrorRow[
   const rows: ErrorRow[] = [BLANK, row(heading, "dim")];
 
   for (const entry of model.rows) {
-    const marker = entry.status === "succeeded" ? "✓" : entry.status === "failed" ? "x" : "·";
+    const marker =
+      entry.status === "succeeded"
+        ? decorationGlyphs().statusSuccess
+        : entry.status === "failed"
+          ? "x"
+          : "·";
     const tone: ErrorRowTone =
       entry.status === "succeeded" ? "ok" : entry.status === "failed" ? "danger" : "dim";
     // SAFETY: serverId/message are provider-controlled and unwrapped — truncate

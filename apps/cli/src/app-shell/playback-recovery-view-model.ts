@@ -1,5 +1,6 @@
 import { classifyProviderResolveUserState } from "@/app/playback/provider-resolve-user-state";
 
+import { localizeShortcutGlyphs } from "./decoration-policy";
 import { footerKeyFromBinding, KEYBINDINGS } from "./keybindings";
 import type { ActionRowModel } from "./primitives/ActionList.model";
 import type { StateBlockModel } from "./primitives/StateBlock.model";
@@ -58,7 +59,7 @@ export function buildPlaybackRecoveryViewModel(
         : "Try another compatible provider",
       shortcut: (() => {
         const binding = KEYBINDINGS.find((entry) => entry.id === "player-fallback");
-        return binding ? footerKeyFromBinding(binding) : "⇧F";
+        return binding ? footerKeyFromBinding(binding) : localizeShortcutGlyphs("⇧F");
       })(),
       tone: "warning",
     });

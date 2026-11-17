@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { tabCycleHint } from "./decoration-policy";
 import { compactProgressBar } from "./format/bar";
 import type { HistoryView } from "./history-view";
 import { useRailPoster } from "./hooks/use-rail-poster";
@@ -70,7 +71,7 @@ export function HistoryShell({
           <ClaudeTabRow
             labels={view.tabLabels}
             activeIndex={view.tabIndex}
-            hint={effectiveListWidth >= 100 ? "⇥ Tab · ⇧⇥ cycles tabs" : undefined}
+            hint={effectiveListWidth >= 100 ? tabCycleHint("tabs") : undefined}
             maxWidth={effectiveListWidth}
             dense
           />

@@ -1,4 +1,4 @@
-import { plainDecorationsActive } from "./decoration-policy";
+import { decorationGlyphs, plainDecorationsActive } from "./decoration-policy";
 import {
   formatNewSinceVisitLine,
   formatReadyForYouNowMeta,
@@ -113,7 +113,7 @@ export function buildBrowseIdleReturnLoopModel(
     const rowIndex = rows.length;
     rows.push({
       id: "new-since-visit",
-      glyph: "●",
+      glyph: decorationGlyphs().statusInfo,
       glyphColor: palette.ok,
       title: formatNewSinceVisitLine(
         idleContext.newSinceVisit.episodeCount,
@@ -135,7 +135,7 @@ export function buildBrowseIdleReturnLoopModel(
     const rowIndex = rows.length;
     rows.push({
       id: "continue",
-      glyph: "⏸",
+      glyph: decorationGlyphs().pauseMark,
       glyphColor: palette.accent,
       title: sanitizeTerminalText(cw.title),
       meta: meta.length > 0 ? meta : undefined,
@@ -165,7 +165,7 @@ export function buildBrowseIdleReturnLoopModel(
     const rowIndex = rows.length;
     rows.push({
       id: "playlist-next",
-      glyph: "▶",
+      glyph: decorationGlyphs().playMark,
       glyphColor: palette.ok,
       title: sanitizeTerminalText(next.title),
       meta: next.ep !== undefined ? sanitizeTerminalText(next.ep) : undefined,

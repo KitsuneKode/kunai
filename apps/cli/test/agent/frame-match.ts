@@ -27,7 +27,8 @@ export function advertisedKeys(frame: string): readonly string[] {
 /** A painted interactive surface, rather than a brand in startup output. */
 export function bootSurface(frame: string): string | null {
   if (!/\[[^\]\n]+\]/.test(frame)) return null;
-  if (/setup\s+\d+⁄\d+/.test(frame)) return "Setup";
+  // Rich chrome uses the fraction slash; plain mode prints an ASCII slash.
+  if (/setup\s+\d+[/⁄]\d+/.test(frame)) return "Setup";
   return (
     /(?:^|\n)\s*(Browse|Search|Trending|Recommendations|Surprise|Random|Schedule|Library|Downloads|Post-play|Tracks|Up Next|Choose episode|History|Settings|Playback|Error)\s*(?:\n|$)/.exec(
       frame,

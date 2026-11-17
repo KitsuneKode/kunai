@@ -1,3 +1,4 @@
+import { localizeShortcutGlyphs } from "@/app-shell/decoration-policy";
 import type { ShellAction } from "@/app-shell/types";
 import type { PostPlayState } from "@/domain/playback/post-play-state";
 
@@ -620,7 +621,7 @@ function buildAction(spec: ActionSpec, ctx: TitleControlContext): TitleControlAc
     shellAction: spec.shellAction,
     enabled: state.enabled,
     reason: state.reason,
-    ...(ACTION_ICONS[spec.id] ? { icon: ACTION_ICONS[spec.id] } : {}),
+    ...(ACTION_ICONS[spec.id] ? { icon: localizeShortcutGlyphs(ACTION_ICONS[spec.id] ?? "") } : {}),
     ...(DESTRUCTIVE_ACTIONS.has(spec.id) ? { destructive: true } : {}),
   };
 }

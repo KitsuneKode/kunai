@@ -12,6 +12,7 @@ import type { ScoredSuggestion, SuggestionBandModel } from "@/domain/search/sugg
 import { Box, Text } from "ink";
 import React from "react";
 
+import { decorativeBorderStyle, listSelectionPrefix } from "./decoration-policy";
 import { measureColumns, sanitizeTerminalText, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 
@@ -79,7 +80,7 @@ function SuggestionRow<TValue>({
       flexDirection="row"
       overflow="hidden"
     >
-      <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
+      <Text color={selected ? palette.accent : palette.dim}>{listSelectionPrefix(selected)}</Text>
       <Box width={titleBudget} overflow="hidden">
         <Text wrap="truncate">
           {titleSegments(suggestion.title, item.matchIndices, titleBudget).map((segment) => (
@@ -147,7 +148,7 @@ export function SearchSuggestionBand<TValue>({
       flexShrink={0}
       height={rowCount}
       width={width}
-      borderStyle="single"
+      borderStyle={decorativeBorderStyle("single")}
       borderColor={palette.line}
       backgroundColor={palette.surface}
       paddingX={1}

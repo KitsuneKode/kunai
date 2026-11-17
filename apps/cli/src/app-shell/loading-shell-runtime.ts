@@ -1,6 +1,7 @@
 import { classifyProviderResolveUserState } from "@/app/playback/provider-resolve-user-state";
 import type { PlaybackProblem } from "@/domain/playback/playback-problem";
 
+import { decorationGlyphs, localizeShortcutGlyphs } from "./decoration-policy";
 import { sanitizeTerminalText } from "./shell-text";
 import type { LoadingShellStage, LoadingShellState, ShellStatusTone } from "./types";
 
@@ -170,7 +171,11 @@ export function renderStageRail(
   const safeIdx = activeIdx === -1 ? 0 : activeIdx;
   return STAGE_ORDER.map((stage, i) => {
     if (i < safeIdx) {
-      return { label: STAGE_LABELS[stage], glyph: "✓", tone: "success" };
+      return {
+        label: STAGE_LABELS[stage],
+        glyph: decorationGlyphs().statusSuccess,
+        tone: "success",
+      };
     }
     if (i === safeIdx) {
       return {
@@ -200,7 +205,7 @@ export function getProviderResolveWaitPresentation(input: {
   readonly stageDetail?: string;
   readonly dominantPhaseLabel?: string;
 }): ProviderResolveWaitPresentation {
-  const fallbackHint = input.fallbackAvailable ? "⇧F fallback · " : "";
+  const fallbackHint = input.fallbackAvailable ? `${localizeShortcutGlyphs("⇧F")} fallback · ` : "";
   const issue = normalizeLoadingIssue(input.latestIssue);
 
   // Classify from structured state only. `latestIssue` is advisory copy and is

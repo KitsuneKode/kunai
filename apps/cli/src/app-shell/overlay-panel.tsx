@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { displaySectionRuleLabel, plainDecorationsActive } from "./decoration-policy";
 import { DetailsSheetUI } from "./details-pane-ui";
 import type { DetailsPanelData } from "./details-panel";
 import { DetailsSheet } from "./details-sheet-ui";
@@ -225,7 +226,7 @@ export function OverlayPanel({
                   return (
                     <Box key={mode} marginRight={3} flexDirection="column">
                       <Text color={active ? palette.accent : palette.muted}>{mode}</Text>
-                      {active ? (
+                      {active && !plainDecorationsActive() ? (
                         <Text color={palette.accent}>{"─".repeat(mode.length)}</Text>
                       ) : null}
                     </Box>
@@ -263,7 +264,7 @@ export function OverlayPanel({
                       <Text color={usesAccent ? palette.text : palette.dim} bold={usesAccent}>
                         {headerLabel}
                       </Text>
-                      {usesAccent ? (
+                      {usesAccent && !plainDecorationsActive() ? (
                         <Text color={palette.accent}>{"─".repeat(headerLabel.length)}</Text>
                       ) : null}
                     </Box>
@@ -387,7 +388,9 @@ export function OverlayPanel({
                 // Section rule — small top gap for grouping, no per-line blank lines.
                 return (
                   <Box key={`${line.label}-h`} marginTop={1}>
-                    <Text color={palette.muted}>{truncateLine(line.label, contentWidth)}</Text>
+                    <Text color={palette.muted}>
+                      {truncateLine(displaySectionRuleLabel(line.label), contentWidth)}
+                    </Text>
                   </Box>
                 );
               }

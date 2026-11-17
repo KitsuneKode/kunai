@@ -7,6 +7,7 @@ import type { TitleDetail, TitleStatus } from "@/domain/catalog/title-detail";
 // =============================================================================
 import { resolveContentKind } from "@/domain/media/content-kind";
 
+import { decorationGlyphs } from "./decoration-policy";
 import { wrapText } from "./shell-text";
 
 // ---------------------------------------------------------------------------
@@ -26,7 +27,7 @@ function formatStatus(status: TitleStatus | undefined): {
   tone: DetailFactRow["tone"];
 } {
   if (!status || status === "unknown") return { text: "—", tone: "muted" };
-  if (status === "airing") return { text: "◉ airing", tone: undefined };
+  if (status === "airing") return { text: `${decorationGlyphs().liveDot} airing`, tone: undefined };
   if (status === "upcoming") return { text: "upcoming", tone: "muted" };
   return { text: "✦ ended", tone: "muted" };
 }

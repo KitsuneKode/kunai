@@ -1,3 +1,5 @@
+import { localizeShortcutGlyphs } from "./decoration-policy";
+
 /**
  * One glyph per kind, and none of them a filled dot.
  *
@@ -33,7 +35,7 @@ export const NOTIFICATION_KIND_LABEL: Record<string, string> = {
 export function notificationKindGlyph(kind: string): string {
   // Unknown kinds fall back to a small ring, not a filled dot: the filled dot
   // is the unread marker and must stay unique to it.
-  return NOTIFICATION_KIND_GLYPH[kind] ?? "◇";
+  return localizeShortcutGlyphs(NOTIFICATION_KIND_GLYPH[kind] ?? "◇");
 }
 
 export function notificationKindLabel(kind: string): string {

@@ -23,6 +23,7 @@ import type { CapabilitySnapshot } from "@/ui";
 import { Box, Text } from "ink";
 import React from "react";
 
+import { decorationGlyphs, decorativeBorderStyle } from "./decoration-policy";
 import { buildDependencyRows, selectStartupIssueRows } from "./setup/dependency-rows";
 import { sanitizeTerminalText } from "./shell-text";
 import { palette } from "./shell-theme";
@@ -51,7 +52,7 @@ export function CapabilityIssueStrip({
   return (
     <Box
       flexDirection="column"
-      borderStyle="round"
+      borderStyle={decorativeBorderStyle("round")}
       borderColor={palette.warn}
       paddingX={1}
       width={width}
@@ -60,7 +61,7 @@ export function CapabilityIssueStrip({
         <Box key={row.id} flexDirection="column">
           <Box>
             <Text color={palette.warn} bold>
-              {"△ "}
+              {`${decorationGlyphs().warnTriangle} `}
             </Text>
             <Text color={palette.text}>
               {sanitizeTerminalText(row.consequence ?? `${row.name} not found`)}

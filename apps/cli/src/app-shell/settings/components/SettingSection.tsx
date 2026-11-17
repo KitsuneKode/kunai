@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { listSelectionPrefix } from "../../decoration-policy";
 import { SectionGroup } from "../../primitives/SectionGroup";
 import { palette, semanticToneColor } from "../../shell-theme";
 import type { SectionLayout } from "../layouts";
@@ -55,7 +56,7 @@ export const SettingRowAction = React.memo(function SettingRowAction({
   const danger = row.def.tone === "danger";
   return (
     <Box width={rowWidth} backgroundColor={selected ? palette.accentFill : undefined}>
-      <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
+      <Text color={selected ? palette.accent : palette.dim}>{listSelectionPrefix(selected)}</Text>
       {danger ? <Text color={palette.dangerText}>! </Text> : null}
       <Text
         bold={selected}

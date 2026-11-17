@@ -8,12 +8,13 @@ import React from "react";
 
 import { CompanionHost } from "../CompanionHost";
 import {
+  alignedStatusMark,
   companionFlavorEnabled,
   decorationGlyphs,
   listSelectionPrefix,
 } from "../decoration-policy";
 import { reducedMotionEnabled } from "../motion-policy";
-import { BLOOM_FRAMES, STATIC_PETAL } from "../primitives/SakuraPetal";
+import { BLOOM_FRAMES } from "../primitives/SakuraPetal";
 import { truncateLine } from "../shell-text";
 import { palette } from "../shell-theme";
 import type { ScopedDependencyRow } from "./dependency-rows";
@@ -34,9 +35,9 @@ export const DOWNLOAD_QUALITIES = ["1080p", "best", "720p", "480p"] as const;
 
 function stateGlyph(state: ScopedDependencyRow["state"]): string {
   const g = decorationGlyphs();
-  if (state === "ok") return g.statusSuccess;
-  if (state === "blocking") return g.statusError;
-  return g.warnTriangle;
+  if (state === "ok") return alignedStatusMark(g.statusSuccess);
+  if (state === "blocking") return alignedStatusMark(g.statusError);
+  return alignedStatusMark(g.warnTriangle);
 }
 
 function stateColor(state: ScopedDependencyRow["state"]): string {
@@ -87,10 +88,11 @@ export function DependencyScreen({
   // The petal belongs where the work is. It used to bloom on the *consent*
   // screen, under text the user was reading, while this screen — the only one
   // that actually probes anything — had no motion at all.
+  const restingPetal = decorationGlyphs().sakura;
   const petal =
     rechecking && !still
-      ? (BLOOM_FRAMES[tick % BLOOM_FRAMES.length] ?? STATIC_PETAL)
-      : STATIC_PETAL;
+      ? (BLOOM_FRAMES[tick % BLOOM_FRAMES.length] ?? restingPetal)
+      : restingPetal;
   const active = rows[selected];
 
   return (
@@ -207,7 +209,7 @@ function LanguageColumn({
   return (
     <Box flexDirection="column" width="48%">
       <Text color={focused ? palette.accent : palette.dim} bold>
-        {focused ? "❯ " : "  "}
+        {focused ? `${decorationGlyphs().focusArrow} ` : "  "}
         {heading}
         {focused ? " ↑↓" : ""}
       </Text>
@@ -458,7 +460,7 @@ export function DoneScreen({
         {!compact ? <CompanionHost moment="settled" rows={3} marginRight={2} /> : null}
         <Box flexDirection="column">
           <Text color={palette.ok} bold>
-            {STATIC_PETAL}
+            {decorationGlyphs().sakura}
           </Text>
           <Text color={palette.text} bold>
             You're all set
@@ -471,7 +473,7 @@ export function DoneScreen({
         {[...summary, ...outstanding].map((line) => (
           <Box key={line.label}>
             <Text color={line.ok ? palette.ok : palette.warn} bold>
-              {`${line.ok ? decorationGlyphs().statusSuccess : decorationGlyphs().warnTriangle} `}
+              {`${alignedStatusMark(line.ok ? decorationGlyphs().statusSuccess : decorationGlyphs().warnTriangle)} `}
             </Text>
             <Text color={palette.text}>{pad(line.label, 22)}</Text>
             <Text color={palette.muted}>

@@ -258,9 +258,9 @@ export function ToggleRow({
    */
   readonly kind?: "toggle" | "cycle";
 }) {
-  const plain = plainDecorationsActive();
-  const glyph =
-    kind === "cycle" ? (plain ? "~ " : "↻ ") : on ? (plain ? "[x] " : "◉ ") : plain ? "[ ] " : "○ ";
+  const glyphs = decorationGlyphs();
+  const mark = kind === "cycle" ? glyphs.cycle : on ? glyphs.toggleOn : glyphs.radioOff;
+  const glyph = `${mark} `;
   const glyphColor = kind === "cycle" ? palette.muted : on ? palette.ok : palette.dim;
   return (
     <Box backgroundColor={selected ? palette.accentFill : undefined}>

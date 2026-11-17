@@ -4,6 +4,7 @@ import { Box, Text } from "ink";
 import React from "react";
 
 import type { ResolvedAppCommand } from "./commands";
+import { listSelectionPrefix } from "./decoration-policy";
 import { getCommandPaletteVisibleCommandCount } from "./layout-policy";
 import { MouseTarget } from "./mouse/MouseRegions";
 import {
@@ -235,7 +236,9 @@ function PaletteLocalTitles({
             }
           >
             <Box width={width + 4} backgroundColor={selected ? palette.accentFill : undefined}>
-              <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
+              <Text color={selected ? palette.accent : palette.dim}>
+                {listSelectionPrefix(selected)}
+              </Text>
               <Box width={titleWidth}>
                 <AccentTitleLabel
                   title={match.entry.title}
@@ -332,7 +335,9 @@ export function CommandPalette({
       >
         <Box flexDirection="column" width={contentWidth + 4}>
           <Box width={contentWidth + 4} backgroundColor={selected ? palette.accentFill : undefined}>
-            <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
+            <Text color={selected ? palette.accent : palette.dim}>
+              {listSelectionPrefix(selected)}
+            </Text>
             <Text
               color={!command.enabled ? palette.dim : selected ? palette.accent : palette.text}
               bold={selected && command.enabled}

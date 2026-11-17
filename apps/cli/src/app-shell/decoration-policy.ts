@@ -57,6 +57,21 @@ export type DecorationGlyphs = {
   readonly chordCtrl: string;
   readonly chordTab: string;
   readonly slashGlyph: string;
+  /** On/off switch, settings radios. */
+  readonly radioOn: string;
+  readonly radioOff: string;
+  /** Setup toggles. Rich mode keeps the bullseye; plain mode matches the radio. */
+  readonly toggleOn: string;
+  /** Hollow mark for queued / not-yet states. */
+  readonly waitingMark: string;
+  /** Filled live/airing dot. */
+  readonly liveDot: string;
+  readonly disclosure: string;
+  readonly focusArrow: string;
+  readonly failMark: string;
+  readonly cycle: string;
+  readonly playMark: string;
+  readonly pauseMark: string;
 };
 
 const RICH_GLYPHS: DecorationGlyphs = {
@@ -76,6 +91,17 @@ const RICH_GLYPHS: DecorationGlyphs = {
   chordCtrl: "⌃",
   chordTab: "⇥",
   slashGlyph: "⁄",
+  radioOn: "●",
+  radioOff: "○",
+  toggleOn: "◉",
+  waitingMark: "○",
+  liveDot: "◉",
+  disclosure: "▸",
+  focusArrow: "❯",
+  failMark: "✗",
+  cycle: "↻",
+  playMark: "▶",
+  pauseMark: "⏸",
 };
 
 const PLAIN_GLYPHS: DecorationGlyphs = {
@@ -95,6 +121,17 @@ const PLAIN_GLYPHS: DecorationGlyphs = {
   chordCtrl: "Ctrl+",
   chordTab: "Tab",
   slashGlyph: "/",
+  radioOn: "[x]",
+  radioOff: "[ ]",
+  toggleOn: "[x]",
+  waitingMark: "-",
+  liveDot: "*",
+  disclosure: ">",
+  focusArrow: ">",
+  failMark: "x",
+  cycle: "~",
+  playMark: ">",
+  pauseMark: "||",
 };
 
 export function decorationGlyphs(env: NodeJS.ProcessEnv = process.env): DecorationGlyphs {
@@ -140,10 +177,67 @@ export function localizeShortcutGlyphs(
     .replaceAll("⇥", g.chordTab)
     .replaceAll("⁄", g.slashGlyph)
     .replaceAll("▌", g.listCursor)
-    .replaceAll("✓", "ok")
-    .replaceAll("△", "!")
+    .replaceAll("✓", g.statusSuccess)
+    .replaceAll("△", g.warnTriangle)
     .replaceAll("❀", g.sakura)
-    .replaceAll("⌕", g.search);
+    .replaceAll("⌕", g.search)
+    .replaceAll("❯", g.focusArrow)
+    .replaceAll("▸", g.disclosure)
+    .replaceAll("◉", g.liveDot)
+    .replaceAll("●", g.statusInfo)
+    .replaceAll("○", g.waitingMark)
+    .replaceAll("✗", g.failMark)
+    .replaceAll("↻", g.cycle)
+    .replaceAll("▶", g.playMark)
+    .replaceAll("⏸", g.pauseMark)
+    .replaceAll("┌", "")
+    .replaceAll("│", "")
+    .replaceAll("└", "")
+    .replaceAll("─", "");
+}
+
+/**
+ * Status words (`ok`) and one-cell marks (`!`, `x`) share a column in plain mode.
+ * Rich marks are already one cell, so they stay as drawn.
+ */
+export function alignedStatusMark(glyph: string, env: NodeJS.ProcessEnv = process.env): string {
+  if (!plainDecorationsActive(env)) return glyph;
+  const g = decorationGlyphs(env);
+  const width = Math.max(g.statusSuccess.length, g.statusError.length, g.warnTriangle.length);
+  return glyph.padEnd(width);
+}
+
+/** Ink border, omitted when plain mode drops box drawing. */
+export function decorativeBorderStyle<T extends string>(
+  style: T,
+  env: NodeJS.ProcessEnv = process.env,
+): T | undefined {
+  return plainDecorationsActive(env) ? undefined : style;
+}
+
+/** Box-drawing gutter. Plain mode keeps the same column width with spaces. */
+export function verticalRulePrefix(spaced = true, env: NodeJS.ProcessEnv = process.env): string {
+  if (plainDecorationsActive(env)) return spaced ? "  " : " ";
+  return spaced ? "│ " : "│";
+}
+
+const SECTION_RULE_PREFIX = "─── ";
+
+/** `─── Synopsis` becomes `Synopsis` in plain mode. Detection can keep the prefix. */
+export function displaySectionRuleLabel(
+  label: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  if (!plainDecorationsActive(env) || !label.startsWith(SECTION_RULE_PREFIX)) return label;
+  return label.slice(SECTION_RULE_PREFIX.length);
+}
+
+/** Tab-strip hints. Plain mode spells the chord so it does not double the word "Tab". */
+export function tabCycleHint(which: "tabs" | "type", env: NodeJS.ProcessEnv = process.env): string {
+  if (!plainDecorationsActive(env)) {
+    return which === "tabs" ? "⇥ Tab · ⇧⇥ cycles tabs" : "⇥ Tab cycles type";
+  }
+  return which === "tabs" ? "Tab · Shift+Tab cycles tabs" : "Tab cycles type";
 }
 
 export type SectionSeparatorModel =

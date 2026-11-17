@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { decorationGlyphs, listSelectionPrefix } from "../../decoration-policy";
 import { palette } from "../../shell-theme";
 import type { BuiltSettingsRow } from "../types";
 
@@ -15,8 +16,8 @@ export const SettingRowReorder = React.memo(function SettingRowReorder({
 }) {
   return (
     <Box width={rowWidth} backgroundColor={selected ? palette.accentFill : undefined}>
-      <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
-      <Text color={palette.muted}>▸ </Text>
+      <Text color={selected ? palette.accent : palette.dim}>{listSelectionPrefix(selected)}</Text>
+      <Text color={palette.muted}>{`${decorationGlyphs().disclosure} `}</Text>
       <Text bold={selected} color={selected ? palette.text : palette.textDim}>
         {row.def.label}
       </Text>

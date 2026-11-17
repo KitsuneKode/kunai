@@ -560,7 +560,7 @@ export function TerminalSizeChip({ columns, rows }: { columns: number; rows: num
 }
 
 export const EmptyState = React.memo(function EmptyState({
-  icon = "○",
+  icon = decorationGlyphs().waitingMark,
   title,
   subtitle,
   hint,

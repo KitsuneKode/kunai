@@ -5,6 +5,7 @@ import { measureColumns, truncateLine } from "@/domain/text-display";
 import { Box, Text, useInput } from "ink";
 import React from "react";
 
+import { decorationGlyphs, decorativeBorderStyle, verticalRulePrefix } from "./decoration-policy";
 import { extractErrorDebugExcerpt } from "./error-debug-excerpt";
 import { MouseTarget } from "./mouse/MouseRegions";
 import { buildErrorRows, type ErrorRow, type ErrorRowTone } from "./playback-error-rows";
@@ -71,7 +72,7 @@ export function RootIdleShell({ state }: { state: SessionState }) {
         <Box flexDirection="column" gap={0}>
           <Text color={palette.dim}>{resolveContentKind(currentTitle, state.mode)}</Text>
           <Box marginTop={1}>
-            <Text color={palette.accent}>{"⏸  "}</Text>
+            <Text color={palette.accent}>{`${decorationGlyphs().pauseMark}  `}</Text>
             <Text color={palette.text} bold>
               {currentTitle?.name?.trim()
                 ? truncateLine(currentTitle.name.trim(), 60)
@@ -133,7 +134,7 @@ function ErrorRowLine({ row, width }: { readonly row: ErrorRow; readonly width: 
   let remaining = width - TEXT_COLUMN;
   return (
     <Text>
-      <Text color={palette.dangerDim}>│ </Text>
+      <Text color={palette.dangerDim}>{verticalRulePrefix()}</Text>
       {row.segments.map((segment, index) => {
         const text = truncateLine(segment.text, Math.max(0, remaining));
         remaining -= measureColumns(text);
@@ -206,7 +207,7 @@ export function ErrorShell({
     <Box
       flexDirection="column"
       marginTop={1}
-      borderStyle="round"
+      borderStyle={decorativeBorderStyle("round")}
       borderColor={palette.danger}
       paddingX={1}
       width={width + 4}

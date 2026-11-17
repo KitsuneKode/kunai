@@ -106,7 +106,13 @@ import { sortCalendarOptions } from "./calendar-view";
 import type { AppCommandId, ResolvedAppCommand } from "./commands";
 import { momentForBrowseEmpty } from "./companion-moment";
 import { CompanionHost } from "./CompanionHost";
-import { listSelectionPrefix, terminalPostersEnabled } from "./decoration-policy";
+import {
+  decorationGlyphs,
+  listSelectionPrefix,
+  localizeShortcutGlyphs,
+  plainDecorationsActive,
+  terminalPostersEnabled,
+} from "./decoration-policy";
 import { SectionSeparator } from "./decoration-ui";
 import { DetailsSheetUI } from "./details-pane-ui";
 import {
@@ -2118,7 +2124,9 @@ export function BrowseShell<T>({
             {activeFilterBadges.map((filter) => (
               <Box key={filter} marginRight={2} flexDirection="column">
                 <Text color={palette.muted}>{filter}</Text>
-                <Text color={palette.accentSoft}>{"─".repeat(filter.length)}</Text>
+                {plainDecorationsActive() ? null : (
+                  <Text color={palette.accentSoft}>{"─".repeat(filter.length)}</Text>
+                )}
               </Box>
             ))}
           </Box>
@@ -2150,7 +2158,7 @@ export function BrowseShell<T>({
             <Text color={palette.accent}>◈ </Text>
             <Text color={palette.text}>schedule</Text>
             <Text color={palette.dim} dimColor>
-              {"  ·  ← → day  ·  ⇥ type  ·  ↵ open  ·  / commands"}
+              {localizeShortcutGlyphs("  ·  ← → day  ·  ⇥ type  ·  ↵ open  ·  / commands")}
             </Text>
           </Box>
         ) : (
@@ -2636,7 +2644,9 @@ export function BrowseShell<T>({
       {settings?.discoverShowOnStartup && (
         <Text color={palette.dim}>/ recommendation · based on your history</Text>
       )}
-      {actionFeedback ? <Text color={palette.ok}>{`✓ ${actionFeedback}`}</Text> : null}
+      {actionFeedback ? (
+        <Text color={palette.ok}>{`${decorationGlyphs().statusSuccess} ${actionFeedback}`}</Text>
+      ) : null}
       {(() => {
         const browseBindingIds: string[] = [
           ...(listFocused && searchState === "ready" ? ["browse-details"] : []),

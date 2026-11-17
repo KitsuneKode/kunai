@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { listSelectionPrefix } from "../decoration-policy";
 import { MouseTarget } from "../mouse/MouseRegions";
 import { PickerOptionRow } from "../overlay-picker-row";
 import { ClaudeTabRow } from "../primitives/ClaudeTabRow";
@@ -134,7 +135,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
                 >
                   <Box backgroundColor={selected ? palette.accentFill : undefined}>
                     <Text color={selected ? palette.accent : palette.dim}>
-                      {selected ? "▌ " : "  "}
+                      {listSelectionPrefix(selected)}
                     </Text>
                     <PickerOptionRow
                       label={choice.label}

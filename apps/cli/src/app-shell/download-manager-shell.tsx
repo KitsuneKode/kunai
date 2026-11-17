@@ -32,6 +32,7 @@ import type { DownloadJobRecord } from "@/services/storage/storage-read-models";
 import { Box, Text, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { decorationGlyphs, listSelectionPrefix } from "./decoration-policy";
 import { useRootContentSuspended } from "./RootContentSuspension";
 
 /** Fixed queue columns — tuned via computeQueueRowLayout for the active shell width. */
@@ -49,11 +50,16 @@ function refreshJobLists(container: Container) {
 }
 
 function queueStatePresentation(job: DownloadJobRecord): { label: string; color: string } {
+  const glyphs = decorationGlyphs();
   if (job.status === "running") return { label: "↓ downloading", color: palette.accent };
-  if (job.status === "queued") return { label: "○ queued", color: palette.muted };
+  if (job.status === "queued")
+    return { label: `${glyphs.waitingMark} queued`, color: palette.muted };
   if (job.status === "completed" || job.status === "completed-with-notes") {
     return {
-      label: job.status === "completed-with-notes" ? "✓ playable" : "✓ complete",
+      label:
+        job.status === "completed-with-notes"
+          ? `${glyphs.statusSuccess} playable`
+          : `${glyphs.statusSuccess} complete`,
       color: palette.ok,
     };
   }
@@ -61,7 +67,7 @@ function queueStatePresentation(job: DownloadJobRecord): { label: string; color:
     return { label: "◇ repairable", color: palette.accent };
   }
   if (job.status === "failed") {
-    return { label: "✗ failed", color: palette.dangerText };
+    return { label: `${glyphs.failMark} failed`, color: palette.dangerText };
   }
   return { label: "— aborted", color: palette.dim };
 }
@@ -504,7 +510,9 @@ export function DownloadManagerContent({
         backgroundColor={isSelected ? palette.accentFill : undefined}
       >
         <Box flexDirection="row" width={shellWidth} overflow="hidden">
-          <Text color={isSelected ? palette.accent : palette.dim}>{isSelected ? "▌ " : "  "}</Text>
+          <Text color={isSelected ? palette.accent : palette.dim}>
+            {listSelectionPrefix(isSelected)}
+          </Text>
           <Box width={titleCol} overflow="hidden">
             <Text
               wrap="truncate"

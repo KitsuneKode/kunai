@@ -2,6 +2,12 @@ import type { TitleDetail } from "@/domain/catalog/title-detail";
 import { Box, Text } from "ink";
 import React from "react";
 
+import {
+  decorationGlyphs,
+  decorativeBorderStyle,
+  displaySectionRuleLabel,
+  verticalRulePrefix,
+} from "./decoration-policy";
 import { SectionSeparator } from "./decoration-ui";
 import type { DetailsPanelData, DetailsPanelSecondary } from "./details-panel";
 import {
@@ -28,12 +34,18 @@ const SERIES_STATE_COLORS: Record<SeriesStateKey, string> = {
   upcoming: palette.muted,
 };
 
-const SERIES_STATE_LABELS: Record<SeriesStateKey, string> = {
-  airing: "◉ airing",
-  ended: "✦ ended",
-  complete: "✦ you finished this",
-  upcoming: "upcoming",
-};
+function seriesStateLabel(state: SeriesStateKey): string {
+  switch (state) {
+    case "airing":
+      return `${decorationGlyphs().liveDot} airing`;
+    case "ended":
+      return "✦ ended";
+    case "complete":
+      return "✦ you finished this";
+    default:
+      return "upcoming";
+  }
+}
 
 function SecondaryZoneShimmer() {
   return (
@@ -96,7 +108,7 @@ export function DetailsSheetUI({
     <Box
       flexDirection="column"
       width={width}
-      borderStyle="single"
+      borderStyle={decorativeBorderStyle("single")}
       borderColor={palette.line}
       paddingX={1}
       overflow="hidden"
@@ -119,7 +131,7 @@ export function DetailsSheetUI({
           {visible.map((line) =>
             line.detail === "" && line.label.startsWith("───") ? (
               <Text key={line.label} color={palette.muted}>
-                {line.label}
+                {displaySectionRuleLabel(line.label)}
               </Text>
             ) : (
               <Box key={`${line.label}:${line.detail ?? ""}`}>
@@ -175,7 +187,7 @@ export function DetailsPaneUI({
   return (
     <Box flexDirection="row" width={width}>
       <Box width={1} marginRight={1}>
-        <Text color={seriesStateColor}>{"│"}</Text>
+        <Text color={seriesStateColor}>{verticalRulePrefix(false)}</Text>
       </Box>
       <Box flexDirection="column" flexGrow={1}>
         <Box marginBottom={1}>
@@ -212,7 +224,7 @@ export function DetailsPaneUI({
           <Box flexDirection="column" marginTop={1}>
             {secondary.seriesState && (
               <Text color={SERIES_STATE_COLORS[secondary.seriesState]}>
-                {SERIES_STATE_LABELS[secondary.seriesState]}
+                {seriesStateLabel(secondary.seriesState)}
                 {secondary.nextAirDate ? `  ·  ${secondary.nextAirDate}` : ""}
               </Text>
             )}
@@ -468,7 +480,7 @@ export function TitleDetailSheetUI({
     <Box
       flexDirection="column"
       width={width}
-      borderStyle="single"
+      borderStyle={decorativeBorderStyle("single")}
       borderColor={palette.line}
       paddingX={1}
     >

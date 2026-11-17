@@ -15,6 +15,7 @@ import {
 
 export { buildPickerActionContext };
 import { companionFallbackGlyph, companionToggleable } from "@/app-shell/companion-policy";
+import { decorationGlyphs } from "@/app-shell/decoration-policy";
 import { exportLocalSupportBundle } from "@/app-shell/export-local-support-bundle";
 import {
   buildExternalOpenFallback,
@@ -1194,7 +1195,7 @@ async function handleProviderToggles(container: Container): Promise<"handled"> {
         const off = disabled.has(id.toLowerCase());
         return {
           value: id,
-          label: `${off ? "○" : "●"} ${name}`,
+          label: `${off ? decorationGlyphs().waitingMark : decorationGlyphs().statusInfo} ${name}`,
           detail: off ? "Off — skipped in resolve and fallback" : "On",
         };
       }),
@@ -2854,7 +2855,11 @@ async function handleUpNext(container: Container): Promise<ShellWorkflowResult> 
         const played = item.playedAt !== undefined;
         const isNext = !played && item.id === firstUnplayedId;
         const addedLabel = relativeHistoryDate(item.addedAt);
-        const prefix = played ? "✓  " : isNext ? "▶  " : "   ";
+        const prefix = played
+          ? `${decorationGlyphs().statusSuccess}  `
+          : isNext
+            ? `${decorationGlyphs().playMark}  `
+            : "   ";
         const label = `${prefix}${item.title}${ep}`;
         const detail = played
           ? `played ${relativeHistoryDate(item.playedAt ?? item.addedAt)}  ·  ${item.mediaKind}`

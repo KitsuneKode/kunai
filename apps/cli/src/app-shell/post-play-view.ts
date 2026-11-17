@@ -19,6 +19,7 @@ import type { TitleDetail } from "@/domain/catalog/title-detail";
 import type { PostPlayState } from "@/domain/playback/post-play-state";
 import { formatTimestamp } from "@/services/continuation/history-progress";
 
+import { decorationGlyphs, localizeShortcutGlyphs } from "./decoration-policy";
 import { resolveKeybinding, resolvePostPlaybackBindingResult } from "./keybinding-runtime";
 import { footerKeyFromBinding, KEYBINDINGS, type KeyBinding } from "./keybindings";
 import { formatRuntimeMinutes } from "./media-panel-model";
@@ -203,7 +204,7 @@ function postPlayShortcut(
   fallback: string,
 ): string {
   const binding = bindings.find((candidate) => candidate.id === bindingId);
-  return binding ? footerKeyFromBinding(binding) : fallback;
+  return binding ? footerKeyFromBinding(binding) : localizeShortcutGlyphs(fallback);
 }
 
 function postPlayShortcutGroup(
@@ -459,7 +460,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
     return {
       heroKind: "stopped-early",
       nextUpHero: buildNextUpHero(props, "resume"),
-      heroLabel: "⏸ stopped early",
+      heroLabel: `${decorationGlyphs().pauseMark} stopped early`,
       heroColor: "accent",
       // Where you stopped, not how far into the season you are. Films get one
       // too — the season bar never applied to them.
@@ -512,9 +513,9 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
     return {
       heroKind: "movie-complete",
       nextUpHero: buildNextUpHero(props, "queue-only"),
-      heroLabel: "✓ movie complete",
+      heroLabel: `${decorationGlyphs().statusSuccess} movie complete`,
       heroColor: "ok",
-      completionLine: `✓ ${title}`,
+      completionLine: `${decorationGlyphs().statusSuccess} ${title}`,
       actions: withQueueNextPrimary(bindings, props, [
         {
           id: "replay",
@@ -549,9 +550,9 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
     return {
       heroKind: "mid-series",
       nextUpHero: buildNextUpHero(props, "next-episode"),
-      heroLabel: "✓ episode complete",
+      heroLabel: `${decorationGlyphs().statusSuccess} episode complete`,
       heroColor: "ok",
-      completionLine: "✓ episode complete",
+      completionLine: `${decorationGlyphs().statusSuccess} episode complete`,
       actions: [
         {
           id: "next",
@@ -609,7 +610,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
     return {
       heroKind: "caught-up",
       nextUpHero: buildNextUpHero(props, "queue-only"),
-      heroLabel: "◉ caught up · airing",
+      heroLabel: `${decorationGlyphs().liveDot} caught up · airing`,
       heroColor: "ok",
       heroSub: airLine,
       actions: withQueueNextPrimary(bindings, props, [

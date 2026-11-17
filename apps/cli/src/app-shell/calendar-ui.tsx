@@ -10,6 +10,7 @@ import {
   type CalendarDay,
   type CalendarTypeTab,
 } from "./calendar-ui.model";
+import { decorationGlyphs, tabCycleHint } from "./decoration-policy";
 import { ClaudeTabRow } from "./primitives/ClaudeTabRow";
 import { buildCalendarRowColumns, computeCalendarRowLayout } from "./primitives/list-row-layout";
 import { ListRow } from "./primitives/ListRow";
@@ -107,7 +108,7 @@ export function CalendarTypeTabs({
     <ClaudeTabRow
       labels={labels}
       activeIndex={activeIndex}
-      hint={maxWidth === undefined || maxWidth >= 100 ? "⇥ Tab cycles type" : undefined}
+      hint={maxWidth === undefined || maxWidth >= 100 ? tabCycleHint("type") : undefined}
       maxWidth={maxWidth}
       dense={dense}
     />
@@ -171,7 +172,7 @@ function CalendarScheduleRowInner<T>({
   // Distinct glyphs, not just distinct tints: "new for you" and "tracked" used to
   // share ● and differ only by colour, which is unreadable at a glance and
   // invisible to a colourblind reader.
-  const marker = isNew ? "●" : tracked ? "★" : "";
+  const marker = isNew ? decorationGlyphs().statusInfo : tracked ? "★" : "";
   const markerColor = isNew ? palette.accent : palette.ok;
 
   const columns = buildCalendarRowColumns({

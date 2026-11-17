@@ -12,7 +12,11 @@
 import { Box, Text } from "ink";
 import React from "react";
 
-import { decorationGlyphs, terminalPostersEnabled } from "./decoration-policy";
+import {
+  decorationGlyphs,
+  decorativeBorderStyle,
+  terminalPostersEnabled,
+} from "./decoration-policy";
 import { SectionSeparator } from "./decoration-ui";
 import type { KittyPlacementSlot } from "./kitty-placement-registry";
 import type { MediaPanelFact, MediaPanelMiniCard, MediaPanelModel } from "./media-panel-model";
@@ -217,7 +221,7 @@ export const MediaPanel = React.memo(function MediaPanel({
       flexDirection="column"
       width={railWidth}
       paddingLeft={2}
-      borderStyle="single"
+      borderStyle={decorativeBorderStyle("single")}
       borderColor={palette.lineSoft}
       borderTop={false}
       borderRight={false}
