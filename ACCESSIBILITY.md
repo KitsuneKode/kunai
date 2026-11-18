@@ -22,7 +22,7 @@ plain non-interactive output instead of the shell.
 - **Degraded terminals.** `TERM=dumb` terminals and non-TTY output skip the
   graphics and probing layers entirely rather than emitting escape codes a
   dumb terminal cannot interpret.
-- **`NO_COLOR` and monochrome mode.** When `NO_COLOR` is set (any value),
+- **`NO_COLOR` and monochrome mode.** When `NO_COLOR` is set to any non-empty value (an empty `NO_COLOR=` is ignored, per no-color.org; it also overrides `FORCE_COLOR`),
   `FORCE_COLOR=0`, or `TERM=dumb`, Kunai detects a **none** colour level: the
   shell omits Ink `color` / `backgroundColor` / border colour props so no
   foreground or background SGR is emitted. Bold, underline, and inverse remain
