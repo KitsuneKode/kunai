@@ -32,7 +32,8 @@ describe("PreviewRail helpers", () => {
     );
     expect(shouldRenderPreviewRail({ columns: 100, hasModel: true })).toBe(true);
     expect(shouldRenderPreviewRail({ columns: 120, hasModel: true })).toBe(true);
-    for (const columns of [100, 120]) {
+    for (const columns of [100, 110, 119, 120]) {
+      expect(getShellViewportPolicy("browse", columns, 40).previewRail).toBe(true);
       const viewport = getShellViewportPolicy("browse", columns, 40);
       const innerWidth = Math.max(24, columns - 8);
       const previewWidth =

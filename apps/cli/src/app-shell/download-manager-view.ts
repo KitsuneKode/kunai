@@ -9,11 +9,7 @@
 import { formatMediaItemCount, presentMedia } from "@/domain/media/media-presentation";
 import type { DownloadJobRecord } from "@/services/storage/storage-read-models";
 
-import {
-  PREVIEW_RAIL_MIN_COLUMNS,
-  type PreviewPosterState,
-  type PreviewRailModel,
-} from "./primitives/PreviewRail.model";
+import type { PreviewPosterState, PreviewRailModel } from "./primitives/PreviewRail.model";
 
 /**
  * Gap between the list and the companion rail. This is not a free parameter: it
@@ -27,10 +23,11 @@ export const DOWNLOAD_MANAGER_RAIL_GAP = 2;
 const DOWNLOAD_MANAGER_RAIL_WIDTH = 32;
 
 /**
- * Minimum content width that can seat a list plus a rail without squeezing the
- * list below usability. Shared with `shouldRenderPreviewRail`.
+ * Downloads rows pack state, progress, and transfer meta beside the title — at
+ * 100 columns the rail leaves ~19 characters for titles. Hold the rail until
+ * 110 so the list keeps readable title cells while Browse/Library still rail at 100.
  */
-const DOWNLOAD_MANAGER_RAIL_MIN_COLUMNS = PREVIEW_RAIL_MIN_COLUMNS;
+export const DOWNLOAD_MANAGER_RAIL_MIN_COLUMNS = 110;
 
 export type DownloadManagerLayout = {
   readonly columns: number;

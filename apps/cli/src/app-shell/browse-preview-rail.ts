@@ -4,18 +4,10 @@ import type {
 } from "@/app-shell/primitives/PreviewRail.model";
 import { countLabel } from "@/domain/text-display";
 
-import { buildPreviewMetaLine } from "./details-panel";
+import { BROWSE_DETAILS_DIAGNOSTIC_LABELS, buildPreviewMetaLine } from "./details-panel";
 import type { PosterResult, PosterState } from "./poster-types";
 import { truncateLine } from "./shell-text";
 import type { BrowseShellOption, ShellPanelLine } from "./types";
-
-/** Provider/diagnostic facts stay in the details sheet, not the compact preview rail. */
-const RAIL_SKIP_LABELS = new Set([
-  "Metadata source",
-  "Provider detail page",
-  "Image source",
-  "Popularity",
-]);
 
 const RAIL_LABEL_SHORT: Record<string, string> = {
   "Watch history": "Progress",
@@ -101,7 +93,7 @@ function normalizePreviewNote(note: string): PreviewRailModel["facts"][number] |
 }
 
 function railFactFromPanelLine(fact: ShellPanelLine): PreviewRailModel["facts"][number] | null {
-  if (RAIL_SKIP_LABELS.has(fact.label)) return null;
+  if (BROWSE_DETAILS_DIAGNOSTIC_LABELS.has(fact.label)) return null;
   const value = normalizeRailFactValue(fact.label, fact.detail ?? "");
   if (!value) return null;
   return {

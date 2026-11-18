@@ -142,6 +142,7 @@ export function buildRootStatusSummary({
     mpvAvailable,
   });
   const headerLabel = settledHeader?.label ?? humanReadableRootStatus(rootStatus);
+  const networkOfflineInHeader = settledHeader?.label === "offline";
 
   // Crumb: show the provider actually serving the active stream when it differs from the
   // session selection (for example after recovery fallback or stale shell state).
@@ -176,7 +177,7 @@ export function buildRootStatusSummary({
   const crumbParts: string[] = [];
   if (offlineMode) {
     crumbParts.push("offline mode");
-  } else if (!networkAvailable) {
+  } else if (!networkAvailable && !networkOfflineInHeader) {
     crumbParts.push("no network");
   }
   if (isActivePlayback && playbackIsLocal) {
@@ -257,7 +258,7 @@ export function buildRootStatusSummary({
     alert = { text: `⬇ ${downloadStatus}`, tone: "info" };
   } else if (offlineMode && !isActivePlayback) {
     alert = { text: "offline mode · library only", tone: "info" };
-  } else if (!networkAvailable && !offlineMode && !isActivePlayback) {
+  } else if (!networkAvailable && !offlineMode && !isActivePlayback && !networkOfflineInHeader) {
     alert = { text: "network unavailable · local copies preferred", tone: "warning" };
   }
   // Standing notification count is NOT an alert — the alert slot is reserved for

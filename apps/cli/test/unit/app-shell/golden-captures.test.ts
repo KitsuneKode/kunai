@@ -115,9 +115,12 @@ describe("PR 4 capture width budget", () => {
     expect(content, "downloads.narrow must not render the rail").not.toContain("Status");
   });
 
-  test("medium downloads at the rail threshold show the companion rail", async () => {
+  test("medium downloads keep the rail hidden until 110 columns", async () => {
     const content = await readFile(path.join(CAPTURE_DIR, "downloads.medium.txt"), "utf8");
-    expect(content).toContain("Status");
+    expect(content, "downloads.medium must not render the rail at 100 cols").not.toContain(
+      "Status",
+    );
+    expect(content).toContain("Frieren: Beyond Journey's End");
   });
 
   test("wide downloads show the selected-job rail and canonical position labels", async () => {

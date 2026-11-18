@@ -90,7 +90,9 @@ export function getShellViewportPolicy(
   const wideBrowse = !blocked && kind === "browse" && wide;
   const mediumBrowse = !blocked && kind === "browse" && medium;
   const previewRail =
-    wideBrowse &&
+    !blocked &&
+    kind === "browse" &&
+    !zen &&
     terminalProfile === "local" &&
     columns >= PREVIEW_RAIL_MIN_COLUMNS &&
     rows >= GLOBAL_BLOCKED_MIN_ROWS;

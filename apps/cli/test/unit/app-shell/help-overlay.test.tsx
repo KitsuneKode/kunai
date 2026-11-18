@@ -79,7 +79,9 @@ describe("help overlay is registry-driven (P0-5)", () => {
 
   test("legacy aliases stay out of the help overlay", () => {
     const labels = helpSections().flatMap((section) => section.items.map((item) => item.label));
-    expect(labels.some((label) => label.includes("(legacy"))).toBe(false);
+    expect(
+      KEYBINDINGS.some((binding) => binding.legacy === true && labels.includes(binding.label)),
+    ).toBe(false);
   });
 
   test("binding keys are unique within a section", () => {

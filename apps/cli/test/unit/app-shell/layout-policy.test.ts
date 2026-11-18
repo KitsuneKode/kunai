@@ -130,10 +130,13 @@ describe("getShellViewportPolicy", () => {
   });
 
   test("preview rail appears once browse is wide enough for list plus rail", () => {
+    for (const columns of [100, 110, 119]) {
+      expect(getShellViewportPolicy("browse", columns, 40).previewRail).toBe(true);
+    }
     expect(getShellViewportPolicy("browse", 119, 30).wideBrowse).toBe(false);
-    expect(getShellViewportPolicy("browse", 119, 30).previewRail).toBe(false);
     expect(getShellViewportPolicy("browse", 120, 30).wideBrowse).toBe(true);
     expect(getShellViewportPolicy("browse", 120, 30).previewRail).toBe(true);
+    expect(getShellViewportPolicy("browse", 99, 40).previewRail).toBe(false);
   });
 
   test("preview rail stays collapsed in constrained SSH or tmux terminals", () => {

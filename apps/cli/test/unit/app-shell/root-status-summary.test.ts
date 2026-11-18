@@ -466,6 +466,8 @@ describe("buildRootStatusSummary", () => {
       networkAvailable: false,
     });
     expect(summary.header).toEqual({ label: "offline", tone: "warning" });
+    expect(summary.crumb).not.toContain("no network");
+    expect(summary.alert).toBeNull();
   });
 
   test("reports mpv missing instead of ready when mpv is absent", () => {
