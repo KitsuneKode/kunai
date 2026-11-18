@@ -95,6 +95,32 @@ describe("buildBrowseIdleContext", () => {
     });
   });
 
+  test("a queued movie has no episode label (no SundefinedEundefined)", async () => {
+    const container = {
+      queueService: {
+        // Movie queue items carry undefined, not null, for season/episode.
+        peekNext: () => ({ title: "The Odyssey", titleId: "tmdb:11", mediaKind: "movie" }),
+      },
+      releaseProgressCache: {
+        summarizeActive: () => ({ titleCount: 0, episodeCount: 0 }),
+        getByTitleIds: () => new Map(),
+      },
+      offlineAssetService: { listNextReadyByTitleCursors: () => [] },
+      historyRepository: { listLatestByTitle: () => [] },
+      config: { lastCalendarVisitAt: 0 },
+      followedTitleRepository: { listByPreference: () => [] },
+      listService: { getWatchlist: () => [] },
+    };
+
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    const { idleContext } = await buildBrowseIdleContext(container as never, {
+      preloadedHistory: {},
+    });
+
+    expect(idleContext?.playlistNext?.title).toBe("The Odyssey");
+    expect(idleContext?.playlistNext?.ep).toBeUndefined();
+  });
+
   test("Continue hero requires engage gate (>30s) and ignores DNS-short rows", async () => {
     const container = {
       queueService: {
