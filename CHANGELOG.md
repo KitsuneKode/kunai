@@ -1,11 +1,5 @@
 # Changelog
 
-## Unreleased
-
-### Changed
-
-- **Browse and History shortcuts:** `u` adds the highlighted title to Up Next (was `q`). Bare `q` on browse lists and filterable overlays means back when no filter text is active, same as Esc. While a filter field has text, `q` types normally. Player, post-playback, and setup keep their existing `q` meanings (stop playback or quit). Ctrl+Q and other modified chords are unchanged.
-
 ## v0.4.0
 
 A focused watching update: clearer search and recovery, accurate source and

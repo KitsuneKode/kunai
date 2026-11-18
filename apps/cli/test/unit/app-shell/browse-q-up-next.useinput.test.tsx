@@ -249,6 +249,56 @@ describe("root overlay list-back vs filter typing", () => {
     }
   });
 
+  test("Up Next backs out on bare q (letters are commands there, not a filter)", async () => {
+    const fixture = rootOverlayContainer();
+    const state = createInitialState("vidking", "videasy", LANGUAGE_PROFILES);
+    const handle = render(
+      <RootOverlayShell
+        overlay={{ type: "queue" }}
+        state={state}
+        container={fixture.container}
+        onRedraw={() => {}}
+      />,
+      { columns: 120, rows: 40 },
+    );
+
+    try {
+      await waitUntil(() => (handle.lastFrame() ?? "").length > 0, { label: "queue overlay" });
+      fixture.dispatches.length = 0;
+      handle.stdin.enqueue(["q"]);
+      await waitUntil(() => fixture.dispatches.includes("close"), { label: "queue q closes" });
+    } finally {
+      handle.unmount();
+    }
+  });
+
+  test("Notifications backs out on bare q (letters are commands there, not a filter)", async () => {
+    const fixture = rootOverlayContainer();
+    const state = createInitialState("vidking", "videasy", LANGUAGE_PROFILES);
+    const handle = render(
+      <RootOverlayShell
+        overlay={{ type: "notifications" }}
+        state={state}
+        container={fixture.container}
+        onRedraw={() => {}}
+      />,
+      { columns: 120, rows: 40 },
+    );
+
+    try {
+      await waitUntil(() => (handle.lastFrame() ?? "").length > 0, {
+        label: "notifications overlay",
+      });
+      fixture.dispatches.length = 0;
+      handle.stdin.enqueue(["q"]);
+      await waitUntil(() => fixture.dispatches.includes("close"), {
+        label: "notifications q closes",
+      });
+    } finally {
+      handle.unmount();
+    }
+  });
+
   test("help overlay backs out on bare q", async () => {
     const fixture = rootOverlayContainer();
     const state = createInitialState("vidking", "videasy", LANGUAGE_PROFILES);

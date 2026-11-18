@@ -1696,7 +1696,13 @@ export function RootOverlayShell({
       isOverlayListBackKey(input, key, {
         acceptsTypedFilter: overlayAcceptsTypedFilter,
         filterQuery: overlayFilterQuery,
-        lettersAreCommands: overlay.type === "history",
+        // History, Up Next and Notifications bind bare letters as commands
+        // (u/m/w · J/K/g/G/x · s/r/x/d/a/A/C); Up Next and Notifications never
+        // read a typed filter at all. `q` is back there, not a hidden letter.
+        lettersAreCommands:
+          overlay.type === "history" ||
+          overlay.type === "queue" ||
+          overlay.type === "notifications",
       })
     ) {
       const backAction = resolveOverlayBackStack({
