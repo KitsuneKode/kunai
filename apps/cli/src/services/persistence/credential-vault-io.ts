@@ -98,6 +98,15 @@ export function resolveCredentialStoreStatus(input: {
   return { vaultBackend: vault.backend, tokenStore, reason };
 }
 
+type VaultTokenTombstones = Partial<Record<"anilist" | "tmdb", true>>;
+
+type SyncTokensOnDisk = SyncTokens & { readonly _vaultTombstones?: VaultTokenTombstones };
+
+function stripSyncTokenFileMeta(raw: SyncTokensOnDisk): SyncTokens {
+  const { _vaultTombstones: _omit, ...tokens } = raw;
+  return tokens;
+}
+
 function mergeSyncTokenPatch(current: SyncTokens, patch: SyncTokens): SyncTokens {
   const anilist = Object.hasOwn(patch, "anilist") ? patch.anilist : current.anilist;
   const tmdb = Object.hasOwn(patch, "tmdb") ? patch.tmdb : current.tmdb;
@@ -105,6 +114,29 @@ function mergeSyncTokenPatch(current: SyncTokens, patch: SyncTokens): SyncTokens
   if (anilist !== undefined) return { anilist };
   if (tmdb !== undefined) return { tmdb };
   return {};
+}
+
+async function readSyncTokensOnDisk(path: string): Promise<SyncTokensOnDisk> {
+  try {
+    return JSON.parse(await readFile(path, "utf8")) as SyncTokensOnDisk;
+  } catch {
+    return {};
+  }
+}
+
+/** Merge a tracker patch into `sync-tokens.json`, recording vault tombstones on disconnect. */
+async function patchSyncTokenFile(path: string, patch: SyncTokens): Promise<void> {
+  const onDisk = await readSyncTokensOnDisk(path);
+  const tombstones = { ...onDisk._vaultTombstones } satisfies VaultTokenTombstones;
+  const merged = mergeSyncTokenPatch(stripSyncTokenFileMeta(onDisk), patch);
+  for (const slot of ["anilist", "tmdb"] as const) {
+    if (!Object.hasOwn(patch, slot)) continue;
+    if (patch[slot] === undefined) tombstones[slot] = true;
+    else delete tombstones[slot];
+  }
+  const next: SyncTokensOnDisk =
+    Object.keys(tombstones).length > 0 ? { ...merged, _vaultTombstones: tombstones } : merged;
+  await realSyncTokenFileIo.writeTokens(path, next);
 }
 
 // oxlint-disable-next-line anti-slop/no-unknown-parameters -- vault faults arrive as thrown values of any shape; stringified at the degradation boundary.
@@ -172,14 +204,13 @@ export function vaultSyncTokenFileIoWithFileFallback(
       }
     },
     async patchTokens(path: string, patch: SyncTokens) {
-      const filePatch = realSyncTokenFileIo.patchTokens;
-      const vaultPatch = vaultIo.patchTokens;
       if (useFile) {
-        await filePatch?.(path, patch);
+        await patchSyncTokenFile(path, patch);
         return;
       }
-      if (!vaultPatch) {
-        await filePatch?.(path, patch);
+      const vaultPatch = vaultIo.patchTokens;
+      if (vaultPatch === undefined) {
+        await patchSyncTokenFile(path, patch);
         return;
       }
       try {
@@ -197,7 +228,7 @@ export function vaultSyncTokenFileIoWithFileFallback(
         }
         const merged = mergeSyncTokenPatch(current, patch);
         await degrade(error, merged);
-        await realSyncTokenFileIo.writeTokens(path, merged);
+        await patchSyncTokenFile(path, patch);
       }
     },
   };
@@ -218,20 +249,47 @@ export async function migrateSyncTokensToVault(options: {
 }): Promise<MigrateSyncTokensResult> {
   if (options.vault.backend === "file") return "skipped";
   const file = join(options.paths.configDir, "sync-tokens.json");
-  let plaintext: SyncTokens;
+  let onDisk: SyncTokensOnDisk;
   try {
-    plaintext = JSON.parse(await readFile(file, "utf8")) as SyncTokens;
+    onDisk = JSON.parse(await readFile(file, "utf8")) as SyncTokensOnDisk;
   } catch {
     return "complete"; // absent or unreadable — nothing to migrate
   }
 
-  let migrated = false;
+  const tombstones = { ...onDisk._vaultTombstones } satisfies VaultTokenTombstones;
+  const tombstonedSlots = new Set(
+    (["anilist", "tmdb"] as const).filter((slot) => tombstones[slot]),
+  );
+  const tokens = stripSyncTokenFileMeta(onDisk);
+  const hasTokens = Boolean(tokens.anilist || tokens.tmdb);
+  const hasTombstones = tombstonedSlots.size > 0;
+  if (!hasTokens && !hasTombstones) {
+    await rm(file, { force: true }).catch(() => {});
+    return "complete";
+  }
+
   let pending = false;
+
   for (const [slot, key] of [
     ["anilist", CREDENTIAL_KEYS.anilistTokens],
     ["tmdb", CREDENTIAL_KEYS.tmdbTokens],
   ] as const) {
-    const value = plaintext[slot];
+    if (!tombstones[slot]) continue;
+    try {
+      await options.vault.delete(key);
+      delete tombstones[slot];
+    } catch {
+      dbg("credential-vault", `vault delete failed for ${key}; plaintext kept`);
+      pending = true;
+    }
+  }
+
+  for (const [slot, key] of [
+    ["anilist", CREDENTIAL_KEYS.anilistTokens],
+    ["tmdb", CREDENTIAL_KEYS.tmdbTokens],
+  ] as const) {
+    if (tombstonedSlots.has(slot)) continue;
+    const value = tokens[slot];
     if (!value) continue;
     const blob = JSON.stringify(value);
     try {
@@ -239,25 +297,15 @@ export async function migrateSyncTokensToVault(options: {
       if ((await options.vault.get(key)) !== blob) {
         dbg("credential-vault", `vault read-back mismatch for ${key}; plaintext kept`);
         pending = true;
-        continue;
       }
-      // Only now may the plaintext go.
-      delete (plaintext as Record<string, unknown>)[slot];
-      migrated = true;
     } catch {
       dbg("credential-vault", `vault write failed for ${key}; plaintext kept`);
       pending = true;
     }
   }
 
-  if (!migrated && !pending) return "complete";
-  if (!migrated) return "pending";
-  if (!plaintext.anilist && !plaintext.tmdb) {
-    await rm(file, { force: true }).catch(() => {});
-  } else {
-    // Partial migration — rewrite the file with only what didn't move.
-    const { writeAtomicSecretJson } = await import("../../infra/fs/atomic-write");
-    await writeAtomicSecretJson(file, plaintext).catch(() => {});
-  }
-  return pending ? "pending" : "complete";
+  if (pending) return "pending";
+
+  await rm(file, { force: true }).catch(() => {});
+  return "complete";
 }

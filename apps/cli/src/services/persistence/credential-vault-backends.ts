@@ -171,6 +171,11 @@ function wincredNotFound(out: {
   return out.exitCode === 1 && !out.timedOut && out.stderr.trim() === "";
 }
 
+const WINCRED_ELEMENT_NOT_FOUND = 0x80070490;
+
+/** Map PasswordVault faults to stderr + non-1 exit; bare exit 1 means absent. */
+const WINCRED_CATCH_FAULT = `catch { if ($_.Exception.HResult -eq ${WINCRED_ELEMENT_NOT_FOUND}) { exit 1 }; [Console]::Error.Write($_.Exception.Message); exit 2 }`;
+
 /**
  * Windows Credential Manager via WinRT `PasswordVault` through Windows
  * PowerShell 5.1 (`powershell.exe -NoProfile -NonInteractive -Command`).
@@ -190,7 +195,7 @@ function wincredVault(spawn: CredentialSpawn, shell: string): CredentialVaultPor
       const out = await run(
         [
           `$v = New-Object Windows.Security.Credentials.PasswordVault`,
-          `try { $c = $v.Retrieve('${VAULT_SERVICE}', '${quote(key)}'); $c.RetrievePassword(); [Console]::Out.Write($c.Password) } catch { exit 1 }`,
+          `try { $c = $v.Retrieve('${VAULT_SERVICE}', '${quote(key)}'); $c.RetrievePassword(); [Console]::Out.Write($c.Password) } ${WINCRED_CATCH_FAULT}`,
         ].join("; "),
         "",
       );
@@ -217,7 +222,7 @@ function wincredVault(spawn: CredentialSpawn, shell: string): CredentialVaultPor
       const out = await run(
         [
           `$v = New-Object Windows.Security.Credentials.PasswordVault`,
-          `try { $v.Remove($v.Retrieve('${VAULT_SERVICE}', '${quote(key)}')) } catch { exit 1 }`,
+          `try { $v.Remove($v.Retrieve('${VAULT_SERVICE}', '${quote(key)}')) } ${WINCRED_CATCH_FAULT}`,
         ].join("; "),
         "",
       );
@@ -262,7 +267,7 @@ async function probeWincred(spawn: CredentialSpawn, shell: string): Promise<bool
       wincredScript(
         [
           `$v = New-Object Windows.Security.Credentials.PasswordVault`,
-          `try { $c = $v.Retrieve('${VAULT_SERVICE}', '${key}'); $c.RetrievePassword(); exit 0 } catch { exit 1 }`,
+          `try { $c = $v.Retrieve('${VAULT_SERVICE}', '${key}'); $c.RetrievePassword(); exit 0 } ${WINCRED_CATCH_FAULT}`,
         ].join("; "),
       ),
     ],

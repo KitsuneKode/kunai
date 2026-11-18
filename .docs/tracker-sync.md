@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-17"
+lastReviewed: "2026-11-18"
 ---
 
 # Tracker Sync
@@ -192,10 +192,14 @@ no native vault works, the `file` backend marker routes tracker tokens through
 `secrets.json` lane. Linux waits up to three seconds on the probe before
 falling back. The first launch on a vault-capable machine migrates
 `sync-tokens.json` write → read-back → compare → delete; any store failure
-leaves migration **pending** and keeps **sync-tokens.json** as the token store
-for that session so reconnect still works. A native vault fault on tracker
-get/set/delete during the session degrades to **sync-tokens.json** for the rest
-of that run without dropping the token being saved. Token-store mutations stay
+leaves migration **pending**, keeps the plaintext file intact (already-migrated
+slots are not stripped until every slot succeeds), and uses **sync-tokens.json**
+as the token store for that session so both trackers stay visible. A native vault
+fault on tracker get/set/delete during the session degrades to
+**sync-tokens.json** for the rest of that run; patches use read-merge-write so
+the other tracker keeps working. A disconnect on that degraded lane writes
+`_vaultTombstones` in the file so the next healthy vault launch deletes the stale
+vault entry before it can resurrect the tracker. Token-store mutations stay
 serialized. Native vault patches write or delete only the explicitly targeted
 tracker key, without reading or rewriting the other tracker. Malformed or
 unavailable unrelated credentials therefore remain untouched during connect and

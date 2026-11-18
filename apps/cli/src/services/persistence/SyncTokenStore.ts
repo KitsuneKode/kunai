@@ -56,7 +56,11 @@ export const realSyncTokenFileIo: SyncTokenFileIo = {
       return {};
     }
     try {
-      return JSON.parse(raw) as SyncTokens;
+      // SAFETY: `_vaultTombstones` is internal persistence metadata, not a tracker token.
+      const { _vaultTombstones: _omit, ...tokens } = JSON.parse(raw) as SyncTokens & {
+        _vaultTombstones?: unknown;
+      };
+      return tokens;
     } catch {
       // Corrupt file: never merge a single-tracker patch over `{}` and
       // silently erase the other tracker's credential. Quarantine the bytes

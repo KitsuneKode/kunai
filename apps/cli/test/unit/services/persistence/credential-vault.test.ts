@@ -245,11 +245,12 @@ describe("migrateSyncTokensToVault", () => {
       },
     });
 
-    await migrateSyncTokensToVault({ paths: fakePaths(dir), vault });
-    // anilist migrated, tmdb kept in the file
+    expect(await migrateSyncTokensToVault({ paths: fakePaths(dir), vault })).toBe("pending");
+    // Pending migration keeps the plaintext file intact until every slot succeeds.
     const remaining = JSON.parse(await readFile(file(dir), "utf8")) as SyncTokens;
-    expect(remaining.anilist).toBeUndefined();
+    expect(remaining.anilist).toEqual(plaintext.anilist);
     expect(remaining.tmdb).toEqual(plaintext.tmdb);
+    expect(JSON.parse(vault.store.get(CREDENTIAL_KEYS.anilistTokens)!)).toEqual(plaintext.anilist);
 
     // Second run with a healthy vault finishes the job — idempotent.
     const healthy = fakeVault();
@@ -270,6 +271,28 @@ describe("migrateSyncTokensToVault", () => {
     const vault = fakeVault({ backend: "file" });
     expect(await migrateSyncTokensToVault({ paths: fakePaths(dir), vault })).toBe("skipped");
     expect(JSON.parse(await readFile(file(dir), "utf8"))).toEqual(plaintext);
+  });
+
+  test("degraded disconnect tombstone deletes the vault key on the next healthy launch", async () => {
+    const vault = fakeVault();
+    await vault.set(
+      CREDENTIAL_KEYS.anilistTokens,
+      JSON.stringify({ accessToken: "stale", userId: 1 }),
+    );
+    await vault.set(CREDENTIAL_KEYS.tmdbTokens, JSON.stringify({ sessionId: "keep" }));
+    await writeFile(
+      file(dir),
+      JSON.stringify({
+        anilist: { accessToken: "stale", userId: 1 },
+        tmdb: { sessionId: "keep" },
+        _vaultTombstones: { anilist: true },
+      }),
+    );
+
+    expect(await migrateSyncTokensToVault({ paths: fakePaths(dir), vault })).toBe("complete");
+    expect(vault.store.has(CREDENTIAL_KEYS.anilistTokens)).toBe(false);
+    expect(JSON.parse(vault.store.get(CREDENTIAL_KEYS.tmdbTokens)!)).toEqual({ sessionId: "keep" });
+    await expect(readFile(file(dir), "utf8")).rejects.toThrow();
   });
 
   test("a store failure returns pending and keeps shouldUseVaultTokenStore on the file lane", async () => {
@@ -475,6 +498,37 @@ describe("createCredentialVault backend selection", () => {
     });
     expect(degradedReason).toContain("keyring write failed");
     expect(status.tokenStore).toBe("sync-tokens.json");
+  });
+
+  test("after degrade on one tracker, patches to the other tracker persist in sync-tokens.json", async () => {
+    const vault = fakeVault({
+      set: async (key, value) => {
+        if (key === CREDENTIAL_KEYS.tmdbTokens) throw new Error("store exit 1");
+        vault.store.set(key, value);
+      },
+      get: async (key) => vault.store.get(key),
+    });
+    const store = new SyncTokenStore(
+      fakePaths(dir),
+      vaultSyncTokenFileIoWithFileFallback(fakePaths(dir), vault, () => {}),
+    );
+
+    await store.patchTmdb({ sessionId: "tmdb-first" });
+    await store.patchAniList({ accessToken: "after-degrade", userId: 2 });
+    expect(await store.load()).toEqual({
+      anilist: { accessToken: "after-degrade", userId: 2 },
+      tmdb: { sessionId: "tmdb-first" },
+    });
+    expect(JSON.parse(await readFile(join(dir, "sync-tokens.json"), "utf8"))).toMatchObject({
+      anilist: { accessToken: "after-degrade", userId: 2 },
+    });
+
+    await store.patchAniList(undefined);
+    await store.patchTmdb({ sessionId: "tmdb-later" });
+    const onDisk = JSON.parse(await readFile(join(dir, "sync-tokens.json"), "utf8"));
+    expect(onDisk.tmdb).toEqual({ sessionId: "tmdb-later" });
+    expect(onDisk.anilist).toBeUndefined();
+    expect(onDisk._vaultTombstones).toEqual({ anilist: true });
   });
 });
 

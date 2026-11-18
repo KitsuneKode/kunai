@@ -410,6 +410,8 @@ jobs:
 
       - name: Windows credential vault round-trip
         timeout-minutes: 3
+        env:
+          KUNAI_CI_REAL_VAULT: "1"
         run: bun run --cwd apps/cli test:integration credential-vault-windows.test.ts
 
       - name: Test Windows storage lifecycle

@@ -7,9 +7,13 @@ import { CREDENTIAL_VAULT_PROBE_KEY } from "@/services/persistence/credential-va
 import { createCredentialVault } from "@/services/persistence/credential-vault-backends";
 import { getKunaiPaths } from "@kunai/storage";
 
-const describeWindows = process.platform === "win32" ? describe : describe.skip;
+function describeRealVault(): typeof describe {
+  return process.platform === "win32" && process.env.KUNAI_CI_REAL_VAULT === "1"
+    ? describe
+    : describe.skip;
+}
 
-describeWindows("Windows credential vault", () => {
+describeRealVault()("Windows credential vault", () => {
   let appData: string;
   let restoreAppData: string | undefined;
 
