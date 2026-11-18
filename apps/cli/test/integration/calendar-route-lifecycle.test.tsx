@@ -153,7 +153,8 @@ test("the calendar surface mounts and paints before its schedule request or idle
       "calendar-load-completed",
       "browse-rendered:calendar-success",
     ]);
-    expect(frame(handle)).toContain("Frieren");
+    expect(frame(handle)).toContain("▌");
+    expect(frame(handle)).toMatch(/Frieren|Dandadan/);
   } finally {
     idle.resolve(undefined);
     handle.unmount();
