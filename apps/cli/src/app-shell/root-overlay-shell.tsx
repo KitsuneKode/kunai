@@ -2231,6 +2231,11 @@ export function RootOverlayShell({
         return;
       }
       if (
+        // Up Next and the Notifications inbox never read or show a typed
+        // filter; feeding them letters only built invisible text that the next
+        // Esc then had to clear.
+        overlay.type !== "queue" &&
+        overlay.type !== "notifications" &&
         shouldHistoryOverlayAcceptFilterInput({
           overlayType: overlay.type,
           pendingDelete: historyPendingDelete,

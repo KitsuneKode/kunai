@@ -299,6 +299,32 @@ describe("root overlay list-back vs filter typing", () => {
     }
   });
 
+  test("a stray letter in Up Next does not build a hidden filter that eats Esc", async () => {
+    const fixture = rootOverlayContainer();
+    const state = createInitialState("vidking", "videasy", LANGUAGE_PROFILES);
+    const handle = render(
+      <RootOverlayShell
+        overlay={{ type: "queue" }}
+        state={state}
+        container={fixture.container}
+        onRedraw={() => {}}
+      />,
+      { columns: 120, rows: 40 },
+    );
+
+    try {
+      await waitUntil(() => (handle.lastFrame() ?? "").length > 0, { label: "queue overlay" });
+      fixture.dispatches.length = 0;
+      handle.stdin.enqueue(["o"]);
+      handle.stdin.enqueue("\x1b");
+      await waitUntil(() => fixture.dispatches.includes("close"), {
+        label: "first Esc closes after a stray letter",
+      });
+    } finally {
+      handle.unmount();
+    }
+  });
+
   test("help overlay backs out on bare q", async () => {
     const fixture = rootOverlayContainer();
     const state = createInitialState("vidking", "videasy", LANGUAGE_PROFILES);
