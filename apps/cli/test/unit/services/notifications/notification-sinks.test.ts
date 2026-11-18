@@ -62,6 +62,21 @@ describe("notification sinks", () => {
     });
   });
 
+  test("a kind written by a newer build is not forwarded to sinks", () => {
+    // Older builds cast unknown kinds into NotificationKind and forwarded them;
+    // sinks then rendered a kind they do not know. Dropping is intended.
+    expect(
+      mapRecordToSinkDelivery({
+        dedupKey: "n:2",
+        kind: "kind-from-a-future-build",
+        title: "?",
+        body: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        readAt: null,
+      } as never),
+    ).toBeNull();
+  });
+
   test("log sink writes structured delivery events", () => {
     const lines: Array<Record<string, unknown>> = [];
     const sink = new LogNotificationSink((message, context) => {
