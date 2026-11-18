@@ -341,6 +341,7 @@ export function getBrowseListMaxVisible(
   chromeRows: number,
   rootHeaderRows: number = ROOT_CHROME_ROWS,
   transientRows: number = TRANSIENT_ROW_SLOTS,
+  stackedCompanionRows: number = 0,
 ): number {
   const available =
     rows -
@@ -349,7 +350,8 @@ export function getBrowseListMaxVisible(
     chromeRows -
     BROWSE_FOOTER_ROWS -
     BROWSE_INK_BUFFER_ROWS -
-    SCROLL_AFFORDANCE_ROWS;
+    SCROLL_AFFORDANCE_ROWS -
+    stackedCompanionRows;
   return Math.max(1, Math.min(18, available));
 }
 

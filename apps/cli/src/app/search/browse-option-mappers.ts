@@ -260,11 +260,6 @@ export function toBrowseResultOption(
         : []),
       ...(isYoutubeResult ? youtubePreviewFacts(result, contentLabel) : []),
       {
-        label: "Metadata source",
-        detail: result.metadataSource ?? "provider response",
-        tone: result.metadataSource ? ("success" as const) : ("neutral" as const),
-      },
-      {
         label: "Title aliases",
         detail: alternateTitles || "No alternate title aliases returned",
         tone: alternateTitles ? ("success" as const) : ("neutral" as const),
@@ -277,27 +272,6 @@ export function toBrowseResultOption(
             ? ("success" as const)
             : ("neutral" as const),
       },
-      {
-        label: "Provider detail page",
-        detail: overview ? "Overview available" : "Provider did not return overview text",
-        tone: overview ? ("success" as const) : ("warning" as const),
-      },
-      {
-        label: "Image source",
-        detail: posterUrl
-          ? `Poster URL available${result.posterSource ? ` from ${result.posterSource}` : ""}`
-          : "No poster URL returned",
-        tone: posterUrl ? ("success" as const) : ("warning" as const),
-      },
-      ...(typeof result.popularity === "number" && result.popularity > 0
-        ? [
-            {
-              label: "Popularity",
-              detail: result.popularity.toFixed(0),
-              tone: "neutral" as const,
-            },
-          ]
-        : []),
     ],
     previewImageUrl: posterUrl,
     previewRating: formatRating(result.rating),

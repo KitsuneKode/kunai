@@ -37,6 +37,7 @@ import React, {
   useSyncExternalStore,
 } from "react";
 
+import { getBrowseStackedCompanionRows } from "./browse-companion-budget";
 import { resolveBrowseDestinationLabel, setBrowseDestinationLabel } from "./browse-destination";
 import { decideBrowseFilterAction } from "./browse-filter-actions";
 import {
@@ -141,7 +142,7 @@ import {
   type ListRowColumn,
 } from "./primitives/ListRow.model";
 import { PreviewRail } from "./primitives/PreviewRail";
-import { shouldRenderPreviewRail } from "./primitives/PreviewRail.model";
+import { shouldRenderBrowsePreviewRail } from "./primitives/PreviewRail.model";
 import { StateBlock } from "./primitives/StateBlock";
 import { mountRootContent } from "./root-content-state";
 import {
@@ -1394,7 +1395,27 @@ export function BrowseShell<T>({
   const showPreviewRail =
     showCompanion &&
     viewport.previewRail &&
-    shouldRenderPreviewRail({ columns: viewport.columns, hasModel: previewRailModel !== null });
+    shouldRenderBrowsePreviewRail({
+      companionBesideList,
+      listWidth,
+      hasModel: previewRailModel !== null,
+    });
+  const detailsMaxVisibleLines = viewport.breakpoint === "wide" ? 14 : 10;
+  const companionView =
+    settledOption === selectedOption
+      ? companionDetails
+      : buildDetailsPanelDataFromBrowseOption(selectedOption);
+  const detailsSheetLines = buildDetailsSheetLines(selectedOption, companionView.secondary);
+  const stackedCompanionRows = getBrowseStackedCompanionRows({
+    showCompanion,
+    companionBesideList,
+    showPreviewRail,
+    previewRailModel,
+    previewWidth,
+    companionView,
+    detailsLines: detailsSheetLines,
+    detailsMaxVisibleLines,
+  });
   const resultStatus = browseResultStatusLine({
     resultSubtitle,
     resultFilter,
@@ -1425,14 +1446,13 @@ export function BrowseShell<T>({
         ? getSuggestionBandRowCount(suggestionBandModel, boundedSuggestionIndex, suggestionMaxRows)
         : 0,
   });
-  const maxVisible = getBrowseListMaxVisible(viewport.rows, browseChromeRows);
-  // The card follows the selected row at once; enriched details arrive when the
-  // selection settles. Rendering only the settled data flashed "No selection"
-  // over a row that was plainly selected.
-  const companionView =
-    settledOption === selectedOption
-      ? companionDetails
-      : buildDetailsPanelDataFromBrowseOption(selectedOption);
+  const maxVisible = getBrowseListMaxVisible(
+    viewport.rows,
+    browseChromeRows,
+    undefined,
+    undefined,
+    stackedCompanionRows,
+  );
   const windowStart = getWindowStart(boundedSelectedIndex, displayOptions.length, maxVisible);
   const windowEnd = Math.min(windowStart + maxVisible, displayOptions.length);
   const visibleOptions = displayOptions.slice(windowStart, windowEnd);
@@ -2467,10 +2487,10 @@ export function BrowseShell<T>({
                 ) : (
                   <DetailsSheetUI
                     data={companionView}
-                    lines={buildDetailsSheetLines(selectedOption, companionView.secondary)}
+                    lines={detailsSheetLines}
                     width={previewWidth}
                     scrollIndex={0}
-                    maxVisibleLines={viewport.breakpoint === "wide" ? 14 : 10}
+                    maxVisibleLines={detailsMaxVisibleLines}
                   />
                 )}
               </Box>

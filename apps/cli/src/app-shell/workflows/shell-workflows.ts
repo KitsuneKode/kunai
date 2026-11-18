@@ -2428,7 +2428,7 @@ async function handleWatchlist(container: Container): Promise<"handled"> {
     const subtitle =
       items.length > 0
         ? `${items.length} title${items.length === 1 ? "" : "s"}`
-        : "Press w on a title or use /watchlist";
+        : "Press w on a title, or /bookmark, to add one here";
 
     const picked = await chooseFromListShell({
       title: "Watchlist",

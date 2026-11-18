@@ -4,6 +4,7 @@ import { getShellViewportPolicy } from "@/app-shell/layout-policy";
 import {
   getPreviewPosterLabel,
   PREVIEW_RAIL_MIN_COLUMNS,
+  shouldRenderBrowsePreviewRail,
   shouldRenderPreviewRail,
   visiblePreviewFacts,
 } from "@/app-shell/primitives/PreviewRail.model";
@@ -41,7 +42,15 @@ describe("PreviewRail helpers", () => {
           ? Math.max(28, Math.floor(innerWidth * 0.3))
           : Math.max(26, Math.floor(innerWidth * 0.28));
       const listWidth = Math.max(48, innerWidth - previewWidth - 4);
+      const companionBesideList = viewport.breakpoint === "wide";
       expect(listWidth).toBeGreaterThanOrEqual(60);
+      expect(
+        shouldRenderBrowsePreviewRail({
+          companionBesideList,
+          listWidth,
+          hasModel: true,
+        }),
+      ).toBe(companionBesideList);
     }
   });
 });

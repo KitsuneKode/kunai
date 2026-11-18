@@ -163,7 +163,7 @@ export function resolveBrowseDetailsSecondary<T>(
 const LOCAL_FACT_LABELS = new Set(["Local progress", "Offline"]);
 const RELEASE_FACT_LABELS = new Set(["Release", "Watch history"]);
 const MANAGEMENT_FACT_LABELS = new Set(["Watchlist", "Favourite", "Release follow", "Up Next"]);
-/** Provider diagnostics stay in the details overlay and debug flows, not browse sheets. */
+/** Labels stripped from browse panels and rails; previewFacts may still carry them from older paths. */
 export const BROWSE_DETAILS_DIAGNOSTIC_LABELS = new Set([
   "Metadata source",
   "Provider detail page",

@@ -1,3 +1,4 @@
+import { wrapText } from "../shell-text";
 import { buildContextCardTile } from "./ContextCard.model";
 
 /**
@@ -43,9 +44,43 @@ export function visiblePreviewFacts(facts: readonly PreviewFact[]): readonly Pre
 /** Minimum terminal width before the compact preview rail replaces the details sheet. */
 export const PREVIEW_RAIL_MIN_COLUMNS = 100;
 
+/** Browse keeps at least this many columns for the results list when the rail sits beside it. */
+export const BROWSE_PREVIEW_RAIL_MIN_LIST_COLUMNS = 60;
+
 export function shouldRenderPreviewRail(input: {
   readonly columns: number;
   readonly hasModel: boolean;
 }): boolean {
   return input.hasModel && input.columns >= PREVIEW_RAIL_MIN_COLUMNS;
+}
+
+/** Browse only shows the rail in the wide beside-list layout with a usable list column. */
+export function shouldRenderBrowsePreviewRail(input: {
+  readonly companionBesideList: boolean;
+  readonly listWidth: number;
+  readonly hasModel: boolean;
+}): boolean {
+  return (
+    input.hasModel &&
+    input.companionBesideList &&
+    input.listWidth >= BROWSE_PREVIEW_RAIL_MIN_LIST_COLUMNS
+  );
+}
+
+export function estimatePreviewRailRowBudget(
+  model: PreviewRailModel | null,
+  input: { readonly reserveRows: number; readonly bodyWidth: number },
+): number {
+  if (!model) return 0;
+  const facts = visiblePreviewFacts(model.facts).slice(0, 4);
+  const overviewLines = model.overview
+    ? wrapText(model.overview, Math.max(16, input.bodyWidth), 3)
+    : [];
+  let rows = input.reserveRows;
+  rows += 1; // marginTop before the title block
+  rows += 1; // title
+  if (model.subtitle) rows += 1;
+  if (overviewLines.length > 0) rows += 1 + overviewLines.length;
+  if (facts.length > 0) rows += 1 + facts.length;
+  return rows;
 }

@@ -54,11 +54,6 @@ describe("toBrowseResultOption", () => {
           tone: "neutral",
         },
         {
-          label: "Metadata source",
-          detail: "provider response",
-          tone: "neutral",
-        },
-        {
           label: "Title aliases",
           detail: "No alternate title aliases returned",
           tone: "neutral",
@@ -67,21 +62,6 @@ describe("toBrowseResultOption", () => {
           label: "Audio and subtitles",
           detail:
             "audio availability unknown until resolve  ·  subtitle availability unknown until resolve",
-          tone: "neutral",
-        },
-        {
-          label: "Provider detail page",
-          detail: "Overview available",
-          tone: "success",
-        },
-        {
-          label: "Image source",
-          detail: "Poster URL available",
-          tone: "success",
-        },
-        {
-          label: "Popularity",
-          detail: "123",
           tone: "neutral",
         },
       ],
@@ -118,7 +98,6 @@ describe("toBrowseResultOption", () => {
       previewFacts: [
         { label: "Watchlist", detail: "Not saved · /bookmark to add", tone: "neutral" },
         { label: "Favourite", detail: "Not favourited · f to add", tone: "neutral" },
-        { label: "Metadata source", detail: "AniList", tone: "success" },
         {
           label: "Title aliases",
           detail: "provider: Kimetsu no Yaiba  ·  native: 鬼滅の刃",
@@ -130,12 +109,6 @@ describe("toBrowseResultOption", () => {
             "audio availability unknown until resolve  ·  subtitle availability unknown until resolve",
           tone: "neutral",
         },
-        {
-          label: "Provider detail page",
-          detail: "Provider did not return overview text",
-          tone: "warning",
-        },
-        { label: "Image source", detail: "Poster URL available from AniList", tone: "success" },
       ],
     });
   });
@@ -194,11 +167,6 @@ describe("toBrowseResultOption", () => {
         {
           label: "Offline",
           detail: "downloaded",
-          tone: "success",
-        },
-        {
-          label: "Metadata source",
-          detail: "AniList",
           tone: "success",
         },
       ]),

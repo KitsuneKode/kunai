@@ -1,0 +1,34 @@
+# browse-search · 110x40 (110×40)
+4 results · sample
+
+Search title
+
+ › Search title
+──────────────────────────────────────────────────────────────────────────────────────────────────────
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────
+
+▌ The Odyssey (2026)
+ ▼ ...
+
+┌──────────────────────────┐
+│ The Odyssey              │
+│ movie · 2026             │
+│                          │
+│ A retelling of Homer's   │
+│ epic voyage across the   │
+│ ancient…                 │
+│                          │
+│ Watchlist  Not saved · … │
+│ Favourite  Not favourit… │
+│ ─── Synopsis             │
+│ Overview   A retelling … │
+│ ─── Details              │
+│ Title ali… No alternate… │
+│ Audio and… audio availa… │
+│ Actions    Enter play ·… │
+└──────────────────────────┘
+
+Click to select · click selection to open
+
+[enter] play  [↑↓] navigate · [esc] search  [i] details  [/] commands
