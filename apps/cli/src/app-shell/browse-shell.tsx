@@ -37,7 +37,10 @@ import React, {
   useSyncExternalStore,
 } from "react";
 
-import { getBrowseStackedCompanionRows } from "./browse-companion-budget";
+import {
+  getBrowseStackedCompanionRows,
+  resolveBrowseStackedListLayout,
+} from "./browse-companion-budget";
 import { resolveBrowseDestinationLabel, setBrowseDestinationLabel } from "./browse-destination";
 import { decideBrowseFilterAction } from "./browse-filter-actions";
 import {
@@ -122,11 +125,7 @@ import { SUGGESTION_DEBOUNCE_MS, useSearchSuggestions } from "./hooks/use-search
 import { undisplayPlacementsKeepCache } from "./image-pane";
 import { resolveBrowseBindingEffect, resolveKeybinding } from "./keybinding-runtime";
 import { buildFooterActionsFromBindings } from "./keybindings";
-import {
-  getBrowseChromeRows,
-  getBrowseCommandPaletteMaxVisible,
-  getBrowseListMaxVisible,
-} from "./layout-policy";
+import { getBrowseChromeRows, getBrowseCommandPaletteMaxVisible } from "./layout-policy";
 import { reducedMotionEnabled } from "./motion-policy";
 import { MouseTarget, useMouseEnabled, useMouseRegion } from "./mouse/MouseRegions";
 import type { BrowseOverlay } from "./overlay-panel";
@@ -1406,7 +1405,7 @@ export function BrowseShell<T>({
       ? companionDetails
       : buildDetailsPanelDataFromBrowseOption(selectedOption);
   const detailsSheetLines = buildDetailsSheetLines(selectedOption, companionView.secondary);
-  const stackedCompanionRows = getBrowseStackedCompanionRows({
+  const stackedCompanionNaturalRows = getBrowseStackedCompanionRows({
     showCompanion,
     companionBesideList,
     showPreviewRail,
@@ -1446,13 +1445,15 @@ export function BrowseShell<T>({
         ? getSuggestionBandRowCount(suggestionBandModel, boundedSuggestionIndex, suggestionMaxRows)
         : 0,
   });
-  const maxVisible = getBrowseListMaxVisible(
-    viewport.rows,
-    browseChromeRows,
-    undefined,
-    undefined,
-    stackedCompanionRows,
-  );
+  const stackedListLayout = resolveBrowseStackedListLayout({
+    terminalRows: viewport.rows,
+    chromeRows: browseChromeRows,
+    listItemCount: displayOptions.length,
+    stackedCompanionNaturalRows,
+  });
+  const showStackedCompanion =
+    showCompanion && (companionBesideList || stackedListLayout.showStackedCompanion);
+  const maxVisible = stackedListLayout.listMaxVisible;
   const windowStart = getWindowStart(boundedSelectedIndex, displayOptions.length, maxVisible);
   const windowEnd = Math.min(windowStart + maxVisible, displayOptions.length);
   const visibleOptions = displayOptions.slice(windowStart, windowEnd);
@@ -2456,7 +2457,7 @@ export function BrowseShell<T>({
             </Box>
 
             {/* Companion pane */}
-            {showCompanion ? (
+            {showStackedCompanion ? (
               <Box
                 // Stable key: a selection-derived key here force-UNMOUNTED and
                 // remounted the whole preview pane (PreviewRail + poster + details)

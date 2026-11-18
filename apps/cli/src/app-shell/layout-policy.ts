@@ -313,6 +313,30 @@ export function getOverlayListMaxVisible(input: {
 const BROWSE_BASE_CHROME_ROWS = 10;
 const BROWSE_FOOTER_ROWS = 5;
 
+/**
+ * Guaranteed list rows in medium (stacked companion) browse before the details
+ * block takes height. Five rows fit a compact result set (calendar items, short
+ * search pages) with scroll affordance while keeping the companion optional.
+ */
+export const BROWSE_LIST_MIN_ROWS = 5;
+
+export function getBrowseSharedContentRowBudget(
+  rows: number,
+  chromeRows: number,
+  rootHeaderRows: number = ROOT_CHROME_ROWS,
+  transientRows: number = TRANSIENT_ROW_SLOTS,
+): number {
+  return (
+    rows -
+    rootHeaderRows -
+    transientRows -
+    chromeRows -
+    BROWSE_FOOTER_ROWS -
+    BROWSE_INK_BUFFER_ROWS -
+    SCROLL_AFFORDANCE_ROWS
+  );
+}
+
 export function getBrowseChromeRows(flags: {
   readonly hasResultSubtitle: boolean;
   readonly hasFilterBar: boolean;
@@ -344,13 +368,7 @@ export function getBrowseListMaxVisible(
   stackedCompanionRows: number = 0,
 ): number {
   const available =
-    rows -
-    rootHeaderRows -
-    transientRows -
-    chromeRows -
-    BROWSE_FOOTER_ROWS -
-    BROWSE_INK_BUFFER_ROWS -
-    SCROLL_AFFORDANCE_ROWS -
+    getBrowseSharedContentRowBudget(rows, chromeRows, rootHeaderRows, transientRows) -
     stackedCompanionRows;
   return Math.max(1, Math.min(18, available));
 }

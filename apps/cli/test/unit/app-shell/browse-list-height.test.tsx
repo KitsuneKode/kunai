@@ -2,12 +2,16 @@ import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-import { getBrowseStackedCompanionRows } from "@/app-shell/browse-companion-budget";
+import {
+  getBrowseStackedCompanionRows,
+  resolveBrowseStackedListLayout,
+} from "@/app-shell/browse-companion-budget";
 import { PREVIEW_POSTER_ROWS } from "@/app-shell/browse-shell-view";
 import {
   buildDetailsPanelDataFromBrowseOption,
   buildDetailsSheetLines,
 } from "@/app-shell/details-panel";
+import { BROWSE_LIST_MIN_ROWS } from "@/app-shell/layout-policy";
 import { getBrowseChromeRows, getBrowseListMaxVisible } from "@/app-shell/layout-policy";
 import {
   estimatePreviewRailRowBudget,
@@ -39,6 +43,7 @@ const RICH_OPTION: BrowseShellOption<string> = {
 };
 
 const VIEWPORT_CASES = [
+  { columns: 100, rows: 30 },
   { columns: 100, rows: 32 },
   { columns: 100, rows: 40 },
   { columns: 110, rows: 40 },
@@ -51,7 +56,7 @@ function selectedRowVisible(frame: string, label: string): boolean {
 }
 
 function listRowCount(frame: string): number {
-  return frame.split("\n").filter((line) => /^\s*▌ /.test(line)).length;
+  return frame.split("\n").filter((line) => /^\s*▌? .+\(\d{4}\)/.test(line)).length;
 }
 
 describe("browse list height budget", () => {
@@ -77,6 +82,28 @@ describe("browse list height budget", () => {
         hasModel: true,
       }),
     ).toBe(false);
+  });
+
+  test("hides the stacked companion before shrinking the list below the floor", () => {
+    const chromeRows = getBrowseChromeRows({
+      hasResultSubtitle: true,
+      hasFilterBar: false,
+      hasFilterBadges: false,
+      hasCalendarChrome: false,
+      hasContextStrip: false,
+      hasQueryDirtyHint: false,
+      commandMode: false,
+    });
+    const natural = 12;
+    const layout = resolveBrowseStackedListLayout({
+      terminalRows: 30,
+      chromeRows,
+      listItemCount: 4,
+      stackedCompanionNaturalRows: natural,
+    });
+    expect(layout.showStackedCompanion).toBe(false);
+    expect(layout.stackedCompanionRows).toBe(0);
+    expect(layout.listMaxVisible).toBeGreaterThanOrEqual(Math.min(4, BROWSE_LIST_MIN_ROWS));
   });
 
   test("reserves stacked companion rows for medium browse terminals", () => {
@@ -140,8 +167,10 @@ describe("browse search layout captures", () => {
       const frame = stripAnsi(
         captureFrame(<BrowseSearchCapture />, { columns: size.columns, rows: size.rows }),
       );
+      const resultCount = 4;
+      const minRows = Math.min(resultCount, BROWSE_LIST_MIN_ROWS);
       expect(selectedRowVisible(frame, "The Odyssey"), frame).toBe(true);
-      expect(listRowCount(frame), frame).toBeGreaterThanOrEqual(1);
+      expect(listRowCount(frame), frame).toBeGreaterThanOrEqual(minRows);
       expect(listRowCount(frame), frame).toBeLessThanOrEqual(8);
     });
   }

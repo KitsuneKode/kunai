@@ -69,6 +69,7 @@ export function BrowseSearchCapture() {
 }
 
 const CAPTURE_SIZES = [
+  { name: "100x30", columns: 100, rows: 30 },
   { name: "100x32", columns: 100, rows: 32 },
   { name: "100x40", columns: 100, rows: 40 },
   { name: "110x40", columns: 110, rows: 40 },
