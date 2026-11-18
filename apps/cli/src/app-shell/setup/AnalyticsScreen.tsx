@@ -81,7 +81,7 @@ export function AnalyticsScreen({ selectedIndex }: { readonly selectedIndex: num
             Sends: installId (hashed) · version · os · arch · ts
           </Text>
           <Text color={palette.dim} wrap="truncate">
-            Never: titles · queries · URLs · paths · your IP
+            Never: titles · queries · providers · URLs · paths · your IP
           </Text>
         </Box>
       )}
