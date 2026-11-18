@@ -46,6 +46,12 @@ describe("tmdb proxy search errors", () => {
     const error = new Error("Search failed: 500");
     expect(formatTmdbSearchError(error).message).toBe("Search failed: 500");
   });
+
+  test("a superseded AbortError is not rewritten as unreachable", () => {
+    const error = new DOMException("The operation was aborted.", "AbortError");
+    expect(isTmdbNetworkError(error)).toBe(false);
+    expect(formatTmdbSearchError(error).message).toBe("The operation was aborted.");
+  });
 });
 
 describe("fetchTmdbJsonCached", () => {
@@ -226,5 +232,28 @@ describe("fetchTmdbJsonCached", () => {
     // the proxy is down.
     await expect(fetchTmdbJsonCached("/tv/2")).resolves.toEqual({ ok: true });
     expect(urls.some((url) => !isTmdbApiUrl(url))).toBe(true);
+  });
+
+  test("cancelling a joined type-ahead does not abort a submitted search on the same path", async () => {
+    let fetchCount = 0;
+    globalThis.fetch = Object.assign(
+      async () => {
+        fetchCount += 1;
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+
+    const typeahead = new AbortController();
+    const submitted = fetchTmdbJsonCached("/movie/42");
+    const suggest = fetchTmdbJsonCached("/movie/42", typeahead.signal);
+    typeahead.abort();
+
+    await expect(suggest).rejects.toThrow();
+    await expect(submitted).resolves.toEqual({ ok: true });
+    expect(fetchCount).toBe(1);
   });
 });

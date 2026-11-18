@@ -39,6 +39,7 @@ import {
   describeSearchResultAvailability,
   toBrowseResultOption,
 } from "@/app/search/browse-option-mappers";
+import { createBrowseSearchAbort } from "@/app/search/browse-search-abort";
 import { launchCalendarContinue } from "@/app/search/calendar-continue-launch";
 import { isCalendarSearchResult, loadCalendarResults } from "@/app/search/calendar-results";
 import { playTrailer } from "@/app/search/details-trailer";
@@ -445,6 +446,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           });
           const searchMode = stateManager.getState().mode;
           let search: Awaited<ReturnType<typeof searchTitles>>;
+          const searchAbort = createBrowseSearchAbort(context.signal);
           try {
             search = await observeOnline(container, "search-error", () =>
               this.dependencies.searchTitles(searchIntent.intent, {
@@ -452,17 +454,24 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                 providerId: currentState.provider,
                 animeLanguageProfile: container.config.animeLanguageProfile,
                 youtubeLanguageProfile: container.config.youtubeLanguageProfile,
-                signal: context.signal,
+                signal: searchAbort.signal,
                 searchRegistry,
                 providerRegistry,
                 enrichAnimeMetadata: true,
               }),
             );
           } catch (error) {
-            if (context.signal.aborted) throw error;
+            searchAbort.dispose();
+            if (
+              searchAbort.signal.aborted ||
+              (error instanceof Error && error.name === "AbortError")
+            ) {
+              throw error;
+            }
             initialSearchError = containSearchFailure(error, "search.bootstrap.failed").note;
             continue;
           }
+          searchAbort.dispose();
           initialSearchError = undefined;
           const results = search.results;
           this.warmAnimeEpisodesForResults(context, results);
@@ -891,6 +900,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
 
             const searchMode = stateManager.getState().mode;
             let search: Awaited<ReturnType<typeof searchTitles>>;
+            const searchAbort = createBrowseSearchAbort(context.signal);
             try {
               search = await observeOnline(container, "search-error", () =>
                 this.dependencies.searchTitles(searchIntent.intent, {
@@ -898,17 +908,24 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                   providerId: stateManager.getState().provider,
                   animeLanguageProfile: container.config.animeLanguageProfile,
                   youtubeLanguageProfile: container.config.youtubeLanguageProfile,
-                  signal: context.signal,
+                  signal: searchAbort.signal,
                   searchRegistry,
                   providerRegistry,
                   enrichAnimeMetadata: true,
                 }),
               );
             } catch (error) {
-              if (context.signal.aborted) throw error;
+              searchAbort.dispose();
+              if (
+                searchAbort.signal.aborted ||
+                (error instanceof Error && error.name === "AbortError")
+              ) {
+                throw error;
+              }
               const failure = containSearchFailure(error, "search.query.failed");
               throw new Error(failure.note, { cause: error });
             }
+            searchAbort.dispose();
             initialSearchError = undefined;
             const results = search.results;
             this.warmAnimeEpisodesForResults(context, results);
