@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-12"
+lastReviewed: "2026-11-18"
 ---
 
 # Kunai — Repo Infrastructure
@@ -89,9 +89,10 @@ results belong in the release qualification record.
 and `@hono/node-server` 2.1.8 are overridden because those are the patched
 releases and the parents have not moved. The MCP SDK accepts
 `@hono/node-server` 2.x, so the 1.x advisories are fixed by the override, not
-ignored. One advisory stays ignored in `scripts/audit-dependencies.ts` because
-it has no safe upgrade: `GHSA-gcqx-w48m-w2h4` (`deepmerge` 4.3.1, no patched
-release). A new advisory still fails the guard.
+ignored. Two advisories stay ignored in `scripts/audit-dependencies.ts` because
+neither has a patched release: `GHSA-gcqx-w48m-w2h4` (`deepmerge` 4.3.1) and
+`GHSA-fc5q-39xc-vjpf` (`picomatch` 4.0.7, reached only through build and dev
+tooling). A new advisory still fails the guard.
 
 Dependency fixes use compatible upstream stable releases and targeted catalog or
 override floors. Update a parent package when its supported newer release removes
