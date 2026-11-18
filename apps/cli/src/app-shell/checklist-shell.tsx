@@ -1,3 +1,4 @@
+import { decorationGlyphs, scrollAffordance } from "@/app-shell/decoration-policy";
 import {
   getPickerChromeRows,
   getPickerLayout,
@@ -167,7 +168,7 @@ function ChecklistShell<T>({
           </Text>
         </Box>
         <Box paddingY={1}>
-          <Text color={palette.accent}>⌕ </Text>
+          <Text color={palette.accent}>{`${decorationGlyphs().search} `}</Text>
           <LineEditorText
             value={filterQuery}
             cursor={filterEditor.cursor}
@@ -191,7 +192,7 @@ function ChecklistShell<T>({
               justifyContent="space-between"
             >
               <Box flexDirection="column" width={showSelectionCompanion ? listWidth : undefined}>
-                {windowStart > 0 && <Text color={palette.dim}> ▲ ...</Text>}
+                {windowStart > 0 && <Text color={palette.dim}>{scrollAffordance("up")}</Text>}
                 {visibleOptions.map((option) => {
                   const highlighted = option === selectedOption;
                   const isChecked = selectedSet.has(option.value);
@@ -224,7 +225,9 @@ function ChecklistShell<T>({
                     </Box>
                   );
                 })}
-                {windowEnd < filteredOptions.length && <Text color={palette.dim}> ▼ ...</Text>}
+                {windowEnd < filteredOptions.length && (
+                  <Text color={palette.dim}>{scrollAffordance("down")}</Text>
+                )}
               </Box>
             </Box>
           </>

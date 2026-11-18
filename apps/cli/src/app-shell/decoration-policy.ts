@@ -1,18 +1,30 @@
 /**
  * Glyph and chrome decoration policy for plain, screen-reader-friendly output.
  *
- * Active when `minimalMode` is on (CLI `-m`, persisted config, or implied by
- * `-z`) or when `TERM=dumb`. Primitives consult this module instead of
- * scattering `if (minimal)` checks.
+ * Active when `minimalMode` is on (CLI `-m` or persisted config), when a saved
+ * or session `zenMode` is on (`--zen` implies minimal), or when `TERM=dumb`
+ * on an interactive TTY. Primitives consult this module instead of scattering
+ * `if (minimal)` checks.
  */
 
 import type { StateBlockKind } from "./primitives/StateBlock.model";
 
 let minimalModeSource: () => boolean = () => false;
 
-/** Wired at bootstrap to `config.minimalMode` (session overrides included). */
+/**
+ * Wired at bootstrap. Session overrides win over the saved file, and zen
+ * implies the same plain chrome as minimal — matching `--zen` on the CLI.
+ */
 export function setPlainDecorationSource(source: () => boolean): void {
   minimalModeSource = source;
+}
+
+/** Persisted or session layout flags that turn plain chrome on. */
+export function plainDecorationFromLayout(layout: {
+  readonly minimalMode: boolean;
+  readonly zenMode: boolean;
+}): boolean {
+  return layout.minimalMode || layout.zenMode;
 }
 
 export function isDumbTerminal(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -107,7 +119,7 @@ const RICH_GLYPHS: DecorationGlyphs = {
 const PLAIN_GLYPHS: DecorationGlyphs = {
   listCursor: ">",
   listCursorSpaced: "> ",
-  search: "/",
+  search: "Search",
   sakura: "*",
   statusLoading: "...",
   statusEmpty: "-",
@@ -126,7 +138,7 @@ const PLAIN_GLYPHS: DecorationGlyphs = {
   toggleOn: "[x]",
   waitingMark: "-",
   liveDot: "*",
-  disclosure: ">",
+  disclosure: "...",
   focusArrow: ">",
   failMark: "x",
   cycle: "~",
@@ -136,6 +148,76 @@ const PLAIN_GLYPHS: DecorationGlyphs = {
 
 export function decorationGlyphs(env: NodeJS.ProcessEnv = process.env): DecorationGlyphs {
   return plainDecorationsActive(env) ? PLAIN_GLYPHS : RICH_GLYPHS;
+}
+
+/** `★8.1` / `★ 8.1` in rich mode; `8.1/10` when plain. */
+export function formatScoreLabel(
+  score: number,
+  spacing: "tight" | "spaced" = "tight",
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const digits = score.toFixed(1);
+  if (plainDecorationsActive(env)) return `${digits}/10`;
+  return spacing === "spaced" ? `★ ${digits}` : `★${digits}`;
+}
+
+export function streakMilestoneAlert(days: number, env: NodeJS.ProcessEnv = process.env): string {
+  const text = `${days}-day streak! Keep it going.`;
+  return plainDecorationsActive(env) ? text : `🔥 ${text}`;
+}
+
+export function streakAtRiskAlert(days: number, env: NodeJS.ProcessEnv = process.env): string {
+  const text = `${days}d streak at risk — watch something tonight`;
+  return plainDecorationsActive(env) ? text : `🔥 ${text}`;
+}
+
+/** Empty in plain mode so the stats hero reads "3-day streak". */
+export function streakHeroPrefix(env: NodeJS.ProcessEnv = process.env): string {
+  return plainDecorationsActive(env) ? "" : "🔥 ";
+}
+
+/** Drop decorative emoji from copy that a domain formatter already decorated. */
+export function undecoratedCopy(text: string, env: NodeJS.ProcessEnv = process.env): string {
+  if (!plainDecorationsActive(env)) return text;
+  return text.replaceAll("🔥 ", "").replaceAll("🔥", "");
+}
+
+export type ScrollAffordanceStyle = "ellipsis" | "more" | "scroll";
+
+/** Scroll hint. Rich mode keeps the arrow; plain mode says which way is off-screen. */
+export function scrollAffordance(
+  direction: "up" | "down",
+  style: ScrollAffordanceStyle = "ellipsis",
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  if (plainDecorationsActive(env)) {
+    return direction === "up" ? " more above" : " more below";
+  }
+  if (style === "more") return direction === "up" ? " ▲ more" : " ▼ more";
+  if (style === "scroll") return direction === "up" ? "▲ " : "▼ scroll";
+  return direction === "up" ? " ▲ ..." : " ▼ ...";
+}
+
+/**
+ * Cursor and the following mark in one string. A trailing space on its own
+ * Ink `Text` is trimmed, which glued setup toggles into `>[ ]`.
+ */
+export function cursorThen(
+  mark: string,
+  selected: boolean,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const cursor = selected ? decorationGlyphs(env).listCursor : " ";
+  return `${cursor} ${mark}`;
+}
+
+/**
+ * Search field mark. Focused plain mode says "Search"; an idle plain field
+ * has no icon, so it does not sit next to the `/` commands key.
+ */
+export function searchFieldPrefix(focused: boolean, env: NodeJS.ProcessEnv = process.env): string {
+  if (focused) return `${decorationGlyphs(env).search} `;
+  return plainDecorationsActive(env) ? "" : "› ";
 }
 
 export function stateBlockGlyph(

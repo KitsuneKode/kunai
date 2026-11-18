@@ -5,7 +5,7 @@ import { Box, Text, useInput } from "ink";
 import React from "react";
 
 import type { AppCommandId, ResolvedAppCommand } from "./commands";
-import { decorationGlyphs } from "./decoration-policy";
+import { searchFieldPrefix } from "./decoration-policy";
 import { SectionSeparator } from "./decoration-ui";
 import { isHardGlobalQuit, routeShellInput } from "./input-router";
 import { useRootContentSuspended } from "./RootContentSuspension";
@@ -259,9 +259,7 @@ export function InputField({
       </Box>
       <Box marginTop={1} flexDirection="column">
         <Box paddingX={1}>
-          <Text color={focus ? palette.accent : palette.dim}>
-            {focus ? `${decorationGlyphs().search} ` : "› "}
-          </Text>
+          <Text color={focus ? palette.accent : palette.dim}>{searchFieldPrefix(focus)}</Text>
           <LineEditorText
             value={value}
             cursor={editor.cursor}

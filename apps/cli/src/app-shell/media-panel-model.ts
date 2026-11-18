@@ -14,7 +14,7 @@ import type { TitleDetail } from "@/domain/catalog/title-detail";
 import type { ContentKind } from "@/domain/media/content-kind";
 import type { ContentType, VideoMeta } from "@/domain/types";
 
-import { decorationGlyphs } from "./decoration-policy";
+import { decorationGlyphs, formatScoreLabel } from "./decoration-policy";
 import { resolveEpisodeThumbUrl, resolveSeasonAwarePosterUrl } from "./media-art";
 import type { ShellStatus } from "./types";
 
@@ -148,7 +148,7 @@ export function formatRuntimeMinutes(minutes: number | undefined): string | unde
 
 function formatScore(score: number | undefined): string | undefined {
   if (score === undefined || !Number.isFinite(score) || score <= 0) return undefined;
-  return `★ ${score.toFixed(1)}`;
+  return formatScoreLabel(score, "spaced");
 }
 
 function padSE(value: number | undefined): string | undefined {

@@ -2,6 +2,7 @@ import { Box, measureElement, Text } from "ink";
 import type { DOMElement } from "ink";
 import React, { useEffect, useRef } from "react";
 
+import { terminalPostersEnabled } from "./decoration-policy";
 import type { PosterResult } from "./poster-types";
 import { sixelOverlayManager } from "./sixel-overlay";
 
@@ -73,7 +74,7 @@ export function PosterOutput({
   readonly poster: PosterResult;
   readonly repaintAfterInkRender?: boolean;
 }) {
-  if (poster.kind === "none") return null;
+  if (!terminalPostersEnabled() || poster.kind === "none") return null;
   if (poster.kind === "sixel") {
     return <SixelPosterPane poster={poster} repaintAfterInkRender={repaintAfterInkRender} />;
   }

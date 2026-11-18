@@ -6,6 +6,8 @@ import {
   decorationGlyphs,
   decorativeBorderStyle,
   displaySectionRuleLabel,
+  scrollAffordance,
+  terminalPostersEnabled,
   verticalRulePrefix,
 } from "./decoration-policy";
 import { SectionSeparator } from "./decoration-ui";
@@ -152,8 +154,8 @@ export function DetailsSheetUI({
         </Box>
         {scrollable.length > maxVisibleLines ? (
           <Text color={palette.dim} dimColor>
-            {clampedScroll > 0 ? "▲ " : ""}
-            {clampedScroll < maxScroll ? "▼ scroll" : ""}
+            {clampedScroll > 0 ? scrollAffordance("up", "scroll") : ""}
+            {clampedScroll < maxScroll ? scrollAffordance("down", "scroll") : ""}
           </Text>
         ) : null}
       </Box>
@@ -173,10 +175,11 @@ export function DetailsPaneUI({
   posterCols?: number;
 }) {
   const { primary, secondary } = data;
+  const showPoster = terminalPostersEnabled();
   const { poster, spinner } = usePosterPreview(primary.posterPath ?? undefined, {
     rows: posterRows,
     cols: posterCols,
-    enabled: Boolean(primary.posterPath),
+    enabled: showPoster && Boolean(primary.posterPath),
     debounceMs: 90,
     variant: "detail",
     placementSlot: "details-primary",
@@ -190,18 +193,20 @@ export function DetailsPaneUI({
         <Text color={seriesStateColor}>{verticalRulePrefix(false)}</Text>
       </Box>
       <Box flexDirection="column" flexGrow={1}>
-        <Box marginBottom={1}>
-          {poster.kind !== "none" ? (
-            <PosterOutput poster={poster} />
-          ) : primary.posterPath && spinner ? (
-            <SakuraPetal mode="loading" />
-          ) : (
-            // No poster URL, a cache hit still painting, or a failed fetch — the
-            // initials block is the honest resting state. A spinner that never
-            // resolves reads as a hang.
-            <PosterInitialBlock title={primary.title} width={8} height={4} />
-          )}
-        </Box>
+        {showPoster ? (
+          <Box marginBottom={1}>
+            {poster.kind !== "none" ? (
+              <PosterOutput poster={poster} />
+            ) : primary.posterPath && spinner ? (
+              <SakuraPetal mode="loading" />
+            ) : (
+              // No poster URL, a cache hit still painting, or a failed fetch — the
+              // initials block is the honest resting state. A spinner that never
+              // resolves reads as a hang.
+              <PosterInitialBlock title={primary.title} width={8} height={4} />
+            )}
+          </Box>
+        ) : null}
         <Text bold>{truncateLine(primary.title, width - 4)}</Text>
         <Text color={palette.dim}>
           {[primary.type, primary.year, ...(primary.genres?.slice(0, 2) ?? [])]
@@ -472,6 +477,7 @@ export function TitleDetailSheetUI({
   const factLabelWidth = 8;
   const factValueWidth = Math.max(8, innerWidth - factLabelWidth - 2);
 
+  const showPoster = terminalPostersEnabled();
   const subtitle = buildDetailSubtitle(detail);
   const synopsisLines = wrapSynopsis(detail.synopsis, innerWidth, 4);
   const factRows = buildDetailFactRows(detail);
@@ -484,10 +490,11 @@ export function TitleDetailSheetUI({
       borderColor={palette.line}
       paddingX={1}
     >
-      {/* ---- Poster slot ---- */}
-      <Box marginBottom={1}>
-        <DetailPosterSlot detail={detail} posterRows={posterRows} posterCols={posterCols} />
-      </Box>
+      {showPoster ? (
+        <Box marginBottom={1}>
+          <DetailPosterSlot detail={detail} posterRows={posterRows} posterCols={posterCols} />
+        </Box>
+      ) : null}
 
       {/* ---- Title (bright + bold — weight carries hierarchy) ---- */}
       <Text color={palette.text} bold>

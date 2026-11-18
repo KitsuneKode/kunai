@@ -4,7 +4,7 @@ import { Box, Text } from "ink";
 import React from "react";
 
 import type { ResolvedAppCommand } from "./commands";
-import { listSelectionPrefix } from "./decoration-policy";
+import { listSelectionPrefix, scrollAffordance } from "./decoration-policy";
 import { getCommandPaletteVisibleCommandCount } from "./layout-policy";
 import { MouseTarget } from "./mouse/MouseRegions";
 import {
@@ -397,7 +397,9 @@ export function CommandPalette({
           <>
             {/* Scroll affordance only when there is actually more above — no empty
                 placeholder line, so the palette stays tight. */}
-            {windowStart > 0 ? <Text color={palette.dim}> ▲ more</Text> : null}
+            {windowStart > 0 ? (
+              <Text color={palette.dim}>{scrollAffordance("up", "more")}</Text>
+            ) : null}
             {showGrouped ? (
               <>
                 {(() => {
@@ -429,7 +431,9 @@ export function CommandPalette({
                 return renderCommand(command, absoluteIndex);
               })
             )}
-            {windowEnd < matches.length ? <Text color={palette.dim}> ▼ more</Text> : null}
+            {windowEnd < matches.length ? (
+              <Text color={palette.dim}>{scrollAffordance("down", "more")}</Text>
+            ) : null}
           </>
         ) : (
           <Text color={palette.dim}>No matching commands</Text>

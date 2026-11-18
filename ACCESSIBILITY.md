@@ -32,7 +32,8 @@ plain non-interactive output instead of the shell.
   re-paints. Launch with **`-m` / `--minimal`** (or **`--zen`**, which implies
   it) for plain chrome: ASCII list cursors, shortcut labels without modifier
   symbols, no decorative emoji or mascot lines, no full-width box-drawing
-  rules, no panel box borders, no terminal poster graphics, and forced reduced motion for loaders.
+  rules, no panel box borders, no terminal poster graphics (half-block included, and the slot is not reserved), and forced reduced motion for loaders.
+  A saved `zenMode` setting enables that same plain chrome even when `minimalMode` is off.
   Information and keyboard reachability stay the same; only decoration drops.
   An interactive session with **`TERM=dumb`** gets the same ASCII glyph table
   even without `-m`. If minimal

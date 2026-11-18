@@ -1,7 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
-import { decorationGlyphs } from "./decoration-policy";
+import { decorationGlyphs, terminalPostersEnabled } from "./decoration-policy";
 import type { DetailsSheetModel } from "./details-sheet.model";
 import { wrapSynopsis } from "./details-view";
 import { PosterInitialBlock } from "./poster-initial-block";
@@ -60,16 +60,19 @@ export function DetailsSheet({
   readonly seasonsExpanded: boolean;
   readonly width: number;
 }) {
-  const textWidth = Math.max(20, width - POSTER_COLS - 4);
+  const showPoster = terminalPostersEnabled();
+  const textWidth = showPoster ? Math.max(20, width - POSTER_COLS - 4) : Math.max(20, width - 2);
   const synopsisLines = wrapSynopsis(model.synopsis.text, Math.max(20, width - 2), 6);
 
   return (
     <Box flexDirection="column" width={width}>
-      {/* Header: poster + title/meta/genres */}
+      {/* Header: poster + title/meta/genres. Plain mode omits the slot so the title is not indented. */}
       <Box flexDirection="row">
-        <Box width={POSTER_COLS} marginRight={2}>
-          <SheetPoster url={model.header.posterUrl} title={model.header.title} />
-        </Box>
+        {showPoster ? (
+          <Box width={POSTER_COLS} marginRight={2}>
+            <SheetPoster url={model.header.posterUrl} title={model.header.title} />
+          </Box>
+        ) : null}
         <Box flexDirection="column" flexGrow={1}>
           <Text bold>{model.header.title}</Text>
           <Text color={palette.muted}>{model.header.metaLine}</Text>

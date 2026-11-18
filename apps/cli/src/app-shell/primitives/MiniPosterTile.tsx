@@ -2,6 +2,7 @@ import { CELL_ASPECT } from "@/image/renderers/sixel";
 import { Text } from "ink";
 import React from "react";
 
+import { terminalPostersEnabled } from "../decoration-policy";
 import type { KittyPlacementSlot } from "../kitty-placement-registry";
 import { sanitizeTerminalText } from "../shell-text";
 import { palette } from "../shell-theme";
@@ -76,6 +77,8 @@ export function MiniPosterTile({
     placementSlot: useGraphics ? placementSlot : undefined,
     debounceMs,
   });
+
+  if (!terminalPostersEnabled()) return null;
 
   if (!url) {
     return <Text color={placeholderColor}>{initialsOf(title)}</Text>;

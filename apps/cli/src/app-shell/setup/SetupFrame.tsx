@@ -17,6 +17,7 @@ import React from "react";
 import type { CompanionMoment } from "../companion-moment";
 import { CompanionHost } from "../CompanionHost";
 import {
+  cursorThen,
   decorationGlyphs,
   listSelectionPrefix,
   plainDecorationsActive,
@@ -260,13 +261,11 @@ export function ToggleRow({
 }) {
   const glyphs = decorationGlyphs();
   const mark = kind === "cycle" ? glyphs.cycle : on ? glyphs.toggleOn : glyphs.radioOff;
-  const glyph = `${mark} `;
   const glyphColor = kind === "cycle" ? palette.muted : on ? palette.ok : palette.dim;
   return (
     <Box backgroundColor={selected ? palette.accentFill : undefined}>
-      <Text color={selected ? palette.accent : palette.dim}>{listSelectionPrefix(selected)}</Text>
-      <Text color={glyphColor}>{glyph}</Text>
-      <Box flexDirection="column" flexShrink={1}>
+      <Text color={selected ? palette.accent : glyphColor}>{cursorThen(mark, selected)}</Text>
+      <Box flexDirection="column" flexShrink={1} marginLeft={1}>
         <Text color={palette.text} bold={selected}>
           {label}
         </Text>

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
 import {
+  decorationGlyphs,
   EMOJI_OR_MASCOT,
   LONG_BOX_RULE,
   setPlainDecorationSource,
@@ -10,20 +11,27 @@ import {
   buildBrowseDetailsPanel,
   buildDetailsPanelDataFromBrowseOption,
 } from "@/app-shell/details-panel";
+import { DetailsSheet } from "@/app-shell/details-sheet-ui";
+import { buildDetailsSheet } from "@/app-shell/details-sheet.model";
 import { kannaLinesFor } from "@/app-shell/kanna-voice";
 import { helpSectionsForScope } from "@/app-shell/keybindings";
+import { renderStageRail } from "@/app-shell/loading-shell-runtime";
+import { buildMediaPanel } from "@/app-shell/media-panel-model";
+import { MediaPanel } from "@/app-shell/MediaPanel";
 import { StateBlock } from "@/app-shell/primitives/StateBlock";
 import { HelpShell } from "@/app-shell/root-overlay-shell";
 import { ErrorShell } from "@/app-shell/root-status-shells";
 import { SakuraLoader } from "@/app-shell/SakuraLoader";
 import { fallbackCommandState } from "@/app-shell/shell-command-model";
 import { CommandPalette } from "@/app-shell/shell-command-ui";
+import type { TitleDetail } from "@/domain/catalog/title-detail";
 import React from "react";
 
 import { historyWideNode } from "../../harness/capture-history";
 import { playbackErrorNode } from "../../harness/capture-playback-error";
 import { settingsFixtures } from "../../harness/capture-settings";
 import { SETUP_SCREENS, setupFrameAt } from "../../harness/capture-setup";
+import { StatsOverviewCapture } from "../../harness/capture-stats";
 import { captureFrame } from "../../harness/render-capture";
 
 const BOX_DRAWING = /[┌│└─]/u;
@@ -160,5 +168,95 @@ describe("minimal plain render", () => {
     expect(frames.find(([name]) => name === "browse-details")?.[1]).toContain("Synopsis");
     expect(frames.find(([name]) => name === "loading")?.[1]).toContain("Loading titles");
     expect(frames.find(([name]) => name === "setup-done")?.[1]).toContain("You're all set");
+  });
+
+  test("plain details sheet and now-playing panel have no half-block poster or poster gap", () => {
+    setPlainDecorationSource(() => true);
+    const sheetModel = buildDetailsSheet({
+      seed: {
+        title: "Frieren",
+        type: "series",
+        year: "2023",
+        score: 8.1,
+        posterUrl: "https://image.example/frieren.jpg",
+      },
+      detail: null,
+      history: null,
+      availability: null,
+    });
+    const sheet = captureFrame(
+      <DetailsSheet model={sheetModel} seasonsExpanded={false} width={72} />,
+      { columns: 80, rows: 24 },
+    );
+    expect(sheet).not.toContain("▀");
+    expect(sheet).toContain("Frieren");
+    expect(sheet).toContain("8.1/10");
+    expect(sheet).not.toContain("★");
+    const titleLine = sheet.split("\n").find((line) => line.includes("Frieren"));
+    expect(titleLine?.startsWith("Frieren")).toBe(true);
+
+    const detail: TitleDetail = {
+      id: "438631",
+      type: "movie",
+      title: "Dune",
+      year: "2021",
+      score: 8.1,
+      synopsis: "A noble house arrives on Arrakis.",
+      artwork: { poster: "https://image.example/dune.jpg" },
+    };
+    const panelModel = buildMediaPanel({
+      surface: "playing",
+      contentKind: "movie",
+      title: "Dune",
+      posterUrl: detail.artwork?.poster,
+      titleDetail: detail,
+    });
+    const panel = captureFrame(
+      <MediaPanel model={panelModel} railWidth={36} placementSlot="playing-rail" allowSixel />,
+      { columns: 40, rows: 40 },
+    );
+    expect(panel).not.toContain("▀");
+    expect(panel).toContain("Dune");
+    expect(panel).toContain("8.1/10");
+    expect(panel).not.toContain("★");
+    const contentLines = panel.split("\n").filter((line) => line.trim().length > 0);
+    const duneAt = contentLines.findIndex((line) => line.includes("Dune"));
+    expect(duneAt).toBeGreaterThanOrEqual(0);
+    expect(duneAt).toBeLessThan(3);
+  });
+
+  test("plain streak and stats copy has no emoji", () => {
+    setPlainDecorationSource(() => true);
+    const frame = captureFrame(<StatsOverviewCapture innerWidth={80} rows={24} />, {
+      columns: 90,
+      rows: 30,
+    });
+    expect(frame).toContain("2-day streak");
+    expect(frame).not.toContain("🔥");
+    expect(EMOJI_OR_MASCOT.test(frame)).toBe(false);
+  });
+
+  test("plain loading stage rail and chrome glyphs stay ascii", () => {
+    setPlainDecorationSource(() => true);
+    const rail = renderStageRail("finding-stream", null)
+      .map((item) => `${item.glyph} ${item.label}`)
+      .join("\n");
+    expect(rail).not.toMatch(/[◐◓◑◒]/u);
+    expect(rail).toContain("...");
+
+    const glyphs = decorationGlyphs();
+    expect(glyphs.search).toBe("Search");
+    expect(glyphs.disclosure).toBe("...");
+    expect(glyphs.disclosure).not.toBe(glyphs.listCursor);
+
+    const library = setupFrameAt(3, 80);
+    expect(library).not.toContain(">[");
+    expect(library).toContain("> [");
+
+    const settingsNode = settingsFixtures()[0]?.[1];
+    if (settingsNode === undefined) throw new Error("settings fixture missing");
+    const settings = captureFrame(settingsNode, { columns: 100, rows: 40 });
+    expect(settings).not.toMatch(/[▲▼]/u);
+    expect(settings).not.toContain("> >");
   });
 });

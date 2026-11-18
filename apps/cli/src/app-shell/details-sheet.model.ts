@@ -5,7 +5,7 @@
 // seasons, trailer, links), plus history + availability, into typed sections each
 // carrying a `loading` flag so the renderer can skeleton only the unresolved parts.
 
-import { decorationGlyphs } from "@/app-shell/decoration-policy";
+import { decorationGlyphs, formatScoreLabel } from "@/app-shell/decoration-policy";
 import type { TitleDetail, TitleLink } from "@/domain/catalog/title-detail";
 import { resolveContentKind, type ContentKind } from "@/domain/media/content-kind";
 import { sanitizeTerminalText } from "@/domain/text-display";
@@ -114,7 +114,7 @@ export function buildDetailsSheet(input: {
   const metaLine = [
     typeLabel,
     seed.year !== undefined ? sanitizeTerminalText(seed.year) : undefined,
-    typeof score === "number" ? `★${score.toFixed(1)}` : undefined,
+    typeof score === "number" ? formatScoreLabel(score) : undefined,
     status,
   ]
     .filter(Boolean)

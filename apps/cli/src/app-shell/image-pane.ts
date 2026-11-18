@@ -1,6 +1,7 @@
 import { detectImageCapability } from "@/image";
 import { useEffect, useRef } from "react";
 
+import { terminalPostersEnabled } from "./decoration-policy";
 import { recordPosterFetch } from "./diagnostics/render-trace";
 import {
   getKittyPlacement,
@@ -223,7 +224,7 @@ export async function fetchPoster(
     signal,
   }: PosterFetchOptions,
 ): Promise<PosterResult> {
-  if (!url) return { kind: "none" };
+  if (!url || !terminalPostersEnabled()) return { kind: "none" };
   if (signal?.aborted) return { kind: "none" };
   if (!inkEmbedded && !allowKitty) return { kind: "none" };
   const capability = runtime.detectImageCapability();

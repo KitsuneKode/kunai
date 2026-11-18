@@ -44,7 +44,14 @@ import { useBrowseDestinationLabel } from "./browse-destination";
 import { CapabilityIssueStrip } from "./CapabilityIssueStrip";
 import { dispatchAppCommand } from "./command-router";
 import { setContextualTipListener } from "./contextual-tips";
-import { decorationGlyphs } from "./decoration-policy";
+import {
+  decorationGlyphs,
+  scrollAffordance,
+  streakAtRiskAlert as plainStreakAtRiskAlert,
+  streakHeroPrefix,
+  streakMilestoneAlert as plainStreakMilestoneAlert,
+  undecoratedCopy,
+} from "./decoration-policy";
 import { SectionSeparator } from "./decoration-ui";
 import { recordRender } from "./diagnostics/render-trace";
 import { createDismissTimerRegistry } from "./dismiss-timer-registry";
@@ -642,7 +649,7 @@ export function AppRoot({ container }: { container: Container }) {
         const lastCelebrated = container.config.lastStreakMilestoneDays ?? 0;
         const nextMilestone = getNextStreakMilestone(days, lastCelebrated);
         if (nextMilestone) {
-          setStreakMilestoneAlert(`🔥 ${nextMilestone}-day streak! Keep it going.`);
+          setStreakMilestoneAlert(plainStreakMilestoneAlert(nextMilestone));
           // Must persist: update() is memory-only, so without the save() the same
           // milestone is celebrated again on every launch.
           void container.config
@@ -658,7 +665,7 @@ export function AppRoot({ container }: { container: Container }) {
           try {
             const watchedToday = container.statsService.watchedToday();
             if (!watchedToday) {
-              setStreakAtRiskAlert(`🔥 ${days}d streak at risk — watch something tonight`);
+              setStreakAtRiskAlert(plainStreakAtRiskAlert(days));
               dismissTimers.schedule(() => setStreakAtRiskAlert(null), 10_000);
             }
           } catch {
@@ -1818,7 +1825,7 @@ function ListShell<T>({
               justifyContent="space-between"
             >
               <Box flexDirection="column" width={showCompanion ? listWidth : undefined}>
-                {windowStart > 0 && <Text color={palette.dim}> ▲ ...</Text>}
+                {windowStart > 0 && <Text color={palette.dim}>{scrollAffordance("up")}</Text>}
                 {visibleOptions.map((option) => {
                   const selected = option === selectedOption;
                   const isConfirmed = confirmed && selected;
@@ -1881,7 +1888,9 @@ function ListShell<T>({
                     </Box>
                   );
                 })}
-                {windowEnd < filteredOptions.length && <Text color={palette.dim}> ▼ ...</Text>}
+                {windowEnd < filteredOptions.length && (
+                  <Text color={palette.dim}>{scrollAffordance("down")}</Text>
+                )}
               </Box>
               {!ultraCompact && showCompanion ? (
                 <Box marginLeft={2} flexDirection="column" width={companionWidth}>
@@ -2053,7 +2062,7 @@ function StatsShell({
     else if (input === "3") setRangeIdx(2);
     else if (input === "s") {
       const shareText = [
-        statsFormatter.formatSummaryLine(stats),
+        undecoratedCopy(statsFormatter.formatSummaryLine(stats)),
         statsFormatter.formatWeeklyDigest(stats),
         "",
         statsFormatter.formatTopShows(stats.topShows.slice(0, 5)),
@@ -2122,7 +2131,7 @@ function StatsShell({
           <Box marginTop={1} flexDirection="column">
             {view.streakHero ? (
               <Text>
-                <Text color={palette.accentDeep}>{"🔥 " + view.streakHero}</Text>
+                <Text color={palette.accentDeep}>{streakHeroPrefix() + view.streakHero}</Text>
                 {view.streakDetail ? (
                   <Text color={palette.muted}>{" · " + view.streakDetail}</Text>
                 ) : null}

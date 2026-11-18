@@ -1,4 +1,4 @@
-import { decorationGlyphs } from "@/app-shell/decoration-policy";
+import { decorationGlyphs, scrollAffordance } from "@/app-shell/decoration-policy";
 import { DownloadManagerContent } from "@/app-shell/download-manager-shell";
 import { useConnectivityOnline } from "@/app-shell/hooks/use-connectivity-online";
 import { useRailPoster } from "@/app-shell/hooks/use-rail-poster";
@@ -500,7 +500,7 @@ function LibraryTab({
           </Text>
         </Box>
       ) : null}
-      {showScrollUp ? <Text color={palette.dim}> ▲ ...</Text> : null}
+      {showScrollUp ? <Text color={palette.dim}>{scrollAffordance("up")}</Text> : null}
       {items.map((item) => {
         if (item.kind === "section") {
           return <SectionGroup key={`section-${item.label}`} label={item.label} marginTop={1} />;
@@ -544,7 +544,7 @@ function LibraryTab({
           </MouseTarget>
         );
       })}
-      {showScrollDown ? <Text color={palette.dim}> ▼ ...</Text> : null}
+      {showScrollDown ? <Text color={palette.dim}>{scrollAffordance("down")}</Text> : null}
       {selectedOfflineGroup && confirmDeleteKey === selectedOfflineGroup.key ? (
         <Box marginTop={1}>
           <Text color={palette.accentDeep}>

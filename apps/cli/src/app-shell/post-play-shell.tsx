@@ -22,6 +22,7 @@ import {
   decorativeBorderStyle,
   listSelectionPrefix,
   plainDecorationsActive,
+  terminalPostersEnabled,
 } from "./decoration-policy";
 import { buildMediaPanel } from "./media-panel-model";
 import { MediaPanel } from "./MediaPanel";
@@ -202,6 +203,7 @@ function DiscoveryCard({
   readonly kittySlot?: (typeof DISCOVERY_KITTY_SLOTS)[number];
   readonly allowKitty?: boolean;
 }) {
+  const showPoster = terminalPostersEnabled();
   const titleWidth = Math.max(8, width - 4);
   const reasonWidth = Math.max(4, width - 4);
   const posterCols = Math.max(8, width - 4);
@@ -214,17 +216,19 @@ function DiscoveryCard({
       flexDirection="column"
       width={width}
     >
-      <Box minHeight={3} justifyContent="center" alignItems="center">
-        <MiniPosterTile
-          url={card.posterUrl}
-          title={card.title}
-          cols={posterCols}
-          rows={3}
-          enabled={Boolean(card.posterUrl)}
-          allowKitty={allowKitty}
-          placementSlot={kittySlot}
-        />
-      </Box>
+      {showPoster ? (
+        <Box minHeight={3} justifyContent="center" alignItems="center">
+          <MiniPosterTile
+            url={card.posterUrl}
+            title={card.title}
+            cols={posterCols}
+            rows={3}
+            enabled={Boolean(card.posterUrl)}
+            allowKitty={allowKitty}
+            placementSlot={kittySlot}
+          />
+        </Box>
+      ) : null}
       <Text color={palette.accent} bold>
         {String(card.index)}
       </Text>
@@ -276,21 +280,23 @@ function DiscoveryCards({
     <Box flexDirection="column" marginTop={1}>
       {cards.map((card, index) => (
         <Box key={card.id} flexDirection="row" flexWrap="nowrap">
-          <Box width={5}>
-            <MiniPosterTile
-              url={card.posterUrl}
-              title={card.title}
-              cols={4}
-              rows={2}
-              enabled={Boolean(card.posterUrl)}
-              allowKitty={allowKitty && index < DISCOVERY_KITTY_SLOTS.length}
-              placementSlot={
-                allowKitty && index < DISCOVERY_KITTY_SLOTS.length
-                  ? DISCOVERY_KITTY_SLOTS[index]
-                  : undefined
-              }
-            />
-          </Box>
+          {terminalPostersEnabled() ? (
+            <Box width={5}>
+              <MiniPosterTile
+                url={card.posterUrl}
+                title={card.title}
+                cols={4}
+                rows={2}
+                enabled={Boolean(card.posterUrl)}
+                allowKitty={allowKitty && index < DISCOVERY_KITTY_SLOTS.length}
+                placementSlot={
+                  allowKitty && index < DISCOVERY_KITTY_SLOTS.length
+                    ? DISCOVERY_KITTY_SLOTS[index]
+                    : undefined
+                }
+              />
+            </Box>
+          ) : null}
           <Text color={palette.accent} bold>
             {String(card.index).padStart(1)}{" "}
           </Text>
@@ -358,15 +364,16 @@ function NextUpHeroCard({
   readonly contentKind?: ContentKind;
   readonly titleType?: ContentType;
 }) {
+  const showPoster = terminalPostersEnabled();
   const innerWidth = Math.max(20, width - 4);
   // Larger hero still so Kitty/Sixel episode art reads sharp next to the rail.
   const posterCols = Math.min(16, Math.max(12, Math.floor(innerWidth * 0.28)));
   const posterRows = 6;
-  const textWidth = Math.max(8, innerWidth - posterCols - 2);
+  const textWidth = showPoster ? Math.max(8, innerWidth - posterCols - 2) : Math.max(8, innerWidth);
   const { poster, spinner } = usePosterPreview(artworkUrl, {
     rows: posterRows,
     cols: posterCols,
-    enabled: Boolean(artworkUrl),
+    enabled: showPoster && Boolean(artworkUrl),
     variant: "preview",
     allowKitty: true,
     allowSixel: true,
@@ -395,18 +402,25 @@ function NextUpHeroCard({
         {nextUpHeroHeading(hero.kind)}
       </Text>
       <Box flexDirection="row" marginTop={1}>
-        <Box width={posterCols} minHeight={posterRows} justifyContent="center" alignItems="center">
-          {poster.kind !== "none" ? (
-            <PosterOutput poster={poster} />
-          ) : spinner ? (
-            <SakuraPetal mode="loading" />
-          ) : (
-            <Text color={palette.dim} bold>
-              {initialsOf(title)}
-            </Text>
-          )}
-        </Box>
-        <Box flexDirection="column" marginLeft={2}>
+        {showPoster ? (
+          <Box
+            width={posterCols}
+            minHeight={posterRows}
+            justifyContent="center"
+            alignItems="center"
+          >
+            {poster.kind !== "none" ? (
+              <PosterOutput poster={poster} />
+            ) : spinner ? (
+              <SakuraPetal mode="loading" />
+            ) : (
+              <Text color={palette.dim} bold>
+                {initialsOf(title)}
+              </Text>
+            )}
+          </Box>
+        ) : null}
+        <Box flexDirection="column" marginLeft={showPoster ? 2 : 0}>
           <Text color={palette.text} bold>
             {truncateLine(hero.label, textWidth)}
           </Text>

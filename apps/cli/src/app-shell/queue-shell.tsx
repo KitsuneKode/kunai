@@ -1,6 +1,7 @@
 import { Box, Text, useInput } from "ink";
 import React, { useEffect, useRef } from "react";
 
+import { scrollAffordance, terminalPostersEnabled } from "./decoration-policy";
 import { useRailPoster } from "./hooks/use-rail-poster";
 import { MouseTarget } from "./mouse/MouseRegions";
 import { buildMediaListRowColumns, computeMediaListRowLayout } from "./primitives/list-row-layout";
@@ -22,7 +23,8 @@ function QueueRow({
   readonly selected: boolean;
   readonly rowWidth: number;
 }) {
-  const innerWidth = Math.max(16, rowWidth - 5);
+  const showPoster = terminalPostersEnabled();
+  const innerWidth = Math.max(16, showPoster ? rowWidth - 5 : rowWidth);
   const layout = computeMediaListRowLayout(innerWidth, { hasEpisode: true });
   const stateLabel =
     row.state === "starting"
@@ -35,9 +37,11 @@ function QueueRow({
   const stateColor = row.state === "starting" ? palette.accent : palette.muted;
   return (
     <Box flexDirection="row">
-      <Box width={5}>
-        <MiniPosterTile url={row.posterUrl} title={row.title} enabled={selected} />
-      </Box>
+      {showPoster ? (
+        <Box width={5}>
+          <MiniPosterTile url={row.posterUrl} title={row.title} enabled={selected} />
+        </Box>
+      ) : null}
       <Box flexGrow={1}>
         <ListRow
           selected={selected}
@@ -115,7 +119,7 @@ export function QueueShell({
         />
       ) : (
         <>
-          {start > 0 ? <Text color={palette.dim}> ▲ ...</Text> : null}
+          {start > 0 ? <Text color={palette.dim}>{scrollAffordance("up")}</Text> : null}
           {view.rows.slice(start, start + visibleCount).map((row, index) => (
             <MouseTarget
               key={row.id}
@@ -135,7 +139,9 @@ export function QueueShell({
               />
             </MouseTarget>
           ))}
-          {start + visibleCount < view.rows.length ? <Text color={palette.dim}> ▼ ...</Text> : null}
+          {start + visibleCount < view.rows.length ? (
+            <Text color={palette.dim}>{scrollAffordance("down")}</Text>
+          ) : null}
         </>
       )}
     </Box>

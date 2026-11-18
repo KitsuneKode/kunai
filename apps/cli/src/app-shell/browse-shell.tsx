@@ -111,6 +111,7 @@ import {
   listSelectionPrefix,
   localizeShortcutGlyphs,
   plainDecorationsActive,
+  scrollAffordance,
   terminalPostersEnabled,
 } from "./decoration-policy";
 import { SectionSeparator } from "./decoration-ui";
@@ -2340,7 +2341,7 @@ export function BrowseShell<T>({
               width={companionBesideList ? listWidth : undefined}
             >
               {(isCalendarView ? calendarWindow.start : windowStart) > 0 ? (
-                <Text color={palette.dim}> ▲ ...</Text>
+                <Text color={palette.dim}>{scrollAffordance("up")}</Text>
               ) : null}
               {isCalendarView
                 ? visibleCalendarRows.map((row) => {
@@ -2437,7 +2438,7 @@ export function BrowseShell<T>({
                   ? calendarWindow.end < calendarRenderRows.length
                   : windowEnd < displayOptions.length
               ) ? (
-                <Text color={palette.dim}> ▼ ...</Text>
+                <Text color={palette.dim}>{scrollAffordance("down")}</Text>
               ) : null}
             </Box>
 

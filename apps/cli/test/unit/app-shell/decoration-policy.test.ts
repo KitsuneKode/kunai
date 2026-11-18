@@ -2,11 +2,19 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import {
   alignedStatusMark,
+  cursorThen,
   decorationGlyphs,
   EMOJI_OR_MASCOT,
+  formatScoreLabel,
+  plainDecorationFromLayout,
   plainDecorationsActive,
+  scrollAffordance,
+  searchFieldPrefix,
   setPlainDecorationSource,
   stateBlockGlyph,
+  streakHeroPrefix,
+  streakMilestoneAlert,
+  undecoratedCopy,
 } from "@/app-shell/decoration-policy";
 import { reducedMotionEnabled } from "@/app-shell/motion-policy";
 
@@ -59,6 +67,41 @@ describe("decoration-policy", () => {
     const g = decorationGlyphs(env);
     expect(g.listCursor).toBe("▌");
     expect(stateBlockGlyph("success", env)).toBe("✓");
+  });
+
+  test("a saved zen layout uses the same plain chrome as minimal", () => {
+    expect(plainDecorationFromLayout({ minimalMode: false, zenMode: true })).toBe(true);
+    expect(plainDecorationFromLayout({ minimalMode: true, zenMode: false })).toBe(true);
+    expect(plainDecorationFromLayout({ minimalMode: false, zenMode: false })).toBe(false);
+  });
+
+  test("plain copy drops stars, fire, and arrow scroll marks", () => {
+    setPlainDecorationSource(() => true);
+    expect(formatScoreLabel(8.1)).toBe("8.1/10");
+    expect(formatScoreLabel(8.1, "spaced")).toBe("8.1/10");
+    expect(streakMilestoneAlert(3)).toBe("3-day streak! Keep it going.");
+    expect(streakHeroPrefix()).toBe("");
+    expect(undecoratedCopy("🔥 3d streak")).toBe("3d streak");
+    expect(scrollAffordance("up")).toBe(" more above");
+    expect(scrollAffordance("down", "more")).toBe(" more below");
+    expect(cursorThen("[ ]", true)).toBe("> [ ]");
+    expect(decorationGlyphs().search).toBe("Search");
+    expect(decorationGlyphs().disclosure).toBe("...");
+    expect(searchFieldPrefix(true)).toBe("Search ");
+    expect(searchFieldPrefix(false)).toBe("");
+  });
+
+  test("rich copy keeps the decorated forms", () => {
+    expect(formatScoreLabel(8.1)).toBe("★8.1");
+    expect(formatScoreLabel(8.1, "spaced")).toBe("★ 8.1");
+    expect(streakMilestoneAlert(3)).toBe("🔥 3-day streak! Keep it going.");
+    expect(streakHeroPrefix()).toBe("🔥 ");
+    expect(scrollAffordance("down")).toBe(" ▼ ...");
+    expect(scrollAffordance("up", "more")).toBe(" ▲ more");
+    expect(scrollAffordance("down", "scroll")).toBe("▼ scroll");
+    expect(cursorThen("○", true)).toBe("▌ ○");
+    expect(searchFieldPrefix(true)).toBe("⌕ ");
+    expect(searchFieldPrefix(false)).toBe("› ");
   });
 
   test("emoji detector matches pictographics", () => {

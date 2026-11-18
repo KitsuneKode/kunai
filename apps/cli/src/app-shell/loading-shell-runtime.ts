@@ -1,7 +1,11 @@
 import { classifyProviderResolveUserState } from "@/app/playback/provider-resolve-user-state";
 import type { PlaybackProblem } from "@/domain/playback/playback-problem";
 
-import { decorationGlyphs, localizeShortcutGlyphs } from "./decoration-policy";
+import {
+  decorationGlyphs,
+  localizeShortcutGlyphs,
+  plainDecorationsActive,
+} from "./decoration-policy";
 import { sanitizeTerminalText } from "./shell-text";
 import type { LoadingShellStage, LoadingShellState, ShellStatusTone } from "./types";
 
@@ -180,7 +184,7 @@ export function renderStageRail(
     if (i === safeIdx) {
       return {
         label: STAGE_LABELS[stage],
-        glyph: STAGE_GLYPHS[stage],
+        glyph: plainDecorationsActive() ? decorationGlyphs().statusLoading : STAGE_GLYPHS[stage],
         tone: issue ? "warning" : "info",
       };
     }
