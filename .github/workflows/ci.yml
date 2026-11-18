@@ -412,7 +412,9 @@ jobs:
         timeout-minutes: 3
         env:
           KUNAI_CI_REAL_VAULT: "1"
-        run: bun run --cwd apps/cli test:integration credential-vault-windows.test.ts
+        # test:file, not test:integration: that script already names the whole
+        # test/integration directory, so appending a file ran every suite.
+        run: bun run --cwd apps/cli test:file test/integration/credential-vault-windows.test.ts
 
       - name: Test Windows storage lifecycle
         # SQLite handles and temp-directory teardown have Windows-specific

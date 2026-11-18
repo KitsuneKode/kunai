@@ -10,7 +10,10 @@ import {
   CREDENTIAL_KEYS,
   CREDENTIAL_VAULT_PROBE_KEY,
 } from "@/services/persistence/credential-vault";
-import { createCredentialVault } from "@/services/persistence/credential-vault-backends";
+import {
+  createCredentialVault,
+  WINCRED_CATCH_FAULT,
+} from "@/services/persistence/credential-vault-backends";
 import {
   migrateSyncTokensToVault,
   resolveCredentialStoreStatus,
@@ -737,4 +740,12 @@ describe("ConfigService vault lane (#179)", () => {
     expect(service.videasySessionToken).toBe("keep-me");
     expect(store.written.at(-1)?.videasySessionToken).toBe("keep-me");
   });
+});
+
+test("Windows not-found check compares PowerShell's signed Int32 HResult", () => {
+  // PasswordVault "element not found" is HRESULT 0x80070490. PowerShell
+  // reports $_.Exception.HResult as Int32, i.e. -2147023728; the unsigned
+  // 2147943568 never matches and turns every not-found into a fault.
+  expect(WINCRED_CATCH_FAULT).toContain("-eq -2147023728");
+  expect(WINCRED_CATCH_FAULT).not.toContain("2147943568");
 });

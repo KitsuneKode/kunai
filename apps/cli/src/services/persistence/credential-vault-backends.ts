@@ -174,7 +174,10 @@ function wincredNotFound(out: {
 const WINCRED_ELEMENT_NOT_FOUND = 0x80070490;
 
 /** Map PasswordVault faults to stderr + non-1 exit; bare exit 1 means absent. */
-const WINCRED_CATCH_FAULT = `catch { if ($_.Exception.HResult -eq ${WINCRED_ELEMENT_NOT_FOUND}) { exit 1 }; [Console]::Error.Write($_.Exception.Message); exit 2 }`;
+// PowerShell's HResult is a signed Int32 (-2147023728); the JS literal
+// 0x80070490 is the unsigned 2147943568, so interpolate it as Int32 or `-eq`
+// never matches and every not-found becomes a fault.
+export const WINCRED_CATCH_FAULT = `catch { if ($_.Exception.HResult -eq ${WINCRED_ELEMENT_NOT_FOUND | 0}) { exit 1 }; [Console]::Error.Write($_.Exception.Message); exit 2 }`;
 
 /**
  * Windows Credential Manager via WinRT `PasswordVault` through Windows
