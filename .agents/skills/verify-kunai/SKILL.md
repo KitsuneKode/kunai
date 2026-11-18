@@ -13,9 +13,12 @@ produce the quote, report "not verified" — never "should work".
 ## The loop
 
 1. **Route.** Find the owning code through `.docs/feature-map.md`, read the
-   handler and its real callee, and pick rows from
-   [references/scenarios.md](references/scenarios.md) — the happy path **and**
-   the reverse or failure case. One happy path never verifies a feature.
+   handler and its real callee. Start from the journey's file in
+   [features/](features/README.md) — each holds a key plan that was run, for
+   the happy path **and** the way back out — and pick any extra rows from
+   [references/scenarios.md](references/scenarios.md). One happy path never
+   verifies a feature. A plan that no longer matches the app is drift: fix the
+   feature file in the same change.
 2. **Pick the lowest tier that can answer the question** (table below).
 3. **Drive one transition at a time** — wait for the surface you are about to
    type into, act, then wait for the next.
