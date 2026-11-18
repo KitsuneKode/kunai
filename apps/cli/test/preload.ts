@@ -1,3 +1,5 @@
+import { installProfileGuard } from "./helpers/profile-guard";
+
 function configureTestEnvironment(): void {
   /** Block xdg-open / browser spawns during `bun test` unless a test opts out explicitly. */
   process.env.KUNAI_DISABLE_EXTERNAL_URL ??= "1";
@@ -9,3 +11,6 @@ function configureTestEnvironment(): void {
 }
 
 configureTestEnvironment();
+
+/** Fail the run if a test changed the developer's real Kunai profile. See helpers/profile-guard.ts. */
+installProfileGuard();
