@@ -92,9 +92,9 @@ describe("ProjectCard", () => {
   });
 
   test("falls back to the repository when a project has no site", () => {
-    const kittymux = workshop.find((project) => project.repo === "kittymux")!;
-    const html = renderToStaticMarkup(<ProjectCard project={kittymux} meta={undefined} />);
-    expect(html).toContain(`href="${kittymux.repoUrl}"`);
+    const themes = workshop.find((project) => project.repo === "nvchad-themes")!;
+    const html = renderToStaticMarkup(<ProjectCard project={themes} meta={undefined} />);
+    expect(html.match(/<a [^>]*>/)?.[0]).toContain(`href="${themes.repoUrl}"`);
   });
 
   test("prints stars at the floor and above, not below, and the update date", () => {
