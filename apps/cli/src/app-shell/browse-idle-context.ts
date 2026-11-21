@@ -156,10 +156,14 @@ export async function buildBrowseIdleContext(
           playlistNext: playlistNextItem
             ? {
                 title: playlistNextItem.title,
+                // Movie queue items carry `undefined` (not `null`) for season and
+                // episode; a strict `!== null` check rendered "SundefinedEundefined".
                 ep:
-                  playlistNextItem.mediaKind === "video" && playlistNextItem.episode !== null
+                  playlistNextItem.mediaKind === "video" &&
+                  (playlistNextItem.episode ?? null) !== null
                     ? `#${playlistNextItem.episode}`
-                    : playlistNextItem.season !== null && playlistNextItem.episode !== null
+                    : (playlistNextItem.season ?? null) !== null &&
+                        (playlistNextItem.episode ?? null) !== null
                       ? `S${String(playlistNextItem.season).padStart(2, "0")}E${String(playlistNextItem.episode).padStart(2, "0")}`
                       : undefined,
                 titleId: playlistNextItem.titleId,
