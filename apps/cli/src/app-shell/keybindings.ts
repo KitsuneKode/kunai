@@ -75,6 +75,8 @@ export type KeyBinding = {
    * (handled by another layer — the line editor, the list controller, or mpv).
    */
   readonly helpOnly?: boolean;
+  /** Superseded shortcut kept for migration notes only — omitted from grouped help. */
+  readonly legacy?: boolean;
   /** Optional slash-command id for palette / footer / help parity. */
   readonly commandId?: AppCommandId;
   /**
@@ -334,6 +336,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     group: "While browsing",
     footerPriority: 19,
     helpOnly: true,
+    legacy: true,
   },
   {
     id: "browse-notifications",
@@ -1245,10 +1248,15 @@ export function footerHints(scope: KeyScope, max?: number): readonly KeyHint[] {
 }
 
 /** Group a set of bindings into help sections, preserving first-seen group order. */
+function isLegacyHelpBinding(binding: KeyBinding): boolean {
+  return binding.legacy === true;
+}
+
 function groupHelpSections(bindings: readonly KeyBinding[]): readonly HelpSection[] {
   const order: string[] = [];
   const byGroup = new Map<string, KeyHint[]>();
   for (const binding of bindings) {
+    if (isLegacyHelpBinding(binding)) continue;
     if (!byGroup.has(binding.group)) {
       byGroup.set(binding.group, []);
       order.push(binding.group);

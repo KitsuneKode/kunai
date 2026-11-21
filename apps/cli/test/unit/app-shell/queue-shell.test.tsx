@@ -44,7 +44,7 @@ function frame(cols: number): string {
   ).replace(ANSI, "");
 }
 
-test.each([72, 100, 140])("renders queue rows cleanly at %i cols", (cols) => {
+test.each([72, 99, 140])("renders queue rows cleanly at %i cols", (cols) => {
   const out = frame(cols);
   expect(out).toContain("UP NEXT");
   expect(out).toContain("The Eminence in Shadow");
@@ -65,8 +65,8 @@ test("a claimed row renders startup without implying the player began", () => {
     resolvePoster: () => undefined,
     recoverableSessions: 0,
   });
-  const out = captureFrame(<QueueShell view={view} columns={100} listWidth={92} rowWidth={88} />, {
-    columns: 100,
+  const out = captureFrame(<QueueShell view={view} columns={99} listWidth={92} rowWidth={88} />, {
+    columns: 99,
   }).replace(ANSI, "");
   expect(out).toContain("starting");
   expect(out).not.toContain("playing");

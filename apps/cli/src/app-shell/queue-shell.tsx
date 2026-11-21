@@ -7,6 +7,7 @@ import { buildMediaListRowColumns, computeMediaListRowLayout } from "./primitive
 import { ListRow } from "./primitives/ListRow";
 import { MediaListShell } from "./primitives/MediaListShell";
 import { MiniPosterTile } from "./primitives/MiniPosterTile";
+import { PREVIEW_RAIL_MIN_COLUMNS } from "./primitives/PreviewRail.model";
 import { SectionGroup } from "./primitives/SectionGroup";
 import { StateBlock } from "./primitives/StateBlock";
 import type { QueueView, QueueViewRow } from "./queue-view";
@@ -97,7 +98,7 @@ export function QueueShell({
   const { poster: railPoster } = useRailPoster(view.rail?.posterUrl, {
     rows: 12,
     cols: 26,
-    enabled: columns >= 124,
+    enabled: columns >= PREVIEW_RAIL_MIN_COLUMNS,
     variant: "detail",
   });
 

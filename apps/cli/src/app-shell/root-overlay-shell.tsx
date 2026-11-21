@@ -361,6 +361,7 @@ function HelpShell({
   highlightedIndex,
   footerActions,
   onClose,
+  terminalColumns = 120,
 }: {
   /** Scope-filtered help sections for the surface beneath the overlay. */
   sections: readonly HelpSection[];
@@ -373,6 +374,7 @@ function HelpShell({
   highlightedIndex: number;
   footerActions: readonly FooterAction[];
   onClose: () => void;
+  terminalColumns?: number;
 }) {
   const tabs = sections.length > 0 ? sections.map((section) => section.group) : HELP_TABS;
   const sectionByGroup = useMemo(
@@ -412,9 +414,10 @@ function HelpShell({
   }));
   // Dense reference card: split the active section's rows into two balanced
   // columns so a long surface (player/postPlayback) reads without scrolling.
-  const half = Math.ceil(rows.length / 2);
+  const singleColumn = terminalColumns < 96;
+  const half = singleColumn ? rows.length : Math.ceil(rows.length / 2);
   const leftRows = rows.slice(0, half);
-  const rightRows = rows.slice(half);
+  const rightRows = singleColumn ? [] : rows.slice(half);
   const keyColWidth = Math.max(8, ...rows.map((row) => row.key.length));
   const renderColumn = (columnRows: typeof rows, side: "left" | "right") => (
     <Box flexDirection="column" flexGrow={1} marginRight={side === "left" ? 2 : 0}>
@@ -436,7 +439,6 @@ function HelpShell({
           </Text>
           <Text color={palette.muted}>{`  ·  ${scopeLabel}`}</Text>
         </Box>
-        <Text color={palette.dim}>{"Tab / Shift+Tab cycles sections · Esc or ? closes"}</Text>
         {/* Tab strip */}
         <Box flexDirection="row" marginTop={1} marginBottom={0} flexWrap="wrap">
           {tabs.map((tab) => (
@@ -2575,6 +2577,7 @@ export function RootOverlayShell({
         highlightedIndex={highlightedIndex}
         footerActions={footerActions}
         onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
+        terminalColumns={cols}
       />,
     );
   }

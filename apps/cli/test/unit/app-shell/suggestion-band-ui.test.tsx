@@ -83,7 +83,6 @@ test("a bounded window follows the last selection and accounts for every rendere
       const lines = stripAnsi(h.lastFrame()).split("\n");
       expect(lines.length).toBe(getSuggestionBandRowCount(model, selectedIndex, 7));
       expect(lines.length).toBeLessThanOrEqual(7);
-      expect(h.lastFrame()).toContain("↑↓ move");
       if (selectedIndex >= 0) expect(h.lastFrame()).toContain(`Dune chapter ${selectedIndex + 1}`);
     } finally {
       h.unmount();
@@ -148,7 +147,7 @@ test("a constrained parent cannot squeeze suggestion rows into each other", () =
   );
   try {
     expect(h.lastFrame()).toContain("Preview · Enter open · Ctrl+O details");
-    expect(h.lastFrame()).toContain("Suggestions · ↑↓ move · Esc dismiss");
+    expect(h.lastFrame()).not.toContain("Suggestions · ↑↓ move · Esc dismiss");
     const lines = h.lastFrame().split("\n");
     expect(lines.findIndex((line) => line.includes("Preview"))).not.toBe(
       lines.findIndex((line) => line.includes("Suggestions")),

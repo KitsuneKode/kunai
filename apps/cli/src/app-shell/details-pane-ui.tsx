@@ -61,6 +61,31 @@ function sheetLineColor(tone: ShellPanelLine["tone"]): string {
   return semanticToneColor(tone);
 }
 
+/** Ink row budget for a stacked browse details sheet — mirrors {@link DetailsSheetUI}. */
+export function measureDetailsSheetRowBudget(
+  data: DetailsPanelData,
+  lines: readonly ShellPanelLine[],
+  maxVisibleLines: number,
+  width = 48,
+): number {
+  const { primary } = data;
+  const headerLines = [
+    primary.title,
+    [primary.type, primary.year, ...(primary.genres?.slice(0, 3) ?? [])]
+      .filter(Boolean)
+      .join(" · "),
+    primary.synopsis ? truncateAtWord(primary.synopsis, width * 2) : undefined,
+  ].filter((line): line is string => Boolean(line));
+  const bodyStart = headerLines.length;
+  const scrollable = lines.slice(bodyStart);
+  let rows = 2;
+  if (primary.synopsis) rows += 2;
+  rows += 1;
+  rows += Math.min(maxVisibleLines, scrollable.length);
+  if (scrollable.length > maxVisibleLines) rows += 1;
+  return rows;
+}
+
 export function DetailsSheetUI({
   data,
   lines,

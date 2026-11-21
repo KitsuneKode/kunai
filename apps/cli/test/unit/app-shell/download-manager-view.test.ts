@@ -32,6 +32,7 @@ describe("buildDownloadManagerLayout", () => {
   test.each([
     [72, false, 72],
     [100, false, 100],
+    [110, true, 76],
     [140, true, 106],
   ] as const)("download layout at %d columns", (columns, showRail, expectedListWidth) => {
     const layout = buildDownloadManagerLayout(columns);
@@ -49,8 +50,9 @@ describe("buildDownloadManagerLayout", () => {
   });
 
   test("the rail appears exactly at the documented width threshold", () => {
-    expect(buildDownloadManagerLayout(123).showRail).toBe(false);
-    expect(buildDownloadManagerLayout(124).showRail).toBe(true);
+    expect(buildDownloadManagerLayout(109).showRail).toBe(false);
+    expect(buildDownloadManagerLayout(110).showRail).toBe(true);
+    expect(buildDownloadManagerLayout(100).showRail).toBe(false);
   });
 
   test("a degenerate width still yields a usable, non-negative list", () => {

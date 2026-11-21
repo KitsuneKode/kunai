@@ -1,3 +1,4 @@
+import { PREVIEW_RAIL_MIN_COLUMNS } from "./primitives/PreviewRail.model";
 import type { ShellFooterMode } from "./types";
 
 export type ShellViewportKind = "browse" | "picker" | "playback";
@@ -89,9 +90,12 @@ export function getShellViewportPolicy(
   const wideBrowse = !blocked && kind === "browse" && wide;
   const mediumBrowse = !blocked && kind === "browse" && medium;
   const previewRail =
-    // Policy gate (140+): browse shell may still show PreviewRail at 124+ when the
-    // component's own threshold is met — see PreviewRail.model.ts and browse-shell.
-    wideBrowse && terminalProfile === "local" && columns >= 140 && rows >= GLOBAL_BLOCKED_MIN_ROWS;
+    !blocked &&
+    kind === "browse" &&
+    !zen &&
+    terminalProfile === "local" &&
+    columns >= PREVIEW_RAIL_MIN_COLUMNS &&
+    rows >= GLOBAL_BLOCKED_MIN_ROWS;
 
   const { minColumns, minRows } = KIND_MINIMUMS[kind];
   const tooSmall = blocked || columns < minColumns || rows < minRows;
@@ -309,6 +313,30 @@ export function getOverlayListMaxVisible(input: {
 const BROWSE_BASE_CHROME_ROWS = 10;
 const BROWSE_FOOTER_ROWS = 5;
 
+/**
+ * Guaranteed list rows in medium (stacked companion) browse before the details
+ * block takes height. Five rows fit a compact result set (calendar items, short
+ * search pages) with scroll affordance while keeping the companion optional.
+ */
+export const BROWSE_LIST_MIN_ROWS = 5;
+
+export function getBrowseSharedContentRowBudget(
+  rows: number,
+  chromeRows: number,
+  rootHeaderRows: number = ROOT_CHROME_ROWS,
+  transientRows: number = TRANSIENT_ROW_SLOTS,
+): number {
+  return (
+    rows -
+    rootHeaderRows -
+    transientRows -
+    chromeRows -
+    BROWSE_FOOTER_ROWS -
+    BROWSE_INK_BUFFER_ROWS -
+    SCROLL_AFFORDANCE_ROWS
+  );
+}
+
 export function getBrowseChromeRows(flags: {
   readonly hasResultSubtitle: boolean;
   readonly hasFilterBar: boolean;
@@ -337,15 +365,11 @@ export function getBrowseListMaxVisible(
   chromeRows: number,
   rootHeaderRows: number = ROOT_CHROME_ROWS,
   transientRows: number = TRANSIENT_ROW_SLOTS,
+  stackedCompanionRows: number = 0,
 ): number {
   const available =
-    rows -
-    rootHeaderRows -
-    transientRows -
-    chromeRows -
-    BROWSE_FOOTER_ROWS -
-    BROWSE_INK_BUFFER_ROWS -
-    SCROLL_AFFORDANCE_ROWS;
+    getBrowseSharedContentRowBudget(rows, chromeRows, rootHeaderRows, transientRows) -
+    stackedCompanionRows;
   return Math.max(1, Math.min(18, available));
 }
 

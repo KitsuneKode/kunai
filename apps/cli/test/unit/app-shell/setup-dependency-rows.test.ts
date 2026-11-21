@@ -183,7 +183,7 @@ describe("buildDependencyRows", () => {
     const ffmpeg = rows.find((row) => row.id === "ffmpeg");
     expect(ffmpeg?.consequence).toContain("merge");
     const mpv = rows.find((row) => row.id === "mpv");
-    expect(mpv?.consequence).toContain("Nothing can play");
+    expect(mpv?.consequence).toContain("install mpv to play");
   });
 
   test("distinguishes plain curl from an impersonate build", async () => {

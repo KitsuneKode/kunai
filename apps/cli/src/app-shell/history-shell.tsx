@@ -8,7 +8,7 @@ import { ClaudeTabRow } from "./primitives/ClaudeTabRow";
 import { buildMediaListRowColumns, computeMediaListRowLayout } from "./primitives/list-row-layout";
 import { ListRow } from "./primitives/ListRow";
 import { MediaListShell } from "./primitives/MediaListShell";
-import { shouldRenderPreviewRail } from "./primitives/PreviewRail.model";
+import { PREVIEW_RAIL_MIN_COLUMNS, shouldRenderPreviewRail } from "./primitives/PreviewRail.model";
 import { ResumeCard } from "./primitives/ResumeCard";
 import { SectionGroup } from "./primitives/SectionGroup";
 import { StateBlock } from "./primitives/StateBlock";
@@ -47,7 +47,7 @@ export function HistoryShell({
   const { poster: railPoster } = useRailPoster(railPosterUrl, {
     rows: 12,
     cols: 26,
-    enabled: columns >= 124,
+    enabled: columns >= PREVIEW_RAIL_MIN_COLUMNS,
   });
   const selectedItem = view.items.find(
     (item): item is Extract<HistoryView["items"][number], { kind: "row" }> =>

@@ -60,6 +60,28 @@ function humanReadableRootStatus(raw: string): string {
   }
 }
 
+function formatPlaybackProblemCause(cause: string): string {
+  if (cause === "mpv-missing") return "mpv is not installed";
+  return cause;
+}
+
+function resolveSettledHeaderStatus(input: {
+  readonly rootStatus: string;
+  readonly networkAvailable: boolean;
+  readonly offlineMode: boolean;
+  readonly mpvAvailable?: boolean;
+}): { readonly label: string; readonly tone: ShellStatusTone } | null {
+  const settled = input.rootStatus === "ready" || input.rootStatus === "idle";
+  if (!settled || input.offlineMode) return null;
+  if (!input.networkAvailable) {
+    return { label: "offline", tone: "warning" };
+  }
+  if (input.mpvAvailable === false) {
+    return { label: "mpv missing", tone: "warning" };
+  }
+  return null;
+}
+
 function headerTone(rootStatus: string): ShellStatusTone {
   if (rootStatus === "error") return "error";
   if (rootStatus === "playing" || rootStatus === "ready" || rootStatus === "idle") return "success";
@@ -87,6 +109,7 @@ export function buildRootStatusSummary({
   newEpisodeNotificationCount,
   offlineMode = false,
   networkAvailable = true,
+  mpvAvailable,
   playbackIsLocal = false,
   providerRegistry,
 }: {
@@ -101,6 +124,7 @@ export function buildRootStatusSummary({
   newEpisodeNotificationCount?: number;
   offlineMode?: boolean;
   networkAvailable?: boolean;
+  mpvAvailable?: boolean;
   playbackIsLocal?: boolean;
   providerRegistry?: ProviderNameLookup;
 }): RootStatusSummary {
@@ -111,7 +135,14 @@ export function buildRootStatusSummary({
     rootStatus === "seeking" ||
     rootStatus === "paused";
 
-  const headerLabel = humanReadableRootStatus(rootStatus);
+  const settledHeader = resolveSettledHeaderStatus({
+    rootStatus,
+    networkAvailable,
+    offlineMode,
+    mpvAvailable,
+  });
+  const headerLabel = settledHeader?.label ?? humanReadableRootStatus(rootStatus);
+  const networkOfflineInHeader = settledHeader?.label === "offline";
 
   // Crumb: show the provider actually serving the active stream when it differs from the
   // session selection (for example after recovery fallback or stale shell state).
@@ -146,7 +177,7 @@ export function buildRootStatusSummary({
   const crumbParts: string[] = [];
   if (offlineMode) {
     crumbParts.push("offline mode");
-  } else if (!networkAvailable) {
+  } else if (!networkAvailable && !networkOfflineInHeader) {
     crumbParts.push("no network");
   }
   if (isActivePlayback && playbackIsLocal) {
@@ -214,7 +245,7 @@ export function buildRootStatusSummary({
   let alert: RootStatusAlert | null = null;
   if (state.playbackProblem) {
     alert = {
-      text: `⚠ issue · ${state.playbackProblem.cause}`,
+      text: `⚠ issue · ${formatPlaybackProblemCause(state.playbackProblem.cause)}`,
       tone: state.playbackProblem.severity === "blocking" ? "error" : "warning",
     };
   } else if (state.autoplaySessionPaused) {
@@ -227,7 +258,7 @@ export function buildRootStatusSummary({
     alert = { text: `⬇ ${downloadStatus}`, tone: "info" };
   } else if (offlineMode && !isActivePlayback) {
     alert = { text: "offline mode · library only", tone: "info" };
-  } else if (!networkAvailable && !offlineMode && !isActivePlayback) {
+  } else if (!networkAvailable && !offlineMode && !isActivePlayback && !networkOfflineInHeader) {
     alert = { text: "network unavailable · local copies preferred", tone: "warning" };
   }
   // Standing notification count is NOT an alert — the alert slot is reserved for
@@ -239,7 +270,7 @@ export function buildRootStatusSummary({
   return {
     header: {
       label: headerLabel,
-      tone: headerTone(rootStatus),
+      tone: settledHeader?.tone ?? headerTone(rootStatus),
     },
     crumb,
     alert,

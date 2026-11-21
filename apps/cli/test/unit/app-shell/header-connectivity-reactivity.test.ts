@@ -30,6 +30,7 @@ describe("header connectivity reactivity", () => {
       networkAvailable: connectivity.isOnline(),
       offlineMode: false,
     });
-    expect(offlineSummary.alert?.text).toContain("network unavailable");
+    expect(offlineSummary.header.label).toBe("offline");
+    expect(offlineSummary.alert).toBeNull();
   });
 });

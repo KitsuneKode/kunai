@@ -70,7 +70,9 @@ export function buildDependencyRows(
         : "not required by selected player",
     fix: mpvIssue ? fixFor(mpvIssue.install, which) : null,
     ...(mpvRequired && !snapshot.mpv
-      ? { consequence: "Nothing can play until this is installed." }
+      ? {
+          consequence: "mpv is not installed — you can still browse; install mpv to play.",
+        }
       : null),
   });
 

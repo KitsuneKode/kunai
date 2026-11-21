@@ -91,18 +91,15 @@ describe("NotificationsShell", () => {
     expect(frame).toContain("allanime");
   });
 
-  it("collapses the rail at 100 and 72 columns while keeping rows and labels", () => {
-    for (const columns of [100, 72]) {
-      const frame = frameAt(columns);
+  it("keeps the rail only from the shared minimum width upward", () => {
+    const narrow = frameAt(72);
+    expect(narrow).toContain("Frieren S1E13 available");
+    expect(narrow).not.toContain("mark read");
 
-      expect(frame).toContain("Frieren S1E13 available");
-      expect(frame).toContain("Play now");
-      expect(frame).toContain("Needs attention");
-      // Rail-only evidence is absent.
-      expect(frame).not.toContain("mark read");
-      expect(frame).not.toContain("S01E06");
-      expect(frame).not.toContain("↵ Play now");
-    }
+    const rail = frameAt(100);
+    expect(rail).toContain("Frieren S1E13 available");
+    expect(rail).toContain("mark read");
+    expect(rail).toContain("E06");
   });
 
   it("renders a read selected row without the unread badge in the rail", () => {

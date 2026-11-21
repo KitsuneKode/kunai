@@ -127,7 +127,8 @@ describe("buildBrowseDetailsPanel", () => {
         { label: "Watch history", detail: "Watched · S01E05", tone: "success" },
       ]),
     );
-    expect(panel.lines.find((line) => line.label === "─── Details")).toBeDefined();
+    expect(panel.lines.find((line) => line.label === "Metadata source")).toBeUndefined();
+    expect(panel.lines.find((line) => line.label === "─── Details")).toBeUndefined();
   });
 
   test("builds compact companion facts for the selected browse result", () => {

@@ -37,6 +37,10 @@ import React, {
   useSyncExternalStore,
 } from "react";
 
+import {
+  getBrowseStackedCompanionRows,
+  resolveBrowseStackedListLayout,
+} from "./browse-companion-budget";
 import { resolveBrowseDestinationLabel, setBrowseDestinationLabel } from "./browse-destination";
 import { decideBrowseFilterAction } from "./browse-filter-actions";
 import {
@@ -121,11 +125,7 @@ import { SUGGESTION_DEBOUNCE_MS, useSearchSuggestions } from "./hooks/use-search
 import { undisplayPlacementsKeepCache } from "./image-pane";
 import { resolveBrowseBindingEffect, resolveKeybinding } from "./keybinding-runtime";
 import { buildFooterActionsFromBindings } from "./keybindings";
-import {
-  getBrowseChromeRows,
-  getBrowseCommandPaletteMaxVisible,
-  getBrowseListMaxVisible,
-} from "./layout-policy";
+import { getBrowseChromeRows, getBrowseCommandPaletteMaxVisible } from "./layout-policy";
 import { reducedMotionEnabled } from "./motion-policy";
 import { MouseTarget, useMouseEnabled, useMouseRegion } from "./mouse/MouseRegions";
 import type { BrowseOverlay } from "./overlay-panel";
@@ -141,7 +141,7 @@ import {
   type ListRowColumn,
 } from "./primitives/ListRow.model";
 import { PreviewRail } from "./primitives/PreviewRail";
-import { shouldRenderPreviewRail } from "./primitives/PreviewRail.model";
+import { shouldRenderBrowsePreviewRail } from "./primitives/PreviewRail.model";
 import { StateBlock } from "./primitives/StateBlock";
 import { mountRootContent } from "./root-content-state";
 import {
@@ -1394,7 +1394,27 @@ export function BrowseShell<T>({
   const showPreviewRail =
     showCompanion &&
     viewport.previewRail &&
-    shouldRenderPreviewRail({ columns: viewport.columns, hasModel: previewRailModel !== null });
+    shouldRenderBrowsePreviewRail({
+      companionBesideList,
+      listWidth,
+      hasModel: previewRailModel !== null,
+    });
+  const detailsMaxVisibleLines = viewport.breakpoint === "wide" ? 14 : 10;
+  const companionView =
+    settledOption === selectedOption
+      ? companionDetails
+      : buildDetailsPanelDataFromBrowseOption(selectedOption);
+  const detailsSheetLines = buildDetailsSheetLines(selectedOption, companionView.secondary);
+  const stackedCompanionNaturalRows = getBrowseStackedCompanionRows({
+    showCompanion,
+    companionBesideList,
+    showPreviewRail,
+    previewRailModel,
+    previewWidth,
+    companionView,
+    detailsLines: detailsSheetLines,
+    detailsMaxVisibleLines,
+  });
   const resultStatus = browseResultStatusLine({
     resultSubtitle,
     resultFilter,
@@ -1425,14 +1445,15 @@ export function BrowseShell<T>({
         ? getSuggestionBandRowCount(suggestionBandModel, boundedSuggestionIndex, suggestionMaxRows)
         : 0,
   });
-  const maxVisible = getBrowseListMaxVisible(viewport.rows, browseChromeRows);
-  // The card follows the selected row at once; enriched details arrive when the
-  // selection settles. Rendering only the settled data flashed "No selection"
-  // over a row that was plainly selected.
-  const companionView =
-    settledOption === selectedOption
-      ? companionDetails
-      : buildDetailsPanelDataFromBrowseOption(selectedOption);
+  const stackedListLayout = resolveBrowseStackedListLayout({
+    terminalRows: viewport.rows,
+    chromeRows: browseChromeRows,
+    listItemCount: displayOptions.length,
+    stackedCompanionNaturalRows,
+  });
+  const showStackedCompanion =
+    showCompanion && (companionBesideList || stackedListLayout.showStackedCompanion);
+  const maxVisible = stackedListLayout.listMaxVisible;
   const windowStart = getWindowStart(boundedSelectedIndex, displayOptions.length, maxVisible);
   const windowEnd = Math.min(windowStart + maxVisible, displayOptions.length);
   const visibleOptions = displayOptions.slice(windowStart, windowEnd);
@@ -2188,7 +2209,7 @@ export function BrowseShell<T>({
                   commandMode
                     ? undefined
                     : suggestionBandVisible && suggestionBandModel.rows.length > 0
-                      ? "↓ suggestions · → complete · esc dismiss · ↵ search"
+                      ? "Enter to search · ↑↓ suggestions · Esc dismiss"
                       : displayOptions.length === 0
                         ? canFocusIdleRows
                           ? "Type a title · ↓ for you now · / commands"
@@ -2436,7 +2457,7 @@ export function BrowseShell<T>({
             </Box>
 
             {/* Companion pane */}
-            {showCompanion ? (
+            {showStackedCompanion ? (
               <Box
                 // Stable key: a selection-derived key here force-UNMOUNTED and
                 // remounted the whole preview pane (PreviewRail + poster + details)
@@ -2467,10 +2488,10 @@ export function BrowseShell<T>({
                 ) : (
                   <DetailsSheetUI
                     data={companionView}
-                    lines={buildDetailsSheetLines(selectedOption, companionView.secondary)}
+                    lines={detailsSheetLines}
                     width={previewWidth}
                     scrollIndex={0}
-                    maxVisibleLines={viewport.breakpoint === "wide" ? 14 : 10}
+                    maxVisibleLines={detailsMaxVisibleLines}
                   />
                 )}
               </Box>
@@ -2524,7 +2545,7 @@ export function BrowseShell<T>({
                 detail: errorMessage ?? "Something went wrong while loading results.",
                 actions: [
                   { id: "retry", label: "Retry search", shortcut: "Enter" },
-                  { id: "clear", label: "Clear and start over", shortcut: "Esc", tone: "muted" },
+                  { id: "clear", label: "Clear query", shortcut: "Esc", tone: "muted" },
                 ],
               }}
               width={Math.min(innerWidth, 72)}
@@ -2667,6 +2688,7 @@ export function BrowseShell<T>({
                 ...(onFollowSelected ? ["browse-follow"] : []),
               ]
             : []),
+          "help",
         ];
         const allBrowseFooterActions: readonly FooterAction[] = [
           {
@@ -2677,10 +2699,9 @@ export function BrowseShell<T>({
           },
           {
             key: "↑↓",
-            label: listFocused
-              ? "navigate · ↑↓ ends → search"
-              : idleFocused
-                ? "navigate · ↑↓ ends → search"
+            label:
+              listFocused || idleFocused
+                ? "navigate · [esc] search"
                 : canFocusIdleRows || options.length > 0
                   ? "navigate · ↓ leave search"
                   : "navigate",
@@ -2700,6 +2721,7 @@ export function BrowseShell<T>({
               "browse-queue": "up-next",
               "browse-watchlist": "bookmark",
               "browse-follow": "follow",
+              help: "help",
             },
             overrides: {
               "browse-mode": {
