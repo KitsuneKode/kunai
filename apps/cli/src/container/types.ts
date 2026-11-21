@@ -55,6 +55,7 @@ import type { OfflineRunwayService } from "../services/offline/OfflineRunwayServ
 import type { CacheStore } from "../services/persistence/CacheStore";
 import type { ConfigService } from "../services/persistence/ConfigService";
 import type { ConfigStore } from "../services/persistence/ConfigStore";
+import type { CredentialStoreStatus } from "../services/persistence/credential-vault";
 import type { StorageMaintenanceService } from "../services/persistence/StorageMaintenanceService";
 import type { SyncTokenStore } from "../services/persistence/SyncTokenStore";
 import type { EpisodePlaybackSelectionService } from "../services/playback/EpisodePlaybackSelectionService";
@@ -180,6 +181,7 @@ export interface Container {
   readonly statsService: StatsService;
   readonly statsFormatter: StatsFormatter;
   readonly syncTokenStore: SyncTokenStore;
+  readonly credentialStoreStatus: CredentialStoreStatus;
   readonly syncService: SyncService;
   readonly syncReconciliationRepository: import("@kunai/storage").SyncReconciliationRepository;
   /** Typed, non-secret: whether each tracker's auth flow can start at all. */

@@ -34,6 +34,26 @@ export type CredentialVaultDeps = {
   readonly onFallback?: (backend: CredentialBackendId, reason: string) => void;
 };
 
+/** Throwaway probe key — must never collide with tracker credential names. */
+export const CREDENTIAL_VAULT_PROBE_KEY = "__kunai_probe__";
+
+/**
+ * Effective credential lane after bootstrap: native vault vs plaintext
+ * `sync-tokens.json` when the vault is unreachable or migration is pending.
+ */
+export type CredentialStoreStatus = {
+  readonly vaultBackend: CredentialBackendId;
+  readonly tokenStore: "vault" | "sync-tokens.json";
+  readonly reason?: string;
+};
+
+export function formatCredentialStoreDetail(status: CredentialStoreStatus): string {
+  const tokenHint = status.tokenStore === "sync-tokens.json" ? " · sync-tokens.json" : "";
+  const base = `${status.vaultBackend}${tokenHint}`;
+  if (!status.reason) return base;
+  return `${base} (${status.reason})`;
+}
+
 /** Spawn shape the CLI backends need: argv array, secret on stdin, timed out. */
 export type CredentialSpawn = (
   argv: readonly string[],

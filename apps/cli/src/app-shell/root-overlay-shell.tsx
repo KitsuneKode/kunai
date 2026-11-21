@@ -843,6 +843,7 @@ export function RootOverlayShell({
             config: container.config.getRaw(),
             state,
             capabilitySnapshot: container.capabilitySnapshot,
+            credentialStoreStatus: container.credentialStoreStatus,
           })
         : overlay.type === "diagnostics"
           ? diagnosticsLines
