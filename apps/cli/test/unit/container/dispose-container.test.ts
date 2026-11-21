@@ -2,8 +2,15 @@ import { expect, test } from "bun:test";
 
 import { disposeContainer, registerContainerDisposeHandles } from "@/container/dispose-container";
 import type { Container } from "@/container/types";
+import {
+  bindTitleDetailCrosswalk,
+  isTitleDetailCrosswalkBound,
+} from "@/services/catalog/TitleDetailService";
 
-function fakeContainer(calls: string[], options: { failDataClose?: boolean } = {}) {
+function fakeContainer(
+  calls: string[],
+  options: { failDataClose?: boolean; onDataClose?: () => void } = {},
+) {
   const container = {
     presence: {
       shutdown: () => {
@@ -44,6 +51,7 @@ function fakeContainer(calls: string[], options: { failDataClose?: boolean } = {
     dataDb: {
       close: () => {
         calls.push("data:close");
+        options.onDataClose?.();
         if (options.failDataClose) throw new Error("data close failed");
       },
     } as never,
@@ -105,4 +113,26 @@ test("concurrent disposal runs every resource exactly once", async () => {
 test("disposing a null or unregistered container is a no-op", async () => {
   await disposeContainer(null);
   await disposeContainer({} as Container);
+});
+
+/**
+ * The crosswalk reads the catalog cache through a module-level binding. Left
+ * bound after dispose, the next title-detail lookup in the process queried a
+ * closed database — which is how `test:future`, running files serially, failed
+ * every TitleDetailService test after any test that booted a container.
+ */
+test("unbinds the title-detail crosswalk before the databases close", async () => {
+  const calls: string[] = [];
+  let boundAtClose: boolean | undefined;
+  bindTitleDetailCrosswalk(() => undefined);
+  const container = fakeContainer(calls, {
+    onDataClose: () => {
+      boundAtClose = isTitleDetailCrosswalkBound();
+    },
+  });
+
+  await disposeContainer(container);
+
+  expect(boundAtClose).toBe(false);
+  expect(isTitleDetailCrosswalkBound()).toBe(false);
 });
