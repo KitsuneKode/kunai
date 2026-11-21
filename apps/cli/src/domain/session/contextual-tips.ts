@@ -57,7 +57,7 @@ export type ContextualTip = {
 // Every entry was audited against two sources: the palette list for the
 // surface (`SEARCH_BROWSE_COMMAND_IDS`, `COMMAND_CONTEXTS`) and the keybinding
 // scope that owns the taught key. Two near-misses are deliberately absent:
-// `/playlist-add` has no tip because `q` only works on the browse list, where
+// `/playlist-add` has no tip because `u` only works on the browse list, where
 // the palette does not offer the command; and `/details` has no tip because
 // its key is focus-split (`i` under list focus, ⌃O under search focus), so a
 // one-line teach would be wrong half the time.

@@ -5,6 +5,7 @@ import {
 } from "@/app-shell/download-manager-view";
 import { useRailPoster } from "@/app-shell/hooks/use-rail-poster";
 import { useSettledValue } from "@/app-shell/hooks/use-settled-value";
+import { isListBackKey } from "@/app-shell/input-router";
 import {
   getPickerChromeRows,
   getPickerListMaxVisible,
@@ -332,7 +333,8 @@ export function DownloadManagerContent({
   const suspended = useRootContentSuspended();
   useInput(
     (input, key) => {
-      if (key.escape) {
+      // Downloads has no text field, so bare `q` backs out like Esc.
+      if (isListBackKey(input, key)) {
         onClose();
         return;
       }

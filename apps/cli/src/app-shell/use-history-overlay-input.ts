@@ -1,5 +1,6 @@
 import { cycleHistoryTab, cycleHistoryTypeFilter, type HistoryTab } from "@/app-shell/history-view";
 import type { HistoryTypeFilter } from "@/app-shell/history-view";
+import { isListBackKey } from "@/app-shell/input-router";
 import type { LineEditorKey } from "@/app-shell/line-editor";
 import type { HistoryPickerOptionsContext } from "@/app-shell/panel-data";
 import {
@@ -233,7 +234,7 @@ export function handleHistoryOverlayInput(
       ctx.onHistoryMutated();
       return "handled";
     }
-    if (key.escape) {
+    if (isListBackKey(input, key)) {
       ctx.setPendingDelete(null);
       ctx.setOverlayStatus(null);
       return "handled";
@@ -319,7 +320,7 @@ export function handleHistoryOverlayInput(
     void openHistoryTitleControlMenu(ctx, selected);
     return "handled";
   }
-  if (input.toLowerCase() === "q") {
+  if (input.toLowerCase() === "u") {
     if (selected) {
       const historySelection = buildRootHistorySelection(
         selected,

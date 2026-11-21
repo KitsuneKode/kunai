@@ -2,7 +2,7 @@
 title: Kunai CLI Keybindings
 description: Screen-by-screen keybinding map for the Kunai terminal shell.
 status: current
-lastReviewed: "2026-10-24"
+lastReviewed: "2026-11-17"
 ---
 
 # Kunai CLI Keybindings
@@ -20,8 +20,13 @@ visibly different.
 - `/playlist` and `/pl` are compatibility aliases for `/playlists`; `/queue` is a compatibility alias for `/up-next`.
 - `?` opens help on non-text playback and panel surfaces. In focused search or
   filter fields, use `/help` so `?` can still be typed normally.
-- `Esc` closes the top overlay or picker first; in post-playback it returns to
-  previous results.
+- `Esc` (and bare `q` on list surfaces that are not typing in a search/filter field)
+  closes the top overlay or picker first; in post-playback it returns to
+  previous results. Bare `q` matches that back behavior on browse lists, Downloads,
+  Up Next, Notifications, and History while its filter is empty. In type-to-filter pickers (provider,
+  episode, season, subtitle, recommendations) `q` is always a filter letter, so
+  a filter can start with "q"; use Esc there. Active playback `q` still stops
+  playback; post-play and setup `q` still quit when those surfaces own focus.
 - `Ctrl+C` is the hard global exit.
 - Text inputs keep terminal editing behavior. Printable keys type text unless
   the surface explicitly has no focused input.
@@ -52,7 +57,8 @@ visibly different.
 | `Tab`      | Cycle catalog mode (series / anime / YouTube)                                     |
 | `/`        | Open command palette                                                              |
 | `m`        | Open starting-point menu for the highlighted title (same as Enter)                |
-| `q`        | Add selected result to Up Next when the result list, not text input, owns focus   |
+| `u`        | Add selected result to Up Next when the result list, not text input, owns focus   |
+| `q`        | Back (same as Esc) when the result list, not text input, owns focus               |
 | `w`        | Add selected result to Watchlist when the result list, not text input, owns focus |
 | `Shift+W`  | Follow selected title when the result list, not text input, owns focus            |
 | `Shift+Q`  | Open Up Next when the result list, not text input, owns focus                     |
@@ -243,7 +249,8 @@ manual skip key can still offer finite known segments while autoskip is paused.
 | Key            | Action                                     |
 | -------------- | ------------------------------------------ |
 | `Enter`        | Resume the highlighted title               |
-| `q`            | Add the highlighted title to Up Next       |
+| `u`            | Add the highlighted title to Up Next       |
+| `q`            | Back (same as Esc)                         |
 | `m`            | Open title actions for the highlighted row |
 | `w`            | Toggle watched for the highlighted row     |
 | `Tab` / `⇧Tab` | Cycle history tabs (Shift reverses)        |

@@ -1164,7 +1164,7 @@
       "id": "browse-queue",
       "scope": "browse",
       "group": "While browsing",
-      "keys": "q",
+      "keys": "u",
       "label": "Add the highlighted title to Up Next",
       "tier": "surface",
       "order": 230

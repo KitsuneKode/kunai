@@ -128,6 +128,7 @@ import {
   type HistoryTypeFilter,
 } from "./history-view";
 import { routeOverlayInput } from "./input-router";
+import { isListBackKey } from "./input-router";
 import { helpSections, helpSectionsForScope, type HelpSection, type KeyScope } from "./keybindings";
 import {
   getOverlayContentViewport,
@@ -160,6 +161,8 @@ import {
 import {
   isOverlayCancelActive,
   shouldHandleOverlayEscape,
+  isOverlayListBackKey,
+  rootOverlayAcceptsTypedFilter,
   shouldHistoryOverlayAcceptFilterInput,
 } from "./overlay-input-safety";
 import { OverlayLayoutProvider, type OverlayLayoutValue } from "./overlay-layout-context";
@@ -1602,7 +1605,7 @@ export function RootOverlayShell({
       };
       const inSubtitleGrid = tracksNav.focusedPane === "options" && navCtx.gridColumns > 1;
 
-      if (key.escape) {
+      if (isListBackKey(input, key)) {
         const backAction = resolveOverlayBackStack({
           nestedPaneActive: tracksNav.focusedPane === "options",
           pickerOverlay: true,
@@ -1679,13 +1682,35 @@ export function RootOverlayShell({
       }
       return;
     }
-    if (key.escape) {
+    const overlayFilterQuery = isRootMediaPickerOverlay(overlay)
+      ? (overlay.filterQuery ?? "")
+      : filterQuery;
+    const overlayAcceptsTypedFilter = rootOverlayAcceptsTypedFilter({
+      overlay,
+      notificationPlayConfirm: Boolean(notificationPlayConfirm),
+      notificationActionDedupKey,
+      pendingDelete: historyPendingDelete,
+      sourceChoiceTitleId: historySourceChoiceTitleId,
+    });
+    if (
+      isOverlayListBackKey(input, key, {
+        acceptsTypedFilter: overlayAcceptsTypedFilter,
+        filterQuery: overlayFilterQuery,
+        // History, Up Next and Notifications bind bare letters as commands
+        // (u/m/w · J/K/g/G/x · s/r/x/d/a/A/C); Up Next and Notifications never
+        // read a typed filter at all. `q` is back there, not a hidden letter.
+        lettersAreCommands:
+          overlay.type === "history" ||
+          overlay.type === "queue" ||
+          overlay.type === "notifications",
+      })
+    ) {
       const backAction = resolveOverlayBackStack({
         cancelActive: shouldHandleOverlayEscape({
           overlay,
           pickerFilterQuery,
         }),
-        filterQuery: isRootMediaPickerOverlay(overlay) ? (overlay.filterQuery ?? "") : filterQuery,
+        filterQuery: overlayFilterQuery,
         confirmationActive:
           (overlay.type === "notifications" &&
             Boolean(notificationPlayConfirm || notificationActionDedupKey)) ||
@@ -2206,6 +2231,11 @@ export function RootOverlayShell({
         return;
       }
       if (
+        // Up Next and the Notifications inbox never read or show a typed
+        // filter; feeding them letters only built invisible text that the next
+        // Esc then had to clear.
+        overlay.type !== "queue" &&
+        overlay.type !== "notifications" &&
         shouldHistoryOverlayAcceptFilterInput({
           overlayType: overlay.type,
           pendingDelete: historyPendingDelete,

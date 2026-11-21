@@ -155,7 +155,13 @@ test("buildFooterActionsFromBindings preserves display keys and appends the comm
 test("matchBinding matches browse watchlist and follow chords", () => {
   expect(matchBinding("browse", "w", {})?.id).toBe("browse-watchlist");
   expect(matchBinding("browse", "W", { shift: true })?.id).toBe("browse-follow");
-  expect(matchBinding("browse", "q", {})?.id).toBe("browse-queue");
+  expect(matchBinding("browse", "u", {})?.id).toBe("browse-queue");
+  expect(matchBinding("browse", "q", {})).toBeNull();
+});
+
+test("matchBinding ignores Ctrl+Q and bare q is not add-to-up-next", () => {
+  expect(matchBinding("browse", "q", { ctrl: true })).toBeNull();
+  expect(matchBinding("browse", "u", { ctrl: true })).toBeNull();
 });
 
 test("bindingForCommand links stable slash commands to browse shortcuts", () => {

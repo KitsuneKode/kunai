@@ -50,6 +50,7 @@ import { startDownloadStatusMonitor } from "./download-status-monitor";
 import { ExitShell } from "./exit-shell";
 import { useSettledValue } from "./hooks/use-settled-value";
 import { deleteAllKittyImages } from "./image-pane";
+import { isListBackKey } from "./input-router";
 import {
   clearInteractiveShellMounted,
   markInteractiveShellMounted,
@@ -2009,7 +2010,7 @@ function StatsShell({
       requestAppShutdown({ reason: "SIGINT", exitCode: 130 });
       return;
     }
-    if (key.escape || input === "q") {
+    if (isListBackKey(input, key)) {
       onBack();
       return;
     }

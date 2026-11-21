@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-07"
+lastReviewed: "2026-11-17"
 ---
 
 # Up Next
@@ -35,8 +35,8 @@ The current shell exposes:
 - `/up-next`: inspect and manage the current playback order
 - `/queue`: compatibility alias for `/up-next`
 - `/notifications`: `Enter` restores recoverable Up Next sessions or queues new episode notices
-- `/history`: `q` adds the selected history item to Up Next without replacing playback
-- search, trending, and recommendation browse rows: `q` adds the highlighted row to Up Next without opening it
+- `/history`: `u` adds the selected history item to Up Next without replacing playback
+- search, trending, and recommendation browse rows: `u` adds the highlighted row to Up Next without opening it
 - post-playback recommendation rail: `1`, `2`, or `3` **plays** that pick immediately
   (`post-play-view.ts` → `{ type: "recommendation" }`). The shifted variants `!`, `@`, `#`
   open that pick's action menu, which is where adding to Up Next lives
