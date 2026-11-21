@@ -13,6 +13,7 @@ describe("interactive boot readiness", () => {
 
   it("accepts a fresh wizard with visible input hints", () => {
     expect(bootSurface("Kunai · welcome  setup 1⁄7\n[enter] continue\nSetup")).toBe("Setup");
+    expect(bootSurface("Kunai · welcome  setup 1/6\n[enter] continue\nSetup")).toBe("Setup");
   });
 
   it("rejects brand-only startup output and unrecognized screens", () => {

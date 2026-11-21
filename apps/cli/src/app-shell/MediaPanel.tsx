@@ -12,6 +12,12 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import {
+  decorationGlyphs,
+  decorativeBorderStyle,
+  terminalPostersEnabled,
+} from "./decoration-policy";
+import { SectionSeparator } from "./decoration-ui";
 import type { KittyPlacementSlot } from "./kitty-placement-registry";
 import type { MediaPanelFact, MediaPanelMiniCard, MediaPanelModel } from "./media-panel-model";
 import { MiniPosterTile } from "./primitives/MiniPosterTile";
@@ -46,17 +52,7 @@ function miniCardPlacementSlot(
 // ── Section divider (── label ──) ──────────────────────────────────────────
 
 function SectionLabel({ label, width }: { readonly label: string; readonly width: number }) {
-  const text = label.toLowerCase();
-  const sideLen = Math.max(0, width - measureColumns(text) - 2);
-  const left = Math.min(2, sideLen);
-  const right = Math.max(0, sideLen - left);
-  return (
-    <Box marginTop={1} flexDirection="row" flexWrap="nowrap">
-      <Text color={palette.lineSoft}>{"─".repeat(left)}</Text>
-      <Text color={palette.muted}> {text} </Text>
-      <Text color={palette.lineSoft}>{"─".repeat(right)}</Text>
-    </Box>
-  );
+  return <SectionSeparator width={width} label={label} />;
 }
 
 // ── Poster slot (the single Kitty image budget) ────────────────────────────
@@ -157,34 +153,37 @@ function MiniCard({
   readonly allowSixel: boolean;
   readonly placementSlot?: KittyPlacementSlot;
 }) {
+  const showPoster = terminalPostersEnabled();
   const thumbCols = Math.min(MINI_CARD_THUMB_COLS, Math.max(8, width - 10));
-  const textWidth = Math.max(6, width - thumbCols - 3);
+  const textWidth = showPoster ? Math.max(6, width - thumbCols - 3) : Math.max(6, width - 1);
   const accent = card.kind === "resume" ? palette.accent : palette.text;
   const useGraphics = allowKitty && Boolean(placementSlot);
   return (
     <Box flexDirection="row" flexWrap="nowrap" marginTop={1}>
-      <Box
-        width={thumbCols}
-        minHeight={useGraphics ? MINI_CARD_THUMB_ROWS : 3}
-        justifyContent="center"
-        alignItems="center"
-      >
-        {card.thumbUrl ? (
-          <MiniPosterTile
-            url={card.thumbUrl}
-            title={title}
-            cols={thumbCols}
-            rows={useGraphics ? MINI_CARD_THUMB_ROWS : 3}
-            enabled
-            allowKitty={useGraphics}
-            allowSixel={allowSixel}
-            placementSlot={placementSlot}
-          />
-        ) : (
-          <SakuraPetal mode="placeholder" active={active} bold={false} />
-        )}
-      </Box>
-      <Box flexDirection="column" marginLeft={1}>
+      {showPoster ? (
+        <Box
+          width={thumbCols}
+          minHeight={useGraphics ? MINI_CARD_THUMB_ROWS : 3}
+          justifyContent="center"
+          alignItems="center"
+        >
+          {card.thumbUrl ? (
+            <MiniPosterTile
+              url={card.thumbUrl}
+              title={title}
+              cols={thumbCols}
+              rows={useGraphics ? MINI_CARD_THUMB_ROWS : 3}
+              enabled
+              allowKitty={useGraphics}
+              allowSixel={allowSixel}
+              placementSlot={placementSlot}
+            />
+          ) : (
+            <SakuraPetal mode="placeholder" active={active} bold={false} />
+          )}
+        </Box>
+      ) : null}
+      <Box flexDirection="column" marginLeft={showPoster ? 1 : 0}>
         <Text color={accent} bold>
           {truncateLine(card.label, textWidth)}
         </Text>
@@ -201,8 +200,8 @@ export const MediaPanel = React.memo(function MediaPanel({
   railWidth,
   active = true,
   placementSlot,
-  allowKitty = true,
-  allowSixel = true,
+  allowKitty = terminalPostersEnabled(),
+  allowSixel = terminalPostersEnabled(),
 }: {
   readonly model: MediaPanelModel;
   readonly railWidth: number;
@@ -215,6 +214,7 @@ export const MediaPanel = React.memo(function MediaPanel({
   /** Permit framebuffer Sixel output. Keep false on high-frequency surfaces. */
   readonly allowSixel?: boolean;
 }) {
+  const showPoster = terminalPostersEnabled();
   const innerWidth = Math.max(12, railWidth - 3);
   const synopsisLines = model.synopsis
     ? wrapText(model.synopsis, innerWidth, SYNOPSIS_MAX_LINES)
@@ -225,24 +225,26 @@ export const MediaPanel = React.memo(function MediaPanel({
       flexDirection="column"
       width={railWidth}
       paddingLeft={2}
-      borderStyle="single"
+      borderStyle={decorativeBorderStyle("single")}
       borderColor={palette.lineSoft}
       borderTop={false}
       borderRight={false}
       borderBottom={false}
     >
-      <PosterSlot
-        url={model.posterUrl}
-        width={innerWidth}
-        active={active}
-        placementSlot={placementSlot}
-        allowKitty={allowKitty}
-        allowSixel={allowSixel}
-      />
+      {showPoster ? (
+        <PosterSlot
+          url={model.posterUrl}
+          width={innerWidth}
+          active={active}
+          placementSlot={placementSlot}
+          allowKitty={allowKitty}
+          allowSixel={allowSixel}
+        />
+      ) : null}
 
       {/* Header: badge + title + secondary line */}
       <Box marginTop={1}>
-        <Text color={palette.accent}>{`❀ ${model.kindBadge}`}</Text>
+        <Text color={palette.accent}>{`${decorationGlyphs().sakura} ${model.kindBadge}`}</Text>
       </Box>
       <Text color={palette.text} bold>
         {truncateLine(model.title, innerWidth)}

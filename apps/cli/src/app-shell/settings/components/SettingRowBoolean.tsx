@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { listSelectionPrefix } from "../../decoration-policy";
 import { BooleanSwitch } from "../../primitives/Switch";
 import { palette } from "../../shell-theme";
 import type { BuiltSettingsRow } from "../types";
@@ -18,7 +19,7 @@ export const SettingRowBoolean = React.memo(function SettingRowBoolean({
 
   return (
     <Box width={rowWidth} backgroundColor={selected ? palette.accentFill : undefined}>
-      <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
+      <Text color={selected ? palette.accent : palette.dim}>{listSelectionPrefix(selected)}</Text>
       <BooleanSwitch on={isOn} />
       <Text bold={selected} color={selected ? palette.text : palette.textDim}>
         {row.def.label}

@@ -10,6 +10,7 @@ import { sanitizeTerminalText } from "@/domain/text-display";
 import { Box, Text } from "ink";
 import React from "react";
 
+import { decorationGlyphs, listSelectionPrefix } from "./decoration-policy";
 import { MouseTarget } from "./mouse/MouseRegions";
 import { StateBlock } from "./primitives/StateBlock";
 import { getWindowStart, measureColumns, truncateLine } from "./shell-text";
@@ -103,7 +104,7 @@ function rowStatusGlyph(
     return { glyph: "× ", color: palette.muted };
   }
   if (capability.selected) {
-    return { glyph: "✓ ", color: palette.ok };
+    return { glyph: `${decorationGlyphs().statusSuccess} `, color: palette.ok };
   }
   return null;
 }
@@ -258,7 +259,7 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
               >
                 <Box backgroundColor={active ? palette.accentFill : undefined}>
                   <Text color={focused ? palette.accent : palette.dim}>
-                    {focused ? "▸ " : "  "}
+                    {focused ? `${decorationGlyphs().disclosure} ` : "  "}
                   </Text>
                   <Box width={10} flexShrink={0}>
                     <Text
@@ -373,8 +374,8 @@ function OptionsPane({
                       bold={highlighted || capability.selected}
                       wrap="truncate"
                     >
-                      {highlighted ? "▌" : " "}
-                      {capability.selected ? "✓ " : "  "}
+                      {highlighted ? decorationGlyphs().listCursor : " "}
+                      {capability.selected ? `${decorationGlyphs().statusSuccess} ` : "  "}
                       {sanitizeTerminalText(labels[flatIndex] ?? capability.label)}
                     </Text>
                   </Box>
@@ -432,7 +433,7 @@ function OptionsPane({
               backgroundColor={highlighted ? palette.accentFill : undefined}
             >
               <Text color={highlighted ? palette.accent : palette.dim}>
-                {highlighted ? "▌ " : capability.selected ? "› " : "  "}
+                {highlighted ? listSelectionPrefix(true) : capability.selected ? "› " : "  "}
               </Text>
               {fav ? <Text color={palette.accent}>♥ </Text> : null}
               {statusGlyph ? (
@@ -543,7 +544,7 @@ function StackedView({
               backgroundColor={highlighted ? palette.accentFill : undefined}
             >
               <Text color={highlighted ? palette.accent : palette.dim}>
-                {highlighted ? "▌ " : capability.selected ? "› " : "  "}
+                {highlighted ? listSelectionPrefix(true) : capability.selected ? "› " : "  "}
               </Text>
               {fav ? <Text color={palette.accent}>♥ </Text> : null}
               {statusGlyph ? (

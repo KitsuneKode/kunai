@@ -79,7 +79,7 @@ import type { BinaryAutoUpdater } from "../services/update/BinaryAutoUpdater";
 import type { UpdateService } from "../services/update/UpdateService";
 import type { CapabilitySnapshot } from "../ui";
 
-export type ShellChrome = "default" | "minimal" | "quick";
+export type ShellChrome = "default" | "minimal";
 
 /**
  * The container is the single source of truth for all dependencies.
@@ -209,7 +209,7 @@ export function effectiveFooterHints(
   container: Pick<Container, "config" | "shellChrome">,
 ): "detailed" | "minimal" {
   if (container.config.minimalMode) return "minimal";
-  if (container.shellChrome === "minimal" || container.shellChrome === "quick") return "minimal";
+  if (container.shellChrome === "minimal") return "minimal";
   return container.config.footerHints;
 }
 

@@ -5,6 +5,7 @@ import {
 } from "@/domain/session/session-display";
 import type { SessionState } from "@/domain/session/SessionState";
 
+import { plainDecorationsActive } from "./decoration-policy";
 import type { ShellStatusTone } from "./types";
 
 type ProviderNameLookup = {
@@ -179,8 +180,9 @@ export function buildRootStatusSummary({
     crumbParts.push(laneCrumb, providerCrumb);
   }
   if (!isActivePlayback) {
+    const plain = plainDecorationsActive();
     if (streak !== undefined && streak >= 2) {
-      crumbParts.push(`🔥 ${streak}d`);
+      crumbParts.push(plain ? `${streak}d streak` : `🔥 ${streak}d`);
     }
     // Only states the user can act on earn a crumb: "disconnected" is the
     // default for most people and would be permanent noise.
@@ -189,12 +191,19 @@ export function buildRootStatusSummary({
     // check read as a typo rather than a status. The glyph carries the state so
     // it survives a 16-colour terminal, and the word stays the same across all
     // four so the row is scannable.
-    const syncCrumb: Record<string, string> = {
-      ok: "🔄 sync",
-      paused: "⏸ sync",
-      warn: "⚠ sync",
-      error: "✗ sync",
-    };
+    const syncCrumb: Record<string, string> = plain
+      ? {
+          ok: "sync ok",
+          paused: "sync paused",
+          warn: "sync warn",
+          error: "sync error",
+        }
+      : {
+          ok: "🔄 sync",
+          paused: "⏸ sync",
+          warn: "⚠ sync",
+          error: "✗ sync",
+        };
     const syncLabel = syncHealth ? syncCrumb[syncHealth] : undefined;
     if (syncLabel) crumbParts.push(syncLabel);
     if (playlistCount !== undefined && playlistCount > 0) {
@@ -202,9 +211,13 @@ export function buildRootStatusSummary({
     }
     if (notificationCount !== undefined && notificationCount > 0) {
       crumbParts.push(
-        newEpisodeNotificationCount !== undefined && newEpisodeNotificationCount > 0
-          ? `🔔 ${newEpisodeNotificationCount} new`
-          : `🔔 ${notificationCount}`,
+        plain
+          ? newEpisodeNotificationCount !== undefined && newEpisodeNotificationCount > 0
+            ? `${newEpisodeNotificationCount} new`
+            : `${notificationCount} notifications`
+          : newEpisodeNotificationCount !== undefined && newEpisodeNotificationCount > 0
+            ? `🔔 ${newEpisodeNotificationCount} new`
+            : `🔔 ${notificationCount}`,
       );
     }
   }

@@ -10,6 +10,12 @@ import React from "react";
 import type { AppCommandId } from "./commands";
 import { momentForLoading } from "./companion-moment";
 import { CompanionHost } from "./CompanionHost";
+import {
+  decorationGlyphs,
+  listSelectionPrefix,
+  localizeShortcutGlyphs,
+  plainDecorationsActive,
+} from "./decoration-policy";
 import { usePlaybackPosterSurfaceCleanup } from "./image-pane";
 import { footerKeyFromBinding, KEYBINDINGS } from "./keybindings";
 import { buildLoadingFooterActions } from "./loading-shell-model";
@@ -50,9 +56,11 @@ import { useDebouncedViewportPolicy } from "./use-viewport-policy";
 
 const MEMORY_PANEL_AUTO_HIDE_MS = 8_000;
 const PLAYER_FALLBACK_BINDING = KEYBINDINGS.find((binding) => binding.id === "player-fallback");
-const PLAYER_FALLBACK_KEY = PLAYER_FALLBACK_BINDING
-  ? footerKeyFromBinding(PLAYER_FALLBACK_BINDING)
-  : "⇧F";
+function playerFallbackKey(): string {
+  return PLAYER_FALLBACK_BINDING
+    ? footerKeyFromBinding(PLAYER_FALLBACK_BINDING)
+    : localizeShortcutGlyphs("⇧F");
+}
 
 function PlaybackShareControl({ onShare }: { readonly onShare: () => void }) {
   const commandModeOpen = useShellCommandModeOpen();
@@ -294,7 +302,7 @@ const PlaybackRecoveryView = React.memo(function PlaybackRecoveryView({
       {primaryAction ? (
         <Box marginTop={1}>
           <Text color={palette.accent} bold>
-            {"▌ "}
+            {listSelectionPrefix(true)}
           </Text>
           <Text color={palette.accent} bold>
             {padColumnsEnd(primaryAction.label, 16)}
@@ -348,12 +356,13 @@ const BufferHealthBadge = React.memo(function BufferHealthBadge({
       : health === "buffering"
         ? palette.accentDeep
         : palette.dangerText;
+  const mark = decorationGlyphs().statusInfo;
   const label =
     health === "healthy"
-      ? "● buffer healthy"
+      ? `${mark} buffer healthy`
       : health === "buffering"
-        ? "● buffer building"
-        : "● buffer stalled";
+        ? `${mark} buffer building`
+        : `${mark} buffer stalled`;
   return (
     <Text color={color} bold>
       {label}
@@ -690,7 +699,7 @@ export const LoadingShell = React.memo(function LoadingShell({
       letterKeysHandledExternally
       escapeAction={null}
       onFooterAction={(action) => {
-        const shiftedFallback = action.key === "⇧F";
+        const shiftedFallback = action.key === playerFallbackKey();
         const effect = resolvePlaybackShellInput(
           shiftedFallback ? "F" : action.key,
           { shift: shiftedFallback },
@@ -900,9 +909,11 @@ export const LoadingShell = React.memo(function LoadingShell({
                 {/* Control deck (.prototypes/playback-postplay): progress leads,
                   then a single NOW facts line + GO key-hints, then the mpv hint.
                   Title/episode live in the ShellFrame header. */}
-                <Text color={palette.lineSoft}>
-                  {"─".repeat(Math.min(infoWidth, barWidth + 16))}
-                </Text>
+                {plainDecorationsActive() ? null : (
+                  <Text color={palette.lineSoft}>
+                    {"─".repeat(Math.min(infoWidth, barWidth + 16))}
+                  </Text>
+                )}
 
                 {/* Progress — the prominent current-watch line */}
                 {state.currentPosition !== undefined &&
@@ -982,7 +993,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                       {`⚠ ${truncateLine(playbackTrouble, infoWidth - 2)}`}
                     </Text>
                     <Text color={palette.dim}>
-                      {`r recover  ·  ${PLAYER_FALLBACK_KEY} fallback  ·  o source  ·  d diagnostics`}
+                      {`r recover  ·  ${playerFallbackKey()} fallback  ·  o source  ·  d diagnostics`}
                     </Text>
                   </Box>
                 ) : state.bufferHealth === "buffering" || state.bufferHealth === "stalled" ? (
@@ -994,7 +1005,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                 {/* Up next on narrow/medium — wide terminals show this on the right rail. */}
                 {!isWidePlaying && state.upNextLabel?.trim() ? (
                   <Box marginTop={1}>
-                    <Text color={palette.accent}>{"▶ "}</Text>
+                    <Text color={palette.accent}>{`${decorationGlyphs().playMark} `}</Text>
                     <Text color={palette.dim} dimColor>
                       {"up next  "}
                     </Text>

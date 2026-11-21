@@ -1,6 +1,7 @@
 import type { LineEditorKey } from "@/app-shell/line-editor";
 import type { AppCommandId } from "@/domain/session/command-registry";
 
+import { decorationGlyphs, localizeShortcutGlyphs } from "./decoration-policy";
 import type { FooterAction, ShellAction } from "./types";
 
 /**
@@ -1075,9 +1076,10 @@ export function commandBackedBindingsForScope(scope: KeyScope): readonly KeyBind
 
 /** Human-readable chord using locked glyphs: ⇧ Shift, ⌃ Ctrl. */
 export function formatChord(chord: KeyChord): string {
+  const g = decorationGlyphs();
   const modifiers: string[] = [];
-  if (chord.ctrl) modifiers.push("⌃");
-  if (chord.shift) modifiers.push("⇧");
+  if (chord.ctrl) modifiers.push(g.chordCtrl);
+  if (chord.shift) modifiers.push(g.chordShift);
   const base = chord.named
     ? (NAMED_LABELS[chord.named] ?? chord.named)
     : formatPrintable(chord.input ?? "", modifiers.length > 0 || chord.meta === true);
@@ -1092,7 +1094,7 @@ function formatPrintable(input: string, hasModifier: boolean): string {
 
 /** Rendered key label for a binding — its display override, else its formatted chord. */
 export function bindingKeys(binding: KeyBinding): string {
-  return binding.display ?? formatChord(binding.chord);
+  return localizeShortcutGlyphs(binding.display ?? formatChord(binding.chord));
 }
 
 /**
@@ -1187,10 +1189,10 @@ export type FooterBindingsContext = {
 
 /** Rendered footer key for a binding — preserves display overrides such as `J / K`. */
 export function footerKeyFromBinding(binding: KeyBinding): string {
-  if (binding.display) return binding.display;
+  if (binding.display) return localizeShortcutGlyphs(binding.display);
   if (binding.chord.named === "return") return "enter";
   if (binding.chord.named === "escape") return "esc";
-  return formatChord(binding.chord);
+  return localizeShortcutGlyphs(formatChord(binding.chord));
 }
 
 /** Build structured footer actions from the keybinding registry for a scope. */
@@ -1253,7 +1255,10 @@ function groupHelpSections(bindings: readonly KeyBinding[]): readonly HelpSectio
       byGroup.set(binding.group, []);
       order.push(binding.group);
     }
-    byGroup.get(binding.group)?.push({ keys: bindingKeys(binding), label: binding.label });
+    byGroup.get(binding.group)?.push({
+      keys: bindingKeys(binding),
+      label: localizeShortcutGlyphs(binding.label),
+    });
   }
   return order.map((group) => ({ group, items: byGroup.get(group) ?? [] }));
 }

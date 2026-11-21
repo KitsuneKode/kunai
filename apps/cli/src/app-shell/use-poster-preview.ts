@@ -1,5 +1,6 @@
 import { startTransition, useEffect, useReducer, useRef } from "react";
 
+import { terminalPostersEnabled } from "./decoration-policy";
 import {
   fetchPoster,
   isPosterCached,
@@ -191,6 +192,8 @@ export function usePosterPreview(
     placementSlot?: KittyPlacementSlot;
   },
 ): { poster: PosterResult; posterState: PosterState; spinner: boolean } {
+  const postersAllowed = terminalPostersEnabled();
+  const previewEnabled = enabled && postersAllowed;
   const [state, dispatch] = useReducer(posterPreviewReducer, initialPosterPreviewState);
   const previousGeometry = useRef<{ readonly rows: number; readonly cols: number } | null>(null);
   // Bounded delayed retries per requestKey: transient failures (busy machine
@@ -220,7 +223,7 @@ export function usePosterPreview(
       (previousGeometry.current.rows !== rows || previousGeometry.current.cols !== cols);
     previousGeometry.current = { rows, cols };
 
-    if (!url || !enabled) {
+    if (!url || !previewEnabled) {
       releaseOwnedPlacement(placementSlot, preserveTerminalImages);
       dispatch({ type: "reset", posterState: url ? "unavailable" : "idle" });
       return undefined;
@@ -325,7 +328,7 @@ export function usePosterPreview(
     allowSixel,
     cols,
     debounceMs,
-    enabled,
+    previewEnabled,
     inkEmbedded,
     placementSlot,
     preserveTerminalImages,
@@ -336,7 +339,9 @@ export function usePosterPreview(
     variant,
   ]);
 
-  const visibleState = visiblePosterPreviewState(state, enabled ? requestKey : null);
+  const visibleState = postersAllowed
+    ? visiblePosterPreviewState(state, previewEnabled ? requestKey : null)
+    : initialPosterPreviewState;
   return {
     poster: visibleState.poster,
     posterState: visibleState.posterState,

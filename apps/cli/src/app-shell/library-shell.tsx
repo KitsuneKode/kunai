@@ -1,3 +1,4 @@
+import { decorationGlyphs, scrollAffordance } from "@/app-shell/decoration-policy";
 import { DownloadManagerContent } from "@/app-shell/download-manager-shell";
 import { useConnectivityOnline } from "@/app-shell/hooks/use-connectivity-online";
 import { useRailPoster } from "@/app-shell/hooks/use-rail-poster";
@@ -499,7 +500,7 @@ function LibraryTab({
           </Text>
         </Box>
       ) : null}
-      {showScrollUp ? <Text color={palette.dim}> ▲ ...</Text> : null}
+      {showScrollUp ? <Text color={palette.dim}>{scrollAffordance("up")}</Text> : null}
       {items.map((item) => {
         if (item.kind === "section") {
           return <SectionGroup key={`section-${item.label}`} label={item.label} marginTop={1} />;
@@ -543,7 +544,7 @@ function LibraryTab({
           </MouseTarget>
         );
       })}
-      {showScrollDown ? <Text color={palette.dim}> ▼ ...</Text> : null}
+      {showScrollDown ? <Text color={palette.dim}>{scrollAffordance("down")}</Text> : null}
       {selectedOfflineGroup && confirmDeleteKey === selectedOfflineGroup.key ? (
         <Box marginTop={1}>
           <Text color={palette.accentDeep}>
@@ -555,8 +556,8 @@ function LibraryTab({
         <ResumeCard
           label={
             selectedOfflineGroup.nextPlayableEpisodeLabel
-              ? `▸ Resume ${selectedOfflineGroup.nextPlayableEpisodeLabel} offline`
-              : `▸ Open ${selectedOfflineGroup.titleName}`
+              ? `${decorationGlyphs().disclosure} Resume ${selectedOfflineGroup.nextPlayableEpisodeLabel} offline`
+              : `${decorationGlyphs().disclosure} Open ${selectedOfflineGroup.titleName}`
           }
           action="↵ enter"
           width={Math.min(rowWidth, 56)}
@@ -673,7 +674,11 @@ function formatLibraryStatus(row: LibraryShelfRow, historyMap: Record<string, Hi
   if (hist && !isFinished(hist) && (hist.durationSeconds ?? 0) > 0) {
     const pct = Math.round((hist.positionSeconds / (hist.durationSeconds ?? 0)) * 100);
     if (pct > 0 && pct < 95) {
-      return { label: `▸ ${pct}%`, color: palette.accent, dim: false };
+      return {
+        label: `${decorationGlyphs().disclosure} ${pct}%`,
+        color: palette.accent,
+        dim: false,
+      };
     }
   }
   if (group.readyCount > 0) {

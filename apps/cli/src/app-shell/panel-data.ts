@@ -1,3 +1,4 @@
+import { decorationGlyphs } from "@/app-shell/decoration-policy";
 import type { CatalogEpisodeBounds } from "@/domain/continuation/catalog-episode-bounds";
 import {
   type HistoryBucket,
@@ -562,10 +563,10 @@ function buildHistoryOptionRow(
     };
   }
   const statusGlyph = isCompleted
-    ? "✓ complete"
+    ? `${decorationGlyphs().statusSuccess} complete`
     : displayEntry.positionSeconds > 10
-      ? `⏸ ${formatTimestamp(displayEntry.positionSeconds)}`
-      : "▶ start";
+      ? `${decorationGlyphs().pauseMark} ${formatTimestamp(displayEntry.positionSeconds)}`
+      : `${decorationGlyphs().playMark} start`;
   const timeAgo = formatRelativeAge(displayEntry.updatedAt, context.now) ?? "just now";
 
   return {

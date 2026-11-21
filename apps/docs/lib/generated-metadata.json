@@ -812,17 +812,17 @@
     {
       "short": "-m",
       "long": "--minimal",
-      "description": "Minimal chrome"
+      "description": "Plain chrome for screen readers (no emoji, rules, mascot)"
     },
     {
       "short": "-z",
       "long": "--zen",
-      "description": "Zen mode (bare, ani-cli-style)"
+      "description": "Single-column layout; implies --minimal"
     },
     {
       "short": "-q",
       "long": "--quick",
-      "description": "Quick layout"
+      "description": "Auto-pick the first search result (same as --jump 1)"
     },
     {
       "short": "",

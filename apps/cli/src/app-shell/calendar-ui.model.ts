@@ -5,6 +5,7 @@ import type {
 import type { BrowseShellOption } from "@/app-shell/types";
 import type { SearchResult } from "@/domain/types";
 
+import { decorationGlyphs } from "./decoration-policy";
 import type { StateBlockModel } from "./primitives/StateBlock.model";
 import { RETURN_LOOP_CALENDAR_EMPTY_TAIL } from "./return-loop-copy";
 import { truncateLine } from "./shell-text";
@@ -308,7 +309,7 @@ export { computeCalendarRowLayout } from "./primitives/list-row-layout";
 
 /** Shorten long schedule status copy so the right column stays readable. */
 export function compactCalendarStatusLabel(label: string, maxColumns: number): string {
-  let normalized = label.trim().replace(/^[·✓◷◐×]\s+/, "");
+  let normalized = label.trim().replace(/^(?:[·✓◷◐×]|ok|x|!)\s+/u, "");
   if (normalized.length <= maxColumns) return normalized;
   if (normalized.startsWith("aired · ")) {
     const tail = normalized.slice("aired · ".length);
@@ -429,7 +430,7 @@ export function calendarReleaseRowPresentation<T>(
   const state = deriveCalendarReleaseState(option, nowMs);
   const label = formatCalendarReleaseStateLabel(state, option, nowMs);
   if (state === "available") {
-    return { glyph: "✓ ", color: palette.ok, dim: false, label };
+    return { glyph: `${decorationGlyphs().statusSuccess} `, color: palette.ok, dim: false, label };
   }
   if (state === "continue-ready") {
     return { glyph: "→ ", color: palette.ok, dim: false, label };

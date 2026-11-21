@@ -1,3 +1,4 @@
+import { decorationGlyphs } from "../decoration-policy";
 import { truncateLine } from "../shell-text";
 
 export type ContextCardKind = "next" | "previous" | "now" | "related";
@@ -44,11 +45,12 @@ export function buildContextCardTile(title: string): string {
 export function contextCardGlyph(
   input: Pick<ContextCardModel, "kind" | "stateLabel" | "stateTone">,
 ): string {
-  if (input.stateTone === "danger") return "×";
+  const glyphs = decorationGlyphs();
+  if (input.stateTone === "danger") return glyphs.statusError;
   if (input.stateTone === "warning") return "◷";
-  if (input.stateTone === "success" && input.kind === "previous") return "✓";
-  if (input.stateTone === "success" && input.kind === "next") return "▶";
-  if (input.stateLabel?.toLowerCase().includes("watched")) return "✓";
+  if (input.stateTone === "success" && input.kind === "previous") return glyphs.statusSuccess;
+  if (input.stateTone === "success" && input.kind === "next") return glyphs.playMark;
+  if (input.stateLabel?.toLowerCase().includes("watched")) return glyphs.statusSuccess;
   return "·";
 }
 

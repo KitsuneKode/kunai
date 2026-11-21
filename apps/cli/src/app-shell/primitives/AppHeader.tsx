@@ -1,9 +1,11 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { appBrandLabel } from "../decoration-policy";
+import { headerStatusPrefix } from "../decoration-ui";
 import { composeHeader } from "../format/header";
 import { measureColumns, truncateLine } from "../shell-text";
-import { APP_LABEL, palette } from "../shell-theme";
+import { palette } from "../shell-theme";
 
 /**
  * The single canonical header. Owns brand · destination pill · context · status
@@ -15,7 +17,7 @@ import { APP_LABEL, palette } from "../shell-theme";
  * the crumb absorbs the squeeze and drops out entirely when there is no room.
  */
 export const AppHeader = React.memo(function AppHeader({
-  brand = APP_LABEL,
+  brand = appBrandLabel(),
   destination,
   context,
   status,
@@ -64,7 +66,7 @@ export const AppHeader = React.memo(function AppHeader({
       </Box>
       {h.right ? (
         <Box flexShrink={0}>
-          {status ? <Text color={statusColor}>{"● "}</Text> : null}
+          {status ? <Text color={statusColor}>{headerStatusPrefix(true)}</Text> : null}
           <Text color={palette.muted} wrap="truncate-end">
             {h.right}
           </Text>

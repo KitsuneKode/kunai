@@ -1,3 +1,4 @@
+import { decorationGlyphs } from "@/app-shell/decoration-policy";
 import { chooseFromListShell } from "@/app-shell/pickers/choose-from-list-shell";
 import type { ListShellActionContext } from "@/app-shell/pickers/list-shell-types";
 import {
@@ -53,7 +54,7 @@ async function buildEpisodeStatusMap(
   const maxWatched = Math.max(...seasonEntries.map((e) => e.episode ?? e.absoluteEpisode ?? 0));
   for (const ep of episodes) {
     if (ep.number < maxWatched && !map.has(ep.number)) {
-      map.set(ep.number, { tone: "success", badge: "✓" });
+      map.set(ep.number, { tone: "success", badge: decorationGlyphs().statusSuccess });
     }
   }
 
@@ -160,11 +161,11 @@ export async function buildEpisodePickerOptions({
               : undefined,
       badge:
         status?.tone === "success"
-          ? "✓"
+          ? decorationGlyphs().statusSuccess
           : status?.tone === "warning"
             ? status.badge
             : episode.number === currentEpisode
-              ? "▸"
+              ? decorationGlyphs().disclosure
               : undefined,
       previewImageUrl: episode.stillPath,
     };

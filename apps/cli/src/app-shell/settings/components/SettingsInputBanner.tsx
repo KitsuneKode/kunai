@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { decorationGlyphs } from "../../decoration-policy";
 import { palette } from "../../shell-theme";
 import type { SettingRowDef } from "../types";
 
@@ -27,7 +28,7 @@ export const SettingsInputBanner = React.memo(function SettingsInputBanner({
         <Text color={palette.text} bold>
           {display}
         </Text>
-        <Text color={palette.dim}>▌</Text>
+        <Text color={palette.dim}>{decorationGlyphs().listCursor}</Text>
       </Box>
       <Text color={palette.dim} dimColor>
         {`Saved: ${saved}`}

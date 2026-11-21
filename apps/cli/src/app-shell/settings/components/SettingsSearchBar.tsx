@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { decorationGlyphs } from "../../decoration-policy";
 import { palette } from "../../shell-theme";
 
 export const SettingsSearchBar = React.memo(function SettingsSearchBar({
@@ -17,7 +18,7 @@ export const SettingsSearchBar = React.memo(function SettingsSearchBar({
       <Text color={palette.text} bold>
         {query}
       </Text>
-      {focused ? <Text color={palette.dim}>▌</Text> : null}
+      {focused ? <Text color={palette.dim}>{decorationGlyphs().listCursor}</Text> : null}
     </Box>
   );
 });

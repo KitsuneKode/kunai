@@ -12,8 +12,9 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { decorationGlyphs } from "./decoration-policy";
 import { reducedMotionEnabled } from "./motion-policy";
-import { BLOOM_FRAMES, STATIC_PETAL, useFrameTick } from "./primitives/SakuraPetal";
+import { BLOOM_FRAMES, useFrameTick } from "./primitives/SakuraPetal";
 import { sanitizeTerminalText } from "./shell-text";
 import { palette } from "./shell-theme";
 
@@ -86,7 +87,8 @@ export function SakuraBloom({
   const tick = useFrameTick(active, BLOOM_INTERVAL_MS);
   const animate = active && !reducedMotionEnabled();
   const frame = animate ? tick % BLOOM_FRAMES.length : 0;
-  const center = animate ? (BLOOM_FRAMES[frame] ?? STATIC_PETAL) : STATIC_PETAL;
+  const petal = decorationGlyphs().sakura;
+  const center = animate ? (BLOOM_FRAMES[frame] ?? petal) : petal;
   const color = stalled ? palette.warn : palette.accent;
   // Side petals breathe in on alternating frames; hidden under reduced motion.
   const sideVisible = animate && frame % 2 === 0;
@@ -141,7 +143,8 @@ export function InlineSakuraLoader({
 }) {
   const tick = useFrameTick(active, BLOOM_INTERVAL_MS);
   const animate = active && !reducedMotionEnabled();
-  const glyph = animate ? (BLOOM_FRAMES[tick % BLOOM_FRAMES.length] ?? STATIC_PETAL) : STATIC_PETAL;
+  const petal = decorationGlyphs().sakura;
+  const glyph = animate ? (BLOOM_FRAMES[tick % BLOOM_FRAMES.length] ?? petal) : petal;
   const color = stalled ? palette.warn : palette.accent;
   return (
     <Box flexDirection="row" flexWrap="nowrap">

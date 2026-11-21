@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
+import { setPlainDecorationSource } from "@/app-shell/decoration-policy";
+
 import { BrowseIdleReturnLoopPreview } from "../../harness/capture-browse";
 import { CalendarList, CalendarStrip } from "../../harness/capture-calendar";
 import { postPlayFixtures } from "../../harness/capture-demo";
@@ -60,7 +62,11 @@ describe("committed captures match a live re-render", () => {
   let previousPoster: string | undefined;
   let previousPet: string | undefined;
   let previousReducedMotion: string | undefined;
+  let previousTerm: string | undefined;
   beforeAll(() => {
+    setPlainDecorationSource(() => false);
+    previousTerm = process.env.TERM;
+    process.env.TERM = "xterm-256color";
     previousPoster = process.env.KUNAI_POSTER;
     process.env.KUNAI_POSTER = "0";
     previousPet = process.env.KUNAI_PET;
@@ -75,6 +81,9 @@ describe("committed captures match a live re-render", () => {
     else process.env.KUNAI_PET = previousPet;
     if (previousReducedMotion === undefined) delete process.env.KUNAI_REDUCED_MOTION;
     else process.env.KUNAI_REDUCED_MOTION = previousReducedMotion;
+    if (previousTerm === undefined) delete process.env.TERM;
+    else process.env.TERM = previousTerm;
+    setPlainDecorationSource(() => false);
   });
 
   test("downloads", async () => {

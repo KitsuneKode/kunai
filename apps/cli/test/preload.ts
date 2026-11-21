@@ -6,6 +6,13 @@ function configureTestEnvironment(): void {
   // with CI=0 or an inherited DO_NOT_TRACK=0. Consent/ingest unit fixtures may
   // inject env: {} only alongside isolated config and mocked/local delivery.
   process.env.DO_NOT_TRACK = "1";
+
+  // Sandbox / CI harnesses often set TERM=dumb. Rich-glyph render tests assume a
+  // colour terminal; plain-mode behaviour is asserted in decoration-policy tests
+  // with TERM=dumb set explicitly.
+  if ((process.env.TERM ?? "").trim().toLowerCase() === "dumb") {
+    process.env.TERM = "xterm-256color";
+  }
 }
 
 configureTestEnvironment();

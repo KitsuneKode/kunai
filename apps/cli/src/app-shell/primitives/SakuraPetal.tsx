@@ -12,6 +12,7 @@
 import { Text } from "ink";
 import React from "react";
 
+import { decorationGlyphs, plainDecorationsActive } from "../decoration-policy";
 import { reducedMotionEnabled } from "../motion-policy";
 import { palette } from "../shell-theme";
 
@@ -90,7 +91,9 @@ export function SakuraPetal({
   readonly bold?: boolean;
 }) {
   const frame = useSakuraFrame(active && mode === "loading");
-  const glyph = mode === "loading" ? (BLOOM_FRAMES[frame] ?? STATIC_PETAL) : STATIC_PETAL;
+  const plain = plainDecorationsActive();
+  const staticGlyph = plain ? decorationGlyphs().sakura : STATIC_PETAL;
+  const glyph = mode === "loading" && !plain ? (BLOOM_FRAMES[frame] ?? STATIC_PETAL) : staticGlyph;
   return (
     <Text color={color ?? modeColor(mode)} bold={bold}>
       {glyph}

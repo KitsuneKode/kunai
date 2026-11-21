@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { decorationGlyphs, terminalPostersEnabled } from "./decoration-policy";
 import type { DetailsSheetModel } from "./details-sheet.model";
 import { wrapSynopsis } from "./details-view";
 import { PosterInitialBlock } from "./poster-initial-block";
@@ -59,16 +60,19 @@ export function DetailsSheet({
   readonly seasonsExpanded: boolean;
   readonly width: number;
 }) {
-  const textWidth = Math.max(20, width - POSTER_COLS - 4);
+  const showPoster = terminalPostersEnabled();
+  const textWidth = showPoster ? Math.max(20, width - POSTER_COLS - 4) : Math.max(20, width - 2);
   const synopsisLines = wrapSynopsis(model.synopsis.text, Math.max(20, width - 2), 6);
 
   return (
     <Box flexDirection="column" width={width}>
-      {/* Header: poster + title/meta/genres */}
+      {/* Header: poster + title/meta/genres. Plain mode omits the slot so the title is not indented. */}
       <Box flexDirection="row">
-        <Box width={POSTER_COLS} marginRight={2}>
-          <SheetPoster url={model.header.posterUrl} title={model.header.title} />
-        </Box>
+        {showPoster ? (
+          <Box width={POSTER_COLS} marginRight={2}>
+            <SheetPoster url={model.header.posterUrl} title={model.header.title} />
+          </Box>
+        ) : null}
         <Box flexDirection="column" flexGrow={1}>
           <Text bold>{model.header.title}</Text>
           <Text color={palette.muted}>{model.header.metaLine}</Text>
@@ -140,7 +144,8 @@ export function DetailsSheet({
       {model.seasons.items.length > 0 ? (
         <Box flexDirection="column" marginTop={1}>
           <Text color={palette.accent}>
-            {seasonsExpanded ? "▾" : "▸"} {model.seasons.items.length} seasons (s)
+            {seasonsExpanded ? "▾" : decorationGlyphs().disclosure} {model.seasons.items.length}{" "}
+            seasons (s)
           </Text>
           {seasonsExpanded
             ? model.seasons.items.map((season) => (
@@ -157,7 +162,9 @@ export function DetailsSheet({
       {model.links.items.length > 0 || model.trailerUrl ? (
         <Box flexDirection="column" marginTop={1}>
           <SectionLabel>Links</SectionLabel>
-          {model.trailerUrl ? <Text color={palette.accent}>▶ trailer (t)</Text> : null}
+          {model.trailerUrl ? (
+            <Text color={palette.accent}>{`${decorationGlyphs().playMark} trailer (t)`}</Text>
+          ) : null}
           {model.links.items.length > 0 ? (
             <Text color={palette.muted}>
               {model.links.items.map((link) => link.label).join(" · ")}
@@ -169,7 +176,7 @@ export function DetailsSheet({
       {/* Actions footer */}
       <Box marginTop={1}>
         <Text color={palette.dim}>
-          ▶ play · + queue · w follow · d download · e episodes
+          {`${decorationGlyphs().playMark} play · + queue · w follow · d download · e episodes`}
           {model.trailerUrl ? " · t trailer" : ""}
           {model.links.items.length > 0 ? " · l links" : ""} · esc
         </Text>

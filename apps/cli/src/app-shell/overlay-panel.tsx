@@ -1,6 +1,12 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import {
+  displaySectionRuleLabel,
+  plainDecorationsActive,
+  scrollAffordance,
+  terminalPostersEnabled,
+} from "./decoration-policy";
 import { DetailsSheetUI } from "./details-pane-ui";
 import type { DetailsPanelData } from "./details-panel";
 import { DetailsSheet } from "./details-sheet-ui";
@@ -106,17 +112,19 @@ const EpisodePreviewRail = React.memo(function EpisodePreviewRail({
   const badgeColor = semanticToneColor(option?.tone);
   return (
     <Box flexDirection="column" width={width} marginLeft={2} flexShrink={0}>
-      <Box height={6} width={width}>
-        {poster.kind !== "none" ? (
-          <PosterOutput poster={poster} />
-        ) : spinner ? (
-          <SakuraPetal mode="loading" />
-        ) : (
-          <Text color={palette.dim} dimColor>
-            no preview art
-          </Text>
-        )}
-      </Box>
+      {terminalPostersEnabled() ? (
+        <Box height={6} width={width}>
+          {poster.kind !== "none" ? (
+            <PosterOutput poster={poster} />
+          ) : spinner ? (
+            <SakuraPetal mode="loading" />
+          ) : (
+            <Text color={palette.dim} dimColor>
+              no preview art
+            </Text>
+          )}
+        </Box>
+      ) : null}
       {option ? (
         <Box flexDirection="column" marginTop={1}>
           <Text color={palette.text} bold>
@@ -225,7 +233,7 @@ export function OverlayPanel({
                   return (
                     <Box key={mode} marginRight={3} flexDirection="column">
                       <Text color={active ? palette.accent : palette.muted}>{mode}</Text>
-                      {active ? (
+                      {active && !plainDecorationsActive() ? (
                         <Text color={palette.accent}>{"─".repeat(mode.length)}</Text>
                       ) : null}
                     </Box>
@@ -249,7 +257,9 @@ export function OverlayPanel({
           </Box>
           <Box marginTop={1} flexDirection="row">
             <Box flexDirection="column" flexGrow={1}>
-              {optionWindowStart > 0 ? <Text color={palette.dim}> ▲ ...</Text> : null}
+              {optionWindowStart > 0 ? (
+                <Text color={palette.dim}>{scrollAffordance("up")}</Text>
+              ) : null}
               {visibleOptions.map((option, index) => {
                 const optionIndex = optionWindowStart + index;
                 const selected = optionIndex === overlay.selectedIndex;
@@ -263,7 +273,7 @@ export function OverlayPanel({
                       <Text color={usesAccent ? palette.text : palette.dim} bold={usesAccent}>
                         {headerLabel}
                       </Text>
-                      {usesAccent ? (
+                      {usesAccent && !plainDecorationsActive() ? (
                         <Text color={palette.accent}>{"─".repeat(headerLabel.length)}</Text>
                       ) : null}
                     </Box>
@@ -285,9 +295,10 @@ export function OverlayPanel({
                 // Derive dot indicator for settings rows
                 const effectiveLabel = option.label;
                 const isHistoryPicker = overlay.type === "history-picker";
+                const showHistoryPoster =
+                  isHistoryPicker && Boolean(option.posterTitle) && terminalPostersEnabled();
                 const historyPosterWidth = 4;
-                const prefixWidth =
-                  isHistoryPicker && option.posterTitle ? historyPosterWidth + 1 : 0;
+                const prefixWidth = showHistoryPoster ? historyPosterWidth + 1 : 0;
                 const historyRowWidth = Math.max(0, listContentWidth - prefixWidth);
                 return (
                   <Box
@@ -295,7 +306,7 @@ export function OverlayPanel({
                     backgroundColor={selected ? palette.accentFill : undefined}
                     flexDirection="row"
                   >
-                    {isHistoryPicker && option.posterTitle ? (
+                    {showHistoryPoster && option.posterTitle ? (
                       <Box marginRight={1}>
                         <PosterInitialBlock
                           title={option.posterTitle}
@@ -330,7 +341,7 @@ export function OverlayPanel({
                 );
               })}
               {optionWindowEnd < overlay.options.length ? (
-                <Text color={palette.dim}> ▼ ...</Text>
+                <Text color={palette.dim}>{scrollAffordance("down")}</Text>
               ) : null}
             </Box>
             {showPreviewRail ? (
@@ -387,7 +398,9 @@ export function OverlayPanel({
                 // Section rule — small top gap for grouping, no per-line blank lines.
                 return (
                   <Box key={`${line.label}-h`} marginTop={1}>
-                    <Text color={palette.muted}>{truncateLine(line.label, contentWidth)}</Text>
+                    <Text color={palette.muted}>
+                      {truncateLine(displaySectionRuleLabel(line.label), contentWidth)}
+                    </Text>
                   </Box>
                 );
               }

@@ -2,6 +2,7 @@ import { Box, Text } from "ink";
 import React from "react";
 
 import { companionMode, companionToggleable } from "./companion-policy";
+import { companionFlavorEnabled, decorationGlyphs } from "./decoration-policy";
 import { type ShellViewportKind, TRANSIENT_ROW_SLOTS } from "./layout-policy";
 import { MouseTarget } from "./mouse/MouseRegions";
 import { measureColumns, padColumnsEnd, sanitizeTerminalText, truncateLine } from "./shell-text";
@@ -172,7 +173,8 @@ export function Footer({
   // inside the width budget — it is the only restore affordance, so it cannot
   // lose the slot race — and it hides entirely when an env pin makes the
   // toggle a dead control.
-  const kannaHidden = companionHint && companionMode() === "off" && companionToggleable();
+  const kannaHidden =
+    companionFlavorEnabled() && companionHint && companionMode() === "off" && companionToggleable();
   const visibleActions = React.useMemo(
     () =>
       selectFooterActions(
@@ -419,7 +421,11 @@ export type SelectableRowStyle = {
 /** The single selection treatment: accent rule + accent-tinted fill. */
 export function selectableRowStyle(selected: boolean): SelectableRowStyle {
   if (selected) {
-    return { prefix: "▌", color: palette.accentSoft, backgroundColor: palette.accentFill };
+    return {
+      prefix: decorationGlyphs().listCursor,
+      color: palette.accentSoft,
+      backgroundColor: palette.accentFill,
+    };
   }
   return { prefix: "  ", color: palette.text };
 }
@@ -554,7 +560,7 @@ export function TerminalSizeChip({ columns, rows }: { columns: number; rows: num
 }
 
 export const EmptyState = React.memo(function EmptyState({
-  icon = "○",
+  icon = decorationGlyphs().waitingMark,
   title,
   subtitle,
   hint,

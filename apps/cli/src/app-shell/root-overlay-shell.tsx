@@ -64,6 +64,11 @@ import {
 import { requestBrowseIdleContextRefresh } from "./browse-idle-context";
 import { cancelAllRootOverlays, cancelRootOverlay } from "./cancel-root-overlay";
 import { resolveCommandContext, resolveCommands, type ResolvedAppCommand } from "./commands";
+import {
+  decorationGlyphs,
+  localizeShortcutGlyphs,
+  plainDecorationsActive,
+} from "./decoration-policy";
 import { diagnosticsVisibleRows } from "./diagnostics-dashboard-model";
 import { sanitizeTerminalText } from "./shell-text";
 
@@ -263,14 +268,9 @@ const HELP_SCOPE_LABELS = {
   notifications: "notifications",
 } satisfies Record<KeyScope, string>;
 
-const HELP_SECTION_BY_GROUP = new Map<string, HelpSection>(
-  helpSections().map((section) => [section.group, section]),
-);
-
 /**
- * Render rows for a given help tab. Exported for testability — the live
- * `HelpShell` calls this directly and the help-overlay test asserts the
- * overlay's content matches the registry.
+ * Render rows for a given help tab. Built at call time so plain-mode chords
+ * follow the decoration policy instead of a module-load snapshot.
  */
 
 /**
@@ -295,9 +295,10 @@ function describeUnmanagedUpdate(
 }
 
 export function helpTabRows(tab: string): readonly { key: string; desc: string }[] {
-  return (HELP_SECTION_BY_GROUP.get(tab)?.items ?? []).map((hint) => ({
-    key: hint.keys,
-    desc: hint.label,
+  const section = helpSections().find((candidate) => candidate.group === tab);
+  return (section?.items ?? []).map((hint) => ({
+    key: localizeShortcutGlyphs(hint.keys),
+    desc: localizeShortcutGlyphs(hint.label),
   }));
 }
 
@@ -351,7 +352,7 @@ function findDiagnosticsSpanIdNearScroll(
   return null;
 }
 
-function HelpShell({
+export function HelpShell({
   sections,
   scopeLabel,
   commandMode,
@@ -407,8 +408,8 @@ function HelpShell({
   );
 
   const rows = (sectionByGroup.get(safeActiveTab)?.items ?? []).map((hint) => ({
-    key: hint.keys,
-    desc: hint.label,
+    key: localizeShortcutGlyphs(hint.keys),
+    desc: localizeShortcutGlyphs(hint.label),
   }));
   // Dense reference card: split the active section's rows into two balanced
   // columns so a long surface (player/postPlayback) reads without scrolling.
@@ -432,7 +433,7 @@ function HelpShell({
       <Box flexDirection="column" paddingX={1} marginTop={1}>
         <Box flexDirection="row" flexWrap="nowrap">
           <Text color={palette.accent} bold>
-            {"❀ Help"}
+            {`${decorationGlyphs().sakura} Help`}
           </Text>
           <Text color={palette.muted}>{`  ·  ${scopeLabel}`}</Text>
         </Box>
@@ -442,7 +443,7 @@ function HelpShell({
           {tabs.map((tab) => (
             <Box key={tab} marginRight={3} flexDirection="column">
               <Text color={safeActiveTab === tab ? palette.accent : palette.dim}>{tab}</Text>
-              {safeActiveTab === tab ? (
+              {safeActiveTab === tab && !plainDecorationsActive() ? (
                 <Text color={palette.accent}>{"─".repeat(tab.length)}</Text>
               ) : null}
             </Box>

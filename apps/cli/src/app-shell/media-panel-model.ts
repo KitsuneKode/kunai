@@ -14,6 +14,7 @@ import type { TitleDetail } from "@/domain/catalog/title-detail";
 import type { ContentKind } from "@/domain/media/content-kind";
 import type { ContentType, VideoMeta } from "@/domain/types";
 
+import { decorationGlyphs, formatScoreLabel } from "./decoration-policy";
 import { resolveEpisodeThumbUrl, resolveSeasonAwarePosterUrl } from "./media-art";
 import type { ShellStatus } from "./types";
 
@@ -147,7 +148,7 @@ export function formatRuntimeMinutes(minutes: number | undefined): string | unde
 
 function formatScore(score: number | undefined): string | undefined {
   if (score === undefined || !Number.isFinite(score) || score <= 0) return undefined;
-  return `★ ${score.toFixed(1)}`;
+  return formatScoreLabel(score, "spaced");
 }
 
 function padSE(value: number | undefined): string | undefined {
@@ -347,7 +348,7 @@ function buildVideoPanel(ctx: MediaPanelContext): MediaPanelModel {
   if (posted) facts.push({ label: "posted", value: posted });
   if (length) facts.push({ label: "length", value: length });
   if (meta?.liveStatus === "live") {
-    facts.push({ label: "live", value: "● live", tone: "error" });
+    facts.push({ label: "live", value: `${decorationGlyphs().statusInfo} live`, tone: "error" });
   } else if (meta?.liveStatus === "upcoming") {
     facts.push({ label: "live", value: "◷ upcoming", tone: "warning" });
   } else if (meta?.liveStatus === "post_live") {

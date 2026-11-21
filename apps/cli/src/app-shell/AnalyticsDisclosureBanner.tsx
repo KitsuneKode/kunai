@@ -11,6 +11,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { plainDecorationsActive } from "./decoration-policy";
 import { STATIC_PETAL } from "./primitives/SakuraPetal";
 import { palette } from "./shell-theme";
 
@@ -18,20 +19,26 @@ import { palette } from "./shell-theme";
 export const ANALYTICS_NOTICE_VISIBLE_MS = 15_000;
 
 export function AnalyticsDisclosureBanner({ width }: { readonly width: number }) {
+  const plain = plainDecorationsActive();
+  const lead = plain ? "" : `${STATIC_PETAL}  `;
   return (
     <Box
       flexDirection="column"
-      borderStyle="round"
-      borderColor={palette.accent}
-      paddingX={1}
+      borderStyle={plain ? undefined : "round"}
+      borderColor={plain ? undefined : palette.accent}
+      paddingX={plain ? 0 : 1}
       width={width}
     >
       <Box>
-        <Text color={palette.accent} bold>
-          {STATIC_PETAL}
-        </Text>
+        {lead ? (
+          <Text color={palette.accent} bold>
+            {lead}
+          </Text>
+        ) : null}
         <Text color={palette.text} bold>
-          {"  Anonymous usage analytics is not enabled"}
+          {plain
+            ? "Anonymous usage analytics is not enabled"
+            : " Anonymous usage analytics is not enabled"}
         </Text>
       </Box>
       <Text color={palette.muted}>

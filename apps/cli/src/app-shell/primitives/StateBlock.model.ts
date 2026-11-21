@@ -1,3 +1,4 @@
+import { stateBlockGlyph } from "../decoration-policy";
 import type { ActionRowModel } from "./ActionList.model";
 
 export type StateBlockKind = "loading" | "empty" | "info" | "success" | "error";
@@ -11,11 +12,7 @@ export type StateBlockModel = {
 };
 
 export function getStateBlockGlyph(kind: StateBlockKind): string {
-  if (kind === "loading") return "◐";
-  if (kind === "empty") return "·";
-  if (kind === "success") return "✓";
-  if (kind === "error") return "×";
-  return "●";
+  return stateBlockGlyph(kind);
 }
 
 export function getStateBlockTone(kind: StateBlockKind): StateBlockTone {

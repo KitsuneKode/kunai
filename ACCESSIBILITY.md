@@ -29,16 +29,21 @@ plain non-interactive output instead of the shell.
 
 - **Screen readers.** The shell uses full-screen redraws typical of TUI
   frameworks. Screen readers that track terminal output may announce large
-  re-paints; there is no dedicated reduced-output mode today. If this blocks
-  you, tell us — it is the gap we most want real-world feedback on.
+  re-paints. Launch with **`-m` / `--minimal`** (or **`--zen`**, which implies
+  it) for plain chrome: ASCII list cursors, shortcut labels without modifier
+  symbols, no decorative emoji or mascot lines, no full-width box-drawing
+  rules, no panel box borders, no terminal poster graphics (half-block included, and the slot is not reserved), and forced reduced motion for loaders.
+  A saved `zenMode` setting enables that same plain chrome even when `minimalMode` is off.
+  Information and keyboard reachability stay the same; only decoration drops.
+  An interactive session with **`TERM=dumb`** gets the same ASCII glyph table
+  even without `-m`. If minimal
+  mode still blocks you, tell us — that is the feedback we most want.
 - **Color contrast.** The palette is fixed by the app theme rather than
   reading terminal color preferences, and low-vision contrast has not been
   formally audited.
-- **Motion.** The companion petals honor reduced motion: setting
-  `KUNAI_REDUCED_MOTION=1` (or `NO_MOTION=1`) renders a static mark instead of
-  the animated petals. Progress spinners, shimmer placeholders, and progress
-  bars do not read those variables yet, so motion-sensitive users may still see
-  animation elsewhere — that gap is tracked, not denied.
+- **Motion.** Setting `KUNAI_REDUCED_MOTION=1` (or `NO_MOTION=1`) renders static
+  loader marks instead of animated petals. **`-m` / `--minimal`** also forces
+  reduced motion for every surface that reads the shared motion policy.
 - **mpv playback** happens in an external window controlled by mpv's own
   keybindings, which are outside this application's accessibility surface.
 

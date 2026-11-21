@@ -2,6 +2,15 @@ import type { TitleDetail } from "@/domain/catalog/title-detail";
 import { Box, Text } from "ink";
 import React from "react";
 
+import {
+  decorationGlyphs,
+  decorativeBorderStyle,
+  displaySectionRuleLabel,
+  scrollAffordance,
+  terminalPostersEnabled,
+  verticalRulePrefix,
+} from "./decoration-policy";
+import { SectionSeparator } from "./decoration-ui";
 import type { DetailsPanelData, DetailsPanelSecondary } from "./details-panel";
 import {
   buildDetailCastLines,
@@ -27,12 +36,18 @@ const SERIES_STATE_COLORS: Record<SeriesStateKey, string> = {
   upcoming: palette.muted,
 };
 
-const SERIES_STATE_LABELS: Record<SeriesStateKey, string> = {
-  airing: "◉ airing",
-  ended: "✦ ended",
-  complete: "✦ you finished this",
-  upcoming: "upcoming",
-};
+function seriesStateLabel(state: SeriesStateKey): string {
+  switch (state) {
+    case "airing":
+      return `${decorationGlyphs().liveDot} airing`;
+    case "ended":
+      return "✦ ended";
+    case "complete":
+      return "✦ you finished this";
+    default:
+      return "upcoming";
+  }
+}
 
 function SecondaryZoneShimmer() {
   return (
@@ -95,7 +110,7 @@ export function DetailsSheetUI({
     <Box
       flexDirection="column"
       width={width}
-      borderStyle="single"
+      borderStyle={decorativeBorderStyle("single")}
       borderColor={palette.line}
       paddingX={1}
       overflow="hidden"
@@ -118,7 +133,7 @@ export function DetailsSheetUI({
           {visible.map((line) =>
             line.detail === "" && line.label.startsWith("───") ? (
               <Text key={line.label} color={palette.muted}>
-                {line.label}
+                {displaySectionRuleLabel(line.label)}
               </Text>
             ) : (
               <Box key={`${line.label}:${line.detail ?? ""}`}>
@@ -139,8 +154,8 @@ export function DetailsSheetUI({
         </Box>
         {scrollable.length > maxVisibleLines ? (
           <Text color={palette.dim} dimColor>
-            {clampedScroll > 0 ? "▲ " : ""}
-            {clampedScroll < maxScroll ? "▼ scroll" : ""}
+            {clampedScroll > 0 ? scrollAffordance("up", "scroll") : ""}
+            {clampedScroll < maxScroll ? scrollAffordance("down", "scroll") : ""}
           </Text>
         ) : null}
       </Box>
@@ -160,10 +175,11 @@ export function DetailsPaneUI({
   posterCols?: number;
 }) {
   const { primary, secondary } = data;
+  const showPoster = terminalPostersEnabled();
   const { poster, spinner } = usePosterPreview(primary.posterPath ?? undefined, {
     rows: posterRows,
     cols: posterCols,
-    enabled: Boolean(primary.posterPath),
+    enabled: showPoster && Boolean(primary.posterPath),
     debounceMs: 90,
     variant: "detail",
     placementSlot: "details-primary",
@@ -174,21 +190,23 @@ export function DetailsPaneUI({
   return (
     <Box flexDirection="row" width={width}>
       <Box width={1} marginRight={1}>
-        <Text color={seriesStateColor}>{"│"}</Text>
+        <Text color={seriesStateColor}>{verticalRulePrefix(false)}</Text>
       </Box>
       <Box flexDirection="column" flexGrow={1}>
-        <Box marginBottom={1}>
-          {poster.kind !== "none" ? (
-            <PosterOutput poster={poster} />
-          ) : primary.posterPath && spinner ? (
-            <SakuraPetal mode="loading" />
-          ) : (
-            // No poster URL, a cache hit still painting, or a failed fetch — the
-            // initials block is the honest resting state. A spinner that never
-            // resolves reads as a hang.
-            <PosterInitialBlock title={primary.title} width={8} height={4} />
-          )}
-        </Box>
+        {showPoster ? (
+          <Box marginBottom={1}>
+            {poster.kind !== "none" ? (
+              <PosterOutput poster={poster} />
+            ) : primary.posterPath && spinner ? (
+              <SakuraPetal mode="loading" />
+            ) : (
+              // No poster URL, a cache hit still painting, or a failed fetch — the
+              // initials block is the honest resting state. A spinner that never
+              // resolves reads as a hang.
+              <PosterInitialBlock title={primary.title} width={8} height={4} />
+            )}
+          </Box>
+        ) : null}
         <Text bold>{truncateLine(primary.title, width - 4)}</Text>
         <Text color={palette.dim}>
           {[primary.type, primary.year, ...(primary.genres?.slice(0, 2) ?? [])]
@@ -211,7 +229,7 @@ export function DetailsPaneUI({
           <Box flexDirection="column" marginTop={1}>
             {secondary.seriesState && (
               <Text color={SERIES_STATE_COLORS[secondary.seriesState]}>
-                {SERIES_STATE_LABELS[secondary.seriesState]}
+                {seriesStateLabel(secondary.seriesState)}
                 {secondary.nextAirDate ? `  ·  ${secondary.nextAirDate}` : ""}
               </Text>
             )}
@@ -257,11 +275,7 @@ export function DetailsPaneUI({
 
 /** Separator drawn between sections of the detail sheet. */
 function SectionDivider({ width }: { readonly width: number }) {
-  return (
-    <Box marginTop={1}>
-      <Text color={palette.line}>{"─".repeat(Math.max(2, width))}</Text>
-    </Box>
-  );
+  return <SectionSeparator width={width} color={palette.line} />;
 }
 
 /** One labelled fact row: muted label + text value. */
@@ -463,6 +477,7 @@ export function TitleDetailSheetUI({
   const factLabelWidth = 8;
   const factValueWidth = Math.max(8, innerWidth - factLabelWidth - 2);
 
+  const showPoster = terminalPostersEnabled();
   const subtitle = buildDetailSubtitle(detail);
   const synopsisLines = wrapSynopsis(detail.synopsis, innerWidth, 4);
   const factRows = buildDetailFactRows(detail);
@@ -471,14 +486,15 @@ export function TitleDetailSheetUI({
     <Box
       flexDirection="column"
       width={width}
-      borderStyle="single"
+      borderStyle={decorativeBorderStyle("single")}
       borderColor={palette.line}
       paddingX={1}
     >
-      {/* ---- Poster slot ---- */}
-      <Box marginBottom={1}>
-        <DetailPosterSlot detail={detail} posterRows={posterRows} posterCols={posterCols} />
-      </Box>
+      {showPoster ? (
+        <Box marginBottom={1}>
+          <DetailPosterSlot detail={detail} posterRows={posterRows} posterCols={posterCols} />
+        </Box>
+      ) : null}
 
       {/* ---- Title (bright + bold — weight carries hierarchy) ---- */}
       <Text color={palette.text} bold>

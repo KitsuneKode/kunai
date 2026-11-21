@@ -1,3 +1,4 @@
+import { streakHeroPrefix } from "@/app-shell/decoration-policy";
 import { ClaudeTabRow } from "@/app-shell/primitives/ClaudeTabRow";
 import { SegmentedControl } from "@/app-shell/primitives/SegmentedControl";
 import { palette } from "@/app-shell/shell-theme";
@@ -88,7 +89,7 @@ export function StatsOverviewCapture({
       />
       {view.streakHero ? (
         <Text>
-          <Text color={palette.accentDeep}>{"🔥 " + view.streakHero}</Text>
+          <Text color={palette.accentDeep}>{streakHeroPrefix() + view.streakHero}</Text>
           {view.streakDetail ? (
             <Text color={palette.muted}>{" · " + view.streakDetail}</Text>
           ) : null}

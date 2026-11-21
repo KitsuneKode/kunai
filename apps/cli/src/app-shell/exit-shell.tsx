@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 
 import { companionMode } from "./companion-policy";
 import { CompanionHost } from "./CompanionHost";
+import { decorationGlyphs } from "./decoration-policy";
 import { palette } from "./shell-theme";
 
 type ExitStep = "dim" | "footer-gone" | "fox" | "closing" | "done";
@@ -65,7 +66,7 @@ export function ExitShell({ onDone }: { onDone: () => void }) {
     <Box flexDirection="column" paddingY={1}>
       <CompanionHost moment={showFox ? "farewell" : null} rows={4} marginBottom={1} />
       <Text dimColor={isDim} color={palette.dim}>
-        {showFox ? "◉  see you next time" : ""}
+        {showFox ? `${decorationGlyphs().liveDot}  see you next time` : ""}
       </Text>
       {(step === "closing" || step === "done") && <Text color={palette.accent}>◈ kunai</Text>}
     </Box>

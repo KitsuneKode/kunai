@@ -5,6 +5,7 @@
 // seasons, trailer, links), plus history + availability, into typed sections each
 // carrying a `loading` flag so the renderer can skeleton only the unresolved parts.
 
+import { decorationGlyphs, formatScoreLabel } from "@/app-shell/decoration-policy";
 import type { TitleDetail, TitleLink } from "@/domain/catalog/title-detail";
 import { resolveContentKind, type ContentKind } from "@/domain/media/content-kind";
 import { sanitizeTerminalText } from "@/domain/text-display";
@@ -71,7 +72,7 @@ export type DetailsSheetModel = {
 
 function statusLabel(status: TitleDetail["status"] | undefined): string | undefined {
   if (!status || status === "unknown") return undefined;
-  if (status === "airing") return "◉ airing";
+  if (status === "airing") return `${decorationGlyphs().liveDot} airing`;
   if (status === "upcoming") return "upcoming";
   return "finished";
 }
@@ -113,7 +114,7 @@ export function buildDetailsSheet(input: {
   const metaLine = [
     typeLabel,
     seed.year !== undefined ? sanitizeTerminalText(seed.year) : undefined,
-    typeof score === "number" ? `★${score.toFixed(1)}` : undefined,
+    typeof score === "number" ? formatScoreLabel(score) : undefined,
     status,
   ]
     .filter(Boolean)

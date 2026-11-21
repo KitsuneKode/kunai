@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { scrollAffordance, tabCycleHint } from "./decoration-policy";
 import { compactProgressBar } from "./format/bar";
 import type { HistoryView } from "./history-view";
 import { useRailPoster } from "./hooks/use-rail-poster";
@@ -70,7 +71,7 @@ export function HistoryShell({
           <ClaudeTabRow
             labels={view.tabLabels}
             activeIndex={view.tabIndex}
-            hint={effectiveListWidth >= 100 ? "⇥ Tab · ⇧⇥ cycles tabs" : undefined}
+            hint={effectiveListWidth >= 100 ? tabCycleHint("tabs") : undefined}
             maxWidth={effectiveListWidth}
             dense
           />
@@ -127,7 +128,7 @@ export function HistoryShell({
 
       {view.state === "success" ? (
         <Box flexDirection="column" flexGrow={1}>
-          {view.showScrollUp ? <Text color={palette.dim}> ▲ ...</Text> : null}
+          {view.showScrollUp ? <Text color={palette.dim}>{scrollAffordance("up")}</Text> : null}
           {view.items.map((item) => {
             if (item.kind === "section") {
               return <SectionGroup key={`section-${item.label}`} label={item.label} />;
@@ -161,7 +162,7 @@ export function HistoryShell({
               />
             );
           })}
-          {view.showScrollDown ? <Text color={palette.dim}> ▼ ...</Text> : null}
+          {view.showScrollDown ? <Text color={palette.dim}>{scrollAffordance("down")}</Text> : null}
         </Box>
       ) : null}
 

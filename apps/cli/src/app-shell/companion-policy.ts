@@ -1,6 +1,8 @@
 import { detectImageCapability } from "@/image";
 import { isMultiplexed } from "@/image/capability";
 
+import { companionFlavorEnabled } from "./decoration-policy";
+
 export type CompanionPose = "idle" | "watch" | "go" | "wait" | "oops" | "nap";
 
 /**
@@ -69,6 +71,9 @@ export function companionMode(
 
   // Nothing decorative belongs in a pipe, a redirect, or a captured log.
   if (!stdout.isTTY) return "off";
+
+  // Plain chrome drops the mascot entirely, glyph included.
+  if (!companionFlavorEnabled(env)) return "off";
 
   if (GLYPH_VALUES.has(requested)) return "glyph";
 

@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { decorativeBorderStyle } from "../decoration-policy";
 import { palette } from "../shell-theme";
 
 /** Uppercase section label with an inline trailing rule (Sakura systems shelf bands).
@@ -29,7 +30,7 @@ export const SectionGroup = React.memo(function SectionGroup({
     >
       <Text color={palette.muted}>{label.toUpperCase()}</Text>
       {tag ? <Text color={palette.dim}>{tag}</Text> : null}
-      {rule ? (
+      {rule && decorativeBorderStyle("single") ? (
         <Box
           flexGrow={1}
           borderStyle="single"

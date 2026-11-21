@@ -16,6 +16,12 @@ import React from "react";
 
 import type { CompanionMoment } from "../companion-moment";
 import { CompanionHost } from "../CompanionHost";
+import {
+  cursorThen,
+  decorationGlyphs,
+  listSelectionPrefix,
+  plainDecorationsActive,
+} from "../decoration-policy";
 import { palette } from "../shell-theme";
 import { SetupTarget } from "./SetupPointer";
 
@@ -60,7 +66,8 @@ function FrameBar({
   return (
     <Box
       width={width}
-      borderStyle="single"
+      // Plain mode: no full-width rule lines; the bar text still separates.
+      borderStyle={plainDecorationsActive() ? undefined : "single"}
       borderTop={!top}
       borderBottom={top}
       borderLeft={false}
@@ -153,7 +160,10 @@ export function SetupFrame({
             <Text color={palette.accent} bold>
               {step + 1}
             </Text>
-            <Text color={palette.muted}>⁄{totalSteps}</Text>
+            <Text color={palette.muted}>
+              {decorationGlyphs().slashGlyph}
+              {totalSteps}
+            </Text>
           </Text>
         }
       />
@@ -211,7 +221,7 @@ export function ChoiceRow({
 }) {
   return (
     <Box backgroundColor={selected ? palette.accentFill : undefined}>
-      <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
+      <Text color={selected ? palette.accent : palette.dim}>{listSelectionPrefix(selected)}</Text>
       <Box flexDirection="column">
         <Text>
           <Text color={palette.text} bold={selected}>
@@ -249,13 +259,13 @@ export function ToggleRow({
    */
   readonly kind?: "toggle" | "cycle";
 }) {
-  const glyph = kind === "cycle" ? "↻ " : on ? "◉ " : "○ ";
+  const glyphs = decorationGlyphs();
+  const mark = kind === "cycle" ? glyphs.cycle : on ? glyphs.toggleOn : glyphs.radioOff;
   const glyphColor = kind === "cycle" ? palette.muted : on ? palette.ok : palette.dim;
   return (
     <Box backgroundColor={selected ? palette.accentFill : undefined}>
-      <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
-      <Text color={glyphColor}>{glyph}</Text>
-      <Box flexDirection="column" flexShrink={1}>
+      <Text color={selected ? palette.accent : glyphColor}>{cursorThen(mark, selected)}</Text>
+      <Box flexDirection="column" flexShrink={1} marginLeft={1}>
         <Text color={palette.text} bold={selected}>
           {label}
         </Text>

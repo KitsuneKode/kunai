@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-15"
+lastReviewed: "2026-11-18"
 ---
 
 # Poster and terminal image output
@@ -82,6 +82,7 @@ were retired, and `jpeg-js` is test-support only.
   writes the payload after the frame.
 - **`text`**: in-process half-block output as placeholder text. Covers every terminal without a graphics protocol, and every multiplexer.
 - **`none`**: Silent skip; UI shows “Poster unavailable” when appropriate.
+- **Plain chrome** (`minimalMode`, a saved or session `zenMode`, or `TERM=dumb` on an interactive TTY) skips every renderer, including half-block. `terminalPostersEnabled()` is the gate. Surfaces omit the poster slot instead of reserving an empty or initials-sized gap. `KUNAI_POSTER=0` still disables acquisition on its own; plain chrome does not need that variable.
 
 In Ink, browse and playback companion panes both render `placeholder` for **`kitty`** and **`text`**; only **`none`** (or missing URL while loading) shows the unavailable copy.
 

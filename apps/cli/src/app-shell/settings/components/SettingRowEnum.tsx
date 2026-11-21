@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { listSelectionPrefix } from "../../decoration-policy";
 import { SegmentedControl } from "../../primitives/SegmentedControl";
 import { palette } from "../../shell-theme";
 import type { BuiltSettingsRow } from "../types";
@@ -27,7 +28,7 @@ export const SettingRowEnum = React.memo(function SettingRowEnum({
       flexDirection="column"
     >
       <Box>
-        <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
+        <Text color={selected ? palette.accent : palette.dim}>{listSelectionPrefix(selected)}</Text>
         <Text bold={selected} color={selected ? palette.text : palette.textDim}>
           {row.def.label}
         </Text>

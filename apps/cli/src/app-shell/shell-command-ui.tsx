@@ -4,6 +4,7 @@ import { Box, Text } from "ink";
 import React from "react";
 
 import type { ResolvedAppCommand } from "./commands";
+import { listSelectionPrefix, scrollAffordance } from "./decoration-policy";
 import { getCommandPaletteVisibleCommandCount } from "./layout-policy";
 import { MouseTarget } from "./mouse/MouseRegions";
 import {
@@ -235,7 +236,9 @@ function PaletteLocalTitles({
             }
           >
             <Box width={width + 4} backgroundColor={selected ? palette.accentFill : undefined}>
-              <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
+              <Text color={selected ? palette.accent : palette.dim}>
+                {listSelectionPrefix(selected)}
+              </Text>
               <Box width={titleWidth}>
                 <AccentTitleLabel
                   title={match.entry.title}
@@ -332,7 +335,9 @@ export function CommandPalette({
       >
         <Box flexDirection="column" width={contentWidth + 4}>
           <Box width={contentWidth + 4} backgroundColor={selected ? palette.accentFill : undefined}>
-            <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
+            <Text color={selected ? palette.accent : palette.dim}>
+              {listSelectionPrefix(selected)}
+            </Text>
             <Text
               color={!command.enabled ? palette.dim : selected ? palette.accent : palette.text}
               bold={selected && command.enabled}
@@ -392,7 +397,9 @@ export function CommandPalette({
           <>
             {/* Scroll affordance only when there is actually more above — no empty
                 placeholder line, so the palette stays tight. */}
-            {windowStart > 0 ? <Text color={palette.dim}> ▲ more</Text> : null}
+            {windowStart > 0 ? (
+              <Text color={palette.dim}>{scrollAffordance("up", "more")}</Text>
+            ) : null}
             {showGrouped ? (
               <>
                 {(() => {
@@ -424,7 +431,9 @@ export function CommandPalette({
                 return renderCommand(command, absoluteIndex);
               })
             )}
-            {windowEnd < matches.length ? <Text color={palette.dim}> ▼ more</Text> : null}
+            {windowEnd < matches.length ? (
+              <Text color={palette.dim}>{scrollAffordance("down", "more")}</Text>
+            ) : null}
           </>
         ) : (
           <Text color={palette.dim}>No matching commands</Text>

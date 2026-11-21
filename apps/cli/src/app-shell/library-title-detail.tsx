@@ -1,3 +1,4 @@
+import { scrollAffordance } from "@/app-shell/decoration-policy";
 import { useConnectivityOnline } from "@/app-shell/hooks/use-connectivity-online";
 import { useRailPoster } from "@/app-shell/hooks/use-rail-poster";
 import { getPickerChromeRows, getPickerListMaxVisible } from "@/app-shell/layout-policy";
@@ -269,7 +270,7 @@ export function LibraryTitleDetail({
           )}
         </Text>
       </Box>
-      {windowStart > 0 ? <Text color={palette.dim}> ▲ ...</Text> : null}
+      {windowStart > 0 ? <Text color={palette.dim}>{scrollAffordance("up")}</Text> : null}
       {visibleRows.map((row, index) => {
         const flatIndex = windowStart + index;
         const selected = flatIndex === safeIndex;
@@ -317,7 +318,7 @@ export function LibraryTitleDetail({
           />
         );
       })}
-      {windowEnd < totalRows ? <Text color={palette.dim}> ▼ ...</Text> : null}
+      {windowEnd < totalRows ? <Text color={palette.dim}>{scrollAffordance("down")}</Text> : null}
       {windowStart <= episodeRows.length && windowEnd > episodeRows.length ? (
         <SectionGroup label="Actions" marginTop={1} />
       ) : null}

@@ -3,6 +3,7 @@ import { Box, Text, useInput } from "ink";
 import { useMemo, useState } from "react";
 
 import type { ResolvedAppCommand } from "./commands";
+import { decorationGlyphs, listSelectionPrefix } from "./decoration-policy";
 import { GUIDE_SURFACE_TAGS, type GuideRow, type GuideSectionRows } from "./guide-model";
 import { useOverlayLayout } from "./overlay-layout-context";
 import { CommandPalette } from "./shell-command-ui";
@@ -119,7 +120,7 @@ export function GuideShell({
       <Box flexDirection="column" paddingX={1} marginTop={1}>
         <Box flexDirection="row" flexWrap="nowrap">
           <Text color={palette.accent} bold>
-            {"❀ Guide"}
+            {`${decorationGlyphs().sakura} Guide`}
           </Text>
           <Text color={palette.muted}>{"  ·  everything Kunai can do"}</Text>
         </Box>
@@ -180,7 +181,7 @@ function GuideRowLine({ row, selected }: { readonly row: GuideRow; readonly sele
   const detailWidth = Math.max(8, contentColumns - 2 - 2 - 24 - tagText.length);
   return (
     <Box flexDirection="row" flexWrap="nowrap">
-      <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
+      <Text color={selected ? palette.accent : palette.dim}>{listSelectionPrefix(selected)}</Text>
       <Text color={selected ? palette.accent : inactive ? palette.dim : palette.text}>
         {truncateLine(row.invocation.padEnd(24), 24)}
       </Text>

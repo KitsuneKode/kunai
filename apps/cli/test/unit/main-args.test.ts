@@ -139,6 +139,14 @@ test("parseArgs treats zen as layout only, not auto-selection", () => {
   expect(args.shellChrome).toBe("minimal");
 });
 
+test("parseArgs leaves shellChrome default for --quick alone", () => {
+  const args = parseArgs(["--quick", "-S", "Dune"]);
+
+  expect(args.quick).toBe(true);
+  expect(args.minimal).toBe(false);
+  expect(args.shellChrome).toBe("default");
+});
+
 test("parseArgs still composes zen with an explicit --quick", () => {
   const args = parseArgs(["--zen", "--quick", "-S", "Dune"]);
 
