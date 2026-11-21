@@ -58,7 +58,7 @@ test("HLS expansion and exact rendition selection use the candidate headers and 
       runtime: "direct-http",
       fetch: async (target, init) => {
         const href = String(target);
-        if (href.includes("VideoProviderServices"))
+        if (href.includes("/api/providers"))
           return Response.json({ data: ["citadel", "vanguard"] });
         if (href.includes("/api/"))
           return Response.json({ data: { sources: [{ url, quality: "720p", format: "hls" }] } });
@@ -94,10 +94,10 @@ test("source switching resolves the requested source's own quality rows", async 
       runtime: "direct-http",
       fetch: async (target) => {
         const url = new URL(String(target));
-        if (url.searchParams.get("requestID") === "VideoProviderServices")
+        if (url.pathname === "/api/providers")
           return Response.json({ data: ["citadel", "vanguard"] });
-        if (url.pathname.includes("/api/")) {
-          const source = url.searchParams.get("service");
+        if (url.pathname === "/api/provider") {
+          const source = url.searchParams.get("provider");
           return Response.json({
             data: {
               sources: [
@@ -131,7 +131,7 @@ test("observed extensionless HLS media keeps its protocol without inventing qual
       runtime: "direct-http",
       fetch: async (target) => {
         const url = String(target);
-        if (url.includes("VideoProviderServices")) return Response.json({ data: ["citadel"] });
+        if (url.includes("/api/providers")) return Response.json({ data: ["citadel"] });
         if (url.includes("/api/"))
           return Response.json({
             data: {

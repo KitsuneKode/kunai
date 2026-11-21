@@ -29,6 +29,7 @@ import {
   getLastAllMangaRotationSignal,
   type AllMangaCryptoMaterial,
 } from "./crypto";
+import { ALLMANGA_EPISODE_QUERY } from "./episode-query";
 import { ALLANIME_PROVIDER_ID } from "./manifest";
 
 export {
@@ -755,6 +756,79 @@ export function isAllMangaPersistedQueryNotFound(rawText: string): boolean {
   return rawText.includes("PersistedQueryNotFound");
 }
 
+/** Variables of the desktop episode-sources document. */
+type AllMangaEpisodeQueryVariables = {
+  readonly showId: string;
+  readonly translationType: "sub" | "dub";
+  readonly episodeString: string;
+};
+
+/** Extensions posted with that document: persisted-query hash, lane, and aaReq. */
+type AllMangaEpisodeQueryExtensions = {
+  readonly persistedQuery: {
+    readonly version: 1;
+    readonly sha256Hash: string;
+  };
+  readonly k: string;
+  readonly aaReq: string;
+};
+
+/**
+ * GET automatic persisted queries miss on build 189 even when the hash is
+ * current. Upstream falls back to POST of the desktop document with the same
+ * extensions. One POST; a second `PersistedQueryNotFound` is real drift.
+ */
+async function postEpisodeQueryDocument(opts: {
+  readonly context: ProviderRuntimeContext;
+  readonly apiUrl: string;
+  readonly referer: string;
+  readonly ua: string;
+  readonly buildId: string;
+  readonly vars: AllMangaEpisodeQueryVariables;
+  readonly extensions: AllMangaEpisodeQueryExtensions;
+  readonly signal?: AbortSignal;
+}): Promise<string> {
+  const { context, apiUrl, referer, ua, buildId, vars, extensions, signal } = opts;
+  try {
+    const response = await providerFetch(context, apiUrl, {
+      method: "POST",
+      signal: createTimeoutSignal(signal, 12_000),
+      headers: {
+        "Content-Type": "application/json",
+        Referer: referer,
+        Origin: ALLMANGA_SITE_ORIGIN,
+        "User-Agent": ua,
+        "x-build-id": buildId || ALLMANGA_BUILD_ID,
+      },
+      body: JSON.stringify({
+        query: ALLMANGA_EPISODE_QUERY,
+        variables: vars,
+        extensions,
+      }),
+    });
+    if (!response.ok) {
+      throw createProviderHttpError(response, {
+        providerId: ALLANIME_PROVIDER_ID,
+        stage: "episode-sources",
+      });
+    }
+    return await response.text();
+  } catch (error) {
+    if (error instanceof ProviderHttpError) throw error;
+    const message = error instanceof Error ? error.message : "AllManga source request failed";
+    const timedOut =
+      error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+    throw new ProviderHttpError({
+      providerId: ALLANIME_PROVIDER_ID,
+      stage: "episode-sources",
+      code: timedOut ? "timeout" : "network-error",
+      message,
+      retryable: timedOut || !isOfflineNetworkFailure({ code: "network-error", message }),
+      cause: error,
+    });
+  }
+}
+
 export async function resolveEpisodeSources(opts: {
   readonly context: ProviderRuntimeContext;
   readonly apiUrl: string;
@@ -853,7 +927,29 @@ export async function resolveEpisodeSources(opts: {
     }
 
     if (isAllMangaPersistedQueryNotFound(rawText)) {
-      throw new AllMangaQueryDriftError();
+      const extensions: AllMangaEpisodeQueryExtensions = {
+        persistedQuery: { version: 1, sha256Hash: material.queryHash },
+        k: material.contentLane,
+        aaReq,
+      };
+      rawText = await postEpisodeQueryDocument({
+        context,
+        apiUrl,
+        referer,
+        ua,
+        buildId: material.buildId || ALLMANGA_BUILD_ID,
+        vars,
+        extensions,
+        signal,
+      });
+      if (!rawText) return [];
+      if (rawText.includes('"tobeparsed"')) break;
+      if (isAllMangaCaptchaResponse(rawText)) {
+        throw new AllMangaCaptchaError();
+      }
+      if (isAllMangaPersistedQueryNotFound(rawText)) {
+        throw new AllMangaQueryDriftError();
+      }
     }
 
     if (rawText.includes("Too many requests")) {

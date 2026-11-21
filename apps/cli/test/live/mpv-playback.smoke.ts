@@ -1,7 +1,7 @@
 /**
  * Opt-in mpv decode check: resolve one matrix fixture, then prove mpv decodes it.
  *
- * Usage — one provider per run, and only the four with fixtures here. The
+ * Usage — one provider per run, and only the fixtures in `FIXTURES`. The
  * anime providers keep their own search-based smokes, so naming them prints the
  * supported list instead:
  *   bun run test:live:mpv videasy

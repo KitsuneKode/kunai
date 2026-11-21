@@ -73,15 +73,14 @@ export const providerResearchProfiles = [
       ".reference/experiments/scratchpads/provider-rivestream/RIVESTREAM_DECRYPT_REPORT.md",
       ".reference/experiments/scratchpads/provider-rivestream/rivestream-headless.ts",
     ],
-    runtimeClass: "direct-http secretKey hash API",
+    runtimeClass: "direct-http scraper provider API",
     implementationSource: "scratchpad-report",
     supportedContent: ["movie", "series"],
     sourceStrategy:
-      "Generate secretKey locally, call backendfetch APIs, and expose direct stream variants.",
-    subtitleStrategy:
-      "Dedicated backendfetch subtitle endpoint returning direct subtitle inventory.",
+      "Discover services at scrapper.rivestream.app/api/providers and resolve each at /api/provider. secretKey is not sent.",
+    subtitleStrategy: "Captions travel with the provider source payload.",
     productionGap:
-      "Registered and serving. Hash-generation fixtures remain thin, so a secretKey scheme change would surface as resolve failures rather than a failing test.",
+      "Registered and serving. generateSecretKey remains a rotation canary; the live provider API does not read it.",
   },
   {
     providerId: "miruro",
