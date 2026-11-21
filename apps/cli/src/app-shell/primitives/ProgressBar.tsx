@@ -1,8 +1,8 @@
-import { Box, Text } from "ink";
 import React from "react";
 
 import { barFill } from "../format/bar";
 import { palette } from "../shell-theme";
+import { Box, Text } from "../ShellInk";
 
 export const ProgressBar = React.memo(function ProgressBar({
   value,

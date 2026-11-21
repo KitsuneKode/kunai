@@ -1,10 +1,10 @@
 import { sanitizeTerminalText } from "@/domain/text-display";
-import { Box, Text } from "ink";
 import React from "react";
 
 import { companionFallbackGlyph, companionMode } from "../companion-policy";
 import { companionLineFor } from "../kanna-voice";
 import { palette, semanticToneColor } from "../shell-theme";
+import { Box, Text } from "../ShellInk";
 import { ActionList } from "./ActionList";
 import {
   getStateBlockGlyph,

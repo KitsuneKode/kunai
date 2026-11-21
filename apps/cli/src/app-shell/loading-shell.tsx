@@ -4,7 +4,7 @@ import {
 } from "@/app/playback/subtitle-status";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
 import { getRuntimeMemoryLine } from "@/services/diagnostics/runtime-memory";
-import { Box, Text, useInput } from "ink";
+import { useInput } from "ink";
 import React from "react";
 
 import type { AppCommandId } from "./commands";
@@ -45,6 +45,7 @@ import { ShellFrame } from "./shell-frame";
 import { DetailLine } from "./shell-primitives";
 import { padColumnsEnd, sanitizeTerminalText, truncateLine } from "./shell-text";
 import { palette, statusColor } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 import type { FooterAction, LoadingShellState, ShellPanelLine } from "./types";
 import { useDebouncedViewportPolicy } from "./use-viewport-policy";
 

@@ -20,11 +20,11 @@ import {
   SUBTITLE_PREFERENCE_OPTIONS,
 } from "@/domain/media/media-preferences";
 import type { CapabilitySnapshot } from "@/ui";
-import { Box, Text, useInput } from "ink";
+import { useInput } from "ink";
 import React, { useState } from "react";
 
 import packageJson from "../../package.json" with { type: "json" };
-import { ROOT_HORIZONTAL_PADDING } from "./layout-policy";
+import { getRootContentRowBudget, ROOT_HORIZONTAL_PADDING } from "./layout-policy";
 import { useFrameTick } from "./primitives/SakuraPetal";
 import { mountRootContent } from "./root-content-state";
 import { AnalyticsScreen, ANALYTICS_ON_INDEX, ANALYTICS_OFF_INDEX } from "./setup/AnalyticsScreen";
@@ -44,6 +44,7 @@ import {
 } from "./setup/SetupScreens";
 import { ViewportResizeGate } from "./shell-primitives";
 import { palette } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 import { useDebouncedViewportPolicy, useShellDimensions } from "./use-viewport-policy";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -238,7 +239,8 @@ export function SetupShell({
   // Columns only. The frame takes its height from its container via flexGrow —
   // sizing to `stdout.rows` is what pushed the footer off the bottom of the
   // screen, because setup mounts inside the app shell's box, not the terminal.
-  const { cols, rows } = useShellDimensions();
+  const { cols, rows: terminalRows } = useShellDimensions();
+  const contentRows = getRootContentRowBudget(terminalRows);
   // Setup is inside AppRoot, whose side padding also consumes columns.
   const frameWidth = Math.max(0, cols - ROOT_HORIZONTAL_PADDING * 2);
   // Same policy the gate below renders against. While it is too small the
@@ -714,6 +716,7 @@ export function SetupShell({
       <ViewportResizeGate kind="picker" message="Resize terminal to run setup">
         <SetupFrame
           width={frameWidth}
+          rows={contentRows}
           context={SCREEN_CONTEXT[screen]}
           step={screenIdx}
           totalSteps={SCREEN_ORDER.length}
@@ -765,7 +768,7 @@ export function SetupShell({
           {screen === "analytics" ? <AnalyticsScreen selectedIndex={analyticsIdx} /> : null}
           {screen === "done" ? (
             <DoneScreen
-              compact={rows < 30}
+              compact={contentRows < 30}
               contentWidth={setupContentWidth(frameWidth)}
               headline={describeChoice(buildPrefs(analyticsDecision))}
               summary={summaryLines(buildPrefs(analyticsDecision))}
@@ -861,6 +864,7 @@ function summaryLines(prefs: SetupPrefs): readonly SummaryLine[] {
   }
   lines.push({
     ok: prefs.downloadsEnabled,
+    neutral: !prefs.downloadsEnabled,
     label: prefs.downloadsEnabled ? "Downloads on" : "Downloads off",
     detail: prefs.downloadsEnabled ? prefs.downloadQuality : "stream-only · change in /settings",
   });
@@ -869,17 +873,20 @@ function summaryLines(prefs: SetupPrefs): readonly SummaryLine[] {
   );
   lines.push({
     ok: skips.length > 0,
+    neutral: skips.length === 0,
     label: skips.length > 0 ? "Auto-skip" : "Auto-skip off",
     detail: skips.length > 0 ? skips.join(" and ") : "nothing skipped",
   });
   lines.push({
     ok: prefs.autoNext,
+    neutral: !prefs.autoNext,
     label: prefs.autoNext ? "Autoplay on" : "Autoplay off",
     detail: prefs.autoNext ? "next episode rolls on" : "stops after each episode",
   });
   if (prefs.analyticsChoice !== "unchanged") {
     lines.push({
       ok: prefs.analyticsChoice === "enabled",
+      neutral: prefs.analyticsChoice !== "enabled",
       label: prefs.analyticsChoice === "enabled" ? "Usage ping on" : "Usage ping off",
       detail: "change any time in /settings",
     });

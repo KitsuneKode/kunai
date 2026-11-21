@@ -1,4 +1,3 @@
-import { Box, Text } from "ink";
 import React from "react";
 
 import { DetailsSheetUI } from "./details-pane-ui";
@@ -21,6 +20,7 @@ import {
   wrapText,
 } from "./shell-text";
 import { palette, semanticToneColor, statusColor } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 import { PosterOutput } from "./SixelPosterPane";
 import type { ShellPanelLine, ShellPickerOption } from "./types";
 import { usePosterPreview } from "./use-poster-preview";

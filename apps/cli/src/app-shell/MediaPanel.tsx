@@ -9,7 +9,6 @@
 // ❀ petal placeholder rather than initials or blank space. Sections use light
 // rose-dim ── label ── rules instead of one long left border.
 
-import { Box, Text } from "ink";
 import React from "react";
 
 import type { KittyPlacementSlot } from "./kitty-placement-registry";
@@ -19,6 +18,7 @@ import { ProgressBar } from "./primitives/ProgressBar";
 import { SakuraPetal } from "./primitives/SakuraPetal";
 import { measureColumns, padColumnsEnd, truncateLine, wrapText } from "./shell-text";
 import { palette, statusColor } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 import { PosterOutput } from "./SixelPosterPane";
 import { usePosterPreview } from "./use-poster-preview";
 

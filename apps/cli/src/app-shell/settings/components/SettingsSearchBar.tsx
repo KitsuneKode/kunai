@@ -1,7 +1,7 @@
-import { Box, Text } from "ink";
 import React from "react";
 
 import { palette } from "../../shell-theme";
+import { Box, Text } from "../../ShellInk";
 
 export const SettingsSearchBar = React.memo(function SettingsSearchBar({
   query,

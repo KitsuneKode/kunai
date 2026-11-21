@@ -1,9 +1,9 @@
-import { Box, Text } from "ink";
 import React from "react";
 
 import type { PosterResult } from "../poster-types";
 import { truncateLine, wrapText } from "../shell-text";
 import { palette } from "../shell-theme";
+import { Box, Text } from "../ShellInk";
 import { PosterOutput } from "../SixelPosterPane";
 import {
   getPreviewPosterLabel,

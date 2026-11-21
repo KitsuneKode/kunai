@@ -1,8 +1,8 @@
-import { Box, Text } from "ink";
 import React from "react";
 
 import { BooleanSwitch } from "../../primitives/Switch";
 import { palette } from "../../shell-theme";
+import { Box, Text } from "../../ShellInk";
 import type { BuiltSettingsRow } from "../types";
 
 export const SettingRowBoolean = React.memo(function SettingRowBoolean({

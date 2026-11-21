@@ -1,8 +1,8 @@
-import { Box, Text } from "ink";
 import React from "react";
 
 import { truncateLine } from "../shell-text";
 import { palette } from "../shell-theme";
+import { Box, Text } from "../ShellInk";
 
 export const ResumeCard = React.memo(function ResumeCard({
   label,

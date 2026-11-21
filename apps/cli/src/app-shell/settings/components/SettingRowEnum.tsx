@@ -1,8 +1,8 @@
-import { Box, Text } from "ink";
 import React from "react";
 
 import { SegmentedControl } from "../../primitives/SegmentedControl";
 import { palette } from "../../shell-theme";
+import { Box, Text } from "../../ShellInk";
 import type { BuiltSettingsRow } from "../types";
 
 export const SettingRowEnum = React.memo(function SettingRowEnum({

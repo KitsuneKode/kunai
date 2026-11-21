@@ -46,7 +46,7 @@ test("setup advances when mpv is missing", () => {
   try {
     const deps = handle.lastFrame();
     expect(deps).toContain("mpv");
-    expect(deps).toContain("Nothing can play until this is installed.");
+    expect(deps).toContain("Install mpv to play video");
     // Degraded, not blocking — a crimson ✗ would overstate it.
     expect(deps).toContain("△");
 

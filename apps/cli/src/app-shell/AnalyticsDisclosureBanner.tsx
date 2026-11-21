@@ -8,11 +8,11 @@
 // handler, and a second one here would make Enter both dismiss the notice and
 // fire whatever Enter means in the current view. It auto-hides instead.
 
-import { Box, Text } from "ink";
 import React from "react";
 
 import { STATIC_PETAL } from "./primitives/SakuraPetal";
 import { palette } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 
 /** Long enough to read four short lines without rushing, short enough not to squat. */
 export const ANALYTICS_NOTICE_VISIBLE_MS = 15_000;

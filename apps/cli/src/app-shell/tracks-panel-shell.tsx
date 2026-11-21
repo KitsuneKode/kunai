@@ -7,13 +7,13 @@ import {
   type TrackCapabilitySection,
 } from "@/domain/playback/track-capabilities";
 import { sanitizeTerminalText } from "@/domain/text-display";
-import { Box, Text } from "ink";
 import React from "react";
 
 import { MouseTarget } from "./mouse/MouseRegions";
 import { StateBlock } from "./primitives/StateBlock";
 import { getWindowStart, measureColumns, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 import {
   chunkSubtitleGrid,
   disambiguateSubtitleLabels,

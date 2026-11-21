@@ -122,10 +122,16 @@ describe("design color resolution", () => {
     });
 
     test("explicit user intent still wins over the Windows default", () => {
-      expect(detectTerminalColorLevel({ OS: "Windows_NT", NO_COLOR: "1" })).toBe("16");
+      expect(detectTerminalColorLevel({ OS: "Windows_NT", NO_COLOR: "1" })).toBe("none");
       expect(detectTerminalColorLevel({ OS: "Windows_NT", FORCE_COLOR: "1" })).toBe("16");
       // A real TERM means the Unix hints already classified it.
       expect(detectTerminalColorLevel({ OS: "Windows_NT", TERM: "xterm" })).toBe("16");
+    });
+
+    test("NO_COLOR and TERM=dumb honour no-color.org", () => {
+      expect(detectTerminalColorLevel({ NO_COLOR: "1" })).toBe("none");
+      expect(detectTerminalColorLevel({ TERM: "dumb" })).toBe("none");
+      expect(detectTerminalColorLevel({ FORCE_COLOR: "0" })).toBe("none");
     });
   });
 });

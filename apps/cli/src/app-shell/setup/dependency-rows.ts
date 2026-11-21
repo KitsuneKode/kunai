@@ -70,7 +70,9 @@ export function buildDependencyRows(
         : "not required by selected player",
     fix: mpvIssue ? fixFor(mpvIssue.install, which) : null,
     ...(mpvRequired && !snapshot.mpv
-      ? { consequence: "Nothing can play until this is installed." }
+      ? {
+          consequence: "Install mpv to play video — browsing and lists still work.",
+        }
       : null),
   });
 
@@ -112,7 +114,7 @@ export function buildDependencyRows(
     name: "curl-impersonate",
     scope: "anime",
     state: snapshot.curl.impersonates && !curlBroken ? "ok" : "degraded",
-    role: "anime search",
+    role: "anime search (optional)",
     detail: curlBroken
       ? `${snapshot.curl.profile ?? "curl"} resolved but cannot execute`
       : snapshot.curl.impersonates
@@ -125,7 +127,7 @@ export function buildDependencyRows(
       ? null
       : {
           consequence:
-            "Cloudflare fingerprints the TLS handshake, so anime search can come back empty.",
+            "Optional. Impersonating Chrome TLS helps anime search get past Cloudflare — plain curl may return empty.",
         }),
   });
 
@@ -139,8 +141,8 @@ export function buildDependencyRows(
       snapshot.image.renderer !== "none"
         ? `${snapshot.image.renderer} · ${snapshot.image.terminal}`
         : snapshot.image.terminal && snapshot.image.terminal !== "unknown"
-          ? `${snapshot.image.terminal} has no image support`
-          : "this terminal has no image support",
+          ? `text-block fallback · ${snapshot.image.terminal}`
+          : "text-block fallback",
     // Nothing to install: every renderer consumes one natively prepared image
     // and half-block is the universal floor.
     fix: null,

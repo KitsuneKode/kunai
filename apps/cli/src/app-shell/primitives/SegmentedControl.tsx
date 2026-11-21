@@ -1,8 +1,8 @@
-import { Box, Text } from "ink";
 import React from "react";
 
 import { segmentGeometry } from "../format/segmented";
 import { palette } from "../shell-theme";
+import { Box, Text } from "../ShellInk";
 
 /** Filter/range segmented control: active segment gets an accent-fill pill. */
 export const SegmentedControl = React.memo(function SegmentedControl({
@@ -23,10 +23,12 @@ export const SegmentedControl = React.memo(function SegmentedControl({
         <React.Fragment key={seg.label}>
           {i > 0 ? <Text color={palette.dim}> </Text> : null}
           <Text
+            bold={seg.active}
+            underline={seg.active}
             color={seg.active ? activeFg : palette.muted}
             backgroundColor={seg.active ? activeBg : undefined}
           >
-            {seg.text}
+            {seg.active ? `[${seg.text}]` : seg.text}
           </Text>
         </React.Fragment>
       ))}

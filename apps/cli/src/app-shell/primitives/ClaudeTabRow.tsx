@@ -1,10 +1,10 @@
-import { Box, Text } from "ink";
 import React from "react";
 
 import { windowedSegmentGeometry } from "../format/segmented";
 import { MouseTarget } from "../mouse/MouseRegions";
 import { truncateLine } from "../shell-text";
 import { palette } from "../shell-theme";
+import { Box, Text } from "../ShellInk";
 
 /** Width the hint claims when one is present, so tabs are not measured against it. */
 const HINT_RESERVE = 20;
@@ -60,10 +60,11 @@ export const ClaudeTabRow = React.memo(function ClaudeTabRow({
             <Box flexShrink={0}>
               <Text
                 bold={seg.active}
+                underline={seg.active}
                 color={seg.active ? palette.text : palette.textDim}
                 backgroundColor={seg.active ? palette.accentFill : undefined}
               >
-                {seg.text}
+                {seg.active ? `[${seg.text}]` : seg.text}
               </Text>
             </Box>
           </MouseTarget>

@@ -1,8 +1,8 @@
-import { Box, Text } from "ink";
 import React from "react";
 
 import { useFrameTick as usePulse } from "./primitives/SakuraPetal";
 import { palette } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 
 // Animated "content is loading" placeholder rows. A soft accent band sweeps
 // left→right across dim bars, staggered per row, so a long request reads as

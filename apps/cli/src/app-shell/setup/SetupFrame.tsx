@@ -11,15 +11,19 @@
 //   <body — the current decision>
 //   [key] label  [key] label                                         Setup
 
-import { Box, Text } from "ink";
 import React from "react";
 
 import type { CompanionMoment } from "../companion-moment";
 import { CompanionHost } from "../CompanionHost";
+import { inkBorderColor, inkColor } from "../shell-color";
 import { palette } from "../shell-theme";
+import { Box, Text } from "../ShellInk";
 import { SetupTarget } from "./SetupPointer";
 
 export type FooterKey = { readonly key: string; readonly label: string };
+
+/** Row budget from the frame — choice rows hide detail lines when the terminal is short. */
+export const SetupTerminalRowsContext = React.createContext(99);
 
 /** Side padding the frame reserves, so screens can budget their own columns. */
 export function setupGutter(width: number): number {
@@ -65,7 +69,7 @@ function FrameBar({
       borderBottom={top}
       borderLeft={false}
       borderRight={false}
-      borderColor={palette.line}
+      borderColor={inkBorderColor(palette.line)}
       paddingX={2}
       justifyContent="space-between"
     >
@@ -83,12 +87,12 @@ function FrameBar({
 
 export function FooterKeys({ parts }: { readonly parts: readonly FooterKey[] }) {
   return (
-    <Box columnGap={2} rowGap={0} flexWrap="wrap">
+    <Box columnGap={2} rowGap={1} flexWrap="wrap">
       {parts.map(({ key, label }) => (
         <React.Fragment key={key}>
           <SetupTarget field="action" value={key}>
-            <Text color={palette.accent}>[{key}]</Text>
-            <Text color={palette.textDim}> {label}</Text>
+            <Text color={inkColor(palette.accent)}>[{key}]</Text>
+            <Text color={inkColor(palette.textDim)}> {label}</Text>
           </SetupTarget>
         </React.Fragment>
       ))}
@@ -112,6 +116,7 @@ export function FooterKeys({ parts }: { readonly parts: readonly FooterKey[] }) 
  */
 export function SetupFrame({
   width,
+  rows,
   context,
   step,
   totalSteps,
@@ -120,6 +125,8 @@ export function SetupFrame({
   companion = "setup",
 }: {
   readonly width: number;
+  /** Terminal rows available to the wizard — drives narrow-layout tradeoffs. */
+  readonly rows: number;
   readonly context: string;
   readonly step: number;
   readonly totalSteps: number;
@@ -133,53 +140,58 @@ export function SetupFrame({
    */
   readonly companion?: CompanionMoment | null;
 }) {
+  const showCompanion = rows >= 28;
   const gutter = setupGutter(width);
 
   return (
-    <Box flexDirection="column" width={width} flexGrow={1}>
-      <FrameBar
-        top
-        width={width}
-        left={
-          <Text>
-            <Text color={palette.text} bold>
-              {context}
+    <SetupTerminalRowsContext.Provider value={rows}>
+      <Box flexDirection="column" width={width} flexGrow={1}>
+        <FrameBar
+          top
+          width={width}
+          left={
+            <Text>
+              <Text color={inkColor(palette.text)} bold>
+                {context}
+              </Text>
             </Text>
-          </Text>
-        }
-        right={
-          <Text>
-            <Text color={palette.muted}>setup </Text>
-            <Text color={palette.accent} bold>
-              {step + 1}
+          }
+          right={
+            <Text>
+              <Text color={inkColor(palette.muted)}>setup </Text>
+              <Text color={inkColor(palette.accent)} bold>
+                {step + 1}
+              </Text>
+              <Text color={inkColor(palette.muted)}>⁄{totalSteps}</Text>
             </Text>
-            <Text color={palette.muted}>⁄{totalSteps}</Text>
-          </Text>
-        }
-      />
+          }
+        />
 
-      {/* flexGrow, never a fixed height — see the note on SetupFrame. Content
+        {/* flexGrow, never a fixed height — see the note on SetupFrame. Content
           sits a little above centre: dead-centre in a tall terminal leaves the
           top half looking abandoned, and the eye starts high. */}
-      <Box flexDirection="column" width={width} flexGrow={1} paddingX={gutter} paddingTop={1}>
-        {/* One pose for the whole wizard. Flipping it on the last step meant a
+        <Box flexDirection="column" width={width} flexGrow={1} paddingX={gutter} paddingTop={1}>
+          {/* One pose for the whole wizard. Flipping it on the last step meant a
             fresh placement upload on a step transition, which is the one moment
             the pane is already re-laying out.
 
             The wrapper is conditional, not just the pet: a Box with a margin
             around a null child still lays out its margin, so `KUNAI_PET=off`
             left an empty row behind — which is not "retired entirely". */}
-        <CompanionHost moment={companion} rows={4} marginBottom={1} />
-        {children}
-      </Box>
+          {showCompanion && companion ? (
+            <CompanionHost moment={companion} rows={4} marginBottom={1} />
+          ) : null}
+          {children}
+        </Box>
 
-      <FrameBar
-        top={false}
-        width={width}
-        left={<FooterKeys parts={footer} />}
-        right={<Text color={palette.dim}>Setup</Text>}
-      />
-    </Box>
+        <FrameBar
+          top={false}
+          width={width}
+          left={<FooterKeys parts={footer} />}
+          right={<Text color={inkColor(palette.dim)}>Setup</Text>}
+        />
+      </Box>
+    </SetupTerminalRowsContext.Provider>
   );
 }
 
@@ -209,20 +221,24 @@ export function ChoiceRow({
   readonly selected: boolean;
   readonly badge?: string;
 }) {
+  const terminalRows = React.useContext(SetupTerminalRowsContext);
+  const showDetail = selected || terminalRows >= 26;
   return (
     <Box backgroundColor={selected ? palette.accentFill : undefined}>
       <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
-      <Box flexDirection="column">
+      <Box flexDirection="column" flexShrink={0}>
         <Text>
           <Text color={palette.text} bold={selected}>
             {label}
           </Text>
           {badge ? <Text color={palette.accent}>{`   ${badge}`}</Text> : null}
         </Text>
-        <Text color={selected ? palette.muted : palette.dim} dimColor={!selected}>
-          {"  "}
-          {detail}
-        </Text>
+        {showDetail ? (
+          <Text color={selected ? palette.muted : palette.dim} dimColor={!selected}>
+            {"  "}
+            {detail}
+          </Text>
+        ) : null}
       </Box>
     </Box>
   );
@@ -255,8 +271,8 @@ export function ToggleRow({
     <Box backgroundColor={selected ? palette.accentFill : undefined}>
       <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
       <Text color={glyphColor}>{glyph}</Text>
-      <Box flexDirection="column" flexShrink={1}>
-        <Text color={palette.text} bold={selected}>
+      <Box flexDirection="column" flexShrink={1} flexGrow={1}>
+        <Text color={palette.text} bold={selected} wrap="truncate-end">
           {label}
         </Text>
         {selected ? (

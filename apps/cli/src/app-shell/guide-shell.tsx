@@ -1,5 +1,5 @@
 import { truncateLine } from "@/domain/text-display";
-import { Box, Text, useInput } from "ink";
+import { useInput } from "ink";
 import { useMemo, useState } from "react";
 
 import type { ResolvedAppCommand } from "./commands";
@@ -8,6 +8,7 @@ import { useOverlayLayout } from "./overlay-layout-context";
 import { CommandPalette } from "./shell-command-ui";
 import { ShellFooter } from "./shell-primitives";
 import { palette } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 import type { FooterAction } from "./types";
 
 type GuideLine =

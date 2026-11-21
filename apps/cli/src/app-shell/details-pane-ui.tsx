@@ -1,5 +1,4 @@
 import type { TitleDetail } from "@/domain/catalog/title-detail";
-import { Box, Text } from "ink";
 import React from "react";
 
 import type { DetailsPanelData, DetailsPanelSecondary } from "./details-panel";
@@ -14,6 +13,7 @@ import { PosterInitialBlock } from "./poster-initial-block";
 import { SakuraPetal } from "./primitives/SakuraPetal";
 import { padColumnsEnd, truncateAtWord, truncateLine } from "./shell-text";
 import { palette, semanticToneColor } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 import { PosterOutput } from "./SixelPosterPane";
 import type { ShellPanelLine } from "./types";
 import { usePosterPreview } from "./use-poster-preview";

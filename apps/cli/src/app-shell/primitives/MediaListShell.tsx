@@ -1,7 +1,7 @@
-import { Box } from "ink";
 import React from "react";
 
 import type { PosterResult } from "../poster-types";
+import { Box } from "../ShellInk";
 import { PreviewRail } from "./PreviewRail";
 import { shouldRenderPreviewRail, type PreviewRailModel } from "./PreviewRail.model";
 

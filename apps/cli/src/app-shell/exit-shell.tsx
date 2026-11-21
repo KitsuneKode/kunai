@@ -1,9 +1,9 @@
-import { Box, Text } from "ink";
 import React, { useEffect, useState } from "react";
 
 import { companionMode } from "./companion-policy";
 import { CompanionHost } from "./CompanionHost";
 import { palette } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 
 type ExitStep = "dim" | "footer-gone" | "fox" | "closing" | "done";
 

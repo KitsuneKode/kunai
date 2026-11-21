@@ -1,4 +1,3 @@
-import { Box, Text } from "ink";
 import React from "react";
 
 import { compactProgressBar } from "./format/bar";
@@ -15,6 +14,7 @@ import { StateBlock } from "./primitives/StateBlock";
 import { RETURN_LOOP_HISTORY_NEW_EMPTY, RETURN_LOOP_HISTORY_SUBTITLE } from "./return-loop-copy";
 import { sanitizeTerminalText } from "./shell-text";
 import { palette } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 import type { HistoryDeletePending } from "./use-history-overlay-input";
 
 export function HistoryShell({

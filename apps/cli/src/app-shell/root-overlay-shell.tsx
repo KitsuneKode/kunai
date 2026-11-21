@@ -51,7 +51,7 @@ import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/
 import type { InstallMethodKind } from "@/services/update/install-method";
 import { resolveNotificationUpdateAction } from "@/services/update/notification-update-action";
 import { appReleasePageUrl } from "@/services/update/release-url";
-import { Box, Text, useInput } from "ink";
+import { useInput } from "ink";
 import {
   useCallback,
   useEffect,
@@ -66,6 +66,7 @@ import { cancelAllRootOverlays, cancelRootOverlay } from "./cancel-root-overlay"
 import { resolveCommandContext, resolveCommands, type ResolvedAppCommand } from "./commands";
 import { diagnosticsVisibleRows } from "./diagnostics-dashboard-model";
 import { sanitizeTerminalText } from "./shell-text";
+import { Box, Text } from "./ShellInk";
 
 /** The ContextStrip line drawn above the panel, inside the content area. */
 const DIAGNOSTICS_CONTEXT_STRIP_ROWS = 1;

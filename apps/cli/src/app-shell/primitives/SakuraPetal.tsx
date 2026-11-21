@@ -9,11 +9,11 @@
 // `active` prop so off-screen petals stop reconciling. The glyph stays a single
 // cell so terminals never see width jitter mid-cycle.
 
-import { Text } from "ink";
 import React from "react";
 
 import { reducedMotionEnabled } from "../motion-policy";
 import { palette } from "../shell-theme";
+import { Text } from "../ShellInk";
 
 export type SakuraPetalMode = "loading" | "placeholder" | "complete";
 

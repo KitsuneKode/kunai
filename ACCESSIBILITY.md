@@ -22,6 +22,15 @@ plain non-interactive output instead of the shell.
 - **Degraded terminals.** `TERM=dumb` terminals and non-TTY output skip the
   graphics and probing layers entirely rather than emitting escape codes a
   dumb terminal cannot interpret.
+- **`NO_COLOR` and monochrome mode.** When `NO_COLOR` is set to any non-empty value (an empty `NO_COLOR=` is ignored, per no-color.org; it also overrides `FORCE_COLOR`),
+  `FORCE_COLOR=0`, or `TERM=dumb`, Kunai detects a **none** colour level: the
+  shell omits Ink `color` / `backgroundColor` / border colour props so no
+  foreground or background SGR is emitted. Bold, underline, and inverse remain
+  available; active tabs and setup choices use glyphs and brackets, not hue
+  alone.
+- **Narrow setup.** On short terminals (around 64×22), the setup wizard hides
+  the companion host, keeps option titles from shrinking away, and trims
+  secondary detail on unselected rows so both analytics choices stay readable.
 - **Honest status.** Missing dependencies and failed operations surface as
   explicit text rows, never as color alone.
 

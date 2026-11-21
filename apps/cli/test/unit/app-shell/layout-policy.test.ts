@@ -12,11 +12,19 @@ import {
   getPickerChromeRows,
   getPickerListMaxVisible,
   getPickerLayout,
+  getRootContentRowBudget,
   ROOT_CHROME_ROWS,
   TRANSIENT_ROW_SLOTS,
   getShellViewportPolicy,
 } from "@/app-shell/layout-policy";
 import { getShellTerminalProfile } from "@/app-shell/use-viewport-policy";
+
+describe("getRootContentRowBudget", () => {
+  test("subtracts AppRoot header and transient row from terminal height", () => {
+    expect(getRootContentRowBudget(22)).toBe(22 - ROOT_CHROME_ROWS - TRANSIENT_ROW_SLOTS);
+    expect(getRootContentRowBudget(4)).toBe(1);
+  });
+});
 
 describe("getShellViewportPolicy", () => {
   test("marks picker viewports below minimum size as too small", () => {

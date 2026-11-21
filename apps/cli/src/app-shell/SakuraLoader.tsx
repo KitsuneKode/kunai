@@ -9,13 +9,13 @@
 // prop, both delegated to the shared SakuraPetal frame primitives so there is
 // one motion policy across the app.
 
-import { Box, Text } from "ink";
 import React from "react";
 
 import { reducedMotionEnabled } from "./motion-policy";
 import { BLOOM_FRAMES, STATIC_PETAL, useFrameTick } from "./primitives/SakuraPetal";
 import { sanitizeTerminalText } from "./shell-text";
 import { palette } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 
 const SHIMMER_INTERVAL_MS = 110;
 const BLOOM_INTERVAL_MS = 150;

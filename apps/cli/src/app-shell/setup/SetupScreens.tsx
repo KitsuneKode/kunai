@@ -3,7 +3,6 @@
 // Every screen asks something or pays something off. The old flow spent three
 // of seven slides asking nothing, which is why it read as a slideshow.
 
-import { Box, Text } from "ink";
 import React from "react";
 
 import { CompanionHost } from "../CompanionHost";
@@ -11,8 +10,15 @@ import { reducedMotionEnabled } from "../motion-policy";
 import { BLOOM_FRAMES, STATIC_PETAL } from "../primitives/SakuraPetal";
 import { truncateLine } from "../shell-text";
 import { palette } from "../shell-theme";
+import { Box, Text } from "../ShellInk";
 import type { ScopedDependencyRow } from "./dependency-rows";
-import { ChoiceRow, ScreenTitle, ToggleRow, type FooterKey } from "./SetupFrame";
+import {
+  ChoiceRow,
+  ScreenTitle,
+  SetupTerminalRowsContext,
+  ToggleRow,
+  type FooterKey,
+} from "./SetupFrame";
 import { SetupTarget } from "./SetupPointer";
 
 export const MODE_OPTIONS = [
@@ -219,7 +225,7 @@ function LanguageColumn({
                     : palette.dim
               }
             >
-              {i === index ? "▌ " : "  "}
+              {focused && i === index ? "▌ " : i === index ? "● " : "  "}
             </Text>
             <Text
               color={i === index ? palette.text : palette.textDim}
@@ -323,9 +329,18 @@ export function LibraryScreen({
   readonly ytDlpReady: boolean;
   readonly downloadPath: string;
 }) {
+  const contentRows = React.useContext(SetupTerminalRowsContext);
+  const tight = contentRows < 20;
+
   return (
     <Box flexDirection="column">
-      <ScreenTitle text="Playback, downloads & accounts" sub="Change these later in Settings." />
+      {tight ? (
+        <Text color={palette.text} bold>
+          Playback, downloads & accounts
+        </Text>
+      ) : (
+        <ScreenTitle text="Playback, downloads & accounts" sub="Change these later in Settings." />
+      )}
       <Box flexDirection="column">
         <SetupTarget field="library" value="0">
           <ToggleRow
@@ -354,9 +369,11 @@ export function LibraryScreen({
         </SetupTarget>
       </Box>
 
-      <Box marginTop={0} marginBottom={0}>
-        <Text color={palette.muted}>Playback feel</Text>
-      </Box>
+      {tight ? null : (
+        <Box marginTop={0} marginBottom={0}>
+          <Text color={palette.muted}>Playback feel</Text>
+        </Box>
+      )}
       <Box flexDirection="column">
         <SetupTarget field="library" value="2">
           <ToggleRow
@@ -384,9 +401,11 @@ export function LibraryScreen({
         </SetupTarget>
       </Box>
 
-      <Box marginTop={0} marginBottom={0}>
-        <Text color={palette.muted}>While we're here</Text>
-      </Box>
+      {tight ? null : (
+        <Box marginTop={0} marginBottom={0}>
+          <Text color={palette.muted}>While we're here</Text>
+        </Box>
+      )}
       <Box flexDirection="column">
         <SetupTarget field="library" value="5">
           <ToggleRow
@@ -421,6 +440,8 @@ export function LibraryScreen({
 
 export type SummaryLine = {
   readonly ok: boolean;
+  /** Intentional off choices wear ○ — not the attention △ glyph. */
+  readonly neutral?: boolean;
   readonly label: string;
   readonly detail: string;
 };
@@ -460,8 +481,11 @@ export function DoneScreen({
       <Box flexDirection="column" marginBottom={1}>
         {[...summary, ...outstanding].map((line) => (
           <Box key={line.label}>
-            <Text color={line.ok ? palette.ok : palette.warn} bold>
-              {line.ok ? "✓ " : "△ "}
+            <Text
+              color={line.ok ? palette.ok : line.neutral ? palette.muted : palette.warn}
+              bold={!line.neutral}
+            >
+              {line.ok ? "✓ " : line.neutral ? "○ " : "△ "}
             </Text>
             <Text color={palette.text}>{pad(line.label, 22)}</Text>
             <Text color={palette.muted}>

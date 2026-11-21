@@ -29,10 +29,11 @@ import {
   formatDownloadRemovalFeedback,
 } from "@/services/download/download-removal";
 import type { DownloadJobRecord } from "@/services/storage/storage-read-models";
-import { Box, Text, useInput } from "ink";
+import { useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useRootContentSuspended } from "./RootContentSuspension";
+import { Box, Text } from "./ShellInk";
 
 /** Fixed queue columns — tuned via computeQueueRowLayout for the active shell width. */
 

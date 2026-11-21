@@ -9,12 +9,12 @@
 // reading to make a privacy decision, while the screen that actually probes the
 // machine had none. `design-system.md` warns against exactly that.
 
-import { Box, Text } from "ink";
 import React from "react";
 
 import packageJson from "../../../package.json" with { type: "json" };
 import { palette } from "../shell-theme";
-import { ChoiceRow, ScreenTitle } from "./SetupFrame";
+import { Box, Text } from "../ShellInk";
+import { ChoiceRow, ScreenTitle, SetupTerminalRowsContext } from "./SetupFrame";
 
 /** "Turn it on" leads. Index is load-bearing — see the input handler. */
 export const ANALYTICS_ON_INDEX = 0;
@@ -32,6 +32,9 @@ const OPTIONS = [
 ];
 
 export function AnalyticsScreen({ selectedIndex }: { readonly selectedIndex: number }) {
+  const contentRows = React.useContext(SetupTerminalRowsContext);
+  const showPayloadPreview = contentRows >= 24;
+
   return (
     <Box flexDirection="column">
       <ScreenTitle
@@ -51,23 +54,37 @@ export function AnalyticsScreen({ selectedIndex }: { readonly selectedIndex: num
         ))}
       </Box>
 
-      <Box flexDirection="column" marginTop={1}>
-        <Text color={palette.muted}>Privacy first, by construction</Text>
-        <Box paddingLeft={2} flexDirection="column">
-          <Text color={palette.text}>
-            {`{ "installId": "<sha256 of a local id>", "version": "${packageJson.version}",`}
+      {showPayloadPreview ? (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={palette.muted}>Privacy first, by construction</Text>
+          <Box paddingLeft={2} flexDirection="column">
+            <Text color={palette.text}>
+              {`{ "installId": "<sha256 of a local id>", "version": "${packageJson.version}",`}
+            </Text>
+            <Text color={palette.text}>
+              {`  "os": "${process.platform}", "arch": "${process.arch}", "ts": 0 }`}
+            </Text>
+            <Text color={palette.dim}>
+              Never: titles · queries · providers · URLs · paths · your IP
+            </Text>
+            <Text color={palette.dim}>
+              The raw id never leaves this machine. Off in /settings deletes it.
+            </Text>
+          </Box>
+        </Box>
+      ) : (
+        // Short terminal: still name the exact fields at the moment of consent,
+        // just without the JSON layout. "Never titles…" alone says what is not
+        // sent, not what is.
+        <Box marginTop={1} flexDirection="column">
+          <Text color={palette.text} wrap="truncate">
+            Sends: installId (hashed) · version · os · arch · ts
           </Text>
-          <Text color={palette.text}>
-            {`  "os": "${process.platform}", "arch": "${process.arch}", "ts": 0 }`}
-          </Text>
-          <Text color={palette.dim}>
+          <Text color={palette.dim} wrap="truncate">
             Never: titles · queries · providers · URLs · paths · your IP
           </Text>
-          <Text color={palette.dim}>
-            The raw id never leaves this machine. Off in /settings deletes it.
-          </Text>
         </Box>
-      </Box>
+      )}
     </Box>
   );
 }

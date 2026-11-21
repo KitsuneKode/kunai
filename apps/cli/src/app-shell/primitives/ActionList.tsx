@@ -1,8 +1,8 @@
-import { Box, Text } from "ink";
 import React from "react";
 
 import { padColumnsEnd, truncateLine } from "../shell-text";
 import { hotkeyLabel, palette } from "../shell-theme";
+import { Box, Text } from "../ShellInk";
 import {
   normalizeActionShortcut,
   type ActionRowModel,

@@ -1,4 +1,3 @@
-import { Box, Text } from "ink";
 import React from "react";
 
 import { companionMode, companionToggleable } from "./companion-policy";
@@ -6,6 +5,7 @@ import { type ShellViewportKind, TRANSIENT_ROW_SLOTS } from "./layout-policy";
 import { MouseTarget } from "./mouse/MouseRegions";
 import { measureColumns, padColumnsEnd, sanitizeTerminalText, truncateLine } from "./shell-text";
 import { APP_LABEL, hotkeyLabel, palette, semanticToneColor } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 import type { FooterAction, ShellFooterMode } from "./types";
 import { useDebouncedViewportPolicy, useShellDimensions } from "./use-viewport-policy";
 

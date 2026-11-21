@@ -1,9 +1,9 @@
-import { Box } from "ink";
 import React from "react";
 
 import { poseForMoment, type CompanionMoment } from "./companion-moment";
 import { companionMode } from "./companion-policy";
 import { CompanionPet } from "./CompanionPet";
+import { Box } from "./ShellInk";
 
 /**
  * The one place a companion is drawn.

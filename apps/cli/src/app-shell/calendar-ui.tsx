@@ -1,5 +1,4 @@
 import type { BrowseShellOption } from "@/app-shell/types";
-import { Box, Text } from "ink";
 import React from "react";
 
 import {
@@ -17,6 +16,7 @@ import { SectionGroup } from "./primitives/SectionGroup";
 import { StateBlock } from "./primitives/StateBlock";
 import type { StateBlockModel } from "./primitives/StateBlock.model";
 import { palette } from "./shell-theme";
+import { Box, Text } from "./ShellInk";
 
 /** Schedule rows start at the time column; no lead gutter is reserved. */
 const CALENDAR_ROW_LEAD_WIDTH = 0;

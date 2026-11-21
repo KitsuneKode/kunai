@@ -3,8 +3,8 @@
  History
  Resume first, then picks ready for you now.
                                                                            ╭────────────────────────────╮
-  Continue   Completed  New episodes  All                                  │                        │
-  All   Anime  Series  Movies  YouTube                                     │             FB         │
+ [ Continue ]  Completed  New episodes  All                                │                        │
+ [ All ]  Anime  Series  Movies  YouTube                                   │             FB         │
                                                                            │                        │
                                                                            │                        │
  CONTINUE WATCHING ──────────────────────────────────────────────────────  ╰────────────────────────────╯

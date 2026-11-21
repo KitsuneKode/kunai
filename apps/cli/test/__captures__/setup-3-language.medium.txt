@@ -7,7 +7,7 @@
           ▌ Shows   Movies   Anime   YouTube
 
           ❯ Audio ↑↓                                Subtitles
-          ▌ Original                              ▌ English
+          ▌ Original                              ● English
             English                                 Pick each time
             Japanese                                None
             Any dub                                 Arabic
@@ -18,4 +18,5 @@
           Use the language the title was made in
  ──────────────────────────────────────────────────────────────────────────────────────────────────
    [enter] next  [tab] profile  [←→] audio / subs  [a] copy to all  [S] finish defaults     Setup
+
    [b] back
