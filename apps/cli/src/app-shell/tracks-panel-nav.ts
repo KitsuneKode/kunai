@@ -87,5 +87,3 @@ export function tracksPanelNavReducer(
       return state;
   }
 }
-
-export const isOptionsFocused = (state: TracksNavState): boolean => state.focusedPane === "options";

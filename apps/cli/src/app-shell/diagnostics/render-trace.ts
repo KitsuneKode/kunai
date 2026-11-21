@@ -122,12 +122,3 @@ export type InputDropReason =
 export function recordInputDrop(surface: string, reason: InputDropReason, key?: string): void {
   dbg(MODULE, "input drop", { surface, reason, key });
 }
-
-/** Test seam: reset all accumulated counters. */
-export function __resetRenderTrace(): void {
-  surfaces.clear();
-  posterStats.calls = 0;
-  posterStats.cacheHits = 0;
-  posterStats.misses = 0;
-  posterStats.spawns = 0;
-}

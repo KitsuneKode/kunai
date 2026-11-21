@@ -17,7 +17,6 @@ import { HandoffPlayerService } from "../infra/player/handoff-player-service";
 import type { PlayerPresentationPort } from "../infra/player/player-presentation-port";
 import { PlayerControlServiceImpl } from "../infra/player/PlayerControlServiceImpl";
 import { PlayerServiceImpl } from "../infra/player/PlayerServiceImpl";
-import { ShellServiceImpl } from "../infra/shell/ShellServiceImpl";
 import { WorkControlServiceImpl } from "../infra/work/WorkControlServiceImpl";
 import {
   resolveAnalyticsEndpoint,
@@ -142,7 +141,6 @@ export function bootstrapServices(input: {
     choice: options?.playerChoice ?? "auto",
     platform: detectPlayerPlatform(),
   });
-  const shell = new ShellServiceImpl({ logger, tracer, stateManager });
   const playerControl = new PlayerControlServiceImpl({ logger, diagnostics: diagnosticsService });
   const workControl = new WorkControlServiceImpl({ logger, diagnostics: diagnosticsService });
   const playerPresentation: PlayerPresentationPort = {
@@ -519,7 +517,6 @@ export function bootstrapServices(input: {
 
   return {
     dataDir: persistence.paths.dataDir,
-    shell,
     player,
     playerControl,
     workControl,

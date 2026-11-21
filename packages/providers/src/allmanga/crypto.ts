@@ -347,11 +347,6 @@ export function getLastAllMangaRotationSignal(): AllMangaRotationSignal | null {
   return lastAllMangaRotationSignal;
 }
 
-/** Test seam: clear the module-level signal between cases. */
-export function resetAllMangaRotationSignalForTest(): void {
-  lastAllMangaRotationSignal = null;
-}
-
 export async function fetchAllMangaCryptoMaterial(
   context: ProviderRuntimeContext,
   ua: string,

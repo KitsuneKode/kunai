@@ -127,28 +127,3 @@ export function SakuraLoader({
     </Box>
   );
 }
-
-// ── Inline loader (browse search / overlay spinners) ──────────────────────────
-
-export function InlineSakuraLoader({
-  label,
-  active = true,
-  stalled = false,
-}: {
-  readonly label?: string;
-  readonly active?: boolean;
-  readonly stalled?: boolean;
-}) {
-  const tick = useFrameTick(active, BLOOM_INTERVAL_MS);
-  const animate = active && !reducedMotionEnabled();
-  const glyph = animate ? (BLOOM_FRAMES[tick % BLOOM_FRAMES.length] ?? STATIC_PETAL) : STATIC_PETAL;
-  const color = stalled ? palette.warn : palette.accent;
-  return (
-    <Box flexDirection="row" flexWrap="nowrap">
-      <Text color={color} bold>
-        {glyph}
-      </Text>
-      {label ? <Text color={palette.muted}> {sanitizeTerminalText(label)}</Text> : null}
-    </Box>
-  );
-}

@@ -1,4 +1,4 @@
-import type { ContentType, PlaybackTimingMetadata, PlaybackTimingSegment } from "@/domain/types";
+import type { ContentType, PlaybackTimingSegment } from "@/domain/types";
 import {
   classifyTimingHttpStatus,
   classifyTimingThrownError,
@@ -17,17 +17,6 @@ type IntroDbPayload = {
   credits?: unknown;
   preview?: unknown;
 };
-
-export async function fetchPlaybackTimingMetadata(opts: {
-  tmdbId: string;
-  type: ContentType;
-  season?: number;
-  episode?: number;
-  signal?: AbortSignal;
-}): Promise<PlaybackTimingMetadata | null> {
-  const detailed = await fetchPlaybackTimingMetadataDetailed(opts);
-  return detailed.metadata;
-}
 
 export async function fetchPlaybackTimingMetadataDetailed(opts: {
   tmdbId: string;

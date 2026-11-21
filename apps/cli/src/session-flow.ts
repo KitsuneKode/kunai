@@ -12,13 +12,11 @@ import {
 } from "@/app/playback/playback-cache-purge";
 import { applyUserProviderSwitch } from "@/app/playback/playback-provider-switch";
 import type { Container } from "@/container";
-import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import { resolveEpisodeAvailability } from "@/domain/playback/playback-policy";
 import { providerMetadataMatchesLane, shellModeToProviderLane } from "@/domain/provider-lane";
 import { COMMAND_CONTEXTS, type AppCommandId } from "@/domain/session/command-registry";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import type { EpisodePickerOption } from "@/domain/types";
-import { cyan, dim, yellow } from "@/menu";
 import { formatEpisodePickerLabel } from "@/services/catalog/episode-display";
 import { isFinished } from "@/services/continuation/history-progress";
 import { formatTimestamp } from "@/services/continuation/history-progress";
@@ -588,19 +586,4 @@ export async function resolveNextHistoryEpisode(
         episode: nextSelection.nextEpisode.episode,
       }
     : null;
-}
-
-export function describeHistoryEntry(entry: HistoryProgress): string {
-  const percent =
-    projectWatchProgress({
-      timestamp: entry.positionSeconds,
-      duration: entry.durationSeconds,
-      completed: entry.completed,
-    }).percentage ?? 0;
-  const resumeAt = formatTimestamp(entry.positionSeconds);
-  const season = entry.season ?? 1;
-  const episode = entry.episode ?? entry.absoluteEpisode ?? 1;
-  return isFinished(entry)
-    ? `Last finished: ${cyan(`S${season}E${episode}`)}`
-    : `Last watched: ${cyan(`S${season}E${episode}`)}  stopped at ${yellow(resumeAt)}  ${dim(`(${percent}%)`)}`;
 }

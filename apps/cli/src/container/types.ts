@@ -27,7 +27,6 @@ import type { Logger } from "../infra/logger/Logger";
 import type { MpvRuntimeOptions } from "../infra/player/mpv-runtime-options";
 import type { PlayerControlService } from "../infra/player/PlayerControlService";
 import type { PlayerService } from "../infra/player/PlayerService";
-import type { ShellService } from "../infra/shell/ShellService";
 import type { StorageService } from "../infra/storage/StorageService";
 import type { Tracer } from "../infra/tracer/Tracer";
 import type { WorkControlService } from "../infra/work/WorkControlService";
@@ -98,7 +97,6 @@ export interface Container {
   readonly searchRegistry: SearchRegistry;
 
   // Infrastructure
-  readonly shell: ShellService;
   readonly player: PlayerService;
   readonly playerControl: PlayerControlService;
   readonly workControl: WorkControlService;

@@ -42,14 +42,6 @@ export const relayErrorCodeSchema = z.enum([
   "upstream-error",
   "bad-request",
 ]);
-export const providerOperationSchema = z.enum([
-  "search",
-  "list-episodes",
-  "resolve-stream",
-  "resolve-subtitles",
-  "refresh-source",
-  "health-check",
-]);
 export const cacheTtlClassSchema = z.enum([
   "never-cache",
   "session",

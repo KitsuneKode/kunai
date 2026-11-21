@@ -733,8 +733,6 @@ export interface RelayRpcRequest {
  * not read an HTTP status that arrived over a relay hop as the upstream's own
  * verdict.
  */
-export const RELAY_HOP_HEADER = "X-Kunai-Relay-Hop";
-
 export interface RelayRpcErrorBody {
   readonly error: {
     readonly code: RelayErrorCode;

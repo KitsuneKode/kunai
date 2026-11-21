@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-12"
+lastReviewed: "2026-11-17"
 ---
 
 # Share Links & PlaybackTargetRef
@@ -50,7 +50,7 @@ Parser returns `null` when neither `cat` nor `q` is present, or when the catalog
 | `apps/cli/src/app/bootstrap/resolve-share-target.ts`        | Container-aware resolver (catalog, search, anime mapping) |
 | `apps/cli/src/app/bootstrap/apply-resolved-share-target.ts` | Apply resolved targets to bootstrap launch                |
 | `apps/cli/src/app/bootstrap/share-bootstrap-start.ts`       | One-shot shared timestamp mailbox for first play          |
-| `apps/cli/src/app/bootstrap/copy-share-link.ts`             | Clipboard helper                                          |
+| `apps/cli/src/infra/share/copy-share-link.ts`               | Clipboard helper                                          |
 | `apps/cli/src/domain/share/qr-code.ts`                      | Dependency-free QR Model 2 encoder                        |
 | `apps/cli/src/app-shell/share-qr-shell.tsx`                 | Half-block terminal QR surface                            |
 | `apps/docs/app/w/[code]/page.tsx`                           | Stateless browser fallback and app handoff                |

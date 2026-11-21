@@ -139,15 +139,6 @@ export function buildLoadingFooterActions(state: LoadingShellState): readonly Fo
   ];
 }
 
-export function formatLoadingProviderLine(
-  state: Pick<LoadingShellState, "providerName" | "providerId">,
-): string | null {
-  const name = state.providerName?.trim();
-  const id = state.providerId?.trim();
-  if (name && id && name !== id) return `${name} (${id})`;
-  return name || id || null;
-}
-
 export function buildPlaybackSignalRail(
   state: Pick<LoadingShellState, "qualityLabel" | "downloadStatus" | "subtitleTrack">,
 ): string[] {

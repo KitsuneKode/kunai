@@ -23,7 +23,6 @@ import type { CapabilitySnapshot } from "@/ui";
 import { Box, Text, useInput } from "ink";
 import React, { useState } from "react";
 
-import packageJson from "../../package.json" with { type: "json" };
 import { ROOT_HORIZONTAL_PADDING } from "./layout-policy";
 import { useFrameTick } from "./primitives/SakuraPetal";
 import { mountRootContent } from "./root-content-state";
@@ -67,13 +66,6 @@ const SCREEN_CONTEXT: Record<Screen, string> = {
   analytics: "usage ping",
   done: "ready",
 };
-
-/**
- * The consent screen must describe *this* machine. It used to print the literal
- * `"version": "0.3.0", "os": "linux", "arch": "x64"`, which made the one screen
- * that has to be exactly true a false statement on macOS and Windows.
- */
-export const KUNAI_VERSION: string = packageJson.version;
 
 /**
  * Three outcomes, because "skipped" was doing two incompatible jobs.

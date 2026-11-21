@@ -257,11 +257,6 @@ export function directIdTitleName(id: string): string {
   return `TMDB ${id}`;
 }
 
-/** True while a title still carries the `-i` placeholder rather than a real name. */
-export function isDirectIdTitleName(name: string, id: string): boolean {
-  return name.trim() === directIdTitleName(id);
-}
-
 /**
  * True while a name is a stand-in for the id rather than something a catalog or
  * a user supplied — safe to replace the moment real detail arrives, and never

@@ -247,7 +247,3 @@ export function buildBrowseIdleReturnLoopModel(
     hasSelectableRows: rows.some((row) => row.actionable),
   };
 }
-
-export function countIdleReturnLoopRows(idleContext: BrowseIdleContext | undefined): number {
-  return buildBrowseIdleReturnLoopModel(idleContext, { idleFocused: false })?.rows.length ?? 0;
-}

@@ -17,7 +17,6 @@ const NON_TEXT_DANGER = [
     pattern: /borderColor=\{palette\.danger\}/,
     reason: "a border",
   },
-  { file: "petal-fall.ts", pattern: /./, reason: "falling-petal art, not text" },
 ];
 
 function sourceFiles(dir: string): string[] {
@@ -34,7 +33,7 @@ describe("status text tokens", () => {
     lines: readFileSync(path, "utf8").split("\n"),
   }));
 
-  test("danger text reads dangerText, so only a border and petal art read palette.danger", () => {
+  test("danger text reads dangerText, so only borders read palette.danger", () => {
     const stray: string[] = [];
     for (const file of files) {
       const allowed = NON_TEXT_DANGER.find((rule) => file.name.endsWith(rule.file));
