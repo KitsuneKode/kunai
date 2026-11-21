@@ -4730,7 +4730,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       if (!PlaybackPhase.wyzieKeyNoticeShown) {
         PlaybackPhase.wyzieKeyNoticeShown = true;
         this.updatePlaybackFeedback(context, {
-          note: "Preferred subtitles unavailable. Add a Wyzie key in Settings › Language to search for them.",
+          note: "Preferred subtitles unavailable. Add a Wyzie key in Settings › General to search for them.",
         });
       }
       return;

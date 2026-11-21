@@ -890,7 +890,7 @@ const actionHandlers: Record<string, ActionHandler | undefined> = {
   settings: (c) => handleSettings(c),
   providers: (c) => handleProvidersHub(c),
   provider: (c) => handleProvidersHub(c),
-  presence: (c) => handleSettings(c),
+  presence: (c) => handleSettings(c, { initialSectionId: "subheading:presence" }),
   analytics: (c) => handleAnalytics(c),
   "analytics-show": (c) => handleAnalyticsShow(c),
   setup: async (container) => {
@@ -1162,7 +1162,7 @@ async function handleProvidersHub(container: Container): Promise<"handled"> {
     return handleProviderPicker(container);
   }
   if (choice === "defaults") {
-    return handleSettings(container, { initialSectionId: "section:providers" });
+    return handleSettings(container, { initialSectionId: "section:sources" });
   }
   if (choice === "toggle") {
     return handleProviderToggles(container);

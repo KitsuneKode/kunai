@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 
 import { buildSettingsPage, listSettingsSectionLabels } from "@/app-shell/settings/build-page";
 import { handleSettingsKey } from "@/app-shell/settings/controller";
-import { firstSelectableRowIndex } from "@/app-shell/settings/navigation";
+import { firstSelectableRowIndex, moveSelectedIndex } from "@/app-shell/settings/navigation";
 import { handleSettingsPointer } from "@/app-shell/settings/pointer";
 import { createSettingsUiState } from "@/app-shell/settings/state";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
@@ -68,11 +68,11 @@ function rowIndexFor(page: ReturnType<typeof buildSettingsPage>, id: string): nu
 test("Enter on relay URL enters dedicated input mode instead of submenu", () => {
   const draft = baseConfig();
   const registryCtx = mockRegistryCtx(draft);
-  const relaySectionIndex = listSettingsSectionLabels(registryCtx).indexOf("Provider relay");
-  const page = buildSettingsPage(registryCtx, { activeSectionIndex: relaySectionIndex });
+  const sourcesSectionIndex = listSettingsSectionLabels(registryCtx).indexOf("Sources");
+  const page = buildSettingsPage(registryCtx, { activeSectionIndex: sourcesSectionIndex });
   const state = {
     ...createSettingsUiState(draft),
-    activeSectionIndex: relaySectionIndex,
+    activeSectionIndex: sourcesSectionIndex,
     selectedIndex: rowIndexFor(page, "providerRelayBaseUrl"),
   };
 
@@ -291,9 +291,9 @@ test("`?` and `j`/`k` keys reach navigation instead of the filter", () => {
     registryCtx,
   });
   expect(down.handled).toBe(true);
-  expect(down.state.selectedIndex).toBe(
-    Math.min(state.selectedIndex + 1, Math.max(0, page.rows.length - 1)),
-  );
+  // `j` moves to the next *selectable* row; sub-headings are skipped.
+  expect(down.state.selectedIndex).toBe(moveSelectedIndex(page, state.selectedIndex, 1));
+  expect(down.state.selectedIndex).toBeGreaterThan(state.selectedIndex);
   expect(down.state.searchQuery).toBe("");
 });
 
@@ -348,10 +348,10 @@ test("single-provider YouTube keeps mode settings but hides provider controls", 
   expect(page.rowById.has("youtubeProvider")).toBe(false);
   expect(page.rowById.has("youtubeProviderPriority")).toBe(false);
   expect(config.youtubeProvider).toBe("youtube");
-  const youtube = buildSettingsPage(ctx, {
-    activeSectionIndex: listSettingsSectionLabels(ctx).indexOf("YouTube"),
+  const sources = buildSettingsPage(ctx, {
+    activeSectionIndex: listSettingsSectionLabels(ctx).indexOf("Sources"),
   });
-  expect(youtube.rows.length).toBeGreaterThan(1);
+  expect(sources.rows.some((row) => row.def.id === "youtubeMetadataInstanceUrl")).toBe(true);
 });
 
 test("YouTube provider controls return when a second registered choice exists", () => {

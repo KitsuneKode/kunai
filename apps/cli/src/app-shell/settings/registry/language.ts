@@ -10,9 +10,9 @@ import {
 export function languageSettingsRows(_ctx: SettingsRegistryContext): SettingRowDef[] {
   return [
     {
-      kind: "section",
-      id: "section:language",
-      label: "Language",
+      kind: "subheading",
+      id: "subheading:language",
+      label: "Language & Subtitles",
       detail: "Preferred audio/subtitle tracks when a provider exposes choices",
     },
     {
