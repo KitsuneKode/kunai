@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26"
+lastReviewed: "2026-11-17"
 ---
 
 # Feature Map
@@ -122,7 +122,7 @@ Do not reuse these nouns for anything else.
 | Watchlist / playlists          | `packages/storage` `lists`, `playlists`; `services/playlists/*`                                                                                      | [features/playlists.md](./features/playlists.md)                                       |
 | Up Next queue                  | `packages/storage` `queue`, `apps/cli/src/domain/queue/*`                                                                                            | [features/queue.md](./features/queue.md)                                               |
 | Follow / new-episode attention | `packages/storage` `followed-titles`; `services/attention/*`                                                                                         | [features/new-episode-tracking.md](./features/new-episode-tracking.md)                 |
-| Notifications inbox            | `packages/storage` `notifications`; `services/notifications/*`                                                                                       | [features/notifications.md](./features/notifications.md)                               |
+| Notifications inbox            | `packages/storage` `notifications`; `apps/cli/src/domain/notifications/*`, `services/notifications/*`                                                | [features/notifications.md](./features/notifications.md)                               |
 | Watch stats                    | `packages/storage` `watch-stats`                                                                                                                     | [features/privacy-and-storage.md](./features/privacy-and-storage.md)                   |
 | Lists and stats domain         | `apps/cli/src/domain/lists/*` — `ListService`, `StatsService`, genre stats, formatting                                                               | [features/playlists.md](./features/playlists.md)                                       |
 | Session undo (`z`)             | `apps/cli/src/domain/undo/session-undo-journal.ts` (bounded LIFO + expiry), `apps/cli/src/services/session-undo/*` (capture/revert via repos)        | [ux-architecture.md](./ux-architecture.md)                                             |

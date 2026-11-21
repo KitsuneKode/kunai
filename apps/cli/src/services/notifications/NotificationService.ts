@@ -2,6 +2,7 @@ import {
   mediaItemHasPlayableTarget,
   type MediaItemIdentity,
 } from "@/domain/media/media-item-identity";
+import { NOTIFICATION_KINDS } from "@/domain/notifications/notification-kinds";
 import type { NotificationRepository, NotificationRecord } from "@kunai/storage";
 
 import {
@@ -183,15 +184,7 @@ export class NotificationService {
  * notice written by a newer build — keeps the actions stored on the record, so
  * downgrading never strips a notice of actions this build cannot name.
  */
-export const KNOWN_NOTIFICATION_KINDS: ReadonlySet<string> = new Set([
-  "queue-recovery",
-  "app-update",
-  "app-restart-required",
-  "download-failed",
-  "download-complete",
-  "new-episode",
-  "provider-health",
-]);
+export const KNOWN_NOTIFICATION_KINDS: ReadonlySet<string> = new Set(NOTIFICATION_KINDS);
 
 export function defaultNotificationActionIds(input: {
   readonly kind: string;

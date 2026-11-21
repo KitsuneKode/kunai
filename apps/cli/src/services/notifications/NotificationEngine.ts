@@ -1,6 +1,7 @@
 import type { MediaItemIdentity } from "@/domain/media/media-item-identity";
 import { sanitizeProviderHints } from "@/domain/media/media-item-identity";
 import { normalizeMediaKind } from "@/domain/media/media-presentation";
+import type { NotificationKind } from "@/domain/notifications/notification-kinds";
 import type { ContentType } from "@/domain/types";
 import type { ProviderExternalIds } from "@kunai/types";
 
@@ -71,14 +72,7 @@ export type NotificationSignal =
 
 export interface DerivedNotification {
   readonly dedupKey: string;
-  readonly kind:
-    | "new-episode"
-    | "queue-recovery"
-    | "download-complete"
-    | "download-failed"
-    | "app-update"
-    | "app-restart-required"
-    | "provider-health";
+  readonly kind: NotificationKind;
   readonly title: string;
   readonly body: string;
   readonly item?: MediaItemIdentity;

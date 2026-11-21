@@ -1,12 +1,10 @@
+import {
+  isNotificationKind,
+  type NotificationKind,
+} from "@/domain/notifications/notification-kinds";
 import type { NotificationRecord } from "@kunai/storage";
 
-export type NotificationKind =
-  | "new-episode"
-  | "queue-recovery"
-  | "download-complete"
-  | "download-failed"
-  | "app-update"
-  | "app-restart-required";
+export type { NotificationKind };
 
 export type NotificationSinkDelivery = {
   readonly dedupKey: string;
@@ -41,10 +39,13 @@ export class NotificationSinkRegistry {
   }
 }
 
-export function mapRecordToSinkDelivery(record: NotificationRecord): NotificationSinkDelivery {
+export function mapRecordToSinkDelivery(
+  record: NotificationRecord,
+): NotificationSinkDelivery | null {
+  if (!isNotificationKind(record.kind)) return null;
   return {
     dedupKey: record.dedupKey,
-    kind: record.kind as NotificationKind,
+    kind: record.kind,
     title: record.title,
     body: record.body ?? undefined,
     createdAt: record.createdAt,
