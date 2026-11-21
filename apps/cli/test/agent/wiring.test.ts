@@ -388,6 +388,33 @@ describe("agent wiring · notifications inbox", () => {
   }, 60_000);
 });
 
+describe("agent wiring · calendar", () => {
+  it("a failed or abandoned schedule load does not leave the header searching", async () => {
+    // Regression: opening the calendar set the session search status to
+    // "loading" and only a successful load reset it. With the catalog
+    // unreachable the schedule failed, Esc returned to Browse, and the header
+    // said "Searching…" for the rest of the session.
+    await withSession("wiring-calendar", {}, async (s) => {
+      await s.waitForFrame((f) => f.includes("Search title"), "browse home");
+      s.press("/");
+      await s.waitForFrame((f) => f.includes("command"), "command palette");
+      s.press("calendar");
+      await s.waitSettled();
+      s.press(K.enter);
+      await s.waitForFrame((f) => f.includes("Schedule unavailable"), "schedule failure");
+      await s.waitSettled();
+      expect(s.sessionState().searchState).not.toBe("loading");
+
+      s.press(K.esc);
+      await s.waitForFrame((f) => f.includes("Search title"), "back on browse");
+      await s.waitSettled();
+      expect(s.sessionState().searchState).not.toBe("loading");
+      expect(s.frame()).not.toContain("Searching…");
+      expect(s.blockedHosts().length).toBeGreaterThan(0);
+    });
+  }, 60_000);
+});
+
 describe("agent wiring · offline mode", () => {
   it("offline mode parks on the library instead of starving the session loop", async () => {
     // Regression for the livelock: offlineMode + empty query used to return a

@@ -36,6 +36,7 @@ import type { ShutdownIntent } from "@/app/session/shutdown-coordinator";
 import { bindShutdownRequestHandler } from "@/app/session/shutdown-request";
 import type { Container } from "@/container";
 import { disposeContainer } from "@/container/dispose-container";
+import type { SessionState } from "@/domain/session/SessionState";
 import { createElement } from "react";
 
 import { render, stripAnsi, type RenderHandle } from "../harness/render-capture";
@@ -82,6 +83,14 @@ export interface AgentSessionOptions {
   /** Record a step journal (frame + DB delta per event) for evidence bundles. */
   readonly recordEvidence?: boolean;
   readonly extraEnv?: Record<string, string>;
+  /**
+   * `"off"` (default) rejects every `fetch` to a non-loopback host, so a drive
+   * is reproducible and never depends on today's catalog or provider. The
+   * rejected hosts are kept on `blockedHosts()` — a drive that needed one
+   * proves a path the fixture does not cover. `"live"` lets requests through;
+   * a result from a live drive is a dated observation, not a regression proof.
+   */
+  readonly network?: "off" | "live";
 }
 
 export interface JournalEntry {
@@ -131,6 +140,13 @@ export interface AgentSession {
   quitRequested(): ShutdownIntent | null;
   /** Analytics contract self-check: no installId, analytics not enabled. */
   assertPrivacyClean(): void;
+  /** Hosts a `network: "off"` session refused, in first-seen order. */
+  blockedHosts(): readonly string[];
+  /**
+   * The session state the shell renders from. Read it when a frame cannot
+   * witness a fact on its own, such as a header that has not repainted yet.
+   */
+  sessionState(): SessionState;
   dispose(): Promise<void>;
 }
 
@@ -182,6 +198,50 @@ function installActWarningFilter(): () => void {
   };
 }
 
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+
+/** True for a URL the hermetic network guard lets through: loopback only. */
+export function isLoopbackUrl(url: URL): boolean {
+  return LOOPBACK_HOSTS.has(url.hostname) || url.hostname.startsWith("127.");
+}
+
+/**
+ * Replace `globalThis.fetch` with one that rejects non-loopback requests the
+ * way an unreachable network does, so the app's own offline and failure paths
+ * run. Loopback stays open for the real-mpv media server.
+ */
+function installNetworkGuard(blocked: Set<string>): () => void {
+  const original = globalThis.fetch;
+  const guarded = (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    const raw = input instanceof Request ? input.url : String(input);
+    let url: URL | null = null;
+    try {
+      url = new URL(raw);
+    } catch {
+      url = null;
+    }
+    if (url && !isLoopbackUrl(url)) {
+      blocked.add(url.host);
+      // The exact shape Bun's fetch rejects with when the host is unreachable,
+      // so connectivity classifies it as offline just as on a machine with no
+      // network.
+      const error = new TypeError(
+        "ECONNREFUSED: Unable to connect. Is the computer able to access the url?",
+      );
+      return Promise.reject(
+        Object.assign(error, { code: "ECONNREFUSED", errno: 0, path: url.href }),
+      );
+    }
+    return original(input, init);
+  };
+  // `fetch.preconnect` is a property of Bun's fetch; copying it across keeps
+  // the guarded function a full `typeof fetch`.
+  globalThis.fetch = Object.assign(guarded, { preconnect: original.preconnect });
+  return () => {
+    globalThis.fetch = original;
+  };
+}
+
 // Polling uses a plain sleep, NOT an act()-wrapped one: updates arrive from
 // the app's own async orchestrator (they commit to CaptureStdout regardless of
 // act), and an async act() scope held open across a sleep serializes the
@@ -202,6 +262,8 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
 
   const cleanups: Array<() => void> = [];
   cleanups.push(installActWarningFilter());
+  const blockedHosts = new Set<string>();
+  if ((options.network ?? "off") === "off") cleanups.push(installNetworkGuard(blockedHosts));
   let unbindShutdown: (() => void) | null = null;
   let handle: RenderHandle | null = null;
   let container: Container | null = null;
@@ -577,6 +639,13 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
       if (config.analytics === "enabled") {
         throw new Error("privacy invariant: analytics ended the session enabled");
       }
+    },
+    blockedHosts() {
+      return [...blockedHosts];
+    },
+    sessionState() {
+      if (!container) throw new Error("sessionState: the session has no container");
+      return container.stateManager.getState();
     },
     async dispose() {
       if (disposed) return;

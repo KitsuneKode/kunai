@@ -34,7 +34,15 @@ produce the quote, report "not verified" — never "should work".
 | L4 real mpv               | `KUNAI_REAL_MPV=1` + `test/agent/real-mpv*` | mpv decodes and Kunai records progress                     | Live providers                           |
 | L5 live / device          | `bun run test:live:*`, a physical phone     | Today's upstream and hardware                              | Anything reproducible — date it, it rots |
 
-L2 and L3 run against fixture providers and a fixture catalog: zero network.
+L2 and L3 use fixture providers, but the catalog is the real one: calendar,
+trending, recommendations and metadata call AniList and TMDB. L2 therefore
+refuses every non-loopback `fetch` by default (`--network off`), so those
+routes take the app's own offline path and a drive gives the same answer
+tomorrow. Refused hosts print under `== network refused ==`; a drive that
+lists any proved the offline path, not the online one. `--network live` lets
+requests through and makes the result a dated observation. L3 has no guard —
+it is a real process on your network unless you start it under `unshare -rn`
+(Linux).
 L3 needs `tmux` (Linux/macOS). A missing tool is a skip, and **a skip is not a
 pass** — say which tier you could not run.
 
@@ -79,6 +87,7 @@ journal, and writes a bundle (transcript, frames, per-step DB deltas).
 | `--fake-mpv-mode M`       | `normal \| fail-pre-loaded \| hold`                                             |
 | `--width N` / `--rows N`  | terminal size (default 100×30)                                                  |
 | `--set-env K=V`           | extra env for the run (repeatable)                                              |
+| `--network off\|live`     | `off` (default) refuses non-loopback `fetch`; `live` is a dated run             |
 
 `--show keys` lists the `[key]` hints the current frame advertises — read it
 before writing a key plan for an unfamiliar surface. `--seed fresh` writes no
