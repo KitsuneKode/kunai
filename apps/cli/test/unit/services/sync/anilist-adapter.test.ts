@@ -18,8 +18,16 @@ const anilistTarget = { tracker: "anilist", anilistId: 438631, mediaKind: "anime
  * A fake AniList that holds real state, so idempotence can be asserted against
  * what the remote ends up believing rather than against call arguments.
  */
-function fakeAniList(options: { favourite?: boolean; failNextResponse?: boolean } = {}) {
+function fakeAniList(
+  options: {
+    favourite?: boolean;
+    failNextResponse?: boolean;
+    episodes?: number | null;
+    entry?: { status: string; progress: number } | null;
+  } = {},
+) {
   const state = {
+    progressLookups: 0,
     favourite: options.favourite ?? false,
     toggleCalls: 0,
     favouriteReads: 0,
@@ -67,6 +75,17 @@ function fakeAniList(options: { favourite?: boolean; failNextResponse?: boolean 
     if (body.query.includes("DeleteMediaListEntry")) {
       state.deleteCalls += 1;
       return json({ DeleteMediaListEntry: { deleted: true } });
+    }
+    if (body.query.includes("ProgressFor")) {
+      state.progressLookups += 1;
+      const entry = options.entry ?? null;
+      return json({
+        Media: {
+          id: 438631,
+          episodes: options.episodes === undefined ? 12 : options.episodes,
+          mediaListEntry: entry ? { id: 7, ...entry } : null,
+        },
+      });
     }
     if (body.query.includes("mediaListEntry")) {
       return json({ Media: { id: 438631, mediaListEntry: { id: 7 } } });
@@ -145,7 +164,7 @@ test("AniList Connect sends a non-empty attempt state to the browser", async () 
 
 describe("AniListAdapter.apply", () => {
   test("sends the cour-relative progress and desired status", async () => {
-    const { state, fetchImpl } = fakeAniList();
+    const { state, fetchImpl } = fakeAniList({ episodes: 3 });
     const adapter = await connectedAdapter(fetchImpl);
 
     const outcome = await adapter.apply(
@@ -161,6 +180,71 @@ describe("AniListAdapter.apply", () => {
 
     expect(outcome.status).toBe("ok");
     expect(state.lastSave).toMatchObject({ mediaId: 438631, progress: 3, status: "COMPLETED" });
+  });
+
+  const finishedEpisode = (progress: number): TrackerOperation => ({
+    version: 1,
+    kind: "progress:set",
+    target: anilistTarget,
+    progress,
+    status: "completed",
+  });
+
+  test("finishing a middle episode is progress, not completion of the title", async () => {
+    const { state, fetchImpl } = fakeAniList({ episodes: 12 });
+    const adapter = await connectedAdapter(fetchImpl);
+
+    const outcome = await adapter.apply(finishedEpisode(3), signal());
+
+    expect(outcome.status).toBe("ok");
+    expect(state.lastSave).toMatchObject({ mediaId: 438631, progress: 3, status: "CURRENT" });
+  });
+
+  test("an unknown episode count never completes the title", async () => {
+    const { state, fetchImpl } = fakeAniList({ episodes: null });
+    const adapter = await connectedAdapter(fetchImpl);
+
+    await adapter.apply(finishedEpisode(24), signal());
+
+    expect(state.lastSave).toMatchObject({ progress: 24, status: "CURRENT" });
+  });
+
+  test("re-watching an early episode leaves a completed title completed", async () => {
+    const { state, fetchImpl } = fakeAniList({
+      episodes: 12,
+      entry: { status: "COMPLETED", progress: 12 },
+    });
+    const adapter = await connectedAdapter(fetchImpl);
+
+    const outcome = await adapter.apply(finishedEpisode(3), signal());
+
+    expect(outcome).toMatchObject({ status: "ok", detail: "remote-completed" });
+    expect(state.saveCalls).toBe(0);
+  });
+
+  test("progress already ahead on AniList is not wound back", async () => {
+    const { state, fetchImpl } = fakeAniList({
+      episodes: 12,
+      entry: { status: "CURRENT", progress: 8 },
+    });
+    const adapter = await connectedAdapter(fetchImpl);
+
+    const outcome = await adapter.apply(finishedEpisode(5), signal());
+
+    expect(outcome).toMatchObject({ status: "ok", detail: "remote-ahead" });
+    expect(state.saveCalls).toBe(0);
+  });
+
+  test("a rewatch that reaches the last episode completes the title again", async () => {
+    const { state, fetchImpl } = fakeAniList({
+      episodes: 12,
+      entry: { status: "REPEATING", progress: 11 },
+    });
+    const adapter = await connectedAdapter(fetchImpl);
+
+    await adapter.apply(finishedEpisode(12), signal());
+
+    expect(state.lastSave).toMatchObject({ progress: 12, status: "COMPLETED" });
   });
 
   /**
