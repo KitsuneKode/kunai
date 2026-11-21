@@ -374,8 +374,10 @@ a:focus-visible .kunai-nav-title .kunai-fox {
   transition: transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.kunai-roamer__fox:hover {
-  transform: scale(1.08);
+@media (hover: hover) and (pointer: fine) {
+  .kunai-roamer__fox:hover {
+    transform: scale(1.08);
+  }
 }
 
 /* While she walks, the legs are the animation: `KunaiFoxWalker` is posed every
@@ -387,8 +389,10 @@ a:focus-visible .kunai-nav-title .kunai-fox {
   transition: none;
 }
 
-.kunai-roamer__fox.is-walking:hover {
-  transform: none;
+@media (hover: hover) and (pointer: fine) {
+  .kunai-roamer__fox.is-walking:hover {
+    transform: none;
+  }
 }
 
 /* Walking and resting are different drawings. A short fade from the one that
@@ -485,8 +489,10 @@ a:focus-visible .kunai-nav-title .kunai-fox {
   transition: opacity 160ms ease-out;
 }
 
-.kunai-roamer:hover .kunai-roamer__close {
-  opacity: 1;
+@media (hover: hover) and (pointer: fine) {
+  .kunai-roamer:hover .kunai-roamer__close {
+    opacity: 1;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -301,7 +301,7 @@ const TerminalSimulator = memo(function TerminalSimulator({
             <input
               ref={terminalInputRef}
               type="text"
-              className="text-fd-foreground w-full border-none bg-transparent font-mono text-base outline-none sm:text-xs"
+              className="text-fd-foreground focus-visible:ring-ring w-full border-none bg-transparent font-mono text-base outline-none focus-visible:ring-2 sm:text-xs"
               value={terminalInput}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
