@@ -48,6 +48,9 @@ test("matchBinding matches a printable chord and respects ctrl modifier", () => 
   // bare "c" is not quit; only Ctrl+C is.
   expect(matchBinding("global", "c", {})).toBeNull();
   expect(matchBinding("global", "c", { ctrl: true })?.id).toBe("quit");
+  expect(matchBinding("browse", "g", { ctrl: true })?.id).toBe("home");
+  expect(matchBinding("player", "g", { ctrl: true })?.id).toBe("home");
+  expect(matchBinding("browse", "g", {})?.id).not.toBe("home");
 });
 
 test("matchBinding distinguishes Ctrl+R (refresh) from Alt+R (resume-seek)", () => {

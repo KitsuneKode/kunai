@@ -123,7 +123,9 @@ import { GuideShell } from "./guide-shell";
 import { HistoryShell } from "./history-shell";
 import {
   buildHistoryView,
+  historyTabAt,
   historyTabFromLegacy,
+  historyTypeFilterAt,
   type HistoryTab,
   type HistoryTypeFilter,
 } from "./history-view";
@@ -234,7 +236,11 @@ import type {
   ShellPanelLine,
 } from "./types";
 import { toShellAction } from "./types";
-import { handleHistoryOverlayInput, type HistoryDeletePending } from "./use-history-overlay-input";
+import {
+  handleHistoryOverlayInput,
+  type HistoryDeletePending,
+  type HistoryOverlayInputContext,
+} from "./use-history-overlay-input";
 import {
   createNotificationsOverlayState,
   handleNotificationsOverlayInput,
@@ -1547,6 +1553,43 @@ export function RootOverlayShell({
     }
   };
 
+  const onConfirmHistorySelection = (
+    selection: Parameters<HistoryOverlayInputContext["onConfirmSelection"]>[0],
+    options?: Parameters<HistoryOverlayInputContext["onConfirmSelection"]>[1],
+  ) => {
+    if (selection) {
+      void import("@/services/continuation/continuation-diagnostics").then(
+        ({ recordContinuationSourceResolution }) =>
+          recordContinuationSourceResolution(container, {
+            surface: "history",
+            selection,
+            preference: continueSourcePreference,
+            override: options?.sourceOverride,
+            resolved: selection.localJobId ? "local" : "stream",
+          }),
+      );
+    }
+    const awaited = hasPendingRootHistorySelection();
+    resolveRootHistorySelection(selection);
+    if (selection) {
+      if (!awaited && getRootContentSession()?.kind !== "browse") {
+        setOverlayStatus("Play it from the search screen");
+        return;
+      }
+      container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+      if (!awaited) {
+        void resolveHistorySelectionLaunch(container, selection, "history").then((launch) =>
+          launch
+            ? forceCloseRootContent<BrowseShellResult<SearchResult>>({
+                type: "launch-playback",
+                launch,
+              })
+            : false,
+        );
+      }
+    }
+  };
+
   useInput((input, key) => {
     if (commandMode) {
       return;
@@ -1759,48 +1802,7 @@ export function RootOverlayShell({
           pendingDelete: historyPendingDelete,
           setPendingDelete: setHistoryPendingDelete,
           onHistoryMutated,
-          onConfirmSelection: (selection, options) => {
-            if (selection) {
-              void import("@/services/continuation/continuation-diagnostics").then(
-                ({ recordContinuationSourceResolution }) =>
-                  recordContinuationSourceResolution(container, {
-                    surface: "history",
-                    selection,
-                    preference: continueSourcePreference,
-                    override: options?.sourceOverride,
-                    resolved: selection.localJobId ? "local" : "stream",
-                  }),
-              );
-            }
-            // Only the palette route awaits this. Opened directly from another
-            // overlay there is no resolver, so the selection used to vanish and
-            // the overlay simply closed. Fall back to the same launch channel
-            // the inbox uses, via the shared resolver so both routes align the
-            // provider lane and record the source decision identically.
-            const awaited = hasPendingRootHistorySelection();
-            resolveRootHistorySelection(selection);
-            if (selection) {
-              // launch-playback resolves only on browse — delivered to a
-              // playback or picker session it would be a foreign result the
-              // phase loop cannot read, silently dropping the pick.
-              if (!awaited && getRootContentSession()?.kind !== "browse") {
-                setOverlayStatus("Play it from the search screen");
-                return;
-              }
-              container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
-              if (!awaited) {
-                void resolveHistorySelectionLaunch(container, selection, "history").then(
-                  (launch) =>
-                    launch
-                      ? forceCloseRootContent<BrowseShellResult<SearchResult>>({
-                          type: "launch-playback",
-                          launch,
-                        })
-                      : false,
-                );
-              }
-            }
-          },
+          onConfirmSelection: onConfirmHistorySelection,
         }) === "handled"
       ) {
         return;
@@ -1842,7 +1844,7 @@ export function RootOverlayShell({
         refresh();
         return;
       }
-      if (input === "g" && row) {
+      if (input === "g" && !key.ctrl && row) {
         const undoBefore = container.sessionUndo?.captureQueue();
         setQueueConfirm(null);
         container.queueService.moveToTop(row.id);
@@ -1854,7 +1856,7 @@ export function RootOverlayShell({
         refresh();
         return;
       }
-      if (input === "G" && row) {
+      if (input === "G" && !key.ctrl && row) {
         const undoBefore = container.sessionUndo?.captureQueue();
         setQueueConfirm(null);
         container.queueService.moveToBottom(row.id);
@@ -2375,6 +2377,30 @@ export function RootOverlayShell({
           columns={overlayLayout.contentColumns}
           selectedIndex={notificationsView.selectedIndex}
           unreadCount={notificationUnreadCount}
+          pointer={
+            commandMode
+              ? undefined
+              : {
+                  selectRow: (dedupKey) => {
+                    setNotificationsState((state) => ({ ...state, selectedDedupKey: dedupKey }));
+                  },
+                  activateRow: (dedupKey) => {
+                    runNotificationAction(dedupKey);
+                  },
+                  scroll: (direction) => {
+                    const rows = notificationsView.rows;
+                    if (rows.length === 0) return;
+                    const current = Math.max(0, notificationsView.selectedIndex);
+                    const next =
+                      direction === "up"
+                        ? Math.max(0, current - 1)
+                        : Math.min(rows.length - 1, current + 1);
+                    const dedupKey = rows[next]?.dedupKey;
+                    if (!dedupKey) return;
+                    setNotificationsState((state) => ({ ...state, selectedDedupKey: dedupKey }));
+                  },
+                }
+          }
         />
         {commandMode ? (
           <CommandPalette
@@ -2520,6 +2546,60 @@ export function RootOverlayShell({
           listWidth={listWidth}
           rowWidth={rowWidth}
           pendingDelete={historyPendingDelete}
+          pointer={
+            commandMode
+              ? undefined
+              : {
+                  selectRow: (index) => {
+                    setHistoryPendingDelete(null);
+                    setSelectedIndex(index);
+                  },
+                  activateRow: (index) => {
+                    setHistoryPendingDelete(null);
+                    setSelectedIndex(index);
+                    handleHistoryOverlayInput(
+                      "",
+                      { return: true },
+                      {
+                        container,
+                        historyView,
+                        historySelections,
+                        historyPickerContext,
+                        selectedIndex: index,
+                        sourceChoiceTitleId: historySourceChoiceTitleId,
+                        sourcePreference: continueSourcePreference,
+                        setSourceChoiceTitleId: setHistorySourceChoiceTitleId,
+                        setHistoryTypeFilter,
+                        setHistoryTab,
+                        setSelectedIndex,
+                        setOverlayStatus: (status) => setOverlayStatus(status),
+                        onRedraw,
+                        pendingDelete: null,
+                        setPendingDelete: setHistoryPendingDelete,
+                        onHistoryMutated,
+                        onConfirmSelection: onConfirmHistorySelection,
+                      },
+                    );
+                  },
+                  selectTab: (index) => {
+                    setHistoryTab(() => historyTabAt(index));
+                  },
+                  selectType: (index) => {
+                    setHistoryTypeFilter(() => historyTypeFilterAt(index));
+                    setSelectedIndex(0);
+                  },
+                  scroll: (direction) => {
+                    setHistoryPendingDelete(null);
+                    const count = historyView.flatRows.length;
+                    if (count === 0) return;
+                    setSelectedIndex((current) =>
+                      direction === "up"
+                        ? Math.max(0, current - 1)
+                        : Math.min(count - 1, current + 1),
+                    );
+                  },
+                }
+          }
         />
         {commandMode ? (
           <CommandPalette

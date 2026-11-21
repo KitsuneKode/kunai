@@ -1,9 +1,11 @@
 import { Box, Text } from "ink";
-import React from "react";
+import React, { useRef } from "react";
 
 import { compactProgressBar } from "./format/bar";
 import type { HistoryView } from "./history-view";
 import { useRailPoster } from "./hooks/use-rail-poster";
+import { MouseTarget } from "./mouse/MouseRegions";
+import { pointerClickIntent } from "./mouse/pointer-activation";
 import { ClaudeTabRow } from "./primitives/ClaudeTabRow";
 import { buildMediaListRowColumns, computeMediaListRowLayout } from "./primitives/list-row-layout";
 import { ListRow } from "./primitives/ListRow";
@@ -23,12 +25,20 @@ export function HistoryShell({
   listWidth,
   rowWidth,
   pendingDelete = null,
+  pointer,
 }: {
   readonly view: HistoryView;
   readonly columns: number;
   readonly listWidth: number;
   readonly rowWidth: number;
   readonly pendingDelete?: HistoryDeletePending | null;
+  readonly pointer?: {
+    readonly selectRow: (flatIndex: number) => void;
+    readonly activateRow: (flatIndex: number) => void;
+    readonly selectTab: (index: number) => void;
+    readonly selectType: (index: number) => void;
+    readonly scroll: (direction: "up" | "down") => void;
+  };
 }) {
   const railWidth = 32;
   const railGap = 2;
@@ -55,6 +65,7 @@ export function HistoryShell({
   );
   const selectedRow =
     selectedItem !== undefined ? view.flatRows[selectedItem.flatIndex] : view.flatRows[0];
+  const priorRow = useRef<string | null>(null);
 
   const list = (
     <Box flexDirection="column" flexGrow={1}>
@@ -73,6 +84,7 @@ export function HistoryShell({
             hint={effectiveListWidth >= 100 ? "⇥ Tab · ⇧⇥ cycles tabs" : undefined}
             maxWidth={effectiveListWidth}
             dense
+            pointer={pointer ? { id: "history:tab", select: pointer.selectTab } : undefined}
           />
           <ClaudeTabRow
             labels={view.typeFilterLabels}
@@ -80,6 +92,7 @@ export function HistoryShell({
             hint={effectiveListWidth >= 100 ? "←→ type" : undefined}
             maxWidth={effectiveListWidth}
             dense
+            pointer={pointer ? { id: "history:type", select: pointer.selectType } : undefined}
           />
         </Box>
       )}
@@ -143,22 +156,42 @@ export function HistoryShell({
             const statusLabel = progress
               ? `${compactProgressBar(progress.percentage)} ${Math.round(progress.percentage)}%`
               : row.statusLabel;
+            const rowKey = `${row.titleId}:${item.flatIndex}`;
             return (
-              <ListRow
-                key={`${row.titleId}-${item.flatIndex}`}
-                selected={selected}
-                rowWidth={effectiveRowWidth}
-                flexColumnIndex={rowLayout.flexColumnIndex}
-                columns={buildMediaListRowColumns({
-                  title: row.title,
-                  episodeCode: row.episodeCode,
-                  statusLabel,
-                  statusColor: row.statusColor,
-                  statusDim: row.statusDim,
-                  recencyLabel: row.recencyLabel,
-                  layout: rowLayout,
-                })}
-              />
+              <MouseTarget
+                key={rowKey}
+                id={`history:row:${rowKey}`}
+                active={Boolean(pointer)}
+                onWheel={(direction) => {
+                  priorRow.current = null;
+                  pointer?.scroll(direction);
+                }}
+                onClick={() => {
+                  if (!pointer) return;
+                  const click = pointerClickIntent(priorRow.current, rowKey, selected);
+                  priorRow.current = click.priorKey;
+                  if (click.intent === "select") {
+                    pointer.selectRow(item.flatIndex);
+                    return;
+                  }
+                  pointer.activateRow(item.flatIndex);
+                }}
+              >
+                <ListRow
+                  selected={selected}
+                  rowWidth={effectiveRowWidth}
+                  flexColumnIndex={rowLayout.flexColumnIndex}
+                  columns={buildMediaListRowColumns({
+                    title: row.title,
+                    episodeCode: row.episodeCode,
+                    statusLabel,
+                    statusColor: row.statusColor,
+                    statusDim: row.statusDim,
+                    recencyLabel: row.recencyLabel,
+                    layout: rowLayout,
+                  })}
+                />
+              </MouseTarget>
             );
           })}
           {view.showScrollDown ? <Text color={palette.dim}> ▼ ...</Text> : null}

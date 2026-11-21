@@ -145,6 +145,17 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     docs: { tier: "core", order: 30 },
   },
   {
+    id: "home",
+    chord: { input: "g", ctrl: true },
+    display: "⌃G",
+    label: "Home, or back to the screen you left",
+    hintLabel: "home",
+    scope: "global",
+    group: "Global",
+    footerPriority: 25,
+    docs: { tier: "core", order: 35 },
+  },
+  {
     id: "quit",
     chord: { input: "c", ctrl: true },
     label: "Quit",

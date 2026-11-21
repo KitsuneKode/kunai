@@ -140,6 +140,14 @@ export function historyTabFromLegacy(mode: "all" | "watching" | "completed"): Hi
   return "all";
 }
 
+export function historyTabAt(index: number): HistoryTab {
+  return HISTORY_TABS[index] ?? "continue";
+}
+
+export function historyTypeFilterAt(index: number): HistoryTypeFilter {
+  return HISTORY_TYPE_FILTERS[index] ?? "all";
+}
+
 export function cycleHistoryTab(tab: HistoryTab, direction: 1 | -1 = 1): HistoryTab {
   const index = HISTORY_TABS.indexOf(tab);
   const length = HISTORY_TABS.length;

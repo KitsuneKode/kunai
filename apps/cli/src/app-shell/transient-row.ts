@@ -16,6 +16,8 @@ export type TransientRowInput = {
   readonly weeklyDigestLine: string | null;
   /** Once-ever shortcut coaching — yields to everything else on the row. */
   readonly tipLine?: string | null;
+  /** Armed header-fox confirm while playing — yields to alerts, above undo. */
+  readonly homePointerConfirm?: string | null;
 };
 
 export type TransientRowLine = {
@@ -42,6 +44,14 @@ export function selectTransientRow(input: TransientRowInput): TransientRowLine |
   }
   if (input.alert) {
     return { text: input.alert.text, tone: input.alert.tone, accent: false, dim: true };
+  }
+  if (input.homePointerConfirm) {
+    return {
+      text: input.homePointerConfirm,
+      tone: "warning",
+      accent: false,
+      dim: false,
+    };
   }
   if (input.undoLine) {
     return { text: input.undoLine.text, tone: input.undoLine.tone, accent: false, dim: false };

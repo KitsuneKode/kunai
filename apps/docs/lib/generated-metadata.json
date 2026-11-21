@@ -1071,6 +1071,15 @@
       "order": 30
     },
     {
+      "id": "home",
+      "scope": "global",
+      "group": "Global",
+      "keys": "⌃G",
+      "label": "Home, or back to the screen you left",
+      "tier": "core",
+      "order": 35
+    },
+    {
       "id": "browse-mode",
       "scope": "browse",
       "group": "While browsing",

@@ -5,7 +5,7 @@
 // field while typing, ↓ highlights a row, Enter commits a title row through
 // the same onSubmit the results list uses, Esc dismisses the band before the
 // ladder resumes. `suggestionDebounceMs: 0` collapses the catalog wait to one
-// macrotask — no sleeps, no wall-clock assertions.
+// macrotask. Lone Esc still waits out Ink's 20ms escape-sequence flush.
 // =============================================================================
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
