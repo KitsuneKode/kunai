@@ -100,6 +100,38 @@ export function clearTmdbSessionCache(): void {
 }
 
 /**
+ * A follower may opt out of waiting without cancelling the leader fetch — the
+ * shared TMDB task must not inherit a superseded type-ahead abort signal.
+ */
+function joinTmdbInflight(task: Promise<JsonValue>, signal?: AbortSignal): Promise<JsonValue> {
+  if (!signal) return task;
+  if (signal.aborted) {
+    return Promise.reject(
+      signal.reason ?? new DOMException("The operation was aborted.", "AbortError"),
+    );
+  }
+  return new Promise<JsonValue>((resolve, reject) => {
+    const onAbort = () => {
+      signal.removeEventListener("abort", onAbort);
+      reject(signal.reason ?? new DOMException("The operation was aborted.", "AbortError"));
+    };
+    signal.addEventListener("abort", onAbort);
+    void task.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+        return undefined;
+      },
+      (error) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+        return undefined;
+      },
+    );
+  });
+}
+
+/**
  * Proxy + mirror chain with in-flight dedup and a short session cache so
  * trending/recommendations/search do not repeat identical TMDB calls.
  */
@@ -113,22 +145,22 @@ export async function fetchTmdbJsonCached(
   const cached = sessionCache.get(normalized);
   if (cached && cached.expiresAt > now) return cached.value;
 
-  const inflight = inflightRequests.get(normalized);
-  if (inflight) return inflight;
+  let task = inflightRequests.get(normalized);
+  if (!task) {
+    task = fetchTmdbJsonWithFallback(normalized, undefined, timeoutMs)
+      .then((value) => {
+        sessionCacheWrite(normalized, { expiresAt: now + SESSION_CACHE_MS, value });
+        inflightRequests.delete(normalized);
+        return value;
+      })
+      .catch((error) => {
+        inflightRequests.delete(normalized);
+        throw error;
+      });
+    inflightRequests.set(normalized, task);
+  }
 
-  const task = fetchTmdbJsonWithFallback(normalized, signal, timeoutMs)
-    .then((value) => {
-      sessionCacheWrite(normalized, { expiresAt: now + SESSION_CACHE_MS, value });
-      inflightRequests.delete(normalized);
-      return value;
-    })
-    .catch((error) => {
-      inflightRequests.delete(normalized);
-      throw error;
-    });
-
-  inflightRequests.set(normalized, task);
-  return task;
+  return joinTmdbInflight(task, signal);
 }
 
 async function fetchTmdbHostJson(
@@ -184,11 +216,11 @@ export async function fetchTmdbJsonWithFallback(
 
 export function isTmdbNetworkError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
+  if (error.name === "AbortError") return false;
   const message = error.message.toLowerCase();
   const name = error.name.toLowerCase();
   return (
     name.includes("failedtoopensocket") ||
-    name.includes("aborterror") ||
     message.includes("network") ||
     classifyNetworkFailure(message) !== "unknown"
   );

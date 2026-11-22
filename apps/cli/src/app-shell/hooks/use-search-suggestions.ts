@@ -17,6 +17,10 @@ import { createLatestRequestGate } from "../browse-async";
 /** Catalog round-trip budget for a keystroke-driven lookup — tune here. */
 export const SUGGESTION_DEBOUNCE_MS = 300;
 
+export function resolveSuggestionDebounceMs(explicitMs?: number): number {
+  return explicitMs ?? SUGGESTION_DEBOUNCE_MS;
+}
+
 /** The handle a `SuggestionTimers.set` hands back — opaque to the hook. */
 export type SuggestionTimerHandle = ReturnType<typeof setTimeout> | number;
 
