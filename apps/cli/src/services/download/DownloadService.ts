@@ -263,6 +263,7 @@ export type DownloadQueueKickSource =
   | "download-manager"
   | "offline-repair"
   | "offline-runway"
+  | "online-resume"
   | "queue-coalesced";
 
 type DownloadEventListener = (event: DownloadEvent) => void;

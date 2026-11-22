@@ -237,14 +237,20 @@ always the fallback.
   defaults on read.
 - **Startup.** `activateCachedProviderHotfixManifest`
   (`apps/cli/src/app/providers/provider-definitions-actions.ts`) re-verifies the
-  cached manifest and makes it live before the first resolve, offline included;
+  cached manifest and makes it live before the first resolve, offline included,
+  in the interactive shell and in headless `-S --json` search;
   without it a manifest would apply only in the process that fetched it.
 - **Background refresh.** `maybeBackgroundRefreshProviderManifest` refreshes at
   most every six hours, only when `KUNAI_PROVIDER_MANIFEST_URL` and trusted keys
   are both set, and fails silently offline.
 - **Priority.** `applyHotfixToProviderBootstrap` merges manifest lane priorities
-  and `disabled` flags into the user's priority at bootstrap; the CLI wiring is
-  `apps/cli/src/app/providers/provider-definitions-actions.ts`.
+  and `disabled` flags into the user's priority. Two consumers must agree: the
+  provider registry (pickers, `apps/cli/src/app/providers/provider-definitions-actions.ts`)
+  and playback admission and fallback order (`createOrderedModulesGetter` in
+  `apps/cli/src/container/bootstrap-providers.ts`). The playback side reads the
+  manifest on every resolve through the expiry-aware getter, so an expired
+  manifest stops excluding providers immediately; the registry copy refreshes on
+  the next settings change or manifest action.
 - **Authoring.** `scripts/generate-hotfix-manifest.ts` builds an unsigned
   manifest (optionally from a provider status report);
   `scripts/sign-provider-manifest.ts sign` signs it.

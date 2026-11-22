@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
+import { settingsDraftPatch } from "@/app-shell/settings/persist";
+import { languageSettingsRows } from "@/app-shell/settings/registry/language";
 import { resolveSessionConfigOverrides } from "@/app/session/session-overrides";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { ConfigServiceImpl } from "@/services/persistence/ConfigServiceImpl";
@@ -794,6 +796,64 @@ describe("session overrides", () => {
     const persisted = await store.load();
     expect(persisted.offlineMode).toBeFalsy();
     expect(persisted.hdrMode ?? "auto").toBe("auto");
+  });
+
+  test("editing one language field in Settings never saves the launch flag's other fields", async () => {
+    for (const lane of ["anime", "series", "movie"] as const) {
+      const profileKey = `${lane}LanguageProfile` as const;
+      const saved = { audio: "original", subtitle: "en", quality: "720p" };
+      const store = new MemoryConfigStore({ [profileKey]: saved });
+      const service = await ConfigServiceImpl.load(store);
+
+      // `--audio ja --quality 1080p` for this session.
+      service.applySessionOverrides(
+        resolveSessionConfigOverrides(
+          { zen: false, minimal: false, audio: "ja", quality: "1080p" },
+          service,
+        ),
+      );
+
+      // Settings seeds its draft from the effective config, then the user
+      // changes only the subtitle row.
+      const draft = service.getRaw();
+      const row = languageSettingsRows({} as never).find((r) => r.id === `${lane}Subtitle`);
+      if (!row || row.kind !== "enum") throw new Error(`missing ${lane}Subtitle row`);
+      const next = row.write(draft, "none");
+      await service.update(settingsDraftPatch(next, draft));
+      await service.save();
+
+      const persisted = (await store.load())[profileKey];
+      expect(persisted).toEqual({ audio: "original", subtitle: "none", quality: "720p" });
+      // The launch flag still holds for the rest of the session.
+      expect(service[profileKey]).toEqual({ audio: "ja", subtitle: "none", quality: "1080p" });
+    }
+  });
+
+  test("changing the flagged field itself in Settings persists it and ends that override", async () => {
+    const store = new MemoryConfigStore({
+      seriesLanguageProfile: { audio: "original", subtitle: "en", quality: "720p" },
+    });
+    const service = await ConfigServiceImpl.load(store);
+    service.applySessionOverrides(
+      resolveSessionConfigOverrides(
+        { zen: false, minimal: false, audio: "ja", quality: "1080p" },
+        service,
+      ),
+    );
+    await service.update({
+      seriesLanguageProfile: { ...service.seriesLanguageProfile, audio: "en" },
+    });
+    await service.save();
+    expect((await store.load()).seriesLanguageProfile).toEqual({
+      audio: "en",
+      subtitle: "en",
+      quality: "720p",
+    });
+    expect(service.seriesLanguageProfile).toEqual({
+      audio: "en",
+      subtitle: "en",
+      quality: "1080p",
+    });
   });
 
   test("an explicit user change during the session wins over the flag", async () => {

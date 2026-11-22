@@ -231,6 +231,15 @@ export function loadCachedProviderHotfixManifest(
   if (Object.keys(trusted).length === 0) {
     return { status: "invalid", path, reason: "No trusted manifest signing keys configured" };
   }
+  // Runs on every launch: refuse an oversized (damaged) cache from its size on
+  // disk, before reading and decoding it.
+  try {
+    if (statSync(path).size > MAX_MANIFEST_BYTES) {
+      return { status: "invalid", path, reason: "Cached manifest exceeds size limit" };
+    }
+  } catch {
+    return { status: "invalid", path, reason: "Could not read cached manifest" };
+  }
   let rawText: string;
   try {
     rawText = readFileSync(path, "utf8");

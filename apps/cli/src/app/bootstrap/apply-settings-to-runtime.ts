@@ -102,6 +102,15 @@ export async function applySettingsToRuntime({
   if (before.offlineMode !== next.offlineMode) {
     container.connectivity.notifyIntentChanged();
   }
+  if (before.offlineMode && !next.offlineMode) {
+    // Startup skips the download-queue kick and the sync delivery pass while
+    // offline (saved setting or --offline). Coming back online in the same
+    // session must run them, or paused downloads and queued tracker updates
+    // wait for an unrelated trigger. Analytics is deliberately not resumed
+    // here: only an explicit keystroke may start it.
+    container.downloadService.kickQueue("online-resume");
+    container.syncService.deliverSoon();
+  }
 
   if (
     before.presenceProvider !== next.presenceProvider ||

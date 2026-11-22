@@ -102,15 +102,26 @@ export async function probeMpvHdrCapability(
 }
 
 /**
+ * SDR output target. `--target-colorspace-hint=no` only stops signalling the
+ * display; a `target-trc=pq` in the user's mpv.conf would still render PQ, so
+ * the SDR modes pin primaries and transfer explicitly. Both options predate
+ * gpu-next, so they are safe on legacy mpv too.
+ */
+const SDR_TARGET_ARGS = ["--target-prim=bt.709", "--target-trc=bt.1886"] as const;
+
+/**
  * Pure mpv CLI argument builder for HDR playback.
  *
  * - `auto` emits nothing. mpv already tone-maps HDR on SDR displays, and a
  *   forced `--vo` would override the user's `mpv.conf` and can leave a host
  *   whose gpu-next cannot initialise (no Vulkan, no MoltenVK) with no video.
  *   That also keeps a reused persistent mpv correct across SDR/HDR episodes.
- * - Explicit modes use libplacebo options only when the probe found
- *   `vo=gpu-next` (mpv >= 0.35). Without it, only `--hdr-compute-peak` is sent:
- *   older builds reject `--tone-mapping=bt.2446a` as a fatal option error.
+ * - Explicit modes use libplacebo options (`--vo=gpu-next`,
+ *   `--target-colorspace-hint`, `--tone-mapping=bt.2446a`) only when the probe
+ *   found `vo=gpu-next` (mpv >= 0.35); older builds reject an unknown
+ *   `--tone-mapping` value as a fatal option error.
+ * - `tone-map` and `sdr-only` produce the same output; `sdr-only` additionally
+ *   prefers SDR variants when a source is picked (see source-quality).
  * - `--gamut-mapping-mode` is left at mpv's default (perceptual since 0.36);
  *   naming a value 0.35 does not know would abort launch.
  */
@@ -124,32 +135,17 @@ export function resolveMpvHdrArgs(input: ResolveMpvHdrArgsInput): readonly strin
       : ["--hdr-compute-peak=yes"];
   }
 
-  if (mode === "tone-map") {
+  if (mode === "tone-map" || mode === "sdr-only") {
     return canGpuNext
       ? [
           "--vo=gpu-next",
           "--target-colorspace-hint=no",
+          ...SDR_TARGET_ARGS,
           "--tone-mapping=bt.2446a",
           "--hdr-compute-peak=yes",
         ]
-      : ["--hdr-compute-peak=yes"];
-  }
-
-  if (mode === "sdr-only") {
-    return canGpuNext ? ["--target-colorspace-hint=no", "--tone-mapping=bt.2446a"] : [];
+      : [...SDR_TARGET_ARGS, "--hdr-compute-peak=yes"];
   }
 
   return [];
-}
-
-/**
- * A reused persistent mpv keeps the HDR options it was launched with, and
- * `--vo` cannot change on `loadfile`. When the HDR mode changed since launch
- * (Settings mid-chain), the next file needs a fresh mpv.
- */
-export function hdrModeRequiresPlayerRestart(
-  launchedWith: HdrMode | undefined,
-  current: HdrMode | undefined,
-): boolean {
-  return (launchedWith ?? "auto") !== (current ?? "auto");
 }

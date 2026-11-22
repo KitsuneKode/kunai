@@ -201,6 +201,19 @@ describe("TUI provider definitions actions", () => {
     expect(getActiveProviderHotfixManifest(NOW_MS)).toBeNull();
     expect(expired.priorityUpdates).toHaveLength(0);
 
+    // A damaged oversized cache is refused from its size, not parsed.
+    const oversizedPath = join(dir, "oversized.json");
+    writeFileSync(oversizedPath, " ".repeat(300 * 1024));
+    const oversized = makeFakeContainer();
+    expect(
+      activateCachedProviderHotfixManifest(oversized.container, {
+        path: oversizedPath,
+        trustedPublicKeysById,
+        nowMs: NOW_MS,
+      }),
+    ).toBe("invalid");
+    expect(oversized.priorityUpdates).toHaveLength(0);
+
     // Signed by a key this install does not trust: not activated.
     const other = makeKeypair();
     const untrusted = makeFakeContainer();

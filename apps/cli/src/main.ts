@@ -856,12 +856,20 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       process.exitCode = 2;
       return;
     }
-    const [{ runHeadlessSearchJson }, { createContainer, disposeContainer }] = await Promise.all([
+    const [
+      { runHeadlessSearchJson },
+      { createContainer, disposeContainer },
+      { activateCachedProviderHotfixManifest },
+    ] = await Promise.all([
       import("./services/agent/run-headless-search"),
       import("@/container"),
+      import("@/app/providers/provider-definitions-actions"),
     ]);
     const container = await createContainer();
     try {
+      // Same provider state as the interactive shell: a cached mirror fix must
+      // reach headless search too, or it queries the broken bundled host.
+      activateCachedProviderHotfixManifest(container);
       const mode = args.youtube ? "youtube" : args.anime ? "anime" : "series";
       process.exitCode = await runHeadlessSearchJson({
         container,

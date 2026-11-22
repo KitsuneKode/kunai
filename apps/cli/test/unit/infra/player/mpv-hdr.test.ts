@@ -1,12 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { HDR_MODE_OPTIONS } from "@/app-shell/settings/registry/shared";
-import { CliUsageError, parseCliArgs } from "@/cli-args";
+import { buildCliHelpText, CliUsageError, parseCliArgs } from "@/cli-args";
 import {
   clearMpvHdrCapabilityCache,
   formatDynamicRangeBadge,
   parseMpvVoHelpSupportsGpuNext,
-  hdrModeRequiresPlayerRestart,
   probeMpvHdrCapability,
   resolveMpvHdrArgs,
 } from "@/infra/player/mpv-hdr";
@@ -92,37 +91,50 @@ describe("mpv HDR capability probing & argument resolution", () => {
       "--target-colorspace-hint=yes",
       "--hdr-compute-peak=yes",
     ]);
-    expect(resolveMpvHdrArgs({ hdrMode: "tone-map", supportsGpuNext: true })).toEqual([
-      "--vo=gpu-next",
-      "--target-colorspace-hint=no",
-      "--tone-mapping=bt.2446a",
+    expect(resolveMpvHdrArgs({ hdrMode: "passthrough", supportsGpuNext: false })).toEqual([
       "--hdr-compute-peak=yes",
     ]);
-    expect(resolveMpvHdrArgs({ hdrMode: "sdr-only", supportsGpuNext: true })).toEqual([
-      "--target-colorspace-hint=no",
-      "--tone-mapping=bt.2446a",
-    ]);
+    for (const hdrMode of ["tone-map", "sdr-only"] as const) {
+      expect(resolveMpvHdrArgs({ hdrMode, supportsGpuNext: true })).toEqual([
+        "--vo=gpu-next",
+        "--target-colorspace-hint=no",
+        "--target-prim=bt.709",
+        "--target-trc=bt.1886",
+        "--tone-mapping=bt.2446a",
+        "--hdr-compute-peak=yes",
+      ]);
+    }
   });
 
-  test("legacy mpv (no gpu-next) never gets a tone-mapping value or gamut mode it may reject", () => {
-    // An unknown --tone-mapping value is a fatal option error on pre-0.34 mpv, and
-    // --gamut-mapping-mode=perceptual is unknown to 0.35 — either aborts launch.
-    for (const hdrMode of ["auto", "passthrough", "tone-map", "sdr-only"] as const) {
+  test("SDR modes pin an SDR target so an mpv.conf target-trc=pq cannot keep HDR output", () => {
+    // CLI options override mpv.conf, so an explicit SDR target beats a
+    // configured PQ target on both gpu-next and legacy mpv.
+    for (const hdrMode of ["tone-map", "sdr-only"] as const) {
       for (const supportsGpuNext of [true, false]) {
         const args = resolveMpvHdrArgs({ hdrMode, supportsGpuNext });
-        expect(args.some((arg) => arg.startsWith("--gamut-mapping-mode"))).toBe(false);
-        if (!supportsGpuNext) {
-          expect(args.filter((arg) => arg !== "--hdr-compute-peak=yes")).toEqual([]);
-        }
+        expect(args).toContain("--target-trc=bt.1886");
+        expect(args).toContain("--target-prim=bt.709");
       }
     }
   });
 
-  test("a mode change since launch forces a fresh persistent mpv; same mode reuses it", () => {
-    expect(hdrModeRequiresPlayerRestart("auto", "auto")).toBe(false);
-    expect(hdrModeRequiresPlayerRestart(undefined, "auto")).toBe(false);
-    expect(hdrModeRequiresPlayerRestart("auto", "passthrough")).toBe(true);
-    expect(hdrModeRequiresPlayerRestart("tone-map", "sdr-only")).toBe(true);
+  test("legacy mpv (no gpu-next) gets no libplacebo-only option or value", () => {
+    // An unknown --tone-mapping value is a fatal option error on old mpv, and
+    // --gamut-mapping-mode=perceptual is unknown to 0.35 — either aborts launch.
+    const libplaceboOnly = [
+      "--vo=gpu-next",
+      "--target-colorspace-hint",
+      "--tone-mapping",
+      "--gamut-mapping-mode",
+    ];
+    for (const hdrMode of ["auto", "passthrough", "tone-map", "sdr-only"] as const) {
+      const legacy = resolveMpvHdrArgs({ hdrMode, supportsGpuNext: false });
+      for (const arg of legacy) {
+        expect(libplaceboOnly.some((prefix) => arg.startsWith(prefix))).toBe(false);
+      }
+      const modern = resolveMpvHdrArgs({ hdrMode, supportsGpuNext: true });
+      expect(modern.some((arg) => arg.startsWith("--gamut-mapping-mode"))).toBe(false);
+    }
   });
 
   test("buildMpvArgs appends HDR flags for an explicit mode and stays quiet in auto", () => {
@@ -153,6 +165,20 @@ describe("mpv HDR capability probing & argument resolution", () => {
     }
     expect(parseCliArgs([]).hdr).toBeUndefined();
     expect(() => parseCliArgs(["--hdr", "bogus"])).toThrow(CliUsageError);
+  });
+
+  test("--help lists exactly the modes config accepts", () => {
+    // The help line is plain text on purpose: the docs generator parses it from
+    // source, so it cannot interpolate HDR_MODES. This test keeps them in step.
+    const line = buildCliHelpText("0.0.0")
+      .split("\n")
+      .find((row) => row.includes("--hdr <mode>"));
+    expect(
+      line
+        ?.split("HDR mode:")[1]
+        ?.split("|")
+        .map((mode) => mode.trim()),
+    ).toEqual([...HDR_MODES]);
   });
 
   test("the settings row offers exactly the modes config accepts", () => {

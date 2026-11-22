@@ -12,6 +12,7 @@ import type {
   QuitNearEndThresholdMode,
 } from "@/services/persistence/ConfigService";
 import { resolvePresenceClientIdSource } from "@/services/presence/PresenceServiceImpl";
+import { HDR_MODES } from "@kunai/config";
 import type { StartupPriority } from "@kunai/types";
 
 import type { EnumOption } from "../types";
@@ -53,28 +54,32 @@ export const PRE_PLAY_CONFIRM_SETTINGS_OPTIONS: readonly EnumOption[] = [
   },
 ];
 
-export const HDR_MODE_OPTIONS: readonly EnumOption[] = [
-  {
-    value: "auto" satisfies HdrMode,
+// Exhaustive by type: a mode added to HDR_MODES fails to compile until it has a row.
+const HDR_MODE_META: Readonly<
+  Record<HdrMode, { readonly label: string; readonly detail: string }>
+> = {
+  auto: {
     label: "Auto",
     detail: "Leave HDR to mpv and your mpv.conf; mpv tone-maps HDR to SDR by default",
   },
-  {
-    value: "passthrough" satisfies HdrMode,
+  passthrough: {
     label: "HDR passthrough",
     detail: "HDR displays: output HDR via mpv gpu-next; needs gpu-next, else tone-maps",
   },
-  {
-    value: "tone-map" satisfies HdrMode,
+  "tone-map": {
     label: "Tone-map to SDR",
     detail: "Force SDR output with bt.2446a tone-mapping (needs gpu-next)",
   },
-  {
-    value: "sdr-only" satisfies HdrMode,
+  "sdr-only": {
     label: "Prefer SDR",
     detail: "Force SDR output; on a picked source, prefer SDR at equal quality",
   },
-];
+};
+
+export const HDR_MODE_OPTIONS: readonly EnumOption[] = HDR_MODES.map((value) => ({
+  value,
+  ...HDR_MODE_META[value],
+}));
 
 export const ANIME_TITLE_SETTINGS_OPTIONS: readonly EnumOption[] = [
   { value: "english", label: "English", detail: "Prefer localized English titles when known" },

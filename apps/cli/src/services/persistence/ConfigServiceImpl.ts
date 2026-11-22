@@ -975,12 +975,58 @@ export class ConfigServiceImpl implements ConfigService {
     this.sessionOverrides = { ...this.sessionOverrides, ...partial };
   }
 
-  async update(partial: Partial<KitsuneConfig>): Promise<void> {
+  /**
+   * `--quality`/`--audio`/`--sub` override whole language profiles for the
+   * session, and Settings edits whole profiles seeded from the effective
+   * (overridden) value. Changing one field must not persist the launch flag's
+   * other fields: a field still equal to its override (and different from the
+   * saved value) keeps the saved value on disk and stays overridden for the
+   * session. Only fields the user actually changed are persisted.
+   */
+  private separateProfileOverrides(input: Partial<KitsuneConfig>): {
+    readonly partial: Partial<KitsuneConfig>;
+    readonly keptProfileOverrides: Partial<KitsuneConfig>;
+  } {
+    const partial: Partial<KitsuneConfig> = { ...input };
+    const keptProfileOverrides: Partial<KitsuneConfig> = {};
+    for (const key of SESSION_PROFILE_KEYS) {
+      const incoming = partial[key];
+      const override = this.sessionOverrides[key];
+      if (!incoming || !override) continue;
+      const saved = this.config[key];
+      const persisted: import("./ConfigService").MediaLanguageProfile = { ...incoming };
+      let keptAny = false;
+      for (const field of PROFILE_FIELDS) {
+        if (override[field] !== saved[field] && incoming[field] === override[field]) {
+          if (saved[field] === undefined) delete persisted[field];
+          else persisted[field] = saved[field];
+          keptAny = true;
+        }
+      }
+      partial[key] = persisted;
+      if (keptAny) {
+        const effective: import("./ConfigService").MediaLanguageProfile = { ...persisted };
+        for (const field of PROFILE_FIELDS) {
+          if (override[field] !== saved[field] && incoming[field] === override[field]) {
+            const value = override[field];
+            if (value === undefined) delete effective[field];
+            else effective[field] = value;
+          }
+        }
+        keptProfileOverrides[key] = effective;
+      }
+    }
+    return { partial, keptProfileOverrides };
+  }
+
+  async update(input: Partial<KitsuneConfig>): Promise<void> {
+    const { partial, keptProfileOverrides } = this.separateProfileOverrides(input);
     // SAFETY: Object.keys of a Partial<KitsuneConfig> only yields its keys.
     for (const key of Object.keys(partial) as (keyof KitsuneConfig)[]) {
       if (key in this.sessionOverrides) delete this.sessionOverrides[key];
       this.dirtyKeys.add(key);
     }
+    Object.assign(this.sessionOverrides, keptProfileOverrides);
     this.config = {
       ...this.config,
       ...partial,
@@ -1432,6 +1478,13 @@ function normalizeAnalyticsPreference<T>(value: T): KitsuneConfig["analytics"] {
 function normalizeStartupPriority<T>(value: T): StartupPriority {
   return value === "fast" ? "fast" : value === "quality-first" ? "quality-first" : "balanced";
 }
+
+const SESSION_PROFILE_KEYS = [
+  "animeLanguageProfile",
+  "seriesLanguageProfile",
+  "movieLanguageProfile",
+] as const;
+const PROFILE_FIELDS = ["audio", "subtitle", "quality"] as const;
 
 function normalizeHdrMode<T>(value: T): KitsuneConfig["hdrMode"] {
   return isHdrMode(value) ? value : "auto";
