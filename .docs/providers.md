@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-17"
+lastReviewed: "2026-11-22"
 ---
 
 # Kunai — Provider Guide
@@ -214,6 +214,42 @@ selectable variants; a refusal on one URL does not remove healthy paths on the
 same CDN. `not-found` remains in the trace for title-level recovery, but carries
 no provider availability failure delta. Transport, timeout and server failures
 continue to report provider health evidence.
+
+### Signed provider hotfix manifest
+
+Upstream hosts and crypto constants rotate faster than binaries ship, so a
+provider can be patched at runtime by a **signed manifest** instead of a release.
+The manifest (`packages/providers/src/shared/manifest-bundle.ts`) carries, per
+provider, a `baseUrl`, `mirrors`, `deadServers`, `disabled`, and
+`cryptoOverrides`, plus optional per-lane priorities. Adapters read it through
+`packages/providers/src/shared/hotfix-runtime.ts`
+(`getEffectiveProviderMirrors`, `getProviderCryptoOverride`); bundled values are
+always the fallback.
+
+- **Trust.** Envelopes are Ed25519-signed and verified against keys from
+  `KUNAI_PROVIDER_MANIFEST_PUBKEYS`. No key and no URL are baked into the
+  binary — like the relay, the manifest source is operator-owned and the feature
+  is off until both are configured.
+- **Lifecycle.** `kunai providers update --url <https>` fetches, verifies, and
+  caches it (`--dry-run` to inspect); `providers status`, `verify`, `rollback`,
+  and `reset` are the ways back out. The previous manifest is kept as a backup
+  for rollback. An expired manifest (`expiresAt`) drops back to bundled
+  defaults on read.
+- **Background refresh.** `maybeBackgroundRefreshProviderManifest` refreshes at
+  most every six hours, only when `KUNAI_PROVIDER_MANIFEST_URL` and trusted keys
+  are both set, and fails silently offline.
+- **Priority.** `applyHotfixToProviderBootstrap` merges manifest lane priorities
+  and `disabled` flags into the user's priority at bootstrap; the CLI wiring is
+  `apps/cli/src/app/providers/provider-definitions-actions.ts`.
+- **Authoring.** `scripts/generate-hotfix-manifest.ts` builds an unsigned
+  manifest (optionally from a provider status report);
+  `scripts/sign-provider-manifest.ts sign` signs it.
+
+`kunai capabilities --json` (`apps/cli/src/services/agent/run-capabilities.ts`)
+publishes the machine-readable contract scripts and agents can rely on —
+subcommands, flags, themes, HDR modes, the live provider list, the manifest
+schema, and the headless routes — and `kunai -S <query> --json`
+(`run-headless-search.ts`) searches without starting the shell.
 
 ### Persistent provider cache (`context.cache`)
 
