@@ -9,7 +9,6 @@ import {
   moveSelectedIndex,
   resolveSelectableRowIndex,
 } from "./navigation";
-import { shouldDebouncePersist } from "./persist";
 import type { PersistTiming } from "./persist";
 import { moveProviderInOrder } from "./provider-order";
 import {
@@ -461,9 +460,4 @@ export function handleSettingsKey(
   }
 
   return { handled: false, state };
-}
-
-export function persistTimingForDef(def: SettingRowDef | null): PersistTiming {
-  if (!def) return "immediate";
-  return shouldDebouncePersist(def.kind) ? "debounced" : "immediate";
 }

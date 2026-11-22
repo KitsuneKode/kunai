@@ -246,9 +246,6 @@ function mergeInventorySources(
   };
 }
 
-/** @deprecated Use VideasyLazySourceProbeService */
-export const VidkingLazySourceProbeService = VideasyLazySourceProbeService;
-
 function dedupeById<T extends { readonly id: string }>(items: readonly T[]): T[] {
   const byId = new Map<string, T>();
   for (const item of items) {

@@ -1,6 +1,6 @@
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
-import type { SettingsInputMode, SettingsUiState } from "./types";
+import type { SettingsUiState } from "./types";
 
 export function createSettingsUiState(snapshot: KitsuneConfig): SettingsUiState {
   return {
@@ -86,10 +86,4 @@ export function exitSettingsSubmenu(state: SettingsUiState): SettingsUiState {
     selectedIndex: state.parentIndex,
     error: null,
   };
-}
-
-export function isSettingsInputActive(
-  mode: SettingsInputMode,
-): mode is Extract<SettingsInputMode, { active: true }> {
-  return mode.active;
 }

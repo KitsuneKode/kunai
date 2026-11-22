@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-23"
+lastReviewed: "2026-11-17"
 ---
 
 # Kunai — Terminal Design System (Sakura)
@@ -16,7 +16,6 @@ Visual reference prototypes live in [`.reference/design/cli/kunai-sakura.html`](
 - `packages/design/src/tokens.ts` owns shared token values (sRGB hex, tuned from an oklch source). It is also the **Ember Dusk palette** — the brand-canonical theme.
 - `packages/design/src/themes.ts` + `palettes/` own the user-selectable theme registry: every palette fills the same semantic roles, and `setDesignTheme(name)` rewrites the live `tokens` box in place so the next Ink frame repaints without a restart.
 - `apps/cli/src/app-shell/shell-theme.ts` adapts tokens into the `palette` consumed by Ink surfaces, plus `statusColor`, `contentTintColor`, `heatColor`. `palette` entries are getters — never hold a color at module scope.
-- `apps/cli/src/menu.ts` owns legacy ANSI helpers tied to interactive flows.
 
 Do not duplicate raw hex anywhere else. New code references semantic palette names.
 
@@ -131,15 +130,7 @@ cursor. Truncated cells always keep a one-column gutter before the next column.
 
 ### Failure motion
 
-The playback failure panel (`ErrorShell` in `apps/cli/src/app-shell/root-status-shells.tsx`) carries a one-shot sakura petal fall in the crimson `danger` family: petals drift down the panel for ~5.7s at one row per 380ms, then the sky empties and a single still `❀` rests in the gutter beside the recovery actions. Depths are `danger` near, `dangerDim` mid, `accentDim` far.
-
-Three rules make it safe, and they generalize to any surface that wants motion over text:
-
-- **Petals are written into a cell buffer after the text, never inserted into a string.** A petal can only overwrite padding, so it cannot lengthen a row — reflow is unrepresentable rather than merely avoided. See `rowCells`.
-- **The panel takes an explicit width derived from terminal columns.** Ink sizes a bordered box to its longest child, so a petal landing in a far column would otherwise move the right border frame to frame.
-- **The gutter column is a guaranteed lane.** Field lanes yield to text and so starve on a narrow terminal; the gutter never carries text, so the effect thins to one column instead of vanishing.
-
-Placement is a pure function of frame in [`apps/cli/src/app-shell/petal-fall.ts`](../apps/cli/src/app-shell/petal-fall.ts); panel content is a row model in [`apps/cli/src/app-shell/playback-error-rows.ts`](../apps/cli/src/app-shell/playback-error-rows.ts). The clock is `useFrameTick(active, intervalMs, stopAfter)`, which clears its own interval once the fall settles — a settled surface runs no timer. Reduced motion renders the settled frame immediately and never starts one.
+The playback failure panel (`ErrorShell` in `apps/cli/src/app-shell/root-status-shells.tsx`) uses static row content in [`apps/cli/src/app-shell/playback-error-rows.ts`](../apps/cli/src/app-shell/playback-error-rows.ts) at an explicit terminal-derived width so recovery actions stay stable and never reflow across terminal sizes.
 
 ## Portability (degradation order)
 

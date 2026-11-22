@@ -252,14 +252,6 @@ export async function fetchEpisodes(tmdbId: string, season: number): Promise<Epi
   return filterPlayableEpisodes(raw);
 }
 
-/** All TMDB episode rows for a season, including unreleased placeholders. */
-export async function fetchEpisodesUnfiltered(
-  tmdbId: string,
-  season: number,
-): Promise<EpisodeInfo[] | null> {
-  return fetchEpisodesRaw(tmdbId, season);
-}
-
 // Fetches playable season list + episodes for the target season (one season fetch).
 // Returns null fields when TMDB is unreachable.
 export async function fetchSeriesData(
@@ -297,14 +289,4 @@ function readRecord(value: unknown): Record<string, unknown> {
 
 function readString(value: unknown): string {
   return typeof value === "string" ? value : "";
-}
-
-// Format an EpisodeInfo for display in a picker.
-// Returns a consistent-width string suitable for interactive list pickers.
-export function formatEpisode(ep: EpisodeInfo): string {
-  const num = `Ep ${String(ep.number).padStart(3, " ")}`;
-  const name = ep.name.slice(0, 44).padEnd(44, " ");
-  const yearArr = (ep.airDate || "").split("-");
-  const year = (yearArr[0] || "").padEnd(4, " ");
-  return `${num}  ${name}  ${year}`;
 }

@@ -93,19 +93,3 @@ export function titleInfoFromQueueEntry(
     queuePlaybackIntent,
   };
 }
-
-export function episodeInfoFromQueueEntry(entry: QueueEntry): EpisodeInfo | undefined {
-  if (entry.mediaKind === "movie" || entry.contentType === "movie") return undefined;
-  if (
-    entry.season === undefined &&
-    entry.episode === undefined &&
-    entry.absoluteEpisode === undefined
-  ) {
-    return undefined;
-  }
-  return {
-    season: entry.season ?? 1,
-    episode: entry.episode ?? entry.absoluteEpisode ?? 1,
-    absoluteEpisode: entry.absoluteEpisode,
-  };
-}

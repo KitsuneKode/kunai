@@ -1,7 +1,4 @@
-import {
-  buildOfflineAvailabilityIndex,
-  type OfflineAvailabilityIndex,
-} from "@/domain/playback-source/offline-availability";
+import { buildOfflineAvailabilityIndex } from "@/domain/playback-source/offline-availability";
 import type { EpisodeInfo } from "@/domain/types";
 import {
   encodeProviderEpisodeIdentity,
@@ -10,23 +7,6 @@ import {
 } from "@kunai/types";
 
 import type { OfflineAssetService } from "./OfflineAssetService";
-
-/**
- * Every function here takes the id an asset is actually filed under. Resolve it
- * once at the call site with `OfflineTitleIdentity.resolveForTitle`; writes
- * resolve the same way, so a single id is enough and asking under two was only
- * ever a way to paper over the write and read paths disagreeing.
- */
-export function buildOfflineEpisodeIndex(
-  offlineAssetService: OfflineAssetService,
-  titleIds?: readonly string[],
-): OfflineAvailabilityIndex {
-  const assets =
-    titleIds && titleIds.length > 0
-      ? offlineAssetService.listByTitleIds(titleIds)
-      : offlineAssetService.listByTitleIds([]);
-  return buildOfflineAvailabilityIndex(assets);
-}
 
 export function isEpisodeDownloaded(
   offlineAssetService: OfflineAssetService,

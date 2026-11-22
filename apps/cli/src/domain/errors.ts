@@ -40,14 +40,3 @@ export function createError(
     cause: options?.cause,
   };
 }
-
-export function isRetryable(error: KitsuneError): boolean {
-  return error.retryable;
-}
-
-export function formatError(error: KitsuneError): string {
-  const extras: string[] = [];
-  if (error.service) extras.push(`service=${error.service}`);
-  if (error.provider) extras.push(`provider=${error.provider}`);
-  return [error.code, ...extras, error.message].join(" | ");
-}

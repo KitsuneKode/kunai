@@ -66,11 +66,3 @@ export function curlSupportsHttp2(environment: Partial<CurlFeatureEnvironment> =
   cachedHttp2Support ??= parseCurlHttp2Support(defaultProbeVersion());
   return cachedHttp2Support;
 }
-
-/** Test-only: drop the memoized probe. */
-export const __testing = {
-  resetHttp2Cache(): void {
-    cachedHttp2Support = null;
-  },
-  defaultProbeVersion,
-};

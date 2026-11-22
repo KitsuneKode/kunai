@@ -44,17 +44,6 @@ export async function resolveOfflineArtifactStatus(
   }
 }
 
-export async function hydrateCompletedOfflineJobs(
-  jobs: readonly DownloadJobRecord[],
-): Promise<OfflineLibraryEntry[]> {
-  return Promise.all(
-    jobs.map(async (job) => ({
-      job,
-      status: await resolveOfflineArtifactStatus(job),
-    })),
-  );
-}
-
 export function groupOfflineLibraryEntries(
   entries: readonly OfflineLibraryEntry[],
   artworkPolicy: OfflineArtworkPolicy = {},

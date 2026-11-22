@@ -149,9 +149,3 @@ export function RootContentBody({
       return renderIdleRootContent(ctx.state);
   }
 }
-
-export function mountedRootContentKindLabel(
-  session: RootContentSession,
-): RootContentSession["kind"] {
-  return session.kind;
-}

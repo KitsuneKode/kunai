@@ -18,9 +18,6 @@ export type KunaiHandoffLaunch = {
   readonly requiresConfirmation: true;
 };
 
-export const KUNAI_INSTALL_URL = "https://github.com/KitsuneKode/kunai#install";
-export const KUNAI_INSTALL_SCRIPT_URL = "https://kunai.kitsunekode.in/install.sh";
-
 export function parseKunaiHandoffUrl(value: string): KunaiHandoffLaunch | null {
   const parsed = parseKunaiShareUrl(value);
   if (!parsed) return null;

@@ -1,10 +1,7 @@
 import { chooseFromListShell, type ListShellActionContext } from "@/app-shell/pickers";
 import { queueMoreOfflineTitleEpisodes } from "@/app-shell/workflows";
 import type { Container } from "@/container";
-import {
-  parseOfflineTitleCleanupPreference,
-  type OfflineTitleCleanupPreference,
-} from "@/services/download/download-cleanup-policy";
+import type { OfflineTitleCleanupPreference } from "@/services/download/download-cleanup-policy";
 import {
   deleteDownloads,
   formatDownloadRemovalFeedback,
@@ -280,10 +277,4 @@ export async function routeOfflineLibraryGroupAction(
   }
 
   return "continue";
-}
-
-export function parseOfflineCleanupFromPolicy(
-  cleanupJson: string | undefined,
-): ReturnType<typeof parseOfflineTitleCleanupPreference> {
-  return parseOfflineTitleCleanupPreference(cleanupJson);
 }

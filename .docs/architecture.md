@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-22"
+lastReviewed: "2026-11-17"
 ---
 
 # Kunai — Runtime Architecture
@@ -63,7 +63,7 @@ The old legacy two-loop runtime has been collapsed into the `apps/cli/src/main.t
 | Playback              | `apps/cli/src/infra/player/*`, `apps/cli/src/mpv.ts`                                    | `mpv` launch, IPC, and Lua-assisted progress tracking; detached Android intent handoff                                  |
 | Persistence           | `apps/cli/src/services/persistence/*`, `packages/storage`                               | Config JSON, SQLite history/cache, tuning                                                                               |
 | Providers             | `packages/providers/src/*`, `apps/cli/src/services/providers/ProviderRegistry.ts`       | Direct HTTP provider modules + CLI registry adapter                                                                     |
-| Terminal UI           | `apps/cli/src/menu.ts`, `packages/design`                                               | ANSI helpers, design tokens, posters                                                                                    |
+| Terminal UI           | `packages/design`, `apps/cli/src/app-shell/*`                                           | Design tokens, Ink UI primitives, posters                                                                               |
 | Observability         | `apps/cli/src/logger.ts`, `apps/cli/src/services/diagnostics/*`                         | Structured debug logs and diagnostics events                                                                            |
 
 If your change is broad enough to blur these module boundaries, stop and check whether the work belongs in the v2 migration path instead.

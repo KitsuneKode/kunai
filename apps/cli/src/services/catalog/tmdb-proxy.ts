@@ -131,37 +131,6 @@ export async function fetchTmdbJsonCached(
   return task;
 }
 
-export async function fetchTmdbProxyJson(
-  path: string,
-  signal?: AbortSignal,
-  timeoutMs = DEFAULT_TIMEOUT_MS,
-): Promise<JsonValue> {
-  const normalized = normalizePath(path);
-  let lastError: unknown;
-  // Mirror chain: api.videasy.to went NXDOMAIN while db.wingsdatabase.com
-  // serves the same /3 contract — walk the live-first list so one dead host
-  // never burns the whole proxy leg.
-  for (const host of TMDB_PROXY_HOSTS) {
-    try {
-      return await fetchTmdbHostJson(host, normalized, signal, timeoutMs);
-    } catch (error) {
-      // A caller abort stops the chain; a per-request timeout still earns the
-      // next mirror its attempt.
-      if (signal?.aborted) throw error;
-      lastError = error;
-    }
-  }
-  throw lastError;
-}
-
-export async function fetchTmdbDirectJson(
-  path: string,
-  signal?: AbortSignal,
-  timeoutMs = DEFAULT_TIMEOUT_MS,
-): Promise<JsonValue> {
-  return fetchTmdbHostJson(TMDB_DIRECT_HOST, normalizePath(path), signal, timeoutMs);
-}
-
 async function fetchTmdbHostJson(
   host: TmdbHost,
   normalizedPath: string,

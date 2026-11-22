@@ -5,7 +5,6 @@ import {
   applyAnimeProviderOrder,
   applySeriesProviderOrder,
   applyYoutubeProviderOrder,
-  describeProviderOrder,
   resolveAnimeProviderOrder,
   resolveSeriesProviderOrder,
   resolveYoutubeProviderOrder,
@@ -181,8 +180,4 @@ export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
       tone: describeVideasySessionToken(ctx.config) === "missing" ? "warning" : "info",
     },
   ];
-}
-
-export function summarizeProviderOrder(config: SettingsRegistryContext["config"]): string {
-  return describeProviderOrder(resolveSeriesProviderOrder(config));
 }

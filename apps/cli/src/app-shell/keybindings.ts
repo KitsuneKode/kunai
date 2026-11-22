@@ -1056,16 +1056,6 @@ export function bindingForCommand(commandId: AppCommandId): KeyBinding | undefin
   return KEYBINDINGS.find((binding) => binding.commandId === commandId);
 }
 
-/** All bindings linked to a slash-command id. */
-export function bindingsForCommand(commandId: AppCommandId): readonly KeyBinding[] {
-  return KEYBINDINGS.filter((binding) => binding.commandId === commandId);
-}
-
-/** Slash-command id linked to a binding, when declared. */
-export function commandForBinding(bindingId: string): AppCommandId | undefined {
-  return KEYBINDINGS.find((binding) => binding.id === bindingId)?.commandId;
-}
-
 /** Live bindings in a scope that declare a command id. */
 export function commandBackedBindingsForScope(scope: KeyScope): readonly KeyBinding[] {
   return bindingsForScope(scope).filter(

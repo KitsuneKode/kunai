@@ -12,12 +12,6 @@ export {
   type YtDlpVideoInfo,
 } from "@kunai/providers/youtube";
 
-export function probeYtDlp(): { readonly available: boolean; readonly version?: string } {
-  const path = whichLive("yt-dlp");
-  if (!path) return { available: false };
-  return { available: true };
-}
-
 export type YtDlpPluginProbe = {
   /** yt-dlp answered the probe at all. */
   readonly available: boolean;

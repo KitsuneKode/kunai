@@ -7,7 +7,7 @@ import type {
   SearchSort,
   WatchFilter,
 } from "./SearchIntent";
-import { filterStateToSearchIntent, normalizeFilterState } from "./SearchIntent";
+import { normalizeFilterState } from "./SearchIntent";
 
 export type SearchIntentParseError = {
   readonly key: string;
@@ -170,18 +170,6 @@ export function parseSearchIntentText(text: string): ParsedSearchIntentText {
     errors,
     corrections,
   };
-}
-
-export function parseSearchFilterState(text: string): ParsedSearchIntentText["filterState"] {
-  return parseSearchIntentText(text).filterState;
-}
-
-export function parseSearchIntentFromText(
-  text: string,
-  context: { readonly currentMode: SearchIntentMode },
-) {
-  const parsed = parseSearchIntentText(text);
-  return filterStateToSearchIntent(parsed.filterState, context.currentMode);
 }
 
 export function describeSearchIntentFilters(input: {

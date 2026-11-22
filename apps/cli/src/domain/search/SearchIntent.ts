@@ -75,13 +75,6 @@ export function normalizeSearchIntent(input: {
   };
 }
 
-export function createEmptyFilterState(query = ""): FilterState {
-  return {
-    query: query.trim(),
-    genres: [],
-  };
-}
-
 export function normalizeFilterState(input: Partial<FilterState>): FilterState {
   const normalizedGenres = input.genres?.map((genre) => genre.trim()).filter(Boolean) ?? [];
   const normalizedFilters = normalizeFilters({
