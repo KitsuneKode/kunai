@@ -20,6 +20,24 @@ export const SettingSection = React.memo(function SettingSection({
   );
 });
 
+export const SettingSubheading = React.memo(function SettingSubheading({
+  row,
+}: {
+  readonly row: BuiltSettingsRow;
+}) {
+  if (row.def.kind !== "subheading") return null;
+  if (row.def.tone === "danger") {
+    return (
+      <Box marginTop={1}>
+        <Text color={palette.dangerText} bold>
+          {row.def.label.toUpperCase()}
+        </Text>
+      </Box>
+    );
+  }
+  return <SectionGroup label={row.def.label} marginTop={1} rule />;
+});
+
 export const SettingRowStatus = React.memo(function SettingRowStatus({
   row,
 }: {

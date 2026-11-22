@@ -21,7 +21,7 @@ Do not duplicate raw hex anywhere else. New code references semantic palette nam
 
 ## User-selectable themes
 
-Users pick a theme in **Settings › Appearance**, set `"theme"` in `config.json`, or override per run with `KUNAI_THEME`. Themes only recolor surfaces — the rules below (THE ONE RULE, semantic roles, Stats-only type hues) hold in every palette, so a theme is a palette swap, not a design fork.
+Users pick a theme in **Settings › General**, set `"theme"` in `config.json`, or override per run with `KUNAI_THEME`. Themes only recolor surfaces — the rules below (THE ONE RULE, semantic roles, Stats-only type hues) hold in every palette, so a theme is a palette swap, not a design fork.
 
 - Selection comes from `KitsuneConfig.theme` (`@kunai/config`); the registry in `@kunai/design` is the validator, unknown names fall back to `ember-dusk`.
 - Degradation is palette-aware: Ember Dusk keeps its curated 256/16 fallback table; other themes quantize to nearest xterm-256 / ANSI name so a themed accent never leaks brand rose onto a degraded terminal.

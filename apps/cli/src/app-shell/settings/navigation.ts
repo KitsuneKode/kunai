@@ -1,7 +1,7 @@
 import type { BuiltSettingsPage, BuiltSettingsRow } from "./types";
 
 function isSelectableRow(row: BuiltSettingsRow): boolean {
-  return row.def.kind !== "section" && row.def.kind !== "status";
+  return row.def.kind !== "section" && row.def.kind !== "subheading" && row.def.kind !== "status";
 }
 
 export function selectableSettingsRows(page: BuiltSettingsPage): readonly BuiltSettingsRow[] {

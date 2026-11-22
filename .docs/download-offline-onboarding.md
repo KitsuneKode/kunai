@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-27T06:55:37Z"
+lastReviewed: "2026-11-17"
 ---
 
 # Kunai — Download, Offline Library, And Onboarding
@@ -73,7 +73,7 @@ accounts, usage ping, done. Implementation is
   and written back to, its own `*LanguageProfile`. Two earlier shapes were both
   wrong: writing anime only left films and shows on original audio for a user who
   picked English and skipped YouTube entirely (#229); writing one answer to all
-  four then flattened per-lane values that `/settings` → Language lets you set
+  four then flattened per-lane values that `/settings` → General lets you set
   independently, so a rerun silently discarded them. Fields the screen does not
   ask about — `quality` — are preserved per lane. Press `a` to copy the active
   lane's audio and subtitle choices to all four lanes; changing any lane later
@@ -107,7 +107,7 @@ accounts, usage ping, done. Implementation is
   patch actually changes a field the user would miss (`RESTORABLE_SETUP_FIELDS`
   in `apps/cli/src/services/persistence/pre-setup-snapshot.ts`). Onboarding
   bookkeeping and analytics consent are deliberately not among them. The write is
-  best effort and never blocks setup; `/settings` → General → _Undo the last
+  best effort and never blocks setup; `/settings` → Privacy & System → _Undo the last
   setup run_ restores it.
 
 ## Desired Download Behavior

@@ -250,7 +250,7 @@ export function deriveNotifications(
         kind: "provider-health",
         title: `${signal.providerId} is unreachable`,
         body: signal.suggestedProviderId
-          ? `Your default provider is down. Try ${signal.suggestedProviderId} — change it in Settings → Provider order.`
+          ? `Your default provider is down. Try ${signal.suggestedProviderId} — change it in Settings → Sources.`
           : "Your default provider is down and no healthy fallback is on record. Check provider status or pick another provider in Settings.",
         createdAt: input.now,
         updatedAt: input.now,

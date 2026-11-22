@@ -18,7 +18,7 @@ test("a settings save failure is visible and recorded without enabling analytics
       width={100}
       maxRows={20}
       commandMode={false}
-      initialSectionId="section:playback"
+      initialSectionId="subheading:advanced"
       onClose={() => {}}
       onStatus={() => {}}
       onRedraw={() => {}}

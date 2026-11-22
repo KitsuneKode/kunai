@@ -220,8 +220,15 @@ export async function dispatchPaletteCommand(
   }
   if (action === "continue") return openRootHistorySelection(container, "continue", workflows);
   if (action === "history") return openRootHistorySelection(container, "history", workflows);
-  if (action === "settings" || action === "presence") {
+  if (action === "settings") {
     await workflows.openOverlay(container, { type: "settings" });
+    return "handled";
+  }
+  if (action === "presence") {
+    await workflows.openOverlay(container, {
+      type: "settings",
+      initialSectionId: "subheading:presence",
+    });
     return "handled";
   }
   if (action === "theme") {

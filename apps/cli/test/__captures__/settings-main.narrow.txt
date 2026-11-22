@@ -1,14 +1,25 @@
 # settings-main · narrow (72×45)
  Settings
  series default  ·  discover auto  ·  series vidlink  ·  anime hianime
-  General   Appearance  Discover  Providers  Provider switches › Tab / Shift+Tab
+  General   Sources  Playback & Offline  Accounts & Sync  Privacy & System
 
 
  GENERAL ──────────────────────────────────────────────────────────────
- Launch mode and how much shortcut help the shell shows
+ Startup, appearance, language, and discover preferences
+
+ STARTUP & SHELL ──────────────────────────────────────────────────────
    ▸ Default startup mode ·  Series mode
    ▸ Footer hints ·  Detailed
+   ▸ Theme ·  Ember Dusk
+   ● on    Mascot & tips
    ● on    Shortcut tips
-   ▸ Every shortcut tip ·  0 of 8 shown
-   ○ off   Usage analytics
-   ● on    Kanna the companion
+   Reset tips
+
+ LANGUAGE & SUBTITLES ─────────────────────────────────────────────────
+ Preferred audio/subtitle tracks when a provider exposes choices
+   ▸ Anime audio ·  Original
+   ▸ Anime subtitles ·  English
+   ▸ Anime quality ·  Best available
+   ▸ Series audio ·  Original
+   ▸ Series subtitles ·  None
+  ▼ ...

@@ -5,15 +5,21 @@ import { MouseTarget } from "../mouse/MouseRegions";
 import { PickerOptionRow } from "../overlay-picker-row";
 import { ClaudeTabRow } from "../primitives/ClaudeTabRow";
 import { StateBlock } from "../primitives/StateBlock";
+import { truncateLine } from "../shell-text";
 import { palette } from "../shell-theme";
-import { listSettingsSectionLabels } from "./build-page";
+import { listSettingsTabLabels } from "./build-page";
 import { buildSettingsSubmenuView } from "./build-submenu";
 import { SettingRowBoolean } from "./components/SettingRowBoolean";
 import { SettingRowEnum } from "./components/SettingRowEnum";
 import { SettingRowReorder } from "./components/SettingRowReorder";
 import { SettingRowSubmenu } from "./components/SettingRowSubmenu";
 import { SettingRowText } from "./components/SettingRowText";
-import { SettingRowAction, SettingRowStatus, SettingSection } from "./components/SettingSection";
+import {
+  SettingRowAction,
+  SettingRowStatus,
+  SettingSection,
+  SettingSubheading,
+} from "./components/SettingSection";
 import { SettingsInputBanner } from "./components/SettingsInputBanner";
 import { SettingsSearchBar } from "./components/SettingsSearchBar";
 import { selectableSettingsRows, windowStart } from "./navigation";
@@ -28,6 +34,8 @@ function renderMainRow(
   switch (row.def.kind) {
     case "section":
       return <SettingSection key={row.def.id} row={row} layout={row.def.layout} />;
+    case "subheading":
+      return <SettingSubheading key={row.def.id} row={row} />;
     case "boolean":
       return (
         <SettingRowBoolean key={row.def.id} row={row} selected={selected} rowWidth={rowWidth} />
@@ -79,8 +87,9 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   readonly pointer?: (event: SettingsPointerEvent) => void;
 }) {
   const rowWidth = Math.max(24, width - 4);
-  const sectionLabels = listSettingsSectionLabels(registryCtx);
-  const showSectionTabs = sectionLabels.length > 1 && !state.searchQuery.trim();
+  const tabHint = rowWidth >= 100 ? "Tab / Shift+Tab" : undefined;
+  const tabLabels = listSettingsTabLabels(registryCtx, rowWidth, tabHint !== undefined);
+  const showSectionTabs = tabLabels.length > 1 && !state.searchQuery.trim();
   const inputDef =
     state.inputMode.active && state.inputMode.settingId
       ? page.defById.get(state.inputMode.settingId)
@@ -167,7 +176,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             {page.title}
           </Text>
         )}
-        <Text color={palette.dim}>{page.subtitle}</Text>
+        <Text color={palette.dim}>{truncateLine(page.subtitle, rowWidth)}</Text>
         <MouseTarget
           id="settings:search"
           active={Boolean(pointer)}
@@ -205,12 +214,12 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             {page.title}
           </Text>
         )}
-        <Text color={palette.dim}>{page.subtitle}</Text>
+        <Text color={palette.dim}>{truncateLine(page.subtitle, rowWidth)}</Text>
         {showSectionTabs ? (
           <ClaudeTabRow
-            labels={sectionLabels}
+            labels={tabLabels}
             activeIndex={state.activeSectionIndex}
-            hint="Tab / Shift+Tab"
+            hint={tabHint}
             maxWidth={rowWidth}
             dense
             pointer={
@@ -234,7 +243,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
             const selected = absolute === state.selectedIndex && !state.searchFocused;
             // Status rows render their own detail, with the tone colour that
             // carries the meaning. Only sections need one added here.
-            if (row.def.kind === "section") {
+            if (row.def.kind === "section" || row.def.kind === "subheading") {
               return (
                 <Box key={row.def.id} flexDirection="column">
                   {renderMainRow(row, false, rowWidth)}

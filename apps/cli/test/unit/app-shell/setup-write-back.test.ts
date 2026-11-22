@@ -294,7 +294,7 @@ test("an unavailable tracker points at the reachable Settings sync surface", asy
   await pending;
 
   expect(config.sync.anilist.enabled).toBe(false);
-  expect(notes.some((note) => note.includes("Settings → Sync"))).toBe(true);
+  expect(notes.some((note) => note.includes("Settings → Accounts & Sync"))).toBe(true);
   expect(notes.every((note) => !note.includes("/sync-connect-anilist"))).toBe(true);
 });
 
