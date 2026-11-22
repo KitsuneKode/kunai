@@ -102,7 +102,7 @@ export function buildRssFeedXml(items: readonly FeedItem[], channel: FeedChannel
       <guid isPermaLink="true">${escapeXml(item.id)}</guid>
       <pubDate>${item.publishedAt.toUTCString()}</pubDate>
       <category>${escapeXml(item.category)}</category>
-      <description>${escapeXml(item.summary)}</description>
+      <description>${escapeXml(escapeXml(item.summary))}</description>
     </item>`,
   );
 

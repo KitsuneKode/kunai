@@ -62,15 +62,29 @@ describe("RSS and Atom feeds", () => {
       },
     );
     expect(rss).toContain("Kunai &lt;0.4&gt; &amp; Friends");
-    expect(rss).toContain("Fast &amp; safe &lt;mpv&gt;");
+    // RSS <description> is interpreted as HTML by feed readers, so plain text is HTML-escaped then XML-escaped.
+    expect(rss).toContain("<description>Fast &amp;amp; safe &amp;lt;mpv&amp;gt;</description>");
 
-    const atom = buildAtomFeedXml([], {
-      title: "Kunai",
-      description: "Empty",
-      siteUrl: docsSiteUrl,
-      selfUrl: docsCanonicalUrl("/atom.xml"),
-    });
+    const atom = buildAtomFeedXml(
+      [
+        {
+          id: "https://kunai.kitsunekode.in/releases/v0.4.0",
+          title: "Kunai <0.4> & Friends",
+          url: "https://kunai.kitsunekode.in/releases/v0.4.0",
+          summary: "Fast & safe <mpv>",
+          publishedAt: new Date("2026-11-20T00:00:00Z"),
+          category: "Release",
+        },
+      ],
+      {
+        title: "Kunai",
+        description: "Empty",
+        siteUrl: docsSiteUrl,
+        selfUrl: docsCanonicalUrl("/atom.xml"),
+      },
+    );
     expect(atom).toContain("<feed xmlns=");
+    expect(atom).toContain("<summary>Fast &amp; safe &lt;mpv&gt;</summary>");
 
     const filtered = releaseFeedItems([
       {
@@ -104,10 +118,22 @@ describe("sitemap, robots, and metadata alternates", () => {
     }
   });
 
-  test("robots points at sitemap.xml and declares host", () => {
-    const config = robots();
-    expect(config.sitemap).toBe(`${docsSiteUrl}/sitemap.xml`);
-    expect(config.host).toBe(docsSiteUrl);
+  test("robots points at sitemap.xml in production and blocks crawling on preview deployments", () => {
+    const previous = process.env.VERCEL_ENV;
+    try {
+      process.env.VERCEL_ENV = "production";
+      const prod = robots();
+      expect(prod.sitemap).toBe(`${docsSiteUrl}/sitemap.xml`);
+      expect(prod.host).toBe(docsSiteUrl);
+
+      process.env.VERCEL_ENV = "preview";
+      const preview = robots();
+      expect(preview.sitemap).toBeUndefined();
+      expect(preview.host).toBeUndefined();
+    } finally {
+      if (previous === undefined) delete process.env.VERCEL_ENV;
+      else process.env.VERCEL_ENV = previous;
+    }
   });
 
   test("buildPageMetadata advertises RSS, Atom, and optional Markdown alternates together", () => {
