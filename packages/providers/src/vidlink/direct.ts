@@ -28,6 +28,7 @@ import { requireEffectiveProviderHost, getProviderCryptoOverride } from "../shar
 import { readJsonObjectBody } from "../shared/json-body";
 import { isSafeManifestHttpsUrl } from "../shared/manifest-bundle";
 import { sleepAbortable } from "../shared/timeout-signal";
+import { trimTrailingSlashes } from "../shared/trim-trailing-slashes";
 import { vidlinkManifest, VIDLINK_PROVIDER_ID } from "./manifest";
 
 export { VIDLINK_PROVIDER_ID };
@@ -51,7 +52,7 @@ const VIDLINK_ORIGIN = "https://vidlink.pro";
 
 export function effectiveVidlinkApiBase(): string {
   const host = requireEffectiveProviderHost(VIDLINK_PROVIDER_ID, [VIDLINK_API_BASE]);
-  const trimmed = host.replace(/\/+$/, "");
+  const trimmed = trimTrailingSlashes(host);
   if (trimmed.includes("/api/")) return trimmed;
   if (trimmed.endsWith("/api")) return `${trimmed}/b`;
   return `${trimmed}/api/b`;
@@ -71,7 +72,7 @@ export function effectiveVidlinkReferer(): string {
 
 export function effectiveVidlinkEncDecBase(): string {
   const override = getProviderCryptoOverride(VIDLINK_PROVIDER_ID, "encDecBase", ENC_DEC_BASE);
-  return isSafeManifestHttpsUrl(override) ? override.replace(/\/+$/, "") : ENC_DEC_BASE;
+  return isSafeManifestHttpsUrl(override) ? trimTrailingSlashes(override) : ENC_DEC_BASE;
 }
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36";

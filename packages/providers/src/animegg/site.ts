@@ -10,11 +10,12 @@
  */
 import { requireEffectiveProviderHost } from "../shared/hotfix-runtime";
 import { decodeMarkupEntities, findTagEnd, indexOfTagName, stripTags } from "../shared/markup-text";
+import { trimTrailingSlashes } from "../shared/trim-trailing-slashes";
 
 export const ANIMEGG_BASE_URL = "https://www.animegg.org";
 
 export function effectiveAnimeggBaseUrl(): string {
-  return requireEffectiveProviderHost("animegg", [ANIMEGG_BASE_URL]).replace(/\/+$/, "");
+  return trimTrailingSlashes(requireEffectiveProviderHost("animegg", [ANIMEGG_BASE_URL]));
 }
 
 export type AnimeggSearchResult = {

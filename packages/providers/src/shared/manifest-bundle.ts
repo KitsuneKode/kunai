@@ -8,6 +8,7 @@ import {
   type JsonValue,
   type LooseJsonValue,
 } from "./json-value";
+import { trimTrailingSlashes } from "./trim-trailing-slashes";
 
 export type ProviderHotfixEntry = {
   readonly baseUrl?: string;
@@ -324,10 +325,10 @@ export function resolveProviderHotfixEntry(
 export function normalizeMirrorUrl(value: string): string {
   try {
     const parsed = new URL(value);
-    const trimmedPath = parsed.pathname.replace(/\/+$/, "");
+    const trimmedPath = trimTrailingSlashes(parsed.pathname);
     return `${parsed.origin.toLowerCase()}${trimmedPath}${parsed.search}`;
   } catch {
-    return value.trim().replace(/\/+$/, "").toLowerCase();
+    return trimTrailingSlashes(value.trim()).toLowerCase();
   }
 }
 

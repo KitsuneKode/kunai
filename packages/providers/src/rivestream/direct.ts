@@ -64,6 +64,7 @@ import {
 import { selectReadyStream } from "../shared/startup-selection";
 import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { createTimeoutSignal } from "../shared/timeout-signal";
+import { trimTrailingSlashes } from "../shared/trim-trailing-slashes";
 import { rivestreamManifest, RIVESTREAM_PROVIDER_ID } from "./manifest";
 
 export { RIVESTREAM_PROVIDER_ID };
@@ -75,9 +76,8 @@ export const RIVESTREAM_REFERER = "https://www.rivestream.app/";
 export const RIVESTREAM_SCRAPER_BASE = "https://scrapper.rivestream.app";
 
 export function effectiveRivestreamScraperBase(): string {
-  return requireEffectiveProviderHost(RIVESTREAM_PROVIDER_ID, [RIVESTREAM_SCRAPER_BASE]).replace(
-    /\/+$/,
-    "",
+  return trimTrailingSlashes(
+    requireEffectiveProviderHost(RIVESTREAM_PROVIDER_ID, [RIVESTREAM_SCRAPER_BASE]),
   );
 }
 

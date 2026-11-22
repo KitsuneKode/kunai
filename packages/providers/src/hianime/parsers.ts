@@ -8,12 +8,13 @@
 import { requireEffectiveProviderHost } from "../shared/hotfix-runtime";
 import { decodeMarkupEntities, markupToPlainText } from "../shared/markup-text";
 import { chooseProviderSearchMatch } from "../shared/provider-title-match";
+import { trimTrailingSlashes } from "../shared/trim-trailing-slashes";
 
 export const HIANIME_BASE = "https://hianime.at";
 export const HIANIME_REFERER = "https://hianime.at/";
 
 export function effectiveHianimeBase(): string {
-  return requireEffectiveProviderHost("hianime", [HIANIME_BASE]).replace(/\/+$/, "");
+  return trimTrailingSlashes(requireEffectiveProviderHost("hianime", [HIANIME_BASE]));
 }
 
 export function effectiveHianimeReferer(): string {

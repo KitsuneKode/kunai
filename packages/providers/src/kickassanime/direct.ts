@@ -43,6 +43,7 @@ import {
 } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
 import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
+import { trimTrailingSlashes } from "../shared/trim-trailing-slashes";
 import { kickassanimeManifest, KICKASSANIME_PROVIDER_ID } from "./manifest";
 import {
   kaaEpisodeNumbers,
@@ -75,7 +76,7 @@ let lastHotfixSignature = "";
 
 function effectiveKaaMirrors(): readonly string[] {
   return getEffectiveProviderMirrors(KICKASSANIME_PROVIDER_ID, [PRIMARY_BASE]).map((u) =>
-    u.replace(/\/+$/, ""),
+    trimTrailingSlashes(u),
   );
 }
 

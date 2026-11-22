@@ -54,6 +54,7 @@ import {
 } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
 import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
+import { trimTrailingSlashes } from "../shared/trim-trailing-slashes";
 import { movyManifest, MOVY_PROVIDER_ID } from "./manifest";
 import { decryptMovyPayload, MovyDecryptError } from "./streamcrypto";
 
@@ -71,7 +72,7 @@ export const MOVY_REFERER = "https://www.movy.sx/";
 const MOVY_ORIGIN = "https://www.movy.sx";
 
 export function effectiveMovyApiBase(): string {
-  return requireEffectiveProviderHost(MOVY_PROVIDER_ID, [MOVY_API_BASE]).replace(/\/+$/, "");
+  return trimTrailingSlashes(requireEffectiveProviderHost(MOVY_PROVIDER_ID, [MOVY_API_BASE]));
 }
 
 const USER_AGENT =

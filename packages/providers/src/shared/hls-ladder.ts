@@ -12,6 +12,7 @@ import {
   readBoundedTextBody,
 } from "./stream-reachability";
 import { normalizeIsoLanguageCode } from "./subtitle-helpers";
+import { trimTrailingSlashes } from "./trim-trailing-slashes";
 
 export type HlsLadderVariant = {
   readonly url: string;
@@ -255,7 +256,7 @@ export function looksLikeHlsMasterUrl(url: string): boolean {
   if (!isHlsPlaylistUrl(url) && !/\.m3u8(?:[?#]|$)/i.test(url)) return false;
   try {
     const path = new URL(url).pathname.toLowerCase();
-    const leaf = path.replace(/\/+$/, "").split("/").pop() ?? "";
+    const leaf = trimTrailingSlashes(path).split("/").pop() ?? "";
     return leaf === "master.m3u8" || leaf.includes("master") || leaf === "index.m3u8";
   } catch {
     return /\bmaster\.m3u8\b/i.test(url);
