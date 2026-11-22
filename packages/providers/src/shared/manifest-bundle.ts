@@ -8,7 +8,7 @@ import {
   type JsonValue,
   type LooseJsonValue,
 } from "./json-value";
-import { trimTrailingSlashes } from "./trim-trailing-slashes";
+import { trimTrailingDots, trimTrailingSlashes } from "./trim-trailing-slashes";
 
 export type ProviderHotfixEntry = {
   readonly baseUrl?: string;
@@ -75,10 +75,7 @@ function isPrivateIpv4Octets(a: number, b: number): boolean {
 function isPrivateOrLoopbackHost(rawHost: string): boolean {
   // A trailing dot is the same name in DNS (`localhost.` resolves to loopback),
   // so strip it before every comparison below.
-  const host = rawHost
-    .toLowerCase()
-    .replace(/^\[|\]$/g, "")
-    .replace(/\.+$/, "");
+  const host = trimTrailingDots(rawHost.toLowerCase().replace(/^\[|\]$/g, ""));
   if (host === "localhost" || host.endsWith(".localhost")) {
     return true;
   }
