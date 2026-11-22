@@ -2376,6 +2376,18 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             stateManager.dispatch({ type: "SET_STREAM", stream: null });
             return { status: "success", value: "back_to_results" };
           }
+          if (container.player.capabilities.observation === "managed") {
+            // Fire-and-forget: a capability gap is advice, never a startup gate.
+            const noticeStream = stream;
+            void import("./hdr-capability-notice")
+              .then(({ resolveHdrCapabilityNotice }) =>
+                resolveHdrCapabilityNotice(noticeStream, config.hdrMode),
+              )
+              .then((note) => {
+                if (note) this.updatePlaybackFeedback(context, { note });
+              })
+              .catch(() => undefined);
+          }
           const providerHandoff =
             sourceAuthority.kind === "provider"
               ? resolvePlaybackProviderHandoff({

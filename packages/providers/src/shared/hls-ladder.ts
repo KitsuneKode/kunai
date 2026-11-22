@@ -264,11 +264,15 @@ export function looksLikeHlsMasterUrl(url: string): boolean {
 
 /**
  * Classify `#EXT-X-STREAM-INF` dynamic range per RFC 8216 bis (`VIDEO-RANGE`,
- * `CODECS` Dolby Vision profiles `dvh1`/`dvhe`, or explicit `NAME` tokens).
+ * `CODECS` Dolby Vision sample entries `dvh1`/`dvhe`/`dav1`/`dva1`/`dvav`, or
+ * explicit `NAME` tokens).
  */
 export function detectHlsVariantDynamicRange(streamInfLine: string): VideoDynamicRange | undefined {
   const codecs = hlsAttribute(streamInfLine, "CODECS");
-  if (codecs && /\b(?:dvh1|dvhe)\./i.test(codecs)) return "dolby-vision";
+  // Dolby Vision sample entries: HEVC (dvh1/dvhe), AV1 (dav1), AVC (dva1/dvav).
+  // A DV layer signalled only in SUPPLEMENTAL-CODECS rides an HDR10/HLG base
+  // layer that plays correctly without DV support, so VIDEO-RANGE decides there.
+  if (codecs && /\b(?:dvh1|dvhe|dav1|dva1|dvav)\./i.test(codecs)) return "dolby-vision";
   const videoRange = hlsAttribute(streamInfLine, "VIDEO-RANGE")?.toUpperCase();
   if (videoRange === "PQ") return "hdr10";
   if (videoRange === "HLG") return "hlg";

@@ -210,7 +210,8 @@ export function detectDynamicRangeFromLabel(
 ): import("@kunai/types").VideoDynamicRange | undefined {
   const raw = value?.trim();
   if (!raw) return undefined;
-  if (/\b(?:dolby[\s._-]*vision|dovi|dv|dvh1|dvhe)\b/i.test(raw)) return "dolby-vision";
+  if (/\b(?:dolby[\s._-]*vision|dovi|dv|dvh1|dvhe|dav1|dva1|dvav)\b/i.test(raw))
+    return "dolby-vision";
   if (/\bhlg\b/i.test(raw)) return "hlg";
   if (/\b(?:hdr10\+?|hdr|pq|bt\.?2020|10[\s._-]*bit[\s._-]*hdr)\b/i.test(raw)) return "hdr10";
   if (/\bsdr\b/i.test(raw)) return "sdr";

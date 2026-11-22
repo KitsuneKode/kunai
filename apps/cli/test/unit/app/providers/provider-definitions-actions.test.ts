@@ -227,6 +227,52 @@ describe("TUI provider definitions actions", () => {
     expect(getActiveProviderHotfixManifest(NOW_MS)).toBeNull();
   });
 
+  test("the registry drops manifest disables when the manifest expires mid-session", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kunai-tui-defs-"));
+    tempDirs.push(dir);
+    const cachePath = join(dir, "providers-manifest.json");
+    const { publicPem, privatePem } = makeKeypair();
+    writeFileSync(
+      cachePath,
+      JSON.stringify(signProviderManifest(makeManifest(9), privatePem, "key-2026")),
+    );
+    const { container, priorityUpdates } = makeFakeContainer();
+    let clock = NOW_MS;
+    const armed: Array<{ readonly task: () => void; readonly delayMs: number }> = [];
+
+    expect(
+      activateCachedProviderHotfixManifest(container, {
+        path: cachePath,
+        trustedPublicKeysById: { "key-2026": publicPem },
+        nowMs: NOW_MS,
+        clock: () => clock,
+        schedule: (task, delayMs) => {
+          armed.push({ task, delayMs });
+          return () => undefined;
+        },
+      }),
+    ).toBe("active");
+    expect(priorityUpdates.at(-1)?.disabledProviderIds).toContain("vidlink");
+    // expiresAt (2026-12-20) is 28 days out, past setTimeout's ~24.8-day
+    // ceiling: the first timer is clamped and re-arms for the remainder.
+    const expiresAtMs = Date.parse("2026-12-20T00:00:00.000Z");
+    expect(armed).toHaveLength(1);
+    expect(armed[0]?.delayMs).toBe(2_147_483_647);
+
+    clock = NOW_MS + 2_147_483_647;
+    armed[0]?.task();
+    expect(priorityUpdates.at(-1)?.disabledProviderIds).toContain("vidlink");
+    expect(armed).toHaveLength(2);
+    expect(armed[1]?.delayMs).toBe(expiresAtMs - clock + 1_000);
+
+    clock = expiresAtMs + 1_000;
+    armed[1]?.task();
+    expect(getActiveProviderHotfixManifest(clock)).toBeNull();
+    expect(priorityUpdates.at(-1)?.disabledProviderIds).not.toContain("vidlink");
+    // Nothing left to expire, so nothing re-arms.
+    expect(armed).toHaveLength(2);
+  });
+
   test("refuses remote fetches when offline mode is enabled", async () => {
     const { container } = makeFakeContainer({ offlineMode: true });
     const msg = await updateProviderDefinitionsFromShell(container, {

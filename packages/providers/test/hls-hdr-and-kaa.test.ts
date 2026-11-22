@@ -52,6 +52,33 @@ describe("HLS HDR / Dolby Vision detection and master max-height parsing", () =>
     expect(detectHlsMasterDynamicRange(master)).toBe("hdr10");
   });
 
+  test("parser edge cases: AV1/AVC Dolby Vision, supplemental codecs, casing, quoting", () => {
+    const inf = (attrs: string) => `#EXT-X-STREAM-INF:BANDWIDTH=9000000,${attrs}`;
+    expect(detectHlsVariantDynamicRange(inf('CODECS="dav1.10.09,opus"'))).toBe("dolby-vision");
+    expect(detectHlsVariantDynamicRange(inf('CODECS="dva1.09.05,mp4a.40.2"'))).toBe("dolby-vision");
+    // Profile 8.1 signalled only as a supplemental codec plays as its HDR10 base.
+    expect(
+      detectHlsVariantDynamicRange(
+        inf('CODECS="hvc1.2.4.L153.B0",SUPPLEMENTAL-CODECS="dvh1.08.06/db1p",VIDEO-RANGE=PQ'),
+      ),
+    ).toBe("hdr10");
+    expect(detectHlsVariantDynamicRange(inf("video-range=hlg"))).toBe("hlg");
+    expect(detectHlsVariantDynamicRange(inf("CODECS=dvh1.05.06"))).toBe("dolby-vision");
+    expect(detectHlsVariantDynamicRange(inf("RESOLUTION=1920x1080"))).toBeUndefined();
+
+    // I-frame playlists are not variants; a variant without RESOLUTION adds no height.
+    const master = [
+      "#EXTM3U",
+      '#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=200000,RESOLUTION=3840x2160,VIDEO-RANGE=PQ,URI="iframe.m3u8"',
+      "#EXT-X-STREAM-INF:BANDWIDTH=4000000,RESOLUTION=1920x1080,VIDEO-RANGE=SDR",
+      "1080.m3u8",
+      "#EXT-X-STREAM-INF:BANDWIDTH=6000000,VIDEO-RANGE=SDR",
+      "unknown.m3u8",
+    ].join("\n");
+    expect(parseHlsMasterMaxHeight(master)).toBe(1080);
+    expect(detectHlsMasterDynamicRange(master)).toBe("sdr");
+  });
+
   test("detectDynamicRangeFromLabel classifies release/quality tokens cleanly", () => {
     expect(detectDynamicRangeFromLabel("2160p Dolby Vision")).toBe("dolby-vision");
     expect(detectDynamicRangeFromLabel("4K DV")).toBe("dolby-vision");

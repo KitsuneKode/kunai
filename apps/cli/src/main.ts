@@ -1382,29 +1382,17 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
               {
                 id: "provider-manifest-refresh",
                 run: async () => {
-                  const {
-                    applyHotfixToProviderBootstrap,
-                    groupProvidersByLane,
-                    maybeBackgroundRefreshProviderManifest,
-                  } = await import("./services/providers/provider-hotfix-manifest");
+                  const { groupProvidersByLane, maybeBackgroundRefreshProviderManifest } =
+                    await import("./services/providers/provider-hotfix-manifest");
                   const outcome = await maybeBackgroundRefreshProviderManifest({
                     knownProvidersByLane: groupProvidersByLane(container.engine.modules),
                   });
                   if (outcome === "updated") {
                     const { getActiveProviderHotfixManifest } = await import("@kunai/providers");
-                    const { createProviderPrioritySnapshot } =
-                      await import("./services/providers/provider-priority");
-                    const raw = container.config.getRaw();
+                    const { reloadProviderRegistryPriority } =
+                      await import("@/app/providers/provider-definitions-actions");
                     const activeManifest = getActiveProviderHotfixManifest();
-                    const effective = applyHotfixToProviderBootstrap(
-                      createProviderPrioritySnapshot(raw),
-                      raw.disabledProviders,
-                      activeManifest,
-                    );
-                    container.providerRegistry.setPriority({
-                      ...effective.priority,
-                      disabledProviderIds: effective.disabledProviderIds,
-                    });
+                    reloadProviderRegistryPriority(container);
                     if (activeManifest) {
                       container.notificationService.recordSignals([
                         {

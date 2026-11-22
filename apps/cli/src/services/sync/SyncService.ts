@@ -91,6 +91,13 @@ export interface SyncServiceDeps {
   readonly outbox: SyncOutboxRepository;
   readonly config: SyncConfigPort;
   readonly diagnostics?: Pick<DiagnosticsService, "record">;
+  /**
+   * User offline intent (saved setting or `--offline`). While true nothing is
+   * delivered and nothing is claimed: queued rows wait, and leaving offline mode
+   * calls `deliverSoon()`. Without this, finishing a downloaded episode offline
+   * still sent watch progress to AniList/TMDB.
+   */
+  readonly isOfflineIntent?: () => boolean;
   /** Injectable so operation-budget continuations can be advanced without real timers in tests. */
   readonly scheduleContinuation?: (task: () => void) => void;
   /** Injectable only so due-time and shutdown behavior are deterministic in tests. */
@@ -268,10 +275,12 @@ export class SyncService {
   private accepting = true;
   private lastPushFailed = false;
 
+  private readonly isOfflineIntent: () => boolean;
   constructor(deps: SyncServiceDeps) {
     for (const adapter of deps.adapters) this.adaptersById.set(adapter.id, adapter);
     this.outbox = deps.outbox;
     this.config = deps.config;
+    this.isOfflineIntent = deps.isOfflineIntent ?? (() => false);
     this.diagnostics = deps.diagnostics;
     this.now = deps.now ?? (() => new Date());
     this.maxOperationsPerPass = clampDrainLimit(deps.maxOperationsPerPass, DRAIN_MAX_OPERATIONS);
@@ -583,6 +592,7 @@ export class SyncService {
   private async drainOnce(limit: number, options?: SyncMutationOptions): Promise<SyncPushSummary> {
     // Checked before claiming, not per row: a paused queue should not churn
     // leases it has no intention of using.
+    if (this.isOfflineIntent()) return emptySummary(this.outbox.counts().pending);
     const pause = resolvePauseState((await this.config.read()).sync.pausedUntil);
     if (pause.paused) {
       this.scheduleRetryWake(pause.until.getTime());

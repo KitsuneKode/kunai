@@ -249,8 +249,9 @@ always the fallback.
   and playback admission and fallback order (`createOrderedModulesGetter` in
   `apps/cli/src/container/bootstrap-providers.ts`). The playback side reads the
   manifest on every resolve through the expiry-aware getter, so an expired
-  manifest stops excluding providers immediately; the registry copy refreshes on
-  the next settings change or manifest action.
+  manifest stops excluding providers immediately. The registry holds a copy, so
+  `reloadProviderRegistryPriority` arms one unref'd timer for `expiresAt`
+  (clamped to the `setTimeout` ceiling and re-armed) that restores it.
 - **Authoring.** `scripts/generate-hotfix-manifest.ts` builds an unsigned
   manifest (optionally from a provider status report);
   `scripts/sign-provider-manifest.ts sign` signs it.
