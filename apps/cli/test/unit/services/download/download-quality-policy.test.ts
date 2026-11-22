@@ -24,9 +24,9 @@ describe("download-quality-policy", () => {
     expect(streamMeetsDownloadQualityFloor({ qualityRank: 1080 }, "720p")).toBe(true);
   });
 
-  test("ytDlpFormatSelectorForQuality prefers DASH merge for height caps", () => {
+  test("ytDlpFormatSelectorForQuality prefers DASH merge for short-side caps", () => {
     expect(ytDlpFormatSelectorForQuality("1080p")).toBe(
-      "bv*[height<=?1080]+ba/bv*[height<=?1080]/bv*+ba/b/ba",
+      "(bv*[height<=1080][aspect_ratio>=1]/bv*[width<=1080][aspect_ratio<1]/bv*[height<=?1080])+ba/(bv*[height<=1080][aspect_ratio>=1]/bv*[width<=1080][aspect_ratio<1]/bv*[height<=?1080])/bv*+ba/b/ba",
     );
     expect(ytDlpFormatSelectorForQuality("best")).toBeUndefined();
   });

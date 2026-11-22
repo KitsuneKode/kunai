@@ -67,7 +67,12 @@ export function streamRequestToResolveInput(
       request.favoriteSourceNames && request.favoriteSourceNames.length > 0
         ? request.favoriteSourceNames
         : undefined,
-    preferredAudioLanguage: animeAudioIntent?.preferredAudioLanguage,
+    preferredAudioLanguage:
+      adapted.mediaKind === "anime"
+        ? animeAudioIntent?.preferredAudioLanguage
+        : adapted.mediaKind === "video"
+          ? request.audioPreference?.trim() || undefined
+          : undefined,
     preferredSubtitleLanguage: request.subtitlePreference,
     preferredPresentation: animeAudioIntent?.presentation ?? "raw",
     preferredSubtitleDelivery: adapted.mediaKind === "anime" ? "hardcoded" : "external",

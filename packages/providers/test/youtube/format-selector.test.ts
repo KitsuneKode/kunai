@@ -12,12 +12,12 @@ describe("buildYtdlFormatSelector", () => {
     expect(buildYtdlFormatSelector("best")).toBe("bv*+ba/b/ba");
   });
 
-  test("height caps prefer bestvideo+bestaudio, not muxed best[height]", () => {
+  test("height caps prefer bestvideo+bestaudio with short-side portrait support", () => {
     expect(buildYtdlFormatSelector("1080p")).toBe(
-      "bv*[height<=?1080]+ba/bv*[height<=?1080]/bv*+ba/b/ba",
+      "(bv*[height<=1080][aspect_ratio>=1]/bv*[width<=1080][aspect_ratio<1]/bv*[height<=?1080])+ba/(bv*[height<=1080][aspect_ratio>=1]/bv*[width<=1080][aspect_ratio<1]/bv*[height<=?1080])/bv*+ba/b/ba",
     );
     expect(buildYtdlFormatSelector("2160p")).toBe(
-      "bv*[height<=?2160]+ba/bv*[height<=?2160]/bv*+ba/b/ba",
+      "(bv*[height<=2160][aspect_ratio>=1]/bv*[width<=2160][aspect_ratio<1]/bv*[height<=?2160])+ba/(bv*[height<=2160][aspect_ratio>=1]/bv*[width<=2160][aspect_ratio<1]/bv*[height<=?2160])/bv*+ba/b/ba",
     );
   });
 });

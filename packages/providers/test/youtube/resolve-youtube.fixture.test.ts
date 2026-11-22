@@ -223,3 +223,66 @@ ytdlpTest(
     expect(result.sources?.[1]?.label).toBe("YouTube · fallback connection 1");
   },
 );
+
+ytdlpTest(
+  "preferredAudioLanguage flows into ytdlFormat and fallback lanes drop HLS-only pins",
+  async () => {
+    const metadata = normalizeYtDlpVideoInfo(
+      {
+        id: FIXTURE_VIDEO_ID,
+        title: "Multi-audio HDR sample",
+        formats: [
+          {
+            format_id: "636",
+            width: 1920,
+            height: 1080,
+            fps: 60,
+            tbr: 7423,
+            dynamic_range: "HDR10",
+            protocol: "m3u8_native",
+            vcodec: "vp09.02.41.10",
+            acodec: "none",
+          },
+          {
+            format_id: "699",
+            width: 1920,
+            height: 1080,
+            fps: 60,
+            tbr: 4401,
+            dynamic_range: "HDR10",
+            protocol: "https",
+            vcodec: "av01.0.09M.10",
+            acodec: "none",
+          },
+        ],
+      },
+      FIXTURE_VIDEO_ID,
+    );
+    configureYoutubeProvider({
+      extractorArgs: "youtube:player_client=visionos,web",
+      metadataCache: { get: () => metadata, set: () => {} },
+    });
+    const resolve = youtubeProviderModule.resolve;
+    if (!resolve) throw new Error("YouTube provider resolve adapter is not configured");
+    const result = await resolve(
+      { ...buildResolveInput(), preferredAudioLanguage: "ja" },
+      TEST_CONTEXT,
+    );
+    const primary = result.streams.find((stream) => stream.id === result.selectedStreamId);
+    expect(primary?.metadata?.formatId).toBe("699");
+    expect(primary?.metadata?.ytdlFormat).toBe("699+(ba[language^=ja]/ba)");
+
+    // On fallback lane (`web`), an HLS-only (`m3u8_native`) format from `visionos`
+    // must drop its exact pin back to a resolution ceiling selector so failover works.
+    const primaryHls = result.streams.find(
+      (stream) =>
+        stream.sourceId === "source:youtube:visionos" && stream.metadata?.formatId === "636",
+    );
+    const fallbackHls = result.streams.find(
+      (stream) => stream.sourceId === "source:youtube:web" && stream.metadata?.formatId === "636",
+    );
+    expect(primaryHls?.metadata?.ytdlFormat).toBe("636+(ba[language^=ja]/ba)");
+    expect(String(fallbackHls?.metadata?.ytdlFormat)).toContain("bv*[height<=1080]");
+    expect(String(fallbackHls?.metadata?.ytdlFormat)).toContain("(ba[language^=ja]/ba)");
+  },
+);

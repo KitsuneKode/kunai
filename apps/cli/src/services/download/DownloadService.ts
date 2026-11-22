@@ -1590,7 +1590,7 @@ export class DownloadService {
       (stream) => stream.id === resolved.stream.providerResolveResult?.selectedStreamId,
     );
     const streamMeta = selectedStream?.metadata as
-      | { readonly isLive?: boolean; readonly liveStatus?: string }
+      | { readonly isLive?: boolean; readonly liveStatus?: string; readonly ytdlFormat?: string }
       | undefined;
     if (streamMeta?.isLive === true || streamMeta?.liveStatus === "live") {
       throw new Error("Live YouTube streams cannot be downloaded yet");
@@ -1677,6 +1677,7 @@ export class DownloadService {
     }
     if (isYoutubeJob) {
       const youtubeConfig = getYoutubeProviderConfig();
+      const audioLanguage = this.deps.config.youtubeLanguageProfile.audio;
       const profile = buildYoutubeYtdlProfile({
         cookiesFromBrowser:
           youtubeConfig.cookiesFromBrowser ?? this.deps.config.youtubeMetadata.cookiesFromBrowser,
@@ -1688,12 +1689,16 @@ export class DownloadService {
           youtubeConfig.sponsorblockRemove ?? this.deps.config.youtubeMetadata.sponsorblockRemove,
         forDownload: true,
         qualityLabel: job.selectedQualityLabel,
+        audioLanguage,
         subtitleLanguage:
           job.subLang?.trim() || this.deps.config.youtubeLanguageProfile.subtitle || "en",
       });
       args.push(...profile.cliArgs);
+      const selectedYtdlFormat = streamMeta?.ytdlFormat?.trim() || undefined;
       const formatSelector =
-        ytDlpFormatSelectorForQuality(job.selectedQualityLabel) ?? profile.formatSelector;
+        selectedYtdlFormat ??
+        ytDlpFormatSelectorForQuality(job.selectedQualityLabel, audioLanguage) ??
+        profile.formatSelector;
       if (formatSelector) {
         args.push("-f", formatSelector);
       }

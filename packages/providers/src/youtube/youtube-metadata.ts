@@ -1,11 +1,14 @@
-// Bumped for format-level quality identity; older height-only cache rows must refetch.
-export const YOUTUBE_METADATA_SCHEMA_VERSION = 4 as const;
+// Bumped for short-side resolution ranking, dynamic range, and protocol metadata;
+// older cache rows must refetch so HDR/DASH/Shorts ladders are ranked accurately.
+export const YOUTUBE_METADATA_SCHEMA_VERSION = 5 as const;
 
 export type YoutubeVideoQuality = {
   readonly label: string;
   readonly rank: number;
   readonly formatId: string;
   readonly hasAudio?: boolean;
+  readonly dynamicRange?: string;
+  readonly protocol?: string;
 };
 
 export type YoutubeVideoSubtitle = {

@@ -62,8 +62,11 @@ import { buildYtdlFormatSelector } from "@kunai/providers/youtube";
  * yt-dlp `-f` selector honoring a configured quality ceiling without an
  * unconstrained `/best` tail that can fall through to 360p.
  */
-export function ytDlpFormatSelectorForQuality(qualityLabel?: string): string | undefined {
+export function ytDlpFormatSelectorForQuality(
+  qualityLabel?: string,
+  audioPreference?: string,
+): string | undefined {
   const height = parseQualityHeight(qualityLabel);
   if (height === null) return undefined;
-  return buildYtdlFormatSelector(`${height}p`);
+  return buildYtdlFormatSelector(`${height}p`, audioPreference);
 }

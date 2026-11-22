@@ -51,6 +51,7 @@ import {
   buildExactYtdlFormatSelector,
   buildYtdlFormatSelector,
   defaultYtdlPlaybackFormat,
+  isYoutubeHlsProtocol,
 } from "./yt-dlp-metadata";
 import { parseYoutubePlayerClients, withYoutubePlayerClient } from "./ytdl-options";
 
@@ -588,42 +589,57 @@ async function resolveYoutube(
         : `stream:${YOUTUBE_PROVIDER_ID}:${videoId}:${formatId}`;
 
     const streams: StreamCandidate[] = lanes.flatMap((lane, laneIndex) =>
-      qualityLabels.map((entry) => ({
-        id: streamId(entry.formatId, lane.client),
-        providerId: YOUTUBE_PROVIDER_ID,
-        sourceId: lane.sourceId,
-        variantId: `variant:${YOUTUBE_PROVIDER_ID}:${entry.formatId}`,
-        url: watchUrl,
-        protocol: "youtube" as const,
-        container: "unknown" as const,
-        qualityLabel: entry.label,
-        qualityRank: entry.rank,
-        requiresYtdl: true,
-        headers: {},
-        // Later lanes are fallbacks, so rank them below the first.
-        confidence: (ytInfo ? 0.95 : 0.85) - laneIndex * 0.05,
-        cachePolicy,
-        metadata: {
-          ytdlFormat:
-            mappedFormats.length > 0
-              ? buildExactYtdlFormatSelector(entry.formatId, entry.hasAudio)
-              : isLive
-                ? defaultYtdlPlaybackFormat()
-                : buildYtdlFormatSelector(entry.label),
-          formatId: mappedFormats.length > 0 ? entry.formatId : undefined,
-          // Read back by the player so each lane asks yt-dlp for its own client
-          // rather than the global default.
-          extractorArgs: lane.extractorArgs,
-          playerClient: lane.client,
-          videoId,
-          durationSeconds: ytInfo?.durationSeconds,
-          isLive,
-          liveStatus,
-          // Read back by diagnostics: a resolve that ran without metadata has an
-          // unverified quality ladder, so a wrong rendition is explainable.
-          metadataUnavailable,
-        },
-      })),
+      qualityLabels.map((entry) => {
+        // Fallback player clients (e.g. `web`) do not serve HLS-only ITAGs
+        // discovered on the primary Apple/visionOS client. Drop an HLS-only pin
+        // back to the resolution ceiling on fallback lanes so failover can play.
+        const isCrossClientHlsFallback =
+          laneIndex > 0 && "protocol" in entry && isYoutubeHlsProtocol(entry.protocol);
+        const ytdlFormat =
+          mappedFormats.length > 0 && !isCrossClientHlsFallback
+            ? buildExactYtdlFormatSelector(
+                entry.formatId,
+                entry.hasAudio,
+                input.preferredAudioLanguage,
+              )
+            : isLive
+              ? defaultYtdlPlaybackFormat(input.preferredAudioLanguage)
+              : buildYtdlFormatSelector(
+                  entry.rank > 0 ? `${entry.rank}p` : entry.label,
+                  input.preferredAudioLanguage,
+                );
+        return {
+          id: streamId(entry.formatId, lane.client),
+          providerId: YOUTUBE_PROVIDER_ID,
+          sourceId: lane.sourceId,
+          variantId: `variant:${YOUTUBE_PROVIDER_ID}:${entry.formatId}`,
+          url: watchUrl,
+          protocol: "youtube" as const,
+          container: "unknown" as const,
+          qualityLabel: entry.label,
+          qualityRank: entry.rank,
+          requiresYtdl: true,
+          headers: {},
+          // Later lanes are fallbacks, so rank them below the first.
+          confidence: (ytInfo ? 0.95 : 0.85) - laneIndex * 0.05,
+          cachePolicy,
+          metadata: {
+            ytdlFormat,
+            formatId: mappedFormats.length > 0 ? entry.formatId : undefined,
+            // Read back by the player so each lane asks yt-dlp for its own client
+            // rather than the global default.
+            extractorArgs: lane.extractorArgs,
+            playerClient: lane.client,
+            videoId,
+            durationSeconds: ytInfo?.durationSeconds,
+            isLive,
+            liveStatus,
+            // Read back by diagnostics: a resolve that ran without metadata has an
+            // unverified quality ladder, so a wrong rendition is explainable.
+            metadataUnavailable,
+          },
+        };
+      }),
     );
 
     const primaryLane = lanes[0];

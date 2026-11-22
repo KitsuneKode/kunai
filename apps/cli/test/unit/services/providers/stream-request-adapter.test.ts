@@ -380,3 +380,36 @@ test("an episode never overrides an identity the title already holds", () => {
 
   expect(input.title.anilistId).toBe("21");
 });
+
+test("streamRequestToResolveInput forwards audioPreference for YouTube video mode", () => {
+  const ja = streamRequestToResolveInput(
+    {
+      title: {
+        id: "youtube:video:0e3GPea1Tyg",
+        type: "movie",
+        name: "Multi-audio video",
+        externalIds: { youtubeId: "0e3GPea1Tyg" },
+      },
+      audioPreference: "ja",
+      subtitlePreference: "en",
+    },
+    "youtube",
+  );
+  expect(ja.mediaKind).toBe("video");
+  expect(ja.preferredAudioLanguage).toBe("ja");
+
+  const original = streamRequestToResolveInput(
+    {
+      title: {
+        id: "youtube:video:0e3GPea1Tyg",
+        type: "movie",
+        name: "Multi-audio video",
+        externalIds: { youtubeId: "0e3GPea1Tyg" },
+      },
+      audioPreference: "original",
+      subtitlePreference: "en",
+    },
+    "youtube",
+  );
+  expect(original.preferredAudioLanguage).toBe("original");
+});

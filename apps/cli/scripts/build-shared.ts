@@ -355,8 +355,9 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  */
 // October 22 provider/timing/consent/mouse integration measured 3,185,739 bytes.
 // November 6 dependency alignment measured 3,195,955 bytes.
-// 3125 KiB leaves 4,045 bytes; public launcher budgets below are unchanged.
-export const NPM_BUNDLE_BUDGET_KB = 3_125;
+// November 22 YouTube format policy (short-side Shorts, HDR/DASH/codec ranking, audio language) measured 3,202,130 bytes.
+// 3130 KiB leaves 2,990 bytes; public launcher budgets below are unchanged.
+export const NPM_BUNDLE_BUDGET_KB = 3_130;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

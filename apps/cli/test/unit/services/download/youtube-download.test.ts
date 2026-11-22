@@ -60,8 +60,8 @@ describe("DownloadService youtube argv contract", () => {
     runYtDlpSpy.mockImplementation((options: RunYtDlpProcessOptions) => {
       capturedArgs = options.args;
       const oIndex = options.args.indexOf("-o");
-      const outputPath = oIndex >= 0 ? options.args[oIndex + 1] : "";
-      if (typeof outputPath === "string") writeFileSync(outputPath, "video-bytes");
+      const outputPath = oIndex >= 0 ? options.args[oIndex + 1] : undefined;
+      if (outputPath) writeFileSync(outputPath, "video-bytes");
       return {
         // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         process: { kill: mock(() => {}) } as never,
@@ -90,19 +90,20 @@ describe("DownloadService youtube argv contract", () => {
     await service.processQueue();
 
     expect(repo.get(job.id)?.status).toBe("completed");
-    expect(capturedArgs.join(" ")).toContain("bv*[height<=?1080]");
+    expect(capturedArgs.join(" ")).toContain("bv*[height<=1080][aspect_ratio>=1]");
     expect(capturedArgs).toEqual(
       expect.arrayContaining([
         "--merge-output-format",
         "mp4",
-        "--write-subs",
-        "--write-auto-subs",
         "--cookies-from-browser",
         "firefox",
         "--cookies",
         "/tmp/cookies.txt",
       ]),
     );
+    expect(capturedArgs).not.toContain("--write-subs");
+    expect(capturedArgs).not.toContain("--write-auto-subs");
+    expect(capturedArgs).not.toContain("--sub-langs");
     // A download needs the same PO token playback uses; without it yt-dlp skips
     // every format whose GVS policy requires one and the job fails on a 403.
     expect(capturedArgs.join(" ")).toContain(
@@ -110,6 +111,62 @@ describe("DownloadService youtube argv contract", () => {
     );
     expect(runYtDlpSpy).toHaveBeenCalled();
     expect(spawnSpy).not.toHaveBeenCalled();
+  });
+
+  test("downloads pin the resolved stream ytdlFormat and keep unset quality uncapped", async () => {
+    const capturedByJob: string[][] = [];
+    runYtDlpSpy.mockImplementation((options: RunYtDlpProcessOptions) => {
+      capturedByJob.push([...options.args]);
+      const oIndex = options.args.indexOf("-o");
+      const outputPath = oIndex >= 0 ? options.args[oIndex + 1] : undefined;
+      if (outputPath) writeFileSync(outputPath, "video-bytes");
+      return {
+        process: { kill: mock(() => {}) } as never,
+        completed: Promise.resolve({ exitCode: 0, stderr: "" }),
+        cancel: mock(() => {}),
+      };
+    });
+
+    // 1. When resolve picked an exact format (e.g. AV1 HDR10 + ja audio), download uses it.
+    const pinnedService = buildYoutubeService({
+      repo,
+      downloadPath: tempDir,
+      resolveDownloadStream: async () =>
+        // SAFETY: partial YouTube resolve fixture supplies only the fields DownloadService reads.
+        youtubeResolveResult({
+          ytdlFormat: "699+(ba[language^=ja]/ba)",
+        }) as never,
+    });
+    const pinnedJob = await pinnedService.enqueue({
+      title: { id: "youtube:video:hdr123", type: "movie", name: "HDR video" },
+      stream: { url: "https://www.youtube.com/watch?v=hdr123", headers: {}, timestamp: 0 },
+      providerId: "youtube",
+      mode: "youtube",
+      selectedQualityLabel: "1080p",
+    });
+    await pinnedService.processQueue();
+    expect(repo.get(pinnedJob.id)?.status).toBe("completed");
+    const pinnedArgs = capturedByJob[0] ?? [];
+    expect(pinnedArgs[pinnedArgs.indexOf("-f") + 1]).toBe("699+(ba[language^=ja]/ba)");
+
+    // 2. When no quality ceiling or exact ytdlFormat is set, download must NOT silently cap at 1080p.
+    const uncappedService = buildYoutubeService({
+      repo,
+      downloadPath: tempDir,
+      resolveDownloadStream: async () =>
+        // SAFETY: partial YouTube resolve fixture supplies only the fields DownloadService reads.
+        youtubeResolveResult() as never,
+    });
+    const uncappedJob = await uncappedService.enqueue({
+      title: { id: "youtube:video:best123", type: "movie", name: "4K video" },
+      stream: { url: "https://www.youtube.com/watch?v=best123", headers: {}, timestamp: 0 },
+      providerId: "youtube",
+      mode: "youtube",
+    });
+    await uncappedService.processQueue();
+    expect(repo.get(uncappedJob.id)?.status).toBe("completed");
+    const uncappedArgs = capturedByJob[1] ?? [];
+    expect(uncappedArgs[uncappedArgs.indexOf("-f") + 1]).toBe("bv*+ba/b/ba");
   });
 
   test("rejects live youtube streams before yt-dlp spawn", async () => {
@@ -262,7 +319,11 @@ describe("DownloadService youtube argv contract", () => {
 });
 
 function youtubeResolveResult(
-  metadata: { readonly isLive?: boolean; readonly liveStatus?: string } = {},
+  metadata: {
+    readonly isLive?: boolean;
+    readonly liveStatus?: string;
+    readonly ytdlFormat?: string;
+  } = {},
 ) {
   return {
     stream: {
