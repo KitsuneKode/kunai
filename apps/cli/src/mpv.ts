@@ -7,6 +7,7 @@ import type { SubtitleTrack } from "@/domain/types";
 import { createPrivateTempDir } from "@/infra/fs/temp-dir";
 import { scrubbedChildEnv } from "@/infra/os/child-env";
 import { discoverMpvInvocation } from "@/infra/player/mpv-discovery";
+import { probeMpvHdrCapability, resolveMpvHdrArgs } from "@/infra/player/mpv-hdr";
 import type { MpvIpcSession } from "@/infra/player/mpv-ipc";
 import { openMpvIpcSession, waitForMpvIpcEndpoint } from "@/infra/player/mpv-ipc";
 import {
@@ -94,6 +95,7 @@ export async function launchMpv(opts: {
   ytdlFormat?: string;
   ytdlRawOptions?: string;
   isLive?: boolean;
+  dynamicRange?: import("@kunai/types").VideoDynamicRange;
   attach?: boolean;
   timing?: import("@/domain/types").PlaybackTimingMetadata | null;
   autoSkipEnabled?: boolean;
@@ -123,9 +125,24 @@ export async function launchMpv(opts: {
   }
 
   try {
+    const mpvInvocation = discoverMpvInvocation();
+    if (!mpvInvocation) {
+      throw new MpvLaunchError("dependency", "mpv is not installed or not found on PATH");
+    }
+    const needsHdrProbe =
+      opts.mpv?.supportsGpuNext === undefined &&
+      ((opts.mpv?.hdrMode !== undefined && opts.mpv.hdrMode !== "auto") ||
+        opts.dynamicRange === "hdr10" ||
+        opts.dynamicRange === "hlg" ||
+        opts.dynamicRange === "dolby-vision");
+    const hdrCapability = needsHdrProbe ? await probeMpvHdrCapability(mpvInvocation) : null;
+    const effectiveMpv: MpvRuntimeOptions | undefined =
+      hdrCapability !== null
+        ? { ...opts.mpv, supportsGpuNext: hdrCapability.supportsGpuNext }
+        : opts.mpv;
     const sensitiveConf = await writeMpvSensitiveConf(opts, ipcEndpoint);
     const args = buildMpvArgs({ ...opts, chaptersFile }, ipcServerCliArg(ipcEndpoint), {
-      mpv: opts.mpv,
+      mpv: effectiveMpv,
       sensitiveOptionsPath: sensitiveConf?.path,
     });
     const stats = createPlayerStatsState(ipcEndpoint.path);
@@ -137,11 +154,6 @@ export async function launchMpv(opts: {
       }
       baseEmit(event);
     };
-
-    const mpvInvocation = discoverMpvInvocation();
-    if (!mpvInvocation) {
-      throw new MpvLaunchError("dependency", "mpv is not installed or not found on PATH");
-    }
 
     const stdio = opts.attach ? ("inherit" as const) : ("ignore" as const);
     const mpv = Bun.spawn([...mpvInvocation.argv, ...args], {
@@ -648,6 +660,7 @@ export function buildMpvArgs(
     ytdlFormat?: string;
     ytdlRawOptions?: string;
     isLive?: boolean;
+    dynamicRange?: import("@kunai/types").VideoDynamicRange;
     chaptersFile?: string | null;
   },
   ipcPath: string | null,
@@ -807,6 +820,14 @@ export function buildMpvArgs(
   }
   if (config?.mpv?.clean || config?.mpv?.noUserConfig) {
     args.push("--no-config");
+  }
+  const hdrArgs = resolveMpvHdrArgs({
+    hdrMode: config?.mpv?.hdrMode,
+    streamDynamicRange: opts.dynamicRange,
+    supportsGpuNext: config?.mpv?.supportsGpuNext,
+  });
+  for (const hdrArg of hdrArgs) {
+    args.push(hdrArg);
   }
   if (config?.mpv?.debug) {
     // `--term-msg-level` is not a valid mpv flag and aborts launch; use msg-level only.

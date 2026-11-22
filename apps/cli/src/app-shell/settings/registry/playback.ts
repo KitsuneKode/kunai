@@ -2,6 +2,7 @@ import type { SettingRowDef, SettingsRegistryContext } from "../types";
 import {
   AUTO_CLEANUP_GRACE_DAY_OPTIONS,
   CONTINUE_SOURCE_PREFERENCE_OPTIONS,
+  HDR_MODE_OPTIONS,
   PRE_PLAY_CONFIRM_SETTINGS_OPTIONS,
   PROVIDER_QUALITY_SETTINGS_OPTIONS,
   QUIT_NEAR_END_BEHAVIOR_OPTIONS,
@@ -45,6 +46,20 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
       write: (config, value) => ({
         ...config,
         startupPriority: value as typeof config.startupPriority,
+      }),
+    },
+    {
+      kind: "enum",
+      id: "hdrMode",
+      label: "HDR playback",
+      detail: "Control mpv HDR passthrough (gpu-next), SDR tone-mapping, or SDR variant preference",
+      options: HDR_MODE_OPTIONS,
+      presentation: "submenu",
+      read: (config) => config.hdrMode,
+      write: (config, value) => ({
+        ...config,
+        // SAFETY: the row's options are HDR_MODE_OPTIONS, the same union HdrMode declares.
+        hdrMode: value as typeof config.hdrMode,
       }),
     },
     {

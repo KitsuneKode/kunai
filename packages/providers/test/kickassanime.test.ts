@@ -701,14 +701,15 @@ describe("kickassanimeProviderModule", () => {
     expect(result.streams[0]).toMatchObject({ presentation: "sub", qualityLabel: "auto" });
   });
 
-  test("hands mpv the master, never a video-only rendition", async () => {
+  test("hands mpv the master, never a video-only rendition, while reporting top ladder height", async () => {
     const result = await kickassanimeProviderModule.resolve(
       resolveInput(),
       contextWith(catalogRoute()),
     );
     expect(result.streams).toHaveLength(1);
     expect(result.streams[0]?.url).toContain("master.m3u8");
-    expect(result.streams[0]?.qualityRank).toBe(0);
+    expect(result.streams[0]?.qualityLabel).toBe("1080p");
+    expect(result.streams[0]?.qualityRank).toBe(1080);
   });
 
   test("fetches the listing page that holds a later episode", async () => {

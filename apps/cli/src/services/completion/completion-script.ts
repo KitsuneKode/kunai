@@ -23,6 +23,7 @@ const SPECIALISED_VALUE_FLAGS = new Set([
   "--audio",
   "--sub",
   "--player",
+  "--hdr",
   "--format",
   "--download-path",
   "--mpv-log-file",
@@ -47,6 +48,7 @@ const QUALITY_VALUES = ["best", "2160p", "1440p", "1080p", "720p", "480p"] as co
 const AUDIO_VALUES = ["original", "en", "ja", "hi", "pt", "es", "fr", "de", "dub"] as const;
 const SUB_VALUES = ["en", "interactive", "none", "hi", "pt", "ar", "de", "es", "fr", "ja"] as const;
 const PLAYER_VALUES = ["auto", "mpv", "vlc"] as const;
+const HDR_VALUES = ["auto", "passthrough", "tone-map", "sdr-only"] as const;
 const FORMAT_VALUES = ["pretty", "jsonl", "markdown"] as const;
 const PROVIDERS_SUBCOMMANDS = ["status", "update", "verify", "rollback", "reset"] as const;
 
@@ -71,6 +73,8 @@ _kunai_complete() {
       COMPREPLY=( $(compgen -W "${SUB_VALUES.join(" ")}" -- "$cur") ); return ;;
     --player)
       COMPREPLY=( $(compgen -W "${PLAYER_VALUES.join(" ")}" -- "$cur") ); return ;;
+    --hdr)
+      COMPREPLY=( $(compgen -W "${HDR_VALUES.join(" ")}" -- "$cur") ); return ;;
     --format)
       COMPREPLY=( $(compgen -W "${FORMAT_VALUES.join(" ")}" -- "$cur") ); return ;;
     --download-path|--mpv-log-file)
@@ -100,7 +104,7 @@ function zshScript(): string {
 # or append to ~/.zshrc:
 #   eval "$(kunai completion zsh)"
 _kunai() {
-  local -a subcommands flags shells providers_subs types qualities audios subs players formats
+  local -a subcommands flags shells providers_subs types qualities audios subs players hdrs formats
   subcommands=(${CLI_SUBCOMMANDS.map((c) => `'${c}'`).join(" ")})
   flags=(${allFlags()
     .map((f) => `'${f}'`)
@@ -112,6 +116,7 @@ _kunai() {
   audios=(${AUDIO_VALUES.map((a) => `'${a}'`).join(" ")})
   subs=(${SUB_VALUES.map((s) => `'${s}'`).join(" ")})
   players=(${PLAYER_VALUES.map((p) => `'${p}'`).join(" ")})
+  hdrs=(${HDR_VALUES.map((h) => `'${h}'`).join(" ")})
   formats=(${FORMAT_VALUES.map((f) => `'${f}'`).join(" ")})
 
   case "\${words[CURRENT-1]}" in
@@ -120,6 +125,7 @@ _kunai() {
     --audio) _describe 'audio' audios; return ;;
     --sub) _describe 'subtitle' subs; return ;;
     --player) _describe 'player' players; return ;;
+    --hdr) _describe 'hdr mode' hdrs; return ;;
     --format) _describe 'format' formats; return ;;
     --download-path|--mpv-log-file) _files -/; return ;;
     completion) _describe 'shell' shells; return ;;
@@ -152,6 +158,7 @@ function fishScript(): string {
     `complete -c kunai -l audio -x -a "${AUDIO_VALUES.join(" ")}"`,
     `complete -c kunai -l sub -x -a "${SUB_VALUES.join(" ")}"`,
     `complete -c kunai -l player -x -a "${PLAYER_VALUES.join(" ")}"`,
+    `complete -c kunai -l hdr -x -a "${HDR_VALUES.join(" ")}"`,
     `complete -c kunai -l format -x -a "${FORMAT_VALUES.join(" ")}"`,
     `complete -c kunai -l download-path -r -F`,
     `complete -c kunai -l mpv-log-file -r -F`,
@@ -184,6 +191,7 @@ Register-ArgumentCompleter -Native -CommandName kunai -ScriptBlock {
   $audios = @(${AUDIO_VALUES.map((a) => `'${a}'`).join(", ")})
   $subs = @(${SUB_VALUES.map((s) => `'${s}'`).join(", ")})
   $players = @(${PLAYER_VALUES.map((p) => `'${p}'`).join(", ")})
+  $hdrs = @(${HDR_VALUES.map((h) => `'${h}'`).join(", ")})
   $formats = @(${FORMAT_VALUES.map((f) => `'${f}'`).join(", ")})
 
   $elements = $commandAst.CommandElements
@@ -196,6 +204,7 @@ Register-ArgumentCompleter -Native -CommandName kunai -ScriptBlock {
     '--audio' { $audios }
     '--sub' { $subs }
     '--player' { $players }
+    '--hdr' { $hdrs }
     '--format' { $formats }
     'completion' { $shells }
     'providers' { $providersSubs }

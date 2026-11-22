@@ -8,6 +8,15 @@ function configureTestEnvironment(): void {
   // with CI=0 or an inherited DO_NOT_TRACK=0. Consent/ingest unit fixtures may
   // inject env: {} only alongside isolated config and mocked/local delivery.
   process.env.DO_NOT_TRACK = "1";
+
+  // Bun 1.4+ `--parallel` injects FORCE_COLOR=1 into worker processes under a PTY,
+  // which overrides NO_COLOR inside supports-color/chalk and breaks Ink frame
+  // assertions that expect plain text. Strip FORCE_COLOR and set NO_COLOR=1 unless
+  // a caller explicitly opts into colored test output via KUNAI_TEST_COLOR=1.
+  if (process.env.KUNAI_TEST_COLOR !== "1") {
+    delete process.env.FORCE_COLOR;
+    process.env.NO_COLOR = "1";
+  }
 }
 
 configureTestEnvironment();

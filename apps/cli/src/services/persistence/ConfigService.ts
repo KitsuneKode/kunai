@@ -10,6 +10,7 @@ export type {
   ConfigTuningOverrides,
   ContinueSourcePreference,
   DiscoverMode,
+  HdrMode,
   KitsuneConfig as BaseKitsuneConfig,
   MediaLanguageProfile,
   PresencePrivacy,

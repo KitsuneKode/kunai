@@ -1,7 +1,11 @@
-import type { ProviderFetchPort } from "@kunai/types";
+import type { ProviderFetchPort, VideoDynamicRange } from "@kunai/types";
 
 import { isHlsMasterPlaylist, isHlsPlaylistUrl } from "./hls-manifest";
-import { normalizeQualityLabel, qualityRankFromLabel } from "./source-inventory";
+import {
+  detectDynamicRangeFromLabel,
+  normalizeQualityLabel,
+  qualityRankFromLabel,
+} from "./source-inventory";
 import {
   blockedLiteralTargetReason,
   fetchGuardedStreamTarget,
@@ -14,6 +18,7 @@ export type HlsLadderVariant = {
   readonly qualityLabel: string;
   readonly qualityRank: number;
   readonly bandwidth?: number;
+  readonly dynamicRange?: VideoDynamicRange;
 };
 
 /** A resolved `#EXT-X-MEDIA` rendition — an alternate audio or subtitle playlist. */
@@ -257,6 +262,53 @@ export function looksLikeHlsMasterUrl(url: string): boolean {
   }
 }
 
+/**
+ * Classify `#EXT-X-STREAM-INF` dynamic range per RFC 8216 bis (`VIDEO-RANGE`,
+ * `CODECS` Dolby Vision profiles `dvh1`/`dvhe`, or explicit `NAME` tokens).
+ */
+export function detectHlsVariantDynamicRange(streamInfLine: string): VideoDynamicRange | undefined {
+  const codecs = hlsAttribute(streamInfLine, "CODECS");
+  if (codecs && /\b(?:dvh1|dvhe)\./i.test(codecs)) return "dolby-vision";
+  const videoRange = hlsAttribute(streamInfLine, "VIDEO-RANGE")?.toUpperCase();
+  if (videoRange === "PQ") return "hdr10";
+  if (videoRange === "HLG") return "hlg";
+  if (videoRange === "SDR") return "sdr";
+  const name = hlsAttribute(streamInfLine, "NAME");
+  return detectDynamicRangeFromLabel(name);
+}
+
+/** Highest declared variant height (`RESOLUTION=WxH`) in an HLS master playlist. */
+export function parseHlsMasterMaxHeight(manifestText: string): number | undefined {
+  let maxHeight = 0;
+  for (const rawLine of manifestText.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line.startsWith("#EXT-X-STREAM-INF:")) continue;
+    const resMatch = /RESOLUTION=\d+x(\d+)/i.exec(line);
+    const height = resMatch?.[1] ? Number.parseInt(resMatch[1], 10) : 0;
+    if (Number.isFinite(height) && height > maxHeight) {
+      maxHeight = height;
+    }
+  }
+  return maxHeight > 0 ? maxHeight : undefined;
+}
+
+/** Strongest HDR dynamic range declared across `#EXT-X-STREAM-INF` rows in a master playlist. */
+export function detectHlsMasterDynamicRange(manifestText: string): VideoDynamicRange | undefined {
+  let detected: VideoDynamicRange | undefined;
+  const rank = (dr: VideoDynamicRange): number =>
+    dr === "dolby-vision" ? 3 : dr === "hdr10" ? 2 : dr === "hlg" ? 1 : 0;
+  for (const rawLine of manifestText.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line.startsWith("#EXT-X-STREAM-INF:")) continue;
+    const dr = detectHlsVariantDynamicRange(line);
+    if (!dr) continue;
+    if (!detected || rank(dr) > rank(detected)) {
+      detected = dr;
+    }
+  }
+  return detected;
+}
+
 export function parseHlsMasterVariants(
   manifestText: string,
   masterUrl: string,
@@ -266,6 +318,7 @@ export function parseHlsMasterVariants(
   let currentResolution = "";
   let currentBandwidth = 0;
   let currentName = "";
+  let currentDynamicRange: VideoDynamicRange | undefined;
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
@@ -276,6 +329,7 @@ export function parseHlsMasterVariants(
       currentBandwidth = bwMatch?.[1] ? Number.parseInt(bwMatch[1], 10) : 0;
       const nameMatch = /NAME="([^"]+)"/i.exec(line);
       currentName = nameMatch?.[1]?.trim() ?? "";
+      currentDynamicRange = detectHlsVariantDynamicRange(line);
       continue;
     }
     if (!line || line.startsWith("#")) continue;
@@ -287,6 +341,7 @@ export function parseHlsMasterVariants(
       currentResolution = "";
       currentBandwidth = 0;
       currentName = "";
+      currentDynamicRange = undefined;
       continue;
     }
 
@@ -299,16 +354,27 @@ export function parseHlsMasterVariants(
       qualityRankFromLabel(currentResolution) ??
       currentBandwidth;
 
-    variants.push({
-      url: absoluteUrl,
-      qualityLabel,
-      qualityRank,
-      bandwidth: currentBandwidth > 0 ? currentBandwidth : undefined,
-    });
+    const variant: HlsLadderVariant =
+      currentDynamicRange !== undefined
+        ? {
+            url: absoluteUrl,
+            qualityLabel,
+            qualityRank,
+            bandwidth: currentBandwidth > 0 ? currentBandwidth : undefined,
+            dynamicRange: currentDynamicRange,
+          }
+        : {
+            url: absoluteUrl,
+            qualityLabel,
+            qualityRank,
+            bandwidth: currentBandwidth > 0 ? currentBandwidth : undefined,
+          };
+    variants.push(variant);
 
     currentResolution = "";
     currentBandwidth = 0;
     currentName = "";
+    currentDynamicRange = undefined;
   }
 
   return dedupeHlsVariantsByUrl(variants);

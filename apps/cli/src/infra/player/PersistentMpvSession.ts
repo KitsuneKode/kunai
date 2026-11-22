@@ -32,6 +32,7 @@ import {
   resolveKunaiMpvBridgeScriptPath,
 } from "./kunai-mpv-bridge";
 import { discoverMpvInvocation } from "./mpv-discovery";
+import { isHdrDynamicRange, probeMpvHdrCapability } from "./mpv-hdr";
 import { computeInProcessReconnectSeek } from "./mpv-in-process-reconnect";
 import type { MpvIpcSession } from "./mpv-ipc";
 import { openMpvIpcSession, waitForMpvIpcEndpoint } from "./mpv-ipc";
@@ -648,6 +649,27 @@ export class PersistentMpvSession {
       },
       this.ipcEndpoint,
     );
+    const initialDynamicRange = this.initialStream.providerResolveResult?.streams.find(
+      (candidate) => candidate.id === this.initialStream.providerResolveResult?.selectedStreamId,
+    )?.dynamicRange;
+    const needsHdrProbe =
+      mpvOptions?.supportsGpuNext === undefined &&
+      this.runtime.spawn === defaultPersistentMpvSessionRuntime.spawn &&
+      ((mpvOptions?.hdrMode !== undefined && mpvOptions.hdrMode !== "auto") ||
+        isHdrDynamicRange(initialDynamicRange));
+    const mpvProbeInvocation = needsHdrProbe
+      ? discoverMpvInvocation({
+          which: this.runtime.which,
+          ...(this.runtime.exists && { exists: this.runtime.exists }),
+        })
+      : null;
+    const hdrCapability = mpvProbeInvocation
+      ? await probeMpvHdrCapability(mpvProbeInvocation)
+      : null;
+    const effectiveMpvOptions: MpvRuntimeOptions | undefined =
+      hdrCapability !== null
+        ? { ...mpvOptions, supportsGpuNext: hdrCapability.supportsGpuNext }
+        : mpvOptions;
     const args = buildMpvArgs(
       {
         url: this.initialStream.url,
@@ -661,6 +683,7 @@ export class PersistentMpvSession {
         displayTitle: this.initialOptions.displayTitle,
         startAt: this.initialStream.isLive ? undefined : this.initialOptions.startAt,
         isLive: this.initialStream.isLive,
+        dynamicRange: initialDynamicRange,
         requiresYtdl: this.initialStream.requiresYtdl,
         ytdlFormat: this.initialStream.ytdlFormat,
         ytdlRawOptions: this.initialStream.ytdlRawOptions,
@@ -669,7 +692,7 @@ export class PersistentMpvSession {
       ipcServerCliArg(this.ipcEndpoint),
       {
         persistent: true,
-        mpv: mpvOptions,
+        mpv: effectiveMpvOptions,
         includeStartArg,
         scriptPath: this.luaScriptPath ?? undefined,
         scriptOpts: this.scriptOptsArg,

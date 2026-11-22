@@ -16,6 +16,7 @@ describe("runCapabilities", () => {
     expect(report.providers.length).toBeGreaterThanOrEqual(11);
     expect(report.themes).toContain("ember-dusk");
     expect(report.themes).toContain("nord");
+    expect(report.hdrModes).toEqual(["auto", "passthrough", "tone-map", "sdr-only"]);
     expect(report.subcommands).toContain("capabilities");
     expect(report.providerHotfixManifest.signatureAlgorithm).toBe("Ed25519");
   });

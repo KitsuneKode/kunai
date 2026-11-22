@@ -200,6 +200,23 @@ export function qualityRankFromLabel(value: string | number | undefined): number
   return Number.isFinite(rank) ? rank : undefined;
 }
 
+/**
+ * Infer dynamic range from stream/label text (Dolby Vision, HDR10/HDR10+, HLG).
+ * Returns `undefined` when no explicit HDR/SDR token is present so callers do
+ * not mislabel plain 1080p/4K feeds.
+ */
+export function detectDynamicRangeFromLabel(
+  value: string | undefined,
+): import("@kunai/types").VideoDynamicRange | undefined {
+  const raw = value?.trim();
+  if (!raw) return undefined;
+  if (/\b(?:dolby[\s._-]*vision|dovi|dv|dvh1|dvhe)\b/i.test(raw)) return "dolby-vision";
+  if (/\bhlg\b/i.test(raw)) return "hlg";
+  if (/\b(?:hdr10\+?|hdr|pq|bt\.?2020|10[\s._-]*bit[\s._-]*hdr)\b/i.test(raw)) return "hdr10";
+  if (/\bsdr\b/i.test(raw)) return "sdr";
+  return undefined;
+}
+
 export function createProviderLanguageEvidence(input: {
   readonly role: ProviderLanguageEvidence["role"];
   readonly value?: string;
@@ -379,6 +396,7 @@ export function createVariantCandidateFromStream(input: {
     label: input.label ?? describeVariantLabel(input.stream),
     qualityLabel: input.stream.qualityLabel,
     qualityRank: input.stream.qualityRank,
+    dynamicRange: input.stream.dynamicRange,
     protocol: input.stream.protocol,
     container: input.stream.container,
     audioLanguages: input.stream.audioLanguages,

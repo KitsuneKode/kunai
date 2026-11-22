@@ -2369,6 +2369,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               getPreferredStreamSelection(sourceProviderId, currentEpisode),
               playbackQualityPreference(profileContext),
               playbackSubtitlePreference(profileContext),
+              config.hdrMode,
             );
           }
           if (!stream || resolveController.signal.aborted) {

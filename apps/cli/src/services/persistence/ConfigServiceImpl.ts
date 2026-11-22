@@ -290,6 +290,7 @@ export class ConfigServiceImpl implements ConfigService {
       continueSourcePreference: normalizeContinueSourcePreference(loaded.continueSourcePreference),
       prePlayConfirm: normalizePrePlayConfirm(loaded.prePlayConfirm),
       startupPriority: normalizeStartupPriority(loaded.startupPriority),
+      hdrMode: normalizeHdrMode(loaded.hdrMode),
       mpvInProcessStreamReconnectMaxAttempts: normalizeMpvReconnectAttempts(
         loaded.mpvInProcessStreamReconnectMaxAttempts,
       ),
@@ -799,6 +800,10 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.startupPriority;
   }
 
+  get hdrMode(): KitsuneConfig["hdrMode"] {
+    return this.config.hdrMode;
+  }
+
   get offlineArtworkCacheEnabled(): boolean {
     return this.config.offlineArtworkCacheEnabled;
   }
@@ -1033,6 +1038,7 @@ export class ConfigServiceImpl implements ConfigService {
       ...(partial.startupPriority !== undefined
         ? { startupPriority: normalizeStartupPriority(partial.startupPriority) }
         : null),
+      ...(partial.hdrMode !== undefined ? { hdrMode: normalizeHdrMode(partial.hdrMode) } : null),
       ...(partial.mpvInProcessStreamReconnectMaxAttempts !== undefined
         ? {
             mpvInProcessStreamReconnectMaxAttempts: normalizeMpvReconnectAttempts(
@@ -1420,6 +1426,16 @@ function normalizeAnalyticsPreference<T>(value: T): KitsuneConfig["analytics"] {
 
 function normalizeStartupPriority<T>(value: T): StartupPriority {
   return value === "fast" ? "fast" : value === "quality-first" ? "quality-first" : "balanced";
+}
+
+function normalizeHdrMode<T>(value: T): KitsuneConfig["hdrMode"] {
+  return value === "passthrough"
+    ? "passthrough"
+    : value === "tone-map"
+      ? "tone-map"
+      : value === "sdr-only"
+        ? "sdr-only"
+        : "auto";
 }
 
 function normalizeBytes<T>(value: T, fallback: number): number {

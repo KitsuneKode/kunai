@@ -20,6 +20,7 @@ import { hasResolvableSeriesCoordinates } from "./series-coordinates";
 import {
   createStreamId,
   createVariantId,
+  detectDynamicRangeFromLabel,
   normalizeQualityLabel,
   qualityRankFromLabel,
 } from "./source-inventory";
@@ -37,6 +38,7 @@ export interface DirectStreamInput {
   readonly url: string;
   /** Quality hint such as "1080", "720p", "4k" — used for label + ranking. */
   readonly qualityHint?: string;
+  readonly dynamicRange?: import("@kunai/types").VideoDynamicRange;
   /** Protocol observed from a fetched manifest, for extensionless endpoints. */
   readonly protocol?: StreamCandidate["protocol"];
   readonly serverLabel?: string;
@@ -308,6 +310,7 @@ export async function resolveDirectStreamSource(
       label: stream.qualityLabel ?? stream.container ?? "auto",
       qualityLabel: stream.qualityLabel,
       qualityRank: stream.qualityRank,
+      dynamicRange: stream.dynamicRange,
       protocol: stream.protocol,
       container: stream.container,
       streamIds: [stream.id],
@@ -436,6 +439,7 @@ function normalizeStreams(
       container: containerForProtocol(protocol),
       qualityLabel,
       qualityRank,
+      dynamicRange: entry.dynamicRange ?? detectDynamicRangeFromLabel(entry.qualityHint),
       serverName: entry.serverLabel ?? label,
       flavorLabel: entry.serverLabel ?? label,
       audioLanguages: entry.audioLanguages,

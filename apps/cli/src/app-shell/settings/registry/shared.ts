@@ -6,6 +6,7 @@ import {
 import { getConfigMetadata } from "@/services/persistence/config-metadata";
 import type {
   DiscoverMode,
+  HdrMode,
   KitsuneConfig,
   QuitNearEndBehavior,
   QuitNearEndThresholdMode,
@@ -49,6 +50,29 @@ export const PRE_PLAY_CONFIRM_SETTINGS_OPTIONS: readonly EnumOption[] = [
     value: "always",
     label: "Always",
     detail: "Show the Tracks sheet on every play that resolves a stream inventory",
+  },
+];
+
+export const HDR_MODE_OPTIONS: readonly EnumOption[] = [
+  {
+    value: "auto" satisfies HdrMode,
+    label: "Auto",
+    detail: "Enable dynamic peak tone-mapping on HDR/Dolby Vision streams; stay silent for SDR",
+  },
+  {
+    value: "passthrough" satisfies HdrMode,
+    label: "HDR passthrough",
+    detail: "Send HDR10/HLG/DV natively via mpv gpu-next + target-colorspace-hint (HDR displays)",
+  },
+  {
+    value: "tone-map" satisfies HdrMode,
+    label: "Tone-map to SDR",
+    detail: "Map HDR10 and Dolby Vision cleanly to SDR with bt.2446a perceptual gamut mapping",
+  },
+  {
+    value: "sdr-only" satisfies HdrMode,
+    label: "Prefer SDR",
+    detail: "Rank SDR variants ahead of HDR/DV at the same resolution and tone-map any fallback",
   },
 ];
 

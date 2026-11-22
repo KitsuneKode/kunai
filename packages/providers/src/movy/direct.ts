@@ -45,6 +45,7 @@ import {
   createStreamId,
   createVariantCandidateFromStream,
   createVariantId,
+  detectDynamicRangeFromLabel,
   finalizeCycleSourceInventory,
   normalizeQualityLabel,
   providerInventorySourceId,
@@ -348,7 +349,12 @@ async function resolveMovyLaneCandidate({
         if (!source.url || movySourceProtocol(source) !== "hls") {
           // SAFETY: no manifest was inspected; undefined preserves the lane-audio fallback.
           return [
-            { source, laneAudio, audioLanguages: undefined as readonly string[] | undefined },
+            {
+              source,
+              laneAudio,
+              audioLanguages: undefined as readonly string[] | undefined,
+              dynamicRange: undefined,
+            },
           ];
         }
         const inventory = await expandHlsMasterInventory({
@@ -376,17 +382,19 @@ async function resolveMovyLaneCandidate({
         const audioLanguages = inventory.audioLanguages.length
           ? inventory.audioLanguages
           : undefined;
-        if (inventory.probe.kind !== "ok") return [{ source, laneAudio, audioLanguages }];
+        if (inventory.probe.kind !== "ok")
+          return [{ source, laneAudio, audioLanguages, dynamicRange: undefined }];
         return inventory.variants.map((variant) => ({
           source: { ...source, url: variant.url, quality: variant.qualityLabel },
           laneAudio,
           audioLanguages,
+          dynamicRange: variant.dynamicRange,
         }));
       }),
     )
   ).flat();
 
-  for (const { source, laneAudio, audioLanguages } of expandedSources) {
+  for (const { source, laneAudio, audioLanguages, dynamicRange } of expandedSources) {
     const url = source.url;
     if (!url) continue;
     const qualityStr = movyLaneAudioLanguage(source.quality)
@@ -436,6 +444,7 @@ async function resolveMovyLaneCandidate({
       audioLanguages: audioLanguages ?? (laneAudio ? [laneAudio] : undefined),
       qualityLabel,
       qualityRank,
+      dynamicRange: dynamicRange ?? detectDynamicRangeFromLabel(source.quality),
       languageEvidence,
       sourceEvidence,
       headers: { referer: MOVY_REFERER, "user-agent": USER_AGENT },

@@ -53,6 +53,7 @@ import {
   createStreamId,
   createVariantCandidateFromStream,
   createVariantId,
+  detectDynamicRangeFromLabel,
   finalizeCycleSourceInventory,
   normalizeProviderDisplayLabel,
   normalizeQualityLabel,
@@ -1287,8 +1288,16 @@ async function resolveRivestreamProviderCandidate({
 
     // Expanded masters emit one row per rendition; anything else stays a
     // single row at the API's own quality label.
-    const rows: { url: string; qualityStr: string }[] = ladder
-      ? ladder.map((v) => ({ url: v.url, qualityStr: v.qualityLabel }))
+    const rows: {
+      url: string;
+      qualityStr: string;
+      dynamicRange?: import("@kunai/types").VideoDynamicRange;
+    }[] = ladder
+      ? ladder.map((v) => ({
+          url: v.url,
+          qualityStr: v.qualityLabel,
+          dynamicRange: v.dynamicRange,
+        }))
       : [{ url: source.url, qualityStr }];
 
     for (const row of rows) {
@@ -1305,6 +1314,7 @@ async function resolveRivestreamProviderCandidate({
         url: row.url,
         protocol,
         container: protocol === "hls" ? "m3u8" : protocol === "dash" ? "mpd" : "mp4",
+        dynamicRange: row.dynamicRange ?? detectDynamicRangeFromLabel(row.qualityStr),
         audioLanguages: audioLanguages?.length
           ? audioLanguages
           : normalizedAudioLanguage

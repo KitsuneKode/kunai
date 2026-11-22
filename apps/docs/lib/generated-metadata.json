@@ -866,6 +866,11 @@
     },
     {
       "short": "",
+      "long": "--hdr",
+      "description": "HDR mode: auto | passthrough | tone-map | sdr-only"
+    },
+    {
+      "short": "",
       "long": "--player",
       "description": "Player backend (auto chooses for this platform)"
     },

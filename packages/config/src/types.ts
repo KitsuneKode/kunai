@@ -23,6 +23,7 @@ export type PresencePrivacy = "full" | "private";
 export type AnalyticsPreference = "unset" | "enabled" | "disabled";
 export type DiscoverMode = "auto" | "unified" | "anime-only" | "series-only";
 export type RecoveryMode = "guided" | "fallback-first" | "manual";
+export type HdrMode = "auto" | "passthrough" | "tone-map" | "sdr-only";
 
 /** Runtime tuning override bag; CLI tuning module resolves typed values. */
 export type ConfigTuningOverrides = Partial<Record<string, number>>;
@@ -144,6 +145,7 @@ export interface KitsuneConfig {
   autoCleanupWatched: boolean;
   recoveryMode: RecoveryMode;
   startupPriority: StartupPriority;
+  hdrMode: HdrMode;
   offlineArtworkCacheEnabled: boolean;
   offlineFreeSpaceReserveBytes: number;
   offlineUnknownEpisodeEstimateBytes: number;

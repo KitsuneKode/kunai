@@ -328,6 +328,7 @@ export function resolveVidlinkDirect(
               streams.push({
                 url: variant.url,
                 qualityHint: variant.qualityLabel,
+                dynamicRange: variant.dynamicRange,
                 audioLanguages:
                   inventory.audioLanguages.length > 0 ? inventory.audioLanguages : undefined,
               });

@@ -191,6 +191,24 @@ Queue recovery: if a previous session crashed with pending queue items, Kunai ma
 
 Symptom-specific steps: [Troubleshooting](/docs/users/troubleshooting).
 
+## HDR and 4K playback
+
+Kunai detects `HDR10` (`VIDEO-RANGE=PQ`), `HLG`, and Dolby Vision (`dvh1`/`dvhe`) streams from HLS master playlists and labels them in the Tracks picker (`2160p HDR10`, `2160p DV`). Before enabling libplacebo flags (`--vo=gpu-next`, `--target-colorspace-hint`, `--gamut-mapping-mode`), Kunai probes `mpv --vo=help` once and falls back cleanly on older `mpv` builds that lack `gpu-next`.
+
+Configure **HDR playback** in `/settings` (Playback) or override it for a single run with `--hdr`:
+
+| Mode             | Effect                                                                                                                           |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `auto` (default) | Stays silent on SDR streams; enables dynamic peak tone-mapping on detected HDR/Dolby Vision streams                              |
+| `passthrough`    | Sends HDR10/HLG/DV natively via `mpv --vo=gpu-next --target-colorspace-hint=yes` and prefers HDR variants at the same resolution |
+| `tone-map`       | Maps HDR10 and Dolby Vision to SDR with `bt.2446a` perceptual gamut mapping                                                      |
+| `sdr-only`       | Ranks SDR variants ahead of HDR/DV at the same resolution and tone-maps any HDR fallback                                         |
+
+```sh
+kunai --hdr passthrough -S "Dune"
+kunai --hdr tone-map -S "Dune"
+```
+
 ## Offline playback
 
 Completed downloads play through the same mpv path with local file URLs:

@@ -6,6 +6,7 @@ import {
 } from "@/domain/media/media-preferences";
 import { parsePlayerChoice, type PlayerChoice } from "@/domain/playback/player-choice";
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
+import type { HdrMode } from "@kunai/config";
 import { Command } from "commander";
 
 /**
@@ -43,6 +44,7 @@ export type CliArgs = {
   quality?: string;
   audio?: string;
   subtitle?: string;
+  hdr?: HdrMode;
   setup: boolean;
   offline: boolean;
   history: boolean;
@@ -102,6 +104,7 @@ PLAYBACK PICKS (this run only — config.json untouched)
       --audio <lang>       Audio track: original | en | ja | hi | pt | es | fr | de | dub
       --sub <lang>         Subtitles: en | interactive | none | hi | pt | ar | de | es | fr | ja
       --dub                Shortcut for --audio dub
+      --hdr <mode>         HDR mode: auto | passthrough | tone-map | sdr-only
 
 PLAYER
       --player <auto|mpv|vlc>  Player backend (auto chooses for this platform)
@@ -223,6 +226,7 @@ export const KNOWN_FLAGS: ReadonlySet<string> = new Set([
   "--no-user-mpv-config",
   "--mpv-log-file",
   "--player",
+  "--hdr",
   "-h",
   "--help",
   "-v",
@@ -259,6 +263,7 @@ export const VALUE_FLAGS: ReadonlySet<string> = new Set([
   "--handoff-url",
   "--mpv-log-file",
   "--player",
+  "--hdr",
   "--format",
   "--limit",
   "--url",
@@ -281,6 +286,7 @@ type CommanderCliOptions = {
   readonly audio?: string;
   readonly sub?: string;
   readonly dub?: boolean;
+  readonly hdr?: string;
   readonly debug?: boolean;
   readonly debugJson?: boolean;
   readonly debugSession?: boolean;
@@ -363,6 +369,7 @@ function createCliCommand(): Command {
     .option("--no-user-mpv-config")
     .option("--mpv-log-file <path>")
     .option("--player <player>")
+    .option("--hdr <mode>")
     .option("-h, --help")
     .option("-v, --version")
     .argument("[query...]");
@@ -611,6 +618,15 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
       );
     }
     args.subtitle = subtitle;
+  }
+  if (options.hdr !== undefined) {
+    const hdr = options.hdr.toLowerCase();
+    if (hdr !== "auto" && hdr !== "passthrough" && hdr !== "tone-map" && hdr !== "sdr-only") {
+      throw new CliUsageError(
+        `invalid --hdr "${options.hdr}" — one of: auto, passthrough, tone-map, sdr-only`,
+      );
+    }
+    args.hdr = hdr;
   }
 
   args.debug = Boolean(options.debug || options.debugJson || options.debugSession);

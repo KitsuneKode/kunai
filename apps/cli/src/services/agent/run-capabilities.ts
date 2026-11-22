@@ -23,6 +23,7 @@ export interface CapabilitiesReport {
   readonly subcommands: readonly string[];
   readonly flags: readonly string[];
   readonly themes: readonly string[];
+  readonly hdrModes: readonly string[];
   readonly headlessRoutes: readonly string[];
   readonly providerHotfixManifest: {
     readonly schemaVersion: 1;
@@ -59,6 +60,7 @@ export async function buildCapabilitiesReport(version: string): Promise<Capabili
     subcommands: [...CLI_SUBCOMMANDS],
     flags: [...KNOWN_FLAGS].sort(),
     themes: listThemes().map((theme) => theme.name),
+    hdrModes: ["auto", "passthrough", "tone-map", "sdr-only"],
     headlessRoutes: [
       "kunai capabilities --json",
       "kunai providers status --json",
