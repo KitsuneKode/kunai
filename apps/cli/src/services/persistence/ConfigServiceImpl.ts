@@ -10,6 +10,7 @@ import {
   DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
 } from "@/services/download/StorageBudgetPolicy";
 import {
+  isHdrMode,
   MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS,
   mergeKitsuneConfig,
   normalizeRetiredProductionProviderFields,
@@ -1433,13 +1434,7 @@ function normalizeStartupPriority<T>(value: T): StartupPriority {
 }
 
 function normalizeHdrMode<T>(value: T): KitsuneConfig["hdrMode"] {
-  return value === "passthrough"
-    ? "passthrough"
-    : value === "tone-map"
-      ? "tone-map"
-      : value === "sdr-only"
-        ? "sdr-only"
-        : "auto";
+  return isHdrMode(value) ? value : "auto";
 }
 
 function normalizeBytes<T>(value: T, fallback: number): number {

@@ -27,6 +27,7 @@ import type { LocalPlaybackSource } from "@/services/offline/local-playback-sour
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { isTerminalHlsHttpStatus } from "@/services/playback/hls-manifest-materializer";
 import { materializePlaybackMediaForPlayback } from "@/services/playback/playback-media-materializer";
+import type { HdrMode } from "@kunai/config";
 
 import {
   startHlsRelay,
@@ -36,6 +37,7 @@ import {
 } from "./hls-relay";
 import { resolveLocalPlaybackPolicy, type LocalPlaybackPolicyInput } from "./local-playback-policy";
 import { discoverMpvInvocation } from "./mpv-discovery";
+import { hdrModeRequiresPlayerRestart } from "./mpv-hdr";
 import { classifyMpvLaunchError } from "./mpv-launch-error";
 import { killActiveMpvProcessesSync as killRegisteredMpvProcesses } from "./mpv-process-registry";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
@@ -64,6 +66,8 @@ import type {
 export class PlayerServiceImpl implements PlayerService {
   readonly capabilities = MANAGED_MPV_CAPABILITIES;
   private persistentSession: PersistentMpvSession | null = null;
+  /** HDR mode the live persistent mpv was launched with (its `--vo` is fixed). */
+  private persistentSessionHdrMode: HdrMode | undefined;
   private persistentSessionCreation: Promise<PersistentMpvSession> | null = null;
   private persistentSessionEpoch = 0;
   private persistentSessionRelease: Promise<void> | null = null;
@@ -715,9 +719,6 @@ export class PlayerServiceImpl implements PlayerService {
         ytdlFormat: stream.ytdlFormat,
         ytdlRawOptions: stream.ytdlRawOptions,
         isLive: stream.isLive,
-        dynamicRange: stream.providerResolveResult?.streams.find(
-          (candidate) => candidate.id === stream.providerResolveResult?.selectedStreamId,
-        )?.dynamicRange,
         attach: options.attach,
         timing: options.timing,
         autoSkipEnabled: options.autoSkipEnabled,
@@ -757,7 +758,11 @@ export class PlayerServiceImpl implements PlayerService {
     retiredGeneration: PlaybackGeneration | null,
   ): Promise<PlaybackResult> {
     const generation = this.currentGeneration;
-    if (this.persistentSession && !this.persistentSession.isReusable()) {
+    if (
+      this.persistentSession &&
+      (!this.persistentSession.isReusable() ||
+        hdrModeRequiresPlayerRestart(this.persistentSessionHdrMode, this.deps.config.hdrMode))
+    ) {
       await this.retirePersistentSession(retiredGeneration);
     }
 
@@ -802,13 +807,14 @@ export class PlayerServiceImpl implements PlayerService {
 
     if (!this.persistentSession) {
       const creationEpoch = this.persistentSessionEpoch;
+      const launchHdrMode = this.deps.config.hdrMode;
       const creation = PersistentMpvSession.create({
         stream,
         options: sharedOptions,
         mpv: {
           ...this.deps.mpv,
           startupPriority: this.deps.config.startupPriority,
-          hdrMode: this.deps.config.hdrMode,
+          hdrMode: launchHdrMode,
         },
         kitsuneConfig: this.deps.config.getRaw(),
         onControlReady: (control) => this.setActiveControlFor(generation, control),
@@ -831,6 +837,7 @@ export class PlayerServiceImpl implements PlayerService {
         throw new PlaybackAbortedError("playback aborted during player startup");
       }
       this.persistentSession = created;
+      this.persistentSessionHdrMode = launchHdrMode;
       const result = await created.waitForCurrentPlayback();
       if (this.persistentSession && !this.persistentSession.isReusable()) {
         await this.releasePersistentSession();

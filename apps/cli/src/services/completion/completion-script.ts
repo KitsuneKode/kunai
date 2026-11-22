@@ -1,4 +1,5 @@
 import { CLI_SUBCOMMANDS, KNOWN_FLAGS, VALUE_FLAGS } from "@/cli-args";
+import { HDR_MODES } from "@kunai/config";
 
 /**
  * Shell completion scripts for `kunai`.
@@ -48,7 +49,7 @@ const QUALITY_VALUES = ["best", "2160p", "1440p", "1080p", "720p", "480p"] as co
 const AUDIO_VALUES = ["original", "en", "ja", "hi", "pt", "es", "fr", "de", "dub"] as const;
 const SUB_VALUES = ["en", "interactive", "none", "hi", "pt", "ar", "de", "es", "fr", "ja"] as const;
 const PLAYER_VALUES = ["auto", "mpv", "vlc"] as const;
-const HDR_VALUES = ["auto", "passthrough", "tone-map", "sdr-only"] as const;
+const HDR_VALUES = HDR_MODES;
 const FORMAT_VALUES = ["pretty", "jsonl", "markdown"] as const;
 const PROVIDERS_SUBCOMMANDS = ["status", "update", "verify", "rollback", "reset"] as const;
 

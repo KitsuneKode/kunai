@@ -95,7 +95,6 @@ export async function launchMpv(opts: {
   ytdlFormat?: string;
   ytdlRawOptions?: string;
   isLive?: boolean;
-  dynamicRange?: import("@kunai/types").VideoDynamicRange;
   attach?: boolean;
   timing?: import("@/domain/types").PlaybackTimingMetadata | null;
   autoSkipEnabled?: boolean;
@@ -129,12 +128,11 @@ export async function launchMpv(opts: {
     if (!mpvInvocation) {
       throw new MpvLaunchError("dependency", "mpv is not installed or not found on PATH");
     }
+    // Only an explicit HDR mode emits gpu-next options; `auto` leaves mpv alone.
     const needsHdrProbe =
       opts.mpv?.supportsGpuNext === undefined &&
-      ((opts.mpv?.hdrMode !== undefined && opts.mpv.hdrMode !== "auto") ||
-        opts.dynamicRange === "hdr10" ||
-        opts.dynamicRange === "hlg" ||
-        opts.dynamicRange === "dolby-vision");
+      opts.mpv?.hdrMode !== undefined &&
+      opts.mpv.hdrMode !== "auto";
     const hdrCapability = needsHdrProbe ? await probeMpvHdrCapability(mpvInvocation) : null;
     const effectiveMpv: MpvRuntimeOptions | undefined =
       hdrCapability !== null
@@ -660,7 +658,6 @@ export function buildMpvArgs(
     ytdlFormat?: string;
     ytdlRawOptions?: string;
     isLive?: boolean;
-    dynamicRange?: import("@kunai/types").VideoDynamicRange;
     chaptersFile?: string | null;
   },
   ipcPath: string | null,
@@ -823,7 +820,6 @@ export function buildMpvArgs(
   }
   const hdrArgs = resolveMpvHdrArgs({
     hdrMode: config?.mpv?.hdrMode,
-    streamDynamicRange: opts.dynamicRange,
     supportsGpuNext: config?.mpv?.supportsGpuNext,
   });
   for (const hdrArg of hdrArgs) {

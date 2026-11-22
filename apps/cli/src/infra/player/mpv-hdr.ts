@@ -18,7 +18,6 @@ export interface MpvHdrProbeDeps {
 
 export interface ResolveMpvHdrArgsInput {
   readonly hdrMode?: HdrMode;
-  readonly streamDynamicRange?: VideoDynamicRange;
   readonly supportsGpuNext?: boolean;
 }
 
@@ -105,9 +104,15 @@ export async function probeMpvHdrCapability(
 /**
  * Pure mpv CLI argument builder for HDR playback.
  *
- * Flags exclusive to libplacebo / `gpu-next` (`--vo=gpu-next`,
- * `--target-colorspace-hint`, `--gamut-mapping-mode`) are emitted only when
- * `supportsGpuNext` is true so legacy `mpv` installs never abort at launch.
+ * - `auto` emits nothing. mpv already tone-maps HDR on SDR displays, and a
+ *   forced `--vo` would override the user's `mpv.conf` and can leave a host
+ *   whose gpu-next cannot initialise (no Vulkan, no MoltenVK) with no video.
+ *   That also keeps a reused persistent mpv correct across SDR/HDR episodes.
+ * - Explicit modes use libplacebo options only when the probe found
+ *   `vo=gpu-next` (mpv >= 0.35). Without it, only `--hdr-compute-peak` is sent:
+ *   older builds reject `--tone-mapping=bt.2446a` as a fatal option error.
+ * - `--gamut-mapping-mode` is left at mpv's default (perceptual since 0.36);
+ *   naming a value 0.35 does not know would abort launch.
  */
 export function resolveMpvHdrArgs(input: ResolveMpvHdrArgsInput): readonly string[] {
   const mode: HdrMode = input.hdrMode ?? "auto";
@@ -123,26 +128,28 @@ export function resolveMpvHdrArgs(input: ResolveMpvHdrArgsInput): readonly strin
     return canGpuNext
       ? [
           "--vo=gpu-next",
+          "--target-colorspace-hint=no",
           "--tone-mapping=bt.2446a",
           "--hdr-compute-peak=yes",
-          "--gamut-mapping-mode=perceptual",
         ]
-      : ["--tone-mapping=bt.2446a", "--hdr-compute-peak=yes"];
+      : ["--hdr-compute-peak=yes"];
   }
 
   if (mode === "sdr-only") {
-    return canGpuNext
-      ? ["--target-colorspace-hint=no", "--tone-mapping=bt.2446a"]
-      : ["--tone-mapping=bt.2446a"];
-  }
-
-  // "auto": stay silent for SDR/unknown streams to avoid overriding user mpv.conf,
-  // and enable safe dynamic peak tone-mapping when an HDR/Dolby Vision stream is detected.
-  if (isHdrDynamicRange(input.streamDynamicRange)) {
-    return canGpuNext
-      ? ["--vo=gpu-next", "--tone-mapping=auto", "--hdr-compute-peak=yes"]
-      : ["--tone-mapping=auto", "--hdr-compute-peak=yes"];
+    return canGpuNext ? ["--target-colorspace-hint=no", "--tone-mapping=bt.2446a"] : [];
   }
 
   return [];
+}
+
+/**
+ * A reused persistent mpv keeps the HDR options it was launched with, and
+ * `--vo` cannot change on `loadfile`. When the HDR mode changed since launch
+ * (Settings mid-chain), the next file needs a fresh mpv.
+ */
+export function hdrModeRequiresPlayerRestart(
+  launchedWith: HdrMode | undefined,
+  current: HdrMode | undefined,
+): boolean {
+  return (launchedWith ?? "auto") !== (current ?? "auto");
 }

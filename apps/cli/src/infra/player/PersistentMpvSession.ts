@@ -32,7 +32,7 @@ import {
   resolveKunaiMpvBridgeScriptPath,
 } from "./kunai-mpv-bridge";
 import { discoverMpvInvocation } from "./mpv-discovery";
-import { isHdrDynamicRange, probeMpvHdrCapability } from "./mpv-hdr";
+import { probeMpvHdrCapability } from "./mpv-hdr";
 import { computeInProcessReconnectSeek } from "./mpv-in-process-reconnect";
 import type { MpvIpcSession } from "./mpv-ipc";
 import { openMpvIpcSession, waitForMpvIpcEndpoint } from "./mpv-ipc";
@@ -649,14 +649,12 @@ export class PersistentMpvSession {
       },
       this.ipcEndpoint,
     );
-    const initialDynamicRange = this.initialStream.providerResolveResult?.streams.find(
-      (candidate) => candidate.id === this.initialStream.providerResolveResult?.selectedStreamId,
-    )?.dynamicRange;
+    // Only an explicit HDR mode emits gpu-next options; `auto` leaves mpv alone.
     const needsHdrProbe =
       mpvOptions?.supportsGpuNext === undefined &&
       this.runtime.spawn === defaultPersistentMpvSessionRuntime.spawn &&
-      ((mpvOptions?.hdrMode !== undefined && mpvOptions.hdrMode !== "auto") ||
-        isHdrDynamicRange(initialDynamicRange));
+      mpvOptions?.hdrMode !== undefined &&
+      mpvOptions.hdrMode !== "auto";
     const mpvProbeInvocation = needsHdrProbe
       ? discoverMpvInvocation({
           which: this.runtime.which,
@@ -683,7 +681,6 @@ export class PersistentMpvSession {
         displayTitle: this.initialOptions.displayTitle,
         startAt: this.initialStream.isLive ? undefined : this.initialOptions.startAt,
         isLive: this.initialStream.isLive,
-        dynamicRange: initialDynamicRange,
         requiresYtdl: this.initialStream.requiresYtdl,
         ytdlFormat: this.initialStream.ytdlFormat,
         ytdlRawOptions: this.initialStream.ytdlRawOptions,

@@ -1,13 +1,17 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { HDR_MODE_OPTIONS } from "@/app-shell/settings/registry/shared";
+import { CliUsageError, parseCliArgs } from "@/cli-args";
 import {
   clearMpvHdrCapabilityCache,
   formatDynamicRangeBadge,
   parseMpvVoHelpSupportsGpuNext,
+  hdrModeRequiresPlayerRestart,
   probeMpvHdrCapability,
   resolveMpvHdrArgs,
 } from "@/infra/player/mpv-hdr";
 import { buildMpvArgs } from "@/mpv";
+import { HDR_MODES } from "@kunai/config";
 
 afterEach(() => {
   clearMpvHdrCapabilityCache();
@@ -76,54 +80,52 @@ describe("mpv HDR capability probing & argument resolution", () => {
     expect(calls).toBe(2);
   });
 
-  test("auto mode stays silent for SDR/unknown streams and activates safe peak tone-mapping on HDR/DV", () => {
+  test("auto never emits HDR options, so mpv.conf vo and a reused mpv stay untouched", () => {
     expect(resolveMpvHdrArgs({ hdrMode: "auto", supportsGpuNext: true })).toEqual([]);
-    expect(
-      resolveMpvHdrArgs({ hdrMode: "auto", streamDynamicRange: "sdr", supportsGpuNext: true }),
-    ).toEqual([]);
-    expect(
-      resolveMpvHdrArgs({ hdrMode: "auto", streamDynamicRange: "hdr10", supportsGpuNext: true }),
-    ).toEqual(["--vo=gpu-next", "--tone-mapping=auto", "--hdr-compute-peak=yes"]);
-    expect(
-      resolveMpvHdrArgs({
-        hdrMode: "auto",
-        streamDynamicRange: "dolby-vision",
-        supportsGpuNext: false,
-      }),
-    ).toEqual(["--tone-mapping=auto", "--hdr-compute-peak=yes"]);
+    expect(resolveMpvHdrArgs({ hdrMode: "auto", supportsGpuNext: false })).toEqual([]);
+    expect(resolveMpvHdrArgs({ supportsGpuNext: true })).toEqual([]);
   });
 
-  test("passthrough, tone-map, and sdr-only gate gpu-next-only flags behind supportsGpuNext", () => {
+  test("explicit modes use libplacebo options only with gpu-next", () => {
     expect(resolveMpvHdrArgs({ hdrMode: "passthrough", supportsGpuNext: true })).toEqual([
       "--vo=gpu-next",
       "--target-colorspace-hint=yes",
       "--hdr-compute-peak=yes",
     ]);
-    expect(resolveMpvHdrArgs({ hdrMode: "passthrough", supportsGpuNext: false })).toEqual([
-      "--hdr-compute-peak=yes",
-    ]);
-
     expect(resolveMpvHdrArgs({ hdrMode: "tone-map", supportsGpuNext: true })).toEqual([
       "--vo=gpu-next",
-      "--tone-mapping=bt.2446a",
-      "--hdr-compute-peak=yes",
-      "--gamut-mapping-mode=perceptual",
-    ]);
-    expect(resolveMpvHdrArgs({ hdrMode: "tone-map", supportsGpuNext: false })).toEqual([
+      "--target-colorspace-hint=no",
       "--tone-mapping=bt.2446a",
       "--hdr-compute-peak=yes",
     ]);
-
     expect(resolveMpvHdrArgs({ hdrMode: "sdr-only", supportsGpuNext: true })).toEqual([
       "--target-colorspace-hint=no",
       "--tone-mapping=bt.2446a",
     ]);
-    expect(resolveMpvHdrArgs({ hdrMode: "sdr-only", supportsGpuNext: false })).toEqual([
-      "--tone-mapping=bt.2446a",
-    ]);
   });
 
-  test("buildMpvArgs appends HDR flags when configured and stays quiet for default SDR", () => {
+  test("legacy mpv (no gpu-next) never gets a tone-mapping value or gamut mode it may reject", () => {
+    // An unknown --tone-mapping value is a fatal option error on pre-0.34 mpv, and
+    // --gamut-mapping-mode=perceptual is unknown to 0.35 — either aborts launch.
+    for (const hdrMode of ["auto", "passthrough", "tone-map", "sdr-only"] as const) {
+      for (const supportsGpuNext of [true, false]) {
+        const args = resolveMpvHdrArgs({ hdrMode, supportsGpuNext });
+        expect(args.some((arg) => arg.startsWith("--gamut-mapping-mode"))).toBe(false);
+        if (!supportsGpuNext) {
+          expect(args.filter((arg) => arg !== "--hdr-compute-peak=yes")).toEqual([]);
+        }
+      }
+    }
+  });
+
+  test("a mode change since launch forces a fresh persistent mpv; same mode reuses it", () => {
+    expect(hdrModeRequiresPlayerRestart("auto", "auto")).toBe(false);
+    expect(hdrModeRequiresPlayerRestart(undefined, "auto")).toBe(false);
+    expect(hdrModeRequiresPlayerRestart("auto", "passthrough")).toBe(true);
+    expect(hdrModeRequiresPlayerRestart("tone-map", "sdr-only")).toBe(true);
+  });
+
+  test("buildMpvArgs appends HDR flags for an explicit mode and stays quiet in auto", () => {
     const baseOpts = {
       url: "https://cdn.example.test/video.m3u8",
       headers: {},
@@ -131,18 +133,30 @@ describe("mpv HDR capability probing & argument resolution", () => {
       displayTitle: "Dune",
     };
 
-    const sdrArgs = buildMpvArgs(baseOpts, null, {
+    const autoArgs = buildMpvArgs(baseOpts, null, {
       mpv: { hdrMode: "auto", supportsGpuNext: true },
     });
-    expect(sdrArgs).not.toContain("--vo=gpu-next");
-    expect(sdrArgs).not.toContain("--target-colorspace-hint=yes");
+    expect(autoArgs.some((arg) => arg.startsWith("--vo="))).toBe(false);
+    expect(autoArgs.some((arg) => arg.startsWith("--tone-mapping"))).toBe(false);
 
-    const hdrArgs = buildMpvArgs({ ...baseOpts, dynamicRange: "dolby-vision" }, null, {
+    const hdrArgs = buildMpvArgs(baseOpts, null, {
       mpv: { hdrMode: "passthrough", supportsGpuNext: true },
     });
     expect(hdrArgs).toContain("--vo=gpu-next");
     expect(hdrArgs).toContain("--target-colorspace-hint=yes");
     expect(hdrArgs).toContain("--hdr-compute-peak=yes");
+  });
+
+  test("--hdr parses every mode case-insensitively and rejects anything else", () => {
+    for (const mode of HDR_MODES) {
+      expect(parseCliArgs(["--hdr", mode.toUpperCase()]).hdr).toBe(mode);
+    }
+    expect(parseCliArgs([]).hdr).toBeUndefined();
+    expect(() => parseCliArgs(["--hdr", "bogus"])).toThrow(CliUsageError);
+  });
+
+  test("the settings row offers exactly the modes config accepts", () => {
+    expect(HDR_MODE_OPTIONS.map((option) => option.value)).toEqual([...HDR_MODES]);
   });
 
   test("formatDynamicRangeBadge emits concise HDR badges and omits SDR", () => {

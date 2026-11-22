@@ -52,7 +52,7 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
       kind: "enum",
       id: "hdrMode",
       label: "HDR playback",
-      detail: "Control mpv HDR passthrough (gpu-next), SDR tone-mapping, or SDR variant preference",
+      detail: "How mpv handles HDR10, HLG, and Dolby Vision streams",
       options: HDR_MODE_OPTIONS,
       presentation: "submenu",
       read: (config) => config.hdrMode,

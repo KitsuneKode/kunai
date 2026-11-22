@@ -6,7 +6,7 @@ import {
 } from "@/domain/media/media-preferences";
 import { parsePlayerChoice, type PlayerChoice } from "@/domain/playback/player-choice";
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
-import type { HdrMode } from "@kunai/config";
+import { HDR_MODES, isHdrMode, type HdrMode } from "@kunai/config";
 import { Command } from "commander";
 
 /**
@@ -621,10 +621,8 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
   }
   if (options.hdr !== undefined) {
     const hdr = options.hdr.toLowerCase();
-    if (hdr !== "auto" && hdr !== "passthrough" && hdr !== "tone-map" && hdr !== "sdr-only") {
-      throw new CliUsageError(
-        `invalid --hdr "${options.hdr}" — one of: auto, passthrough, tone-map, sdr-only`,
-      );
+    if (!isHdrMode(hdr)) {
+      throw new CliUsageError(`invalid --hdr "${options.hdr}" — one of: ${HDR_MODES.join(", ")}`);
     }
     args.hdr = hdr;
   }

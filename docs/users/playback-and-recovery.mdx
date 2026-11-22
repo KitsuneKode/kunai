@@ -193,16 +193,18 @@ Symptom-specific steps: [Troubleshooting](/docs/users/troubleshooting).
 
 ## HDR and 4K playback
 
-Kunai detects `HDR10` (`VIDEO-RANGE=PQ`), `HLG`, and Dolby Vision (`dvh1`/`dvhe`) streams from HLS master playlists and labels them in the Tracks picker (`2160p HDR10`, `2160p DV`). Before enabling libplacebo flags (`--vo=gpu-next`, `--target-colorspace-hint`, `--gamut-mapping-mode`), Kunai probes `mpv --vo=help` once and falls back cleanly on older `mpv` builds that lack `gpu-next`.
+Kunai detects `HDR10` (`VIDEO-RANGE=PQ`), `HLG`, and Dolby Vision (`dvh1`/`dvhe`) streams from HLS master playlists and labels them in the Tracks picker (`2160p HDR10`, `2160p DV`). When a playlist mixes SDR and HDR rungs, the label shows the strongest range present; `mpv` still picks the rung it plays.
 
 Configure **HDR playback** in `/settings` (Playback) or override it for a single run with `--hdr`:
 
-| Mode             | Effect                                                                                                                           |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `auto` (default) | Stays silent on SDR streams; enables dynamic peak tone-mapping on detected HDR/Dolby Vision streams                              |
-| `passthrough`    | Sends HDR10/HLG/DV natively via `mpv --vo=gpu-next --target-colorspace-hint=yes` and prefers HDR variants at the same resolution |
-| `tone-map`       | Maps HDR10 and Dolby Vision to SDR with `bt.2446a` perceptual gamut mapping                                                      |
-| `sdr-only`       | Ranks SDR variants ahead of HDR/DV at the same resolution and tone-maps any HDR fallback                                         |
+| Mode             | Effect                                                                                                                                          |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auto` (default) | Kunai adds no HDR options. `mpv` and your `mpv.conf` decide; by default `mpv` tone-maps HDR to SDR.                                             |
+| `passthrough`    | For HDR displays: `--vo=gpu-next --target-colorspace-hint=yes`. When you pick a source, prefers the HDR variant at equal quality.               |
+| `tone-map`       | Forces SDR output with `--vo=gpu-next --target-colorspace-hint=no --tone-mapping=bt.2446a`.                                                     |
+| `sdr-only`       | Forces SDR output with `bt.2446a`. When you pick a source, prefers the SDR variant at equal quality; a higher-resolution HDR stream still wins. |
+
+The explicit modes need an `mpv` built with `gpu-next` (libplacebo, `mpv` 0.35 or newer). Kunai checks `mpv --vo=help` before the first launch that needs it and remembers a successful answer for the session. Without `gpu-next`, Kunai sends only `--hdr-compute-peak=yes`, so older `mpv` builds still start; `mpv` then uses its default tone-mapping. Changing the mode during an autoplay chain restarts `mpv` for the next episode.
 
 ```sh
 kunai --hdr passthrough -S "Dune"

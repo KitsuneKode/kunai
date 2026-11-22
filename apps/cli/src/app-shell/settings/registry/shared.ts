@@ -57,22 +57,22 @@ export const HDR_MODE_OPTIONS: readonly EnumOption[] = [
   {
     value: "auto" satisfies HdrMode,
     label: "Auto",
-    detail: "Enable dynamic peak tone-mapping on HDR/Dolby Vision streams; stay silent for SDR",
+    detail: "Leave HDR to mpv and your mpv.conf; mpv tone-maps HDR to SDR by default",
   },
   {
     value: "passthrough" satisfies HdrMode,
     label: "HDR passthrough",
-    detail: "Send HDR10/HLG/DV natively via mpv gpu-next + target-colorspace-hint (HDR displays)",
+    detail: "HDR displays: output HDR via mpv gpu-next; needs gpu-next, else tone-maps",
   },
   {
     value: "tone-map" satisfies HdrMode,
     label: "Tone-map to SDR",
-    detail: "Map HDR10 and Dolby Vision cleanly to SDR with bt.2446a perceptual gamut mapping",
+    detail: "Force SDR output with bt.2446a tone-mapping (needs gpu-next)",
   },
   {
     value: "sdr-only" satisfies HdrMode,
     label: "Prefer SDR",
-    detail: "Rank SDR variants ahead of HDR/DV at the same resolution and tone-map any fallback",
+    detail: "Force SDR output; on a picked source, prefer SDR at equal quality",
   },
 ];
 

@@ -1,5 +1,6 @@
 import { CLI_SUBCOMMANDS, KNOWN_FLAGS } from "@/cli-args";
 import { loadProductionProviderModules } from "@/container/bootstrap-providers";
+import { HDR_MODES } from "@kunai/config";
 import { listThemes } from "@kunai/design";
 
 export interface CapabilitiesProviderSummary {
@@ -60,7 +61,7 @@ export async function buildCapabilitiesReport(version: string): Promise<Capabili
     subcommands: [...CLI_SUBCOMMANDS],
     flags: [...KNOWN_FLAGS].sort(),
     themes: listThemes().map((theme) => theme.name),
-    hdrModes: ["auto", "passthrough", "tone-map", "sdr-only"],
+    hdrModes: [...HDR_MODES],
     headlessRoutes: [
       "kunai capabilities --json",
       "kunai providers status --json",
