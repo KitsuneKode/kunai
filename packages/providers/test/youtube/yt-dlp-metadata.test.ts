@@ -74,9 +74,11 @@ describe("buildYtdlFormatSelector", () => {
     expect(buildYtdlFormatSelector("best")).toBe(def);
     expect(buildYtdlFormatSelector("auto")).toBe(def);
     expect(buildYtdlFormatSelector("")).toBe(def);
-    expect(buildYtdlFormatSelector("best", "ja")).toBe(
-      "bv*+(ba[language=ja]/ba[language^=ja-]/ba)/b/(ba[language=ja]/ba[language^=ja-]/ba)",
-    );
+    // Explicit language: video-only first, because a muxed `bv*` match keeps its
+    // baked-in default track and yt-dlp drops the requested audio.
+    const ja = "(ba[language=ja]/ba[language^=ja-]/ba)";
+    expect(buildYtdlFormatSelector("best", "ja")).toBe(`bv+${ja}/bv*+${ja}/b/${ja}`);
+    expect(buildYtdlFormatSelector("best", "original")).toBe(def);
   });
 
   test("builds short-side ceiling with DASH merge for numeric qualities", () => {
@@ -89,9 +91,16 @@ describe("buildYtdlFormatSelector", () => {
     expect(buildYtdlFormatSelector("4K")).toBe(
       "(bv*[height<=2160][aspect_ratio>=1]/bv*[width<=2160][aspect_ratio<1]/bv*[height<=?2160])+ba/(bv*[height<=2160][aspect_ratio>=1]/bv*[width<=2160][aspect_ratio<1]/bv*[height<=?2160])/bv*+ba/b/ba",
     );
-    expect(buildYtdlFormatSelector("1080p", "ja")).toContain(
-      "+(ba[language=ja]/ba[language^=ja-]/ba)/",
-    );
+    const ja = "(ba[language=ja]/ba[language^=ja-]/ba)";
+    const jaSelector = buildYtdlFormatSelector("1080p", "ja");
+    expect(
+      jaSelector.startsWith(
+        `(bv[height<=1080][aspect_ratio>=1]/bv[width<=1080][aspect_ratio<1]/bv[height<=?1080])+${ja}/`,
+      ),
+    ).toBe(true);
+    // Muxed formats remain a capped fallback after the video-only attempt.
+    expect(jaSelector).toContain(`(bv*[height<=1080][aspect_ratio>=1]`);
+    expect(jaSelector.endsWith(`/bv+${ja}/bv*+${ja}/b/${ja}`)).toBe(true);
   });
 });
 

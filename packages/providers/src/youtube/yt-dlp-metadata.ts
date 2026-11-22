@@ -130,7 +130,16 @@ export function defaultYtdlPlaybackFormat(audioPreference?: string): string {
   // video" — `bv`/`bestvideo` is video-*only* (`best*[acodec=none]`), which drops
   // the pre-merged renditions YouTube serves for live HLS and for older uploads.
   const audio = buildYoutubeAudioSelector(audioPreference);
-  return `bv*+${audio}/b/${audio}`;
+  const merged = `bv*+${audio}/b/${audio}`;
+  // A muxed `bv*` match keeps its baked-in default track: yt-dlp drops later
+  // audio streams without `--audio-multistreams`. Try video-only first so an
+  // explicit language actually lands; muxed formats remain the fallback.
+  return audio === "ba" ? merged : `bv+${audio}/${merged}`;
+}
+
+/** Short-side ceiling over `bv*` (any video) or `bv` (video-only) formats. */
+function ceilingVideoSelector(kind: "bv" | "bv*", ceiling: number): string {
+  return `(${kind}[height<=${ceiling}][aspect_ratio>=1]/${kind}[width<=${ceiling}][aspect_ratio<1]/${kind}[height<=?${ceiling}])`;
 }
 
 export function buildYtdlFormatSelector(qualityLabel?: string, audioPreference?: string): string {
@@ -144,9 +153,11 @@ export function buildYtdlFormatSelector(qualityLabel?: string, audioPreference?:
   // dimensions fall through to `height<=?ceiling` (live HLS, mainly). Repeating
   // the capped selector before the fallback avoids silently promoting a failed
   // merge above the requested ceiling.
-  const video = `(bv*[height<=${ceiling}][aspect_ratio>=1]/bv*[width<=${ceiling}][aspect_ratio<1]/bv*[height<=?${ceiling}])`;
+  const video = ceilingVideoSelector("bv*", ceiling);
   const audio = buildYoutubeAudioSelector(audioPreference);
-  return `${video}+${audio}/${video}/${fallback}`;
+  const capped = `${video}+${audio}/${video}/${fallback}`;
+  // Same muxed-audio rule as the default: video-only first for an explicit language.
+  return audio === "ba" ? capped : `${ceilingVideoSelector("bv", ceiling)}+${audio}/${capped}`;
 }
 
 /** Pin a discovered rendition. Never silently replace a missing exact format with best. */
