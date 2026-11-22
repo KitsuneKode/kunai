@@ -27,9 +27,9 @@
         "ink": "^7.1.1"
       },
       "lint": {
-        "@oxlint/plugins": "1.74.0",
-        "oxfmt": "^0.74.0",
-        "oxlint": "1.74.0"
+        "@oxlint/plugins": "1.93.0",
+        "oxfmt": "0.78.0",
+        "oxlint": "1.93.0"
       },
       "providers": {
         "@assemblyscript/loader": "^0.28.20"

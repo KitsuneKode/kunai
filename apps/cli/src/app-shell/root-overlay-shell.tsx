@@ -1789,14 +1789,13 @@ export function RootOverlayShell({
               }
               container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
               if (!awaited) {
-                void resolveHistorySelectionLaunch(container, selection, "history").then(
-                  (launch) =>
-                    launch
-                      ? forceCloseRootContent<BrowseShellResult<SearchResult>>({
-                          type: "launch-playback",
-                          launch,
-                        })
-                      : false,
+                void resolveHistorySelectionLaunch(container, selection, "history").then((launch) =>
+                  launch
+                    ? forceCloseRootContent<BrowseShellResult<SearchResult>>({
+                        type: "launch-playback",
+                        launch,
+                      })
+                    : false,
                 );
               }
             }
