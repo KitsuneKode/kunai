@@ -56,13 +56,21 @@ export function selectYoutubeQuality<Entry extends YoutubeQualityEntry>(
   return options.preferSeparateAudio ? preferSeparateAudioAtRank(entries, picked) : picked;
 }
 
-/** First video-only rendition at the picked rank (entries are sorted best-first). */
+/**
+ * Best confirmed video-only rendition at the picked rank (entries are sorted
+ * best-first). Unknown audio presence is weaker evidence: it only replaces a
+ * known muxed pick when no confirmed video-only rendition exists.
+ */
 function preferSeparateAudioAtRank<Entry extends YoutubeQualityEntry>(
   entries: readonly Entry[],
   picked: Entry,
 ): Entry {
+  if (picked.hasAudio === false) return picked;
+  const sameRank = entries.filter((entry) => entry.rank === picked.rank);
+  const videoOnly = sameRank.find((entry) => entry.hasAudio === false);
+  if (videoOnly) return videoOnly;
   if (picked.hasAudio !== true) return picked;
-  return entries.find((entry) => entry.rank === picked.rank && entry.hasAudio !== true) ?? picked;
+  return sameRank.find((entry) => entry.hasAudio === undefined) ?? picked;
 }
 
 function pickByCeiling<Entry extends YoutubeQualityEntry>(

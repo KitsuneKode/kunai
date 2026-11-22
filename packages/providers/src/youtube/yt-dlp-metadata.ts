@@ -112,7 +112,10 @@ export function buildYoutubeAudioSelector(audioPreference?: string): string {
   if (raw === "dub") {
     return `(${audioLanguageFilters("en", "[format_note!*=original]")}/${audioLanguageFilters("en")}/ba)`;
   }
-  const language = normalizeSubtitleLanguage(raw);
+  // Keep only the primary subtag of a BCP 47 tag: the normalizer strips
+  // alphabetic regions (`pt-br`) but keeps numeric ones (`es-419`) and scripts.
+  const primarySubtag = /^[a-z]{2,3}[-_][a-z0-9-]+$/.test(raw) ? raw.split(/[-_]/)[0] : raw;
+  const language = normalizeSubtitleLanguage(primarySubtag);
   // Reject anything that is not a bare language code so config/user input
   // cannot inject yt-dlp selector logic.
   if (!language || !/^[a-z]{2,3}$/.test(language)) return "ba";

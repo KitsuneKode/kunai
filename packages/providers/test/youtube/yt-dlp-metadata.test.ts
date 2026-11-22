@@ -36,6 +36,10 @@ describe("buildYoutubeAudioSelector", () => {
     expect(isExplicitYoutubeAudioPreference("original")).toBe(false);
     expect(isExplicitYoutubeAudioPreference("ja]/best")).toBe(false);
     expect(isExplicitYoutubeAudioPreference("ja")).toBe(true);
+    // Numeric regions and scripts reduce to the primary subtag too.
+    expect(buildYoutubeAudioSelector("es-419")).toBe("(ba[language=es]/ba[language^=es-]/ba)");
+    expect(buildYoutubeAudioSelector("zh-Hant-TW")).toBe("(ba[language=zh]/ba[language^=zh-]/ba)");
+    expect(isExplicitYoutubeAudioPreference("es-419")).toBe(true);
     // `dub` is English everywhere else in Kunai (mpv --alang, dub catalogs).
     expect(buildYoutubeAudioSelector("dub")).toBe(
       "(ba[language=en][format_note!*=original]/ba[language^=en-][format_note!*=original]/ba[language=en]/ba[language^=en-]/ba)",

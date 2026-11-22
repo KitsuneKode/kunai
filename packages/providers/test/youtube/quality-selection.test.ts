@@ -68,4 +68,24 @@ describe("selectYoutubeQuality", () => {
       })?.formatId,
     ).toBe("95");
   });
+
+  test("treats unknown audio presence as weaker evidence than a confirmed video-only rendition", () => {
+    const mixedEvidence = [
+      { label: "1080p · #96", rank: 1080, formatId: "96", hasAudio: true },
+      { label: "1080p · #unknown", rank: 1080, formatId: "unknown" },
+      { label: "1080p · #248", rank: 1080, formatId: "248", hasAudio: false },
+    ];
+    expect(
+      selectYoutubeQuality(mixedEvidence, "1080p", { preferSeparateAudio: true })?.formatId,
+    ).toBe("248");
+    // An unknown pick still yields to a confirmed video-only rendition.
+    expect(
+      selectYoutubeQuality(mixedEvidence.slice(1), "best", { preferSeparateAudio: true })?.formatId,
+    ).toBe("248");
+    // Without a confirmed video-only rendition, unknown beats known muxed.
+    expect(
+      selectYoutubeQuality(mixedEvidence.slice(0, 2), "best", { preferSeparateAudio: true })
+        ?.formatId,
+    ).toBe("unknown");
+  });
 });
