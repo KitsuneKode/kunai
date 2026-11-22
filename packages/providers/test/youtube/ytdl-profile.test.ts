@@ -54,7 +54,7 @@ describe("buildYoutubeYtdlProfile", () => {
       qualityLabel: "1080p",
       audioLanguage: "ja",
     });
-    expect(jpDownload.formatSelector).toContain("+(ba[language^=ja]/ba)/");
+    expect(jpDownload.formatSelector).toContain("+(ba[language=ja]/ba[language^=ja-]/ba)/");
   });
 
   test("uses live playback format when stream is live", () => {

@@ -7,6 +7,7 @@ import {
   buildYoutubeAudioSelector,
   buildYtdlFormatSelector,
   extractYtDlpVideoInfo,
+  isExplicitYoutubeAudioPreference,
   mapYtDlpFormatsToQualityLabels,
 } from "../../src/youtube/yt-dlp-metadata";
 
@@ -17,14 +18,27 @@ describe("buildYoutubeAudioSelector", () => {
     expect(buildYoutubeAudioSelector("original")).toBe("ba");
     expect(buildYoutubeAudioSelector("auto")).toBe("ba");
     expect(buildYoutubeAudioSelector("sub")).toBe("ba");
-    expect(buildYoutubeAudioSelector("ja")).toBe("(ba[language^=ja]/ba)");
+    expect(buildYoutubeAudioSelector("ja")).toBe("(ba[language=ja]/ba[language^=ja-]/ba)");
     // yt-dlp filters are case-sensitive and YouTube reports `en-US`: match the primary subtag.
-    expect(buildYoutubeAudioSelector("en-US")).toBe("(ba[language^=en]/ba)");
-    expect(buildYoutubeAudioSelector("jpn")).toBe("(ba[language^=ja]/ba)");
-    expect(buildYoutubeAudioSelector("Japanese")).toBe("(ba[language^=ja]/ba)");
+    expect(buildYoutubeAudioSelector("en-US")).toBe("(ba[language=en]/ba[language^=en-]/ba)");
+    expect(buildYoutubeAudioSelector("jpn")).toBe("(ba[language=ja]/ba[language^=ja-]/ba)");
+    expect(buildYoutubeAudioSelector("Japanese")).toBe("(ba[language=ja]/ba[language^=ja-]/ba)");
+    // YouTube tags Filipino `fil` and Hebrew `iw`; the ISO 639-1 normalizer folds them away.
+    expect(buildYoutubeAudioSelector("fil")).toBe(
+      "(ba[language=tl]/ba[language^=tl-]/ba[language=fil]/ba[language^=fil-]/ba)",
+    );
+    expect(buildYoutubeAudioSelector("he")).toBe(
+      "(ba[language=he]/ba[language^=he-]/ba[language=iw]/ba[language^=iw-]/ba)",
+    );
+    // Exact tag or regional subtag only: Finnish must never prefix-match Filipino.
+    expect(buildYoutubeAudioSelector("fi")).toBe("(ba[language=fi]/ba[language^=fi-]/ba)");
+    expect(buildYoutubeAudioSelector("fi")).not.toContain("language^=fi]");
+    expect(isExplicitYoutubeAudioPreference("original")).toBe(false);
+    expect(isExplicitYoutubeAudioPreference("ja]/best")).toBe(false);
+    expect(isExplicitYoutubeAudioPreference("ja")).toBe(true);
     // `dub` is English everywhere else in Kunai (mpv --alang, dub catalogs).
     expect(buildYoutubeAudioSelector("dub")).toBe(
-      "(ba[language^=en][format_note!*=original]/ba[language^=en]/ba)",
+      "(ba[language=en][format_note!*=original]/ba[language^=en-][format_note!*=original]/ba[language=en]/ba[language^=en-]/ba)",
     );
     expect(buildYoutubeAudioSelector("ja]/best")).toBe("ba");
     expect(buildYoutubeAudioSelector("en;rm")).toBe("ba");
@@ -36,11 +50,13 @@ describe("buildExactYtdlFormatSelector", () => {
     expect(buildExactYtdlFormatSelector("137", false)).toBe("137+ba");
     expect(buildExactYtdlFormatSelector("18", true)).toBe("18");
     expect(buildExactYtdlFormatSelector("248")).toBe("248+ba/248");
-    expect(buildExactYtdlFormatSelector("699", false, "ja")).toBe("699+(ba[language^=ja]/ba)");
+    expect(buildExactYtdlFormatSelector("699", false, "ja")).toBe(
+      "699+(ba[language=ja]/ba[language^=ja-]/ba)",
+    );
     expect(buildExactYtdlFormatSelector("699", false, "original")).toBe("699+ba");
     expect(buildExactYtdlFormatSelector("18", true, "ja")).toBe("18");
     expect(buildExactYtdlFormatSelector("248", undefined, "dub")).toBe(
-      "248+(ba[language^=en][format_note!*=original]/ba[language^=en]/ba)/248",
+      "248+(ba[language=en][format_note!*=original]/ba[language^=en-][format_note!*=original]/ba[language=en]/ba[language^=en-]/ba)/248",
     );
   });
 
@@ -59,7 +75,7 @@ describe("buildYtdlFormatSelector", () => {
     expect(buildYtdlFormatSelector("auto")).toBe(def);
     expect(buildYtdlFormatSelector("")).toBe(def);
     expect(buildYtdlFormatSelector("best", "ja")).toBe(
-      "bv*+(ba[language^=ja]/ba)/b/(ba[language^=ja]/ba)",
+      "bv*+(ba[language=ja]/ba[language^=ja-]/ba)/b/(ba[language=ja]/ba[language^=ja-]/ba)",
     );
   });
 
@@ -73,7 +89,9 @@ describe("buildYtdlFormatSelector", () => {
     expect(buildYtdlFormatSelector("4K")).toBe(
       "(bv*[height<=2160][aspect_ratio>=1]/bv*[width<=2160][aspect_ratio<1]/bv*[height<=?2160])+ba/(bv*[height<=2160][aspect_ratio>=1]/bv*[width<=2160][aspect_ratio<1]/bv*[height<=?2160])/bv*+ba/b/ba",
     );
-    expect(buildYtdlFormatSelector("1080p", "ja")).toContain("+(ba[language^=ja]/ba)/");
+    expect(buildYtdlFormatSelector("1080p", "ja")).toContain(
+      "+(ba[language=ja]/ba[language^=ja-]/ba)/",
+    );
   });
 });
 

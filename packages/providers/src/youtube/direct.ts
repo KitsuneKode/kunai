@@ -51,6 +51,7 @@ import {
   buildExactYtdlFormatSelector,
   buildYtdlFormatSelector,
   defaultYtdlPlaybackFormat,
+  isExplicitYoutubeAudioPreference,
   isYoutubeHlsProtocol,
 } from "./yt-dlp-metadata";
 import { parseYoutubePlayerClients, withYoutubePlayerClient } from "./ytdl-options";
@@ -555,7 +556,9 @@ async function resolveYoutube(
               formatId: fallbackLabel,
             },
           ];
-    const selectedQuality = selectYoutubeQuality(qualityLabels, input.qualityPreference);
+    const selectedQuality = selectYoutubeQuality(qualityLabels, input.qualityPreference, {
+      preferSeparateAudio: isExplicitYoutubeAudioPreference(input.preferredAudioLanguage),
+    });
 
     // One source per player client. Clients fail independently — one answers 403 on
     // media URLs while another plays the same video — and which one works rotates

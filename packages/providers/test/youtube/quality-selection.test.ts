@@ -43,4 +43,28 @@ describe("selectYoutubeQuality", () => {
     ];
     expect(selectYoutubeQuality(onlyHigh, "720p")).toEqual(onlyHigh[1]);
   });
+
+  test("prefers a video-only rendition over a muxed one at the same rank when audio language is explicit", () => {
+    const entries = [
+      { label: "720p · H.264 · HLS · #95", rank: 720, formatId: "95", hasAudio: true },
+      { label: "720p · VP9 · #247", rank: 720, formatId: "247", hasAudio: false },
+      { label: "480p · H.264 · #94", rank: 480, formatId: "94", hasAudio: true },
+    ];
+    expect(selectYoutubeQuality(entries, "720p")?.formatId).toBe("95");
+    expect(selectYoutubeQuality(entries, "720p", { preferSeparateAudio: true })?.formatId).toBe(
+      "247",
+    );
+    expect(selectYoutubeQuality(entries, "best", { preferSeparateAudio: true })?.formatId).toBe(
+      "247",
+    );
+    // Never trades resolution for a separate audio track.
+    expect(selectYoutubeQuality(entries, "480p", { preferSeparateAudio: true })?.formatId).toBe(
+      "94",
+    );
+    // An exact label is the viewer's explicit pick and is honored as-is.
+    expect(
+      selectYoutubeQuality(entries, "720p · H.264 · HLS · #95", { preferSeparateAudio: true })
+        ?.formatId,
+    ).toBe("95");
+  });
 });

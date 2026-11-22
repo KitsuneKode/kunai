@@ -134,7 +134,7 @@ describe("DownloadService youtube argv contract", () => {
       resolveDownloadStream: async () =>
         // SAFETY: partial YouTube resolve fixture supplies only the fields DownloadService reads.
         youtubeResolveResult({
-          ytdlFormat: "699+(ba[language^=ja]/ba)",
+          ytdlFormat: "699+(ba[language=ja]/ba[language^=ja-]/ba)",
         }) as never,
     });
     const pinnedJob = await pinnedService.enqueue({
@@ -149,7 +149,7 @@ describe("DownloadService youtube argv contract", () => {
     const pinnedArgs = capturedByJob[0] ?? [];
     // The pin leads; its 1080p ceiling follows so a rotated itag still downloads.
     const pinnedSelector = pinnedArgs[pinnedArgs.indexOf("-f") + 1] ?? "";
-    expect(pinnedSelector.startsWith("699+(ba[language^=ja]/ba)/")).toBe(true);
+    expect(pinnedSelector.startsWith("699+(ba[language=ja]/ba[language^=ja-]/ba)/")).toBe(true);
     expect(pinnedSelector).toContain("bv*[height<=1080][aspect_ratio>=1]");
     expect(pinnedSelector).not.toContain("1440");
 

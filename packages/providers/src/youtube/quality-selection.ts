@@ -2,6 +2,17 @@ export type YoutubeQualityEntry = {
   readonly label: string;
   readonly rank: number;
   readonly formatId: string;
+  readonly hasAudio?: boolean;
+};
+
+export type YoutubeQualitySelectionOptions = {
+  /**
+   * The viewer asked for a specific audio language. Muxed renditions carry
+   * YouTube's default track baked in, and yt-dlp keeps the first audio stream
+   * when merging, so a muxed pin can never honor the language. Prefer a
+   * video-only rendition at the same resolution when one exists.
+   */
+  readonly preferSeparateAudio?: boolean;
 };
 
 /** Height in pixels for a `"720p"`, `"1080p"`, or `"4K"`-style label, or undefined for `best`/`auto`. */
@@ -29,22 +40,42 @@ export function youtubeQualityHeight(label: string | undefined): number | undefi
  * the closest honest answer — still not what was asked for, but the closest
  * thing in the direction that was asked for.
  */
-export function selectYoutubeQuality(
-  entries: readonly YoutubeQualityEntry[],
+export function selectYoutubeQuality<Entry extends YoutubeQualityEntry>(
+  entries: readonly Entry[],
   qualityPreference: string | undefined,
-): YoutubeQualityEntry | undefined {
+  options: YoutubeQualitySelectionOptions = {},
+): Entry | undefined {
   const first = entries[0];
   if (!first) return undefined;
-  if (!qualityPreference || qualityPreference === "best") return first;
-
-  const exact = entries.find((entry) => entry.label === qualityPreference);
+  // An exact label is the viewer's explicit pick; honor it even when muxed.
+  const exact = qualityPreference
+    ? entries.find((entry) => entry.label === qualityPreference)
+    : undefined;
   if (exact) return exact;
+  const picked = pickByCeiling(entries, first, qualityPreference);
+  return options.preferSeparateAudio ? preferSeparateAudioAtRank(entries, picked) : picked;
+}
 
+/** First video-only rendition at the picked rank (entries are sorted best-first). */
+function preferSeparateAudioAtRank<Entry extends YoutubeQualityEntry>(
+  entries: readonly Entry[],
+  picked: Entry,
+): Entry {
+  if (picked.hasAudio !== true) return picked;
+  return entries.find((entry) => entry.rank === picked.rank && entry.hasAudio !== true) ?? picked;
+}
+
+function pickByCeiling<Entry extends YoutubeQualityEntry>(
+  entries: readonly Entry[],
+  first: Entry,
+  qualityPreference: string | undefined,
+): Entry {
+  if (!qualityPreference || qualityPreference === "best") return first;
   const ceiling = youtubeQualityHeight(qualityPreference);
   if (ceiling === undefined) return first;
 
-  let bestUnderCeiling: YoutubeQualityEntry | undefined;
-  let smallest: YoutubeQualityEntry = first;
+  let bestUnderCeiling: Entry | undefined;
+  let smallest: Entry = first;
   for (const entry of entries) {
     if (entry.rank <= ceiling && (!bestUnderCeiling || entry.rank > bestUnderCeiling.rank)) {
       bestUnderCeiling = entry;

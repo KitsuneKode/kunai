@@ -270,7 +270,7 @@ ytdlpTest(
     );
     const primary = result.streams.find((stream) => stream.id === result.selectedStreamId);
     expect(primary?.metadata?.formatId).toBe("699");
-    expect(primary?.metadata?.ytdlFormat).toBe("699+(ba[language^=ja]/ba)");
+    expect(primary?.metadata?.ytdlFormat).toBe("699+(ba[language=ja]/ba[language^=ja-]/ba)");
 
     // On fallback lane (`web`), an HLS-only (`m3u8_native`) format from `visionos`
     // must drop its exact pin back to a resolution ceiling selector so failover works.
@@ -281,8 +281,10 @@ ytdlpTest(
     const fallbackHls = result.streams.find(
       (stream) => stream.sourceId === "source:youtube:web" && stream.metadata?.formatId === "636",
     );
-    expect(primaryHls?.metadata?.ytdlFormat).toBe("636+(ba[language^=ja]/ba)");
+    expect(primaryHls?.metadata?.ytdlFormat).toBe("636+(ba[language=ja]/ba[language^=ja-]/ba)");
     expect(String(fallbackHls?.metadata?.ytdlFormat)).toContain("bv*[height<=1080]");
-    expect(String(fallbackHls?.metadata?.ytdlFormat)).toContain("(ba[language^=ja]/ba)");
+    expect(String(fallbackHls?.metadata?.ytdlFormat)).toContain(
+      "(ba[language=ja]/ba[language^=ja-]/ba)",
+    );
   },
 );

@@ -78,26 +78,51 @@ export async function extractYtDlpVideoInfo(
 }
 
 /**
+ * YouTube tags a few languages with legacy or 3-letter codes that the ISO 639-1
+ * normalizer folds away (`fil` → `tl`, `iw` → `he`), so match those too.
+ */
+const YOUTUBE_AUDIO_TAG_ALIASES = new Map<string, readonly string[]>([
+  ["tl", ["fil"]],
+  ["he", ["iw"]],
+]);
+
+/**
+ * Exact tag or a regional variant of it (`en`, `en-US`). A bare `^=` prefix
+ * would let Finnish (`fi`) select Filipino (`fil`) or Hausa (`ha`) Hawaiian.
+ */
+function audioLanguageFilters(tag: string, extraFilter = ""): string {
+  return `ba[language=${tag}]${extraFilter}/ba[language^=${tag}-]${extraFilter}`;
+}
+
+/**
  * Map Kunai's audio preference to a yt-dlp audio selector fragment.
  *
  * `original` (and unset/`auto`/`sub`) emits plain `ba`, which picks YouTube's
- * original audio track. Explicit languages prefer tracks whose `language`
- * starts with the ISO 639-1 code (`ba[language^=ja]/ba`) because mpv 0.42's
- * ytdl hook does not reliably populate per-track `lang` metadata for `--alang`.
- * yt-dlp string filters are case-sensitive and YouTube reports tags like
- * `en-US`, so locales and ISO 639-2 names are reduced to the primary subtag.
+ * original audio track. Explicit languages select the matching audio track by
+ * its yt-dlp `language` tag because mpv 0.42's ytdl hook does not reliably
+ * populate per-track `lang` metadata for `--alang`. yt-dlp string filters are
+ * case-sensitive and YouTube reports tags like `en-US`, so locales and ISO
+ * 639-2 names are reduced to the ISO 639-1 code before matching.
  * `dub` means English, matching `toMpvLanguageToken` and the dub catalogs:
  * an English dubbed track first, then any English track, then the original.
  */
 export function buildYoutubeAudioSelector(audioPreference?: string): string {
   const raw = audioPreference?.trim().toLowerCase();
   if (!raw || raw === "original" || raw === "auto" || raw === "sub") return "ba";
-  if (raw === "dub") return "(ba[language^=en][format_note!*=original]/ba[language^=en]/ba)";
+  if (raw === "dub") {
+    return `(${audioLanguageFilters("en", "[format_note!*=original]")}/${audioLanguageFilters("en")}/ba)`;
+  }
   const language = normalizeSubtitleLanguage(raw);
   // Reject anything that is not a bare language code so config/user input
   // cannot inject yt-dlp selector logic.
   if (!language || !/^[a-z]{2,3}$/.test(language)) return "ba";
-  return `(ba[language^=${language}]/ba)`;
+  const tags = [language, ...(YOUTUBE_AUDIO_TAG_ALIASES.get(language) ?? [])];
+  return `(${tags.map((tag) => audioLanguageFilters(tag)).join("/")}/ba)`;
+}
+
+/** Whether the audio preference asks for a specific track rather than YouTube's default. */
+export function isExplicitYoutubeAudioPreference(audioPreference?: string): boolean {
+  return buildYoutubeAudioSelector(audioPreference) !== "ba";
 }
 
 export function defaultYtdlPlaybackFormat(audioPreference?: string): string {
