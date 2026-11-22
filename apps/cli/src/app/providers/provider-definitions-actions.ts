@@ -78,6 +78,32 @@ function reloadProviderRegistryPriority(container: ProviderDefinitionsPriorityCo
   });
 }
 
+/**
+ * Startup half of the hotfix lifecycle: verify the manifest cached by an earlier
+ * `providers update` (or background refresh) and make it live for this process.
+ * Without this, a cached manifest only ever applied in the process that fetched
+ * it — the background refresh returns "skipped" for a fresh cache and
+ * "unchanged" for the same revision, and neither activates anything.
+ *
+ * Works offline: the cache was verified against trusted keys and expiry is
+ * re-checked here. An absent file, missing keys, or a failed verification
+ * leaves bundled defaults in place.
+ */
+export function activateCachedProviderHotfixManifest(
+  container: ProviderDefinitionsPriorityContainer,
+  options: Pick<ProviderDefinitionsRuntimeOptions, "path" | "trustedPublicKeysById" | "nowMs"> = {},
+): ReturnType<typeof loadCachedProviderHotfixManifest>["status"] {
+  const cached = loadCachedProviderHotfixManifest({
+    path: options.path,
+    trustedPublicKeysById: options.trustedPublicKeysById,
+    nowMs: options.nowMs,
+  });
+  if (cached.status !== "active") return cached.status;
+  setActiveProviderHotfixManifest(cached.manifest);
+  reloadProviderRegistryPriority(container);
+  return cached.status;
+}
+
 export async function updateProviderDefinitionsFromShell(
   container: ProviderDefinitionsUpdateContainer,
   options: ProviderDefinitionsRuntimeOptions = {},

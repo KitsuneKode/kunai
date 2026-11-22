@@ -1012,6 +1012,13 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   if (Object.keys(sessionOverrides).length > 0) {
     config.applySessionOverrides(sessionOverrides);
   }
+  // A verified, unexpired hotfix manifest cached by an earlier `providers update`
+  // must be live from the first resolve — not only in the process that fetched it.
+  {
+    const { activateCachedProviderHotfixManifest } =
+      await import("@/app/providers/provider-definitions-actions");
+    activateCachedProviderHotfixManifest(container);
+  }
   if (args.supportBundle) {
     await maybeRunAutoCleanupDownloads(container);
     const { exportLocalSupportBundle } = await import("./app-shell/export-local-support-bundle");

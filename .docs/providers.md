@@ -235,6 +235,10 @@ always the fallback.
   and `reset` are the ways back out. The previous manifest is kept as a backup
   for rollback. An expired manifest (`expiresAt`) drops back to bundled
   defaults on read.
+- **Startup.** `activateCachedProviderHotfixManifest`
+  (`apps/cli/src/app/providers/provider-definitions-actions.ts`) re-verifies the
+  cached manifest and makes it live before the first resolve, offline included;
+  without it a manifest would apply only in the process that fetched it.
 - **Background refresh.** `maybeBackgroundRefreshProviderManifest` refreshes at
   most every six hours, only when `KUNAI_PROVIDER_MANIFEST_URL` and trusted keys
   are both set, and fails silently offline.

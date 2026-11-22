@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
+  activateCachedProviderHotfixManifest,
   readProviderDefinitionsSnapshot,
   rollbackProviderDefinitionsFromShell,
   updateProviderDefinitionsFromShell,
@@ -150,6 +151,67 @@ describe("TUI provider definitions actions", () => {
     expect(rolled).toBe("Rolled back to rev 5");
     expect(getActiveProviderHotfixManifest()?.revision).toBe(5);
     expect(priorityUpdates.at(-1)?.disabledProviderIds).toContain("vidlink");
+  });
+
+  test("a fresh process activates the verified cached manifest; expired, untrusted, or absent stays bundled", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kunai-tui-defs-"));
+    tempDirs.push(dir);
+    const cachePath = join(dir, "providers-manifest.json");
+    const { publicPem, privatePem } = makeKeypair();
+    const trustedPublicKeysById = { "key-2026": publicPem };
+
+    // Nothing cached yet.
+    const empty = makeFakeContainer();
+    expect(
+      activateCachedProviderHotfixManifest(empty.container, {
+        path: cachePath,
+        trustedPublicKeysById,
+        nowMs: NOW_MS,
+      }),
+    ).toBe("absent");
+    expect(empty.priorityUpdates).toHaveLength(0);
+
+    // An earlier run cached rev 7; this process starts with nothing active.
+    writeFileSync(
+      cachePath,
+      JSON.stringify(signProviderManifest(makeManifest(7), privatePem, "key-2026")),
+    );
+    setActiveProviderHotfixManifest(null);
+    const { container, priorityUpdates } = makeFakeContainer();
+    expect(
+      activateCachedProviderHotfixManifest(container, {
+        path: cachePath,
+        trustedPublicKeysById,
+        nowMs: NOW_MS,
+      }),
+    ).toBe("active");
+    expect(getActiveProviderHotfixManifest(NOW_MS)?.revision).toBe(7);
+    expect(priorityUpdates.at(-1)?.disabledProviderIds).toContain("vidlink");
+
+    // Past expiresAt: not activated.
+    setActiveProviderHotfixManifest(null);
+    const expired = makeFakeContainer();
+    expect(
+      activateCachedProviderHotfixManifest(expired.container, {
+        path: cachePath,
+        trustedPublicKeysById,
+        nowMs: Date.parse("2026-12-21T00:00:00.000Z"),
+      }),
+    ).toBe("invalid");
+    expect(getActiveProviderHotfixManifest(NOW_MS)).toBeNull();
+    expect(expired.priorityUpdates).toHaveLength(0);
+
+    // Signed by a key this install does not trust: not activated.
+    const other = makeKeypair();
+    const untrusted = makeFakeContainer();
+    expect(
+      activateCachedProviderHotfixManifest(untrusted.container, {
+        path: cachePath,
+        trustedPublicKeysById: { "key-2026": other.publicPem },
+        nowMs: NOW_MS,
+      }),
+    ).toBe("invalid");
+    expect(getActiveProviderHotfixManifest(NOW_MS)).toBeNull();
   });
 
   test("refuses remote fetches when offline mode is enabled", async () => {
