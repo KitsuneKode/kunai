@@ -409,13 +409,13 @@ function collectFindings(input: {
     }
   }
 
+  const isAndroid = report.platform.os === "android";
   for (const issue of report.dependencies.issues) {
+    if (isAndroid && issue.id === "mpv-missing") continue;
     // `degraded` describes what the shell can still do; doctor's verdict is
-    // install health. Missing mpv means Kunai cannot play at all, and a curl
-    // that resolves but cannot execute is a broken install (providers will
-    // attempt it and throw mid-request) — both are errors so the exit code is
-    // honest for scripts. yt-dlp/ffmpeg/missing-curl stay warnings: each gates
-    // one lane, not the product.
+    // install health. Missing mpv means Kunai cannot play at all on desktop,
+    // and a curl that resolves but cannot execute is a broken install — both
+    // are errors so the exit code is honest for scripts.
     const core = issue.id === "mpv-missing" || issue.id === "curl-invocation-failed";
     findings.push({
       severity: issue.severity === "fatal" || core ? "error" : "warning",
@@ -423,6 +423,31 @@ function collectFindings(input: {
       message: issue.message,
       remediation: [...issue.remediation],
     });
+  }
+
+  if (isAndroid) {
+    const hasIntentLauncher = Boolean(
+      Bun.which("termux-am") || Bun.which("am") || Bun.which("termux-open"),
+    );
+    if (!hasIntentLauncher) {
+      findings.push({
+        severity: "error",
+        code: "android-intent-launcher-missing",
+        message: "No Android intent launcher (`termux-am` or `am`) found in PATH.",
+        remediation: ["Run `pkg install termux-am` inside Termux and re-run `kunai doctor`."],
+      });
+    }
+    if (!Bun.which("termux-wake-lock")) {
+      findings.push({
+        severity: "warning",
+        code: "android-wake-lock-missing",
+        message:
+          "`termux-wake-lock` not found — Android may pause the stream gateway in background.",
+        remediation: [
+          "Install `termux-api` (`pkg install termux-api`) to keep playback streams alive.",
+        ],
+      });
+    }
   }
 
   for (const store of report.storage) {
@@ -475,7 +500,7 @@ export async function buildDoctorReport(input: BuildDoctorReportInput = {}): Pro
     input.probeCapabilities ??
     (async () => {
       const { probeCapabilities } = await import("@/ui");
-      return probeCapabilities();
+      return probeCapabilities({ requireMpv: platform !== "android", platform });
     });
 
   const manifest = await inspectManifest();

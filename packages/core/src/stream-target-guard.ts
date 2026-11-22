@@ -37,7 +37,6 @@ export function blockedLiteralTargetReason(url: string): string | null {
   }
   const literal = isPrivateLiteralAddress(host);
   if (literal) return literal;
-  // A single-label name is an intranet name; public DNS names always carry a dot.
   if (!host.includes(".") && !host.includes(":")) {
     return `single-label host ${host}`;
   }
@@ -64,15 +63,15 @@ function isPrivateIpv4(parts: readonly [number, number, number, number]): boolea
     a === 0 ||
     a === 10 ||
     a === 127 ||
-    (a === 100 && b >= 64 && b <= 127) || // CGNAT
-    (a === 169 && b === 254) || // link-local
+    (a === 100 && b >= 64 && b <= 127) ||
+    (a === 169 && b === 254) ||
     (a === 172 && b >= 16 && b <= 31) ||
     (a === 192 && b === 0) ||
     (a === 192 && b === 168) ||
-    (a === 198 && (b === 18 || b === 19)) || // benchmarking
+    (a === 198 && (b === 18 || b === 19)) ||
     (a === 198 && b === 51) ||
     (a === 203 && b === 0) ||
-    a >= 224 // multicast + reserved + broadcast
+    a >= 224
   );
 }
 
@@ -104,11 +103,10 @@ function isPrivateLiteralAddress(host: string): string | null {
   }
   const first = parseInt(host.split(":", 1)[0] || "0", 16);
   if (
-    (first & 0xffc0) === 0xfe80 || // fe80::/10 link-local
-    (first & 0xfe00) === 0xfc00 || // fc00::/7 ULA
-    (first & 0xffc0) === 0xfec0 || // fec0::/10 site-local
+    (first & 0xffc0) === 0xfe80 ||
+    (first & 0xfe00) === 0xfc00 ||
+    (first & 0xffc0) === 0xfec0 ||
     (first & 0xff00) === 0xff00 ||
-    // ff00::/8 multicast
     host.startsWith("2001:db8") ||
     host.startsWith("2001:0db8")
   ) {
@@ -124,7 +122,6 @@ async function resolveHostAddresses(host: string): Promise<string[]> {
     const answers = await lookup(host, { all: true });
     return answers.map((a) => a.address);
   } catch {
-    // Never fall back to an unchecked second resolver on lookup failure.
     return [];
   }
 }
@@ -163,6 +160,37 @@ export function isGuardedPlatformFetch(fetchImpl: StreamReachabilityFetch): bool
  * `redirect: "manual"` keeps a trusted Location header from steering the probe
  * somewhere the initial URL was already checked not to go.
  */
+const DNS_CACHE_TTL_MS = 30_000;
+const DNS_CACHE_MAX_ENTRIES = 256;
+const vettedDnsCache = new Map<
+  string,
+  { readonly addresses: readonly string[]; readonly expiresAt: number }
+>();
+
+async function resolveVettedHostAddressesCached(host: string): Promise<readonly string[]> {
+  const key = host.toLowerCase();
+  const now = Date.now();
+  const cached = vettedDnsCache.get(key);
+  if (cached && cached.expiresAt > now) {
+    return cached.addresses;
+  }
+  const addresses = await resolveHostAddresses(host);
+  if (addresses.length === 0) return addresses;
+  for (const address of addresses) {
+    if (isPrivateLiteralAddress(address)) return addresses;
+  }
+  const ordered = [
+    ...addresses.filter((address) => !address.includes(":")),
+    ...addresses.filter((address) => address.includes(":")),
+  ];
+  if (vettedDnsCache.size >= DNS_CACHE_MAX_ENTRIES) {
+    const oldest = vettedDnsCache.keys().next().value;
+    if (oldest !== undefined) vettedDnsCache.delete(oldest);
+  }
+  vettedDnsCache.set(key, { addresses: ordered, expiresAt: now + DNS_CACHE_TTL_MS });
+  return ordered;
+}
+
 export async function fetchProbeTarget(options: {
   readonly fetchImpl: StreamReachabilityFetch;
   readonly url: string;
@@ -180,14 +208,17 @@ export async function fetchProbeTarget(options: {
     if (literalBlocked) {
       return { kind: "blocked", reason: `${target} -> ${literalBlocked}` };
     }
-    let requestTarget = target;
-    let requestInit: RequestInit & { proxy?: false; tls?: { serverName: string } } = init;
-    // The transport must use the address we checked, not resolve the hostname
-    // again. Keep the logical URL for redirect bases and credential boundaries.
+    let pinnedCandidates:
+      | {
+          readonly parsed: URL;
+          readonly host: string;
+          readonly addresses: readonly string[];
+        }
+      | undefined;
     if (options.resolveNamesFor(target) && !options.parentSignal?.aborted) {
       const parsed = new URL(target);
       const host = parsed.hostname.replace(/^\[|\]$/g, "");
-      const addresses = await (options.resolveAddresses ?? resolveHostAddresses)(host);
+      const addresses = await (options.resolveAddresses ?? resolveVettedHostAddressesCached)(host);
       if (addresses.length === 0) {
         return { kind: "blocked", reason: `No vetted DNS address for ${host}` };
       }
@@ -195,43 +226,58 @@ export async function fetchProbeTarget(options: {
         const reason = isPrivateLiteralAddress(address);
         if (reason) return { kind: "blocked", reason: `${reason} (DNS answer for ${host})` };
       }
-      const address = addresses[0];
-      if (!address) return { kind: "blocked", reason: `No vetted DNS address for ${host}` };
-      const pinned = new URL(target);
-      pinned.hostname = address.includes(":") ? `[${address}]` : address;
-      const headers = new Headers(init.headers);
-      headers.set("Host", parsed.host);
-      requestTarget = pinned.toString();
-      requestInit = {
-        ...init,
-        headers,
-        // Environment proxies would resolve the hostname outside this guard.
-        proxy: false,
-        ...(parsed.protocol === "https:" ? { tls: { serverName: host } } : {}),
-      };
+      pinnedCandidates = { parsed, host, addresses };
     }
     if (options.remaining() <= 0) {
       return { kind: "timeout" };
     }
-    // The fetch impl is invoked even on an aborted signal: abort is delivered
-    // through the signal itself, which is also what injected test fetches see.
-    const response = await options.fetchImpl(requestTarget, {
-      ...requestInit,
-      redirect: "manual",
-    });
+    let response: Response | undefined;
+    if (pinnedCandidates) {
+      let lastError: unknown;
+      for (const address of pinnedCandidates.addresses) {
+        if (options.parentSignal?.aborted || options.remaining() <= 0) {
+          return { kind: "timeout" };
+        }
+        const pinned = new URL(target);
+        pinned.hostname = address.includes(":") ? `[${address}]` : address;
+        const headers = new Headers(init.headers);
+        headers.set("Host", pinnedCandidates.parsed.host);
+        const requestInit: RequestInit & { proxy?: false; tls?: { serverName: string } } = {
+          ...init,
+          headers,
+          proxy: false,
+          ...(pinnedCandidates.parsed.protocol === "https:"
+            ? { tls: { serverName: pinnedCandidates.host } }
+            : {}),
+        };
+        try {
+          response = await options.fetchImpl(pinned.toString(), {
+            ...requestInit,
+            redirect: "manual",
+          });
+          break;
+        } catch (error) {
+          lastError = error;
+          if (options.parentSignal?.aborted) throw error;
+        }
+      }
+      if (!response) throw lastError;
+    } else {
+      response = await options.fetchImpl(target, {
+        ...init,
+        redirect: "manual",
+      });
+    }
     if (REDIRECT_STATUSES.has(response.status)) {
       const location = response.headers.get("location");
       if (location && hop < MAX_PROBE_REDIRECT_HOPS) {
         try {
           const next = new URL(location, target);
-          // Match undici's own redirect hygiene: credentials do not cross
-          // origins, even when every hop individually validates as public.
           if (next.origin !== new URL(target).origin && init.headers) {
             init = { ...init, headers: filterCrossOriginStreamHeaders(init.headers) };
           }
           target = next.toString();
         } catch {
-          // A Location we cannot parse is a response, not a redirect.
           return { kind: "response", response, finalUrl: target };
         }
         continue;
@@ -279,7 +325,7 @@ export function fetchGuardedStreamTarget(options: {
     fetchImpl: options.fetchImpl,
     url: options.url,
     init: { ...options.init, signal: options.signal },
-    remaining: () => 1, // the caller's signal owns the deadline
+    remaining: () => 1,
     parentSignal: options.signal,
     resolveNamesFor: options.resolvesLocally ?? (() => isGuardedPlatformFetch(options.fetchImpl)),
   });

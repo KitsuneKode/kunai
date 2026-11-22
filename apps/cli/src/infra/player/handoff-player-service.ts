@@ -1,3 +1,5 @@
+import { stat } from "node:fs/promises";
+
 import type { HandoffBlocker } from "@/domain/playback/handoff-plan";
 import { createHandoffPlan } from "@/domain/playback/handoff-plan";
 import { DETACHED_HANDOFF_CAPABILITIES } from "@/domain/playback/player-capabilities";
@@ -66,20 +68,152 @@ export class HandoffPlaybackError extends Error {
 export class HandoffPlayerService implements PlayerService {
   readonly capabilities = DETACHED_HANDOFF_CAPABILITIES;
   private shuttingDown = false;
-  private readonly target: DetachedPlayerTarget;
+  private wakeLockHeld = false;
+  private activeDeferredCleanup: (() => Promise<void>) | undefined;
+  private readonly resolveTarget: () => DetachedPlayerTarget;
   private readonly runtime: AndroidIntentRuntime;
 
   constructor(input: {
     readonly target: DetachedPlayerTarget;
+    readonly resolveTarget?: () => DetachedPlayerTarget;
     readonly runtime?: AndroidIntentRuntime;
   }) {
-    this.target = input.target;
+    this.resolveTarget = input.resolveTarget ?? (() => input.target);
     this.runtime = input.runtime ?? defaultAndroidIntentRuntime;
+  }
+
+  private get target(): DetachedPlayerTarget {
+    return this.resolveTarget();
+  }
+
+  private acquireWakeLockBestEffort(): void {
+    if (this.wakeLockHeld) return;
+    const bin = this.runtime.which("termux-wake-lock");
+    if (!bin) return;
+    try {
+      const proc = this.runtime.spawn([bin]);
+      void proc.exited.catch(() => {});
+      this.wakeLockHeld = true;
+    } catch {
+      // Optional Termux:API helper — playback continues without wake lock.
+    }
+  }
+
+  private releaseWakeLockBestEffort(): void {
+    if (!this.wakeLockHeld) return;
+    this.wakeLockHeld = false;
+    const bin = this.runtime.which("termux-wake-unlock");
+    if (!bin) return;
+    try {
+      const proc = this.runtime.spawn([bin]);
+      void proc.exited.catch(() => {});
+    } catch {
+      // Best-effort unlock during teardown.
+    }
+  }
+
+  private async runActiveDeferredCleanup(): Promise<void> {
+    const cleanup = this.activeDeferredCleanup;
+    this.activeDeferredCleanup = undefined;
+    if (cleanup) {
+      await cleanup().catch(() => {});
+    }
+  }
+
+  private async launchWithGatewayOrUrl(input: {
+    readonly target: DetachedPlayerTarget;
+    readonly directUrl?: string;
+    readonly gatewaySession?: Parameters<
+      ReturnType<typeof getSharedStreamGateway>["registerSession"]
+    >[0];
+    readonly deferredCleanup?: () => Promise<void>;
+  }): Promise<PlaybackResult> {
+    let url = input.directUrl ?? "";
+    let subtitleExtras: readonly string[] = [];
+    const usesGateway = input.gatewaySession !== undefined;
+    if (input.gatewaySession) {
+      const session = getSharedStreamGateway().registerSession(input.gatewaySession);
+      url = session.mediaUrl;
+      subtitleExtras = session.subtitleUrls;
+    }
+
+    const launched = await launchAndroidIntent({
+      target: input.target,
+      url,
+      subtitles: subtitleExtras,
+      runtime: this.runtime,
+    });
+    if (!launched.ok) {
+      await input.deferredCleanup?.();
+      if (usesGateway) stopSharedStreamGateway();
+      throw new HandoffPlaybackError(launched.reason, [], launched.detail);
+    }
+    if (usesGateway) this.acquireWakeLockBestEffort();
+    this.activeDeferredCleanup = input.deferredCleanup;
+
+    return Object.freeze({
+      watchedSeconds: 0,
+      duration: 0,
+      endReason: "unknown",
+      resultSource: "handoff",
+      handoff: Object.freeze({
+        accepted: true,
+        player: input.target,
+        launcher: launched.launcher,
+      }),
+    });
+  }
+
+  private async launchLocalSource(source: LocalPlaybackSource): Promise<PlaybackResult> {
+    if (this.shuttingDown) throw new HandoffPlaybackError("player-shutting-down");
+    await this.runActiveDeferredCleanup();
+    let fileStat: Awaited<ReturnType<typeof stat>>;
+    try {
+      fileStat = await stat(source.filePath);
+    } catch {
+      throw new HandoffPlaybackError(
+        "local-source-unsupported",
+        [],
+        "Local media file is missing or unreadable.",
+      );
+    }
+    if (!fileStat.isFile()) {
+      throw new HandoffPlaybackError(
+        "local-source-unsupported",
+        [],
+        "Local media path is not a regular file.",
+      );
+    }
+
+    let localSubtitlePath: string | undefined;
+    if (this.target !== "chooser" && source.subtitlePath?.trim()) {
+      try {
+        if ((await stat(source.subtitlePath.trim())).isFile()) {
+          localSubtitlePath = source.subtitlePath.trim();
+        }
+      } catch {
+        // Optional subtitle absent on disk: continue launching video.
+      }
+    }
+
+    return await this.launchWithGatewayOrUrl({
+      target: this.target,
+      gatewaySession: {
+        localFilePath: source.filePath,
+        localSubtitlePath,
+        headers: {},
+      },
+    });
   }
 
   async play(stream: StreamInfo, options: PlayerOptions): Promise<PlaybackResult> {
     if (this.shuttingDown) throw new HandoffPlaybackError("player-shutting-down");
     if (options.abortSignal?.aborted) throw new DOMException("playback aborted", "AbortError");
+    await this.runActiveDeferredCleanup();
+
+    if (options.localPlaybackSource) {
+      return await this.launchLocalSource(options.localPlaybackSource);
+    }
 
     // A deferred locator becomes an in-memory MPD the gateway can serve; when
     // it is expired or unknown the plan reports deferred-source as before.
@@ -123,42 +257,18 @@ export class HandoffPlayerService implements PlayerService {
       throw new HandoffPlaybackError("unsupported-stream", plan.blockers);
     }
 
-    let url = plan.url;
-    let subtitleExtras: readonly string[] = [];
-    if (needsGateway) {
-      const gateway = getSharedStreamGateway();
-      const session = gateway.registerSession({
-        url: document ? undefined : stream.url,
-        headers: stream.headers,
-        subtitles,
-        document,
-      });
-      url = session.mediaUrl;
-      subtitleExtras = session.subtitleUrls;
-    }
-
-    const launched = await launchAndroidIntent({
+    return await this.launchWithGatewayOrUrl({
       target: plan.player,
-      url,
-      subtitles: subtitleExtras,
-      runtime: this.runtime,
-    });
-    if (!launched.ok) {
-      await deferredCleanup?.();
-      if (needsGateway) stopSharedStreamGateway();
-      throw new HandoffPlaybackError(launched.reason, [], launched.detail);
-    }
-
-    return Object.freeze({
-      watchedSeconds: 0,
-      duration: 0,
-      endReason: "unknown",
-      resultSource: "handoff",
-      handoff: Object.freeze({
-        accepted: true,
-        player: plan.player,
-        launcher: launched.launcher,
-      }),
+      directUrl: plan.url,
+      gatewaySession: needsGateway
+        ? {
+            url: document ? undefined : stream.url,
+            headers: stream.headers,
+            subtitles,
+            document,
+          }
+        : undefined,
+      deferredCleanup,
     });
   }
 
@@ -168,6 +278,8 @@ export class HandoffPlayerService implements PlayerService {
 
   beginShutdown(): void {
     this.shuttingDown = true;
+    void this.runActiveDeferredCleanup();
+    this.releaseWakeLockBestEffort();
     stopSharedStreamGateway();
   }
 
@@ -179,8 +291,8 @@ export class HandoffPlayerService implements PlayerService {
     }).ok;
   }
 
-  async playLocal(_options: { readonly source: LocalPlaybackSource }): Promise<PlaybackResult> {
-    throw new HandoffPlaybackError("local-source-unsupported");
+  async playLocal(options: { readonly source: LocalPlaybackSource }): Promise<PlaybackResult> {
+    return await this.launchLocalSource(options.source);
   }
 }
 

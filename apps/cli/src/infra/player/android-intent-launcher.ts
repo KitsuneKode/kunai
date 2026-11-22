@@ -41,19 +41,47 @@ const PLAYER_PACKAGES = {
 
 const MAX_DIAGNOSTIC_LENGTH = 2_048;
 
+const PRESERVED_ANDROID_ENV_KEYS = [
+  "ANDROID_ROOT",
+  "ANDROID_DATA",
+  "BOOTCLASSPATH",
+  "DEX2OATBOOTCLASSPATH",
+  "LD_LIBRARY_PATH",
+  "TERMUX_VERSION",
+] as const;
+
+export type ScrubbedIntentEnv = {
+  PATH: string;
+  HOME: string;
+  PREFIX: string;
+  TMPDIR: string;
+  ANDROID_ROOT?: string;
+  ANDROID_DATA?: string;
+  BOOTCLASSPATH?: string;
+  DEX2OATBOOTCLASSPATH?: string;
+  LD_LIBRARY_PATH?: string;
+  TERMUX_VERSION?: string;
+};
+
 /**
- * Launcher children get a scrubbed environment: the process only needs PATH
- * to find sibling Termux tools and HOME/PREFIX/TMPDIR for its own bookkeeping
- * — never inherited secrets from the shell's environment. Built per-spawn so
- * tests and the agent loop can still redirect the env.
+ * Launcher children get a scrubbed environment: PATH/HOME/PREFIX/TMPDIR plus
+ * the Android runtime vars `/system/bin/am` needs to boot ART's `app_process`
+ * when `termux-am` is absent — never inherited shell secrets.
  */
-function scrubbedIntentEnv(): Record<string, string> {
-  return {
-    PATH: process.env.PATH ?? "/system/bin:/system/xbin",
-    HOME: process.env.HOME ?? "/data/data/com.termux/files/home",
-    PREFIX: process.env.PREFIX ?? "/data/data/com.termux/files/usr",
-    TMPDIR: process.env.TMPDIR ?? "/data/data/com.termux/files/usr/tmp",
+export function scrubbedIntentEnv(
+  sourceEnv: Readonly<Record<string, string | undefined>> = process.env,
+): ScrubbedIntentEnv {
+  const env: ScrubbedIntentEnv = {
+    PATH: sourceEnv.PATH ?? "/system/bin:/system/xbin",
+    HOME: sourceEnv.HOME ?? "/data/data/com.termux/files/home",
+    PREFIX: sourceEnv.PREFIX ?? "/data/data/com.termux/files/usr",
+    TMPDIR: sourceEnv.TMPDIR ?? "/data/data/com.termux/files/usr/tmp",
   };
+  for (const key of PRESERVED_ANDROID_ENV_KEYS) {
+    const value = sourceEnv[key];
+    if (value) env[key] = value;
+  }
+  return env;
 }
 
 export const defaultAndroidIntentRuntime: AndroidIntentRuntime = {
@@ -112,21 +140,23 @@ export function resolveAndroidIntentCommand(input: {
     };
   }
 
+  if (input.target === "chooser") {
+    const termuxOpen = input.runtime.which("termux-open");
+    if (termuxOpen) {
+      return {
+        ok: true,
+        launcher: "termux-open",
+        argv: [termuxOpen, "--view", "--chooser", "--content-type", "video/*", input.url],
+      };
+    }
+  }
+
   const am = input.runtime.which("am");
   if (am) {
     return {
       ok: true,
       launcher: "am",
       argv: actionViewArgv(am, input.target, input.url, subtitles),
-    };
-  }
-
-  const termuxOpen = input.runtime.which("termux-open");
-  if (termuxOpen && input.target === "chooser") {
-    return {
-      ok: true,
-      launcher: "termux-open",
-      argv: [termuxOpen, "--view", "--chooser", "--content-type", "video/*", input.url],
     };
   }
 
@@ -174,6 +204,12 @@ function reportsMissingPlayer(detail: string): boolean {
   );
 }
 
+function reportsLaunchError(detail: string): boolean {
+  return /^\s*(?:error(?:\s+type\s+\d+)?\s*:|java\.lang\.securityexception|securityexception\b)/imu.test(
+    detail,
+  );
+}
+
 export async function launchAndroidIntent(input: {
   readonly target: DetachedPlayerTarget;
   readonly url: string;
@@ -191,18 +227,21 @@ export async function launchAndroidIntent(input: {
       readOutput(process.stdout),
       readOutput(process.stderr),
     ]);
-    if (exitCode === 0) return { ok: true, launcher: command.launcher };
-
-    const rawDetail = stderr.trim() || stdout.trim() || `exit ${exitCode}`;
-    const detail = boundedDiagnostic(rawDetail);
-    if (input.target !== "chooser" && reportsMissingPlayer(rawDetail)) {
+    const combinedOutput = [stderr.trim(), stdout.trim()].filter(Boolean).join("\n");
+    if (input.target !== "chooser" && combinedOutput && reportsMissingPlayer(combinedOutput)) {
       return {
         ok: false,
         reason: "player-not-installed",
         launcher: command.launcher,
-        detail,
+        detail: boundedDiagnostic(combinedOutput),
       };
     }
+    if (exitCode === 0 && (!combinedOutput || !reportsLaunchError(combinedOutput))) {
+      return { ok: true, launcher: command.launcher };
+    }
+
+    const rawDetail = stderr.trim() || stdout.trim() || `exit ${exitCode}`;
+    const detail = boundedDiagnostic(rawDetail);
     return { ok: false, reason: "launch-rejected", launcher: command.launcher, detail };
   } catch (error) {
     return {

@@ -255,4 +255,83 @@ describe("HandoffPlayerService", () => {
       reason: "local-source-unsupported",
     });
   });
+
+  test("serves existing local downloads and subtitle files via the loopback gateway", async () => {
+    const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "kunai-handoff-local-"));
+    let argv: readonly string[] | undefined;
+    try {
+      const filePath = join(dir, "offline.mp4");
+      const subtitlePath = join(dir, "offline.vtt");
+      writeFileSync(filePath, "fake-mp4-bytes");
+      writeFileSync(subtitlePath, "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHi\n");
+      const player = new HandoffPlayerService({
+        target: "vlc",
+        runtime: {
+          ...runtime(),
+          spawn: (a) => {
+            argv = a;
+            return { exited: Promise.resolve(0) };
+          },
+        },
+      });
+      const source = {
+        kind: "local",
+        jobId: "job-local-1",
+        titleId: "title-local-1",
+        titleName: "Offline Ep",
+        mediaKind: "movie",
+        providerId: "provider",
+        filePath,
+        subtitlePath,
+      } satisfies LocalPlaybackSource;
+      const result = await player.playLocal({ source });
+      expect(result.handoff?.accepted).toBe(true);
+      const data = argv?.find((a) => a.startsWith("http"));
+      expect(data).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/g\/[0-9a-f]{32}\/media$/);
+      expect(await (await fetch(data!)).text()).toBe("fake-mp4-bytes");
+      const subIdx = argv?.indexOf("subtitles_location") ?? -1;
+      expect(subIdx).toBeGreaterThan(-1);
+      expect(await (await fetch(argv![subIdx + 1]!)).text()).toContain("Hi");
+    } finally {
+      stopSharedStreamGateway();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("resolveTarget dynamically picks up runtime androidPlayer changes and holds/releases wake lock", async () => {
+    let activeTarget: "vlc" | "mpv" = "vlc";
+    const spawned: string[][] = [];
+    const player = new HandoffPlayerService({
+      target: "vlc",
+      resolveTarget: () => activeTarget,
+      runtime: {
+        which: (cmd) =>
+          cmd === "termux-am" || cmd === "termux-wake-lock" || cmd === "termux-wake-unlock"
+            ? `/usr/bin/${cmd}`
+            : null,
+        spawn: (argv) => {
+          spawned.push([...argv]);
+          return { exited: Promise.resolve(0) };
+        },
+      },
+    });
+    try {
+      await player.play(
+        { ...STREAM, headers: { Referer: "https://provider.example/" } },
+        { url: STREAM.url, displayTitle: "Ep 1" },
+      );
+      expect(spawned.some((a) => a.includes("org.videolan.vlc"))).toBe(true);
+      expect(spawned.some((a) => a[0] === "/usr/bin/termux-wake-lock")).toBe(true);
+
+      activeTarget = "mpv";
+      await player.play(STREAM, { url: STREAM.url, displayTitle: "Ep 2" });
+      expect(spawned.some((a) => a.includes("is.xyz.mpv"))).toBe(true);
+    } finally {
+      player.beginShutdown();
+    }
+    expect(spawned.some((a) => a[0] === "/usr/bin/termux-wake-unlock")).toBe(true);
+  });
 });

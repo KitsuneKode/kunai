@@ -4,6 +4,7 @@ import type { DetachedPlayerTarget } from "@/domain/playback/player-choice";
 import {
   launchAndroidIntent,
   resolveAndroidIntentCommand,
+  scrubbedIntentEnv,
   type AndroidIntentRuntime,
 } from "@/infra/player/android-intent-launcher";
 
@@ -248,5 +249,62 @@ describe("Android intent launch", () => {
       runtime: rt,
     });
     if (chooser.ok) expect(chooser.argv.join(" ")).not.toContain("subs");
+  });
+
+  test("prefers termux-open over bare am for chooser when termux-am is absent", () => {
+    const resolved = resolveAndroidIntentCommand({
+      target: "chooser",
+      url: URL,
+      runtime: runtime({
+        commands: {
+          "termux-open": "/usr/bin/termux-open",
+          am: "/system/bin/am",
+        },
+      }),
+    });
+    expect(resolved).toMatchObject({ ok: true, launcher: "termux-open" });
+  });
+
+  test("catches missing player and SecurityException even when am exits 0", async () => {
+    const missing = await launchAndroidIntent({
+      target: "vlc",
+      url: URL,
+      runtime: runtime({
+        commands: { am: "/system/bin/am" },
+        exitCode: 0,
+        stderr: "Error type 3: Activity class does not exist",
+      }),
+    });
+    expect(missing).toMatchObject({ ok: false, reason: "player-not-installed", launcher: "am" });
+
+    const denied = await launchAndroidIntent({
+      target: "vlc",
+      url: URL,
+      runtime: runtime({
+        commands: { am: "/system/bin/am" },
+        exitCode: 0,
+        stderr: "java.lang.SecurityException: Permission Denial",
+      }),
+    });
+    expect(denied).toMatchObject({ ok: false, reason: "launch-rejected", launcher: "am" });
+  });
+
+  test("scrubbedIntentEnv preserves Android ART runtime vars while dropping secrets", () => {
+    const env = scrubbedIntentEnv({
+      PATH: "/system/bin",
+      HOME: "/data/home",
+      PREFIX: "/data/usr",
+      TMPDIR: "/data/tmp",
+      ANDROID_ROOT: "/system",
+      ANDROID_DATA: "/data",
+      BOOTCLASSPATH: "/apex/com.android.art/javalib/core-oj.jar",
+      TERMUX_VERSION: "0.118.1",
+      TMDB_API_KEY: "must-not-leak",
+    });
+    expect(env.ANDROID_ROOT).toBe("/system");
+    expect(env.ANDROID_DATA).toBe("/data");
+    expect(env.BOOTCLASSPATH).toBe("/apex/com.android.art/javalib/core-oj.jar");
+    expect(env.TERMUX_VERSION).toBe("0.118.1");
+    expect(Object.hasOwn(env, "TMDB_API_KEY")).toBe(false);
   });
 });

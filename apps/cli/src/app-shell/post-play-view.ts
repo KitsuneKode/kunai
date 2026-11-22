@@ -140,6 +140,8 @@ export type BuildPostPlayViewProps = {
   /** Exact queue row id snapped with `queueNextLabel` from one `peekNext()`. */
   readonly queueNextEntryId?: string;
   readonly resumeLabel?: string;
+  /** True when playback ended early by user quit before the resume threshold. */
+  readonly stoppedEarly?: boolean;
   /** Where playback stopped, in seconds. Pairs with `episodeDurationSeconds`. */
   readonly resumePositionSeconds?: number;
   /** Runtime of what was just playing, in seconds, when the player reported one. */
@@ -336,6 +338,7 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
     nextEpisodeLabel,
     queueNextLabel,
     resumeLabel,
+    stoppedEarly,
     postPlayState,
     recommendations = [],
     totalEpisodes,
@@ -368,18 +371,32 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
         : postPlayState.player === "mpv"
           ? "mpv-android"
           : "an Android player";
+    const handoffNextUp =
+      !isMovie && nextEpisodeLabel ? buildNextUpHero(props, "next-episode") : undefined;
     return {
       heroKind: "external-handoff",
       heroLabel: `↗ opened in ${playerName}`,
       heroColor: "accent",
       heroSub: "the launch was accepted; progress and completion are not tracked",
+      nextUpHero: handoffNextUp,
       actions: [
+        ...(handoffNextUp
+          ? [
+              {
+                id: "next" as const,
+                label: "Next episode",
+                detail: handoffNextUp.label,
+                shortcut: postPlayShortcut(bindings, "post-next", "n"),
+                primary: true,
+              },
+            ]
+          : []),
         {
           id: "try-again",
           label: "Open again",
           detail: `send the same stream through ${postPlayState.launcher}`,
           shortcut: postPlayShortcut(bindings, "post-replay", "r"),
-          primary: true,
+          primary: !handoffNextUp,
         },
         {
           id: "source",
@@ -455,23 +472,40 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
   }
 
   // ── stopped early ────────────────────────────────────────────────────────
-  if (resumeLabel) {
+  if (resumeLabel || stoppedEarly) {
+    const timeProgressBar = buildTimeProgressBar(resumePositionSeconds, episodeDurationSeconds);
+    const hasResume = Boolean(resumeLabel);
     return {
       heroKind: "stopped-early",
-      nextUpHero: buildNextUpHero(props, "resume"),
+      nextUpHero: hasResume
+        ? buildNextUpHero(props, "resume")
+        : buildNextUpHero(props, isMovie ? "queue-only" : "next-episode"),
       heroLabel: "⏸ stopped early",
       heroColor: "accent",
+      heroSub: hasResume ? undefined : "stopped before progress was saved",
       // Where you stopped, not how far into the season you are. Films get one
       // too — the season bar never applied to them.
-      progressBar: buildTimeProgressBar(resumePositionSeconds, episodeDurationSeconds),
+      progressBar: timeProgressBar,
       actions: [
-        {
-          id: "resume",
-          label: "↵ Resume",
-          detail: "same stream · same position",
-          shortcut: "↵",
-          primary: true,
-        },
+        ...(hasResume
+          ? [
+              {
+                id: "resume",
+                label: "↵ Resume",
+                detail: "same stream · same position",
+                shortcut: "↵",
+                primary: true,
+              },
+            ]
+          : [
+              {
+                id: "replay",
+                label: "Replay",
+                detail: "rewatch from the start",
+                shortcut: postPlayShortcut(bindings, "post-replay", "r"),
+                primary: true,
+              },
+            ]),
         ...(isMovie
           ? []
           : [
@@ -483,13 +517,25 @@ export function buildPostPlayView(props: BuildPostPlayViewProps): PostPlayView {
                 primary: false,
               },
             ]),
-        {
-          id: "replay",
-          label: "Replay",
-          detail: "rewatch from the start",
-          shortcut: postPlayShortcut(bindings, "post-replay", "r"),
-          primary: false,
-        },
+        ...(hasResume
+          ? [
+              {
+                id: "replay",
+                label: "Replay",
+                detail: "rewatch from the start",
+                shortcut: postPlayShortcut(bindings, "post-replay", "r"),
+                primary: false,
+              },
+            ]
+          : [
+              {
+                id: "source",
+                label: "Sources",
+                detail: "choose another stream",
+                shortcut: postPlayShortcut(bindings, "post-source", "o"),
+                primary: false,
+              },
+            ]),
       ],
       discoveryHeading: "you might also like",
       discovery,

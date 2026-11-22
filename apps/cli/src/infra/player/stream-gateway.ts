@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { extname, resolve } from "node:path";
 
 import {
   blockedLiteralTargetReason,
@@ -17,12 +18,8 @@ import {
   UnsupportedDashManifestError,
   type DashTemplate,
 } from "./dash-gateway-manifest";
-import { fromB64Url, toB64Url } from "./hls-relay";
+import { fetchHlsRelayViaCurl, fromB64Url, streamNeedsHlsRelay, toB64Url } from "./hls-relay";
 import { classifyManifestPrefix } from "./manifest-prefix";
-import {
-  normalizeStreamHttpHeaders,
-  type NormalizedStreamHttpHeaders,
-} from "./mpv-stream-http-headers";
 
 /**
  * Loopback media gateway for launch-only players.
@@ -51,6 +48,7 @@ import {
 const DEFAULT_IDLE_TIMEOUT_MS = 15 * 60_000;
 /** Playlists and MPDs are small; a hostile body is not allowed to be a movie. */
 const MAX_PLAYLIST_BYTES = 4 * 1024 * 1024;
+const MAX_SUBTITLE_BYTES = 16 * 1024 * 1024;
 const MAX_SNIFF_BYTES = 16 * 1024;
 /**
  * `#EXTM3U` tolerant of a UTF-8 BOM or stray leading whitespace — some CDNs
@@ -102,8 +100,12 @@ export type StreamGatewayDocument = {
 };
 
 export type RegisterGatewaySessionInput = {
-  /** Direct stream URL for `/media`; omit when `document` is the entry. */
+  /** Direct stream URL for `/media`; omit when `document` or `localFilePath` is the entry. */
   readonly url?: string;
+  /** Exact local media file path served at `/media` for offline handoff. */
+  readonly localFilePath?: string;
+  /** Optional local subtitle file served at `/sub/0` for offline handoff. */
+  readonly localSubtitlePath?: string;
   /** Provider-attached headers, normalized before they ever reach a fetch. */
   readonly headers: Readonly<Record<string, string>>;
   /** External subtitle URLs the player should be offered. */
@@ -118,12 +120,17 @@ export type GatewaySession = {
   readonly stop: () => void;
 };
 
+type GatewaySubtitleEntry =
+  | { readonly kind: "remote"; readonly url: string }
+  | { readonly kind: "local"; readonly path: string };
+
 type LiveSession = {
   readonly token: string;
   readonly url?: string;
+  readonly localFilePath?: string;
   readonly headers: Headers;
   readonly credentialOrigin: string | null;
-  readonly subtitles: readonly string[];
+  readonly subtitles: readonly GatewaySubtitleEntry[];
   readonly document?: StreamGatewayDocument;
   readonly allowedOrigins: Set<string>;
   readonly dashTemplates: Map<string, DashTemplate>;
@@ -137,6 +144,7 @@ export type StreamGatewayOptions = {
    *  without real sleeps. */
   readonly timers?: GatewayTimers;
   readonly idleTimeoutMs?: number;
+  readonly upstreamTimeoutMs?: number;
 };
 
 export type StreamGateway = {
@@ -146,25 +154,67 @@ export type StreamGateway = {
   readonly stop: () => void;
 };
 
+const DEFAULT_UPSTREAM_TIMEOUT_MS = 25_000;
+const RFC7230_TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+const HOP_BY_HOP_HEADERS = new Set([
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "proxy-connection",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+  "host",
+  "content-length",
+]);
+
+function hasControlChar(value: string): boolean {
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) return true;
+  }
+  return false;
+}
+
 /**
- * `normalizeStreamHttpHeaders` returns referer/user-agent/origin as fields and
- * everything else as `Name: Value` strings for mpv's header list. For fetch we
- * need the inverse fold, so extraFields are split back on their first colon —
- * normalize already rejected names outside the RFC 7230 token set.
+ * Fetch-safe stream header sanitizer. Unlike mpv's `--http-header-fields` list,
+ * `fetch()` natively handles comma-bearing values (`Cookie`, `Accept`,
+ * `Accept-Language`, `Sec-Ch-Ua`), so we keep them intact to match what
+ * `verifyCandidateStream` probed while still blocking CRLF/control injection
+ * and hop-by-hop headers.
  */
-function toFetchHeaders(normalized: NormalizedStreamHttpHeaders): Headers {
+export function sanitizeFetchStreamHeaders(raw: Readonly<Record<string, string>>): Headers {
   const headers = new Headers();
-  if (normalized.referer) headers.set("referer", normalized.referer);
-  if (normalized.userAgent) headers.set("user-agent", normalized.userAgent);
-  if (normalized.origin) headers.set("origin", normalized.origin);
-  for (const field of normalized.extraFields) {
-    const colon = field.indexOf(":");
-    if (colon <= 0) continue;
-    const name = field.slice(0, colon).trim().toLowerCase();
-    const value = field.slice(colon + 1).trim();
-    if (name && value) headers.set(name, value);
+  for (const [rawName, rawValue] of Object.entries(raw)) {
+    const name = rawName.trim().toLowerCase();
+    const value = rawValue.trim();
+    if (!name || !value) continue;
+    if (!RFC7230_TOKEN.test(name) || hasControlChar(value)) continue;
+    if (HOP_BY_HOP_HEADERS.has(name)) continue;
+    headers.set(name, value);
   }
   return headers;
+}
+
+async function fetchGatewayViaHlsRelayCurl(
+  url: string,
+  headers: Headers,
+  timeoutMs: number,
+): Promise<Response | null> {
+  const parsed = new URL(url);
+  const referer = headers.get("referer") ?? `${parsed.origin}/`;
+  const origin = headers.get("origin") ?? parsed.origin;
+  const upstream = await fetchHlsRelayViaCurl(url, referer, origin, timeoutMs);
+  if (!upstream) return null;
+  return new Response(new Uint8Array(upstream.body), {
+    status: upstream.status,
+    headers: {
+      "content-type": upstream.contentType || "application/octet-stream",
+      "content-length": String(upstream.body.byteLength),
+    },
+  });
 }
 
 function mintToken(): string {
@@ -268,8 +318,105 @@ function passthroughResponseHeaders(upstream: Response, contentType?: string): H
   return out;
 }
 
+/** Lowercase file extension (with dot) → media type for the local stream gateway. */
+interface LocalMediaContentTypes {
+  readonly [extension: string]: string;
+}
+
+const LOCAL_CONTENT_TYPES: LocalMediaContentTypes = {
+  ".mp4": "video/mp4",
+  ".m4v": "video/x-m4v",
+  ".mkv": "video/x-matroska",
+  ".webm": "video/webm",
+  ".ts": "video/mp2t",
+  ".mov": "video/quicktime",
+  ".vtt": "text/vtt; charset=utf-8",
+  ".srt": "application/x-subrip; charset=utf-8",
+  ".ass": "text/x-ass; charset=utf-8",
+  ".ssa": "text/x-ssa; charset=utf-8",
+};
+
+function localMediaContentType(filePath: string): string {
+  return LOCAL_CONTENT_TYPES[extname(filePath).toLowerCase()] ?? "application/octet-stream";
+}
+
+function parseSingleByteRange(
+  rangeHeader: string | null,
+  totalSize: number,
+):
+  | { readonly kind: "none" }
+  | { readonly kind: "invalid" }
+  | { readonly kind: "range"; readonly start: number; readonly end: number } {
+  if (!rangeHeader) return { kind: "none" };
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(rangeHeader.trim());
+  if (!match) return { kind: "invalid" };
+  const [, rawStart = "", rawEnd = ""] = match;
+  if (!rawStart && !rawEnd) return { kind: "invalid" };
+  if (totalSize <= 0) return { kind: "invalid" };
+  if (!rawStart) {
+    const suffixLength = Number(rawEnd);
+    if (!Number.isFinite(suffixLength) || suffixLength <= 0) return { kind: "invalid" };
+    return { kind: "range", start: Math.max(0, totalSize - suffixLength), end: totalSize - 1 };
+  }
+  const start = Number(rawStart);
+  const end = rawEnd ? Math.min(Number(rawEnd), totalSize - 1) : totalSize - 1;
+  if (
+    !Number.isFinite(start) ||
+    !Number.isFinite(end) ||
+    start < 0 ||
+    start > end ||
+    start >= totalSize
+  ) {
+    return { kind: "invalid" };
+  }
+  return { kind: "range", start, end };
+}
+
+async function serveLocalMediaFile(filePath: string, req: Request): Promise<Response> {
+  const file = Bun.file(filePath);
+  if (!(await file.exists())) return new Response("not found", { status: 404 });
+  const totalSize = file.size;
+  const contentType = localMediaContentType(filePath);
+  const etag = `W/"${totalSize}-${file.lastModified}"`;
+  const lastModified = new Date(file.lastModified).toUTCString();
+  const isHead = req.method === "HEAD";
+  const range = parseSingleByteRange(req.headers.get("range"), totalSize);
+  if (range.kind === "invalid") {
+    return new Response(null, {
+      status: 416,
+      headers: { "content-range": `bytes */${totalSize}` },
+    });
+  }
+  if (range.kind === "range") {
+    const sliceLength = range.end - range.start + 1;
+    return new Response(isHead ? null : file.slice(range.start, range.end + 1), {
+      status: 206,
+      headers: {
+        "accept-ranges": "bytes",
+        "content-type": contentType,
+        "content-length": String(sliceLength),
+        "content-range": `bytes ${range.start}-${range.end}/${totalSize}`,
+        etag,
+        "last-modified": lastModified,
+      },
+    });
+  }
+  return new Response(isHead ? null : file, {
+    status: 200,
+    headers: {
+      "accept-ranges": "bytes",
+      "content-type": contentType,
+      "content-length": String(totalSize),
+      etag,
+      "last-modified": lastModified,
+    },
+  });
+}
+
 export function createStreamGateway(options: StreamGatewayOptions = {}): StreamGateway {
   const fetchImpl = options.fetchImpl ?? fetch;
+  const useCustomFetch = options.fetchImpl !== undefined;
+  const upstreamTimeoutMs = options.upstreamTimeoutMs ?? DEFAULT_UPSTREAM_TIMEOUT_MS;
   const timers: GatewayTimers = options.timers ?? {
     schedule: (cb, ms) => {
       const handle = setTimeout(cb, ms);
@@ -375,12 +522,30 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
         ? new Headers(session.headers)
         : filterCrossOriginStreamHeaders(session.headers);
     extra.forEach((value, name) => headers.set(name, value));
-    const outcome = await fetchGuardedStreamTarget({
-      fetchImpl,
-      url,
-      init: { headers },
-      signal,
-    });
+    if (!useCustomFetch && streamNeedsHlsRelay(url)) {
+      try {
+        const relayed = await fetchGatewayViaHlsRelayCurl(url, headers, upstreamTimeoutMs);
+        if (relayed) {
+          return { kind: "response", response: relayed, finalUrl: url };
+        }
+      } catch {
+        // Fall through to guarded fetch if curl is unavailable or fails.
+      }
+    }
+    const timeoutSignal = AbortSignal.timeout(upstreamTimeoutMs);
+    const effectiveSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+    let outcome: Awaited<ReturnType<typeof fetchGuardedStreamTarget>>;
+    try {
+      outcome = await fetchGuardedStreamTarget({
+        fetchImpl,
+        url,
+        init: { headers },
+        signal: effectiveSignal,
+      });
+    } catch (error) {
+      if (timeoutSignal.aborted && !signal?.aborted) return { kind: "timeout" };
+      throw error;
+    }
     if (outcome.kind === "blocked") return { kind: "refused" };
     if (outcome.kind === "timeout") return { kind: "timeout" };
     return { kind: "response", response: outcome.response, finalUrl: outcome.finalUrl };
@@ -443,6 +608,9 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
     let dashHint = /\.mpd(?:[?#]|$)/i.test(finalUrl) || /dash\+xml/i.test(contentType);
 
     if (!upstream.body) return new Response(null, { status, headers });
+    if (status < 200 || status >= 300) {
+      return new Response(upstream.body, { status, headers });
+    }
 
     const reader = upstream.body.getReader();
     let first: { done: boolean; value?: Uint8Array };
@@ -602,14 +770,41 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
 
       if (SUBTITLE_ROUTE.test(path)) {
         const index = Number(match[2]);
-        const url = session.subtitles[index];
-        if (!url) return new Response("not found", { status: 404 });
-        const upstream = await upstreamFetch(session, url, new Headers(), req.signal);
+        const entry = session.subtitles[index];
+        if (!entry) return new Response("not found", { status: 404 });
+        if (entry.kind === "local") {
+          const file = Bun.file(entry.path);
+          if (!(await file.exists())) return new Response("not found", { status: 404 });
+          if (file.size > MAX_SUBTITLE_BYTES) {
+            return new Response("upstream body too large", { status: 502 });
+          }
+          return new Response(file, {
+            status: 200,
+            headers: {
+              "content-type": localMediaContentType(entry.path),
+              "content-length": String(file.size),
+            },
+          });
+        }
+        const upstream = await upstreamFetch(session, entry.url, new Headers(), req.signal);
         if (upstream.kind !== "response") return refusedOrTimeout(upstream);
-        return new Response(upstream.response.body, {
-          status: upstream.response.status,
-          headers: passthroughResponseHeaders(upstream.response),
-        });
+        const subtitleHeaders = passthroughResponseHeaders(upstream.response);
+        if (!upstream.response.body) {
+          return new Response(null, { status: upstream.response.status, headers: subtitleHeaders });
+        }
+        const reader = upstream.response.body.getReader();
+        try {
+          const bounded = await readRestFromReader(reader, null, MAX_SUBTITLE_BYTES);
+          subtitleHeaders.set("content-length", String(bounded.byteLength));
+          return new Response(bounded, {
+            status: upstream.response.status,
+            headers: subtitleHeaders,
+          });
+        } catch {
+          return new Response("upstream body too large", { status: 502 });
+        } finally {
+          reader.releaseLock();
+        }
       }
 
       if (FETCH_ROUTE.test(path)) {
@@ -630,7 +825,10 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
         return await serveUpstreamMedia(session, upstream, baseGateway);
       }
 
-      // /media — the registered entry URL.
+      // /media — local registered file or registered upstream entry URL.
+      if (session.localFilePath) {
+        return await serveLocalMediaFile(session.localFilePath, req);
+      }
       if (!session.url) return new Response("not found", { status: 404 });
       const upstream = await upstreamFetch(
         session,
@@ -682,7 +880,7 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
       // stale player cannot keep pulling streams after the user moved on.
       sessions.clear();
       const token = mintToken();
-      const normalized = normalizeStreamHttpHeaders({ ...input.headers });
+      const sanitizedHeaders = sanitizeFetchStreamHeaders(input.headers);
       const allowedOrigins = new Set<string>();
       const addOrigin = (raw: string) => {
         try {
@@ -699,22 +897,30 @@ export function createStreamGateway(options: StreamGatewayOptions = {}): StreamG
       } catch {
         // An invalid entry never gains destination or credential authorization.
       }
-      const subtitles = (input.subtitles ?? []).filter((subtitle) => {
+      const subtitles: GatewaySubtitleEntry[] = [];
+      for (const subtitle of input.subtitles ?? []) {
         addOrigin(subtitle);
         try {
           const parsed = new URL(subtitle);
-          return (
-            blockedLiteralTargetReason(subtitle) === null && parsed.protocol.startsWith("http")
-          );
+          if (blockedLiteralTargetReason(subtitle) === null && parsed.protocol.startsWith("http")) {
+            subtitles.push({ kind: "remote", url: subtitle });
+          }
         } catch {
-          return false;
+          // Invalid or unsafe subtitle URL is skipped.
         }
-      });
+      }
+      if (input.localSubtitlePath?.trim()) {
+        subtitles.push({ kind: "local", path: resolve(input.localSubtitlePath.trim()) });
+      }
       for (const remote of input.document?.remoteUrls ?? []) addOrigin(remote);
+      const localFilePath = input.localFilePath?.trim()
+        ? resolve(input.localFilePath.trim())
+        : undefined;
       const session: LiveSession = {
         token,
         url: input.url,
-        headers: toFetchHeaders(normalized),
+        localFilePath,
+        headers: sanitizedHeaders,
         credentialOrigin,
         subtitles,
         document: input.document,

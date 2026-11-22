@@ -329,6 +329,21 @@ function curlFetchOnce(
   });
 }
 
+export async function fetchHlsRelayViaCurl(
+  url: string,
+  referer: string,
+  origin: string,
+  timeoutMs = 25_000,
+): Promise<HlsRelayUpstreamResponse | null> {
+  const curlPath = whichLive("curl");
+  if (!curlPath) return null;
+  return fetchHlsRelayUpstream(
+    url,
+    (targetUrl, budget) => curlFetchOnce(targetUrl, referer, origin, budget, curlPath),
+    { curlTimeoutMs: timeoutMs, watchdogTimeoutMs: timeoutMs + 5_000 },
+  );
+}
+
 function curlFetch(
   url: string,
   referer: string,

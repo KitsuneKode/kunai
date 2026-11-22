@@ -994,4 +994,108 @@ describe("android stream gateway", () => {
       gw.stop();
     }
   });
+
+  test("caps upstream subtitle downloads at 16 MiB", async () => {
+    const oversized = new Uint8Array(16 * 1024 * 1024 + 1024);
+    const gw = start({
+      fetchImpl: async (url) =>
+        url.endsWith(".vtt")
+          ? new Response(oversized, { headers: { "content-type": "text/vtt" } })
+          : new Response("ok"),
+    });
+    try {
+      const session = gw.registerSession({
+        url: "https://cdn.example.com/movie.mp4",
+        headers: {},
+        subtitles: ["https://subs.example.com/huge.vtt"],
+      });
+      const res = await fetch(session.subtitleUrls[0]!);
+      expect(res.status).toBe(502);
+    } finally {
+      gw.stop();
+    }
+  });
+
+  test("serves registered local media with byte-range seeking and local subtitles", async () => {
+    const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "kunai-gw-local-"));
+    try {
+      const videoPath = join(dir, "episode.mp4");
+      const subPath = join(dir, "episode.vtt");
+      writeFileSync(videoPath, "0123456789abcdef");
+      writeFileSync(subPath, "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nHello\n");
+      const gw = start({});
+      try {
+        const session = gw.registerSession({
+          localFilePath: videoPath,
+          localSubtitlePath: subPath,
+          headers: {},
+        });
+        const full = await fetch(session.mediaUrl);
+        expect(full.status).toBe(200);
+        expect(full.headers.get("content-type")).toBe("video/mp4");
+        expect(await full.text()).toBe("0123456789abcdef");
+
+        const partial = await fetch(session.mediaUrl, { headers: { Range: "bytes=4-9" } });
+        expect(partial.status).toBe(206);
+        expect(partial.headers.get("content-range")).toBe("bytes 4-9/16");
+        expect(await partial.text()).toBe("456789");
+
+        const invalidRange = await fetch(session.mediaUrl, { headers: { Range: "bytes=99-120" } });
+        expect(invalidRange.status).toBe(416);
+
+        const sub = await fetch(session.subtitleUrls[0]!);
+        expect(sub.status).toBe(200);
+        expect(sub.headers.get("content-type")).toContain("text/vtt");
+        expect(await sub.text()).toContain("Hello");
+
+        const head = await fetch(session.mediaUrl, { method: "HEAD" });
+        expect(head.status).toBe(200);
+        expect(head.headers.get("etag")).toBeTruthy();
+        expect(head.headers.get("last-modified")).toBeTruthy();
+        expect(await head.text()).toBe("");
+      } finally {
+        gw.stop();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("preserves comma-bearing HTTP headers and passes through upstream 403 MPD responses", async () => {
+    const seenHeaders: Record<string, string>[] = [];
+    const gw = start({
+      fetchImpl: async (url, init) => {
+        seenHeaders.push(Object.fromEntries(new Headers(init.headers)));
+        if (url.endsWith(".mpd")) {
+          return new Response("Forbidden", {
+            status: 403,
+            headers: { "content-type": "application/dash+xml" },
+          });
+        }
+        return new Response("ok", { status: 200 });
+      },
+    });
+    try {
+      const session = gw.registerSession({
+        url: "https://cdn.example.com/stream.mpd",
+        headers: {
+          Cookie: "a=1, b=2",
+          "Accept-Language": "en-US,en;q=0.9,hi;q=0.8",
+          "Sec-Ch-Ua": '"Chromium";v="124", "Not-A.Brand";v="99"',
+          Connection: "keep-alive",
+        },
+      });
+      const res = await fetch(session.mediaUrl);
+      expect(res.status).toBe(403);
+      expect(seenHeaders[0]?.cookie).toBe("a=1, b=2");
+      expect(seenHeaders[0]?.["accept-language"]).toBe("en-US,en;q=0.9,hi;q=0.8");
+      expect(seenHeaders[0]?.["sec-ch-ua"]).toBe('"Chromium";v="124", "Not-A.Brand";v="99"');
+      expect(seenHeaders[0]?.connection).toBeUndefined();
+    } finally {
+      gw.stop();
+    }
+  });
 });

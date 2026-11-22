@@ -17,6 +17,20 @@ describe("external handoff", () => {
     expect(view.heroLabel).not.toContain("complete");
     expect(view.actions.some((action) => action.id === "try-again")).toBe(true);
   });
+
+  it("offers Next episode when a series episode is handed off with a next episode available", () => {
+    const view = buildPostPlayView({
+      title: "Show",
+      episodeLabel: "S01 E01",
+      nextEpisodeLabel: "S01 E02 — Next Chapter",
+      postPlayState: { kind: "external-handoff", player: "mpv", launcher: "termux-am" },
+    });
+
+    expect(view.nextUpHero?.kind).toBe("next-episode");
+    expect(view.actions[0]?.id).toBe("next");
+    expect(view.actions[0]?.primary).toBe(true);
+    expect(view.actions.some((action) => action.id === "try-again")).toBe(true);
+  });
 });
 
 describe("buildDiscovery posters", () => {
@@ -219,5 +233,24 @@ describe("stopped-early progress", () => {
     });
 
     expect(view.progressBar?.percent).toBe(100);
+  });
+
+  it("never reports episode complete when the user quit early before resume threshold", () => {
+    const view = buildPostPlayView({
+      title: "Naruto",
+      episodeLabel: "S01 E01",
+      nextEpisodeLabel: "S01 E02",
+      postPlayState: { kind: "mid-series" },
+      stoppedEarly: true,
+      resumePositionSeconds: 4,
+      episodeDurationSeconds: 1400,
+    });
+
+    expect(view.heroKind).toBe("stopped-early");
+    expect(view.heroLabel).toBe("⏸ stopped early");
+    expect(view.heroSub).toBe("stopped before progress was saved");
+    expect(view.heroLabel).not.toContain("complete");
+    expect(view.nextUpHero?.kind).toBe("next-episode");
+    expect(view.actions[0]?.id).toBe("replay");
   });
 });
