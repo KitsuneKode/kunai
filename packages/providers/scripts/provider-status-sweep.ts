@@ -240,6 +240,18 @@ export function classify(
   return { status: "degraded", note: `resolve status ${resolveStatus}` };
 }
 
+/** Keep the class label and the provider's own failure text. A generic note alone hid the cause. */
+export function composeStatusNote(
+  classifiedNote: string,
+  failureMessage: string | undefined,
+): string {
+  const detail = failureMessage?.replace(/\s+/g, " ").trim().slice(0, 140) ?? "";
+  if (!detail) return classifiedNote;
+  if (!classifiedNote) return detail;
+  if (classifiedNote.includes(detail)) return classifiedNote;
+  return `${classifiedNote} — ${detail}`;
+}
+
 async function probe(spec: ProbeSpec): Promise<ProviderRow> {
   const upstreamHttp = await probeFrontDoor(spec.frontDoor);
   const started = Date.now();
@@ -266,7 +278,7 @@ async function probe(spec: ProbeSpec): Promise<ProviderRow> {
       classified.note =
         "upstream challenges this network (WAF/captcha); relay in an ungated region bypasses";
     }
-    const note = classified.note || (failures[0]?.message?.slice(0, 140) ?? "");
+    const note = composeStatusNote(classified.note, failures[0]?.message);
     return {
       id: spec.id,
       upstreamHttp,

@@ -22,13 +22,16 @@ import {
   ALLMANGA_BUILD_ID,
   ALLMANGA_CRYPTO_MATERIAL_TTL_MS,
   ALLMANGA_KEY_HEX,
+  ALLMANGA_QUERY_HASH,
   ALLMANGA_SITE_ORIGIN,
   BUNDLED_ALLMANGA_CRYPTO,
   buildAllMangaAaReq,
   fetchAllMangaCryptoMaterial,
+  getEffectiveAllMangaCryptoProfile,
   getLastAllMangaRotationSignal,
   type AllMangaCryptoMaterial,
 } from "./crypto";
+import { ALLMANGA_EPISODE_QUERY } from "./episode-query";
 import { ALLANIME_PROVIDER_ID } from "./manifest";
 
 export {
@@ -38,6 +41,7 @@ export {
   ALLMANGA_CRYPTO_PROFILE,
   ALLMANGA_KEY_GROUP,
   ALLMANGA_EPOCH,
+  ALLMANGA_EPOCH_MS,
   ALLMANGA_KEY_HEX,
   ALLMANGA_QUERY_HASH,
   ALLMANGA_SITE_ORIGIN,
@@ -48,8 +52,13 @@ export {
   currentAllMangaEpochCandidates,
   deriveKeyFromPartB,
   deriveMaskKey,
+  getEffectiveAllMangaBootstrapUrl,
+  getEffectiveAllMangaContentLane,
+  getEffectiveAllMangaCryptoProfile,
+  getEffectiveAllMangaQueryHash,
   getLastAllMangaRotationSignal,
   hashBuildId,
+  resetAllMangaRotationSignalForTest,
   type AllMangaBootPart,
   type AllMangaCryptoMaterial,
   type AllMangaCryptoProfile,
@@ -351,6 +360,7 @@ let cachedCryptoMaterial: { readonly material: AllMangaCryptoMaterial; expiresAt
   null;
 let inFlightCryptoMaterial: Promise<AllMangaCryptoMaterial | null> | null = null;
 let cryptoMaterialOverrideForTest: AllMangaCryptoMaterial | null = null;
+let persistedQueryGetMissedBuildId: string | null = null;
 
 let retrySleep: (ms: number, signal?: AbortSignal) => Promise<void> = (ms, signal) =>
   sleepAbortable(ms, signal);
@@ -377,7 +387,12 @@ export async function getAllMangaCryptoMaterial(
   signal?: AbortSignal,
 ): Promise<AllMangaCryptoMaterial | null> {
   if (cryptoMaterialOverrideForTest) return cryptoMaterialOverrideForTest;
-  if (cachedCryptoMaterial && cachedCryptoMaterial.expiresAt > Date.now()) {
+  const activeBuildId = getEffectiveAllMangaCryptoProfile().buildId;
+  if (
+    cachedCryptoMaterial &&
+    cachedCryptoMaterial.expiresAt > Date.now() &&
+    cachedCryptoMaterial.material.buildId === activeBuildId
+  ) {
     return cachedCryptoMaterial.material;
   }
   return refreshAllMangaCryptoMaterial(context, ua, signal);
@@ -390,6 +405,7 @@ export function refreshAllMangaCryptoMaterial(
   signal?: AbortSignal,
 ): Promise<AllMangaCryptoMaterial | null> {
   if (cryptoMaterialOverrideForTest) return Promise.resolve(cryptoMaterialOverrideForTest);
+  const activeBuildId = getEffectiveAllMangaCryptoProfile().buildId;
   inFlightCryptoMaterial ??= fetchAllMangaCryptoMaterial(context, ua, signal)
     .then((material) => {
       const resolved = material ?? BUNDLED_ALLMANGA_CRYPTO;
@@ -404,13 +420,13 @@ export function refreshAllMangaCryptoMaterial(
           providerId: ALLANIME_PROVIDER_ID,
           message:
             signalKind === "build-rotated"
-              ? `mkissa rejected build ${ALLMANGA_BUILD_ID} as unknown — upstream rotated; re-extract ALLMANGA_CRYPTO_PROFILE`
+              ? `mkissa rejected build ${activeBuildId} as unknown — upstream rotated; re-extract ALLMANGA_CRYPTO_PROFILE`
               : signalKind === "token-rejected"
-                ? `mkissa rejected our boot token for build ${ALLMANGA_BUILD_ID} — derivation constants drifted; re-extract ALLMANGA_CRYPTO_PROFILE`
+                ? `mkissa rejected our boot token for build ${activeBuildId} — derivation constants drifted; re-extract ALLMANGA_CRYPTO_PROFILE`
                 : "mkissa bootstrap unavailable — using bundled crypto material",
           attributes: {
             rotationSignal: signalKind,
-            buildId: ALLMANGA_BUILD_ID,
+            buildId: activeBuildId,
           },
         });
       }
@@ -563,6 +579,7 @@ export function clearAllMangaProviderCachesForTest(): void {
   providerCacheNow = Date.now;
   cachedCryptoMaterial = null;
   cryptoMaterialOverrideForTest = null;
+  persistedQueryGetMissedBuildId = null;
   retrySleep = (ms, signal) => sleepAbortable(ms, signal);
 }
 
@@ -677,6 +694,29 @@ export async function gqlPost(
   }
 }
 
+export async function gqlRaw(
+  context: ProviderRuntimeContext,
+  apiUrl: string,
+  referer: string,
+  ua: string,
+  query: string,
+  vars: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  try {
+    const response = await providerFetch(context, apiUrl, {
+      method: "POST",
+      signal: createTimeoutSignal(signal, 20_000),
+      headers: { "Content-Type": "application/json", Referer: referer, "User-Agent": ua },
+      body: JSON.stringify({ query, variables: vars }),
+    });
+    if (!response.ok) return null;
+    return response.text();
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The AllAnime/mkissa API answers the episode-sources query with `NEED_CAPTCHA`
  * when the caller's network is bot- or geo-gated. The episode *catalog* query is
@@ -731,6 +771,79 @@ export function isAllMangaPersistedQueryNotFound(rawText: string): boolean {
   return rawText.includes("PersistedQueryNotFound");
 }
 
+/** Variables of the desktop episode-sources document. */
+type AllMangaEpisodeQueryVariables = {
+  readonly showId: string;
+  readonly translationType: "sub" | "dub";
+  readonly episodeString: string;
+};
+
+/** Extensions posted with that document: persisted-query hash, lane, and aaReq. */
+type AllMangaEpisodeQueryExtensions = {
+  readonly persistedQuery: {
+    readonly version: 1;
+    readonly sha256Hash: string;
+  };
+  readonly k: string;
+  readonly aaReq: string;
+};
+
+/**
+ * GET automatic persisted queries miss on build 189 even when the hash is
+ * current. Upstream falls back to POST of the desktop document with the same
+ * extensions. One POST; a second `PersistedQueryNotFound` is real drift.
+ */
+async function postEpisodeQueryDocument(opts: {
+  readonly context: ProviderRuntimeContext;
+  readonly apiUrl: string;
+  readonly referer: string;
+  readonly ua: string;
+  readonly buildId: string;
+  readonly vars: AllMangaEpisodeQueryVariables;
+  readonly extensions: AllMangaEpisodeQueryExtensions;
+  readonly signal?: AbortSignal;
+}): Promise<string> {
+  const { context, apiUrl, referer, ua, buildId, vars, extensions, signal } = opts;
+  try {
+    const response = await providerFetch(context, apiUrl, {
+      method: "POST",
+      signal: createTimeoutSignal(signal, 12_000),
+      headers: {
+        "Content-Type": "application/json",
+        Referer: referer,
+        Origin: ALLMANGA_SITE_ORIGIN,
+        "User-Agent": ua,
+        "x-build-id": buildId || ALLMANGA_BUILD_ID,
+      },
+      body: JSON.stringify({
+        query: ALLMANGA_EPISODE_QUERY,
+        variables: vars,
+        extensions,
+      }),
+    });
+    if (!response.ok) {
+      throw createProviderHttpError(response, {
+        providerId: ALLANIME_PROVIDER_ID,
+        stage: "episode-sources",
+      });
+    }
+    return await response.text();
+  } catch (error) {
+    if (error instanceof ProviderHttpError) throw error;
+    const message = error instanceof Error ? error.message : "AllManga source request failed";
+    const timedOut =
+      error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+    throw new ProviderHttpError({
+      providerId: ALLANIME_PROVIDER_ID,
+      stage: "episode-sources",
+      code: timedOut ? "timeout" : "network-error",
+      message,
+      retryable: timedOut || !isOfflineNetworkFailure({ code: "network-error", message }),
+      cause: error,
+    });
+  }
+}
+
 export async function resolveEpisodeSources(opts: {
   readonly context: ProviderRuntimeContext;
   readonly apiUrl: string;
@@ -776,47 +889,64 @@ export async function resolveEpisodeSources(opts: {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (!material) return [];
     const aaReq = buildAllMangaAaReq(undefined, material);
-    const getUrl = `${apiUrl}?variables=${encodeURIComponent(JSON.stringify(vars))}&extensions=${encodeURIComponent(
-      JSON.stringify({
-        persistedQuery: { version: 1, sha256Hash: material.queryHash },
-        k: material.contentLane,
-        aaReq,
-      }),
-    )}`;
+    const activeBuildId = material.buildId || ALLMANGA_BUILD_ID;
+    const canPostBundledDocument = material.queryHash === ALLMANGA_QUERY_HASH;
+    const extensions: AllMangaEpisodeQueryExtensions = {
+      persistedQuery: { version: 1, sha256Hash: material.queryHash },
+      k: material.contentLane,
+      aaReq,
+    };
 
-    try {
-      const getRes = await providerFetch(context, getUrl, {
-        signal: createTimeoutSignal(signal, 12_000),
-        headers: {
-          Referer: referer,
-          Origin: ALLMANGA_SITE_ORIGIN,
-          "User-Agent": ua,
-          "x-build-id": material.buildId || ALLMANGA_BUILD_ID,
-        },
+    if (canPostBundledDocument && persistedQueryGetMissedBuildId === activeBuildId) {
+      rawText = await postEpisodeQueryDocument({
+        context,
+        apiUrl,
+        referer,
+        ua,
+        buildId: activeBuildId,
+        vars,
+        extensions,
+        signal,
       });
-      if (!getRes.ok) {
-        throw createProviderHttpError(getRes, {
+    } else {
+      const getUrl = `${apiUrl}?variables=${encodeURIComponent(JSON.stringify(vars))}&extensions=${encodeURIComponent(
+        JSON.stringify(extensions),
+      )}`;
+
+      try {
+        const getRes = await providerFetch(context, getUrl, {
+          signal: createTimeoutSignal(signal, 12_000),
+          headers: {
+            Referer: referer,
+            Origin: ALLMANGA_SITE_ORIGIN,
+            "User-Agent": ua,
+            "x-build-id": activeBuildId,
+          },
+        });
+        if (!getRes.ok) {
+          throw createProviderHttpError(getRes, {
+            providerId: ALLANIME_PROVIDER_ID,
+            stage: "episode-sources",
+          });
+        }
+        rawText = await getRes.text();
+      } catch (error) {
+        if (error instanceof ProviderHttpError) throw error;
+        const message = error instanceof Error ? error.message : "AllManga source request failed";
+        const timedOut =
+          error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+        // A dead connection must not read as an empty source list: offline
+        // signatures are non-retryable so the engine's offline budget caps the
+        // provider early instead of counting it as a catalog miss.
+        throw new ProviderHttpError({
           providerId: ALLANIME_PROVIDER_ID,
           stage: "episode-sources",
+          code: timedOut ? "timeout" : "network-error",
+          message,
+          retryable: timedOut || !isOfflineNetworkFailure({ code: "network-error", message }),
+          cause: error,
         });
       }
-      rawText = await getRes.text();
-    } catch (error) {
-      if (error instanceof ProviderHttpError) throw error;
-      const message = error instanceof Error ? error.message : "AllManga source request failed";
-      const timedOut =
-        error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
-      // A dead connection must not read as an empty source list: offline
-      // signatures are non-retryable so the engine's offline budget caps the
-      // provider early instead of counting it as a catalog miss.
-      throw new ProviderHttpError({
-        providerId: ALLANIME_PROVIDER_ID,
-        stage: "episode-sources",
-        code: timedOut ? "timeout" : "network-error",
-        message,
-        retryable: timedOut || !isOfflineNetworkFailure({ code: "network-error", message }),
-        cause: error,
-      });
     }
 
     if (!rawText) return [];
@@ -829,7 +959,30 @@ export async function resolveEpisodeSources(opts: {
     }
 
     if (isAllMangaPersistedQueryNotFound(rawText)) {
-      throw new AllMangaQueryDriftError();
+      if (!canPostBundledDocument || persistedQueryGetMissedBuildId === activeBuildId) {
+        throw new AllMangaQueryDriftError();
+      }
+      rawText = await postEpisodeQueryDocument({
+        context,
+        apiUrl,
+        referer,
+        ua,
+        buildId: activeBuildId,
+        vars,
+        extensions,
+        signal,
+      });
+      if (!rawText) return [];
+      if (rawText.includes('"tobeparsed"')) {
+        persistedQueryGetMissedBuildId = activeBuildId;
+        break;
+      }
+      if (isAllMangaCaptchaResponse(rawText)) {
+        throw new AllMangaCaptchaError();
+      }
+      if (isAllMangaPersistedQueryNotFound(rawText)) {
+        throw new AllMangaQueryDriftError();
+      }
     }
 
     if (rawText.includes("Too many requests")) {

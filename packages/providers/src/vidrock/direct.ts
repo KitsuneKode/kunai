@@ -14,6 +14,7 @@ import {
   type DirectSubtitleInput,
 } from "../shared/direct-stream-source";
 import { expandHlsMasterInventory, isHlsDeadHostStatus } from "../shared/hls-ladder";
+import { getEffectiveProviderMirrors, getProviderCryptoOverride } from "../shared/hotfix-runtime";
 import { blockedLiteralTargetReason } from "../shared/stream-reachability";
 import { normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { vidrockManifest, VIDROCK_PROVIDER_ID } from "./manifest";
@@ -22,7 +23,30 @@ export { VIDROCK_PROVIDER_ID };
 
 const BASE_URL = "https://vidrock.net/api";
 const ORIGIN = "https://vidrock.net";
-const REFERER = "https://vidrock.net/";
+
+export function effectiveVidrockApiBase(): string {
+  const host = getEffectiveProviderMirrors(VIDROCK_PROVIDER_ID, [BASE_URL])[0];
+  if (!host) return BASE_URL;
+  const trimmed = host.replace(/\/+$/, "");
+  return trimmed.endsWith("/api") || trimmed.includes("/api/") ? trimmed : `${trimmed}/api`;
+}
+
+export function effectiveVidrockOrigin(): string {
+  try {
+    return new URL(effectiveVidrockApiBase()).origin;
+  } catch {
+    return ORIGIN;
+  }
+}
+
+export function effectiveVidrockReferer(): string {
+  return `${effectiveVidrockOrigin()}/`;
+}
+
+export function effectiveVidrockKeyHex(): string {
+  const override = getProviderCryptoOverride(VIDROCK_PROVIDER_ID, "keyHex", VIDROCK_KEY_HEX);
+  return /^[0-9a-fA-F]{64}$/.test(override) ? override : VIDROCK_KEY_HEX;
+}
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 const VIDROCK_FETCH_TIMEOUT_MS = 20_000;
@@ -52,8 +76,6 @@ const VIDROCK_GCM_IV_LENGTH = 12;
  * rotation (the GCM key is the other half of this provider's drift surface).
  */
 const STREAM_USER_AGENT = USER_AGENT;
-const STREAM_REFERER = REFERER;
-const STREAM_ORIGIN = ORIGIN;
 
 interface VidrockServerEntry {
   readonly url?: string | null;
@@ -82,8 +104,11 @@ export function resolveVidrockDirect(
         resolveInput.mediaKind === "movie"
           ? `movie/${tmdbId}`
           : `tv/${tmdbId}/${season}/${episode}`;
-      const response = await providerFetch(ctx, `${BASE_URL}/${path}`, {
-        headers: { Origin: ORIGIN, Referer: REFERER, "User-Agent": USER_AGENT },
+      const apiBase = effectiveVidrockApiBase();
+      const origin = effectiveVidrockOrigin();
+      const referer = effectiveVidrockReferer();
+      const response = await providerFetch(ctx, `${apiBase}/${path}`, {
+        headers: { Origin: origin, Referer: referer, "User-Agent": USER_AGENT },
         signal: directStreamFetchSignal(ctx.signal, VIDROCK_FETCH_TIMEOUT_MS),
       });
       if (!response.ok) {
@@ -137,8 +162,8 @@ export function resolveVidrockDirect(
             // challenged where Chrome/126 is served).
             playlist = await fetchPlaylist(url, ctx, {
               "User-Agent": STREAM_USER_AGENT,
-              Referer: STREAM_REFERER,
-              Origin: STREAM_ORIGIN,
+              Referer: effectiveVidrockReferer(),
+              Origin: effectiveVidrockOrigin(),
             });
           } catch (error) {
             if (ctx.signal?.aborted) throw error;
@@ -163,8 +188,8 @@ export function resolveVidrockDirect(
           masterUrl: url,
           headers: {
             "user-agent": STREAM_USER_AGENT,
-            referer: STREAM_REFERER,
-            origin: STREAM_ORIGIN,
+            referer: effectiveVidrockReferer(),
+            origin: effectiveVidrockOrigin(),
           },
           signal: directStreamFetchSignal(ctx.signal, 12_000),
         });
@@ -214,8 +239,8 @@ export function resolveVidrockDirect(
         // request stay identical per the resolve-gate contract.
         headers: {
           "user-agent": STREAM_USER_AGENT,
-          referer: STREAM_REFERER,
-          origin: STREAM_ORIGIN,
+          referer: effectiveVidrockReferer(),
+          origin: effectiveVidrockOrigin(),
         },
       };
       return payload;
@@ -224,14 +249,17 @@ export function resolveVidrockDirect(
 }
 
 let cachedKey: CryptoKey | undefined;
+let cachedKeyHex: string | undefined;
 
 async function vidrockGcmKey(): Promise<CryptoKey> {
-  if (cachedKey) return cachedKey;
-  const bytes = new Uint8Array(VIDROCK_KEY_HEX.length / 2);
+  const keyHex = effectiveVidrockKeyHex();
+  if (cachedKey && cachedKeyHex === keyHex) return cachedKey;
+  const bytes = new Uint8Array(keyHex.length / 2);
   for (let i = 0; i < bytes.length; i++) {
-    bytes[i] = parseInt(VIDROCK_KEY_HEX.slice(i * 2, i * 2 + 2), 16);
+    bytes[i] = parseInt(keyHex.slice(i * 2, i * 2 + 2), 16);
   }
   cachedKey = await crypto.subtle.importKey("raw", bytes, { name: "AES-GCM" }, false, ["decrypt"]);
+  cachedKeyHex = keyHex;
   return cachedKey;
 }
 

@@ -41,7 +41,7 @@ describe("rivestream dead master host", () => {
         fetch: async (input: unknown) => {
           const url = String(input);
           if (url.includes(".m3u8")) return new Response("gone", { status: 503 });
-          return jsonResponse(url.includes("VideoProviderServices") ? services : sourceFixture);
+          return jsonResponse(url.includes("/api/providers") ? services : sourceFixture);
         },
       },
     } as unknown as ProviderRuntimeContext;
@@ -65,7 +65,7 @@ describe("rivestream dead master host", () => {
         fetch: async (input: unknown) => {
           const url = String(input);
           if (url.includes(".m3u8")) return new Response("Forbidden", { status: 403 });
-          return jsonResponse(url.includes("VideoProviderServices") ? services : sourceFixture);
+          return jsonResponse(url.includes("/api/providers") ? services : sourceFixture);
         },
       },
     } as unknown as ProviderRuntimeContext;

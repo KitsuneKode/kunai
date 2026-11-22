@@ -31,6 +31,27 @@ describe("selectReadyStream", () => {
     ).toBe("1080");
   });
 
+  test("quality preference falls back to highest candidate at or below requested ceiling", () => {
+    const ladder = [
+      streamCandidate({ id: "720", qualityRank: 720 }),
+      streamCandidate({ id: "1080", qualityRank: 1080 }),
+      streamCandidate({ id: "2160", qualityRank: 2160 }),
+    ] as const satisfies readonly StreamCandidate[];
+
+    expect(
+      selectReadyStream(ladder, { startupPriority: "balanced", qualityPreference: "2160p" })
+        .selected.id,
+    ).toBe("2160");
+    expect(
+      selectReadyStream(ladder, { startupPriority: "balanced", qualityPreference: "1440p" })
+        .selected.id,
+    ).toBe("1080");
+    expect(
+      selectReadyStream(candidates, { startupPriority: "balanced", qualityPreference: "2160p" })
+        .selected.id,
+    ).toBe("1080");
+  });
+
   test("best/auto quality preference falls through to highest rank", () => {
     expect(
       selectReadyStream(candidates, { startupPriority: "balanced", qualityPreference: "best" })

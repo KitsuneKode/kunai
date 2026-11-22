@@ -53,6 +53,7 @@ export type CliArgs = {
   openUrl?: string;
   installProtocolHandler: boolean;
   dryRun: boolean;
+  json: boolean;
   help: boolean;
   version: boolean;
   initialRoute?: "recommendation" | "calendar" | "random";
@@ -86,7 +87,7 @@ LAUNCH
       --calendar             Open the release calendar
       --random               Open the random picks tray
       --download             Download a title without playback (-S or -i required)
-      --setup                Run the setup wizard
+      --onboarding, --setup  Run the guided onboarding wizard
 
 DISPLAY
   -m, --minimal              Minimal chrome
@@ -97,9 +98,9 @@ DISPLAY
 PLAYBACK PICKS (this run only — config.json untouched)
   -e, --episode <n>        Start at episode n (anime: absolute; series: S1)
       --season <n>         Season for --episode (series only)
-      --quality <q>        Stream quality: best | 1080p | 720p | 480p
-      --audio <lang>       Audio track: original | en | ja | dub
-      --sub <lang>         Subtitles: en | interactive | none | ar | de | es | fr | ja
+      --quality <q>        Stream quality: best | 2160p | 1440p | 1080p | 720p | 480p
+      --audio <lang>       Audio track: original | en | ja | hi | pt | es | fr | de | dub
+      --sub <lang>         Subtitles: en | interactive | none | hi | pt | ar | de | es | fr | ja
       --dub                Shortcut for --audio dub
 
 PLAYER
@@ -119,6 +120,7 @@ PATHS & INTEGRATION
       --dry-run              Print what would happen, change nothing
 
 DIAGNOSTICS
+      --json                 Machine-readable JSON output (with -S, doctor, capabilities)
       --debug                Verbose redacted logging to ./logs.txt
       --debug-json           Debug + JSON event stream
       --debug-session        Debug + full session trace
@@ -135,7 +137,12 @@ MAINTENANCE
   kunai rollback --to <ver>    Roll back to an explicit local verified version
   kunai rollback --dry-run     Show the planned rollback without changing state
   kunai doctor                 Read-only install health report (PATH, ownership)
-  kunai doctor --json          Print the same report as JSON
+  kunai doctor --json          Print the same report as JSON (add --strict to fail on warnings)
+  kunai capabilities --json    Machine-readable CLI/provider contract for agents & scripts
+  kunai providers status       Inspect production providers and signed hotfix manifest state
+  kunai providers update       Fetch & verify an Ed25519-signed manifest (--url, --dry-run, --force)
+  kunai providers rollback     Restore the previous verified hotfix manifest backup
+  kunai providers reset        Remove cached hotfix manifest and return to bundled defaults
   kunai uninstall              Remove kunai (add --purge to also delete user data)
   kunai diagnostics recent     Print recent redacted diagnostics from the local cache DB
                                (--format pretty|jsonl|markdown, --limit N, --no-color)
@@ -156,6 +163,8 @@ export const CLI_SUBCOMMANDS: readonly string[] = [
   "upgrade",
   "rollback",
   "doctor",
+  "capabilities",
+  "providers",
   "uninstall",
   "diagnostics",
   "completion",
@@ -194,6 +203,7 @@ export const KNOWN_FLAGS: ReadonlySet<string> = new Set([
   "--debug-json",
   "--debug-session",
   "--support-bundle",
+  "--onboarding",
   "--setup",
   "--offline",
   "--discover",
@@ -220,6 +230,12 @@ export const KNOWN_FLAGS: ReadonlySet<string> = new Set([
   "--purge",
   "--check",
   "--json",
+  "--strict",
+  "--format",
+  "--limit",
+  "--no-color",
+  "--url",
+  "--force",
   "--list",
   "--to",
 ]);
@@ -243,6 +259,9 @@ export const VALUE_FLAGS: ReadonlySet<string> = new Set([
   "--handoff-url",
   "--mpv-log-file",
   "--player",
+  "--format",
+  "--limit",
+  "--url",
   "--to",
 ]);
 
@@ -266,6 +285,7 @@ type CommanderCliOptions = {
   readonly debugJson?: boolean;
   readonly debugSession?: boolean;
   readonly supportBundle?: boolean;
+  readonly onboarding?: boolean;
   readonly setup?: boolean;
   readonly offline?: boolean;
   readonly discover?: boolean;
@@ -280,6 +300,7 @@ type CommanderCliOptions = {
   readonly open?: string;
   readonly installProtocolHandler?: boolean;
   readonly dryRun?: boolean;
+  readonly json?: boolean;
   readonly mpvDebug?: boolean;
   readonly mpvClean?: boolean;
   /**
@@ -321,6 +342,7 @@ function createCliCommand(): Command {
     .option("--debug-json")
     .option("--debug-session")
     .option("--support-bundle")
+    .option("--onboarding")
     .option("--setup")
     .option("--offline")
     .option("--discover")
@@ -335,6 +357,7 @@ function createCliCommand(): Command {
     .option("--handoff-url <url>")
     .option("--install-protocol-handler")
     .option("--dry-run")
+    .option("--json")
     .option("--mpv-debug")
     .option("--mpv-clean")
     .option("--no-user-mpv-config")
@@ -345,6 +368,15 @@ function createCliCommand(): Command {
     .argument("[query...]");
 }
 
+const SUBCOMMAND_ONLY_FLAGS: ReadonlySet<string> = new Set([
+  "--strict",
+  "--format",
+  "--limit",
+  "--no-color",
+  "--url",
+  "--force",
+]);
+
 function normalizeCliArgv(argv: readonly string[]): {
   readonly argv: readonly string[];
   readonly errors: readonly string[];
@@ -354,6 +386,14 @@ function normalizeCliArgv(argv: readonly string[]): {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (!arg) continue;
+    if (SUBCOMMAND_ONLY_FLAGS.has(arg)) {
+      errors.push(`${arg} is only valid with its maintenance subcommand`);
+      const next = argv[i + 1];
+      if (VALUE_FLAGS.has(arg) && next !== undefined && !KNOWN_FLAGS.has(next)) {
+        i += 1;
+      }
+      continue;
+    }
     if (VALUE_FLAGS.has(arg)) {
       const next = argv[i + 1];
       // A flag token must never become another flag's value — `-S --anime` is
@@ -456,6 +496,7 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
     download: false,
     installProtocolHandler: false,
     dryRun: false,
+    json: false,
     help: false,
     version: false,
   };
@@ -576,7 +617,7 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
   args.debugJson = Boolean(options.debugJson || options.debugSession);
   args.debugSession = Boolean(options.debugSession);
   args.supportBundle = Boolean(options.supportBundle);
-  args.setup = Boolean(options.setup);
+  args.setup = Boolean(options.setup || options.onboarding);
   args.offline = Boolean(options.offline);
   if (options.discover) args.initialRoute = "recommendation";
   if (options.calendar) args.initialRoute = "calendar";
@@ -601,6 +642,7 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
   }
   args.installProtocolHandler = Boolean(options.installProtocolHandler);
   args.dryRun = Boolean(options.dryRun);
+  args.json = Boolean(options.json);
   args.mpv = {
     ...(options.mpvDebug ? { debug: true } : {}),
     ...(options.mpvClean ? { clean: true } : {}),

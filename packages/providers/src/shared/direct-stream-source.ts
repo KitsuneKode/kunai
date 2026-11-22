@@ -188,7 +188,6 @@ export async function resolveDirectStreamSource(
     const refusedStreamIds = new Set<string>();
     if (resolveGateProbe) {
       let gateFailure: ProviderFailure | undefined;
-      const refusedStreamIds = new Set<string>();
       let cancelled = false;
 
       for (const candidate of streams.slice(0, RESOLVE_GATE_MAX_PROBES)) {
@@ -227,7 +226,6 @@ export async function resolveDirectStreamSource(
           break;
         }
 
-        refusedStreamIds.add(candidate.id);
         const probe = verdict.probe;
         const reason = verdict.reason;
         // The gate refused this candidate definitively — drop it from the
@@ -297,17 +295,13 @@ export async function resolveDirectStreamSource(
       attributes: { streams: streams.length },
     });
 
-    // Ship the inventory without the rungs the gate refused — leaving them in
-    // lets a later quality/source pick select the exact stream the probe
-    // rejected.
-    const liveStreams = streams.filter((stream) => !refusedStreamIds.has(stream.id));
     const subtitles = normalizeSubtitles(
       payload?.subtitles ?? [],
       providerId,
       sourceId,
       cachePolicy,
     );
-    const variants = liveStreams.map<ProviderVariantCandidate>((stream) => ({
+    const variants = streams.map<ProviderVariantCandidate>((stream) => ({
       id: stream.variantId ?? stream.id,
       providerId,
       sourceId,
@@ -352,7 +346,7 @@ export async function resolveDirectStreamSource(
           cachePolicy,
         },
       ],
-      streams: liveStreams,
+      streams,
       variants,
       subtitles,
       cachePolicy,

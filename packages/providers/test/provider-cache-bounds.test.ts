@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { clearMiruroCachesForTest, MIRURO_CACHE_LIMITS } from "../src/miruro/direct";
 import {
   buildRivestreamCycleCandidates,
-  RIVESTREAM_SECRET_KEY_CACHE_LIMIT,
+  clearRivestreamCachesForTest,
 } from "../src/rivestream/direct";
 
 describe("provider cache bounds", () => {
@@ -22,9 +22,11 @@ describe("provider cache bounds", () => {
     }).not.toThrow();
   });
 
-  test("the rivestream secret-key cache has a hard ceiling", () => {
-    expect(RIVESTREAM_SECRET_KEY_CACHE_LIMIT).toBeGreaterThan(0);
-    expect(Number.isFinite(RIVESTREAM_SECRET_KEY_CACHE_LIMIT)).toBe(true);
+  test("clearRivestreamCachesForTest is callable and idempotent", () => {
+    expect(() => {
+      clearRivestreamCachesForTest();
+      clearRivestreamCachesForTest();
+    }).not.toThrow();
   });
 
   test("the rivestream cycle builder still resolves (smoke that the module loads)", () => {

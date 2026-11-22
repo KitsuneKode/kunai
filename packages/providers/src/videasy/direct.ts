@@ -31,6 +31,7 @@ import type {
 import { providerHttpErrorForStatus } from "@kunai/types";
 
 import { resolveTmdbCatalogId } from "../shared/catalog-id";
+import { getEffectiveProviderMirrors } from "../shared/hotfix-runtime";
 import { readJsonObjectBody } from "../shared/json-body";
 import { decryptOpensslSalted, sha256Hex } from "../shared/openssl-evp";
 import { HealthTracker, TTLCache } from "../shared/provider-cache";
@@ -124,6 +125,10 @@ export const WINGS_API_BASE = "https://api.speedracelight.com";
  * this list when one exists rather than reintroducing a second constant.
  */
 export const WINGS_API_BASES: readonly string[] = [WINGS_API_BASE];
+
+export function effectiveWingsApiBases(): readonly string[] {
+  return getEffectiveProviderMirrors("videasy", WINGS_API_BASES);
+}
 /**
  * TMDB-format catalog mirrors in live-first order. `api.videasy.to` went
  * NXDOMAIN — `db.wingsdatabase.com` serves the identical `/3` contract
@@ -158,7 +163,9 @@ function wingsEndpointToServer(endpoint: string): string {
 
 /** Resolve the correct API base URL for a server endpoint. */
 export function apiBaseForEndpoint(endpoint: string): string {
-  return isWingsdatabaseEndpoint(endpoint) ? WINGS_API_BASE : VIDKING_API_BASE;
+  return isWingsdatabaseEndpoint(endpoint)
+    ? (effectiveWingsApiBases()[0] ?? WINGS_API_BASE)
+    : VIDKING_API_BASE;
 }
 
 /** Resolve the display host label for a server endpoint (used in source metadata). */
@@ -485,16 +492,23 @@ export async function resolveVideasyDirect(
       status: deprecated ? "failed" : phase === "A" ? "probing" : "pending",
       confidence: deprecated ? 0 : phase === "A" ? 0.8 : 0.5,
       cachePolicy,
-      metadata: {
-        server,
-        flavorId: presentation.flavorId,
-        flavorArchetype: presentation.subtitle,
-        flavorLabel: presentation.themeLabel,
-        phase,
-        ...(deprecated
-          ? { failureClass: "candidate-unsupported", reason: "deprecated-endpoint" }
-          : {}),
-      },
+      metadata: deprecated
+        ? {
+            server,
+            flavorId: presentation.flavorId,
+            flavorArchetype: presentation.subtitle,
+            flavorLabel: presentation.themeLabel,
+            phase,
+            failureClass: "candidate-unsupported",
+            reason: "deprecated-endpoint",
+          }
+        : {
+            server,
+            flavorId: presentation.flavorId,
+            flavorArchetype: presentation.subtitle,
+            flavorLabel: presentation.themeLabel,
+            phase,
+          },
     });
   }
 
@@ -1458,7 +1472,7 @@ async function fetchWingsdatabaseSeed(
   mediaId: number,
   context: ProviderRuntimeContext,
   signal?: AbortSignal,
-  hosts: readonly string[] = WINGS_API_BASES,
+  hosts: readonly string[] = effectiveWingsApiBases(),
 ): Promise<WingsSeedTransport | undefined> {
   const requester = context.fetch?.fetch.bind(context.fetch) ?? fetch;
   const effectiveSignal = signal ?? context.signal;

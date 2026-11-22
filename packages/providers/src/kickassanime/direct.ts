@@ -27,6 +27,7 @@ import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import { formatAnimeSourceDetail } from "../shared/anime-source-presentation";
 import { directStreamFetchSignal } from "../shared/direct-stream-source";
 import { parseHlsMasterAudioRenditions, type HlsAudioRendition } from "../shared/hls-ladder";
+import { getEffectiveProviderMirrors } from "../shared/hotfix-runtime";
 import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
 import { verifyCandidateStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
@@ -65,6 +66,23 @@ const SUB_LOCALE = "ja-JP";
 const DUB_LOCALE = "en-US";
 
 let currentBase = PRIMARY_BASE;
+let lastHotfixSignature = "";
+
+function effectiveKaaMirrors(): readonly string[] {
+  return getEffectiveProviderMirrors(KICKASSANIME_PROVIDER_ID, [PRIMARY_BASE]).map((u) =>
+    u.replace(/\/+$/, ""),
+  );
+}
+
+export function effectiveKaaBase(): string {
+  const mirrors = effectiveKaaMirrors();
+  const sig = mirrors.join("|");
+  if (sig !== lastHotfixSignature) {
+    lastHotfixSignature = sig;
+    if (mirrors[0]) currentBase = mirrors[0];
+  }
+  return currentBase;
+}
 
 type Requester = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -96,12 +114,23 @@ async function kaaFetch(
       ...(init.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
       signal: directStreamFetchSignal(context.signal, KAA_FETCH_TIMEOUT_MS),
     });
+  const activeBase = effectiveKaaBase();
   try {
-    return await attempt(currentBase);
+    return await attempt(activeBase);
   } catch (error) {
     if (context.signal?.aborted) throw error;
+    for (const candidate of effectiveKaaMirrors()) {
+      if (candidate === activeBase) continue;
+      try {
+        const res = await attempt(candidate);
+        currentBase = candidate;
+        return res;
+      } catch {
+        if (context.signal?.aborted) throw error;
+      }
+    }
     const rotated = await discoverKaaBase(context);
-    if (!rotated || rotated === currentBase) throw error;
+    if (!rotated || rotated === activeBase) throw error;
     currentBase = rotated;
     return attempt(currentBase);
   }

@@ -5,11 +5,21 @@
  * hardened for attribute order and entity-encoded titles. No network here.
  */
 
+import { getEffectiveProviderMirrors } from "../shared/hotfix-runtime";
 import { decodeMarkupEntities, markupToPlainText } from "../shared/markup-text";
 import { chooseProviderSearchMatch } from "../shared/provider-title-match";
 
 export const HIANIME_BASE = "https://hianime.at";
 export const HIANIME_REFERER = "https://hianime.at/";
+
+export function effectiveHianimeBase(): string {
+  const host = getEffectiveProviderMirrors("hianime", [HIANIME_BASE])[0];
+  return (host ?? HIANIME_BASE).replace(/\/+$/, "");
+}
+
+export function effectiveHianimeReferer(): string {
+  return `${effectiveHianimeBase()}/`;
+}
 export const HIANIME_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 

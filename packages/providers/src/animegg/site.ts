@@ -8,9 +8,15 @@
  *
  * Shapes observed 2026-09-11 (see `.docs/provider-dossiers/animegg.md`).
  */
+import { getEffectiveProviderMirrors } from "../shared/hotfix-runtime";
 import { decodeMarkupEntities, findTagEnd, indexOfTagName, stripTags } from "../shared/markup-text";
 
 export const ANIMEGG_BASE_URL = "https://www.animegg.org";
+
+export function effectiveAnimeggBaseUrl(): string {
+  const host = getEffectiveProviderMirrors("animegg", [ANIMEGG_BASE_URL])[0];
+  return (host ?? ANIMEGG_BASE_URL).replace(/\/+$/, "");
+}
 
 export type AnimeggSearchResult = {
   readonly slug: string;
@@ -183,7 +189,7 @@ export function parseAnimeggEmbedSources(html: string): AnimeggEmbedSource[] {
 /** Absolute stream URL for an embed's relative `file`. */
 export function animeggStreamUrl(file: string): string | null {
   try {
-    const url = new URL(file, `${ANIMEGG_BASE_URL}/`);
+    const url = new URL(file, `${effectiveAnimeggBaseUrl()}/`);
     // The embed's own files are relative and resolve to https. An absolute
     // http: one would be handed to the player in the clear, with the episode
     // referer attached, so it is refused rather than downgraded silently.
@@ -195,17 +201,17 @@ export function animeggStreamUrl(file: string): string | null {
 }
 
 export function animeggEpisodePath(slug: string, episode: number): string {
-  return `${ANIMEGG_BASE_URL}/${slug}-episode-${episode}`;
+  return `${effectiveAnimeggBaseUrl()}/${slug}-episode-${episode}`;
 }
 
 export function animeggSeriesPath(slug: string): string {
-  return `${ANIMEGG_BASE_URL}/series/${slug}`;
+  return `${effectiveAnimeggBaseUrl()}/series/${slug}`;
 }
 
 export function animeggEmbedPath(embedId: string): string {
-  return `${ANIMEGG_BASE_URL}/embed/${embedId}`;
+  return `${effectiveAnimeggBaseUrl()}/embed/${embedId}`;
 }
 
 export function animeggSearchPath(query: string): string {
-  return `${ANIMEGG_BASE_URL}/search/?q=${encodeURIComponent(query)}`;
+  return `${effectiveAnimeggBaseUrl()}/search/?q=${encodeURIComponent(query)}`;
 }

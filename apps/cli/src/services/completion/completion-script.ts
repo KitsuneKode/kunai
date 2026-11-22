@@ -16,7 +16,17 @@ export function isCompletionShell(value: string): value is CompletionShell {
 }
 
 /** Flags handled by an earlier, more specific `case` arm in the generated scripts. */
-const SPECIALISED_VALUE_FLAGS = new Set(["-t", "--type", "--download-path", "--mpv-log-file"]);
+const SPECIALISED_VALUE_FLAGS = new Set([
+  "-t",
+  "--type",
+  "--quality",
+  "--audio",
+  "--sub",
+  "--player",
+  "--format",
+  "--download-path",
+  "--mpv-log-file",
+]);
 
 /**
  * Value-taking flags that have no better completion than "expect a value".
@@ -32,8 +42,13 @@ function allFlags(): readonly string[] {
   return [...KNOWN_FLAGS].sort();
 }
 
-/** `--type` is the one flag with a closed value set worth completing. */
 const TYPE_VALUES = ["movie", "tv"] as const;
+const QUALITY_VALUES = ["best", "2160p", "1440p", "1080p", "720p", "480p"] as const;
+const AUDIO_VALUES = ["original", "en", "ja", "hi", "pt", "es", "fr", "de", "dub"] as const;
+const SUB_VALUES = ["en", "interactive", "none", "hi", "pt", "ar", "de", "es", "fr", "ja"] as const;
+const PLAYER_VALUES = ["auto", "mpv", "vlc"] as const;
+const FORMAT_VALUES = ["pretty", "jsonl", "markdown"] as const;
+const PROVIDERS_SUBCOMMANDS = ["status", "update", "verify", "rollback", "reset"] as const;
 
 function bashScript(): string {
   return `# kunai bash completion. Install:
@@ -48,10 +63,22 @@ _kunai_complete() {
   case "$prev" in
     -t|--type)
       COMPREPLY=( $(compgen -W "${TYPE_VALUES.join(" ")}" -- "$cur") ); return ;;
+    --quality)
+      COMPREPLY=( $(compgen -W "${QUALITY_VALUES.join(" ")}" -- "$cur") ); return ;;
+    --audio)
+      COMPREPLY=( $(compgen -W "${AUDIO_VALUES.join(" ")}" -- "$cur") ); return ;;
+    --sub)
+      COMPREPLY=( $(compgen -W "${SUB_VALUES.join(" ")}" -- "$cur") ); return ;;
+    --player)
+      COMPREPLY=( $(compgen -W "${PLAYER_VALUES.join(" ")}" -- "$cur") ); return ;;
+    --format)
+      COMPREPLY=( $(compgen -W "${FORMAT_VALUES.join(" ")}" -- "$cur") ); return ;;
     --download-path|--mpv-log-file)
       COMPREPLY=( $(compgen -d -- "$cur") ); return ;;
     completion)
       COMPREPLY=( $(compgen -W "${COMPLETION_SHELLS.join(" ")}" -- "$cur") ); return ;;
+    providers)
+      COMPREPLY=( $(compgen -W "${PROVIDERS_SUBCOMMANDS.join(" ")}" -- "$cur") ); return ;;
     ${valueFlags().join("|")})
       COMPREPLY=(); return ;;
   esac
@@ -73,18 +100,30 @@ function zshScript(): string {
 # or append to ~/.zshrc:
 #   eval "$(kunai completion zsh)"
 _kunai() {
-  local -a subcommands flags shells types
+  local -a subcommands flags shells providers_subs types qualities audios subs players formats
   subcommands=(${CLI_SUBCOMMANDS.map((c) => `'${c}'`).join(" ")})
   flags=(${allFlags()
     .map((f) => `'${f}'`)
     .join(" ")})
   shells=(${COMPLETION_SHELLS.map((s) => `'${s}'`).join(" ")})
+  providers_subs=(${PROVIDERS_SUBCOMMANDS.map((p) => `'${p}'`).join(" ")})
   types=(${TYPE_VALUES.map((t) => `'${t}'`).join(" ")})
+  qualities=(${QUALITY_VALUES.map((q) => `'${q}'`).join(" ")})
+  audios=(${AUDIO_VALUES.map((a) => `'${a}'`).join(" ")})
+  subs=(${SUB_VALUES.map((s) => `'${s}'`).join(" ")})
+  players=(${PLAYER_VALUES.map((p) => `'${p}'`).join(" ")})
+  formats=(${FORMAT_VALUES.map((f) => `'${f}'`).join(" ")})
 
   case "\${words[CURRENT-1]}" in
     -t|--type) _describe 'type' types; return ;;
+    --quality) _describe 'quality' qualities; return ;;
+    --audio) _describe 'audio' audios; return ;;
+    --sub) _describe 'subtitle' subs; return ;;
+    --player) _describe 'player' players; return ;;
+    --format) _describe 'format' formats; return ;;
     --download-path|--mpv-log-file) _files -/; return ;;
     completion) _describe 'shell' shells; return ;;
+    providers) _describe 'providers action' providers_subs; return ;;
   esac
 
   if (( CURRENT == 2 )) && [[ "\${words[CURRENT]}" != -* ]]; then
@@ -107,13 +146,18 @@ function fishScript(): string {
     `complete -c kunai -f`,
     `complete -c kunai -n "not __fish_seen_subcommand_from ${sub}" -a "${sub}"`,
     `complete -c kunai -n "__fish_seen_subcommand_from completion" -a "${COMPLETION_SHELLS.join(" ")}"`,
+    `complete -c kunai -n "__fish_seen_subcommand_from providers" -a "${PROVIDERS_SUBCOMMANDS.join(" ")}"`,
     `complete -c kunai -s t -l type -x -a "${TYPE_VALUES.join(" ")}"`,
+    `complete -c kunai -l quality -x -a "${QUALITY_VALUES.join(" ")}"`,
+    `complete -c kunai -l audio -x -a "${AUDIO_VALUES.join(" ")}"`,
+    `complete -c kunai -l sub -x -a "${SUB_VALUES.join(" ")}"`,
+    `complete -c kunai -l player -x -a "${PLAYER_VALUES.join(" ")}"`,
+    `complete -c kunai -l format -x -a "${FORMAT_VALUES.join(" ")}"`,
     `complete -c kunai -l download-path -r -F`,
     `complete -c kunai -l mpv-log-file -r -F`,
   ];
   for (const flag of allFlags()) {
-    if (flag === "-t" || flag === "--type") continue;
-    if (flag === "--download-path" || flag === "--mpv-log-file") continue;
+    if (SPECIALISED_VALUE_FLAGS.has(flag)) continue;
     const takesValue = VALUE_FLAGS.has(flag);
     const spec = flag.startsWith("--") ? `-l ${flag.slice(2)}` : `-s ${flag.slice(1)}`;
     lines.push(`complete -c kunai ${spec}${takesValue ? " -x" : ""}`);
@@ -134,7 +178,13 @@ Register-ArgumentCompleter -Native -CommandName kunai -ScriptBlock {
     .map((f) => `'${f}'`)
     .join(", ")})
   $shells = @(${COMPLETION_SHELLS.map((s) => `'${s}'`).join(", ")})
+  $providersSubs = @(${PROVIDERS_SUBCOMMANDS.map((p) => `'${p}'`).join(", ")})
   $types = @(${TYPE_VALUES.map((t) => `'${t}'`).join(", ")})
+  $qualities = @(${QUALITY_VALUES.map((q) => `'${q}'`).join(", ")})
+  $audios = @(${AUDIO_VALUES.map((a) => `'${a}'`).join(", ")})
+  $subs = @(${SUB_VALUES.map((s) => `'${s}'`).join(", ")})
+  $players = @(${PLAYER_VALUES.map((p) => `'${p}'`).join(", ")})
+  $formats = @(${FORMAT_VALUES.map((f) => `'${f}'`).join(", ")})
 
   $elements = $commandAst.CommandElements
   $previous = if ($elements.Count -ge 2) { $elements[$elements.Count - 2].ToString() } else { '' }
@@ -142,7 +192,13 @@ Register-ArgumentCompleter -Native -CommandName kunai -ScriptBlock {
   $candidates = switch ($previous) {
     '-t' { $types }
     '--type' { $types }
+    '--quality' { $qualities }
+    '--audio' { $audios }
+    '--sub' { $subs }
+    '--player' { $players }
+    '--format' { $formats }
     'completion' { $shells }
+    'providers' { $providersSubs }
     default {
       if ($elements.Count -le 2 -and -not $wordToComplete.StartsWith('-')) { $subcommands } else { $flags }
     }

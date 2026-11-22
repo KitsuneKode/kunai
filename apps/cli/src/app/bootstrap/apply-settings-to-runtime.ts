@@ -1,6 +1,8 @@
 import type { Container } from "@/container";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
+import { applyHotfixToProviderBootstrap } from "@/services/providers/provider-hotfix-manifest";
 import { createProviderPrioritySnapshot } from "@/services/providers/provider-priority";
+import { getActiveProviderHotfixManifest } from "@kunai/providers";
 
 import { providerForLane } from "./lane-settings-sync";
 
@@ -43,9 +45,14 @@ export async function applySettingsToRuntime({
     setDesignTheme(next.theme);
   }
 
+  const effectiveProviders = applyHotfixToProviderBootstrap(
+    createProviderPrioritySnapshot(next),
+    next.disabledProviders,
+    getActiveProviderHotfixManifest(),
+  );
   container.providerRegistry.setPriority({
-    ...createProviderPrioritySnapshot(next),
-    disabledProviderIds: next.disabledProviders,
+    ...effectiveProviders.priority,
+    disabledProviderIds: effectiveProviders.disabledProviderIds,
   });
 
   const state = stateManager.getState();

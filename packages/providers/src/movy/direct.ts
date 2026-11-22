@@ -26,6 +26,7 @@ import type {
 import { ProviderHttpError, providerFetch } from "../runtime/fetch";
 import { resolveTmdbCatalogId } from "../shared/catalog-id";
 import { expandHlsMasterInventory, isHlsDeadHostStatus } from "../shared/hls-ladder";
+import { getEffectiveProviderMirrors } from "../shared/hotfix-runtime";
 import {
   cycleExhaustionFailure,
   providerFailureCodeFromCycleFailure,
@@ -67,6 +68,11 @@ export const MOVY_REFERER = "https://www.movy.sx/";
 // Origin carries no path and no trailing slash — a real browser sends
 // `Origin: https://www.movy.sx`.
 const MOVY_ORIGIN = "https://www.movy.sx";
+
+export function effectiveMovyApiBase(): string {
+  const host = getEffectiveProviderMirrors(MOVY_PROVIDER_ID, [MOVY_API_BASE])[0];
+  return (host ?? MOVY_API_BASE).replace(/\/+$/, "");
+}
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -144,12 +150,13 @@ async function fetchMovySeed(
   mediaId: number,
   signal?: AbortSignal,
 ): Promise<string> {
-  const cacheKey = `${MOVY_API_BASE}|${mediaId}`;
+  const apiBase = effectiveMovyApiBase();
+  const cacheKey = `${apiBase}|${mediaId}`;
   const now = Date.now();
   const cached = seedCache.get(cacheKey);
   if (cached && cached.expiresAt - SEED_EXPIRY_HEADROOM_MS > now) return cached.seed;
 
-  const response = await providerFetch(context, `${MOVY_API_BASE}/seed?mediaId=${mediaId}`, {
+  const response = await providerFetch(context, `${apiBase}/seed?mediaId=${mediaId}`, {
     headers: { "User-Agent": USER_AGENT, Referer: MOVY_REFERER, Origin: MOVY_ORIGIN },
     signal,
   });
@@ -188,7 +195,7 @@ async function fetchMovySeed(
 }
 
 function invalidateMovySeed(mediaId: number): void {
-  seedCache.delete(`${MOVY_API_BASE}|${mediaId}`);
+  seedCache.delete(`${effectiveMovyApiBase()}|${mediaId}`);
 }
 
 /** Test seam — the seed cache is module state and must not leak between cases. */
@@ -208,15 +215,19 @@ async function fetchMovyLaneSources(
   for (let attempt = 0; attempt < 2; attempt++) {
     const seed = await fetchMovySeed(context, mediaId, signal);
     const query = new URLSearchParams({ ...params, enc: "2", seed });
-    const response = await providerFetch(context, `${MOVY_API_BASE}/${lane}/sources?${query}`, {
-      headers: {
-        "User-Agent": USER_AGENT,
-        Referer: MOVY_REFERER,
-        Origin: MOVY_ORIGIN,
-        Accept: "*/*",
+    const response = await providerFetch(
+      context,
+      `${effectiveMovyApiBase()}/${lane}/sources?${query}`,
+      {
+        headers: {
+          "User-Agent": USER_AGENT,
+          Referer: MOVY_REFERER,
+          Origin: MOVY_ORIGIN,
+          Accept: "*/*",
+        },
+        signal,
       },
-      signal,
-    });
+    );
     if (response.status === 401 && attempt === 0) {
       invalidateMovySeed(mediaId);
       continue;
