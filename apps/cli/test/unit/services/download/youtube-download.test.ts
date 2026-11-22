@@ -147,7 +147,11 @@ describe("DownloadService youtube argv contract", () => {
     await pinnedService.processQueue();
     expect(repo.get(pinnedJob.id)?.status).toBe("completed");
     const pinnedArgs = capturedByJob[0] ?? [];
-    expect(pinnedArgs[pinnedArgs.indexOf("-f") + 1]).toBe("699+(ba[language^=ja]/ba)");
+    // The pin leads; its 1080p ceiling follows so a rotated itag still downloads.
+    const pinnedSelector = pinnedArgs[pinnedArgs.indexOf("-f") + 1] ?? "";
+    expect(pinnedSelector.startsWith("699+(ba[language^=ja]/ba)/")).toBe(true);
+    expect(pinnedSelector).toContain("bv*[height<=1080][aspect_ratio>=1]");
+    expect(pinnedSelector).not.toContain("1440");
 
     // 2. When no quality ceiling or exact ytdlFormat is set, download must NOT silently cap at 1080p.
     const uncappedService = buildYoutubeService({

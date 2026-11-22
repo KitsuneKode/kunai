@@ -1,5 +1,6 @@
 import { isJsonString } from "@kunai/types";
 
+import { normalizeSubtitleLanguage } from "../shared/subtitle-helpers";
 import { youtubeQualityHeight } from "./quality-selection";
 import { spawnYtDlpWithTimeout, type YtDlpSpawn } from "./spawn-ytdlp";
 import type { YoutubeVideoQuality } from "./youtube-metadata";
@@ -80,18 +81,23 @@ export async function extractYtDlpVideoInfo(
  * Map Kunai's audio preference to a yt-dlp audio selector fragment.
  *
  * `original` (and unset/`auto`/`sub`) emits plain `ba`, which picks YouTube's
- * original audio track. Explicit language codes prefer tracks whose `language`
- * starts with that code (`ba[language^=ja]/ba`) because mpv 0.42's ytdl hook
- * does not reliably populate per-track `lang` metadata for `--alang`. `dub`
- * prefers any non-original audio track with a safe fallback to `ba`.
+ * original audio track. Explicit languages prefer tracks whose `language`
+ * starts with the ISO 639-1 code (`ba[language^=ja]/ba`) because mpv 0.42's
+ * ytdl hook does not reliably populate per-track `lang` metadata for `--alang`.
+ * yt-dlp string filters are case-sensitive and YouTube reports tags like
+ * `en-US`, so locales and ISO 639-2 names are reduced to the primary subtag.
+ * `dub` means English, matching `toMpvLanguageToken` and the dub catalogs:
+ * an English dubbed track first, then any English track, then the original.
  */
 export function buildYoutubeAudioSelector(audioPreference?: string): string {
   const raw = audioPreference?.trim().toLowerCase();
   if (!raw || raw === "original" || raw === "auto" || raw === "sub") return "ba";
-  if (raw === "dub") return "(ba[format_note!*='original']/ba)";
-  // Reject arbitrary yt-dlp filter characters so config/user input cannot inject selector logic.
-  if (!/^[a-z]{2,3}(?:-[a-z0-9]{2,4})?$/.test(raw)) return "ba";
-  return `(ba[language^=${raw}]/ba)`;
+  if (raw === "dub") return "(ba[language^=en][format_note!*=original]/ba[language^=en]/ba)";
+  const language = normalizeSubtitleLanguage(raw);
+  // Reject anything that is not a bare language code so config/user input
+  // cannot inject yt-dlp selector logic.
+  if (!language || !/^[a-z]{2,3}$/.test(language)) return "ba";
+  return `(ba[language^=${language}]/ba)`;
 }
 
 export function defaultYtdlPlaybackFormat(audioPreference?: string): string {
@@ -146,6 +152,18 @@ function effectiveResolution(
   return height;
 }
 
+const DOLBY_VISION = "Dolby Vision";
+
+/**
+ * HDR10/HLG beat SDR at the same resolution and frame rate, like yt-dlp's
+ * `hdr:12` default. Dolby Vision ranks below SDR there too: mpv only renders it
+ * correctly with libplacebo reshaping, otherwise it plays with tinted colors.
+ */
+function dynamicRangeRank(dynamicRange: string | undefined): number {
+  if (!dynamicRange) return 0;
+  return dynamicRange === DOLBY_VISION ? -1 : 1;
+}
+
 function normalizeDynamicRange(
   format: Pick<YtDlpFormatInfo, "dynamic_range" | "vcodec">,
 ): string | undefined {
@@ -153,7 +171,7 @@ function normalizeDynamicRange(
   if (raw) {
     const upper = raw.toUpperCase();
     if (upper === "SDR") return undefined;
-    if (upper === "DV" || upper === "DOLBY VISION") return "Dolby Vision";
+    if (upper === "DV" || upper === "DOLBY VISION") return DOLBY_VISION;
     return raw;
   }
   // Sparse metadata without `dynamic_range`: VP9 Profile 2 is 10-bit HDR on YouTube.
@@ -215,7 +233,8 @@ export function mapYtDlpFormatsToQualityLabels(
       },
     ];
   });
-  // Rank like yt-dlp: short-side resolution → fps → HDR → direct HTTPS DASH
+  // Rank like yt-dlp: short-side resolution → fps → HDR (Dolby Vision below
+  // SDR) → direct HTTPS DASH
   // before HLS → modern codec (AV1 > VP9.2 > VP9/HEVC > H.264) → bitrate → id.
   // Sorting by raw `tbr` first caused HLS peak-bandwidth entries and bloated
   // H.264 streams to outrank faster HTTPS AV1/VP9 DASH streams.
@@ -223,7 +242,7 @@ export function mapYtDlpFormatsToQualityLabels(
     (a, b) =>
       b.resolution - a.resolution ||
       (b.format.fps ?? 0) - (a.format.fps ?? 0) ||
-      (b.dynamicRange ? 1 : 0) - (a.dynamicRange ? 1 : 0) ||
+      dynamicRangeRank(b.dynamicRange) - dynamicRangeRank(a.dynamicRange) ||
       protocolRank(b.format.protocol) - protocolRank(a.format.protocol) ||
       codecRank(b.format.vcodec) - codecRank(a.format.vcodec) ||
       (b.format.tbr ?? 0) - (a.format.tbr ?? 0) ||
@@ -240,27 +259,25 @@ export function mapYtDlpFormatsToQualityLabels(
         ? `${Number(((format.tbr ?? 0) / 1000).toFixed(2))} Mb/s`
         : undefined;
     const protocolTag = isYoutubeHlsProtocol(format.protocol) ? "HLS" : undefined;
-    const base: YoutubeVideoQuality = {
-      label: [
-        `${resolution}p`,
+    return [
+      {
+        label: [
+          `${resolution}p`,
+          dynamicRange,
+          codecLabel(format.vcodec),
+          protocolTag,
+          fps,
+          bitrate,
+          `#${formatId}`,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        rank: resolution,
+        formatId,
+        hasAudio: format.acodec ? format.acodec !== "none" : undefined,
         dynamicRange,
-        codecLabel(format.vcodec),
-        protocolTag,
-        fps,
-        bitrate,
-        `#${formatId}`,
-      ]
-        .filter(Boolean)
-        .join(" · "),
-      rank: resolution,
-      formatId,
-      hasAudio: format.acodec ? format.acodec !== "none" : undefined,
-    };
-    if (dynamicRange && format.protocol) {
-      return [{ ...base, dynamicRange, protocol: format.protocol }];
-    }
-    if (dynamicRange) return [{ ...base, dynamicRange }];
-    if (format.protocol) return [{ ...base, protocol: format.protocol }];
-    return [base];
+        protocol: format.protocol,
+      },
+    ];
   });
 }

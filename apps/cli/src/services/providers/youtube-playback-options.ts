@@ -41,10 +41,7 @@ export function resolveYoutubeYtdlRawOptions(
   }).mpvRawOptions;
 }
 
-export function resolveYtdlFormatFromCandidate(
-  selected: StreamCandidate,
-  audioLanguage?: string,
-): string {
+export function resolveYtdlFormatFromCandidate(selected: StreamCandidate): string {
   const metadata = selected.metadata as { readonly ytdlFormat?: string } | undefined;
   if (typeof metadata?.ytdlFormat === "string" && metadata.ytdlFormat.trim()) {
     return metadata.ytdlFormat;
@@ -62,6 +59,5 @@ export function resolveYtdlFormatFromCandidate(
     sponsorblockRemove: config.sponsorblockRemove,
     isLive,
     qualityLabel: selected.qualityLabel,
-    audioLanguage,
   }).mpvFormat;
 }

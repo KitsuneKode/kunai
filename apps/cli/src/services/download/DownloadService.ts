@@ -1694,11 +1694,20 @@ export class DownloadService {
           job.subLang?.trim() || this.deps.config.youtubeLanguageProfile.subtitle || "en",
       });
       args.push(...profile.cliArgs);
-      const selectedYtdlFormat = streamMeta?.ytdlFormat?.trim() || undefined;
+      // Prefer the exact rendition the user picked, but keep its ceiling as a
+      // fallback: the pin may come from cached metadata and YouTube rotates
+      // itags, so a bare pin fails the whole job with "Requested format is not
+      // available" where the same-resolution selector still downloads.
+      const pinnedYtdlFormat = streamMeta?.ytdlFormat?.trim() || undefined;
+      const ceilingLabel = pinnedYtdlFormat
+        ? (selectedStream?.qualityLabel ?? job.selectedQualityLabel)
+        : job.selectedQualityLabel;
+      const ceilingFormat =
+        ytDlpFormatSelectorForQuality(ceilingLabel, audioLanguage) ?? profile.formatSelector;
       const formatSelector =
-        selectedYtdlFormat ??
-        ytDlpFormatSelectorForQuality(job.selectedQualityLabel, audioLanguage) ??
-        profile.formatSelector;
+        pinnedYtdlFormat && ceilingFormat && pinnedYtdlFormat !== ceilingFormat
+          ? `${pinnedYtdlFormat}/${ceilingFormat}`
+          : (pinnedYtdlFormat ?? ceilingFormat);
       if (formatSelector) {
         args.push("-f", formatSelector);
       }

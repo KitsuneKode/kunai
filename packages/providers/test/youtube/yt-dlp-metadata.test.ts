@@ -11,15 +11,21 @@ import {
 } from "../../src/youtube/yt-dlp-metadata";
 
 describe("buildYoutubeAudioSelector", () => {
-  test("maps original/unset to ba, explicit languages to prefix match, dub to non-original, and rejects unsafe input", () => {
+  test("maps original/unset to ba, languages to an ISO 639-1 prefix match, dub to English, and rejects unsafe input", () => {
     expect(buildYoutubeAudioSelector(undefined)).toBe("ba");
     expect(buildYoutubeAudioSelector("")).toBe("ba");
     expect(buildYoutubeAudioSelector("original")).toBe("ba");
     expect(buildYoutubeAudioSelector("auto")).toBe("ba");
     expect(buildYoutubeAudioSelector("sub")).toBe("ba");
     expect(buildYoutubeAudioSelector("ja")).toBe("(ba[language^=ja]/ba)");
-    expect(buildYoutubeAudioSelector("en-US")).toBe("(ba[language^=en-us]/ba)");
-    expect(buildYoutubeAudioSelector("dub")).toBe("(ba[format_note!*='original']/ba)");
+    // yt-dlp filters are case-sensitive and YouTube reports `en-US`: match the primary subtag.
+    expect(buildYoutubeAudioSelector("en-US")).toBe("(ba[language^=en]/ba)");
+    expect(buildYoutubeAudioSelector("jpn")).toBe("(ba[language^=ja]/ba)");
+    expect(buildYoutubeAudioSelector("Japanese")).toBe("(ba[language^=ja]/ba)");
+    // `dub` is English everywhere else in Kunai (mpv --alang, dub catalogs).
+    expect(buildYoutubeAudioSelector("dub")).toBe(
+      "(ba[language^=en][format_note!*=original]/ba[language^=en]/ba)",
+    );
     expect(buildYoutubeAudioSelector("ja]/best")).toBe("ba");
     expect(buildYoutubeAudioSelector("en;rm")).toBe("ba");
   });
@@ -34,7 +40,7 @@ describe("buildExactYtdlFormatSelector", () => {
     expect(buildExactYtdlFormatSelector("699", false, "original")).toBe("699+ba");
     expect(buildExactYtdlFormatSelector("18", true, "ja")).toBe("18");
     expect(buildExactYtdlFormatSelector("248", undefined, "dub")).toBe(
-      "248+(ba[format_note!*='original']/ba)/248",
+      "248+(ba[language^=en][format_note!*=original]/ba[language^=en]/ba)/248",
     );
   });
 
@@ -276,6 +282,41 @@ describe("mapYtDlpFormatsToQualityLabels", () => {
 
     expect(mapped.map((entry) => entry.formatId)).toEqual(["399", "248", "137", "270"]);
     expect(selectYoutubeQuality(mapped, "1080p")?.formatId).toBe("399");
+  });
+
+  test("ranks HDR10 above SDR but Dolby Vision below SDR at the same resolution", () => {
+    const qualities = mapYtDlpFormatsToQualityLabels([
+      {
+        format_id: "dv",
+        height: 2160,
+        width: 3840,
+        vcodec: "dvh1.05.06",
+        dynamic_range: "DV",
+        tbr: 30000,
+        protocol: "https",
+      },
+      {
+        format_id: "sdr",
+        height: 2160,
+        width: 3840,
+        vcodec: "vp9",
+        dynamic_range: "SDR",
+        tbr: 18000,
+        protocol: "https",
+      },
+      {
+        format_id: "hdr",
+        height: 2160,
+        width: 3840,
+        vcodec: "vp09.02.51.10",
+        dynamic_range: "HDR10",
+        tbr: 20000,
+        protocol: "https",
+      },
+    ]);
+    expect(qualities.map((quality) => quality.formatId)).toEqual(["hdr", "sdr", "dv"]);
+    expect(qualities[2]?.dynamicRange).toBe("Dolby Vision");
+    expect(qualities[1]?.dynamicRange).toBeUndefined();
   });
 
   test("ranks portrait Shorts by short side so 1080p selects 1080x1920 instead of 608x1080", () => {
