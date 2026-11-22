@@ -88,6 +88,11 @@ export function bindTitleDetailCrosswalk(lookup: CatalogCrosswalkLookup | undefi
   boundCrosswalkLookup = lookup;
 }
 
+/** True while a container's crosswalk is bound; dispose must clear it. */
+export function isTitleDetailCrosswalkBound(): boolean {
+  return boundCrosswalkLookup !== undefined;
+}
+
 const CACHE_TTL_MS = 5 * 60 * 1_000;
 const detailCache = new Map<string, CacheEntry>();
 
