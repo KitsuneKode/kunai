@@ -55,9 +55,7 @@ export const PRE_PLAY_CONFIRM_SETTINGS_OPTIONS: readonly EnumOption[] = [
 ];
 
 // Exhaustive by type: a mode added to HDR_MODES fails to compile until it has a row.
-const HDR_MODE_META: Readonly<
-  Record<HdrMode, { readonly label: string; readonly detail: string }>
-> = {
+const HDR_MODE_META = {
   auto: {
     label: "Auto",
     detail: "Leave HDR to mpv and your mpv.conf; mpv tone-maps HDR to SDR by default",
@@ -68,17 +66,18 @@ const HDR_MODE_META: Readonly<
   },
   "tone-map": {
     label: "Tone-map to SDR",
-    detail: "Force SDR output with bt.2446a tone-mapping (needs gpu-next)",
+    detail: "Force SDR output, overriding mpv.conf; bt.2446a tone-mapping with gpu-next",
   },
   "sdr-only": {
     label: "Prefer SDR",
     detail: "Force SDR output; on a picked source, prefer SDR at equal quality",
   },
-};
+} as const satisfies Record<HdrMode, { readonly label: string; readonly detail: string }>;
 
 export const HDR_MODE_OPTIONS: readonly EnumOption[] = HDR_MODES.map((value) => ({
   value,
-  ...HDR_MODE_META[value],
+  label: HDR_MODE_META[value].label,
+  detail: HDR_MODE_META[value].detail,
 }));
 
 export const ANIME_TITLE_SETTINGS_OPTIONS: readonly EnumOption[] = [

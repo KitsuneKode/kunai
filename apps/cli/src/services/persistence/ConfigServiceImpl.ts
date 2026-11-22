@@ -983,10 +983,7 @@ export class ConfigServiceImpl implements ConfigService {
    * saved value) keeps the saved value on disk and stays overridden for the
    * session. Only fields the user actually changed are persisted.
    */
-  private separateProfileOverrides(input: Partial<KitsuneConfig>): {
-    readonly partial: Partial<KitsuneConfig>;
-    readonly keptProfileOverrides: Partial<KitsuneConfig>;
-  } {
+  private separateProfileOverrides(input: Partial<KitsuneConfig>): ProfileOverrideSplit {
     const partial: Partial<KitsuneConfig> = { ...input };
     const keptProfileOverrides: Partial<KitsuneConfig> = {};
     for (const key of SESSION_PROFILE_KEYS) {
@@ -1477,6 +1474,12 @@ function normalizeAnalyticsPreference<T>(value: T): KitsuneConfig["analytics"] {
 
 function normalizeStartupPriority<T>(value: T): StartupPriority {
   return value === "fast" ? "fast" : value === "quality-first" ? "quality-first" : "balanced";
+}
+
+/** An update split into what to persist and which launch-flag fields stay overridden. */
+interface ProfileOverrideSplit {
+  readonly partial: Partial<KitsuneConfig>;
+  readonly keptProfileOverrides: Partial<KitsuneConfig>;
 }
 
 const SESSION_PROFILE_KEYS = [
