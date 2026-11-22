@@ -1,19 +1,8 @@
 /**
- * Bake the monorepo files the docs runtime used to read on demand.
- *
- * `lib/repo-root.ts` (removed) located the monorepo root by probing candidate
- * paths with `existsSync`. Turbopack's file tracer cannot follow a computed
- * path, so it assumed the whole workspace was reachable from every route and
- * pulled it into each NFT list — "Encountered unexpected file in NFT list".
- * Excluding directories in `next.config.mjs` only trimmed the symptom.
- *
- * Reading these at build time removes the cause: nothing under `app/`,
- * `components/`, or `lib/` touches the filesystem any more. All three sources
- * are tracked files that change only with a commit, and every route that reads
- * them is `force-static`, so there was never request-time data to lose.
- *
- * Outputs are committed, like `lib/generated-metadata.json`, and
- * `apps/docs/scripts/check-codegen-freshness.ts` fails CI when they drift from source.
+ * Bake static monorepo inputs (`.release/*.json`, troubleshooting FAQ, OG mascot)
+ * into committed `apps/docs/lib/generated-*.json` modules so no docs route reads
+ * the workspace filesystem at request time. Verified in CI by
+ * `apps/docs/scripts/check-codegen-freshness.ts`.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -111,19 +100,30 @@ function sectionForAnchor(mdx: string, anchor: string): string | null {
   return nextHeading === -1 ? rest.trim() : rest.slice(0, nextHeading).trim();
 }
 
+function stripFaqMarkdown(text: string): string {
+  return text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/:\s*$/, ".")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function extractFaqAnswer(section: string): string {
   const symptomsMatch = section.match(/\*\*Symptoms:\*\*\s*(.+)/);
   const tryBlockMatch = section.match(/### What to try\s+([\s\S]*?)(?=###|More:|$)/);
   const trySteps = tryBlockMatch?.[1]
     ? [...tryBlockMatch[1].matchAll(/^\d+\.\s+(.+)$/gm)]
-        .map((step) => (step[1] ?? "").replace(/\[[^\]]+\]\([^)]+\)/g, "").trim())
+        .map((step) => stripFaqMarkdown(step[1] ?? ""))
         .filter((step) => step.length > 0)
         .slice(0, 3)
     : [];
 
   const parts: string[] = [];
   if (symptomsMatch?.[1]) {
-    parts.push(symptomsMatch[1].trim());
+    parts.push(stripFaqMarkdown(symptomsMatch[1]));
   }
   if (trySteps.length > 0) {
     parts.push(trySteps.join(" "));

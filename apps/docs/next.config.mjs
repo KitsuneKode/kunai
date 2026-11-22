@@ -48,29 +48,23 @@ const turbopackRoot = (() => {
 /** @type {import('next').NextConfig} */
 const config = {
   reactStrictMode: true,
+  images: {
+    formats: ["image/avif", "image/webp"],
+  },
+  experimental: {
+    optimizePackageImports: ["@tabler/icons-react", "recharts", "motion/react", "@base-ui/react"],
+  },
   // `next dev` otherwise rewrites this app's AGENTS.md (gitignored) with a block that sends
   // agents into next's own node_modules docs. false makes dev strip that block.
   agentRules: false,
   // fumadocs-mdx loads source.config via dynamic import(url.href); keep it out of
   // the server bundle so webpack cache analysis does not warn on that expression.
   serverExternalPackages: ["fumadocs-mdx", "esbuild"],
-  // Without this, Next infers the trace root from the nearest lockfile. On a
-  // Vercel project whose Root Directory is `apps/docs` that inference can land
-  // on the app instead of the workspace, and the workspace files the build
-  // itself reads (docs/ MDX, the `@kunai/design` workspace package) drop out.
-  // tracing root and turbopack root must agree, or Next ignores turbopack.root.
+  // Keep tracing rooted at the workspace (not `apps/docs` on Vercel) so `docs/` MDX
+  // and workspace packages stay traceable; tracing and turbopack roots must agree.
   outputFileTracingRoot: turbopackRoot,
   turbopack: { root: turbopackRoot },
-  // No outputFileTracingIncludes: nothing is read at request time any more.
-  // `.release/*.json`, `docs/`, and the OG mascot are baked into
-  // `lib/generated-*.json` by `scripts/sync-repo-content.ts`, and every route
-  // that used to read them is `force-static`.
-  //
-  // No outputFileTracingExcludes either. They existed because the removed
-  // `lib/repo-root.ts` probed the filesystem with a computed path, so the
-  // tracer gave up and pulled the whole workspace into every function. With the
-  // probe gone the tracer follows real imports and the excludes have nothing
-  // left to exclude — keeping them would only hide the next regression.
+  // Static repo inputs are baked into `lib/generated-*.json` at build time.
   async headers() {
     return [
       {
@@ -80,6 +74,38 @@ const config = {
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "X-Frame-Options", value: "DENY" },
         ],
+      },
+      {
+        source: "/w/:path*",
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
+      {
+        source: "/og/:path*",
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
+      {
+        source: "/opengraph-image",
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
+      {
+        source: "/twitter-image",
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
+      {
+        source: "/_next/static/:path*",
+        headers: [{ key: "X-Robots-Tag", value: "noindex" }],
+      },
+    ];
+  },
+  async rewrites() {
+    return [
+      {
+        source: "/docs.mdx",
+        destination: "/llms.mdx",
+      },
+      {
+        source: "/docs/:path*.mdx",
+        destination: "/llms.mdx/:path*",
       },
     ];
   },

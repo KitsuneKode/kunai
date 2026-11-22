@@ -1,5 +1,5 @@
 ---
-title: Platforms
+title: Linux, macOS, Windows & Termux Platforms
 description: "Platform-specific notes for Kunai on Linux, macOS, and Windows: install, playback, poster support, protocol handlers, and the troubleshooting each one needs."
 ---
 
@@ -24,11 +24,12 @@ Kunai is terminal-first. Playback uses `mpv`; optional downloads use `yt-dlp`; `
 | Windows `windows-x64`                                    | **Beta**                                                 |
 | Windows `windows-arm64`                                  | **Experimental**                                         |
 | WSL                                                      | Linux install + Linux mpv/PATH/data (not Windows-native) |
+| Android (Termux) `android-arm64`, `android-x64`          | **Preview** (loopback gateway + VLC / mpv-android)       |
 | FreeBSD / other BSD                                      | **Unsupported** binary; npm/bun/source only              |
 
 `kunai://` protocol registration is **Linux-only** in 0.3.0 (including WSL). macOS/Windows can still use `kunai --open` without OS handler registration.
 
-<Tabs items={["Linux", "Alpine / musl", "macOS", "Windows", "WSL", "Source checkout"]}>
+<Tabs items={["Linux", "Alpine / musl", "Android (Termux)", "macOS", "Windows", "WSL", "Source checkout"]}>
 <Tab value="Linux">
 
 Recommended install (self-contained binary; Bun runtime embedded, you do not need Bun installed):
@@ -71,6 +72,20 @@ kunai --setup
 ```
 
 Ensure `~/.local/bin` is on your shell `PATH` after install. Treat this as a normal Linux environment, not a Windows PATH.
+
+</Tab>
+<Tab value="Android (Termux)">
+
+Install inside official Termux (`F-Droid` / GitHub releases) and pair with **VLC for Android** or **mpv-android**:
+
+```sh
+pkg update
+pkg install curl termux-am
+curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
+kunai --player vlc
+```
+
+Choose `Android player` in `/settings` (or `androidPlayer` in `config.json`) to save `vlc`, `mpv`, or `auto` (Android chooser) across launches. Headered streams, external subtitles, deferred manifests, and completed offline downloads play via Kunai's loopback gateway (`127.0.0.1`). See [Install and update](/docs/users/install-and-update#android-termux) for details.
 
 </Tab>
 <Tab value="macOS">

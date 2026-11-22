@@ -58,6 +58,11 @@ export async function GET(
       footer="docs · kunai"
       mascotSrc={mascotSrc}
     />,
-    { ...SIZE },
+    {
+      ...SIZE,
+      headers: {
+        "X-Robots-Tag": "noindex, nofollow",
+      },
+    },
   );
 }
