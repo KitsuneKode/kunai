@@ -24,7 +24,7 @@ import {
   isHlsDeadHostStatus,
   looksLikeHlsMasterUrl,
 } from "../shared/hls-ladder";
-import { getEffectiveProviderMirrors, getProviderCryptoOverride } from "../shared/hotfix-runtime";
+import { requireEffectiveProviderHost, getProviderCryptoOverride } from "../shared/hotfix-runtime";
 import { readJsonObjectBody } from "../shared/json-body";
 import { isSafeManifestHttpsUrl } from "../shared/manifest-bundle";
 import { sleepAbortable } from "../shared/timeout-signal";
@@ -50,8 +50,7 @@ const VIDLINK_API_BASE = "https://vidlink.pro/api/b";
 const VIDLINK_ORIGIN = "https://vidlink.pro";
 
 export function effectiveVidlinkApiBase(): string {
-  const host = getEffectiveProviderMirrors(VIDLINK_PROVIDER_ID, [VIDLINK_API_BASE])[0];
-  if (!host) return VIDLINK_API_BASE;
+  const host = requireEffectiveProviderHost(VIDLINK_PROVIDER_ID, [VIDLINK_API_BASE]);
   const trimmed = host.replace(/\/+$/, "");
   if (trimmed.includes("/api/")) return trimmed;
   if (trimmed.endsWith("/api")) return `${trimmed}/b`;

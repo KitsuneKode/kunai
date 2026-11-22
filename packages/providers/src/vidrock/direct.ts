@@ -14,7 +14,7 @@ import {
   type DirectSubtitleInput,
 } from "../shared/direct-stream-source";
 import { expandHlsMasterInventory, isHlsDeadHostStatus } from "../shared/hls-ladder";
-import { getEffectiveProviderMirrors, getProviderCryptoOverride } from "../shared/hotfix-runtime";
+import { requireEffectiveProviderHost, getProviderCryptoOverride } from "../shared/hotfix-runtime";
 import { blockedLiteralTargetReason } from "../shared/stream-reachability";
 import { normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { vidrockManifest, VIDROCK_PROVIDER_ID } from "./manifest";
@@ -25,8 +25,7 @@ const BASE_URL = "https://vidrock.net/api";
 const ORIGIN = "https://vidrock.net";
 
 export function effectiveVidrockApiBase(): string {
-  const host = getEffectiveProviderMirrors(VIDROCK_PROVIDER_ID, [BASE_URL])[0];
-  if (!host) return BASE_URL;
+  const host = requireEffectiveProviderHost(VIDROCK_PROVIDER_ID, [BASE_URL]);
   const trimmed = host.replace(/\/+$/, "");
   return trimmed.endsWith("/api") || trimmed.includes("/api/") ? trimmed : `${trimmed}/api`;
 }

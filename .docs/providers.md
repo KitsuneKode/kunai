@@ -248,6 +248,14 @@ always the fallback.
   constants without any signal. The state lock waits on a deadline and fails
   fast if its path is a directory. JSON failures from `kunai providers` share
   the agent shape `{ ok: false, schemaVersion, error }`.
+- **Runtime guards.** Requests to an origin the manifest introduced (`baseUrl`,
+  `mirrors`, URL-valued `cryptoOverrides`) follow redirects by hand in
+  `providerFetch` (`packages/providers/src/runtime/fetch.ts`), and every hop must
+  pass `isSafeManifestHttpsUrl`; bundled-host traffic keeps normal fetch
+  semantics. Single-host adapters resolve their host through
+  `requireEffectiveProviderHost`, so `deadServers` covering every host throws
+  `ProviderHostsRetiredError` and the engine moves on, instead of calling the
+  retired bundled host.
 - **Startup.** `activateCachedProviderHotfixManifest`
   (`apps/cli/src/app/providers/provider-definitions-actions.ts`) re-verifies the
   cached manifest and makes it live before the first resolve, offline included,

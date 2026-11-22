@@ -33,7 +33,7 @@ import {
   isHlsDeadHostStatus,
   type HlsLadderVariant,
 } from "../shared/hls-ladder";
-import { getEffectiveProviderMirrors, getProviderCryptoOverride } from "../shared/hotfix-runtime";
+import { requireEffectiveProviderHost, getProviderCryptoOverride } from "../shared/hotfix-runtime";
 import { isSafeManifestHttpsUrl } from "../shared/manifest-bundle";
 import {
   cycleExhaustionFailure,
@@ -75,8 +75,10 @@ export const RIVESTREAM_REFERER = "https://www.rivestream.app/";
 export const RIVESTREAM_SCRAPER_BASE = "https://scrapper.rivestream.app";
 
 export function effectiveRivestreamScraperBase(): string {
-  const host = getEffectiveProviderMirrors(RIVESTREAM_PROVIDER_ID, [RIVESTREAM_SCRAPER_BASE])[0];
-  return (host ?? RIVESTREAM_SCRAPER_BASE).replace(/\/+$/, "");
+  return requireEffectiveProviderHost(RIVESTREAM_PROVIDER_ID, [RIVESTREAM_SCRAPER_BASE]).replace(
+    /\/+$/,
+    "",
+  );
 }
 
 export function effectiveRivestreamReferer(): string {

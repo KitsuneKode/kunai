@@ -8,14 +8,13 @@
  *
  * Shapes observed 2026-09-11 (see `.docs/provider-dossiers/animegg.md`).
  */
-import { getEffectiveProviderMirrors } from "../shared/hotfix-runtime";
+import { requireEffectiveProviderHost } from "../shared/hotfix-runtime";
 import { decodeMarkupEntities, findTagEnd, indexOfTagName, stripTags } from "../shared/markup-text";
 
 export const ANIMEGG_BASE_URL = "https://www.animegg.org";
 
 export function effectiveAnimeggBaseUrl(): string {
-  const host = getEffectiveProviderMirrors("animegg", [ANIMEGG_BASE_URL])[0];
-  return (host ?? ANIMEGG_BASE_URL).replace(/\/+$/, "");
+  return requireEffectiveProviderHost("animegg", [ANIMEGG_BASE_URL]).replace(/\/+$/, "");
 }
 
 export type AnimeggSearchResult = {

@@ -26,7 +26,7 @@ import type {
 import { ProviderHttpError, providerFetch } from "../runtime/fetch";
 import { resolveTmdbCatalogId } from "../shared/catalog-id";
 import { expandHlsMasterInventory, isHlsDeadHostStatus } from "../shared/hls-ladder";
-import { getEffectiveProviderMirrors } from "../shared/hotfix-runtime";
+import { requireEffectiveProviderHost } from "../shared/hotfix-runtime";
 import {
   cycleExhaustionFailure,
   providerFailureCodeFromCycleFailure,
@@ -71,8 +71,7 @@ export const MOVY_REFERER = "https://www.movy.sx/";
 const MOVY_ORIGIN = "https://www.movy.sx";
 
 export function effectiveMovyApiBase(): string {
-  const host = getEffectiveProviderMirrors(MOVY_PROVIDER_ID, [MOVY_API_BASE])[0];
-  return (host ?? MOVY_API_BASE).replace(/\/+$/, "");
+  return requireEffectiveProviderHost(MOVY_PROVIDER_ID, [MOVY_API_BASE]).replace(/\/+$/, "");
 }
 
 const USER_AGENT =
