@@ -48,6 +48,34 @@ describe("mpv HDR capability probing & argument resolution", () => {
     expect(supported).toEqual({ supportsGpuNext: true, probed: true });
   });
 
+  test("a failed or timed-out probe is retried; a completed probe is cached", async () => {
+    const cache = new Map();
+    const invocation = { argv: ["flatpak", "run", "io.mpv.Mpv"], via: "flatpak" } as const;
+    let calls = 0;
+    let next = { ok: false, stdout: "" };
+    const runHelp = async () => {
+      calls += 1;
+      return next;
+    };
+
+    // Cold start timed out: must not pin gpu-next off for the rest of the process.
+    expect(await probeMpvHdrCapability(invocation, { runHelp, cache })).toEqual({
+      supportsGpuNext: false,
+      probed: false,
+    });
+    expect(cache.size).toBe(0);
+
+    next = { ok: true, stdout: "  gpu-next         libplacebo\n" };
+    expect((await probeMpvHdrCapability(invocation, { runHelp, cache })).supportsGpuNext).toBe(
+      true,
+    );
+    expect(await probeMpvHdrCapability(invocation, { runHelp, cache })).toEqual({
+      supportsGpuNext: true,
+      probed: true,
+    });
+    expect(calls).toBe(2);
+  });
+
   test("auto mode stays silent for SDR/unknown streams and activates safe peak tone-mapping on HDR/DV", () => {
     expect(resolveMpvHdrArgs({ hdrMode: "auto", supportsGpuNext: true })).toEqual([]);
     expect(

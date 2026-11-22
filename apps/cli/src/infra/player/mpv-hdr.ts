@@ -12,6 +12,8 @@ export interface MpvHdrProbeDeps {
   readonly runHelp?: (
     argv: readonly string[],
   ) => Promise<{ readonly ok: boolean; readonly stdout: string }>;
+  /** Capability cache. Defaults to the process cache unless `runHelp` is injected. */
+  readonly cache?: Map<string, MpvHdrCapability>;
 }
 
 export interface ResolveMpvHdrArgsInput {
@@ -46,7 +48,9 @@ async function defaultRunVoHelp(
   argv: readonly string[],
 ): Promise<{ readonly ok: boolean; readonly stdout: string }> {
   try {
-    const proc = Bun.spawn([...argv, "--vo=help"], {
+    // --no-config: the probe only lists video outputs; it must not load the
+    // user's mpv.conf or scripts (slow, and a config error would read as "no gpu-next").
+    const proc = Bun.spawn([...argv, "--no-config", "--vo=help"], {
       stdin: "ignore",
       stdout: "pipe",
       stderr: "ignore",
@@ -80,18 +84,20 @@ export async function probeMpvHdrCapability(
 ): Promise<MpvHdrCapability> {
   if (!invocation) return { supportsGpuNext: false, probed: false };
   const cacheKey = invocation.argv.join("\0");
-  if (!deps.runHelp) {
-    const cached = gpuNextCapabilityCache.get(cacheKey);
-    if (cached) return cached;
-  }
+  const cache = deps.cache ?? (deps.runHelp ? null : gpuNextCapabilityCache);
+  const cached = cache?.get(cacheKey);
+  if (cached) return cached;
   const runHelp = deps.runHelp ?? defaultRunVoHelp;
   const result = await runHelp(invocation.argv);
   const capability: MpvHdrCapability = {
     supportsGpuNext: result.ok && parseMpvVoHelpSupportsGpuNext(result.stdout),
     probed: result.ok,
   };
-  if (!deps.runHelp) {
-    gpuNextCapabilityCache.set(cacheKey, capability);
+  // Cache only a probe that completed. A timeout or spawn failure (a cold flatpak
+  // start can exceed the deadline) would otherwise pin gpu-next off for the whole
+  // process; the next launch retries instead.
+  if (cache && capability.probed) {
+    cache.set(cacheKey, capability);
   }
   return capability;
 }

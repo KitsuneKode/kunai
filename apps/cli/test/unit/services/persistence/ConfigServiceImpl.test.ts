@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { resolveSessionConfigOverrides } from "@/app/session/session-overrides";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { ConfigServiceImpl } from "@/services/persistence/ConfigServiceImpl";
 import { DEFAULT_CONFIG, type ConfigStore } from "@/services/persistence/ConfigStore";
@@ -755,6 +756,44 @@ describe("session overrides", () => {
     const persisted = await store.load();
     expect(persisted.zenMode).toBeFalsy();
     expect(persisted.minimalMode).toBeFalsy();
+  });
+
+  test("every session-overridable getter reflects its launch flag", async () => {
+    // main.ts applies --offline, --hdr and --quality/--audio/--sub through
+    // applySessionOverrides. Each typed getter must read the override, or the flag
+    // is parsed and silently dropped by every reader that uses the getter.
+    const store = new MemoryConfigStore();
+    const service = await ConfigServiceImpl.load(store);
+    const overrides = resolveSessionConfigOverrides(
+      {
+        zen: false,
+        minimal: false,
+        offline: true,
+        hdr: "sdr-only",
+        quality: "720p",
+        audio: "en",
+        subtitle: "none",
+      },
+      service,
+    );
+    service.applySessionOverrides(overrides);
+
+    expect(service.offlineMode).toBe(true);
+    expect(service.hdrMode).toBe("sdr-only");
+    for (const profile of [
+      service.animeLanguageProfile,
+      service.seriesLanguageProfile,
+      service.movieLanguageProfile,
+    ]) {
+      expect(profile.quality).toBe("720p");
+      expect(profile.audio).toBe("en");
+      expect(profile.subtitle).toBe("none");
+    }
+
+    await service.save();
+    const persisted = await store.load();
+    expect(persisted.offlineMode).toBeFalsy();
+    expect(persisted.hdrMode ?? "auto").toBe("auto");
   });
 
   test("an explicit user change during the session wins over the flag", async () => {

@@ -640,16 +640,20 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.wyzieApiKey;
   }
 
+  // Session-overridable getters read `sessionOverrides` first. A getter that reads
+  // `this.config` directly turns its launch flag (`--quality`/`--audio`/`--sub`,
+  // `--offline`, `--hdr`) into a silent no-op: main.ts applies those flags through
+  // applySessionOverrides, never through update().
   get animeLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
-    return this.config.animeLanguageProfile;
+    return this.sessionOverrides.animeLanguageProfile ?? this.config.animeLanguageProfile;
   }
 
   get seriesLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
-    return this.config.seriesLanguageProfile;
+    return this.sessionOverrides.seriesLanguageProfile ?? this.config.seriesLanguageProfile;
   }
 
   get movieLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
-    return this.config.movieLanguageProfile;
+    return this.sessionOverrides.movieLanguageProfile ?? this.config.movieLanguageProfile;
   }
 
   get animeTitlePreference(): "english" | "romaji" | "native" | "provider" {
@@ -769,7 +773,7 @@ export class ConfigServiceImpl implements ConfigService {
   }
 
   get offlineMode(): boolean {
-    return this.config.offlineMode;
+    return this.sessionOverrides.offlineMode ?? this.config.offlineMode;
   }
 
   get maxConcurrentDownloads(): number {
@@ -801,7 +805,7 @@ export class ConfigServiceImpl implements ConfigService {
   }
 
   get hdrMode(): KitsuneConfig["hdrMode"] {
-    return this.config.hdrMode;
+    return this.sessionOverrides.hdrMode ?? this.config.hdrMode;
   }
 
   get offlineArtworkCacheEnabled(): boolean {
