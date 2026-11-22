@@ -1109,6 +1109,15 @@ mp.add_forced_key_binding("N", "kunai-next-shift", do_next, { repeatable = false
 mp.add_forced_key_binding("p", "kunai-prev", do_previous, { repeatable = false })
 mp.add_forced_key_binding("P", "kunai-prev-shift", do_previous, { repeatable = false })
 
+-- Media keys that reach mpv itself (the mpv window has focus, or the macOS /
+-- Windows media-key path) arrive as NEXT / PREV. mpv's defaults map them to
+-- playlist-next/prev, a no-op in Kunai's one-file sessions, so route them to
+-- the episode actions instead. Not covered: desktops that grab media keys and
+-- talk MPRIS — mpv-mpris calls playlist_next/prev directly and reports
+-- CanGoNext=false for a one-item playlist, so those keys never get here.
+mp.add_forced_key_binding("NEXT", "kunai-next-media", do_next, { repeatable = false })
+mp.add_forced_key_binding("PREV", "kunai-prev-media", do_previous, { repeatable = false })
+
 -- Skip intro / recap / credits.
 -- Safe: does nothing unless user-data/kunai-skip-to is active.
 mp.add_key_binding("b", "kunai-skip", do_skip, { repeatable = false })

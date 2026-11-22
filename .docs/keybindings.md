@@ -2,7 +2,7 @@
 title: Kunai CLI Keybindings
 description: Screen-by-screen keybinding map for the Kunai terminal shell.
 status: current
-lastReviewed: "2026-10-24"
+lastReviewed: "2026-11-17"
 ---
 
 # Kunai CLI Keybindings
@@ -111,26 +111,27 @@ because a skip may never opt anyone in.
 
 These keys are available while `mpv` is active and the shell is supervising it.
 
-| Key         | Action                                                                               |
-| ----------- | ------------------------------------------------------------------------------------ |
-| `q`         | Stop playback and enter post-playback controls                                       |
-| `Shift+S`   | Stop playback and return to search                                                   |
-| `n`         | Next episode, starting from the beginning with mpv resume prompt when applicable     |
-| `p`         | Previous episode, starting from the beginning with mpv resume prompt when applicable |
-| `a`         | Pause/resume autoplay for the current chain                                          |
-| `u`         | Pause/resume autoskip for the current title/session                                  |
-| `e`         | Open episode picker without changing episode until selection is confirmed            |
-| `k`         | Open quality picker in the terminal (mpv itself may still use `v`)                   |
-| `o`         | Open source picker without changing source until selection is confirmed              |
-| `Shift+F`   | Try fallback provider when available (bare `f` is intentionally unbound)             |
-| `l`         | Favourite / unfavourite the current title (not `f`, which sits beside `Shift+F`)     |
-| `/provider` | Open provider picker without changing provider until a row is confirmed              |
-| `Ctrl+R`    | Refresh / recover the current stream                                                 |
-| `s`         | Reload subtitles                                                                     |
-| `b`         | Manually skip the currently offered timing segment                                   |
-| `m`         | Open title control menu                                                              |
-| `/memory`   | Toggle the temporary memory/health panel                                             |
-| `x`         | Toggle stop-after-current when available                                             |
+| Key         | Action                                                                                                                                             |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `q`         | Stop playback and enter post-playback controls                                                                                                     |
+| `Shift+S`   | Stop playback and return to search                                                                                                                 |
+| `n`         | Next episode, starting from the beginning with mpv resume prompt when applicable                                                                   |
+| `p`         | Previous episode, starting from the beginning with mpv resume prompt when applicable                                                               |
+| Media keys  | Next/previous media keys do the same as `n` / `p` when they reach mpv (window focused, or macOS/Windows media keys); MPRIS desktop controls do not |
+| `a`         | Pause/resume autoplay for the current chain                                                                                                        |
+| `u`         | Pause/resume autoskip for the current title/session                                                                                                |
+| `e`         | Open episode picker without changing episode until selection is confirmed                                                                          |
+| `k`         | Open quality picker in the terminal (mpv itself may still use `v`)                                                                                 |
+| `o`         | Open source picker without changing source until selection is confirmed                                                                            |
+| `Shift+F`   | Try fallback provider when available (bare `f` is intentionally unbound)                                                                           |
+| `l`         | Favourite / unfavourite the current title (not `f`, which sits beside `Shift+F`)                                                                   |
+| `/provider` | Open provider picker without changing provider until a row is confirmed                                                                            |
+| `Ctrl+R`    | Refresh / recover the current stream                                                                                                               |
+| `s`         | Reload subtitles                                                                                                                                   |
+| `b`         | Manually skip the currently offered timing segment                                                                                                 |
+| `m`         | Open title control menu                                                                                                                            |
+| `/memory`   | Toggle the temporary memory/health panel                                                                                                           |
+| `x`         | Toggle stop-after-current when available                                                                                                           |
 
 `Shift+S` is intentionally uppercase because lowercase `s` reloads subtitles
 during active playback. Lowercase `g` is not used for this action because `g`
