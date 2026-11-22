@@ -182,6 +182,28 @@ const VALID_BOOT_PARTS = new Set<AllMangaBootPart>(["group", "host", "lane", "bu
 export function getEffectiveAllMangaCryptoProfile(): AllMangaCryptoProfile {
   const overrides = getProviderHotfixEntry("allanime")?.cryptoOverrides;
   if (!overrides?.buildId) return ALLMANGA_CRYPTO_PROFILE;
+  return parseAllMangaCryptoProfileOverride(overrides) ?? ALLMANGA_CRYPTO_PROFILE;
+}
+
+/**
+ * Refuse, at install time, an `allanime` override that names a rotation
+ * (`buildId`) but would fall back to the bundled profile at runtime. Applied
+ * silently, it looks exactly like a stale pin: the operator thinks the
+ * rotation shipped and every user stays on the old constants.
+ */
+export function describeAllMangaCryptoOverrideProblem(
+  overrides: Readonly<Record<string, string>> | undefined,
+): string | null {
+  if (!overrides?.buildId) return null;
+  return parseAllMangaCryptoProfileOverride(overrides)
+    ? null
+    : "AllManga cryptoOverrides names a buildId but the rotation profile is incomplete or malformed (saltMul, saltAdd, fragMul, fragAdd, bootPrefix, bootJoin, 5 bootParts, 4 maskFragments)";
+}
+
+function parseAllMangaCryptoProfileOverride(
+  overrides: Readonly<Record<string, string>>,
+): AllMangaCryptoProfile | null {
+  if (!overrides.buildId) return null;
 
   const saltMul = Number(overrides.saltMul);
   const saltAdd = Number(overrides.saltAdd);
@@ -206,7 +228,7 @@ export function getEffectiveAllMangaCryptoProfile(): AllMangaCryptoProfile {
     maskFragments.length !== 4 ||
     maskFragments.some((f) => Buffer.from(f, "base64").length !== 8)
   ) {
-    return ALLMANGA_CRYPTO_PROFILE;
+    return null;
   }
 
   return {

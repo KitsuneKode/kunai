@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -98,6 +98,9 @@ describe("provider hotfix manifest runtime", () => {
       "https://169.254.169.254/latest/meta-data",
       "https://10.0.0.1/providers.json",
       "https://localhost/providers.json",
+      "https://localhost./providers.json",
+      "https://foo.localhost./providers.json",
+      "https://127.0.0.1./providers.json",
     ]) {
       const result = await fetchAndCacheProviderHotfixManifest({
         url: badUrl,
@@ -585,5 +588,121 @@ describe("provider hotfix manifest runtime", () => {
     if (conflict.status === "rejected") {
       expect(conflict.reason).toContain("Conflicting manifest payload");
     }
+  });
+});
+
+describe("provider hotfix manifest: reset, rollback, and body pinning survive refresh", () => {
+  const url = "https://manifests.kunai.test/providers.json";
+
+  function setup() {
+    const path = makeTempCachePath();
+    const { publicPem, privatePem } = makeKeypair();
+    const trusted = { "key-2026": publicPem };
+    const sign = (manifest: ProviderHotfixManifest) =>
+      signProviderManifest(manifest, privatePem, "key-2026");
+    const install = (manifest: ProviderHotfixManifest, extra: { force?: boolean } = {}) =>
+      fetchAndCacheProviderHotfixManifest({
+        url,
+        path,
+        trustedPublicKeysById: trusted,
+        nowMs: NOW_MS,
+        fetchImpl: jsonFetch(sign(manifest)),
+        ...extra,
+      });
+    const refresh = (manifest: ProviderHotfixManifest) =>
+      maybeBackgroundRefreshProviderManifest({
+        url,
+        path,
+        trustedPublicKeysById: trusted,
+        nowMs: NOW_MS,
+        minIntervalMs: 0,
+        fetchImpl: jsonFetch(sign(manifest)),
+      });
+    return { path, trusted, install, refresh };
+  }
+
+  test("a different body re-signed under the same revision is refused after a cache purge", async () => {
+    const { path, install } = setup();
+    expect((await install(makeManifest({ revision: 5 }))).status).toBe("updated");
+    rmSync(path);
+
+    const swapped = makeManifest({
+      revision: 5,
+      providers: { rivestream: { baseUrl: "https://evil.example" } },
+    });
+    const result = await install(swapped);
+    expect(result.status).toBe("rejected");
+    // The identical body is still reinstallable after a purge.
+    expect((await install(makeManifest({ revision: 5 }))).status).toBe("updated");
+  });
+
+  test("reset holds bundled defaults against the background refresh until an explicit update", async () => {
+    const { path, install, refresh } = setup();
+    expect((await install(makeManifest({ revision: 5 }))).status).toBe("updated");
+
+    resetCachedProviderHotfixManifest({ path, nowMs: NOW_MS });
+    expect(existsSync(path)).toBe(false);
+    expect(await refresh(makeManifest({ revision: 5 }))).toBe("skipped");
+    expect(existsSync(path)).toBe(false);
+
+    // An explicit update clears the hold, and refresh works again after it.
+    expect((await install(makeManifest({ revision: 6 }))).status).toBe("updated");
+    expect(await refresh(makeManifest({ revision: 7 }))).toBe("updated");
+  });
+
+  test("rollback is not undone by the next background refresh of the newer revision", async () => {
+    const { path, trusted, install, refresh } = setup();
+    expect((await install(makeManifest({ revision: 4 }))).status).toBe("updated");
+    expect((await install(makeManifest({ revision: 5 }))).status).toBe("updated");
+
+    const rolled = await rollbackCachedProviderHotfixManifest({
+      path,
+      trustedPublicKeysById: trusted,
+      nowMs: NOW_MS,
+    });
+    expect(rolled.ok).toBe(true);
+
+    expect(await refresh(makeManifest({ revision: 5 }))).toBe("skipped");
+    const cached = loadCachedProviderHotfixManifest({
+      path,
+      trustedPublicKeysById: trusted,
+      nowMs: NOW_MS,
+    });
+    expect(cached.status === "active" ? cached.manifest.revision : null).toBe(4);
+
+    // `providers update` is the explicit way forward again.
+    expect((await install(makeManifest({ revision: 5 }))).status).toBe("updated");
+  });
+
+  test("an AllManga rotation that names a buildId but is incomplete is refused at install", async () => {
+    const { install } = setup();
+    const result = await install(
+      makeManifest({
+        revision: 5,
+        providers: { allanime: { cryptoOverrides: { buildId: "abc123", queryHash: "deadbeef" } } },
+      }),
+    );
+    expect(result.status).toBe("rejected");
+    if (result.status === "rejected") expect(result.reason).toContain("AllManga");
+    // A lone queryHash rotation (no buildId) is still a valid manifest.
+    expect(
+      (
+        await install(
+          makeManifest({
+            revision: 6,
+            providers: { allanime: { cryptoOverrides: { queryHash: "deadbeef" } } },
+          }),
+        )
+      ).status,
+    ).toBe("updated");
+  });
+
+  test("a directory at the lock path fails fast instead of spinning", async () => {
+    const { path, install } = setup();
+    const lockPath = `${providerManifestStatePath(path)}.lock`;
+    mkdirSync(lockPath, { recursive: true });
+    const old = new Date(NOW_MS - 10 * 60_000);
+    utimesSync(lockPath, old, old);
+    await expect(install(makeManifest({ revision: 5 }))).rejects.toThrow(/directory/);
   });
 });

@@ -72,7 +72,12 @@ function isPrivateIpv4Octets(a: number, b: number): boolean {
 }
 
 function isPrivateOrLoopbackHost(rawHost: string): boolean {
-  const host = rawHost.toLowerCase().replace(/^\[|\]$/g, "");
+  // A trailing dot is the same name in DNS (`localhost.` resolves to loopback),
+  // so strip it before every comparison below.
+  const host = rawHost
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "")
+    .replace(/\.+$/, "");
   if (host === "localhost" || host.endsWith(".localhost")) {
     return true;
   }

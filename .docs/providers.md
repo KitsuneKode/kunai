@@ -235,6 +235,19 @@ always the fallback.
   and `reset` are the ways back out. The previous manifest is kept as a backup
   for rollback. An expired manifest (`expiresAt`) drops back to bundled
   defaults on read.
+- **State file** (`providers-manifest-state.json`) outlives a cache purge. It
+  records `highestRevision` and the `payloadSha256` of that revision's body, so
+  a lower revision, or a different body re-signed under the same revision, is
+  refused without `--force` even after the cache is deleted. `rollback` and
+  `reset` set a `hold` that the background refresh honours (otherwise the next
+  launch would reinstall the newer manifest); an explicit `providers update`
+  clears it. `reset --force` also drops the revision floor.
+- **Install-time checks** beyond the signature: every lane keeps at least one
+  provider, and an `allanime` `cryptoOverrides` that names a `buildId` must be a
+  complete rotation profile, since an incomplete one falls back to the bundled
+  constants without any signal. The state lock waits on a deadline and fails
+  fast if its path is a directory. JSON failures from `kunai providers` share
+  the agent shape `{ ok: false, schemaVersion, error }`.
 - **Startup.** `activateCachedProviderHotfixManifest`
   (`apps/cli/src/app/providers/provider-definitions-actions.ts`) re-verifies the
   cached manifest and makes it live before the first resolve, offline included,

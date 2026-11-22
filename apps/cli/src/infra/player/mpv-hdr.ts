@@ -54,16 +54,25 @@ async function defaultRunVoHelp(
       stdout: "pipe",
       stderr: "ignore",
     });
-    const timer = setTimeout(() => {
-      try {
-        proc.kill();
-      } catch {
-        // Process already exited.
-      }
-    }, GPU_NEXT_PROBE_TIMEOUT_MS);
+    // The deadline bounds the whole probe, not just the process: after kill()
+    // a pipe is not guaranteed to reach EOF (notably on Windows), and an
+    // explicit HDR mode awaits this before mpv launches.
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<{ readonly ok: boolean; readonly stdout: string }>((resolve) => {
+      timer = setTimeout(() => {
+        try {
+          proc.kill();
+        } catch {
+          // Process already exited.
+        }
+        resolve({ ok: false, stdout: "" });
+      }, GPU_NEXT_PROBE_TIMEOUT_MS);
+    });
+    const completed = Promise.all([new Response(proc.stdout).text(), proc.exited]).then(
+      ([stdout, code]) => ({ ok: code === 0, stdout }),
+    );
     try {
-      const [stdout, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
-      return { ok: code === 0, stdout };
+      return await Promise.race([completed, deadline]);
     } finally {
       clearTimeout(timer);
     }

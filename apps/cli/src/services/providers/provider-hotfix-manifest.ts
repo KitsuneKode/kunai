@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   closeSync,
   existsSync,
@@ -7,6 +8,7 @@ import {
   statSync,
   unlinkSync,
   utimesSync,
+  writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
 
@@ -15,6 +17,7 @@ import { getKunaiPaths } from "@/services/storage/storage-read-models";
 import type { ProviderPriorityInput } from "@kunai/core";
 import {
   canonicalizeManifestPayload,
+  describeAllMangaCryptoOverrideProblem,
   isSafeManifestHttpsUrl,
   setActiveProviderHotfixManifest,
   verifySignedProviderManifest,
@@ -138,14 +141,32 @@ async function withManifestLock<T>(statePath: string, run: () => Promise<T>): Pr
       } catch (error) {
         const code = error instanceof Error && "code" in error ? error.code : undefined;
         if (code !== "EEXIST") throw error;
+        // Every path below either takes the lock or waits on the deadline: an
+        // unlink that keeps failing (EPERM on Windows while another process holds
+        // the file, or a directory at the lock path) must not spin forever.
+        let stale = false;
         try {
-          const ageMs = Date.now() - statSync(lockPath).mtimeMs;
-          if (ageMs > MANIFEST_LOCK_STALE_MS) {
+          const lockStat = statSync(lockPath);
+          if (lockStat.isDirectory()) {
+            throw new Error(`Provider manifest lock path is a directory: ${lockPath}`);
+          }
+          stale = Date.now() - lockStat.mtimeMs > MANIFEST_LOCK_STALE_MS;
+        } catch (statError) {
+          if (
+            statError instanceof Error &&
+            statError.message.startsWith("Provider manifest lock path")
+          ) {
+            throw statError;
+          }
+          // Vanished between open and stat: retry after the short wait below.
+        }
+        if (stale) {
+          try {
             unlinkSync(lockPath);
             continue;
+          } catch {
+            // Could not clear it; fall through to the deadline.
           }
-        } catch {
-          continue;
         }
         if (Date.now() >= deadline) {
           throw new Error("Timed out waiting for provider manifest lock", { cause: error });
@@ -179,22 +200,56 @@ function parseJsonPayload(text: string): JsonValue {
   return JSON.parse(text) as JsonValue;
 }
 
-function readManifestHighWaterRevision(statePath: string): number | null {
-  if (!existsSync(statePath)) return null;
+/**
+ * What survives a cache purge. `highestRevision` + `payloadSha256` pin the body
+ * of the highest revision ever installed, so a different body re-signed under
+ * the same revision is refused even after the cache file is gone. `hold` is set
+ * by `providers rollback` / `providers reset`: the background refresh honours it
+ * so neither is silently undone, and an explicit `providers update` clears it.
+ */
+export interface ProviderManifestStateFile {
+  readonly highestRevision: number | null;
+  readonly payloadSha256: string | null;
+  readonly hold: "rollback" | "reset" | null;
+}
+
+export function readProviderManifestState(statePath: string): ProviderManifestStateFile {
+  const empty: ProviderManifestStateFile = {
+    highestRevision: null,
+    payloadSha256: null,
+    hold: null,
+  };
+  if (!existsSync(statePath)) return empty;
   try {
     const parsed = parseJsonPayload(readFileSync(statePath, "utf8"));
-    if (
-      isJsonObject(parsed) &&
+    if (!isJsonObject(parsed)) return empty;
+    const revision =
       isJsonNumber(parsed.highestRevision) &&
       Number.isInteger(parsed.highestRevision) &&
       parsed.highestRevision >= 1
-    ) {
-      return parsed.highestRevision;
-    }
-    return null;
+        ? parsed.highestRevision
+        : null;
+    const sha =
+      isJsonString(parsed.payloadSha256) && /^[0-9a-f]{64}$/.test(parsed.payloadSha256)
+        ? parsed.payloadSha256
+        : null;
+    const hold = parsed.hold === "rollback" || parsed.hold === "reset" ? parsed.hold : null;
+    return { highestRevision: revision, payloadSha256: sha, hold };
   } catch {
-    return null;
+    return empty;
   }
+}
+
+async function writeProviderManifestState(
+  statePath: string,
+  state: ProviderManifestStateFile,
+  nowMs: number,
+): Promise<void> {
+  await writeAtomicJson(statePath, { ...state, updatedAt: new Date(nowMs).toISOString() });
+}
+
+function manifestPayloadSha256(manifest: ProviderHotfixManifest): string {
+  return createHash("sha256").update(canonicalizeManifestPayload(manifest)).digest("hex");
 }
 
 export function resolveTrustedManifestPublicKeys(
@@ -338,6 +393,8 @@ export async function fetchAndCacheProviderHotfixManifest(options: {
   readonly maxBytes?: number;
   readonly dryRun?: boolean;
   readonly force?: boolean;
+  /** Background refresh: refuse while `providers rollback`/`reset` holds updates. */
+  readonly respectHold?: boolean;
   readonly knownProvidersByLane?: Readonly<Record<string, readonly string[]>> | ProviderLaneGroups;
   readonly fetchImpl?: ManifestFetch;
 }): Promise<ProviderManifestUpdateResult> {
@@ -406,6 +463,13 @@ export async function fetchAndCacheProviderHotfixManifest(options: {
     return { status: "rejected", path, reason: brickReason };
   }
 
+  const cryptoProblem = describeAllMangaCryptoOverrideProblem(
+    verified.manifest.providers.allanime?.cryptoOverrides,
+  );
+  if (cryptoProblem) {
+    return { status: "rejected", path, reason: cryptoProblem };
+  }
+
   return withManifestLock(statePath, async (): Promise<ProviderManifestUpdateResult> => {
     const existing = loadCachedProviderHotfixManifest({
       path,
@@ -413,10 +477,32 @@ export async function fetchAndCacheProviderHotfixManifest(options: {
       nowMs: options.nowMs,
     });
     const previousRevision = existing.status === "active" ? existing.manifest.revision : null;
-    const highWaterRevision = readManifestHighWaterRevision(statePath);
+    const priorState = readProviderManifestState(statePath);
+    const highWaterRevision = priorState.highestRevision;
     const floorRevision = Math.max(previousRevision ?? 0, highWaterRevision ?? 0);
+    const incomingSha256 = manifestPayloadSha256(verified.manifest);
+
+    if (options.respectHold && priorState.hold) {
+      return {
+        status: "rejected",
+        path,
+        reason: `Held by providers ${priorState.hold}; run \`kunai providers update\` to resume updates`,
+      };
+    }
 
     if (floorRevision > 0 && !options.force) {
+      if (
+        highWaterRevision !== null &&
+        verified.manifest.revision === highWaterRevision &&
+        priorState.payloadSha256 !== null &&
+        priorState.payloadSha256 !== incomingSha256
+      ) {
+        return {
+          status: "rejected",
+          path,
+          reason: `Conflicting manifest payload for already-seen revision ${highWaterRevision}`,
+        };
+      }
       if (verified.manifest.revision < floorRevision) {
         return {
           status: "rejected",
@@ -480,10 +566,16 @@ export async function fetchAndCacheProviderHotfixManifest(options: {
     const nextHighWater = options.force
       ? verified.manifest.revision
       : Math.max(floorRevision, verified.manifest.revision);
-    await writeAtomicJson(statePath, {
-      highestRevision: nextHighWater,
-      updatedAt: new Date(options.nowMs ?? Date.now()).toISOString(),
-    });
+    // Pin the body of the high-water revision. Installing below it (only with
+    // --force lowering the floor, or when it equals the floor) keeps the pin
+    // describing whichever payload owns `nextHighWater`.
+    const nextSha256 =
+      nextHighWater === verified.manifest.revision ? incomingSha256 : priorState.payloadSha256;
+    await writeProviderManifestState(
+      statePath,
+      { highestRevision: nextHighWater, payloadSha256: nextSha256, hold: null },
+      options.nowMs ?? Date.now(),
+    );
 
     return {
       status: "updated",
@@ -537,6 +629,13 @@ export async function rollbackCachedProviderHotfixManifest(
       manifest: backupState.manifest,
     };
     await writeAtomicJson(path, backupEnvelope);
+    // Hold: without it the next background refresh re-fetches the newer
+    // revision and silently undoes the rollback.
+    await writeProviderManifestState(
+      statePath,
+      { ...readProviderManifestState(statePath), hold: "rollback" },
+      options.nowMs ?? Date.now(),
+    );
     return { ok: true, path, keyId: backupState.keyId, manifest: backupState.manifest };
   });
 }
@@ -546,9 +645,11 @@ export function resetCachedProviderHotfixManifest(
     readonly path?: string;
     readonly statePath?: string;
     readonly includeBackup?: boolean;
+    readonly nowMs?: number;
   } = {},
 ): ResetProviderManifestResult {
   const path = options.path ?? providerManifestCachePath();
+  const statePath = providerManifestStatePath(options.path, options.statePath);
   let removed = false;
   if (existsSync(path)) {
     unlinkSync(path);
@@ -557,9 +658,27 @@ export function resetCachedProviderHotfixManifest(
   if (options.includeBackup) {
     const backup = providerManifestBackupPath(path);
     if (existsSync(backup)) unlinkSync(backup);
-    const state = providerManifestStatePath(options.path, options.statePath);
-    if (existsSync(state)) unlinkSync(state);
   }
+  // Bundled defaults until the user asks for an update. Without the hold the
+  // next launch's background refresh reinstalls the published manifest. A
+  // plain reset keeps the revision floor and body pin; --force drops them.
+  const prior = options.includeBackup
+    ? { highestRevision: null, payloadSha256: null }
+    : readProviderManifestState(statePath);
+  mkdirSync(dirname(statePath), { recursive: true });
+  writeFileSync(
+    statePath,
+    `${JSON.stringify(
+      {
+        highestRevision: prior.highestRevision,
+        payloadSha256: prior.payloadSha256,
+        hold: "reset",
+        updatedAt: new Date(options.nowMs ?? Date.now()).toISOString(),
+      },
+      null,
+      2,
+    )}\n`,
+  );
   return { removed, path };
 }
 
@@ -588,6 +707,7 @@ export async function maybeBackgroundRefreshProviderManifest(
   const path = options.path ?? providerManifestCachePath();
   const nowMs = options.nowMs ?? Date.now();
   const minIntervalMs = options.minIntervalMs ?? BACKGROUND_REFRESH_INTERVAL_MS;
+  if (readProviderManifestState(providerManifestStatePath(options.path)).hold) return "skipped";
 
   if (existsSync(path)) {
     try {
@@ -603,6 +723,7 @@ export async function maybeBackgroundRefreshProviderManifest(
     trustedPublicKeysById: trusted,
     path: options.path,
     nowMs,
+    respectHold: true,
     knownProvidersByLane: options.knownProvidersByLane,
     fetchImpl: options.fetchImpl,
   });

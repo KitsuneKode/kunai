@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  issues: write # failure step opens or updates one tracking issue
 
 concurrency:
   group: allmanga-crypto-canary
@@ -24,10 +25,37 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: allmanga-canary
       - uses: ./.github/actions/setup-curl-impersonate
       - name: Run AllManga crypto freshness smoke
-        run: bun run test:live:allmanga-crypto
+        id: smoke
+        run: bun run test:live:allmanga-crypto 2>&1 | tee canary-output.txt
+        shell: bash -o pipefail {0}
+      # A red scheduled run notifies nobody, so a monthly rotation would sit
+      # unnoticed. Keep exactly one open issue and comment on it per failure.
+      - name: Open or update the rotation issue
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          title="AllManga crypto canary failing"
+          {
+            echo "The scheduled AllManga crypto canary failed: $RUN_URL"
+            echo
+            echo "Recovery procedure: .docs/provider-dossiers/allmanga.md"
+            echo
+            echo '```'
+            tail -n 40 canary-output.txt 2>/dev/null || echo "(no output captured)"
+            echo '```'
+          } > body.md
+          existing=$(gh issue list --state open --search "in:title \"$title\"" --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file body.md
+          else
+            gh issue create --title "$title" --body-file body.md
+          fi

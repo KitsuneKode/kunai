@@ -144,6 +144,7 @@ MAINTENANCE
   kunai capabilities --json    Machine-readable CLI/provider contract for agents & scripts
   kunai providers status       Inspect production providers and signed hotfix manifest state
   kunai providers update       Fetch & verify an Ed25519-signed manifest (--url, --dry-run, --force)
+  kunai providers verify       Check the cached manifest and AllManga crypto freshness (--json)
   kunai providers rollback     Restore the previous verified hotfix manifest backup
   kunai providers reset        Remove cached hotfix manifest and return to bundled defaults
   kunai uninstall              Remove kunai (add --purge to also delete user data)

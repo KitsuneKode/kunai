@@ -113,7 +113,7 @@ export async function runProvidersCommand(options: RunProvidersCommandOptions): 
                 revision: rolled.manifest.revision,
                 expiresAt: rolled.manifest.expiresAt,
               }
-            : { ok: false, path: rolled.path, reason: rolled.reason },
+            : jsonFailure(rolled.reason, { path: rolled.path }),
           null,
           2,
         )}\n`,
@@ -136,12 +136,10 @@ export async function runProvidersCommand(options: RunProvidersCommandOptions): 
   if (action === "update") {
     const manifestUrl = options.url ?? process.env.KUNAI_PROVIDER_MANIFEST_URL?.trim();
     if (!manifestUrl) {
-      const payload = {
-        ok: false,
-        reason:
-          "No manifest URL provided. Pass --url <https-url> or set KUNAI_PROVIDER_MANIFEST_URL.",
-        cachePath: options.cachePath ?? providerManifestCachePath(),
-      };
+      const payload = jsonFailure(
+        "No manifest URL provided. Pass --url <https-url> or set KUNAI_PROVIDER_MANIFEST_URL.",
+        { cachePath: options.cachePath ?? providerManifestCachePath() },
+      );
       if (options.json) write(`${JSON.stringify(payload, null, 2)}\n`);
       else write(`kunai providers update: ${payload.reason}\n`);
       return 2;
@@ -161,7 +159,7 @@ export async function runProvidersCommand(options: RunProvidersCommandOptions): 
     if (result.status === "rejected") {
       if (options.json) {
         write(
-          `${JSON.stringify({ ok: false, status: result.status, reason: result.reason }, null, 2)}\n`,
+          `${JSON.stringify(jsonFailure(result.reason, { status: result.status }), null, 2)}\n`,
         );
       } else {
         write(`kunai providers update rejected: ${result.reason}\n`);
@@ -231,9 +229,17 @@ export async function runProvidersCommand(options: RunProvidersCommandOptions): 
     });
     const hotfixManifest =
       expiresInHours !== null ? { ...manifestSummary, expiresInHours } : manifestSummary;
+    const failureReasons = [
+      manifestState.status === "invalid"
+        ? `Hotfix manifest invalid: ${manifestState.reason}`
+        : null,
+      cryptoFresh ? null : `AllManga crypto is ${epochsBehind} epochs behind`,
+    ].filter((reason): reason is string => reason !== null);
     const payload = {
       ok,
       schemaVersion: 1 as const,
+      // null when ok: one shape for agents, no property that comes and goes.
+      error: ok ? null : failureReasons.join("; "),
       hotfixManifest,
       allmangaCrypto: {
         pinnedBuildId: ALLMANGA_BUILD_ID,
@@ -268,7 +274,7 @@ export async function runProvidersCommand(options: RunProvidersCommandOptions): 
 
   if (action !== "status") {
     const reason = `Unknown providers subcommand "${action}". Expected: status, update, verify, rollback, or reset.`;
-    if (options.json) write(`${JSON.stringify({ ok: false, reason }, null, 2)}\n`);
+    if (options.json) write(`${JSON.stringify(jsonFailure(reason), null, 2)}\n`);
     else write(`kunai providers: ${reason}\n`);
     return 2;
   }
@@ -321,4 +327,13 @@ export async function runProvidersCommand(options: RunProvidersCommandOptions): 
   ];
   write(`${lines.join("\n")}\n`);
   return 0;
+}
+
+/**
+ * Every JSON failure from `kunai providers` has the same shape as the other
+ * agent routes: `ok: false`, `schemaVersion`, and a human-readable `error`.
+ * `reason` is kept as an alias for scripts written against the first release.
+ */
+function jsonFailure(error: string, extra: Readonly<Record<string, string | number>> = {}) {
+  return { ok: false as const, schemaVersion: 1 as const, error, reason: error, ...extra };
 }

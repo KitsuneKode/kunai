@@ -52,6 +52,7 @@ export {
   currentAllMangaEpochCandidates,
   deriveKeyFromPartB,
   deriveMaskKey,
+  describeAllMangaCryptoOverrideProblem,
   getEffectiveAllMangaBootstrapUrl,
   getEffectiveAllMangaContentLane,
   getEffectiveAllMangaCryptoProfile,
