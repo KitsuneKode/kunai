@@ -21,7 +21,7 @@ export async function loadDiscoveryList(
 
 const TRENDING_SOURCE_LABELS = new Map<string, string>([
   ["anilist", "AniList"],
-  ["kitsu", "Kitsu"],
+  ["kitsu", "Kitsu · popular this season"],
   ["jikan", "MyAnimeList"],
   ["tmdb", "TMDB"],
   ["youtube", "YouTube"],

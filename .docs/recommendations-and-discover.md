@@ -76,9 +76,21 @@ Trending walks a chain of sources per lane and remembers the last good answer:
   repository deletes a row on read once `expires_at` passes, so tying row expiry
   to the freshness TTL had made the stale fallback unreachable. A refresh whose
   every upstream request failed never overwrites the last good answer.
+- **Fallbacks are stand-ins, not equivalents.** A saved primary list younger
+  than 24 hours is shown (labelled) before any live fallback; Kitsu's list is
+  labelled "Kitsu · popular this season". A fallback answer is reused for 60
+  seconds, not the 30-minute trending TTL, so the primary is retried soon. A
+  fallback that fails is skipped for 10 minutes (Jikan is blackholed on some
+  networks and would otherwise cost its timeout on every outage).
+- **Shared walks.** Concurrent callers share one walk that owns its own abort
+  signal; each caller can cancel its own wait, and the walk stops when its last
+  waiter leaves. A refresh bumps a generation so an older walk cannot commit.
+  With a saved list on hand, a walk slower than 1.2 seconds hands the caller
+  that list and keeps filling the cache.
 - **TMDB hosts** use a half-open breaker: when every host is inside its
-  5-minute failure window, the host whose window ends first is probed instead
-  of failing without a request.
+  5-minute failure window, one request at a time probes the host whose window
+  ends first, a failed probe holds further probes for 30 seconds, and any
+  answer (including a 4xx) closes the breaker.
 
 Calendar uses catalog schedule services on demand:
 

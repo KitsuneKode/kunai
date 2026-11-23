@@ -27,12 +27,15 @@ function item(id: string, title: string): SearchResult {
 }
 
 function memoryDurable(): CatalogDurableCache & { readonly rows: Map<string, unknown> } {
-  const rows = new Map<string, { cachedAt: number; results: readonly SearchResult[] }>();
+  const rows = new Map<
+    string,
+    { cachedAt: number; results: readonly SearchResult[]; sourceId?: string }
+  >();
   return {
     rows,
     read: (key) => rows.get(key) ?? null,
-    write: (key, cachedAt, results) => {
-      rows.set(key, { cachedAt, results });
+    write: (key, cachedAt, results, sourceId) => {
+      rows.set(key, sourceId ? { cachedAt, results, sourceId } : { cachedAt, results });
     },
   };
 }
@@ -498,5 +501,91 @@ describe("contradictory anime mappings", () => {
         malId === "5" ? { anilistId: "50", malId: "999" } : { anilistId: "60", malId },
     });
     expect(results.map((r) => r.id)).toEqual(["60"]);
+  });
+});
+
+describe("fallback quality and cost", () => {
+  test("a recent saved AniList list beats a live Kitsu list", async () => {
+    const durable = memoryDurable();
+    durable.write(
+      "catalog:trending:anime",
+      NOW - 2 * 3_600_000,
+      [item("1", "AniList pick")],
+      "anilist",
+    );
+    let fallbackCalls = 0;
+    const section = await service(
+      down,
+      async () => {
+        fallbackCalls += 1;
+        return [item("2", "Kitsu pick")];
+      },
+      durable,
+    ).loadTrendingSection("anime");
+    expect(section.sourceId).toBe("last-known-good");
+    expect(section.results[0]?.title).toBe("AniList pick");
+    expect(fallbackCalls).toBe(0);
+  });
+
+  test("an old saved list, or one from a fallback, does not block a live fallback", async () => {
+    const durable = memoryDurable();
+    durable.write("catalog:trending:anime", NOW - 3 * 86_400_000, [item("1", "Old")], "anilist");
+    const section = await service(
+      down,
+      async () => [item("2", "Live fallback")],
+      durable,
+    ).loadTrendingSection("anime");
+    expect(section.sourceId).toBe("jikan");
+  });
+
+  test("a failed fallback is skipped on the next outage instead of costing its timeout", async () => {
+    let clock = NOW;
+    let fallbackCalls = 0;
+    const discovery = service(
+      down,
+      async () => {
+        fallbackCalls += 1;
+        throw new Error("blackholed");
+      },
+      memoryDurable(),
+      () => clock,
+    );
+    await expect(discovery.loadTrendingSection("anime")).rejects.toThrow();
+    discovery.clearTrendingCache();
+    await expect(discovery.loadTrendingSection("anime")).rejects.toThrow();
+    expect(fallbackCalls).toBe(1);
+    // After the breaker window it is tried again.
+    clock += 11 * 60_000;
+    discovery.clearTrendingCache();
+    await expect(discovery.loadTrendingSection("anime")).rejects.toThrow();
+    expect(fallbackCalls).toBe(2);
+  });
+
+  test("a fallback answer is reused briefly, so the primary is retried soon", async () => {
+    let clock = NOW;
+    let primaryUp = false;
+    const discovery = service(
+      async () => {
+        if (!primaryUp) throw new Error("down");
+        return [item("1", "AniList")];
+      },
+      async () => [item("2", "Kitsu")],
+      memoryDurable(),
+      () => clock,
+    );
+    expect((await discovery.loadTrendingSection("anime")).sourceId).toBe("jikan");
+    primaryUp = true;
+    clock += 61_000;
+    expect((await discovery.loadTrendingSection("anime")).sourceId).toBe("anilist");
+  });
+
+  test("seasons turn over on Japan time", () => {
+    // 2026-09-30 16:00 UTC is already October 1 in Japan.
+    expect(animeSeasonOf(new Date("2026-09-30T16:00:00Z")).season).toBe("fall");
+    expect(animeSeasonOf(new Date("2026-09-30T14:00:00Z")).season).toBe("summer");
+    expect(animeSeasonOf(new Date("2026-12-31T16:00:00Z"))).toEqual({
+      season: "winter",
+      year: 2027,
+    });
   });
 });

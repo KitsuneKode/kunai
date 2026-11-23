@@ -78,10 +78,15 @@ export type CatalogTrendingSource = {
  * start shows the last answer (with its age) instead of an empty rail.
  */
 export type CatalogDurableCache = {
-  read(
-    key: string,
-  ): { readonly cachedAt: number; readonly results: readonly SearchResult[] } | null;
-  write(key: string, cachedAt: number, results: readonly SearchResult[]): void;
+  read(key: string): CatalogDurableEntry | null;
+  write(key: string, cachedAt: number, results: readonly SearchResult[], sourceId?: string): void;
+};
+
+/** A saved trending list, with the source that produced it when known. */
+export type CatalogDurableEntry = {
+  readonly cachedAt: number;
+  readonly results: readonly SearchResult[];
+  readonly sourceId?: string;
 };
 
 /** A trending list plus where it came from and, when stale, how old it is. */
@@ -123,6 +128,10 @@ export type CatalogDiscoveryOptions = {
 
 /** How long a served stale list is reused before the live chain is retried. */
 const STALE_RETRY_AFTER_MS = 60 * 1000;
+/** A saved primary list younger than this is preferred over a live fallback. */
+const PREFER_SAVED_PRIMARY_MS = 24 * 60 * 60 * 1000;
+/** How long a failed fallback source is skipped. */
+const FALLBACK_BREAKER_MS = 10 * 60 * 1000;
 
 let defaultDurableCache: CatalogDurableCache | null = null;
 
@@ -144,6 +153,8 @@ export class CatalogDiscoveryService {
   private readonly cache = new Map<string, DiscoveryCacheEntry>();
   private readonly sections = new Map<string, CatalogTrendingSection>();
   private readonly sectionWalks = new Map<string, TrendingWalk>();
+  /** Fallback source id → epoch ms until which it is skipped after failing. */
+  private readonly fallbackBrokenUntil = new Map<string, number>();
   /** Bumped by `clearTrendingCache`; a walk started earlier may not commit. */
   private generation = 0;
   private readonly inflight = new Map<string, Promise<readonly SearchResult[]>>();
@@ -316,17 +327,51 @@ export class CatalogDiscoveryService {
 
     let lastError: Error | null = null;
     for (const source of chain) {
+      const isPrimary = source === primary;
+      if (!isPrimary) {
+        // A recent saved list from the primary beats a live fallback: the
+        // fallbacks are stand-ins (Kitsu's "popular this season" overlapped
+        // AniList trending on 4 of 12 titles), not equivalents.
+        const saved = durable?.read(durableKey);
+        if (
+          saved &&
+          saved.sourceId === primary.id &&
+          saved.results.length > 0 &&
+          this.now() - saved.cachedAt < PREFER_SAVED_PRIMARY_MS
+        ) {
+          const section: CatalogTrendingSection = {
+            results: saved.results,
+            sourceId: "last-known-good",
+            staleSince: saved.cachedAt,
+          };
+          this.commitSection(key, generation, section, STALE_RETRY_AFTER_MS);
+          return section;
+        }
+        // A fallback that just failed (Jikan blackholed on some networks)
+        // is skipped for a while instead of costing its timeout every outage.
+        if ((this.fallbackBrokenUntil.get(source.id) ?? 0) > this.now()) continue;
+      }
       try {
         const results = await source.load(signal);
         if (results.length === 0) continue;
         const section: CatalogTrendingSection = { results, sourceId: source.id };
         if (generation === this.generation) {
-          this.commitSection(key, generation, section, DISCOVERY_CACHE_TTL_MS);
-          durable?.write(durableKey, this.now(), results);
+          // A fallback answer is reused only briefly so the primary is
+          // retried soon; one primary timeout must not pin a stand-in for
+          // the full trending TTL.
+          this.commitSection(
+            key,
+            generation,
+            section,
+            isPrimary ? DISCOVERY_CACHE_TTL_MS : STALE_RETRY_AFTER_MS,
+          );
+          durable?.write(durableKey, this.now(), results, source.id);
         }
+        if (!isPrimary) this.fallbackBrokenUntil.delete(source.id);
         return section;
       } catch (error) {
         if (signal.aborted) throw error;
+        if (!isPrimary) this.fallbackBrokenUntil.set(source.id, this.now() + FALLBACK_BREAKER_MS);
         lastError = error instanceof Error ? error : new Error(String(error));
       }
     }

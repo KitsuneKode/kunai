@@ -233,6 +233,27 @@ describe("fetchTmdbJsonCached", () => {
     expect(requests).toBe(1);
   });
 
+  test("after a failed recovery probe, requests fail fast until the next probe window", async () => {
+    let requests = 0;
+    globalThis.fetch = Object.assign(
+      async () => {
+        requests += 1;
+        throw new Error("connect ETIMEDOUT");
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    await expect(fetchTmdbJsonCached("/movie/1")).rejects.toThrow();
+    // First half-open probe fails…
+    requests = 0;
+    await expect(fetchTmdbJsonCached("/movie/2")).rejects.toThrow();
+    expect(requests).toBe(1);
+    // …so the next requests in the window cost no network at all.
+    requests = 0;
+    await expect(fetchTmdbJsonCached("/movie/3")).rejects.toThrow("recovery probe pending");
+    await expect(fetchTmdbJsonCached("/movie/4")).rejects.toThrow("recovery probe pending");
+    expect(requests).toBe(0);
+  });
+
   test("a 4xx is a definitive answer — no mirror hop, no breaker", async () => {
     const urls: string[] = [];
     globalThis.fetch = Object.assign(

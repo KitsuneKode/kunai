@@ -1,7 +1,7 @@
 import { parseCachedSearchResults } from "@/services/catalog/cached-search-results";
 import type { CatalogDurableCache } from "@/services/catalog/CatalogDiscoveryService";
 import type { RecommendationCacheRepository } from "@kunai/storage";
-import { isJsonNumber, isJsonObject, type JsonValue } from "@kunai/types";
+import { isJsonNumber, isJsonObject, isJsonString, type JsonValue } from "@kunai/types";
 
 /** How long a last-known-good trending list is kept for outages and cold starts. */
 export const CATALOG_STALE_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
@@ -28,16 +28,19 @@ export function createCatalogDurableCache(
         const parsed: JsonValue = JSON.parse(entry.payloadJson);
         if (!isJsonObject(parsed) || !isJsonNumber(parsed.cachedAt)) return null;
         const results = parseCachedSearchResults(parsed.results);
-        return results ? { cachedAt: parsed.cachedAt, results } : null;
+        if (!results) return null;
+        return isJsonString(parsed.sourceId)
+          ? { cachedAt: parsed.cachedAt, results, sourceId: parsed.sourceId }
+          : { cachedAt: parsed.cachedAt, results };
       } catch {
         return null;
       }
     },
-    write(key, cachedAt, results) {
+    write(key, cachedAt, results, sourceId) {
       try {
         repository.set(
           key,
-          JSON.stringify({ cachedAt, results }),
+          JSON.stringify(sourceId ? { cachedAt, results, sourceId } : { cachedAt, results }),
           new Date(cachedAt + retentionMs).toISOString(),
           new Date(cachedAt).toISOString(),
         );

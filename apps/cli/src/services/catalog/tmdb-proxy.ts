@@ -118,6 +118,13 @@ const inflightRequests = new Map<string, Promise<JsonValue>>();
 const hostRetryAfter = new Map<string, number>();
 /** One half-open recovery probe at a time across all request paths. */
 let halfOpenProbeInFlight = false;
+/**
+ * After a failed recovery probe, the next one waits this long. Without it,
+ * every request during a long outage paid a full probe timeout before
+ * callers could fall back to a saved list.
+ */
+const HALF_OPEN_PROBE_INTERVAL_MS = 30 * 1000;
+let nextHalfOpenProbeAt = 0;
 
 function sessionCacheWrite(key: string, entry: SessionCacheEntry): void {
   // Writes land after async fetches, so insertion order is not age order —
@@ -146,6 +153,7 @@ export function clearTmdbSessionCache(): void {
   inflightRequests.clear();
   hostRetryAfter.clear();
   halfOpenProbeInFlight = false;
+  nextHalfOpenProbeAt = 0;
 }
 
 /**
@@ -257,7 +265,10 @@ export async function fetchTmdbJsonWithFallback(
     // the host whose window ends first; concurrent requests fail fast instead
     // of each sending their own probe (20 distinct paths = 20 probes before).
     if (halfOpenProbeInFlight) throw new Error("TMDB hosts unavailable (recovery probe in flight)");
+    if (now < nextHalfOpenProbeAt)
+      throw new Error("TMDB hosts unavailable (next recovery probe pending)");
     probing = true;
+    nextHalfOpenProbeAt = now + HALF_OPEN_PROBE_INTERVAL_MS;
     halfOpenProbeInFlight = true;
     candidates = [...TMDB_HOSTS]
       .sort((a, b) => (hostRetryAfter.get(a.base) ?? 0) - (hostRetryAfter.get(b.base) ?? 0))
@@ -269,6 +280,7 @@ export async function fetchTmdbJsonWithFallback(
       try {
         const value = await fetchTmdbHostJson(host, normalized, signal, timeoutMs);
         hostRetryAfter.delete(host.base);
+        nextHalfOpenProbeAt = 0;
         return value;
       } catch (error) {
         if (signal?.aborted === true) throw error;
@@ -276,6 +288,7 @@ export async function fetchTmdbJsonWithFallback(
           // The host answered: it is reachable, so close its breaker even
           // though this path's answer is a 4xx the caller must see.
           hostRetryAfter.delete(host.base);
+          nextHalfOpenProbeAt = 0;
           throw error;
         }
         hostRetryAfter.set(host.base, Date.now() + HOST_RETRY_AFTER_MS);

@@ -30,9 +30,11 @@ export interface AnimeSeason {
 }
 
 export function animeSeasonOf(date: Date): AnimeSeason {
-  const month = date.getUTCMonth();
+  // Broadcast seasons turn over on Japan time (UTC+9, no DST).
+  const japan = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  const month = japan.getUTCMonth();
   const season = month < 3 ? "winter" : month < 6 ? "spring" : month < 9 ? "summer" : "fall";
-  return { season, year: date.getUTCFullYear() };
+  return { season, year: japan.getUTCFullYear() };
 }
 
 export function kitsuSeasonalPopularUrl(date: Date): string {
