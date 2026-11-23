@@ -772,3 +772,28 @@ describe("urgent refresh after a provider goes down", () => {
     expect(fetches).toBe(1);
   });
 });
+
+test("an urgent check that skipped does not consume the window", async () => {
+  resetUrgentProviderManifestRefreshForTest();
+  // No URL configured: skipped without a request…
+  expect(await maybeUrgentProviderManifestRefresh({ url: "", nowMs: NOW_MS })).toBe("skipped");
+  // …so a configured attempt a minute later still runs.
+  const path = makeTempCachePath();
+  const { publicPem, privatePem } = makeKeypair();
+  let fetches = 0;
+  const outcome = await maybeUrgentProviderManifestRefresh({
+    url: "https://manifests.kunai.test/providers.json",
+    path,
+    trustedPublicKeysById: { "key-2026": publicPem },
+    nowMs: NOW_MS + 60_000,
+    fetchImpl: async () => {
+      fetches += 1;
+      return new Response(
+        JSON.stringify(signProviderManifest(makeManifest({ revision: 3 }), privatePem, "key-2026")),
+        { status: 200 },
+      );
+    },
+  });
+  expect(outcome).toBe("updated");
+  expect(fetches).toBe(1);
+});

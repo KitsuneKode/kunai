@@ -47,7 +47,7 @@ export type PlaybackResolveCoordinatorDeps = {
   readonly engine: ProviderEngine;
   readonly cacheStore: CacheStore;
   readonly providerHealth?: ProviderHealthRepository;
-  /** Fired once when a provider's health transitions into `down`. */
+  /** Fired on each failed attempt while a provider is `down`; the receiver throttles. */
   readonly onProviderDown?: (providerId: string) => void;
   readonly streamHealth?: StreamHealthChecker;
   readonly streamHealthService?: StreamHealthService;

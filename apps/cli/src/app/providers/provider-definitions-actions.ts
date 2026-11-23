@@ -1,8 +1,6 @@
 import type { Container } from "@/container";
 import {
-  applyHotfixToProviderBootstrap,
   fetchAndCacheProviderHotfixManifest,
-  getActiveProviderHotfixManifest,
   groupProvidersByLane,
   loadCachedProviderHotfixManifest,
   providerManifestBackupPath,

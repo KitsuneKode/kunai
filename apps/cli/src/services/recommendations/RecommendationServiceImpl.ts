@@ -4,8 +4,10 @@
 // Falls back from videasy proxy to direct TMDB API on failure.
 
 import type { ContentType, SearchResult } from "@/domain/types";
+import { parseCachedSearchResults } from "@/services/catalog/cached-search-results";
 import { clearTmdbSessionCache, fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
 import { RecommendationCacheRepository } from "@kunai/storage";
+import { isJsonNumber, isJsonObject, type JsonValue } from "@kunai/types";
 
 import type {
   RecommendationHistorySeed,
@@ -80,14 +82,23 @@ function toSearchResult(
 export class RecommendationServiceImpl implements RecommendationService {
   constructor(private readonly cacheRepository: RecommendationCacheRepository) {}
 
+  /** Answers cached before this instant are not fresh (a user refresh). */
+  private freshAfter = 0;
+
+  /**
+   * A refresh forces live requests without deleting anything. Deleting the
+   * table (what this used to do, on every Discover open) also deleted the
+   * last-known-good rows — trending lists included — at exactly the moment an
+   * outage would need them.
+   */
   async clearCache(): Promise<void> {
-    this.cacheRepository.clear();
+    this.freshAfter = Date.now();
     clearTmdbSessionCache();
   }
 
   private readCacheEntry(key: string, ttlMs: number): CacheValue | null {
     const parsed = this.readAnyCacheEntry(key);
-    if (!parsed) return null;
+    if (!parsed || parsed.cachedAt <= this.freshAfter) return null;
     return isCacheExpired(parsed.cachedAt, ttlMs) ? null : parsed;
   }
 
@@ -95,11 +106,10 @@ export class RecommendationServiceImpl implements RecommendationService {
     const entry = this.cacheRepository.get(key);
     if (!entry) return null;
     try {
-      const parsed = JSON.parse(entry.payloadJson) as CacheValue;
-      if (!parsed || typeof parsed.cachedAt !== "number" || !Array.isArray(parsed.items)) {
-        return null;
-      }
-      return parsed;
+      const parsed: JsonValue = JSON.parse(entry.payloadJson);
+      if (!isJsonObject(parsed) || !isJsonNumber(parsed.cachedAt)) return null;
+      const items = parseCachedSearchResults(parsed.items);
+      return items ? { cachedAt: parsed.cachedAt, items } : null;
     } catch {
       return null;
     }
@@ -129,7 +139,8 @@ export class RecommendationServiceImpl implements RecommendationService {
     }
     const segment = type === "movie" ? "movie" : "tv";
     const data = await fetchRecommendationData(`/${segment}/${tmdbId}/recommendations`);
-    if (!data) return this.staleSection(key, "similar");
+    // A 200 without a `results` array is a broken answer, not an empty one.
+    if (!data || !Array.isArray(data.results)) return this.staleSection(key, "similar");
     const items = (data?.results ?? [])
       .map((r) => toSearchResult(r, segment === "movie" ? "movie" : "tv"))
       .filter((r): r is SearchResult => r !== null)
@@ -145,7 +156,7 @@ export class RecommendationServiceImpl implements RecommendationService {
       return { label: "", reason: "trending", items: entry.items };
     }
     const data = await fetchRecommendationData("/trending/all/week");
-    if (!data) return this.staleSection(key, "trending");
+    if (!data || !Array.isArray(data.results)) return this.staleSection(key, "trending");
     const items = (data?.results ?? [])
       .map((r) => toSearchResult(r))
       .filter((r): r is SearchResult => r !== null)
@@ -220,14 +231,14 @@ export class RecommendationServiceImpl implements RecommendationService {
       discoverByGenres(topGenres, "movie"),
       discoverByGenres(topGenres, "tv"),
     ]);
-    // discoverByGenres folds a failed request into []: two empty lists mean the
-    // upstream is down, not that the profile has no matches. Writing [] here
-    // would overwrite the last good answer with nothing.
-    if (movieCandidates.length === 0 && tvCandidates.length === 0) {
+    // null = that request failed; [] = a valid answer with no matches. Only a
+    // total failure falls back; writing [] there would overwrite the last
+    // good answer with nothing.
+    if (movieCandidates === null && tvCandidates === null) {
       return this.staleSection(profileKey, "genre-affinity");
     }
 
-    const scored = [...movieCandidates, ...tvCandidates]
+    const scored = [...(movieCandidates ?? []), ...(tvCandidates ?? [])]
       .filter((candidate) => !watchedTitles.has(normalizeTitle(candidate.item.title)))
       .map((candidate) => ({
         item: candidate.item,
@@ -356,14 +367,15 @@ async function fetchTmdbGenres(id: string, mediaType: "movie" | "tv"): Promise<r
 async function discoverByGenres(
   genreIds: readonly number[],
   mediaType: "movie" | "tv",
-): Promise<readonly { item: SearchResult; genreIds: readonly number[] }[]> {
+): Promise<readonly { item: SearchResult; genreIds: readonly number[] }[] | null> {
   const genres = genreIds.join(",");
   const data = (await tmdbFetch(
     `/discover/${mediaType}?with_genres=${genres}&sort_by=vote_average.desc&vote_count.gte=200&page=1`,
   ).catch(() => null)) as {
     results?: Record<string, unknown>[];
   } | null;
-  const candidates = (data?.results ?? [])
+  if (!data || !Array.isArray(data.results)) return null;
+  const candidates = data.results
     .map((result) => {
       const item = toSearchResult(result, mediaType);
       if (!item) return null;

@@ -90,13 +90,25 @@ const TMDB_ALT_HOST: TmdbHost = { base: TMDB_ALT_BASE, needsApiKey: true };
 const TMDB_HOSTS: readonly TmdbHost[] = [...TMDB_PROXY_HOSTS, TMDB_DIRECT_HOST, TMDB_ALT_HOST];
 
 /** A host answered with a non-2xx status — the API itself responded. */
-class TmdbHttpError extends Error {
+export class TmdbHttpError extends Error {
   constructor(
     readonly status: number,
     url: string,
   ) {
-    super(`${status} ${url}`);
+    // Never the raw URL: direct hosts carry `api_key` in the query, and this
+    // message reaches the browse error panel and diagnostics.
+    super(`${status} ${credentialFreeUrl(url)}`);
     this.name = "TmdbHttpError";
+  }
+}
+
+/** Origin and path only: drops the query (api_key, session ids) and userinfo. */
+export function credentialFreeUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    return "<tmdb request>";
   }
 }
 
@@ -104,6 +116,8 @@ const sessionCache = new Map<string, SessionCacheEntry>();
 const inflightRequests = new Map<string, Promise<JsonValue>>();
 /** Epoch ms until which each host is skipped; absent/0 means eligible. */
 const hostRetryAfter = new Map<string, number>();
+/** One half-open recovery probe at a time across all request paths. */
+let halfOpenProbeInFlight = false;
 
 function sessionCacheWrite(key: string, entry: SessionCacheEntry): void {
   // Writes land after async fetches, so insertion order is not age order —
@@ -131,6 +145,7 @@ export function clearTmdbSessionCache(): void {
   sessionCache.clear();
   inflightRequests.clear();
   hostRetryAfter.clear();
+  halfOpenProbeInFlight = false;
 }
 
 /**
@@ -235,27 +250,40 @@ export async function fetchTmdbJsonWithFallback(
   let lastError: Error | null = null;
 
   const eligible = TMDB_HOSTS.filter((host) => now >= (hostRetryAfter.get(host.base) ?? 0));
-  // Half-open: when every host is inside its breaker window, probe the one
-  // whose window ends first instead of failing without a request. Otherwise a
-  // network that came back stays "down" for up to HOST_RETRY_AFTER_MS.
-  const candidates =
-    eligible.length > 0
-      ? eligible
-      : [...TMDB_HOSTS]
-          .sort((a, b) => (hostRetryAfter.get(a.base) ?? 0) - (hostRetryAfter.get(b.base) ?? 0))
-          .slice(0, 1);
+  let probing = false;
+  let candidates = eligible;
+  if (eligible.length === 0) {
+    // Half-open: every host is inside its breaker window. One request probes
+    // the host whose window ends first; concurrent requests fail fast instead
+    // of each sending their own probe (20 distinct paths = 20 probes before).
+    if (halfOpenProbeInFlight) throw new Error("TMDB hosts unavailable (recovery probe in flight)");
+    probing = true;
+    halfOpenProbeInFlight = true;
+    candidates = [...TMDB_HOSTS]
+      .sort((a, b) => (hostRetryAfter.get(a.base) ?? 0) - (hostRetryAfter.get(b.base) ?? 0))
+      .slice(0, 1);
+  }
 
-  for (const host of candidates) {
-    try {
-      const value = await fetchTmdbHostJson(host, normalized, signal, timeoutMs);
-      hostRetryAfter.delete(host.base);
-      return value;
-    } catch (error) {
-      if (signal?.aborted === true) throw error;
-      if (error instanceof TmdbHttpError && error.status < 500) throw error;
-      hostRetryAfter.set(host.base, Date.now() + HOST_RETRY_AFTER_MS);
-      lastError = error instanceof Error ? error : new Error(String(error));
+  try {
+    for (const host of candidates) {
+      try {
+        const value = await fetchTmdbHostJson(host, normalized, signal, timeoutMs);
+        hostRetryAfter.delete(host.base);
+        return value;
+      } catch (error) {
+        if (signal?.aborted === true) throw error;
+        if (error instanceof TmdbHttpError && error.status < 500) {
+          // The host answered: it is reachable, so close its breaker even
+          // though this path's answer is a 4xx the caller must see.
+          hostRetryAfter.delete(host.base);
+          throw error;
+        }
+        hostRetryAfter.set(host.base, Date.now() + HOST_RETRY_AFTER_MS);
+        lastError = error instanceof Error ? error : new Error(String(error));
+      }
     }
+  } finally {
+    if (probing) halfOpenProbeInFlight = false;
   }
   throw lastError ?? new Error("no TMDB hosts available");
 }

@@ -9,6 +9,7 @@
 import { stripHtml } from "@/domain/catalog/strip-html";
 import { anilistCatalogStructure } from "@/domain/media/anilist-format";
 import type { SearchResult, TitleAlias } from "@/domain/types";
+import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
 import { fetchArmIdGraph, type ArmIdGraph } from "@/services/catalog/arm-client";
 
 export const JIKAN_TOP_AIRING_URL =
@@ -132,11 +133,10 @@ export async function loadJikanAnimeTrending(
   const fetchImpl = deps.fetchImpl ?? fetch;
   const lookupArm =
     deps.lookupArm ?? ((malId, armSignal) => fetchArmIdGraph("myanimelist", malId, armSignal));
-  const timeout = AbortSignal.timeout(JIKAN_TIMEOUT_MS);
   let response: Response;
   try {
     response = await fetchImpl(JIKAN_TOP_AIRING_URL, {
-      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      signal: withTimeoutSignal(signal, JIKAN_TIMEOUT_MS),
       headers: { accept: "application/json" },
     });
   } catch (cause) {
@@ -156,12 +156,20 @@ export async function loadJikanAnimeTrending(
   const mapped = await Promise.all(
     entries.map(async (anime) => {
       if (anime.mal_id === undefined) return null;
-      const graph = await lookupArm(String(anime.mal_id), signal);
-      return graph?.anilistId ? jikanAnimeToSearchResult(anime, graph.anilistId) : null;
+      const malId = String(anime.mal_id);
+      const graph = await lookupArm(malId, signal);
+      // ARM answering for a different MAL id is a bad mapping, not a match.
+      if (!graph?.anilistId || (graph.malId !== undefined && graph.malId !== malId)) return null;
+      return jikanAnimeToSearchResult(anime, graph.anilistId);
     }),
   );
+  const seen = new Set<string>();
   const results = mapped
-    .filter((entry): entry is SearchResult => entry !== null)
+    .filter((entry): entry is SearchResult => {
+      if (entry === null || seen.has(entry.id)) return false;
+      seen.add(entry.id);
+      return true;
+    })
     .slice(0, MAX_RESULTS);
   if (results.length === 0) {
     throw new JikanTrendingUnavailableError("no entry could be mapped to an AniList id");

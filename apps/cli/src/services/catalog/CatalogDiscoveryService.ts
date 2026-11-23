@@ -1,6 +1,7 @@
 import { stripHtml } from "@/domain/catalog/strip-html";
 import { anilistCatalogStructure } from "@/domain/media/anilist-format";
 import type { SearchResult, ShellMode, TitleAlias } from "@/domain/types";
+import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
 import { evictOverflowedEntries } from "@/services/catalog/bounded-cache";
 import { loadJikanAnimeTrending } from "@/services/catalog/jikan-trending";
 import { loadKitsuAnimeTrending } from "@/services/catalog/kitsu-trending";
@@ -91,7 +92,29 @@ export type CatalogTrendingSection = {
   readonly staleSince?: number;
 };
 
+type TrendingWalk = {
+  readonly controller: AbortController;
+  waiters: number;
+  readonly promise: Promise<CatalogTrendingSection>;
+};
+
+/**
+ * With a last-known-good list on hand, a live chain slower than this hands the
+ * caller that list instead (the walk continues and fills the cache). A cold
+ * start during an outage otherwise waits out every source's timeout.
+ */
+const TRENDING_HEDGE_AFTER_MS = 1_200;
+
+function abortReason(signal: AbortSignal | undefined): Error {
+  const reason: unknown = signal?.reason;
+  return reason instanceof Error
+    ? reason
+    : new DOMException("The operation was aborted.", "AbortError");
+}
+
 export type CatalogDiscoveryOptions = {
+  /** Hedge delay before serving last-known-good; tests pass 0 or -1 (never). */
+  readonly hedgeAfterMs?: number;
   /** Extra sources tried after the lane's primary loader, per mode. */
   readonly fallbacks?: Partial<Record<ShellMode, readonly CatalogTrendingSource[]>>;
   /** Resolved on each call so the container can install it after construction. */
@@ -120,7 +143,9 @@ export const DEFAULT_TRENDING_FALLBACKS = {
 export class CatalogDiscoveryService {
   private readonly cache = new Map<string, DiscoveryCacheEntry>();
   private readonly sections = new Map<string, CatalogTrendingSection>();
-  private readonly sectionWalks = new Map<string, Promise<CatalogTrendingSection>>();
+  private readonly sectionWalks = new Map<string, TrendingWalk>();
+  /** Bumped by `clearTrendingCache`; a walk started earlier may not commit. */
+  private generation = 0;
   private readonly inflight = new Map<string, Promise<readonly SearchResult[]>>();
 
   constructor(
@@ -139,6 +164,7 @@ export class CatalogDiscoveryService {
     this.inflight.clear();
     this.sections.clear();
     this.sectionWalks.clear();
+    this.generation += 1;
   }
 
   async loadTrending(mode: ShellMode, signal?: AbortSignal): Promise<SearchResult[]> {
@@ -162,22 +188,117 @@ export class CatalogDiscoveryService {
     const cached = this.cache.get(key);
     const cachedSection = this.sections.get(key);
     if (cached && cached.expiresAt > this.now() && cachedSection) return cachedSection;
+    if (signal?.aborted) throw abortReason(signal);
 
-    // Concurrent callers share one walk of the whole chain, not one source's
-    // attempt: joining a single attempt would hand a rejection to a caller
-    // while the walk goes on to a fallback that succeeds.
-    const walking = this.sectionWalks.get(key);
-    if (walking) return walking;
-    const walk = this.walkTrendingChain(mode, signal).finally(() => {
-      this.sectionWalks.delete(key);
+    // Concurrent callers share one walk of the whole chain. The walk owns its
+    // own signal: one caller cancelling must not cancel another caller's
+    // fallback, and the walk stops only when its last waiter has gone.
+    let walk = this.sectionWalks.get(key);
+    if (!walk) {
+      const controller = new AbortController();
+      const created: TrendingWalk = {
+        controller,
+        waiters: 0,
+        promise: this.walkTrendingChain(mode, controller.signal, this.generation),
+      };
+      created.promise
+        .finally(() => {
+          if (this.sectionWalks.get(key) === created) this.sectionWalks.delete(key);
+        })
+        .catch(() => undefined);
+      this.sectionWalks.set(key, created);
+      walk = created;
+    }
+
+    const durable = this.durable();
+    const stale = durable?.read(this.durableKey(mode)) ?? null;
+    return this.awaitWalk(walk, signal, stale);
+  }
+
+  /**
+   * One caller's wait on a shared walk. With a last-known-good list on hand,
+   * a slow live chain hands the caller that list after `hedgeAfterMs` (marked
+   * stale) while the walk keeps going and fills the cache for the next render.
+   */
+  private awaitWalk(
+    walk: TrendingWalk,
+    signal: AbortSignal | undefined,
+    stale: { readonly cachedAt: number; readonly results: readonly SearchResult[] } | null,
+  ): Promise<CatalogTrendingSection> {
+    walk.waiters += 1;
+    return new Promise<CatalogTrendingSection>((resolve, reject) => {
+      let settled = false;
+      let hedge: ReturnType<typeof setTimeout> | undefined;
+      const leave = () => {
+        walk.waiters -= 1;
+        if (walk.waiters <= 0) walk.controller.abort();
+      };
+      const finish = (action: () => void, abandonWalk: boolean) => {
+        if (settled) return;
+        settled = true;
+        if (hedge !== undefined) clearTimeout(hedge);
+        signal?.removeEventListener("abort", onAbort);
+        if (abandonWalk) leave();
+        else walk.waiters -= 1;
+        action();
+      };
+      const onAbort = () => finish(() => reject(abortReason(signal)), true);
+      if (signal?.aborted) {
+        // Aborted before we could listen (e.g. during the walk's first
+        // synchronous step): leave now so a sole waiter stops the walk.
+        onAbort();
+        return;
+      }
+      signal?.addEventListener("abort", onAbort, { once: true });
+      walk.promise.then(
+        (section) => finish(() => resolve(section), false),
+        (error) => finish(() => reject(error), false),
+      );
+      const hedgeAfterMs = this.options.hedgeAfterMs ?? TRENDING_HEDGE_AFTER_MS;
+      if (stale && stale.results.length > 0 && hedgeAfterMs >= 0) {
+        hedge = setTimeout(
+          () =>
+            finish(
+              () =>
+                resolve({
+                  results: stale.results,
+                  sourceId: "last-known-good",
+                  staleSince: stale.cachedAt,
+                }),
+              // The walk keeps running for the cache even with no waiters.
+              false,
+            ),
+          hedgeAfterMs,
+        );
+      }
     });
-    this.sectionWalks.set(key, walk);
-    return walk;
+  }
+
+  private durable(): CatalogDurableCache | null {
+    return this.options.durableCache ? this.options.durableCache() : defaultDurableCache;
+  }
+
+  private durableKey(mode: ShellMode): string {
+    return `catalog:trending:${mode}`;
+  }
+
+  /** Commit a section only if no refresh happened since the walk started. */
+  private commitSection(
+    key: string,
+    generation: number,
+    section: CatalogTrendingSection,
+    ttlMs: number,
+  ): void {
+    if (generation !== this.generation) return;
+    this.cache.set(key, { expiresAt: this.now() + ttlMs, results: section.results });
+    this.sections.set(key, section);
+    evictOverflowedEntries(this.cache, MAX_DISCOVERY_CACHE_ENTRIES, this.now());
   }
 
   private async walkTrendingChain(
     mode: ShellMode,
-    signal?: AbortSignal,
+    signal: AbortSignal,
+    generation: number,
   ): Promise<CatalogTrendingSection> {
     const key = mode;
     const primary: CatalogTrendingSource = {
@@ -190,20 +311,22 @@ export class CatalogDiscoveryService {
             : this.loaders.tmdb,
     };
     const chain = [primary, ...(this.options.fallbacks?.[mode] ?? [])];
-    const durable = this.options.durableCache ? this.options.durableCache() : defaultDurableCache;
-    const durableKey = `catalog:trending:${mode}`;
+    const durable = this.durable();
+    const durableKey = this.durableKey(mode);
 
     let lastError: Error | null = null;
     for (const source of chain) {
       try {
-        const results = await this.runLoad(key, DISCOVERY_CACHE_TTL_MS, () => source.load(signal));
+        const results = await source.load(signal);
         if (results.length === 0) continue;
         const section: CatalogTrendingSection = { results, sourceId: source.id };
-        this.sections.set(key, section);
-        durable?.write(durableKey, this.now(), results);
+        if (generation === this.generation) {
+          this.commitSection(key, generation, section, DISCOVERY_CACHE_TTL_MS);
+          durable?.write(durableKey, this.now(), results);
+        }
         return section;
       } catch (error) {
-        if (signal?.aborted) throw error;
+        if (signal.aborted) throw error;
         lastError = error instanceof Error ? error : new Error(String(error));
       }
     }
@@ -217,8 +340,7 @@ export class CatalogDiscoveryService {
       };
       // Short reuse window: retry the live chain soon, but do not hammer a
       // down upstream on every render.
-      this.cache.set(key, { expiresAt: this.now() + STALE_RETRY_AFTER_MS, results: stale.results });
-      this.sections.set(key, section);
+      this.commitSection(key, generation, section, STALE_RETRY_AFTER_MS);
       return section;
     }
     if (lastError) throw lastError;
@@ -568,7 +690,7 @@ async function postAniList(
 ): Promise<{ readonly data?: unknown }> {
   const response = await fetch(ANILIST_GRAPHQL_URL, {
     method: "POST",
-    signal: signal ?? AbortSignal.timeout(3500),
+    signal: withTimeoutSignal(signal, 3500),
     headers: {
       "content-type": "application/json",
       accept: "application/json",

@@ -11,6 +11,7 @@
 import { stripHtml } from "@/domain/catalog/strip-html";
 import { anilistCatalogStructure } from "@/domain/media/anilist-format";
 import type { SearchResult, TitleAlias } from "@/domain/types";
+import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
 
 const KITSU_ANIME_BASE = "https://kitsu.app/api/edge/anime";
 const KITSU_FIELDS =
@@ -162,17 +163,22 @@ export function kitsuExternalIds(
   anime: KitsuAnime,
   mappingsById: ReadonlyMap<string, KitsuMapping>,
 ): KitsuExternalIds {
-  let anilistId: string | undefined;
-  let malId: string | undefined;
+  const anilist = new Set<string>();
+  const mal = new Set<string>();
   for (const ref of anime.relationships?.mappings?.data ?? []) {
     const mapping = ref.id ? mappingsById.get(ref.id) : undefined;
     const site = mapping?.attributes?.externalSite;
     const value = mapping?.attributes?.externalId;
     if (!value || !/^\d+$/.test(value)) continue;
-    if (site === "anilist/anime") anilistId = value;
-    if (site === "myanimelist/anime") malId = value;
+    if (site === "anilist/anime") anilist.add(value);
+    if (site === "myanimelist/anime") mal.add(value);
   }
-  return { anilistId, malId };
+  // Two different ids for one site (sequel or split-cour mix-ups) are
+  // ambiguous: no id beats a wrong id, which would open the wrong show.
+  return {
+    anilistId: anilist.size === 1 ? [...anilist][0] : undefined,
+    malId: mal.size === 1 ? [...mal][0] : undefined,
+  };
 }
 
 async function fetchKitsuMapped(
@@ -180,11 +186,10 @@ async function fetchKitsuMapped(
   signal: AbortSignal | undefined,
   fetchImpl: typeof fetch,
 ): Promise<SearchResult[]> {
-  const timeout = AbortSignal.timeout(KITSU_TIMEOUT_MS);
   let response: Response;
   try {
     response = await fetchImpl(url, {
-      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      signal: withTimeoutSignal(signal, KITSU_TIMEOUT_MS),
       headers: { accept: "application/vnd.api+json" },
     });
   } catch (cause) {
@@ -203,6 +208,7 @@ async function fetchKitsuMapped(
   for (const included of payload?.included ?? []) {
     if (included.type === "mappings" && included.id) mappingsById.set(included.id, included);
   }
+  const seen = new Set<string>();
   return entries
     .map((anime) => {
       const ids = kitsuExternalIds(anime, mappingsById);
@@ -210,7 +216,11 @@ async function fetchKitsuMapped(
         ? kitsuAnimeToSearchResult(anime, { anilistId: ids.anilistId, malId: ids.malId })
         : null;
     })
-    .filter((entry): entry is SearchResult => entry !== null);
+    .filter((entry): entry is SearchResult => {
+      if (entry === null || seen.has(entry.id)) return false;
+      seen.add(entry.id);
+      return true;
+    });
 }
 
 /**

@@ -137,7 +137,10 @@ flow.
 
 - Add stronger visual verification for discover, calendar, and random loading/layout at small and wide terminal sizes.
 - Keep refining the discover companion treatment inside browse so recommendations, calendar entries, and random picks feel native.
-- Calendar does not yet show cache age; discover rails do ("· updated 3h ago").
+- Calendar has no fallback source and does not show cache age; with no usable schedule cache and TMDB/AniList down it reports "Calendar sources unavailable". TVmaze (series) is the planned fallback.
+- Search has no fallback catalog source yet; the `CatalogSource` contract (provider-platform plan, phase 1) is where it lands.
+- Personalized recommendation rows are keyed by the top history seeds and kept for the retention window with no per-namespace cap; add one if the table grows noticeably.
+- Anime recommendation entry points can treat a numeric AniList history id as a TMDB id (pre-existing); route by media kind and external ids.
 - YouTube mode uses a native recommendation path (Invidious related + same-channel + history channel affinity); keep refining mix weights and trending region.
 
 ## Related

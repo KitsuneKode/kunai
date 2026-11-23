@@ -42,14 +42,16 @@ const down = async (): Promise<readonly SearchResult[]> => {
 };
 
 function service(
-  anime: () => Promise<readonly SearchResult[]>,
-  fallback: () => Promise<readonly SearchResult[]>,
+  anime: (signal?: AbortSignal) => Promise<readonly SearchResult[]>,
+  fallback: (signal?: AbortSignal) => Promise<readonly SearchResult[]>,
   durable: CatalogDurableCache,
   now: () => number = () => NOW,
+  hedgeAfterMs = -1,
 ) {
   return new CatalogDiscoveryService({ anime, tmdb: down }, now, {
     fallbacks: { anime: [{ id: "jikan", load: fallback }] },
     durableCache: () => durable,
+    hedgeAfterMs,
   });
 }
 
@@ -171,6 +173,10 @@ describe("durable catalog cache on the real repository", () => {
       new Date().toISOString(),
     );
     expect(cache.read("catalog:trending:anime")).toBeNull();
+
+    // Valid envelope, unrenderable items: treated as no last good answer.
+    cache.write("catalog:trending:youtube", written, [null, { id: "1" }] as never);
+    expect(cache.read("catalog:trending:youtube")).toBeNull();
   });
 });
 
@@ -334,5 +340,163 @@ describe("Kitsu fallback", () => {
     await expect(
       loadKitsuAnimeTrending(undefined, routedFetch({ seasonal: empty, current: empty })),
     ).rejects.toBeInstanceOf(KitsuTrendingUnavailableError);
+  });
+});
+
+describe("shared walks: cancellation, refresh races, hedging", () => {
+  test("one caller cancelling does not cancel another caller's fallback", async () => {
+    const primary = Promise.withResolvers<readonly SearchResult[]>();
+    let fallbackCalls = 0;
+    const discovery = service(
+      () => primary.promise,
+      async () => {
+        fallbackCalls += 1;
+        return [item("1", "Fallback")];
+      },
+      memoryDurable(),
+    );
+    const first = new AbortController();
+    const firstWait = discovery.loadTrendingSection("anime", first.signal);
+    const secondWait = discovery.loadTrendingSection("anime");
+    first.abort();
+    await expect(firstWait).rejects.toThrow();
+    primary.reject(new Error("down"));
+    const second = await secondWait;
+    expect(second.sourceId).toBe("jikan");
+    expect(fallbackCalls).toBe(1);
+  });
+
+  test("the walk stops once its last waiter leaves", async () => {
+    let walkSignal: AbortSignal | undefined;
+    const primary = Promise.withResolvers<readonly SearchResult[]>();
+    const discovery = service(
+      (signal) => {
+        walkSignal = signal;
+        return primary.promise;
+      },
+      down,
+      memoryDurable(),
+    );
+    const caller = new AbortController();
+    const wait = discovery.loadTrendingSection("anime", caller.signal);
+    caller.abort();
+    await expect(wait).rejects.toThrow();
+    expect(walkSignal?.aborted).toBe(true);
+  });
+
+  test("a walk started before a refresh cannot overwrite the newer answer", async () => {
+    const durable = memoryDurable();
+    const older = Promise.withResolvers<readonly SearchResult[]>();
+    const newer = Promise.withResolvers<readonly SearchResult[]>();
+    let call = 0;
+    const discovery = service(() => (call++ === 0 ? older.promise : newer.promise), down, durable);
+    const a = discovery.loadTrendingSection("anime");
+    discovery.clearTrendingCache();
+    const b = discovery.loadTrendingSection("anime");
+    newer.resolve([item("2", "Newer")]);
+    expect((await b).results[0]?.title).toBe("Newer");
+    older.resolve([item("1", "Older")]);
+    await a;
+    // The stale walk neither replaced memory nor the durable row.
+    expect((await discovery.loadTrendingSection("anime")).results[0]?.title).toBe("Newer");
+    expect(durable.read("catalog:trending:anime")?.results.map((entry) => entry.title)).toEqual([
+      "Newer",
+    ]);
+  });
+
+  test("a slow live chain hands the caller the last good list, then fills the cache", async () => {
+    const durable = memoryDurable();
+    durable.write("catalog:trending:anime", NOW - 3_600_000, [item("1", "Old")]);
+    const primary = Promise.withResolvers<readonly SearchResult[]>();
+    const discovery = service(
+      () => primary.promise,
+      down,
+      durable,
+      () => NOW,
+      0,
+    );
+    const hedged = await discovery.loadTrendingSection("anime");
+    expect(hedged.sourceId).toBe("last-known-good");
+    expect(hedged.staleSince).toBe(NOW - 3_600_000);
+
+    primary.resolve([item("2", "Live")]);
+    await primary.promise;
+    await Promise.resolve();
+    const next = await discovery.loadTrendingSection("anime");
+    expect(next.sourceId).toBe("anilist");
+    expect(next.results[0]?.title).toBe("Live");
+  });
+});
+
+describe("contradictory anime mappings", () => {
+  test("Kitsu: two AniList ids for one entry is ambiguous and dropped; duplicates collapse", async () => {
+    const envelope = {
+      data: [
+        {
+          id: "1",
+          type: "anime",
+          attributes: { canonicalTitle: "Ambiguous" },
+          relationships: { mappings: { data: [{ id: "a" }, { id: "b" }] } },
+        },
+        {
+          id: "2",
+          type: "anime",
+          attributes: { canonicalTitle: "Show" },
+          relationships: { mappings: { data: [{ id: "c" }] } },
+        },
+        {
+          id: "3",
+          type: "anime",
+          attributes: { canonicalTitle: "Show again" },
+          relationships: { mappings: { data: [{ id: "d" }] } },
+        },
+      ],
+      included: [
+        {
+          id: "a",
+          type: "mappings",
+          attributes: { externalSite: "anilist/anime", externalId: "10" },
+        },
+        {
+          id: "b",
+          type: "mappings",
+          attributes: { externalSite: "anilist/anime", externalId: "11" },
+        },
+        {
+          id: "c",
+          type: "mappings",
+          attributes: { externalSite: "anilist/anime", externalId: "20" },
+        },
+        {
+          id: "d",
+          type: "mappings",
+          attributes: { externalSite: "anilist/anime", externalId: "20" },
+        },
+      ],
+    };
+    const fetchImpl = Object.assign(async () => Response.json(envelope), {
+      preconnect: globalThis.fetch.preconnect,
+    });
+    const results = await loadKitsuAnimeTrending(undefined, fetchImpl);
+    expect(results.map((r) => r.id)).toEqual(["20"]);
+  });
+
+  test("Jikan: an ARM answer for a different MAL id is rejected", async () => {
+    const fetchImpl = Object.assign(
+      async () =>
+        Response.json({
+          data: [
+            { mal_id: 5, title: "A", type: "TV" },
+            { mal_id: 6, title: "B", type: "TV" },
+          ],
+        }),
+      { preconnect: globalThis.fetch.preconnect },
+    );
+    const results = await loadJikanAnimeTrending(undefined, {
+      fetchImpl,
+      lookupArm: async (malId) =>
+        malId === "5" ? { anilistId: "50", malId: "999" } : { anilistId: "60", malId },
+    });
+    expect(results.map((r) => r.id)).toEqual(["60"]);
   });
 });

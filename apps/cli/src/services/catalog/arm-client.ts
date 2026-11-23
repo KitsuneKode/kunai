@@ -8,6 +8,8 @@
 //     (multi-cour anime list several MAL/AniList entries per TMDB show; we take
 //      the first row, matching the pre-existing AniSkip behavior)
 
+import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
+
 export const ARM_IDS_API = "https://arm.haglund.dev/api/v2/ids";
 export const ARM_TMDB_API = "https://arm.haglund.dev/api/v2/themoviedb";
 
@@ -90,9 +92,8 @@ export async function fetchArmIdGraph(
   try {
     // Always bounded: a caller signal (navigation, superseded search) is
     // combined with the timeout, not substituted for it.
-    const timeout = AbortSignal.timeout(ARM_TIMEOUT_MS);
     const res = await fetch(url, {
-      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      signal: withTimeoutSignal(signal, ARM_TIMEOUT_MS),
       headers: { accept: "application/json" },
     });
     if (res.status === 404) return null;

@@ -1,4 +1,4 @@
-import type { SearchResult } from "@/domain/types";
+import { parseCachedSearchResults } from "@/services/catalog/cached-search-results";
 import type { CatalogDurableCache } from "@/services/catalog/CatalogDiscoveryService";
 import type { RecommendationCacheRepository } from "@kunai/storage";
 import { isJsonNumber, isJsonObject, type JsonValue } from "@kunai/types";
@@ -26,15 +26,9 @@ export function createCatalogDurableCache(
         const entry = repository.get(key);
         if (!entry) return null;
         const parsed: JsonValue = JSON.parse(entry.payloadJson);
-        if (
-          !isJsonObject(parsed) ||
-          !isJsonNumber(parsed.cachedAt) ||
-          !Array.isArray(parsed.results)
-        ) {
-          return null;
-        }
-        // SAFETY: written by `write` below from SearchResult[]; shape checked above.
-        return { cachedAt: parsed.cachedAt, results: parsed.results as SearchResult[] };
+        if (!isJsonObject(parsed) || !isJsonNumber(parsed.cachedAt)) return null;
+        const results = parseCachedSearchResults(parsed.results);
+        return results ? { cachedAt: parsed.cachedAt, results } : null;
       } catch {
         return null;
       }

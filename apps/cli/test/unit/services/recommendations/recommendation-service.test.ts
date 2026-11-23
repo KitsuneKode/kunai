@@ -266,6 +266,83 @@ describe("recommendation cache against the real SQLite repository", () => {
   });
 });
 
+describe("refresh, malformed rows and malformed answers", () => {
+  function realRepository() {
+    const db = openKunaiDatabase(":memory:");
+    runMigrations(db, "cache");
+    return new RecommendationCacheRepository(db);
+  }
+  const ok = {
+    results: [{ id: 1, media_type: "movie", title: "Dune", release_date: "2021-09-15" }],
+  };
+
+  test("a user refresh forces a live request but keeps the fallback rows", async () => {
+    const originalFetch = globalThis.fetch;
+    const repository = realRepository();
+    const service = new RecommendationServiceImpl(repository);
+    let calls = 0;
+    try {
+      globalThis.fetch = createFetchDouble(async () => {
+        calls += 1;
+        return Response.json(ok);
+      });
+      await service.getTrending();
+      await service.getTrending();
+      expect(calls).toBe(1);
+
+      // Discover refresh, then TMDB is down: the refresh must not have
+      // deleted the row the outage now needs.
+      await service.clearCache();
+      globalThis.fetch = createFetchDouble(async () => {
+        calls += 1;
+        return new Response("{}", { status: 503 });
+      });
+      const afterRefresh = await service.getTrending();
+      // The refresh bypassed the fresh row and tried TMDB (every host).
+      expect(calls).toBeGreaterThan(1);
+      expect(afterRefresh.items.map((item) => item.title)).toEqual(["Dune"]);
+      expect(afterRefresh.staleSince).toBeDefined();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("a damaged row is ignored instead of crashing the rail", async () => {
+    const originalFetch = globalThis.fetch;
+    const repository = realRepository();
+    repository.set(
+      buildRecommendCacheKey("trending", "trending"),
+      JSON.stringify({ cachedAt: 1, items: [null, { id: "x" }] }),
+      new Date(Date.now() + 86_400_000).toISOString(),
+      new Date().toISOString(),
+    );
+    try {
+      globalThis.fetch = createFetchDouble(async () => new Response("{}", { status: 503 }));
+      const section = await new RecommendationServiceImpl(repository).getTrending();
+      expect(section.items).toEqual([]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("a 200 without a results array does not overwrite the last good answer", async () => {
+    const originalFetch = globalThis.fetch;
+    const repository = realRepository();
+    const service = new RecommendationServiceImpl(repository);
+    try {
+      globalThis.fetch = createFetchDouble(async () => Response.json(ok));
+      await service.getForTitle("438631", "movie");
+      await service.clearCache();
+      globalThis.fetch = createFetchDouble(async () => Response.json({ status_message: "oops" }));
+      const section = await service.getForTitle("438631", "movie");
+      expect(section.items.map((item) => item.title)).toEqual(["Dune"]);
+      expect(section.staleSince).toBeDefined();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 type FetchHandler = (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>;
 
 function createFetchDouble(handler: FetchHandler): typeof fetch {

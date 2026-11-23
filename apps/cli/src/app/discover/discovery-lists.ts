@@ -1,3 +1,4 @@
+import { formatRelativeAge } from "@/domain/relative-age";
 import type { SearchResult, ShellMode } from "@/domain/types";
 import {
   createCatalogDiscoveryService,
@@ -16,6 +17,29 @@ export async function loadDiscoveryList(
   signal?: AbortSignal,
 ): Promise<SearchResult[]> {
   return discoveryService.loadTrending(mode, signal);
+}
+
+const TRENDING_SOURCE_LABELS = new Map<string, string>([
+  ["anilist", "AniList"],
+  ["kitsu", "Kitsu"],
+  ["jikan", "MyAnimeList"],
+  ["tmdb", "TMDB"],
+  ["youtube", "YouTube"],
+]);
+
+/**
+ * Where a trending list came from, for subtitles: the source that actually
+ * answered (Kitsu when AniList was down), or the saved list and its age.
+ */
+export function describeTrendingSource(
+  section: Pick<CatalogTrendingSection, "sourceId" | "staleSince">,
+  now: number = Date.now(),
+): string {
+  if (section.staleSince !== undefined) {
+    const age = formatRelativeAge(section.staleSince, now);
+    return age ? `saved list · updated ${age}` : "saved list";
+  }
+  return TRENDING_SOURCE_LABELS.get(section.sourceId) ?? section.sourceId;
 }
 
 /** Trending plus its source and, when every live source failed, its age. */

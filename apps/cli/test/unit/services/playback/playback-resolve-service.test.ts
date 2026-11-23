@@ -2043,9 +2043,11 @@ test("PlaybackResolveService persists consecutive provider failures before marki
   expect(health?.status).toBe("down");
 });
 
-test("PlaybackResolveService reports a provider going down exactly once, on the transition", async () => {
+test("PlaybackResolveService reports failures only once a provider is down", async () => {
   // The container uses this to fetch a published hotfix now rather than at
-  // the next 6-hour check; firing on every failure would hammer the index.
+  // the next 6-hour check, and throttles it. Healthy or degraded failures do
+  // not report; every failure while down does, so a provider that stays down
+  // after a throttled check is checked again once the window passes.
   const providerHealth = createMemoryProviderHealth();
   const downs: string[] = [];
   const engine = createMockEngine({
@@ -2087,7 +2089,8 @@ test("PlaybackResolveService reports a provider going down exactly once, on the 
   }
 
   expect(providerHealth.get("primary")?.status).toBe("down");
-  expect(downs).toEqual(["primary"]);
+  // Down from the 5th consecutive failure: attempts 5–8 report.
+  expect(downs).toEqual(["primary", "primary", "primary", "primary"]);
 });
 
 test("PlaybackResolveService does not poison provider health for offline network results", async () => {
