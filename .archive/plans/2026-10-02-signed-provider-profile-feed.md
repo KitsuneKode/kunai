@@ -4,7 +4,7 @@
 
 ## Status
 
-- **Status:** PROPOSED — design spike only. No code.
+- **Status:** LANDED (core) in #721 as the signed provider hotfix manifest. Superseded by `.plans/2026-11-23-provider-platform.md`; history only.
 - **Priority:** P2
 - **Effort:** M for AllManga alone, then S per additional provider
 - **Risk:** MED — it adds a remotely updated input to a security-sensitive path
