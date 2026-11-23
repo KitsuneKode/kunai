@@ -99,6 +99,25 @@ export const RELEASE_DEFINE: ReleaseDefineMap = {
   "process.env.NODE_ENV": '"production"',
 };
 
+/** `RELEASE_DEFINE` plus build-time opt-ins read from the build environment. */
+export function releaseDefine(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): ReleaseDefineMap {
+  return { ...RELEASE_DEFINE, ...bundledTmdbKeyDefine(env.KUNAI_TMDB_BUILD_KEY) };
+}
+
+/**
+ * Kunai's own TMDB key, inlined only when release CI sets KUNAI_TMDB_BUILD_KEY.
+ * Explicit opt-in: `env: "disable"` still keeps every other build-machine
+ * variable out of published artifacts. Without it the runtime falls back to a
+ * user key or the legacy key (`resolveTmdbApiKey`).
+ */
+export function bundledTmdbKeyDefine(key: string | undefined): ReleaseDefineMap {
+  const trimmed = key?.trim();
+  if (!trimmed || !/^[A-Za-z0-9]{16,64}$/.test(trimmed)) return {};
+  return { "process.env.KUNAI_BUNDLED_TMDB_API_KEY": JSON.stringify(trimmed) };
+}
+
 /**
  * Paths that must never appear in a published bundle graph. The metafile guard
  * runs after every release build so tests, experiments, and planning docs cannot
@@ -130,7 +149,7 @@ export function releaseBuildBaseOptions(
 > {
   return {
     target: "bun",
-    define: RELEASE_DEFINE,
+    define: releaseDefine(),
     // Keep console.* for CLI output; strip only debugger statements.
     drop: ["debugger"],
     // Kunai reads KUNAI_* and other process.env at runtime — never inline the

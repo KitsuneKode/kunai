@@ -5,7 +5,11 @@ import {
   fetchTmdbJsonCached,
   formatTmdbSearchError,
   isTmdbNetworkError,
+  LEGACY_PUBLIC_TMDB_API_KEY,
+  resolveTmdbApiKey,
 } from "@/services/catalog/tmdb-proxy";
+
+import { bundledTmdbKeyDefine } from "../../../../scripts/build-shared";
 
 // Hostname comparison, not a substring check: `"api.themoviedb.org"` inside a
 // URL is a substring match that `api.themoviedb.org.attacker.example` also
@@ -163,6 +167,36 @@ describe("fetchTmdbJsonCached", () => {
     expect(isTmdbAltUrl(urls[0]!)).toBe(true);
   });
 
+  test("half-open: with every host in its breaker window, one host is probed, not none", async () => {
+    let up = false;
+    const urls: string[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request) => {
+        const url = String(input);
+        urls.push(url);
+        if (up) {
+          return new Response(JSON.stringify({ ok: true }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        throw new Error("getaddrinfo ENOTFOUND");
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+
+    // The network is down: every host fails once and enters its breaker.
+    await expect(fetchTmdbJsonCached("/movie/1")).rejects.toThrow();
+    expect(urls).toHaveLength(4);
+
+    // The network is back. The old walker skipped every host and threw
+    // without a request for five minutes; the probe recovers immediately.
+    up = true;
+    urls.length = 0;
+    await expect(fetchTmdbJsonCached("/movie/2")).resolves.toEqual({ ok: true });
+    expect(urls).toHaveLength(1);
+  });
+
   test("a 4xx is a definitive answer — no mirror hop, no breaker", async () => {
     const urls: string[] = [];
     globalThis.fetch = Object.assign(
@@ -255,5 +289,38 @@ describe("fetchTmdbJsonCached", () => {
     await expect(suggest).rejects.toThrow();
     await expect(submitted).resolves.toEqual({ ok: true });
     expect(fetchCount).toBe(1);
+  });
+});
+
+describe("TMDB API key resolution", () => {
+  test("user key, then the build-time Kunai key, then the legacy key", () => {
+    const original = process.env.KUNAI_BUNDLED_TMDB_API_KEY;
+    try {
+      delete process.env.KUNAI_BUNDLED_TMDB_API_KEY;
+      expect(resolveTmdbApiKey({})).toEqual({ key: LEGACY_PUBLIC_TMDB_API_KEY, source: "legacy" });
+      expect(resolveTmdbApiKey({ KUNAI_TMDB_API_KEY: "  " })).toEqual({
+        key: LEGACY_PUBLIC_TMDB_API_KEY,
+        source: "legacy",
+      });
+
+      process.env.KUNAI_BUNDLED_TMDB_API_KEY = "kunaikey1234567890";
+      expect(resolveTmdbApiKey({})).toEqual({ key: "kunaikey1234567890", source: "kunai" });
+      expect(resolveTmdbApiKey({ KUNAI_TMDB_API_KEY: "mine" })).toEqual({
+        key: "mine",
+        source: "user",
+      });
+    } finally {
+      if (original === undefined) delete process.env.KUNAI_BUNDLED_TMDB_API_KEY;
+      else process.env.KUNAI_BUNDLED_TMDB_API_KEY = original;
+    }
+  });
+
+  test("the release define inlines only a well-formed build key", () => {
+    expect(bundledTmdbKeyDefine(undefined)).toEqual({});
+    expect(bundledTmdbKeyDefine("")).toEqual({});
+    expect(bundledTmdbKeyDefine('abc"; process.exit(1); "')).toEqual({});
+    expect(bundledTmdbKeyDefine("0123456789abcdef0123456789abcdef")).toEqual({
+      "process.env.KUNAI_BUNDLED_TMDB_API_KEY": '"0123456789abcdef0123456789abcdef"',
+    });
   });
 });

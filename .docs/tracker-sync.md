@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-22"
+lastReviewed: "2026-11-23"
 ---
 
 # Tracker Sync
@@ -170,10 +170,14 @@ than inheriting the shipped one — which the other application would reject wit
 nothing useful to say about why. The redirect URI must be `http`, a loopback
 host, an explicit port, and exactly `/callback`.
 
-**TMDB** uses a public application key shipped with Kunai, owned by
-`services/catalog/tmdb-proxy.ts`. `KUNAI_TMDB_API_KEY` overrides it; an
-explicitly empty or placeholder override fails closed rather than silently
-falling back.
+**TMDB** keys are owned by `services/catalog/tmdb-proxy.ts`. The shipped key is
+Kunai's own when release CI injects one at build time (`KUNAI_TMDB_BUILD_KEY` →
+`KUNAI_BUNDLED_TMDB_API_KEY`, see `bundledTmdbKeyDefine`), else a legacy public
+key borrowed from another project, which is due for removal.
+`KUNAI_TMDB_API_KEY` overrides both, for sync and for catalog requests alike.
+For sync, an explicitly empty or placeholder override fails closed rather than
+silently falling back; catalog requests treat a blank value as unset, because
+the proxy hosts need no key and failing closed there would blank search.
 
 Connecting mints a request token, opens the approval page, then **polls**
 `authentication/session/new` until TMDB stops answering `401`. There is no

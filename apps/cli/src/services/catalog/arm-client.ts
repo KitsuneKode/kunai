@@ -88,8 +88,11 @@ export async function fetchArmIdGraph(
       : `${ARM_IDS_API}?source=${source}&id=${encodeURIComponent(id)}`;
 
   try {
+    // Always bounded: a caller signal (navigation, superseded search) is
+    // combined with the timeout, not substituted for it.
+    const timeout = AbortSignal.timeout(ARM_TIMEOUT_MS);
     const res = await fetch(url, {
-      signal: signal ?? AbortSignal.timeout(ARM_TIMEOUT_MS),
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       headers: { accept: "application/json" },
     });
     if (res.status === 404) return null;

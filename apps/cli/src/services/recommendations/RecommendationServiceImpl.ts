@@ -25,6 +25,17 @@ export function isCacheExpired(cachedAt: number, ttlMs: number): boolean {
 
 const TTL_SIMILAR = 24 * 60 * 60 * 1000;
 const TTL_TRENDING = 6 * 60 * 60 * 1000;
+/**
+ * How long a row survives past its freshness TTL as the last good answer.
+ *
+ * Freshness and retention are different clocks. The repository deletes a row
+ * on read once `expires_at` passes, and startup maintenance prunes expired
+ * rows, so writing `expires_at = now + freshness TTL` meant the "stale"
+ * fallback could never find anything older than the TTL: a TMDB outage longer
+ * than 6 hours blanked trending and recommendations. The row now lives for the
+ * retention window; freshness is judged from the payload's `cachedAt`.
+ */
+export const RECOMMENDATION_STALE_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
 
 // ── Fetch helper ──────────────────────────────────────────────────────────────
 
@@ -94,10 +105,20 @@ export class RecommendationServiceImpl implements RecommendationService {
     }
   }
 
-  private writeCacheEntry(key: string, value: CacheValue, ttlMs: number): void {
+  private writeCacheEntry(key: string, value: CacheValue): void {
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + ttlMs).toISOString();
+    const expiresAt = new Date(now.getTime() + RECOMMENDATION_STALE_RETENTION_MS).toISOString();
     this.cacheRepository.set(key, JSON.stringify(value), expiresAt, now.toISOString());
+  }
+
+  /** The last good answer for `key`, marked stale, or an empty section. */
+  private staleSection(
+    key: string,
+    reason: RecommendationSection["reason"],
+  ): RecommendationSection {
+    const stale = this.readAnyCacheEntry(key);
+    if (!stale || stale.items.length === 0) return { label: "", reason, items: [] };
+    return { label: "", reason, items: stale.items, staleSince: stale.cachedAt };
   }
 
   async getForTitle(tmdbId: string, type: ContentType): Promise<RecommendationSection> {
@@ -108,15 +129,12 @@ export class RecommendationServiceImpl implements RecommendationService {
     }
     const segment = type === "movie" ? "movie" : "tv";
     const data = await fetchRecommendationData(`/${segment}/${tmdbId}/recommendations`);
-    if (!data) {
-      const stale = this.readAnyCacheEntry(key);
-      return { label: "", reason: "similar", items: stale?.items ?? [] };
-    }
+    if (!data) return this.staleSection(key, "similar");
     const items = (data?.results ?? [])
       .map((r) => toSearchResult(r, segment === "movie" ? "movie" : "tv"))
       .filter((r): r is SearchResult => r !== null)
       .slice(0, 10);
-    this.writeCacheEntry(key, { cachedAt: Date.now(), items }, TTL_SIMILAR);
+    this.writeCacheEntry(key, { cachedAt: Date.now(), items });
     return { label: "", reason: "similar", items };
   }
 
@@ -127,15 +145,12 @@ export class RecommendationServiceImpl implements RecommendationService {
       return { label: "", reason: "trending", items: entry.items };
     }
     const data = await fetchRecommendationData("/trending/all/week");
-    if (!data) {
-      const stale = this.readAnyCacheEntry(key);
-      return { label: "", reason: "trending", items: stale?.items ?? [] };
-    }
+    if (!data) return this.staleSection(key, "trending");
     const items = (data?.results ?? [])
       .map((r) => toSearchResult(r))
       .filter((r): r is SearchResult => r !== null)
       .slice(0, 10);
-    this.writeCacheEntry(key, { cachedAt: Date.now(), items }, TTL_TRENDING);
+    this.writeCacheEntry(key, { cachedAt: Date.now(), items });
     return { label: "", reason: "trending", items };
   }
 
@@ -199,15 +214,18 @@ export class RecommendationServiceImpl implements RecommendationService {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3)
       .map(([genreId]) => genreId);
-    if (topGenres.length === 0) {
-      const stale = this.readAnyCacheEntry(profileKey);
-      return { label: "", reason: "genre-affinity", items: stale?.items ?? [] };
-    }
+    if (topGenres.length === 0) return this.staleSection(profileKey, "genre-affinity");
 
     const [movieCandidates, tvCandidates] = await Promise.all([
       discoverByGenres(topGenres, "movie"),
       discoverByGenres(topGenres, "tv"),
     ]);
+    // discoverByGenres folds a failed request into []: two empty lists mean the
+    // upstream is down, not that the profile has no matches. Writing [] here
+    // would overwrite the last good answer with nothing.
+    if (movieCandidates.length === 0 && tvCandidates.length === 0) {
+      return this.staleSection(profileKey, "genre-affinity");
+    }
 
     const scored = [...movieCandidates, ...tvCandidates]
       .filter((candidate) => !watchedTitles.has(normalizeTitle(candidate.item.title)))
@@ -225,7 +243,7 @@ export class RecommendationServiceImpl implements RecommendationService {
       .slice(0, 10)
       .map((entry) => entry.item);
     const items = best.length > 0 ? best : scored.slice(0, 10).map((entry) => entry.item);
-    this.writeCacheEntry(profileKey, { cachedAt: Date.now(), items }, TTL_SIMILAR);
+    this.writeCacheEntry(profileKey, { cachedAt: Date.now(), items });
     return { label: "", reason: "genre-affinity", items };
   }
 
@@ -245,10 +263,7 @@ export class RecommendationServiceImpl implements RecommendationService {
         `/discover/movie?with_genres=${genres}&sort_by=vote_average.desc&vote_count.gte=200`,
       ).catch(() => null) as Promise<{ results?: Record<string, unknown>[] } | null>,
     ]);
-    if (!tvData && !movieData) {
-      const stale = this.readAnyCacheEntry(key);
-      return { label: "", reason: "genre-affinity", items: stale?.items ?? [] };
-    }
+    if (!tvData && !movieData) return this.staleSection(key, "genre-affinity");
 
     const seen = new Set<string>();
     const items = [...(tvData?.results ?? []), ...(movieData?.results ?? [])]
@@ -261,7 +276,7 @@ export class RecommendationServiceImpl implements RecommendationService {
         return true;
       })
       .slice(0, 10);
-    this.writeCacheEntry(key, { cachedAt: Date.now(), items }, TTL_SIMILAR);
+    this.writeCacheEntry(key, { cachedAt: Date.now(), items });
     return { label: "", reason: "genre-affinity", items };
   }
 }

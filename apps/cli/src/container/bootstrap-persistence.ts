@@ -2,6 +2,8 @@ import { join } from "node:path";
 
 import { createProviderTitleBridgePort } from "@/infra/storage/provider-title-bridge-port";
 import { dbg, initLogger } from "@/logger";
+import { createCatalogDurableCache } from "@/services/catalog/catalog-durable-cache";
+import { setDefaultCatalogDurableCache } from "@/services/catalog/CatalogDiscoveryService";
 import { runHistoryIdentityConsolidator } from "@/services/history-metadata/HistoryIdentityConsolidator";
 import { runHistoryWatchLedgerBackfill } from "@/services/history-metadata/HistoryWatchLedgerBackfill";
 import { runOfflineAssetIdentityBackfill } from "@/services/offline/offline-asset-identity-backfill";
@@ -286,6 +288,9 @@ export async function bootstrapPersistence(
   const playbackEventRepository = new PlaybackEventRepository(dataDb);
   const cacheStore = new SqliteCacheStoreImpl(new StreamCacheRepository(cacheDb));
   const recommendationCache = new RecommendationCacheRepository(cacheDb);
+  // Trending rails keep a durable last-known-good list in the same table, so
+  // an upstream outage or a cold start shows the last answer instead of nothing.
+  setDefaultCatalogDurableCache(createCatalogDurableCache(recommendationCache));
   const providerHealth = new ProviderHealthRepository(cacheDb);
   const { listDeprecatedVidkingEndpoints } = await import("@kunai/providers/videasy");
   const endpointHealth = new ProviderEndpointHealthService(

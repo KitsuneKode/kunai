@@ -14,8 +14,42 @@ export const TMDB_DIRECT_BASE = "https://api.themoviedb.org/3";
  * still resolves to CloudFront. Same API key, same payloads.
  */
 export const TMDB_ALT_BASE = "https://api.tmdb.org/3";
-/** Public TMDB API key (same as used in the luffy reference project). */
-export const TMDB_API_KEY = "653bb8af90162bd98fc7ee32bcbbfb3d";
+/**
+ * Borrowed public TMDB key (the luffy reference project's). It is not Kunai's:
+ * its owner can revoke it at any time, which would take direct-TMDB search,
+ * trending and recommendations down for every install at once. Kept only as
+ * the last resort until a Kunai key is injected at build time.
+ */
+export const LEGACY_PUBLIC_TMDB_API_KEY = "653bb8af90162bd98fc7ee32bcbbfb3d";
+/** @deprecated use {@link resolveTmdbApiKey}; kept for existing imports. */
+export const TMDB_API_KEY = LEGACY_PUBLIC_TMDB_API_KEY;
+
+/**
+ * Which TMDB key direct requests use, in order:
+ * 1. `KUNAI_TMDB_API_KEY` — the user's own key (their own quota and terms).
+ * 2. `KUNAI_BUNDLED_TMDB_API_KEY` — Kunai's key, inlined at release build time
+ *    when CI provides `KUNAI_TMDB_BUILD_KEY` (see `RELEASE_DEFINE`).
+ * 3. The legacy borrowed key.
+ */
+export interface TmdbApiKeyResolution {
+  readonly key: string;
+  readonly source: "user" | "kunai" | "legacy";
+}
+
+export function resolveTmdbApiKey(
+  env: Record<string, string | undefined> = process.env,
+): TmdbApiKeyResolution {
+  const user = env.KUNAI_TMDB_API_KEY?.trim();
+  if (user) return { key: user, source: "user" };
+  return shippedTmdbApiKey();
+}
+
+/** The key Kunai itself ships: the build-time Kunai key, else the legacy key. */
+export function shippedTmdbApiKey(): TmdbApiKeyResolution {
+  const bundled = process.env.KUNAI_BUNDLED_TMDB_API_KEY?.trim();
+  if (bundled) return { key: bundled, source: "kunai" };
+  return { key: LEGACY_PUBLIC_TMDB_API_KEY, source: "legacy" };
+}
 
 const DEFAULT_TIMEOUT_MS = 6_000;
 const SESSION_CACHE_MS = 2 * 60 * 1_000;
@@ -171,7 +205,7 @@ async function fetchTmdbHostJson(
 ): Promise<JsonValue> {
   const joiner = host.needsApiKey ? (normalizedPath.includes("?") ? "&" : "?") : "";
   const url = host.needsApiKey
-    ? `${host.base}${normalizedPath}${joiner}api_key=${TMDB_API_KEY}`
+    ? `${host.base}${normalizedPath}${joiner}api_key=${encodeURIComponent(resolveTmdbApiKey().key)}`
     : `${host.base}${normalizedPath}`;
   return observeOnlineIfBound("search-error", async () => {
     const res = await fetch(url, { signal: withTimeoutSignal(signal, timeoutMs) });
@@ -200,10 +234,22 @@ export async function fetchTmdbJsonWithFallback(
   const now = Date.now();
   let lastError: Error | null = null;
 
-  for (const host of TMDB_HOSTS) {
-    if (now < (hostRetryAfter.get(host.base) ?? 0)) continue;
+  const eligible = TMDB_HOSTS.filter((host) => now >= (hostRetryAfter.get(host.base) ?? 0));
+  // Half-open: when every host is inside its breaker window, probe the one
+  // whose window ends first instead of failing without a request. Otherwise a
+  // network that came back stays "down" for up to HOST_RETRY_AFTER_MS.
+  const candidates =
+    eligible.length > 0
+      ? eligible
+      : [...TMDB_HOSTS]
+          .sort((a, b) => (hostRetryAfter.get(a.base) ?? 0) - (hostRetryAfter.get(b.base) ?? 0))
+          .slice(0, 1);
+
+  for (const host of candidates) {
     try {
-      return await fetchTmdbHostJson(host, normalized, signal, timeoutMs);
+      const value = await fetchTmdbHostJson(host, normalized, signal, timeoutMs);
+      hostRetryAfter.delete(host.base);
+      return value;
     } catch (error) {
       if (signal?.aborted === true) throw error;
       if (error instanceof TmdbHttpError && error.status < 500) throw error;

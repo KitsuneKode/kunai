@@ -683,6 +683,32 @@ export function resetCachedProviderHotfixManifest(
 }
 
 /**
+ * When a provider just went down locally, a fix may already be published:
+ * check sooner than the 6-hour background interval. Still throttled (at most
+ * one check per window per process, and the cache-age gate), still opt-in
+ * (needs a manifest URL and trusted keys), and still a no-op offline.
+ */
+export const URGENT_REFRESH_MIN_INTERVAL_MS = 15 * 60 * 1000;
+let lastUrgentRefreshAtMs = Number.NEGATIVE_INFINITY;
+
+export function resetUrgentProviderManifestRefreshForTest(): void {
+  lastUrgentRefreshAtMs = Number.NEGATIVE_INFINITY;
+}
+
+export async function maybeUrgentProviderManifestRefresh(
+  options: Parameters<typeof maybeBackgroundRefreshProviderManifest>[0] = {},
+): Promise<"skipped" | "updated" | "unchanged" | "failed"> {
+  const nowMs = options.nowMs ?? Date.now();
+  if (nowMs - lastUrgentRefreshAtMs < URGENT_REFRESH_MIN_INTERVAL_MS) return "skipped";
+  lastUrgentRefreshAtMs = nowMs;
+  return maybeBackgroundRefreshProviderManifest({
+    ...options,
+    nowMs,
+    minIntervalMs: URGENT_REFRESH_MIN_INTERVAL_MS,
+  });
+}
+
+/**
  * Throttled, opt-in background manifest check. Runs only when both a manifest
  * URL and trusted Ed25519 public keys are configured, skips if the cached file
  * is fresher than `minIntervalMs`, and fails silently offline.

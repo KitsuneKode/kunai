@@ -212,6 +212,8 @@ export class PlaybackResolveService {
       readonly engine: ProviderEngine;
       readonly cacheStore: CacheStore;
       readonly providerHealth?: Pick<ProviderHealthRepository, "get" | "set">;
+      /** Fired once when a provider's health transitions into `down`. */
+      readonly onProviderDown?: (providerId: string) => void;
       readonly streamHealth?: StreamHealthChecker;
       readonly streamHealthService?: StreamHealthService;
       readonly sourceInventory?: Pick<SourceInventoryService, "get" | "set" | "delete"> &
@@ -839,7 +841,11 @@ export class PlaybackResolveService {
     }
     try {
       const existing = this.deps.providerHealth.get(delta.providerId);
-      this.deps.providerHealth.set(computeProviderHealthUpdate(existing, delta));
+      const next = computeProviderHealthUpdate(existing, delta);
+      this.deps.providerHealth.set(next);
+      if (next.status === "down" && existing?.status !== "down") {
+        this.deps.onProviderDown?.(delta.providerId);
+      }
     } catch {
       // Health persistence is best-effort
     }

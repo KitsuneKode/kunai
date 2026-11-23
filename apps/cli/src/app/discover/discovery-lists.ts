@@ -2,6 +2,7 @@ import type { SearchResult, ShellMode } from "@/domain/types";
 import {
   createCatalogDiscoveryService,
   type CatalogDiscoveryLoaders,
+  type CatalogTrendingSection,
 } from "@/services/catalog/CatalogDiscoveryService";
 
 const discoveryService = createCatalogDiscoveryService();
@@ -15,6 +16,14 @@ export async function loadDiscoveryList(
   signal?: AbortSignal,
 ): Promise<SearchResult[]> {
   return discoveryService.loadTrending(mode, signal);
+}
+
+/** Trending plus its source and, when every live source failed, its age. */
+export async function loadDiscoverySection(
+  mode: ShellMode,
+  signal?: AbortSignal,
+): Promise<CatalogTrendingSection> {
+  return discoveryService.loadTrendingSection(mode, signal);
 }
 
 export async function loadSurpriseList(

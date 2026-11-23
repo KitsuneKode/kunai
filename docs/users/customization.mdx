@@ -183,6 +183,12 @@ See [Downloads and offline](/docs/users/downloads-and-offline).
 
 Tokens are stored separately. Sync is **experimental** and fail-closed: nothing leaves the machine until you enable it in Settings › Accounts & Sync. Pending mutations sit in a local **outbox** and retry; auth failure holds the row until you re-authenticate. Failed-closed rows do not invent progress on AniList/TMDB.
 
+## Catalog sources and your own TMDB key
+
+Search, trending and recommendations come from public catalogs: TMDB for movies and series, AniList for anime, with Kitsu and then MyAnimeList (Jikan) as anime fallbacks when AniList is down. If every source is unreachable, Kunai shows the last list it fetched, marked with its age (`Trending this week · updated 3h ago`), instead of an empty row.
+
+To use your own TMDB API key for direct TMDB requests, and for TMDB account sync, set `KUNAI_TMDB_API_KEY` in your environment.
+
 ## Provider domains
 
 Provider domains for the media (movie/TV and anime) providers are compiled in; changing a media-provider domain requires a code change and rebuild, not a config file. Exception: YouTube metadata endpoints are configurable via `youtubeMetadata.instanceUrl` and `youtubeMetadata.pipedApiUrl` in settings or `config.json`, no rebuild needed.

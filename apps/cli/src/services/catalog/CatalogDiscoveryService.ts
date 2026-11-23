@@ -2,6 +2,8 @@ import { stripHtml } from "@/domain/catalog/strip-html";
 import { anilistCatalogStructure } from "@/domain/media/anilist-format";
 import type { SearchResult, ShellMode, TitleAlias } from "@/domain/types";
 import { evictOverflowedEntries } from "@/services/catalog/bounded-cache";
+import { loadJikanAnimeTrending } from "@/services/catalog/jikan-trending";
+import { loadKitsuAnimeTrending } from "@/services/catalog/kitsu-trending";
 import { fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
 import {
   loadYoutubeTrending,
@@ -61,8 +63,64 @@ export type CatalogDiscoveryLoaders = {
   readonly youtubeSurprise?: CatalogSurpriseLoader;
 };
 
+/**
+ * One catalog source for a lane's trending list. Sources are tried in order;
+ * the first that answers with a non-empty list wins.
+ */
+export type CatalogTrendingSource = {
+  readonly id: string;
+  readonly load: CatalogDiscoveryLoader;
+};
+
+/**
+ * Durable last-known-good store for trending lists, so an outage or a cold
+ * start shows the last answer (with its age) instead of an empty rail.
+ */
+export type CatalogDurableCache = {
+  read(
+    key: string,
+  ): { readonly cachedAt: number; readonly results: readonly SearchResult[] } | null;
+  write(key: string, cachedAt: number, results: readonly SearchResult[]): void;
+};
+
+/** A trending list plus where it came from and, when stale, how old it is. */
+export type CatalogTrendingSection = {
+  readonly results: readonly SearchResult[];
+  readonly sourceId: string;
+  /** Epoch ms the list was fetched; set only when every live source failed. */
+  readonly staleSince?: number;
+};
+
+export type CatalogDiscoveryOptions = {
+  /** Extra sources tried after the lane's primary loader, per mode. */
+  readonly fallbacks?: Partial<Record<ShellMode, readonly CatalogTrendingSource[]>>;
+  /** Resolved on each call so the container can install it after construction. */
+  readonly durableCache?: () => CatalogDurableCache | null;
+};
+
+/** How long a served stale list is reused before the live chain is retried. */
+const STALE_RETRY_AFTER_MS = 60 * 1000;
+
+let defaultDurableCache: CatalogDurableCache | null = null;
+
+/** Installed by the container once the cache database is open. */
+export function setDefaultCatalogDurableCache(cache: CatalogDurableCache | null): void {
+  defaultDurableCache = cache;
+}
+
+export const DEFAULT_TRENDING_FALLBACKS = {
+  // Kitsu first: one request with AniList ids included. Jikan needs an ARM
+  // lookup per entry and is IPv6-only from some networks.
+  anime: [
+    { id: "kitsu", load: (signal) => loadKitsuAnimeTrending(signal) },
+    { id: "jikan", load: (signal) => loadJikanAnimeTrending(signal) },
+  ],
+} satisfies Partial<Record<ShellMode, readonly CatalogTrendingSource[]>>;
+
 export class CatalogDiscoveryService {
   private readonly cache = new Map<string, DiscoveryCacheEntry>();
+  private readonly sections = new Map<string, CatalogTrendingSection>();
+  private readonly sectionWalks = new Map<string, Promise<CatalogTrendingSection>>();
   private readonly inflight = new Map<string, Promise<readonly SearchResult[]>>();
 
   constructor(
@@ -73,29 +131,98 @@ export class CatalogDiscoveryService {
       tmdbSurprise: loadTmdbSurpriseList,
     },
     private readonly now: () => number = () => Date.now(),
+    private readonly options: CatalogDiscoveryOptions = {},
   ) {}
 
   clearTrendingCache(): void {
     this.cache.clear();
     this.inflight.clear();
+    this.sections.clear();
+    this.sectionWalks.clear();
   }
 
   async loadTrending(mode: ShellMode, signal?: AbortSignal): Promise<SearchResult[]> {
+    const section = await this.loadTrendingSection(mode, signal);
+    return [...section.results];
+  }
+
+  /**
+   * Trending for a lane: fresh memory cache → the lane's sources in order →
+   * the durable last-known-good list (marked stale) → reject.
+   *
+   * A source that rejects or answers empty hands over to the next one. A
+   * caller abort stops the walk at once: navigating away is not an outage and
+   * must not burn the fallbacks or serve a stale list to nobody.
+   */
+  async loadTrendingSection(
+    mode: ShellMode,
+    signal?: AbortSignal,
+  ): Promise<CatalogTrendingSection> {
     const key = mode;
     const cached = this.cache.get(key);
-    if (cached && cached.expiresAt > this.now()) return [...cached.results];
+    const cachedSection = this.sections.get(key);
+    if (cached && cached.expiresAt > this.now() && cachedSection) return cachedSection;
 
-    const inflight = this.inflight.get(key);
-    if (inflight) return [...(await inflight)];
+    // Concurrent callers share one walk of the whole chain, not one source's
+    // attempt: joining a single attempt would hand a rejection to a caller
+    // while the walk goes on to a fallback that succeeds.
+    const walking = this.sectionWalks.get(key);
+    if (walking) return walking;
+    const walk = this.walkTrendingChain(mode, signal).finally(() => {
+      this.sectionWalks.delete(key);
+    });
+    this.sectionWalks.set(key, walk);
+    return walk;
+  }
 
-    const loader =
-      mode === "anime"
-        ? this.loaders.anime
-        : mode === "youtube"
-          ? (this.loaders.youtube ?? loadYoutubeDiscoveryList)
-          : this.loaders.tmdb;
-    const results = await this.runLoad(key, DISCOVERY_CACHE_TTL_MS, () => loader(signal));
-    return [...results];
+  private async walkTrendingChain(
+    mode: ShellMode,
+    signal?: AbortSignal,
+  ): Promise<CatalogTrendingSection> {
+    const key = mode;
+    const primary: CatalogTrendingSource = {
+      id: mode === "anime" ? "anilist" : mode === "youtube" ? "youtube" : "tmdb",
+      load:
+        mode === "anime"
+          ? this.loaders.anime
+          : mode === "youtube"
+            ? (this.loaders.youtube ?? loadYoutubeDiscoveryList)
+            : this.loaders.tmdb,
+    };
+    const chain = [primary, ...(this.options.fallbacks?.[mode] ?? [])];
+    const durable = this.options.durableCache ? this.options.durableCache() : defaultDurableCache;
+    const durableKey = `catalog:trending:${mode}`;
+
+    let lastError: Error | null = null;
+    for (const source of chain) {
+      try {
+        const results = await this.runLoad(key, DISCOVERY_CACHE_TTL_MS, () => source.load(signal));
+        if (results.length === 0) continue;
+        const section: CatalogTrendingSection = { results, sourceId: source.id };
+        this.sections.set(key, section);
+        durable?.write(durableKey, this.now(), results);
+        return section;
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        lastError = error instanceof Error ? error : new Error(String(error));
+      }
+    }
+
+    const stale = durable?.read(durableKey);
+    if (stale && stale.results.length > 0) {
+      const section: CatalogTrendingSection = {
+        results: stale.results,
+        sourceId: "last-known-good",
+        staleSince: stale.cachedAt,
+      };
+      // Short reuse window: retry the live chain soon, but do not hammer a
+      // down upstream on every render.
+      this.cache.set(key, { expiresAt: this.now() + STALE_RETRY_AFTER_MS, results: stale.results });
+      this.sections.set(key, section);
+      return section;
+    }
+    if (lastError) throw lastError;
+    return { results: [], sourceId: primary.id };
   }
 
   async loadSurprise(
@@ -155,8 +282,14 @@ export class CatalogDiscoveryService {
 
 export function createCatalogDiscoveryService(
   loaders?: CatalogDiscoveryLoaders,
+  options?: CatalogDiscoveryOptions,
 ): CatalogDiscoveryService {
-  return new CatalogDiscoveryService(loaders);
+  // Injected loaders (tests) get no implicit network fallbacks.
+  return new CatalogDiscoveryService(
+    loaders,
+    undefined,
+    options ?? (loaders ? {} : { fallbacks: DEFAULT_TRENDING_FALLBACKS }),
+  );
 }
 
 async function loadYoutubeDiscoveryList(signal?: AbortSignal): Promise<SearchResult[]> {

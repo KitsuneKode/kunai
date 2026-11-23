@@ -16,6 +16,12 @@ export interface RecommendationSection {
   readonly label: string;
   readonly reason: "similar" | "trending" | "genre-affinity";
   readonly items: readonly SearchResult[];
+  /**
+   * Set only when the live source failed and these items are the last good
+   * answer: epoch ms of when that answer was fetched. Surfaces render it as
+   * "updated 3h ago" so a stale rail never passes for a fresh one.
+   */
+  readonly staleSince?: number;
 }
 
 export interface RecommendationService {

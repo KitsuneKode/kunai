@@ -9,6 +9,8 @@ import {
   fetchAndCacheProviderHotfixManifest,
   loadCachedProviderHotfixManifest,
   maybeBackgroundRefreshProviderManifest,
+  maybeUrgentProviderManifestRefresh,
+  resetUrgentProviderManifestRefreshForTest,
   providerManifestBackupPath,
   providerManifestCachePath,
   providerManifestStatePath,
@@ -704,5 +706,69 @@ describe("provider hotfix manifest: reset, rollback, and body pinning survive re
     const old = new Date(NOW_MS - 10 * 60_000);
     utimesSync(lockPath, old, old);
     await expect(install(makeManifest({ revision: 5 }))).rejects.toThrow(/directory/);
+  });
+});
+
+describe("urgent refresh after a provider goes down", () => {
+  test("checks a cache fresher than the 6-hour interval, at most once per window", async () => {
+    resetUrgentProviderManifestRefreshForTest();
+    const path = makeTempCachePath();
+    const { publicPem, privatePem } = makeKeypair();
+    const trusted = { "key-2026": publicPem };
+    let fetches = 0;
+    const fetchImpl: ManifestFetch = async () => {
+      fetches += 1;
+      return new Response(
+        JSON.stringify(signProviderManifest(makeManifest({ revision: 9 }), privatePem, "key-2026")),
+        { status: 200 },
+      );
+    };
+    const url = "https://manifests.kunai.test/providers.json";
+    // A cache written 30 minutes ago: the background check would skip it.
+    await fetchAndCacheProviderHotfixManifest({
+      url,
+      path,
+      trustedPublicKeysById: trusted,
+      nowMs: NOW_MS - 30 * 60_000,
+      fetchImpl: jsonFetch(
+        signProviderManifest(makeManifest({ revision: 8 }), privatePem, "key-2026"),
+      ),
+    });
+    const old = new Date(NOW_MS - 30 * 60_000);
+    utimesSync(path, old, old);
+
+    expect(
+      await maybeBackgroundRefreshProviderManifest({
+        url,
+        path,
+        trustedPublicKeysById: trusted,
+        nowMs: NOW_MS,
+        fetchImpl,
+      }),
+    ).toBe("skipped");
+    expect(fetches).toBe(0);
+
+    expect(
+      await maybeUrgentProviderManifestRefresh({
+        url,
+        path,
+        trustedPublicKeysById: trusted,
+        nowMs: NOW_MS,
+        fetchImpl,
+      }),
+    ).toBe("updated");
+    expect(fetches).toBe(1);
+
+    // A second provider failing a minute later does not trigger another fetch.
+    expect(
+      await maybeUrgentProviderManifestRefresh({
+        url,
+        path,
+        trustedPublicKeysById: trusted,
+        nowMs: NOW_MS + 60_000,
+        fetchImpl,
+      }),
+    ).toBe("skipped");
+    expect(fetches).toBe(1);
   });
 });
