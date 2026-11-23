@@ -180,6 +180,60 @@ merges → CI builds the changed packs → runs the live provider gate against t
 reviewer → publishes the packs and a new index. Clients pick it up on their next
 check, or within minutes if they are seeing the failure.
 
+## What comparable apps do (researched 2026-11-23)
+
+The point of this section is to adopt proven mechanisms instead of inventing
+workarounds. Sources are linked; claims marked _unverified_ came from secondary
+material only.
+
+| App                                                                                          | Where sources come from                                 | Code or data                                                                                                                            | Updates                                                                      | Trust                                                             |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| [Stremio](https://stremio.github.io/stremio-addon-sdk/api)                                   | Addons the user installs by URL; the core ships none    | **Data**: an HTTP addon serves `/manifest.json` and answers `/{resource}/{type}/{id}.json` for `catalog`, `meta`, `stream`, `subtitles` | The addon server changes; the client does nothing                            | HTTPS URL the user chose                                          |
+| [Mihon / Aniyomi](https://github.com/Secozzi/aniyomi-extensions)                             | Extension repos the user adds (an `index.min.json` URL) | **Code**: signed APKs                                                                                                                   | Repo index lists versions; the app offers updates                            | APK signatures; repo-level signing-key fingerprint (_unverified_) |
+| [Cloudstream](https://th4mjeed.github.io/posts/cloudstream-plugin/)                          | `repo.json` → `pluginLists` → `plugins.json`            | **Code**: compiled plugins implementing one `MainAPI` (home, search, load, links)                                                       | `plugins.json` carries version and, in newer tooling, `jarHash`              | Repository the user added                                         |
+| [Seanime](https://seanime.gitbook.io/seanime-extensions) (desktop, anime — closest to Kunai) | Extensions installed from a `manifest.json` URL         | **Code**: JS/TS run in an embedded engine (Goja), no Node or browser APIs; plugins declare permissions for commands and files           | Each manifest carries a `manifestURI` the app re-checks                      | Declared permissions; repos unaffiliated with the app             |
+| [Kodi](https://kodi.wiki/view/Add-on_repositories)                                           | Repository add-ons with an `addons.xml` index           | Code (Python add-ons)                                                                                                                   | `addons.xml.md5` is a change marker so clients skip re-downloading the index | The checksum is explicitly _not_ a security check; no signing     |
+| [Jellyfin](https://jellyfin.org/docs/general/server/metadata)                                | Metadata providers as plugins                           | Code                                                                                                                                    | Plugin catalog                                                               | Ordered per-library provider list with sequential fallback        |
+
+What this means for the plan:
+
+1. **No comparable app ships scrapers in its core.** Every one of them installs
+   sources from repositories the user adds. Decision 2 option (b), "no bundled
+   scrapers, first run offers the official repository", is the industry norm,
+   not an outlier. The recommendation stays (a) for now, but (b) is the
+   destination, not an optional extra.
+2. **Two mechanisms, both proven.** A remote, data-only addon protocol
+   (Stremio) and local code extensions (Mihon, Cloudstream, Seanime). Kunai
+   should support both, as phase 2 and phase 4 already propose. Supporting the
+   Stremio protocol directly beats inventing a Kunai-only addon protocol.
+3. **Isolate packs with an embedded engine, not just a Worker.** Seanime, the
+   nearest analogue, runs extension code in an embedded engine without host
+   APIs and grants capabilities through declared permissions. A Bun `Worker`
+   still has every Bun API. The phase 2 Worker is the right first step for
+   first-party signed packs; for third-party packs, plan an embedded runtime
+   (QuickJS compiled to WASM) that only sees the provider ports (`fetch`,
+   `cache`, `emit`), with each pack's manifest declaring the hosts it may
+   contact.
+4. **One manifest per pack with its own update URI.** Seanime's
+   `manifestURI` pattern (each manifest says where its next version lives) plus
+   Cloudstream's per-artifact hash is simpler than a central index for
+   third-party packs. Keep the signed central index for first-party packs.
+5. **Change markers are not security.** Kodi's `addons.xml.md5` only tells the
+   client whether to re-download. Kunai's Ed25519-signed index with per-pack
+   sha256 is stronger than the norm; keep it, and use ETag or revision checks
+   as the cheap change marker.
+6. **Ordered metadata providers per lane.** Jellyfin's per-library ordered
+   providers with fallback is what the `CatalogSource` registry is. Let the
+   user reorder sources per lane in Settings, as Jellyfin does.
+7. **Anime id mapping from a dataset, not per-request lookups.** The Jikan
+   fallback maps each entry through an ARM request (up to 15 per load). The
+   cleaner approach is an offline cross-site id dataset such as
+   [manami-project/anime-offline-database](https://github.com/manami-project/anime-offline-database)
+   or [Kometa Anime-IDs](https://github.com/Kometa-Team/Anime-IDs), refreshed
+   weekly into `kunai-cache.sqlite` and looked up locally, with ARM as the
+   fallback for new titles. Check each dataset's licence (ODbL or similar)
+   before shipping it.
+
 ## Legal posture: what actually changes
 
 This is not legal advice, and it does not make scraping legal. It changes who
