@@ -1,6 +1,8 @@
 import type { Container } from "@/container";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
+import { applyHotfixToProviderBootstrap } from "@/services/providers/provider-hotfix-manifest";
 import { createProviderPrioritySnapshot } from "@/services/providers/provider-priority";
+import { getActiveProviderHotfixManifest } from "@kunai/providers";
 
 import { providerForLane } from "./lane-settings-sync";
 
@@ -43,9 +45,14 @@ export async function applySettingsToRuntime({
     setDesignTheme(next.theme);
   }
 
+  const effectiveProviders = applyHotfixToProviderBootstrap(
+    createProviderPrioritySnapshot(next),
+    next.disabledProviders,
+    getActiveProviderHotfixManifest(),
+  );
   container.providerRegistry.setPriority({
-    ...createProviderPrioritySnapshot(next),
-    disabledProviderIds: next.disabledProviders,
+    ...effectiveProviders.priority,
+    disabledProviderIds: effectiveProviders.disabledProviderIds,
   });
 
   const state = stateManager.getState();
@@ -94,6 +101,15 @@ export async function applySettingsToRuntime({
 
   if (before.offlineMode !== next.offlineMode) {
     container.connectivity.notifyIntentChanged();
+  }
+  if (before.offlineMode && !next.offlineMode) {
+    // Startup skips the download-queue kick and the sync delivery pass while
+    // offline (saved setting or --offline). Coming back online in the same
+    // session must run them, or paused downloads and queued tracker updates
+    // wait for an unrelated trigger. Analytics is deliberately not resumed
+    // here: only an explicit keystroke may start it.
+    container.downloadService.kickQueue("online-resume");
+    container.syncService.deliverSoon();
   }
 
   if (

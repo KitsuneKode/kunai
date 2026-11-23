@@ -37,6 +37,10 @@ export function allMangaEpisodeMetadataCacheKey(showId: string, mode: "sub" | "d
   return `allanime:${showId}:${mode}`;
 }
 
+export function miruroEpisodeMetadataCacheKey(anilistId: string): string {
+  return `miruro:${anilistId}`;
+}
+
 export function anidbEpisodeMetadataCacheKey(showId: string): string {
   return `anidb:${showId}`;
 }

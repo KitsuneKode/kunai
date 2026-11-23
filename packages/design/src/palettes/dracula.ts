@@ -1,53 +1,51 @@
 import type { ThemePalette } from "../theme-types";
 
-// Dracula: the classic dark theme (draculatheme.com). Cool purple-grey
-// surfaces, signature pink accent, saturated status hues, comment-blue dim.
 export const draculaPalette: ThemePalette = {
   scrim: "#1e1f29",
   bg: "#282a36",
   surface: "#343746",
-  surfaceElevated: "#44475a", // "current line"
-  surfaceActive: "#493b55", // purple-leaning selection band
+  surfaceElevated: "#44475a",
+  surfaceActive: "#493b55",
   raised: "#565b70",
   line: "#44475a",
   lineSoft: "#343746",
-  lineStrong: "#6272a4", // comment
+  lineStrong: "#6272a4",
   lineControl: "#8291c2",
 
-  accent: "#ff79c6", // pink
+  accent: "#ff79c6",
   accentSoft: "#ffadd9",
   accentDeep: "#d660a4",
   accentDim: "#8f4a74",
   accentGlow: "rgba(255,121,198,0.10)",
   accentFill: "#3d2a3c",
 
-  ok: "#50fa7b", // green
+  ok: "#50fa7b",
   okDim: "#3cb85e",
   okFill: "#233524",
-  warn: "#ffb86c", // orange
+  warn: "#ffb86c",
   warnDim: "#b88550",
   warnFill: "#3a2d1e",
-  danger: "#ff5555", // red
+  danger: "#ff7a7a",
   dangerDim: "#b83f3f",
   dangerFill: "#3a2226",
-  dangerText: "#ff8f8a", // danger hue lifted for readable text
-  info: "#8be9fd", // cyan
+  dangerText: "#ffa39e",
+  info: "#8be9fd",
   infoDim: "#5fafc2",
   infoFill: "#23323f",
-  milestone: "#bd93f9", // purple
+  milestone: "#bd93f9",
   milestoneDim: "#8569b0",
   milestoneFill: "#30294a",
-  milestoneText: "#d3b8ff", // milestone hue lifted for readable text
+  milestoneText: "#d3b8ff",
 
   text: "#f8f8f2",
   textDim: "#d9d9ce",
-  muted: "#a9abbd",
-  dim: "#6272a4",
+  muted: "#b4b6c9",
+  dim: "#96a4d2",
   faint: "#44475a",
 
   typeAnime: "#ff79c6",
   typeSeries: "#8be9fd",
-  typeMovie: "#f1fa8c", // yellow
+  typeMovie: "#f1fa8c",
   typeMixed: "#a9abbd",
   heatRamp: ["#343746", "#53395c", "#8f4a74", "#d660a4", "#ff79c6"],
 };

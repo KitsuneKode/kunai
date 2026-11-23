@@ -191,6 +191,7 @@ export const KNOWN_NOTIFICATION_KINDS: ReadonlySet<string> = new Set([
   "download-complete",
   "new-episode",
   "provider-health",
+  "provider-manifest-updated",
 ]);
 
 export function defaultNotificationActionIds(input: {

@@ -27,6 +27,11 @@ export const AUDIO_PREFERENCE_OPTIONS: readonly MediaPreferenceOption[] = [
   },
   { value: "en", label: "English", detail: "Prefer English audio when available" },
   { value: "ja", label: "Japanese", detail: "Prefer Japanese audio when available" },
+  { value: "hi", label: "Hindi", detail: "Prefer Hindi audio when available (Movy / Rivestream)" },
+  { value: "pt", label: "Portuguese", detail: "Prefer Portuguese audio when available" },
+  { value: "es", label: "Spanish", detail: "Prefer Spanish audio when available" },
+  { value: "fr", label: "French", detail: "Prefer French audio when available" },
+  { value: "de", label: "German", detail: "Prefer German audio when available" },
   { value: "dub", label: "Any dub", detail: "Prefer any dubbed track over the original" },
 ];
 
@@ -34,6 +39,8 @@ export const SUBTITLE_PREFERENCE_OPTIONS: readonly MediaPreferenceOption[] = [
   { value: "en", label: "English", detail: "English subtitles by default" },
   { value: "interactive", label: "Pick each time", detail: "Choose subtitles per episode" },
   { value: "none", label: "None", detail: "No subtitles unless you turn them on" },
+  { value: "hi", label: "Hindi", detail: "Hindi subtitles" },
+  { value: "pt", label: "Portuguese", detail: "Portuguese subtitles" },
   { value: "ar", label: "Arabic", detail: "Arabic subtitles" },
   { value: "de", label: "German", detail: "German subtitles" },
   { value: "es", label: "Spanish", detail: "Spanish subtitles" },
@@ -49,6 +56,8 @@ export const SUBTITLE_PREFERENCE_OPTIONS: readonly MediaPreferenceOption[] = [
  */
 export const PROVIDER_QUALITY_PREFERENCE_OPTIONS: readonly MediaPreferenceOption[] = [
   { value: "best", label: "Best available", detail: "Highest resolution the source offers" },
+  { value: "2160p", label: "2160p (4K)", detail: "4K UHD ceiling when the source offers it" },
+  { value: "1440p", label: "1440p", detail: "QHD ceiling for high-DPI displays" },
   { value: "1080p", label: "1080p", detail: "Full HD ceiling — balances quality and bandwidth" },
   { value: "720p", label: "720p", detail: "HD ceiling for slower connections" },
   { value: "480p", label: "480p", detail: "SD ceiling for tight bandwidth" },

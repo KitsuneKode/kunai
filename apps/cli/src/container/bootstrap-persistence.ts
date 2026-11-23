@@ -450,6 +450,7 @@ export async function bootstrapPersistence(
     adapters: [anilistAdapter, tmdbAdapter],
     outbox: new SyncOutboxRepository(dataDb),
     config: { read: async () => ({ sync: config.getRaw().sync }) },
+    isOfflineIntent: () => config.offlineMode,
     diagnostics: diagnosticsService,
   });
 

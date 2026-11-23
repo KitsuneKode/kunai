@@ -10,6 +10,7 @@ import {
   DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
 } from "@/services/download/StorageBudgetPolicy";
 import {
+  isHdrMode,
   MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS,
   mergeKitsuneConfig,
   normalizeRetiredProductionProviderFields,
@@ -290,6 +291,7 @@ export class ConfigServiceImpl implements ConfigService {
       continueSourcePreference: normalizeContinueSourcePreference(loaded.continueSourcePreference),
       prePlayConfirm: normalizePrePlayConfirm(loaded.prePlayConfirm),
       startupPriority: normalizeStartupPriority(loaded.startupPriority),
+      hdrMode: normalizeHdrMode(loaded.hdrMode),
       mpvInProcessStreamReconnectMaxAttempts: normalizeMpvReconnectAttempts(
         loaded.mpvInProcessStreamReconnectMaxAttempts,
       ),
@@ -639,16 +641,20 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.wyzieApiKey;
   }
 
+  // Session-overridable getters read `sessionOverrides` first. A getter that reads
+  // `this.config` directly turns its launch flag (`--quality`/`--audio`/`--sub`,
+  // `--offline`, `--hdr`) into a silent no-op: main.ts applies those flags through
+  // applySessionOverrides, never through update().
   get animeLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
-    return this.config.animeLanguageProfile;
+    return this.sessionOverrides.animeLanguageProfile ?? this.config.animeLanguageProfile;
   }
 
   get seriesLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
-    return this.config.seriesLanguageProfile;
+    return this.sessionOverrides.seriesLanguageProfile ?? this.config.seriesLanguageProfile;
   }
 
   get movieLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
-    return this.config.movieLanguageProfile;
+    return this.sessionOverrides.movieLanguageProfile ?? this.config.movieLanguageProfile;
   }
 
   get animeTitlePreference(): "english" | "romaji" | "native" | "provider" {
@@ -768,7 +774,7 @@ export class ConfigServiceImpl implements ConfigService {
   }
 
   get offlineMode(): boolean {
-    return this.config.offlineMode;
+    return this.sessionOverrides.offlineMode ?? this.config.offlineMode;
   }
 
   get maxConcurrentDownloads(): number {
@@ -797,6 +803,10 @@ export class ConfigServiceImpl implements ConfigService {
 
   get startupPriority(): StartupPriority {
     return this.config.startupPriority;
+  }
+
+  get hdrMode(): KitsuneConfig["hdrMode"] {
+    return this.sessionOverrides.hdrMode ?? this.config.hdrMode;
   }
 
   get offlineArtworkCacheEnabled(): boolean {
@@ -965,12 +975,55 @@ export class ConfigServiceImpl implements ConfigService {
     this.sessionOverrides = { ...this.sessionOverrides, ...partial };
   }
 
-  async update(partial: Partial<KitsuneConfig>): Promise<void> {
+  /**
+   * `--quality`/`--audio`/`--sub` override whole language profiles for the
+   * session, and Settings edits whole profiles seeded from the effective
+   * (overridden) value. Changing one field must not persist the launch flag's
+   * other fields: a field still equal to its override (and different from the
+   * saved value) keeps the saved value on disk and stays overridden for the
+   * session. Only fields the user actually changed are persisted.
+   */
+  private separateProfileOverrides(input: Partial<KitsuneConfig>): ProfileOverrideSplit {
+    const partial: Partial<KitsuneConfig> = { ...input };
+    const keptProfileOverrides: Partial<KitsuneConfig> = {};
+    for (const key of SESSION_PROFILE_KEYS) {
+      const incoming = partial[key];
+      const override = this.sessionOverrides[key];
+      if (!incoming || !override) continue;
+      const saved = this.config[key];
+      const persisted: import("./ConfigService").MediaLanguageProfile = { ...incoming };
+      let keptAny = false;
+      for (const field of PROFILE_FIELDS) {
+        if (override[field] !== saved[field] && incoming[field] === override[field]) {
+          if (saved[field] === undefined) delete persisted[field];
+          else persisted[field] = saved[field];
+          keptAny = true;
+        }
+      }
+      partial[key] = persisted;
+      if (keptAny) {
+        const effective: import("./ConfigService").MediaLanguageProfile = { ...persisted };
+        for (const field of PROFILE_FIELDS) {
+          if (override[field] !== saved[field] && incoming[field] === override[field]) {
+            const value = override[field];
+            if (value === undefined) delete effective[field];
+            else effective[field] = value;
+          }
+        }
+        keptProfileOverrides[key] = effective;
+      }
+    }
+    return { partial, keptProfileOverrides };
+  }
+
+  async update(input: Partial<KitsuneConfig>): Promise<void> {
+    const { partial, keptProfileOverrides } = this.separateProfileOverrides(input);
     // SAFETY: Object.keys of a Partial<KitsuneConfig> only yields its keys.
     for (const key of Object.keys(partial) as (keyof KitsuneConfig)[]) {
       if (key in this.sessionOverrides) delete this.sessionOverrides[key];
       this.dirtyKeys.add(key);
     }
+    Object.assign(this.sessionOverrides, keptProfileOverrides);
     this.config = {
       ...this.config,
       ...partial,
@@ -1033,6 +1086,7 @@ export class ConfigServiceImpl implements ConfigService {
       ...(partial.startupPriority !== undefined
         ? { startupPriority: normalizeStartupPriority(partial.startupPriority) }
         : null),
+      ...(partial.hdrMode !== undefined ? { hdrMode: normalizeHdrMode(partial.hdrMode) } : null),
       ...(partial.mpvInProcessStreamReconnectMaxAttempts !== undefined
         ? {
             mpvInProcessStreamReconnectMaxAttempts: normalizeMpvReconnectAttempts(
@@ -1420,6 +1474,23 @@ function normalizeAnalyticsPreference<T>(value: T): KitsuneConfig["analytics"] {
 
 function normalizeStartupPriority<T>(value: T): StartupPriority {
   return value === "fast" ? "fast" : value === "quality-first" ? "quality-first" : "balanced";
+}
+
+/** An update split into what to persist and which launch-flag fields stay overridden. */
+interface ProfileOverrideSplit {
+  readonly partial: Partial<KitsuneConfig>;
+  readonly keptProfileOverrides: Partial<KitsuneConfig>;
+}
+
+const SESSION_PROFILE_KEYS = [
+  "animeLanguageProfile",
+  "seriesLanguageProfile",
+  "movieLanguageProfile",
+] as const;
+const PROFILE_FIELDS = ["audio", "subtitle", "quality"] as const;
+
+function normalizeHdrMode<T>(value: T): KitsuneConfig["hdrMode"] {
+  return isHdrMode(value) ? value : "auto";
 }
 
 function normalizeBytes<T>(value: T, fallback: number): number {

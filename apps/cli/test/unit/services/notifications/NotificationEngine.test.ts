@@ -188,3 +188,23 @@ test("flags default to enabled when omitted", () => {
 
   expect(notifications).toHaveLength(1);
 });
+
+test("provider-manifest-updated derives one notice per revision with rollback guidance", () => {
+  const [n] = deriveNotifications({
+    signals: [
+      {
+        type: "provider-manifest-updated",
+        revision: 42,
+        updatedProviders: ["allanime", "rivestream"],
+      },
+    ],
+    mutedTitleIds: new Set(),
+    now: "2026-11-22T01:00:00.000Z",
+  });
+
+  expect(n?.kind).toBe("provider-manifest-updated");
+  expect(n?.dedupKey).toBe("provider-manifest-updated:42");
+  expect(n?.title).toContain("rev 42");
+  expect(n?.body).toContain("allanime, rivestream");
+  expect(n?.body).toContain("kunai providers rollback");
+});

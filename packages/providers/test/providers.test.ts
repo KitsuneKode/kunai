@@ -892,7 +892,7 @@ test("rivestream falls back to static provider services when service discovery i
         fetch: async (input) => {
           const url = String(input);
           requests.push(url);
-          if (url.includes("VideoProviderServices")) return new Response("", { status: 503 });
+          if (url.includes("/api/providers")) return new Response("", { status: 503 });
           return rivestreamFixtureCdnResponse(url) ?? jsonResponse(sourceFixture);
         },
       },
@@ -900,8 +900,8 @@ test("rivestream falls back to static provider services when service discovery i
   );
 
   expect(result.status).toBe("resolved");
-  expect(requests.some((url) => url.includes("VideoProviderServices"))).toBe(true);
-  expect(requests.some((url) => url.includes("service=flowcast"))).toBe(true);
+  expect(requests.some((url) => url.includes("/api/providers"))).toBe(true);
+  expect(requests.some((url) => url.includes("provider=apogee"))).toBe(true);
 });
 
 test("rivestream evidence fixture preserves provider server label and normalized language", async () => {
@@ -938,14 +938,14 @@ test("rivestream evidence fixture preserves provider server label and normalized
           requests.push(url);
           return (
             rivestreamFixtureCdnResponse(url) ??
-            jsonResponse(url.includes("VideoProviderServices") ? services : sourceFixture)
+            jsonResponse(url.includes("/api/providers") ? services : sourceFixture)
           );
         },
       },
     },
   );
 
-  expect(requests.some((url) => url.includes("VideoProviderServices"))).toBe(true);
+  expect(requests.some((url) => url.includes("/api/providers"))).toBe(true);
   expect(result.status).toBe("resolved");
   expect(result.trace.events?.map((event) => event.type)).toEqual(
     expect.arrayContaining(["source:start", "source:success", "provider:success"]),
@@ -1005,7 +1005,7 @@ test("rivestream fixture fast startup keeps the first ready stream", async () =>
         runtime: "direct-http",
         fetch: async (input) =>
           rivestreamFixtureCdnResponse(String(input)) ??
-          jsonResponse(String(input).includes("VideoProviderServices") ? services : source),
+          jsonResponse(String(input).includes("/api/providers") ? services : source),
       },
     },
   );
@@ -1059,7 +1059,7 @@ test("rivestream fast startup selects provider ready-order before returned quali
           runtime: "direct-http",
           fetch: async (input) =>
             rivestreamFixtureCdnResponse(String(input)) ??
-            jsonResponse(String(input).includes("VideoProviderServices") ? services : source),
+            jsonResponse(String(input).includes("/api/providers") ? services : source),
         },
       },
     );
@@ -1117,7 +1117,7 @@ test("rivestream caches provider services across cold resolves", async () => {
             requests.push(url);
             return (
               rivestreamFixtureCdnResponse(url) ??
-              jsonResponse(url.includes("VideoProviderServices") ? services : source)
+              jsonResponse(url.includes("/api/providers") ? services : source)
             );
           },
         },
@@ -1127,10 +1127,11 @@ test("rivestream caches provider services across cold resolves", async () => {
     expect(result.status).toBe("resolved");
   }
 
-  // Services discovery is cached across cold resolves (1 call), while each
-  // resolve prefetches every candidate service in parallel (2 per resolve).
-  expect(requests.filter((url) => url.includes("VideoProviderServices"))).toHaveLength(1);
-  expect(requests.filter((url) => url.includes("VideoProvider&id="))).toHaveLength(4);
+  // Services discovery is cached across cold resolves (1 call). Each resolve
+  // warms only the next service; the first fixture name returns a stream, so
+  // the second name is never fetched (1 source call per resolve).
+  expect(requests.filter((url) => url.includes("/api/providers"))).toHaveLength(1);
+  expect(requests.filter((url) => url.includes("/api/provider?"))).toHaveLength(2);
 });
 
 test("miruro evidence fixture preserves server evidence subtitles and seek thumbnails", async () => {
@@ -1535,7 +1536,7 @@ test("negative fixture keeps rivestream parse failures inspectable", async () =>
         runtime: "direct-http",
         fetch: async (input) => {
           const url = String(input);
-          if (url.includes("VideoProviderServices")) return jsonResponse(services);
+          if (url.includes("/api/providers")) return jsonResponse(services);
           return new Response(malformed, {
             status: 200,
             headers: { "Content-Type": "application/json" },

@@ -195,7 +195,7 @@ test("language profile hotkeys edit one media lane without rewriting the others"
     handle.stdin.enqueue("\t"); // Shows -> Movies
     handle.stdin.enqueue("\t"); // Movies -> Anime
     handle.stdin.enqueue("\x1b[C"); // focus subtitles
-    handle.stdin.enqueue("\x1b[B"); // None -> Arabic
+    handle.stdin.enqueue("\x1b[B"); // None -> Hindi
 
     expect(stripAnsi(handle.lastFrame())).toContain("▌ Anime");
     handle.stdin.enqueue(["\r", "\r"]); // library -> analytics
@@ -203,7 +203,7 @@ test("language profile hotkeys edit one media lane without rewriting the others"
     handle.stdin.enqueue("\r");
     expect(results[0]?.prefs.languageProfiles).toEqual({
       series: { audio: "en", subtitle: "en" },
-      anime: { audio: "ja", subtitle: "ar" },
+      anime: { audio: "ja", subtitle: "hi" },
       movie: { audio: "en", subtitle: "es" },
       youtube: { audio: "dub", subtitle: "interactive" },
     });

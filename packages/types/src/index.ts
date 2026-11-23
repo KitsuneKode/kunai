@@ -68,6 +68,8 @@ export type SubtitleDelivery = "hardcoded" | "embedded" | "external";
 
 export type StartupPriority = "fast" | "balanced" | "quality-first";
 
+export type VideoDynamicRange = "sdr" | "hdr10" | "hlg" | "dolby-vision";
+
 export type ProviderSelectionReason =
   | "fast-start"
   | "balanced-1080"
@@ -288,6 +290,7 @@ export interface StreamCandidate {
   readonly serverName?: string;
   readonly qualityLabel?: string;
   readonly qualityRank?: number;
+  readonly dynamicRange?: VideoDynamicRange;
   readonly languageEvidence?: readonly ProviderLanguageEvidence[];
   readonly sourceEvidence?: readonly ProviderSourceEvidence[];
   readonly artwork?: ProviderArtworkInfo;
@@ -354,6 +357,7 @@ export interface ProviderVariantCandidate {
   readonly label?: string;
   readonly qualityLabel?: string;
   readonly qualityRank?: number;
+  readonly dynamicRange?: VideoDynamicRange;
   readonly protocol?: StreamCandidate["protocol"];
   readonly container?: StreamCandidate["container"];
   readonly audioLanguages?: readonly string[];

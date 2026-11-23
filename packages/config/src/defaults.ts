@@ -140,6 +140,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   autoCleanupWatched: false,
   recoveryMode: "guided",
   startupPriority: "balanced",
+  hdrMode: "auto",
   offlineArtworkCacheEnabled: true,
   offlineFreeSpaceReserveBytes: DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
   offlineUnknownEpisodeEstimateBytes: DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,

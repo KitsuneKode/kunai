@@ -57,6 +57,17 @@ export function streamRequestToResolveInput(
   });
   const animeAudioIntent =
     adapted.mediaKind === "anime" ? resolveAnimeAudioIntent(request.audioPreference) : null;
+  const nonAnimeAudioLanguage = (() => {
+    if (adapted.mediaKind === "anime") return undefined;
+    const raw = request.audioPreference.trim().toLowerCase();
+    if (!raw || raw === "original" || raw === "dub") return undefined;
+    return raw;
+  })();
+  const resolvedSubtitleLanguage = (() => {
+    const raw = request.subtitlePreference.trim().toLowerCase();
+    if (!raw || raw === "none" || raw === "interactive" || raw === "fzf") return undefined;
+    return raw;
+  })();
   return {
     title: titleToCoreIdentity(title, mode, catalogIdentity, providerId, adapted.mediaKind),
     episode: adapted.episode,
@@ -67,10 +78,14 @@ export function streamRequestToResolveInput(
       request.favoriteSourceNames && request.favoriteSourceNames.length > 0
         ? request.favoriteSourceNames
         : undefined,
-    preferredAudioLanguage: animeAudioIntent?.preferredAudioLanguage,
-    preferredSubtitleLanguage: request.subtitlePreference,
+    preferredAudioLanguage: animeAudioIntent?.preferredAudioLanguage ?? nonAnimeAudioLanguage,
+    preferredSubtitleLanguage: resolvedSubtitleLanguage,
     preferredPresentation: animeAudioIntent?.presentation ?? "raw",
-    preferredSubtitleDelivery: adapted.mediaKind === "anime" ? "hardcoded" : "external",
+    preferredSubtitleDelivery:
+      adapted.mediaKind === "anime" &&
+      (!resolvedSubtitleLanguage || resolvedSubtitleLanguage === "en")
+        ? "hardcoded"
+        : "external",
     qualityPreference: normalizeQualityPreference(request.qualityPreference),
     startupPriority: request.startupPriority ?? "balanced",
     intent,

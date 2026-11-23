@@ -26,6 +26,7 @@ import type {
 import { ProviderHttpError, providerFetch } from "../runtime/fetch";
 import { resolveTmdbCatalogId } from "../shared/catalog-id";
 import { expandHlsMasterInventory, isHlsDeadHostStatus } from "../shared/hls-ladder";
+import { requireEffectiveProviderHost } from "../shared/hotfix-runtime";
 import {
   cycleExhaustionFailure,
   providerFailureCodeFromCycleFailure,
@@ -44,6 +45,7 @@ import {
   createStreamId,
   createVariantCandidateFromStream,
   createVariantId,
+  detectDynamicRangeFromLabel,
   finalizeCycleSourceInventory,
   normalizeQualityLabel,
   providerInventorySourceId,
@@ -52,6 +54,7 @@ import {
 } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
 import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
+import { trimTrailingSlashes } from "../shared/trim-trailing-slashes";
 import { movyManifest, MOVY_PROVIDER_ID } from "./manifest";
 import { decryptMovyPayload, MovyDecryptError } from "./streamcrypto";
 
@@ -67,6 +70,10 @@ export const MOVY_REFERER = "https://www.movy.sx/";
 // Origin carries no path and no trailing slash — a real browser sends
 // `Origin: https://www.movy.sx`.
 const MOVY_ORIGIN = "https://www.movy.sx";
+
+export function effectiveMovyApiBase(): string {
+  return trimTrailingSlashes(requireEffectiveProviderHost(MOVY_PROVIDER_ID, [MOVY_API_BASE]));
+}
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -144,12 +151,13 @@ async function fetchMovySeed(
   mediaId: number,
   signal?: AbortSignal,
 ): Promise<string> {
-  const cacheKey = `${MOVY_API_BASE}|${mediaId}`;
+  const apiBase = effectiveMovyApiBase();
+  const cacheKey = `${apiBase}|${mediaId}`;
   const now = Date.now();
   const cached = seedCache.get(cacheKey);
   if (cached && cached.expiresAt - SEED_EXPIRY_HEADROOM_MS > now) return cached.seed;
 
-  const response = await providerFetch(context, `${MOVY_API_BASE}/seed?mediaId=${mediaId}`, {
+  const response = await providerFetch(context, `${apiBase}/seed?mediaId=${mediaId}`, {
     headers: { "User-Agent": USER_AGENT, Referer: MOVY_REFERER, Origin: MOVY_ORIGIN },
     signal,
   });
@@ -188,7 +196,7 @@ async function fetchMovySeed(
 }
 
 function invalidateMovySeed(mediaId: number): void {
-  seedCache.delete(`${MOVY_API_BASE}|${mediaId}`);
+  seedCache.delete(`${effectiveMovyApiBase()}|${mediaId}`);
 }
 
 /** Test seam — the seed cache is module state and must not leak between cases. */
@@ -208,15 +216,19 @@ async function fetchMovyLaneSources(
   for (let attempt = 0; attempt < 2; attempt++) {
     const seed = await fetchMovySeed(context, mediaId, signal);
     const query = new URLSearchParams({ ...params, enc: "2", seed });
-    const response = await providerFetch(context, `${MOVY_API_BASE}/${lane}/sources?${query}`, {
-      headers: {
-        "User-Agent": USER_AGENT,
-        Referer: MOVY_REFERER,
-        Origin: MOVY_ORIGIN,
-        Accept: "*/*",
+    const response = await providerFetch(
+      context,
+      `${effectiveMovyApiBase()}/${lane}/sources?${query}`,
+      {
+        headers: {
+          "User-Agent": USER_AGENT,
+          Referer: MOVY_REFERER,
+          Origin: MOVY_ORIGIN,
+          Accept: "*/*",
+        },
+        signal,
       },
-      signal,
-    });
+    );
     if (response.status === 401 && attempt === 0) {
       invalidateMovySeed(mediaId);
       continue;
@@ -337,7 +349,12 @@ async function resolveMovyLaneCandidate({
         if (!source.url || movySourceProtocol(source) !== "hls") {
           // SAFETY: no manifest was inspected; undefined preserves the lane-audio fallback.
           return [
-            { source, laneAudio, audioLanguages: undefined as readonly string[] | undefined },
+            {
+              source,
+              laneAudio,
+              audioLanguages: undefined as readonly string[] | undefined,
+              dynamicRange: undefined,
+            },
           ];
         }
         const inventory = await expandHlsMasterInventory({
@@ -365,17 +382,19 @@ async function resolveMovyLaneCandidate({
         const audioLanguages = inventory.audioLanguages.length
           ? inventory.audioLanguages
           : undefined;
-        if (inventory.probe.kind !== "ok") return [{ source, laneAudio, audioLanguages }];
+        if (inventory.probe.kind !== "ok")
+          return [{ source, laneAudio, audioLanguages, dynamicRange: undefined }];
         return inventory.variants.map((variant) => ({
           source: { ...source, url: variant.url, quality: variant.qualityLabel },
           laneAudio,
           audioLanguages,
+          dynamicRange: variant.dynamicRange,
         }));
       }),
     )
   ).flat();
 
-  for (const { source, laneAudio, audioLanguages } of expandedSources) {
+  for (const { source, laneAudio, audioLanguages, dynamicRange } of expandedSources) {
     const url = source.url;
     if (!url) continue;
     const qualityStr = movyLaneAudioLanguage(source.quality)
@@ -425,6 +444,7 @@ async function resolveMovyLaneCandidate({
       audioLanguages: audioLanguages ?? (laneAudio ? [laneAudio] : undefined),
       qualityLabel,
       qualityRank,
+      dynamicRange: dynamicRange ?? detectDynamicRangeFromLabel(source.quality),
       languageEvidence,
       sourceEvidence,
       headers: { referer: MOVY_REFERER, "user-agent": USER_AGENT },

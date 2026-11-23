@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-17"
+lastReviewed: "2026-11-22"
 ---
 
 # Kunai — Provider Guide
@@ -214,6 +214,74 @@ selectable variants; a refusal on one URL does not remove healthy paths on the
 same CDN. `not-found` remains in the trace for title-level recovery, but carries
 no provider availability failure delta. Transport, timeout and server failures
 continue to report provider health evidence.
+
+### Signed provider hotfix manifest
+
+Upstream hosts and crypto constants rotate faster than binaries ship, so a
+provider can be patched at runtime by a **signed manifest** instead of a release.
+The manifest (`packages/providers/src/shared/manifest-bundle.ts`) carries, per
+provider, a `baseUrl`, `mirrors`, `deadServers`, `disabled`, and
+`cryptoOverrides`, plus optional per-lane priorities. Adapters read it through
+`packages/providers/src/shared/hotfix-runtime.ts`
+(`getEffectiveProviderMirrors`, `getProviderCryptoOverride`); bundled values are
+always the fallback.
+
+- **Trust.** Envelopes are Ed25519-signed and verified against keys from
+  `KUNAI_PROVIDER_MANIFEST_PUBKEYS`. No key and no URL are baked into the
+  binary — like the relay, the manifest source is operator-owned and the feature
+  is off until both are configured.
+- **Lifecycle.** `kunai providers update --url <https>` fetches, verifies, and
+  caches it (`--dry-run` to inspect); `providers status`, `verify`, `rollback`,
+  and `reset` are the ways back out. The previous manifest is kept as a backup
+  for rollback. An expired manifest (`expiresAt`) drops back to bundled
+  defaults on read.
+- **State file** (`providers-manifest-state.json`) outlives a cache purge. It
+  records `highestRevision` and the `payloadSha256` of that revision's body, so
+  a lower revision, or a different body re-signed under the same revision, is
+  refused without `--force` even after the cache is deleted. `rollback` and
+  `reset` set a `hold` that the background refresh honours (otherwise the next
+  launch would reinstall the newer manifest); an explicit `providers update`
+  clears it. `reset --force` also drops the revision floor.
+- **Install-time checks** beyond the signature: every lane keeps at least one
+  provider, and an `allanime` `cryptoOverrides` that names a `buildId` must be a
+  complete rotation profile, since an incomplete one falls back to the bundled
+  constants without any signal. The state lock waits on a deadline and fails
+  fast if its path is a directory. JSON failures from `kunai providers` share
+  the agent shape `{ ok: false, schemaVersion, error }`.
+- **Runtime guards.** Requests to an origin the manifest introduced (`baseUrl`,
+  `mirrors`, URL-valued `cryptoOverrides`) follow redirects by hand in
+  `providerFetch` (`packages/providers/src/runtime/fetch.ts`), and every hop must
+  pass `isSafeManifestHttpsUrl`; bundled-host traffic keeps normal fetch
+  semantics. Single-host adapters resolve their host through
+  `requireEffectiveProviderHost`, so `deadServers` covering every host throws
+  `ProviderHostsRetiredError` and the engine moves on, instead of calling the
+  retired bundled host.
+- **Startup.** `activateCachedProviderHotfixManifest`
+  (`apps/cli/src/app/providers/provider-definitions-actions.ts`) re-verifies the
+  cached manifest and makes it live before the first resolve, offline included,
+  in the interactive shell and in headless `-S --json` search;
+  without it a manifest would apply only in the process that fetched it.
+- **Background refresh.** `maybeBackgroundRefreshProviderManifest` refreshes at
+  most every six hours, only when `KUNAI_PROVIDER_MANIFEST_URL` and trusted keys
+  are both set, and fails silently offline.
+- **Priority.** `applyHotfixToProviderBootstrap` merges manifest lane priorities
+  and `disabled` flags into the user's priority. Two consumers must agree: the
+  provider registry (pickers, `apps/cli/src/app/providers/provider-definitions-actions.ts`)
+  and playback admission and fallback order (`createOrderedModulesGetter` in
+  `apps/cli/src/container/bootstrap-providers.ts`). The playback side reads the
+  manifest on every resolve through the expiry-aware getter, so an expired
+  manifest stops excluding providers immediately. The registry holds a copy, so
+  `reloadProviderRegistryPriority` arms one unref'd timer for `expiresAt`
+  (clamped to the `setTimeout` ceiling and re-armed) that restores it.
+- **Authoring.** `scripts/generate-hotfix-manifest.ts` builds an unsigned
+  manifest (optionally from a provider status report);
+  `scripts/sign-provider-manifest.ts sign` signs it.
+
+`kunai capabilities --json` (`apps/cli/src/services/agent/run-capabilities.ts`)
+publishes the machine-readable contract scripts and agents can rely on —
+subcommands, flags, themes, HDR modes, the live provider list, the manifest
+schema, and the headless routes — and `kunai -S <query> --json`
+(`run-headless-search.ts`) searches without starting the shell.
 
 ### Persistent provider cache (`context.cache`)
 

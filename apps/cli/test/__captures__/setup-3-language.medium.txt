@@ -10,10 +10,12 @@
           ▌ Original                              ▌ English
             English                                 Pick each time
             Japanese                                None
-            Any dub                                 Arabic
-                                                    German
-                                                    Spanish
-                                                    French
+            Hindi                                   Hindi
+            Portuguese                              Portuguese
+            Spanish                                 Arabic
+            French                                  German
+            German                                  Spanish
+            Any dub                                 French
                                                     Japanese
           Use the language the title was made in
  ──────────────────────────────────────────────────────────────────────────────────────────────────

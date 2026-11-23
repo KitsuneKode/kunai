@@ -17,6 +17,10 @@
  *    the rest of the session should not pay to rediscover that.
  */
 
+import { getEffectiveProviderMirrors, getProviderHotfixEntry } from "../shared/hotfix-runtime";
+import { isJsonObject } from "../shared/json-value";
+import { normalizeMirrorUrl } from "../shared/manifest-bundle";
+
 export const MIRURO_KNOWN_PIPE_BASE_URLS = [
   "https://www.miruro.bz",
   "https://www.miruro.ru",
@@ -49,30 +53,22 @@ export type MiruroMirrorStatus = {
 
 type StatusFetch = (input: string, init?: RequestInit) => Promise<Response>;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/**
- * Read the "mirrors" group out of an Uptime Kuma status page and its heartbeat
- * document. Anything malformed yields fewer mirrors, never an exception — this
- * feeds a fallback path and must not be able to break it.
- */
 export function parseMiruroStatusMirrors(page: unknown, heartbeat: unknown): MiruroMirrorStatus[] {
-  if (!isRecord(page) || !Array.isArray(page.publicGroupList)) return [];
+  if (!isJsonObject(page) || !Array.isArray(page.publicGroupList)) return [];
   const beats =
-    isRecord(heartbeat) && isRecord(heartbeat.heartbeatList) ? heartbeat.heartbeatList : {};
+    isJsonObject(heartbeat) && isJsonObject(heartbeat.heartbeatList) ? heartbeat.heartbeatList : {};
 
   const mirrors: MiruroMirrorStatus[] = [];
   for (const group of page.publicGroupList) {
-    if (!isRecord(group) || group.name !== "mirrors" || !Array.isArray(group.monitorList)) continue;
+    if (!isJsonObject(group) || group.name !== "mirrors" || !Array.isArray(group.monitorList))
+      continue;
     for (const monitor of group.monitorList) {
-      if (!isRecord(monitor)) continue;
+      if (!isJsonObject(monitor)) continue;
       const name = typeof monitor.name === "string" ? monitor.name.trim().toLowerCase() : "";
       if (!MIRROR_NAME.test(name) || NON_PIPE_MIRRORS.has(name)) continue;
       const history = beats[String(monitor.id)];
       const latest = Array.isArray(history) ? history.at(-1) : undefined;
-      const status = isRecord(latest) ? latest.status : undefined;
+      const status = isJsonObject(latest) ? latest.status : undefined;
       mirrors.push({ name, up: status === 1 ? true : status === 0 ? false : null });
     }
   }
@@ -146,11 +142,16 @@ export function miruroPipeBaseUrls(
       refreshing = null;
     });
   }
-  return orderMiruroPipeBaseUrls({
-    known: MIRURO_KNOWN_PIPE_BASE_URLS,
+  const ordered = orderMiruroPipeBaseUrls({
+    known: getEffectiveProviderMirrors("miruro", MIRURO_KNOWN_PIPE_BASE_URLS),
     discovered: discovered?.mirrors ?? [],
     lastSuccess: lastSuccessBaseUrl,
   });
+  const deadServers = getProviderHotfixEntry("miruro")?.deadServers;
+  if (!deadServers || deadServers.length === 0) return ordered;
+  const dead = new Set(deadServers.map(normalizeMirrorUrl));
+  const live = ordered.filter((url) => !dead.has(normalizeMirrorUrl(url)));
+  return live.length > 0 ? live : ordered;
 }
 
 /** Called when a mirror returns a decodable pipe body. */

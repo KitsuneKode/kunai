@@ -3,7 +3,9 @@ import { createCipheriv, createHash, createHmac } from "node:crypto";
 import type { ProviderRuntimeContext } from "@kunai/types";
 
 import { providerFetch } from "../runtime/fetch";
+import { getProviderCryptoOverride, getProviderHotfixEntry } from "../shared/hotfix-runtime";
 import { readJsonObjectBody } from "../shared/json-body";
+import { isSafeManifestHttpsUrl } from "../shared/manifest-bundle";
 
 /**
  * AllManga / mkissa client-crypto (post-2026-08 buildId scheme).
@@ -90,20 +92,20 @@ export type AllMangaCryptoProfile = {
 };
 
 /**
- * Live profile, extracted from `cdn.mkissa.net/all/mk/_app/immutable/chunks/Cs-j4hUW.js`
- * on 2026-10-19 and confirmed by a successful bootstrap (HTTP 200, epoch 2963)
- * plus a persisted-query episode round-trip (`aaReq` accepted).
+ * Live profile, extracted from `cdn.mkissa.net/all/mk/_app/immutable/chunks/DmW2_MRj.js`
+ * on 2026-11-12 and confirmed live on epoch 2968 (HTTP 200).
+ * The next epoch in the grace window answered `403 invalid_boot_token`.
  */
 export const ALLMANGA_CRYPTO_PROFILE: AllMangaCryptoProfile = {
-  buildId: "181",
-  saltMul: 60,
-  saltAdd: 175,
-  fragMul: 44,
-  fragAdd: 1,
-  bootPrefix: "UZQjku7:",
-  bootJoin: ":",
-  bootParts: ["buildId", "group", "host", "epoch", "lane"],
-  maskFragments: ["Yh7GkKY7p1E=", "GhmFaOUHEGk=", "prExpp5kt+4=", "FSm6Hdvb+S4="],
+  buildId: "189",
+  saltMul: 175,
+  saltAdd: 202,
+  fragMul: 129,
+  fragAdd: 61,
+  bootPrefix: "iGmNgPGdi:",
+  bootJoin: "|",
+  bootParts: ["epoch", "lane", "group", "host", "buildId"],
+  maskFragments: ["pF98Ab2CCc0=", "gEhpQrtSn+M=", "oPeHj9dBNTU=", "7XcuzKoXhgs="],
 };
 
 export const ALLMANGA_BUILD_ID = ALLMANGA_CRYPTO_PROFILE.buildId;
@@ -148,8 +150,8 @@ export type AllMangaCryptoMaterial = {
 };
 
 /**
- * Last-known-good material when bootstrap fails (epoch 2963, build 181),
- * captured from a live bootstrap on 2026-10-19. It must be derived under the
+ * Last-known-good material when bootstrap fails (epoch 2968, build 189),
+ * captured from a live bootstrap on 2026-11-22. It must be derived under the
  * same profile as {@link ALLMANGA_CRYPTO_PROFILE}: a key left over from an
  * older build is not a degraded fallback, it is a guaranteed decrypt failure.
  * `allmanga.test.ts` pins that relationship.
@@ -159,8 +161,8 @@ export type AllMangaCryptoMaterial = {
  * that quietly runs on a fallback two epochs old looks exactly like a dead
  * provider.
  */
-export const ALLMANGA_KEY_HEX = "5ce91c85a5aa5a2a670c553daf07a8a5ab730508692106a9e7fbb519dd219ae1";
-export const ALLMANGA_EPOCH = 2963;
+export const ALLMANGA_KEY_HEX = "e574fe78e582fc9d49ec645d7a2d2aac1798e482279fd22ef9f892dff33d1f58";
+export const ALLMANGA_EPOCH = 2968;
 
 export const BUNDLED_ALLMANGA_CRYPTO: AllMangaCryptoMaterial = {
   keyHex: ALLMANGA_KEY_HEX,
@@ -170,41 +172,124 @@ export const BUNDLED_ALLMANGA_CRYPTO: AllMangaCryptoMaterial = {
   contentLane: ALLMANGA_CONTENT_LANE_EPISODE,
 };
 
+const VALID_BOOT_PARTS = new Set<AllMangaBootPart>(["group", "host", "lane", "buildId", "epoch"]);
+
+/**
+ * Returns the active Tier-1 hotfix AllManga crypto profile when a complete,
+ * valid rotation bundle is installed; falls back atomically to the bundled
+ * profile on any missing or malformed field so partial rotations never apply.
+ */
+export function getEffectiveAllMangaCryptoProfile(): AllMangaCryptoProfile {
+  const overrides = getProviderHotfixEntry("allanime")?.cryptoOverrides;
+  if (!overrides?.buildId) return ALLMANGA_CRYPTO_PROFILE;
+  return parseAllMangaCryptoProfileOverride(overrides) ?? ALLMANGA_CRYPTO_PROFILE;
+}
+
+/**
+ * Refuse, at install time, an `allanime` override that names a rotation
+ * (`buildId`) but would fall back to the bundled profile at runtime. Applied
+ * silently, it looks exactly like a stale pin: the operator thinks the
+ * rotation shipped and every user stays on the old constants.
+ */
+export function describeAllMangaCryptoOverrideProblem(
+  overrides: Readonly<Record<string, string>> | undefined,
+): string | null {
+  if (!overrides?.buildId) return null;
+  return parseAllMangaCryptoProfileOverride(overrides)
+    ? null
+    : "AllManga cryptoOverrides names a buildId but the rotation profile is incomplete or malformed (saltMul, saltAdd, fragMul, fragAdd, bootPrefix, bootJoin, 5 bootParts, 4 maskFragments)";
+}
+
+function parseAllMangaCryptoProfileOverride(
+  overrides: Readonly<Record<string, string>>,
+): AllMangaCryptoProfile | null {
+  if (!overrides.buildId) return null;
+
+  const saltMul = Number(overrides.saltMul);
+  const saltAdd = Number(overrides.saltAdd);
+  const fragMul = Number(overrides.fragMul);
+  const fragAdd = Number(overrides.fragAdd);
+  const bootPrefix = overrides.bootPrefix;
+  const bootJoin = overrides.bootJoin;
+  const bootPartsRaw = overrides.bootParts?.split(",").map((p) => p.trim()) ?? [];
+  const maskFragments = overrides.maskFragments?.split(",").map((f) => f.trim()) ?? [];
+
+  if (
+    !Number.isInteger(saltMul) ||
+    !Number.isInteger(saltAdd) ||
+    !Number.isInteger(fragMul) ||
+    !Number.isInteger(fragAdd) ||
+    !bootPrefix ||
+    !bootJoin ||
+    bootPartsRaw.length !== 5 ||
+    !bootPartsRaw.every((p): p is AllMangaBootPart =>
+      VALID_BOOT_PARTS.has(p as AllMangaBootPart),
+    ) ||
+    maskFragments.length !== 4 ||
+    maskFragments.some((f) => Buffer.from(f, "base64").length !== 8)
+  ) {
+    return null;
+  }
+
+  return {
+    buildId: overrides.buildId,
+    saltMul,
+    saltAdd,
+    fragMul,
+    fragAdd,
+    bootPrefix,
+    bootJoin,
+    bootParts: bootPartsRaw,
+    maskFragments,
+  };
+}
+
+export function getEffectiveAllMangaQueryHash(): string {
+  return getProviderCryptoOverride("allanime", "queryHash", ALLMANGA_QUERY_HASH);
+}
+
+export function getEffectiveAllMangaBootstrapUrl(): string {
+  const override = getProviderCryptoOverride("allanime", "bootstrapUrl", ALLMANGA_BOOTSTRAP_URL);
+  return isSafeManifestHttpsUrl(override) ? override : ALLMANGA_BOOTSTRAP_URL;
+}
+
+export function getEffectiveAllMangaContentLane(): string {
+  return getProviderCryptoOverride("allanime", "contentLane", ALLMANGA_CONTENT_LANE_EPISODE);
+}
+
 export function hashBuildId(buildId: string): Buffer {
+  const profile = getEffectiveAllMangaCryptoProfile();
   const text = buildId || "";
   const out = Buffer.alloc(32);
   for (let index = 0; index < 32; index += 1) {
     out[index] =
       (text.charCodeAt(index % Math.max(text.length, 1)) || 0) ^
-      ((index * ALLMANGA_CRYPTO_PROFILE.saltMul + ALLMANGA_CRYPTO_PROFILE.saltAdd) & 255);
+      ((index * profile.saltMul + profile.saltAdd) & 255);
   }
   return out;
 }
 
 /** Port of mkissa `ev(buildId)` — 32-byte mask key material. */
-export function deriveMaskKey(
-  buildId: string = ALLMANGA_BUILD_ID,
-  fragments: readonly string[] = ALLMANGA_MASK_FRAGMENTS,
-): Buffer {
-  const hashed = hashBuildId(buildId);
+export function deriveMaskKey(buildId?: string, fragments?: readonly string[]): Buffer {
+  const profile = getEffectiveAllMangaCryptoProfile();
+  const activeBuildId = buildId ?? profile.buildId;
+  const activeFragments = fragments ?? profile.maskFragments;
+  const hashed = hashBuildId(activeBuildId);
   const out = Buffer.alloc(32);
   for (let fragmentIndex = 0; fragmentIndex < 4; fragmentIndex += 1) {
-    const fragment = Buffer.from(fragments[fragmentIndex] ?? "", "base64");
+    const fragment = Buffer.from(activeFragments[fragmentIndex] ?? "", "base64");
     const offset = fragmentIndex * 8;
     for (let byteIndex = 0; byteIndex < 8; byteIndex += 1) {
       out[offset + byteIndex] =
         (fragment[byteIndex] ?? 0) ^
         (hashed[offset + byteIndex] ?? 0) ^
-        (((fragmentIndex * ALLMANGA_CRYPTO_PROFILE.fragMul +
-          byteIndex * ALLMANGA_CRYPTO_PROFILE.fragAdd) &
-          255) >>>
-          0);
+        (((fragmentIndex * profile.fragMul + byteIndex * profile.fragAdd) & 255) >>> 0);
     }
   }
   return out;
 }
 
-export function deriveKeyFromPartB(partB: string, buildId: string = ALLMANGA_BUILD_ID): Buffer {
+export function deriveKeyFromPartB(partB: string, buildId?: string): Buffer {
   const mask = deriveMaskKey(buildId);
   const part = Buffer.from(partB, "base64");
   if (part.length !== 32) {
@@ -241,7 +326,8 @@ export function buildAllMangaBootToken(options: {
   readonly refererHost?: string;
   readonly contentLane?: string;
 }): string {
-  const buildId = options.buildId ?? ALLMANGA_BUILD_ID;
+  const profile = getEffectiveAllMangaCryptoProfile();
+  const buildId = options.buildId ?? profile.buildId;
   const values: Record<AllMangaBootPart, string> = {
     group: options.keyGroup ?? ALLMANGA_KEY_GROUP,
     // Signed without the `www.` prefix; the site sends the bare host.
@@ -253,13 +339,8 @@ export function buildAllMangaBootToken(options: {
     epoch: String(options.epoch),
   };
   const mask = deriveMaskKey(buildId);
-  const inner = Buffer.from(
-    hmacSha256Hex(mask, `${ALLMANGA_CRYPTO_PROFILE.bootPrefix}${buildId}`),
-    "hex",
-  );
-  const payload = ALLMANGA_CRYPTO_PROFILE.bootParts
-    .map((part) => values[part])
-    .join(ALLMANGA_CRYPTO_PROFILE.bootJoin);
+  const inner = Buffer.from(hmacSha256Hex(mask, `${profile.bootPrefix}${buildId}`), "hex");
+  const payload = profile.bootParts.map((part) => values[part]).join(profile.bootJoin);
   return hmacSha256Hex(inner, payload);
 }
 
@@ -347,6 +428,11 @@ export function getLastAllMangaRotationSignal(): AllMangaRotationSignal | null {
   return lastAllMangaRotationSignal;
 }
 
+/** Test seam: clear the module-level signal between cases. */
+export function resetAllMangaRotationSignalForTest(): void {
+  lastAllMangaRotationSignal = null;
+}
+
 export async function fetchAllMangaCryptoMaterial(
   context: ProviderRuntimeContext,
   ua: string,
@@ -354,8 +440,11 @@ export async function fetchAllMangaCryptoMaterial(
 ): Promise<AllMangaCryptoMaterial | null> {
   let lastRotationSignal: AllMangaRotationSignal | null = null;
   try {
-    const buildId = ALLMANGA_BUILD_ID;
-    const contentLane = ALLMANGA_CONTENT_LANE_EPISODE;
+    const profile = getEffectiveAllMangaCryptoProfile();
+    const buildId = profile.buildId;
+    const contentLane = getEffectiveAllMangaContentLane();
+    const bootstrapUrl = getEffectiveAllMangaBootstrapUrl();
+    const queryHash = getEffectiveAllMangaQueryHash();
     const contextNowMs = Date.parse(context.now());
     const nowMs = Number.isFinite(contextNowMs) ? contextNowMs : Date.now();
 
@@ -367,7 +456,7 @@ export async function fetchAllMangaCryptoMaterial(
         refererHost: "mkissa.to",
         contentLane,
       });
-      const url = `${ALLMANGA_BOOTSTRAP_URL}?buildId=${encodeURIComponent(buildId)}&k=${encodeURIComponent(contentLane)}`;
+      const url = `${bootstrapUrl}?buildId=${encodeURIComponent(buildId)}&k=${encodeURIComponent(contentLane)}`;
       try {
         const response = await providerFetch(context, url, {
           signal: signal
@@ -408,7 +497,7 @@ export async function fetchAllMangaCryptoMaterial(
         return {
           keyHex: key.toString("hex"),
           epoch: body.epoch,
-          queryHash: ALLMANGA_QUERY_HASH,
+          queryHash,
           buildId,
           contentLane: body.k?.trim() || contentLane,
         };

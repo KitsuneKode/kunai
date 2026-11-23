@@ -151,7 +151,7 @@ export function getNotificationTone(kind: string): ShellStatusTone {
   if (kind === "queue-recovery") return "warning";
   if (kind === "download-failed") return "error";
   if (kind === "new-episode" || kind === "download-complete") return "success";
-  if (kind === "app-update") return "info";
+  if (kind === "app-update" || kind === "provider-manifest-updated") return "info";
   if (kind === "app-restart-required") return "success";
   return "neutral";
 }

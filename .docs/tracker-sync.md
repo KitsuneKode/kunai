@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-18"
+lastReviewed: "2026-11-22"
 ---
 
 # Tracker Sync
@@ -310,6 +310,12 @@ paused and goes out on resume, so pausing never costs an episode. The drain
 checks the pause before claiming, so a paused queue holds no leases. An
 unparseable timestamp fails open rather than stopping sync with nothing able to
 explain why.
+
+**Offline intent** (saved `offlineMode` or `--offline`) gates delivery the same
+way: `SyncService` takes `isOfflineIntent` and the drain claims nothing while it
+is true, so finishing a downloaded episode offline queues the progress without
+contacting a tracker. Leaving offline mode in Settings calls `deliverSoon()`
+(`apply-settings-to-runtime.ts`), and startup skips the sync pass while offline.
 
 The root status crumb shows `sync✓`, `sync⏸`, `sync⚠`, or `sync✗`. Disconnected
 earns no crumb — it is the default for most users and would be permanent noise.

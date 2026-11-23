@@ -26,6 +26,20 @@ function streamMatchesQualityPreference(stream: StreamCandidate, preference: str
   return false;
 }
 
+function selectStreamForQualityCeiling(
+  ordered: readonly StreamCandidate[],
+  preference: string,
+): StreamCandidate | undefined {
+  const exact = ordered.find((stream) => streamMatchesQualityPreference(stream, preference));
+  if (exact) return exact;
+  const prefRank = Number.parseInt(preference.replace(/p$/i, ""), 10);
+  if (!Number.isFinite(prefRank) || prefRank <= 0) return undefined;
+  return ordered.find((stream) => {
+    const rank = stream.qualityRank ?? 0;
+    return rank > 0 && rank <= prefRank;
+  });
+}
+
 export function selectReadyStream(
   streams: readonly StreamCandidate[],
   input: {
@@ -83,9 +97,7 @@ export function selectReadyStream(
   // still wins when labels are "1080p" / "1080P" / "ORG 1080".
   const preferredQuality =
     normalizedQualityPreference && normalizedQualityPreference !== "best"
-      ? ordered.find((stream) =>
-          streamMatchesQualityPreference(stream, normalizedQualityPreference),
-        )
+      ? selectStreamForQualityCeiling(ordered, normalizedQualityPreference)
       : undefined;
   const useProviderReadyOrder =
     input.preferProviderReadyOrder === true &&

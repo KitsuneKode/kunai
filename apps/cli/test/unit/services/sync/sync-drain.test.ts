@@ -902,6 +902,47 @@ describe("SyncService rate limiting", () => {
  * if pausing never loses work — so enqueue keeps accepting while the drain
  * holds, and resuming delivers everything that piled up.
  */
+describe("SyncService offline intent", () => {
+  test("offline delivers and claims nothing; going online delivers what queued", async () => {
+    const repo = outbox();
+    const anilist = adapter("anilist");
+    const service = createSyncService({
+      adapters: [anilist.adapter],
+      outbox: repo,
+      config: configPort(),
+      isOfflineIntent: () => true,
+    });
+
+    // Finishing a downloaded episode offline still enqueues durably...
+    seedOperation(repo, anilistFavourite);
+    const summary = await service.drain();
+    // ...but nothing reaches the tracker and no lease is left behind.
+    expect(anilist.calls.length).toBe(0);
+    expect(summary.claimed).toBe(0);
+    expect(summary.pending).toBe(1);
+    expect(repo.claimDue(10).length).toBe(1);
+  });
+
+  test("once online, the queued row is delivered", async () => {
+    const repo = outbox();
+    const anilist = adapter("anilist");
+    let offline = true;
+    const service = createSyncService({
+      adapters: [anilist.adapter],
+      outbox: repo,
+      config: configPort(),
+      isOfflineIntent: () => offline,
+    });
+    seedOperation(repo, anilistFavourite);
+    await service.drain();
+    expect(anilist.calls.length).toBe(0);
+
+    offline = false;
+    await service.drain();
+    expect(anilist.calls.length).toBe(1);
+  });
+});
+
 describe("SyncService pause", () => {
   const pausedConfig = (pausedUntil: string | null) => ({
     read: async () => ({

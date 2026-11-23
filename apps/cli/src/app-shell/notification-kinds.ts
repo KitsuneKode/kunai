@@ -18,6 +18,7 @@ export const NOTIFICATION_KIND_GLYPH: Record<string, string> = {
   "app-update": "↑",
   "app-restart-required": "⟳",
   "provider-health": "⊘",
+  "provider-manifest-updated": "↻",
 };
 
 export const NOTIFICATION_KIND_LABEL: Record<string, string> = {
@@ -28,6 +29,7 @@ export const NOTIFICATION_KIND_LABEL: Record<string, string> = {
   "app-update": "Update available",
   "app-restart-required": "Restart required",
   "provider-health": "Provider unreachable",
+  "provider-manifest-updated": "Providers updated",
 };
 
 export function notificationKindGlyph(kind: string): string {

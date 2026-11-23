@@ -1,4 +1,4 @@
-import type { MediaLanguageProfile } from "@kunai/config";
+import type { HdrMode, MediaLanguageProfile } from "@kunai/config";
 
 /**
  * Pure resolution of transient, in-memory config overrides a launch flag should
@@ -15,12 +15,14 @@ export interface SessionOverrideArgs {
   readonly quality?: string;
   readonly audio?: string;
   readonly subtitle?: string;
+  readonly hdr?: HdrMode;
 }
 
 export interface SessionLayoutConfig {
   readonly zenMode: boolean;
   readonly minimalMode: boolean;
   readonly offlineMode?: boolean;
+  readonly hdrMode?: HdrMode;
   readonly animeLanguageProfile: MediaLanguageProfile;
   readonly seriesLanguageProfile: MediaLanguageProfile;
   readonly movieLanguageProfile: MediaLanguageProfile;
@@ -30,6 +32,7 @@ export type SessionConfigOverrides = Partial<{
   zenMode: boolean;
   minimalMode: boolean;
   offlineMode: boolean;
+  hdrMode: HdrMode;
   animeLanguageProfile: MediaLanguageProfile;
   seriesLanguageProfile: MediaLanguageProfile;
   movieLanguageProfile: MediaLanguageProfile;
@@ -60,6 +63,7 @@ export function resolveSessionConfigOverrides(
   if (args.zen && !config.zenMode) overrides.zenMode = true;
   if (args.minimal && !config.minimalMode) overrides.minimalMode = true;
   if (args.offline && !config.offlineMode) overrides.offlineMode = true;
+  if (args.hdr !== undefined && args.hdr !== config.hdrMode) overrides.hdrMode = args.hdr;
 
   if (args.quality !== undefined || args.audio !== undefined || args.subtitle !== undefined) {
     for (const lane of LANGUAGE_LANES) {

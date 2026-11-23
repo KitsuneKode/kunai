@@ -9,6 +9,7 @@ import {
   probeStreamReachability,
   shouldAbortPlaybackForPreflight,
 } from "../src/shared/stream-reachability";
+import { asMockFetch } from "./support/mock-fetch";
 
 function response(
   status: number,
@@ -732,9 +733,7 @@ describe("stream reachability", () => {
 describe("isGuardedPlatformFetch", () => {
   test("a distinct stub is not the platform fetch, even when assigned to globalThis.fetch", () => {
     const originalFetch = globalThis.fetch;
-    // SAFETY: the stub is only invoked as `(url, init) => Response`; fetch's branded preconnect member is unused.
-    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
-    const stub: typeof fetch = (async () => new Response("ok")) as unknown as typeof fetch;
+    const stub = asMockFetch(async () => new Response("ok"));
     try {
       expect(isGuardedPlatformFetch(stub)).toBe(false);
       globalThis.fetch = stub;
@@ -750,10 +749,7 @@ describe("isGuardedPlatformFetch", () => {
     // globalThis.fetch, so documentation hosts (example.com → 192.0.2.1) and
     // DNS sinkholes reported blocked-target and never called the stub.
     const originalFetch = globalThis.fetch;
-    // SAFETY: the stub is only invoked as `(url, init) => Response`; fetch's branded preconnect member is unused.
-    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
-    const stub: typeof fetch = (async () =>
-      new Response("ok", { status: 200 })) as unknown as typeof fetch;
+    const stub = asMockFetch(async () => new Response("ok", { status: 200 }));
     globalThis.fetch = stub;
     try {
       const outcome = await fetchGuardedStreamTarget({

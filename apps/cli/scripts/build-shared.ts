@@ -68,8 +68,31 @@ function cliVersionManifestPlugin(root: string): BunPlugin {
   };
 }
 
+/**
+ * Keep the unpublished dev bundle slim: Android handoff DASH parsing pulls in
+ * `@xmldom/xmldom`, which is large but already a declared runtime dependency.
+ * `bun run start` resolves it from node_modules; compiled binaries still bundle
+ * it because this plugin is npm-bundle-only.
+ */
+function npmBundleExternalDependencyPlugin(): BunPlugin {
+  return {
+    name: "kunai-npm-bundle-externals",
+    setup(build) {
+      build.onResolve({ filter: /^@xmldom\/xmldom$/ }, () => ({
+        path: "@xmldom/xmldom",
+        external: true,
+      }));
+    },
+  };
+}
+
+/** Compile-time define map shared by every release artifact. */
+interface ReleaseDefineMap {
+  readonly [key: string]: string;
+}
+
 /** Compile-time defines shared by every release artifact. */
-export const RELEASE_DEFINE: Record<string, string> = {
+export const RELEASE_DEFINE: ReleaseDefineMap = {
   // Pin Ink's optional devtools path off in release builds.
   "process.env.DEV": '"false"',
   // Let React and any small env-gated branches take their production path.
@@ -124,14 +147,16 @@ export function npmBundleBuildOptions(
   root: string,
   options: { readonly minify: boolean },
 ): BunBuildOptions {
+  const releaseBase = releaseBuildBaseOptions(root);
   return {
-    ...releaseBuildBaseOptions(root),
+    ...releaseBase,
     entrypoints: [join(root, CLI_ENTRY)],
     outdir: join(root, "dist"),
     format: "esm",
     splitting: false,
     // Inline workspace @kunai/* packages and runtime npm deps into one artifact.
     packages: "bundle",
+    plugins: [...(releaseBase.plugins ?? []), npmBundleExternalDependencyPlugin()],
     naming: {
       entry: "kunai.js",
       chunk: "[name]-[hash].[ext]",
@@ -152,8 +177,11 @@ export function npmBundleBuildOptions(
 export function compileBinaryBuildOptions(
   root: string,
   target: { readonly triple: string; readonly outfile: string },
+  options: { readonly bytecode?: boolean } = {},
 ): BunBuildOptions {
-  return {
+  const bytecode = options.bytecode ?? process.env.KUNAI_COMPILE_BYTECODE === "1";
+  // SAFETY: target.triple is a validated ReleaseBinaryTarget triple; Bun's CompileTarget union is narrower than string.
+  const base = {
     ...releaseBuildBaseOptions(root),
     entrypoints: [join(root, CLI_ENTRY)],
     sourcemap: "none",
@@ -167,6 +195,10 @@ export function compileBinaryBuildOptions(
       autoloadDotenv: false,
     },
   } as BunBuildOptions;
+  if (bytecode) {
+    return { ...base, bytecode: true, format: "esm" };
+  }
+  return base;
 }
 
 export function forbiddenReleaseInputs(metafile: BunBuildMetafile): readonly string[] {
@@ -205,6 +237,18 @@ export function topReleaseInputs(
   metafile: BunBuildMetafile,
   limit = 12,
 ): readonly { readonly path: string; readonly bytes: number }[] {
+  const byOutputBytes = new Map<string, number>();
+  for (const output of Object.values(metafile.outputs ?? {})) {
+    for (const [path, info] of Object.entries(output.inputs ?? {})) {
+      byOutputBytes.set(path, (byOutputBytes.get(path) ?? 0) + info.bytesInOutput);
+    }
+  }
+  if (byOutputBytes.size > 0) {
+    return [...byOutputBytes.entries()]
+      .map(([path, bytes]) => ({ path, bytes }))
+      .sort((left, right) => right.bytes - left.bytes)
+      .slice(0, limit);
+  }
   return Object.entries(metafile.inputs)
     .map(([path, input]) => ({ path, bytes: input.bytes }))
     .sort((left, right) => right.bytes - left.bytes)
@@ -355,8 +399,10 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
  */
 // October 22 provider/timing/consent/mouse integration measured 3,185,739 bytes.
 // November 6 dependency alignment measured 3,195,955 bytes.
-// 3125 KiB leaves 4,045 bytes; public launcher budgets below are unchanged.
-export const NPM_BUNDLE_BUDGET_KB = 3_125;
+// November 19 Jikan fallback, Android local-file gateway, sub/dub source cycling,
+// and Termux onboarding additions measured 3,205,426 bytes.
+// 3135 KiB leaves 4,814 bytes; public launcher budgets below are unchanged.
+export const NPM_BUNDLE_BUDGET_KB = 3_135;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
@@ -444,6 +490,41 @@ export function assertNpmBundleBudget(bytes: number): void {
   throw new Error(
     `[build] dist/kunai.js is ${formatBuildSize(bytes)} (${bytes} bytes; budget ${NPM_BUNDLE_BUDGET_KB} KiB, over by ${bytes - budgetBytes} bytes). ` +
       `Run KUNAI_BUILD_ANALYZE=1 bun run build to inspect top inputs.`,
+  );
+}
+
+/** Default compiled standalone binary size ceiling (MiB, includes embedded Bun runtime). */
+export const COMPILED_BINARY_BUDGET_MIB = 120;
+
+/**
+ * Per-target compiled binary ceilings (MiB). macOS binaries are ~30 MiB smaller
+ * than Linux/Windows Bun executables, so a single flat 120 MiB cap would hide a
+ * 40+ MiB regression on darwin targets.
+ */
+export const COMPILED_BINARY_BUDGET_MIB_BY_TARGET: Readonly<Record<string, number>> = {
+  "darwin-arm64": 80,
+  "darwin-x64": 90,
+  "linux-arm64": 115,
+  "linux-arm64-musl": 115,
+  "linux-x64": 115,
+  "linux-x64-musl": 115,
+  "android-arm64": 115,
+  "android-x64": 115,
+  "windows-x64": 120,
+  "windows-arm64": 120,
+};
+
+export function compiledBinaryBudgetMib(targetId: string): number {
+  return COMPILED_BINARY_BUDGET_MIB_BY_TARGET[targetId] ?? COMPILED_BINARY_BUDGET_MIB;
+}
+
+export function assertCompiledBinaryBudget(targetId: string, bytes: number): void {
+  const budgetMib = compiledBinaryBudgetMib(targetId);
+  const budgetBytes = budgetMib * 1024 * 1024;
+  if (bytes <= budgetBytes) return;
+  throw new Error(
+    `[binaries] ${targetId} is ${formatBuildSize(bytes)} (${bytes} bytes; budget ${budgetMib} MiB, over by ${bytes - budgetBytes} bytes). ` +
+      `Run bun run scripts/build-binaries.ts --only ${targetId} --analyze to inspect top inputs.`,
   );
 }
 
