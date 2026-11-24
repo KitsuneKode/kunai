@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 
+import { rememberSeriesHint } from "@/services/catalog/series-hints";
 import { ActivePlaybackCheckpoint } from "@/services/continuation/active-playback-checkpoint";
 
 import { setCompanionPreferenceSource } from "../app-shell/companion-policy";
@@ -137,6 +138,21 @@ export function bootstrapServices(input: {
   } = persistence;
 
   const stateManager = new SessionStateManagerImpl({ logger });
+  // Every selected series leaves a hint (name, year, IMDb id) so episode lists
+  // can fall back to TVmaze when every TMDB host is down.
+  let lastHintedTitle = stateManager.getState().currentTitle;
+  stateManager.subscribe((state) => {
+    const title = state.currentTitle;
+    // Subscribers run on every state change; only a new title needs work.
+    if (title === lastHintedTitle) return;
+    lastHintedTitle = title;
+    if (title?.type !== "series" || title.isAnime) return;
+    rememberSeriesHint(title.id, {
+      name: title.name,
+      year: title.year,
+      imdbId: title.externalIds?.imdbId,
+    });
+  });
   const playerMode = resolvePlayerMode({
     choice: options?.playerChoice ?? "auto",
     platform: detectPlayerPlatform(),

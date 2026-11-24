@@ -5,8 +5,10 @@ import {
   type PlaybackTimingSourceFetchResult,
 } from "@/infra/timing/PlaybackTimingSource";
 import { dbg } from "@/logger";
+import { AniListRequestError, postAniListGraphql } from "@/services/catalog/anilist-client";
 import { fetchArmIdGraph } from "@/services/catalog/arm-client";
 import { fetchAnidbMalId } from "@kunai/providers";
+import { isJsonNumber, isJsonObject } from "@kunai/types";
 import type { ProviderExternalIds } from "@kunai/types";
 
 const ANISKIP_API = "https://api.aniskip.com/v1/skip-times";
@@ -203,30 +205,24 @@ async function resolveAniListIdByName(
     const query = seasonYear
       ? `query ($s: String, $y: Int) { Media(search: $s, type: ANIME, seasonYear: $y) { id } }`
       : `query ($s: String) { Media(search: $s, type: ANIME) { id } }`;
-    const res = await fetch("https://graphql.anilist.co", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        accept: "application/json",
-      },
-      body: JSON.stringify(
-        seasonYear
-          ? { query, variables: { s: name, y: seasonYear } }
-          : { query, variables: { s: name } },
-      ),
-      signal: signal ?? AbortSignal.timeout(5_000),
-    });
-    if (!res.ok) {
-      setCapped(anilistIdByNameCache, key, null);
-      return null;
-    }
-    const data = (await res.json()) as { data?: { Media?: { id?: number } } };
-    const id = data?.data?.Media?.id;
-    const result = typeof id === "number" ? String(id) : null;
+    const payload = await postAniListGraphql(
+      seasonYear
+        ? { query, variables: { s: name, y: seasonYear } }
+        : { query, variables: { s: name } },
+      { signal, timeoutMs: 5_000 },
+    );
+    const data = isJsonObject(payload.data) ? payload.data : null;
+    const media = data && isJsonObject(data.Media) ? data.Media : null;
+    const id = media?.id;
+    const result = isJsonNumber(id) ? String(id) : null;
     setCapped(anilistIdByNameCache, key, result);
     return result;
-  } catch {
-    setCapped(anilistIdByNameCache, key, null);
+  } catch (error) {
+    // Only a definitive answer is cached. A transport failure or a rate-limit
+    // cooldown used to be cached as "no match" for the whole session.
+    if (error instanceof AniListRequestError && error.kind === "http" && error.status === 404) {
+      setCapped(anilistIdByNameCache, key, null);
+    }
     return null;
   }
 }

@@ -35,8 +35,8 @@ import {
 } from "@/domain/catalog/title-detail";
 import { upgradeContentTypeFromAniListFormat } from "@/domain/media/anilist-format";
 import type { ContentType } from "@/domain/types";
-import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
 import { dbg } from "@/logger";
+import { postAniListGraphql } from "@/services/catalog/anilist-client";
 import { clearTmdbSessionCache, fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
 import {
   filterPlayableEpisodes,
@@ -46,6 +46,7 @@ import {
   seasonSummaryNeedsEpisodeVerification,
 } from "@/services/catalog/tmdb-release";
 import type { ProviderExternalIds } from "@kunai/types";
+import { isJsonObject } from "@kunai/types";
 
 import { aniListExternalLinks, tmdbExternalLinks, toTrailerUrl } from "./title-detail-extras";
 
@@ -54,7 +55,6 @@ import { aniListExternalLinks, tmdbExternalLinks, toTrailerUrl } from "./title-d
 // ---------------------------------------------------------------------------
 
 const TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p";
-const ANILIST_GRAPHQL = "https://graphql.anilist.co";
 
 const FETCH_TIMEOUT_MS = 8_000;
 const CREDITS_CAST_LIMIT = 15;
@@ -759,28 +759,15 @@ async function fetchAniListDetail(
   anilistId: string,
   signal?: AbortSignal,
 ): Promise<AniListDetailResult | null> {
-  const res = await fetch(ANILIST_GRAPHQL, {
-    method: "POST",
-    signal: withTimeoutSignal(signal, FETCH_TIMEOUT_MS),
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({
-      query: ANILIST_DETAIL_QUERY,
-      variables: { id: Number(anilistId) },
-    }),
-  }).catch(() => null);
+  // Shared client: rate-limit cooldown, dedupe, bounded timeout. Any failure
+  // means "no AniList detail", exactly as before.
+  const json = await postAniListGraphql(
+    { query: ANILIST_DETAIL_QUERY, variables: { id: Number(anilistId) } },
+    { signal, timeoutMs: FETCH_TIMEOUT_MS },
+  ).catch(() => null);
+  const data = json && isJsonObject(json.data) ? json.data : null;
 
-  if (!res || !res.ok) return null;
-
-  const json = (await res.json().catch(() => null)) as {
-    readonly data?: {
-      readonly Media?: unknown;
-    };
-  } | null;
-
-  const media = readRecord(json?.data?.Media);
+  const media = readRecord(data?.Media);
   if (!media.id) return null;
 
   const title =

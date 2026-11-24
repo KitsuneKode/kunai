@@ -4,7 +4,8 @@ import {
   upgradeContentTypeFromAniListFormat,
 } from "@/domain/media/anilist-format";
 import type { SearchResult, TitleAlias } from "@/domain/types";
-import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
+import { AniListRequestError, postAniListGraphql } from "@/services/catalog/anilist-client";
+import type { JsonObject } from "@kunai/types";
 
 type AniListTitle = {
   readonly romaji?: string | null;
@@ -30,7 +31,6 @@ type AniListMedia = {
   readonly synonyms?: readonly string[] | null;
 };
 
-const ANILIST_GRAPHQL_URL = "https://graphql.anilist.co";
 const animeMetadataCache = new Map<string, readonly AniListMedia[]>();
 
 export async function enrichAnimeSearchResultsWithAniList(
@@ -111,18 +111,22 @@ async function fetchAniListSearchPage(
     }
   }`;
 
-  const response = await fetch(ANILIST_GRAPHQL_URL, {
-    method: "POST",
-    signal: withTimeoutSignal(signal, 3500),
-    headers: {
-      "content-type": "application/json",
-      accept: "application/json",
-    },
-    body: JSON.stringify({ query: gqlQuery, variables: { search: query } }),
-  });
-
-  if (!response.ok) return [];
-  const data = (await response.json()) as {
+  let body: JsonObject;
+  try {
+    body = await postAniListGraphql({ query: gqlQuery, variables: { search: query } }, { signal });
+  } catch (error) {
+    // As before: an HTTP answer (including a rate-limit cooldown) means "no
+    // enrichment"; transport failures and timeouts still reach the caller.
+    if (
+      error instanceof AniListRequestError &&
+      (error.kind === "http" || error.kind === "rate-limited" || error.kind === "unreadable")
+    ) {
+      return [];
+    }
+    throw error;
+  }
+  // SAFETY: AniList's Page/media envelope for this query; fields are read optionally.
+  const data = body as {
     readonly data?: { readonly Page?: { readonly media?: readonly AniListMedia[] } };
   };
   const media = data.data?.Page?.media ?? [];

@@ -1,7 +1,7 @@
 import { stripHtml } from "@/domain/catalog/strip-html";
 import { anilistCatalogStructure } from "@/domain/media/anilist-format";
 import type { SearchResult, ShellMode, TitleAlias } from "@/domain/types";
-import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
+import { AniListRequestError, postAniListGraphql } from "@/services/catalog/anilist-client";
 import { evictOverflowedEntries } from "@/services/catalog/bounded-cache";
 import { loadJikanAnimeTrending } from "@/services/catalog/jikan-trending";
 import { loadKitsuAnimeTrending } from "@/services/catalog/kitsu-trending";
@@ -15,8 +15,12 @@ import {
   invidiousSearch,
   mapInvidiousSearchItem,
 } from "@kunai/providers/youtube";
-import type { JsonObject, ProviderSearchResult } from "@kunai/types";
-const ANILIST_GRAPHQL_URL = "https://graphql.anilist.co";
+import {
+  isJsonObject,
+  isJsonString,
+  type JsonObject,
+  type ProviderSearchResult,
+} from "@kunai/types";
 const DISCOVERY_CACHE_TTL_MS = 30 * 60 * 1000;
 const SURPRISE_CACHE_TTL_MS = 10 * 60 * 1000;
 // Surprise keys embed a rolling 10-minute bucket, so a session that outlives
@@ -730,26 +734,21 @@ async function loadAnimeSurpriseList(
  */
 async function postAniList(
   source: string,
-  body: Record<string, unknown>,
+  body: JsonObject,
   signal?: AbortSignal,
 ): Promise<{ readonly data?: unknown }> {
-  const response = await fetch(ANILIST_GRAPHQL_URL, {
-    method: "POST",
-    signal: withTimeoutSignal(signal, 3500),
-    headers: {
-      "content-type": "application/json",
-      accept: "application/json",
-    },
-    body: JSON.stringify(body),
-  }).catch((error: unknown) => {
-    throw new DiscoveryUnavailableError(source, "request failed", { cause: error });
-  });
-  if (!response.ok) throw new DiscoveryUnavailableError(source, `HTTP ${response.status}`);
-  // SAFETY: response.json() resolves to the parsed document; data is checked optional.
-
-  return (await response.json().catch((error: unknown) => {
-    throw new DiscoveryUnavailableError(source, "unreadable payload", { cause: error });
-  })) as { readonly data?: unknown };
+  if (!isJsonString(body.query)) {
+    throw new DiscoveryUnavailableError(source, "request carried no GraphQL query");
+  }
+  const variables = isJsonObject(body.variables) ? body.variables : undefined;
+  try {
+    // Shared client: rate-limit cooldown, in-flight dedupe and a bounded timeout.
+    return await postAniListGraphql({ query: body.query, variables }, { signal });
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    const reason = error instanceof AniListRequestError ? error.kind : "request failed";
+    throw new DiscoveryUnavailableError(source, reason, { cause: error });
+  }
 }
 
 async function fetchAniListMedia(

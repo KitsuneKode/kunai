@@ -1,14 +1,20 @@
+import {
+  AniListRequestError,
+  postAniListGraphql as postSharedAniList,
+} from "@/services/catalog/anilist-client";
 import { evictOverflowedEntries } from "@/services/catalog/bounded-cache";
+import { seriesHintFor } from "@/services/catalog/series-hints";
 import { fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
 import {
   summarizeTmdbSeasonEpisodes as summarizeTmdbSeasonEpisodesImpl,
   type TmdbSeasonAiring,
 } from "@/services/catalog/tmdb-release";
+import { loadTvmazeEpisodesForHint } from "@/services/catalog/tvmaze-client";
 import type { ReleaseNewSeason } from "@kunai/types";
+import type { JsonValue } from "@kunai/types";
 
 export type { TmdbSeasonAiring };
 export const summarizeTmdbSeasonEpisodes = summarizeTmdbSeasonEpisodesImpl;
-const ANILIST_GRAPHQL_URL = "https://graphql.anilist.co";
 const NEXT_RELEASE_TTL_MS = 2 * 60 * 60 * 1000;
 const RELEASING_TODAY_TTL_MS = 30 * 60 * 1000;
 const HISTORICAL_RELEASE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -803,14 +809,49 @@ function dedupeScheduleItems(
   return deduped;
 }
 
+/**
+ * A TMDB season's episode rows, or the same rows rebuilt from TVmaze when
+ * every TMDB host is down. Rows keep TMDB's field names so the summarisers
+ * need no second code path. TVmaze needs to know the show: the session's hint
+ * for this TMDB id, else the schedule entry's title (exact name match only).
+ */
+async function fetchSeasonEpisodeRows(
+  titleId: string,
+  season: number,
+  titleName: string | undefined,
+  signal?: AbortSignal,
+): Promise<Record<string, unknown>[]> {
+  try {
+    const data = await fetchJson(`/tv/${titleId}/season/${season}`, signal);
+    const episodePayload = readRecord(data).episodes;
+    return Array.isArray(episodePayload) ? episodePayload.map(readRecord) : [];
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    const hint = seriesHintFor(titleId) ?? (titleName ? { name: titleName } : undefined);
+    const episodes = hint ? await loadTvmazeEpisodesForHint(hint, signal).catch(() => null) : null;
+    const rows = (episodes ?? [])
+      .filter((episode) => episode.season === season)
+      .map((episode) => ({
+        episode_number: episode.number,
+        name: episode.name,
+        air_date: episode.airdate,
+      }));
+    if (rows.length === 0) throw error;
+    return rows;
+  }
+}
+
 async function loadTmdbNextRelease(
   input: CatalogScheduleInput,
   signal?: AbortSignal,
 ): Promise<CatalogScheduleItem | null> {
   if (!input.season || !input.episode) return null;
-  const data = await fetchJson(`/tv/${input.titleId}/season/${input.season}`, signal);
-  const episodePayload = readRecord(data).episodes;
-  const episodes = Array.isArray(episodePayload) ? episodePayload.map(readRecord) : [];
+  const episodes = await fetchSeasonEpisodeRows(
+    input.titleId,
+    input.season,
+    input.titleName,
+    signal,
+  );
   const episode = episodes.find((candidate) => Number(candidate.episode_number) === input.episode);
   if (!episode) return null;
 
@@ -833,9 +874,12 @@ async function loadTmdbSeriesReleaseProgress(
   signal?: AbortSignal,
 ): Promise<CatalogSeriesReleaseProgress | null> {
   if (!input.season) return null;
-  const data = await fetchJson(`/tv/${input.titleId}/season/${input.season}`, signal);
-  const episodePayload = readRecord(data).episodes;
-  const episodes = Array.isArray(episodePayload) ? episodePayload.map(readRecord) : [];
+  const episodes = await fetchSeasonEpisodeRows(
+    input.titleId,
+    input.season,
+    input.titleName,
+    signal,
+  );
   const today = formatDateKey(new Date());
   const { aired, next } = summarizeTmdbSeasonEpisodes(episodes, today);
   if (!aired && !next) return null;
@@ -875,9 +919,7 @@ async function probeTmdbNextSeason(
   signal?: AbortSignal,
 ): Promise<ReleaseNewSeason | undefined> {
   try {
-    const data = await fetchJson(`/tv/${titleId}/season/${season}`, signal);
-    const episodePayload = readRecord(data).episodes;
-    const episodes = Array.isArray(episodePayload) ? episodePayload.map(readRecord) : [];
+    const episodes = await fetchSeasonEpisodeRows(titleId, season, undefined, signal);
     const { aired, next } = summarizeTmdbSeasonEpisodes(episodes, today);
     if (!aired && !next) return undefined;
     return {
@@ -957,21 +999,12 @@ function formatWindowDateKey(date: Date): string {
 }
 
 async function postAniListGraphql<T>(
-  body: { readonly query: string; readonly variables?: Record<string, unknown> },
+  body: { readonly query: string; readonly variables?: Readonly<Record<string, JsonValue>> },
   signal?: AbortSignal,
 ): Promise<T | null> {
   try {
-    const response = await fetch(ANILIST_GRAPHQL_URL, {
-      method: "POST",
-      signal: signal ?? AbortSignal.timeout(3500),
-      headers: {
-        "content-type": "application/json",
-        accept: "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-    if (!response.ok) throw catalogResponseError(response.status);
-    return (await response.json()) as T;
+    // SAFETY: AniList answers with the documented envelope for this query; callers read optional fields.
+    return (await postSharedAniList(body, { signal })) as T;
   } catch (error) {
     throw normalizeCatalogError(error);
   }
@@ -995,6 +1028,20 @@ function catalogResponseError(status: number): CatalogScheduleRequestError {
 
 function normalizeCatalogError(error: unknown): Error {
   if (error instanceof CatalogScheduleRequestError) return error;
+  if (error instanceof AniListRequestError) {
+    if (error.kind === "rate-limited") {
+      return new CatalogScheduleRequestError("rate-limited", "catalog rate limited", error.status);
+    }
+    if (error.kind === "timeout") {
+      return new CatalogScheduleRequestError("timeout", "catalog request timed out", error.status);
+    }
+    if (error.kind === "network") {
+      return new CatalogScheduleRequestError("network", "catalog network request failed");
+    }
+    return error.status === undefined
+      ? new CatalogScheduleRequestError("unavailable", "catalog unavailable")
+      : catalogResponseError(error.status);
+  }
   if (error instanceof Error && error.name === "AbortError") return error;
   if (error instanceof Error && /timeout|timed out/i.test(error.message)) {
     return new CatalogScheduleRequestError("timeout", "catalog request timed out");
