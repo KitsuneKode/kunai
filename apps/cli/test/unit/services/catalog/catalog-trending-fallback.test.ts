@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 
 import { withFreshnessLabel } from "@/app/discover/discover-sections";
 import type { SearchResult } from "@/domain/types";
-import { createCatalogDurableCache } from "@/services/catalog/catalog-durable-cache";
 import {
   catalogAnswersSnapshot,
   recordCatalogAnswer,
@@ -11,6 +10,7 @@ import {
   CatalogDiscoveryService,
   type CatalogDurableCache,
 } from "@/services/catalog/CatalogDiscoveryService";
+import { createCatalogDurableCache } from "@/services/catalog/durable-json-cache";
 import {
   JikanTrendingUnavailableError,
   loadJikanAnimeTrending,
@@ -430,13 +430,14 @@ describe("shared walks: cancellation, refresh races, hedging", () => {
     const newer = Promise.withResolvers<readonly SearchResult[]>();
     let call = 0;
     const discovery = service(() => (call++ === 0 ? older.promise : newer.promise), down, durable);
-    const a = discovery.loadTrendingSection("anime");
+    const a = discovery.loadTrendingSection("anime").catch((error: Error) => error);
     discovery.clearTrendingCache();
     const b = discovery.loadTrendingSection("anime");
     newer.resolve([item("2", "Newer")]);
     expect((await b).results[0]?.title).toBe("Newer");
     older.resolve([item("1", "Older")]);
-    await a;
+    // The cleared walk's caller is told it was cancelled, not handed its answer.
+    expect(await a).toMatchObject({ name: "AbortError" });
     // The stale walk neither replaced memory nor the durable row.
     expect((await discovery.loadTrendingSection("anime")).results[0]?.title).toBe("Newer");
     expect(durable.read("catalog:trending:anime")?.results.map((entry) => entry.title)).toEqual([

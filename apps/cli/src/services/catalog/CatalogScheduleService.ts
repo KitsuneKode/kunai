@@ -1,3 +1,4 @@
+import { createKeyedJoiner } from "@/infra/concurrency/keyed-joiner";
 import {
   AniListRequestError,
   postAniListGraphql as postSharedAniList,
@@ -144,8 +145,10 @@ type ScheduleCacheEntry<T> = {
 
 export class CatalogScheduleService {
   private readonly cache = new Map<string, ScheduleCacheEntry<unknown>>();
-  private readonly inflight = new Map<string, Promise<unknown>>();
-  private readonly sharedLoads = new Map<string, SharedLoad<unknown>>();
+  /** One AniList progress batch per id set, shared by every caller asking for it. */
+  private readonly progressBatches = createKeyedJoiner<void>();
+  /** One schedule load per cache key, aborted once its last waiter leaves. */
+  private readonly loads = createKeyedJoiner<unknown>();
 
   constructor(
     private readonly loaders: CatalogScheduleLoaders = defaultCatalogScheduleLoaders,
@@ -155,9 +158,8 @@ export class CatalogScheduleService {
 
   clearCache(): void {
     this.cache.clear();
-    this.inflight.clear();
-    for (const shared of this.sharedLoads.values()) shared.controller.abort();
-    this.sharedLoads.clear();
+    this.progressBatches.clear();
+    this.loads.clear();
   }
 
   private store(key: string, entry: ScheduleCacheEntry<unknown>): void {
@@ -216,35 +218,30 @@ export class CatalogScheduleService {
 
     const uniqueIds = [...new Set(staleIds)].sort();
     const inflightKey = `progress-batch:anilist:${uniqueIds.join(",")}`;
-    const active = this.inflight.get(inflightKey);
-    if (active) {
-      await active;
-      return;
-    }
-
-    const task = (this.loaders.animeProgress ?? loadAniListReleaseProgressBatch)(
-      uniqueIds,
-      signal,
-    ).then((progressById) => {
-      for (const titleId of uniqueIds) {
-        const key = `progress:anilist:anime:${titleId}`;
-        const progress = progressById.get(titleId) ?? null;
-        const expiresAt = nowMs + NEXT_RELEASE_TTL_MS;
-        this.store(key, { expiresAt, value: progress });
-        this.persistentCache?.set(key, JSON.stringify(progress), {
-          expiresAt: new Date(expiresAt).toISOString(),
-          now: new Date(nowMs).toISOString(),
-          source: "anilist",
-        });
-      }
-      return undefined;
-    });
-    this.inflight.set(inflightKey, task);
-    try {
-      await task;
-    } finally {
-      this.inflight.delete(inflightKey);
-    }
+    const loadBatch = this.loaders.animeProgress ?? loadAniListReleaseProgressBatch;
+    // The batch runs on its own signal: one caller leaving must not cancel
+    // the batch another caller still waits on (it used to take the first
+    // caller's signal), and a batch cancelled or cleared mid-flight writes
+    // nothing.
+    await this.progressBatches.join(
+      inflightKey,
+      async (upstream) => {
+        const progressById = await loadBatch(uniqueIds, upstream);
+        if (upstream.aborted) return;
+        for (const titleId of uniqueIds) {
+          const key = `progress:anilist:anime:${titleId}`;
+          const progress = progressById.get(titleId) ?? null;
+          const expiresAt = nowMs + NEXT_RELEASE_TTL_MS;
+          this.store(key, { expiresAt, value: progress });
+          this.persistentCache?.set(key, JSON.stringify(progress), {
+            expiresAt: new Date(expiresAt).toISOString(),
+            now: new Date(nowMs).toISOString(),
+            source: "anilist",
+          });
+        }
+      },
+      { signal },
+    );
   }
 
   /**
@@ -456,48 +453,32 @@ export class CatalogScheduleService {
     const persisted = this.loadPersisted<T>(key);
     if (persisted.found) return persisted.value;
 
-    signal?.throwIfAborted();
-    const existing = this.sharedLoads.get(key);
-    // A load whose last waiter left is cancelled: start a fresh one instead
-    // of handing a new caller its abort. The identity check in its cleanup
-    // keeps it from removing the replacement.
-    if (existing && !existing.controller.signal.aborted) {
-      // SAFETY: as above — one key, one loader, one T.
-      return joinSharedLoad(existing as SharedLoad<T>, signal);
-    }
-
-    const controller = new AbortController();
-    const task = load(controller.signal).then((value) => {
-      // A cancelled load (every waiter left, or clearCache) may have resolved
-      // with partial data from a caught abort: never cache or persist it.
-      if (controller.signal.aborted) return value;
-      if (isStandIn?.(value) === true) {
-        // Retry the primary soon; a stand-in must not pin itself for the TTL
-        // or survive a restart as if it were the catalog's own answer.
-        this.store(key, { expiresAt: this.now() + STAND_IN_REUSE_MS, value });
+    // SAFETY: as above — one key, one loader, one T.
+    return this.loads.join(
+      key,
+      async (upstream) => {
+        const value = await load(upstream);
+        // A cancelled load (every waiter left, or clearCache) may have resolved
+        // with partial data from a caught abort: never cache or persist it.
+        if (upstream.aborted) return value;
+        if (isStandIn?.(value) === true) {
+          // Retry the primary soon; a stand-in must not pin itself for the TTL
+          // or survive a restart as if it were the catalog's own answer.
+          this.store(key, { expiresAt: this.now() + STAND_IN_REUSE_MS, value });
+          return value;
+        }
+        const ttl = ttlForScheduleValue(value, ttlMs, this.now());
+        const expiresAt = this.now() + ttl;
+        this.store(key, { expiresAt, value });
+        this.persistentCache?.set(key, JSON.stringify(value), {
+          expiresAt: new Date(expiresAt).toISOString(),
+          now: new Date(this.now()).toISOString(),
+          ...metadata,
+        });
         return value;
-      }
-      const ttl = ttlForScheduleValue(value, ttlMs, this.now());
-      const expiresAt = this.now() + ttl;
-      this.store(key, {
-        expiresAt,
-        value,
-      });
-      this.persistentCache?.set(key, JSON.stringify(value), {
-        expiresAt: new Date(expiresAt).toISOString(),
-        now: new Date(this.now()).toISOString(),
-        ...metadata,
-      });
-      return value;
-    });
-    const shared: SharedLoad<T> = { promise: task, controller, waiters: 0 };
-    this.sharedLoads.set(key, shared);
-    task
-      .finally(() => {
-        if (this.sharedLoads.get(key) === shared) this.sharedLoads.delete(key);
-      })
-      .catch(() => undefined);
-    return joinSharedLoad(shared, signal);
+      },
+      { signal },
+    ) as Promise<T>;
   }
 
   private loadPersisted<T>(key: string): { found: true; value: T } | { found: false } {
@@ -517,48 +498,6 @@ export class CatalogScheduleService {
       return { found: false };
     }
   }
-}
-
-/** One in-flight schedule request shared by every caller asking for its key. */
-interface SharedLoad<T> {
-  readonly promise: Promise<T>;
-  readonly controller: AbortController;
-  waiters: number;
-}
-
-/**
- * Wait on a shared load with the caller's own signal. A caller that aborts
- * leaves on its own; the request is cancelled only when no waiter remains.
- */
-function joinSharedLoad<T>(shared: SharedLoad<T>, signal: AbortSignal | undefined): Promise<T> {
-  shared.waiters += 1;
-  return new Promise<T>((resolve, reject) => {
-    let settled = false;
-    const leave = (abandoned: boolean) => {
-      if (settled) return;
-      settled = true;
-      signal?.removeEventListener("abort", onAbort);
-      shared.waiters -= 1;
-      if (abandoned && shared.waiters <= 0) shared.controller.abort();
-    };
-    const onAbort = () => {
-      leave(true);
-      reject(signal?.reason ?? new DOMException("The operation was aborted.", "AbortError"));
-    };
-    signal?.addEventListener("abort", onAbort, { once: true });
-    shared.promise.then(
-      (value) => {
-        leave(false);
-        resolve(value);
-        return undefined;
-      },
-      (error) => {
-        leave(false);
-        reject(error);
-        return undefined;
-      },
-    );
-  });
 }
 
 /** How long a stand-in calendar answer is reused before the primary is retried. */

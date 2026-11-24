@@ -1,4 +1,5 @@
 import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
+import { createKeyedJoiner } from "@/infra/concurrency/keyed-joiner";
 import {
   recordFallbackCatalogAnswer,
   recordPrimaryCatalogAnswer,
@@ -201,7 +202,11 @@ export function credentialFreeUrl(url: string): string {
 }
 
 const sessionCache = new Map<string, SessionCacheEntry>();
-const inflightRequests = new Map<string, Promise<JsonValue>>();
+/**
+ * "finish": a follower may opt out of waiting without cancelling the shared
+ * fetch — a superseded type-ahead request still warms the session cache.
+ */
+const inflightRequests = createKeyedJoiner<JsonValue>({ whenAbandoned: "finish" });
 /** Epoch ms until which each host is skipped; absent/0 means eligible. */
 const hostRetryAfter = new Map<string, number>();
 /**
@@ -276,10 +281,6 @@ export function clearTmdbSessionCache(): void {
   nextHalfOpenProbeAt = 0;
 }
 
-/**
- * A follower may opt out of waiting without cancelling the leader fetch — the
- * shared TMDB task must not inherit a superseded type-ahead abort signal.
- */
 /** How long a host that answered 429 is rested (shorter than an outage breaker). */
 const RATE_LIMITED_RETRY_AFTER_MS = 30 * 1000;
 
@@ -300,30 +301,6 @@ function abortReasonOf(signal: AbortSignal): Error {
     : new DOMException("The operation was aborted.", "AbortError");
 }
 
-function joinTmdbInflight(task: Promise<JsonValue>, signal?: AbortSignal): Promise<JsonValue> {
-  if (!signal) return task;
-  if (signal.aborted) return Promise.reject(abortReasonOf(signal));
-  return new Promise<JsonValue>((resolve, reject) => {
-    const onAbort = () => {
-      signal.removeEventListener("abort", onAbort);
-      reject(abortReasonOf(signal));
-    };
-    signal.addEventListener("abort", onAbort);
-    void task.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve(value);
-        return undefined;
-      },
-      (error) => {
-        signal.removeEventListener("abort", onAbort);
-        reject(error);
-        return undefined;
-      },
-    );
-  });
-}
-
 /**
  * Proxy + mirror chain with in-flight dedup and a short session cache so
  * trending/recommendations/search do not repeat identical TMDB calls.
@@ -340,22 +317,16 @@ export async function fetchTmdbJsonCached(
   // A caller that already left must not start a request nobody will read.
   if (signal?.aborted) throw abortReasonOf(signal);
 
-  let task = inflightRequests.get(normalized);
-  if (!task) {
-    const durable = isDurableTmdbPath(normalized) ? durableTmdbCache : null;
-    task = fetchTmdbJsonWithFallback(normalized, undefined, timeoutMs)
-      .then((value) => {
-        sessionCacheWrite(normalized, { expiresAt: now + SESSION_CACHE_MS, value });
-        inflightRequests.delete(normalized);
-        // Only a well-formed answer may replace the last good copy.
-        if (durable && isUsableDurableAnswer(normalized, value)) {
-          durable.write(normalized, Date.now(), value);
-          if (isSeasonPath(normalized)) recordEpisodesAnswer(false);
-        }
-        return value;
-      })
-      .catch((error: Error) => {
-        inflightRequests.delete(normalized);
+  return inflightRequests.join(
+    normalized,
+    async (upstream) => {
+      const durable = isDurableTmdbPath(normalized) ? durableTmdbCache : null;
+      let value: JsonValue;
+      try {
+        value = await fetchTmdbJsonWithFallback(normalized, upstream, timeoutMs);
+      } catch (error) {
+        // A cleared request answers nobody: no saved-copy fallback either.
+        if (upstream.aborted) throw error;
         // Every host is unreachable: serve the last good answer for this exact
         // request. A definitive 4xx is TMDB's real answer and is never masked.
         const isDefinitive = error instanceof TmdbHttpError && isDefinitiveTmdbStatus(error.status);
@@ -365,16 +336,19 @@ export async function fetchTmdbJsonCached(
           return saved.value;
         }
         throw error;
-      });
-    inflightRequests.set(normalized, task);
-    // The shared task delivers its failure to every joined caller; when they
-    // have all left (aborted), nothing else reads it. Mark it handled so an
-    // offline or 4xx answer cannot surface as an unhandled rejection, which
-    // main.ts treats as fatal.
-    task.catch(() => undefined);
-  }
-
-  return joinTmdbInflight(task, signal);
+      }
+      // A request cleared mid-flight must not repopulate either cache.
+      if (upstream.aborted) return value;
+      sessionCacheWrite(normalized, { expiresAt: now + SESSION_CACHE_MS, value });
+      // Only a well-formed answer may replace the last good copy.
+      if (durable && isUsableDurableAnswer(normalized, value)) {
+        durable.write(normalized, Date.now(), value);
+        if (isSeasonPath(normalized)) recordEpisodesAnswer(false);
+      }
+      return value;
+    },
+    { signal },
+  );
 }
 
 /**
