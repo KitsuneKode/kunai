@@ -108,6 +108,57 @@ describe("CatalogScheduleService", () => {
     expect(calls).toBe(2);
   });
 
+  test("one caller leaving does not cancel the shared request another caller waits on", async () => {
+    let loadSignal: AbortSignal | undefined;
+    let finish: ((items: never[]) => void) | undefined;
+    const service = new CatalogScheduleService(
+      createLoaders({
+        releasingToday: (_mode, _window, signal) => {
+          loadSignal = signal;
+          return new Promise((resolve) => {
+            finish = resolve;
+          });
+        },
+      }),
+      () => NOW,
+    );
+    const leaving = new AbortController();
+    const first = service
+      .loadReleaseWindow("series", 7, leaving.signal)
+      .catch((error: Error) => error);
+    const second = service.loadReleaseWindow("series", 7);
+    leaving.abort();
+    expect(await first).toBeInstanceOf(Error);
+    // The shared request keeps running for the caller still waiting.
+    expect(loadSignal?.aborted).toBe(false);
+    finish?.([]);
+    await expect(second).resolves.toEqual([]);
+  });
+
+  test("the shared request is cancelled once its last waiter leaves", async () => {
+    let loadSignal: AbortSignal | undefined;
+    const service = new CatalogScheduleService(
+      createLoaders({
+        releasingToday: (_mode, _window, signal) => {
+          loadSignal = signal;
+          return new Promise(() => {});
+        },
+      }),
+      () => NOW,
+    );
+    const a = new AbortController();
+    const b = new AbortController();
+    // Capture outcomes now: each caller's promise rejects the moment it aborts.
+    const first = service.loadReleaseWindow("anime", 7, a.signal).catch((error: Error) => error);
+    const second = service.loadReleaseWindow("anime", 7, b.signal).catch((error: Error) => error);
+    a.abort();
+    expect(loadSignal?.aborted).toBe(false);
+    b.abort();
+    expect(loadSignal?.aborted).toBe(true);
+    expect(await first).toBeInstanceOf(Error);
+    expect(await second).toBeInstanceOf(Error);
+  });
+
   test("reuses persisted schedule cache across service instances", async () => {
     let calls = 0;
     const store = new MemoryScheduleCache();

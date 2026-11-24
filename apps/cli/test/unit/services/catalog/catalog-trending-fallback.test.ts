@@ -63,6 +63,21 @@ function service(
 }
 
 describe("trending source chain", () => {
+  test("clearing trending stops the walk already in flight", async () => {
+    let walkSignal: AbortSignal | undefined;
+    const hanging = (signal?: AbortSignal) => {
+      walkSignal = signal;
+      return new Promise<readonly SearchResult[]>((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    };
+    const svc = service(hanging, down, memoryDurable());
+    const pending = svc.loadTrendingSection("anime").catch(() => "rejected");
+    svc.clearTrendingCache();
+    expect(walkSignal?.aborted).toBe(true);
+    await pending;
+  });
+
   test("a cached section still updates /diagnostics' source record", async () => {
     const svc = service(async () => [item("1", "Live")], down, memoryDurable());
     await svc.loadTrendingSection("anime");

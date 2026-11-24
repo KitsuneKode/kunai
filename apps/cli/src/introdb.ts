@@ -1,4 +1,5 @@
 import type { ContentType, PlaybackTimingSegment } from "@/domain/types";
+import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
 import {
   classifyTimingHttpStatus,
   classifyTimingThrownError,
@@ -43,7 +44,8 @@ export async function fetchPlaybackTimingMetadataDetailed(opts: {
 
   try {
     const response = await fetch(`${INTRODB_API}?${params.toString()}`, {
-      signal: signal ?? AbortSignal.timeout(4_000),
+      // The caller's signal adds cancellation; it never removes the deadline.
+      signal: withTimeoutSignal(signal, 4_000),
       headers: {
         accept: "application/json",
         "user-agent":

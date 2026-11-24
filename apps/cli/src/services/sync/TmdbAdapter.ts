@@ -1,5 +1,6 @@
 import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
 import { openExternalUrl } from "@/infra/shell/open-external-url";
+import { classifyTmdbCredential } from "@/services/catalog/tmdb-proxy";
 
 import type { SyncTokenStore } from "../persistence/SyncTokenStore";
 import type { TrackerOperation } from "./operations";
@@ -59,6 +60,12 @@ const UNREACHABLE_ERROR =
   "a blocked or filtered connection stops it here. Check a proxy, VPN, or DNS " +
   "filter and try again.";
 
+/** A TMDB request with its credential attached (in the URL or a header). */
+interface AuthorizedTmdbRequest {
+  readonly url: string;
+  readonly headers: Readonly<Record<string, string>>;
+}
+
 export class TmdbAdapter implements SyncAdapter {
   readonly id = "tmdb" as const;
   readonly displayName = "TMDB";
@@ -104,11 +111,10 @@ export class TmdbAdapter implements SyncAdapter {
     const deadline = startRequestDeadline(options.signal);
     try {
       await this.limiter.waitInline(deadline.signal);
-      const res = await this.fetchImpl(this.accountUrl(path), {
+      const account = this.accountUrl(path);
+      const res = await this.fetchImpl(account.url, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { ...account.headers, "Content-Type": "application/json" },
         body: JSON.stringify({
           media_type: mediaKind === "movie" ? "movie" : "tv",
           media_id: tmdbId,
@@ -182,10 +188,11 @@ export class TmdbAdapter implements SyncAdapter {
     try {
       let tokenRes: Response;
       try {
-        tokenRes = await this.fetchImpl(
-          `${TMDB_API_BASE}/authentication/token/new?api_key=${this.apiKey}`,
-          { signal: withTimeoutSignal(signal, TMDB_REQUEST_TIMEOUT_MS) },
-        );
+        const tokenNew = this.authorize(new URL(`${TMDB_API_BASE}/authentication/token/new`));
+        tokenRes = await this.fetchImpl(tokenNew.url, {
+          headers: tokenNew.headers,
+          signal: withTimeoutSignal(signal, TMDB_REQUEST_TIMEOUT_MS),
+        });
       } catch {
         // Reached before the browser opens, deliberately: opening a tab for a
         // flow that cannot complete is worse than saying why up front.
@@ -262,9 +269,10 @@ export class TmdbAdapter implements SyncAdapter {
     if (this.sessionId) {
       const deadline = startRequestDeadline(options?.signal ?? new AbortController().signal);
       try {
-        await this.fetchImpl(`${TMDB_API_BASE}/authentication/session?api_key=${this.apiKey}`, {
+        const session = this.authorize(new URL(`${TMDB_API_BASE}/authentication/session`));
+        await this.fetchImpl(session.url, {
           method: "DELETE",
-          headers: { "Content-Type": "application/json" },
+          headers: { ...session.headers, "Content-Type": "application/json" },
           body: JSON.stringify({ session_id: this.sessionId }),
           signal: deadline.signal,
         });
@@ -293,11 +301,24 @@ export class TmdbAdapter implements SyncAdapter {
    * reaching for; the mitigation is that this adapter never logs a URL, and
    * `redactSensitive` covers `api_key`/`session_id` for anything that does.
    */
-  private accountUrl(path: "watchlist" | "favorite"): string {
+  private accountUrl(path: "watchlist" | "favorite"): AuthorizedTmdbRequest {
     const url = new URL(`${TMDB_API_BASE}/account/${this.accountId}/${path}`);
-    url.searchParams.set("api_key", this.apiKey);
     url.searchParams.set("session_id", this.sessionId ?? "");
-    return url.toString();
+    return this.authorize(url);
+  }
+
+  /**
+   * Attach the app credential the way its kind requires: a 32-character v3
+   * key rides in `api_key`; a v4 read access token (a JWT) is sent as
+   * `Authorization: Bearer` and never put in a URL. TMDB accepts either on v3
+   * endpoints; sending a v4 token as `api_key` is simply rejected.
+   */
+  private authorize(url: URL): AuthorizedTmdbRequest {
+    if (classifyTmdbCredential(this.apiKey) === "bearer") {
+      return { url: url.toString(), headers: { authorization: `Bearer ${this.apiKey}` } };
+    }
+    url.searchParams.set("api_key", this.apiKey);
+    return { url: url.toString(), headers: {} };
   }
 
   /** Resolve `{ accountId, username }` for a session, or null if TMDB refuses. */
@@ -306,9 +327,10 @@ export class TmdbAdapter implements SyncAdapter {
     signal?: AbortSignal,
   ): Promise<{ accountId: string; username?: string } | null> {
     const url = new URL(`${TMDB_API_BASE}/account`);
-    url.searchParams.set("api_key", this.apiKey);
     url.searchParams.set("session_id", sessionId);
-    const res = await this.fetchImpl(url.toString(), {
+    const request = this.authorize(url);
+    const res = await this.fetchImpl(request.url, {
+      headers: request.headers,
       signal: withTimeoutSignal(signal, TMDB_REQUEST_TIMEOUT_MS),
     });
     if (!res.ok) return null;
@@ -335,15 +357,13 @@ export class TmdbAdapter implements SyncAdapter {
     while (Date.now() < deadline && !signal.aborted) {
       let res: Response;
       try {
-        res = await this.fetchImpl(
-          `${TMDB_API_BASE}/authentication/session/new?api_key=${this.apiKey}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ request_token: requestToken }),
-            signal: withTimeoutSignal(signal, TMDB_REQUEST_TIMEOUT_MS),
-          },
-        );
+        const sessionNew = this.authorize(new URL(`${TMDB_API_BASE}/authentication/session/new`));
+        res = await this.fetchImpl(sessionNew.url, {
+          method: "POST",
+          headers: { ...sessionNew.headers, "Content-Type": "application/json" },
+          body: JSON.stringify({ request_token: requestToken }),
+          signal: withTimeoutSignal(signal, TMDB_REQUEST_TIMEOUT_MS),
+        });
       } catch {
         // A dropped poll is not a failed approval — the user may still be on
         // the consent page. Keep polling until the outer deadline, so a flaky

@@ -391,26 +391,32 @@ export class ConfigServiceImpl implements ConfigService {
     // keeps serving it so consumers never learn where it lives.
     let vaultResave = false;
     if (vault && vault.backend !== "file") {
-      for (const field of VAULTED_CONFIG_FIELDS) {
-        try {
-          const key = VAULT_KEY_BY_FIELD[field];
-          const plaintext = service.config[field];
-          if (plaintext) {
-            await vault.set(key, plaintext);
-            if ((await vault.get(key)) === plaintext) {
-              service.vaultedFields.add(field);
-              vaultResave = true;
+      // Each vault call can be a subprocess (secret-tool, security, PowerShell),
+      // so the fields are read in parallel: boot pays one round trip, not one
+      // per secret. Each field still migrates or hydrates independently.
+      const outcomes = await Promise.all(
+        VAULTED_CONFIG_FIELDS.map(async (field) => {
+          try {
+            const key = VAULT_KEY_BY_FIELD[field];
+            const plaintext = service.config[field];
+            if (plaintext) {
+              await vault.set(key, plaintext);
+              const verified = (await vault.get(key)) === plaintext;
+              return { field, vaulted: verified, migrated: verified, value: undefined };
             }
-          } else {
-            const vaulted = await vault.get(key);
-            if (vaulted) {
-              service.config = { ...service.config, [field]: vaulted };
-              service.vaultedFields.add(field);
-            }
+            const value = await vault.get(key);
+            return { field, vaulted: Boolean(value), migrated: false, value };
+          } catch {
+            // Vault write/read failed — keep the plaintext and retry next launch.
+            return { field, vaulted: false, migrated: false, value: undefined };
           }
-        } catch {
-          // Vault write/read failed — keep the plaintext and retry next launch.
-        }
+        }),
+      );
+      for (const outcome of outcomes) {
+        if (!outcome.vaulted) continue;
+        service.vaultedFields.add(outcome.field);
+        if (outcome.migrated) vaultResave = true;
+        if (outcome.value) service.config = { ...service.config, [outcome.field]: outcome.value };
       }
     }
     // Normalization heals on disk: a key whose stored value parsed but

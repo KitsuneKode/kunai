@@ -183,6 +183,7 @@ async function dispatchRpcRequest(
       maxResponseBodyBytes,
       options.providerId,
       rpc.method,
+      options.timeoutMs ?? DEFAULT_RELAY_TIMEOUT_MS,
     );
   } catch (error) {
     if (error instanceof RelayValidationError) {
@@ -269,6 +270,9 @@ async function fetchWithValidatedRedirects(input: {
         signal: controller.signal,
       });
       if (!REDIRECT_STATUSES.has(response.status)) return response;
+      // A redirect is never returned to the caller, so its body is never read:
+      // release the connection now instead of at garbage collection.
+      await response.body?.cancel().catch(() => undefined);
 
       const location = response.headers.get("location");
       if (!location || redirectCount >= input.maxRedirects) {
@@ -278,7 +282,16 @@ async function fetchWithValidatedRedirects(input: {
           502,
         );
       }
-      const redirectUrl = new URL(location, currentUrl);
+      let redirectUrl: URL;
+      try {
+        redirectUrl = new URL(location, currentUrl);
+      } catch {
+        throw new RelayValidationError(
+          "redirect-not-allowed",
+          "Upstream redirect has an invalid Location",
+          502,
+        );
+      }
       if (currentUrl.protocol === "https:" && redirectUrl.protocol === "http:") {
         throw new RelayValidationError(
           "redirect-not-allowed",
@@ -325,6 +338,7 @@ async function relayUpstreamResponse(
   maxResponseBytes: number,
   providerId: string,
   method: RelayMethod,
+  bodyTimeoutMs: number,
 ): Promise<Response> {
   const headers = filteredResponseHeaders(upstream.headers);
 
@@ -338,6 +352,7 @@ async function relayUpstreamResponse(
 
   const contentLength = upstream.headers.get("content-length");
   if (contentLength && Number(contentLength) > maxResponseBytes) {
+    await upstream.body.cancel().catch(() => undefined);
     return relayError(
       "response-too-large",
       providerId,
@@ -346,8 +361,10 @@ async function relayUpstreamResponse(
     );
   }
 
-  const body = await upstream.arrayBuffer();
-  if (body.byteLength > maxResponseBytes) {
+  // Read with a cap: without Content-Length, buffering the whole body before
+  // checking its size would let an upstream exhaust the relay's memory.
+  const body = await readBodyWithin(upstream.body, maxResponseBytes, bodyTimeoutMs);
+  if (body === null) {
     return relayError(
       "response-too-large",
       providerId,
@@ -454,4 +471,47 @@ function isAbortLike(cause: unknown): boolean {
 
 function byteLength(value: string): number {
   return new TextEncoder().encode(value).byteLength;
+}
+
+/**
+ * The whole body, or null (and the stream cancelled) once it passes
+ * `maxBytes`. The upstream deadline ends when headers arrive, so the body
+ * carries its own: a response that stalls after its headers is cut off and
+ * reported as a timeout instead of pinning the relay.
+ */
+async function readBodyWithin(
+  stream: ReadableStream<Uint8Array>,
+  maxBytes: number,
+  timeoutMs: number,
+): Promise<Uint8Array<ArrayBuffer> | null> {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    void reader.cancel("relay body timeout").catch(() => undefined);
+  }, timeoutMs);
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        return null;
+      }
+      chunks.push(value);
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+  if (timedOut) throw new DOMException("Upstream body timed out", "AbortError");
+  const body = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
 }

@@ -47,14 +47,15 @@ const SENSITIVE_KEYS = new Set([
 
 /**
  * Exact names above, plus any field that ends like a credential: a new
- * `tmdbApiKey` or `wyzieApiKey` must not need a list edit to stay out of logs.
+ * `tmdbApiKey`, `wyzieApiKey` or `poToken` must not need a list edit to stay
+ * out of logs.
  */
 function isSensitiveKeyName(normalizedKey: string): boolean {
   return (
     SENSITIVE_KEYS.has(normalizedKey) ||
     normalizedKey.endsWith("apikey") ||
-    normalizedKey.endsWith("accesstoken") ||
-    normalizedKey.endsWith("sessiontoken") ||
+    // Any *token field: access, session, relay, YouTube PO tokens alike.
+    normalizedKey.endsWith("token") ||
     normalizedKey.endsWith("secret")
   );
 }

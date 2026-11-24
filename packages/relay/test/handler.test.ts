@@ -1083,3 +1083,107 @@ function nodeResponse(
   }) as unknown as import("node:http").ClientRequest;
   return outgoing;
 }
+
+/** A response body that records whether it was cancelled. */
+interface TrackedBody {
+  readonly body: ReadableStream<Uint8Array>;
+  readonly cancelled: () => boolean;
+}
+
+/** A body that records whether it was cancelled, optionally endless. */
+function trackedBody(endless = false): TrackedBody {
+  let cancelled = false;
+  const chunk = new TextEncoder().encode("x".repeat(64));
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (endless) controller.enqueue(chunk);
+      else controller.close();
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  return { body, cancelled: () => cancelled };
+}
+
+test("handleRpcRequest releases a refused redirect's body", async () => {
+  const tracked = trackedBody(true);
+  const response = await handleRpcRequest(
+    rpcRequest({ method: "GET", upstreamUrl: "https://api.allanime.day/api" }),
+    {
+      providerId: "allanime",
+      registry: providerRegistry,
+      authorization: localLoopbackAuthorization,
+      async transport() {
+        return new Response(tracked.body, {
+          status: 302,
+          headers: { Location: "https://miruro.bz/api" },
+        });
+      },
+    },
+  );
+  expect(response.status).toBe(502);
+  expect(tracked.cancelled()).toBe(true);
+});
+
+test("handleRpcRequest classifies an unparseable Location as a refused redirect", async () => {
+  const response = await handleRpcRequest(
+    rpcRequest({ method: "GET", upstreamUrl: "https://api.allanime.day/api" }),
+    {
+      providerId: "allanime",
+      registry: providerRegistry,
+      authorization: localLoopbackAuthorization,
+      async transport() {
+        return new Response(null, { status: 302, headers: { Location: "http://[::1" } });
+      },
+    },
+  );
+  expect(response.status).toBe(502);
+  expect(await response.json()).toMatchObject({ error: { code: "redirect-not-allowed" } });
+});
+
+test("handleRpcRequest stops reading an endless body without Content-Length at the cap", async () => {
+  const tracked = trackedBody(true);
+  const response = await handleRpcRequest(
+    rpcRequest({ method: "GET", upstreamUrl: "https://api.allanime.day/api" }),
+    {
+      providerId: "allanime",
+      registry: providerRegistry,
+      authorization: localLoopbackAuthorization,
+      async transport() {
+        return new Response(tracked.body, { status: 200 });
+      },
+    },
+  );
+  expect(response.status).toBe(502);
+  expect(await response.json()).toMatchObject({ error: { code: "response-too-large" } });
+  expect(tracked.cancelled()).toBe(true);
+});
+
+test("handleRpcRequest times out a body that stalls after its headers", async () => {
+  let cancelled = false;
+  const stalled = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode("{"));
+      // ...and then nothing: headers arrived, the body never finishes.
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  const response = await handleRpcRequest(
+    rpcRequest({ method: "GET", upstreamUrl: "https://api.allanime.day/api" }),
+    {
+      providerId: "allanime",
+      registry: providerRegistry,
+      authorization: localLoopbackAuthorization,
+      timeoutMs: 5,
+      async transport() {
+        return new Response(stalled, { status: 200 });
+      },
+    },
+  );
+  expect(response.status).toBe(504);
+  expect(await response.json()).toMatchObject({ error: { code: "upstream-timeout" } });
+  expect(cancelled).toBe(true);
+});

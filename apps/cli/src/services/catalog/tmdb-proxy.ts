@@ -6,7 +6,7 @@ import {
 import { observeOnlineIfBound } from "@/services/network/network-observation";
 import { classifyNetworkFailure } from "@/services/network/NetworkStatus";
 import { VIDEASY_DB_BASE, VIDEASY_DB_BASES } from "@kunai/providers";
-import type { JsonValue } from "@kunai/types";
+import { isJsonObject, type JsonValue } from "@kunai/types";
 
 export { VIDEASY_DB_BASE as TMDB_PROXY_BASE };
 
@@ -273,17 +273,33 @@ export function clearTmdbSessionCache(): void {
  * A follower may opt out of waiting without cancelling the leader fetch — the
  * shared TMDB task must not inherit a superseded type-ahead abort signal.
  */
+/** How long a host that answered 429 is rested (shorter than an outage breaker). */
+const RATE_LIMITED_RETRY_AFTER_MS = 30 * 1000;
+
+/** A 4xx other than 429: TMDB's real answer, identical on every host. */
+function isDefinitiveTmdbStatus(status: number): boolean {
+  return status < 500 && status !== 429;
+}
+
+/** The shape a show or season answer must have before it may be kept as last-known-good. */
+function isUsableDurableAnswer(path: string, value: JsonValue): boolean {
+  if (!isJsonObject(value)) return false;
+  return /\/season\/\d+/.test(path) ? Array.isArray(value.episodes) : Array.isArray(value.seasons);
+}
+
+function abortReasonOf(signal: AbortSignal): Error {
+  return signal.reason instanceof Error
+    ? signal.reason
+    : new DOMException("The operation was aborted.", "AbortError");
+}
+
 function joinTmdbInflight(task: Promise<JsonValue>, signal?: AbortSignal): Promise<JsonValue> {
   if (!signal) return task;
-  if (signal.aborted) {
-    return Promise.reject(
-      signal.reason ?? new DOMException("The operation was aborted.", "AbortError"),
-    );
-  }
+  if (signal.aborted) return Promise.reject(abortReasonOf(signal));
   return new Promise<JsonValue>((resolve, reject) => {
     const onAbort = () => {
       signal.removeEventListener("abort", onAbort);
-      reject(signal.reason ?? new DOMException("The operation was aborted.", "AbortError"));
+      reject(abortReasonOf(signal));
     };
     signal.addEventListener("abort", onAbort);
     void task.then(
@@ -314,6 +330,8 @@ export async function fetchTmdbJsonCached(
   const now = Date.now();
   const cached = sessionCache.get(normalized);
   if (cached && cached.expiresAt > now) return cached.value;
+  // A caller that already left must not start a request nobody will read.
+  if (signal?.aborted) throw abortReasonOf(signal);
 
   let task = inflightRequests.get(normalized);
   if (!task) {
@@ -322,7 +340,8 @@ export async function fetchTmdbJsonCached(
       .then((value) => {
         sessionCacheWrite(normalized, { expiresAt: now + SESSION_CACHE_MS, value });
         inflightRequests.delete(normalized);
-        if (durable) {
+        // Only a well-formed answer may replace the last good copy.
+        if (durable && isUsableDurableAnswer(normalized, value)) {
           durable.write(normalized, Date.now(), value);
           if (isSeasonPath(normalized)) recordEpisodesAnswer(false);
         }
@@ -332,7 +351,7 @@ export async function fetchTmdbJsonCached(
         inflightRequests.delete(normalized);
         // Every host is unreachable: serve the last good answer for this exact
         // request. A definitive 4xx is TMDB's real answer and is never masked.
-        const isDefinitive = error instanceof TmdbHttpError && error.status < 500;
+        const isDefinitive = error instanceof TmdbHttpError && isDefinitiveTmdbStatus(error.status);
         const saved = !isDefinitive ? durable?.read(normalized) : null;
         if (saved) {
           if (isSeasonPath(normalized)) recordEpisodesAnswer(true);
@@ -341,6 +360,11 @@ export async function fetchTmdbJsonCached(
         throw error;
       });
     inflightRequests.set(normalized, task);
+    // The shared task delivers its failure to every joined caller; when they
+    // have all left (aborted), nothing else reads it. Mark it handled so an
+    // offline or 4xx answer cannot surface as an unhandled rejection, which
+    // main.ts treats as fatal.
+    task.catch(() => undefined);
   }
 
   return joinTmdbInflight(task, signal);
@@ -397,8 +421,14 @@ async function fetchTmdbHostJson(
       throw new TmdbCredentialRejectedError(credential);
     }
     if (!res.ok) throw new TmdbHttpError(res.status, url);
-    // SAFETY: Response.json() resolves to the parsed JSON document.
-    return res.json() as Promise<JsonValue>;
+    const value: JsonValue = JSON.parse(await res.text());
+    // Some mirrors answer HTTP 200 with TMDB's error envelope
+    // (`{ success: false, status_code, status_message }`). That is this host
+    // failing, not TMDB's data: treat it like a 5xx and try the next host.
+    if (isJsonObject(value) && value.success === false) {
+      throw new Error(`TMDB host returned an error payload (${credentialFreeUrl(url)})`);
+    }
+    return value;
   });
 }
 
@@ -471,7 +501,15 @@ export async function fetchTmdbJsonWithFallback(
           lastError = error;
           continue;
         }
-        if (error instanceof TmdbHttpError && error.status < 500) {
+        if (error instanceof TmdbHttpError && error.status === 429) {
+          // Rate limited: a temporary refusal by this host, not TMDB's answer
+          // to the request. Rest it briefly and let the next host (or, once
+          // every host is out, the saved copy) answer.
+          hostRetryAfter.set(host.base, Date.now() + RATE_LIMITED_RETRY_AFTER_MS);
+          lastError = error;
+          continue;
+        }
+        if (error instanceof TmdbHttpError && isDefinitiveTmdbStatus(error.status)) {
           // The host answered: it is reachable, so close its breaker even
           // though this path's answer is a 4xx the caller must see.
           hostRetryAfter.delete(host.base);

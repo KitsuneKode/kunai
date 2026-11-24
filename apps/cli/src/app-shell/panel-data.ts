@@ -103,6 +103,12 @@ export function buildAboutPanelLines({
       detail: `Bun ${Bun.version}  ·  Node ${process.versions.node}`,
     },
     {
+      // TMDB's terms require this notice wherever its data is shown.
+      label: "Data sources",
+      detail:
+        "This product uses the TMDB API but is not endorsed or certified by TMDB.  ·  Anime data: AniList, Kitsu  ·  Search fallback: Wikidata (CC0)  ·  Schedules: TVmaze",
+    },
+    {
       label: "Current mode",
       detail: `${state.mode}  ·  Provider ${state.provider}`,
     },
