@@ -26,6 +26,16 @@ import {
   type StartupPriority,
 } from "@kunai/types";
 
+import {
+  collectDirtyVaultFields,
+  preserveUnchangedNestedDiskSecrets,
+  readVaultedField,
+  scrubVaultedFields,
+  VAULT_KEY_BY_FIELD,
+  VAULTED_CONFIG_FIELDS,
+  writeVaultedField,
+  type VaultedConfigField,
+} from "./config-vault-fields";
 import type {
   AnalyticsPingCompletion,
   ConfigService,
@@ -38,36 +48,7 @@ import type {
 } from "./ConfigService";
 import type { ConfigStore } from "./ConfigStore";
 import { DEFAULT_CONFIG } from "./ConfigStore";
-import { CREDENTIAL_KEYS, type CredentialVaultPort } from "./credential-vault";
-
-/**
- * Config fields whose values live in the OS credential vault (Keychain,
- * Windows Credential Manager, Secret Service) when one is available. The
- * in-memory config keeps serving them, so consumers never learn where they
- * live; config.json carries "" once the vault holds a verified copy.
- */
-const VAULTED_CONFIG_FIELDS = ["videasySessionToken", "tmdbApiKey", "wyzieApiKey"] as const;
-type VaultedConfigField = (typeof VAULTED_CONFIG_FIELDS)[number];
-
-const VAULT_KEY_BY_FIELD = {
-  videasySessionToken: CREDENTIAL_KEYS.videasySessionToken,
-  tmdbApiKey: CREDENTIAL_KEYS.tmdbApiKey,
-  wyzieApiKey: CREDENTIAL_KEYS.wyzieApiKey,
-} satisfies Record<VaultedConfigField, string>;
-
-function isVaultedConfigField(key: string): key is VaultedConfigField {
-  return VAULTED_CONFIG_FIELDS.some((field) => field === key);
-}
-
-function scrubVaultedFields(
-  config: KitsuneConfig,
-  scrub: ReadonlySet<VaultedConfigField>,
-): KitsuneConfig {
-  if (scrub.size === 0) return config;
-  const scrubbed = { ...config };
-  for (const field of scrub) scrubbed[field] = "";
-  return scrubbed;
-}
+import type { CredentialVaultPort } from "./credential-vault";
 import type { TuningConfig } from "./tuning";
 import { resolveTuning } from "./tuning";
 
@@ -223,6 +204,8 @@ export class ConfigServiceImpl implements ConfigService {
 
   /** Secret fields the vault holds — hydrated or migrated this session. */
   private readonly vaultedFields = new Set<VaultedConfigField>();
+  /** Vaulted secret fields explicitly modified or cleared via `update()` / `reset()`. */
+  private readonly dirtyVaultFields = new Set<VaultedConfigField>();
 
   static async load(store: ConfigStore, vault?: CredentialVaultPort): Promise<ConfigServiceImpl> {
     const load = () => ConfigServiceImpl.loadWithinLock(store, vault);
@@ -380,6 +363,7 @@ export class ConfigServiceImpl implements ConfigService {
       relayEnabled: service.config.providerRelay.enabled !== false,
       relayHost: relayHostForDebug(service.config.providerRelay.baseUrl),
       hasRelayToken: (service.config.providerRelay.token ?? "").length > 0,
+      hasYoutubePoToken: (service.config.youtubeMetadata.poToken ?? "").length > 0,
       hasVideasySession: service.config.videasySessionToken.length > 0,
       migratedAnimeDefaults,
       migratedSeriesDefaults,
@@ -398,7 +382,7 @@ export class ConfigServiceImpl implements ConfigService {
         VAULTED_CONFIG_FIELDS.map(async (field) => {
           try {
             const key = VAULT_KEY_BY_FIELD[field];
-            const plaintext = service.config[field];
+            const plaintext = readVaultedField(service.config, field);
             if (plaintext) {
               await vault.set(key, plaintext);
               const verified = (await vault.get(key)) === plaintext;
@@ -416,21 +400,22 @@ export class ConfigServiceImpl implements ConfigService {
         if (!outcome.vaulted) continue;
         service.vaultedFields.add(outcome.field);
         if (outcome.migrated) vaultResave = true;
-        if (outcome.value) service.config = { ...service.config, [outcome.field]: outcome.value };
+        if (outcome.value) {
+          service.config = writeVaultedField(service.config, outcome.field, outcome.value);
+        }
       }
     }
     // Normalization heals on disk: a key whose stored value parsed but
     // normalized differently (legacy enums, clamps, trims) stays dirty so the
     // next merge save rewrites just that key — the heal the old whole-document
     // write used to provide, without reverting keys another instance changed.
+    // Compare against the scrubbed view so hydrating a vaulted secret (flat or
+    // nested) never marks the owning key dirty.
+    const comparableConfig = scrubVaultedFields(service.config, service.vaultedFields);
     // SAFETY: Object.keys of a Partial<KitsuneConfig> only yields its keys.
     for (const key of Object.keys(loaded) as (keyof KitsuneConfig)[]) {
       if (loaded[key] === undefined) continue;
-      // Hydration is not permission to overwrite a rotated native token.
-      if (isVaultedConfigField(key) && loaded[key] === "" && service.vaultedFields.has(key)) {
-        continue;
-      }
-      if (JSON.stringify(loaded[key]) !== JSON.stringify(service.config[key])) {
+      if (JSON.stringify(loaded[key]) !== JSON.stringify(comparableConfig[key])) {
         service.dirtyKeys.add(key);
       }
     }
@@ -544,10 +529,13 @@ export class ConfigServiceImpl implements ConfigService {
       // Only explicit token changes write the vault. Keep its transition inside
       // the config lock so sibling rotations and the file scrub share an owner.
       const scrub = new Set(this.vaultedFields);
+      const persistedVaultSecrets = new Map<VaultedConfigField, string>();
       for (const field of VAULTED_CONFIG_FIELDS) {
-        if (!this.vault || this.vault.backend === "file" || !this.dirtyKeys.has(field)) continue;
+        if (!this.vault || this.vault.backend === "file" || !this.dirtyVaultFields.has(field)) {
+          continue;
+        }
         const key = VAULT_KEY_BY_FIELD[field];
-        const secret = config[field];
+        const secret = readVaultedField(config, field);
         scrub.delete(field);
         if (secret) {
           this.vaultedFields.delete(field);
@@ -560,6 +548,7 @@ export class ConfigServiceImpl implements ConfigService {
           } catch {
             // A failed replacement retains its plaintext for a later migration.
           }
+          persistedVaultSecrets.set(field, secret);
         } else {
           // A sibling may have added a secret since hydration. A clear must
           // remove it too, and must not claim success if native deletion failed.
@@ -567,6 +556,7 @@ export class ConfigServiceImpl implements ConfigService {
           if ((await this.vault.get(key)) !== undefined)
             throw new Error("Native credential clear could not be verified");
           this.vaultedFields.delete(field);
+          persistedVaultSecrets.set(field, "");
         }
       }
       // When this process has updated keys, write per-key over the CURRENT
@@ -587,7 +577,12 @@ export class ConfigServiceImpl implements ConfigService {
           for (const key of mergedKeys) {
             Object.assign(dirtySubset, { [key]: config[key] });
           }
-          toWrite = { ...DEFAULT_CONFIG, ...onDisk, ...dirtySubset };
+          toWrite = preserveUnchangedNestedDiskSecrets(
+            { ...DEFAULT_CONFIG, ...onDisk, ...dirtySubset },
+            onDisk,
+            mergedKeys,
+            this.dirtyVaultFields,
+          );
           mergedValues = dirtySubset;
         } catch {
           toWrite = config;
@@ -611,7 +606,8 @@ export class ConfigServiceImpl implements ConfigService {
       const verified = new Set<VaultedConfigField>();
       for (const field of scrub) {
         try {
-          if ((await this.vault?.get(VAULT_KEY_BY_FIELD[field])) === toWrite[field]) {
+          const secret = readVaultedField(toWrite, field);
+          if (secret && (await this.vault?.get(VAULT_KEY_BY_FIELD[field])) === secret) {
             verified.add(field);
           }
         } catch {
@@ -620,7 +616,7 @@ export class ConfigServiceImpl implements ConfigService {
       }
       await this.store.save(scrubVaultedFields(toWrite, verified));
       if (forceFullWrite) this.needsFullConfigWrite = false;
-      this.clearPersistedDirtyKeys(mergedKeys, mergedValues ?? toWrite);
+      this.clearPersistedDirtyKeys(mergedKeys, mergedValues ?? toWrite, persistedVaultSecrets);
     };
 
     const withLock = this.store.withLock?.bind(this.store);
@@ -634,6 +630,7 @@ export class ConfigServiceImpl implements ConfigService {
   private clearPersistedDirtyKeys(
     mergedKeys: ReadonlySet<keyof KitsuneConfig> | null,
     written: Partial<KitsuneConfig>,
+    persistedVaultSecrets: ReadonlyMap<VaultedConfigField, string>,
   ): void {
     // A key re-dirtied while the write was in flight keeps its flag — the
     // next persist carries the newer value instead of reverting to what was
@@ -642,6 +639,9 @@ export class ConfigServiceImpl implements ConfigService {
     const keys = mergedKeys ?? [...this.dirtyKeys];
     for (const key of keys) {
       if (this.config[key] === written[key]) this.dirtyKeys.delete(key);
+    }
+    for (const [field, secret] of persistedVaultSecrets) {
+      if (readVaultedField(this.config, field) === secret) this.dirtyVaultFields.delete(field);
     }
   }
 
@@ -1074,6 +1074,7 @@ export class ConfigServiceImpl implements ConfigService {
   }
 
   async update(input: Partial<KitsuneConfig>): Promise<void> {
+    const previous = this.config;
     const { partial, keptProfileOverrides } = this.separateProfileOverrides(input);
     // SAFETY: Object.keys of a Partial<KitsuneConfig> only yields its keys.
     for (const key of Object.keys(partial) as (keyof KitsuneConfig)[]) {
@@ -1084,6 +1085,9 @@ export class ConfigServiceImpl implements ConfigService {
     this.config = {
       ...this.config,
       ...partial,
+      ...(partial.youtubeMetadata !== undefined
+        ? { youtubeMetadata: normalizeYoutubeMetadata(partial.youtubeMetadata) }
+        : null),
       ...(partial.providerPriority !== undefined
         ? { providerPriority: normalizeProviderIdList(partial.providerPriority) }
         : null),
@@ -1183,6 +1187,9 @@ export class ConfigServiceImpl implements ConfigService {
         : null),
     };
     this.config = applyRetiredProductionProviderNormalization(this.config);
+    for (const field of collectDirtyVaultFields(previous, this.config, partial)) {
+      this.dirtyVaultFields.add(field);
+    }
   }
 
   private savePending: Promise<void> | null = null;
@@ -1265,6 +1272,9 @@ export class ConfigServiceImpl implements ConfigService {
     // SAFETY: Object.keys of DEFAULT_CONFIG only yields KitsuneConfig keys.
     for (const key of Object.keys(DEFAULT_CONFIG) as (keyof KitsuneConfig)[]) {
       this.dirtyKeys.add(key);
+    }
+    for (const field of VAULTED_CONFIG_FIELDS) {
+      this.dirtyVaultFields.add(field);
     }
     await this.persistConfig();
   }

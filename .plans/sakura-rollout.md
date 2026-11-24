@@ -1,3 +1,7 @@
+---
+lastReviewed: "2026-11-24"
+---
+
 # Sakura Redesign — Rollout Plan
 
 Status: **in progress** — foundation landed (tokens + theme contract). Slices below are parallelizable across agents.

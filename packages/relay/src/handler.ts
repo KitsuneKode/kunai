@@ -1,5 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 
+import { createDeadlineSignal } from "@kunai/core";
+
 import { filterForwardHeaders, mergeRelayHeaders, RelayValidationError } from "./forward-headers";
 import {
   createPinnedRelayTransport,
@@ -256,8 +258,9 @@ async function fetchWithValidatedRedirects(input: {
   let method = input.init.method ?? "GET";
   let body = input.init.body;
   const headers = new Headers(input.init.headers);
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort("relay upstream timeout"), input.timeoutMs);
+  const deadline = createDeadlineSignal(undefined, input.timeoutMs, {
+    reason: "relay upstream timeout",
+  });
 
   try {
     for (let redirectCount = 0; redirectCount <= input.maxRedirects; redirectCount++) {
@@ -267,7 +270,7 @@ async function fetchWithValidatedRedirects(input: {
         body,
         headers,
         redirect: "manual",
-        signal: controller.signal,
+        signal: deadline.signal,
       });
       if (!REDIRECT_STATUSES.has(response.status)) return response;
       // A redirect is never returned to the caller, so its body is never read:
@@ -323,7 +326,7 @@ async function fetchWithValidatedRedirects(input: {
 
     throw new RelayValidationError("redirect-not-allowed", "Too many upstream redirects", 502);
   } finally {
-    clearTimeout(timeout);
+    deadline.release();
   }
 }
 
