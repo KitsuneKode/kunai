@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T09:30:00Z"
+lastReviewed: "2026-11-24T12:30:00Z"
 ---
 
 # Kunai — Testing Strategy
@@ -50,6 +50,13 @@ CLI suites are separate Turbo tasks for scheduling and focused invocation. Becau
 Live / VHS / Docker smokes stay opt-in and are excluded from CLI unit/integration cache inputs. Test/typecheck tasks depend on a local `transit` node (`dependsOn: ["transit"]`, with `transit` → `^transit`) so dependency-package changes invalidate caches without serializing suites behind each other or behind `typecheck`. Typecheck remains its own CI job. CLI integration depends on `build`, which in turn requires typecheck; this orders shared `dist/` writers. CLI unit tests have no build prerequisite. Formatting has no typecheck prerequisite.
 
 ## Verification loop for contributors and agents
+
+A test that runs `git` on a fixture repository builds its environment from
+`withoutGitEnv()` in `apps/cli/test/helpers/git-env.ts`. Git exports `GIT_DIR`
+and `GIT_WORK_TREE` to hooks, and inside a worktree they point at the real
+repository, so a fixture spawned from the pre-push hook with `...process.env`
+writes there instead (it once set `core.bare=true` and committed fixture
+commits onto a branch). `git-fixture-env.test.ts` fails on a new one.
 
 Use `storageRootEnv()` from `apps/cli/test/helpers/storage-env.ts` for every
 throwaway profile. It redirects HOME/XDG/APPDATA and forces
