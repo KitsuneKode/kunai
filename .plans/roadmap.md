@@ -78,7 +78,6 @@ archive and put only the residue here.
 
 | Track                          | Remaining                                                                                            | Plan                                                                                                 |
 | ------------------------------ | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| 0.3.0 merge train              | Merge order, chain-A publication, regression watch                                                   | [2026-08-24-0-3-0-merge-train.md](./2026-08-24-0-3-0-merge-train.md)                                 |
 | Provider-independent offline   | Candidate fix: downloads survive provider retirement; merge and platform qualification pending       | [offline-provider-independent-playback.md](./offline-provider-independent-playback.md)               |
 | Offline artwork cache          | Library previews                                                                                     | [offline-artwork-cache-and-library-previews.md](./offline-artwork-cache-and-library-previews.md)     |
 | Boundary + downloads           | Reviewed adaptive-download design, not started                                                       | [boundary-hardening-and-adaptive-downloads.md](./boundary-hardening-and-adaptive-downloads.md)       |
