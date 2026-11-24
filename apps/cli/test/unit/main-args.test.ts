@@ -509,8 +509,16 @@ test("`kunai addons enable --accept-risk` writes consent and `disable` keeps it"
 
     // Non-interactive enable without the flag fails closed.
     const refused = run("addons", "enable", "--json");
-    expect(await refused.exited).toBe(1);
-    expect(JSON.parse(await new Response(refused.stdout).text())).toMatchObject({ ok: false });
+    const [refusedOut, refusedErr, refusedStatus] = await Promise.all([
+      new Response(refused.stdout).text(),
+      new Response(refused.stderr).text(),
+      refused.exited,
+    ]);
+    if (refusedStatus !== 1) {
+      console.error("[DEBUG-addons-consent]", { refusedStatus, refusedOut, refusedErr });
+    }
+    expect(refusedStatus).toBe(1);
+    expect(JSON.parse(refusedOut)).toMatchObject({ ok: false });
 
     const enabled = run("addons", "enable", "--accept-risk", "--json");
     const [enabledOut, enabledStatus] = await Promise.all([
