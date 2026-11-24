@@ -1,13 +1,16 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import { AnalyticsDisclosureBanner } from "@/app-shell/AnalyticsDisclosureBanner";
+import { CalendarScheduleRow } from "@/app-shell/calendar-ui";
 import { CapabilityIssueStrip } from "@/app-shell/CapabilityIssueStrip";
 import { companionMode, companionToggleable } from "@/app-shell/companion-policy";
 import { DetailsSheetUI, TitleDetailSheetUI } from "@/app-shell/details-pane-ui";
 import { DetailsSheet } from "@/app-shell/details-sheet-ui";
+import { downloadQueueStatusLabel } from "@/app-shell/download-manager-shell";
 import { ExitShell } from "@/app-shell/exit-shell";
 import { compactProgressBar } from "@/app-shell/format/bar";
 import { GuideShell } from "@/app-shell/guide-shell";
+import { libraryResumeCardCopy } from "@/app-shell/library-shell";
 import { LoadingShell } from "@/app-shell/loading-shell";
 import { MediaPanel } from "@/app-shell/MediaPanel";
 import { reducedMotionEnabled } from "@/app-shell/motion-policy";
@@ -23,10 +26,12 @@ import { listRowTitleColumn } from "@/app-shell/primitives/ListRow.model";
 import { LoadingState } from "@/app-shell/primitives/LoadingState";
 import { MediaListShell } from "@/app-shell/primitives/MediaListShell";
 import { ProgressBar } from "@/app-shell/primitives/ProgressBar";
+import { ResumeCard } from "@/app-shell/primitives/ResumeCard";
 import { SectionGroup } from "@/app-shell/primitives/SectionGroup";
 import { SegmentedControl } from "@/app-shell/primitives/SegmentedControl";
 import { StateBlock } from "@/app-shell/primitives/StateBlock";
 import { BooleanSwitch } from "@/app-shell/primitives/Switch";
+import { HelpShell } from "@/app-shell/root-overlay-shell";
 import { ErrorShell, RootIdleShell } from "@/app-shell/root-status-shells";
 import { SakuraLoader } from "@/app-shell/SakuraLoader";
 import { SettingRowBoolean } from "@/app-shell/settings/components/SettingRowBoolean";
@@ -34,7 +39,7 @@ import { SettingRowSubmenu } from "@/app-shell/settings/components/SettingRowSub
 import { SettingsSearchBar } from "@/app-shell/settings/components/SettingsSearchBar";
 import { appearanceSettingsRows } from "@/app-shell/settings/registry/appearance";
 import { ChoiceRow, SetupFrame, ToggleRow } from "@/app-shell/setup/SetupFrame";
-import { DependencyScreen } from "@/app-shell/setup/SetupScreens";
+import { DependencyScreen, DoneScreen, LanguageScreen } from "@/app-shell/setup/SetupScreens";
 import { CommandPalette } from "@/app-shell/shell-command-ui";
 import { InputField } from "@/app-shell/shell-frame";
 import { EmptyState, Footer } from "@/app-shell/shell-primitives";
@@ -44,9 +49,10 @@ import { createInitialState } from "@/domain/session/SessionState";
 import { buildHelpText, parseArgs } from "@/main";
 import type { CapabilitySnapshot } from "@/ui";
 import { DEFAULT_CONFIG } from "@kunai/config";
-import { Box } from "ink";
+import { Box, Text } from "ink";
 
 import { captureFrame } from "../../harness/render-capture";
+import { readRepoFile } from "../../support/repo-scan";
 
 /** Box-drawing lines and decorative glyphs that screen readers announce as noise. */
 const DECORATIVE_NOISE = /[┌┐└┘─│╭╮╰╯🦊❀✿❁✾▌█┈░▰▱◉○●◆◈▲▼]/u;
@@ -88,6 +94,13 @@ describe("plain mode policy, flag, env, and setting", () => {
     expect(companionToggleable({ KUNAI_PLAIN: "1" }, { isTTY: true })).toBe(false);
   });
 
+  test("the screen buffer and mouse change on the next launch", () => {
+    const statement = readRepoFile("ACCESSIBILITY.md");
+    expect(statement).toContain("screen buffer");
+    expect(statement).toContain("mouse reporting");
+    expect(statement.toLowerCase()).toContain("next launch");
+  });
+
   test("--plain parses cleanly and is documented in --help", () => {
     expect(parseArgs(["--plain"]).plain).toBe(true);
     expect(parseArgs([]).plain).toBe(false);
@@ -97,6 +110,9 @@ describe("plain mode policy, flag, env, and setting", () => {
   test("plainMode setting exists in appearance settings and toggles both ways", () => {
     const rows = appearanceSettingsRows();
     const plainRow = rows.find((row) => row.id === "plainMode");
+    expect(plainRow?.detail).toContain("screen buffer");
+    expect(plainRow?.detail).toContain("mouse");
+    expect(plainRow?.detail?.toLowerCase()).toContain("next launch");
     expect(plainRow?.kind).toBe("boolean");
     if (plainRow?.kind === "boolean") {
       expect(plainRow.read(DEFAULT_CONFIG)).toBe(false);
@@ -577,5 +593,171 @@ describe("plain / screen-reader rendering across every shell surface", () => {
     expect(overlayFrame).toContain("[selected] /settings — Open preferences");
     expect(overlayFrame).toContain("[selected] Retry");
     expect(overlayFrame).toContain("No playable source found");
+  });
+
+  test("help, language, and done setup screens are one column of words", () => {
+    enablePlainMode();
+    const help = captureFrame(
+      <HelpShell
+        sections={[
+          {
+            group: "Global",
+            items: [
+              { keys: "?", label: "Show this help" },
+              { keys: "esc", label: "Close" },
+              { keys: "tab", label: "Cycle sections" },
+              { keys: "/", label: "Commands" },
+            ],
+          },
+          {
+            group: "Playback",
+            items: [{ keys: "space", label: "Pause" }],
+          },
+        ]}
+        scopeLabel="playing"
+        commandMode={false}
+        commandInput=""
+        commandCursor={0}
+        commands={[]}
+        highlightedIndex={0}
+        footerActions={[]}
+        onClose={() => {}}
+      />,
+      { columns: 80, rows: 24 },
+    );
+    const setup = captureFrame(
+      <>
+        <LanguageScreen
+          lanes={[
+            { value: "series", label: "Shows" },
+            { value: "anime", label: "Anime" },
+          ]}
+          activeLane="anime"
+          audioOptions={[
+            { value: "ja", label: "Japanese", detail: "Original audio" },
+            { value: "en", label: "English", detail: "Dub" },
+          ]}
+          subtitleOptions={[
+            { value: "en", label: "English", detail: "English subtitles" },
+            { value: "off", label: "Off", detail: "No subtitles" },
+          ]}
+          audioIndex={0}
+          subtitleIndex={0}
+          focus="audio"
+          contentWidth={70}
+        />
+        <DoneScreen
+          headline="Ready to watch"
+          summary={[{ ok: true, label: "Player", detail: "mpv found" }]}
+          outstanding={[{ ok: false, label: "Downloads", detail: "yt-dlp missing" }]}
+        />
+      </>,
+      { columns: 80, rows: 40 },
+    );
+
+    for (const frame of [help, setup]) {
+      expect(frame.length).toBeGreaterThan(0);
+      expect(frame).not.toMatch(DECORATIVE_NOISE);
+    }
+    expect(help).toContain("Help");
+    expect(help).not.toContain("❀");
+    expect(help).toContain("[active] Global");
+    expect(help).not.toContain("[active] Playback");
+    const helpLines = help.split("\n");
+    const questionLine = helpLines.find((line) => line.includes("Show this help"));
+    expect(questionLine).toBeDefined();
+    expect(questionLine).not.toContain("Cycle sections");
+    expect(setup).toContain("[active] Anime");
+    expect(setup).toContain("[active] Audio");
+    expect(setup).toContain("[selected] Japanese");
+    expect(setup).toContain("Subtitles");
+    const audioLine = setup.split("\n").find((line) => line.includes("Audio"));
+    expect(audioLine).not.toContain("Subtitles");
+    expect(setup).toContain("[ok] Player");
+    expect(setup).toContain("[warning] Downloads");
+    expect(setup).not.toContain("❀");
+  });
+
+  test("playing, diagnostics, downloads, calendar, and library drop decorative glyphs", () => {
+    enablePlainMode();
+    const resume = libraryResumeCardCopy({
+      titleName: "Andor",
+      nextPlayableEpisodeLabel: "S01E02",
+    });
+    const frame = captureFrame(
+      <>
+        <LoadingShell
+          state={{
+            title: "Andor",
+            subtitle: "S01E01",
+            operation: "playing",
+            bufferHealth: "buffering",
+            upNextLabel: "S01E02",
+            currentPosition: 30,
+            duration: 120,
+          }}
+        />
+        <LoadingShell
+          state={{
+            title: "Andor",
+            operation: "playing",
+            bufferHealth: "stalled",
+            latestIssue: "Stream stalled",
+            upNextLabel: "S01E03",
+          }}
+        />
+        <OverlayPanel
+          width={72}
+          maxLinesOverride={6}
+          overlay={{
+            type: "diagnostics",
+            title: "Diagnostics",
+            subtitle: "Session",
+            lines: [
+              { label: "─── Verdict", detail: "", tone: "info" },
+              { label: "Verdict", detail: "Playable", tone: "success" },
+            ],
+          }}
+        />
+        {(["running", "queued", "completed", "completed-with-notes", "failed"] as const).map(
+          (status) => (
+            <Text key={status}>{downloadQueueStatusLabel(status)}</Text>
+          ),
+        )}
+        <CalendarScheduleRow
+          option={{ value: "andor", label: "Andor" }}
+          selected
+          rowWidth={60}
+          timeLabel="20:00"
+          isNew
+        />
+        <CalendarScheduleRow
+          option={{ value: "dune", label: "Dune" }}
+          selected={false}
+          rowWidth={60}
+          timeLabel="21:00"
+          tracked
+        />
+        <ResumeCard label={resume.label} action={resume.action} />
+      </>,
+      { columns: 100, rows: 80 },
+    );
+
+    expect(frame).not.toMatch(DECORATIVE_NOISE);
+    expect(frame).toContain("[buffering] buffer");
+    expect(frame).toContain("Up next: S01E02");
+    expect(frame).toContain("Warning: Stream stalled");
+    expect(frame).toContain("Up next: S01E03");
+    expect(frame).toContain("Verdict");
+    expect(frame).not.toContain("───");
+    expect(frame).toContain("[downloading]");
+    expect(frame).toContain("[queued]");
+    expect(frame).toContain("[complete]");
+    expect(frame).toContain("[playable]");
+    expect(frame).toContain("[failed]");
+    expect(frame).toContain("[new] Andor");
+    expect(frame).toContain("[tracked] Dune");
+    expect(frame).toContain("Resume: S01E02 offline (enter)");
+    expect(frame).not.toContain("▸");
   });
 });

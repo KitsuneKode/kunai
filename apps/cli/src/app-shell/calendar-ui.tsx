@@ -10,6 +10,7 @@ import {
   type CalendarDay,
   type CalendarTypeTab,
 } from "./calendar-ui.model";
+import { plainModeEnabled } from "./plain-mode";
 import { ClaudeTabRow } from "./primitives/ClaudeTabRow";
 import { buildCalendarRowColumns, computeCalendarRowLayout } from "./primitives/list-row-layout";
 import { ListRow } from "./primitives/ListRow";
@@ -158,7 +159,8 @@ function CalendarScheduleRowInner<T>({
   const status = statusLabel ?? presentation.label;
   const color = statusColor ?? presentation.color;
   const dim = statusDim ?? presentation.dim;
-  const glyph = statusGlyph ?? presentation.glyph.trim();
+  const plain = plainModeEnabled();
+  const glyph = plain ? "" : (statusGlyph ?? presentation.glyph.trim());
   const innerWidth = Math.max(16, rowWidth - CALENDAR_ROW_LEAD_WIDTH);
   const layout = computeCalendarRowLayout(innerWidth);
   const statusText = compactCalendarStatusLabel(
@@ -171,12 +173,13 @@ function CalendarScheduleRowInner<T>({
   // Distinct glyphs, not just distinct tints: "new for you" and "tracked" used to
   // share ● and differ only by colour, which is unreadable at a glance and
   // invisible to a colourblind reader.
-  const marker = isNew ? "●" : tracked ? "★" : "";
+  const marker = plain ? "" : isNew ? "●" : tracked ? "★" : "";
   const markerColor = isNew ? palette.accent : palette.ok;
+  const titlePrefix = plain ? (isNew ? "[new] " : tracked ? "[tracked] " : "") : "";
 
   const columns = buildCalendarRowColumns({
     timeLabel,
-    title: option.label,
+    title: `${titlePrefix}${option.label}`,
     marker,
     markerColor,
     episodeCode: ep,

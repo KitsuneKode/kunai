@@ -15,6 +15,7 @@ import {
   libraryFooterActions,
   downloadQueueFooterActions,
 } from "@/app-shell/overlay-footer-actions";
+import { plainModeEnabled } from "@/app-shell/plain-mode";
 import { ClaudeTabRow } from "@/app-shell/primitives/ClaudeTabRow";
 import {
   buildMediaListRowColumns,
@@ -52,6 +53,26 @@ import { Box, Text, useInput } from "ink";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 import { useRootContentSuspended } from "./RootContentSuspension";
+
+export function libraryResumeCardCopy(input: {
+  readonly titleName: string;
+  readonly nextPlayableEpisodeLabel?: string;
+}) {
+  if (plainModeEnabled()) {
+    return {
+      label: input.nextPlayableEpisodeLabel
+        ? `${input.nextPlayableEpisodeLabel} offline`
+        : input.titleName,
+      action: "enter",
+    };
+  }
+  return {
+    label: input.nextPlayableEpisodeLabel
+      ? `▸ Resume ${input.nextPlayableEpisodeLabel} offline`
+      : `▸ Open ${input.titleName}`,
+    action: "↵ enter",
+  };
+}
 
 type TabId = "library" | "queue";
 
@@ -553,12 +574,7 @@ function LibraryTab({
       ) : null}
       {selectedOfflineGroup && confirmDeleteKey !== selectedOfflineGroup.key ? (
         <ResumeCard
-          label={
-            selectedOfflineGroup.nextPlayableEpisodeLabel
-              ? `▸ Resume ${selectedOfflineGroup.nextPlayableEpisodeLabel} offline`
-              : `▸ Open ${selectedOfflineGroup.titleName}`
-          }
-          action="↵ enter"
+          {...libraryResumeCardCopy(selectedOfflineGroup)}
           width={Math.min(rowWidth, 56)}
         />
       ) : null}

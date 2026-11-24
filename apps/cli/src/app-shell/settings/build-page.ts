@@ -1,3 +1,4 @@
+import { plainModeEnabled, plainModeEnvOverridden } from "@/app-shell/plain-mode";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
 import { isSettingVisible } from "./gates";
@@ -48,6 +49,9 @@ function disabledReasonFor(def: SettingRowDef): string | undefined {
   if (def.kind === "text" && def.envOverride && process.env[def.envOverride]?.trim()) {
     return `Unset ${def.envOverride} to edit this value in config`;
   }
+  if (def.kind === "boolean" && def.envOverride && process.env[def.envOverride]?.trim()) {
+    return `Unset ${def.envOverride} to change this.`;
+  }
   return undefined;
 }
 
@@ -57,6 +61,9 @@ function valueSummaryFor(def: SettingRowDef, config: KitsuneConfig): string {
     case "subheading":
       return "";
     case "boolean":
+      if (def.id === "plainMode" && plainModeEnvOverridden()) {
+        return plainModeEnabled() ? "on" : "off";
+      }
       return def.read(config) ? "on" : "off";
     case "enum": {
       const value = def.read(config);

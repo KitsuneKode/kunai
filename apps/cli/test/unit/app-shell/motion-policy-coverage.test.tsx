@@ -42,16 +42,93 @@ const AUDITED_ANIMATED_FILES: ReadonlyMap<
 const NON_ANIMATION_INTERVAL_FILES: ReadonlyMap<string, string> = new Map([
   ["apps/cli/src/app-shell/hooks/use-calendar-now.ts", "wall-clock minute refresh for air times"],
   ["apps/cli/src/app-shell/playback-mount-shell.tsx", "mpv playback position/status poll"],
-  ["apps/cli/src/app-shell/ink-shell.tsx", "notification & presence background poll"],
+  [
+    "apps/cli/src/app-shell/ink-shell.tsx",
+    "notification, presence, and toast timers — not a glyph frame loop",
+  ],
   ["apps/cli/src/app-shell/download-status-monitor.ts", "active download queue progress poll"],
   [
     "apps/cli/src/app-shell/loading-shell.tsx",
-    "elapsed seconds counter, memory & runtime health poll (animations delegated to SakuraBloom/GlimmerLabel)",
+    "elapsed seconds counter, memory panel auto-hide, and runtime health poll (animations delegated to SakuraBloom/GlimmerLabel)",
   ],
+  [
+    "apps/cli/src/app-shell/use-poster-preview.ts",
+    "poster fetch debounce and delayed spinner arm, not a glyph frame loop",
+  ],
+  [
+    "apps/cli/src/app-shell/checklist-shell.tsx",
+    "confirm delay before submit, not a frame animation",
+  ],
+  ["apps/cli/src/app-shell/browse-shell.tsx", "action-feedback and search debounce timers"],
+  [
+    "apps/cli/src/app-shell/mouse/mouse-stdin.ts",
+    "coalesce a partial mouse report, not a frame animation",
+  ],
+  ["apps/cli/src/app-shell/workflows/shell-workflows.ts", "clear a transient download-queued note"],
+  [
+    "apps/cli/src/app-shell/use-viewport-policy.ts",
+    "debounce terminal resize before recomputing layout",
+  ],
+  ["apps/cli/src/app-shell/hooks/use-dwell-prefetch.ts", "dwell delay before prefetch"],
+  [
+    "apps/cli/src/app-shell/hooks/use-search-suggestions.ts",
+    "debounce before requesting suggestions",
+  ],
+  ["apps/cli/src/app-shell/hooks/use-settled-value.ts", "settle a rapidly changing value"],
+  [
+    "apps/cli/src/app-shell/dismiss-timer-registry.ts",
+    "shared dismiss timer, not a frame animation",
+  ],
+  ["apps/cli/src/app-shell/sixel-overlay.ts", "flush a queued sixel paint after Ink's frame"],
+  ["apps/cli/src/app-shell/settings/SettingsShell.tsx", "debounce settings draft persistence"],
+  ["apps/cli/src/app-shell/root-overlay-shell.tsx", "clear a transient overlay status line"],
 ]);
 
 const ANIMATION_SIGNAL_REGEX =
-  /\b(?:setInterval|useFrameTick|useSakuraFrame|BLOOM_FRAMES|BUSY_FRAMES|GRAPHICS_TIMINGS)\b/;
+  /\b(?:setTimeout|setInterval)\s*\(|\b(?:useFrameTick|useSakuraFrame|BLOOM_FRAMES|BUSY_FRAMES|GRAPHICS_TIMINGS)\b/;
+
+function codeWithoutComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'])\/\/.*$/gm, "$1");
+}
+
+/** A mention of the gate name is not proof. The file has to call it. */
+function gateIsInvoked(source: string, gate: string): boolean {
+  return new RegExp(`\\b${gate}\\s*\\(`).test(codeWithoutComments(source));
+}
+
+/**
+ * Files with a timer or frame animation must either call their declared motion
+ * gate or sit on the allowlist with a stated reason. `sources` is injectable
+ * so a synthetic file can fail this without landing in app-shell.
+ */
+function auditMotionSources(
+  sources: ReadonlyMap<string, string>,
+  audited: ReadonlyMap<string, { readonly gate: string }> = AUDITED_ANIMATED_FILES,
+  allowlist: ReadonlyMap<string, string> = NON_ANIMATION_INTERVAL_FILES,
+): string[] {
+  const violations: string[] = [];
+  for (const [file, source] of sources) {
+    if (!ANIMATION_SIGNAL_REGEX.test(source)) continue;
+    const reason = allowlist.get(file);
+    if (reason !== undefined) {
+      if (reason.trim().length === 0) {
+        violations.push(`${file} (allowlisted without a stated reason)`);
+      }
+      continue;
+    }
+    const entry = audited.get(file);
+    if (!entry) {
+      violations.push(
+        `${file} (setTimeout/setInterval or animation signal is not allowlisted with a reason and is not a gated animation)`,
+      );
+      continue;
+    }
+    if (!gateIsInvoked(source, entry.gate)) {
+      violations.push(`${file} (names ${entry.gate} without calling it)`);
+    }
+  }
+  return violations;
+}
 
 type SavedMotionEnv = {
   reduced: string | undefined;
@@ -95,31 +172,46 @@ afterEach(() => {
 
 describe("motion policy coverage inventory", () => {
   test("every animated component in app-shell is audited and gated on reducedMotionEnabled", () => {
-    const files = collectSourceFiles("apps/cli/src/app-shell");
-    const unaudited: string[] = [];
-    const missingGate: string[] = [];
-
-    for (const file of files) {
-      const source = readRepoFile(file);
-      if (!ANIMATION_SIGNAL_REGEX.test(source)) continue;
-
-      if (NON_ANIMATION_INTERVAL_FILES.has(file)) continue;
-
-      const entry = AUDITED_ANIMATED_FILES.get(file);
-      if (!entry) {
-        unaudited.push(file);
-        continue;
-      }
-      if (!source.includes(entry.gate)) {
-        missingGate.push(`${file} (expected ${entry.gate})`);
-      }
-    }
-
+    const sources = new Map(
+      collectSourceFiles("apps/cli/src/app-shell").map(
+        (file) => [file, readRepoFile(file)] as const,
+      ),
+    );
     expect(
-      unaudited,
-      "new animated component or interval found in app-shell — gate it on reducedMotionEnabled and add it to AUDITED_ANIMATED_FILES",
+      auditMotionSources(sources),
+      "new setTimeout/setInterval or animation in app-shell — gate it by calling reducedMotionEnabled/useFrameTick/useSakuraFrame, or allowlist it with a stated reason",
     ).toEqual([]);
-    expect(missingGate, "audited animated file no longer references its motion gate").toEqual([]);
+  });
+
+  test("a synthetic setTimeout animation fails unless it calls its gate or is allowlisted with a reason", () => {
+    const file = "apps/cli/src/app-shell/synthetic-spinner.tsx";
+    const commentOnly = `
+      // reducedMotionEnabled is mentioned here and must not count as a gate
+      export function spin() {
+        setTimeout(() => setFrame(1), 80);
+      }
+    `;
+    const called = `
+      import { reducedMotionEnabled } from "./motion-policy";
+      export function spin() {
+        if (reducedMotionEnabled()) return;
+        setInterval(() => setFrame(1), 80);
+      }
+    `;
+    const audited = new Map([[file, { gate: "reducedMotionEnabled" }]]);
+    expect(auditMotionSources(new Map([[file, commentOnly]]))).not.toEqual([]);
+    expect(auditMotionSources(new Map([[file, commentOnly]]), audited)).not.toEqual([]);
+    expect(auditMotionSources(new Map([[file, called]]), audited)).toEqual([]);
+    expect(
+      auditMotionSources(
+        new Map([[file, commentOnly]]),
+        new Map(),
+        new Map([[file, "status poll, not a glyph animation"]]),
+      ),
+    ).toEqual([]);
+    expect(
+      auditMotionSources(new Map([[file, commentOnly]]), new Map(), new Map([[file, "   "]])),
+    ).not.toEqual([]);
   });
 
   test("audited motion inventory has no stale paths", () => {

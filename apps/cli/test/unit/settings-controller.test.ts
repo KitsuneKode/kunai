@@ -65,6 +65,43 @@ function rowIndexFor(page: ReturnType<typeof buildSettingsPage>, id: string): nu
   );
 }
 
+test("KUNAI_PLAIN shows the effective plain-mode switch and refuses the toggle", () => {
+  const saved = process.env.KUNAI_PLAIN;
+  try {
+    const cases = [
+      { env: "1", stored: false, shown: "on" },
+      { env: "0", stored: true, shown: "off" },
+    ] as const;
+    for (const { env, stored, shown } of cases) {
+      process.env.KUNAI_PLAIN = env;
+      const draft = { ...baseConfig(), plainMode: stored };
+      const registryCtx = mockRegistryCtx(draft);
+      const section = listSettingsSectionLabels(registryCtx).indexOf("General");
+      const page = buildSettingsPage(registryCtx, { activeSectionIndex: section });
+      const row = page.rows.find((entry) => entry.def.id === "plainMode");
+      expect(row?.valueSummary, `KUNAI_PLAIN=${env}`).toBe(shown);
+      expect(row?.envBadge).toBe("env");
+      expect(row?.disabledReason).toBe("Unset KUNAI_PLAIN to change this.");
+      const state = {
+        ...createSettingsUiState(draft),
+        activeSectionIndex: section,
+        selectedIndex: rowIndexFor(page, "plainMode"),
+      };
+      const result = handleSettingsKey("", inkKey({ return: true }), state, {
+        container: registryCtx.container,
+        registryCtx,
+      });
+      expect(result.handled).toBe(true);
+      expect(result.state.draft.plainMode).toBe(stored);
+      expect(result.persist).toBeUndefined();
+      expect(result.state.error).toBe("Unset KUNAI_PLAIN to change this.");
+    }
+  } finally {
+    if (saved === undefined) delete process.env.KUNAI_PLAIN;
+    else process.env.KUNAI_PLAIN = saved;
+  }
+});
+
 test("Enter on relay URL enters dedicated input mode instead of submenu", () => {
   const draft = baseConfig();
   const registryCtx = mockRegistryCtx(draft);

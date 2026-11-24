@@ -129,6 +129,17 @@ export function plainDependencyState(state: "ok" | "blocking" | "optional" | str
   return "[warning]";
 }
 
+/**
+ * Visual section titles keep a `─── ` prefix so scroll and grouping can find
+ * them. Plain mode speaks the title and drops the rule.
+ */
+export const VISUAL_SECTION_RULE = "─── ";
+
+export function plainRuleHeader(label: string, plain: boolean = plainModeEnabled()): string {
+  if (!plain || !label.startsWith(VISUAL_SECTION_RULE)) return label;
+  return label.slice(VISUAL_SECTION_RULE.length);
+}
+
 /** Explicit text status for playback bootstrap stages. */
 export function plainStageStatus(
   tone: "neutral" | "info" | "success" | "warning" | "error",

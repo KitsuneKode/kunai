@@ -8,7 +8,12 @@ import type { DetailsSheetModel } from "./details-sheet.model";
 import { useSettledValue } from "./hooks/use-settled-value";
 import { useIsInsideOverlay } from "./overlay-layout-context";
 import { PickerOptionRow } from "./overlay-picker-row";
-import { plainModeEnabled, plainTabLabel } from "./plain-mode";
+import {
+  plainModeEnabled,
+  plainRuleHeader,
+  plainTabLabel,
+  VISUAL_SECTION_RULE,
+} from "./plain-mode";
 import { PosterInitialBlock } from "./poster-initial-block";
 import { suppressPosterWhileNavigating, type PosterResult } from "./poster-types";
 import { LoadingState } from "./primitives/LoadingState";
@@ -397,12 +402,14 @@ export function OverlayPanel({
           {overlay.lines
             .slice(overlay.scrollIndex ?? 0, (overlay.scrollIndex ?? 0) + maxLines)
             .map((line: ShellPanelLine) => {
-              const isHeader = !line.detail && line.label.startsWith("───");
+              const isHeader = !line.detail && line.label.startsWith(VISUAL_SECTION_RULE);
               if (isHeader) {
                 // Section rule — small top gap for grouping, no per-line blank lines.
                 return (
                   <Box key={`${line.label}-h`} marginTop={1}>
-                    <Text color={palette.muted}>{truncateLine(line.label, contentWidth)}</Text>
+                    <Text color={palette.muted}>
+                      {truncateLine(plainRuleHeader(line.label, plain), contentWidth)}
+                    </Text>
                   </Box>
                 );
               }

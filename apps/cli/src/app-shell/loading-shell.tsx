@@ -351,8 +351,14 @@ const BufferHealthBadge = React.memo(function BufferHealthBadge({
       : health === "buffering"
         ? palette.accentDeep
         : palette.dangerText;
-  const label =
-    health === "healthy"
+  const plain = plainModeEnabled();
+  const label = plain
+    ? health === "healthy"
+      ? "[healthy] buffer"
+      : health === "buffering"
+        ? "[buffering] buffer"
+        : "[stalled] buffer"
+    : health === "healthy"
       ? "● buffer healthy"
       : health === "buffering"
         ? "● buffer building"
@@ -987,7 +993,9 @@ export const LoadingShell = React.memo(function LoadingShell({
                 {playbackTrouble ? (
                   <Box marginTop={1} flexDirection="column">
                     <Text color={palette.dangerText} bold>
-                      {`⚠ ${truncateLine(playbackTrouble, infoWidth - 2)}`}
+                      {plainModeEnabled()
+                        ? `Warning: ${truncateLine(playbackTrouble, infoWidth - 10)}`
+                        : `⚠ ${truncateLine(playbackTrouble, infoWidth - 2)}`}
                     </Text>
                     <Text color={palette.dim}>
                       {`r recover  ·  ${PLAYER_FALLBACK_KEY} fallback  ·  o source  ·  d diagnostics`}
@@ -1002,13 +1010,21 @@ export const LoadingShell = React.memo(function LoadingShell({
                 {/* Up next on narrow/medium — wide terminals show this on the right rail. */}
                 {!isWidePlaying && state.upNextLabel?.trim() ? (
                   <Box marginTop={1}>
-                    <Text color={palette.accent}>{"▶ "}</Text>
-                    <Text color={palette.dim} dimColor>
-                      {"up next  "}
-                    </Text>
-                    <Text color={palette.text}>
-                      {truncateLine(state.upNextLabel, infoWidth - 10)}
-                    </Text>
+                    {plainModeEnabled() ? (
+                      <Text color={palette.text}>
+                        {`Up next: ${truncateLine(state.upNextLabel, infoWidth - 10)}`}
+                      </Text>
+                    ) : (
+                      <>
+                        <Text color={palette.accent}>{"▶ "}</Text>
+                        <Text color={palette.dim} dimColor>
+                          {"up next  "}
+                        </Text>
+                        <Text color={palette.text}>
+                          {truncateLine(state.upNextLabel, infoWidth - 10)}
+                        </Text>
+                      </>
+                    )}
                   </Box>
                 ) : null}
 

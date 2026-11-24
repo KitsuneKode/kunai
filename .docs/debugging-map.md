@@ -141,6 +141,8 @@ writer to stdout, and three things in this app are not Ink.
 | `clearRootContentTransitionFrame()` — the raw `ESC[2J ESC[H` on every root-content transition | Drove the real `mountRootContent` transition under a PTY and replayed the bytes through a terminal emulator. Screen was clean: header plus all four rows of the new surface, no stale cells. The `ESC[2J` blanks what the misaimed erase misses, and Ink re-synchronizes on the next frame.                                                                |
 | Ink frames interleaving into a chunked Kitty upload                                           | The chunk loop in `image/kitty-transport.ts` yields to the event loop every 8 chunks, and the graphics protocol requires one transmission's chunks to be contiguous. Measured with both writers instrumented and Ink re-rendering on a 4 ms timer: **0 foreign writes** landed between the 14 chunks. Ink's 30 fps throttle is far slower than the yields. |
 
+In plain mode that helper only undisplays image placements. Plain mode draws on the primary screen, where `ESC[2J` desyncs Ink's erase (`shell-screen-clear.ts`). The alternate-screen shell still writes the clear.
+
 Note while reading that code: `ink-external-clear-desync.test.tsx` still pins the
 desync itself (13 erase-line ops, 12 cursor-up ops, aimed at a cursor the clear
 already moved home), because it is real and load-bearing if anything ever stops

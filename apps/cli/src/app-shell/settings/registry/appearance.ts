@@ -34,7 +34,7 @@ export function appearanceSettingsRows(_ctx?: SettingsRegistryContext): SettingR
       configKeys: ["plainMode"],
       label: "Plain / screen-reader mode",
       detail:
-        "No animation, box art, or decorative glyphs; states and selection announced as text (also --plain or KUNAI_PLAIN=1)",
+        "No animation, box art, or decorative glyphs; states and selection announced as text. The screen buffer and mouse change on the next launch (also --plain or KUNAI_PLAIN=1)",
       envOverride: "KUNAI_PLAIN",
       read: (config) => config.plainMode,
       write: (config, value) => ({

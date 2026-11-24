@@ -49,22 +49,27 @@ function refreshJobLists(container: Container) {
   };
 }
 
+export function downloadQueueStatusLabel(status: DownloadJobRecord["status"]): string {
+  const plain = plainModeEnabled();
+  if (status === "running") return plain ? "[downloading]" : "↓ downloading";
+  if (status === "queued") return plain ? "[queued]" : "○ queued";
+  if (status === "completed") return plain ? "[complete]" : "✓ complete";
+  if (status === "completed-with-notes") return plain ? "[playable]" : "✓ playable";
+  if (status === "repairable") return plain ? "[repairable]" : "◇ repairable";
+  if (status === "failed") return plain ? "[failed]" : "✗ failed";
+  return plain ? "[aborted]" : "— aborted";
+}
+
 function queueStatePresentation(job: DownloadJobRecord): { label: string; color: string } {
-  if (job.status === "running") return { label: "↓ downloading", color: palette.accent };
-  if (job.status === "queued") return { label: "○ queued", color: palette.muted };
+  const label = downloadQueueStatusLabel(job.status);
+  if (job.status === "running") return { label, color: palette.accent };
+  if (job.status === "queued") return { label, color: palette.muted };
   if (job.status === "completed" || job.status === "completed-with-notes") {
-    return {
-      label: job.status === "completed-with-notes" ? "✓ playable" : "✓ complete",
-      color: palette.ok,
-    };
+    return { label, color: palette.ok };
   }
-  if (job.status === "repairable") {
-    return { label: "◇ repairable", color: palette.accent };
-  }
-  if (job.status === "failed") {
-    return { label: "✗ failed", color: palette.dangerText };
-  }
-  return { label: "— aborted", color: palette.dim };
+  if (job.status === "repairable") return { label, color: palette.accent };
+  if (job.status === "failed") return { label, color: palette.dangerText };
+  return { label, color: palette.dim };
 }
 
 export type DownloadLiveStats = {

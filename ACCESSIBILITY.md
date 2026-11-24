@@ -27,8 +27,12 @@ output or JSON (`-S --json`, `doctor --json`, `capabilities --json`).
   - Removes box-drawing borders, decorative glyphs, mascot art/emoji, and
     poster images across browse, details, settings, playback status, post-play,
     tracks, setup, command palette, and overlays.
-  - Stacks two-pane views into linear, single-column output and runs in the
-    normal terminal buffer (`alternateScreen: false`) with mouse reporting off.
+  - Stacks two-pane views into linear, single-column output. Glyphs, layout,
+    and motion follow the setting on the next frame. The screen buffer and
+    mouse reporting are sampled when the shell starts, so turning plain mode
+    on or off in Settings changes them on the next launch. A launch that
+    starts in plain mode uses the normal terminal buffer
+    (`alternateScreen: false`) with mouse reporting off.
   - States focus, selection, active tabs, switches, checkboxes, progress, and
     status explicitly in words (`[selected]`, `[active]`, `[on]`/`[off]`,
     `[ok]`/`[missing]`, `[done]`/`[in progress]`/`[pending]`, `[42%]`,
