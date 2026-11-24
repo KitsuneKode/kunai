@@ -7,9 +7,10 @@
 // Returns NEXT_ITERATION to run the loop again, or the phase result.
 // =============================================================================
 
-import { openTracksPanel, openPlaybackEpisodePicker } from "@/app-shell/workflows";
+import { openPlaybackEpisodePicker } from "@/app-shell/workflows";
 import { episodeInfoFromSelection } from "@/app/bootstrap/episode-info-from-catalog";
 import { planCatalogAutoAdvance } from "@/app/playback/playback-catalog-autoadvance";
+import { applyPlaybackControlAction } from "@/app/playback/playback-control-actions";
 import {
   armEpisodeResolve,
   createEpisodeAttempt,
@@ -47,19 +48,13 @@ import {
 import { clearPresenceInBackground } from "@/app/playback/playback-presence-writer";
 import { recoverAfterPlayback } from "@/app/playback/playback-recovery";
 import { didPlaybackFailToStart } from "@/app/playback/playback-session-controller";
-import { startAtResumePoint } from "@/app/playback/playback-start-intent";
 import { acquireEpisodeStream } from "@/app/playback/playback-stream-acquire";
 import { offerPrePlayConfirm, readyEpisodeStream } from "@/app/playback/playback-stream-ready";
 import type { AutoAdvanceGuards } from "@/app/playback/policies/auto-advance-policy";
-import {
-  streamSelectionFromTrackPick,
-  type StreamSelectionIntent,
-} from "@/app/playback/source-quality";
 import { runAutoplayAdvanceCountdown } from "@/app/post-play/autoplay-advance-countdown";
 import { PostPlaybackRecommendationRail } from "@/app/post-play/post-playback-recommendations";
 import type { MediaItemIdentity } from "@/domain/media/media-item-identity";
 import { decodeEpisodeSelectionValue } from "@/domain/playback/episode-selection";
-import { toHistoryTimestamp } from "@/domain/playback/playback-history";
 import { formatQueueEntryLabel } from "@/domain/queue/queue-entry-label";
 import { listReadyEpisodes } from "@/services/offline/offline-episode-index";
 
@@ -138,12 +133,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
       sourceAuthority,
       configuredProviderId,
     });
-    const {
-      completeSourceTrackPick,
-      applyConfirmedPlaybackTrackSelection,
-      recordTrackOverrideSelected,
-      recordStartupMark,
-    } = attempt;
+    const { completeSourceTrackPick, recordStartupMark } = attempt;
     recordStartupMark("episode-bootstrap-started");
     const episodeContext = await loadEpisodeContext(loop, attempt);
     const {
@@ -163,7 +153,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
       return NEXT_ITERATION;
     }
     const nextEpisodePrefetch = createNextEpisodePrefetch(loop, attempt, episodeContext, ready);
-    const { buildNextPrefetchTarget, handoffNextEpisodePrefetch } = nextEpisodePrefetch;
+    const { handoffNextEpisodePrefetch } = nextEpisodePrefetch;
     const played = await playEpisode(loop, attempt, ready, nextEpisodePrefetch);
     if (played.kind === "exit") return played.step;
     const { result } = played;
@@ -178,246 +168,16 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
       quitThresholdMode,
     );
     if (recovery.kind === "exit") return recovery.step;
-    const { playbackControlAction, confirmedStreamSelection, confirmedEpisodeSelection } = recovery;
-    if (playbackControlAction === "back-to-search") {
-      return { status: "success", value: "back_to_search" };
-    }
-
-    if (playbackControlAction === "next" && title.type === "series") {
-      if (episodeAvailability.nextEpisode) {
-        run.pendingStart = await navigatePlaybackEpisode(episodeAvailability.nextEpisode, {
-          loadingOrder: "before-start",
-          resetStopAfterCurrent: true,
-          resumeInterruptedAutoplay: true,
-        });
-        const nextPrefetchTarget = buildNextPrefetchTarget();
-        if (nextPrefetchTarget) {
-          await handoffNextEpisodePrefetch(nextPrefetchTarget, "playback.prefetch-wait");
-        }
-        return NEXT_ITERATION;
-      }
-    }
-
-    if (playbackControlAction === "previous" && title.type === "series") {
-      if (episodeAvailability.previousEpisode) {
-        run.pendingStart = await navigatePlaybackEpisode(episodeAvailability.previousEpisode, {
-          cancelPrefetchReason: "user-navigation",
-          loadingOrder: "after-start",
-          resetStopAfterCurrent: true,
-          resumeInterruptedAutoplay: true,
-        });
-        return NEXT_ITERATION;
-      }
-    }
-
-    if (playbackControlAction === "pick-episode" && confirmedEpisodeSelection) {
-      run.pendingStart = await navigatePlaybackEpisode(confirmedEpisodeSelection, {
-        cancelPrefetchReason: "user-navigation",
-        loadingOrder: "after-start",
-        resetStopAfterCurrent: true,
-        resumeInterruptedAutoplay: true,
-      });
-      return NEXT_ITERATION;
-    }
-
-    if (playbackControlAction === "cycle-source") {
-      const streams = preparedStream.providerResolveResult?.streams ?? [];
-      const resumePos = toHistoryTimestamp(
-        result,
-        effectiveTiming.current,
-        config.quitNearEndThresholdMode,
-      );
-      if (streams.length > 1) {
-        const currentStreamId = preparedStream.providerResolveResult?.selectedStreamId;
-        const currentStream = streams.find((s) => s.id === currentStreamId);
-        const currentSourceId = currentStream?.sourceId ?? currentStreamId;
-        const availableSourceIds = Array.from(
-          new Set(
-            streams
-              .map((s) => s.sourceId)
-              .filter((id): id is string => id !== null && id !== undefined && id.length > 0),
-          ),
-        );
-
-        let nextSelection: StreamSelectionIntent | null = null;
-        if (availableSourceIds.length > 1) {
-          const currentIndex = availableSourceIds.indexOf(currentSourceId ?? "");
-          const nextIndex = (currentIndex + 1) % availableSourceIds.length;
-          const nextSourceId = availableSourceIds[nextIndex];
-          if (nextSourceId) {
-            nextSelection = { sourceId: nextSourceId, streamId: null };
-          }
-        } else {
-          const currentIndex = streams.findIndex((s) => s.id === currentStreamId);
-          const nextIndex = (currentIndex + 1) % streams.length;
-          const nextStream = streams[nextIndex];
-          if (nextStream) {
-            nextSelection = {
-              sourceId: nextStream.sourceId ?? null,
-              streamId: nextStream.id,
-            };
-          }
-        }
-
-        if (nextSelection) {
-          run.pendingStart = await applyConfirmedPlaybackTrackSelection(
-            "pick-source",
-            nextSelection,
-            resumePos,
-          );
-          return NEXT_ITERATION;
-        }
-      } else {
-        run.pendingSourceRefreshAction = "recover";
-        run.pendingRecomputeSources = true;
-        run.pendingStart = startAtResumePoint(resumePos, { suppressResumePrompt: true });
-        return NEXT_ITERATION;
-      }
-    }
-
-    if (playbackControlAction === "cycle-audio") {
-      const streams = preparedStream.providerResolveResult?.streams ?? [];
-      const resumePos = toHistoryTimestamp(
-        result,
-        effectiveTiming.current,
-        config.quitNearEndThresholdMode,
-      );
-      const currentStream = streams.find(
-        (s) => s.id === preparedStream.providerResolveResult?.selectedStreamId,
-      );
-      const currentPresentation =
-        currentStream?.presentation ??
-        (currentStream?.audioLanguages?.includes("en") ? "dub" : "sub");
-      const targetPresentation = currentPresentation === "dub" ? "sub" : "dub";
-
-      const matchingStream = streams.find((s) => {
-        if (s.presentation) {
-          return s.presentation === targetPresentation;
-        }
-        if (targetPresentation === "dub") {
-          return s.audioLanguages?.includes("en");
-        }
-        return s.audioLanguages?.includes("ja") || !s.audioLanguages?.includes("en");
-      });
-
-      if (matchingStream) {
-        const nextSelection: StreamSelectionIntent = {
-          sourceId: matchingStream.sourceId ?? null,
-          streamId: matchingStream.id,
-        };
-        run.pendingStart = await applyConfirmedPlaybackTrackSelection(
-          "pick-stream",
-          nextSelection,
-          resumePos,
-        );
-        return NEXT_ITERATION;
-      } else {
-        run.pendingSourceRefreshAction = "recover";
-        run.pendingStart = startAtResumePoint(resumePos, { suppressResumePrompt: true });
-        return NEXT_ITERATION;
-      }
-    }
-
-    if (playbackControlAction === "pick-source") {
-      if (confirmedStreamSelection) {
-        run.pendingStart = await applyConfirmedPlaybackTrackSelection(
-          playbackControlAction,
-          confirmedStreamSelection,
-          toHistoryTimestamp(result, effectiveTiming.current, config.quitNearEndThresholdMode),
-        );
-        return NEXT_ITERATION;
-      }
-      const picked = await openTracksPanel(preparedStream, { initialSection: "source" }, container);
-      const selection = picked ? streamSelectionFromTrackPick(picked) : null;
-      if (picked && (selection || picked.section === "subtitle")) {
-        const restartResume = toHistoryTimestamp(
-          result,
-          effectiveTiming.current,
-          config.quitNearEndThresholdMode,
-        );
-        const trackStart = await completeSourceTrackPick(
-          currentEpisode,
-          picked,
-          selection,
-          restartResume,
-          "playback-control-track-override",
-        );
-        if (trackStart) {
-          run.pendingStart = trackStart;
-          if (selection) recordTrackOverrideSelected(picked, selection);
-          return NEXT_ITERATION;
-        }
-      }
-    }
-
-    if (playbackControlAction === "pick-stream") {
-      if (confirmedStreamSelection) {
-        run.pendingStart = await applyConfirmedPlaybackTrackSelection(
-          playbackControlAction,
-          confirmedStreamSelection,
-          toHistoryTimestamp(result, effectiveTiming.current, config.quitNearEndThresholdMode),
-        );
-        return NEXT_ITERATION;
-      }
-      const picked = await openTracksPanel(preparedStream, {}, container);
-      const selection = picked ? streamSelectionFromTrackPick(picked) : null;
-      if (picked && (selection || picked.section === "subtitle")) {
-        const restartResume = toHistoryTimestamp(
-          result,
-          effectiveTiming.current,
-          config.quitNearEndThresholdMode,
-        );
-        const trackStart = await completeSourceTrackPick(
-          currentEpisode,
-          picked,
-          selection,
-          restartResume,
-          "playback-control-track-override",
-        );
-        if (trackStart) {
-          run.pendingStart = trackStart;
-          if (selection) recordTrackOverrideSelected(picked, selection);
-          return NEXT_ITERATION;
-        }
-      }
-    }
-
-    if (playbackControlAction === "pick-quality") {
-      if (confirmedStreamSelection) {
-        run.pendingStart = await applyConfirmedPlaybackTrackSelection(
-          playbackControlAction,
-          confirmedStreamSelection,
-          toHistoryTimestamp(result, effectiveTiming.current, config.quitNearEndThresholdMode),
-        );
-        return NEXT_ITERATION;
-      }
-      const picked = await openTracksPanel(
-        preparedStream,
-        { initialSection: "quality" },
-        container,
-      );
-      const selection = picked ? streamSelectionFromTrackPick(picked) : null;
-      if (picked && (selection || picked.section === "subtitle")) {
-        const restartResume = toHistoryTimestamp(
-          result,
-          effectiveTiming.current,
-          config.quitNearEndThresholdMode,
-        );
-        const trackStart = await completeSourceTrackPick(
-          currentEpisode,
-          picked,
-          selection,
-          restartResume,
-          "playback-control-track-override",
-        );
-        if (trackStart) {
-          run.pendingStart = trackStart;
-          if (selection) recordTrackOverrideSelected(picked, selection);
-          return NEXT_ITERATION;
-        }
-      }
-    }
-
+    const controlStep = await applyPlaybackControlAction(
+      loop,
+      attempt,
+      episodeContext,
+      ready,
+      nextEpisodePrefetch,
+      result,
+      recovery,
+    );
+    if (controlStep) return controlStep;
     // Handle post-playback
     diagnosticsService.record({
       category: "playback",
