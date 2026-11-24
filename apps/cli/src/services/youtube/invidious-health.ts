@@ -1,3 +1,4 @@
+import { createDeadlineSignal } from "@/infra/abort/timeout-signal";
 import { fetchHealthyInvidiousInstances } from "@kunai/providers/youtube";
 
 export type InvidiousHealthProbe = {
@@ -14,12 +15,11 @@ export async function probeInvidiousHealth(options: {
 }): Promise<InvidiousHealthProbe> {
   const startedAt = Date.now();
   const timeoutMs = options.timeoutMs ?? 8_000;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const deadline = createDeadlineSignal(undefined, timeoutMs);
   try {
     const instances = await fetchHealthyInvidiousInstances({
       preferredInstanceUrl: options.preferredInstanceUrl,
-      signal: controller.signal,
+      signal: deadline.signal,
     });
     if (instances.length === 0) {
       return {
@@ -44,7 +44,7 @@ export async function probeInvidiousHealth(options: {
 
     const response = await fetch(`${instance}/api/v1/stats`, {
       headers: { Accept: "application/json" },
-      signal: controller.signal,
+      signal: deadline.signal,
     });
     if (!response.ok) {
       return {
@@ -69,6 +69,6 @@ export async function probeInvidiousHealth(options: {
       error: error instanceof Error ? error.message : "Invidious probe failed",
     };
   } finally {
-    clearTimeout(timeout);
+    deadline.release();
   }
 }

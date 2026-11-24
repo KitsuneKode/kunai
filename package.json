@@ -71,6 +71,7 @@
     "lint:anti-slop:changed": "bun run scripts/anti-slop-changed.ts",
     "lint:anti-slop:baseline": "bun run scripts/anti-slop-baseline.ts",
     "lint:anti-slop:baseline:update": "bun run scripts/anti-slop-baseline.ts --update",
+    "ratchet:file-size:update": "bun run scripts/update-file-size-baseline.ts",
     "fmt": "turbo run fmt && bun run fmt:root",
     "fmt:check": "turbo run fmt:check && bun run fmt:root:check",
     "fmt:root": "oxfmt --write '*.md' '*.json' '*.toml' '*.yml' '*.yaml' .oxfmtrc.json .oxlintrc.json .oxlintrc.anti-slop.json .run.toml .gitguardian.yaml .changeset .docs .github .plans .release docs scripts test tools",

@@ -182,7 +182,9 @@ not keep a second checklist beside it. Doc rot here is almost always a directory
 move that leaves routing docs pointing at the old layout, so
 `bun run verify:doc-paths` checks every backticked path and relative link in
 `AGENTS.md` and `.docs/`, plus the mechanical half of the roadmap index: every
-`.plans/*.md` must be linked, and a LANDED row must point into `.archive/`. Cite
+`.plans/*.md` must be linked, and a LANDED row must point into `.archive/`.
+Every active or in-progress plan under `.plans/` must also carry a frontmatter
+`lastReviewed` ISO date no older than 45 days, or `verify:doc-paths` fails. Cite
 a removed file only with wording that says so ("the old `x.ts` was removed") —
 the verifier keys off that.
 
