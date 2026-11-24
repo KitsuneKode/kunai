@@ -756,26 +756,44 @@ function readEbmlVint(
  * a truncated header, an unsupported DocType, "webm" bytes under an unrelated
  * element ID — is not positive media evidence.
  */
-function hasMatroskaDocType(view: DataView): boolean {
+/** Where the EBML header ends when it names a webm/matroska DocType, else null. */
+function matroskaHeaderEnd(view: DataView): number | null {
   const header = readEbmlVint(view, 4, view.byteLength, false);
-  if (!header) return false;
+  if (!header) return null;
   const end = header.end + header.value;
-  if (end > view.byteLength) return false;
+  if (end > view.byteLength) return null;
   let docType: string | undefined;
   for (let offset = header.end; offset < end;) {
     const id = readEbmlVint(view, offset, end, true);
-    if (!id) return false;
+    if (!id) return null;
     const size = readEbmlVint(view, id.end, end, false);
-    if (!size || size.value > end - size.end) return false;
+    if (!size || size.value > end - size.end) return null;
     offset = size.end + size.value;
     if (id.value !== 0x4282) continue;
-    if (docType !== undefined) return false;
+    if (docType !== undefined) return null;
     const bytes = new Uint8Array(view.buffer, view.byteOffset + size.end, size.value);
     let decoded = new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes);
     while (decoded.endsWith("\0")) decoded = decoded.slice(0, -1);
     docType = decoded;
   }
-  return docType === "webm" || docType === "matroska";
+  return docType === "webm" || docType === "matroska" ? end : null;
+}
+
+const MATROSKA_SEGMENT_ID = 0x18538067;
+
+/**
+ * A complete Matroska/WebM body must continue past its EBML header into a
+ * Segment element with payload; a body that ends at the header is a header
+ * with no media. The Segment size may be the "unknown length" form streams use.
+ */
+function hasMatroskaSegment(view: DataView, headerEnd: number): boolean {
+  const id = readEbmlVint(view, headerEnd, view.byteLength, true);
+  if (!id || id.value !== MATROSKA_SEGMENT_ID || id.end >= view.byteLength) return false;
+  const first = view.getUint8(id.end);
+  if (first === 0) return false;
+  let width = 1;
+  for (let marker = 0x80; (first & marker) === 0; marker >>= 1) width += 1;
+  return id.end + width < view.byteLength;
 }
 
 interface DirectMediaRange {
@@ -814,7 +832,9 @@ function isDirectMediaPrefix(prefix: Uint8Array, complete: boolean): boolean {
   if (prefix.byteLength < 8) return false;
   const view = new DataView(prefix.buffer, prefix.byteOffset, prefix.byteLength);
   if (view.getUint32(0) === 0x1a45dfa3) {
-    return hasMatroskaDocType(view);
+    const headerEnd = matroskaHeaderEnd(view);
+    if (headerEnd === null) return false;
+    return !complete || hasMatroskaSegment(view, headerEnd);
   }
   const box = readIsoBox(view, 0);
   if (!box || box.type !== "ftyp" || box.end - box.payload < 8 || box.end > view.byteLength) {

@@ -792,11 +792,41 @@ describe("direct-media probes", () => {
   const EBML_VERSION = ebml(Buffer.from([0x42, 0x86]), Buffer.from([0x01]));
   const docType = (name: string) => ebml(Buffer.from([0x42, 0x82]), Buffer.from(name, "ascii"));
 
+  /** A Segment element (`0x18538067`) with the "unknown length" size streams use. */
+  const SEGMENT_UNKNOWN = Buffer.from([
+    0x18, 0x53, 0x80, 0x67, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x1f,
+  ]);
+  /** A Segment element with a 1-byte size and payload. */
+  const SEGMENT_SIZED = Buffer.concat([
+    Buffer.from([0x18, 0x53, 0x80, 0x67, 0x84]),
+    Buffer.from([0x15, 0x49, 0xa9, 0x66]),
+  ]);
+
   test.each([
-    ["webm", ebmlHeader(docType("webm"))],
-    ["matroska", ebmlHeader(EBML_VERSION, docType("matroska"))],
-  ])("accepts an EBML header naming DocType %s", async (_name, bytes) => {
+    ["webm", Buffer.concat([ebmlHeader(docType("webm")), SEGMENT_UNKNOWN])],
+    ["matroska", Buffer.concat([ebmlHeader(EBML_VERSION, docType("matroska")), SEGMENT_SIZED])],
+  ])("accepts a complete EBML body naming DocType %s with a Segment", async (_name, bytes) => {
     expect((await strict(bytes)).status).toBe("reachable");
+  });
+
+  test("rejects a complete 200 body that ends at its EBML header", async () => {
+    expect((await strict(ebmlHeader(docType("webm")))).status).toBe("unreachable");
+  });
+
+  test("rejects a complete body whose next element after the header is not a Segment", async () => {
+    const notSegment = Buffer.from([0x1f, 0x43, 0xb6, 0x75, 0x81, 0x00]);
+    expect((await strict(Buffer.concat([ebmlHeader(docType("webm")), notSegment]))).status).toBe(
+      "unreachable",
+    );
+  });
+
+  test("accepts a header-only prefix of a larger file served as a 206", async () => {
+    const header = ebmlHeader(docType("webm"));
+    const probe = await strict(header, {
+      status: 206,
+      headers: { "content-range": `bytes 0-${header.length - 1}/1000000` },
+    });
+    expect(probe.status).toBe("reachable");
   });
 
   test.each([
