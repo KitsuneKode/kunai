@@ -638,6 +638,16 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     );
   }
   if (argv[0] === "addons") {
+    const json = argv.includes("--json");
+    if (argv.slice(1).some((arg) => arg.startsWith("-") && arg !== "--json" && arg !== "--stdin")) {
+      const error = "unsupported flag. Use --json or --stdin (add only).";
+      process.stdout.write(
+        json
+          ? `${JSON.stringify({ schemaVersion: 1, ok: false, error }, null, 2)}\n`
+          : `kunai addons: ${error}\n`,
+      );
+      process.exit(2);
+    }
     const { runAddonsCommand } = await import("./services/providers/run-addons-command");
     // Positionals only: `kunai addons add <url> --json` and `--json add <url>` both work.
     const words = argv.slice(1).filter((word) => !word.startsWith("-"));
@@ -646,7 +656,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
         subcommand: words[0],
         target: words[1],
         stdin: argv.includes("--stdin"),
-        json: argv.includes("--json"),
+        json,
       }),
     );
   }

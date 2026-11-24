@@ -144,14 +144,14 @@ infer history progress, autoplay, or queue acknowledgement from the intent.
 
 ## Stremio addons
 
-| Command                   | What it does                                                         |
-| ------------------------- | -------------------------------------------------------------------- |
-| `kunai addons list`       | List the addons you added: number, name, host, provider id           |
+| Command                   | What it does                                                                      |
+| ------------------------- | --------------------------------------------------------------------------------- |
+| `kunai addons list`       | List the addons you added: number, name, host, provider id                        |
 | `kunai addons add <url>`  | Add an addon by its `https://…/manifest.json` URL (`--stdin` reads it from stdin) |
-| `kunai addons remove <n>` | Remove an addon by its number, id, host or name                      |
-| `kunai addons check [n]`  | Ask each addon for its manifest; exits non-zero if one cannot be used |
+| `kunai addons remove <n>` | Remove an addon by its number, id, host or name                                   |
+| `kunai addons check [n]`  | Ask each addon for its manifest; exits non-zero if one cannot be used             |
 
-`list` and `check` accept `--json`. No command prints an addon's full URL. See [Stremio addons](/docs/users/providers#stremio-addons).
+All addon actions accept `--json`. Unsupported flags, including `--dry-run`, are rejected before the command can change your config. No command prints an addon's full URL. See [Stremio addons](/docs/users/providers#stremio-addons).
 
 ## Providers
 

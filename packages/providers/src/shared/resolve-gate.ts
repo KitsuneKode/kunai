@@ -56,10 +56,13 @@ export type CandidateStreamVerdict =
  * made and cycling stopped at a source that could not play. Passing the
  * candidate makes the probed shape and the shipped shape the same object.
  *
- * Only a *definitive* refusal rejects. A timeout, a non-definitive error, or a
- * skipped probe is not evidence of a dead stream — treating it as one trades a
- * working source for a slow link, and playback preflight still runs before mpv
- * receives the handoff.
+ * Only a *definitive* refusal rejects — **in the default lenient mode**. A
+ * timeout, a non-definitive error, or a skipped probe is not evidence of a
+ * dead stream — treating it as one trades a working source for a slow link,
+ * and playback preflight still runs before mpv receives the handoff.
+ * `requireDirectMedia` is the exception: there only positive direct-media
+ * evidence accepts, because inconclusive answers are exactly what a rotating
+ * or challenged addon endpoint looks like.
  */
 export async function verifyCandidateStream({
   stream,
@@ -91,14 +94,15 @@ export async function verifyCandidateStream({
   });
 
   const probe = health.probe;
-  if (!probe || isStreamReachableForResolve(probe)) {
-    return { accepted: true, verified: probe?.status === "reachable" };
+  if (probe?.status === "reachable") return { accepted: true, verified: true };
+  if (!requireDirectMedia && (!probe || isStreamReachableForResolve(probe))) {
+    return { accepted: true, verified: false };
   }
-
   return {
     accepted: false,
-    reason: probe.status === "unreachable" ? probe.reason : `stream probe ${probe.status}`,
-    probe,
+    reason:
+      probe?.status === "unreachable" ? probe.reason : `stream probe ${probe?.status ?? "skipped"}`,
+    ...(probe ? { probe } : null),
   };
 }
 

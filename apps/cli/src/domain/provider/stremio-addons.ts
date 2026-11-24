@@ -94,6 +94,37 @@ export function normalizeStremioAddonEntries(
   return readInstalledStremioAddons(value).map((addon) => addon.entry);
 }
 
+/**
+ * The stored addon list with one entry's display name updated — nothing else.
+ *
+ * Display-name refresh is a courtesy write: it must not normalize, drop, or
+ * re-add anything a user or another process left in the file. Returns
+ * `undefined` when there is no matching installed entry or the stored name is
+ * already correct, so callers can skip a pointless write.
+ */
+export function withStremioAddonName(
+  entries: readonly StremioAddonConfigEntry[] | undefined,
+  manifestUrl: string,
+  name: string,
+): readonly StremioAddonConfigEntry[] | undefined {
+  const cleanName = cleanStremioAddonName(name, manifestUrl);
+  if (!cleanName || !Array.isArray(entries)) return undefined;
+  const stored: readonly StremioAddonConfigEntry[] = entries;
+  const index = stored.findIndex((raw) => {
+    const entry = readStoredEntry(raw);
+    if (!entry) return false;
+    const parsed = parseStremioAddonUrl(entry.url);
+    return parsed.ok && parsed.addon.manifestUrl === manifestUrl;
+  });
+  const previous = stored[index];
+  if (!previous || previous.name === cleanName) return undefined;
+  const result = [...stored];
+  result[index] = isJsonObject(previous)
+    ? { ...previous, name: cleanName }
+    : { url: manifestUrl, name: cleanName };
+  return result;
+}
+
 export type AddStremioAddonResult =
   | {
       readonly ok: true;

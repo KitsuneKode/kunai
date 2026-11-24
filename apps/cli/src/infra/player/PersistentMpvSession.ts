@@ -1869,6 +1869,8 @@ export class PersistentMpvSession {
     const now = Date.now();
     if (now < this.reconnectBackoffUntilMs) return false;
     const reconnectGeneration = this.cycleGeneration;
+    const isCurrent = () =>
+      this.activeCycle === active && !this.retired && this.isGenerationCurrent(reconnectGeneration);
 
     const nextAttempt = this.reconnectTryCount + 1;
     const backoffBefore =
@@ -1878,10 +1880,10 @@ export class PersistentMpvSession {
     if (backoffBefore > 0) {
       const sleepDeadline = Date.now() + backoffBefore;
       while (Date.now() < sleepDeadline) {
-        if (this.retired || !this.isGenerationCurrent(reconnectGeneration)) return false;
+        if (!isCurrent()) return false;
         await Bun.sleep(Math.min(50, Math.max(1, sleepDeadline - Date.now())));
       }
-      if (this.retired || !this.isGenerationCurrent(reconnectGeneration)) return false;
+      if (!isCurrent()) return false;
     }
 
     this.reconnectInFlight = true;
@@ -1911,11 +1913,9 @@ export class PersistentMpvSession {
           this.playbackStream,
           opts.abortSignal,
         );
-        if (
-          preflight.status !== "reachable" ||
-          opts.abortSignal?.aborted ||
-          !this.isGenerationCurrent(reconnectGeneration)
-        ) {
+        // A stale continuation must not clear a new owner's reconnectInFlight.
+        if (!isCurrent()) return false;
+        if (preflight.status !== "reachable" || opts.abortSignal?.aborted) {
           this.reconnectInFlight = false;
           return false;
         }

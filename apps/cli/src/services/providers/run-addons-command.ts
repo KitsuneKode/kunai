@@ -118,12 +118,16 @@ function describeUsability(manifest: StremioManifest): AddonUsability {
         "the addon must be configured on its own page first; add the manifest URL it gives you after that",
     };
   }
-  const movie = manifestServesStream(manifest, "movie", "tt0000001");
-  const series = manifestServesStream(manifest, "series", "tt0000001:1:1");
+  const movie = manifestServesStream(manifest, "movie");
+  const series = manifestServesStream(manifest, "series");
   if (movie.served || series.served) {
     return { movie: movie.served, series: series.served, reason: null };
   }
-  return { movie: false, series: false, reason: movie.reason };
+  return {
+    movie: false,
+    series: false,
+    reason: movie.reason === "the addon has no movie streams" ? series.reason : movie.reason,
+  };
 }
 
 /** Bounded stdin read for `add --stdin`: the first line only, capped. */
@@ -173,7 +177,9 @@ export async function runAddonsCommand(options: RunAddonsCommandOptions): Promis
     write(json ? `${JSON.stringify({ schemaVersion: 1, ...payload }, null, 2)}\n` : `${text}\n`);
   };
   const fail = (code: 1 | 2, reason: string): number => {
-    emit({ ok: false, error: reason }, `kunai addons ${action}: ${reason}`);
+    // The action is caller input and can be a pasted URL holding a token —
+    // the reason is fixed text, the subcommand is never echoed back.
+    emit({ ok: false, error: reason }, `kunai addons: ${reason}`);
     return code;
   };
 
@@ -258,7 +264,12 @@ export async function runAddonsCommand(options: RunAddonsCommandOptions): Promis
         ok: true,
         error: null,
         added: result.added,
-        addon: summarize(result.addon, result.entries.length - 1),
+        addon: summarize(
+          result.addon,
+          readInstalledStremioAddons(result.entries).findIndex(
+            (entry) => entry.providerId === result.addon.providerId,
+          ),
+        ),
         movie: usability.movie,
         series: usability.series,
       },

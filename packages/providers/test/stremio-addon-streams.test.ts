@@ -350,3 +350,35 @@ describe("addon text shown in the terminal", () => {
     expect(playable[0]?.description).toBe("line one [2J line two");
   });
 });
+
+describe("addon stream request dedup", () => {
+  const entry = (headers: Record<string, string>) => ({
+    url: "https://cdn.example.com/same.mp4",
+    name: "Example\n1080p",
+    behaviorHints: { proxyHeaders: { request: headers } },
+  });
+
+  test("same URL and headers differing only by key case or order deduplicate", () => {
+    const { playable } = classifyAddonStreams([
+      entry({ "X-Token": "secret-a", Referer: "https://site.example" }),
+      entry({ referer: "https://site.example", "x-token": "secret-a" }),
+    ]);
+
+    expect(playable).toHaveLength(1);
+    // The first listing keeps its position and its outward header casing.
+    expect(playable[0]?.headers).toEqual({
+      "X-Token": "secret-a",
+      Referer: "https://site.example",
+    });
+  });
+
+  test("same URL with different header values stays two distinct requests", () => {
+    const { playable } = classifyAddonStreams([
+      entry({ "x-token": "a" }),
+      entry({ "x-token": "b" }),
+    ]);
+
+    expect(playable).toHaveLength(2);
+    expect(playable[0]?.requestKey).not.toBe(playable[1]?.requestKey);
+  });
+});

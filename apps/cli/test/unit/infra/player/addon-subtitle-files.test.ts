@@ -1,5 +1,7 @@
-import { describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { existsSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, relative } from "node:path";
 
 import {
   AddonSubtitleFiles,
@@ -8,7 +10,32 @@ import {
 } from "@/infra/player/addon-subtitle-files";
 import { buildMpvArgs } from "@/mpv";
 
+import { applyStorageRootEnv } from "../../../helpers/storage-env";
+import { removeTempDir } from "../../../support/remove-temp-dir";
+
 const SRT = "1\n00:00:01,000 --> 00:00:02,000\nhello\n";
+
+let testRoot: string;
+let restoreStorage: () => void;
+let previousTempDirs: Record<"TMPDIR" | "TMP" | "TEMP", string | undefined>;
+beforeEach(() => {
+  testRoot = mkdtempSync(join(tmpdir(), "kunai-addon-subs-test-"));
+  restoreStorage = applyStorageRootEnv(testRoot);
+  // tempDir follows TMPDIR/TMP/TEMP, not the storage root — this suite opens
+  // no IPC socket, so a long per-test temp root is safe here.
+  previousTempDirs = { TMPDIR: process.env.TMPDIR, TMP: process.env.TMP, TEMP: process.env.TEMP };
+  process.env.TMPDIR = testRoot;
+  process.env.TMP = testRoot;
+  process.env.TEMP = testRoot;
+});
+afterEach(() => {
+  for (const [key, value] of Object.entries(previousTempDirs)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  restoreStorage();
+  removeTempDir(testRoot);
+});
 
 const okDownload = async (): Promise<{ text: string; extension: "srt" }> => ({
   text: SRT,
@@ -22,6 +49,11 @@ describe("AddonSubtitleFiles", () => {
     expect(first).not.toBeNull();
     if (!first) throw new Error("expected a localized path");
     expect(existsSync(first)).toBe(true);
+    // Owned files live under this test's redirected temp root, never loose in
+    // the OS temp or in a profile directory.
+    const insideTemp = relative(testRoot, first);
+    expect(insideTemp.startsWith("..")).toBe(false);
+    expect(insideTemp).not.toBe("");
     expect(files.existingPath("https://subs.example.com/en.srt")).toBe(first);
     expect(await files.localize("https://subs.example.com/en.srt")).toBe(first);
     expect(first).not.toContain("subs.example.com");

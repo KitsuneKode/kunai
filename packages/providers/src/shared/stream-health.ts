@@ -162,7 +162,7 @@ export async function runStreamHealthCheck(
       fetchImpl: input.fetchImpl,
       resolvesLocally: input.resolvesLocally,
       requireDirectMedia: input.requireDirectMedia,
-      timeoutMs: Math.max(plan.timeoutMs, 1_500),
+      timeoutMs: plan.timeoutMs,
       signal: input.signal,
     });
   }

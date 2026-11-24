@@ -940,12 +940,16 @@ export function buildMpvArgs(
     // lavf layer (FFmpeg 8.1+/7.1.4 `max_redirects`; older builds may ignore
     // it, which is why the strict preflight exists), no unsafe playlists, and
     // TLS verification regardless of any user-level mpv.conf. Best effort —
-    // the preflight is the guarantee, these narrow what mpv may do after.
+    // mpv fetches the URL separately after preflight. For
+    // a persistent session the same per-file set rides the initial argv here
+    // and every IPC loadfile, including `--ytdl=no` (one-shot already carries
+    // it process-wide above).
     args.push(
       "--{",
       "--stream-lavf-o=max_redirects=0",
       "--load-unsafe-playlists=no",
       "--tls-verify=yes",
+      ...(config?.persistent ? ["--ytdl=no"] : []),
       opts.url,
       "--}",
     );

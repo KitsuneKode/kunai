@@ -141,12 +141,14 @@ export class PersistentSubtitleManager {
     // Dedup and metadata always work on the ORIGINAL URLs; only the string
     // written into the IPC command is the resolved local path.
     const safePrimary = primarySubtitle
-      ? await this.resolveForMpv(primarySubtitle, primarySubtitleKind, undefined, isCurrent)
+      ? await this.resolveForMpv(
+          primarySubtitle,
+          primarySubtitleKind,
+          subtitleTracks?.find((track) => track.url === primarySubtitle),
+          isCurrent,
+        )
       : null;
-    if (primarySubtitle && !safePrimary && isCurrent() && !this.resolveSubtitle) {
-      // Legacy path: an unsafe literal was dropped — the previous behavior was
-      // to continue to the additional tracks, which we keep.
-    }
+    if (!isCurrent()) return;
     if (safePrimary) {
       const primary = describeSubtitleTrackForMpv(primarySubtitle ?? "", subtitleTracks);
       const result = await ipcSession.send(
@@ -206,6 +208,7 @@ export class PersistentSubtitleManager {
           isCurrent,
         )
       : null;
+    if (!isCurrent()) return { status: "none-requested", attachedCount: 0 };
     const additionalTracks = collectAdditionalSubtitleTracks(
       attachment.primarySubtitle ?? null,
       attachment.subtitleTracks,

@@ -2,7 +2,10 @@
 // Config Service Implementation
 // =============================================================================
 
-import { normalizeStremioAddonEntries } from "@/domain/provider/stremio-addons";
+import {
+  normalizeStremioAddonEntries,
+  withStremioAddonName,
+} from "@/domain/provider/stremio-addons";
 import { dbg } from "@/logger";
 import type { ContinueSourcePreference } from "@/services/continuation/continuation-source";
 import {
@@ -526,6 +529,31 @@ export class ConfigServiceImpl implements ConfigService {
       return this.store.withLock ? this.store.withLock(complete) : complete();
     };
     // Share the save chain so completion cannot interleave its read/merge/write.
+    const run = this.persistChain.then(write);
+    this.persistChain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  recordStremioAddonName(manifestUrl: string, name: string): Promise<void> {
+    const write = async (): Promise<void> => {
+      const complete = async (): Promise<void> => {
+        const onDisk = await this.store.load();
+        // One entry's name, in place: a name refresh must not normalize or
+        // re-add entries another process (or a hand edit) put in the file.
+        const entries = withStremioAddonName(onDisk.stremioAddons, manifestUrl, name);
+        if (!entries) return;
+        await this.store.save({ ...DEFAULT_CONFIG, ...onDisk, stremioAddons: entries });
+        // A local stremioAddons change may be awaiting its save; refreshing
+        // the snapshot with the old list would lose it on the next merge.
+        if (this.dirtyKeys.has("stremioAddons")) return;
+        const local = withStremioAddonName(this.config.stremioAddons, manifestUrl, name);
+        if (local) this.config.stremioAddons = local;
+      };
+      return this.store.withLock ? this.store.withLock(complete) : complete();
+    };
     const run = this.persistChain.then(write);
     this.persistChain = run.then(
       () => undefined,

@@ -289,4 +289,63 @@ describe("PersistentSubtitleManager addon resolver", () => {
     ]);
     expect(commands.join(" ")).not.toContain("subs.example");
   });
+
+  test("the resolver sees the primary's provenance: marked localizes, unmarked stays remote", async () => {
+    const { ipc, commands } = createFakeIpc();
+    const manager = new PersistentSubtitleManager(
+      () => true,
+      (url, _kind, track) => Promise.resolve(track?.guardedAddon ? "/local/owned.srt" : url),
+    );
+
+    await manager.replaceSubtitleInventory(ipc, "https://subs.example/owned.srt", [
+      { url: "https://subs.example/owned.srt", guardedAddon: true },
+    ]);
+    await manager.replaceSubtitleInventory(ipc, "https://subs.example/plain.srt", [
+      { url: "https://subs.example/plain.srt" },
+    ]);
+
+    expect(commands.filter((command) => command[0] === "sub-add")).toEqual([
+      ["sub-add", "/local/owned.srt", "select", "", ""],
+      ["sub-add", "https://subs.example/plain.srt", "select", "", ""],
+    ]);
+  });
+});
+
+describe("PersistentSubtitleManager generation guard", () => {
+  test("replaceSubtitleInventory sends nothing when its generation retires before the primary send", async () => {
+    let isCurrent = true;
+    const { ipc, commands } = createFakeIpc();
+    const manager = new PersistentSubtitleManager();
+
+    const pending = manager.replaceSubtitleInventory(
+      ipc,
+      "https://subs.example/main.vtt",
+      [{ url: "https://subs.example/main.vtt" }],
+      undefined,
+      "remote",
+      () => isCurrent,
+    );
+    await Promise.resolve();
+    isCurrent = false;
+    await pending;
+
+    expect(commands).toEqual([]);
+  });
+
+  test("attachSubtitles sends nothing when its generation retires before the primary resolves", async () => {
+    let isCurrent = true;
+    const { ipc, commands } = createFakeIpc();
+    const manager = new PersistentSubtitleManager();
+
+    const pending = manager.attachSubtitles(
+      ipc,
+      { primarySubtitle: "https://subs.example/main.vtt" },
+      () => isCurrent,
+    );
+    isCurrent = false;
+    const result = await pending;
+
+    expect(result).toEqual({ status: "none-requested", attachedCount: 0 });
+    expect(commands).toEqual([]);
+  });
 });

@@ -394,6 +394,59 @@ test("a persistent session carries the ytdl guard even when it launches on a dir
   expect(args).toContain("--script-opts=ytdlautoformat-domains=");
 });
 
+test("a persistent addon launch confines --ytdl=no to the addon file group", () => {
+  const args = buildMpvArgs(
+    {
+      url: "https://cdn.example/episode.mp4",
+      headers: {},
+      subtitle: null,
+      displayTitle: "Ep 1",
+      stremioAddon: true,
+    },
+    "/tmp/kunai-test.sock",
+    { persistent: true },
+  );
+
+  const open = args.indexOf("--{");
+  const close = args.indexOf("--}");
+  expect(open).toBeGreaterThanOrEqual(0);
+  expect(close).toBeGreaterThan(open);
+  const ytdlOff = args.indexOf("--ytdl=no");
+  // One occurrence, inside the file-local group — a persistent session must
+  // keep process-wide ytdl available for later YouTube loadfiles.
+  expect(args.filter((arg) => arg === "--ytdl=no")).toHaveLength(1);
+  expect(ytdlOff).toBeGreaterThan(open);
+  expect(ytdlOff).toBeLessThan(close);
+  expect(args.indexOf("https://cdn.example/episode.mp4")).toBeGreaterThan(open);
+  expect(args.indexOf("https://cdn.example/episode.mp4")).toBeLessThan(close);
+});
+
+test("an ordinary persistent direct stream is not ytdl-disabled", () => {
+  const args = buildMpvArgs(
+    { url: "https://cdn.example/episode.mp4", headers: {}, subtitle: null, displayTitle: "Ep 1" },
+    "/tmp/kunai-test.sock",
+    { persistent: true },
+  );
+  expect(args).not.toContain("--ytdl=no");
+});
+
+test("a one-shot addon launch keeps its process-wide --ytdl=no only", () => {
+  const args = buildMpvArgs(
+    {
+      url: "https://cdn.example/episode.mp4",
+      headers: {},
+      subtitle: null,
+      displayTitle: "Ep 1",
+      stremioAddon: true,
+    },
+    null,
+    {},
+  );
+  const occurrences = args.flatMap((arg, index) => (arg === "--ytdl=no" ? [index] : []));
+  expect(occurrences).toHaveLength(1);
+  expect(occurrences[0]).toBeLessThan(args.indexOf("--{"));
+});
+
 test("a one-shot direct stream does not get the ytdl guard", () => {
   const args = buildMpvArgs(
     { url: "https://cdn.example/episode.m3u8", headers: {}, subtitle: null, displayTitle: "Ep 1" },

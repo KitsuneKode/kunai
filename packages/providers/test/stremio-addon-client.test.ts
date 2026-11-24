@@ -265,9 +265,8 @@ describe("addon manifest request", () => {
     ]);
 
     expect(outcome).not.toBe("pending");
-    expect(outcome).toBeInstanceOf(ProviderHttpError);
-    // SAFETY: outcome was asserted to be a ProviderHttpError above.
-    expect((outcome as ProviderHttpError).code).toBe("timeout");
+    // The caller's own abort reason surfaces — it is not an addon timeout.
+    expect(outcome).toBe(controller.signal.reason);
     expect(context.requested).toEqual([]);
   });
 
@@ -313,21 +312,63 @@ describe("addon manifest request", () => {
 
   test("a caller's cancellation is rethrown as theirs, not reported as an addon fault", async () => {
     const controller = new AbortController();
-    const context = contextWith((_url, init) => {
-      controller.abort();
-      init.signal?.throwIfAborted();
-      return json(VALID_MANIFEST);
+    const reason = new Error("caller cancelled");
+    const context = contextWith(() => {
+      controller.abort(reason);
+      throw new Error("transport cancellation");
     });
 
-    let thrown: unknown;
-    try {
-      await fetchStremioManifest(addonRef(), { context, signal: controller.signal });
-    } catch (error) {
-      thrown = error;
-    }
+    await expect(
+      fetchStremioManifest(addonRef(), { context, signal: controller.signal }),
+    ).rejects.toBe(reason);
+  });
 
-    expect(thrown).toBeDefined();
-    expect(thrown).not.toBeInstanceOf(ProviderHttpError);
+  test("a distinct context signal cancels the request too — caller and context compose", async () => {
+    const contextController = new AbortController();
+    const caller = new AbortController();
+    const reason = new Error("context cancelled");
+    const context = contextWith(
+      (_url, init) => {
+        contextController.abort(reason);
+        init.signal?.throwIfAborted();
+        return json(VALID_MANIFEST);
+      },
+      { signal: contextController.signal },
+    );
+
+    await expect(fetchStremioManifest(addonRef(), { context, signal: caller.signal })).rejects.toBe(
+      reason,
+    );
+  });
+
+  test("a declared-oversize streamed manifest body is cancelled without being pulled", async () => {
+    let pulled = 0;
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(c) {
+          pulled += 1;
+          c.enqueue(new TextEncoder().encode(JSON.stringify(VALID_MANIFEST)));
+          c.close();
+        },
+        cancel() {
+          cancelled = true;
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    const context = contextWith(
+      () =>
+        new Response(body, {
+          headers: { "content-length": String(STREMIO_ADDON_LIMITS.manifestBytes + 1) },
+        }),
+    );
+
+    const error = await failure(fetchStremioManifest(addonRef(), { context }));
+
+    expect(error.message).toContain("more than 512 KiB");
+    expect(pulled).toBe(0);
+    expect(cancelled).toBe(true);
   });
 });
 
@@ -447,6 +488,26 @@ describe("fetchStremioSubtitle (guarded download)", () => {
         resolveAddresses: async () => ["93.184.216.34"],
       }),
     ).toEqual({ text: VTT, extension: "vtt" });
+  });
+
+  test("a declared-oversize SRT is dropped unread; the same SRT undeclared passes", async () => {
+    const declared = fetchLogging(
+      () => new Response(SRT, { headers: { "content-length": String(513 * 1024) } }),
+    );
+    expect(
+      await fetchStremioSubtitle("https://subs.example.com/en.srt", {
+        fetchImpl: declared.impl,
+        resolveAddresses: async () => ["93.184.216.34"],
+      }),
+    ).toBeNull();
+
+    const plain = fetchLogging(() => new Response(SRT));
+    expect(
+      await fetchStremioSubtitle("https://subs.example.com/en.srt", {
+        fetchImpl: plain.impl,
+        resolveAddresses: async () => ["93.184.216.34"],
+      }),
+    ).toEqual({ text: SRT, extension: "srt" });
   });
 
   test("non-2xx is refused", async () => {

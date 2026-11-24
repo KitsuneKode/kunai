@@ -198,6 +198,47 @@ describe("kunai addons add", () => {
     expect(config.state.stremioAddons).toHaveLength(1);
   });
 
+  test("re-adding an installed addon reports its real list number and keeps the order", async () => {
+    const config = memoryConfig({
+      stremioAddons: [
+        { url: A, name: "Alpha" },
+        { url: B, name: "Beta" },
+      ],
+    });
+
+    const { code, output } = await run({
+      subcommand: "add",
+      target: A,
+      json: true,
+      config,
+      context: contextAnswering(() => manifestResponse()),
+    });
+    const payload = JSON.parse(output);
+
+    expect(code).toBe(0);
+    expect(payload).toMatchObject({ ok: true, added: false });
+    expect(payload.addon.number).toBe(1);
+    // Order is kept; a re-add may refresh the stored name from the manifest.
+    expect((config.state.stremioAddons ?? []).map((entry) => entry.url)).toEqual([A, B]);
+  });
+
+  test("an addon whose prefixes only admit IMDb ids is usable for both kinds", async () => {
+    const config = memoryConfig();
+    const context = contextAnswering(() => manifestResponse({ ...MANIFEST, idPrefixes: ["tt13"] }));
+
+    const { code, output } = await run({
+      subcommand: "add",
+      target: A,
+      json: true,
+      config,
+      context,
+    });
+    const payload = JSON.parse(output);
+
+    expect(code).toBe(0);
+    expect(payload).toMatchObject({ ok: true, added: true, movie: true, series: true });
+  });
+
   test("a missing URL is a usage error", async () => {
     const { code } = await run({ subcommand: "add", config: memoryConfig() });
 
@@ -422,6 +463,27 @@ describe("kunai addons check", () => {
     expect(output).toContain("ok — movies and series, v1.2.3");
     expect(config.calls.saved).toBe(0);
   });
+
+  test("a stream resource's own idPrefixes is judged per kind, not by the manifest's", async () => {
+    const config = memoryConfig({ stremioAddons: [{ url: A, name: "Alpha" }] });
+    const manifest = {
+      ...MANIFEST,
+      idPrefixes: ["kitsu:"],
+      resources: [{ name: "stream", idPrefixes: ["tt13579:0:"] }],
+    };
+    const context = contextAnswering(() => manifestResponse(manifest));
+
+    const { code, output } = await run({ subcommand: "check", json: true, config, context });
+    const payload = JSON.parse(output);
+
+    expect(code).toBe(0);
+    expect(payload.addons[0]).toMatchObject({
+      usable: true,
+      movie: false,
+      series: true,
+      problem: null,
+    });
+  });
 });
 
 test("an unknown action is a usage error", async () => {
@@ -429,4 +491,19 @@ test("an unknown action is a usage error", async () => {
 
   expect(code).toBe(2);
   expect(output).toContain("list, add, remove, check");
+});
+
+test("an unknown action never echoes the argument — it may be a pasted URL holding a token", async () => {
+  const config = memoryConfig();
+
+  const plain = await run({ subcommand: A, config });
+  const json = await run({ subcommand: A, json: true, config });
+
+  expect(plain.code).toBe(2);
+  expect(json.code).toBe(2);
+  expect(plain.output + json.output).not.toContain(TOKEN);
+  expect(plain.output + json.output).not.toContain(A);
+  expect(plain.output).toContain("kunai addons:");
+  expect(config.state.stremioAddons).toEqual([]);
+  expect(config.calls.saved).toBe(0);
 });

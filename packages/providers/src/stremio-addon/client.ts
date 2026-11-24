@@ -8,7 +8,7 @@ import {
 import type { z } from "zod";
 
 import { readBoundedTextBody, type StreamReachabilityFetch } from "../shared/stream-reachability";
-import { createTimeoutSignal } from "../shared/timeout-signal";
+import { combineAbortSignals, createTimeoutSignal } from "../shared/timeout-signal";
 import { scrubStremioAddonText, stremioStreamUrl, type StremioAddonRef } from "./addon-url";
 import {
   STREMIO_ADDON_LIMITS,
@@ -26,7 +26,7 @@ export const STREMIO_ADDON_TIMEOUTS = {
 
 export interface AddonRequestOptions {
   readonly context: ProviderRuntimeContext;
-  /** Overrides `context.signal`; either one cancels the request. */
+  /** Optional additional caller cancellation; combined with `context.signal`, either aborts. */
   readonly signal?: AbortSignal;
   readonly timeoutMs?: number;
   /** Resolver seam for tests; production uses the system resolver. */
@@ -68,7 +68,10 @@ async function fetchAddonJson<T>(
   defaultTimeoutMs: number,
 ): Promise<T> {
   const { context, label, maxBytes } = options;
-  const callerSignal = options.signal ?? context.signal;
+  const callerSignal =
+    options.signal && context.signal && options.signal !== context.signal
+      ? combineAbortSignals([options.signal, context.signal])
+      : (options.signal ?? context.signal);
   const signal = createTimeoutSignal(callerSignal, options.timeoutMs ?? defaultTimeoutMs);
   const port = context.fetch;
   const send: StreamReachabilityFetch = port
@@ -100,6 +103,12 @@ async function fetchAddonJson<T>(
         : () => isGuardedPlatformFetch(fetch),
       ...(options.resolveAddresses ? { resolveAddresses: options.resolveAddresses } : null),
     });
+    // A caller cancel that raced a completed fetch still wins — the response
+    // body is dropped unread and the caller's own reason is what propagates.
+    if (callerSignal?.aborted && outcome.kind === "response") {
+      await outcome.response.body?.cancel().catch(() => undefined);
+    }
+    callerSignal?.throwIfAborted();
     if (outcome.kind === "blocked") {
       // The guard reports a failed lookup as a block, because it never falls
       // back to an unchecked resolver. For the user that is a network failure,
@@ -172,9 +181,10 @@ async function fetchAddonJson<T>(
     }
     return parsed.data;
   } catch (error) {
+    // The caller cancelled: that is their decision, not a fault of the addon —
+    // surface their own abort reason rather than the transport's words.
+    callerSignal?.throwIfAborted();
     if (error instanceof ProviderHttpError) throw error;
-    // The caller cancelled: that is their decision, not a fault of the addon.
-    if (callerSignal?.aborted) throw error;
     if (signal.aborted) {
       throw new ProviderHttpError({
         message: `${label} did not answer in time`,

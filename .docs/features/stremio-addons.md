@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24"
+lastReviewed: "2026-11-24T13:08:50Z"
 ---
 
 # Stremio addons
@@ -47,20 +47,27 @@ before the first mpv spawn, before every persistent-session `loadfile`, and
 before an in-process reconnect reload. A fresh resolve attestation never skips
 the strict preflight, because the attestation covers the probed URL at resolve
 time, not this moment's answer. Supplied `Range`/`If-Range` request headers
-refuse the candidate rather than being overridden.
+refuse the candidate rather than being overridden. A partial response must
+provide a valid Content-Range starting at byte zero and matching the bytes
+returned. An EBML header must carry a WebM or Matroska DocType; a complete
+MP4-family response cannot stop at its ftyp box.
 
 On top of the check, addon files — and only addon files — are handed to mpv
 inside a file-local block: `--stream-lavf-o=max_redirects=0`,
-`--load-unsafe-playlists=no`, `--tls-verify=yes`, and `ytdl=no` per file (the
-initial one-shot file also gets `--ytdl=no`). `max_redirects` exists in
+`--load-unsafe-playlists=no`, `--tls-verify=yes`, and `ytdl=no` per file
+(including the first file in a persistent session; one-shot launches disable
+it for the process). `max_redirects` exists in
 FFmpeg's HTTP protocol in 8.1+ and the 7.1.4 backport (not 8.0 or 7.1
 initial); `stream-lavf-o` is the option mpv's top-level HTTP stream reads.
 These are best-effort confinement on known-good builds, not a sandbox.
 
-Residuals to be honest about: an mpv built against an FFmpeg without
-`max_redirects` can still follow a redirect at the lavf layer; a response that
-changes between probe and playback (signed URLs, rotation) is mpv's own fetch;
-a user-configured proxy environment or third-party mpv scripts are outside
+Residuals: the probe's request pins the checked address, but mpv resolves the
+original hostname again for its own connection. On supported builds there is
+no portable per-request way to pass the vetted address to mpv while keeping
+the original HTTP Host, TLS SNI and certificate checks. An mpv built against
+an FFmpeg without `max_redirects` can still follow a redirect at the lavf
+layer; the media response can also change between probe and playback. A
+user-configured proxy environment or third-party mpv scripts are outside
 Kunai's control. Kunai installs no proxy and no media relay for addons, and a
 passing preflight confirms the file answers — it is not end-to-end proof that
 mpv can decode and play it.
@@ -134,7 +141,9 @@ the fallback order, the switches and per-title choices
 
 Startup contacts no addon. The manifest is fetched on the first resolve and
 cached for 12 hours; the mapped IMDb id is cached for 30 days. The stream list
-is requested on every resolve.
+is requested on every resolve. Recording a manifest display name only updates
+that entry in the current stored list; an entry another process removed is
+never re-added.
 
 ## Entry points
 
@@ -144,7 +153,10 @@ is requested on every resolve.
   configuring, or cannot serve movie or series streams by IMDb id. With
   `--stdin` the URL is read from standard input instead of argv, so a
   token-bearing URL never reaches `ps` or shell history; the input is capped
-  and never echoed.
+  and never echoed. The command rejects unsupported flags, including
+  `--dry-run`, before touching configuration. Manifest prefixes that match
+  only some IMDb IDs are accepted; the provider still checks each title
+  against the manifest.
 - Settings → Sources → Stremio addons
   (`apps/cli/src/app-shell/settings/registry/addons.ts`). Adding here does not
   contact the addon; its name is recorded on first use.

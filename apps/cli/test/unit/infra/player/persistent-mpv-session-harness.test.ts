@@ -1772,6 +1772,62 @@ describe("PersistentMpvSession addon strict preflight", () => {
     }
   });
 
+  test("a quit during a stalled addon preflight loads nothing after the verdict arrives", async () => {
+    const entered = Promise.withResolvers<void>();
+    const gate = Promise.withResolvers<
+      | { readonly status: "reachable" }
+      | { readonly status: "unreachable"; readonly reason: string; readonly definitive: boolean }
+      | { readonly status: "timeout" }
+    >();
+    const harness = createHarness();
+    let preflightCalls = 0;
+    harness.runtime.checkAddonPreflight = async () => {
+      preflightCalls++;
+      if (preflightCalls === 1) return { status: "reachable" };
+      entered.resolve();
+      return gate.promise;
+    };
+    let emitWatchdog!: (event: PlayerPlaybackEvent) => void;
+    harness.runtime.createPlaybackWatchdog = (emit) => {
+      emitWatchdog = emit;
+      return { observe() {}, stop() {}, reset() {} };
+    };
+    const session = await PersistentMpvSession.create({
+      stream: addonStream(),
+      options: { displayTitle: "Addon episode", primarySubtitle: null },
+      // SAFETY: fixture supplies only the reconnect policy it exercises.
+      kitsuneConfig: {
+        mpvInProcessStreamReconnect: true,
+        mpvInProcessStreamReconnectMaxAttempts: 1,
+        mpvKunaiScriptOpts: "",
+      } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    try {
+      harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+      const playback = session.waitForCurrentPlayback();
+      harness.commands.length = 0;
+      emitWatchdog({
+        type: "stream-stalled",
+        stallKind: "network-read-dead",
+        secondsWithoutProgress: 8,
+      });
+      // The reconnect preflight is in flight; the cycle ends before it resolves.
+      await entered.promise;
+      harness.callbacks().onEndFile({ reason: "quit", observedAt: 2 });
+      expect(await playback).toMatchObject({ endReason: "quit" });
+      gate.resolve({ status: "reachable" });
+      await flushAsyncWork();
+      expect(harness.commands.some((command) => command[0] === "loadfile")).toBe(false);
+      expect(pendingLoadOwners(session)).toBe(0);
+    } finally {
+      gate.resolve({ status: "reachable" });
+      harness.endProcess();
+      await session.close();
+    }
+  });
+
   test("a refused addon initial stream never spawns mpv", async () => {
     const harness = createHarness();
     let spawned = 0;

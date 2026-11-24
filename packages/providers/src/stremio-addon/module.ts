@@ -175,28 +175,31 @@ export function createStremioAddonProviderModule(
       } catch {
         // Recording a name is a courtesy; it must never fail a resolve.
       }
+      return loaded;
     };
     const cached = stremioManifestSchema.safeParse(
       await context.cache?.read(MANIFEST_CACHE_NAMESPACE, addon.providerId),
     );
+    // A competing caller may have committed while this read was in flight.
+    if (manifestInMemory) return manifestInMemory;
     if (cached.success) {
       // Sanitizing again covers manifests cached before the scrub existed;
       // on already-clean data it is a no-op.
-      const clean = sanitizeStremioManifest(cached.data, addon.manifestUrl);
-      remember(clean);
-      return clean;
+      return remember(sanitizeStremioManifest(cached.data, addon.manifestUrl));
     }
     const fetched = await fetchStremioManifest(addon, { context, signal });
-    // The client already sanitizes; sanitizing again covers manifests cached
-    // before the scrub existed, and is idempotent.
-    remember(sanitizeStremioManifest(fetched, addon.manifestUrl));
+    // Requests are not joined — a second caller keeps its own signal — but the
+    // first answer to land commits; a slower competing fetch must not overwrite
+    // the manifest callers already resolved against.
+    if (manifestInMemory) return manifestInMemory;
+    const committed = remember(fetched);
     await context.cache?.write(
       MANIFEST_CACHE_NAMESPACE,
       addon.providerId,
-      fetched,
+      committed,
       MANIFEST_CACHE_TTL_MS,
     );
-    return fetched;
+    return committed;
   };
 
   const lookupImdbId = async (
@@ -407,21 +410,24 @@ export function createStremioAddonProviderModule(
         });
       }
 
-      const streams = playable.map((stream) =>
+      const remaining = playable.map((stream) =>
         toStreamCandidate(stream, { addon, name, cachePolicy }),
       );
       // Addons list streams in their own preferred order, which the user sets on
       // the addon's page. That order is kept unless the user pinned a source or a
-      // quality here, or asked for quality first.
-      const first = selectReadyStream(streams, {
+      // quality here, or asked for quality first. The selection is re-run after
+      // every probe so the next pick is the best *remaining* candidate — under
+      // quality-first a dead 2160p falls through to 1440p, not to whatever
+      // trailed the first pick in provider order.
+      const selection = {
         startupPriority,
         qualityPreference: input.qualityPreference,
         preferredStreamId: input.preferredStreamId,
         preferredSourceId: input.preferredSourceId,
         favoriteSourceNames: input.favoriteSourceNames,
         preferProviderReadyOrder: true,
-      });
-      const walkOrder = [first.selected, ...streams.filter((s) => s.id !== first.selected.id)];
+      } satisfies Parameters<typeof selectReadyStream>[1];
+      const firstPick = remaining.length > 0 ? selectReadyStream(remaining, selection) : undefined;
 
       // Only a verified stream may be reported. An addon is untrusted input:
       // a candidate the gate merely could not disprove (inconclusive) or never
@@ -429,12 +435,18 @@ export function createStremioAddonProviderModule(
       // selection could hand the player a URL the gate never cleared.
       const verifiedStreams: StreamCandidate[] = [];
       let gateFailure: Omit<ProviderFailure, "providerId" | "at"> | undefined;
-      for (const candidate of walkOrder.slice(0, RESOLVE_GATE_MAX_PROBES)) {
+      for (
+        let attempt = 0;
+        attempt < RESOLVE_GATE_MAX_PROBES && remaining.length > 0;
+        attempt += 1
+      ) {
         if (context.signal?.aborted) break;
         const probeBudgetMs = resolveGateBudgetMs(remainingMs());
         // Out of time for a probe that can reach a verdict. Only the first
-        // candidate is exempt: the fetch-phase bound always leaves it room.
-        if (probeBudgetMs < RESOLVE_GATE_MIN_PROBE_MS && candidate !== first.selected) break;
+        // attempt is exempt: the fetch-phase bound always leaves it room.
+        if (probeBudgetMs < RESOLVE_GATE_MIN_PROBE_MS && attempt > 0) break;
+        const { selected: candidate } = selectReadyStream(remaining, selection);
+        remaining.splice(remaining.indexOf(candidate), 1);
 
         const verdict = await verifyCandidateStream({
           stream: candidate,
@@ -524,7 +536,8 @@ export function createStremioAddonProviderModule(
         providerId,
         selectedStreamId: selectedStream.id,
         streamReachabilityVerified: true,
-        selectionDecision: first.selected.id === selectedStream.id ? first.decision : undefined,
+        selectionDecision:
+          firstPick?.selected.id === selectedStream.id ? firstPick.decision : undefined,
         sources,
         streams: verifiedStreams,
         variants,
@@ -572,6 +585,15 @@ function sourceLabel(addonName: string, streamName: string | undefined): string 
     : `${addonName} · ${streamName}`;
 }
 
+/**
+ * A candidate id for the request actually shipped: the URL plus its outgoing
+ * headers, hashed — headers can carry addon tokens, so the key itself is never
+ * published, only its hash.
+ */
+function addonStreamId(providerId: string, stream: PlayableAddonStream): string {
+  return createStreamId(providerId, [Bun.hash(stream.requestKey).toString(36)]);
+}
+
 function toStreamCandidate(
   stream: PlayableAddonStream,
   owner: {
@@ -586,11 +608,12 @@ function toStreamCandidate(
   // release on the next. Streams without one share a single source.
   const sourceId = providerInventorySourceId(providerId, stream.bingeGroup ?? "streams");
   const label = sourceLabel(owner.name, stream.name);
+  const id = addonStreamId(providerId, stream);
   return {
-    id: createStreamId(providerId, [stream.url]),
+    id,
     providerId,
     sourceId,
-    variantId: createVariantId(providerId, [sourceId, stream.qualityLabel, stream.url]),
+    variantId: createVariantId(providerId, [sourceId, stream.qualityLabel, id]),
     url: stream.url,
     protocol: stream.protocol,
     container: stream.container,
@@ -647,18 +670,20 @@ function toSubtitleCandidates(
   providerId: string,
   cachePolicy: CachePolicy,
 ): SubtitleCandidate[] {
-  const streamByUrl = new Map(streams.map((stream) => [stream.url, stream]));
+  const streamById = new Map(streams.map((stream) => [stream.id, stream]));
   const subtitles: SubtitleCandidate[] = [];
-  const seen = new Set<string>();
   for (const source of playable) {
-    const stream = streamByUrl.get(source.url);
+    const stream = streamById.get(addonStreamId(providerId, source));
     if (!stream) continue;
+    // Dedup is per variant: the same subtitle URL offered by two verified
+    // variants is two candidates, one resolving to each variant.
+    const seen = new Set<string>();
     for (const subtitle of source.subtitles) {
       if (seen.has(subtitle.url)) continue;
       seen.add(subtitle.url);
       const lower = subtitle.url.toLowerCase();
       subtitles.push({
-        id: `subtitle:${providerId}:${Bun.hash(subtitle.url).toString(36)}`,
+        id: `subtitle:${providerId}:${stream.variantId}:${Bun.hash(subtitle.url).toString(36)}`,
         providerId,
         sourceId: stream.sourceId,
         variantId: stream.variantId,

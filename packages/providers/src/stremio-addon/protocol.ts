@@ -161,16 +161,30 @@ export function readStreamSubtitles(stream: StremioStream): StremioStreamSubtitl
 }
 
 /**
+ * Whether a declared `idPrefixes` entry could prefix an IMDb video id Kunai
+ * would actually send for `type`. Movie ids are `tt…`; series requests carry
+ * `tt…:season:episode`. A prefix longer than any real id cannot match.
+ */
+function matchesImdbVideoPrefix(prefix: string, type: StremioContentType): boolean {
+  if (!prefix) return false;
+  if (prefix === "t" || /^tt[0-9]{0,10}$/.test(prefix)) return true;
+  return (
+    type === "series" && /^tt[0-9]{5,10}:(?:(?:0|[1-9][0-9]*)(?::(?:[1-9][0-9]*)?)?)?$/.test(prefix)
+  );
+}
+
+/**
  * Whether the manifest says the addon answers `/stream/{type}/{id}.json`.
  *
  * A resource is either a bare name, which inherits the manifest's `types` and
  * `idPrefixes`, or an object carrying its own. `idPrefixes` is optional; when
- * it is absent the addon accepts any id of a supported type.
+ * it is absent the addon accepts any id of a supported type. Omit `id` to ask
+ * whether any valid movie or series IMDb video id could match the prefixes.
  */
 export function manifestServesStream(
   manifest: StremioManifest,
   type: StremioContentType,
-  id: string,
+  id?: string,
 ): { readonly served: true } | { readonly served: false; readonly reason: string } {
   let sawStreamResource = false;
   let sawType = false;
@@ -181,7 +195,14 @@ export function manifestServesStream(
     if (!types.includes(type)) continue;
     sawType = true;
     const idPrefixes = resource.idPrefixes ?? manifest.idPrefixes;
-    if (!idPrefixes || idPrefixes.some((prefix) => prefix.length > 0 && id.startsWith(prefix))) {
+    if (
+      !idPrefixes ||
+      idPrefixes.some((prefix) =>
+        id === undefined
+          ? matchesImdbVideoPrefix(prefix, type)
+          : prefix.length > 0 && id.startsWith(prefix),
+      )
+    ) {
       return { served: true };
     }
   }

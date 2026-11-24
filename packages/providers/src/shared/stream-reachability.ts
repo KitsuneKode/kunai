@@ -713,23 +713,117 @@ const DIRECT_MEDIA_PROBE_PREFIX_BYTES = 4096;
 /** Playlist-looking paths are refused before any request is dispatched. */
 const DIRECT_MEDIA_URL_DENY = /\.(?:m3u8?|mpd)$/i;
 
+interface EbmlVint {
+  readonly value: number;
+  readonly end: number;
+}
+
+/**
+ * One EBML variable-length integer at `offset`. With `keepMarker` the leading
+ * marker bit stays in the value (element IDs); without it the marker is
+ * stripped (element sizes) and the all-ones "unknown length" form is refused.
+ */
+function readEbmlVint(
+  view: DataView,
+  offset: number,
+  limit: number,
+  keepMarker: boolean,
+): EbmlVint | null {
+  if (offset >= limit) return null;
+  const first = view.getUint8(offset);
+  if (first === 0) return null;
+  let marker = 0x80;
+  let width = 1;
+  while ((first & marker) === 0) {
+    marker >>= 1;
+    width += 1;
+  }
+  const end = offset + width;
+  if (end > limit || (keepMarker && width > 4)) return null;
+  let value = keepMarker ? first : first & (marker - 1);
+  let allOnes = value === marker - 1;
+  for (let index = offset + 1; index < end; index += 1) {
+    const byte = view.getUint8(index);
+    value = value * 256 + byte;
+    allOnes = allOnes && byte === 0xff;
+  }
+  return Number.isSafeInteger(value) && (keepMarker || !allOnes) ? { value, end } : null;
+}
+
+/**
+ * The EBML magic is only a container claim; the DocType element inside the
+ * header is what names the format as "webm" or "matroska". Anything else —
+ * a truncated header, an unsupported DocType, "webm" bytes under an unrelated
+ * element ID — is not positive media evidence.
+ */
+function hasMatroskaDocType(view: DataView): boolean {
+  const header = readEbmlVint(view, 4, view.byteLength, false);
+  if (!header) return false;
+  const end = header.end + header.value;
+  if (end > view.byteLength) return false;
+  let docType: string | undefined;
+  for (let offset = header.end; offset < end;) {
+    const id = readEbmlVint(view, offset, end, true);
+    if (!id) return false;
+    const size = readEbmlVint(view, id.end, end, false);
+    if (!size || size.value > end - size.end) return false;
+    offset = size.end + size.value;
+    if (id.value !== 0x4282) continue;
+    if (docType !== undefined) return false;
+    const bytes = new Uint8Array(view.buffer, view.byteOffset + size.end, size.value);
+    let decoded = new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes);
+    while (decoded.endsWith("\0")) decoded = decoded.slice(0, -1);
+    docType = decoded;
+  }
+  return docType === "webm" || docType === "matroska";
+}
+
+interface DirectMediaRange {
+  readonly length: number;
+  readonly complete: boolean;
+}
+
+/**
+ * The only partial answer with evidentiary value is `bytes 0-N` — the same
+ * leading span the probe asked for. A missing, malformed, nonzero-offset, or
+ * impossible Content-Range means the server did not honor the request shape.
+ */
+function parseDirectMediaRange(value: string | null): DirectMediaRange | null {
+  const match = /^bytes 0-([0-9]+)\/([0-9]+|\*)$/i.exec(value ?? "");
+  if (!match) return null;
+  const last = Number(match[1]);
+  if (!Number.isSafeInteger(last) || last >= DIRECT_MEDIA_PROBE_PREFIX_BYTES) return null;
+  const length = last + 1;
+  if (match[2] === "*") return { length, complete: false };
+  const total = Number(match[2]);
+  return Number.isSafeInteger(total) && total >= length
+    ? { length, complete: total === length }
+    : null;
+}
+
 /**
  * Positive identification of a self-contained media file prefix.
  *
- * MP4-family files open with an `ftyp` box; it must be complete inside the
- * prefix — a lone "ftyp" string is not structure. Matroska/WebM open with the
- * EBML magic and name their DocType inside the header, so the magic alone is
- * not enough either.
+ * MP4-family files open with an `ftyp` box whose own payload must hold a major
+ * brand and minor version; on a *complete* body the prefix must run past that
+ * first box, because a file that ends at its `ftyp` is a header with no media.
+ * Matroska/WebM open with the EBML magic and name their DocType inside the
+ * header, so the magic alone is not enough either.
  */
-function isDirectMediaPrefix(prefix: Uint8Array): boolean {
+function isDirectMediaPrefix(prefix: Uint8Array, complete: boolean): boolean {
   if (prefix.byteLength < 8) return false;
   const view = new DataView(prefix.buffer, prefix.byteOffset, prefix.byteLength);
   if (view.getUint32(0) === 0x1a45dfa3) {
-    const text = new TextDecoder().decode(prefix).toLowerCase();
-    return text.includes("matroska") || text.includes("webm");
+    return hasMatroskaDocType(view);
   }
   const box = readIsoBox(view, 0);
-  return box !== null && box.type === "ftyp" && box.end >= 16 && box.end <= prefix.byteLength;
+  return (
+    box !== null &&
+    box.type === "ftyp" &&
+    box.end - box.payload >= 8 &&
+    box.end <= prefix.byteLength &&
+    (!complete || box.end < prefix.byteLength)
+  );
 }
 
 /**
@@ -801,16 +895,27 @@ async function probeDirectMedia(
         definitive: isDefinitiveHttpStatus(response.status),
       };
     }
-    if (response.status === 206) {
-      // Honoring the range from anywhere but byte 0 gives no media evidence.
-      const contentRange = response.headers.get("content-range");
-      if (contentRange !== null && !contentRange.startsWith("bytes 0-")) {
-        await response.body?.cancel().catch(() => undefined);
-        return { status: "unreachable", reason: "unsupported-direct-media", definitive: true };
-      }
+    const range =
+      response.status === 206 ? parseDirectMediaRange(response.headers.get("content-range")) : null;
+    if (response.status === 206 && !range) {
+      // A partial answer without a verifiable `bytes 0-N` range did not honor
+      // the request shape — there is no evidence to read.
+      await response.body?.cancel().catch(() => undefined);
+      return { status: "unreachable", reason: "unsupported-direct-media", definitive: true };
     }
     const prefix = await readPrefixBytes(response.body, DIRECT_MEDIA_PROBE_PREFIX_BYTES);
-    if (isDirectMediaPrefix(prefix)) return { status: "reachable" };
+    // Complete means the prefix holds the whole object: a short 200 body, a
+    // 206 whose range covered the full length, or a 200 whose declared size is
+    // exactly what arrived (and no transfer encoding rewrote it mid-flight).
+    const contentEncoding = response.headers.get("content-encoding");
+    const complete =
+      range?.complete ??
+      (prefix.byteLength < DIRECT_MEDIA_PROBE_PREFIX_BYTES ||
+        ((!contentEncoding || contentEncoding.toLowerCase() === "identity") &&
+          Number(response.headers.get("content-length")) === prefix.byteLength));
+    if ((!range || range.length === prefix.byteLength) && isDirectMediaPrefix(prefix, complete)) {
+      return { status: "reachable" };
+    }
     return { status: "unreachable", reason: "unsupported-direct-media", definitive: true };
   } catch {
     if (signal.aborted) return { status: "timeout" };

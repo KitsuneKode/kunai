@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 
 import { providerCycleCandidateTimeoutMs } from "@kunai/core";
 
@@ -96,5 +96,36 @@ describe("resolve gate budgets", () => {
   test("a candidate too small for any probe still yields a positive budget", () => {
     // Better a short probe than a negative timeout that throws or never fires.
     expect(resolveGateBudgetMs(200)).toBeGreaterThan(0);
+  });
+});
+
+describe("resolve gate retry budget", () => {
+  test("the second strict probe gets the same planned timeout, not a floor", async () => {
+    const { verifyCandidateStream } = await import("../src/shared/resolve-gate");
+    const recorded: number[] = [];
+    const spy = spyOn(AbortSignal, "timeout").mockImplementation((ms: number) => {
+      recorded.push(ms);
+      return new AbortController().signal;
+    });
+    try {
+      const context = {
+        now: () => new Date().toISOString(),
+        fetch: {
+          runtime: "direct-http",
+          fetch: async () => new Response("busy", { status: 500 }),
+        },
+      } as unknown as import("@kunai/types").ProviderRuntimeContext;
+      const verdict = await verifyCandidateStream({
+        stream: { url: "https://cdn.example/movie.mp4", headers: {} },
+        context,
+        requireDirectMedia: true,
+        timeoutMs: resolveGateBudgetMs(2_200),
+      });
+      expect(recorded).toEqual([850, 850]);
+      // Strict mode: a non-definitive 500 is not positive media evidence.
+      expect(verdict).toMatchObject({ accepted: false });
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

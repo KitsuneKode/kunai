@@ -50,6 +50,12 @@ export interface PlayableAddonStream {
   readonly filename?: string;
   /** `behaviorHints.proxyHeaders.request`: sent on every request for this stream. */
   readonly headers?: Record<string, string>;
+  /**
+   * Internal dedup/identity key for the exact request shape (URL + normalized
+   * headers). It embeds header values, so it must never appear in runtime
+   * output — callers hash it when they need a stable identifier.
+   */
+  readonly requestKey: string;
   /** `behaviorHints.notWebReady`: the URL may be plain HTTP or not an MP4. mpv plays both. */
   readonly notWebReady: boolean;
   /** `behaviorHints.bingeGroup`: streams sharing it are interchangeable across episodes. */
@@ -112,7 +118,7 @@ export function classifyAddonStreams(
     unsupported[kind] = (unsupported[kind] ?? 0) + 1;
     unsupportedTotal += 1;
   };
-  const seenUrls = new Set<string>();
+  const seenRequests = new Set<string>();
   // Text the addon wrote can echo the configured URL's secret path; labels and
   // metadata are scrubbed before they reach the UI. URLs and header values are
   // functional, not displayed, and stay exactly as sent.
@@ -149,9 +155,18 @@ export function classifyAddonStreams(
 
     const headers = readRequestHeaders(stream);
     if (headers === null) return reject("invalid");
-    // One URL listed twice is one stream; the first listing keeps its position.
-    if (seenUrls.has(url)) return;
-    seenUrls.add(url);
+    // One exact request listed twice is one stream; the first listing keeps
+    // its position. The key is normalized — same URL with differently cased or
+    // ordered header names is still one request — while same URL carrying
+    // different header values is a genuinely different request to probe.
+    const requestKey = JSON.stringify([
+      url,
+      Object.entries(headers ?? {})
+        .map(([key, value]) => [key.toLowerCase(), value])
+        .sort(),
+    ]);
+    if (seenRequests.has(requestKey)) return;
+    seenRequests.add(requestKey);
 
     const name = firstLine(scrub(stream.name));
     const description = oneLine(scrub(stream.description ?? stream.title));
@@ -165,6 +180,7 @@ export function classifyAddonStreams(
 
     playable.push({
       url,
+      requestKey,
       ...(name ? { name } : null),
       ...(description ? { description } : null),
       ...(filename ? { filename } : null),

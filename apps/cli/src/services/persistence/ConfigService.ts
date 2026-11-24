@@ -57,6 +57,13 @@ export interface ConfigService extends KitsuneConfig {
   save(): Promise<void>;
   /** Apply bookkeeping only if persisted consent and identity still match. */
   recordAnalyticsPing(completion: AnalyticsPingCompletion): Promise<boolean>;
+  /**
+   * Refresh one installed addon's stored display name from its manifest.
+   * Merges over the live file under the store lock and the persist chain, so
+   * another process's entries and unrelated keys survive; an addon removed in
+   * the meantime is not re-added. Display-only — callers tolerate failure.
+   */
+  recordStremioAddonName(manifestUrl: string, name: string): Promise<void>;
   /** Persist any debounced pending save immediately (shutdown path). */
   flushPending(): Promise<void>;
   reset(): Promise<void>;

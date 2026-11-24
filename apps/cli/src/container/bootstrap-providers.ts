@@ -10,7 +10,6 @@ import type { ProviderHotfixManifest } from "@kunai/providers";
 import { buildProviderRelayRegistry, createRelayFetchPort } from "@kunai/relay";
 import { ProviderCacheRepository } from "@kunai/storage";
 
-import { addStremioAddon } from "../domain/provider/stremio-addons";
 import { PlaybackResolveCoordinator } from "../services/playback/PlaybackResolveCoordinator";
 import { PlaybackResolveWorkService } from "../services/playback/PlaybackResolveWorkService";
 import {
@@ -127,15 +126,9 @@ export async function bootstrapProviders(
         createStremioAddonModules({
           getEntries: () => config.stremioAddons,
           onName: (addon, name) => {
-            const recorded = addStremioAddon(config.stremioAddons, addon.manifestUrl, name);
-            // `added` means the addon was removed since startup; do not put it back.
-            if (!recorded.ok || recorded.added) return;
-            void config
-              .update({ stremioAddons: recorded.entries })
-              .then(() => config.save())
-              .catch(() => {
-                // The name is display-only; the addon keeps working under its host.
-              });
+            void config.recordStremioAddonName(addon.manifestUrl, name).catch(() => {
+              // The name is display-only; the addon keeps working under its host.
+            });
           },
         }),
       );
