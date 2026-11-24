@@ -29,30 +29,92 @@ export const LEGACY_PUBLIC_TMDB_API_KEY = "653bb8af90162bd98fc7ee32bcbbfb3d";
 export const TMDB_API_KEY = LEGACY_PUBLIC_TMDB_API_KEY;
 
 /**
- * Which TMDB key direct requests use, in order:
- * 1. `KUNAI_TMDB_API_KEY` — the user's own key (their own quota and terms).
+ * Which TMDB credential direct requests use, in order:
+ * 1. The user's own key: `KUNAI_TMDB_API_KEY`, else the `tmdbApiKey` setting
+ *    (kept in the OS credential vault). Their own quota and terms, and it
+ *    sends requests to TMDB itself first — nothing in between depends on Kunai.
  * 2. `KUNAI_BUNDLED_TMDB_API_KEY` — Kunai's key, inlined at release build time
  *    when CI provides `KUNAI_TMDB_BUILD_KEY` (see `RELEASE_DEFINE`).
  * 3. The legacy borrowed key.
+ *
+ * A user key TMDB rejects (401) is set aside for {@link USER_KEY_REJECTED_RETRY_MS}
+ * and the shipped key serves meanwhile, so a typo never takes the catalog down.
  */
 export interface TmdbApiKeyResolution {
   readonly key: string;
   readonly source: "user" | "kunai" | "legacy";
+  /** v3 keys ride in the `api_key` query; v4 read tokens in `Authorization`. */
+  readonly kind: TmdbCredentialKind;
+  /** Where a user key came from. */
+  readonly origin?: "env" | "settings";
+}
+
+export type TmdbCredentialKind = "api-key" | "bearer";
+
+/** How long a user key TMDB rejected is set aside before it is tried again. */
+export const USER_KEY_REJECTED_RETRY_MS = 10 * 60 * 1000;
+
+let configuredUserKey: () => string = () => "";
+let userKeyRejectedUntil = 0;
+let userKeyRejectedValue = "";
+
+/** Installed by the container: reads the `tmdbApiKey` setting live. */
+export function setTmdbUserKeySource(read: (() => string) | null): void {
+  configuredUserKey = read ?? (() => "");
+  userKeyRejectedUntil = 0;
+  userKeyRejectedValue = "";
+}
+
+/** v4 read access tokens are JWTs; everything else is sent as a v3 key. */
+export function classifyTmdbCredential(value: string): TmdbCredentialKind {
+  return /^eyJ[\w-]+\.[\w-]+\.[\w-]+$/.test(value) ? "bearer" : "api-key";
+}
+
+/** Whether a pasted value looks like a TMDB credential at all. */
+export function isPlausibleTmdbCredential(value: string): boolean {
+  const trimmed = value.trim();
+  return /^[0-9a-f]{32}$/i.test(trimmed) || classifyTmdbCredential(trimmed) === "bearer";
 }
 
 export function resolveTmdbApiKey(
   env: Record<string, string | undefined> = process.env,
+  now: number = Date.now(),
 ): TmdbApiKeyResolution {
-  const user = env.KUNAI_TMDB_API_KEY?.trim();
-  if (user) return { key: user, source: "user" };
+  const fromEnv = env.KUNAI_TMDB_API_KEY?.trim();
+  const fromSettings = configuredUserKey().trim();
+  const user = fromEnv || fromSettings;
+  const rejected = user !== "" && user === userKeyRejectedValue && now < userKeyRejectedUntil;
+  if (user && !rejected) {
+    return {
+      key: user,
+      source: "user",
+      kind: classifyTmdbCredential(user),
+      origin: fromEnv ? "env" : "settings",
+    };
+  }
   return shippedTmdbApiKey();
 }
 
 /** The key Kunai itself ships: the build-time Kunai key, else the legacy key. */
 export function shippedTmdbApiKey(): TmdbApiKeyResolution {
   const bundled = process.env.KUNAI_BUNDLED_TMDB_API_KEY?.trim();
-  if (bundled) return { key: bundled, source: "kunai" };
-  return { key: LEGACY_PUBLIC_TMDB_API_KEY, source: "legacy" };
+  if (bundled) return { key: bundled, source: "kunai", kind: classifyTmdbCredential(bundled) };
+  return { key: LEGACY_PUBLIC_TMDB_API_KEY, source: "legacy", kind: "api-key" };
+}
+
+/** What /diagnostics shows about the TMDB credential. */
+export interface TmdbCredentialStatus {
+  readonly active: TmdbApiKeyResolution;
+  /** True while a configured user key is set aside after TMDB rejected it. */
+  readonly userKeyRejected: boolean;
+}
+
+export function tmdbCredentialStatus(now: number = Date.now()): TmdbCredentialStatus {
+  const user = (process.env.KUNAI_TMDB_API_KEY?.trim() || configuredUserKey().trim()) ?? "";
+  return {
+    active: resolveTmdbApiKey(process.env, now),
+    userKeyRejected: user !== "" && user === userKeyRejectedValue && now < userKeyRejectedUntil,
+  };
 }
 
 const DEFAULT_TIMEOUT_MS = 6_000;
@@ -91,7 +153,29 @@ const TMDB_PROXY_HOSTS: readonly TmdbHost[] = VIDEASY_DB_BASES.map((base) => ({
 const TMDB_DIRECT_HOST: TmdbHost = { base: TMDB_DIRECT_BASE, needsApiKey: true };
 const TMDB_ALT_HOST: TmdbHost = { base: TMDB_ALT_BASE, needsApiKey: true };
 
-const TMDB_HOSTS: readonly TmdbHost[] = [...TMDB_PROXY_HOSTS, TMDB_DIRECT_HOST, TMDB_ALT_HOST];
+const TMDB_KEYLESS_FIRST: readonly TmdbHost[] = [
+  ...TMDB_PROXY_HOSTS,
+  TMDB_DIRECT_HOST,
+  TMDB_ALT_HOST,
+];
+/** With the user's own key, TMDB itself is asked first; mirrors are the fallback. */
+const TMDB_DIRECT_FIRST: readonly TmdbHost[] = [
+  TMDB_DIRECT_HOST,
+  TMDB_ALT_HOST,
+  ...TMDB_PROXY_HOSTS,
+];
+
+function tmdbHostOrder(): readonly TmdbHost[] {
+  return resolveTmdbApiKey().source === "user" ? TMDB_DIRECT_FIRST : TMDB_KEYLESS_FIRST;
+}
+
+/** A keyed host answered 401: the credential, not the request, was refused. */
+class TmdbCredentialRejectedError extends Error {
+  constructor(readonly credential: TmdbApiKeyResolution) {
+    super("TMDB rejected the API key");
+    this.name = "TmdbCredentialRejectedError";
+  }
+}
 
 /** A host answered with a non-2xx status — the API itself responded. */
 export class TmdbHttpError extends Error {
@@ -298,12 +382,20 @@ async function fetchTmdbHostJson(
   signal?: AbortSignal,
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<JsonValue> {
-  const joiner = host.needsApiKey ? (normalizedPath.includes("?") ? "&" : "?") : "";
-  const url = host.needsApiKey
-    ? `${host.base}${normalizedPath}${joiner}api_key=${encodeURIComponent(resolveTmdbApiKey().key)}`
-    : `${host.base}${normalizedPath}`;
+  const credential = host.needsApiKey ? resolveTmdbApiKey() : null;
+  const joiner = normalizedPath.includes("?") ? "&" : "?";
+  const url =
+    credential?.kind === "api-key"
+      ? `${host.base}${normalizedPath}${joiner}api_key=${encodeURIComponent(credential.key)}`
+      : `${host.base}${normalizedPath}`;
+  const headers: Record<string, string> =
+    credential?.kind === "bearer" ? { authorization: `Bearer ${credential.key}` } : {};
   return observeOnlineIfBound("search-error", async () => {
-    const res = await fetch(url, { signal: withTimeoutSignal(signal, timeoutMs) });
+    const res = await fetch(url, { headers, signal: withTimeoutSignal(signal, timeoutMs) });
+    if (res.status === 401 && credential) {
+      await res.body?.cancel().catch(() => undefined);
+      throw new TmdbCredentialRejectedError(credential);
+    }
     if (!res.ok) throw new TmdbHttpError(res.status, url);
     // SAFETY: Response.json() resolves to the parsed JSON document.
     return res.json() as Promise<JsonValue>;
@@ -329,7 +421,8 @@ export async function fetchTmdbJsonWithFallback(
   const now = Date.now();
   let lastError: Error | null = null;
 
-  const eligible = TMDB_HOSTS.filter((host) => now >= (hostRetryAfter.get(host.base) ?? 0));
+  const hosts = tmdbHostOrder();
+  const eligible = hosts.filter((host) => now >= (hostRetryAfter.get(host.base) ?? 0));
   let probing = false;
   let candidates = eligible;
   if (eligible.length === 0) {
@@ -342,13 +435,21 @@ export async function fetchTmdbJsonWithFallback(
     probing = true;
     nextHalfOpenProbeAt = now + HALF_OPEN_PROBE_INTERVAL_MS;
     halfOpenProbeInFlight = true;
-    candidates = [...TMDB_HOSTS]
+    candidates = [...hosts]
       .sort((a, b) => (hostRetryAfter.get(a.base) ?? 0) - (hostRetryAfter.get(b.base) ?? 0))
       .slice(0, 1);
   }
 
+  /** A credential TMDB refused in this walk; another keyed host would refuse it too. */
+  let refusedKey: string | null = null;
   try {
     for (const host of candidates) {
+      // Skip a keyed host only while it would send the refused credential. A
+      // refused user key is set aside below, so the next keyed host retries
+      // with the shipped key instead of being skipped.
+      if (host.needsApiKey && refusedKey !== null && resolveTmdbApiKey().key === refusedKey) {
+        continue;
+      }
       try {
         const value = await fetchTmdbHostJson(host, normalized, signal, timeoutMs);
         hostRetryAfter.delete(host.base);
@@ -356,6 +457,20 @@ export async function fetchTmdbJsonWithFallback(
         return value;
       } catch (error) {
         if (signal?.aborted === true) throw error;
+        if (error instanceof TmdbCredentialRejectedError) {
+          // The host answered, so its breaker closes. A bad key is not the
+          // request's answer: keyless mirrors can still serve it, and a user
+          // key is set aside so the shipped key serves until it is fixed.
+          hostRetryAfter.delete(host.base);
+          nextHalfOpenProbeAt = 0;
+          refusedKey = error.credential.key;
+          if (error.credential.source === "user") {
+            userKeyRejectedValue = error.credential.key;
+            userKeyRejectedUntil = Date.now() + USER_KEY_REJECTED_RETRY_MS;
+          }
+          lastError = error;
+          continue;
+        }
         if (error instanceof TmdbHttpError && error.status < 500) {
           // The host answered: it is reachable, so close its breaker even
           // though this path's answer is a 4xx the caller must see.

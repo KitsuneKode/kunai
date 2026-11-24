@@ -13,6 +13,7 @@ import {
   describeCatalogAnswers,
   type CatalogSourceAnswer,
 } from "@/services/catalog/catalog-source-ledger";
+import type { TmdbCredentialStatus } from "@/services/catalog/tmdb-proxy";
 import type { ContinuationProjection } from "@/services/continuation/continuation-policy";
 import { projectContinuationSurface } from "@/services/continuation/continuation-surface-policy";
 import {
@@ -162,7 +163,34 @@ export type DiagnosticsPanelLineInput = {
   catalogAnswers?: readonly CatalogSourceAnswer[];
   /** Clock for answer ages; defaults to `Date.now()`. */
   now?: number;
+  /** Which credentials catalog and subtitle requests use. */
+  serviceKeys?: ServiceKeysStatus;
 };
+
+/** What /diagnostics says about keys, without ever showing one. */
+export interface ServiceKeysStatus {
+  readonly tmdb: TmdbCredentialStatus;
+  readonly wyzieConfigured: boolean;
+}
+
+export function describeServiceKeys(status: ServiceKeysStatus): ShellPanelLine {
+  const { active, userKeyRejected } = status.tmdb;
+  const tmdb = userKeyRejected
+    ? `TMDB rejected your key (401) — using ${active.source === "kunai" ? "Kunai's key" : "the fallback key"} until you fix it in Settings → Accounts`
+    : active.source === "user"
+      ? `TMDB: your ${active.kind === "bearer" ? "read token" : "key"} (${active.origin === "env" ? "KUNAI_TMDB_API_KEY" : "settings"}), direct to TMDB`
+      : active.source === "kunai"
+        ? "TMDB: Kunai's key — add your own free key in Settings → Accounts for independent quota"
+        : "TMDB: borrowed fallback key — add your own free key in Settings → Accounts";
+  const subtitles = status.wyzieConfigured
+    ? "subtitle search: your Wyzie key"
+    : "subtitle search: no Wyzie key (online subtitle search off)";
+  return {
+    label: "Service keys",
+    detail: `${tmdb}  ·  ${subtitles}`,
+    tone: userKeyRejected ? "warning" : "info",
+  };
+}
 
 export function buildDiagnosticsPanelLines({
   state,
@@ -180,6 +208,7 @@ export function buildDiagnosticsPanelLines({
   expandedSpanIds,
   catalogAnswers,
   now,
+  serviceKeys,
 }: DiagnosticsPanelLineInput): readonly ShellPanelLine[] {
   const insight = buildDiagnosticsInsight({
     state,
@@ -209,6 +238,7 @@ export function buildDiagnosticsPanelLines({
   const catalogLine = catalogAnswers
     ? describeCatalogAnswers(catalogAnswers, now ?? Date.now())
     : null;
+  if (serviceKeys) supplemental.unshift(describeServiceKeys(serviceKeys));
   if (catalogLine) {
     supplemental.unshift({
       label: "Catalog sources",

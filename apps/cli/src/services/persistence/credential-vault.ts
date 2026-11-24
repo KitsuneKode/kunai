@@ -21,6 +21,10 @@ export const CREDENTIAL_KEYS = {
   anilistTokens: "anilist.tokens",
   tmdbTokens: "tmdb.tokens",
   videasySessionToken: "videasy.sessionToken",
+  /** The user's own TMDB key (v3 API key or v4 read access token). */
+  tmdbApiKey: "tmdb.apiKey",
+  /** The user's own Wyzie subtitle search key. */
+  wyzieApiKey: "wyzie.apiKey",
 } as const;
 
 export type CredentialVaultDeps = {

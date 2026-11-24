@@ -197,6 +197,7 @@ export function languageSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
       // limited, so one shared credential would throttle every user at once.
       detail: "Your own Wyzie key for subtitle search — get one at store.wyzie.io/redeem",
       placeholder: "Paste your Wyzie API key, then press Enter",
+      sensitive: true,
       envOverride: "KUNAI_WYZIE_API_KEY",
       read: (config) => config.wyzieApiKey,
       apply: (config, value) => ({ ...config, wyzieApiKey: value.trim() }),

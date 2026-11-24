@@ -192,13 +192,41 @@ export function npmBundleBuildOptions(
   };
 }
 
+/**
+ * Targets compiled with JSC bytecode by default. Measured 2026-11-24 on
+ * linux-x64: shell mounted in ~220 ms instead of ~340 ms, `--help` in 0.02–0.04 s
+ * instead of 0.10 s, and ~28% less memory, for ~11 MiB more per binary.
+ *
+ * Left out on purpose: every shipped updater refuses a binary over 128 MiB
+ * (`MAX_RELEASE_BINARY_BYTES`, baked into published binaries), and bytecode
+ * puts windows-x64 at 124.6 MiB and android-x64 at 129.1 MiB. Windows and
+ * Android stay plain until that ceiling can move.
+ */
+const BYTECODE_TRIPLE = /^bun-(?:linux-(?:x64|arm64)(?:-musl)?|darwin-(?:x64|arm64))$/;
+
+export function bytecodeByDefault(triple: string): boolean {
+  return BYTECODE_TRIPLE.test(triple);
+}
+
+/**
+ * `KUNAI_COMPILE_BYTECODE=1` forces bytecode on, `=0` forces it off (for A/B
+ * measurement); anything else uses the per-target default.
+ */
+function bytecodeFor(triple: string, explicit: boolean | undefined): boolean {
+  if (explicit !== undefined) return explicit;
+  const override = process.env.KUNAI_COMPILE_BYTECODE;
+  if (override === "1") return true;
+  if (override === "0") return false;
+  return bytecodeByDefault(triple);
+}
+
 /** Bun.build options for a single compiled binary target. */
 export function compileBinaryBuildOptions(
   root: string,
   target: { readonly triple: string; readonly outfile: string },
   options: { readonly bytecode?: boolean } = {},
 ): BunBuildOptions {
-  const bytecode = options.bytecode ?? process.env.KUNAI_COMPILE_BYTECODE === "1";
+  const bytecode = bytecodeFor(target.triple, options.bytecode);
   // SAFETY: target.triple is a validated ReleaseBinaryTarget triple; Bun's CompileTarget union is narrower than string.
   const base = {
     ...releaseBuildBaseOptions(root),
@@ -517,21 +545,25 @@ export function assertNpmBundleBudget(bytes: number): void {
 export const COMPILED_BINARY_BUDGET_MIB = 120;
 
 /**
- * Per-target compiled binary ceilings (MiB). macOS binaries are ~30 MiB smaller
- * than Linux/Windows Bun executables, so a single flat 120 MiB cap would hide a
- * 40+ MiB regression on darwin targets.
+ * Per-target compiled binary ceilings (MiB), enforced by build-binaries.
+ * Measured 2026-11-24 (Bun 1.4.4) plus ~3.5 MiB headroom, bytecode where
+ * {@link bytecodeByDefault}: darwin-arm64 99.8, darwin-x64 108.3, linux-x64
+ * 118.7, linux-arm64 118.8, linux-x64-musl 112.6, linux-arm64-musl 111.6;
+ * plain: windows-x64 113.4, windows-arm64 99.0, android-arm64 112.6,
+ * android-x64 117.8. Every value stays under the 128 MiB ceiling shipped
+ * updaters enforce. Raising one is a deliberate edit with a new measurement.
  */
 export const COMPILED_BINARY_BUDGET_MIB_BY_TARGET: Readonly<Record<string, number>> = {
-  "darwin-arm64": 80,
-  "darwin-x64": 90,
-  "linux-arm64": 115,
+  "darwin-arm64": 104,
+  "darwin-x64": 112,
+  "linux-arm64": 122,
   "linux-arm64-musl": 115,
-  "linux-x64": 115,
-  "linux-x64-musl": 115,
-  "android-arm64": 115,
-  "android-x64": 115,
-  "windows-x64": 120,
-  "windows-arm64": 120,
+  "linux-x64": 122,
+  "linux-x64-musl": 116,
+  "android-arm64": 116,
+  "android-x64": 121,
+  "windows-x64": 117,
+  "windows-arm64": 103,
 };
 
 export function compiledBinaryBudgetMib(targetId: string): number {

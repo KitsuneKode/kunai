@@ -45,6 +45,20 @@ const SENSITIVE_KEYS = new Set([
   "privatekey",
 ]);
 
+/**
+ * Exact names above, plus any field that ends like a credential: a new
+ * `tmdbApiKey` or `wyzieApiKey` must not need a list edit to stay out of logs.
+ */
+function isSensitiveKeyName(normalizedKey: string): boolean {
+  return (
+    SENSITIVE_KEYS.has(normalizedKey) ||
+    normalizedKey.endsWith("apikey") ||
+    normalizedKey.endsWith("accesstoken") ||
+    normalizedKey.endsWith("sessiontoken") ||
+    normalizedKey.endsWith("secret")
+  );
+}
+
 const SENSITIVE_QUERY_KEYS = new Set([
   "access_token",
   // TMDB v3 authenticates in the query string, so both of these ride in URLs
@@ -77,7 +91,7 @@ export function redactDiagnosticValue(value: unknown, options: RedactionOptions 
   const output: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value)) {
     const normalizedKey = key.toLowerCase().replace(/[-_]/g, "");
-    if (SENSITIVE_KEYS.has(normalizedKey)) {
+    if (isSensitiveKeyName(normalizedKey)) {
       output[key] = "[redacted]";
       continue;
     }

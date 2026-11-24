@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T07:52:27Z"
+lastReviewed: "2026-11-24T08:04:41Z"
 ---
 
 # Kunai — Repo Infrastructure
@@ -299,6 +299,18 @@ silently fetch another formatter version.
 - `build:binary:host` — host compiled binary (`dist/bin/kunai-*`)
 - `build:binaries` — release cross-compiles plus deterministic archives
   (`dist/bin/**`): `.tar.gz` for Linux/macOS, `.zip` for Windows
+
+**Compiled binaries** carry JSC bytecode on Linux and macOS
+(`bytecodeByDefault` in `apps/cli/scripts/build-shared.ts`): measured on
+linux-x64, the shell mounts in ~220 ms instead of ~340 ms and `--help` runs in
+0.02–0.04 s instead of 0.10 s, for ~11 MiB more per binary. Windows and Android
+stay plain because every published updater refuses a binary over 128 MiB
+(`MAX_RELEASE_BINARY_BYTES`, immutable once shipped) and bytecode puts
+windows-x64 at 124.6 MiB and android-x64 at 129.1 MiB. `KUNAI_COMPILE_BYTECODE=1`
+or `=0` overrides the default for A/B measurement. `build-binaries` enforces
+the per-target budgets in `COMPILED_BINARY_BUDGET_MIB_BY_TARGET` (measured
+size plus ~3.5 MiB, each under the 128 MiB ceiling); raising one needs a new
+measurement in that table's comment.
 
 `bun run build` at the repo root runs `build` + `build:binary:host` in parallel.
 The public launcher resolves a platform package; `pkg:check` enforces its file

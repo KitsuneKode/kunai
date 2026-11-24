@@ -4,7 +4,11 @@ import { link, mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { RELEASE_BINARY_TARGETS } from "@/services/update/platform-assets";
+
 import {
+  bytecodeByDefault,
+  COMPILED_BINARY_BUDGET_MIB_BY_TARGET,
   assertCompiledBinaryBudget,
   assertNoForbiddenReleaseInputs,
   assertNpmBundleBudget,
@@ -262,5 +266,29 @@ describe("release build shared options", () => {
     );
     expect(withBytecode.bytecode).toBe(true);
     expect(withBytecode.format).toBe("esm");
+  });
+});
+
+describe("bytecode and size budgets per release target", () => {
+  test("bytecode is on for Linux and macOS, off for Windows and Android", () => {
+    const onByDefault = RELEASE_BINARY_TARGETS.filter((target) => bytecodeByDefault(target.triple))
+      .map((target) => target.id)
+      .sort();
+    expect(onByDefault).toEqual([
+      "darwin-arm64",
+      "darwin-x64",
+      "linux-arm64",
+      "linux-arm64-musl",
+      "linux-x64",
+      "linux-x64-musl",
+    ]);
+  });
+
+  test("every target has a budget, and every budget fits the ceiling shipped updaters enforce", () => {
+    for (const target of RELEASE_BINARY_TARGETS) {
+      const budget = COMPILED_BINARY_BUDGET_MIB_BY_TARGET[target.id];
+      expect(budget).toBeDefined();
+      expect((budget ?? Infinity) * 1024 * 1024).toBeLessThanOrEqual(target.maxBinaryBytes);
+    }
   });
 });
