@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-22"
+lastReviewed: "2026-11-24T10:55:19Z"
 ---
 
 # Playback timing, IntroDB, and AniSkip
@@ -161,18 +161,18 @@ export interface PlaybackTimingFetchContext {
 }
 ```
 
-Thread new fields from `PlaybackPhase` where timing is resolved; **do not** thread provider secrets into mpv.
+Thread new fields from `app/playback/playback-timing-lookup.ts` (where the playback phase resolves timing); **do not** thread provider secrets into mpv.
 
 ---
 
 ## File map
 
-| Area                              | Path                                                                                                  |
-| --------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| AniSkip fetch + MAL resolution    | `apps/cli/src/aniskip.ts`                                                                             |
-| AniSkip timing source             | `apps/cli/src/infra/timing/AniSkipTimingSource.ts`                                                    |
-| IntroDB fetch                     | `apps/cli/src/introdb.ts`                                                                             |
-| IntroDB timing source             | `apps/cli/src/infra/timing/IntroDbTimingSource.ts`                                                    |
-| Merge + aggregator + context type | `apps/cli/src/infra/timing/merge-timing.ts`, `PlaybackTimingAggregator.ts`, `PlaybackTimingSource.ts` |
-| Wiring provider id into timing    | `apps/cli/src/app/playback/PlaybackPhase.ts`                                                          |
-| Skip application (mpv)            | `apps/cli/src/infra/player/playback-skip.ts`, `PersistentMpvSession.ts`                               |
+| Area                              | Path                                                                                                                                                            |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AniSkip fetch + MAL resolution    | `apps/cli/src/aniskip.ts`                                                                                                                                       |
+| AniSkip timing source             | `apps/cli/src/infra/timing/AniSkipTimingSource.ts`                                                                                                              |
+| IntroDB fetch                     | `apps/cli/src/introdb.ts`                                                                                                                                       |
+| IntroDB timing source             | `apps/cli/src/infra/timing/IntroDbTimingSource.ts`                                                                                                              |
+| Merge + aggregator + context type | `apps/cli/src/infra/timing/merge-timing.ts`, `PlaybackTimingAggregator.ts`, `PlaybackTimingSource.ts`                                                           |
+| Wiring provider id into timing    | `apps/cli/src/app/playback/playback-episode-context.ts` (early fetch), `playback-stream-ready.ts` (re-key on the serving provider), `playback-timing-lookup.ts` |
+| Skip application (mpv)            | `apps/cli/src/infra/player/playback-skip.ts`, `PersistentMpvSession.ts`                                                                                         |
