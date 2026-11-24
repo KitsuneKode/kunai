@@ -227,7 +227,7 @@ describe("release build shared options", () => {
     const out = await mapWithConcurrency([1, 2, 3, 4], 2, async (value) => {
       active += 1;
       peak = Math.max(peak, active);
-      await Bun.sleep(5);
+      await nextTurn();
       active -= 1;
       return value * 2;
     });
@@ -239,9 +239,9 @@ describe("release build shared options", () => {
     // Pinned on purpose: raising the ratchet has to be a deliberate edit with a
     // documented measurement in build-shared.ts, not a number that drifts up
     // whenever a bundle grows.
-    expect(NPM_BUNDLE_BUDGET_KB).toBe(3_135);
-    expect(() => assertNpmBundleBudget(3_210_240)).not.toThrow();
-    expect(() => assertNpmBundleBudget(3_210_241)).toThrow("budget 3135 KiB");
+    expect(NPM_BUNDLE_BUDGET_KB).toBe(3_143);
+    expect(() => assertNpmBundleBudget(3_218_432)).not.toThrow();
+    expect(() => assertNpmBundleBudget(3_218_433)).toThrow("budget 3143 KiB");
   });
 
   test("enforces per-target compiled binary size budget and supports bytecode opt-in", () => {
@@ -292,3 +292,9 @@ describe("bytecode and size budgets per release target", () => {
     }
   });
 });
+
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}

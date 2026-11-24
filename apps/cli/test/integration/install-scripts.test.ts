@@ -136,6 +136,7 @@ async function waitForPaths(paths: readonly string[]): Promise<void> {
   const deadline = Date.now() + 60_000;
   while (paths.some((path) => !existsSync(path))) {
     if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${paths.join(", ")}`);
+    // sleep-allow: waits for a real installer child
     await Bun.sleep(10);
   }
 }
@@ -188,6 +189,7 @@ async function runInstallShWithin(
     new Response(proc.stderr).text(),
     proc.exited,
   ]).then(([stdout, stderr, status]) => ({ status, stdout, stderr }));
+  // sleep-allow: waits for a real installer child
   const result = await Promise.race([output, Bun.sleep(timeoutMs).then(() => null)]);
   if (result === null) {
     proc.kill();

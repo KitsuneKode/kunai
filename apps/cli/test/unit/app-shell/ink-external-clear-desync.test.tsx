@@ -61,6 +61,7 @@ async function renderThenExternallyClear(): Promise<string> {
   try {
     const actTick = async (ms: number) => {
       await act(async () => {
+        // sleep-allow: waits for Ink to paint the external clear; no clock seam
         await Bun.sleep(ms);
       });
     };

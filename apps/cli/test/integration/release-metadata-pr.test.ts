@@ -3,6 +3,8 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { withoutGitEnv } from "../helpers/git-env";
+
 const script = resolve(import.meta.dir, "../../../../.github/scripts/open-release-metadata-pr.sh");
 
 for (const scenario of [
@@ -23,7 +25,7 @@ for (const scenario of [
       const remote = join(root, "remote.git");
       mkdirSync(repo);
       const env = {
-        ...process.env,
+        ...withoutGitEnv(),
         HUSKY: "0",
         GIT_CONFIG_NOSYSTEM: "1",
         GIT_CONFIG_GLOBAL: "/dev/null",

@@ -115,6 +115,7 @@ async function spawnAndSignal(
   // boot is quick and only buys headroom when it is not.
   const startupDeadline = Date.now() + startupTimeoutMs;
   while (Date.now() < startupDeadline && !(existsSync(pidFile) && existsSync(dataDbPath))) {
+    // sleep-allow: waits for a real CLI child and its signal handler
     await Bun.sleep(100);
   }
   if (!existsSync(pidFile) || !existsSync(dataDbPath)) {
@@ -157,6 +158,7 @@ async function spawnAndSignal(
       mounted = true;
       break;
     }
+    // sleep-allow: waits for a real CLI child and its signal handler
     await Bun.sleep(50);
   }
   if (!mounted) {
@@ -168,6 +170,7 @@ async function spawnAndSignal(
         `--- transcript ---\n${readTranscript()}`,
     );
   }
+  // sleep-allow: waits for a real CLI child and its signal handler
   await Bun.sleep(100);
   try {
     process.kill(cliPid, signal);
@@ -179,6 +182,7 @@ async function spawnAndSignal(
     );
   }
 
+  // sleep-allow: waits for a real CLI child and its signal handler
   const exitCode = await Promise.race([child.exited, Bun.sleep(exitTimeoutMs).then(() => -1)]);
   return { exitCode: exitCode as number, dataDbPath };
 }

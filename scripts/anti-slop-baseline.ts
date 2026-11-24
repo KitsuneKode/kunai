@@ -64,6 +64,37 @@ export function baselineUpdateAllowed(hadBaseline: boolean, drift: BaselineDrift
   return !hadBaseline || drift.increases.length === 0;
 }
 
+/**
+ * Oxlint's JSON formatter is the success path. A config or plugin failure is
+ * plain text on stdout, and `JSON.parse` then throws a SyntaxError that hides
+ * the line oxlint actually printed.
+ */
+export function diagnosticCodesFromOxlintStdout(stdout: string): readonly string[] {
+  const trimmed = stdout.trim();
+  if (!trimmed.startsWith("{")) {
+    throw new Error(
+      `anti-slop oxlint did not return JSON. Output:\n${trimmed.slice(0, 4_000) || "(empty output)"}`,
+    );
+  }
+  let report: OxlintJsonReport;
+  try {
+    // SAFETY: a leading `{` is the JSON object oxlint's formatter prints; anything else throws.
+    report = JSON.parse(trimmed) as OxlintJsonReport;
+  } catch (error) {
+    const detail = error instanceof SyntaxError ? error.message : "invalid JSON";
+    throw new Error(
+      `anti-slop oxlint did not return JSON (${detail}). Output:\n${trimmed.slice(0, 4_000)}`,
+      { cause: error },
+    );
+  }
+  if (!Array.isArray(report.diagnostics)) {
+    throw new Error(
+      `anti-slop oxlint JSON has no diagnostics array. Output:\n${trimmed.slice(0, 4_000)}`,
+    );
+  }
+  return report.diagnostics.map((diagnostic) => diagnostic.code);
+}
+
 async function collectRuleCodes(): Promise<readonly string[]> {
   const child = Bun.spawn(
     [
@@ -76,16 +107,28 @@ async function collectRuleCodes(): Promise<readonly string[]> {
       "json",
       ".",
     ],
-    { cwd: REPO_ROOT, stdout: "pipe", stderr: "inherit" },
+    { cwd: REPO_ROOT, stdout: "pipe", stderr: "pipe" },
   );
-  const stdout = await new Response(child.stdout).text();
-  const exitCode = await child.exited;
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  const failureText = [stdout.trim(), stderr.trim()].filter(Boolean).join("\n");
   if (exitCode !== 0 && exitCode !== 1) {
-    throw new Error(`anti-slop oxlint exited ${exitCode}`);
+    throw new Error(
+      `anti-slop oxlint exited ${exitCode}.${failureText ? `\n${failureText.slice(0, 4_000)}` : ""}`,
+    );
   }
-  // SAFETY: oxlint's documented JSON formatter owns this subprocess output.
-  const report = JSON.parse(stdout) as OxlintJsonReport;
-  return report.diagnostics.map((diagnostic) => diagnostic.code);
+  try {
+    return diagnosticCodesFromOxlintStdout(stdout);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const extra = stderr.trim();
+    throw new Error(extra ? `${message}\nstderr:\n${extra.slice(0, 4_000)}` : message, {
+      cause: error,
+    });
+  }
 }
 
 async function readBaseline(): Promise<RuleCounts> {

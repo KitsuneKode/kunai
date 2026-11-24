@@ -34,6 +34,7 @@ test("a settings save failure is visible and recorded without enabling analytics
         label: "settings save error rendered",
         tick: async (ms) => {
           await act(async () => {
+            // sleep-allow: Ink settings save debounce; the component clock is not injected
             await Bun.sleep(ms);
           });
         },

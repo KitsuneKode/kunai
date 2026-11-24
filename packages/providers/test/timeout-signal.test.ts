@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, jest, test } from "bun:test";
 
 import {
   combineAbortSignals,
@@ -7,20 +7,30 @@ import {
 } from "../src/shared/timeout-signal";
 
 describe("createTimeoutSignal", () => {
-  test("arms a deadline when no caller signal is provided", async () => {
-    const signal = createTimeoutSignal(undefined, 20);
-    expect(signal.aborted).toBe(false);
-    await Bun.sleep(80);
-    expect(signal.aborted).toBe(true);
+  test("arms a deadline when no caller signal is provided", () => {
+    jest.useFakeTimers();
+    try {
+      const signal = createTimeoutSignal(undefined, 20);
+      expect(signal.aborted).toBe(false);
+      jest.advanceTimersByTime(20);
+      expect(signal.aborted).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
-  test("keeps the deadline when the caller also passes a signal", async () => {
-    const caller = new AbortController();
-    const signal = createTimeoutSignal(caller.signal, 20);
-    expect(signal.aborted).toBe(false);
-    await Bun.sleep(80);
-    expect(signal.aborted).toBe(true);
-    expect(caller.signal.aborted).toBe(false);
+  test("keeps the deadline when the caller also passes a signal", () => {
+    jest.useFakeTimers();
+    try {
+      const caller = new AbortController();
+      const signal = createTimeoutSignal(caller.signal, 20);
+      expect(signal.aborted).toBe(false);
+      jest.advanceTimersByTime(20);
+      expect(signal.aborted).toBe(true);
+      expect(caller.signal.aborted).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test("propagates caller cancellation immediately with its reason", () => {
@@ -61,13 +71,18 @@ describe("combineAbortSignalsManually", () => {
     expect((combined.reason as Error).message).toBe("already-gone");
   });
 
-  test("stays pending while every member is pending", async () => {
-    const controllers = [new AbortController(), new AbortController(), new AbortController()];
-    const combined = combineAbortSignalsManually(controllers.map((c) => c.signal));
-    await Bun.sleep(20);
-    expect(combined.aborted).toBe(false);
-    controllers.at(-1)?.abort();
-    expect(combined.aborted).toBe(true);
+  test("stays pending while every member is pending", () => {
+    jest.useFakeTimers();
+    try {
+      const controllers = [new AbortController(), new AbortController(), new AbortController()];
+      const combined = combineAbortSignalsManually(controllers.map((c) => c.signal));
+      jest.advanceTimersByTime(1_000);
+      expect(combined.aborted).toBe(false);
+      controllers.at(-1)?.abort();
+      expect(combined.aborted).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
 

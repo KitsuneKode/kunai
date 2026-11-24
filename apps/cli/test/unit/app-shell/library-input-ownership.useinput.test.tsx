@@ -125,6 +125,7 @@ async function waitForFrame(
     label: `frame containing ${JSON.stringify(needle)}`,
     tick: (ms) =>
       act(async () => {
+        // sleep-allow: Ink input debounce; the component clock is not injected
         await new Promise((r) => setTimeout(r, ms));
       }),
   }).catch(() => {
@@ -136,6 +137,7 @@ async function pressEscape(handle: { stdin: { enqueue: (data: string) => void } 
   await act(async () => {
     handle.stdin.enqueue("\x1b");
     // Ink defers a lone ESC briefly to disambiguate escape sequences.
+    // sleep-allow: Ink input debounce; the component clock is not injected
     await new Promise((resolve) => setTimeout(resolve, 60));
   });
 }

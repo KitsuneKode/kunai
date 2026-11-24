@@ -397,6 +397,7 @@ test("service shutdown promptly cancels in-flight reconciliation enrichment", as
     run.then(() => "settled" as const),
     // Soft bound, not the assertion: a slow scheduler still releases the
     // blocker below and the final expect pins the abort semantics.
+    // sleep-allow: hang bound: reconciliation must still be running
     Bun.sleep(1_000).then(() => "still-running" as const),
   ]);
   if (phase === "still-running") releaseEnrichment();

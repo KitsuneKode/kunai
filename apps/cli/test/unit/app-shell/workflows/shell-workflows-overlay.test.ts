@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, jest, test } from "bun:test";
 
+import { shellFeedbackTimers } from "@/app-shell/dismiss-timer-registry";
 import {
   enqueueCurrentPlaybackDownload,
   runShellWorkflowFromOverlay,
@@ -141,4 +142,48 @@ describe("enqueueCurrentPlaybackDownload feedback", () => {
     expect(notes[0]).toBe("Download queued: Kunai Release Trailer · Video");
     expect(notes[0]).not.toMatch(/E\d/);
   });
+
+  test("dismisses the queued toast through the shell feedback timer registry", async () => {
+    jest.useFakeTimers();
+    try {
+      const queued = createTrackedDownload();
+      await enqueueCurrentPlaybackDownload({ container: queued.container, reason: "test" });
+      jest.advanceTimersByTime(2_999);
+      expect(queued.notes).toEqual(["Download queued: Dune: Part Two · Movie"]);
+      jest.advanceTimersByTime(1);
+      expect(queued.notes).toEqual(["Download queued: Dune: Part Two · Movie", null]);
+
+      const cancelled = createTrackedDownload();
+      await enqueueCurrentPlaybackDownload({ container: cancelled.container, reason: "test" });
+      shellFeedbackTimers.dispose();
+      jest.advanceTimersByTime(3_000);
+      expect(cancelled.notes).toEqual(["Download queued: Dune: Part Two · Movie"]);
+    } finally {
+      shellFeedbackTimers.dispose();
+      jest.useRealTimers();
+    }
+  });
+
+  function createTrackedDownload() {
+    const { container, notes } = createContainer(
+      { titleName: "Dune: Part Two", mediaKind: "movie", season: 1, episode: 1 },
+      { titleType: "movie" },
+    );
+    const readState = container.stateManager.getState.bind(container.stateManager);
+    let playbackNote: string | null = null;
+    const dispatch = container.stateManager.dispatch.bind(container.stateManager);
+    container.stateManager.getState = () => ({
+      ...readState(),
+      playbackNote,
+    });
+    container.stateManager.dispatch = (event) => {
+      dispatch(event);
+      if (event.type === "SET_PLAYBACK_FEEDBACK") playbackNote = event.note ?? null;
+    };
+    return { container, notes };
+  }
+});
+
+afterEach(() => {
+  shellFeedbackTimers.dispose();
 });

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-27"
+lastReviewed: "2026-11-24T12:30:00Z"
 ---
 
 # Kunai — Testing Strategy
@@ -51,6 +51,13 @@ Live / VHS / Docker smokes stay opt-in and are excluded from CLI unit/integratio
 
 ## Verification loop for contributors and agents
 
+A test that runs `git` on a fixture repository builds its environment from
+`withoutGitEnv()` in `apps/cli/test/helpers/git-env.ts`. Git exports `GIT_DIR`
+and `GIT_WORK_TREE` to hooks, and inside a worktree they point at the real
+repository, so a fixture spawned from the pre-push hook with `...process.env`
+writes there instead (it once set `core.bare=true` and committed fixture
+commits onto a branch). `git-fixture-env.test.ts` fails on a new one.
+
 Use `storageRootEnv()` from `apps/cli/test/helpers/storage-env.ts` for every
 throwaway profile. It redirects HOME/XDG/APPDATA and forces
 `KUNAI_CREDENTIAL_BACKEND=file` and `DO_NOT_TRACK=1`: native credential vault entries belong to the
@@ -80,6 +87,10 @@ root itself and child names beginning with dots remain valid.
 2. Change the failure trigger deliberately: deferred resolve/reject, cancellation,
    injected clock, or fake timer. A sleep is not an acknowledgement. A generous
    test timeout bounds a hang; it does not prove synchronization.
+   `apps/cli/test/unit/architecture/no-real-test-sleep.test.ts` fails when a
+   test file gains a `Bun.sleep`, `setTimeout`, or `setInterval` that is not
+   already allowlisted. An allowlist entry is for a real process or an OS wait
+   that has no clock seam, and it has to say why.
 3. For a regression test, temporarily remove the behavior it protects and confirm
    the assertion fails. Restore it before broader validation. Do not mutate source
    while another verification command is reading the same tree.

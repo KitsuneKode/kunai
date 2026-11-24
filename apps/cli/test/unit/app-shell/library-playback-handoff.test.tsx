@@ -45,6 +45,7 @@ async function waitForFrame(
     label: `frame containing ${JSON.stringify(needle)}`,
     tick: (ms) =>
       act(async () => {
+        // sleep-allow: Ink handoff debounce; the component clock is not injected
         await new Promise((r) => setTimeout(r, ms));
       }),
   }).catch(() => {

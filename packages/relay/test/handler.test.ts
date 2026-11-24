@@ -6,6 +6,7 @@ import type { CoreProviderManifest } from "@kunai/core";
 import { handleRpcRequest } from "../src/handler";
 import { createPinnedRelayTransport, type RelayNodeRequest } from "../src/pinned-transport";
 import { buildProviderRelayRegistry } from "../src/registry";
+import { DEFAULT_MAX_REQUEST_BODY_BYTES } from "../src/types";
 import type { RelayAuthorizationPolicy } from "../src/types";
 
 const localLoopbackAuthorization = {
@@ -167,6 +168,101 @@ test("handleRpcRequest rejects oversized upstream request bodies", async () => {
 
   expect(response.status).toBe(413);
   expect(await response.json()).toMatchObject({ error: { code: "body-too-large" } });
+});
+
+test("an oversized envelope gets 413 even when its body cancel never settles", async () => {
+  const neverSettles = new ReadableStream<Uint8Array>({
+    cancel: () => new Promise<void>(() => {}),
+  });
+  // SAFETY: Bun streams a Request body only when duplex is set; this lib's RequestInit omits it.
+  const request = new Request("https://relay.test/rpc/miruro", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "content-length": String(DEFAULT_MAX_REQUEST_BODY_BYTES + 1),
+    },
+    body: neverSettles,
+    duplex: "half",
+  } as RequestInit);
+
+  const response = await handleRpcRequest(request, {
+    providerId: "miruro",
+    registry: providerRegistry,
+    authorization: localLoopbackAuthorization,
+  });
+
+  expect(response.status).toBe(413);
+});
+
+test("a client that stalls its envelope upload gets 408 within the relay's own timeout", async () => {
+  let cancelled = false;
+  const stalled = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode("{"));
+      // ...and the client never sends the rest.
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  // SAFETY: Bun streams a Request body only when duplex is set; this lib's RequestInit omits it.
+  const request = new Request("https://relay.test/rpc/miruro", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: stalled,
+    duplex: "half",
+  } as RequestInit);
+
+  const response = await handleRpcRequest(request, {
+    providerId: "miruro",
+    registry: providerRegistry,
+    authorization: localLoopbackAuthorization,
+    timeoutMs: 5,
+  });
+
+  expect(response.status).toBe(408);
+  expect(await response.json()).toMatchObject({
+    error: { code: "bad-request", message: "Relay request body timed out" },
+  });
+  expect(cancelled).toBe(true);
+});
+
+test("handleRpcRequest stops reading an envelope once it passes the byte cap", async () => {
+  let produced = 0;
+  let cancelled = false;
+  const chunkBytes = 8 * 1024;
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (cancelled || produced >= DEFAULT_MAX_REQUEST_BODY_BYTES * 4) {
+        controller.close();
+        return;
+      }
+      produced += chunkBytes;
+      controller.enqueue(new Uint8Array(chunkBytes));
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  // SAFETY: Bun streams a Request body only when duplex is set; this lib's RequestInit omits it.
+  const request = new Request("https://relay.test/rpc/miruro", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: stream,
+    duplex: "half",
+  } as RequestInit);
+
+  const response = await handleRpcRequest(request, {
+    providerId: "miruro",
+    registry: providerRegistry,
+    authorization: localLoopbackAuthorization,
+  });
+
+  expect(response.status).toBe(413);
+  expect(await response.json()).toMatchObject({ error: { code: "body-too-large" } });
+  expect(cancelled).toBe(true);
+  expect(produced).toBeLessThanOrEqual(DEFAULT_MAX_REQUEST_BODY_BYTES + chunkBytes);
+  expect(produced).toBeGreaterThan(DEFAULT_MAX_REQUEST_BODY_BYTES);
 });
 
 test("handleRpcRequest rejects unsafe upstream hosts before fetch", async () => {
@@ -1016,6 +1112,7 @@ test("handleRpcRequest applies one deadline to the complete redirect chain", asy
       async transport(_url, init) {
         attempts++;
         if (attempts === 1) {
+          // sleep-allow: transport delay has to overlap the handler's real redirect deadline
           await Bun.sleep(40);
           return new Response(null, {
             status: 302,
@@ -1024,6 +1121,7 @@ test("handleRpcRequest applies one deadline to the complete redirect chain", asy
         }
 
         return new Promise((_resolve, reject) => {
+          // sleep-allow: transport delay has to overlap the handler's real redirect deadline
           const timer = setTimeout(() => _resolve(Response.json({ ok: true })), 40);
           init?.signal?.addEventListener(
             "abort",
