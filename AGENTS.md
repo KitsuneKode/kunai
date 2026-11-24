@@ -25,6 +25,12 @@ touches; do not read `.docs/` end to end. Vocabulary lives in
    migrate it. Isolate with `storageRootEnv` (HOME + XDG + APPDATA). Never point
    tests or a debug run at the live SQLite databases; copy them to a shadow
    directory first. Data flows one way: into your sandbox, never back out.
+   `bun test` runs with the real home, and a test that mounts a shell or boots a
+   service writes the live profile unless it isolates itself with
+   `applyStorageRootEnv`. The CLI test preload fails any run that changed the
+   real config, data or cache directory and names the files; fix the leaker,
+   do not skip the check. To find one, run the suite with every storage root
+   pointed at a stand-in profile, then bisect — never against your own.
 2. **Believing a green gate.** A passing root `bun run typecheck` / `test` can be
    a turbo cache replay — re-run with `--force` or per-package before claiming
    green. Pwsh-gated installer tests land in the "N skip" line, not the failure

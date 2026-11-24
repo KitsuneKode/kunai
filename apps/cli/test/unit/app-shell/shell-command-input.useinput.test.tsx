@@ -1,14 +1,20 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { BrowseShell } from "@/app-shell/browse-shell";
 import { useShellInput } from "@/app-shell/shell-command-input";
 import type { FooterAction, ShellAction } from "@/app-shell/types";
 import type { ResolvedAppCommand } from "@/domain/session/command-registry";
+import { kunaiConfigDir } from "@/infra/storage/kunai-paths";
+import { flushSearchHistory } from "@/services/persistence/search-history";
 import { Text } from "ink";
 import React, { useEffect, useState } from "react";
 import { act } from "react";
 
 import { render } from "../../harness/render-capture";
+import { applyStorageRootEnv } from "../../helpers/storage-env";
 
 const FOOTER_ACTIONS: readonly FooterAction[] = [
   { key: "/", label: "commands", action: "command-mode" },
@@ -117,6 +123,13 @@ test.each(["packets", "drain"])("latest shared palette draft submits in one %s",
 test.each(["packets", "drain"])(
   "Browse submits the complete search text in one %s",
   async (delivery) => {
+    // Enter saves the submitted query to search history. It must land in a
+    // throwaway profile: this test wrote "Odyssey" into the developer's real
+    // search-history-series.json on every run.
+    const sandbox = mkdtempSync(join(tmpdir(), "kunai-shell-command-input-"));
+    const restoreEnv = applyStorageRootEnv(sandbox);
+    const historyFile = join(kunaiConfigDir(), "search-history-series.json");
+    expect(historyFile.startsWith(sandbox)).toBe(true);
     const seen: string[] = [];
     const handle = render(
       <BrowseShell
@@ -142,8 +155,14 @@ test.each(["packets", "drain"])(
         }
       });
       expect(seen).toEqual(["Odyssey"]);
+      // Wait for the writer while the sandbox is still applied, or the save
+      // resolves its path after the restore and lands in the real profile.
+      await flushSearchHistory();
+      expect(JSON.parse(readFileSync(historyFile, "utf8"))).toEqual(["Odyssey"]);
     } finally {
       handle.unmount();
+      restoreEnv();
+      rmSync(sandbox, { recursive: true, force: true });
     }
   },
 );
