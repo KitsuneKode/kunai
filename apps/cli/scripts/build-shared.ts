@@ -449,13 +449,20 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // November 19 Jikan fallback, Android local-file gateway, sub/dub source cycling,
 // and Termux onboarding additions measured 3,205,426 bytes.
 // November 24 Ink 8 + dependency refresh measured 3,202,977 bytes.
+// November 24 six-review fixes (#731) measured 3,210,160 bytes — 80 bytes left.
+// November 24 PlaybackPhase split into stage modules (plan 012) measured
+// 3,218,128 bytes: +7,968, all property names at the new typed stage
+// boundaries, which minification cannot shorten. No dependency or asset.
+// Merged onto the #740 dead-code prune (providers, aliases, CLI exports), the
+// split measured 3,212,126 bytes: -6,002 against the split alone.
 // November 24 plain/screen-reader mode across app-shell surfaces plus light and
 // high-contrast themes measured 3,224,652 bytes (+21,675).
 // November 24 streaming relay cap, locked manifest reset, registered toast
 // timer, and unread-body cancels measured 3,210,429 bytes.
-// November 24 plain-mode recheck on that tree measured 3,220,665 bytes.
-// 3152 KiB leaves 6,983 bytes; public launcher budgets below are unchanged.
-export const NPM_BUNDLE_BUDGET_KB = 3_152;
+// Plain mode merged with the PlaybackPhase split (#741) and #705 measured
+// 3,228,630 bytes. 3156 KiB leaves 3,114 bytes; public launcher budgets below
+// are unchanged.
+export const NPM_BUNDLE_BUDGET_KB = 3_156;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

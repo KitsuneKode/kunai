@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T08:39:32Z"
+lastReviewed: "2026-11-24T10:55:19Z"
 ---
 
 # Kunai Runtime Boundary Map
@@ -102,8 +102,12 @@ surface it owns.
 - `app-shell/ink-shell.tsx` is still both host and surface code. New render
   extraction should move one surface or presenter at a time; do not add more
   policy there.
-- `app/playback/PlaybackPhase.ts` is still the playback state machine plus too
-  much surrounding orchestration. Extract only tested transition slices from it.
+- `app/playback/PlaybackPhase.ts` is now only the phase outline. The loop body is
+  `app/playback/playback-episode-iteration.ts`, itself an outline over one stage
+  module per concern (attempt, context, stream acquire/ready, prefetch, player
+  launch, history, recovery, controls, auto-advance, post-play). A new playback
+  decision belongs in the stage that owns it — or a pure policy beside it — never
+  as a new inline branch in either outline.
 - `domain/types.ts` is a CLI-domain type bridge, not the package contract. Do
   not move it into `packages/types` until adapter tests cover the conversion.
 
