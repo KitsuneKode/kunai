@@ -33,6 +33,8 @@ Current execution: [watching release candidate](./2026-10-22-watching-release-ca
 
 Quality push: [road to 9.5 — every reviewed dimension, competitors, workstreams W1–W6](./2026-11-24-road-to-9-5.md).
 
+Players and mobile order: [VLC and IINA beside mpv, and the mobile sequence](./2026-11-24-players-vlc-iina-and-mobile-order.md).
+
 Watching UX follow-up: [first-run, playback, Tracks and shell coherence](./2026-10-23-watching-ux-coherence.md).
 Watching capability recovery: [provider inventories, playback truth and discoverable controls](./2026-10-24-watching-capability-recovery.md).
 Integration and test safety: [analytics isolation, review reconciliation and checkout recovery](./2026-10-25-integration-and-test-safety.md).
