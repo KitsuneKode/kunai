@@ -8,6 +8,7 @@ import { join } from "node:path";
 import * as reservedCopy from "@/infra/fs/reserved-file-copy";
 import type { DiagnosticEventInput } from "@/services/diagnostics/diagnostic-event";
 import {
+  ADDON_DOWNLOAD_REFUSAL,
   DownloadEnqueueRejectedError,
   DownloadService,
   type DownloadResolveResult,
@@ -1172,6 +1173,28 @@ describe("DownloadService", () => {
         providerId: "vidking",
       }),
     ).rejects.toBeInstanceOf(DownloadEnqueueRejectedError);
+  });
+
+  test("refuses to queue a download from a Stremio addon", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+
+    const attempt = service.enqueue({
+      title: { id: "tmdb:1", type: "series", name: "Example" },
+      episode: { season: 1, episode: 1, name: "Episode 1" },
+      stream: { url: "https://cdn.example.com/episode.mp4", headers: {}, timestamp: 0 },
+      providerId: "stremio-0123456789abcdef",
+    });
+    await expect(attempt).rejects.toBeInstanceOf(DownloadEnqueueRejectedError);
+    await expect(attempt).rejects.toMatchObject({
+      code: "addon-source",
+      reason: ADDON_DOWNLOAD_REFUSAL,
+    });
+    expect(service.listActive().length).toBe(0);
   });
 
   test("rejects a duplicate episode intent through the indexed admission guard", async () => {

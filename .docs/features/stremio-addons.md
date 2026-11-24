@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T13:08:50Z"
+lastReviewed: "2026-11-24T15:30:00Z"
 ---
 
 # Stremio addons
@@ -173,3 +173,7 @@ never re-added.
 | Stored list helpers                   | `apps/cli/src/domain/provider/stremio-addons.ts`           |
 | Module factory, IMDb lookup           | `apps/cli/src/services/providers/stremio-addon-modules.ts` |
 | Registration                          | `apps/cli/src/container/bootstrap-providers.ts`            |
+
+## Downloads
+
+Downloads refuse addon streams: `DownloadService` rejects an addon provider id at enqueue (`DownloadEnqueueRejectedError` code `addon-source`) and again after resolve, so a fallback that lands on an addon is refused too. yt-dlp would fetch the URL with none of the playback confinement (direct-media check, pinned DNS, no redirects); lift this only when downloads share that guarded fetch.

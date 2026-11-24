@@ -34,7 +34,7 @@ import {
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { normalizeSubtitleUrl } from "@/subtitle";
 import { looksLikeOpaqueProviderNativeId } from "@kunai/core";
-import { fetchGuardedStreamTarget } from "@kunai/providers";
+import { fetchGuardedStreamTarget, isStremioAddonProviderId } from "@kunai/providers";
 import {
   buildYoutubeYtdlProfile,
   getYoutubeProviderConfig,
@@ -184,13 +184,28 @@ export type DownloadEnqueueEligibility =
       readonly reason: string;
     };
 
+/**
+ * Stremio addon streams are only safe to play through the guarded playback
+ * path (direct media, pinned DNS, no redirects). yt-dlp would fetch them with
+ * none of that, so downloads from addons are refused until they share it.
+ */
+export const ADDON_DOWNLOAD_REFUSAL =
+  "Downloads from Stremio addons aren't supported yet. Play the title instead, or download it from a built-in provider.";
+
+function assertDownloadableProvider(providerId: string): void {
+  if (isStremioAddonProviderId(providerId)) {
+    throw new DownloadEnqueueRejectedError("addon-source", ADDON_DOWNLOAD_REFUSAL);
+  }
+}
+
 export class DownloadEnqueueRejectedError extends Error {
   constructor(
     readonly code:
       | "downloads-disabled"
       | "yt-dlp-missing"
       | "insufficient-disk"
-      | "duplicate-intent",
+      | "duplicate-intent"
+      | "addon-source",
     readonly reason: string,
   ) {
     super(reason);
@@ -514,6 +529,7 @@ export class DownloadService {
     const tempPath = join(dirname(outputPath), `.tmp.${id}${DOWNLOAD_FILE_EXT}`);
     await mkdir(dirname(outputPath), { recursive: true });
 
+    assertDownloadableProvider(input.providerId);
     const storage = await this.evaluateStorageForPath(
       outputPath,
       undefined,
@@ -1581,6 +1597,9 @@ export class DownloadService {
   ): Promise<DownloadJobRecord> {
     const attemptPath = job.tempPath;
     const resolved = await this.resolveStreamForJob(job);
+    // A fallback resolve can land on an addon even when the job named a bundled
+    // provider; yt-dlp would fetch it without the playback confinement.
+    assertDownloadableProvider(resolved.providerId);
     if (!this.deps.repo.withRunningClaim(claim, () => {}).owned)
       throw new StaleDownloadClaimError();
     // Resolution can outlive abort/shutdown. Let the queue's cancellation
