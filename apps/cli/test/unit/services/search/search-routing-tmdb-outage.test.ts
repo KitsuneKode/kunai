@@ -149,6 +149,24 @@ describe("movie/series search when every TMDB route fails", () => {
     expect(consulted).toBe(false);
   });
 
+  test("a successful filtered search replaces the fallback record", async () => {
+    await searchTitles(
+      "dune",
+      context(tmdbDown, async () => [DUNE]),
+    );
+    const intent = createSearchIntentEngine().fromText("dune type:movie", {
+      currentMode: "series",
+    }).intent;
+    const healthy = tmdbService(async () => [{ ...DUNE, metadataSource: undefined }]);
+    await searchTitles(
+      intent,
+      context(healthy, async () => []),
+    );
+    expect(catalogAnswersSnapshot()).toMatchObject([
+      { capability: "search", sourceId: "tmdb", fallback: false },
+    ]);
+  });
+
   test("a cancelled search propagates instead of falling back", async () => {
     const controller = new AbortController();
     let consulted = false;

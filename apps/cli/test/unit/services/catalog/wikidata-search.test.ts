@@ -52,6 +52,28 @@ function hostOf(url: string): string {
 }
 
 describe("Wikidata movie/series search", () => {
+  test("an HTTP 200 MediaWiki error envelope is an outage, not an empty search", async () => {
+    const fetchImpl: WikidataFetch = async () =>
+      new Response(JSON.stringify({ error: { code: "unknownerror", info: "request failed" } }), {
+        status: 200,
+      });
+    await expect(searchWikidataTmdbTitles("dune", { fetchImpl })).rejects.toBeInstanceOf(
+      WikidataSearchUnavailableError,
+    );
+  });
+
+  test("the exact-title row wins for a TMDB id reached from two items", () => {
+    const results = wikidataRowsToSearchResults("dune", [
+      { item: "Q1", label: "Dune (franchise entry)", movie: "1", links: "10" },
+      { item: "Q2", label: "Dunes Elsewhere", movie: "2", links: "50" },
+      { item: "Q3", label: "Dune", movie: "1", links: "5" },
+    ]);
+    expect(results.map((entry) => `${entry.title}:${entry.id}`)).toEqual([
+      "Dune:1",
+      "Dunes Elsewhere:2",
+    ]);
+  });
+
   test("parses entity ids and SPARQL rows, keeping only well-formed ids", () => {
     expect(readSearchEntityIds(SEARCH_PAYLOAD)).toEqual(["Q114819", "Q60834962"]);
     expect(readSearchEntityIds({ error: "x" })).toEqual([]);

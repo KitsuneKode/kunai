@@ -82,6 +82,18 @@ describe("TMDB last-known-good for series structure", () => {
     ]);
   });
 
+  test("a show-only request (genres for recommendations) does not speak for the episode source", async () => {
+    setTmdbDurableCache(realCache());
+    serve(() => Response.json(show));
+    await fetchTmdbJsonCached("/tv/2316");
+    expect(catalogAnswersSnapshot()).toEqual([]);
+    serve(() => Response.json(season4));
+    await fetchTmdbJsonCached("/tv/2316/season/4?language=en-US");
+    expect(catalogAnswersSnapshot()).toMatchObject([
+      { capability: "series-episodes", sourceId: "tmdb", fallback: false },
+    ]);
+  });
+
   test("a definitive 4xx is TMDB's answer and is never masked by a saved copy", async () => {
     setTmdbDurableCache(realCache());
     serve(() => Response.json(show));

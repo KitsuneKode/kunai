@@ -137,6 +137,12 @@ export async function searchTitles(
         intent,
         evidence,
       );
+      recordSearchAnswer(
+        resolvedLane,
+        compatibleSearch.metadata.id,
+        compatibleSearch.metadata.name,
+        false,
+      );
       return {
         results: withResolvedSearchLane(results, resolvedLane),
         resolvedLane,
@@ -161,6 +167,9 @@ export async function searchTitles(
           },
           context.signal,
         )) ?? [];
+      // The provider's own search is the designed route for a filtered query
+      // with no compatible catalog, not an outage stand-in.
+      recordSearchAnswer(resolvedLane, provider.metadata.id, provider.metadata.name, false);
       return {
         results: withResolvedSearchLane(
           applyLocalSearchFilters(results.map(normalizeProviderSearchResult), intent, evidence),

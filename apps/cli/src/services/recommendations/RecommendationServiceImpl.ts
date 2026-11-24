@@ -103,7 +103,10 @@ export class RecommendationServiceImpl implements RecommendationService {
   private readCacheEntry(key: string, ttlMs: number): CacheValue | null {
     const parsed = this.readAnyCacheEntry(key);
     if (!parsed || parsed.cachedAt <= this.freshAfter) return null;
-    return isCacheExpired(parsed.cachedAt, ttlMs) ? null : parsed;
+    if (isCacheExpired(parsed.cachedAt, ttlMs)) return null;
+    // A fresh entry is a recent live TMDB answer, so it counts as primary.
+    recordRecommendationsAnswer(false);
+    return parsed;
   }
 
   private readAnyCacheEntry(key: string): CacheValue | null {

@@ -4,6 +4,10 @@ import { withFreshnessLabel } from "@/app/discover/discover-sections";
 import type { SearchResult } from "@/domain/types";
 import { createCatalogDurableCache } from "@/services/catalog/catalog-durable-cache";
 import {
+  catalogAnswersSnapshot,
+  recordCatalogAnswer,
+} from "@/services/catalog/catalog-source-ledger";
+import {
   CatalogDiscoveryService,
   type CatalogDurableCache,
 } from "@/services/catalog/CatalogDiscoveryService";
@@ -59,6 +63,24 @@ function service(
 }
 
 describe("trending source chain", () => {
+  test("a cached section still updates /diagnostics' source record", async () => {
+    const svc = service(async () => [item("1", "Live")], down, memoryDurable());
+    await svc.loadTrendingSection("anime");
+    recordCatalogAnswer({
+      capability: "trending",
+      lane: "anime",
+      sourceId: "last-known-good",
+      sourceName: "saved list",
+      fallback: true,
+      reason: "AniList unavailable",
+    });
+    // Served from the in-memory cache: the record must say AniList again.
+    await svc.loadTrendingSection("anime");
+    expect(catalogAnswersSnapshot()).toMatchObject([
+      { capability: "trending", lane: "anime", sourceId: "anilist", fallback: false },
+    ]);
+  });
+
   test("primary down → the fallback answers and is remembered as last-known-good", async () => {
     const durable = memoryDurable();
     const section = await service(

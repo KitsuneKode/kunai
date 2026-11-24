@@ -242,7 +242,12 @@ export class CatalogDiscoveryService {
     const key = mode;
     const cached = this.cache.get(key);
     const cachedSection = this.sections.get(key);
-    if (cached && cached.expiresAt > this.now() && cachedSection) return cachedSection;
+    if (cached && cached.expiresAt > this.now() && cachedSection) {
+      // A cached answer is still the current answer: a walk that finished in
+      // the background after a hedged stale reply must replace that record.
+      recordTrendingAnswer(mode, cachedSection);
+      return cachedSection;
+    }
     if (signal?.aborted) throw abortReason(signal);
 
     // Concurrent callers share one walk of the whole chain. The walk owns its

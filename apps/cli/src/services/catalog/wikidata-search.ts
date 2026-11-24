@@ -94,12 +94,18 @@ async function fetchJson(
     if (options.signal?.aborted) throw cause;
     throw new WikidataSearchUnavailableError(`${step} response cut off`, { cause });
   }
+  let parsed: JsonValue;
   try {
-    const parsed: JsonValue = JSON.parse(text);
-    return parsed;
+    parsed = JSON.parse(text);
   } catch (cause) {
     throw new WikidataSearchUnavailableError(`${step} unreadable`, { cause });
   }
+  // MediaWiki reports API failures as HTTP 200 with a top-level `error`; read
+  // as an empty search it would pass for an honest "no match".
+  if (isJsonObject(parsed) && parsed.error !== undefined) {
+    throw new WikidataSearchUnavailableError(`${step} API error`);
+  }
+  return parsed;
 }
 
 /** Entity ids from a `list=search` response, in Wikidata's relevance order. */
@@ -177,7 +183,6 @@ export function wikidataRowsToSearchResults(
     readonly exact: boolean;
     readonly links: number;
   }[] = [];
-  const seen = new Set<string>();
   for (const row of rows) {
     const title = row.label?.trim();
     if (!title) continue;
@@ -190,9 +195,6 @@ export function wikidataRowsToSearchResults(
     ];
     for (const entry of entries) {
       if (!entry.id || !TMDB_ID.test(entry.id)) continue;
-      const key = `${entry.type}:${entry.id}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
       candidates.push({
         exact: normalizeTitle(title) === wanted,
         links: Number.isFinite(links) ? links : 0,
@@ -210,10 +212,21 @@ export function wikidataRowsToSearchResults(
       });
     }
   }
-  return candidates
-    .sort((left, right) => Number(right.exact) - Number(left.exact) || right.links - left.links)
-    .slice(0, MAX_RESULTS)
-    .map((candidate) => candidate.result);
+  // Rank first, then keep the best-ranked row per TMDB id: an exact-title row
+  // must not lose to an earlier non-exact row for the same id.
+  const seen = new Set<string>();
+  const results: SearchResult[] = [];
+  const ranked = candidates.sort(
+    (left, right) => Number(right.exact) - Number(left.exact) || right.links - left.links,
+  );
+  for (const candidate of ranked) {
+    const key = `${candidate.result.type}:${candidate.result.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    results.push(candidate.result);
+    if (results.length === MAX_RESULTS) break;
+  }
+  return results;
 }
 
 /**

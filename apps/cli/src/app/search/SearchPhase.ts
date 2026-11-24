@@ -370,6 +370,8 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
       let pendingSearchEvidence: SearchFilterEvidence | undefined;
       let pendingSearchWarnings: readonly string[] = [];
       let pendingSearchEmptyMessage: string | undefined;
+      /** Source of the bootstrap search, shown in place of "previous search". */
+      let pendingSearchSourceName: string | undefined;
       let initialSearchError: string | undefined;
 
       while (true) {
@@ -484,6 +486,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           // addSearchQuery makes a later interactive repeat idempotent.
           addSearchQuery(searchIntent.intent.query, searchMode);
           pendingSearchEvidence = search.evidence;
+          pendingSearchSourceName = search.sourceName;
           pendingSearchWarnings = searchIntent.warnings;
           pendingSearchEmptyMessage =
             search.results.length === 0 ? buildSearchEmptyMessage(search) : undefined;
@@ -640,9 +643,11 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         });
         const initialWarnings = pendingSearchWarnings;
         const initialEmptyMessage = pendingSearchEmptyMessage;
+        const initialSourceName = pendingSearchSourceName;
         pendingSearchEvidence = undefined;
         pendingSearchWarnings = [];
         pendingSearchEmptyMessage = undefined;
+        pendingSearchSourceName = undefined;
 
         // A picker mounted by a detached overlay workflow (e.g. /providers run
         // from Up Next) owns the content slot until the user dismisses it.
@@ -726,7 +731,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               ? browseState.searchQuery.trim().length === 0
                 ? (routeSubtitle ??
                   `${browseState.searchResults.length} recommendation picks · loaded`)
-                : `${countLabel(initialBrowse.options.length, "result")} · previous search${initialBrowse.subtitleSuffix}`
+                : `${countLabel(initialBrowse.options.length, "result")} · ${initialSourceName ?? "previous search"}${initialBrowse.subtitleSuffix}`
               : undefined,
           initialWarnings,
           initialSelectedIndex: browseState.selectedResultIndex,
@@ -1122,6 +1127,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             pendingSearchEvidence = consumedSearchEvidence;
             pendingSearchWarnings = initialWarnings;
             pendingSearchEmptyMessage = initialEmptyMessage;
+            pendingSearchSourceName = initialSourceName;
             await waitForRootContentSlot(context.signal);
             if (context.signal.aborted) {
               return { status: "cancelled" };

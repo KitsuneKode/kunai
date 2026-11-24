@@ -240,7 +240,7 @@ export async function fetchTmdbJsonCached(
         inflightRequests.delete(normalized);
         if (durable) {
           durable.write(normalized, Date.now(), value);
-          recordEpisodesAnswer(false);
+          if (isSeasonPath(normalized)) recordEpisodesAnswer(false);
         }
         return value;
       })
@@ -251,7 +251,7 @@ export async function fetchTmdbJsonCached(
         const isDefinitive = error instanceof TmdbHttpError && error.status < 500;
         const saved = !isDefinitive ? durable?.read(normalized) : null;
         if (saved) {
-          recordEpisodesAnswer(true);
+          if (isSeasonPath(normalized)) recordEpisodesAnswer(true);
           return saved.value;
         }
         throw error;
@@ -260,6 +260,15 @@ export async function fetchTmdbJsonCached(
   }
 
   return joinTmdbInflight(task, signal);
+}
+
+/**
+ * A season request is an episode list. A bare show request (`/tv/:id`) also
+ * serves metadata (genres for recommendations), so it does not speak for the
+ * episode source.
+ */
+function isSeasonPath(path: string): boolean {
+  return /^\/tv\/\d+\/season\/\d+(?:\?|$)/.test(path);
 }
 
 function recordEpisodesAnswer(fromSaved: boolean): void {
