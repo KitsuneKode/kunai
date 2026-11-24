@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-17"
+lastReviewed: "2026-11-24T15:07:31Z"
 ---
 
 # Share Links & PlaybackTargetRef
@@ -65,6 +65,15 @@ Parser returns `null` when neither `cat` nor `q` is present, or when the catalog
 - Post-play **Share link** action and history **Copy share link**
 - mpv `Ctrl+Shift+S` — copy the HTTPS link at live `time-pos`
 - Discord Rich Presence — **Play on Kunai** button carrying the https web-share URL, plus an https catalog button; the `kunai://` ref also stays in presence text (Discord only allows http(s) button URLs, so the play button uses the web route)
+
+## Lane and provider
+
+A share link's `kind` chooses the lane (`anime`, `video` → YouTube, anything
+else → series/movie). Launch-time links and `/watch` both go through
+`applyShareLaneAndProviderHint`: when the session is in another lane it
+switches to that lane's default provider; already in the lane, it keeps the
+session's provider. A `src=` hint applies only when that provider belongs to the
+link's lane, so an anime provider hint never lands on a TMDB movie.
 
 ## Timestamp resume
 
