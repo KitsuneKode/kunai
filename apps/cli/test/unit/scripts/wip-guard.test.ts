@@ -114,7 +114,9 @@ describe("wip guard", () => {
   });
 
   test("backups default outside the Kunai profile and honour an override", () => {
-    expect(defaultBackupDir({ KUNAI_WIP_BACKUP_DIR: "/srv/b" }, "kunai")).toBe(join("/srv/b", "kunai"));
+    expect(defaultBackupDir({ KUNAI_WIP_BACKUP_DIR: "/srv/b" }, "kunai")).toBe(
+      join("/srv/b", "kunai"),
+    );
     expect(defaultBackupDir({}, "kunai")).toContain("kunai-dev-backups");
     expect(backupStamp(new Date(2026, 10, 24, 9, 5))).toBe("20261124-0905");
   });
