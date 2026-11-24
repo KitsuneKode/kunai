@@ -5,12 +5,7 @@
 // Returns when user wants to go back to search or switch mode.
 // =============================================================================
 
-import {
-  openTracksPanel,
-  openPlaybackEpisodePicker,
-  buildPickerActionContext,
-  openSubtitlePicker,
-} from "@/app-shell/workflows";
+import { openTracksPanel, openPlaybackEpisodePicker } from "@/app-shell/workflows";
 import { episodeInfoFromSelection } from "@/app/bootstrap/episode-info-from-catalog";
 import { consumeShareBootstrapStartSeconds } from "@/app/bootstrap/share-bootstrap-start";
 import { resolveTitleHistoryLookupId } from "@/app/bootstrap/title-info";
@@ -20,7 +15,6 @@ import {
   adoptEpisodePrefetchBundle,
   EpisodePrefetchHandle,
   isEpisodePrefetchEligible,
-  type EpisodePrefetchBundle,
   type EpisodePrefetchProgress,
   type EpisodePrefetchTarget,
 } from "@/app/playback/episode-prefetch";
@@ -40,11 +34,9 @@ import {
   playbackDeadStreamScopeKey,
 } from "@/app/playback/playback-dead-stream-ledger";
 import { gatePlaybackDependencies } from "@/app/playback/playback-dependency-gate";
+import { getAnimeEpisodeOptions } from "@/app/playback/playback-episode-catalog";
 import { applyPlaybackEpisodeNavigation } from "@/app/playback/playback-episode-navigation";
-import {
-  animeEpisodeCatalogCacheKey,
-  buildPlaybackEpisodePickerOptions,
-} from "@/app/playback/playback-episode-picker";
+import { buildPlaybackEpisodePickerOptions } from "@/app/playback/playback-episode-picker";
 import { episodeIdentityForHistory } from "@/app/playback/playback-history-identity";
 import { createPlaybackIteration } from "@/app/playback/playback-iteration";
 import {
@@ -79,7 +71,6 @@ import {
   playbackEpisodeCatalogLanguages,
   playbackQualityPreference,
   playbackSubtitlePreference,
-  type EpisodeCatalogLanguagePreferences,
 } from "@/app/playback/playback-profile-context";
 import {
   isProviderIdFallbackEligible,
@@ -119,6 +110,10 @@ import {
   startFromBeginning,
   startFromEpisodeSelection,
 } from "@/app/playback/playback-start-intent";
+import {
+  preparePlaybackStream,
+  resolveEpisodePrefetchBundle,
+} from "@/app/playback/playback-stream-prepare";
 import { shouldFetchPlaybackTiming } from "@/app/playback/playback-timing-fetch-policy";
 import {
   playbackTimingCacheKey,
@@ -155,7 +150,6 @@ import {
   applyPreferredStreamSelection,
   buildPlaybackControlSummary,
   shouldOfferPrePlayConfirm,
-  shouldSkipExternalSubtitleLookup,
   streamSelectionFromTrackPick,
   type StreamSelectionIntent,
 } from "@/app/playback/source-quality";
@@ -163,7 +157,6 @@ import {
   createSourceRefreshCooldownState,
   resolveSourceRefreshDecision,
 } from "@/app/playback/source-refresh-policy";
-import { choosePlaybackSubtitle } from "@/app/playback/subtitle-selection";
 import { describePlaybackSubtitleStatus } from "@/app/playback/subtitle-status";
 import { applyTrackPickRestart } from "@/app/playback/track-pick-restart";
 import { runAutoplayAdvanceCountdown } from "@/app/post-play/autoplay-advance-countdown";
@@ -487,7 +480,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           }).catch(() => undefined);
       const initialAnimeEpisodes = skipRemotePreparation
         ? undefined
-        : await this.getAnimeEpisodeOptions({
+        : await getAnimeEpisodeOptions({
             title,
             mode: stateManager.getState().mode,
             provider,
@@ -1182,7 +1175,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           const currentAnimeEpisodesPromise =
             sourceAuthority.kind === "local"
               ? Promise.resolve(undefined)
-              : this.getAnimeEpisodeOptions({
+              : getAnimeEpisodeOptions({
                   title,
                   mode: playbackMode,
                   provider: sourceAuthority.provider,
@@ -2149,7 +2142,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           const preparedStream =
             prefetchWasPrepared || streamProvenance === "local"
               ? stream
-              : await this.preparePlaybackStream(stream, title, currentEpisode, context);
+              : await preparePlaybackStream(stream, title, currentEpisode, context);
           recordStartupMark("stream-prepared", preparedStream);
           stateManager.dispatch({ type: "SET_STREAM", stream: preparedStream });
 
@@ -2279,7 +2272,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             if (!prefetchMetadata) {
               return Promise.resolve(null);
             }
-            return this.resolveEpisodePrefetchBundle(context, {
+            return resolveEpisodePrefetchBundle(context, {
               title,
               nextEpisode: nextEp,
               providerId: prefetchMetadata.metadata.id,
@@ -3800,160 +3793,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     return { status: "success", value: "back_to_search" };
   }
 
-  private async resolveEpisodePrefetchBundle(
-    context: PhaseContext,
-    input: {
-      readonly title: TitleInfo;
-      readonly nextEpisode: EpisodeInfo;
-      readonly providerId: string;
-      readonly target?: EpisodePrefetchTarget;
-      readonly onProgress?: (progress: EpisodePrefetchProgress) => void;
-      readonly signal: AbortSignal;
-    },
-  ): Promise<EpisodePrefetchBundle | null> {
-    const { config, stateManager, playbackResolveWork } = context.container;
-    const mode = stateManager.getState().mode;
-    const profileCtx = {
-      mode,
-      title: input.title,
-      config: config.getRaw(),
-      overrides: stateManager.getState().playbackTrackPreferences,
-    };
-    const subLang = playbackSubtitlePreference(profileCtx);
-    const isInteractiveSubtitle = subLang === "interactive" || subLang === "fzf";
-
-    const stream = await playbackResolveWork.prefetch(
-      {
-        title: input.title,
-        episode: input.nextEpisode,
-        mode,
-        providerId: input.providerId,
-        audioPreference: playbackAudioPreference(profileCtx),
-        subtitlePreference: playbackSubtitlePreference(profileCtx),
-        qualityPreference: playbackQualityPreference(profileCtx),
-        startupPriority: config.startupPriority,
-        selectedSourceId: input.target?.sourceId,
-        selectedStreamId: input.target?.streamId,
-        recoveryMode: config.recoveryMode,
-        signal: input.signal,
-        onEvent: (event) => {
-          if (event.type === "cache-hit" || event.type === "cache-hit-validated") {
-            input.onProgress?.({ exactStreamCacheHit: true });
-          } else if (event.type === "source-inventory-hit") {
-            input.onProgress?.({ sourceInventoryHit: true, streamValidationActive: true });
-          } else if (event.type === "provider-resolve-started") {
-            input.onProgress?.({ providerResolveActive: true });
-          } else if (event.type === "attempt" && event.attempt > 1) {
-            input.onProgress?.({ fallbackAttemptStarted: true });
-          }
-        },
-      },
-      { intentKind: "prefetch", budgetLane: "near-need" },
-    );
-
-    if (!stream) return null;
-    input.onProgress?.({ videoReady: true, candidateStreamsReturned: true });
-
-    const target: EpisodePrefetchTarget = input.target ?? {
-      titleId: input.title.id,
-      episode: input.nextEpisode,
-      providerId: input.providerId,
-      audioPreference: playbackAudioPreference(profileCtx),
-      qualityPreference: playbackQualityPreference(profileCtx),
-      startupPriority: config.startupPriority,
-      subtitlePreference: playbackSubtitlePreference(profileCtx),
-    };
-    const resolvedProviderId = stream.providerId;
-
-    if (isInteractiveSubtitle) {
-      return { target, stream: stream.stream, prepared: false, resolvedProviderId };
-    }
-
-    const preparedStream = await this.preparePlaybackStream(
-      stream.stream,
-      input.title,
-      input.nextEpisode,
-      context,
-    );
-
-    return { target, stream: preparedStream, prepared: true, resolvedProviderId };
-  }
-
-  private async preparePlaybackStream(
-    stream: StreamInfo,
-    title: TitleInfo,
-    episode: EpisodeInfo,
-    context: PhaseContext,
-  ): Promise<StreamInfo> {
-    const { stateManager, logger, config } = context.container;
-    const subLang = playbackSubtitlePreference({
-      overrides: stateManager.getState().playbackTrackPreferences,
-      mode: stateManager.getState().mode,
-      title,
-      config,
-    });
-
-    if (shouldSkipExternalSubtitleLookup(stream, subLang)) {
-      logger.info("Subtitle resolution skipped", {
-        provider: stateManager.getState().provider,
-        titleId: title.id,
-        requestedSubLang: subLang,
-        reason: "hardsub-satisfied-or-disabled",
-      });
-      return subLang === "none" ? { ...stream, subtitle: undefined } : stream;
-    }
-
-    const subtitleDecision = await choosePlaybackSubtitle({
-      stream,
-      subLang,
-      pickSubtitle: (tracks) =>
-        openSubtitlePicker(
-          tracks,
-          buildPickerActionContext({
-            container: context.container,
-            taskLabel: "Choose subtitles",
-          }),
-          context.container,
-        ),
-    });
-
-    logger.info("Subtitle resolution", {
-      provider: stateManager.getState().provider,
-      titleId: title.id,
-      type: title.type,
-      season: episode.season,
-      episode: episode.episode,
-      requestedSubLang: subLang,
-      subtitleReason: subtitleDecision.reason,
-      availableTracks: subtitleDecision.availableTracks,
-      subtitleSelected: subtitleDecision.subtitle ?? null,
-      providerSubtitleSource: stream.subtitleSource ?? "none",
-      providerSubtitleEvidence: stream.subtitleEvidence ?? null,
-    });
-    context.container.diagnosticsService.record({
-      category: "subtitle",
-      message: "Subtitle resolution",
-      context: {
-        provider: stateManager.getState().provider,
-        titleId: title.id,
-        type: title.type,
-        season: episode.season,
-        episode: episode.episode,
-        requestedSubLang: subLang,
-        subtitleReason: subtitleDecision.reason,
-        availableTracks: subtitleDecision.availableTracks,
-        subtitleSelected: subtitleDecision.subtitle ?? null,
-        providerSubtitleSource: stream.subtitleSource ?? "none",
-        providerSubtitleEvidence: stream.subtitleEvidence ?? null,
-      },
-    });
-
-    return {
-      ...stream,
-      subtitle: subtitleDecision.subtitle ?? undefined,
-    };
-  }
-
   /**
    * Rejected / aborted / skipped-history sessions must not survive coordinated
    * shutdown flush. Clears ledger state and unregisters only this phase's
@@ -4262,72 +4101,5 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         onPlayerReady: () => {},
       },
     });
-  }
-
-  private async getAnimeEpisodeOptions({
-    title,
-    mode,
-    provider,
-    cache,
-    languages,
-    signal,
-  }: {
-    title: TitleInfo;
-    mode: import("../../domain/types").ShellMode;
-    provider: import("../../services/providers/Provider").Provider | undefined;
-    cache: Map<string, readonly EpisodePickerOption[] | undefined>;
-    languages: EpisodeCatalogLanguagePreferences;
-    signal?: AbortSignal;
-  }): Promise<readonly EpisodePickerOption[] | undefined> {
-    const cacheKey = animeEpisodeCatalogCacheKey({
-      providerId: provider?.metadata.id,
-      titleId: title?.id,
-      audioPreference: languages.audioPreference,
-    });
-    if (cacheKey && cache.has(cacheKey)) {
-      return cache.get(cacheKey);
-    }
-
-    const result = await this.loadAnimeEpisodeOptions(title, mode, provider, languages, signal);
-    // Never cache a failed/aborted load: a cancelled resolve would otherwise
-    // pin the episode picker to its 1-entry fallback for the whole session.
-    if (cacheKey && result !== undefined) {
-      cache.set(cacheKey, result);
-    }
-    return result;
-  }
-
-  private async loadAnimeEpisodeOptions(
-    title: TitleInfo,
-    mode: import("../../domain/types").ShellMode,
-    provider: import("../../services/providers/Provider").Provider | undefined,
-    languages: EpisodeCatalogLanguagePreferences,
-    signal?: AbortSignal,
-  ): Promise<readonly EpisodePickerOption[] | undefined> {
-    if (
-      (mode !== "anime" && mode !== "youtube") ||
-      title.type !== "series" ||
-      !provider?.listEpisodes
-    ) {
-      return undefined;
-    }
-
-    try {
-      // Same language context `resolve` gets. Omitting it made AllAnime's
-      // `resolveAnimeAudioIntent` fall back to sub, so dub users browsed a sub
-      // episode list and then played dub — mismatched counts and labels.
-      return (
-        (await provider.listEpisodes(
-          {
-            title,
-            audioPreference: languages.audioPreference,
-            subtitlePreference: languages.subtitlePreference,
-          },
-          signal,
-        )) ?? undefined
-      );
-    } catch {
-      return undefined;
-    }
   }
 }

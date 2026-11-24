@@ -223,12 +223,10 @@ test("a late subtitle acknowledgement cannot overwrite a replacement stream", as
 });
 
 test("a provider default subtitle is cleared before playback when this session chose Off", async () => {
-  const { PlaybackPhase } = await import("@/app/playback/PlaybackPhase");
+  // Exercise the preparation path that runs after every provider/source resolve.
+  const { preparePlaybackStream: prepare } = await import("@/app/playback/playback-stream-prepare");
   const { container, dispose } = await createIsolatedContainer("off-before-playback");
   const savedProfile = { ...container.config.getRaw().movieLanguageProfile };
-  const phase = new PlaybackPhase();
-  // Exercise the preparation path that runs after every provider/source resolve.
-  const prepare = phase["preparePlaybackStream"].bind(phase);
   try {
     container.stateManager.dispatch({
       type: "SET_SESSION_TRACK_PREFERENCES",
