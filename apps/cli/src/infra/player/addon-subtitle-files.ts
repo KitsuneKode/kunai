@@ -114,7 +114,7 @@ export class AddonSubtitleFiles {
     this.closed = true;
     this.abort.abort();
     this.joiner.clear();
-    await Promise.allSettled([...this.inFlight]);
+    await Promise.allSettled(this.inFlight);
     for (const path of this.paths.values()) {
       await unlink(path).catch(() => {});
     }
