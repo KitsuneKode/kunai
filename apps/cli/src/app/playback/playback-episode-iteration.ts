@@ -76,10 +76,13 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
     provider: stateManager.getState().provider,
   });
 
+  // From here until the iteration ends, Esc / provider skip / recover cancel
+  // this episode's resolve (with intent) and a session stop aborts it.
   const resolve = armEpisodeResolve(loop, currentEpisode);
   const { controller: resolveController, abortOnSessionStop } = resolve;
 
   try {
+    // 1. Who owns this episode: a verified local file or a provider adapter.
     const authority = await resolveEpisodeSourceAuthority(loop, currentEpisode);
     if (authority.kind === "exit") return authority.step;
     const { sourceAuthority, configuredProviderId } = authority;
@@ -92,6 +95,8 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
     });
     const { recordStartupMark } = attempt;
     recordStartupMark("episode-bootstrap-started");
+
+    // 2. Episode metadata, then a playable stream, then ready for the player.
     const episodeContext = await loadEpisodeContext(loop, attempt);
     const acquired = await acquireEpisodeStream(loop, attempt, episodeContext);
     if (acquired.kind === "exit") return acquired.step;
@@ -100,10 +105,14 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
     if ((await offerPrePlayConfirm(loop, attempt, preparedStream)) === NEXT_ITERATION) {
       return NEXT_ITERATION;
     }
+
+    // 3. Play it; the next episode prefetches near EOF.
     const nextEpisodePrefetch = createNextEpisodePrefetch(loop, attempt, episodeContext, ready);
     const played = await playEpisode(loop, attempt, ready, nextEpisodePrefetch);
     if (played.kind === "exit") return played.step;
     const { result } = played;
+
+    // 4. Record what the episode achieved, then recover a failed stream.
     const quitThresholdMode = config.quitNearEndThresholdMode;
     await persistEpisodeHistory(loop, attempt, episodeContext, acquired, ready, result);
     const recovery = await recoverAfterPlayback(
@@ -115,6 +124,9 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
       quitThresholdMode,
     );
     if (recovery.kind === "exit") return recovery.step;
+
+    // 5. Act on the control the user pressed, else auto-advance, Up Next and
+    //    finally the post-play menu.
     const controlStep = await applyPlaybackControlAction(
       loop,
       attempt,

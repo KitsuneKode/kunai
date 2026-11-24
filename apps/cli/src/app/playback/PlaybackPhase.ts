@@ -3,6 +3,22 @@
 //
 // Handles episode selection → stream resolve → MPV playback → post-playback.
 // Returns when user wants to go back to search or switch mode.
+//
+// `execute` is the outline; each step lives in its own module:
+//   playback-phase-session.ts      per-execute session and per-loop state
+//   playback-episode-bootstrap.ts  mpv gate, episode / start-point choice
+//   playback-episode-iteration.ts  one loop iteration, itself an outline of:
+//     playback-episode-attempt.ts    resolve control, source authority, ids
+//     playback-episode-context.ts    episode metadata, availability, timing kick
+//     playback-stream-acquire.ts     local file / prefetch / recent / resolve
+//     playback-stream-ready.ts       timing, preparation, pre-play confirm
+//     playback-next-episode-prefetch.ts  near-EOF prefetch and handoff
+//     playback-player-launch.ts      launching the player for one file
+//     playback-history-persist.ts    history at episode end
+//     playback-recovery.ts           dead streams, refresh, failover, fallback
+//     playback-control-actions.ts    next/previous/pick/cycle controls
+//     playback-auto-advance.ts       catalog auto-next, Up Next
+//     playback-post-play-entry.ts    the post-play menu
 // =============================================================================
 
 import { resetLateSubtitleLookups } from "@/app/playback/late-subtitle-resolver";
