@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T12:46:43Z"
+lastReviewed: "2026-11-24T13:06:38Z"
 ---
 
 # Provider: AnimeGG
@@ -130,5 +130,7 @@ resolved end to end.
 
 Registered in `loadProductionProviderModules()` and first fallback after
 HiAnime in the default anime order. The November 23 hosted sweep resolved four
-streams from AnimeGG while KickAssAnime and Miruro refused access. AnimeGG
-reaches its own catalogue directly.
+streams from AnimeGG in 21.9 seconds, outside the 12-second default attempt
+budget. AnimeGG stays first among fallbacks because it reaches its own catalog
+directly and was the only fallback to resolve in that sweep. KickAssAnime and
+Miruro refused access and AllManga's stream authorization was stale.

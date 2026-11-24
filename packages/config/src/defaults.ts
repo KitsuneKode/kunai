@@ -67,8 +67,9 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // Ordering, not an allowlist: every registered anime module stays reachable.
   // `createProviderPrioritySnapshot` prepends `animeProvider`, so this array
   // holds the *rest* of the order and must not repeat the lane default.
-  // The 2026-11-23 sweep resolved HiAnime and AnimeGG. KickAssAnime and Miruro
-  // refused the runner's requests, and AllManga's stream bootstrap was stale.
+  // On 2026-11-23 HiAnime fit the default attempt budget. AnimeGG was the
+  // only fallback to resolve, in 21.9s. KickAssAnime and Miruro refused the
+  // runner's requests, and AllManga's stream bootstrap was stale.
   animeProviderPriority: ["animegg", "kickassanime", "miruro", "allanime"],
   // Bump alongside any lane-default change above; see `providerDefaultsRevision`.
   // Revision 3 leads with VidLink + HiAnime and covers both lanes.

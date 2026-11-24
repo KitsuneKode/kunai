@@ -172,6 +172,7 @@
         "@kunai/types": "workspace:*",
       },
       "devDependencies": {
+        "@kunai/config": "workspace:*",
         "@types/bun": "catalog:",
       },
       "peerDependencies": {

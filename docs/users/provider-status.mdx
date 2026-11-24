@@ -4,17 +4,17 @@ description: Daily live check on every registered provider, covering upstream re
 status: shipped
 ---
 
-A scheduled job resolves a known-good title through every production provider once a day from a clean network and publishes the result here. This board is **upstream health**, not your network's view: a region-gated provider may work fine for you (or vice versa).
+A scheduled job tries a fixture title through every production provider once a day from the hosted runner's network. Access and resolve times can differ on your network.
 
 <ProviderStatusBoard />
 
 ## What the statuses mean
 
-- **Working**: upstream reachable and a real resolve returned playable lanes.
-- **Limited**: the provider works somewhere but not for the sweep: either upstream responds yet resolve exhausted without a clear block reason (`degraded`, usually a scheme rotation or partial outage), or the sweep network is challenged (`blocked`: Cloudflare WAF, captcha). Region-gated providers often work from other regions or through a user-owned relay (`providerRelay.baseUrl`).
-- **Down**: nobody can resolve through it right now: upstream reports maintenance (`down`, 503 pages) or the front door does not answer at all (`dead`: DNS or connection failure). A sustained dead reading means the provider is gone for everyone; a one-off can be a runner-side network fault.
+- **Working** means the fixture returned streams before the default attempt deadline.
+- **Limited** means the provider exhausted its sources or returned them after the default deadline (`degraded`), or the resolver observed an access refusal (`blocked`).
+- **Down** means the front door reported maintenance (`down`) or failed to answer and the resolver returned no streams or refusal (`dead`).
 
-The small tag under each badge is the raw sweep verdict (`healthy`, `degraded`, `blocked`, `down`, `dead`) and the note column carries the specifics.
+The sweep gives each provider up to 30 seconds to resolve. The note distinguishes a resolve within that window from one that also fit the default 12-second attempt budget. Qualification measures the fixture's resolver through stream discovery and ends before the player opens the stream.
 
 ## How this affects playback
 

@@ -14,12 +14,16 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { DEFAULT_CONFIG } from "@kunai/config";
+import { providerAttemptTimeoutMs } from "@kunai/core";
 import {
   isJsonString,
+  ProviderHttpError,
   type ProviderModule,
   type ProviderResolveInput,
   type ProviderResolveResult,
   type ProviderRuntimeContext,
+  type ResolveErrorCode,
   type StreamCandidate,
 } from "@kunai/types";
 
@@ -46,6 +50,7 @@ const OUTPUT_PATH = path.resolve(
 
 const RESOLVE_TIMEOUT_MS = 30_000;
 const FRONT_DOOR_TIMEOUT_MS = 12_000;
+const DEFAULT_ATTEMPT_BUDGET_MS = providerAttemptTimeoutMs(DEFAULT_CONFIG.startupPriority);
 
 export type SweepStatus = "healthy" | "degraded" | "blocked" | "down" | "dead";
 
@@ -55,6 +60,8 @@ interface ProviderRow {
   readonly upstreamReachable: boolean;
   readonly resolveStatus: string;
   readonly resolveMs: number | null;
+  readonly qualifiedForDefaultPlayback: boolean;
+  readonly failureCode: ResolveErrorCode | null;
   readonly streams: number;
   readonly qualities: readonly string[];
   readonly servers: readonly string[];
@@ -67,6 +74,7 @@ interface ProviderRow {
 interface StatusFile {
   readonly generatedAt: string;
   readonly schemaVersion: 1;
+  readonly defaultAttemptBudgetMs: number;
   readonly providers: readonly ProviderRow[];
 }
 
@@ -230,19 +238,19 @@ export function classify(
   upstreamHttp: number | null,
   resolveStatus: string,
   streams: number,
-  firstFailureCode: string | undefined,
+  failureCode: ResolveErrorCode | undefined,
 ): Classification {
-  if (upstreamHttp === null && resolveStatus !== "resolved") {
-    return { status: "dead", note: "upstream unreachable" };
-  }
   if (resolveStatus === "resolved" && streams > 0) {
     return { status: "healthy", note: "" };
   }
-  if (firstFailureCode === "blocked") {
+  if (failureCode === "blocked") {
     return {
       status: "blocked",
       note: BLOCKED_NOTE,
     };
+  }
+  if (upstreamHttp === null && resolveStatus !== "resolved") {
+    return { status: "dead", note: "upstream unreachable" };
   }
   if (upstreamHttp === 503) {
     return { status: "down", note: "upstream reports maintenance" };
@@ -253,57 +261,96 @@ export function classify(
   return { status: "degraded", note: `resolve status ${resolveStatus}` };
 }
 
-/** Keep the class label and the provider's own failure text. A generic note alone hid the cause. */
+// Provider text can include signed absolute URLs, redirect locations, or a
+// query printed on its own. Strip those before clipping the public text.
+function redactPublicText(text: string): string {
+  return text
+    .replaceAll("\\/", "/")
+    .replace(/(?:[a-z][a-z\d+.-]*:)?\/\/\S+|\bwww\.\S+/gi, "[redacted URL]")
+    .replace(/(?:[?&]|\b)[\w%.-]+=(?:"[^"]*"|'[^']*'|\S*)|\?\S+/g, "[redacted query]")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function composeStatusNote(
   classifiedNote: string,
   failureMessage: string | undefined,
 ): string {
-  const detail = failureMessage?.replace(/\s+/g, " ").trim().slice(0, 140) ?? "";
-  if (!detail) return classifiedNote;
-  if (!classifiedNote) return detail;
-  if (classifiedNote.includes(detail)) return classifiedNote;
-  return `${classifiedNote} — ${detail}`;
+  const label = redactPublicText(classifiedNote);
+  const detail = redactPublicText(failureMessage ?? "").slice(0, 140);
+  if (!detail || label.includes(detail)) return label;
+  return label ? `${label} — ${detail}` : detail;
+}
+
+export function qualifiesForDefaultPlayback(
+  resolveStatus: string,
+  streams: number,
+  resolveMs: number,
+): boolean {
+  return resolveStatus === "resolved" && streams > 0 && resolveMs < DEFAULT_ATTEMPT_BUDGET_MS;
 }
 
 export function summarizeProbeResolution<T extends Pick<StreamCandidate, "metadata">>(
   providerId: string,
   upstreamHttp: number | null,
   result: Pick<ProviderResolveResult, "status" | "failures"> & { readonly streams: readonly T[] },
-): Classification & { readonly streams: readonly T[] } {
+  resolveMs: number,
+): Classification & {
+  readonly streams: readonly T[];
+  readonly qualifiedForDefaultPlayback: boolean;
+  readonly failureCode: ResolveErrorCode | null;
+} {
   // A watch URL alone can be handed to mpv even when extraction fails.
   const streams =
     providerId === "youtube"
       ? result.streams.filter((stream) => isJsonString(stream.metadata?.formatId))
       : result.streams;
-  const failure = result.failures[0];
   const { status } = result;
+  const resolved = status === "resolved" && streams.length > 0;
+  const failure =
+    (!resolved && result.failures.find(({ code }) => code === "blocked")) || result.failures[0];
   const classified = classify(upstreamHttp, status, streams.length, failure?.code);
-  if (status !== "resolved" && /captcha|waf|challenge/i.test(failure?.message ?? "")) {
-    classified.status = "blocked";
-    classified.note = BLOCKED_NOTE;
+  const qualified = qualifiesForDefaultPlayback(status, streams.length, resolveMs);
+  if (resolved) {
+    classified.status = qualified ? "healthy" : "degraded";
+    const budget = `${DEFAULT_ATTEMPT_BUDGET_MS / 1_000}s`;
+    classified.note = qualified
+      ? `qualified for default playback (within ${budget})`
+      : `resolved within sweep, missed the default ${budget} attempt budget`;
   }
   if (providerId === "youtube" && status === "resolved" && streams.length === 0) {
     classified.note = "yt-dlp did not discover video formats";
   }
-  return { ...classified, streams, note: composeStatusNote(classified.note, failure?.message) };
+  return {
+    ...classified,
+    streams,
+    qualifiedForDefaultPlayback: qualified,
+    failureCode: failure?.code ?? null,
+    note: composeStatusNote(classified.note, failure?.message),
+  };
 }
 
 async function probe(spec: ProbeSpec): Promise<ProviderRow> {
   const upstreamHttp = await probeFrontDoor(spec.frontDoor);
-  const started = Date.now();
+  const started = performance.now();
   const signal = AbortSignal.timeout(RESOLVE_TIMEOUT_MS);
   try {
-    const result = await spec.module.resolve(spec.input, resolveContext(signal));
-    const resolveMs = Date.now() - started;
-    const summary = summarizeProbeResolution(spec.id, upstreamHttp, result);
+    const result = await spec.module.resolve(
+      { ...spec.input, startupPriority: DEFAULT_CONFIG.startupPriority },
+      resolveContext(signal),
+    );
+    const resolveMs = Math.floor(performance.now() - started);
+    const summary = summarizeProbeResolution(spec.id, upstreamHttp, result, resolveMs);
     const { streams } = summary;
     const qualities = [
-      ...new Set(streams.map((s) => s.qualityLabel ?? "").filter((q) => q.length > 0)),
+      ...new Set(streams.map((s) => redactPublicText(s.qualityLabel ?? "")).filter(Boolean)),
     ];
     const servers = [
-      ...new Set(streams.map((s) => s.serverName ?? "").filter((s) => s.length > 0)),
+      ...new Set(streams.map((s) => redactPublicText(s.serverName ?? "")).filter(Boolean)),
     ];
-    const audio = [...new Set(streams.flatMap((s) => s.audioLanguages ?? []))];
+    const audio = [
+      ...new Set(streams.flatMap((s) => (s.audioLanguages ?? []).map(redactPublicText))),
+    ];
     const subtitleLanes =
       result.subtitles.length ||
       streams.filter((s) => (s.subtitleLanguages?.length ?? 0) > 0).length;
@@ -313,6 +360,8 @@ async function probe(spec: ProbeSpec): Promise<ProviderRow> {
       upstreamReachable: upstreamHttp !== null && upstreamHttp < 500,
       resolveStatus: result.status,
       resolveMs,
+      qualifiedForDefaultPlayback: summary.qualifiedForDefaultPlayback,
+      failureCode: summary.failureCode,
       streams: streams.length,
       qualities,
       servers,
@@ -322,39 +371,49 @@ async function probe(spec: ProbeSpec): Promise<ProviderRow> {
       note: summary.note,
     };
   } catch (error) {
+    const failureCode = error instanceof ProviderHttpError ? error.code : "unknown";
+    const classified = classify(upstreamHttp, "error", 0, failureCode);
     return {
       id: spec.id,
       upstreamHttp,
       upstreamReachable: upstreamHttp !== null && upstreamHttp < 500,
       resolveStatus: "error",
-      resolveMs: Date.now() - started,
+      resolveMs: Math.floor(performance.now() - started),
+      qualifiedForDefaultPlayback: false,
+      failureCode,
       streams: 0,
       qualities: [],
       servers: [],
       audioLanguages: [],
       subtitleLanes: 0,
-      effectiveStatus: upstreamHttp === null ? "dead" : upstreamHttp === 503 ? "down" : "degraded",
-      note: error instanceof Error ? error.message.slice(0, 140) : String(error),
+      effectiveStatus: classified.status,
+      note: composeStatusNote(
+        classified.note,
+        error instanceof Error ? error.message : String(error),
+      ),
     };
   }
 }
 
-async function main() {
-  configureYoutubeProvider({ metadataService: createYoutubeMetadataService({}) });
-  const rows = await Promise.all(PROBES.map(probe));
+export async function runProviderStatusSweep(probes: readonly ProbeSpec[], outputPath: string) {
+  const rows = await Promise.all(probes.map(probe));
   const file: StatusFile = {
     generatedAt: new Date().toISOString(),
     schemaVersion: 1,
+    defaultAttemptBudgetMs: DEFAULT_ATTEMPT_BUDGET_MS,
     providers: rows,
   };
-  fs.mkdirSync(path.dirname(OUTPUT_PATH), { recursive: true });
-  fs.writeFileSync(OUTPUT_PATH, `${JSON.stringify(file, null, 2)}\n`);
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  fs.writeFileSync(outputPath, `${JSON.stringify(file, null, 2)}\n`);
   for (const row of rows) {
     console.log(
-      `${row.id.padEnd(10)} ${row.effectiveStatus.padEnd(8)} http=${row.upstreamHttp ?? "—"} resolve=${row.resolveStatus} streams=${row.streams} ${row.note}`,
+      `${row.id.padEnd(10)} ${row.effectiveStatus.padEnd(8)} http=${row.upstreamHttp ?? "—"} resolve=${row.resolveStatus} streams=${row.streams} failure=${row.failureCode ?? "—"} ${row.note}`,
     );
   }
-  console.log(`wrote ${OUTPUT_PATH}`);
+  console.log(`wrote ${outputPath}`);
 }
 
-if (import.meta.main) await main();
+if (import.meta.main) {
+  configureYoutubeProvider({ metadataService: createYoutubeMetadataService({}) });
+  await runProviderStatusSweep(PROBES, OUTPUT_PATH);
+}
