@@ -192,7 +192,7 @@ Search, trending, recommendations and the calendar come from public catalogs: TM
 - **Series episode lists** keep working when TMDB is down for any series you have opened in the last 30 days: Kunai uses the season and episode list it saved last time, so you can still pick an episode. Release dates for series you follow use the same saved data.
 - **Movie and series search** falls back to Wikidata when TMDB is unreachable. Results carry the same TMDB ids, so picking one plays the right title; they have no posters, and the header says `Wikidata (TMDB unreachable)`. Filtered searches (`type:`, `year:` and similar) still need TMDB.
 - **Anime search** tries the other anime providers when the active one or AniList fails.
-- **The "airing today" calendar** has no fallback source yet. It needs TMDB (movies and series) or AniList (anime) to be reachable.
+- **The calendar** keeps its series rows when TMDB is down, using TVmaze's US schedule matched to the same TMDB titles (the header says `series via TVmaze (TMDB unreachable)`; those rows have no episode numbers). The anime calendar needs AniList; when one part of the calendar cannot load, the header says which (`anime schedule unavailable`) instead of quietly showing less.
 - **`/diagnostics`** has a "Catalog sources" line that says which source answered search, trending, recommendations and episode lists, and why a backup was used.
 - **AniList limits requests.** When it asks Kunai to slow down, AniList-backed rows show their fallback or saved list for up to a couple of minutes instead of waiting.
 

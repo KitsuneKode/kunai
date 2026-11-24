@@ -74,6 +74,40 @@ describe("CatalogScheduleService", () => {
     expect(calls).toBe(2);
   });
 
+  test("a stand-in calendar answer is never persisted and is reused only briefly", async () => {
+    let now = NOW;
+    let calls = 0;
+    const store = new MemoryScheduleCache();
+    const service = new CatalogScheduleService(
+      createLoaders({
+        releasingToday: async () => {
+          calls += 1;
+          return [
+            {
+              source: "tmdb",
+              titleId: "1489",
+              titleName: "Jimmy Kimmel Live",
+              type: "series",
+              releaseAt: "2026-05-08T23:35:00.000Z",
+              releasePrecision: "timestamp",
+              status: "unknown",
+              via: "TVmaze",
+            },
+          ];
+        },
+      }),
+      () => now,
+      store,
+    );
+    await service.loadReleaseWindow("series", 7);
+    await service.loadReleaseWindow("series", 7);
+    expect(calls).toBe(1);
+    expect(store.size).toBe(0);
+    now += 61_000;
+    await service.loadReleaseWindow("series", 7);
+    expect(calls).toBe(2);
+  });
+
   test("reuses persisted schedule cache across service instances", async () => {
     let calls = 0;
     const store = new MemoryScheduleCache();
@@ -397,5 +431,9 @@ class MemoryScheduleCache {
 
   set(key: string, payloadJson: string, options: { expiresAt: string }): void {
     this.entries.set(key, { payloadJson, expiresAt: options.expiresAt });
+  }
+
+  get size(): number {
+    return this.entries.size;
   }
 }

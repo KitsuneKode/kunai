@@ -56,7 +56,11 @@ export async function loadCalendarResults(
   // selected day, and subtitle counts disagree for the same response.
   const nowMs = Date.now();
   const days = 7;
-  const forwardItems = await loadUnifiedCalendarWindow(container.timelineService, days, signal);
+  const { items: forwardItems, unavailable } = await loadUnifiedCalendarWindow(
+    container.timelineService,
+    days,
+    signal,
+  );
   const items = mergeArchivedPastWindow(container, forwardItems, nowMs);
   // Collapse duplicate schedule entries for the same (titleId, releaseAt) slot so a
   // title cannot appear twice for one airing (sources occasionally emit dupes, and
@@ -165,15 +169,18 @@ export async function loadCalendarResults(
   const forYouCount = calendarPairs.filter(({ calendar }) => isCalendarItemForYou(calendar)).length;
   const newEpisodeSuffix = newEpisodeCount > 0 ? ` · ${newEpisodeCount} new for you` : "";
   const forYouSuffix = forYouCount > 0 ? ` · ${forYouCount} tracked` : "";
+  const sourceSuffix = describeCalendarSources(forwardItems, unavailable);
 
   return {
     results,
     subtitle:
       results.length > 0
-        ? `${results.length} this week · ${airingTodayCount} airing today · ${releasedCount} released${newEpisodeSuffix}${forYouSuffix}`
-        : "No releases found for the next week",
+        ? `${results.length} this week · ${airingTodayCount} airing today · ${releasedCount} released${newEpisodeSuffix}${forYouSuffix}${sourceSuffix}`
+        : `No releases found for the next week${sourceSuffix}`,
     emptyMessage:
-      "No releases found for the next week. Search and recommendations still work normally.",
+      unavailable.length > 0
+        ? `No releases found. The ${unavailable.join(" and ")} schedule could not be loaded; try again later.`
+        : "No releases found for the next week. Search and recommendations still work normally.",
   };
 }
 
@@ -269,7 +276,7 @@ function toCalendarSearchResult(item: CatalogScheduleItem, calendar: CalendarIte
     year,
     overview: formatCalendarOverview(calendar),
     posterPath: item.posterPath ?? null,
-    metadataSource: `${item.source === "anilist" ? "AniList" : "TMDB"} calendar`,
+    metadataSource: `${item.via ?? (item.source === "anilist" ? "AniList" : "TMDB")} calendar`,
     rating: typeof item.averageScore === "number" ? item.averageScore / 10 : undefined,
     popularity: item.popularity,
     calendar,
@@ -369,11 +376,35 @@ function parseArchivedCalendarItem(payloadJson: string): CatalogScheduleItem | n
   }
 }
 
+/** Which calendar lanes failed to load (shown, never silently dropped). */
+type CalendarLane = "anime" | "series" | "movie";
+
+interface UnifiedCalendarWindow {
+  readonly items: readonly CatalogScheduleItem[];
+  readonly unavailable: readonly CalendarLane[];
+}
+
+/**
+ * Header suffix naming lanes that failed and stand-in sources that answered,
+ * so a partial calendar never passes for a complete one.
+ */
+export function describeCalendarSources(
+  items: readonly CatalogScheduleItem[],
+  unavailable: readonly CalendarLane[],
+): string {
+  const standIns = [...new Set(items.flatMap((item) => (item.via ? [item.via] : [])))];
+  const parts = [
+    ...unavailable.map((lane) => `${lane} schedule unavailable`),
+    ...standIns.map((via) => `series via ${via} (TMDB unreachable)`),
+  ];
+  return parts.length > 0 ? ` · ${parts.join(" · ")}` : "";
+}
+
 async function loadUnifiedCalendarWindow(
   timelineService: CalendarContainer["timelineService"],
   days: number,
   signal?: AbortSignal,
-): Promise<readonly CatalogScheduleItem[]> {
+): Promise<UnifiedCalendarWindow> {
   // Content-kind aware: load anime + series + movie windows concurrently and merge.
   // allSettled keeps the calendar rendering even if ONE source fails — but it
   // must not turn "every source failed" or "the user cancelled" into a cheerful
@@ -383,6 +414,7 @@ async function loadUnifiedCalendarWindow(
   // `loadMovieReleaseWindow` contributes neither a success nor a failure, so a
   // placeholder `Promise.resolve([])` would have masked a total anime+series
   // outage as one fulfilled (empty) source.
+  const lanes: CalendarLane[] = ["anime", "series"];
   const tasks: Promise<readonly CatalogScheduleItem[]>[] = [
     loadWindowForMode(timelineService, "anime", days, signal),
     loadWindowForMode(timelineService, "series", days, signal),
@@ -391,6 +423,7 @@ async function loadUnifiedCalendarWindow(
     "loadMovieReleaseWindow" in timelineService &&
     typeof timelineService.loadMovieReleaseWindow === "function"
   ) {
+    lanes.push("movie");
     tasks.push(timelineService.loadMovieReleaseWindow(days, signal));
   }
 
@@ -410,7 +443,11 @@ async function loadUnifiedCalendarWindow(
   }
   // A fulfilled empty array IS a real successful source response — an honestly
   // quiet week stays success.
-  return fulfilled.flat();
+  const unavailable = settled.flatMap((result, index) => {
+    const lane = lanes[index];
+    return result.status === "rejected" && lane ? [lane] : [];
+  });
+  return { items: fulfilled.flat(), unavailable };
 }
 
 async function loadWindowForMode(

@@ -7,7 +7,12 @@
 // catalog indistinguishable from a healthy one. Process-wide and bounded: one
 // entry per capability and lane.
 
-export type CatalogCapability = "search" | "trending" | "recommendations" | "series-episodes";
+export type CatalogCapability =
+  | "search"
+  | "trending"
+  | "recommendations"
+  | "series-episodes"
+  | "calendar";
 export type CatalogLane = "movie-series" | "anime";
 
 export interface CatalogSourceAnswer {
@@ -76,6 +81,7 @@ const CAPABILITY_LABELS = {
   trending: "trending",
   recommendations: "recommendations",
   "series-episodes": "episodes",
+  calendar: "calendar",
 } satisfies Record<CatalogCapability, string>;
 
 /** The diagnostics line for the ledger. */

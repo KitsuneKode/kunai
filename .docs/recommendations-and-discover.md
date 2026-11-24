@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T06:33:28Z"
+lastReviewed: "2026-11-24T07:11:02Z"
 ---
 
 # Kunai — Recommendations And Discover
@@ -124,6 +124,39 @@ linked titles. The result reports `sourceName: "Wikidata (TMDB unreachable)"`
 and `diagnosis.code: "catalog-fallback"`; a filtered (discover-style) search, a
 caller abort, or a Wikidata failure keeps the original TMDB error.
 
+### Catalog source contract
+
+`apps/cli/src/services/catalog/catalog-source.ts` is the Phase 1 contract: a
+capability is answered by an ordered list of `CatalogSource`s (primary first,
+then stand-ins that return the SAME ids), and `walkCatalogSources` owns the
+shared rules: a caller abort propagates and never reaches a stand-in, a
+stand-in that failed is skipped for 10 minutes, an empty answer hands over
+only when the capability says so (`handsOver`), and every answer is written
+to the ledger below. A source that cannot prove identity (exact external ids,
+never a name match) does not belong in a list. The calendar uses it today;
+search (`SearchRoutingService`) and trending (`CatalogDiscoveryService`, which
+also hedges to a saved list) still walk their own chains and are next.
+
+### Calendar fallback: TVmaze mapped through Wikidata
+
+When TMDB's airing-today list fails, the series calendar is rebuilt from
+TVmaze's broadcast and streaming schedules for the day (US)
+(`apps/cli/src/services/catalog/tvmaze-schedule.ts`). Each show is mapped to
+its TMDB id in one Wikidata SPARQL request by its IMDb id (P345) or TheTVDB id
+(P4835) (`mapShowsToTmdbTvIds` in `wikidata-search.ts`); a show that does not
+map, maps to two TMDB ids, or whose two ids disagree is dropped. Entries carry
+`via: "TVmaze"` and **no season or episode number**: TVmaze numbering can
+differ from TMDB's, and the calendar turns an episode number on a released
+entry into an optimistic "+N new" badge. Stand-in answers are kept in memory
+for 60 seconds and never persisted (`CatalogScheduleService.loadCached`,
+`isStandIn`), so the primary is retried soon and a restart never treats them
+as TMDB's own. The calendar header says `series via TVmaze (TMDB unreachable)`
+and each row's source reads "TVmaze calendar".
+
+The anime calendar has no stand-in: Kitsu's `nextRelease` is empty for most
+airing titles and Jikan is unreachable from some networks, so a guess would be
+worse than the honest "anime schedule unavailable".
+
 ### Catalog source ledger
 
 `apps/cli/src/services/catalog/catalog-source-ledger.ts` keeps the latest
@@ -204,7 +237,7 @@ flow.
 
 - Add stronger visual verification for discover, calendar, and random loading/layout at small and wide terminal sizes.
 - Keep refining the discover companion treatment inside browse so recommendations, calendar entries, and random picks feel native.
-- The global "airing today" calendar has no fallback source and does not show cache age; with no usable schedule cache and TMDB/AniList down it reports "Calendar sources unavailable". Per-title release info for followed series does fall back, to the last-known-good TMDB responses (below).
+- The anime calendar has no fallback source (AniList only; see "Calendar fallback" below), and the calendar does not show cache age. A lane that fails is named in the header ("anime schedule unavailable"); with every lane down it reports "Calendar sources unavailable". Per-title release info for followed series falls back to the last-known-good TMDB responses (below).
 - Search has no fallback catalog source yet; the `CatalogSource` contract (provider-platform plan, phase 1) is where it lands.
 - Personalized recommendation rows are keyed by the top history seeds and kept for the retention window with no per-namespace cap; add one if the table grows noticeably.
 - Anime recommendation entry points can treat a numeric AniList history id as a TMDB id (pre-existing); route by media kind and external ids.
