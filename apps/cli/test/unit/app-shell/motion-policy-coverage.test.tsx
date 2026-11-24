@@ -188,6 +188,7 @@ describe("motion policy coverage inventory", () => {
     const commentOnly = `
       // reducedMotionEnabled is mentioned here and must not count as a gate
       export function spin() {
+        // sleep-allow: synthetic source fixture for the motion audit, not a wait this test runs
         setTimeout(() => setFrame(1), 80);
       }
     `;
@@ -195,6 +196,7 @@ describe("motion policy coverage inventory", () => {
       import { reducedMotionEnabled } from "./motion-policy";
       export function spin() {
         if (reducedMotionEnabled()) return;
+        // sleep-allow: synthetic source fixture for the motion audit, not a wait this test runs
         setInterval(() => setFrame(1), 80);
       }
     `;

@@ -286,7 +286,11 @@ export class UsageAnalyticsService {
         // hop. Refusing to follow one at all is simpler than re-validating each.
         redirect: "error",
       });
-      return response.status >= 500 ? "retry" : "permanent";
+      const outcome = response.status >= 500 ? "retry" : "permanent";
+      // The status is the whole answer. Leaving the body unread pins the
+      // connection until the socket times out.
+      await response.body?.cancel().catch(() => undefined);
+      return outcome;
     } catch {
       // Network error, timeout, or abort — all transient.
       return "retry";

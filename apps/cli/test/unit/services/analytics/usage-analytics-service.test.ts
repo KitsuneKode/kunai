@@ -382,6 +382,27 @@ describe("endpoint configuration", () => {
     expect(isTransportSafeAnalyticsEndpoint("http://ingest.test/ping")).toBe(false);
   });
 
+  test("an opted-in ping cancels the unread response body", async () => {
+    const config = makeConfig({ analytics: "enabled", installId: UUID });
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new TextEncoder().encode("ok"));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const service = makeService(config, {
+      fetchImpl: async () => new Response(body, { status: 204 }),
+    });
+
+    await service.maybePing({ isInteractive: true });
+
+    expect(cancelled).toBe(true);
+    expect(config.rawRef.lastAnalyticsPingAt).toBeGreaterThan(0);
+  });
+
   test("an opted-in install sends nothing to a non-https endpoint", async () => {
     const config = makeConfig({ analytics: "enabled", installId: UUID });
     let calls = 0;

@@ -451,10 +451,11 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // November 24 Ink 8 + dependency refresh measured 3,202,977 bytes.
 // November 24 plain/screen-reader mode across app-shell surfaces plus light and
 // high-contrast themes measured 3,224,652 bytes (+21,675).
-// November 24 plain-mode recheck merged with the dead-code prune measured
-// 3,221,718 bytes (-2,934). 3153 KiB leaves 6,954 bytes; public launcher
-// budgets below are unchanged.
-export const NPM_BUNDLE_BUDGET_KB = 3_153;
+// November 24 streaming relay cap, locked manifest reset, registered toast
+// timer, and unread-body cancels measured 3,210,429 bytes.
+// November 24 plain-mode recheck on that tree measured 3,220,665 bytes.
+// 3152 KiB leaves 6,983 bytes; public launcher budgets below are unchanged.
+export const NPM_BUNDLE_BUDGET_KB = 3_152;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

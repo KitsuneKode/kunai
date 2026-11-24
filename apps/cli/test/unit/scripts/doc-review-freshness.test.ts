@@ -3,6 +3,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { withoutGitEnv } from "../../helpers/git-env";
 import { storageRootEnv } from "../../helpers/storage-env";
 
 const verifier = resolve(import.meta.dir, "../../../../../scripts/verify-doc-frontmatter.ts");
@@ -62,7 +63,7 @@ for (const scenario of [
   test(scenario.name, () => {
     const root = mkdtempSync(join(tmpdir(), "kunai-doc-freshness-"));
     const env = {
-      ...process.env,
+      ...withoutGitEnv(),
       ...storageRootEnv(root),
       GIT_CONFIG_NOSYSTEM: "1",
       GIT_CONFIG_GLOBAL: join(root, "gitconfig"),

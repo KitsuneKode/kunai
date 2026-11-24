@@ -199,7 +199,7 @@ describe("BackgroundWorkScheduler", () => {
     ).toBe(true);
 
     const drain = scheduler.drain();
-    await Bun.sleep(0);
+    await nextTurn();
     scheduler.beginShutdown("app-exit");
     releaseActive();
     const result = await drain;
@@ -309,3 +309,9 @@ describe("BackgroundWorkScheduler", () => {
     expect(ran).toEqual(["fresh"]);
   });
 });
+
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}

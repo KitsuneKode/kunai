@@ -84,6 +84,7 @@ test.each(["provider", "attached"] as const)(
     const clock = spyOn(Date, "now").mockImplementation(() => now);
     const tick = async (ms: number) => {
       await act(async () => {
+        // sleep-allow: waits for a real subtitle picker frame; no clock seam
         await Bun.sleep(ms);
       });
     };

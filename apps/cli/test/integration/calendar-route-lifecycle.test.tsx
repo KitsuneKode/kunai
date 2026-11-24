@@ -45,6 +45,7 @@ async function flush(): Promise<void> {
 async function pressEscape(handle: RenderHandle): Promise<void> {
   await act(async () => {
     handle.stdin.enqueue("\u001b");
+    // sleep-allow: Ink route debounce; the component clock is not injected
     await new Promise((resolve) => setTimeout(resolve, 60));
   });
 }

@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 
+import type { SearchResult } from "@/domain/types";
 import {
   CatalogDiscoveryService,
   DiscoveryUnavailableError,
@@ -196,6 +197,62 @@ test("CatalogDiscoveryService never caches a failed surprise load", async () => 
   expect((await service.loadSurprise("series", undefined, options))[0]?.title).toBe("Spin");
   expect(calls).toBe(2);
 });
+
+test("a surprise load survives its first caller leaving while another still waits", async () => {
+  // The load used to run on the first caller's signal, so that caller leaving
+  // cancelled the spin for a second caller still waiting on it.
+  const answer = Promise.withResolvers<readonly SearchResult[]>();
+  let calls = 0;
+  const service = new CatalogDiscoveryService({
+    anime: async () => [],
+    tmdb: async () => [],
+    tmdbSurprise: (_options, signal) => {
+      calls += 1;
+      return new Promise((resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+        void answer.promise.then(resolve);
+      });
+    },
+  });
+  const options = { random: () => 0 };
+  const leaving = new AbortController();
+  const first = service.loadSurprise("series", leaving.signal, options);
+  const second = service.loadSurprise("series", undefined, options);
+  leaving.abort();
+  await expect(first).rejects.toThrow();
+  answer.resolve([spin("Spin")]);
+  expect((await second)[0]?.title).toBe("Spin");
+  expect(calls).toBe(1);
+});
+
+test("a surprise follower that leaves stops waiting at once", async () => {
+  const answer = Promise.withResolvers<readonly SearchResult[]>();
+  const service = new CatalogDiscoveryService({
+    anime: async () => [],
+    tmdb: async () => [],
+    tmdbSurprise: () => answer.promise,
+  });
+  const options = { random: () => 0 };
+  const first = service.loadSurprise("series", undefined, options);
+  const leaving = new AbortController();
+  let followerOutcome = "waiting";
+  const follower = service.loadSurprise("series", leaving.signal, options).then(
+    () => (followerOutcome = "resolved"),
+    () => (followerOutcome = "rejected"),
+  );
+  leaving.abort();
+  await Promise.resolve();
+  await Promise.resolve();
+  // Settled by its own signal, while the shared load is still running.
+  expect(followerOutcome).toBe("rejected");
+  answer.resolve([spin("Spin")]);
+  expect((await first)[0]?.title).toBe("Spin");
+  await follower;
+});
+
+function spin(title: string): SearchResult {
+  return { id: "1", type: "movie", title, year: "2026", overview: "", posterPath: null };
+}
 
 /** Settles to the rejection reason, with the handler attached up front. */
 function captureRejection(promise: Promise<unknown>): Promise<unknown> {

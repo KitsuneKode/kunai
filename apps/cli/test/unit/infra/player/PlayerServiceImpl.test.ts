@@ -634,7 +634,7 @@ describe("PlayerServiceImpl playback generations", () => {
     ).persistentSession = {
       isAlive: () => true,
       async close() {
-        await Bun.sleep(0);
+        await nextTurn();
       },
     };
 
@@ -724,11 +724,11 @@ describe("PlayerServiceImpl shutdown", () => {
       displayTitle: "Episode 1",
       abortSignal: abortController.signal,
     });
-    await Bun.sleep(0);
+    await nextTurn();
     abortController.abort("session-shutdown");
     service.beginShutdown();
     publishControl();
-    await Bun.sleep(0);
+    await nextTurn();
     const observedStopReason = stopReason;
     finishPlayback(createPlaybackResult());
     await playing;
@@ -768,9 +768,9 @@ describe("PlayerServiceImpl shutdown", () => {
       displayTitle: "Episode 1",
       abortSignal: abortController.signal,
     });
-    await Bun.sleep(0);
+    await nextTurn();
     abortController.abort("session-shutdown");
-    await Bun.sleep(0);
+    await nextTurn();
     const observedStopReason = stopReason;
     finishPlayback(createPlaybackResult());
     await playing;
@@ -884,7 +884,7 @@ describe("PlayerServiceImpl shutdown", () => {
     ).persistentSessionCreation = creation;
 
     const release = service.releasePersistentSession();
-    await Bun.sleep(0);
+    await nextTurn();
     expect(closed).toBe(false);
 
     resolveCreation({
@@ -922,7 +922,7 @@ describe("PlayerServiceImpl shutdown", () => {
 
     const first = service.releasePersistentSession();
     const second = service.releasePersistentSession();
-    await Bun.sleep(0);
+    await nextTurn();
     expect(closeCalls).toBe(1);
 
     resolveClose();
@@ -952,7 +952,7 @@ describe("PlayerServiceImpl shutdown", () => {
       url: "https://cdn.example/show/episode.mp4",
       displayTitle: "Episode 1",
     });
-    await Bun.sleep(0);
+    await nextTurn();
 
     await expect(
       service.play(createStream(), {
@@ -1024,3 +1024,9 @@ describe("PlayerServiceImpl shutdown", () => {
     expect(killedWith).toBe("SIGKILL");
   });
 });
+
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}

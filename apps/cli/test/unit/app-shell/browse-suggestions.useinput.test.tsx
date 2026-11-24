@@ -61,7 +61,9 @@ function localSuggestion(id: string, title: string): SearchSuggestion<SearchResu
 async function nextMacrotask(): Promise<void> {
   // A single event-loop yield flushes the debounce-0 catalog timer — this is a
   // scheduling boundary, not a sleep: the callback is already queued.
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
 }
 
 async function pressEscape(handle: { stdin: { enqueue: (data: string) => void } }): Promise<void> {
@@ -69,6 +71,7 @@ async function pressEscape(handle: { stdin: { enqueue: (data: string) => void } 
     handle.stdin.enqueue("\x1b");
     // Ink defers a lone ESC briefly to disambiguate escape sequences — same
     // convention as library-input-ownership's pressEscape.
+    // sleep-allow: Ink suggestion debounce; the component clock is not injected
     await new Promise((resolve) => setTimeout(resolve, 60));
   });
 }

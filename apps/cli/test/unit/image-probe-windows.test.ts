@@ -75,8 +75,8 @@ describe("probeTerminalGraphics", () => {
       env: { OS: "Windows_NT", WT_SESSION: "abc" },
     });
 
-    // A Windows console round-trips through conhost; the reply is not immediate.
-    setTimeout(() => stdin.emit("data", Buffer.from("[?61;4;6;22c", "latin1")), 150);
+    // The probe is already waiting on stdin. Deliver the reply on the next turn.
+    setImmediate(() => stdin.emit("data", Buffer.from("[?61;4;6;22c", "latin1")));
 
     expect(await pending).toEqual({ sixel: true, kittyGraphics: false });
     // The query must actually have been written, and raw mode restored after.

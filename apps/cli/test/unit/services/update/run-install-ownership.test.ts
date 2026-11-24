@@ -188,6 +188,7 @@ test("holds launcher and manifest publication ownership across package command a
     },
     layout,
   );
+  // sleep-allow: negative wait — proves activation stays blocked while the package lock is held; the install path has no "blocked" observable to await
   await Bun.sleep(25);
   expect(nativeActivated).toBe(false);
 

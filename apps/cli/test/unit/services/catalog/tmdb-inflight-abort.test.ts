@@ -67,3 +67,31 @@ describe("TMDB in-flight requests and cancelled callers", () => {
     expect(unhandled).toBe(0);
   });
 });
+
+describe("TMDB in-flight requests and a session clear", () => {
+  test("a request cleared mid-flight answers its caller but never writes the cache", async () => {
+    const answers: Array<(body: { readonly title: string }) => void> = [];
+    globalThis.fetch = Object.assign(
+      (): Promise<Response> =>
+        new Promise<Response>((resolve) => {
+          answers.push((body) => resolve(Response.json(body)));
+        }),
+      { preconnect: originalFetch.preconnect },
+    );
+    const before = fetchTmdbJsonCached("/movie/552");
+    clearTmdbSessionCache();
+    // A caller after the refresh starts its own request instead of joining.
+    const after = fetchTmdbJsonCached("/movie/552");
+    expect(answers).toHaveLength(2);
+
+    answers[1]?.({ title: "Newer" });
+    expect(await after).toEqual({ title: "Newer" });
+    // The pre-refresh request settles last; its caller still gets an answer.
+    answers[0]?.({ title: "Older" });
+    expect(await before).toEqual({ title: "Older" });
+
+    // The session cache holds the post-refresh answer, with no new request.
+    expect(await fetchTmdbJsonCached("/movie/552")).toEqual({ title: "Newer" });
+    expect(answers).toHaveLength(2);
+  });
+});

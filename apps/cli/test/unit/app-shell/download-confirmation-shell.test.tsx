@@ -156,6 +156,7 @@ describe("DownloadConfirmationContent", () => {
     try {
       await act(async () => {
         handle.stdin.enqueue("");
+        // sleep-allow: Ink confirmation debounce; the component clock is not injected
         await new Promise((resolve) => setTimeout(resolve, 60));
       });
       expect(results).toEqual(["cancelled"]);

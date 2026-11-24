@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26"
+lastReviewed: "2026-11-24T10:41:51Z"
 ---
 
 # Playback Source Inventory Contract
@@ -197,7 +197,11 @@ playback layer. The key represents output-equivalent playable work: title,
 episode, provider, language preferences, source/stream/quality selection,
 freshness policy, and work purpose. It intentionally does not include the budget
 lane, so an exact near-EOF prefetch and foreground playback request can join the
-same physical resolve.
+same physical resolve. The join itself is `createKeyedJoiner`
+(`apps/cli/src/infra/concurrency/keyed-joiner.ts`): each consumer leaves on its
+own signal, the last one out aborts the resolve with its reason, and a consumer
+arriving after that starts a fresh resolve rather than joining the cancelled
+one.
 
 Budget lane is still recorded in the local ledger:
 
