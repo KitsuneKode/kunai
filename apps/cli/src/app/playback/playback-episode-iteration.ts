@@ -12,12 +12,6 @@ import { episodeInfoFromSelection } from "@/app/bootstrap/episode-info-from-cata
 import { resolveTitleHistoryLookupId } from "@/app/bootstrap/title-info";
 import { confirmPlaybackStart } from "@/app/playback/confirmed-playback-start";
 import {
-  adoptEpisodePrefetchBundle,
-  isEpisodePrefetchEligible,
-  type EpisodePrefetchProgress,
-  type EpisodePrefetchTarget,
-} from "@/app/playback/episode-prefetch";
-import {
   MAX_AUTO_SOURCE_RECOVER_ATTEMPTS,
   releasePersistentMpvForTerminalFailure,
   shouldReleasePersistentMpvBeforePostPlay,
@@ -33,6 +27,7 @@ import { loadEpisodeContext } from "@/app/playback/playback-episode-context";
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback/playback-episode-picker";
 import { episodeIdentityForHistory } from "@/app/playback/playback-history-identity";
 import { createPlaybackIteration } from "@/app/playback/playback-iteration";
+import { createNextEpisodePrefetch } from "@/app/playback/playback-next-episode-prefetch";
 import { resolvePlaylistAutoNextCountdown } from "@/app/playback/playback-outcome";
 import {
   updatePlaybackFeedback,
@@ -81,7 +76,6 @@ import {
   startFromBeginning,
 } from "@/app/playback/playback-start-intent";
 import { acquireEpisodeStream } from "@/app/playback/playback-stream-acquire";
-import { resolveEpisodePrefetchBundle } from "@/app/playback/playback-stream-prepare";
 import { offerPrePlayConfirm, readyEpisodeStream } from "@/app/playback/playback-stream-ready";
 import type { AutoAdvanceGuards } from "@/app/playback/policies/auto-advance-policy";
 import {
@@ -108,7 +102,7 @@ import {
   trustedProgressFromPlaybackResult,
 } from "@/domain/playback/progress-engage-policy";
 import { formatQueueEntryLabel } from "@/domain/queue/queue-entry-label";
-import { type PlaybackResult, type SearchResult, isDetachedHandoffResult } from "@/domain/types";
+import { type PlaybackResult, isDetachedHandoffResult } from "@/domain/types";
 import { PlaybackAbortedError } from "@/infra/player/playback-aborted";
 import { classifyPlaybackFailureFromResult } from "@/infra/player/playback-failure-classifier";
 import { buildRecoveryDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
@@ -228,154 +222,9 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
     const startIntent = run.pendingStart;
     run.pendingStart = startFromBeginning();
 
-    let prefetchedRecommendationItems: readonly SearchResult[] | null = null;
-    let nextPrefetchProgress: EpisodePrefetchProgress = {};
-    const buildNextPrefetchTarget = (): EpisodePrefetchTarget | null => {
-      if (sourceAuthority.kind !== "provider") return null;
-      const nextEp = episodeAvailability.nextEpisode;
-      if (!nextEp) return null;
-      const prefetchProviderId = providerHandoff.nextEpisodeProviderId;
-      if (!providerRegistry.get(prefetchProviderId)) return null;
-      return buildPrefetchTarget(nextEp, prefetchProviderId);
-    };
-    const handoffNextEpisodePrefetch = async (
-      target: EpisodePrefetchTarget,
-      operation: "playback.prefetch-wait" | "post-playback.autonext.prefetch-wait",
-    ) => {
-      if (sourceAuthority.kind !== "provider") return;
-      await adoptEpisodePrefetchBundle({
-        handle: episodePrefetch,
-        target,
-        run: (signal) => runNextEpisodePrefetch(signal, target),
-        getProgress: () => nextPrefetchProgress,
-        onWaiting: () =>
-          updatePlaybackFeedback(context, {
-            detail: "Preparing next episode",
-            note: "Still preparing a source in the background",
-          }),
-        recordWait: (wait) => {
-          diagnosticsService.record({
-            category: "playback",
-            operation,
-            message: wait.bundle
-              ? "Prefetch completed during episode handoff wait"
-              : "Prefetch grace window elapsed during episode handoff",
-            context: {
-              titleId: title.id,
-              nextSeason: target.episode.season,
-              nextEpisode: target.episode.episode,
-              completed: wait.bundle !== null,
-              waitResult: wait.outcome,
-              waitedMs: wait.waitedMs,
-              prepared: wait.bundle?.prepared ?? false,
-            },
-          });
-        },
-      });
-    };
-    const runNextEpisodePrefetch = (signal: AbortSignal, target: EpisodePrefetchTarget) => {
-      if (sourceAuthority.kind !== "provider") return Promise.resolve(null);
-      const nextEp = target.episode;
-      const prefetchMetadata = providerRegistry.get(target.providerId);
-      if (!prefetchMetadata) {
-        return Promise.resolve(null);
-      }
-      return resolveEpisodePrefetchBundle(context, {
-        title,
-        nextEpisode: nextEp,
-        providerId: prefetchMetadata.metadata.id,
-        target,
-        onProgress: (progress) => {
-          nextPrefetchProgress = { ...nextPrefetchProgress, ...progress };
-        },
-        signal,
-      })
-        .then((bundle) => {
-          if (bundle) {
-            diagnosticsService.record({
-              category: "playback",
-              message: "Prefetch resolved successfully",
-              context: {
-                titleId: title.id,
-                nextSeason: nextEp.season,
-                nextEpisode: nextEp.episode,
-                providerId: prefetchMetadata.metadata.id,
-                resolvedProviderId: bundle.resolvedProviderId,
-                prepared: bundle.prepared,
-              },
-            });
-          }
-          return bundle;
-        })
-        .catch((err) => {
-          diagnosticsService.record({
-            category: "playback",
-            level: "warn",
-            message: "Prefetch resolve failed",
-            context: {
-              titleId: title.id,
-              nextSeason: nextEp.season,
-              nextEpisode: nextEp.episode,
-              providerId: prefetchMetadata.metadata.id,
-              error: err instanceof Error ? err.message : String(err),
-            },
-          });
-          return null;
-        });
-    };
-    const maybePrefetchNext = async () => {
-      if (sourceAuthority.kind !== "provider" || container.config.powerSaverMode) {
-        return;
-      }
-      if (
-        !isEpisodePrefetchEligible({
-          titleType: title.type,
-          hasNextEpisode: Boolean(episodeAvailability.nextEpisode),
-          stopAfterCurrent: run.playbackSession.stopAfterCurrent,
-          sessionMode: run.playbackSession.mode,
-          autoplayPaused: run.playbackSession.autoplayPaused,
-          networkAllowed: playbackNetworkAllowed,
-        })
-      ) {
-        return;
-      }
-      const nextEp = episodeAvailability.nextEpisode;
-      const prefetchProviderId = providerHandoff.nextEpisodeProviderId;
-      const prefetchMetadata = providerRegistry.get(prefetchProviderId);
-      if (nextEp && prefetchMetadata) {
-        await selectionCoordinator.hydrate(prefetchMetadata.metadata.id, nextEp);
-      }
-      const target = buildNextPrefetchTarget();
-      if (!target) return;
-      nextPrefetchProgress = {};
-      episodePrefetch.schedule(target, (signal) => runNextEpisodePrefetch(signal, target));
-
-      if (
-        container.config.recommendationRailEnabled &&
-        prefetchedRecommendationItems === null &&
-        stateManager.getState().mode !== "youtube" &&
-        !title.id.startsWith("youtube") &&
-        // TMDB recommendations need a TMDB id. Anime titles carry AniList
-        // ids (often bare numbers), which TMDB would read as an unrelated
-        // show; anime post-play uses the AniList recommendations path.
-        stateManager.getState().mode !== "anime" &&
-        title.isAnime !== true
-      ) {
-        container.backgroundWorkScheduler.enqueue({
-          id: `recommendation-prefetch:${title.type}:${title.id}`,
-          lane: "recommendation-warm",
-          signal: context.signal,
-          run: async () => {
-            const section = await container.recommendationService.getForTitle(title.id, title.type);
-            prefetchedRecommendationItems = section.items.filter(
-              (item) => item.title.trim().length > 0,
-            );
-          },
-        });
-        void container.backgroundWorkScheduler.drain();
-      }
-    };
-
+    const nextEpisodePrefetch = createNextEpisodePrefetch(loop, attempt, episodeContext, ready);
+    const { buildNextPrefetchTarget, handoffNextEpisodePrefetch, maybePrefetchNext } =
+      nextEpisodePrefetch;
     if (context.signal.aborted) {
       stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
       host.ledger.discard();
@@ -1485,7 +1334,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
     });
     const recommendationRailItems = await recommendationRail.resolveRailItems({
       mode: stateManager.getState().mode,
-      prefetchedItems: prefetchedRecommendationItems,
+      prefetchedItems: nextEpisodePrefetch.prefetchedRecommendationItems,
       autoContinueIntoRecommendationPossible,
     });
     const topRec = recommendationRailItems[0];
@@ -1612,7 +1461,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
       catalogAutoplayEndBanner,
       shellEpisodePicker,
       watchedEntries,
-      prefetchedRecommendationItems,
+      prefetchedRecommendationItems: nextEpisodePrefetch.prefetchedRecommendationItems,
       currentAnimeEpisodes,
       preparedStream,
       resolvedProviderId: attempt.resolvedProviderId,
