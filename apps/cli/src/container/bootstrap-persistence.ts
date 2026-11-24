@@ -5,7 +5,7 @@ import { dbg, initLogger } from "@/logger";
 import { createCatalogDurableCache } from "@/services/catalog/catalog-durable-cache";
 import { setDefaultCatalogDurableCache } from "@/services/catalog/CatalogDiscoveryService";
 import { createTmdbDurableCache } from "@/services/catalog/tmdb-durable-cache";
-import { setTmdbDurableCache } from "@/services/catalog/tmdb-proxy";
+import { setTmdbDurableCache, setTmdbUserKeySource } from "@/services/catalog/tmdb-proxy";
 import { runHistoryIdentityConsolidator } from "@/services/history-metadata/HistoryIdentityConsolidator";
 import { runHistoryWatchLedgerBackfill } from "@/services/history-metadata/HistoryWatchLedgerBackfill";
 import { runOfflineAssetIdentityBackfill } from "@/services/offline/offline-asset-identity-backfill";
@@ -413,6 +413,8 @@ export async function bootstrapPersistence(
     onFallback: (backend, reason) => dbg("credential-vault", `using ${backend} backend: ${reason}`),
   });
   const config = await ConfigServiceImpl.load(configStore, credentialVault);
+  // Read live per request, so a key saved in settings applies without a restart.
+  setTmdbUserKeySource(() => config.tmdbApiKey);
 
   // Theme applies here, once, before any frame renders: `KUNAI_THEME` is a
   // per-run override that is never persisted; otherwise the configured theme.

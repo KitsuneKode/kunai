@@ -39,6 +39,35 @@ import type {
 import type { ConfigStore } from "./ConfigStore";
 import { DEFAULT_CONFIG } from "./ConfigStore";
 import { CREDENTIAL_KEYS, type CredentialVaultPort } from "./credential-vault";
+
+/**
+ * Config fields whose values live in the OS credential vault (Keychain,
+ * Windows Credential Manager, Secret Service) when one is available. The
+ * in-memory config keeps serving them, so consumers never learn where they
+ * live; config.json carries "" once the vault holds a verified copy.
+ */
+const VAULTED_CONFIG_FIELDS = ["videasySessionToken", "tmdbApiKey", "wyzieApiKey"] as const;
+type VaultedConfigField = (typeof VAULTED_CONFIG_FIELDS)[number];
+
+const VAULT_KEY_BY_FIELD = {
+  videasySessionToken: CREDENTIAL_KEYS.videasySessionToken,
+  tmdbApiKey: CREDENTIAL_KEYS.tmdbApiKey,
+  wyzieApiKey: CREDENTIAL_KEYS.wyzieApiKey,
+} satisfies Record<VaultedConfigField, string>;
+
+function isVaultedConfigField(key: string): key is VaultedConfigField {
+  return VAULTED_CONFIG_FIELDS.some((field) => field === key);
+}
+
+function scrubVaultedFields(
+  config: KitsuneConfig,
+  scrub: ReadonlySet<VaultedConfigField>,
+): KitsuneConfig {
+  if (scrub.size === 0) return config;
+  const scrubbed = { ...config };
+  for (const field of scrub) scrubbed[field] = "";
+  return scrubbed;
+}
 import type { TuningConfig } from "./tuning";
 import { resolveTuning } from "./tuning";
 
@@ -192,8 +221,8 @@ export class ConfigServiceImpl implements ConfigService {
     this.config = { ...DEFAULT_CONFIG };
   }
 
-  /** Whether the vault holds the videasy token — hydrated or migrated this session. */
-  private videasyTokenVaulted = false;
+  /** Secret fields the vault holds — hydrated or migrated this session. */
+  private readonly vaultedFields = new Set<VaultedConfigField>();
 
   static async load(store: ConfigStore, vault?: CredentialVaultPort): Promise<ConfigServiceImpl> {
     const load = () => ConfigServiceImpl.loadWithinLock(store, vault);
@@ -360,25 +389,28 @@ export class ConfigServiceImpl implements ConfigService {
     // no longer carries it, or migrate plaintext that predates the vault. The
     // scrubbed write below is what removes it from disk — the in-memory config
     // keeps serving it so consumers never learn where it lives.
-    let videasyVaultResave = false;
+    let vaultResave = false;
     if (vault && vault.backend !== "file") {
-      try {
-        const key = CREDENTIAL_KEYS.videasySessionToken;
-        if (service.config.videasySessionToken) {
-          await vault.set(key, service.config.videasySessionToken);
-          if ((await vault.get(key)) === service.config.videasySessionToken) {
-            service.videasyTokenVaulted = true;
-            videasyVaultResave = true;
+      for (const field of VAULTED_CONFIG_FIELDS) {
+        try {
+          const key = VAULT_KEY_BY_FIELD[field];
+          const plaintext = service.config[field];
+          if (plaintext) {
+            await vault.set(key, plaintext);
+            if ((await vault.get(key)) === plaintext) {
+              service.vaultedFields.add(field);
+              vaultResave = true;
+            }
+          } else {
+            const vaulted = await vault.get(key);
+            if (vaulted) {
+              service.config = { ...service.config, [field]: vaulted };
+              service.vaultedFields.add(field);
+            }
           }
-        } else {
-          const vaulted = await vault.get(key);
-          if (vaulted) {
-            service.config = { ...service.config, videasySessionToken: vaulted };
-            service.videasyTokenVaulted = true;
-          }
+        } catch {
+          // Vault write/read failed — keep the plaintext and retry next launch.
         }
-      } catch {
-        // Vault write/read failed — keep the plaintext and retry next launch.
       }
     }
     // Normalization heals on disk: a key whose stored value parsed but
@@ -389,8 +421,9 @@ export class ConfigServiceImpl implements ConfigService {
     for (const key of Object.keys(loaded) as (keyof KitsuneConfig)[]) {
       if (loaded[key] === undefined) continue;
       // Hydration is not permission to overwrite a rotated native token.
-      if (key === "videasySessionToken" && loaded[key] === "" && service.videasyTokenVaulted)
+      if (isVaultedConfigField(key) && loaded[key] === "" && service.vaultedFields.has(key)) {
         continue;
+      }
       if (JSON.stringify(loaded[key]) !== JSON.stringify(service.config[key])) {
         service.dirtyKeys.add(key);
       }
@@ -399,7 +432,7 @@ export class ConfigServiceImpl implements ConfigService {
       requiresExplicitAnalyticsConsent ||
       repairedAnalyticsIdentity ||
       migratedVideasyAppId ||
-      videasyVaultResave ||
+      vaultResave ||
       migratedAnimeDefaults ||
       migratedSeriesDefaults ||
       retiredFieldsChanged
@@ -504,33 +537,30 @@ export class ConfigServiceImpl implements ConfigService {
     const writeOnce = async (): Promise<void> => {
       // Only explicit token changes write the vault. Keep its transition inside
       // the config lock so sibling rotations and the file scrub share an owner.
-      let scrubToken = this.videasyTokenVaulted;
-      if (
-        this.vault &&
-        this.vault.backend !== "file" &&
-        this.dirtyKeys.has("videasySessionToken")
-      ) {
-        const key = CREDENTIAL_KEYS.videasySessionToken;
-        const token = config.videasySessionToken;
-        scrubToken = false;
-        if (token) {
-          this.videasyTokenVaulted = false;
+      const scrub = new Set(this.vaultedFields);
+      for (const field of VAULTED_CONFIG_FIELDS) {
+        if (!this.vault || this.vault.backend === "file" || !this.dirtyKeys.has(field)) continue;
+        const key = VAULT_KEY_BY_FIELD[field];
+        const secret = config[field];
+        scrub.delete(field);
+        if (secret) {
+          this.vaultedFields.delete(field);
           try {
-            await this.vault.set(key, token);
-            if ((await this.vault.get(key)) === token) {
-              this.videasyTokenVaulted = true;
-              scrubToken = true;
+            await this.vault.set(key, secret);
+            if ((await this.vault.get(key)) === secret) {
+              this.vaultedFields.add(field);
+              scrub.add(field);
             }
           } catch {
             // A failed replacement retains its plaintext for a later migration.
           }
         } else {
-          // A sibling may have added a token since hydration. A clear must
+          // A sibling may have added a secret since hydration. A clear must
           // remove it too, and must not claim success if native deletion failed.
           await this.vault.delete(key);
           if ((await this.vault.get(key)) !== undefined)
             throw new Error("Native credential clear could not be verified");
-          this.videasyTokenVaulted = false;
+          this.vaultedFields.delete(field);
         }
       }
       // When this process has updated keys, write per-key over the CURRENT
@@ -569,7 +599,20 @@ export class ConfigServiceImpl implements ConfigService {
           toWrite = config;
         }
       }
-      await this.store.save(scrubToken ? { ...toWrite, videasySessionToken: "" } : toWrite);
+      // Blank only fields whose vault copy matches the value being written. The
+      // scrub set reflects this instance's view; a sibling whose vault write
+      // failed may have left newer plaintext on disk that must survive.
+      const verified = new Set<VaultedConfigField>();
+      for (const field of scrub) {
+        try {
+          if ((await this.vault?.get(VAULT_KEY_BY_FIELD[field])) === toWrite[field]) {
+            verified.add(field);
+          }
+        } catch {
+          // The vault cannot confirm the value: keep the plaintext.
+        }
+      }
+      await this.store.save(scrubVaultedFields(toWrite, verified));
       if (forceFullWrite) this.needsFullConfigWrite = false;
       this.clearPersistedDirtyKeys(mergedKeys, mergedValues ?? toWrite);
     };
@@ -639,6 +682,10 @@ export class ConfigServiceImpl implements ConfigService {
 
   get wyzieApiKey(): string {
     return this.config.wyzieApiKey;
+  }
+
+  get tmdbApiKey(): string {
+    return this.config.tmdbApiKey;
   }
 
   // Session-overridable getters read `sessionOverrides` first. A getter that reads

@@ -91,6 +91,11 @@ export interface KitsuneConfig {
    * no key the external lookup is skipped and only provider subtitles are used.
    */
   wyzieApiKey: string;
+  /**
+   * The user's own TMDB credential: a v3 API key or a v4 read access token.
+   * Empty uses Kunai's release key, then keyless mirrors.
+   */
+  tmdbApiKey: string;
   animeLanguageProfile: MediaLanguageProfile;
   seriesLanguageProfile: MediaLanguageProfile;
   movieLanguageProfile: MediaLanguageProfile;

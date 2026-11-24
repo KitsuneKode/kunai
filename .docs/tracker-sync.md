@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-23"
+lastReviewed: "2026-11-24T07:28:48Z"
 ---
 
 # Tracker Sync
@@ -175,6 +175,12 @@ Kunai's own when release CI injects one at build time (`KUNAI_TMDB_BUILD_KEY` â†
 `KUNAI_BUNDLED_TMDB_API_KEY`, see `bundledTmdbKeyDefine`), else a legacy public
 key borrowed from another project, which is due for removal.
 `KUNAI_TMDB_API_KEY` overrides both, for sync and for catalog requests alike.
+The **TMDB key** setting (`tmdbApiKey`, Settings â†’ Accounts, kept in the OS
+credential vault) is catalog-only: it accepts a v3 API key or a v4 read
+access token, sends catalog requests to TMDB directly before the keyless
+mirrors, and a key TMDB refuses (401) is set aside for 10 minutes while the
+shipped key and mirrors serve. Sync keeps the env/shipped key, because a TMDB
+session belongs to the key that created it.
 For sync, an explicitly empty or placeholder override fails closed rather than
 silently falling back; catalog requests treat a blank value as unset, because
 the proxy hosts need no key and failing closed there would blank search.

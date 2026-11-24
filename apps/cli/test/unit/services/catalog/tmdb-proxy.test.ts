@@ -354,17 +354,23 @@ describe("TMDB API key resolution", () => {
     const original = process.env.KUNAI_BUNDLED_TMDB_API_KEY;
     try {
       delete process.env.KUNAI_BUNDLED_TMDB_API_KEY;
-      expect(resolveTmdbApiKey({})).toEqual({ key: LEGACY_PUBLIC_TMDB_API_KEY, source: "legacy" });
-      expect(resolveTmdbApiKey({ KUNAI_TMDB_API_KEY: "  " })).toEqual({
+      expect(resolveTmdbApiKey({})).toEqual({
+        key: LEGACY_PUBLIC_TMDB_API_KEY,
+        source: "legacy",
+        kind: "api-key",
+      });
+      expect(resolveTmdbApiKey({ KUNAI_TMDB_API_KEY: "  " })).toMatchObject({
         key: LEGACY_PUBLIC_TMDB_API_KEY,
         source: "legacy",
       });
 
       process.env.KUNAI_BUNDLED_TMDB_API_KEY = "kunaikey1234567890";
-      expect(resolveTmdbApiKey({})).toEqual({ key: "kunaikey1234567890", source: "kunai" });
+      expect(resolveTmdbApiKey({})).toMatchObject({ key: "kunaikey1234567890", source: "kunai" });
       expect(resolveTmdbApiKey({ KUNAI_TMDB_API_KEY: "mine" })).toEqual({
         key: "mine",
         source: "user",
+        kind: "api-key",
+        origin: "env",
       });
     } finally {
       if (original === undefined) delete process.env.KUNAI_BUNDLED_TMDB_API_KEY;

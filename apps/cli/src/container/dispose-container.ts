@@ -1,5 +1,5 @@
 import { setDefaultCatalogDurableCache } from "@/services/catalog/CatalogDiscoveryService";
-import { setTmdbDurableCache } from "@/services/catalog/tmdb-proxy";
+import { setTmdbDurableCache, setTmdbUserKeySource } from "@/services/catalog/tmdb-proxy";
 import type { KunaiDatabase } from "@kunai/storage";
 
 import { bindTitleDetailCrosswalk } from "../services/catalog/TitleDetailService";
@@ -79,6 +79,7 @@ async function runDisposal(container: Container, handles: ContainerDisposeHandle
     // closes, so a later container or test never writes into a dead handle.
     setDefaultCatalogDurableCache(null);
     setTmdbDurableCache(null);
+    setTmdbUserKeySource(null);
     await bestEffort(() => handles.dataDb.close());
     await bestEffort(() => handles.cacheDb.close());
   } finally {

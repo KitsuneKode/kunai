@@ -196,7 +196,17 @@ Search, trending, recommendations and the calendar come from public catalogs: TM
 - **`/diagnostics`** has a "Catalog sources" line that says which source answered search, trending, recommendations and episode lists, and why a backup was used.
 - **AniList limits requests.** When it asks Kunai to slow down, AniList-backed rows show their fallback or saved list for up to a couple of minutes instead of waiting.
 
-To use your own TMDB API key for direct TMDB requests, and for TMDB account sync, set `KUNAI_TMDB_API_KEY` in your environment.
+### Your own TMDB key (free, recommended)
+
+Kunai works without any key. Your own free TMDB key makes the catalog faster and keeps it working even if Kunai's key or the keyless mirrors have a bad day:
+
+1. Sign in at [themoviedb.org](https://www.themoviedb.org/settings/api) and request an API key (personal use, free).
+2. Copy either the **API Key** or the **API Read Access Token**.
+3. Open **Settings → Accounts → Your API keys → TMDB key**, paste it, and press Enter.
+
+With your key, Kunai asks TMDB directly first. The key is stored in your system's credential store (macOS Keychain, Windows Credential Manager, or Secret Service on Linux) when one is available, not in `config.json`. If TMDB ever rejects it, Kunai keeps working on its fallbacks and `/diagnostics` says so under **Service keys**.
+
+`KUNAI_TMDB_API_KEY` in your environment overrides the setting, and is also the key TMDB account sync uses.
 
 ## Provider domains
 

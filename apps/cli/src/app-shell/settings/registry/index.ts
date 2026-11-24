@@ -1,5 +1,6 @@
 import type { SettingRowDef, SettingsRegistryContext } from "../types";
 import { generalSettingsRows } from "./general";
+import { keySettingsRows } from "./keys";
 import { playbackSettingsRows } from "./playback";
 import { presenceSettingsRows } from "./presence";
 import { privacySettingsRows } from "./privacy";
@@ -20,9 +21,10 @@ export function buildSettingsRegistry(ctx: SettingsRegistryContext): SettingRowD
       id: "section:accounts",
       label: "Accounts & Sync",
       tabLabel: "Accounts",
-      detail: "AniList and TMDB tracker sync, plus local Discord Rich Presence",
+      detail: "AniList and TMDB tracker sync, your own API keys, and Discord Rich Presence",
     },
     ...syncSettingsRows(ctx),
+    ...keySettingsRows(ctx),
     ...presenceSettingsRows(ctx),
     ...privacySettingsRows(ctx),
   ];
