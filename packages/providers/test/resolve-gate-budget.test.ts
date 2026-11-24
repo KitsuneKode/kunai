@@ -1,6 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
 
 import { providerCycleCandidateTimeoutMs } from "@kunai/core";
+import type { ProviderRuntimeContext } from "@kunai/types";
 
 import { ALLMANGA_CANDIDATE_TIMEOUT_MS } from "../src/allmanga/direct";
 import {
@@ -108,13 +109,13 @@ describe("resolve gate retry budget", () => {
       return new AbortController().signal;
     });
     try {
-      const context = {
+      const context: ProviderRuntimeContext = {
         now: () => new Date().toISOString(),
         fetch: {
           runtime: "direct-http",
           fetch: async () => new Response("busy", { status: 500 }),
         },
-      } as unknown as import("@kunai/types").ProviderRuntimeContext;
+      };
       const verdict = await verifyCandidateStream({
         stream: { url: "https://cdn.example/movie.mp4", headers: {} },
         context,

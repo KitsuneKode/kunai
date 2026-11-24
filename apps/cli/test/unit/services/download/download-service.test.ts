@@ -3938,6 +3938,7 @@ describe("DownloadService stream provenance", () => {
     });
     spawnSpy.mockImplementation((command: string[]) => {
       writeFileSync(command[command.indexOf("-o") + 1]!, "verified bytes");
+      // SAFETY: the spawn spy only supplies the subprocess fields this test exercises.
       return {
         stdout: streamOf(""),
         stderr: streamOf(""),
