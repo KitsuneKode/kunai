@@ -27,9 +27,10 @@ export interface AddonsConfigPort extends StremioAddonReferenceSlice {
 }
 
 export interface RunAddonsCommandOptions {
-  readonly subcommand?: string;
+  /** Absent or `undefined` means `list`. */
+  readonly subcommand?: string | undefined;
   /** `add`: the manifest URL. `remove`/`check`: a number from `list`, an id, a host or a name. */
-  readonly target?: string;
+  readonly target?: string | undefined;
   readonly json?: boolean;
   readonly write?: (text: string) => void;
   /** Defaults to the user's real config, opened the way startup opens it. */
@@ -50,16 +51,54 @@ function summarize(addon: InstalledStremioAddon, index: number): AddonSummary {
   return { number: index + 1, id: addon.providerId, name: addon.displayName, host: addon.host };
 }
 
+/** Which of the two things Kunai plays an addon can be asked for. */
+interface AddonUsability {
+  readonly movie: boolean;
+  readonly series: boolean;
+  /** Why the addon cannot be used at all; `null` when it can. */
+  readonly reason: string | null;
+}
+
+/** One addon's line in `kunai addons check`. */
+interface AddonCheckReport extends AddonSummary {
+  readonly reachable: boolean;
+  readonly usable: boolean;
+  readonly manifestName: string | null;
+  readonly version: string | null;
+  readonly movie: boolean;
+  readonly series: boolean;
+  readonly streamTypes: readonly string[];
+  readonly problem: string | null;
+}
+
+/**
+ * Everything `--json` may print, before `schemaVersion` is added. Every form
+ * carries `ok` and `error`; the rest depends on the action.
+ */
+type AddonsCommandOutput =
+  | { readonly ok: false; readonly error: string }
+  | { readonly ok: true; readonly error: null; readonly addons: readonly AddonSummary[] }
+  | {
+      readonly ok: true;
+      readonly error: null;
+      readonly added: boolean;
+      readonly addon: AddonSummary;
+      readonly movie: boolean;
+      readonly series: boolean;
+    }
+  | { readonly ok: true; readonly error: null; readonly removed: AddonSummary }
+  | {
+      readonly ok: boolean;
+      readonly error: string | null;
+      readonly addons: readonly AddonCheckReport[];
+    };
+
 /**
  * Whether Kunai can ask this addon for the two things it plays. An addon that
  * only lists catalogs, or only answers ids Kunai cannot map to, would sit in
  * the provider order and never return a stream.
  */
-function describeUsability(manifest: StremioManifest): {
-  readonly movie: boolean;
-  readonly series: boolean;
-  readonly reason: string | null;
-} {
+function describeUsability(manifest: StremioManifest): AddonUsability {
   if (manifest.behaviorHints?.configurationRequired === true) {
     return {
       movie: false,
@@ -76,8 +115,8 @@ function describeUsability(manifest: StremioManifest): {
   return { movie: false, series: false, reason: movie.reason };
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "the addon could not be reached";
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : "the addon could not be reached";
 }
 
 export async function runAddonsCommand(options: RunAddonsCommandOptions): Promise<number> {
@@ -87,7 +126,7 @@ export async function runAddonsCommand(options: RunAddonsCommandOptions): Promis
   const context: ProviderRuntimeContext = options.context ?? {
     now: () => new Date().toISOString(),
   };
-  const emit = (payload: Record<string, unknown>, text: string): void => {
+  const emit = (payload: AddonsCommandOutput, text: string): void => {
     write(json ? `${JSON.stringify({ schemaVersion: 1, ...payload }, null, 2)}\n` : `${text}\n`);
   };
   const fail = (code: 1 | 2, reason: string): number => {
@@ -207,7 +246,7 @@ export async function runAddonsCommand(options: RunAddonsCommandOptions): Promis
     return 0;
   }
   const reports = await Promise.all(
-    subjects.map(async (addon) => {
+    subjects.map(async (addon): Promise<AddonCheckReport> => {
       const summary = summarize(addon, installed.indexOf(addon));
       try {
         const manifest = await fetchStremioManifest(addon, { context });

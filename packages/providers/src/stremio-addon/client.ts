@@ -1,5 +1,6 @@
 import { fetchProbeTarget, isGuardedPlatformFetch, isOfflineNetworkFailure } from "@kunai/core";
 import {
+  isJsonString,
   ProviderHttpError,
   providerHttpErrorForStatus,
   type ProviderRuntimeContext,
@@ -34,8 +35,19 @@ export interface AddonRequestOptions {
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
+/** What one addon request is for, and what a good answer looks like. */
+interface AddonJsonRequest<T> extends AddonRequestOptions {
+  /** The addon by host, for error messages. */
+  readonly label: string;
+  readonly maxBytes: number;
+  /** The answer is returned only after it passes this. */
+  readonly schema: z.ZodType<T>;
+  /** Completes "`label` …" when the answer fails the schema. */
+  readonly invalidAnswer: string;
+}
+
 /**
- * One GET to an addon, and the JSON it answered with.
+ * One GET to an addon, and the validated JSON it answered with.
  *
  * - **HTTPS only, on every hop.** The first URL is checked by the caller's
  *   parser; a redirect to plain HTTP is refused here before it is sent.
@@ -44,17 +56,17 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
  *   pinned to the checked address.
  * - **Bounded.** The body is read up to `maxBytes` and refused past it; the
  *   request is abandoned at `timeoutMs`.
- * - **Data only.** The body is parsed as JSON and returned as `unknown`; the
- *   caller validates it against a schema before reading a field.
+ * - **Data only.** The body is parsed as JSON and checked against
+ *   `options.schema` here, so no caller ever holds an unvalidated answer.
  *
  * Error messages name the addon by `label` and never include the URL: its path
  * may hold the user's own settings or tokens.
  */
-async function fetchAddonJson(
+async function fetchAddonJson<T>(
   url: string,
-  options: AddonRequestOptions & { readonly label: string; readonly maxBytes: number },
+  options: AddonJsonRequest<T>,
   defaultTimeoutMs: number,
-): Promise<unknown> {
+): Promise<T> {
   const { context, label, maxBytes } = options;
   const callerSignal = options.signal ?? context.signal;
   const signal = createTimeoutSignal(callerSignal, options.timeoutMs ?? defaultTimeoutMs);
@@ -139,8 +151,9 @@ async function fetchAddonJson(
     const text = await readBoundedTextBody(response.body, maxBytes);
     if (text === null) throw responseTooLarge(label, maxBytes);
 
+    let body: unknown;
     try {
-      return JSON.parse(text) as unknown;
+      body = JSON.parse(text);
     } catch (cause) {
       throw new ProviderHttpError({
         message: `${label} did not answer with JSON`,
@@ -149,6 +162,15 @@ async function fetchAddonJson(
         cause,
       });
     }
+    const parsed = options.schema.safeParse(body);
+    if (!parsed.success) {
+      throw new ProviderHttpError({
+        message: `${label} ${options.invalidAnswer} (${describeSchemaIssues(parsed.error)})`,
+        code: "parse-failed",
+        retryable: false,
+      });
+    }
+    return parsed.data;
   } catch (error) {
     if (error instanceof ProviderHttpError) throw error;
     // The caller cancelled: that is their decision, not a fault of the addon.
@@ -179,10 +201,10 @@ const UNRESOLVED_HOST_REASON = "No vetted DNS address";
  * (`ENOTFOUND`, `EAI_AGAIN`), so it is kept; a URL in it is replaced because the
  * addon's path may hold a token.
  */
-function describeTransportError(error: unknown): string {
-  if (!(error instanceof Error)) return "network error";
-  const code = "code" in error && typeof error.code === "string" ? `${error.code}: ` : "";
-  return `${code}${error.message}`.replace(/https?:\/\/\S+/gi, "[addon address]").slice(0, 200);
+function describeTransportError(cause: unknown): string {
+  if (!(cause instanceof Error)) return "network error";
+  const code = "code" in cause && isJsonString(cause.code) ? `${cause.code}: ` : "";
+  return `${code}${cause.message}`.replace(/https?:\/\/\S+/gi, "[addon address]").slice(0, 200);
 }
 
 function responseTooLarge(label: string, maxBytes: number): ProviderHttpError {
@@ -206,21 +228,17 @@ export async function fetchStremioManifest(
   addon: Pick<StremioAddonRef, "manifestUrl" | "host">,
   options: AddonRequestOptions,
 ): Promise<StremioManifest> {
-  const label = `Addon at ${addon.host}`;
-  const body = await fetchAddonJson(
+  return fetchAddonJson(
     addon.manifestUrl,
-    { ...options, label, maxBytes: STREMIO_ADDON_LIMITS.manifestBytes },
+    {
+      ...options,
+      label: `Addon at ${addon.host}`,
+      maxBytes: STREMIO_ADDON_LIMITS.manifestBytes,
+      schema: stremioManifestSchema,
+      invalidAnswer: "sent a manifest that is not a valid Stremio manifest",
+    },
     STREMIO_ADDON_TIMEOUTS.manifestMs,
   );
-  const parsed = stremioManifestSchema.safeParse(body);
-  if (!parsed.success) {
-    throw new ProviderHttpError({
-      message: `${label} sent a manifest that is not a valid Stremio manifest (${describeSchemaIssues(parsed.error)})`,
-      code: "parse-failed",
-      retryable: false,
-    });
-  }
-  return parsed.data;
 }
 
 export interface StremioStreamListing {
@@ -237,21 +255,17 @@ export async function fetchStremioStreams(
   videoId: string,
   options: AddonRequestOptions,
 ): Promise<StremioStreamListing> {
-  const label = `Addon at ${addon.host}`;
-  const body = await fetchAddonJson(
+  const { streams: all } = await fetchAddonJson(
     stremioStreamUrl(addon, type, videoId),
-    { ...options, label, maxBytes: STREMIO_ADDON_LIMITS.streamResponseBytes },
+    {
+      ...options,
+      label: `Addon at ${addon.host}`,
+      maxBytes: STREMIO_ADDON_LIMITS.streamResponseBytes,
+      schema: stremioStreamResponseSchema,
+      invalidAnswer: "sent a stream list that is not valid",
+    },
     STREMIO_ADDON_TIMEOUTS.streamsMs,
   );
-  const parsed = stremioStreamResponseSchema.safeParse(body);
-  if (!parsed.success) {
-    throw new ProviderHttpError({
-      message: `${label} sent a stream list that is not valid (${describeSchemaIssues(parsed.error)})`,
-      code: "parse-failed",
-      retryable: false,
-    });
-  }
-  const all = parsed.data.streams;
   const entries = all.slice(0, STREMIO_ADDON_LIMITS.streamsPerResponse);
   return { entries, truncated: all.length - entries.length };
 }

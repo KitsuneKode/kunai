@@ -4,6 +4,7 @@ import {
   toDisplayText,
   type StremioAddonRef,
 } from "@kunai/providers/stremio-addon";
+import { isJsonObject, isJsonString, type LooseJsonValue } from "@kunai/types";
 
 /**
  * Most addons one install may hold. Every installed addon is one more source
@@ -22,11 +23,30 @@ export interface InstalledStremioAddon extends StremioAddonRef {
 }
 
 /**
+ * One entry of the addon list as `config.json` may hold it. The file is
+ * hand-editable, so an entry is any JSON at all until it has been read.
+ */
+type StoredStremioAddonEntry = LooseJsonValue | StremioAddonConfigEntry;
+
+/** The addon list as `config.json` may hold it: the typed list, or whatever a hand edit left there. */
+export type StoredStremioAddons = LooseJsonValue | readonly StremioAddonConfigEntry[];
+
+/**
  * An addon's name as it may be shown: one line of printable text. It comes
  * from a server the user does not control and lands in pickers and footers.
  */
-export function cleanStremioAddonName(value: unknown): string | undefined {
-  return typeof value === "string" ? toDisplayText(value, MAX_ADDON_NAME_LENGTH) : undefined;
+export function cleanStremioAddonName(value: string | null | undefined): string | undefined {
+  return toDisplayText(value, MAX_ADDON_NAME_LENGTH);
+}
+
+/**
+ * What one stored entry says: a bare URL, or an object with a text `url` and
+ * perhaps a text `name`. Anything else names no addon.
+ */
+function readStoredEntry(raw: StoredStremioAddonEntry): StremioAddonConfigEntry | undefined {
+  if (isJsonString(raw)) return { url: raw };
+  if (!isJsonObject(raw) || !isJsonString(raw.url)) return undefined;
+  return isJsonString(raw.name) ? { url: raw.url, name: raw.name } : { url: raw.url };
 }
 
 /**
@@ -37,25 +57,18 @@ export function cleanStremioAddonName(value: unknown): string | undefined {
  * `https://…/manifest.json` address is dropped, and a URL listed twice is kept
  * once. Nothing is corrected by guessing.
  */
-export function readInstalledStremioAddons(value: unknown): InstalledStremioAddon[] {
-  if (!Array.isArray(value)) return [];
+export function readInstalledStremioAddons(value: StoredStremioAddons): InstalledStremioAddon[] {
+  const stored: readonly StoredStremioAddonEntry[] = Array.isArray(value) ? value : [];
   const installed: InstalledStremioAddon[] = [];
   const seen = new Set<string>();
-  for (const raw of value) {
+  for (const raw of stored) {
     if (installed.length >= MAX_STREMIO_ADDONS) break;
-    const url =
-      typeof raw === "string"
-        ? raw
-        : typeof raw === "object" && raw !== null && "url" in raw && typeof raw.url === "string"
-          ? raw.url
-          : undefined;
-    if (url === undefined) continue;
-    const parsed = parseStremioAddonUrl(url);
+    const entry = readStoredEntry(raw);
+    if (entry === undefined) continue;
+    const parsed = parseStremioAddonUrl(entry.url);
     if (!parsed.ok || seen.has(parsed.addon.providerId)) continue;
     seen.add(parsed.addon.providerId);
-    const name = cleanStremioAddonName(
-      typeof raw === "object" && raw !== null && "name" in raw ? raw.name : undefined,
-    );
+    const name = cleanStremioAddonName(entry.name);
     installed.push({
       ...parsed.addon,
       displayName: name ?? parsed.addon.host,
@@ -66,7 +79,9 @@ export function readInstalledStremioAddons(value: unknown): InstalledStremioAddo
 }
 
 /** The stored form of {@link readInstalledStremioAddons}. */
-export function normalizeStremioAddonEntries(value: unknown): readonly StremioAddonConfigEntry[] {
+export function normalizeStremioAddonEntries(
+  value: StoredStremioAddons,
+): readonly StremioAddonConfigEntry[] {
   return readInstalledStremioAddons(value).map((addon) => addon.entry);
 }
 

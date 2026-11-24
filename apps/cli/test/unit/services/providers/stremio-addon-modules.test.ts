@@ -13,6 +13,7 @@ import {
 } from "@/services/providers/stremio-addon-modules";
 import { DEFAULT_CONFIG, type StremioAddonConfigEntry } from "@kunai/config";
 import { resolveProviderLaneFromModule } from "@kunai/core";
+import type { LooseJsonValue } from "@kunai/types";
 
 const A = "https://a.example.com/SECRETTOKEN/manifest.json";
 const B = "https://b.example.com/manifest.json";
@@ -138,7 +139,7 @@ describe("IMDb id for a TMDB title", () => {
     );
     return seen;
   };
-  const json = (body: unknown, status = 200) =>
+  const json = (body: LooseJsonValue, status = 200) =>
     new Response(JSON.stringify(body), {
       status,
       headers: { "content-type": "application/json" },

@@ -5,6 +5,8 @@ lastReviewed: "2026-11-24"
 
 # Stremio addons
 
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
+
 A user can add Stremio addons as movie and series sources. Kunai ships none: an
 addon exists only because the user gave its manifest URL. Each installed addon
 is one provider in the movies and series lane, ordered and switched off like

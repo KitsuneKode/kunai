@@ -59,6 +59,8 @@ function row<K extends SettingRowDef["kind"]>(
 ): Extract<SettingRowDef, { kind: K }> {
   const found = rows.find((candidate) => candidate.id === id);
   if (!found || found.kind !== kind) throw new Error(`expected a ${kind} row with id ${id}`);
+  // SAFETY: `found.kind === kind` was checked on the line above; TypeScript does
+  // not narrow a union by a generic `K`.
   return found as Extract<SettingRowDef, { kind: K }>;
 }
 

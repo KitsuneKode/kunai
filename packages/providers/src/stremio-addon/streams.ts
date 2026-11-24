@@ -27,15 +27,18 @@ export type UnsupportedAddonStreamKind =
   /** The entry failed validation or names no stream at all. */
   | "invalid";
 
-export const UNSUPPORTED_ADDON_STREAM_LABELS: Readonly<Record<UnsupportedAddonStreamKind, string>> =
-  {
-    torrent: "torrent",
-    youtube: "YouTube id",
-    "external-page": "external page",
-    "unsupported-scheme": "unsupported URL scheme",
-    "private-address": "private address",
-    invalid: "invalid entry",
-  };
+export const UNSUPPORTED_ADDON_STREAM_LABELS = {
+  torrent: "torrent",
+  youtube: "YouTube id",
+  "external-page": "external page",
+  "unsupported-scheme": "unsupported URL scheme",
+  "private-address": "private address",
+  invalid: "invalid entry",
+} as const satisfies Record<UnsupportedAddonStreamKind, string>;
+
+function isUnsupportedAddonStreamKind(kind: string): kind is UnsupportedAddonStreamKind {
+  return Object.hasOwn(UNSUPPORTED_ADDON_STREAM_LABELS, kind);
+}
 
 export interface PlayableAddonStream {
   readonly url: string;
@@ -146,6 +149,8 @@ export function classifyAddonStreams(entries: readonly unknown[]): ClassifiedAdd
     const labelText = [name, description, filename].filter(Boolean).join(" ");
     const quality = readQuality(labelText);
     const { protocol, container } = inferProtocol(parsedUrl, stream, filename);
+    // The schema admits a number or nothing, so "present" is the whole question.
+    const videoSize = stream.behaviorHints?.videoSize ?? undefined;
 
     playable.push({
       url,
@@ -157,9 +162,7 @@ export function classifyAddonStreams(entries: readonly unknown[]): ClassifiedAdd
       ...(stream.behaviorHints?.bingeGroup
         ? { bingeGroup: stream.behaviorHints.bingeGroup }
         : null),
-      ...(typeof stream.behaviorHints?.videoSize === "number"
-        ? { videoSizeBytes: stream.behaviorHints.videoSize }
-        : null),
+      ...(videoSize !== undefined ? { videoSizeBytes: videoSize } : null),
       protocol,
       container,
       ...(quality ? { qualityLabel: quality.label } : null),
@@ -182,11 +185,12 @@ export function classifyAddonStreams(entries: readonly unknown[]): ClassifiedAdd
 export function describeUnsupportedAddonStreams(
   unsupported: ClassifiedAddonStreams["unsupported"],
 ): string {
+  // `Object.entries` hands keys back as plain strings; the guard restores the kind.
   return Object.entries(unsupported)
-    .filter(([, count]) => (count ?? 0) > 0)
-    .map(
-      ([kind, count]) =>
-        `${count} ${UNSUPPORTED_ADDON_STREAM_LABELS[kind as UnsupportedAddonStreamKind]}`,
+    .flatMap(([kind, count]) =>
+      isUnsupportedAddonStreamKind(kind) && (count ?? 0) > 0
+        ? [`${count} ${UNSUPPORTED_ADDON_STREAM_LABELS[kind]}`]
+        : [],
     )
     .join(", ");
 }

@@ -52,13 +52,21 @@ const shortText = z.string().max(STREMIO_ADDON_LIMITS.shortText);
 const longText = z.string().max(STREMIO_ADDON_LIMITS.longText);
 const urlText = z.string().min(1).max(STREMIO_ADDON_LIMITS.urlLength);
 
+const resourceObjectSchema = z.object({
+  name: shortText,
+  types: z.array(shortText).max(64).nullish(),
+  idPrefixes: z.array(shortText).max(64).nullish(),
+});
+
+/**
+ * A resource is either a bare name or an object carrying its own `types` and
+ * `idPrefixes`. Both are read into the object form here, so no later code has
+ * to ask which one it was given: a bare name is an object with neither, and
+ * inherits the manifest's.
+ */
 const resourceDescriptorSchema = z.union([
-  shortText,
-  z.object({
-    name: shortText,
-    types: z.array(shortText).max(64).nullish(),
-    idPrefixes: z.array(shortText).max(64).nullish(),
-  }),
+  shortText.transform((name): z.infer<typeof resourceObjectSchema> => ({ name })),
+  resourceObjectSchema,
 ]);
 
 export const stremioManifestSchema = z.object({
@@ -157,14 +165,12 @@ export function manifestServesStream(
   let sawStreamResource = false;
   let sawType = false;
   for (const resource of manifest.resources) {
-    const name = typeof resource === "string" ? resource : resource.name;
-    if (name !== "stream") continue;
+    if (resource.name !== "stream") continue;
     sawStreamResource = true;
-    const types = (typeof resource === "string" ? undefined : resource.types) ?? manifest.types;
+    const types = resource.types ?? manifest.types;
     if (!types.includes(type)) continue;
     sawType = true;
-    const idPrefixes =
-      (typeof resource === "string" ? undefined : resource.idPrefixes) ?? manifest.idPrefixes;
+    const idPrefixes = resource.idPrefixes ?? manifest.idPrefixes;
     if (!idPrefixes || idPrefixes.some((prefix) => prefix.length > 0 && id.startsWith(prefix))) {
       return { served: true };
     }
@@ -174,21 +180,24 @@ export function manifestServesStream(
   return { served: false, reason: "the addon does not accept IMDb ids" };
 }
 
-/** What the addon offers, for `kunai addons list` and the settings check. */
-export function describeManifestResources(manifest: StremioManifest): {
+/** What an addon's manifest says it offers. */
+export interface StremioManifestResources {
+  /** Content types the addon answers `/stream/…` for. */
   readonly streamTypes: readonly string[];
+  /** Every resource other than `stream`, by name. */
   readonly otherResources: readonly string[];
-} {
+}
+
+/** What the addon offers, for `kunai addons list` and the settings check. */
+export function describeManifestResources(manifest: StremioManifest): StremioManifestResources {
   const streamTypes = new Set<string>();
   const otherResources = new Set<string>();
   for (const resource of manifest.resources) {
-    const name = typeof resource === "string" ? resource : resource.name;
-    if (name !== "stream") {
-      otherResources.add(name);
+    if (resource.name !== "stream") {
+      otherResources.add(resource.name);
       continue;
     }
-    const types = (typeof resource === "string" ? undefined : resource.types) ?? manifest.types;
-    for (const type of types) streamTypes.add(type);
+    for (const type of resource.types ?? manifest.types) streamTypes.add(type);
   }
   return { streamTypes: [...streamTypes], otherResources: [...otherResources] };
 }

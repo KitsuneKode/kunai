@@ -643,8 +643,8 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     const words = argv.slice(1).filter((word) => !word.startsWith("-"));
     process.exit(
       await runAddonsCommand({
-        ...(words[0] !== undefined ? { subcommand: words[0] } : {}),
-        ...(words[1] !== undefined ? { target: words[1] } : {}),
+        subcommand: words[0],
+        target: words[1],
         json: argv.includes("--json"),
       }),
     );

@@ -11,7 +11,7 @@ import {
   isImdbTitleId,
   type StremioImdbIdResolver,
 } from "@kunai/providers/stremio-addon";
-import { isJsonObject } from "@kunai/types";
+import { isJsonObject, isJsonString } from "@kunai/types";
 
 /**
  * The IMDb id TMDB records for one of its own titles.
@@ -36,7 +36,7 @@ export const resolveImdbIdFromTmdb: StremioImdbIdResolver = async ({
     throw error;
   }
   const imdbId = isJsonObject(body) ? body.imdb_id : undefined;
-  return typeof imdbId === "string" && isImdbTitleId(imdbId) ? imdbId : null;
+  return isJsonString(imdbId) && isImdbTitleId(imdbId) ? imdbId : null;
 };
 
 export interface StremioAddonModuleHost {

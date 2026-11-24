@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
+import type { LooseJsonValue, ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
 
 import { parseStremioAddonUrl } from "../src/stremio-addon/addon-url";
 import {
@@ -26,7 +26,7 @@ const MANIFEST = {
   idPrefixes: ["tt"],
 };
 
-const json = (body: unknown) =>
+const json = (body: LooseJsonValue) =>
   new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } });
 
 interface Harness {
@@ -41,8 +41,8 @@ interface Harness {
  * media probe, answered by `media` (default: reachable).
  */
 function harness(options: {
-  readonly manifest?: unknown;
-  readonly streams?: unknown;
+  readonly manifest?: LooseJsonValue;
+  readonly streams?: LooseJsonValue;
   readonly media?: (url: string) => Response;
   readonly signal?: AbortSignal;
 }): Harness {
@@ -54,6 +54,8 @@ function harness(options: {
     signal: options.signal,
     cache: {
       read: async <T>(namespace: string, key: string) =>
+        // SAFETY: a cache hands back whatever was written under the key; `T` is
+        // the caller's claim, and the module re-checks what it reads.
         (cache.get(`${namespace}|${key}`) as T | undefined) ?? null,
       write: async (namespace, key, value) => {
         cache.set(`${namespace}|${key}`, value);

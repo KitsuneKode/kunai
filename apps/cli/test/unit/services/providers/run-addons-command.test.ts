@@ -7,7 +7,7 @@ import {
   type RunAddonsCommandOptions,
 } from "@/services/providers/run-addons-command";
 import { DEFAULT_CONFIG } from "@kunai/config";
-import type { ProviderRuntimeContext } from "@kunai/types";
+import type { LooseJsonValue, ProviderRuntimeContext } from "@kunai/types";
 
 const TOKEN = "SECRETTOKEN";
 const A = `https://a.example.com/${TOKEN}/manifest.json`;
@@ -79,7 +79,7 @@ function contextAnswering(
   };
 }
 
-const manifestResponse = (manifest: unknown = MANIFEST) =>
+const manifestResponse = (manifest: LooseJsonValue = MANIFEST) =>
   new Response(JSON.stringify(manifest), { headers: { "content-type": "application/json" } });
 
 async function run(

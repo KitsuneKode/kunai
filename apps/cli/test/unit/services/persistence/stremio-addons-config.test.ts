@@ -1,16 +1,29 @@
 import { describe, expect, test } from "bun:test";
 
+import type { StoredStremioAddons } from "@/domain/provider/stremio-addons";
 import { ConfigServiceImpl } from "@/services/persistence/ConfigServiceImpl";
 import { DEFAULT_CONFIG, type KitsuneConfig } from "@/services/persistence/ConfigStore";
 
 const A = "https://a.example.com/token/manifest.json";
 const B = "https://b.example.com/manifest.json";
 
-function memoryStore(initial: Record<string, unknown>) {
-  const state: { disk: Record<string, unknown> } = { disk: { ...DEFAULT_CONFIG, ...initial } };
+/** `config.json` as it may be on disk: typed, except that the addon list can be hand-edited. */
+interface DiskConfig extends Omit<Partial<KitsuneConfig>, "stremioAddons"> {
+  stremioAddons?: StoredStremioAddons;
+}
+
+interface MemoryDisk {
+  disk: DiskConfig;
+}
+
+function memoryStore(initial: DiskConfig) {
+  const state: MemoryDisk = { disk: { ...DEFAULT_CONFIG, ...initial } };
   return {
     state,
     store: {
+      // SAFETY: deliberately not a checked `KitsuneConfig`. A real store hands the
+      // service whatever a hand edit left in the file, and that is what these
+      // tests feed it.
       load: async () => ({ ...state.disk }) as Partial<KitsuneConfig>,
       save: async (value: KitsuneConfig) => {
         state.disk = { ...value };
@@ -79,6 +92,8 @@ describe("stremioAddons in config", () => {
     const { store } = memoryStore({ stremioAddons: [{ url: A }] });
     const config = await ConfigServiceImpl.load(store);
 
+    // SAFETY: the cast drops `readonly` on purpose; the test is that editing the
+    // returned array cannot reach the stored list.
     (config.stremioAddons as { url: string }[]).pop();
 
     expect(config.stremioAddons).toEqual([{ url: A }]);

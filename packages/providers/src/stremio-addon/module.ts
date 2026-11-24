@@ -9,6 +9,7 @@ import {
   type CoreProviderModule,
 } from "@kunai/core";
 import {
+  isJsonString,
   ProviderHttpError,
   type CachePolicy,
   type ProviderFailure,
@@ -208,7 +209,7 @@ export function createStremioAddonProviderModule(
     const mediaKind = input.mediaKind === "movie" ? "movie" : "series";
     const cacheKey = `${mediaKind}:${tmdbId}`;
     const cached = await context.cache?.read<unknown>(IMDB_CACHE_NAMESPACE, cacheKey);
-    if (typeof cached === "string" && isImdbTitleId(cached)) return { imdbId: cached };
+    if (isJsonString(cached) && isImdbTitleId(cached)) return { imdbId: cached };
 
     let found: string | null | undefined;
     try {

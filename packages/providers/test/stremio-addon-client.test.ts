@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { ProviderHttpError, type ProviderRuntimeContext } from "@kunai/types";
+import { ProviderHttpError, type LooseJsonValue, type ProviderRuntimeContext } from "@kunai/types";
 
 import { parseStremioAddonUrl } from "../src/stremio-addon/addon-url";
 import { fetchStremioManifest, fetchStremioStreams } from "../src/stremio-addon/client";
@@ -34,7 +34,7 @@ function contextWith(
   };
 }
 
-const json = (body: unknown, init?: ResponseInit) =>
+const json = (body: LooseJsonValue, init?: ResponseInit) =>
   new Response(JSON.stringify(body), {
     headers: { "content-type": "application/json" },
     ...init,
