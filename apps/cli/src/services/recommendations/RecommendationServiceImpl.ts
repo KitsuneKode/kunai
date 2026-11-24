@@ -5,6 +5,10 @@
 
 import type { ContentType, SearchResult } from "@/domain/types";
 import { parseCachedSearchResults } from "@/services/catalog/cached-search-results";
+import {
+  recordFallbackCatalogAnswer,
+  recordPrimaryCatalogAnswer,
+} from "@/services/catalog/catalog-source-ledger";
 import { clearTmdbSessionCache, fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
 import { RecommendationCacheRepository } from "@kunai/storage";
 import { isJsonNumber, isJsonObject, type JsonValue } from "@kunai/types";
@@ -116,6 +120,8 @@ export class RecommendationServiceImpl implements RecommendationService {
   }
 
   private writeCacheEntry(key: string, value: CacheValue): void {
+    // Only live TMDB answers are written, so a write is a healthy answer.
+    recordRecommendationsAnswer(false);
     const now = new Date();
     const expiresAt = new Date(now.getTime() + RECOMMENDATION_STALE_RETENTION_MS).toISOString();
     this.cacheRepository.set(key, JSON.stringify(value), expiresAt, now.toISOString());
@@ -128,6 +134,7 @@ export class RecommendationServiceImpl implements RecommendationService {
   ): RecommendationSection {
     const stale = this.readAnyCacheEntry(key);
     if (!stale || stale.items.length === 0) return { label: "", reason, items: [] };
+    recordRecommendationsAnswer(true);
     return { label: "", reason, items: stale.items, staleSince: stale.cachedAt };
   }
 
@@ -388,4 +395,25 @@ async function discoverByGenres(
       (candidate): candidate is { item: SearchResult; genreIds: number[] } => candidate !== null,
     );
   return candidates;
+}
+
+function recordRecommendationsAnswer(fromSaved: boolean): void {
+  if (fromSaved) {
+    recordFallbackCatalogAnswer(
+      {
+        capability: "recommendations",
+        lane: "movie-series",
+        sourceId: "saved",
+        sourceName: "saved list",
+      },
+      "TMDB unreachable",
+    );
+    return;
+  }
+  recordPrimaryCatalogAnswer({
+    capability: "recommendations",
+    lane: "movie-series",
+    sourceId: "tmdb",
+    sourceName: "TMDB",
+  });
 }

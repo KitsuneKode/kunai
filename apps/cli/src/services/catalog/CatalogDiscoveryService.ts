@@ -3,6 +3,11 @@ import { anilistCatalogStructure } from "@/domain/media/anilist-format";
 import type { SearchResult, ShellMode, TitleAlias } from "@/domain/types";
 import { AniListRequestError, postAniListGraphql } from "@/services/catalog/anilist-client";
 import { evictOverflowedEntries } from "@/services/catalog/bounded-cache";
+import {
+  recordFallbackCatalogAnswer,
+  recordPrimaryCatalogAnswer,
+  type CatalogAnswerSource,
+} from "@/services/catalog/catalog-source-ledger";
 import { loadJikanAnimeTrending } from "@/services/catalog/jikan-trending";
 import { loadKitsuAnimeTrending } from "@/services/catalog/kitsu-trending";
 import { fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
@@ -144,6 +149,41 @@ export function setDefaultCatalogDurableCache(cache: CatalogDurableCache | null)
   defaultDurableCache = cache;
 }
 
+/** What the user is shown for a trending source id. */
+function trendingSourceName(sourceId: string): string {
+  switch (sourceId) {
+    case "anilist":
+      return "AniList";
+    case "tmdb":
+      return "TMDB";
+    case "kitsu":
+      return "Kitsu";
+    case "jikan":
+      return "MyAnimeList (Jikan)";
+    case "last-known-good":
+      return "saved list";
+    default:
+      return sourceId;
+  }
+}
+
+/** Tell /diagnostics which trending source answered and whether it was a stand-in. */
+function recordTrendingAnswer(mode: ShellMode, section: CatalogTrendingSection): void {
+  if (mode === "youtube" || section.results.length === 0) return;
+  const primaryId = mode === "anime" ? "anilist" : "tmdb";
+  const source = {
+    capability: "trending",
+    lane: mode === "anime" ? "anime" : "movie-series",
+    sourceId: section.sourceId,
+    sourceName: trendingSourceName(section.sourceId),
+  } satisfies CatalogAnswerSource;
+  if (section.sourceId === primaryId) {
+    recordPrimaryCatalogAnswer(source);
+    return;
+  }
+  recordFallbackCatalogAnswer(source, `${trendingSourceName(primaryId)} unavailable`);
+}
+
 export const DEFAULT_TRENDING_FALLBACKS = {
   // Kitsu first: one request with AniList ids included. Jikan needs an ARM
   // lookup per entry and is IPv6-only from some networks.
@@ -227,7 +267,9 @@ export class CatalogDiscoveryService {
 
     const durable = this.durable();
     const stale = durable?.read(this.durableKey(mode)) ?? null;
-    return this.awaitWalk(walk, signal, stale);
+    const section = await this.awaitWalk(walk, signal, stale);
+    recordTrendingAnswer(mode, section);
+    return section;
   }
 
   /**

@@ -14,12 +14,12 @@
 
 Four things break, and they break for different reasons:
 
-| What breaks                                                       | Why                                                                                                                                                                      | Today's fix path                                                                                        | Time to users                                                  |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| A stream provider (host move, crypto rotation, new anti-bot step) | Upstream changes; AllManga rotates every constant roughly monthly                                                                                                        | Hotfix manifest for data (mirrors, `deadServers`, crypto constants); a release for anything code-shaped | Minutes for data, days for code                                |
-| Search, trending, recommendations, discover — all at once         | One catalog path: TMDB via the Videasy proxy hosts, then direct TMDB with a **borrowed public API key** (`tmdb-proxy.ts`, "same as used in the luffy reference project") | Code change and release                                                                                 | Days, and the key can be revoked at any moment by someone else |
-| Anime metadata                                                    | AniList GraphQL only for most of it; Jikan in places                                                                                                                     | Code change and release                                                                                 | Days                                                           |
-| Users on npm / package managers                                   | `BinaryAutoUpdater` auto-applies only on the binary channel; npm is notify-only                                                                                          | User runs `npm i -g`                                                                                    | Whenever they notice                                           |
+| What breaks                                                       | Why                                                                                                                                                                      | Today's fix path                                                                                                                                                                                                                              | Time to users                                                                                                     |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| A stream provider (host move, crypto rotation, new anti-bot step) | Upstream changes; AllManga rotates every constant roughly monthly                                                                                                        | Hotfix manifest for data (mirrors, `deadServers`, crypto constants), but only on installs configured with `KUNAI_PROVIDER_MANIFEST_URL` and trusted keys; a default install has neither and skips refresh. A release for anything code-shaped | Up to 6 hours on a configured install (or `kunai providers update --url` by hand); a release for default installs |
+| Search, trending, recommendations, discover — all at once         | One catalog path: TMDB via the Videasy proxy hosts, then direct TMDB with a **borrowed public API key** (`tmdb-proxy.ts`, "same as used in the luffy reference project") | Code change and release                                                                                                                                                                                                                       | Days, and the key can be revoked at any moment by someone else                                                    |
+| Anime metadata                                                    | AniList GraphQL only for most of it; Jikan in places                                                                                                                     | Code change and release                                                                                                                                                                                                                       | Days                                                                                                              |
+| Users on npm / package managers                                   | `BinaryAutoUpdater` auto-applies only on the binary channel; npm is notify-only                                                                                          | User runs `npm i -g`                                                                                                                                                                                                                          | Whenever they notice                                                                                              |
 
 And one structural risk: the official binary ships eleven scraper adapters with
 hardcoded hosts. The project, not the user, distributes every scraper.
@@ -101,7 +101,10 @@ Rules:
   publishes trending and popular lists as signed static JSON (ids and titles
   only, artwork resolved live). It makes a cold-start offline-capable rail and
   cuts API load. Check TMDB's redistribution terms before shipping it; if they
-  forbid it, keep only the durable local cache.
+  forbid it, keep only the durable local cache, and narrow the promise: on a
+  first run with no saved list and every source down, a rail shows "Trending is
+  unavailable right now" with a retry, never a blank. "Never empty" only holds
+  once a list has been saved, or with a signed snapshot.
 
 ### 2. Stream layer: packs, addons, and a baseline
 
@@ -241,11 +244,13 @@ distributes what:
 
 - **Remove the borrowed TMDB key** and comply with TMDB attribution. This is
   the clearest current issue and needs no architecture.
-- **Core distributes no scraper by default** (decision 2). The official binary
-  is a player, a catalog client and an SDK. Stream sources arrive as packs or
-  addons from a repository the user adds. Distributing a neutral client, while
-  scrapers live in separately published repositories, is the model the major
-  extension-based apps use.
+- **Option (decision 2 b/c): core distributes no scraper by default.** The
+  official binary would be a player, a catalog client and an SDK, with stream
+  sources arriving as packs or addons from a repository the user adds. That is
+  the model the major extension-based apps use and gives the most distance. It
+  is not the current recommendation: decision 2 recommends (a), keep bundled
+  scrapers now and build the pack layer so (b) is a build flag. Under (a) the
+  legal posture is today's, plus TMDB key compliance and source attribution.
 - **First-class legitimate sources** make the default useful without scrapers:
   YouTube (exists), Internet Archive, and the user's own Jellyfin, Plex or Emby
   servers and local files.
@@ -293,13 +298,23 @@ manifest's behaviour.
   season responses replaced the planned TVmaze fallback: TVmaze numbers some
   shows differently from TMDB, so its episode list could start the wrong
   episode.
-- Health-triggered hotfix-manifest refresh.
+- Health-triggered hotfix-manifest refresh (shipped in #723). It only acts on
+  installs that already have a manifest URL and trusted keys; provisioning a
+  default manifest URL and the project's public key in the release build is a
+  prerequisite for data fixes to reach default installs, and it waits on
+  decision 3 (hosting and key custody).
 
 ### Phase 1 — catalog contract
 
 - `CatalogSource` contract and registry; move search, trending, discover,
   recommendations and schedules behind it, one capability at a time.
-- `/diagnostics` shows which source answered each catalog request.
+  **Started:** movie/series search falls back to Wikidata (CC0, keyless,
+  carries TMDB's own ids) when every TMDB route fails; anime search already
+  fails over across anime providers. Still to do: the shared `CatalogSource`
+  interface itself, discover and schedules.
+- `/diagnostics` shows which source answered each catalog request. **Done**
+  for search, trending, recommendations and series episodes
+  (`catalog-source-ledger.ts`, "Catalog sources" line).
 - Decide on the signed snapshot floor after the terms check.
 
 ### Phase 2 — packs (needs decisions 1, 3)

@@ -1569,6 +1569,9 @@ function buildSearchEmptyMessage(search: Awaited<ReturnType<typeof searchTitles>
     const names = [...new Set(failures.map((failure) => failure.providerId))].join(", ");
     return `Provider search failed (${names}). Check /diagnostics or switch provider with /provider.`;
   }
+  if (search.diagnosis?.code === "catalog-fallback") {
+    return "TMDB is unreachable and the backup catalog (Wikidata) found no match. Try the original title, or search again once TMDB is back.";
+  }
   if (search.diagnosis?.code === "compatible-catalog-unavailable") {
     return "The active provider can't answer a filtered search like this. Simplify the query or switch provider with /provider.";
   }

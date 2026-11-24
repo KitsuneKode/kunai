@@ -7,6 +7,12 @@ import {
 import { describeSearchIntentFilters } from "@/domain/search/SearchIntentParser";
 import type { ProviderLane, SearchResult, ShellMode } from "@/domain/types";
 import { buildVideasyDiscoverPlan } from "@/search";
+import {
+  recordFallbackCatalogAnswer,
+  recordPrimaryCatalogAnswer,
+  type CatalogAnswerSource,
+} from "@/services/catalog/catalog-source-ledger";
+import { searchWikidataTmdbTitles } from "@/services/catalog/wikidata-search";
 import type { ProviderRegistry } from "@/services/providers/ProviderRegistry";
 
 import { enrichAnimeSearchResultsWithAniList } from "./anime-metadata";
@@ -21,6 +27,8 @@ export type SearchRoutingContext = {
   searchRegistry: Pick<SearchRegistry, "getDefault" | "getForProvider">;
   providerRegistry: ProviderRegistry;
   enrichAnimeMetadata?: boolean;
+  /** Test seam for the TMDB-outage search fallback. */
+  searchWikidata?: typeof searchWikidataTmdbTitles;
 };
 
 /**
@@ -29,6 +37,12 @@ export type SearchRoutingContext = {
  * that changes the catalog identity of the returned titles without saying so.
  */
 export type SearchRoutingDiagnosis =
+  | {
+      /** The lane's catalog failed and an independent source with the same ids answered. */
+      readonly code: "catalog-fallback";
+      /** The catalog that failed. */
+      readonly sourceId: string;
+    }
   | {
       readonly code: "provider-native-fallback";
       readonly providerId: string;
@@ -247,6 +261,12 @@ export async function searchTitles(
       // Apply the same local-filter pipeline every other provider path uses so
       // the returned evidence can never claim a filter that was not applied.
       const evidence = classifySearchEvidence(intent, candidate.metadata.id, context.mode);
+      recordSearchAnswer(
+        resolvedLane,
+        candidate.metadata.id,
+        candidate.metadata.name,
+        providerSearchFailures.length > 0,
+      );
       return {
         results: withResolvedSearchLane(
           applyLocalSearchFilters(enriched, intent, evidence),
@@ -278,9 +298,27 @@ export async function searchTitles(
     // all. A sibling anime provider that does carry native search (AniDB,
     // AllManga) can still answer, and a degraded result set beats a dead
     // search box. Cancellation is the caller leaving, not an outage.
-    if (context.signal?.aborted === true || routing.mode !== "anime") throw error;
+    if (context.signal?.aborted === true) throw error;
+    if (routing.mode !== "anime") {
+      const fallback = await searchTmdbTitlesViaWikidata(query, intent, searchService, context);
+      if (!fallback) throw error;
+      recordSearchAnswer(resolvedLane, fallback.sourceId, fallback.sourceName, true);
+      return {
+        results: withResolvedSearchLane(
+          applyLocalSearchFilters(fallback.results, intent, evidence),
+          resolvedLane,
+        ),
+        resolvedLane,
+        sourceId: fallback.sourceId,
+        sourceName: fallback.sourceName,
+        strategy: "registry",
+        evidence,
+        diagnosis: { code: "catalog-fallback", sourceId: searchService.metadata.id },
+      };
+    }
     const borrowed = await searchAnimeViaSiblingProvider(query, routing.providerId, context);
     if (!borrowed) throw error;
+    recordSearchAnswer(resolvedLane, borrowed.providerId, borrowed.providerName, true);
     return {
       results: withResolvedSearchLane(
         applyLocalSearchFilters(borrowed.results, intent, evidence),
@@ -301,6 +339,7 @@ export async function searchTitles(
   }
 
   const results = applyLocalSearchFilters(upstream, intent, evidence);
+  recordSearchAnswer(resolvedLane, searchService.metadata.id, searchService.metadata.name, false);
 
   return {
     results: withResolvedSearchLane(results, resolvedLane),
@@ -311,6 +350,59 @@ export async function searchTitles(
     evidence,
     providerSearchFailures: providerSearchFailures.length > 0 ? providerSearchFailures : undefined,
   };
+}
+
+/**
+ * Text search for the TMDB catalog when every TMDB route failed. Wikidata
+ * records TMDB's own ids, so a picked result is the same title a TMDB search
+ * would have returned. Discover-style searches (filters, no text) cannot be
+ * answered from Wikidata and keep the original failure.
+ */
+async function searchTmdbTitlesViaWikidata(
+  query: string,
+  intent: SearchIntent,
+  searchService: { readonly servesCatalog?: string },
+  context: SearchRoutingContext,
+): Promise<{
+  readonly results: SearchResult[];
+  readonly sourceId: string;
+  readonly sourceName: string;
+} | null> {
+  if (searchService.servesCatalog !== "tmdb" || query.trim().length === 0) return null;
+  if (hasAdvancedSearchFilters(intent)) return null;
+  try {
+    const results = await (context.searchWikidata ?? searchWikidataTmdbTitles)(query, {
+      signal: context.signal,
+    });
+    return { results, sourceId: "wikidata", sourceName: "Wikidata (TMDB unreachable)" };
+  } catch (error) {
+    if (context.signal?.aborted) throw error;
+    return null;
+  }
+}
+
+function recordSearchAnswer(
+  lane: ProviderLane,
+  sourceId: string,
+  sourceName: string,
+  fallback: boolean,
+): void {
+  if (lane === "youtube") return;
+  const source = {
+    capability: "search",
+    lane: lane === "anime" ? "anime" : "movie-series",
+    sourceId,
+    sourceName,
+  } satisfies CatalogAnswerSource;
+  if (!fallback) {
+    recordPrimaryCatalogAnswer(source);
+    return;
+  }
+  // Anime: an earlier provider in the lane failed. Series: every TMDB route failed.
+  recordFallbackCatalogAnswer(
+    source,
+    lane === "anime" ? "another anime source failed" : "TMDB unreachable",
+  );
 }
 
 /**

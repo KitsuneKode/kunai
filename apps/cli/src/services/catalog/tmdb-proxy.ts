@@ -1,4 +1,8 @@
 import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
+import {
+  recordFallbackCatalogAnswer,
+  recordPrimaryCatalogAnswer,
+} from "@/services/catalog/catalog-source-ledger";
 import { observeOnlineIfBound } from "@/services/network/network-observation";
 import { classifyNetworkFailure } from "@/services/network/NetworkStatus";
 import { VIDEASY_DB_BASE, VIDEASY_DB_BASES } from "@kunai/providers";
@@ -234,7 +238,10 @@ export async function fetchTmdbJsonCached(
       .then((value) => {
         sessionCacheWrite(normalized, { expiresAt: now + SESSION_CACHE_MS, value });
         inflightRequests.delete(normalized);
-        durable?.write(normalized, Date.now(), value);
+        if (durable) {
+          durable.write(normalized, Date.now(), value);
+          recordEpisodesAnswer(false);
+        }
         return value;
       })
       .catch((error: Error) => {
@@ -243,13 +250,37 @@ export async function fetchTmdbJsonCached(
         // request. A definitive 4xx is TMDB's real answer and is never masked.
         const isDefinitive = error instanceof TmdbHttpError && error.status < 500;
         const saved = !isDefinitive ? durable?.read(normalized) : null;
-        if (saved) return saved.value;
+        if (saved) {
+          recordEpisodesAnswer(true);
+          return saved.value;
+        }
         throw error;
       });
     inflightRequests.set(normalized, task);
   }
 
   return joinTmdbInflight(task, signal);
+}
+
+function recordEpisodesAnswer(fromSaved: boolean): void {
+  if (fromSaved) {
+    recordFallbackCatalogAnswer(
+      {
+        capability: "series-episodes",
+        lane: "movie-series",
+        sourceId: "saved",
+        sourceName: "saved TMDB copy",
+      },
+      "TMDB unreachable",
+    );
+    return;
+  }
+  recordPrimaryCatalogAnswer({
+    capability: "series-episodes",
+    lane: "movie-series",
+    sourceId: "tmdb",
+    sourceName: "TMDB",
+  });
 }
 
 async function fetchTmdbHostJson(
