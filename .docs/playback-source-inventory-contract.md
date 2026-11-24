@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T10:41:51Z"
+lastReviewed: "2026-11-24T15:18:49Z"
 ---
 
 # Playback Source Inventory Contract
@@ -249,6 +249,14 @@ the same user-facing hierarchy.
   (muxed audio) still contribute their declared `LANGUAGE` to the stream's
   `audioLanguages`. `CLOSED-CAPTIONS` rows are skipped — embedded captions are
   read in-container by the player.
+- HLS variant quality is measured, not labelled: a `#EXT-X-STREAM-INF` row's
+  rung comes from `RESOLUTION` through `hlsResolutionQualityClass` (the long
+  side scaled to 16:9, so a letterboxed 1920x804 encode is 1080p), and `NAME`
+  only labels rows that declare no size. A row with neither ranks 0, never its
+  raw `BANDWIDTH`; bandwidth only orders equal rungs. A master kept whole
+  because its audio lives in a separate rendition still ranks by the highest
+  rung it declares (`parseHlsMasterMaxHeight`), so it competes with other
+  sources as the quality it is.
 
 UI surfaces can simplify this into tabs like "Sub", "Dub", "Servers", and
 "Quality", but diagnostics must always show the underlying `providerId`,
