@@ -100,7 +100,7 @@ function typeArguments(source: string, open: number): string[] | null {
     else if (char === "," && angle === 1 && nested === 0) {
       args.push(source.slice(start, index).trim());
       start = index + 1;
-    } else if (char === ";" || nested < 0) return null;
+    } else if ((char === ";" && nested === 0) || nested < 0) return null;
   }
   return null;
 }
@@ -168,6 +168,10 @@ describe("keyed joiner ratchet", () => {
     expect(flagged("let pending: Map<string, Promise<Result<T, E>> | undefined>;")).toBe(true);
     // Values that are functions returning a promise are a registry, not a join.
     expect(flagged("const handlers = new Map<string, () => Promise<void>>();")).toBe(false);
+    // A `;` inside an inline object type does not end the declaration.
+    expect(
+      flagged("const inflight = new Map<string, Promise<{ id: string; title: string }>>();"),
+    ).toBe(true);
     expect(
       flagged("const tasks = new Map<string, (signal: AbortSignal) => Promise<number>>();"),
     ).toBe(false);

@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 
 import { buildCliHelpText, CliUsageError, parseCliArgs as parseArgs } from "@/cli-args";
+import { resolvePlayerMode, type SupportedPlayerPlatform } from "@/domain/playback/player-choice";
 
 test("buildCliHelpText describes canonical launch flags", () => {
   const help = buildCliHelpText("0.0.0-test");
@@ -9,7 +10,6 @@ test("buildCliHelpText describes canonical launch flags", () => {
   expect(help).toContain("-S, --search <query>");
   expect(help).toContain("--continue, --resume");
   expect(help).toContain("--install-protocol-handler");
-  expect(help).toContain("--player <auto|mpv|vlc>");
   expect(help).toContain("Register the Linux-only kunai:// URL handler");
   expect(help).toContain("-y, --youtube");
   expect(help).toContain("--debug                Verbose redacted logging to ./logs.txt");
@@ -26,6 +26,26 @@ test("buildCliHelpText describes canonical launch flags", () => {
   expect(help).toContain("kunai upgrade");
   expect(help).toContain("kunai upgrade --check");
   expect(help).toContain("kunai uninstall");
+});
+
+test("every advertised player choice is supported on the named platform", () => {
+  const line = buildCliHelpText("0.0.0-test")
+    .split("\n")
+    .find((row) => row.trimStart().startsWith("--player"));
+  const entries = [...(line ?? "").matchAll(/(desktop|Android\/Termux) <([^>]+)>/g)];
+  expect(entries.map((entry) => entry[1])).toEqual(["desktop", "Android/Termux"]);
+  for (const [, label, choices = ""] of entries) {
+    const platforms: readonly SupportedPlayerPlatform[] =
+      label === "desktop" ? ["linux", "darwin", "win32", "other"] : ["android"];
+    for (const choice of choices.split("|")) {
+      const parsed = parseArgs(["--player", choice]).player;
+      for (const platform of platforms) {
+        expect(resolvePlayerMode({ choice: parsed, platform }).kind).toBe(
+          label === "desktop" ? "managed-mpv" : "android-handoff",
+        );
+      }
+    }
+  }
 });
 
 test("parseArgs exposes an explicit player choice with an auto default", () => {

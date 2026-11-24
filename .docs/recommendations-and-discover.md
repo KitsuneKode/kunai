@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T11:11:45Z"
+lastReviewed: "2026-11-24T13:00:00Z"
 ---
 
 # Kunai — Recommendations And Discover
@@ -103,9 +103,11 @@ Trending walks a chain of sources per lane and remembers the last good answer:
   request runs on a signal its entry owns, each caller waits with its own
   signal, and the request is aborted only when the last waiter leaves. TMDB
   is the exception on purpose: it uses the joiner's `"finish"` mode, so a
-  superseded type-ahead request still warms the session cache. A request whose
-  waiters all left is never joined by a later caller, and a request that is
-  cancelled or cleared never writes a cache. **Trending refresh**
+  superseded type-ahead request still warms the session cache. In the default
+  abort mode, a request whose waiters all left is never joined by a later
+  caller; in `"finish"` mode (TMDB, posters) it keeps running and a later caller
+  for the same key joins it. A request that is cancelled or cleared never
+  writes a cache. **Trending refresh**
   (`clearTrendingCache`) aborts the walks it supersedes, and a walk abandoned
   without a refresh rechecks its own signal after every source answer, so a
   late answer cannot overwrite the walk a returning caller started.

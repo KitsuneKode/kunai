@@ -26,8 +26,6 @@ export const TMDB_ALT_BASE = "https://api.tmdb.org/3";
  * the last resort until a Kunai key is injected at build time.
  */
 export const LEGACY_PUBLIC_TMDB_API_KEY = "653bb8af90162bd98fc7ee32bcbbfb3d";
-/** @deprecated use {@link resolveTmdbApiKey}; kept for existing imports. */
-export const TMDB_API_KEY = LEGACY_PUBLIC_TMDB_API_KEY;
 
 /**
  * Which TMDB credential direct requests use, in order:
