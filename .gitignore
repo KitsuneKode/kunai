@@ -128,3 +128,7 @@ apps/docs/CLAUDE.md
 
 # husky regenerates its hook shims on `prepare`
 .husky/_/
+
+# Branded installers rendered with the published checksum pin at docs build time.
+/apps/docs/public/install.sh
+/apps/docs/public/install.ps1

@@ -16,6 +16,18 @@ subtitle controls, and safer persistence, downloads and native installation.
 - Recover from failed playback through visible provider controls and a
   consistent Shift+F fallback action, with accurate attempt and loading states.
 
+### Catalog and settings
+
+- Keep series details and episodes available from the last successful TMDB lookup.
+  Search can fall back to Wikidata, and the series calendar can use TVmaze through
+  mapped IDs. Diagnostics shows which source answered.
+- Trending and recommendations retain usable results during upstream failures.
+  Shared AniList requests reduce duplicate work across anime surfaces.
+- Settings groups preferences into five sections. Add or remove personal TMDB and
+  Wyzie keys there. Kunai uses the OS vault when available.
+- A signed provider hotfix manifest delivers supported configuration updates.
+  HDR and Dolby Vision selections preserve the chosen playback route.
+
 ### Playback and providers
 
 - Preserve exact YouTube format IDs through quality selection and the options
@@ -91,7 +103,11 @@ subtitle controls, and safer persistence, downloads and native installation.
 
 ### Performance and distribution
 
-- Refresh the Bun 1.4.4, TypeScript 7 and Ink 7 toolchain with compatible package
+- Install through the project’s Homebrew tap or Scoop bucket. Signed releases
+  include a checksum-pinned Arch PKGBUILD. The native updater and branded
+  installers authenticate both checksum manifests when built with the release key.
+- Native bytecode builds reduce startup work on supported targets.
+- Refresh the Bun 1.4.5, TypeScript 7 and Ink 8 toolchain with compatible package
   updates. Reduce redundant provider/watchlist work, batch playlist imports,
   bound poster-cache recovery and buffer mpv IPC writes without leaking expired
   commands or stalled queues.
@@ -110,6 +126,17 @@ subtitle controls, and safer persistence, downloads and native installation.
 - Harden CI against zero-task and cache-replay false passes, retain gate
   evidence, and exercise installer and lifecycle contracts across platforms.
 
+### Reliability fixes
+
+- Handle OAuth callback bind failures, resolve relative HLS segments against the
+  final redirect URL, and cancel abandoned provider requests and prefetches.
+- Bound relay response reads. Concurrent catalog lookups can cancel independently,
+  and an abandoned request can no longer overwrite a successful retry.
+- Preserve healthy cache entries after malformed responses. Mark AniList titles
+  completed at their final episode, and handle hardware next/previous media keys.
+- Send macOS Keychain writes through stdin. Check that the Windows vault can
+  store, retrieve and delete a probe before using it. Report a file fallback.
+
 ### Scope and qualification
 
 - This release prioritizes the existing watching experience. Chromecast, the
@@ -127,5 +154,5 @@ subtitle controls, and safer persistence, downloads and native installation.
 ### Contributors
 
 Thanks [@KitsuneKode](https://github.com/KitsuneKode) for the implementation.
-The [full change history](https://github.com/KitsuneKode/kunai/compare/v0.3.0...7a13d8ce3072c65824261e6d8122b80382dc813a)
+The [full change history](https://github.com/KitsuneKode/kunai/compare/v0.3.0...v0.4.0)
 retains the individual changes and their attribution.

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T07:28:48Z"
+lastReviewed: "2026-11-24T09:36:13Z"
 ---
 
 # Tracker Sync
@@ -206,13 +206,14 @@ Two things about the v3 write path are easy to get wrong, and both were:
 ## Privacy
 
 Tokens live in the OS credential vault when one is reachable — macOS Keychain
-(`security`), Windows Credential Manager (`pwsh` PasswordVault), or Linux
-Secret Service (`secret-tool`), probed once per launch in that order with
+(writes use `security -i` over stdin), Windows Credential Manager (WinRT
+PasswordVault), or Linux Secret Service (`secret-tool`). Windows prefers inbox
+PowerShell and checks store, read-back and delete before selecting a vault. A
+failed probe reports the file fallback. Kunai selects the platform backend with
 `KUNAI_CREDENTIAL_BACKEND` as an override. One vault entry per tracker
-(`anilist.tokens`, `tmdb.tokens`) holds the credential JSON blob. On machines
-with no keyring — headless Linux without a Secret Service daemon — a `file`
-backend keeps the old guarantee: `configDir/secrets.json` written atomically
-with owner-only permissions. Linux waits for the bounded Secret Service probe
+(`anilist.tokens`, `tmdb.tokens`) holds the credential JSON blob. When the native keyring is unavailable, tracker tokens remain in the
+owner-only `sync-tokens.json` store. The file vault uses `secrets.json` for
+entries written through the vault port. Linux waits for the bounded Secret Service probe
 (up to three seconds) before selecting a backend. A separate short fallback
 timer must not redirect a slow but healthy keyring to a different credential
 store. The first launch on a vault-capable machine

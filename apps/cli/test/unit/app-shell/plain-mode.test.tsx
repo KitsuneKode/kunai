@@ -986,7 +986,7 @@ function libraryFixture() {
   const gate = new Promise<void>((resolve) => {
     open = resolve;
   });
-  // SAFETY: deliberate partial test stub; only the members defined here are exercised.
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
   const container = {
     config: {
       zenMode: false,

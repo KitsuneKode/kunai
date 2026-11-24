@@ -13,6 +13,8 @@ import { join, resolve } from "node:path";
 import { isJsonString } from "@kunai/types";
 import type { BunPlugin } from "bun";
 
+import releaseKey from "../src/services/update/release-key.json";
+
 export type BunBuildMetafile = NonNullable<Awaited<ReturnType<typeof Bun.build>>["metafile"]>;
 export type BunBuildOptions = NonNullable<Parameters<typeof Bun.build>[0]>;
 
@@ -93,6 +95,7 @@ interface ReleaseDefineMap {
 
 /** Compile-time defines shared by every release artifact. */
 export const RELEASE_DEFINE: ReleaseDefineMap = {
+  "import.meta.kunaiReleasePublicKey": JSON.stringify(releaseKey.ed25519Spki),
   // Pin Ink's optional devtools path off in release builds.
   "process.env.DEV": '"false"',
   // Let React and any small env-gated branches take their production path.
@@ -470,9 +473,9 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // request identity, and playback/config guards); 3175 KiB leaves 705 bytes.
 // Addon beta safety fixes measured 3,253,277 bytes; 3178 KiB leaves 995 bytes.
 // After merging main and making addons opt-in, Bun 1.4.5 measured 3,270,431
-// bytes. With #734, #745, and the fail-closed prompt, it measured 3,288,215
-// bytes. 3213 KiB leaves 1,897 bytes; public launcher budgets are unchanged.
-export const NPM_BUNDLE_BUDGET_KB = 3_213;
+// bytes. With #734, #745, #744, and the fail-closed prompt, it measured
+// 3,290,874 bytes. 3215 KiB leaves 1,286 bytes; public launcher budgets are unchanged.
+export const NPM_BUNDLE_BUDGET_KB = 3_215;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

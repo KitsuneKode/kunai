@@ -1,3 +1,4 @@
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { KunaiPaths } from "@kunai/storage";
@@ -127,12 +128,13 @@ function secretServiceVault(spawn: CredentialSpawn): CredentialVaultPort {
   };
 }
 
-/**
- * macOS Keychain via the `security` CLI. `add-generic-password` has no stdin
- * secret channel — `-w` is argv — which is a brief `ps` exposure documented
- * here deliberately; a native Keychain binding is the follow-up that removes
- * it. Lookup/delete carry only attribute names in argv.
- */
+// security -i reads one 4096-byte line at a time. Quote the account and
+// password for its own split_line parser, and reject inputs it cannot encode.
+function keychainArgument(value: string): string {
+  if (/[\r\n\0]/.test(value)) throw new Error("Unsupported Keychain line delimiter");
+  return '"' + value.replace(/["\\]/g, "\\$&") + '"';
+}
+
 function keychainVault(spawn: CredentialSpawn): CredentialVaultPort {
   return {
     backend: "keychain",
@@ -153,12 +155,12 @@ function keychainVault(spawn: CredentialSpawn): CredentialVaultPort {
       );
     },
     async set(key, value) {
-      const out = await spawn(
-        ["security", "add-generic-password", "-U", "-s", VAULT_SERVICE, "-a", key, "-w", value],
-        "",
-        SPAWN_TIMEOUT_MS,
-      );
-      if (out.exitCode !== 0) throw new Error(`security add-generic-password failed`);
+      const command = `add-generic-password -U -s ${VAULT_SERVICE} -a ${keychainArgument(key)} -w ${keychainArgument(value)}\n`;
+      if (Buffer.byteLength(command) > 4095)
+        throw new Error("Keychain command exceeds input limit");
+      const out = await spawn(["security", "-i"], command, SPAWN_TIMEOUT_MS);
+      if (out.exitCode !== 0 || out.timedOut)
+        throw new Error("security add-generic-password failed");
     },
     async delete(key) {
       const out = await spawn(
@@ -174,57 +176,63 @@ function keychainVault(spawn: CredentialSpawn): CredentialVaultPort {
   };
 }
 
-/**
- * Windows Credential Manager via WinRT `PasswordVault` through `pwsh`
- * (`-NoProfile -NonInteractive -Command`). The secret arrives on stdin and is
- * read inside the script — `cmdkey` is not used because it cannot store
- * arbitrary secrets for arbitrary targets.
- */
-function wincredVault(spawn: CredentialSpawn, shell: string): CredentialVaultPort {
-  const run = (script: string, input: string) =>
-    // The probe resolved this binary (pwsh preferred, powershell fallback):
-    // spawning the resolved path instead of a bare name keeps the backend
-    // working on inbox PowerShell 5.1 machines with no pwsh installed.
-    spawn([shell, "-NoProfile", "-NonInteractive", "-Command", script], input, SPAWN_TIMEOUT_MS);
+// Inbox Windows PowerShell projects WinRT classes after explicit activation.
+// Distinguish ERROR_NOT_FOUND from a denied or unavailable credential locker.
+const WINRT_VAULT = [
+  "$ErrorActionPreference = 'Stop'",
+  "[Console]::InputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)",
+  "$v = [Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime]::new()",
+].join("; ");
+const WINRT_CREDENTIAL =
+  "[Windows.Security.Credentials.PasswordCredential,Windows.Security.Credentials,ContentType=WindowsRuntime]";
+const WINRT_MISSING =
+  "if ($_.Exception.GetBaseException().HResult -eq -2147023728) { exit 44 }; throw";
+
+function wincredVault(
+  spawn: CredentialSpawn,
+  shell: string,
+): CredentialVaultPort & { probe(): Promise<boolean> } {
+  const run = (script: string, input = "") =>
+    spawn(
+      [shell, "-NoProfile", "-NonInteractive", "-Command", `${WINRT_VAULT}; ${script}`],
+      input,
+      SPAWN_TIMEOUT_MS,
+    );
+  const retrieve = (key: string) => `$v.Retrieve('${VAULT_SERVICE}', '${key.replace(/'/g, "''")}')`;
   return {
     backend: "wincred",
-    async get(key) {
+    async probe() {
+      // One shell startup, one unique resource per session. The reserved account
+      // never collides with another process or a real credential.
       const out = await run(
         [
-          `$v = New-Object Windows.Security.Credentials.PasswordVault`,
-          `try { $c = $v.Retrieve('${VAULT_SERVICE}', '${key.replace(/'/g, "''")}'); $c.RetrievePassword(); [Console]::Out.Write($c.Password) } catch { exit 1 }`,
+          "$resource = [Guid]::NewGuid().ToString()",
+          `$c = ${WINRT_CREDENTIAL}::new($resource, '__probe__', 'kunai-probe')`,
+          "$v.Add($c)",
+          "try { $stored = $v.Retrieve($resource, '__probe__'); $stored.RetrievePassword(); [Console]::Out.Write($stored.Password) } finally { $v.Remove($c) }",
         ].join("; "),
-        "",
       );
-      if (out.exitCode === 0) return out.stdout;
-      // The script exits 1 from its own catch — the documented not-found.
-      // Anything else (or a killed spawn) is a vault fault, not "absent".
-      if (out.exitCode === 1 && !out.timedOut) return undefined;
-      throw new Error(
-        `PasswordVault Retrieve failed (${out.timedOut ? "timeout" : `exit ${out.exitCode}`})`,
+      return out.exitCode === 0 && !out.timedOut && out.stdout === "kunai-probe";
+    },
+    async get(key) {
+      const out = await run(
+        `try { $c = ${retrieve(key)} } catch { ${WINRT_MISSING} }; $c.RetrievePassword(); [Console]::Out.Write($c.Password)`,
       );
+      if (out.exitCode === 44 && !out.timedOut) return undefined;
+      if (out.exitCode !== 0 || out.timedOut) throw new Error("PasswordVault Retrieve failed");
+      return out.stdout;
     },
     async set(key, value) {
       const out = await run(
-        [
-          `$pw = [Console]::In.ReadToEnd()`,
-          `$v = New-Object Windows.Security.Credentials.PasswordVault`,
-          `$c = New-Object Windows.Security.Credentials.PasswordCredential('${VAULT_SERVICE}', '${key.replace(/'/g, "''")}', $pw)`,
-          `$v.Add($c)`,
-        ].join("; "),
+        `$v.Add(${WINRT_CREDENTIAL}::new('${VAULT_SERVICE}', '${key.replace(/'/g, "''")}', [Console]::In.ReadToEnd()))`,
         value,
       );
-      if (out.exitCode !== 0) throw new Error("PasswordVault Add failed");
+      if (out.exitCode !== 0 || out.timedOut) throw new Error("PasswordVault Add failed");
     },
     async delete(key) {
-      const out = await run(
-        [
-          `$v = New-Object Windows.Security.Credentials.PasswordVault`,
-          `try { $v.Remove($v.Retrieve('${VAULT_SERVICE}', '${key.replace(/'/g, "''")}')) } catch { }`,
-        ].join("; "),
-        "",
-      );
-      if (out.exitCode !== 0) throw new Error("PasswordVault Remove failed");
+      const out = await run(`try { $v.Remove(${retrieve(key)}) } catch { ${WINRT_MISSING} }`);
+      if ((out.exitCode !== 0 && out.exitCode !== 44) || out.timedOut)
+        throw new Error("PasswordVault Remove failed");
     },
   };
 }
@@ -255,8 +263,16 @@ async function probeBackend(
       return which("security") ? keychainVault(spawn) : undefined;
     }
     if (backend === "wincred") {
-      const shell = which("pwsh") ?? which("powershell");
-      return shell ? wincredVault(spawn, shell) : undefined;
+      for (const command of ["powershell.exe", "pwsh"]) {
+        const shell = which(command);
+        if (!shell) continue;
+        const vault = wincredVault(spawn, shell);
+        try {
+          if (await vault.probe()) return vault;
+        } catch {
+          // A shell may exist without WinRT support. Try the other host.
+        }
+      }
     }
   } catch {
     return undefined;
@@ -290,4 +306,30 @@ export async function createCredentialVault(
   if (picked) return picked;
   deps.onFallback?.("file", `${wanted} backend unavailable on ${platform}`);
   return fileVault(deps.paths);
+}
+
+/** Marker in the profile's config dir: the Windows file-fallback notice was shown. */
+export const FILE_FALLBACK_NOTICE_MARKER = ".credential-file-fallback-noticed";
+
+/**
+ * Tell a Windows user once per profile that credentials went to profile files.
+ * The fallback recurs on every startup on such a machine, so the line used to
+ * print every time. The marker is created exclusively before printing; if it
+ * cannot be written the notice still prints, so a read-only profile is told.
+ */
+export function noticeFileFallbackOnce(input: {
+  readonly configDir: string;
+  readonly platform?: NodeJS.Platform;
+  readonly write: (line: string) => void;
+}): void {
+  if ((input.platform ?? process.platform) !== "win32") return;
+  try {
+    mkdirSync(input.configDir, { recursive: true });
+    writeFileSync(join(input.configDir, FILE_FALLBACK_NOTICE_MARKER), "", { flag: "wx" });
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "EEXIST") return;
+  }
+  input.write(
+    "Windows credential vault unavailable. Kunai will store credentials in user-profile files.\n",
+  );
 }
