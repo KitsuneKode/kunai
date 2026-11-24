@@ -44,6 +44,16 @@ touches; do not read `.docs/` end to end. Vocabulary lives in
    and user-owned. Published binaries are immutable, so a baked-in host is
    forever.
 
+## Never lose work
+
+Uncommitted or unpushed work is one cleanup away from gone — a website
+redesign once survived only in a local backup commit. Commit design and UX work
+as you go on a `wip/*` branch and push it. Before ending a session, deleting a
+worktree, branch or stash, or "cleaning up", run `bun run wip:audit`; if it
+lists anything, run `bun run wip:backup` first (it snapshots dirty worktrees,
+stashes and every branch into a bundle outside the repo without touching any
+working tree). Never delete local work that the audit lists without a backup.
+
 ## Non-negotiables
 
 Each of these is enforced by a test or is expensive to get wrong.
