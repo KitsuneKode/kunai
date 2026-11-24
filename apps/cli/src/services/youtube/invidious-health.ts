@@ -46,6 +46,7 @@ export async function probeInvidiousHealth(options: {
       headers: { Accept: "application/json" },
       signal: controller.signal,
     });
+    await response.body?.cancel().catch(() => undefined);
     if (!response.ok) {
       return {
         ok: false,

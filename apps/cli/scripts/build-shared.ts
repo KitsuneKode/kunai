@@ -455,7 +455,10 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // boundaries, which minification cannot shorten. No dependency or asset.
 // Merged onto the #740 dead-code prune (providers, aliases, CLI exports), the
 // split measured 3,212,126 bytes: -6,002 against the split alone.
-// 3140 KiB leaves 3,234 bytes; public launcher budgets below are unchanged.
+// November 24 streaming relay cap, locked manifest reset, registered toast
+// timer, and unread-body cancels measured 3,210,429 bytes.
+// The split merged with those (#733) and the prune (#740) measured 3,212,477 bytes.
+// 3140 KiB leaves 2,883 bytes; public launcher budgets below are unchanged.
 export const NPM_BUNDLE_BUDGET_KB = 3_140;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */

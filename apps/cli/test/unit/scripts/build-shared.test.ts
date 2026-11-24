@@ -227,7 +227,7 @@ describe("release build shared options", () => {
     const out = await mapWithConcurrency([1, 2, 3, 4], 2, async (value) => {
       active += 1;
       peak = Math.max(peak, active);
-      await Bun.sleep(5);
+      await nextTurn();
       active -= 1;
       return value * 2;
     });
@@ -292,3 +292,9 @@ describe("bytecode and size budgets per release target", () => {
     }
   });
 });
+
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}

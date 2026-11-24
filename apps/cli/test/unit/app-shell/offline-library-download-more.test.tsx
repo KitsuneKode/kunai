@@ -268,6 +268,7 @@ test("anime movie download-more restores its persisted lane before actual enqueu
         label: "queued download row",
         tick: (ms) =>
           act(async () => {
+            // sleep-allow: Ink overlay debounce; the component clock is not injected
             await new Promise((r) => setTimeout(r, ms));
           }),
       });

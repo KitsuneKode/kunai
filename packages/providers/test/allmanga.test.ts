@@ -2070,6 +2070,7 @@ async function mockAllMangaFetch(
         { once: true },
       );
       if (options.akDelayMs) {
+        // sleep-allow: stands in for AllManga's ak delay; that clock is not injected into the fixture
         await Bun.sleep(options.akDelayMs);
         if (init?.signal?.aborted) {
           throw init.signal.reason ?? new DOMException("Aborted", "AbortError");
@@ -2087,6 +2088,7 @@ async function mockAllMangaFetch(
           abortedBaselineRequests += 1;
           reject(init?.signal?.reason ?? new DOMException("Aborted", "AbortError"));
         };
+        // sleep-allow: stands in for AllManga's ak delay; that clock is not injected into the fixture
         const timer = setTimeout(() => {
           init?.signal?.removeEventListener("abort", onAbort);
           resolve();
@@ -2104,6 +2106,7 @@ async function mockAllMangaFetch(
           abortedBaselineRequests += 1;
           reject(init?.signal?.reason ?? new DOMException("Aborted", "AbortError"));
         };
+        // sleep-allow: stands in for AllManga's ak delay; that clock is not injected into the fixture
         const timer = setTimeout(() => {
           init?.signal?.removeEventListener("abort", onAbort);
           resolve();

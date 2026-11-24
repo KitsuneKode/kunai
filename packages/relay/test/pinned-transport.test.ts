@@ -240,12 +240,13 @@ test("pinned transport aborts while DNS resolution is still pending", async () =
       () => "resolved",
       (error: unknown) => (error as { name?: string }).name,
     ),
+    // sleep-allow: hang bound: the lookup must still be pending
     Bun.sleep(500).then(() => "still-pending"),
   ]);
 
   expect(outcome).toBe("AbortError");
   resolveDns?.([publicAddress]);
-  await Bun.sleep(0);
+  await nextTurn();
   expect(requests).toBe(0);
 });
 
@@ -598,3 +599,9 @@ const _relayTransportRequestInput: Parameters<RelayTransport>[0] = new Request(
 );
 void _relayTransportUrlInput;
 void _relayTransportRequestInput;
+
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}

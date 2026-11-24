@@ -147,6 +147,7 @@ if (process.argv.includes("--echo-args")) {
   process.stdout.write(process.argv.slice(2).join(","));
   // Natural exit lets piped stdout drain before the stand-in terminates.
 } else {
+  // sleep-allow: waits for a real launcher child
   setTimeout(() => {}, 30000);
 }
 `,
@@ -399,6 +400,7 @@ signalTest("dies by the same signal as the child, giving 128+n", async () => {
             `launcher exited ${child.exitCode} before registering ${signal} handlers`,
           );
         }
+        // sleep-allow: waits for a real launcher child
         await Bun.sleep(ms);
       },
     });

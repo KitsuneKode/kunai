@@ -165,7 +165,7 @@ describe("VideasyLazySourceProbeService", () => {
       resolveVideasyDirect: async () => {
         active += 1;
         maxActive = Math.max(maxActive, active);
-        await Bun.sleep(1);
+        await nextTurn();
         active -= 1;
         return baseResult();
       },
@@ -265,4 +265,10 @@ function failedSource(id: string, label: string, flavorId: string): ProviderSour
       failureReason: "previous failure",
     },
   };
+}
+
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
 }
