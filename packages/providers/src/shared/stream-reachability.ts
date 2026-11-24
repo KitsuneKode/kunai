@@ -817,13 +817,47 @@ function isDirectMediaPrefix(prefix: Uint8Array, complete: boolean): boolean {
     return hasMatroskaDocType(view);
   }
   const box = readIsoBox(view, 0);
-  return (
-    box !== null &&
-    box.type === "ftyp" &&
-    box.end - box.payload >= 8 &&
-    box.end <= prefix.byteLength &&
-    (!complete || box.end < prefix.byteLength)
-  );
+  if (!box || box.type !== "ftyp" || box.end - box.payload < 8 || box.end > view.byteLength) {
+    return false;
+  }
+  // A complete body must also hold at least one more complete, known top-level
+  // box — an ftyp header alone, or trailing bytes that parse as nothing, is a
+  // header with no media.
+  return !complete || hasCompleteMp4Boxes(view, box.end);
+}
+
+/** Top-level ISO boxes that count as media evidence after `ftyp`. */
+const MP4_TOP_LEVEL_BOXES = new Set([
+  "moov",
+  "mdat",
+  "moof",
+  "free",
+  "skip",
+  "wide",
+  "sidx",
+  "styp",
+  "pdin",
+  "meta",
+  "mfra",
+]);
+
+/**
+ * Every box after `ftyp` must parse and fit the body. Unknown-but-complete
+ * boxes are tolerated either side of the media boxes — `known` requires at
+ * least one recognized top-level box, so a prefix of nothing but foreign
+ * boxes still refuses.
+ */
+function hasCompleteMp4Boxes(view: DataView, offset: number): boolean {
+  let known = false;
+  while (offset < view.byteLength) {
+    const next = readIsoBox(view, offset);
+    if (!next) return false;
+    const end = next.end === Number.POSITIVE_INFINITY ? view.byteLength : next.end;
+    if (end > view.byteLength || (next.type === "uuid" && end - next.payload < 16)) return false;
+    known ||= MP4_TOP_LEVEL_BOXES.has(next.type);
+    offset = end;
+  }
+  return known;
 }
 
 /**
@@ -897,23 +931,34 @@ async function probeDirectMedia(
     }
     const range =
       response.status === 206 ? parseDirectMediaRange(response.headers.get("content-range")) : null;
-    if (response.status === 206 && !range) {
-      // A partial answer without a verifiable `bytes 0-N` range did not honor
-      // the request shape — there is no evidence to read.
+    const declaredLength = response.headers.get("content-length");
+    if (
+      response.status === 206 &&
+      (!range ||
+        (declaredLength !== null &&
+          (!/^\d+$/.test(declaredLength) || Number(declaredLength) !== range.length)))
+    ) {
+      // A partial answer without a verifiable `bytes 0-N` range — or one whose
+      // Content-Length contradicts that range — did not honor the request
+      // shape: there is no evidence to read.
       await response.body?.cancel().catch(() => undefined);
       return { status: "unreachable", reason: "unsupported-direct-media", definitive: true };
     }
-    const prefix = await readPrefixBytes(response.body, DIRECT_MEDIA_PROBE_PREFIX_BYTES);
-    // Complete means the prefix holds the whole object: a short 200 body, a
-    // 206 whose range covered the full length, or a 200 whose declared size is
-    // exactly what arrived (and no transfer encoding rewrote it mid-flight).
-    const contentEncoding = response.headers.get("content-encoding");
-    const complete =
-      range?.complete ??
-      (prefix.byteLength < DIRECT_MEDIA_PROBE_PREFIX_BYTES ||
-        ((!contentEncoding || contentEncoding.toLowerCase() === "identity") &&
-          Number(response.headers.get("content-length")) === prefix.byteLength));
-    if ((!range || range.length === prefix.byteLength) && isDirectMediaPrefix(prefix, complete)) {
+    // One byte past the target distinguishes EOF exactly at the range from an
+    // overflow — an excess byte, even in a separate chunk, is a body that does
+    // not match its own contract.
+    const bytes = await readPrefixBytes(
+      response.body,
+      (range?.length ?? DIRECT_MEDIA_PROBE_PREFIX_BYTES) + 1,
+    );
+    if (range && bytes.byteLength !== range.length) {
+      return { status: "unreachable", reason: "unsupported-direct-media", definitive: true };
+    }
+    // Complete means the prefix provably holds the whole object: a 206 whose
+    // range covered the full length, or a 200 that ended inside the read cap.
+    const complete = range?.complete ?? bytes.byteLength <= DIRECT_MEDIA_PROBE_PREFIX_BYTES;
+    const prefix = bytes.subarray(0, DIRECT_MEDIA_PROBE_PREFIX_BYTES);
+    if (isDirectMediaPrefix(prefix, complete)) {
       return { status: "reachable" };
     }
     return { status: "unreachable", reason: "unsupported-direct-media", definitive: true };

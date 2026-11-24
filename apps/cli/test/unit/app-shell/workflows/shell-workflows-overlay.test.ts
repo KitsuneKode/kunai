@@ -51,16 +51,19 @@ describe("enqueueCurrentPlaybackDownload feedback", () => {
       readonly mode?: string;
       readonly titleType?: "movie" | "series";
       readonly episode?: { season: number; episode: number };
+      readonly stream?: unknown;
+      readonly provider?: string;
     } = {},
-  ): { container: Container; notes: (string | null)[] } {
+  ): { container: Container; notes: (string | null)[]; enqueued: unknown[] } {
     const notes: (string | null)[] = [];
+    const enqueued: unknown[] = [];
     const languageProfile = { audio: "en", subtitle: "en", quality: "1080p" };
     const state = {
       currentTitle: { id: "t1", type: playback.titleType ?? "series", name: job.titleName },
       currentEpisode: playback.episode ?? { season: 1, episode: 1 },
       mode: playback.mode ?? "series",
-      stream: undefined,
-      provider: "provider-1",
+      stream: playback.stream,
+      provider: playback.provider ?? "provider-1",
       animeLanguageProfile: languageProfile,
       movieLanguageProfile: languageProfile,
       seriesLanguageProfile: languageProfile,
@@ -82,19 +85,21 @@ describe("enqueueCurrentPlaybackDownload feedback", () => {
       playerControl: { waitForActivePlayer: async () => null },
       downloadService: {
         getEnqueueEligibility: () => ({ allowed: true }),
-        enqueue: async () =>
-          ({
+        enqueue: async (input: unknown) => {
+          enqueued.push(input);
+          return {
             id: "job-1",
             titleId: "t1",
             providerId: "provider-1",
             outputPath: "/downloads/out.mp4",
             ...job,
-          }) as DownloadJobRecord,
+          } as DownloadJobRecord;
+        },
         kickQueue: () => {},
       },
     } as unknown as Container;
 
-    return { container, notes };
+    return { container, notes, enqueued };
   }
 
   test("a movie job is queued as Movie, never as a synthetic S01E01", async () => {
@@ -141,6 +146,36 @@ describe("enqueueCurrentPlaybackDownload feedback", () => {
 
     expect(notes[0]).toBe("Download queued: Kunai Release Trailer · Video");
     expect(notes[0]).not.toMatch(/E\d/);
+  });
+
+  test("hands the stream's producer id to the download, not the selected provider", async () => {
+    // Playback can fall back from the selected provider to an addon-produced
+    // stream; the enqueue has to carry that producer id or the addon refusal
+    // in DownloadService.enqueue could never see it.
+    const { container, enqueued } = createContainer(
+      { titleName: "Fallback feature", mediaKind: "movie" },
+      {
+        titleType: "movie",
+        provider: "vidlink",
+        stream: {
+          url: "https://addon.example/stream.mp4",
+          headers: {},
+          timestamp: 0,
+          providerResolveResult: {
+            providerId: "stremio-fixture-12345678",
+            status: "resolved",
+            streams: [],
+            subtitles: [],
+            failures: [],
+          },
+        },
+      },
+    );
+
+    await enqueueCurrentPlaybackDownload({ container, reason: "test" });
+
+    expect(enqueued).toHaveLength(1);
+    expect(enqueued[0]).toMatchObject({ providerId: "stremio-fixture-12345678" });
   });
 
   test("dismisses the queued toast through the shell feedback timer registry", async () => {

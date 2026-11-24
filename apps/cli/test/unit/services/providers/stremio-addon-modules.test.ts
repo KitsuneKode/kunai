@@ -20,12 +20,14 @@ const B = "https://b.example.com/manifest.json";
 
 describe("addon provider modules", () => {
   test("one module per installed addon, named by the addon and never by its path", () => {
-    const entries: StremioAddonConfigEntry[] = [{ url: A, name: "Alpha" }, { url: B }];
+    // A configured install's stored name may itself be secret-derived; it is
+    // never exported, only the host-only label is.
+    const entries: StremioAddonConfigEntry[] = [{ url: A, name: "Alpha SECRETTOKEN" }, { url: B }];
 
     const modules = createStremioAddonModules({ getEntries: () => entries });
 
     expect(modules.map((module) => module.manifest.displayName)).toEqual([
-      "Alpha",
+      "addon @ a.example.com",
       "b.example.com",
     ]);
     expect(modules.every((module) => module.providerId.startsWith("stremio-"))).toBe(true);

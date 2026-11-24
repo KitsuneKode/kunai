@@ -3,6 +3,9 @@ import { describe, expect, test } from "bun:test";
 import {
   isStremioAddonProviderId,
   parseStremioAddonUrl,
+  scrubStremioAddonText,
+  stremioAddonDisplayLabel,
+  stremioAddonHasPrivateConfiguration,
   stremioStreamUrl,
   stremioVideoId,
 } from "../src/stremio-addon/addon-url";
@@ -82,6 +85,81 @@ describe("addon resource paths", () => {
     expect(videoId).toBe("tt0944947:1:2");
     expect(stremioStreamUrl(addon, "series", videoId)).toBe(
       "https://addon.example.com/stream/series/tt0944947%3A1%3A2.json",
+    );
+  });
+});
+
+describe("addon private configuration", () => {
+  test("a path before manifest.json marks the URL as private configuration", () => {
+    expect(stremioAddonHasPrivateConfiguration("https://addon.example.com/manifest.json")).toBe(
+      false,
+    );
+    expect(stremioAddonHasPrivateConfiguration("https://addon.example.com/cfg/manifest.json")).toBe(
+      true,
+    );
+    expect(
+      stremioAddonHasPrivateConfiguration("https://addon.example.com/manifest.json?token=x"),
+    ).toBe(true);
+    expect(
+      stremioAddonHasPrivateConfiguration("https://user:pw@addon.example.com/manifest.json"),
+    ).toBe(true);
+    expect(stremioAddonHasPrivateConfiguration("not a url")).toBe(true);
+  });
+
+  test("the display label is host-only, marked when the install is configured", () => {
+    expect(
+      stremioAddonDisplayLabel({
+        host: "addon.example.com",
+        manifestUrl: "https://addon.example.com/manifest.json",
+      }),
+    ).toBe("addon.example.com");
+    expect(
+      stremioAddonDisplayLabel({
+        host: "addon.example.com",
+        manifestUrl: "https://addon.example.com/cfg/manifest.json",
+      }),
+    ).toBe("addon @ addon.example.com");
+  });
+});
+
+describe("addon text scrubbing", () => {
+  const CANARY = "CanaryToken2026";
+  const configured = `https://addon.example.com/key=${CANARY}&opt=plain/manifest.json`;
+
+  test("a compound path secret is removed in the forms it can take", () => {
+    expect(scrubStremioAddonText(`Echo ${CANARY}`, configured)).toBe("Echo [redacted]");
+    expect(scrubStremioAddonText("Echo key=CanaryToken2026&opt=plain", configured)).toBe(
+      "Echo [redacted]",
+    );
+  });
+
+  test("a percent-encoded compound secret is removed decoded", () => {
+    const url = `https://addon.example.com/key%3D${CANARY}%26opt%3Don/manifest.json`;
+    expect(scrubStremioAddonText(`Echo ${CANARY}`, url)).toBe("Echo [redacted]");
+    expect(scrubStremioAddonText(`Echo key%3D${CANARY}%26opt%3Don`, url)).toBe("Echo [redacted]");
+  });
+
+  test("a base64url-encoded secret is removed decoded", () => {
+    const encoded = Buffer.from(CANARY).toString("base64url");
+    const url = `https://addon.example.com/${encoded}/manifest.json`;
+    expect(scrubStremioAddonText(`Echo ${CANARY}`, url)).toBe("Echo [redacted]");
+    expect(scrubStremioAddonText(`Echo ${encoded}`, url)).toBe("Echo [redacted]");
+  });
+
+  test("a base64url-encoded JSON object gives up the token inside", () => {
+    const encoded = Buffer.from(`{"opt":"${CANARY}"}`).toString("base64url");
+    const url = `https://addon.example.com/${encoded}/manifest.json`;
+    expect(scrubStremioAddonText(`Echo ${CANARY}`, url)).toBe("Echo [redacted]");
+  });
+
+  test("query values are scrubbed even though the URL parser refuses them", () => {
+    const url = `https://addon.example.com/manifest.json?token=${CANARY}`;
+    expect(scrubStremioAddonText(`Echo ${CANARY}`, url)).toBe("Echo [redacted]");
+  });
+
+  test("an absolute URL inside addon text is never trusted display data", () => {
+    expect(scrubStremioAddonText("mirror https://tracker.example.com/abc", configured)).toBe(
+      "mirror [redacted]",
     );
   });
 });

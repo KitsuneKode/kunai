@@ -22,6 +22,7 @@ import {
   runMigrations,
 } from "@kunai/storage";
 
+import { downloadStream } from "../../../support/download-stream";
 import { waitUntil as sharedWaitUntil } from "../../../support/wait-until";
 
 const encoder = new TextEncoder();
@@ -306,7 +307,11 @@ describe("DownloadService", () => {
     const job = await service.enqueue({
       title: { id: "tmdb:783", type: "movie", name: "Replaced hard link" },
       providerId: "vidking",
-      stream: { url: "https://example.com/video.mp4", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/video.mp4",
+        headers: {},
+        timestamp: 0,
+      }),
     });
     const events: string[] = [];
     service.onEvent((event) => events.push(event.type));
@@ -345,7 +350,11 @@ describe("DownloadService", () => {
       const job = await service.enqueue({
         title: { id: "tmdb:778", type: "movie", name: "Copy fallback" },
         providerId: "vidking",
-        stream: { url: "https://example.com/copy.mp4", headers: {}, timestamp: 0 },
+        stream: downloadStream("vidking", {
+          url: "https://example.com/copy.mp4",
+          headers: {},
+          timestamp: 0,
+        }),
       });
       await service.processQueue();
       expect(copy).toHaveBeenCalledTimes(1);
@@ -401,7 +410,11 @@ describe("DownloadService", () => {
     const job = await old.enqueue({
       title: { id: "tmdb:779", type: "movie", name: "Copy takeover" },
       providerId: "vidking",
-      stream: { url: "https://example.com/copy.mp4", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/copy.mp4",
+        headers: {},
+        timestamp: 0,
+      }),
     });
     const work = old.processNextQueued();
     const secondDb = openKunaiDatabase(join(tempDir, "data.sqlite"));
@@ -475,7 +488,11 @@ describe("DownloadService", () => {
     const job = await service.enqueue({
       title: { id: "tmdb:780", type: "movie", name: "User replacement" },
       providerId: "vidking",
-      stream: { url: "https://example.com/copy.mp4", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/copy.mp4",
+        headers: {},
+        timestamp: 0,
+      }),
     });
     const work = service.processNextQueued();
     try {
@@ -491,7 +508,11 @@ describe("DownloadService", () => {
       const following = await service.enqueue({
         title: { id: "tmdb:785", type: "movie", name: "Following recovery" },
         providerId: "vidking",
-        stream: { url: "https://example.com/next.mp4", headers: {}, timestamp: 0 },
+        stream: downloadStream("vidking", {
+          url: "https://example.com/next.mp4",
+          headers: {},
+          timestamp: 0,
+        }),
       });
       db.query("UPDATE download_jobs SET last_heartbeat_at = ? WHERE id = ?").run(
         new Date(Date.now() - 120_000).toISOString(),
@@ -544,7 +565,11 @@ describe("DownloadService", () => {
     const job = await service.enqueue({
       title: { id: "tmdb:786", type: "movie", name: "Cancel copy" },
       providerId: "vidking",
-      stream: { url: "https://example.com/copy.mp4", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/copy.mp4",
+        headers: {},
+        timestamp: 0,
+      }),
     });
     const work = service.processNextQueued();
     const settled = Promise.allSettled([work]);
@@ -600,7 +625,11 @@ describe("DownloadService", () => {
     const job = await service.enqueue({
       title: { id: "tmdb:782", type: "movie", name: "Interrupted copy" },
       providerId: "vidking",
-      stream: { url: "https://example.com/copy.mp4", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/copy.mp4",
+        headers: {},
+        timestamp: 0,
+      }),
     });
     const work = service.processNextQueued();
     const settled = Promise.allSettled([work]);
@@ -643,7 +672,11 @@ describe("DownloadService", () => {
     const job = await service.enqueue({
       title: { id: "tmdb:781", type: "movie", name: "Delete replacement" },
       providerId: "vidking",
-      stream: { url: "https://example.com/copy.mp4", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/copy.mp4",
+        headers: {},
+        timestamp: 0,
+      }),
     });
     await service.processQueue();
     nativeFs.renameSync(job.outputPath, join(tempDir, "completed-original"));
@@ -680,7 +713,11 @@ describe("DownloadService", () => {
     const job = await service.enqueue({
       title: { id: "tmdb:782", type: "movie", name: "Marker recovery" },
       providerId: "vidking",
-      stream: { url: "https://example.com/video.mp4", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/video.mp4",
+        headers: {},
+        timestamp: 0,
+      }),
     });
     const marker = spyOn(repo, "setPublication").mockImplementation(() => {
       throw new Error("publication metadata unavailable");
@@ -731,7 +768,11 @@ describe("DownloadService", () => {
         const job = await service.enqueue({
           title: { id: "tmdb:9999", type: "movie", name: "Persistence" },
           providerId: "vidking",
-          stream: { url: "https://example.com/fixture.mp4", headers: {}, timestamp: 0 },
+          stream: downloadStream("vidking", {
+            url: "https://example.com/fixture.mp4",
+            headers: {},
+            timestamp: 0,
+          }),
         });
         spawnSpy.mockImplementation((command: string[]) => {
           writeFileSync(command[command.indexOf("-o") + 1]!, "published bytes");
@@ -776,7 +817,11 @@ describe("DownloadService", () => {
       const job = await service.enqueue({
         title: { id: "tmdb:9999", type: "movie", name: "Cleanup" },
         providerId: "vidking",
-        stream: { url: "https://example.com/fixture.mp4", headers: {}, timestamp: 0 },
+        stream: downloadStream("vidking", {
+          url: "https://example.com/fixture.mp4",
+          headers: {},
+          timestamp: 0,
+        }),
       });
       spawnSpy.mockImplementation((command: string[]) => {
         writeFileSync(command[command.indexOf("-o") + 1]!, "published bytes");
@@ -868,7 +913,11 @@ describe("DownloadService", () => {
             title: { id: "tmdb:999", type: "series", name: "A".repeat(300) },
             episode: { season: 1, episode },
             providerId: "vidking",
-            stream: { url: `https://example.com/${episode}.mp4`, headers: {}, timestamp: 0 },
+            stream: downloadStream("vidking", {
+              url: `https://example.com/${episode}.mp4`,
+              headers: {},
+              timestamp: 0,
+            }),
           }),
         );
       await service.processQueue();
@@ -888,7 +937,11 @@ describe("DownloadService", () => {
       const job = await service.enqueue({
         title: { id: "tmdb:888", type: "movie", name: "Existing" },
         providerId: "vidking",
-        stream: { url: "https://example.com/new.mp4", headers: {}, timestamp: 0 },
+        stream: downloadStream("vidking", {
+          url: "https://example.com/new.mp4",
+          headers: {},
+          timestamp: 0,
+        }),
       });
       writeFileSync(job.outputPath, "user-owned bytes");
       spawnSpy.mockImplementation((command: string[]) => {
@@ -1140,7 +1193,11 @@ describe("DownloadService", () => {
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
       episode: { season: 1, episode: 1, name: "Episode 1" },
-      stream: { url: "--exec=touch /tmp/pwned", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "--exec=touch /tmp/pwned",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
     });
     await service.processQueue();
@@ -1169,7 +1226,11 @@ describe("DownloadService", () => {
       service.enqueue({
         title: { id: "tmdb:1", type: "series", name: "Example" },
         episode: { season: 1, episode: 1, name: "Episode 1" },
-        stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+        stream: downloadStream("vidking", {
+          url: "https://example.com/master.m3u8",
+          headers: {},
+          timestamp: 0,
+        }),
         providerId: "vidking",
       }),
     ).rejects.toBeInstanceOf(DownloadEnqueueRejectedError);
@@ -1186,7 +1247,11 @@ describe("DownloadService", () => {
     const attempt = service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
       episode: { season: 1, episode: 1, name: "Episode 1" },
-      stream: { url: "https://cdn.example.com/episode.mp4", headers: {}, timestamp: 0 },
+      stream: downloadStream("stremio-0123456789abcdef", {
+        url: "https://cdn.example.com/episode.mp4",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "stremio-0123456789abcdef",
     });
     await expect(attempt).rejects.toBeInstanceOf(DownloadEnqueueRejectedError);
@@ -1316,11 +1381,11 @@ describe("DownloadService", () => {
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
       episode: { season: 1, episode: 1, name: "Episode 1" },
-      stream: {
+      stream: downloadStream("vidking", {
         url: "https://example.com/master.m3u8",
         headers: { Referer: "https://example.com" },
         timestamp: 0,
-      },
+      }),
       providerId: "vidking",
     });
     await service.processQueue();
@@ -1348,7 +1413,11 @@ describe("DownloadService", () => {
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
       episode: { season: 1, episode: 1, name: "Episode 1" },
-      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/master.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
     });
     reserveBytes = Number.MAX_SAFE_INTEGER;
@@ -1374,7 +1443,11 @@ describe("DownloadService", () => {
     await expect(
       service.enqueue({
         title: { id: "tmdb:full-disk", type: "movie", name: "Full Disk" },
-        stream: { url: "https://example.com/full.m3u8", headers: {}, timestamp: 0 },
+        stream: downloadStream("vidking", {
+          url: "https://example.com/full.m3u8",
+          headers: {},
+          timestamp: 0,
+        }),
         providerId: "vidking",
         mode: "series",
       }),
@@ -1392,11 +1465,11 @@ describe("DownloadService", () => {
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
       episode: { season: 1, episode: 1, name: "Episode 1" },
-      stream: {
+      stream: downloadStream("vidking", {
         url: "https://example.com/master.m3u8",
         headers: { Referer: "https://example.com" },
         timestamp: 0,
-      },
+      }),
       providerId: "vidking",
       selectedSourceId: "source-b",
       selectedStreamId: "stream-b-1080",
@@ -1434,12 +1507,20 @@ describe("DownloadService", () => {
     });
     const job = await service.enqueue({
       title: { id: "tmdb:registration-1", type: "movie", name: "Registration failure" },
-      stream: { url: "https://example.com/one.mp4", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/one.mp4",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
     });
     const next = await service.enqueue({
       title: { id: "tmdb:registration-2", type: "movie", name: "Following job" },
-      stream: { url: "https://example.com/two.mp4", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/two.mp4",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
     });
     await expect(service.processQueue()).rejects.toBe(registrationError);
@@ -1463,12 +1544,20 @@ describe("DownloadService", () => {
     });
     const first = await service.enqueue({
       title: { id: "tmdb:fifo-1", type: "movie", name: "First" },
-      stream: { url: "https://example.com/1.mp4", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/1.mp4",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
     });
     const second = await service.enqueue({
       title: { id: "tmdb:fifo-2", type: "movie", name: "Second" },
-      stream: { url: "https://example.com/2.mp4", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/2.mp4",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
     });
     expect(Date.parse(second.createdAt)).toBeGreaterThan(Date.parse(first.createdAt));
@@ -1513,7 +1602,11 @@ describe("DownloadService", () => {
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
       episode: { season: 1, episode: 1, name: "Episode 1" },
-      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/master.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
     });
     await service.processQueue();
@@ -1574,7 +1667,11 @@ describe("DownloadService", () => {
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Deadline" },
       episode: { season: 1, episode: 1, name: "Episode 1" },
-      stream: { url: "https://secret.example/master.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://secret.example/master.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
     });
     const processing = service.processQueue();
@@ -1633,7 +1730,11 @@ describe("DownloadService", () => {
     const job = await service.enqueue({
       title: { id: "tmdb:2", type: "series", name: "Cancelled Probe" },
       episode: { season: 1, episode: 1, name: "Episode 1" },
-      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/master.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
     });
     const processing = service.processQueue();
@@ -1691,7 +1792,11 @@ describe("DownloadService", () => {
     const job = await service.enqueue({
       title: { id: "tmdb:3", type: "series", name: "Pre-registration Abort" },
       episode: { season: 1, episode: 1, name: "Episode 1" },
-      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/master.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
     });
     jobId = job.id;
@@ -1754,7 +1859,11 @@ describe("DownloadService", () => {
         posterUrl: "https://img.example/poster.jpg",
       },
       episode: { season: 1, episode: 1, name: "Episode 1" },
-      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/master.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
     });
     await service.processQueue();
@@ -1920,12 +2029,12 @@ describe("DownloadService", () => {
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
       episode: { season: 1, episode: 4, name: "Episode 4" },
-      stream: {
+      stream: downloadStream("vidking", {
         url: "https://stale.example/master.m3u8",
         headers: {},
         timestamp: 0,
         subtitle: "https://stale.example/subs/en.vtt",
-      },
+      }),
       providerId: "vidking",
       mode: "series",
       audioPreference: "original",
@@ -1973,12 +2082,12 @@ describe("DownloadService", () => {
     const job = await service.enqueue({
       title: { id: "anime:1", type: "series", name: "Example Anime" },
       episode: { season: 1, episode: 1, name: "Episode 1" },
-      stream: {
+      stream: downloadStream("allanime", {
         url: "https://example.com/hardsub.m3u8",
         headers: {},
         timestamp: 0,
         hardSubLanguage: "en",
-      },
+      }),
       providerId: "allanime",
       mode: "anime",
       audioPreference: "sub",
@@ -2338,7 +2447,11 @@ describe("DownloadService", () => {
         posterUrl: "https://img.example/poster.jpg",
       },
       episode: { season: 1, episode: 7, name: "Episode 7" },
-      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/master.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
     });
     await service.processQueue();
@@ -2373,7 +2486,11 @@ describe("DownloadService", () => {
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
       episode: { season: 1, episode: 1, name: "Episode 1" },
-      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/master.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
     });
     writeFileSync(job.outputPath, "last-known-good");
@@ -2398,7 +2515,11 @@ describe("DownloadService", () => {
     const job = await service.enqueue({
       title: { id: "tmdb:2", type: "movie", name: "Custom Movie" },
       episode: { season: 1, episode: 1 },
-      stream: { url: "https://example.com/movie.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/movie.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
       outputDirectory: customDir,
     });
@@ -2418,12 +2539,20 @@ describe("DownloadService", () => {
     const episodeJob = await service.enqueue({
       title: { id: "tmdb:1396", type: "series", name: "Breaking Bad", year: "2008" },
       episode: { season: 4, episode: 12, name: "End Times" },
-      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/master.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
     });
     const movieJob = await service.enqueue({
       title: { id: "tmdb:438631", type: "movie", name: "Dune", year: "2021-09-15" },
-      stream: { url: "https://example.com/movie.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/movie.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
     });
 
@@ -2453,7 +2582,11 @@ describe("DownloadService", () => {
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
       episode: { season: 1, episode: 1, name: "Episode 1" },
-      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/master.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
     });
     await service.processQueue();
@@ -2495,7 +2628,11 @@ describe("DownloadService", () => {
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
       episode: { season: 1, episode: 1, name: "Episode 1" },
-      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/master.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
     });
 
@@ -2540,7 +2677,11 @@ describe("DownloadService", () => {
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
       episode: { season: 1, episode: 1, name: "Episode 1" },
-      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/master.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
     });
 
@@ -2575,7 +2716,11 @@ describe("DownloadService", () => {
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
       episode: { season: 1, episode: 1, name: "Episode 1" },
-      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/master.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
     });
     await service.processQueue();
@@ -2598,7 +2743,11 @@ describe("DownloadService", () => {
       const job = await service.enqueue({
         title: { id: "tmdb:784", type: "movie", name: "Unproved legacy destination" },
         providerId: "vidking",
-        stream: { url: "https://example.com/video.mp4", headers: {}, timestamp: 0 },
+        stream: downloadStream("vidking", {
+          url: "https://example.com/video.mp4",
+          headers: {},
+          timestamp: 0,
+        }),
       });
       markLegacyRunning(repo, db, job.id, new Date(Date.now() - 120_000).toISOString());
       writeFileSync(job.outputPath, "user-owned bytes");
@@ -2628,7 +2777,11 @@ describe("DownloadService", () => {
     });
     const job = await enqueueService.enqueue({
       title: { id: "tmdb:1", type: "movie", name: "Crash Window" },
-      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/master.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
       mode: "series",
     });
@@ -2661,7 +2814,11 @@ describe("DownloadService", () => {
     });
     const job = await enqueueService.enqueue({
       title: { id: "tmdb:2", type: "movie", name: "Empty Crash Window" },
-      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/master.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
       mode: "series",
     });
@@ -2696,7 +2853,11 @@ describe("DownloadService", () => {
     });
     const job = await enqueueService.enqueue({
       title: { id: "tmdb:6", type: "movie", name: "Commit Failure" },
-      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/master.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
       mode: "series",
     });
@@ -2729,7 +2890,11 @@ describe("DownloadService", () => {
     });
     const job = await enqueueService.enqueue({
       title: { id: "tmdb:7", type: "movie", name: "Probe Timeout" },
-      stream: { url: "https://secret.example/master.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://secret.example/master.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
       mode: "series",
     });
@@ -2779,7 +2944,11 @@ describe("DownloadService", () => {
     });
     const job = await service.enqueue({
       title: { id: "tmdb:8", type: "movie", name: "Metadata Probe" },
-      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/master.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
       mode: "series",
     });
@@ -2816,7 +2985,11 @@ describe("DownloadService", () => {
     });
     const job = await enqueueService.enqueue({
       title: { id: "tmdb:8", type: "movie", name: "Recovery Shutdown" },
-      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/master.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
       mode: "series",
     });
@@ -3000,7 +3173,11 @@ describe("DownloadService", () => {
     });
     const job = await service.enqueue({
       title: { id: "tmdb:queue-retry", type: "movie", name: "Queue Retry" },
-      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/master.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
       mode: "series",
     });
@@ -3025,7 +3202,11 @@ describe("DownloadService", () => {
     });
     const job = await service.enqueue({
       title: { id: "tmdb:worker-context", type: "movie", name: "Worker Context" },
-      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/master.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
       mode: "series",
     });
@@ -3070,13 +3251,21 @@ describe("DownloadService", () => {
     });
     const firstJob = await service.enqueue({
       title: { id: "tmdb:claim-a", type: "movie", name: "Claim A" },
-      stream: { url: "https://example.com/a.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/a.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
       mode: "series",
     });
     const secondJob = await service.enqueue({
       title: { id: "tmdb:claim-b", type: "movie", name: "Claim B" },
-      stream: { url: "https://example.com/b.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/b.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
       mode: "series",
     });
@@ -3121,7 +3310,11 @@ describe("DownloadService", () => {
     });
     await service.enqueue({
       title: { id: "tmdb:awaited-failure", type: "movie", name: "Awaited Failure" },
-      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/master.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
       mode: "series",
     });
@@ -3296,7 +3489,11 @@ describe("DownloadService", () => {
     });
     const job = await enqueueService.enqueue({
       title: { id: "tmdb:3", type: "movie", name: "Active Elsewhere" },
-      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/master.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
       mode: "series",
     });
@@ -3328,7 +3525,11 @@ describe("DownloadService", () => {
     const stale = await enqueueService.enqueue({
       title: { id: "tmdb:4", type: "series", name: "Shared Directory" },
       episode: { season: 1, episode: 1, name: "Stale Owner" },
-      stream: { url: "https://example.com/stale.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/stale.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
       mode: "series",
       outputDirectory: tempDir,
@@ -3336,7 +3537,11 @@ describe("DownloadService", () => {
     const fresh = await enqueueService.enqueue({
       title: { id: "tmdb:4", type: "series", name: "Shared Directory" },
       episode: { season: 1, episode: 2, name: "Fresh Owner" },
-      stream: { url: "https://example.com/fresh.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/fresh.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
       mode: "series",
       outputDirectory: tempDir,
@@ -3372,7 +3577,11 @@ describe("DownloadService", () => {
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
       episode: { season: 1, episode: 1, name: "Episode 1" },
-      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/master.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
     });
 
@@ -3414,7 +3623,11 @@ describe("DownloadService", () => {
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
       episode: { season: 1, episode: 1, name: "Episode 1" },
-      stream: { url: "https://example.com/master.m3u8", headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: "https://example.com/master.m3u8",
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
     });
     const running = service.processQueue();
@@ -3579,3 +3792,171 @@ function nextTurn(): Promise<void> {
     setTimeout(resolve, 0);
   });
 }
+
+describe("DownloadService stream provenance", () => {
+  let tempDir: string;
+  let db: ReturnType<typeof openKunaiDatabase>;
+  let repo: DownloadJobsRepository;
+  let spawnSpy: ReturnType<typeof spyOn>;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "kunai-download-provenance-"));
+    db = openKunaiDatabase(join(tempDir, "data.sqlite"));
+    runMigrations(db, "data");
+    repo = new DownloadJobsRepository(db);
+    spawnSpy = spyOn(Bun, "spawn");
+    // Same refusal as the main harness: a missed stub would spawn host yt-dlp.
+    spawnSpy.mockImplementation((command: string[]) => {
+      throw new Error(
+        `DownloadService unit tests must stub Bun.spawn; refusing ${String(command[0] ?? "unknown")}`,
+      );
+    });
+  });
+
+  afterEach(() => {
+    spawnSpy.mockRestore();
+    db.close();
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  test("enqueue rejects a stream carrying addon provenance under a built-in provider", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+    await expect(
+      service.enqueue({
+        title: { id: "tmdb:prov-a", type: "movie", name: "Provenance refusal" },
+        providerId: "vidlink",
+        stream: downloadStream("stremio-fixture-12345678", {
+          url: "https://addon.example/media.mp4",
+          headers: {},
+          timestamp: 0,
+        }),
+      }),
+    ).rejects.toMatchObject({ code: "addon-source" });
+    expect(repo.listActive()).toHaveLength(0);
+  });
+
+  test("a legacy row with a provenance-less cached URL fails resolve instead of spawning", async () => {
+    const now = new Date().toISOString();
+    repo.enqueue({
+      id: "legacy-1",
+      titleId: "tmdb:prov-b",
+      titleName: "Legacy mislabel",
+      mediaKind: "movie",
+      providerId: "vidlink",
+      streamUrl: "https://legacy.example/cached.mp4",
+      headers: {},
+      outputPath: join(tempDir, "legacy.mp4"),
+      tempPath: join(tempDir, ".legacy.part"),
+      createdAt: now,
+      updatedAt: now,
+    });
+    // Rows written before stream_provider_id can be mislabeled under a
+    // built-in id; the label alone must not vouch for the cached URL.
+    db.query("UPDATE download_jobs SET last_resolved_provider_id = ? WHERE id = ?").run(
+      "vidlink",
+      "legacy-1",
+    );
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+      resolveDownloadStream: async () => null,
+    });
+    await service.processQueue();
+    expect(spawnSpy).not.toHaveBeenCalled();
+    expect(repo.get("legacy-1")?.errorMessage).toContain("stream resolve failed");
+  });
+
+  test("retrying a stored addon job rejects addon-source and does not requeue", async () => {
+    const now = new Date().toISOString();
+    repo.enqueue({
+      id: "addon-1",
+      titleId: "tmdb:prov-c",
+      titleName: "Stored addon",
+      mediaKind: "movie",
+      providerId: "stremio-fixture-12345678",
+      streamUrl: "https://addon.example/cached.mp4",
+      streamProviderId: "stremio-fixture-12345678",
+      headers: {},
+      outputPath: join(tempDir, "addon.mp4"),
+      tempPath: join(tempDir, ".addon.part"),
+      createdAt: now,
+      updatedAt: now,
+    });
+    repo.fail("addon-1", "refused", false, now, "addon-source");
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+    });
+    await expect(service.retry("addon-1")).rejects.toMatchObject({ code: "addon-source" });
+    expect(repo.get("addon-1")?.status).toBe("failed");
+  });
+
+  test("a resolve that lands on an addon producer terminates the worker without a retry", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+      resolveDownloadStream: async () => ({
+        stream: downloadStream("stremio-fixture-12345678", {
+          url: "https://addon.example/fallback.mp4",
+          headers: {},
+          timestamp: 0,
+        }),
+        providerId: "vidlink",
+      }),
+    });
+    const job = await service.enqueue({
+      title: { id: "tmdb:prov-d", type: "movie", name: "Addon fallback" },
+      providerId: "vidlink",
+    });
+    await service.processQueue();
+    const stored = repo.get(job.id);
+    expect(stored?.status).toBe("failed");
+    expect(stored?.failureKind).toBe("addon-source");
+    expect(stored?.nextRetryAt).toBeUndefined();
+    expect(stored?.retryCount).toBe(0);
+    expect(spawnSpy).not.toHaveBeenCalled();
+  });
+
+  test("a provenance-carrying built-in URL stays a usable fallback when re-resolve returns null", async () => {
+    const service = buildService({
+      repo,
+      downloadsEnabled: true,
+      ytDlpAvailable: true,
+      downloadPath: tempDir,
+      resolveDownloadStream: async () => null,
+    });
+    spawnSpy.mockImplementation((command: string[]) => {
+      writeFileSync(command[command.indexOf("-o") + 1]!, "verified bytes");
+      return {
+        stdout: streamOf(""),
+        stderr: streamOf(""),
+        exited: Promise.resolve(0),
+        kill() {},
+      } as never;
+    });
+    const job = await service.enqueue({
+      title: { id: "tmdb:prov-e", type: "movie", name: "Verified fallback" },
+      providerId: "vidlink",
+      stream: downloadStream("vidlink", {
+        url: "https://cdn.example/verified.mp4",
+        headers: {},
+        timestamp: 0,
+      }),
+    });
+    expect(repo.get(job.id)?.streamProviderId).toBe("vidlink");
+    await service.processQueue();
+    expect(repo.get(job.id)?.status).toBe("completed");
+    expect(spawnSpy).toHaveBeenCalledTimes(1);
+  });
+});

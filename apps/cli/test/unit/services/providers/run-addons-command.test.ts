@@ -7,8 +7,9 @@ import {
   type AddonsConfigPort,
   type RunAddonsCommandOptions,
 } from "@/services/providers/run-addons-command";
+import { createStremioAddonModules } from "@/services/providers/stremio-addon-modules";
 import { DEFAULT_CONFIG } from "@kunai/config";
-import type { LooseJsonValue, ProviderRuntimeContext } from "@kunai/types";
+import type { LooseJsonValue, ProviderRuntimeContext, ProviderTraceEvent } from "@kunai/types";
 
 const TOKEN = "SECRETTOKEN";
 const A = `https://a.example.com/${TOKEN}/manifest.json`;
@@ -108,10 +109,15 @@ describe("kunai addons add", () => {
     const { code, output } = await run({ subcommand: "add", target: A, config, context });
 
     expect(code).toBe(0);
+    // The one request is the manifest read itself; no unchecked call is made.
     expect(context.requested).toEqual([A]);
-    expect(config.state.stremioAddons).toEqual([{ url: A, name: "Example Streams" }]);
+    // A configured URL may hide secrets in its path, so no addon-supplied
+    // name is stored or shown — only the host-only label is.
+    expect(config.state.stremioAddons).toEqual([{ url: A }]);
     expect(config.calls).toEqual({ saved: 1, flushed: 1 });
-    expect(output).toContain('Added "Example Streams" (a.example.com) for movies and series.');
+    expect(output).toContain(
+      'Added "addon @ a.example.com" (a.example.com) for movies and series.',
+    );
     expect(output).toContain("next time Kunai opens");
     expect(output).not.toContain(TOKEN);
   });
@@ -245,31 +251,99 @@ describe("kunai addons add", () => {
     expect(code).toBe(2);
   });
 
-  test("an addon that echoes the URL's token in its manifest never leaks it", async () => {
+  test("an addon that echoes the URL's secret in its manifest never leaks it", async () => {
+    const CANARY = "CompoundCanary2026";
+    const configured = `https://a.example.com/token=${CANARY}&option=on/manifest.json`;
     const leaky = {
       ...MANIFEST,
-      name: `Streams ${TOKEN}`,
-      version: `2.0-${TOKEN}`,
-      types: ["movie", `meta-${TOKEN}`],
-      resources: ["stream", `catalog-${TOKEN}`],
+      name: `Streams ${CANARY}`,
+      version: `2.0-${CANARY}`,
+      description: `mirrors ${CANARY}`,
+      types: ["movie", `meta-${CANARY}`],
+      resources: ["stream", `catalog-${CANARY}`],
     };
     const config = memoryConfig();
     const context = contextAnswering(() => manifestResponse(leaky));
 
-    const add = await run({ subcommand: "add", target: A, config, context });
+    const add = await run({ subcommand: "add", target: configured, json: true, config, context });
     const list = await run({ subcommand: "list", json: true, config });
     const check = await run({ subcommand: "check", json: true, config, context });
 
     const everything = add.output + list.output + check.output;
-    expect(everything).not.toContain(TOKEN);
+    expect(everything).not.toContain(CANARY);
+    // Every request was the manifest read itself — nothing unchecked is asked.
+    expect(context.requested).toEqual([configured, configured]);
     // The config keeps the full URL — it is the secret. Only stored display
     // text is held to the same bar as terminal output.
-    const stored = JSON.stringify(config.state.stremioAddons?.[0]?.name ?? "");
-    expect(stored).not.toContain(TOKEN);
+    expect(config.state.stremioAddons).toEqual([{ url: configured }]);
     expect(add.code).toBe(0);
-    // Public, non-secret parts still come through.
-    expect(everything).toContain("a.example.com");
+    expect(JSON.parse(add.output)).toMatchObject({
+      ok: true,
+      added: true,
+      addon: { name: "addon @ a.example.com" },
+    });
+    // The host-only label, a null version, and canonical stream types only.
+    expect(everything).toContain("addon @ a.example.com");
+    const listPayload = JSON.parse(list.output);
+    const checkPayload = JSON.parse(check.output);
+    expect(listPayload.addons[0]).toMatchObject({ name: "addon @ a.example.com" });
+    expect(checkPayload.addons[0]).toMatchObject({
+      manifestName: null,
+      version: null,
+      streamTypes: ["movie"],
+    });
     expect(everything).toContain("movie");
+
+    // A config written before the scrub existed can hold a canary as the
+    // stored name: it is still never shown, logged, or traced.
+    const legacy = memoryConfig({
+      stremioAddons: [{ url: configured, name: `Legacy ${CANARY}` }],
+    });
+    const legacyList = await run({ subcommand: "list", json: true, config: legacy });
+    const legacyPayload = JSON.parse(legacyList.output);
+    expect(legacyList.output).not.toContain(CANARY);
+    expect(legacyPayload.addons[0]).toMatchObject({
+      name: "addon @ a.example.com",
+      host: "a.example.com",
+    });
+
+    const [module] = createStremioAddonModules({
+      getEntries: () => legacy.state.stremioAddons ?? [],
+      resolveImdbId: async () => "tt1375666",
+    });
+    if (!module) throw new Error("expected configured fixture addon");
+    const traceContext = contextAnswering((url) =>
+      url === configured
+        ? manifestResponse(leaky)
+        : manifestResponse({ streams: [{ externalUrl: "https://example.com/" }] }),
+    );
+    const events: ProviderTraceEvent[] = [];
+    await module.resolve(
+      {
+        mediaKind: "movie",
+        intent: "play",
+        title: {
+          id: "tmdb:27205",
+          kind: "movie",
+          title: "Fixture",
+          imdbId: "tt1375666",
+        },
+        allowedRuntimes: ["direct-http"],
+      },
+      {
+        ...traceContext,
+        emit(event: ProviderTraceEvent) {
+          events.push(event);
+        },
+      },
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "source:skipped",
+        message: expect.stringContaining("addon @ a.example.com"),
+      }),
+    );
+    expect(JSON.stringify(events)).not.toContain(CANARY);
   });
 
   test("add --stdin reads the manifest URL from the input reader, not argv", async () => {
@@ -289,7 +363,7 @@ describe("kunai addons add", () => {
 
     expect(reads).toBe(1);
     expect(code).toBe(0);
-    expect(config.state.stremioAddons).toEqual([{ url: A, name: "Example Streams" }]);
+    expect(config.state.stremioAddons).toEqual([{ url: A }]);
   });
 
   test("the stdin reader takes the first line across chunk boundaries", async () => {
@@ -363,14 +437,16 @@ describe("kunai addons list", () => {
     const payload = JSON.parse(json.output);
 
     expect(text.code).toBe(0);
-    expect(text.output).toContain("1. Alpha  a.example.com");
+    // A legacy raw stored name is not trusted for a configured install.
+    expect(text.output).toContain("1. addon @ a.example.com  a.example.com");
+    expect(text.output).not.toContain("1. Alpha");
     expect(text.output).toContain("2. b.example.com  b.example.com");
     expect(payload).toMatchObject({
       ok: true,
       schemaVersion: 1,
       error: null,
       addons: [
-        { number: 1, name: "Alpha", host: "a.example.com" },
+        { number: 1, name: "addon @ a.example.com", host: "a.example.com" },
         { number: 2, name: "b.example.com", host: "b.example.com" },
       ],
     });
@@ -402,10 +478,10 @@ describe("kunai addons remove", () => {
     const jsonPayload = JSON.parse(json.output);
 
     expect(code).toBe(0);
-    expect(output).toContain('Removed "Alpha" (a.example.com)');
+    expect(output).toContain('Removed "addon @ a.example.com" (a.example.com)');
     expect(output).toContain("after restart");
     expect(jsonPayload.appliesAfterRestart).toBe(true);
-    expect(jsonPayload.removed.name).toBe("Alpha");
+    expect(jsonPayload.removed.name).toBe("addon @ a.example.com");
     expect(config.state.stremioAddons).toEqual([{ url: B }]);
     expect(config.state.provider).toBe("vidlink");
     expect(config.state.providerPriority).toEqual(["vidlink"]);
@@ -439,12 +515,14 @@ describe("kunai addons check", () => {
     expect(code).toBe(1);
     expect(payload.ok).toBe(false);
     expect(payload.addons[0]).toMatchObject({
-      name: "Alpha",
+      name: "addon @ a.example.com",
       reachable: true,
       usable: true,
       movie: true,
       series: true,
-      version: "1.2.3",
+      manifestName: null,
+      version: null,
+      streamTypes: ["movie", "series"],
       problem: null,
     });
     expect(payload.addons[1]).toMatchObject({ reachable: false, usable: false });

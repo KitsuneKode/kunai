@@ -229,6 +229,10 @@ describe("addon stream classification", () => {
 
     const stream = playable[0];
     expect(stream?.url).toBe("https://cdn.example.com/a.mp4");
+    expect(stream?.subtitles[0]?.url).toBe("https://subs.example/en.vtt");
+    // A configured URL's secrets can take forms a scrubber cannot recognise:
+    // arbitrary display fields are withheld outright, while the track URL —
+    // functional, not shown — is kept.
     for (const field of [
       stream?.name,
       stream?.description,
@@ -236,10 +240,30 @@ describe("addon stream classification", () => {
       stream?.bingeGroup,
       stream?.subtitles[0]?.language,
     ]) {
-      expect(field).toBeDefined();
-      expect(field).not.toContain("SECRETTOKEN");
-      expect(field).not.toContain("manifest.json");
+      expect(field).toBeUndefined();
     }
+    // The withheld text still fed quality inference: the filename's 1080p landed.
+    expect(stream?.qualityLabel).toBe("1080p");
+  });
+
+  test("an unconfigured addon keeps its scrubbed display text", () => {
+    const { playable } = classifyAddonStreams(
+      [
+        {
+          url: "https://cdn.example.com/a.mp4",
+          name: "Example",
+          description: "a mirror",
+          behaviorHints: { bingeGroup: "grp", filename: "Movie.720p.mp4" },
+        },
+      ],
+      "https://addon.example.com/manifest.json",
+    );
+
+    const stream = playable[0];
+    expect(stream?.name).toBe("Example");
+    expect(stream?.description).toBe("a mirror");
+    expect(stream?.filename).toBe("Movie.720p.mp4");
+    expect(stream?.bingeGroup).toBe("grp");
   });
 
   test("one URL listed twice is one stream at its first position", () => {

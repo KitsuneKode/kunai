@@ -9,7 +9,13 @@ import type { z } from "zod";
 
 import { readBoundedTextBody, type StreamReachabilityFetch } from "../shared/stream-reachability";
 import { combineAbortSignals, createTimeoutSignal } from "../shared/timeout-signal";
-import { scrubStremioAddonText, stremioStreamUrl, type StremioAddonRef } from "./addon-url";
+import {
+  scrubStremioAddonText,
+  stremioAddonDisplayLabel,
+  stremioAddonHasPrivateConfiguration,
+  stremioStreamUrl,
+  type StremioAddonRef,
+} from "./addon-url";
 import {
   STREMIO_ADDON_LIMITS,
   stremioManifestSchema,
@@ -239,19 +245,29 @@ function describeSchemaIssues(error: z.ZodError): string {
 
 /**
  * The manifest as Kunai may keep and show it: every addon-supplied string
- * scrubbed of the configured URL's secret parts. Structural protocol words —
- * the `stream` resource name and the canonical `movie`/`series` types — are
- * matched literally, never treated as free text, so a token overlapping one
- * cannot break what the addon actually serves. `idPrefixes` is left as sent:
- * it is matched, not displayed.
+ * scrubbed of the configured URL's secret parts. A configured URL (a path
+ * before `manifest.json`) may hold secrets in forms the scrubber cannot
+ * recognise, so for those installs every arbitrary string — name, version,
+ * description, noncanonical type words — is withheld outright and the only
+ * label is `addon @ host`. Structural protocol words — the `stream` resource
+ * name and the canonical `movie`/`series` types — are matched literally,
+ * never treated as free text, so a token overlapping one cannot break what
+ * the addon actually serves. `idPrefixes` is left as sent: it is matched,
+ * not displayed.
  */
 export function sanitizeStremioManifest(
   manifest: StremioManifest,
   manifestUrl: string,
 ): StremioManifest {
-  const scrub = (text: string | null | undefined) => scrubStremioAddonText(text, manifestUrl);
+  const privateConfiguration = stremioAddonHasPrivateConfiguration(manifestUrl);
+  const scrub = (text: string | null | undefined) =>
+    privateConfiguration ? undefined : scrubStremioAddonText(text, manifestUrl);
   const scrubType = (type: string) =>
     type === "movie" || type === "series" ? type : (scrub(type) ?? type);
+  const scrubTypes = (types: string[]) =>
+    privateConfiguration
+      ? types.filter((type) => type === "movie" || type === "series")
+      : types.map(scrubType);
   let host = "addon";
   try {
     host = new URL(manifestUrl).host || host;
@@ -260,24 +276,24 @@ export function sanitizeStremioManifest(
   }
   return {
     ...manifest,
-    name: scrub(manifest.name) || host,
+    name: scrub(manifest.name) || stremioAddonDisplayLabel({ host, manifestUrl }),
     version: scrub(manifest.version),
     description: scrub(manifest.description),
     resources: manifest.resources.map((resource) =>
       resource.name === "stream"
         ? {
             ...resource,
-            types: resource.types?.map(scrubType),
+            types: resource.types ? scrubTypes(resource.types) : undefined,
             idPrefixes: resource.idPrefixes,
           }
         : {
             ...resource,
-            name: scrub(resource.name) ?? resource.name,
-            types: resource.types?.map(scrubType),
+            name: scrub(resource.name) ?? "[redacted]",
+            types: resource.types ? scrubTypes(resource.types) : undefined,
             idPrefixes: resource.idPrefixes,
           },
     ),
-    types: manifest.types.map(scrubType),
+    types: scrubTypes(manifest.types),
   };
 }
 

@@ -11,7 +11,7 @@ import {
 } from "@/domain/provider/stremio-addons";
 import { DEFAULT_CONFIG, type KitsuneConfig } from "@kunai/config";
 
-const A = "https://a.example.com/token-a/manifest.json";
+const A = "https://a.example.com/manifest.json";
 const B = "https://b.example.com/manifest.json";
 
 function idOf(url: string): string {
@@ -41,6 +41,16 @@ describe("stored addon list", () => {
     expect(normalizeStremioAddonEntries(undefined)).toEqual([]);
     expect(normalizeStremioAddonEntries({ url: A })).toEqual([]);
     expect(normalizeStremioAddonEntries("nope")).toEqual([]);
+  });
+
+  test("a configured addon shows only its host, never a stored or remote name", () => {
+    const configured = "https://a.example.com/key=CanaryToken/manifest.json";
+    const [addon] = readInstalledStremioAddons([{ url: configured, name: "CanaryToken Addon" }]);
+
+    expect(addon?.displayName).toBe("addon @ a.example.com");
+    expect(addon?.entry.name).toBeUndefined();
+    const added = addStremioAddon([], configured, "CanaryToken");
+    expect(added.ok && added.entries).toEqual([{ url: configured }]);
   });
 
   test("an addon shows its own name when known, else its host", () => {

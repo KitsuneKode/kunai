@@ -4,7 +4,7 @@ import type { StoredStremioAddons } from "@/domain/provider/stremio-addons";
 import { ConfigServiceImpl } from "@/services/persistence/ConfigServiceImpl";
 import { DEFAULT_CONFIG, type KitsuneConfig } from "@/services/persistence/ConfigStore";
 
-const A = "https://a.example.com/token/manifest.json";
+const A = "https://a.example.com/manifest.json";
 const B = "https://b.example.com/manifest.json";
 const C = "https://c.example.com/manifest.json";
 

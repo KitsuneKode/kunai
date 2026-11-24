@@ -15,6 +15,7 @@ import {
   manifestServesStream,
   parseStremioAddonUrl,
   scrubStremioAddonText,
+  stremioAddonDisplayLabel,
   toDisplayText,
   type StremioManifest,
 } from "@kunai/providers/stremio-addon";
@@ -246,7 +247,8 @@ export async function runAddonsCommand(options: RunAddonsCommandOptions): Promis
     if (usability.reason) {
       // The name is the addon's own text; it is printed only after cleaning.
       const shown =
-        cleanStremioAddonName(manifest.name, parsed.addon.manifestUrl) ?? parsed.addon.host;
+        cleanStremioAddonName(manifest.name, parsed.addon.manifestUrl) ??
+        stremioAddonDisplayLabel(parsed.addon);
       return fail(1, `"${shown}" cannot be used: ${usability.reason}. Nothing was added.`);
     }
 

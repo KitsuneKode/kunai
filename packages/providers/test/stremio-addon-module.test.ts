@@ -10,9 +10,16 @@ import {
 
 const TOKEN = "SECRETTOKEN";
 const MANIFEST_URL = `https://addon.example.com/${TOKEN}/manifest.json`;
+const ROOT_MANIFEST_URL = "https://addon.example.com/manifest.json";
 
 function addonRef() {
   const result = parseStremioAddonUrl(MANIFEST_URL);
+  if (!result.ok) throw new Error(result.reason);
+  return result.addon;
+}
+
+function rootAddonRef() {
+  const result = parseStremioAddonUrl(ROOT_MANIFEST_URL);
   if (!result.ok) throw new Error(result.reason);
   return result.addon;
 }
@@ -80,7 +87,7 @@ function harness(options: {
       fetch: async (input, init) => {
         const url = input instanceof Request ? input.url : String(input);
         requested.push(url);
-        if (url === MANIFEST_URL) {
+        if (url === MANIFEST_URL || url === ROOT_MANIFEST_URL) {
           manifestCalls += 1;
           return options.manifestFetch?.(manifestCalls) ?? json(options.manifest ?? MANIFEST);
         }
@@ -533,7 +540,7 @@ describe("stremio addon provider", () => {
         ],
       },
     });
-    const module = addonModule();
+    const module = addonModule({ addon: rootAddonRef() });
     const open = await module.resolve(movieInput(), h.context);
     const second = open.streams[1];
 
@@ -570,7 +577,10 @@ describe("stremio addon manifest commit", () => {
       streams: { streams: [] },
     });
     const names: string[] = [];
-    const module = addonModule({ onManifest: (manifest) => names.push(manifest.name) });
+    const module = addonModule({
+      addon: rootAddonRef(),
+      onManifest: (manifest) => names.push(manifest.name),
+    });
     const movie = movieInput();
 
     const first = module.resolve(movie, h.context);
@@ -583,13 +593,13 @@ describe("stremio addon manifest commit", () => {
     expect(names).toEqual(["Example"]);
     expect(firstResult.status).toBe("exhausted");
     expect(secondResult.status).toBe("exhausted");
-    const cached = h.cache.get(`stremio-addon:manifest|${addonRef().providerId}`);
+    const cached = h.cache.get(`stremio-addon:manifest|${rootAddonRef().providerId}`);
     expect(cached).toMatchObject({ name: "Example" });
   });
 
   test("a cached manifest committed by a racing caller wins; the loser never re-commits", async () => {
     const h = harness({ streams: { streams: [] } });
-    h.cache.set(`stremio-addon:manifest|${addonRef().providerId}`, MANIFEST);
+    h.cache.set(`stremio-addon:manifest|${rootAddonRef().providerId}`, MANIFEST);
     // Gate each manifest cache read so both resolves are in flight before the
     // first answer lands — the second must then see the committed winner.
     const gates: Array<() => void> = [];
@@ -605,7 +615,10 @@ describe("stremio addon manifest commit", () => {
       return baseRead<T>(namespace, key);
     };
     const names: string[] = [];
-    const module = addonModule({ onManifest: (manifest) => names.push(manifest.name) });
+    const module = addonModule({
+      addon: rootAddonRef(),
+      onManifest: (manifest) => names.push(manifest.name),
+    });
     const movie = movieInput();
 
     const first = module.resolve(movie, h.context);
@@ -619,7 +632,7 @@ describe("stremio addon manifest commit", () => {
     expect(names).toEqual(["Example"]);
     expect(firstResult.status).toBe("exhausted");
     expect(secondResult.status).toBe("exhausted");
-    expect(h.requested).not.toContain(MANIFEST_URL);
+    expect(h.requested).not.toContain(ROOT_MANIFEST_URL);
   });
 });
 

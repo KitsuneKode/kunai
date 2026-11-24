@@ -101,6 +101,29 @@ export function isStremioAddonProviderId(providerId: string): boolean {
   return providerId.startsWith(STREMIO_ADDON_PROVIDER_ID_PREFIX);
 }
 
+/**
+ * A configured addon URL — a path before `manifest.json` — carries the user's
+ * own settings or tokens. Only its host is safe to show; anything it returns
+ * (names, versions, descriptions, cached or fresh) may be secret-derived.
+ */
+export function stremioAddonHasPrivateConfiguration(manifestUrl: string): boolean {
+  if (manifestUrl.length > SECRET_URL_MAX_LENGTH) return true;
+  try {
+    const url = new URL(manifestUrl);
+    return url.pathname !== MANIFEST_SUFFIX || Boolean(url.search || url.username || url.password);
+  } catch {
+    return true;
+  }
+}
+
+/** The only label guaranteed free of secret material: `addon @ host`, or bare host when unconfigured. */
+export function stremioAddonDisplayLabel({
+  host,
+  manifestUrl,
+}: Pick<StremioAddonRef, "host" | "manifestUrl">): string {
+  return stremioAddonHasPrivateConfiguration(manifestUrl) ? `addon @ ${host}` : host;
+}
+
 /** Past this a configured URL is refused as a scrub source, the same bound the protocol uses. */
 const SECRET_URL_MAX_LENGTH = 4096;
 const REDACTED_TEXT = "[redacted]";
@@ -118,9 +141,9 @@ function escapeRegExp(text: string): string {
  * path, and nothing stops an addon (or a transport error) from echoing it
  * back into names, descriptions or errors. This rewrites the full URL in
  * both schemes, every path segment except `manifest.json`, every query
- * value, their percent-decoded forms, and any other absolute URL to a fixed
- * marker. Segments shorter than 3 characters are not treated as secrets:
- * scrubbing a one- or two-letter part would mangle ordinary prose.
+ * value, the forms compound secrets take after splitting on separators,
+ * their percent-decoded and base64-decoded forms, and any other absolute
+ * URL to a fixed marker.
  *
  * Never throws and never echoes `manifestUrl` back — a malformed one just
  * leaves the generic URL pass.
@@ -142,15 +165,7 @@ export function scrubStremioAddonText(
         ...url.pathname.split("/").filter((part) => part && part !== "manifest.json"),
         ...url.searchParams.values(),
       ];
-      for (const part of secretParts) {
-        if (!part) continue;
-        secrets.add(part);
-        try {
-          secrets.add(decodeURIComponent(part));
-        } catch {
-          // Not an encoded form; the literal is already listed.
-        }
-      }
+      for (const part of secretParts) addSecretForms(secrets, part);
     } catch {
       // Not a URL this can decompose; the generic URL pass below still applies.
     }
@@ -168,6 +183,48 @@ export function scrubStremioAddonText(
     "gi",
   );
   return value.replace(pattern, () => REDACTED_TEXT);
+}
+
+/**
+ * Compound configuration values survive naive scrubbing: `key=secret` hides
+ * the secret behind its prefix, and percent- or base64-encoded forms hide it
+ * behind an encoding. Expand each secret part into the bounded set of forms a
+ * token can take — delimited fragments, decoded encodings — so echoing any of
+ * them back still scrubs. Four rounds bound the transitive expansion.
+ */
+function addSecretForms(secrets: Set<string>, part: string): void {
+  let forms = [part];
+  for (let round = 0; round < 4 && forms.length > 0; round++) {
+    const next: string[] = [];
+    for (const form of forms) {
+      if (!form || secrets.has(form)) continue;
+      secrets.add(form);
+      next.push(...form.split(/[=&;,|:"'{}[\]\s]+/));
+      try {
+        next.push(decodeURIComponent(form));
+      } catch {
+        // Malformed escape: the literal form is already included.
+      }
+      const decoded = decodeAddonBase64(form);
+      if (decoded) next.push(decoded);
+    }
+    forms = next;
+  }
+}
+
+/** Exact round-trip only: a string that is genuinely base64url-encoded printable text. */
+function decodeAddonBase64(form: string): string | undefined {
+  if (!/^[A-Za-z0-9_+/-]{4,}={0,2}$/.test(form)) return;
+  const bytes = Buffer.from(form, "base64url");
+  const canonical = form.replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+  if (bytes.toString("base64url") !== canonical) return;
+  const text = bytes.toString("utf8");
+  if (text.length === 0) return;
+  for (const char of text) {
+    const code = char.codePointAt(0) ?? 0;
+    if (code < 32 || code > 126) return;
+  }
+  return text;
 }
 
 /**

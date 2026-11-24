@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T15:30:00Z"
+lastReviewed: "2026-11-24"
 ---
 
 # Stremio addons
@@ -48,9 +48,10 @@ before an in-process reconnect reload. A fresh resolve attestation never skips
 the strict preflight, because the attestation covers the probed URL at resolve
 time, not this moment's answer. Supplied `Range`/`If-Range` request headers
 refuse the candidate rather than being overridden. A partial response must
-provide a valid Content-Range starting at byte zero and matching the bytes
-returned. An EBML header must carry a WebM or Matroska DocType; a complete
-MP4-family response cannot stop at its ftyp box.
+provide a valid Content-Range starting at byte zero, match the bytes actually
+received, and agree with Content-Length when supplied. An EBML header must
+carry a WebM or Matroska DocType; a complete MP4-family response must contain
+a recognized top-level box after ftyp and no truncated boxes.
 
 On top of the check, addon files — and only addon files — are handed to mpv
 inside a file-local block: `--stream-lavf-o=max_redirects=0`,
@@ -60,6 +61,12 @@ it for the process). `max_redirects` exists in
 FFmpeg's HTTP protocol in 8.1+ and the 7.1.4 backport (not 8.0 or 7.1
 initial); `stream-lavf-o` is the option mpv's top-level HTTP stream reads.
 These are best-effort confinement on known-good builds, not a sandbox.
+
+The initial persistent file's request headers are file-local, like each IPC
+replacement. mpv restores its baseline when the file ends. Addon streams are
+desktop-mpv-only during the beta: Android handoff refuses before launching a
+player or opening a gateway. Offline downloads refuse addon provenance,
+including a fallback, and ignore cached URLs with no recorded producer.
 
 Residuals: the probe's request pins the checked address, but mpv resolves the
 original hostname again for its own connection. On supported builds there is
@@ -119,11 +126,12 @@ token, in the URL path. So:
 - The URL is stored in `config.json` as `stremioAddons[].url`. It is not in the
   credential vault.
 
-Addon-supplied text (addon name, version, stream labels) has control
-characters removed before it can reach the terminal (`toDisplayText`), and
-`scrubStremioAddonText` removes the URL's secret path and query parts — plus
-any other HTTP(S)/Stremio URL — in case a misbehaving addon echoes them back
-in names or descriptions.
+Configured URLs (with a path before manifest.json) may contain secrets in
+forms a scrubber cannot recognize. Kunai shows `addon @ host` for those
+installs and withholds arbitrary addon-supplied display text, including
+cached names and versions. Unconfigured addons may show sanitized names. The
+scrubber removes path and query parts, including compound and decoded values,
+and absolute URLs from addon text before interpretation.
 
 ## Lifecycle
 
@@ -159,7 +167,7 @@ never re-added.
   against the manifest.
 - Settings → Sources → Stremio addons
   (`apps/cli/src/app-shell/settings/registry/addons.ts`). Adding here does not
-  contact the addon; its name is recorded on first use.
+  contact the addon; an unconfigured addon's name is recorded on first use.
 
 ## Code
 

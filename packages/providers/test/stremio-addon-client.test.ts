@@ -69,8 +69,20 @@ describe("addon manifest request", () => {
 
     const manifest = await fetchStremioManifest(addonRef(), { context });
 
-    expect(manifest.name).toBe("Example");
+    expect(manifest.name).toBe("addon @ addon.example.com");
+    expect(manifest.version).toBeUndefined();
     expect(context.requested).toEqual([`https://addon.example.com/${TOKEN}/manifest.json`]);
+  });
+
+  test("an unconfigured root manifest keeps its sanitized name and version", async () => {
+    const context = contextWith(() => json(VALID_MANIFEST));
+    const root = parseStremioAddonUrl("https://addon.example.com/manifest.json");
+    if (!root.ok) throw new Error(root.reason);
+
+    const manifest = await fetchStremioManifest(root.addon, { context });
+
+    expect(manifest.name).toBe("Example");
+    expect(manifest.version).toBe("1.0.0");
   });
 
   test("a manifest that fails the schema is refused, naming fields but not values", async () => {

@@ -2,7 +2,7 @@ import { blockedLiteralTargetReason } from "@kunai/core";
 import type { StreamCandidate } from "@kunai/types";
 
 import { detectDynamicRangeFromLabel, qualityRankFromLabel } from "../shared/source-inventory";
-import { scrubStremioAddonText } from "./addon-url";
+import { scrubStremioAddonText, stremioAddonHasPrivateConfiguration } from "./addon-url";
 import {
   readStreamSubtitles,
   stremioStreamSchema,
@@ -120,8 +120,13 @@ export function classifyAddonStreams(
   };
   const seenRequests = new Set<string>();
   // Text the addon wrote can echo the configured URL's secret path; labels and
-  // metadata are scrubbed before they reach the UI. URLs and header values are
-  // functional, not displayed, and stay exactly as sent.
+  // metadata are scrubbed before they reach the UI. A configured URL can hide
+  // secrets a scrubber cannot recognise, so arbitrary display strings are also
+  // withheld from the output of a private install — they still feed quality,
+  // HDR and protocol inference, which reads the shape, never the text. URLs
+  // and header values are functional, not displayed, and stay exactly as sent.
+  const privateConfiguration =
+    manifestUrl !== undefined && stremioAddonHasPrivateConfiguration(manifestUrl);
   const scrub = manifestUrl
     ? (text: string | null | undefined) => scrubStremioAddonText(text, manifestUrl)
     : (text: string | null | undefined) => text ?? undefined;
@@ -181,12 +186,12 @@ export function classifyAddonStreams(
     playable.push({
       url,
       requestKey,
-      ...(name ? { name } : null),
-      ...(description ? { description } : null),
-      ...(filename ? { filename } : null),
+      ...(!privateConfiguration && name ? { name } : null),
+      ...(!privateConfiguration && description ? { description } : null),
+      ...(!privateConfiguration && filename ? { filename } : null),
       ...(headers ? { headers } : null),
       notWebReady: stream.behaviorHints?.notWebReady === true,
-      ...(bingeGroup ? { bingeGroup } : null),
+      ...(!privateConfiguration && bingeGroup ? { bingeGroup } : null),
       ...(videoSize !== undefined ? { videoSizeBytes: videoSize } : null),
       protocol,
       container,
@@ -196,7 +201,7 @@ export function classifyAddonStreams(
       subtitles: readStreamSubtitles(stream)
         .filter((subtitle) => isPublicHttpUrl(subtitle.url))
         .map((subtitle) => {
-          const language = scrub(subtitle.lang);
+          const language = privateConfiguration ? undefined : scrub(subtitle.lang);
           return {
             url: subtitle.url,
             ...(language ? { language } : null),

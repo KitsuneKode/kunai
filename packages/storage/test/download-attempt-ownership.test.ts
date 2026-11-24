@@ -58,7 +58,7 @@ test("recovery revokes every mutation and external effect from the old attempt",
   expect(
     a.updateResolvedStream(
       "job",
-      { streamUrl: "https://example.com/old.mp4", headers: {} },
+      { streamUrl: "https://example.com/old.mp4", headers: {}, providerId: "fixture-provider" },
       at,
       old,
     ),

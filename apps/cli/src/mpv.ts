@@ -676,8 +676,10 @@ function quoteMpvConfValue(value: string): string {
  * the path for {@link buildMpvArgs}' `sensitiveOptionsPath`, or null when no
  * sensitive options exist for this stream.
  *
- * Lifetime: mpv parses `--include` files once at startup, so the caller may
- * delete the file as soon as the IPC endpoint is provably live.
+ * Lifetime: one-shot mpv parses the include at startup, so the caller may
+ * delete the file as soon as the IPC endpoint is provably live. Persistent mpv
+ * reads it when the first file's scoped local options are applied; retain it
+ * until that file settles or the process exits.
  */
 export async function writeMpvSensitiveConf(
   opts: {
@@ -785,20 +787,26 @@ export function buildMpvArgs(
     args.push("--ytdl=no");
   }
 
+  // Options that shape this file's request: referrer, user-agent and the
+  // credential-bearing set. A one-shot process may carry them on argv, but in a
+  // persistent session they must ride the file's `--{ ... --}` group instead —
+  // process-wide values would leak into later loadfiles that carry no headers.
+  const requestOptions: string[] = [];
   const { referer, userAgent } = normalizeStreamHttpHeaders(opts.headers);
-  if (referer) args.push(`--referrer=${referer}`);
-  if (userAgent) args.push(`--user-agent=${userAgent}`);
+  if (referer) requestOptions.push(`--referrer=${referer}`);
+  if (userAgent) requestOptions.push(`--user-agent=${userAgent}`);
   // argv is world-readable on POSIX (`/proc/<pid>/cmdline`), so
   // credential-bearing options never ride it when a conf path was supplied —
   // they land in the owner-only `--include` file the caller wrote instead.
   const sensitive = collectSensitiveMpvOptions(opts);
   if (sensitive.length > 0) {
     if (config?.sensitiveOptionsPath) {
-      args.push(`--include=${config.sensitiveOptionsPath}`);
+      requestOptions.push(`--include=${config.sensitiveOptionsPath}`);
     } else {
-      for (const line of sensitive) args.push(`--${line}`);
+      for (const line of sensitive) requestOptions.push(`--${line}`);
     }
   }
+  if (!config?.persistent) args.push(...requestOptions);
   // ani-cli plays mp4upload with --tls-verify=no; without it mpv rejects some hosts.
   // The mp4upload exception never applies to an addon file — its block carries
   // `--tls-verify=yes` and must not be cancelled by a process-level "no".
@@ -946,6 +954,7 @@ export function buildMpvArgs(
     // it process-wide above).
     args.push(
       "--{",
+      ...(config?.persistent ? requestOptions : []),
       "--stream-lavf-o=max_redirects=0",
       "--load-unsafe-playlists=no",
       "--tls-verify=yes",
@@ -953,11 +962,19 @@ export function buildMpvArgs(
       opts.url,
       "--}",
     );
-  } else if (disableTlsVerify && config?.persistent) {
+  } else if (config?.persistent && (disableTlsVerify || requestOptions.length > 0)) {
     // mpv restores the user's baseline after this file, just as loadfile's
-    // per-file options do for replacements and reconnects. The validated
-    // exception URL is HTTPS and cannot be parsed as a command-line option.
-    args.push("--{", "--tls-verify=no", opts.url, "--}");
+    // per-file options do for replacements and reconnects — so this file's
+    // request options (and the validated TLS exception, when it applies) ride
+    // inside the scope. The validated target cannot be parsed as a
+    // command-line option.
+    args.push(
+      "--{",
+      ...requestOptions,
+      ...(disableTlsVerify ? ["--tls-verify=no"] : []),
+      opts.url,
+      "--}",
+    );
   } else {
     args.push("--", opts.url);
   }

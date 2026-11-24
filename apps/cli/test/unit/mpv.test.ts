@@ -394,6 +394,75 @@ test("a persistent session carries the ytdl guard even when it launches on a dir
   expect(args).toContain("--script-opts=ytdlautoformat-domains=");
 });
 
+test("a persistent launch scopes request options to the initial file", () => {
+  // Process-wide --referrer/--user-agent/--http-header-fields would leak into
+  // every later IPC loadfile that carries no headers of its own; mpv restores
+  // the baseline only when they ride the file's `--{ ... --}` group.
+  const args = buildMpvArgs(
+    {
+      url: "https://cdn.example/episode.mp4",
+      headers: {
+        Referer: "https://provider.example/",
+        "User-Agent": "FixtureUA/1.0",
+        Origin: "https://provider.example",
+      },
+      subtitle: null,
+      displayTitle: "Ep 1",
+    },
+    "/tmp/kunai-test.sock",
+    { persistent: true, sensitiveOptionsPath: "/tmp/kunai-secret.conf" },
+  );
+
+  expect(args.slice(-6)).toEqual([
+    "--{",
+    "--referrer=https://provider.example/",
+    "--user-agent=FixtureUA/1.0",
+    "--include=/tmp/kunai-secret.conf",
+    "https://cdn.example/episode.mp4",
+    "--}",
+  ]);
+  // Nothing request-scoped also rides argv as a process option.
+  const processWide = args.slice(0, -6);
+  expect(
+    processWide.some(
+      (arg) =>
+        arg.startsWith("--referrer=") ||
+        arg.startsWith("--user-agent=") ||
+        arg.startsWith("--include=") ||
+        arg.startsWith("--http-header-fields="),
+    ),
+  ).toBe(false);
+});
+
+test("a persistent addon launch keeps request options inside its file group", () => {
+  const args = buildMpvArgs(
+    {
+      url: "https://cdn.example/episode.mp4",
+      headers: { Referer: "https://provider.example/" },
+      subtitle: null,
+      displayTitle: "Ep 1",
+      stremioAddon: true,
+    },
+    "/tmp/kunai-test.sock",
+    { persistent: true },
+  );
+
+  const open = args.indexOf("--{");
+  const close = args.indexOf("--}");
+  expect(open).toBeGreaterThanOrEqual(0);
+  expect(close).toBeGreaterThan(open);
+  const scoped = args.slice(open + 1, close);
+  expect(scoped).toEqual([
+    "--referrer=https://provider.example/",
+    "--stream-lavf-o=max_redirects=0",
+    "--load-unsafe-playlists=no",
+    "--tls-verify=yes",
+    "--ytdl=no",
+    "https://cdn.example/episode.mp4",
+  ]);
+  expect(args.filter((arg) => arg.startsWith("--referrer="))).toHaveLength(1);
+});
+
 test("a persistent addon launch confines --ytdl=no to the addon file group", () => {
   const args = buildMpvArgs(
     {

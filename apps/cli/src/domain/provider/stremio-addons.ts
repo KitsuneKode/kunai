@@ -2,6 +2,8 @@ import { DEFAULT_CONFIG, type StremioAddonConfigEntry } from "@kunai/config";
 import {
   parseStremioAddonUrl,
   scrubStremioAddonText,
+  stremioAddonDisplayLabel,
+  stremioAddonHasPrivateConfiguration,
   toDisplayText,
   type StremioAddonRef,
 } from "@kunai/providers/stremio-addon";
@@ -40,6 +42,9 @@ export function cleanStremioAddonName(
   value: string | null | undefined,
   manifestUrl?: string,
 ): string | undefined {
+  // A configured URL's secrets can take forms a scrubber cannot recognise, so
+  // a stored or freshly reported name for one is never trusted at all.
+  if (manifestUrl && stremioAddonHasPrivateConfiguration(manifestUrl)) return undefined;
   // Names stored before the scrub existed can still echo the URL's secret
   // path, so the stored URL's own secrets are removed on every read.
   return toDisplayText(
@@ -80,7 +85,7 @@ export function readInstalledStremioAddons(value: StoredStremioAddons): Installe
     const name = cleanStremioAddonName(entry.name, parsed.addon.manifestUrl);
     installed.push({
       ...parsed.addon,
-      displayName: name ?? parsed.addon.host,
+      displayName: name ?? stremioAddonDisplayLabel(parsed.addon),
       entry: { url: parsed.addon.manifestUrl, ...(name ? { name } : null) },
     });
   }
@@ -151,7 +156,7 @@ export function addStremioAddon(
   };
   const addon: InstalledStremioAddon = {
     ...parsed.addon,
-    displayName: cleanName ?? parsed.addon.host,
+    displayName: cleanName ?? stremioAddonDisplayLabel(parsed.addon),
     entry,
   };
   if (existing) {

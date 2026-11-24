@@ -8,8 +8,8 @@ import { DownloadService } from "@/services/download/DownloadService";
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { DownloadJobsRepository, openKunaiDatabase, runMigrations } from "@kunai/storage";
 
+import { downloadStream } from "../../../support/download-stream";
 import { waitUntil } from "../../../support/wait-until";
-
 const encoder = new TextEncoder();
 
 function streamOf(text: string): ReadableStream<Uint8Array> {
@@ -107,7 +107,11 @@ describe("DownloadService queue hardening", () => {
   ): Promise<string> {
     const job = await service.enqueue({
       title: { id: `tmdb:${name}`, type: "movie", name },
-      stream: { url: `https://example.com/${name}.mp4`, headers: {}, timestamp: 0 },
+      stream: downloadStream("vidking", {
+        url: `https://example.com/${name}.mp4`,
+        headers: {},
+        timestamp: 0,
+      }),
       providerId: "vidking",
       ...(outputDirectory ? { outputDirectory } : {}),
     });

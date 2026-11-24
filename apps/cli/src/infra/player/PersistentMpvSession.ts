@@ -238,6 +238,14 @@ export class PersistentMpvSession {
   private alive = false;
   private currentControl: ActivePlayerControl;
   private hasLoadedFile = false;
+  /**
+   * Deferred sensitive-conf cleanup. In a persistent session `--include` rides
+   * inside the initial file's `--{ ... --}` group and mpv reads it lazily at
+   * file-entry processing, so deleting it at IPC-ready would silently drop the
+   * sensitive options. Released at the first file-loaded/end-file (the include
+   * is consumed by then) or on process termination.
+   */
+  private initialConfCleanup: (() => Promise<void>) | null = null;
   private currentPositionSeconds = 0;
   private skippedSegments = new Set<string>();
   private currentOptions: PlayerCycleOptions;
@@ -433,7 +441,9 @@ export class PersistentMpvSession {
     try {
       await session.spawn(opts.mpv);
     } catch (error) {
-      // A failed startup must not strand localized subtitle files.
+      // A failed startup must not strand localized subtitle files or the
+      // sensitive conf (args/prep/spawn errors happen before mpv could read it).
+      await session.releaseInitialConf();
       await session.addonSubtitleFiles?.close().catch(() => {});
       session.addonSubtitleFiles = undefined;
       throw error;
@@ -721,6 +731,12 @@ export class PersistentMpvSession {
       },
       this.ipcEndpoint,
     );
+    // Registered before any handler can fire: a persistent session scopes
+    // `--include` inside the initial file's `--{ ... --}` group and mpv reads
+    // it lazily at file-entry processing, so deletion must wait for
+    // file-loaded/end-file or process exit — `releaseInitialConf` covers all
+    // three, and create()'s catch covers errors before spawn.
+    this.initialConfCleanup = sensitiveConf?.cleanup ?? null;
     // Only an explicit HDR mode emits gpu-next options; `auto` leaves mpv alone.
     const needsHdrProbe =
       mpvOptions?.supportsGpuNext === undefined &&
@@ -795,18 +811,10 @@ export class PersistentMpvSession {
     );
     this.titleAppliedViaArgs = true;
 
-    try {
-      await this.spawnProcessAndConnect(mpvOptions, args);
-    } finally {
-      // The conf's only reader is mpv's startup config parse — once spawn()
-      // has settled (IPC ready, bootstrap failure, or spawn throw) the file
-      // has no further consumer.
-      await sensitiveConf?.cleanup();
-    }
+    await this.spawnProcessAndConnect(mpvOptions, args);
   }
 
-  /** The spawn→IPC-connect tail of {@link spawn} — kept separate so the
-   * sensitive-conf cleanup wraps every exit path with one finally. */
+  /** The spawn→IPC-connect tail of {@link spawn}. */
   private async spawnProcessAndConnect(
     mpvOptions: MpvRuntimeOptions | undefined,
     args: string[],
@@ -916,6 +924,7 @@ export class PersistentMpvSession {
             void this.handlePlaybackEnded(reason, observedAt, fileError);
           },
           onFileLoaded: () => {
+            void this.releaseInitialConf();
             const pending = this.pendingFileLoad;
             // mpv's file-loaded carries no identity. Without a pending owner it
             // belongs to a load nobody is waiting for, so it must do nothing.
@@ -1119,6 +1128,17 @@ export class PersistentMpvSession {
 
   private retirePendingFileLoad(): void {
     this.pendingFileLoad = null;
+  }
+
+  /**
+   * The scoped `--include` is consumed when mpv processes the file entry;
+   * file-loaded, end-file and process exit are all after that point, so each
+   * can release the deferred conf cleanup idempotently.
+   */
+  private async releaseInitialConf(): Promise<void> {
+    const cleanup = this.initialConfCleanup;
+    this.initialConfCleanup = null;
+    await cleanup?.();
   }
 
   /** Clears the pending owner only when it is exactly the one that failed. */
@@ -1686,6 +1706,7 @@ export class PersistentMpvSession {
       const active = this.activeCycle;
       this.activeCycle = null;
 
+      await this.releaseInitialConf();
       await this.closeIpcSession();
       if (this.addonSubtitleFiles) {
         const scope = this.addonSubtitleFiles;
@@ -1747,6 +1768,7 @@ export class PersistentMpvSession {
     observedAt: number,
     fileError?: string,
   ): Promise<void> {
+    void this.releaseInitialConf();
     const active = this.activeCycle;
     if (!active) return;
 

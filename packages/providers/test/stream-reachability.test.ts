@@ -829,6 +829,28 @@ describe("direct-media probes", () => {
     expect((await strict(FTYP)).status).toBe("unreachable");
   });
 
+  test("rejects a complete 200 body that ends one byte into the next box header", async () => {
+    // A trailing byte is not a complete box — it cannot be positive media evidence.
+    expect((await strict(FTYP_MDAT.subarray(0, FTYP.length + 1))).status).toBe("unreachable");
+  });
+
+  test("rejects a complete 200 body that truncates a declared post-ftyp box", async () => {
+    // The mdat header is readable but its declared size overruns the body.
+    expect((await strict(FTYP_MDAT.subarray(0, FTYP_MDAT.length - 1))).status).toBe("unreachable");
+  });
+
+  test("rejects a complete 200 body whose post-ftyp boxes are all unknown", async () => {
+    const body = Buffer.concat([FTYP, mp4Box("zzzz", mediaBytes(64))]);
+    expect((await strict(body)).status).toBe("unreachable");
+  });
+
+  test("accepts a complete 200 body with an unknown ancillary box before media", async () => {
+    // Unknown-but-complete boxes around known media boxes are not a refusal —
+    // only a prefix with no known media box at all is.
+    const body = Buffer.concat([FTYP, mp4Box("junk", mediaBytes(8)), mp4Box("mdat", mediaBytes())]);
+    expect((await strict(body)).status).toBe("reachable");
+  });
+
   test("accepts a complete 200 body with media after its ftyp box", async () => {
     expect((await strict(FTYP_MDAT)).status).toBe("reachable");
   });
@@ -870,6 +892,62 @@ describe("direct-media probes", () => {
       headers: { "content-range": "bytes 0-99/8192" },
     });
     expect(probe.status).toBe("unreachable");
+  });
+
+  test("rejects a 206 whose body overflows the declared range by one byte", async () => {
+    const padded = Buffer.concat([FTYP_MDAT, mediaBytes(4097 - FTYP_MDAT.length)]);
+    const probe = await strict(padded, {
+      status: 206,
+      headers: { "content-range": "bytes 0-4095/8192" },
+    });
+    expect(probe.status).toBe("unreachable");
+  });
+
+  test("rejects a 206 when the excess byte arrives as a separate stream chunk", async () => {
+    const head = Buffer.concat([FTYP_MDAT, mediaBytes(4096 - FTYP_MDAT.length)]);
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(head);
+        // Byte 4097 — one past the declared range, in its own chunk.
+        controller.enqueue(mediaBytes(1));
+        controller.close();
+      },
+    });
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/movie.mp4",
+      fetchImpl: async () =>
+        new Response(stream, {
+          status: 206,
+          headers: { "content-range": "bytes 0-4095/8192" },
+        }),
+      requireDirectMedia: true,
+    });
+    expect(probe.status).toBe("unreachable");
+  });
+
+  test.each([
+    ["conflicting", "4096"],
+    ["non-numeric", "chunked"],
+  ])("rejects a 206 whose %s content-length disagrees with the range", async (_name, length) => {
+    const probe = await strict(FTYP_MDAT, {
+      status: 206,
+      headers: {
+        "content-range": `bytes 0-${FTYP_MDAT.length - 1}/8192`,
+        "content-length": length,
+      },
+    });
+    expect(probe.status).toBe("unreachable");
+  });
+
+  test("accepts a 206 whose content-length agrees with the range", async () => {
+    const probe = await strict(FTYP_MDAT, {
+      status: 206,
+      headers: {
+        "content-range": `bytes 0-${FTYP_MDAT.length - 1}/8192`,
+        "content-length": `${FTYP_MDAT.length}`,
+      },
+    });
+    expect(probe.status).toBe("reachable");
   });
 
   test("a 200 body ignores a content-range header it should not carry", async () => {
