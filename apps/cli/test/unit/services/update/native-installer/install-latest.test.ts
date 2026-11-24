@@ -178,6 +178,60 @@ describe("installLatest", () => {
     },
   );
 
+  test("pinned updater installs a release whose archive manifest is present and signed", async () => {
+    // The path every published release takes: SHA256SUMS.archives and its .sig
+    // both exist and verify, so the archive is fetched, its member checked
+    // against the signed SHA256SUMS, and the raw asset never requested.
+    const { layout } = await makeLayout();
+    const { privateKey, spki } = releaseSigningKeys();
+    const releaseTarget = hostTarget();
+    const bytes = new TextEncoder().encode("SIGNED-ARCHIVED-BINARY");
+    const archive = createReleaseArchive(releaseTarget, bytes);
+    const sums = sumsFor(releaseTarget.out, sha256Hex(bytes));
+    const archiveSums = sumsFor(releaseTarget.archiveName, sha256Hex(archive));
+    const signatures: Record<string, Buffer> = {
+      "SHA256SUMS.sig": signStatement(privateKey, "valid", "1.2.3", "SHA256SUMS", sums),
+      "SHA256SUMS.archives.sig": signStatement(
+        privateKey,
+        "valid",
+        "1.2.3",
+        "SHA256SUMS.archives",
+        archiveSums,
+      ),
+    };
+    const requested: string[] = [];
+    const result = await installLatest({
+      layout,
+      version: "1.2.3",
+      releasePublicKey: spki,
+      fetchImpl: async (input) => {
+        const name = String(input).split("/").at(-1) ?? "";
+        requested.push(name);
+        if (name === "SHA256SUMS") return new Response(sums);
+        if (name === "SHA256SUMS.archives") return new Response(archiveSums);
+        const signature = signatures[name];
+        if (signature) return new Response(signature);
+        if (name === releaseTarget.archiveName) return new Response(archive);
+        return new Response(null, { status: 404 });
+      },
+    });
+
+    if (result.status !== "installed") throw new Error(JSON.stringify(result));
+    expect(requested).toContain("SHA256SUMS.sig");
+    expect(requested).toContain("SHA256SUMS.archives.sig");
+    expect(requested).toContain(releaseTarget.archiveName);
+    expect(requested).not.toContain(releaseTarget.out);
+    expect(await Bun.file(versionBinaryPath(layout, "1.2.3")).text()).toBe(
+      "SIGNED-ARCHIVED-BINARY",
+    );
+    expect(await readInstallManifest(layout.configDir)).toMatchObject({
+      activeVersion: "1.2.3",
+      artifactName: releaseTarget.out,
+      archiveName: releaseTarget.archiveName,
+      archiveSha256: sha256Hex(archive),
+    });
+  });
+
   test("installs the verified archive member and records transport plus binary provenance", async () => {
     const { layout } = await makeLayout();
     const releaseTarget = hostTarget();

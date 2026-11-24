@@ -1,9 +1,11 @@
 import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { renderInstaller } from "../../../../scripts/packaging/render-installers";
+import { createReleaseArchive } from "../../scripts/build-release-archives";
+import { RELEASE_BINARY_TARGETS } from "../../src/services/update/platform-assets";
 import {
   releaseSigningKeys,
   SIGNED_STATEMENT_SCENARIOS,
@@ -44,6 +46,7 @@ const SCENARIOS = [
   "tampered manifest",
   "missing",
   "unsigned archive",
+  "signed archive",
   "LibreSSL first on PATH",
 ] as const;
 type Scenario = (typeof SCENARIOS)[number];
@@ -73,6 +76,18 @@ for (const name of ["install.sh", "install.ps1"] as const) {
         const statement = statementFor(scenario);
         const signedManifest = scenario === "tampered manifest" ? sums + "\n" : sums;
         const prefix = `/download/v${VERSION}/`;
+        // The release path every published archive takes: a signed
+        // SHA256SUMS.archives selects the archive, its member is then checked
+        // against the signed SHA256SUMS, and the raw asset is never fetched.
+        const target = RELEASE_BINARY_TARGETS.find((candidate) => candidate.out === asset);
+        if (!target) throw new Error(`Missing release target for ${asset}`);
+        const archive =
+          scenario === "signed archive"
+            ? createReleaseArchive(target, new TextEncoder().encode(body))
+            : undefined;
+        const archiveSums = archive
+          ? `${createHash("sha256").update(archive).digest("hex")}  ${target.archiveName}\n`
+          : sums;
 
         let env: NodeJS.ProcessEnv = {
           ...sandbox.env,
@@ -105,7 +120,21 @@ for (const name of ["install.sh", "install.ps1"] as const) {
             [prefix + asset]: { body },
             [prefix + "SHA256SUMS"]: { body: sums },
             [prefix + "SHA256SUMS.archives"]:
-              scenario === "unsigned archive" ? { body: sums } : { status: 404 },
+              scenario === "unsigned archive" || archive ? { body: archiveSums } : { status: 404 },
+            ...(archive
+              ? {
+                  [prefix + target.archiveName]: { body: archive },
+                  [prefix + "SHA256SUMS.archives.sig"]: {
+                    body: signStatement(
+                      privateKey,
+                      "valid",
+                      VERSION,
+                      "SHA256SUMS.archives",
+                      archiveSums,
+                    ),
+                  },
+                }
+              : {}),
             [prefix + "SHA256SUMS.sig"]:
               scenario === "missing"
                 ? { status: 404 }
@@ -133,9 +162,24 @@ for (const name of ["install.sh", "install.ps1"] as const) {
               new Response(child.stderr).text(),
               child.exited,
             ]);
-            const accepted = scenario === "valid" || scenario === "LibreSSL first on PATH";
+            const accepted =
+              scenario === "valid" ||
+              scenario === "signed archive" ||
+              scenario === "LibreSSL first on PATH";
             if (accepted !== (status === 0)) throw new Error(stdout + stderr);
             expect(existsSync(join(sandbox.configDir, "install.json"))).toBe(accepted);
+            if (archive) {
+              expect(evidence.requests).toContain(prefix + "SHA256SUMS.archives.sig");
+              expect(evidence.requests).toContain(prefix + target.archiveName);
+              expect(evidence.requests).not.toContain(prefix + asset);
+              expect(
+                JSON.parse(readFileSync(join(sandbox.configDir, "install.json"), "utf8")),
+              ).toMatchObject({
+                archiveName: target.archiveName,
+                archiveSha256: createHash("sha256").update(archive).digest("hex"),
+                artifactName: asset,
+              });
+            }
             if (accepted) return;
             // Rejected before the binary is fetched, let alone activated.
             expect(evidence.requests).not.toContain(prefix + asset);

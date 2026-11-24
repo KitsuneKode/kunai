@@ -109,14 +109,78 @@ describe("renderScoopManifest", () => {
   });
 });
 
-test("the committed channel manifests are byte-for-byte the renderer's output", async () => {
+// The committed tap and bucket are rewritten by the release metadata PR for
+// every published version, so this drift check must not pin a fixture
+// release. It reads the version and digests back out of the committed files,
+// re-renders from exactly those inputs, and demands identical bytes: any
+// hand edit, or a renderer change that was not re-rendered, fails here at
+// whatever version is current.
+describe("committed channel manifests", () => {
   const root = join(import.meta.dir, "../../../../..");
-  expect(await Bun.file(join(root, "bucket/kunai.json")).text()).toBe(
-    renderScoopManifest(channel, sums),
-  );
-  expect(await Bun.file(join(root, "Formula/kunai.rb")).text()).toBe(
-    renderHomebrewFormula(channel, sums),
-  );
+  const readCommitted = (rel: string) => Bun.file(join(root, rel)).text();
+
+  /** Version + `<archive name> -> sha256` pairs a committed manifest declares. */
+  function inputsFromFormula(text: string): { version: string; sums: Map<string, string> } {
+    const version = /^\s*version "([^"]+)"$/m.exec(text)?.[1];
+    if (!version) throw new Error("Formula/kunai.rb declares no version");
+    const sums = new Map<string, string>();
+    for (const match of text.matchAll(/url "[^"]*\/([^"/]+)"\n\s*sha256 "([0-9a-f]{64})"/g)) {
+      const [, name, sha] = match;
+      if (name && sha) sums.set(name, sha);
+    }
+    return { version, sums };
+  }
+
+  function inputsFromScoop(text: string): { version: string; sums: Map<string, string> } {
+    // SAFETY: shape asserted by the byte-equality check below; a wrong shape
+    // yields missing entries and the renderer fails closed.
+    const parsed = JSON.parse(text) as {
+      version: string;
+      architecture: Record<string, { url: string; hash: string }>;
+    };
+    const sums = new Map<string, string>();
+    for (const arch of Object.values(parsed.architecture)) {
+      const name = arch.url.split("/").pop();
+      if (name) sums.set(name, arch.hash);
+    }
+    return { version: parsed.version, sums };
+  }
+
+  const channelFor = (version: string) => ({ version, tag: `v${version}` });
+
+  test("Formula/kunai.rb is byte-for-byte the renderer's output for its own version", async () => {
+    const committed = await readCommitted("Formula/kunai.rb");
+    const { version, sums: formulaSums } = inputsFromFormula(committed);
+    expect(formulaSums.size).toBe(4);
+    expect(committed).toBe(renderHomebrewFormula(channelFor(version), formulaSums));
+  });
+
+  test("bucket/kunai.json is byte-for-byte the renderer's output for its own version", async () => {
+    const committed = await readCommitted("bucket/kunai.json");
+    const { version, sums: scoopSums } = inputsFromScoop(committed);
+    expect(scoopSums.size).toBe(2);
+    expect(committed).toBe(renderScoopManifest(channelFor(version), scoopSums));
+  });
+
+  test("the tap and the bucket advertise the same release", async () => {
+    const formula = inputsFromFormula(await readCommitted("Formula/kunai.rb"));
+    const scoop = inputsFromScoop(await readCommitted("bucket/kunai.json"));
+    expect(scoop.version).toBe(formula.version);
+  });
+
+  test("the drift check follows a re-rendered release instead of pinning one", () => {
+    // What the metadata PR does on the next release: render new files from new
+    // sums. Reading inputs back from that output must reproduce it exactly.
+    const next = channelFor("9.8.7");
+    const nextSums = new Map([...sums].map(([name]) => [name, "f".repeat(64)]));
+    const formula = renderHomebrewFormula(next, nextSums);
+    const scoop = renderScoopManifest(next, nextSums);
+    const fromFormula = inputsFromFormula(formula);
+    const fromScoop = inputsFromScoop(scoop);
+    expect(fromFormula.version).toBe("9.8.7");
+    expect(renderHomebrewFormula(channelFor(fromFormula.version), fromFormula.sums)).toBe(formula);
+    expect(renderScoopManifest(channelFor(fromScoop.version), fromScoop.sums)).toBe(scoop);
+  });
 });
 
 describe("renderPkgbuild + renderSrcinfo", () => {
