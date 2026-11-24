@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T15:07:31Z"
+lastReviewed: "2026-11-24T15:37:23Z"
 ---
 
 # Share Links & PlaybackTargetRef
@@ -77,7 +77,12 @@ link's lane, so an anime provider hint never lands on a TMDB movie.
 
 ## Timestamp resume
 
-Shared `t=` is applied once on the first mpv launch via `resolveBootstrapStartSeconds` (max of shared vs local history). Normal per-episode history resume takes over afterward.
+A shared `t=` is an instruction: it sets the start of the first episode of the
+launch, wins over local history, and skips the resume prompt
+(`sharedStartOverride` in `apps/cli/src/app/playback/playback-start-intent.ts`).
+`t=0` means "from the beginning", not "no timestamp". It is consumed once from
+the start mailbox, so every later episode (auto-advance, navigation) resumes
+from its own history.
 
 ## Examples
 
