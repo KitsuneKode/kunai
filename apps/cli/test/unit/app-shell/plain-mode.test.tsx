@@ -901,6 +901,7 @@ function settingsRegistry(): SettingsRegistryContext {
         health: "disconnected" as const,
       },
     },
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     container: {} as Container,
   };
 }
@@ -910,6 +911,7 @@ function offlineEntry(
     Pick<OfflineLibraryEntry["job"], "id" | "titleId" | "titleName">,
   status: OfflineLibraryEntry["status"],
 ): OfflineLibraryEntry {
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
   return {
     job: {
       mediaKind: "movie",
@@ -1011,6 +1013,7 @@ function libraryFixture() {
     offlineLibraryService: {
       listCompletedEntries: async () => {
         await gate;
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         return entries;
       },
     },
@@ -1020,7 +1023,7 @@ function libraryFixture() {
     },
     stateManager: { dispatch: () => undefined },
     connectivity: { isOnline: () => true, subscribe: () => () => undefined },
-  } as unknown as Container;
+  } as never;
   return {
     container,
     settle: async () => {
@@ -1055,6 +1058,7 @@ async function libraryShelfFrames(columns: number): Promise<string> {
 }
 
 function completedDownload(): DownloadJobRecord {
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
   return {
     id: "job-1",
     titleId: "title-1",
@@ -1074,6 +1078,7 @@ function completedDownload(): DownloadJobRecord {
 
 function downloadContainer(): Container {
   const job = completedDownload();
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
   return {
     stateManager: { dispatch: () => undefined },
     config: { zenMode: false },
@@ -1093,7 +1098,7 @@ function downloadContainer(): Container {
       retry: async () => undefined,
       kickQueue: () => undefined,
     },
-  } as unknown as Container;
+  } as never;
 }
 
 function diagnosticSpanLines() {
