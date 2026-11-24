@@ -43,7 +43,12 @@ export async function buildDiscoverSections(
 
   const topGenres: number[] = [];
   const recentHistoryId = mostRecentCompleted?.[0] ?? null;
-  const hasTmdbLikeRecentId = recentHistoryId !== null && /^\d+$/.test(recentHistoryId);
+  // A bare number is only a TMDB id when the entry came from a series/movie
+  // provider; anime history ids are AniList ids, which TMDB would read as an
+  // unrelated title.
+  const recentIsAnime = animeProviders.has(mostRecentCompleted?.[1].providerId ?? "unknown");
+  const hasTmdbLikeRecentId =
+    recentHistoryId !== null && /^\d+$/.test(recentHistoryId) && !recentIsAnime;
   const completedHistorySeeds = Object.entries(history)
     .filter(([, entry]) => entry.completed)
     .filter(([, entry]) =>

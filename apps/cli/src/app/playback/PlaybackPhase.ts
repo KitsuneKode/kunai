@@ -2673,7 +2673,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               container.config.recommendationRailEnabled &&
               prefetchedRecommendationItems === null &&
               stateManager.getState().mode !== "youtube" &&
-              !title.id.startsWith("youtube")
+              !title.id.startsWith("youtube") &&
+              // TMDB recommendations need a TMDB id. Anime titles carry AniList
+              // ids (often bare numbers), which TMDB would read as an unrelated
+              // show; anime post-play uses the AniList recommendations path.
+              stateManager.getState().mode !== "anime" &&
+              title.isAnime !== true
             ) {
               container.backgroundWorkScheduler.enqueue({
                 id: `recommendation-prefetch:${title.type}:${title.id}`,

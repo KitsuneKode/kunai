@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-23"
+lastReviewed: "2026-11-24"
 ---
 
 # Kunai — Recommendations And Discover
@@ -92,6 +92,35 @@ Trending walks a chain of sources per lane and remembers the last good answer:
   ends first, a failed probe holds further probes for 30 seconds, and any
   answer (including a 4xx) closes the breaker.
 
+### Series fallback: last-known-good TMDB
+
+Every successful TMDB show (`/tv/:id`) and season (`/tv/:id/season/:n`)
+response is also saved to the cache database as a `tmdb:<path>` row
+(`apps/cli/src/services/catalog/tmdb-durable-cache.ts`, wired in
+`bootstrap-persistence.ts`, kept 30 days). When every TMDB host fails with a
+transport error or a 5xx, `fetchTmdbJsonCached` serves the saved copy instead,
+so a series opened in the last month still lists its seasons and episodes, and
+per-title release info (next episode, release progress) still renders. A 4xx is
+an answer, not an outage, and is never masked by a saved copy.
+
+The saved copy is TMDB's own response, so numbering and identity are exactly
+what playback, downloads and history expect. A TVmaze fallback was built and
+dropped before merge: TVmaze numbers some real shows differently from TMDB
+(The Office US S04E05 is "Local Ad" on TMDB and a different episode on TVmaze),
+so a fallback episode list could start the wrong episode and write the wrong
+history row.
+
+### AniList client
+
+Every read-only AniList request in the CLI goes through
+`apps/cli/src/services/catalog/anilist-client.ts`: a process-wide rate-limit
+cooldown (honours `Retry-After` and starts early when `X-RateLimit-Remaining`
+is nearly spent; requests during it fail fast so surfaces reach their fallback),
+in-flight dedupe of identical queries, and a bounded timeout even with a caller
+signal. Tracker sync (`services/sync/AniListAdapter.ts`) is authenticated and
+keeps its own policy; the providers package keeps its own client because it
+cannot import the CLI.
+
 Calendar uses catalog schedule services on demand:
 
 - AniList releasing-today for anime mode
@@ -149,7 +178,7 @@ flow.
 
 - Add stronger visual verification for discover, calendar, and random loading/layout at small and wide terminal sizes.
 - Keep refining the discover companion treatment inside browse so recommendations, calendar entries, and random picks feel native.
-- Calendar has no fallback source and does not show cache age; with no usable schedule cache and TMDB/AniList down it reports "Calendar sources unavailable". TVmaze (series) is the planned fallback.
+- The global "airing today" calendar has no fallback source and does not show cache age; with no usable schedule cache and TMDB/AniList down it reports "Calendar sources unavailable". Per-title release info for followed series does fall back, to the last-known-good TMDB responses (below).
 - Search has no fallback catalog source yet; the `CatalogSource` contract (provider-platform plan, phase 1) is where it lands.
 - Personalized recommendation rows are keyed by the top history seeds and kept for the retention window with no per-namespace cap; add one if the table grows noticeably.
 - Anime recommendation entry points can treat a numeric AniList history id as a TMDB id (pre-existing); route by media kind and external ids.

@@ -1,5 +1,7 @@
 import { afterEach } from "bun:test";
 
+import { resetAniListClientForTest } from "@/services/catalog/anilist-client";
+
 function configureTestEnvironment(): void {
   /** Block xdg-open / browser spawns during `bun test` unless a test opts out explicitly. */
   process.env.KUNAI_DISABLE_EXTERNAL_URL ??= "1";
@@ -33,6 +35,11 @@ const nativeFetch = globalThis.fetch;
  */
 function failTestsThatLeakFetch(): void {
   afterEach(() => {
+    // The shared AniList client keeps a process-wide rate-limit cooldown and
+    // in-flight table; a test that answers 429 must not cool down every later
+    // test's AniList calls.
+    resetAniListClientForTest();
+
     if (globalThis.fetch === nativeFetch) return;
     globalThis.fetch = nativeFetch;
     throw new Error(

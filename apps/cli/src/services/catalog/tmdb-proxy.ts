@@ -147,6 +147,31 @@ function normalizePath(path: string): string {
   return path.startsWith("/") ? path : `/${path}`;
 }
 
+/**
+ * Durable last-known-good store for series structure (show and season
+ * responses). When every TMDB host is down, a series the user has opened
+ * before still lists its seasons and episodes — with TMDB's own numbering, so
+ * a picked episode, a download or a history write always names the right
+ * episode. (A TVmaze fallback was tried and dropped: its numbering differs from
+ * TMDB's for real shows, e.g. The Office US S04E05.)
+ */
+export type TmdbDurableCache = {
+  read(path: string): { readonly cachedAt: number; readonly value: JsonValue } | null;
+  write(path: string, cachedAt: number, value: JsonValue): void;
+};
+
+let durableTmdbCache: TmdbDurableCache | null = null;
+
+/** Installed by the container once the cache DB is open; unbound before it closes. */
+export function setTmdbDurableCache(cache: TmdbDurableCache | null): void {
+  durableTmdbCache = cache;
+}
+
+/** Show details and season listings only: the data episode pickers and schedules need. */
+export function isDurableTmdbPath(path: string): boolean {
+  return /^\/tv\/\d+(?:\/season\/\d+)?(?:\?[^/]*)?$/.test(path);
+}
+
 /** Clears short-lived TMDB session cache (tests / forced refresh). */
 export function clearTmdbSessionCache(): void {
   sessionCache.clear();
@@ -204,14 +229,21 @@ export async function fetchTmdbJsonCached(
 
   let task = inflightRequests.get(normalized);
   if (!task) {
+    const durable = isDurableTmdbPath(normalized) ? durableTmdbCache : null;
     task = fetchTmdbJsonWithFallback(normalized, undefined, timeoutMs)
       .then((value) => {
         sessionCacheWrite(normalized, { expiresAt: now + SESSION_CACHE_MS, value });
         inflightRequests.delete(normalized);
+        durable?.write(normalized, Date.now(), value);
         return value;
       })
-      .catch((error) => {
+      .catch((error: Error) => {
         inflightRequests.delete(normalized);
+        // Every host is unreachable: serve the last good answer for this exact
+        // request. A definitive 4xx is TMDB's real answer and is never masked.
+        const isDefinitive = error instanceof TmdbHttpError && error.status < 500;
+        const saved = !isDefinitive ? durable?.read(normalized) : null;
+        if (saved) return saved.value;
         throw error;
       });
     inflightRequests.set(normalized, task);

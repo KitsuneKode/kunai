@@ -2,11 +2,10 @@ import { stripHtml } from "@/domain/catalog/strip-html";
 import { anilistCatalogStructure } from "@/domain/media/anilist-format";
 import type { SearchIntent } from "@/domain/search/SearchIntent";
 import type { SearchMetadata, SearchResult, TitleAlias, TitleInfo } from "@/domain/types";
-import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
+import { AniListRequestError, postAniListGraphql } from "@/services/catalog/anilist-client";
+import type { JsonObject, JsonValue } from "@kunai/types";
 
 import type { SearchDeps, SearchService } from "../SearchService";
-
-const ANILIST_GRAPHQL_URL = "https://graphql.anilist.co";
 
 type AniListSearchMedia = {
   readonly id: number;
@@ -59,18 +58,30 @@ export class AniListSearchService implements SearchService {
       sort: searchIntent.sort,
     });
 
-    const response = await fetch(ANILIST_GRAPHQL_URL, {
-      method: "POST",
-      signal: withTimeoutSignal(signal, 8000),
-      headers: {
-        "content-type": "application/json",
-        accept: "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-    if (!response.ok) throw new Error(`AniList search failed: ${response.status}`);
+    let payload: JsonObject;
+    try {
+      payload = await postAniListGraphql(
+        { query: body.query, variables: body.variables },
+        { signal, timeoutMs: 8000 },
+      );
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      // Transport failures surface as the original error so connectivity
+      // tracking still recognises "offline" (it reads the message).
+      if (
+        error instanceof AniListRequestError &&
+        error.kind === "network" &&
+        error.cause instanceof Error
+      ) {
+        throw error.cause;
+      }
+      const detail =
+        error instanceof AniListRequestError ? (error.status ?? error.kind) : "request failed";
+      throw new Error(`AniList search failed: ${detail}`, { cause: error });
+    }
 
-    const data = (await response.json()) as {
+    // SAFETY: AniList's Page/media envelope for this query; fields are read optionally.
+    const data = payload as {
       readonly data?: {
         readonly Page?: {
           readonly media?: readonly AniListSearchMedia[];
@@ -96,9 +107,9 @@ export function createAniListSearchService(deps: SearchDeps): SearchService {
 
 export function buildAniListSearchRequest(intent: SearchIntent): {
   readonly query: string;
-  readonly variables: Record<string, unknown>;
+  readonly variables: Record<string, JsonValue>;
 } {
-  const variables: Record<string, unknown> = {
+  const variables: Record<string, JsonValue> = {
     page: 1,
     sort: [toAniListSort(intent.sort, intent.query)],
   };
