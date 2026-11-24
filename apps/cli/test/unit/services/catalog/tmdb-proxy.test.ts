@@ -5,7 +5,12 @@ import {
   fetchTmdbJsonCached,
   formatTmdbSearchError,
   isTmdbNetworkError,
+  LEGACY_PUBLIC_TMDB_API_KEY,
+  resolveTmdbApiKey,
+  TmdbHttpError,
 } from "@/services/catalog/tmdb-proxy";
+
+import { bundledTmdbKeyDefine } from "../../../../scripts/build-shared";
 
 // Hostname comparison, not a substring check: `"api.themoviedb.org"` inside a
 // URL is a substring match that `api.themoviedb.org.attacker.example` also
@@ -163,6 +168,92 @@ describe("fetchTmdbJsonCached", () => {
     expect(isTmdbAltUrl(urls[0]!)).toBe(true);
   });
 
+  test("half-open: with every host in its breaker window, one host is probed, not none", async () => {
+    let up = false;
+    const urls: string[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request) => {
+        const url = String(input);
+        urls.push(url);
+        if (up) {
+          return new Response(JSON.stringify({ ok: true }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        throw new Error("getaddrinfo ENOTFOUND");
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+
+    // The network is down: every host fails once and enters its breaker.
+    await expect(fetchTmdbJsonCached("/movie/1")).rejects.toThrow();
+    expect(urls).toHaveLength(4);
+
+    // The network is back. The old walker skipped every host and threw
+    // without a request for five minutes; the probe recovers immediately.
+    up = true;
+    urls.length = 0;
+    await expect(fetchTmdbJsonCached("/movie/2")).resolves.toEqual({ ok: true });
+    expect(urls).toHaveLength(1);
+  });
+
+  test("half-open: concurrent distinct requests share one probe; a 4xx closes the breaker", async () => {
+    let up = false;
+    let requests = 0;
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request) => {
+        requests += 1;
+        if (!up) throw new Error("getaddrinfo ENOTFOUND");
+        await Promise.resolve();
+        return String(input).includes("/missing")
+          ? new Response("{}", { status: 404 })
+          : new Response(JSON.stringify({ ok: true }), { status: 200 });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    await expect(fetchTmdbJsonCached("/movie/1")).rejects.toThrow();
+    up = true;
+    requests = 0;
+    const settled = await Promise.allSettled(
+      Array.from({ length: 20 }, (_, index) => fetchTmdbJsonCached(`/movie/${index + 100}`)),
+    );
+    expect(requests).toBe(1);
+    expect(settled.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+
+    // A 404 is proof the host is up: the breaker closes and the next request
+    // goes straight through instead of waiting out the window.
+    clearTmdbSessionCache();
+    up = false;
+    await expect(fetchTmdbJsonCached("/movie/2")).rejects.toThrow();
+    up = true;
+    await expect(fetchTmdbJsonCached("/missing")).rejects.toThrow("404");
+    requests = 0;
+    await expect(fetchTmdbJsonCached("/movie/3")).resolves.toEqual({ ok: true });
+    expect(requests).toBe(1);
+  });
+
+  test("after a failed recovery probe, requests fail fast until the next probe window", async () => {
+    let requests = 0;
+    globalThis.fetch = Object.assign(
+      async () => {
+        requests += 1;
+        throw new Error("connect ETIMEDOUT");
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    await expect(fetchTmdbJsonCached("/movie/1")).rejects.toThrow();
+    // First half-open probe fails…
+    requests = 0;
+    await expect(fetchTmdbJsonCached("/movie/2")).rejects.toThrow();
+    expect(requests).toBe(1);
+    // …so the next requests in the window cost no network at all.
+    requests = 0;
+    await expect(fetchTmdbJsonCached("/movie/3")).rejects.toThrow("recovery probe pending");
+    await expect(fetchTmdbJsonCached("/movie/4")).rejects.toThrow("recovery probe pending");
+    expect(requests).toBe(0);
+  });
+
   test("a 4xx is a definitive answer — no mirror hop, no breaker", async () => {
     const urls: string[] = [];
     globalThis.fetch = Object.assign(
@@ -255,5 +346,79 @@ describe("fetchTmdbJsonCached", () => {
     await expect(suggest).rejects.toThrow();
     await expect(submitted).resolves.toEqual({ ok: true });
     expect(fetchCount).toBe(1);
+  });
+});
+
+describe("TMDB API key resolution", () => {
+  test("user key, then the build-time Kunai key, then the legacy key", () => {
+    const original = process.env.KUNAI_BUNDLED_TMDB_API_KEY;
+    try {
+      delete process.env.KUNAI_BUNDLED_TMDB_API_KEY;
+      expect(resolveTmdbApiKey({})).toEqual({ key: LEGACY_PUBLIC_TMDB_API_KEY, source: "legacy" });
+      expect(resolveTmdbApiKey({ KUNAI_TMDB_API_KEY: "  " })).toEqual({
+        key: LEGACY_PUBLIC_TMDB_API_KEY,
+        source: "legacy",
+      });
+
+      process.env.KUNAI_BUNDLED_TMDB_API_KEY = "kunaikey1234567890";
+      expect(resolveTmdbApiKey({})).toEqual({ key: "kunaikey1234567890", source: "kunai" });
+      expect(resolveTmdbApiKey({ KUNAI_TMDB_API_KEY: "mine" })).toEqual({
+        key: "mine",
+        source: "user",
+      });
+    } finally {
+      if (original === undefined) delete process.env.KUNAI_BUNDLED_TMDB_API_KEY;
+      else process.env.KUNAI_BUNDLED_TMDB_API_KEY = original;
+    }
+  });
+
+  test("the release define inlines only a well-formed build key", () => {
+    expect(bundledTmdbKeyDefine(undefined)).toEqual({});
+    expect(bundledTmdbKeyDefine("")).toEqual({});
+    expect(bundledTmdbKeyDefine('abc"; process.exit(1); "')).toEqual({});
+    expect(bundledTmdbKeyDefine("0123456789abcdef0123456789abcdef")).toEqual({
+      "process.env.KUNAI_BUNDLED_TMDB_API_KEY": '"0123456789abcdef0123456789abcdef"',
+    });
+  });
+});
+
+describe("TMDB errors never carry credentials", () => {
+  test("the message keeps status, host and path, never the api_key query", () => {
+    const error = new TmdbHttpError(
+      404,
+      "https://api.themoviedb.org/3/movie/1?api_key=SECRET123&language=en",
+    );
+    expect(error.message).toBe("404 https://api.themoviedb.org/3/movie/1");
+    expect(formatTmdbSearchError(error).message).not.toContain("SECRET123");
+  });
+
+  test("a 404 from a direct host reaches the caller without the key", async () => {
+    const originalFetch = globalThis.fetch;
+    const original = process.env.KUNAI_TMDB_API_KEY;
+    process.env.KUNAI_TMDB_API_KEY = "USERSECRETKEY";
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.includes("api_key=")) return new Response("{}", { status: 404 });
+        throw new Error("getaddrinfo ENOTFOUND proxy");
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    try {
+      const caught = await fetchTmdbJsonCached("/movie/999999").then(
+        () => null,
+        (error: Error) => error,
+      );
+      expect(caught).toBeInstanceOf(Error);
+      const message = caught?.message ?? "";
+      expect(message).toContain("404");
+      expect(message).not.toContain("USERSECRETKEY");
+      expect(formatTmdbSearchError(caught).message).not.toContain("USERSECRETKEY");
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (original === undefined) delete process.env.KUNAI_TMDB_API_KEY;
+      else process.env.KUNAI_TMDB_API_KEY = original;
+      clearTmdbSessionCache();
+    }
   });
 });

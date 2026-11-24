@@ -212,6 +212,12 @@ export class PlaybackResolveService {
       readonly engine: ProviderEngine;
       readonly cacheStore: CacheStore;
       readonly providerHealth?: Pick<ProviderHealthRepository, "get" | "set">;
+      /**
+       * Fired on each failed attempt while a provider is `down` (the receiver
+       * throttles). Firing only on the transition missed providers that went
+       * down while a check was throttled and then stayed down.
+       */
+      readonly onProviderDown?: (providerId: string) => void;
       readonly streamHealth?: StreamHealthChecker;
       readonly streamHealthService?: StreamHealthService;
       readonly sourceInventory?: Pick<SourceInventoryService, "get" | "set" | "delete"> &
@@ -839,7 +845,11 @@ export class PlaybackResolveService {
     }
     try {
       const existing = this.deps.providerHealth.get(delta.providerId);
-      this.deps.providerHealth.set(computeProviderHealthUpdate(existing, delta));
+      const next = computeProviderHealthUpdate(existing, delta);
+      this.deps.providerHealth.set(next);
+      if (next.status === "down" && (delta.outcome === "failure" || delta.outcome === "timeout")) {
+        this.deps.onProviderDown?.(delta.providerId);
+      }
     } catch {
       // Health persistence is best-effort
     }

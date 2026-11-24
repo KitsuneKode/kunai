@@ -119,8 +119,11 @@ test("CatalogDiscoveryService never caches an aborted trending load", async () =
 
   controller.abort();
   await expect(service.loadTrending("series", controller.signal)).rejects.toThrow("aborted");
+  // An already-aborted caller makes no request at all, and nothing is cached:
+  // the next caller loads live.
+  expect(calls).toBe(0);
   expect((await service.loadTrending("series"))[0]?.title).toBe("Movie");
-  expect(calls).toBe(2);
+  expect(calls).toBe(1);
 });
 
 test("CatalogDiscoveryService does not cache an empty trending result", async () => {

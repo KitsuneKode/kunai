@@ -30,7 +30,7 @@ import { primeShareBootstrapStartSeconds } from "@/app/bootstrap/share-bootstrap
 import { titleInfoFromSearchResult, videoMetaFromSearchResult } from "@/app/bootstrap/title-info";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/discover/anime-provider-mapping";
 import { loadDiscoverResults } from "@/app/discover/discover-results";
-import { loadDiscoveryList } from "@/app/discover/discovery-lists";
+import { describeTrendingSource, loadDiscoverySection } from "@/app/discover/discovery-lists";
 import { loadRandomResults, loadSurpriseResults } from "@/app/discover/random-results";
 import { buildBrowseInitialResults } from "@/app/search/browse-initial-results";
 import { browseLibraryFilterAvailability } from "@/app/search/browse-local-filter-facts";
@@ -80,7 +80,11 @@ import { recordCliStartupMilestone } from "@/services/diagnostics/cli-startup-mi
 import { buildSearchDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 import { seedCaughtUpReleaseProgressFromCatalogCount } from "@/services/history-metadata/history-catalog-seed";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
-import { observeOnline } from "@/services/network/network-observation";
+import {
+  observeOnline,
+  recordNetworkFailure,
+  recordNetworkSuccess,
+} from "@/services/network/network-observation";
 import { collectLocalTitleEntries } from "@/services/palette/collect-local-titles";
 import { addSearchQuery } from "@/services/persistence/search-history";
 import {
@@ -979,18 +983,26 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             stateManager.dispatch({ type: "SET_SEARCH_QUERY", query: "" });
             stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "loading" });
             const mode = stateManager.getState().mode;
-            // Trending rejects when the upstream is down, which is what lets
-            // `observeOnline` see the failure at all. Browse still degrades to
-            // the empty-state copy below rather than tearing down the phase.
-            const results = await observeOnline(container, "search-error", () =>
-              loadDiscoveryList(mode, context.signal),
-            ).catch((error: unknown): SearchResult[] => {
-              // A cancelled navigation is not an empty tray. Swallowing it here
-              // recorded a "succeeded / healthy" discovery event and pushed state
-              // into a phase the user had already left.
-              if (context.signal.aborted) throw error;
-              return [];
-            });
+            // Trending rejects when every source and the saved list failed,
+            // which records the failure. A saved list served during an outage
+            // is not evidence the network is up, so only a live answer records
+            // success. Browse still degrades to the empty-state copy below.
+            const section = await loadDiscoverySection(mode, context.signal).then(
+              (loaded) => {
+                if (loaded.staleSince === undefined)
+                  recordNetworkSuccess(container, "search-error");
+                return loaded;
+              },
+              (error: Error) => {
+                // A cancelled navigation is not an empty tray. Swallowing it here
+                // recorded a "succeeded / healthy" discovery event and pushed state
+                // into a phase the user had already left.
+                if (context.signal.aborted) throw error;
+                recordNetworkFailure(container, error, "search-error");
+                return { results: [], sourceId: "none" };
+              },
+            );
+            const results = [...section.results];
 
             logger.info("Discovery list loaded", {
               mode,
@@ -1014,9 +1026,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             const freshBrowseContext = await loadBrowseDisplayContext(container, results);
             return {
               options: results.map((r) => mapBrowseResultOption(container, freshBrowseContext, r)),
-              subtitle: `${results.length} trending · ${
-                mode === "anime" ? "AniList" : mode === "youtube" ? "YouTube" : "TMDB"
-              }`,
+              subtitle: `${results.length} trending · ${describeTrendingSource(section)}`,
               emptyMessage: "Trending is unavailable right now. Search still works normally.",
             };
           },
@@ -1469,18 +1479,16 @@ async function loadSearchRoute(
   const bundle =
     route === "trending"
       ? {
-          results: await loadDiscoveryList(mode, context.signal).catch(
-            (error: unknown): SearchResult[] => {
+          ...(await loadDiscoverySection(mode, context.signal).then(
+            (section) => ({
+              results: [...section.results],
+              subtitle: `${describeTrendingSource(section)} trending`,
+            }),
+            (error: Error) => {
               if (context.signal.aborted) throw error;
-              return [];
+              return { results: [], subtitle: "Trending unavailable" };
             },
-          ),
-          subtitle:
-            mode === "anime"
-              ? "AniList trending"
-              : mode === "youtube"
-                ? "YouTube trending"
-                : "TMDB trending",
+          )),
         }
       : route === "surprise"
         ? await loadSurpriseResults(container, { signal: context.signal })

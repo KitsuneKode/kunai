@@ -22,11 +22,14 @@ import { createProviderCachePort } from "../services/providers/provider-cache-po
 import {
   applyHotfixToProviderBootstrap,
   getActiveProviderHotfixManifest,
+  groupProvidersByLane,
+  maybeUrgentProviderManifestRefresh,
 } from "../services/providers/provider-hotfix-manifest";
 import {
   createProviderPrioritySnapshot,
   filterEnabledProviderModules,
 } from "../services/providers/provider-priority";
+import { reloadProviderRegistryPriority } from "../services/providers/provider-registry-hotfix";
 import type { ProviderRegistry } from "../services/providers/ProviderRegistry";
 import { createProviderRegistry } from "../services/providers/ProviderRegistry";
 import type { PersistenceBootstrap } from "./bootstrap-persistence";
@@ -171,6 +174,9 @@ export async function bootstrapProviders(
       engine,
       cacheStore,
       providerHealth,
+      onProviderDown: () => {
+        void refreshHotfixAfterProviderDown(config, providerRegistry, engine.modules);
+      },
       streamHealthService,
       sourceInventory,
       titleProviderHealth,
@@ -235,4 +241,26 @@ export function createOrderedModulesGetter(
     }
     return ordered;
   };
+}
+
+/**
+ * A provider just went down locally. If a signed fix is already published,
+ * fetch it now instead of at the next 6-hour check, and apply it: playback
+ * admission reads the active manifest on every resolve, and the registry copy
+ * is reloaded here. Opt-in and throttled inside `maybeUrgent…`; never throws.
+ */
+async function refreshHotfixAfterProviderDown(
+  config: OrderedModulesConfig,
+  providerRegistry: ProviderRegistry,
+  modules: readonly CoreProviderModule[],
+): Promise<void> {
+  if (config.offlineMode) return;
+  try {
+    const outcome = await maybeUrgentProviderManifestRefresh({
+      knownProvidersByLane: groupProvidersByLane(modules),
+    });
+    if (outcome === "updated") reloadProviderRegistryPriority({ config, providerRegistry });
+  } catch {
+    // Advisory: a failed refresh leaves the current manifest in place.
+  }
 }

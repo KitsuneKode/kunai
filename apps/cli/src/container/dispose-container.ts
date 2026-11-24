@@ -1,3 +1,4 @@
+import { setDefaultCatalogDurableCache } from "@/services/catalog/CatalogDiscoveryService";
 import type { KunaiDatabase } from "@kunai/storage";
 
 import { bindTitleDetailCrosswalk } from "../services/catalog/TitleDetailService";
@@ -73,6 +74,9 @@ async function runDisposal(container: Container, handles: ContainerDisposeHandle
     // it before the close, or the next detail lookup in this process — another
     // container, or the next test file — queries a closed database.
     bindTitleDetailCrosswalk(undefined);
+    // Same for the trending last-known-good store: unbound before its DB
+    // closes, so a later container or test never writes into a dead handle.
+    setDefaultCatalogDurableCache(null);
     await bestEffort(() => handles.dataDb.close());
     await bestEffort(() => handles.cacheDb.close());
   } finally {

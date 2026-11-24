@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-22"
+lastReviewed: "2026-11-23"
 ---
 
 # Kunai — Provider Guide
@@ -264,6 +264,12 @@ always the fallback.
 - **Background refresh.** `maybeBackgroundRefreshProviderManifest` refreshes at
   most every six hours, only when `KUNAI_PROVIDER_MANIFEST_URL` and trusted keys
   are both set, and fails silently offline.
+- **Urgent refresh.** When a provider's health transitions into `down`
+  (`PlaybackResolveService` → `onProviderDown`, wired in
+  `apps/cli/src/container/bootstrap-providers.ts`), Kunai checks the manifest
+  through `maybeUrgentProviderManifestRefresh`: a 15-minute cache-age gate
+  instead of six hours, at most once per 15 minutes per process, same opt-in and
+  offline rules. A fix that is already published applies to the next resolve.
 - **Priority.** `applyHotfixToProviderBootstrap` merges manifest lane priorities
   and `disabled` flags into the user's priority. Two consumers must agree: the
   provider registry (pickers, `apps/cli/src/app/providers/provider-definitions-actions.ts`)

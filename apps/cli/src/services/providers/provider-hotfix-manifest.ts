@@ -148,7 +148,9 @@ async function withManifestLock<T>(statePath: string, run: () => Promise<T>): Pr
         try {
           const lockStat = statSync(lockPath);
           if (lockStat.isDirectory()) {
-            throw new Error(`Provider manifest lock path is a directory: ${lockPath}`);
+            throw new Error(`Provider manifest lock path is a directory: ${lockPath}`, {
+              cause: error,
+            });
           }
           stale = Date.now() - lockStat.mtimeMs > MANIFEST_LOCK_STALE_MS;
         } catch (statError) {
@@ -680,6 +682,36 @@ export function resetCachedProviderHotfixManifest(
     )}\n`,
   );
   return { removed, path };
+}
+
+/**
+ * When a provider just went down locally, a fix may already be published:
+ * check sooner than the 6-hour background interval. Still throttled (at most
+ * one check per window per process, and the cache-age gate), still opt-in
+ * (needs a manifest URL and trusted keys), and still a no-op offline.
+ */
+export const URGENT_REFRESH_MIN_INTERVAL_MS = 15 * 60 * 1000;
+let lastUrgentRefreshAtMs = Number.NEGATIVE_INFINITY;
+
+export function resetUrgentProviderManifestRefreshForTest(): void {
+  lastUrgentRefreshAtMs = Number.NEGATIVE_INFINITY;
+}
+
+export async function maybeUrgentProviderManifestRefresh(
+  options: Parameters<typeof maybeBackgroundRefreshProviderManifest>[0] = {},
+): Promise<"skipped" | "updated" | "unchanged" | "failed"> {
+  const nowMs = options.nowMs ?? Date.now();
+  if (nowMs - lastUrgentRefreshAtMs < URGENT_REFRESH_MIN_INTERVAL_MS) return "skipped";
+  const outcome = await maybeBackgroundRefreshProviderManifest({
+    ...options,
+    nowMs,
+    minIntervalMs: URGENT_REFRESH_MIN_INTERVAL_MS,
+  });
+  // Only a real attempt consumes the window. A skip (no URL or keys, or a
+  // cache still inside its gate) made no request; consuming the window there
+  // would hide a provider that stays down until the next 6-hour check.
+  if (outcome !== "skipped") lastUrgentRefreshAtMs = nowMs;
+  return outcome;
 }
 
 /**

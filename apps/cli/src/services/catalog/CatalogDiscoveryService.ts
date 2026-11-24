@@ -1,7 +1,10 @@
 import { stripHtml } from "@/domain/catalog/strip-html";
 import { anilistCatalogStructure } from "@/domain/media/anilist-format";
 import type { SearchResult, ShellMode, TitleAlias } from "@/domain/types";
+import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
 import { evictOverflowedEntries } from "@/services/catalog/bounded-cache";
+import { loadJikanAnimeTrending } from "@/services/catalog/jikan-trending";
+import { loadKitsuAnimeTrending } from "@/services/catalog/kitsu-trending";
 import { fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
 import {
   loadYoutubeTrending,
@@ -61,8 +64,99 @@ export type CatalogDiscoveryLoaders = {
   readonly youtubeSurprise?: CatalogSurpriseLoader;
 };
 
+/**
+ * One catalog source for a lane's trending list. Sources are tried in order;
+ * the first that answers with a non-empty list wins.
+ */
+export type CatalogTrendingSource = {
+  readonly id: string;
+  readonly load: CatalogDiscoveryLoader;
+};
+
+/**
+ * Durable last-known-good store for trending lists, so an outage or a cold
+ * start shows the last answer (with its age) instead of an empty rail.
+ */
+export type CatalogDurableCache = {
+  read(key: string): CatalogDurableEntry | null;
+  write(key: string, cachedAt: number, results: readonly SearchResult[], sourceId?: string): void;
+};
+
+/** A saved trending list, with the source that produced it when known. */
+export type CatalogDurableEntry = {
+  readonly cachedAt: number;
+  readonly results: readonly SearchResult[];
+  readonly sourceId?: string;
+};
+
+/** A trending list plus where it came from and, when stale, how old it is. */
+export type CatalogTrendingSection = {
+  readonly results: readonly SearchResult[];
+  readonly sourceId: string;
+  /** Epoch ms the list was fetched; set only when every live source failed. */
+  readonly staleSince?: number;
+};
+
+type TrendingWalk = {
+  readonly controller: AbortController;
+  waiters: number;
+  readonly promise: Promise<CatalogTrendingSection>;
+};
+
+/**
+ * With a last-known-good list on hand, a live chain slower than this hands the
+ * caller that list instead (the walk continues and fills the cache). A cold
+ * start during an outage otherwise waits out every source's timeout.
+ */
+const TRENDING_HEDGE_AFTER_MS = 1_200;
+
+function abortReason(signal: AbortSignal | undefined): Error {
+  const reason: unknown = signal?.reason;
+  return reason instanceof Error
+    ? reason
+    : new DOMException("The operation was aborted.", "AbortError");
+}
+
+export type CatalogDiscoveryOptions = {
+  /** Hedge delay before serving last-known-good; tests pass 0 or -1 (never). */
+  readonly hedgeAfterMs?: number;
+  /** Extra sources tried after the lane's primary loader, per mode. */
+  readonly fallbacks?: Partial<Record<ShellMode, readonly CatalogTrendingSource[]>>;
+  /** Resolved on each call so the container can install it after construction. */
+  readonly durableCache?: () => CatalogDurableCache | null;
+};
+
+/** How long a served stale list is reused before the live chain is retried. */
+const STALE_RETRY_AFTER_MS = 60 * 1000;
+/** A saved primary list younger than this is preferred over a live fallback. */
+const PREFER_SAVED_PRIMARY_MS = 24 * 60 * 60 * 1000;
+/** How long a failed fallback source is skipped. */
+const FALLBACK_BREAKER_MS = 10 * 60 * 1000;
+
+let defaultDurableCache: CatalogDurableCache | null = null;
+
+/** Installed by the container once the cache database is open. */
+export function setDefaultCatalogDurableCache(cache: CatalogDurableCache | null): void {
+  defaultDurableCache = cache;
+}
+
+export const DEFAULT_TRENDING_FALLBACKS = {
+  // Kitsu first: one request with AniList ids included. Jikan needs an ARM
+  // lookup per entry and is IPv6-only from some networks.
+  anime: [
+    { id: "kitsu", load: (signal) => loadKitsuAnimeTrending(signal) },
+    { id: "jikan", load: (signal) => loadJikanAnimeTrending(signal) },
+  ],
+} satisfies Partial<Record<ShellMode, readonly CatalogTrendingSource[]>>;
+
 export class CatalogDiscoveryService {
   private readonly cache = new Map<string, DiscoveryCacheEntry>();
+  private readonly sections = new Map<string, CatalogTrendingSection>();
+  private readonly sectionWalks = new Map<string, TrendingWalk>();
+  /** Fallback source id → epoch ms until which it is skipped after failing. */
+  private readonly fallbackBrokenUntil = new Map<string, number>();
+  /** Bumped by `clearTrendingCache`; a walk started earlier may not commit. */
+  private generation = 0;
   private readonly inflight = new Map<string, Promise<readonly SearchResult[]>>();
 
   constructor(
@@ -73,29 +167,229 @@ export class CatalogDiscoveryService {
       tmdbSurprise: loadTmdbSurpriseList,
     },
     private readonly now: () => number = () => Date.now(),
+    private readonly options: CatalogDiscoveryOptions = {},
   ) {}
 
   clearTrendingCache(): void {
     this.cache.clear();
     this.inflight.clear();
+    this.sections.clear();
+    this.sectionWalks.clear();
+    this.generation += 1;
   }
 
   async loadTrending(mode: ShellMode, signal?: AbortSignal): Promise<SearchResult[]> {
+    const section = await this.loadTrendingSection(mode, signal);
+    return [...section.results];
+  }
+
+  /**
+   * Trending for a lane: fresh memory cache → the lane's sources in order →
+   * the durable last-known-good list (marked stale) → reject.
+   *
+   * A source that rejects or answers empty hands over to the next one. A
+   * caller abort stops the walk at once: navigating away is not an outage and
+   * must not burn the fallbacks or serve a stale list to nobody.
+   */
+  async loadTrendingSection(
+    mode: ShellMode,
+    signal?: AbortSignal,
+  ): Promise<CatalogTrendingSection> {
     const key = mode;
     const cached = this.cache.get(key);
-    if (cached && cached.expiresAt > this.now()) return [...cached.results];
+    const cachedSection = this.sections.get(key);
+    if (cached && cached.expiresAt > this.now() && cachedSection) return cachedSection;
+    if (signal?.aborted) throw abortReason(signal);
 
-    const inflight = this.inflight.get(key);
-    if (inflight) return [...(await inflight)];
+    // Concurrent callers share one walk of the whole chain. The walk owns its
+    // own signal: one caller cancelling must not cancel another caller's
+    // fallback, and the walk stops only when its last waiter has gone.
+    let walk = this.sectionWalks.get(key);
+    if (!walk) {
+      const controller = new AbortController();
+      const created: TrendingWalk = {
+        controller,
+        waiters: 0,
+        promise: this.walkTrendingChain(mode, controller.signal, this.generation),
+      };
+      created.promise
+        .finally(() => {
+          if (this.sectionWalks.get(key) === created) this.sectionWalks.delete(key);
+        })
+        .catch(() => undefined);
+      this.sectionWalks.set(key, created);
+      walk = created;
+    }
 
-    const loader =
-      mode === "anime"
-        ? this.loaders.anime
-        : mode === "youtube"
-          ? (this.loaders.youtube ?? loadYoutubeDiscoveryList)
-          : this.loaders.tmdb;
-    const results = await this.runLoad(key, DISCOVERY_CACHE_TTL_MS, () => loader(signal));
-    return [...results];
+    const durable = this.durable();
+    const stale = durable?.read(this.durableKey(mode)) ?? null;
+    return this.awaitWalk(walk, signal, stale);
+  }
+
+  /**
+   * One caller's wait on a shared walk. With a last-known-good list on hand,
+   * a slow live chain hands the caller that list after `hedgeAfterMs` (marked
+   * stale) while the walk keeps going and fills the cache for the next render.
+   */
+  private awaitWalk(
+    walk: TrendingWalk,
+    signal: AbortSignal | undefined,
+    stale: { readonly cachedAt: number; readonly results: readonly SearchResult[] } | null,
+  ): Promise<CatalogTrendingSection> {
+    walk.waiters += 1;
+    return new Promise<CatalogTrendingSection>((resolve, reject) => {
+      let settled = false;
+      let hedge: ReturnType<typeof setTimeout> | undefined;
+      const leave = () => {
+        walk.waiters -= 1;
+        if (walk.waiters <= 0) walk.controller.abort();
+      };
+      const finish = (action: () => void, abandonWalk: boolean) => {
+        if (settled) return;
+        settled = true;
+        if (hedge !== undefined) clearTimeout(hedge);
+        signal?.removeEventListener("abort", onAbort);
+        if (abandonWalk) leave();
+        else walk.waiters -= 1;
+        action();
+      };
+      const onAbort = () => finish(() => reject(abortReason(signal)), true);
+      if (signal?.aborted) {
+        // Aborted before we could listen (e.g. during the walk's first
+        // synchronous step): leave now so a sole waiter stops the walk.
+        onAbort();
+        return;
+      }
+      signal?.addEventListener("abort", onAbort, { once: true });
+      walk.promise.then(
+        (section) => finish(() => resolve(section), false),
+        (error) => finish(() => reject(error), false),
+      );
+      const hedgeAfterMs = this.options.hedgeAfterMs ?? TRENDING_HEDGE_AFTER_MS;
+      if (stale && stale.results.length > 0 && hedgeAfterMs >= 0) {
+        hedge = setTimeout(
+          () =>
+            finish(
+              () =>
+                resolve({
+                  results: stale.results,
+                  sourceId: "last-known-good",
+                  staleSince: stale.cachedAt,
+                }),
+              // The walk keeps running for the cache even with no waiters.
+              false,
+            ),
+          hedgeAfterMs,
+        );
+      }
+    });
+  }
+
+  private durable(): CatalogDurableCache | null {
+    return this.options.durableCache ? this.options.durableCache() : defaultDurableCache;
+  }
+
+  private durableKey(mode: ShellMode): string {
+    return `catalog:trending:${mode}`;
+  }
+
+  /** Commit a section only if no refresh happened since the walk started. */
+  private commitSection(
+    key: string,
+    generation: number,
+    section: CatalogTrendingSection,
+    ttlMs: number,
+  ): void {
+    if (generation !== this.generation) return;
+    this.cache.set(key, { expiresAt: this.now() + ttlMs, results: section.results });
+    this.sections.set(key, section);
+    evictOverflowedEntries(this.cache, MAX_DISCOVERY_CACHE_ENTRIES, this.now());
+  }
+
+  private async walkTrendingChain(
+    mode: ShellMode,
+    signal: AbortSignal,
+    generation: number,
+  ): Promise<CatalogTrendingSection> {
+    const key = mode;
+    const primary: CatalogTrendingSource = {
+      id: mode === "anime" ? "anilist" : mode === "youtube" ? "youtube" : "tmdb",
+      load:
+        mode === "anime"
+          ? this.loaders.anime
+          : mode === "youtube"
+            ? (this.loaders.youtube ?? loadYoutubeDiscoveryList)
+            : this.loaders.tmdb,
+    };
+    const chain = [primary, ...(this.options.fallbacks?.[mode] ?? [])];
+    const durable = this.durable();
+    const durableKey = this.durableKey(mode);
+
+    let lastError: Error | null = null;
+    for (const source of chain) {
+      const isPrimary = source === primary;
+      if (!isPrimary) {
+        // A recent saved list from the primary beats a live fallback: the
+        // fallbacks are stand-ins (Kitsu's "popular this season" overlapped
+        // AniList trending on 4 of 12 titles), not equivalents.
+        const saved = durable?.read(durableKey);
+        if (
+          saved &&
+          saved.sourceId === primary.id &&
+          saved.results.length > 0 &&
+          this.now() - saved.cachedAt < PREFER_SAVED_PRIMARY_MS
+        ) {
+          const section: CatalogTrendingSection = {
+            results: saved.results,
+            sourceId: "last-known-good",
+            staleSince: saved.cachedAt,
+          };
+          this.commitSection(key, generation, section, STALE_RETRY_AFTER_MS);
+          return section;
+        }
+        // A fallback that just failed (Jikan blackholed on some networks)
+        // is skipped for a while instead of costing its timeout every outage.
+        if ((this.fallbackBrokenUntil.get(source.id) ?? 0) > this.now()) continue;
+      }
+      try {
+        const results = await source.load(signal);
+        if (results.length === 0) continue;
+        const section: CatalogTrendingSection = { results, sourceId: source.id };
+        if (generation === this.generation) {
+          // A fallback answer is reused only briefly so the primary is
+          // retried soon; one primary timeout must not pin a stand-in for
+          // the full trending TTL.
+          this.commitSection(
+            key,
+            generation,
+            section,
+            isPrimary ? DISCOVERY_CACHE_TTL_MS : STALE_RETRY_AFTER_MS,
+          );
+          durable?.write(durableKey, this.now(), results, source.id);
+        }
+        if (!isPrimary) this.fallbackBrokenUntil.delete(source.id);
+        return section;
+      } catch (error) {
+        if (signal.aborted) throw error;
+        if (!isPrimary) this.fallbackBrokenUntil.set(source.id, this.now() + FALLBACK_BREAKER_MS);
+        lastError = error instanceof Error ? error : new Error(String(error));
+      }
+    }
+
+    const stale = durable?.read(durableKey);
+    if (stale && stale.results.length > 0) {
+      const section: CatalogTrendingSection = {
+        results: stale.results,
+        sourceId: "last-known-good",
+        staleSince: stale.cachedAt,
+      };
+      // Short reuse window: retry the live chain soon, but do not hammer a
+      // down upstream on every render.
+      this.commitSection(key, generation, section, STALE_RETRY_AFTER_MS);
+      return section;
+    }
+    if (lastError) throw lastError;
+    return { results: [], sourceId: primary.id };
   }
 
   async loadSurprise(
@@ -155,8 +449,14 @@ export class CatalogDiscoveryService {
 
 export function createCatalogDiscoveryService(
   loaders?: CatalogDiscoveryLoaders,
+  options?: CatalogDiscoveryOptions,
 ): CatalogDiscoveryService {
-  return new CatalogDiscoveryService(loaders);
+  // Injected loaders (tests) get no implicit network fallbacks.
+  return new CatalogDiscoveryService(
+    loaders,
+    undefined,
+    options ?? (loaders ? {} : { fallbacks: DEFAULT_TRENDING_FALLBACKS }),
+  );
 }
 
 async function loadYoutubeDiscoveryList(signal?: AbortSignal): Promise<SearchResult[]> {
@@ -435,7 +735,7 @@ async function postAniList(
 ): Promise<{ readonly data?: unknown }> {
   const response = await fetch(ANILIST_GRAPHQL_URL, {
     method: "POST",
-    signal: signal ?? AbortSignal.timeout(3500),
+    signal: withTimeoutSignal(signal, 3500),
     headers: {
       "content-type": "application/json",
       accept: "application/json",

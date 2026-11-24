@@ -177,6 +177,8 @@ jobs:
           bun run ci 2>&1 | tee artifacts/gates/repository.log
 
       - name: Package gate
+        env:
+          KUNAI_TMDB_BUILD_KEY: ${{ secrets.KUNAI_TMDB_BUILD_KEY }}
         run: |
           set -euo pipefail
           bun run build 2>&1 | tee artifacts/gates/package.log
@@ -189,6 +191,10 @@ jobs:
         run: bun run release:notes:check 2>&1 | tee -a artifacts/gates/repository.log
 
       - name: Build all release binaries
+        env:
+          # Kunai's own TMDB key, inlined by RELEASE_DEFINE (bundledTmdbKeyDefine).
+          # Unset or malformed → the build falls back to the legacy key.
+          KUNAI_TMDB_BUILD_KEY: ${{ secrets.KUNAI_TMDB_BUILD_KEY }}
         run: bunx turbo run build:binaries --filter=@kitsunekode/kunai -- --jobs 2
 
       - name: Verify release binaries

@@ -4,13 +4,10 @@ import {
   resultEnrichmentKey,
   type ResultEnrichment,
 } from "@/services/catalog/ResultEnrichmentService";
-import {
-  loadYoutubeRecommendations,
-  loadYoutubeTrending,
-} from "@/services/youtube/YoutubeRecommendationService";
+import { loadYoutubeRecommendations } from "@/services/youtube/YoutubeRecommendationService";
 
 import { buildDiscoverSections } from "./discover-sections";
-import { clearDiscoveryListCache } from "./discovery-lists";
+import { clearDiscoveryListCache, loadDiscoverySection } from "./discovery-lists";
 
 export type DiscoverResultBundle = {
   readonly results: readonly SearchResult[];
@@ -94,7 +91,11 @@ async function loadYoutubeDiscoverResults(
     items = await loadYoutubeRecommendations({ title, historySeeds }).catch(() => []);
   }
   if (items.length === 0) {
-    items = await loadYoutubeTrending().catch(() => []);
+    // Through the shared trending chain, not the raw loader: it keeps the
+    // durable last-known-good list, so an Invidious outage still shows picks.
+    items = await loadDiscoverySection("youtube")
+      .then((section) => section.results)
+      .catch((): readonly SearchResult[] => []);
   }
 
   const flatten = items.slice(0, itemLimit).map((item) => ({

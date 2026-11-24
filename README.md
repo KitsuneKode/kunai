@@ -218,3 +218,9 @@ Kunai is a client-side playback tool. It does not host, upload, mirror, seed, or
 distribute video content. Streams and related assets are served by non-affiliated
 third-party providers. Use responsibly and in accordance with applicable laws and
 service terms.
+
+Catalog data and artwork for movies and series come from
+[TMDB](https://www.themoviedb.org). This product uses the TMDB API but is not
+endorsed or certified by TMDB. Anime metadata comes from
+[AniList](https://anilist.co), with [Kitsu](https://kitsu.app) and
+[Jikan](https://jikan.moe) (MyAnimeList) as fallbacks.

@@ -1,4 +1,4 @@
-import { TMDB_API_KEY } from "@/services/catalog/tmdb-proxy";
+import { shippedTmdbApiKey } from "@/services/catalog/tmdb-proxy";
 
 /**
  * Whether a tracker's authorization flow can even be started, and if not, why.
@@ -195,7 +195,7 @@ export function resolveAniListAuth(env: NodeJS.ProcessEnv = process.env): AniLis
  */
 export function resolveTmdbAuth(
   env: NodeJS.ProcessEnv = process.env,
-  shippedApiKey: string | null = TMDB_API_KEY,
+  shippedApiKey: string | null = shippedTmdbApiKey().key,
 ): TmdbAuthResolution {
   const override = env.KUNAI_TMDB_API_KEY;
   if (override !== undefined) {
