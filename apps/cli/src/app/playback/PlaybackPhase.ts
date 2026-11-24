@@ -26,10 +26,7 @@ import {
   type EpisodePrefetchProgress,
   type EpisodePrefetchTarget,
 } from "@/app/playback/episode-prefetch";
-import {
-  describeMpvPlayerEvent,
-  type MpvPlaybackFeedback,
-} from "@/app/playback/mpv-playback-event-copy";
+import { type MpvPlaybackFeedback } from "@/app/playback/mpv-playback-event-copy";
 import {
   dismissMpvTransitionOverlay,
   MAX_AUTO_SOURCE_RECOVER_ATTEMPTS,
@@ -131,10 +128,7 @@ import {
   applyMpvEpisodeLoadingOverlay,
   applyMpvStreamSwitchOverlay,
 } from "@/app/playback/policies/mpv-transition-overlay-policy";
-import {
-  playbackStartupStageForPlayerEvent,
-  summarizeStartupStreamSource,
-} from "@/app/playback/policies/startup-stage-policy";
+import { summarizeStartupStreamSource } from "@/app/playback/policies/startup-stage-policy";
 import { createQueuePlaybackAttempt } from "@/app/playback/queue-playback-attempt";
 import {
   isRecentPlaybackStreamFresh,
@@ -224,7 +218,6 @@ import type {
 import { isDetachedHandoffResult } from "@/domain/types";
 import { PlaybackAbortedError } from "@/infra/player/playback-aborted";
 import { classifyPlaybackFailureFromResult } from "@/infra/player/playback-failure-classifier";
-import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 import {
   AniSkipTimingSource,
   extractProviderNativeTiming,
@@ -276,9 +269,7 @@ import { fetchEpisodes, fetchSeasons } from "@/tmdb";
 import type { ResolveAttempt } from "@kunai/core";
 import type { ProviderFailure, ProviderId } from "@kunai/types";
 
-// Re-exported for tests that import it from this module's public surface.
 export type { PlaybackOutcome } from "@/app/playback/playback-outcome";
-export { playbackStartupStageForPlayerEvent };
 
 const timingAggregator = new PlaybackTimingAggregator([IntroDbTimingSource, AniSkipTimingSource]);
 
@@ -627,13 +618,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     });
     await this.showPlaybackError(context, problem.userMessage);
     return stateManager.getState().playbackStatus === "loading" ? "retry" : "dismiss";
-  }
-
-  private describePlayerEvent(event: PlayerPlaybackEvent): {
-    detail?: string | null;
-    note?: string | null;
-  } {
-    return describeMpvPlayerEvent(event);
   }
 
   async execute(title: TitleInfo, context: PhaseContext): Promise<PhaseResult<PlaybackOutcome>> {
