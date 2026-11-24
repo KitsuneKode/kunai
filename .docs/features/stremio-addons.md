@@ -31,6 +31,55 @@ Torrents (`infoHash`), YouTube ids, external pages, non-http schemes and
 private-address URLs are not playable. They are counted in a `source:skipped`
 trace event and named in the failure message, never dropped without a trace.
 
+## What an addon stream may be (beta)
+
+For the beta, an addon stream is playable only when it is one self-contained
+direct media file: MP4-family (`ftyp`) or Matroska/WebM (`EBML`). HLS, DASH
+and every other playlist form are refused — a `.m3u8`/`.mpd` URL before any
+request is made, and playlist-shaped bodies (extensionless included) after one
+bounded read. Redirects are never followed: a redirecting answer is a refusal.
+
+The check is `requireDirectMedia` in `stream-reachability.ts`: one guarded GET
+asking for `bytes=0-4095` with the stream's own request headers and the normal
+DNS pinning, then positive identification of the file signature. It runs at
+the resolve gate (only verified files enter the inventory), again immediately
+before the first mpv spawn, before every persistent-session `loadfile`, and
+before an in-process reconnect reload. A fresh resolve attestation never skips
+the strict preflight, because the attestation covers the probed URL at resolve
+time, not this moment's answer. Supplied `Range`/`If-Range` request headers
+refuse the candidate rather than being overridden.
+
+On top of the check, addon files — and only addon files — are handed to mpv
+inside a file-local block: `--stream-lavf-o=max_redirects=0`,
+`--load-unsafe-playlists=no`, `--tls-verify=yes`, and `ytdl=no` per file (the
+initial one-shot file also gets `--ytdl=no`). `max_redirects` exists in
+FFmpeg's HTTP protocol in 8.1+ and the 7.1.4 backport (not 8.0 or 7.1
+initial); `stream-lavf-o` is the option mpv's top-level HTTP stream reads.
+These are best-effort confinement on known-good builds, not a sandbox.
+
+Residuals to be honest about: an mpv built against an FFmpeg without
+`max_redirects` can still follow a redirect at the lavf layer; a response that
+changes between probe and playback (signed URLs, rotation) is mpv's own fetch;
+a user-configured proxy environment or third-party mpv scripts are outside
+Kunai's control. Kunai installs no proxy and no media relay for addons, and a
+passing preflight confirms the file answers — it is not end-to-end proof that
+mpv can decode and play it.
+
+## Subtitles an addon offers
+
+mpv only ever sees local subtitle files for addon playback — at startup argv,
+persistent inventory replacement and reconnect, late selection, and `sub-add`
+alike. Every remote addon subtitle URL goes through the same guarded download
+(`fetchStremioSubtitle`): public DNS pinning re-checked per redirect hop, a
+3 s deadline, a 512 KiB body cap, and no addon credentials or headers sent to
+the subtitle host. The body itself must prove a plain format — WebVTT, SRT, or
+ASS — and the file extension comes from the verified body, never the URL; an
+HTML page, playlist, binary, or unrecognized body is dropped and the track
+skipped. Accepted bodies are written owner-only (`0600`) under a private temp
+dir with numeric names, at most 64 distinct URLs per scope; the scope is
+closed and its files deleted when the playback retires. A refused subtitle is
+skipped, never substituted with its raw URL.
+
 ## Identity
 
 Addons are asked by IMDb id: `tt…` for a movie, `tt…:season:episode` for an
@@ -58,20 +107,25 @@ token, in the URL path. So:
   of the path.
 - Only the host is shown, logged, traced or put in an error. Client errors name
   the addon by host and strip any URL from transport messages.
-- `kunai addons list` and its JSON never print the URL.
+- `kunai addons list` and its JSON never print the URL. `add --stdin` keeps
+  it out of argv and shell history; prefer it for token-bearing URLs.
 - The URL is stored in `config.json` as `stremioAddons[].url`. It is not in the
   credential vault.
 
-Addon-supplied text (addon name, stream labels) has control characters removed
-before it can reach the terminal (`toDisplayText`).
+Addon-supplied text (addon name, version, stream labels) has control
+characters removed before it can reach the terminal (`toDisplayText`), and
+`scrubStremioAddonText` removes the URL's secret path and query parts — plus
+any other HTTP(S)/Stremio URL — in case a misbehaving addon echoes them back
+in names or descriptions.
 
 ## Lifecycle
 
-| Action            | Takes effect                                                       |
-| ----------------- | ------------------------------------------------------------------ |
-| Add               | Next start: the provider list is built once per run                |
-| Remove            | Next resolve: each module re-reads the stored list (`isInstalled`) |
-| Reorder or switch | Immediately, through `providerPriority` and `disabledProviders`    |
+| Action                    | Takes effect                                                       |
+| ------------------------- | ------------------------------------------------------------------ |
+| Add                       | Next start: the provider list is built once per run                |
+| Remove in the app         | Next resolve: each module re-reads the stored list (`isInstalled`) |
+| Remove via `kunai addons` | After restart for sessions that were already running               |
+| Reorder or switch         | Immediately, through `providerPriority` and `disabledProviders`    |
 
 A new addon is appended after the bundled providers, so it is a fallback until
 the user moves it. Removing one also removes its id from the default provider,
@@ -84,10 +138,13 @@ is requested on every resolve.
 
 ## Entry points
 
-- `kunai addons list | add <url> | remove <n> | check [n]`
+- `kunai addons list | add <url> | add --stdin | remove <n> | check [n]`
   (`apps/cli/src/services/providers/run-addons-command.ts`). `add` reads the
   manifest first and refuses an address that is not an addon, needs
-  configuring, or cannot serve movie or series streams by IMDb id.
+  configuring, or cannot serve movie or series streams by IMDb id. With
+  `--stdin` the URL is read from standard input instead of argv, so a
+  token-bearing URL never reaches `ps` or shell history; the input is capped
+  and never echoed.
 - Settings → Sources → Stremio addons
   (`apps/cli/src/app-shell/settings/registry/addons.ts`). Adding here does not
   contact the addon; its name is recorded on first use.

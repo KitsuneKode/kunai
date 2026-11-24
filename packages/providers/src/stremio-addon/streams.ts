@@ -2,6 +2,7 @@ import { blockedLiteralTargetReason } from "@kunai/core";
 import type { StreamCandidate } from "@kunai/types";
 
 import { detectDynamicRangeFromLabel, qualityRankFromLabel } from "../shared/source-inventory";
+import { scrubStremioAddonText } from "./addon-url";
 import {
   readStreamSubtitles,
   stremioStreamSchema,
@@ -100,7 +101,10 @@ function hasControlCharacter(value: string): boolean {
  * Playable means a direct http(s) URL on a public host. That says nothing about
  * whether the URL answers: `verifyCandidateStream` decides that afterwards.
  */
-export function classifyAddonStreams(entries: readonly unknown[]): ClassifiedAddonStreams {
+export function classifyAddonStreams(
+  entries: readonly unknown[],
+  manifestUrl?: string,
+): ClassifiedAddonStreams {
   const playable: PlayableAddonStream[] = [];
   const unsupported: Partial<Record<UnsupportedAddonStreamKind, number>> = {};
   let unsupportedTotal = 0;
@@ -109,6 +113,12 @@ export function classifyAddonStreams(entries: readonly unknown[]): ClassifiedAdd
     unsupportedTotal += 1;
   };
   const seenUrls = new Set<string>();
+  // Text the addon wrote can echo the configured URL's secret path; labels and
+  // metadata are scrubbed before they reach the UI. URLs and header values are
+  // functional, not displayed, and stay exactly as sent.
+  const scrub = manifestUrl
+    ? (text: string | null | undefined) => scrubStremioAddonText(text, manifestUrl)
+    : (text: string | null | undefined) => text ?? undefined;
 
   entries.forEach((entry, index) => {
     const parsed = stremioStreamSchema.safeParse(entry);
@@ -143,9 +153,10 @@ export function classifyAddonStreams(entries: readonly unknown[]): ClassifiedAdd
     if (seenUrls.has(url)) return;
     seenUrls.add(url);
 
-    const name = firstLine(stream.name);
-    const description = oneLine(stream.description ?? stream.title);
-    const filename = oneLine(stream.behaviorHints?.filename);
+    const name = firstLine(scrub(stream.name));
+    const description = oneLine(scrub(stream.description ?? stream.title));
+    const filename = oneLine(scrub(stream.behaviorHints?.filename));
+    const bingeGroup = scrub(stream.behaviorHints?.bingeGroup);
     const labelText = [name, description, filename].filter(Boolean).join(" ");
     const quality = readQuality(labelText);
     const { protocol, container } = inferProtocol(parsedUrl, stream, filename);
@@ -159,9 +170,7 @@ export function classifyAddonStreams(entries: readonly unknown[]): ClassifiedAdd
       ...(filename ? { filename } : null),
       ...(headers ? { headers } : null),
       notWebReady: stream.behaviorHints?.notWebReady === true,
-      ...(stream.behaviorHints?.bingeGroup
-        ? { bingeGroup: stream.behaviorHints.bingeGroup }
-        : null),
+      ...(bingeGroup ? { bingeGroup } : null),
       ...(videoSize !== undefined ? { videoSizeBytes: videoSize } : null),
       protocol,
       container,
@@ -170,10 +179,13 @@ export function classifyAddonStreams(entries: readonly unknown[]): ClassifiedAdd
       dynamicRange: detectDynamicRangeFromLabel(labelText),
       subtitles: readStreamSubtitles(stream)
         .filter((subtitle) => isPublicHttpUrl(subtitle.url))
-        .map((subtitle) => ({
-          url: subtitle.url,
-          ...(subtitle.lang ? { language: subtitle.lang } : null),
-        })),
+        .map((subtitle) => {
+          const language = scrub(subtitle.lang);
+          return {
+            url: subtitle.url,
+            ...(language ? { language } : null),
+          };
+        }),
       index,
     });
   });
@@ -209,7 +221,18 @@ function readRequestHeaders(stream: StremioStream): Record<string, string> | und
     const name = rawName.trim();
     if (!HEADER_NAME.test(name) || hasControlCharacter(value)) return null;
     if (FORBIDDEN_REQUEST_HEADERS.has(name.toLowerCase())) continue;
-    headers[name] = value;
+    const key = name.toLowerCase();
+    const normalized = value.trim();
+    // A comma-joined value is a list the server reads as several headers'
+    // worth; referer and user-agent legitimately carry commas, the rest do not.
+    if (!normalized || (key !== "referer" && key !== "user-agent" && normalized.includes(","))) {
+      return null;
+    }
+    // Outside printable ASCII is never a legal header value, and a name already
+    // sent under another casing would put two values on the wire for one field.
+    if (/[^\x20-\x7e]/.test(normalized)) return null;
+    if (Object.keys(headers).some((header) => header.toLowerCase() === key)) return null;
+    headers[name] = normalized;
   }
   return Object.keys(headers).length > 0 ? headers : undefined;
 }

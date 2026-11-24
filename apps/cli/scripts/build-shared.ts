@@ -452,8 +452,11 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // November 24 Stremio addon sources (protocol schemas, guarded client, stream
 // classifier, provider module, `kunai addons`, settings rows) measured
 // 3,240,476 bytes: +37,499 of first-party code, no new dependency or asset.
-// 3172 KiB leaves 7,652 bytes; public launcher budgets below are unchanged.
-export const NPM_BUNDLE_BUDGET_KB = 3_172;
+// Addon media safety (strict direct-media probe, mpv file-local confinement,
+// guarded subtitle localization, stdin add) measured 3,253,769 bytes:
+// +13,293 of first-party code, still no new dependency or asset.
+// 3178 KiB leaves 1,063 bytes; public launcher budgets below are unchanged.
+export const NPM_BUNDLE_BUDGET_KB = 3_178;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

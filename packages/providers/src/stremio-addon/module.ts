@@ -37,7 +37,7 @@ import { selectReadyStream } from "../shared/startup-selection";
 import { normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import { isImdbTitleId, stremioVideoId, type StremioAddonRef } from "./addon-url";
-import { fetchStremioManifest, fetchStremioStreams } from "./client";
+import { fetchStremioManifest, fetchStremioStreams, sanitizeStremioManifest } from "./client";
 import {
   manifestServesStream,
   stremioManifestSchema,
@@ -180,11 +180,16 @@ export function createStremioAddonProviderModule(
       await context.cache?.read(MANIFEST_CACHE_NAMESPACE, addon.providerId),
     );
     if (cached.success) {
-      remember(cached.data);
-      return cached.data;
+      // Sanitizing again covers manifests cached before the scrub existed;
+      // on already-clean data it is a no-op.
+      const clean = sanitizeStremioManifest(cached.data, addon.manifestUrl);
+      remember(clean);
+      return clean;
     }
     const fetched = await fetchStremioManifest(addon, { context, signal });
-    remember(fetched);
+    // The client already sanitizes; sanitizing again covers manifests cached
+    // before the scrub existed, and is idempotent.
+    remember(sanitizeStremioManifest(fetched, addon.manifestUrl));
     await context.cache?.write(
       MANIFEST_CACHE_NAMESPACE,
       addon.providerId,
@@ -342,7 +347,7 @@ export function createStremioAddonProviderModule(
           context,
           signal: fetchSignal,
         });
-        const classified = classifyAddonStreams(listing.entries);
+        const classified = classifyAddonStreams(listing.entries, addon.manifestUrl);
         playable = classified.playable;
         unsupportedSummary = describeUnsupportedAddonStreams(classified.unsupported);
         if (classified.unsupportedTotal > 0 || listing.truncated > 0) {
@@ -402,7 +407,7 @@ export function createStremioAddonProviderModule(
         });
       }
 
-      let streams = playable.map((stream) =>
+      const streams = playable.map((stream) =>
         toStreamCandidate(stream, { addon, name, cachePolicy }),
       );
       // Addons list streams in their own preferred order, which the user sets on
@@ -418,35 +423,36 @@ export function createStremioAddonProviderModule(
       });
       const walkOrder = [first.selected, ...streams.filter((s) => s.id !== first.selected.id)];
 
-      let selected: StreamCandidate | undefined;
-      let verified = false;
+      // Only a verified stream may be reported. An addon is untrusted input:
+      // a candidate the gate merely could not disprove (inconclusive) or never
+      // reached (past the probe cap) stays out of the inventory, or a later
+      // selection could hand the player a URL the gate never cleared.
+      const verifiedStreams: StreamCandidate[] = [];
       let gateFailure: Omit<ProviderFailure, "providerId" | "at"> | undefined;
-      const refusedStreamIds = new Set<string>();
       for (const candidate of walkOrder.slice(0, RESOLVE_GATE_MAX_PROBES)) {
         if (context.signal?.aborted) break;
         const probeBudgetMs = resolveGateBudgetMs(remainingMs());
         // Out of time for a probe that can reach a verdict. Only the first
         // candidate is exempt: the fetch-phase bound always leaves it room.
-        if (probeBudgetMs < RESOLVE_GATE_MIN_PROBE_MS && gateFailure) break;
+        if (probeBudgetMs < RESOLVE_GATE_MIN_PROBE_MS && candidate !== first.selected) break;
 
         const verdict = await verifyCandidateStream({
           stream: candidate,
           context,
           timeoutMs: probeBudgetMs,
+          requireDirectMedia: true,
         });
         // An abort that landed mid-probe makes its result meaningless.
         if (context.signal?.aborted) break;
-        if (verdict.accepted) {
-          selected = candidate;
-          verified = verdict.verified;
-          gateFailure = undefined;
-          break;
+        if (verdict.accepted && verdict.verified) {
+          verifiedStreams.push(candidate);
+          continue;
         }
 
-        refusedStreamIds.add(candidate.id);
+        const probeStatus = verdict.accepted ? "inconclusive" : (verdict.probe?.status ?? "failed");
         gateFailure ??= {
-          code: verdict.probe?.status === "timeout" ? "timeout" : "not-found",
-          message: `${name} offered a stream that is unreachable (${verdict.reason})`,
+          code: probeStatus === "timeout" ? "timeout" : "not-found",
+          message: `${addon.host} did not provide a verified stream`,
           retryable: true,
         };
         emitTraceEvent(events, context, {
@@ -454,12 +460,15 @@ export function createStremioAddonProviderModule(
           providerId,
           sourceId: candidate.sourceId,
           streamId: candidate.id,
-          message: `${name} resolve-gate probe failed`,
-          attributes: { reason: verdict.reason, probe: verdict.probe?.status ?? "failed" },
+          message: `${addon.host} resolve-gate probe failed`,
+          // The status word only — never the verdict reason, which can quote
+          // the probed URL or the response body.
+          attributes: { reason: probeStatus },
         });
       }
 
-      if (!selected) {
+      const selectedStream = context.signal?.aborted ? undefined : verifiedStreams[0];
+      if (!selectedStream) {
         if (context.signal?.aborted) {
           return createExhaustedResult(
             input,
@@ -477,14 +486,10 @@ export function createStremioAddonProviderModule(
           },
         );
       }
-      const selectedStream = selected;
-      // A refused stream must not stay in the inventory, or a later selection
-      // could hand the player the exact URL the gate rejected.
-      streams = streams.filter((stream) => !refusedStreamIds.has(stream.id));
 
-      const subtitles = toSubtitleCandidates(playable, streams, providerId, cachePolicy);
-      const sources = toSourceCandidates(streams, selectedStream, cachePolicy);
-      const variants = streams.map<ProviderVariantCandidate>((stream) => ({
+      const subtitles = toSubtitleCandidates(playable, verifiedStreams, providerId, cachePolicy);
+      const sources = toSourceCandidates(verifiedStreams, selectedStream, cachePolicy);
+      const variants = verifiedStreams.map<ProviderVariantCandidate>((stream) => ({
         id: stream.variantId ?? stream.id,
         providerId,
         sourceId: stream.sourceId ?? sources[0]?.id ?? providerId,
@@ -509,8 +514,8 @@ export function createStremioAddonProviderModule(
         providerId,
         sourceId: selectedStream.sourceId,
         streamId: selectedStream.id,
-        message: `Stremio addon ${name} resolved ${streams.length} stream(s)`,
-        attributes: { addonHost: addon.host, streams: streams.length },
+        message: `Stremio addon ${name} resolved ${verifiedStreams.length} stream(s)`,
+        attributes: { addonHost: addon.host, streams: verifiedStreams.length },
       });
 
       const endedAt = context.now();
@@ -518,10 +523,10 @@ export function createStremioAddonProviderModule(
         status: "resolved",
         providerId,
         selectedStreamId: selectedStream.id,
-        streamReachabilityVerified: verified,
+        streamReachabilityVerified: true,
         selectionDecision: first.selected.id === selectedStream.id ? first.decision : undefined,
         sources,
-        streams,
+        streams: verifiedStreams,
         variants,
         subtitles,
         cachePolicy,
@@ -539,7 +544,7 @@ export function createStremioAddonProviderModule(
               providerId,
               attributes: {
                 addonHost: addon.host,
-                streams: streams.length,
+                streams: verifiedStreams.length,
                 subtitles: subtitles.length,
               },
             }),

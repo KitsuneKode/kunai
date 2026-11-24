@@ -29,6 +29,13 @@ const MANIFEST = {
 const json = (body: LooseJsonValue) =>
   new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } });
 
+/** A positive direct-media answer: one complete 24-byte `ftyp` box. */
+const MP4_PREFIX = new Uint8Array([
+  0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0x00, 0x00, 0x00, 0x00,
+  0x69, 0x73, 0x6f, 0x6d, 0x6d, 0x70, 0x34, 0x31,
+]);
+const directMediaResponse = () => new Response(MP4_PREFIX.slice());
+
 interface Harness {
   readonly context: ProviderRuntimeContext;
   readonly requested: string[];
@@ -67,11 +74,11 @@ function harness(options: {
         const url = input instanceof Request ? input.url : String(input);
         requested.push(url);
         if (url === MANIFEST_URL) return json(options.manifest ?? MANIFEST);
-        if (url.startsWith("https://addon.example.com/")) {
+        if (new URL(url).origin === "https://addon.example.com") {
           return json(options.streams ?? { streams: [] });
         }
         probedHeaders.push(Object.fromEntries(new Headers(init?.headers).entries()));
-        return options.media?.(url) ?? new Response("ok");
+        return options.media?.(url) ?? directMediaResponse();
       },
     },
   };
@@ -241,9 +248,9 @@ describe("stremio addon provider", () => {
         ],
       },
       media: (url) =>
-        url.includes("dead.example.com")
+        new URL(url).hostname === "dead.example.com"
           ? new Response("gone", { status: 404 })
-          : new Response("ok"),
+          : directMediaResponse(),
     });
 
     const result = await addonModule().resolve(movieInput(), h.context);
@@ -252,6 +259,67 @@ describe("stremio addon provider", () => {
     expect(result.streams.map((stream) => stream.url)).toEqual(["https://cdn.example.com/b.mp4"]);
     expect(result.streams[0]?.id).toBe(result.selectedStreamId);
     expect(result.trace.events?.some((event) => event.type === "source:failed")).toBe(true);
+  });
+
+  test("only verified streams reach the result; inconclusive and unprobed ones do not", async () => {
+    const probed: string[] = [];
+    const h = harness({
+      streams: {
+        streams: [
+          { url: "https://cdn.example.com/one.mp4" },
+          { url: "https://cdn.example.com/two.mp4" },
+          { url: "https://cdn.example.com/three.mp4" },
+          { url: "https://cdn.example.com/four.mp4" },
+        ],
+      },
+      media: (url) => {
+        probed.push(url);
+        // A non-definitive refusal: accepted by the gate, but not verified.
+        return new URL(url).pathname === "/two.mp4"
+          ? new Response("broken", { status: 500 })
+          : directMediaResponse();
+      },
+    });
+
+    const result = await addonModule().resolve(movieInput(), h.context);
+
+    expect(result.status).toBe("resolved");
+    // The gate walks at most RESOLVE_GATE_MAX_PROBES candidates; the fourth is
+    // never asked about, and the inconclusive one is not reported either.
+    expect([...new Set(probed)].sort()).toEqual(
+      [
+        "https://cdn.example.com/one.mp4",
+        "https://cdn.example.com/two.mp4",
+        "https://cdn.example.com/three.mp4",
+      ].sort(),
+    );
+    expect(result.streams.map((stream) => stream.url)).toEqual([
+      "https://cdn.example.com/one.mp4",
+      "https://cdn.example.com/three.mp4",
+    ]);
+    expect(result.variants?.flatMap((variant) => variant.streamIds)).toEqual(
+      result.streams.map((stream) => stream.id),
+    );
+    expect(result.selectedStreamId).toBe(result.streams[0]?.id);
+    expect(result.streamReachabilityVerified).toBe(true);
+  });
+
+  test("probes that only reach an inconclusive verdict exhaust instead of reporting success", async () => {
+    const h = harness({
+      streams: {
+        streams: [
+          { url: "https://cdn.example.com/a.mp4" },
+          { url: "https://cdn.example.com/b.mp4" },
+        ],
+      },
+      media: () => new Response("broken", { status: 500 }),
+    });
+
+    const result = await addonModule().resolve(movieInput(), h.context);
+
+    expect(result.status).toBe("exhausted");
+    expect(result.streams).toEqual([]);
+    expect(result.failures[0]?.message).toContain("did not provide a verified stream");
   });
 
   test("never reports success when every probed stream is dead", async () => {
@@ -269,7 +337,78 @@ describe("stremio addon provider", () => {
 
     expect(result.status).toBe("exhausted");
     expect(result.streams).toEqual([]);
-    expect(result.failures[0]?.message).toContain("unreachable");
+    expect(result.failures[0]?.message).toContain("did not provide a verified stream");
+  });
+
+  test("playlist URLs and playlist bodies are refused without a child fetch", async () => {
+    const fetched: string[] = [];
+    const h = harness({
+      streams: {
+        streams: [
+          { url: "https://cdn.example.com/master.m3u8" },
+          { url: "https://cdn.example.com/extensionless" },
+          { url: "https://cdn.example.com/manifest" },
+        ],
+      },
+      media: (url) => {
+        fetched.push(url);
+        if (new URL(url).pathname === "/extensionless") {
+          // An HLS master naming a child the probe must never ask for.
+          return new Response(
+            "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nhttps://child.invalid/seg.m3u8\n",
+          );
+        }
+        return new Response(
+          '<?xml version="1.0"?><MPD xmlns="urn:mpeg:dash:schema:mpd:2011"><Period/></MPD>',
+        );
+      },
+    });
+
+    const result = await addonModule().resolve(movieInput(), h.context);
+
+    expect(result.status).toBe("exhausted");
+    expect(result.streams).toEqual([]);
+    // `.m3u8` is refused before a request exists; extensionless playlist bodies
+    // each cost exactly one bounded GET and no child is ever fetched.
+    expect([...fetched].sort()).toEqual(
+      ["https://cdn.example.com/extensionless", "https://cdn.example.com/manifest"].sort(),
+    );
+    expect(fetched.some((url) => url.includes("child.invalid"))).toBe(false);
+    expect(result.trace.events?.some((event) => event.type === "source:failed")).toBe(true);
+  });
+
+  test("a redirect answer is refused rather than followed, and the trace names no URL", async () => {
+    const fetched: string[] = [];
+    const h = harness({
+      streams: { streams: [{ url: "https://cdn.example.com/a.mp4" }] },
+      media: (url) => {
+        fetched.push(url);
+        return new Response(null, {
+          status: 302,
+          headers: { location: "https://cdn.example.com/redirected.mp4" },
+        });
+      },
+    });
+
+    const result = await addonModule().resolve(movieInput(), h.context);
+
+    expect(result.status).toBe("exhausted");
+    expect(fetched).toEqual(["https://cdn.example.com/a.mp4"]);
+    expect(JSON.stringify(result.trace.events)).not.toContain("redirected.mp4");
+    expect(JSON.stringify(result.trace.events)).not.toContain("a.mp4");
+  });
+
+  test("a pathless URL serving a real MP4 prefix is accepted", async () => {
+    const h = harness({
+      streams: { streams: [{ url: "https://cdn.example.com" }] },
+      media: () => directMediaResponse(),
+    });
+
+    const result = await addonModule().resolve(movieInput(), h.context);
+
+    expect(result.status).toBe("resolved");
+    expect(result.streams.map((stream) => stream.url)).toEqual(["https://cdn.example.com"]);
+    expect(result.streamReachabilityVerified).toBe(true);
   });
 
   test("the probe sends the stream's own request headers", async () => {

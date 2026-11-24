@@ -14,10 +14,12 @@ import {
   fetchStremioManifest,
   manifestServesStream,
   parseStremioAddonUrl,
+  scrubStremioAddonText,
   toDisplayText,
   type StremioManifest,
 } from "@kunai/providers/stremio-addon";
 import type { ProviderRuntimeContext } from "@kunai/types";
+import { ProviderHttpError } from "@kunai/types";
 
 /** The part of the config service this command reads and writes. */
 export interface AddonsConfigPort extends StremioAddonReferenceSlice {
@@ -31,6 +33,10 @@ export interface RunAddonsCommandOptions {
   readonly subcommand?: string | undefined;
   /** `add`: the manifest URL. `remove`/`check`: a number from `list`, an id, a host or a name. */
   readonly target?: string | undefined;
+  /** `add` only: read the manifest URL from standard input instead of the positional. */
+  readonly stdin?: boolean;
+  /** Overrides the stdin read. Defaults to one bounded line of process stdin. */
+  readonly readInput?: () => Promise<string>;
   readonly json?: boolean;
   readonly write?: (text: string) => void;
   /** Defaults to the user's real config, opened the way startup opens it. */
@@ -86,7 +92,12 @@ type AddonsCommandOutput =
       readonly movie: boolean;
       readonly series: boolean;
     }
-  | { readonly ok: true; readonly error: null; readonly removed: AddonSummary }
+  | {
+      readonly ok: true;
+      readonly error: null;
+      readonly removed: AddonSummary;
+      readonly appliesAfterRestart: true;
+    }
   | {
       readonly ok: boolean;
       readonly error: string | null;
@@ -115,8 +126,40 @@ function describeUsability(manifest: StremioManifest): AddonUsability {
   return { movie: false, series: false, reason: movie.reason };
 }
 
+/** Bounded stdin read for `add --stdin`: the first line only, capped. */
+const STDIN_URL_MAX_BYTES = 4096;
+
+/**
+ * One line of standard input. Byte-bounded before decoding so a stream with no
+ * newline cannot grow the buffer without limit, the line ends at the first
+ * LF byte, and an overlong line is refused rather than truncated into a
+ * different URL; the input is never written to output — it can hold the
+ * addon's token.
+ */
+export async function readAddonInputLine(
+  input: AsyncIterable<Uint8Array> = process.stdin,
+): Promise<string> {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of input) {
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    const end = bytes.indexOf(10);
+    const prefix = end >= 0 ? bytes.subarray(0, end) : bytes;
+    total += prefix.length;
+    if (total > STDIN_URL_MAX_BYTES) {
+      throw new Error("addon stdin line exceeded byte limit");
+    }
+    chunks.push(prefix);
+    if (end >= 0) break;
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+const readAddonInput = () => readAddonInputLine();
+
+/** Errors the addon client builds are already URL-free; anything else is not trusted to be. */
 function errorMessage(cause: unknown): string {
-  return cause instanceof Error ? cause.message : "the addon could not be reached";
+  return cause instanceof ProviderHttpError ? cause.message : "the addon could not be reached";
 }
 
 export async function runAddonsCommand(options: RunAddonsCommandOptions): Promise<number> {
@@ -136,6 +179,9 @@ export async function runAddonsCommand(options: RunAddonsCommandOptions): Promis
 
   if (!ADDONS_SUBCOMMANDS.some((known) => known === action)) {
     return fail(2, `unknown action. Use one of: ${ADDONS_SUBCOMMANDS.join(", ")}.`);
+  }
+  if (options.stdin && action !== "add") {
+    return fail(2, "--stdin is only for `kunai addons add`.");
   }
 
   const openConfig =
@@ -166,8 +212,19 @@ export async function runAddonsCommand(options: RunAddonsCommandOptions): Promis
   }
 
   if (action === "add") {
-    if (!options.target) return fail(2, "missing the addon's manifest URL.");
-    const parsed = parseStremioAddonUrl(options.target);
+    if (options.stdin && options.target) {
+      return fail(2, "use either --stdin or a manifest URL, not both.");
+    }
+    let target = options.target;
+    if (options.stdin) {
+      try {
+        target = await (options.readInput ?? readAddonInput)();
+      } catch {
+        return fail(1, "the manifest URL could not be read from standard input.");
+      }
+    }
+    if (!target) return fail(2, "missing the addon's manifest URL.");
+    const parsed = parseStremioAddonUrl(target);
     if (!parsed.ok) return fail(2, parsed.reason);
 
     // The manifest is read before anything is stored: an address that is not
@@ -182,7 +239,8 @@ export async function runAddonsCommand(options: RunAddonsCommandOptions): Promis
     const usability = describeUsability(manifest);
     if (usability.reason) {
       // The name is the addon's own text; it is printed only after cleaning.
-      const shown = cleanStremioAddonName(manifest.name) ?? parsed.addon.host;
+      const shown =
+        cleanStremioAddonName(manifest.name, parsed.addon.manifestUrl) ?? parsed.addon.host;
       return fail(1, `"${shown}" cannot be used: ${usability.reason}. Nothing was added.`);
     }
 
@@ -233,8 +291,13 @@ export async function runAddonsCommand(options: RunAddonsCommandOptions): Promis
     await config.save();
     await config.flushPending();
     emit(
-      { ok: true, error: null, removed: summarize(targeted, installed.indexOf(targeted)) },
-      `Removed "${targeted.displayName}" (${targeted.host}). A running Kunai stops asking it on the next title.`,
+      {
+        ok: true,
+        error: null,
+        removed: summarize(targeted, installed.indexOf(targeted)),
+        appliesAfterRestart: true,
+      },
+      `Removed "${targeted.displayName}" (${targeted.host}). Already-running Kunai sessions stop using it after restart.`,
     );
     return 0;
   }
@@ -256,8 +319,9 @@ export async function runAddonsCommand(options: RunAddonsCommandOptions): Promis
           ...summary,
           reachable: true,
           usable: usability.reason === null,
-          manifestName: cleanStremioAddonName(manifest.name) ?? null,
-          version: toDisplayText(manifest.version, 32) ?? null,
+          manifestName: cleanStremioAddonName(manifest.name, addon.manifestUrl) ?? null,
+          version:
+            toDisplayText(scrubStremioAddonText(manifest.version, addon.manifestUrl), 32) ?? null,
           movie: usability.movie,
           series: usability.series,
           streamTypes: resources.streamTypes,

@@ -66,11 +66,14 @@ export async function verifyCandidateStream({
   context,
   signal,
   timeoutMs = STREAM_HEALTH_DEFAULTS.resolveGateTimeoutMs,
+  requireDirectMedia,
 }: {
   readonly stream: Pick<StreamCandidate, "url" | "headers">;
   readonly context: ProviderRuntimeContext;
   readonly signal?: AbortSignal;
   readonly timeoutMs?: number;
+  /** Strict addon media proof: only positive direct-media evidence verifies. */
+  readonly requireDirectMedia?: boolean;
 }): Promise<CandidateStreamVerdict> {
   const url = stream.url?.trim();
   if (!url) return { accepted: false, reason: "candidate has no stream url" };
@@ -82,6 +85,7 @@ export async function verifyCandidateStream({
     headers: stream.headers,
     fetchImpl: context.fetch?.fetch.bind(context.fetch),
     resolvesLocally: context.fetch?.resolvesLocally,
+    requireDirectMedia,
     timeoutMs,
     signal: signal ?? context.signal,
   });

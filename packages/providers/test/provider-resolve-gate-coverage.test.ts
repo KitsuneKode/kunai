@@ -26,9 +26,12 @@ const PROVIDER_SRC = join(import.meta.dir, "../src");
  * test, so deriving this from it means a new module cannot ship without being
  * scanned here — the previous hand-maintained list silently missed four.
  */
-const PRODUCTION_PROVIDERS = PROBES.map((probe) =>
-  probe.id === "allanime" ? "allmanga" : probe.id,
-);
+const PRODUCTION_PROVIDERS = [
+  ...PROBES.map((probe) => (probe.id === "allanime" ? "allmanga" : probe.id)),
+  // User-installed addons resolve through one shared module that is not on the
+  // sweep's roster of bundled providers.
+  "stremio-addon",
+];
 
 /**
  * A provider may only appear here with a reason that is about the *runtime*,

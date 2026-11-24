@@ -435,17 +435,25 @@ kunai addons check
 kunai addons remove 1
 ```
 
+If the URL carries an account token, prefer `--stdin` so it stays out of your
+shell's process list and history. Kunai reads one line of standard input;
+paste it there, or redirect a file:
+
+```sh
+kunai addons add --stdin < addon-url.txt
+```
+
 You can also add and remove addons in **Settings → Sources → Stremio addons**.
 
 - **What to paste.** The addon's `https://…/manifest.json` address. A `stremio://…/manifest.json` link is the same address and works too. If the addon has a configure page, finish that first and paste the URL it gives you.
 - **Where it sits.** A new addon goes after your other movie and series providers, so it is asked only when the ones before it have nothing. Move it up in **Settings → Sources → Provider priority**, or pause it with its provider switch.
-- **When it applies.** Adding takes effect the next time Kunai starts. Removing takes effect on the next title.
-- **What plays.** Only direct video links. Kunai has no torrent client, so torrent-only results are skipped, and Kunai tells you when that is all an addon offered. Addons that hand out links through a debrid service you configured do work.
+- **When it applies.** Adding takes effect the next time Kunai starts. Removing inside the app applies on the next title; `kunai addons remove` asks already-running sessions to restart first.
+- **What plays.** Only direct video files: MP4-family and WebM/Matroska. During the beta, playlists (HLS, DASH) and redirects are refused rather than followed, and Kunai re-checks the link with a small ranged request immediately before handing it to `mpv`; that check confirms the file answers, not that it plays in mpv end to end. Kunai has no torrent client, so torrent-only results are skipped, and Kunai tells you when that is all an addon offered. Subtitles an addon offers get the same treatment: they are downloaded through a guarded, size-limited request and must prove they are really WebVTT, SRT, or ASS text (anything else is skipped), and mpv only ever sees the local copy, never the remote URL.
 - **Which titles.** Movies and series that have an IMDb id. Addons are not used in anime mode.
 
 **Treat the URL like a password.** A configured addon keeps your settings, and sometimes an account token, in its URL. Kunai shows only the addon's host, never the full URL, and keeps it out of logs and diagnostics. It is stored in your `config.json`.
 
-**An addon is a third-party server you chose.** Kunai sends it the IMDb id of what you are about to watch. It accepts only JSON from it, runs nothing it sends, and checks that a link answers before handing it to `mpv`.
+**An addon is a third-party server you chose.** Kunai sends it the IMDb id of what you are about to watch. It accepts only JSON from it, runs nothing it sends, and checks that a link answers before handing it to `mpv`; that check confirms the link responds, not that it plays in mpv end to end.
 
 ## When providers fail (expected behavior)
 

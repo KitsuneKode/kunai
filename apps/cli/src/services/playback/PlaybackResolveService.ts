@@ -93,7 +93,7 @@ export type PlaybackResolveEvent =
   | {
       readonly type: "cache-health-check";
       readonly providerId: string;
-      readonly strategy: "hls-manifest-get" | "head-then-range";
+      readonly strategy: "hls-manifest-get" | "head-then-range" | "range-direct-media";
       readonly healthy: boolean;
       readonly ageMs?: number;
     }
@@ -359,7 +359,10 @@ export class PlaybackResolveService {
         input.onEvent?.({
           type: "cache-health-check",
           providerId: input.providerId,
-          strategy: health.strategy === "hls-manifest-get" ? "hls-manifest-get" : "head-then-range",
+          strategy:
+            health.strategy === "hls-manifest-get" || health.strategy === "range-direct-media"
+              ? health.strategy
+              : "head-then-range",
           healthy: health.healthy,
           ageMs: health.ageMs,
         });
@@ -462,7 +465,9 @@ export class PlaybackResolveService {
               type: "cache-health-check",
               providerId: input.providerId,
               strategy:
-                health.strategy === "hls-manifest-get" ? "hls-manifest-get" : "head-then-range",
+                health.strategy === "hls-manifest-get" || health.strategy === "range-direct-media"
+                  ? health.strategy
+                  : "head-then-range",
               healthy: health.healthy,
               ageMs: health.ageMs,
             });
@@ -894,7 +899,7 @@ export class PlaybackResolveService {
      * turns the next play into a cache miss.
      */
     readonly cancelled?: boolean;
-    readonly strategy: "none" | "hls-manifest-get" | "head-then-range";
+    readonly strategy: "none" | "hls-manifest-get" | "head-then-range" | "range-direct-media";
     readonly ageMs?: number;
   }> {
     const healthService = this.deps.streamHealthService ?? new StreamHealthService();

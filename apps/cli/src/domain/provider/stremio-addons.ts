@@ -1,6 +1,7 @@
 import { DEFAULT_CONFIG, type StremioAddonConfigEntry } from "@kunai/config";
 import {
   parseStremioAddonUrl,
+  scrubStremioAddonText,
   toDisplayText,
   type StremioAddonRef,
 } from "@kunai/providers/stremio-addon";
@@ -35,8 +36,16 @@ export type StoredStremioAddons = LooseJsonValue | readonly StremioAddonConfigEn
  * An addon's name as it may be shown: one line of printable text. It comes
  * from a server the user does not control and lands in pickers and footers.
  */
-export function cleanStremioAddonName(value: string | null | undefined): string | undefined {
-  return toDisplayText(value, MAX_ADDON_NAME_LENGTH);
+export function cleanStremioAddonName(
+  value: string | null | undefined,
+  manifestUrl?: string,
+): string | undefined {
+  // Names stored before the scrub existed can still echo the URL's secret
+  // path, so the stored URL's own secrets are removed on every read.
+  return toDisplayText(
+    manifestUrl ? scrubStremioAddonText(value, manifestUrl) : value,
+    MAX_ADDON_NAME_LENGTH,
+  );
 }
 
 /**
@@ -68,7 +77,7 @@ export function readInstalledStremioAddons(value: StoredStremioAddons): Installe
     const parsed = parseStremioAddonUrl(entry.url);
     if (!parsed.ok || seen.has(parsed.addon.providerId)) continue;
     seen.add(parsed.addon.providerId);
-    const name = cleanStremioAddonName(entry.name);
+    const name = cleanStremioAddonName(entry.name, parsed.addon.manifestUrl);
     installed.push({
       ...parsed.addon,
       displayName: name ?? parsed.addon.host,
@@ -104,7 +113,7 @@ export function addStremioAddon(
   if (!parsed.ok) return parsed;
   const installed = readInstalledStremioAddons(current);
   const existing = installed.find((addon) => addon.providerId === parsed.addon.providerId);
-  const cleanName = cleanStremioAddonName(name) ?? existing?.entry.name;
+  const cleanName = cleanStremioAddonName(name, parsed.addon.manifestUrl) ?? existing?.entry.name;
   const entry: StremioAddonConfigEntry = {
     url: parsed.addon.manifestUrl,
     ...(cleanName ? { name: cleanName } : null),

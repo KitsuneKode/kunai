@@ -101,6 +101,75 @@ export function isStremioAddonProviderId(providerId: string): boolean {
   return providerId.startsWith(STREMIO_ADDON_PROVIDER_ID_PREFIX);
 }
 
+/** Past this a configured URL is refused as a scrub source, the same bound the protocol uses. */
+const SECRET_URL_MAX_LENGTH = 4096;
+const REDACTED_TEXT = "[redacted]";
+/** Any absolute URL inside addon-supplied text — it may be a copy of the manifest address. */
+const ANY_ABSOLUTE_URL = /\b(?:https?|stremio):\/\/\S+/gi;
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Remove a configured addon URL's secret parts from text the addon sent.
+ *
+ * A manifest URL can carry the user's settings or an account token in its
+ * path, and nothing stops an addon (or a transport error) from echoing it
+ * back into names, descriptions or errors. This rewrites the full URL in
+ * both schemes, every path segment except `manifest.json`, every query
+ * value, their percent-decoded forms, and any other absolute URL to a fixed
+ * marker. Segments shorter than 3 characters are not treated as secrets:
+ * scrubbing a one- or two-letter part would mangle ordinary prose.
+ *
+ * Never throws and never echoes `manifestUrl` back — a malformed one just
+ * leaves the generic URL pass.
+ */
+export function scrubStremioAddonText(
+  value: string | null | undefined,
+  manifestUrl: string,
+): string | undefined {
+  if (value === null || value === undefined) return undefined;
+  const secrets = new Set<string>();
+  if (manifestUrl.length <= SECRET_URL_MAX_LENGTH) {
+    try {
+      const url = new URL(manifestUrl);
+      secrets.add(url.href);
+      if (url.protocol === "https:") {
+        secrets.add(`stremio:${url.href.slice(url.protocol.length)}`);
+      }
+      const secretParts = [
+        ...url.pathname.split("/").filter((part) => part && part !== "manifest.json"),
+        ...url.searchParams.values(),
+      ];
+      for (const part of secretParts) {
+        if (!part) continue;
+        secrets.add(part);
+        try {
+          secrets.add(decodeURIComponent(part));
+        } catch {
+          // Not an encoded form; the literal is already listed.
+        }
+      }
+    } catch {
+      // Not a URL this can decompose; the generic URL pass below still applies.
+    }
+  }
+  const literals = [...secrets]
+    .filter((literal) => literal.length > 0)
+    .sort((left, right) => right.length - left.length);
+  // One bounded pass, leftmost-first. The marker leads the alternatives so a
+  // second run collapses onto itself; the generic URL pattern outranks the
+  // literal tokens so even a one-character secret cannot carve a URL into
+  // pieces the URL pattern would have removed whole. The callback always
+  // returns the marker, which is what keeps the scrub idempotent.
+  const pattern = new RegExp(
+    [escapeRegExp(REDACTED_TEXT), ANY_ABSOLUTE_URL.source, ...literals.map(escapeRegExp)].join("|"),
+    "gi",
+  );
+  return value.replace(pattern, () => REDACTED_TEXT);
+}
+
 /**
  * `{base}/stream/{type}/{id}.json`. The id is percent-encoded as one path
  * segment, which is what the official client sends (`tt0944947%3A1%3A2`).

@@ -149,6 +149,7 @@ MAINTENANCE
   kunai providers reset        Remove cached hotfix manifest and return to bundled defaults
   kunai addons list            List the Stremio addons you added (--json)
   kunai addons add <url>       Add a Stremio addon by its https manifest.json URL
+                               (--stdin reads the URL from stdin, keeping it out of argv)
   kunai addons remove <n>      Remove an addon by its number in the list
   kunai addons check [n]       Ask each addon for its manifest and report problems (--json)
   kunai uninstall              Remove kunai (add --purge to also delete user data)
@@ -251,6 +252,7 @@ export const KNOWN_FLAGS: ReadonlySet<string> = new Set([
   "--force",
   "--list",
   "--to",
+  "--stdin",
 ]);
 
 export const VALUE_FLAGS: ReadonlySet<string> = new Set([

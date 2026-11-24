@@ -645,6 +645,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       await runAddonsCommand({
         subcommand: words[0],
         target: words[1],
+        stdin: argv.includes("--stdin"),
         json: argv.includes("--json"),
       }),
     );

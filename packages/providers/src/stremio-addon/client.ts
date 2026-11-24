@@ -9,7 +9,7 @@ import type { z } from "zod";
 
 import { readBoundedTextBody, type StreamReachabilityFetch } from "../shared/stream-reachability";
 import { createTimeoutSignal } from "../shared/timeout-signal";
-import { stremioStreamUrl, type StremioAddonRef } from "./addon-url";
+import { scrubStremioAddonText, stremioStreamUrl, type StremioAddonRef } from "./addon-url";
 import {
   STREMIO_ADDON_LIMITS,
   stremioManifestSchema,
@@ -154,12 +154,12 @@ async function fetchAddonJson<T>(
     let body: unknown;
     try {
       body = JSON.parse(text);
-    } catch (cause) {
+    } catch {
+      // No `cause`: a parser message can quote the secret-bearing input.
       throw new ProviderHttpError({
         message: `${label} did not answer with JSON`,
         code: "parse-failed",
         retryable: false,
-        cause,
       });
     }
     const parsed = options.schema.safeParse(body);
@@ -180,7 +180,6 @@ async function fetchAddonJson<T>(
         message: `${label} did not answer in time`,
         code: "timeout",
         retryable: true,
-        cause: error,
       });
     }
     const detail = describeTransportError(error);
@@ -188,7 +187,8 @@ async function fetchAddonJson<T>(
       message: `${label} could not be reached: ${detail}`,
       code: "network-error",
       retryable: !isOfflineNetworkFailure({ code: "network-error", message: detail }),
-      cause: error,
+      // No `cause`: a transport error's message can quote the request URL,
+      // which may hold the addon's token.
     });
   }
 }
@@ -197,14 +197,18 @@ async function fetchAddonJson<T>(
 const UNRESOLVED_HOST_REASON = "No vetted DNS address";
 
 /**
- * The transport's own words, minus any URL. Offline detection reads this text
- * (`ENOTFOUND`, `EAI_AGAIN`), so it is kept; a URL in it is replaced because the
- * addon's path may hold a token.
+ * A fixed phrase for a transport failure — never the transport's own words,
+ * whose message can quote the request URL, and the addon's path may hold a
+ * token. The raw text is read locally, only to recognise an offline machine.
  */
 function describeTransportError(cause: unknown): string {
-  if (!(cause instanceof Error)) return "network error";
-  const code = "code" in cause && isJsonString(cause.code) ? `${cause.code}: ` : "";
-  return `${code}${cause.message}`.replace(/https?:\/\/\S+/gi, "[addon address]").slice(0, 200);
+  const local =
+    cause instanceof Error
+      ? `${"code" in cause && isJsonString(cause.code) ? `${cause.code}: ` : ""}${cause.message}`
+      : "";
+  return isOfflineNetworkFailure({ code: "network-error", message: local })
+    ? "the host name did not resolve (ENOTFOUND)"
+    : "the connection failed";
 }
 
 function responseTooLarge(label: string, maxBytes: number): ProviderHttpError {
@@ -223,12 +227,56 @@ function describeSchemaIssues(error: z.ZodError): string {
     .join("; ");
 }
 
+/**
+ * The manifest as Kunai may keep and show it: every addon-supplied string
+ * scrubbed of the configured URL's secret parts. Structural protocol words —
+ * the `stream` resource name and the canonical `movie`/`series` types — are
+ * matched literally, never treated as free text, so a token overlapping one
+ * cannot break what the addon actually serves. `idPrefixes` is left as sent:
+ * it is matched, not displayed.
+ */
+export function sanitizeStremioManifest(
+  manifest: StremioManifest,
+  manifestUrl: string,
+): StremioManifest {
+  const scrub = (text: string | null | undefined) => scrubStremioAddonText(text, manifestUrl);
+  const scrubType = (type: string) =>
+    type === "movie" || type === "series" ? type : (scrub(type) ?? type);
+  let host = "addon";
+  try {
+    host = new URL(manifestUrl).host || host;
+  } catch {
+    // Unparseable URL: the caller's own label still names the addon.
+  }
+  return {
+    ...manifest,
+    name: scrub(manifest.name) || host,
+    version: scrub(manifest.version),
+    description: scrub(manifest.description),
+    resources: manifest.resources.map((resource) =>
+      resource.name === "stream"
+        ? {
+            ...resource,
+            types: resource.types?.map(scrubType),
+            idPrefixes: resource.idPrefixes,
+          }
+        : {
+            ...resource,
+            name: scrub(resource.name) ?? resource.name,
+            types: resource.types?.map(scrubType),
+            idPrefixes: resource.idPrefixes,
+          },
+    ),
+    types: manifest.types.map(scrubType),
+  };
+}
+
 /** Fetch and validate `manifest.json`. */
 export async function fetchStremioManifest(
   addon: Pick<StremioAddonRef, "manifestUrl" | "host">,
   options: AddonRequestOptions,
 ): Promise<StremioManifest> {
-  return fetchAddonJson(
+  const manifest = await fetchAddonJson(
     addon.manifestUrl,
     {
       ...options,
@@ -239,6 +287,7 @@ export async function fetchStremioManifest(
     },
     STREMIO_ADDON_TIMEOUTS.manifestMs,
   );
+  return sanitizeStremioManifest(manifest, addon.manifestUrl);
 }
 
 export interface StremioStreamListing {
@@ -255,7 +304,7 @@ export async function fetchStremioStreams(
   videoId: string,
   options: AddonRequestOptions,
 ): Promise<StremioStreamListing> {
-  const { streams: all } = await fetchAddonJson(
+  const { streams } = await fetchAddonJson(
     stremioStreamUrl(addon, type, videoId),
     {
       ...options,
@@ -266,6 +315,87 @@ export async function fetchStremioStreams(
     },
     STREMIO_ADDON_TIMEOUTS.streamsMs,
   );
-  const entries = all.slice(0, STREMIO_ADDON_LIMITS.streamsPerResponse);
-  return { entries, truncated: all.length - entries.length };
+  return streams;
+}
+
+/** A subtitle file that passed the guarded download and format check. */
+export interface StremioSubtitleFile {
+  readonly text: string;
+  /** Extension derived from the verified body, never from the URL. */
+  readonly extension: "srt" | "vtt" | "ass";
+}
+
+const SUBTITLE_BODY_BYTES = 512 * 1024;
+const SUBTITLE_TIMEOUT_MS = 3_000;
+const WEBVTT_BODY = /^WEBVTT(?:[ \t]|\r?\n|$)/;
+// An SRT opens (after blank lines) with a cue counter then a timestamp line.
+const SRT_BODY =
+  /^(?:[ \t]*\r?\n)*[ \t]*\d+[ \t]*\r?\n\d{2}:\d{2}:\d{2}[,.]\d{3}[ \t]+-->[ \t]+\d{2}:\d{2}:\d{2}[,.]\d{3}/;
+const ASS_BODY = /^\uFEFF?\[Script Info\]/;
+
+function subtitleExtensionFor(text: string): StremioSubtitleFile["extension"] | null {
+  const unbombed = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  if (WEBVTT_BODY.test(unbombed)) return "vtt";
+  if (SRT_BODY.test(unbombed)) return "srt";
+  // ASS needs the script-info header plus an events section with dialogue;
+  // a stray [Script Info] line alone is not a playable track.
+  if (
+    ASS_BODY.test(unbombed) &&
+    /^\s*\[Events\]\s*$/m.test(unbombed) &&
+    /^Dialogue:/m.test(unbombed)
+  )
+    return "ass";
+  return null;
+}
+
+/**
+ * Guarded download of one addon-supplied subtitle: same DNS pinning and
+ * per-hop redirect re-validation as every other addon request, a hard 512 KiB
+ * cap, and a body that must prove a plain subtitle format. No addon headers
+ * are sent — the subtitle host is not owed the addon's credentials.
+ *
+ * Returns `null` for every failure (blocked target, non-2xx, redirect cap,
+ * oversized or unrecognized body, abort, transport error). Nothing is logged
+ * and no URL or transport text escapes: callers treat `null` as "skip".
+ */
+export async function fetchStremioSubtitle(
+  url: string,
+  options: {
+    readonly signal?: AbortSignal;
+    readonly fetchImpl?: StreamReachabilityFetch;
+    readonly resolveAddresses?: (host: string) => Promise<readonly string[]>;
+  } = {},
+): Promise<StremioSubtitleFile | null> {
+  const signal = createTimeoutSignal(options.signal, SUBTITLE_TIMEOUT_MS);
+  const fetchImpl = options.fetchImpl ?? fetch;
+  try {
+    const outcome = await fetchProbeTarget({
+      fetchImpl,
+      url,
+      init: { method: "GET", signal },
+      // The deadline lives on the signal; the guard's own budget never fires.
+      remaining: () => 1,
+      parentSignal: signal,
+      resolveNamesFor: () => Boolean(options.resolveAddresses) || isGuardedPlatformFetch(fetchImpl),
+      resolveAddresses: options.resolveAddresses,
+    });
+    if (outcome.kind !== "response" || signal.aborted) return null;
+    const response = outcome.response;
+    if (response.status < 200 || response.status >= 300) {
+      await response.body?.cancel().catch(() => undefined);
+      return null;
+    }
+    const declaredLength = Number(response.headers.get("content-length"));
+    if (declaredLength > SUBTITLE_BODY_BYTES) {
+      await response.body?.cancel().catch(() => undefined);
+      return null;
+    }
+    const text = await readBoundedTextBody(response.body, SUBTITLE_BODY_BYTES);
+    if (!text || signal.aborted || text.includes("\0")) return null;
+    const extension = subtitleExtensionFor(text);
+    if (!extension) return null;
+    return { text, extension };
+  } catch {
+    return null;
+  }
 }

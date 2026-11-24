@@ -47,6 +47,13 @@ subtitle controls, and safer persistence, downloads and native installation.
   silently mark an unfinished episode watched.
 - Improve provider-native season/episode identity, dub selection and validated
   offline playback, including titles with more than 100 downloaded assets.
+- (Beta) Add your own Stremio addons as movie and series sources via
+  `kunai addons add <manifest-url>` (or `kunai addons add --stdin` to keep the
+  URL out of argv), `list`, `remove` and `check`, plus
+  **Settings > Sources > Stremio addons**. Kunai ships no addon; only direct
+  video links are played, each checked before it reaches mpv, and torrent-only
+  results are skipped. An addon's URL is treated as a secret: only its host is
+  shown or logged.
 
 ### Search and terminal interaction
 

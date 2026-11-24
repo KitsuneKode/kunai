@@ -237,3 +237,56 @@ test("Off selected while a late attachment is pending wins over its completion",
   await manager.attachSubtitles(ipc, { primarySubtitle: "https://subs.example/en.vtt" });
   expect(commands.at(-1)).toEqual(["set_property", "sid", "no"]);
 });
+
+describe("PersistentSubtitleManager addon resolver", () => {
+  test("IPC carries only resolved local paths; refused tracks are skipped", async () => {
+    const { ipc, commands } = createFakeIpc();
+    const manager = new PersistentSubtitleManager(
+      () => true,
+      async (url) =>
+        url === "https://subs.example/good.srt" ? "/tmp/kunai-addon-subs-x/0.srt" : null,
+    );
+
+    await manager.replaceSubtitleInventory(ipc, "https://subs.example/good.srt", [
+      {
+        url: "https://subs.example/good.srt",
+        display: "English",
+        language: "en",
+      },
+      {
+        url: "https://subs.example/bad.srt",
+        display: "Bad",
+        language: "fr",
+      },
+    ]);
+
+    const subAdds = commands.filter((command) => command[0] === "sub-add");
+    expect(subAdds).toEqual([
+      ["sub-add", "/tmp/kunai-addon-subs-x/0.srt", "select", "English", "en"],
+    ]);
+    expect(commands.join(" ")).not.toContain("subs.example");
+  });
+
+  test("attachSubtitles resolves the primary and skips a refused additional", async () => {
+    const { ipc, commands } = createFakeIpc();
+    const manager = new PersistentSubtitleManager(
+      () => true,
+      async (url) =>
+        url === "https://subs.example/good.srt" ? "/tmp/kunai-addon-subs-x/1.srt" : null,
+    );
+
+    const result = await manager.attachSubtitles(ipc, {
+      primarySubtitle: "https://subs.example/good.srt",
+      subtitleTracks: [
+        { url: "https://subs.example/good.srt", display: "English", language: "en" },
+        { url: "https://subs.example/bad.srt", display: "Bad", language: "fr" },
+      ],
+    });
+
+    expect(result.status).toBe("attached");
+    expect(commands.filter((command) => command[0] === "sub-add")).toEqual([
+      ["sub-add", "/tmp/kunai-addon-subs-x/1.srt", "select", "English", "en"],
+    ]);
+    expect(commands.join(" ")).not.toContain("subs.example");
+  });
+});

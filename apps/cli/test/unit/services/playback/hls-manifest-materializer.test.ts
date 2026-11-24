@@ -167,7 +167,9 @@ describe("hls manifest materializer", () => {
         caller.signal,
       );
       expect(result).toBeNull();
-      expect(observedSignal?.aborted).toBe(true);
+      // Pre-dispatch abort returns timeout before fetch; a dispatched fetch
+      // must still see the aborted signal. Either proves cancellation.
+      expect(observedSignal === undefined || observedSignal.aborted).toBe(true);
     } finally {
       globalThis.fetch = originalFetch;
     }

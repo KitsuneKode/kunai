@@ -3,12 +3,56 @@ import { describe, expect, test } from "bun:test";
 import {
   describeManifestResources,
   manifestServesStream,
+  readStreamSubtitles,
+  STREMIO_ADDON_LIMITS,
   stremioManifestSchema,
+  stremioStreamResponseSchema,
+  stremioStreamSchema,
 } from "../src/stremio-addon/protocol";
 import {
   classifyAddonStreams,
   describeUnsupportedAddonStreams,
 } from "../src/stremio-addon/streams";
+
+describe("stream-list envelope", () => {
+  test("entries past the cap are counted, never touched", () => {
+    const entries = Array.from(
+      { length: STREMIO_ADDON_LIMITS.streamsPerResponse + 1 },
+      (_, index) => ({ url: `https://cdn.example.com/${index}.mp4` }),
+    );
+    Object.defineProperty(entries, STREMIO_ADDON_LIMITS.streamsPerResponse, {
+      get() {
+        throw new Error("the envelope read past its cap");
+      },
+    });
+
+    const parsed = stremioStreamResponseSchema.parse({ streams: entries });
+
+    expect(parsed.streams.entries).toHaveLength(STREMIO_ADDON_LIMITS.streamsPerResponse);
+    expect(parsed.streams.truncated).toBe(1);
+  });
+});
+
+describe("stream subtitles", () => {
+  test("subtitles past the cap are never read", () => {
+    const subtitles = Array.from({ length: STREMIO_ADDON_LIMITS.subtitlesPerStream + 1 }, () => ({
+      url: "https://subs.example/en.vtt",
+      lang: "en",
+    }));
+    Object.defineProperty(subtitles, STREMIO_ADDON_LIMITS.subtitlesPerStream, {
+      get() {
+        throw new Error("the stream read a subtitle past its cap");
+      },
+    });
+
+    const parsed = stremioStreamSchema.parse({
+      url: "https://cdn.example.com/a.mp4",
+      subtitles,
+    });
+
+    expect(readStreamSubtitles(parsed)).toHaveLength(STREMIO_ADDON_LIMITS.subtitlesPerStream);
+  });
+});
 
 describe("addon stream classification", () => {
   test("a direct https URL is playable and keeps the addon's labels", () => {
@@ -122,6 +166,80 @@ describe("addon stream classification", () => {
 
     expect(playable).toEqual([]);
     expect(unsupported).toEqual({ invalid: 2 });
+  });
+
+  test("a multi-value request header is refused rather than shipped as a combined list", () => {
+    const { playable, unsupported } = classifyAddonStreams([
+      {
+        url: "https://cdn.example.com/a.mp4",
+        behaviorHints: {
+          proxyHeaders: { request: { Accept: "video/mp4,video/webm" } },
+        },
+      },
+    ]);
+
+    expect(playable).toEqual([]);
+    expect(unsupported).toEqual({ invalid: 1 });
+  });
+
+  test("the same header listed under two casings cannot change the wire set", () => {
+    const { playable, unsupported } = classifyAddonStreams([
+      {
+        url: "https://cdn.example.com/a.mp4",
+        behaviorHints: {
+          proxyHeaders: { request: { "X-Auth": "first", "x-auth": "second" } },
+        },
+      },
+    ]);
+
+    expect(playable).toEqual([]);
+    expect(unsupported).toEqual({ invalid: 1 });
+  });
+
+  test("a valid header is trimmed before it is kept", () => {
+    const { playable } = classifyAddonStreams([
+      {
+        url: "https://cdn.example.com/a.mp4",
+        behaviorHints: {
+          proxyHeaders: { request: { Referer: "  https://site.example/  " } },
+        },
+      },
+    ]);
+
+    expect(playable[0]?.headers).toEqual({ Referer: "https://site.example/" });
+  });
+
+  test("addon-supplied text never echoes the manifest URL's secret parts", () => {
+    const manifestUrl = "https://addon.example.com/SECRETTOKEN/manifest.json";
+    const { playable } = classifyAddonStreams(
+      [
+        {
+          url: "https://cdn.example.com/a.mp4",
+          name: "Example SECRETTOKEN",
+          description: "mirrors https://addon.example.com/SECRETTOKEN/manifest.json",
+          subtitles: [{ url: "https://subs.example/en.vtt", lang: "en-SECRETTOKEN" }],
+          behaviorHints: {
+            bingeGroup: "grp-SECRETTOKEN",
+            filename: "Movie.SECRETTOKEN.1080p.mp4",
+          },
+        },
+      ],
+      manifestUrl,
+    );
+
+    const stream = playable[0];
+    expect(stream?.url).toBe("https://cdn.example.com/a.mp4");
+    for (const field of [
+      stream?.name,
+      stream?.description,
+      stream?.filename,
+      stream?.bingeGroup,
+      stream?.subtitles[0]?.language,
+    ]) {
+      expect(field).toBeDefined();
+      expect(field).not.toContain("SECRETTOKEN");
+      expect(field).not.toContain("manifest.json");
+    }
   });
 
   test("one URL listed twice is one stream at its first position", () => {

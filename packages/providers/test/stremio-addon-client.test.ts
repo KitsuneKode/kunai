@@ -3,7 +3,11 @@ import { describe, expect, test } from "bun:test";
 import { ProviderHttpError, type LooseJsonValue, type ProviderRuntimeContext } from "@kunai/types";
 
 import { parseStremioAddonUrl } from "../src/stremio-addon/addon-url";
-import { fetchStremioManifest, fetchStremioStreams } from "../src/stremio-addon/client";
+import {
+  fetchStremioManifest,
+  fetchStremioStreams,
+  fetchStremioSubtitle,
+} from "../src/stremio-addon/client";
 import { STREMIO_ADDON_LIMITS } from "../src/stremio-addon/protocol";
 
 const TOKEN = "SECRETTOKEN";
@@ -128,7 +132,7 @@ describe("addon manifest request", () => {
 
   test("a redirect to plain HTTP is refused before it is sent", async () => {
     const context = contextWith((url) =>
-      url.startsWith("https://addon.example.com")
+      new URL(url).origin === "https://addon.example.com"
         ? new Response(null, {
             status: 302,
             headers: { location: "http://other.example.com/manifest.json" },
@@ -192,7 +196,7 @@ describe("addon manifest request", () => {
     expect(error.message).toContain("ENOTFOUND");
   });
 
-  test("a transport error keeps its cause but not the URL", async () => {
+  test("a transport error keeps its code but never the URL or its path token", async () => {
     const context = contextWith(() => {
       throw new Error(`connect ECONNRESET https://addon.example.com/${TOKEN}/manifest.json`);
     });
@@ -201,8 +205,110 @@ describe("addon manifest request", () => {
 
     expect(error.code).toBe("network-error");
     expect(error.retryable).toBe(true);
-    expect(error.message).toContain("ECONNRESET");
+    expect(error.message).toContain("addon.example.com");
     expect(error.message).not.toContain(TOKEN);
+    expect(error.message).not.toContain("/manifest.json");
+    expect(error.cause).toBeUndefined();
+  });
+
+  test("a thrown error carrying the token in its own message is not relayed", async () => {
+    const context = contextWith(() => {
+      // Object.assign builds a Node-style errno Error without a cast.
+      const error = Object.assign(
+        new Error(`read ECONNRESET for https://other.example/${TOKEN}?sig=${TOKEN}`),
+        { code: "ECONNRESET" },
+      );
+      throw error;
+    });
+
+    const error = await failure(fetchStremioManifest(addonRef(), { context }));
+
+    expect(error.code).toBe("network-error");
+    expect(error.retryable).toBe(true);
+    expect(error.message).toContain("addon.example.com");
+    expect(error.message).not.toContain(TOKEN);
+    expect(error.cause).toBeUndefined();
+  });
+
+  test("cancelling while the host name resolves still settles the request", async () => {
+    const controller = new AbortController();
+    const context = contextWith(() => json(VALID_MANIFEST));
+    const port = context.fetch;
+    if (!port) throw new Error("fixture has no fetch port");
+    let resolverEntered!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      resolverEntered = resolve;
+    });
+
+    const settled = fetchStremioManifest(addonRef(), {
+      context: { ...context, fetch: { ...port, resolvesLocally: () => true } },
+      signal: controller.signal,
+      resolveAddresses: () => {
+        resolverEntered();
+        return new Promise<readonly string[]>(() => {});
+      },
+    }).then(
+      () => "resolved" as const,
+      (error: ProviderHttpError | Error) => error,
+    );
+
+    await entered;
+    controller.abort();
+    // The request must settle on its own within a bounded number of microtask
+    // turns — a lookup that never answers cannot hold it open.
+    const outcome = await Promise.race([
+      settled,
+      (async () => {
+        for (let turn = 0; turn < 50; turn++) await Promise.resolve();
+        return "pending" as const;
+      })(),
+    ]);
+
+    expect(outcome).not.toBe("pending");
+    expect(outcome).toBeInstanceOf(ProviderHttpError);
+    // SAFETY: outcome was asserted to be a ProviderHttpError above.
+    expect((outcome as ProviderHttpError).code).toBe("timeout");
+    expect(context.requested).toEqual([]);
+  });
+
+  test("a DNS answer that lands after cancel is never dispatched", async () => {
+    const controller = new AbortController();
+    const context = contextWith(() => json(VALID_MANIFEST));
+    const port = context.fetch;
+    if (!port) throw new Error("fixture has no fetch port");
+    let resolverEntered!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      resolverEntered = resolve;
+    });
+    let answerLookup!: (addresses: readonly string[]) => void;
+
+    const settled = fetchStremioManifest(addonRef(), {
+      context: { ...context, fetch: { ...port, resolvesLocally: () => true } },
+      signal: controller.signal,
+      resolveAddresses: () => {
+        resolverEntered();
+        return new Promise<readonly string[]>((resolve) => {
+          answerLookup = resolve;
+        });
+      },
+    }).then(
+      () => "resolved" as const,
+      (error: ProviderHttpError | Error) => error,
+    );
+
+    await entered;
+    controller.abort();
+    answerLookup(["93.184.216.34"]);
+    const outcome = await Promise.race([
+      settled,
+      (async () => {
+        for (let turn = 0; turn < 50; turn++) await Promise.resolve();
+        return "pending" as const;
+      })(),
+    ]);
+
+    expect(outcome).not.toBe("pending");
+    expect(context.requested).toEqual([]);
   });
 
   test("a caller's cancellation is rethrown as theirs, not reported as an addon fault", async () => {
@@ -261,4 +367,108 @@ describe("addon stream request", () => {
     expect(error.code).toBe("parse-failed");
     expect(error.message).toContain("streams");
   });
+});
+
+describe("fetchStremioSubtitle (guarded download)", () => {
+  const SRT = "1\n00:00:01,000 --> 00:00:02,000\nhello\n";
+  const VTT = "WEBVTT\n\n00:01.000 --> 00:02.000\nhi\n";
+
+  function fetchLogging(respond: (url: string) => Response | Promise<Response>) {
+    const requested: string[] = [];
+    // StreamReachabilityFetch already hands the pinned URL string over.
+    const impl = async (url: string) => {
+      requested.push(url);
+      return respond(url);
+    };
+    return { requested, impl };
+  }
+
+  test("private DNS answer blocks the request before fetch is called", async () => {
+    const { requested, impl } = fetchLogging(() => new Response(SRT));
+    const file = await fetchStremioSubtitle("https://subs.example.com/en.srt", {
+      fetchImpl: impl,
+      resolveAddresses: async () => ["10.0.0.5"],
+    });
+    expect(file).toBeNull();
+    expect(requested).toEqual([]);
+  });
+
+  test("redirect to a private target is re-checked per hop and refused", async () => {
+    const { requested, impl } = fetchLogging((url) => {
+      // The guard pins the host to the vetted address on the wire.
+      if (url === "https://93.184.216.34/en.srt") {
+        return new Response(null, {
+          status: 302,
+          headers: { location: "https://internal.example.com/x.srt" },
+        });
+      }
+      return new Response(SRT);
+    });
+    const file = await fetchStremioSubtitle("https://subs.example.com/en.srt", {
+      fetchImpl: impl,
+      resolveAddresses: async (host) =>
+        host === "subs.example.com" ? ["93.184.216.34"] : ["10.0.0.5"],
+    });
+    expect(file).toBeNull();
+    // The private redirect target is refused before a second request exists.
+    expect(requested).toEqual(["https://93.184.216.34/en.srt"]);
+  });
+
+  test("oversized body is dropped", async () => {
+    const { impl } = fetchLogging(() => new Response(SRT.repeat(200_000)));
+    const file = await fetchStremioSubtitle("https://subs.example.com/big.srt", {
+      fetchImpl: impl,
+      resolveAddresses: async () => ["93.184.216.34"],
+    });
+    expect(file).toBeNull();
+  });
+
+  test("non-subtitle body is dropped", async () => {
+    const { impl } = fetchLogging(() => new Response("<html><body>404</body></html>"));
+    const file = await fetchStremioSubtitle("https://subs.example.com/nope", {
+      fetchImpl: impl,
+      resolveAddresses: async () => ["93.184.216.34"],
+    });
+    expect(file).toBeNull();
+  });
+
+  test("valid SRT yields srt; valid WebVTT yields vtt; extension comes from body", async () => {
+    const srtFetch = fetchLogging(() => new Response(SRT));
+    expect(
+      await fetchStremioSubtitle("https://subs.example.com/track.bin", {
+        fetchImpl: srtFetch.impl,
+        resolveAddresses: async () => ["93.184.216.34"],
+      }),
+    ).toEqual({ text: SRT, extension: "srt" });
+    const vttFetch = fetchLogging(() => new Response(VTT));
+    expect(
+      await fetchStremioSubtitle("https://subs.example.com/track", {
+        fetchImpl: vttFetch.impl,
+        resolveAddresses: async () => ["93.184.216.34"],
+      }),
+    ).toEqual({ text: VTT, extension: "vtt" });
+  });
+
+  test("non-2xx is refused", async () => {
+    const { impl } = fetchLogging(() => new Response("nope", { status: 404 }));
+    expect(
+      await fetchStremioSubtitle("https://subs.example.com/en.srt", {
+        fetchImpl: impl,
+        resolveAddresses: async () => ["93.184.216.34"],
+      }),
+    ).toBeNull();
+  });
+});
+
+test("a declared Content-Length over the cap is refused", async () => {
+  const impl = async (_url: string) =>
+    new Response("x".repeat(1024), {
+      headers: { "content-length": String(600 * 1024) },
+    });
+  expect(
+    await fetchStremioSubtitle("https://subs.example.com/big.srt", {
+      fetchImpl: impl,
+      resolveAddresses: async () => ["93.184.216.34"],
+    }),
+  ).toBeNull();
 });

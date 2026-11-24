@@ -110,7 +110,12 @@ export const stremioStreamSchema = z.object({
   name: longText.nullish(),
   title: longText.nullish(),
   description: longText.nullish(),
-  subtitles: z.array(z.unknown()).nullish(),
+  subtitles: z
+    // Capped at the envelope so a stream cannot make the reader walk more
+    // entries than the limit allows — `readStreamSubtitles` trusts this.
+    .custom<readonly unknown[]>(Array.isArray)
+    .transform((all) => all.slice(0, STREMIO_ADDON_LIMITS.subtitlesPerStream))
+    .nullish(),
   behaviorHints: z
     .object({
       notWebReady: z.boolean().nullish(),
@@ -135,7 +140,12 @@ export type StremioStreamSubtitle = z.infer<typeof streamSubtitleSchema>;
  * malformed stream is reported as invalid instead of discarding the others.
  */
 export const stremioStreamResponseSchema = z.object({
-  streams: z.array(z.unknown()),
+  // Truncate inside the schema so entries past the cap are never handed to
+  // the caller at all — `Array.isArray` reads no element.
+  streams: z.custom<readonly unknown[]>(Array.isArray).transform((all) => ({
+    entries: all.slice(0, STREMIO_ADDON_LIMITS.streamsPerResponse),
+    truncated: Math.max(0, all.length - STREMIO_ADDON_LIMITS.streamsPerResponse),
+  })),
 });
 
 export type StremioContentType = "movie" | "series";
@@ -143,7 +153,7 @@ export type StremioContentType = "movie" | "series";
 /** Subtitles of a validated stream; entries that fail the schema are left out. */
 export function readStreamSubtitles(stream: StremioStream): StremioStreamSubtitle[] {
   const subtitles: StremioStreamSubtitle[] = [];
-  for (const entry of (stream.subtitles ?? []).slice(0, STREMIO_ADDON_LIMITS.subtitlesPerStream)) {
+  for (const entry of stream.subtitles ?? []) {
     const parsed = streamSubtitleSchema.safeParse(entry);
     if (parsed.success) subtitles.push(parsed.data);
   }

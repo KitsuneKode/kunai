@@ -41,6 +41,12 @@ export type ProbeStreamReachabilityInput = {
    * as remote-resolving and the real `fetch` as local.
    */
   readonly resolvesLocally?: (url: string) => boolean;
+  /**
+   * Strict mode for addon streams (beta): refuse playlists, redirects and
+   * anything that is not positive direct-media evidence in a bounded prefix —
+   * a `reachable` verdict then means one self-contained file was confirmed.
+   */
+  readonly requireDirectMedia?: boolean;
   readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
 };
@@ -302,6 +308,10 @@ export async function probeStreamReachability(
   // undefined`: defaulting to a stubbed `globalThis.fetch` used to keep DNS
   // on and treat documentation hosts as blocked-target.
   const resolveNamesFor = input.resolvesLocally ?? (() => isGuardedPlatformFetch(fetchImpl));
+
+  if (input.requireDirectMedia) {
+    return probeDirectMedia(input, fetchImpl, resolveNamesFor);
+  }
 
   if (isHlsPlaylistUrl(input.url)) {
     return probeHlsManifest(
@@ -695,6 +705,117 @@ async function probeHttpStatus(
   } finally {
     clearTimeout(timeout);
     options.parentSignal?.removeEventListener("abort", onParentAbort);
+  }
+}
+
+/** Strict addon probes read this many bytes of evidence and nothing more. */
+const DIRECT_MEDIA_PROBE_PREFIX_BYTES = 4096;
+/** Playlist-looking paths are refused before any request is dispatched. */
+const DIRECT_MEDIA_URL_DENY = /\.(?:m3u8?|mpd)$/i;
+
+/**
+ * Positive identification of a self-contained media file prefix.
+ *
+ * MP4-family files open with an `ftyp` box; it must be complete inside the
+ * prefix — a lone "ftyp" string is not structure. Matroska/WebM open with the
+ * EBML magic and name their DocType inside the header, so the magic alone is
+ * not enough either.
+ */
+function isDirectMediaPrefix(prefix: Uint8Array): boolean {
+  if (prefix.byteLength < 8) return false;
+  const view = new DataView(prefix.buffer, prefix.byteOffset, prefix.byteLength);
+  if (view.getUint32(0) === 0x1a45dfa3) {
+    const text = new TextDecoder().decode(prefix).toLowerCase();
+    return text.includes("matroska") || text.includes("webm");
+  }
+  const box = readIsoBox(view, 0);
+  return box !== null && box.type === "ftyp" && box.end >= 16 && box.end <= prefix.byteLength;
+}
+
+/**
+ * The addon strict probe: one redirect-free range GET whose body must prove a
+ * direct MP4-family or Matroska/WebM file. Playlist URLs are refused before
+ * the request exists, and every non-2xx answer — including any redirect —
+ * ends the probe. A rotating manifest can never answer this shape, which is
+ * the point: `reachable` here attests a bounded media object, not just a live
+ * URL.
+ */
+async function probeDirectMedia(
+  input: ProbeStreamReachabilityInput,
+  fetchImpl: StreamReachabilityFetch,
+  resolveNamesFor: (url: string) => boolean,
+): Promise<StreamReachabilityProbeResult> {
+  try {
+    if (DIRECT_MEDIA_URL_DENY.test(new URL(input.url).pathname)) {
+      return { status: "unreachable", reason: "unsupported-direct-media", definitive: true };
+    }
+  } catch {
+    // An unparseable URL is refused by the guarded fetch below.
+  }
+  const headers = input.headers ?? {};
+  // A supplied Range/If-Range is a request shape this probe cannot reproduce
+  // honestly — refuse the candidate instead of overriding it.
+  const hasCustomRange = Object.keys(headers).some((name) => {
+    const lower = name.toLowerCase();
+    return lower === "range" || lower === "if-range";
+  });
+  if (hasCustomRange) {
+    return { status: "unreachable", reason: "unsupported-direct-media", definitive: true };
+  }
+  const signal = input.signal
+    ? AbortSignal.any([
+        input.signal,
+        AbortSignal.timeout(input.timeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS),
+      ])
+    : AbortSignal.timeout(input.timeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS);
+  try {
+    const outcome = await fetchProbeTarget({
+      fetchImpl,
+      url: input.url,
+      init: {
+        method: "GET",
+        headers: { ...headers, Range: `bytes=0-${DIRECT_MEDIA_PROBE_PREFIX_BYTES - 1}` },
+        signal,
+      },
+      // The timeout lives on the signal, so the guard's deadline never
+      // short-circuits early.
+      remaining: () => 1,
+      parentSignal: signal,
+      resolveNamesFor,
+      followRedirects: false,
+    });
+    if (outcome.kind === "timeout") return { status: "timeout" };
+    if (outcome.kind === "blocked") {
+      return { status: "unreachable", reason: "blocked-target", definitive: true };
+    }
+    const response = outcome.response;
+    if (response.status >= 300 && response.status < 400) {
+      await response.body?.cancel().catch(() => undefined);
+      return { status: "unreachable", reason: "redirect-refused", definitive: true };
+    }
+    if (response.status < 200 || response.status >= 300) {
+      await response.body?.cancel().catch(() => undefined);
+      return {
+        status: "unreachable",
+        reason: `HTTP ${response.status}`,
+        definitive: isDefinitiveHttpStatus(response.status),
+      };
+    }
+    if (response.status === 206) {
+      // Honoring the range from anywhere but byte 0 gives no media evidence.
+      const contentRange = response.headers.get("content-range");
+      if (contentRange !== null && !contentRange.startsWith("bytes 0-")) {
+        await response.body?.cancel().catch(() => undefined);
+        return { status: "unreachable", reason: "unsupported-direct-media", definitive: true };
+      }
+    }
+    const prefix = await readPrefixBytes(response.body, DIRECT_MEDIA_PROBE_PREFIX_BYTES);
+    if (isDirectMediaPrefix(prefix)) return { status: "reachable" };
+    return { status: "unreachable", reason: "unsupported-direct-media", definitive: true };
+  } catch {
+    if (signal.aborted) return { status: "timeout" };
+    // No raw cause: a transport message can quote the URL it failed on.
+    return { status: "unreachable", reason: "network-error", definitive: false };
   }
 }
 

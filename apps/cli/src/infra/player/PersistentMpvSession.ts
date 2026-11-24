@@ -14,6 +14,11 @@ import type {
   TitleInfo,
 } from "@/domain/types";
 import { scrubbedChildEnv } from "@/infra/os/child-env";
+import {
+  AddonSubtitleFiles,
+  prepareLaunchSubtitles,
+  resolvePlayerSubtitle,
+} from "@/infra/player/addon-subtitle-files";
 import { registerMpvProcess, terminateMpvProcess } from "@/infra/player/mpv-process-registry";
 import { copyShareLinkForContext } from "@/infra/share/copy-share-link";
 import { removeMpvChaptersFile, writeMpvChaptersFile } from "@/infra/timing";
@@ -21,7 +26,11 @@ import { dbg } from "@/logger";
 import { buildMpvArgs, shouldApplyStartAtSeek, writeMpvSensitiveConf } from "@/mpv";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { resolveTuning } from "@/services/persistence/tuning";
-import { checkStreamPreflight } from "@/services/playback/stream-health-check";
+import {
+  checkStremioPlaybackPreflight,
+  checkStreamPreflight,
+  isStremioPlayback,
+} from "@/services/playback/stream-health-check";
 import { MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS } from "@kunai/config";
 
 import { whichLive } from "../os/which";
@@ -135,6 +144,8 @@ type PlayerCycleOptions = {
   autoNextEnabled?: boolean;
   onPlayerReady?: () => void;
   onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;
+  /** Aborts addon preflight waits before the file is handed to mpv. */
+  abortSignal?: AbortSignal;
   /** Called when the user presses N or P inside the mpv window. The mpv process
    *  handles the stop itself; the app only needs to record the intent. */
   onMpvActionRequest?: (action: MpvRequestedAction) => void;
@@ -180,8 +191,21 @@ export class PersistentMpvSession {
    * publish an event, or activate player control on a retired session.
    */
   private retired = false;
+  private addonSubtitleFiles: AddonSubtitleFiles | undefined;
+  private subtitleFiles(): AddonSubtitleFiles {
+    return (this.addonSubtitleFiles ??= new AddonSubtitleFiles(this.runtime.downloadAddonSubtitle));
+  }
   private readonly subtitleManager = new PersistentSubtitleManager(
     () => this.currentOptions.subtitlePreference?.trim().toLowerCase() !== "none",
+    (url, kind, track) =>
+      resolvePlayerSubtitle(
+        url,
+        kind,
+        isStremioPlayback(this.playbackStream),
+        track,
+        this.subtitleFiles(),
+        this.currentCycleOptions().abortSignal,
+      ),
   );
   private readonly propertyRouter = new PersistentMpvPropertyRouter({
     getActiveCycle: () => this.activeCycle,
@@ -406,7 +430,14 @@ export class PersistentMpvSession {
     session.skipPromptDurationMs = parseSkipPromptDurationMs(cfg.mpvKunaiScriptOpts);
     session.scriptOptsArg = buildKunaiBridgeScriptOptsArg(cfg.mpvKunaiScriptOpts);
     session.luaScriptPath = await resolveKunaiMpvBridgeScriptPath(cfg);
-    await session.spawn(opts.mpv);
+    try {
+      await session.spawn(opts.mpv);
+    } catch (error) {
+      // A failed startup must not strand localized subtitle files.
+      await session.addonSubtitleFiles?.close().catch(() => {});
+      session.addonSubtitleFiles = undefined;
+      throw error;
+    }
     return session;
   }
 
@@ -435,18 +466,27 @@ export class PersistentMpvSession {
     const fileLoadId = this.installPendingFileLoad(generation);
 
     await this.subtitleManager.removeExternalSubtitles(this.ipcSession);
+    // A replacement retires the old subtitle scope; a late resolution from a
+    // previous cycle must not be able to create files in the new one.
+    if (this.addonSubtitleFiles) {
+      const oldScope = this.addonSubtitleFiles;
+      this.addonSubtitleFiles = undefined;
+      void oldScope.close();
+    }
     options.onPlaybackEvent?.({ type: "resolving-playback" });
     this.queueReadyWork(options, { armFallback: false });
 
     this.loadStartAt = shouldApplyStartAtSeek(options.startAt) ? (options.startAt ?? 0) : 0;
 
-    const preflightPromise = needsMpvNetworkPreflight(stream.url, options.urlKind)
-      ? checkStreamPreflight(stream.url, stream.headers, undefined, {
-          cachedAt: stream.timestamp,
-          streamReachabilityVerified: stream.providerResolveResult?.streamReachabilityVerified,
-          requiresYtdl: stream.requiresYtdl,
-        })
-      : Promise.resolve({ status: "reachable" as const });
+    const addon = isStremioPlayback(stream);
+    const preflightPromise =
+      !addon && needsMpvNetworkPreflight(stream.url, options.urlKind)
+        ? checkStreamPreflight(stream.url, stream.headers, undefined, {
+            cachedAt: stream.timestamp,
+            streamReachabilityVerified: stream.providerResolveResult?.streamReachabilityVerified,
+            requiresYtdl: stream.requiresYtdl,
+          })
+        : Promise.resolve({ status: "reachable" as const });
 
     if (options.timing) {
       try {
@@ -467,32 +507,64 @@ export class PersistentMpvSession {
       void removeMpvChaptersFile(oldChapters);
     }
 
-    const loadResult = await this.ipcSession?.send(
-      buildPersistentLoadfileCommand(
-        stream.url,
-        stream.isLive ? undefined : options.startAt,
-        stream.headers,
-        {
-          requiresYtdl: stream.requiresYtdl,
-          ytdlFormat: stream.ytdlFormat,
-          ytdlRawOptions: stream.ytdlRawOptions,
-          isLive: stream.isLive,
-          urlKind: options.urlKind,
-          audioPreference: options.audioPreference,
-          subtitlePreference: options.subtitlePreference,
-          chaptersFile: this.currentChaptersFilePath,
-        },
-      ),
-      3_000,
-    );
+    // Addon files are verified one request at a time: the strict preflight
+    // must pass — and the cycle must still be current — before a loadfile is
+    // ever written to the wire.
+    const addonPreflight = addon
+      ? await (this.runtime.checkAddonPreflight ?? checkStremioPlaybackPreflight)(
+          stream,
+          options.abortSignal,
+        )
+      : undefined;
+    // A result that arrived after this cycle was retired belongs to a dead
+    // owner: touching pending-load bookkeeping now would clear the NEW owner.
+    if (addon && (!this.isGenerationCurrent(generation) || this.activeCycle !== cycle)) {
+      return await cycle.promise;
+    }
+    const addonRefused =
+      addonPreflight !== undefined &&
+      (addonPreflight.status !== "reachable" || options.abortSignal?.aborted);
+    const loadResult = addonRefused
+      ? undefined
+      : await this.ipcSession?.send(
+          buildPersistentLoadfileCommand(
+            stream.url,
+            stream.isLive ? undefined : options.startAt,
+            stream.headers,
+            {
+              requiresYtdl: stream.requiresYtdl,
+              ytdlFormat: stream.ytdlFormat,
+              ytdlRawOptions: stream.ytdlRawOptions,
+              isLive: stream.isLive,
+              urlKind: options.urlKind,
+              audioPreference: options.audioPreference,
+              subtitlePreference: options.subtitlePreference,
+              chaptersFile: this.currentChaptersFilePath,
+              stremioAddon: addon,
+            },
+          ),
+          3_000,
+        );
 
     const preflight = await preflightPromise;
-    if (preflight.status === "unreachable" && preflight.definitive && !loadResult?.ok) {
+    if (
+      addonRefused ||
+      (preflight.status === "unreachable" && preflight.definitive && !loadResult?.ok)
+    ) {
+      const error = addonRefused
+        ? `addon stream refused: ${
+            addonPreflight.status === "unreachable"
+              ? addonPreflight.reason
+              : addonPreflight.status === "reachable"
+                ? "playback superseded"
+                : addonPreflight.status
+          }`
+        : `stream unreachable: ${preflight.status === "unreachable" ? preflight.reason : ""}`;
       void this.ipcSession?.send(["set_property", "user-data/kunai-loading", ""], 500);
       options.onPlaybackEvent?.({
         type: "ipc-command-failed",
         command: "loadfile",
-        error: `stream unreachable: ${preflight.reason}`,
+        error,
       });
       this.clearPendingFileLoadIf(fileLoadId, generation);
       cycle.stats.endReason = "error";
@@ -668,6 +740,22 @@ export class PersistentMpvSession {
       hdrCapability !== null
         ? { ...mpvOptions, supportsGpuNext: hdrCapability.supportsGpuNext }
         : mpvOptions;
+    // Addon subtitles are resolved to owned local files before argv is
+    // built — the URL never reaches mpv.
+    const addonPlayback = isStremioPlayback(this.initialStream);
+    const launchSubs =
+      addonPlayback || this.initialOptions.subtitleTracks?.some((track) => track.guardedAddon)
+        ? await prepareLaunchSubtitles(
+            {
+              subtitle: this.initialOptions.primarySubtitle,
+              subtitleTracks: this.initialOptions.subtitleTracks,
+              subtitleUrlKind: this.initialOptions.subtitleUrlKind,
+              stremioAddon: addonPlayback,
+              abortSignal: this.initialOptions.abortSignal,
+            },
+            this.subtitleFiles(),
+          )
+        : null;
     const args = buildMpvArgs(
       {
         url: this.initialStream.url,
@@ -675,15 +763,19 @@ export class PersistentMpvSession {
         headers: this.initialStream.headers ?? {},
         audioPreference: this.initialOptions.audioPreference,
         subtitlePreference: this.initialOptions.subtitlePreference,
-        subtitle: this.initialOptions.primarySubtitle,
-        subtitleUrlKind: this.initialOptions.subtitleUrlKind,
-        subtitleTracks: this.initialOptions.subtitleTracks,
+        subtitle: launchSubs ? launchSubs.subtitle : this.initialOptions.primarySubtitle,
+        subtitleUrlKind: launchSubs
+          ? launchSubs.subtitleUrlKind
+          : this.initialOptions.subtitleUrlKind,
+        subtitleTracks: launchSubs ? launchSubs.subtitleTracks : this.initialOptions.subtitleTracks,
+        localSubtitlePaths: launchSubs?.localSubtitlePaths,
         displayTitle: this.initialOptions.displayTitle,
         startAt: this.initialStream.isLive ? undefined : this.initialOptions.startAt,
         isLive: this.initialStream.isLive,
         requiresYtdl: this.initialStream.requiresYtdl,
         ytdlFormat: this.initialStream.ytdlFormat,
         ytdlRawOptions: this.initialStream.ytdlRawOptions,
+        stremioAddon: addonPlayback,
         chaptersFile: this.currentChaptersFilePath,
       },
       ipcServerCliArg(this.ipcEndpoint),
@@ -698,7 +790,9 @@ export class PersistentMpvSession {
     );
     this.loadStartAt =
       includeStartArg && this.initialOptions.startAt ? this.initialOptions.startAt : 0;
-    this.subtitlesAttachedAtSpawn = Boolean(this.initialOptions.primarySubtitle);
+    this.subtitlesAttachedAtSpawn = Boolean(
+      launchSubs ? launchSubs.subtitle : this.initialOptions.primarySubtitle,
+    );
     this.titleAppliedViaArgs = true;
 
     try {
@@ -748,6 +842,24 @@ export class PersistentMpvSession {
       });
       await this.handleProcessTermination({ code: 1, signal: null });
       return;
+    }
+
+    // The initial addon file goes on argv, so refusal must precede spawn —
+    // there is no loadfile interception point for the first file.
+    if (isStremioPlayback(this.initialStream)) {
+      const preflight = await (this.runtime.checkAddonPreflight ?? checkStremioPlaybackPreflight)(
+        this.initialStream,
+        this.initialOptions.abortSignal,
+      );
+      if (preflight.status !== "reachable" || this.initialOptions.abortSignal?.aborted) {
+        this.currentCycleOptions().onPlaybackEvent?.({
+          type: "ipc-command-failed",
+          command: "spawn",
+          error: "addon stream refused: playback preflight failed",
+        });
+        await this.handleProcessTermination({ code: 1, signal: null });
+        return;
+      }
     }
 
     const proc = this.runtime.spawn([...mpvInvocation.argv, ...args], {
@@ -1158,7 +1270,11 @@ export class PersistentMpvSession {
     if (!this.isGenerationCurrent(generation)) return false;
     if (tracks.ok && Array.isArray(tracks.response.data))
       this.subtitleManager.updateTrackList(tracks.response.data);
-    const existingId = this.subtitleManager.findExternalSubtitleId(selection.subtitleUrl);
+    const localized = this.addonSubtitleFiles?.existingPath(selection.subtitleUrl);
+    const existingId = this.subtitleManager.findExternalSubtitleId(
+      localized ?? selection.subtitleUrl,
+      localized ? "local" : "remote",
+    );
     let selected = false;
     if (existingId !== undefined) {
       const result = await this.ipcSession.send(["set_property", "sid", existingId], 1_000);
@@ -1571,6 +1687,11 @@ export class PersistentMpvSession {
       this.activeCycle = null;
 
       await this.closeIpcSession();
+      if (this.addonSubtitleFiles) {
+        const scope = this.addonSubtitleFiles;
+        this.addonSubtitleFiles = undefined;
+        await scope.close();
+      }
       await this.cleanupSocket();
       await this.cleanupLuaScript();
       if (this.currentChaptersFilePath) {
@@ -1782,6 +1903,24 @@ export class PersistentMpvSession {
         detail: trigger,
       });
 
+      // An addon reload is strict-checked before anything is mutated: a stale
+      // or refused verdict must leave no pending owner and no replaced stats.
+      const reconnectAddon = isStremioPlayback(this.playbackStream);
+      if (reconnectAddon) {
+        const preflight = await (this.runtime.checkAddonPreflight ?? checkStremioPlaybackPreflight)(
+          this.playbackStream,
+          opts.abortSignal,
+        );
+        if (
+          preflight.status !== "reachable" ||
+          opts.abortSignal?.aborted ||
+          !this.isGenerationCurrent(reconnectGeneration)
+        ) {
+          this.reconnectInFlight = false;
+          return false;
+        }
+      }
+
       const savedEndReason = active.stats.endReason;
       const savedMaxTrusted = active.stats.maxTrustedProgressSeconds;
       const savedLastReliable = active.stats.lastReliableProgressSeconds;
@@ -1815,6 +1954,7 @@ export class PersistentMpvSession {
             audioPreference: opts.audioPreference,
             subtitlePreference: opts.subtitlePreference,
             chaptersFile: this.currentChaptersFilePath ?? undefined,
+            stremioAddon: reconnectAddon,
           },
         ),
         12_000,

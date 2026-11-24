@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { readInstalledStremioAddons } from "@/domain/provider/stremio-addons";
 import {
+  readAddonInputLine,
   runAddonsCommand,
   type AddonsConfigPort,
   type RunAddonsCommandOptions,
@@ -202,6 +203,114 @@ describe("kunai addons add", () => {
 
     expect(code).toBe(2);
   });
+
+  test("an addon that echoes the URL's token in its manifest never leaks it", async () => {
+    const leaky = {
+      ...MANIFEST,
+      name: `Streams ${TOKEN}`,
+      version: `2.0-${TOKEN}`,
+      types: ["movie", `meta-${TOKEN}`],
+      resources: ["stream", `catalog-${TOKEN}`],
+    };
+    const config = memoryConfig();
+    const context = contextAnswering(() => manifestResponse(leaky));
+
+    const add = await run({ subcommand: "add", target: A, config, context });
+    const list = await run({ subcommand: "list", json: true, config });
+    const check = await run({ subcommand: "check", json: true, config, context });
+
+    const everything = add.output + list.output + check.output;
+    expect(everything).not.toContain(TOKEN);
+    // The config keeps the full URL — it is the secret. Only stored display
+    // text is held to the same bar as terminal output.
+    const stored = JSON.stringify(config.state.stremioAddons?.[0]?.name ?? "");
+    expect(stored).not.toContain(TOKEN);
+    expect(add.code).toBe(0);
+    // Public, non-secret parts still come through.
+    expect(everything).toContain("a.example.com");
+    expect(everything).toContain("movie");
+  });
+
+  test("add --stdin reads the manifest URL from the input reader, not argv", async () => {
+    const config = memoryConfig();
+    let reads = 0;
+
+    const { code } = await run({
+      subcommand: "add",
+      stdin: true,
+      config,
+      context: contextAnswering(() => manifestResponse()),
+      readInput: async () => {
+        reads += 1;
+        return `${A}\n`;
+      },
+    });
+
+    expect(reads).toBe(1);
+    expect(code).toBe(0);
+    expect(config.state.stremioAddons).toEqual([{ url: A, name: "Example Streams" }]);
+  });
+
+  test("the stdin reader takes the first line across chunk boundaries", async () => {
+    async function* chunks() {
+      yield Buffer.from("https://addon.example.com/to");
+      yield Buffer.from("ken/manifest.json\nignored trailing bytes");
+      yield Buffer.from("never read");
+    }
+
+    await expect(readAddonInputLine(chunks())).resolves.toBe(
+      "https://addon.example.com/token/manifest.json",
+    );
+  });
+
+  test("the stdin reader refuses an overlong line instead of truncating it", async () => {
+    async function* chunks() {
+      yield Buffer.alloc(5000, "a");
+    }
+
+    await expect(readAddonInputLine(chunks())).rejects.toThrow("exceeded byte limit");
+  });
+
+  test("add --stdin with a positional target fails without reading or asking the addon", async () => {
+    const config = memoryConfig();
+    const context = contextAnswering(() => manifestResponse());
+    let reads = 0;
+
+    const { code, output } = await run({
+      subcommand: "add",
+      stdin: true,
+      target: A,
+      config,
+      context,
+      readInput: async () => {
+        reads += 1;
+        return B;
+      },
+    });
+
+    expect(code).toBe(2);
+    expect(output).toContain("either --stdin or a manifest URL");
+    expect(reads).toBe(0);
+    expect(context.requested).toEqual([]);
+    expect(config.state.stremioAddons).toEqual([]);
+  });
+
+  test("--stdin is rejected for commands that take no input", async () => {
+    for (const subcommand of ["list", "remove", "check"]) {
+      let reads = 0;
+      const { code } = await run({
+        subcommand,
+        stdin: true,
+        config: memoryConfig(),
+        readInput: async () => {
+          reads += 1;
+          return A;
+        },
+      });
+      expect(code).toBe(2);
+      expect(reads).toBe(0);
+    }
+  });
 });
 
 describe("kunai addons list", () => {
@@ -247,9 +356,15 @@ describe("kunai addons remove", () => {
     });
 
     const { code, output } = await run({ subcommand: "remove", target: "1", config });
+    const jsonConfig = memoryConfig({ stremioAddons: [{ url: A, name: "Alpha" }, { url: B }] });
+    const json = await run({ subcommand: "remove", target: "1", json: true, config: jsonConfig });
+    const jsonPayload = JSON.parse(json.output);
 
     expect(code).toBe(0);
     expect(output).toContain('Removed "Alpha" (a.example.com)');
+    expect(output).toContain("after restart");
+    expect(jsonPayload.appliesAfterRestart).toBe(true);
+    expect(jsonPayload.removed.name).toBe("Alpha");
     expect(config.state.stremioAddons).toEqual([{ url: B }]);
     expect(config.state.provider).toBe("vidlink");
     expect(config.state.providerPriority).toEqual(["vidlink"]);
