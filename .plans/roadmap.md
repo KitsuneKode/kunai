@@ -86,10 +86,11 @@ archive and put only the residue here.
 
 ### Analytics
 
-| Track                    | Remaining                                                                                                                                            | Plan                                                                                                          |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Usage analytics redesign | Explicit opt-in and the live aggregate endpoint are deployed; stable-secret, firewall, retention, cron, cost, and live opt-in/disable signoff remain | [usage-analytics-redesign.md](./usage-analytics-redesign.md) · [design](./usage-analytics-redesign-design.md) |
-| Analytics day boundary   | Task 8 only: schedule is now `0 19 * * *`; prove the IST clock is live in prod before merge, then verify the first run                               | [2026-09-11-analytics-ist-day-boundary.md](./2026-09-11-analytics-ist-day-boundary.md)                        |
+| Track                    | Remaining                                                                                                                                                                  | Plan                                                                                                          |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Usage analytics redesign | Explicit opt-in and the live aggregate endpoint are deployed; stable-secret, firewall, retention, cron, cost, and live opt-in/disable signoff remain                       | [usage-analytics-redesign.md](./usage-analytics-redesign.md) · [design](./usage-analytics-redesign-design.md) |
+| Analytics day boundary   | Task 8 only: schedule is now `0 19 * * *`; prove the IST clock is live in prod before merge, then verify the first run                                                     | [2026-09-11-analytics-ist-day-boundary.md](./2026-09-11-analytics-ist-day-boundary.md)                        |
+| Credible usage analytics | Weekly/monthly rollups, cohort retention, capped v2 usage fields (`channel`, `lanes`, playback reliability, `offlineUsed`), consent-default decision, `/analytics` refresh | [2026-11-24-analytics-credible-usage.md](./2026-11-24-analytics-credible-usage.md)                            |
 
 ### Docs
 
