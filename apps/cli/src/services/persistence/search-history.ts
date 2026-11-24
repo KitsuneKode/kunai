@@ -2,6 +2,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import type { ShellMode } from "@/domain/types";
+import { createKeyedJoiner } from "@/infra/concurrency/keyed-joiner";
 import { writeAtomicJson } from "@/infra/fs/atomic-write";
 import { errorCode } from "@/infra/fs/errno";
 import {
@@ -43,7 +44,7 @@ export function createSearchHistoryStore(
   let queue: Promise<void> = Promise.resolve();
   let lastAttempt: Promise<void> = queue;
   const snapshots = new Map<string, readonly string[]>();
-  const refreshing = new Map<string, Promise<void>>();
+  const refreshing = createKeyedJoiner<void>();
   const revisions = new Map<string, number>();
   const listeners = new Set<() => void>();
   const publish = (file: string, history: readonly string[]) => {
@@ -71,27 +72,23 @@ export function createSearchHistoryStore(
     },
     refresh(mode?: ShellMode): Promise<void> {
       const file = resolveFile(mode);
-      const existing = refreshing.get(file);
-      if (existing) return existing;
-      const revision = revisions.get(file) ?? 0;
-      const reload = async (): Promise<void> => {
-        let history: string[];
-        try {
-          history = await readHistory(file);
-        } catch {
-          history = [];
-        } // A corrupt history cannot block search.
-        // A refresh that raced an accepted local query must not replace its
-        // durable snapshot with older bytes from before the write.
-        if ((revisions.get(file) ?? 0) === revision) publish(file, history);
-      };
-      const work = queue
-        .then(() => reload())
-        .finally(() => {
-          refreshing.delete(file);
-        });
-      refreshing.set(file, work);
-      return work;
+      // One refresh per file; a refresh asked for while one runs joins it.
+      return refreshing.join(file, () => {
+        // Captured as the refresh starts (join runs work synchronously).
+        const revision = revisions.get(file) ?? 0;
+        const reload = async (): Promise<void> => {
+          let history: string[];
+          try {
+            history = await readHistory(file);
+          } catch {
+            history = [];
+          } // A corrupt history cannot block search.
+          // A refresh that raced an accepted local query must not replace its
+          // durable snapshot with older bytes from before the write.
+          if ((revisions.get(file) ?? 0) === revision) publish(file, history);
+        };
+        return queue.then(() => reload());
+      });
     },
     get(mode?: ShellMode): readonly string[] {
       const file = resolveFile(mode);

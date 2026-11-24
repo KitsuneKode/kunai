@@ -11,10 +11,10 @@
 
 import { resolveCatalogPosterUrl } from "@/domain/catalog/resolve-catalog-poster-url";
 import { MAX_POSTER_SOURCE_BYTES } from "@/image/native-image";
+import { createKeyedJoiner } from "@/infra/concurrency/keyed-joiner";
 import { readBoundedBody } from "@/services/network/bounded-body";
 import { observeOnlineIfBound } from "@/services/network/network-observation";
 
-import { createKeyedInflight } from "./inflight";
 import { ByteBudgetLruCache } from "./poster-byte-cache";
 import {
   isPosterDiskCacheCandidate,
@@ -36,7 +36,9 @@ const sourceCache = new ByteBudgetLruCache<string, PosterSource>({
   maxBytes: MAX_POSTER_SOURCE_CACHE_BYTES,
   weight: (source) => source.bytes.byteLength,
 });
-const sourceInflight = createKeyedInflight();
+// "finish": a fast-scrolling abort must not kill a read another surface still
+// needs, and a completed read still warms the cache for the next caller.
+const sourceInflight = createKeyedJoiner<PosterSource | null>({ whenAbandoned: "finish" });
 // Disk persists queued behind the render path. Tracked so tests (and a future
 // shutdown flush) can wait them out instead of sleeping.
 const pendingDiskWrites = new Set<Promise<void>>();
@@ -197,48 +199,55 @@ export async function fetchPosterSource(
   // cannot kill a fetch another surface still needs — and a completed read
   // still warms the cache for the next caller. `signal` gates this caller's
   // own await only.
-  return sourceInflight.join(
-    resolved,
-    async () => {
-      try {
-        // Disk lane first: a previous session (or an evicted memory entry)
-        // may already hold these bytes. The hit gate is synchronous — the
-        // network fetch below must still fire synchronously on a miss, so
-        // only a plausible file pays for an async read. Local files skip
-        // the disk; they already are on disk.
-        if (
-          !isLocalImagePath(resolved) &&
-          isPosterDiskCacheCandidate({ url: resolved, cols }, MAX_POSTER_SOURCE_BYTES)
-        ) {
-          const diskBytes = await readPosterDiskCache(
-            { url: resolved, cols },
-            MAX_POSTER_SOURCE_BYTES,
-          );
-          if (diskBytes && hasImageSignature(diskBytes)) {
-            const diskSource = { identity: resolved, bytes: diskBytes };
-            sourceCache.set(resolved, diskSource);
-            return diskSource;
+  return (
+    sourceInflight
+      .join(
+        resolved,
+        async (upstream) => {
+          try {
+            // Disk lane first: a previous session (or an evicted memory entry)
+            // may already hold these bytes. The hit gate is synchronous — the
+            // network fetch below must still fire synchronously on a miss, so
+            // only a plausible file pays for an async read. Local files skip
+            // the disk; they already are on disk.
+            if (
+              !isLocalImagePath(resolved) &&
+              isPosterDiskCacheCandidate({ url: resolved, cols }, MAX_POSTER_SOURCE_BYTES)
+            ) {
+              const diskBytes = await readPosterDiskCache(
+                { url: resolved, cols },
+                MAX_POSTER_SOURCE_BYTES,
+              );
+              if (diskBytes && hasImageSignature(diskBytes)) {
+                const diskSource = { identity: resolved, bytes: diskBytes };
+                if (!upstream.aborted) sourceCache.set(resolved, diskSource);
+                return diskSource;
+              }
+            }
+            const source = isLocalImagePath(resolved)
+              ? await readLocalPosterSource(resolved)
+              : await readRemotePosterSource(resolved);
+            if (!source) return null;
+            // A read the cache was cleared under must not repopulate it.
+            if (upstream.aborted) return source;
+            // Only a complete, in-bounds read is worth remembering; caching a
+            // failure would make one dropped connection permanent for the process.
+            sourceCache.set(resolved, source);
+            // Persist remote bytes for the next scroll/launches. Best-effort and
+            // unawaited — the caller already has its source; the disk must never
+            // slow the render path. writePosterDiskCache never rejects.
+            if (!isLocalImagePath(resolved)) {
+              persistSourceToDisk(resolved, cols, source.bytes);
+            }
+            return source;
+          } catch {
+            return null;
           }
-        }
-        const source = isLocalImagePath(resolved)
-          ? await readLocalPosterSource(resolved)
-          : await readRemotePosterSource(resolved);
-        if (!source) return null;
-        // Only a complete, in-bounds read is worth remembering; caching a
-        // failure would make one dropped connection permanent for the process.
-        sourceCache.set(resolved, source);
-        // Persist remote bytes for the next scroll/launches. Best-effort and
-        // unawaited — the caller already has its source; the disk must never
-        // slow the render path. writePosterDiskCache never rejects.
-        if (!isLocalImagePath(resolved)) {
-          persistSourceToDisk(resolved, cols, source.bytes);
-        }
-        return source;
-      } catch {
-        return null;
-      }
-    },
-    signal,
+        },
+        { signal },
+      )
+      // This caller leaving (or a cleared cache) resolves null, like a failed read.
+      .catch(() => null)
   );
 }
 
