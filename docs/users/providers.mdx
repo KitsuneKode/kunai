@@ -439,7 +439,7 @@ kunai addons disable
 kunai addons remove 1
 ```
 
-`kunai addons enable` asks you to read and accept the risk above; your acknowledgement is stored, so re-enabling after a disable does not ask again. When stdin is not a terminal — a script, a CI job — run `kunai addons enable --accept-risk` to accept without a prompt. Adding while addons are off refuses before contacting the addon: run `kunai addons enable` first.
+`kunai addons enable` asks you to confirm. Kunai shows the warning the first time and remembers your acknowledgement across disable and re-enable. In a script or CI job, run `kunai addons enable --accept-risk` to accept without a prompt. An interactive `add` can ask you to enable addons in the same step. A non-interactive `add` while addons are off refuses before contacting the addon: run `kunai addons enable` first.
 
 If the URL carries an account token, prefer `--stdin` so it stays out of your
 shell's process list and history. Kunai reads one line of standard input;
@@ -451,7 +451,7 @@ kunai addons add --stdin < addon-url.txt
 
 You can also add and remove addons in **Settings → Sources → Stremio addons**, and turn the whole feature on or off under **Experimental: Stremio addons** there.
 
-- **On and off.** `kunai addons disable` stops addon use at the next resolve — including in a session that is already running — and keeps your installed list and preferences. `kunai addons enable` turns them back on; addons that were already loaded can answer again at the next resolve. A Kunai session that started while addons were off never loaded them, so restart that session to use addons, and restart any session to pick up newly installed addons. `kunai addons list` and `kunai addons check` still work while off — they report the disabled state, and `check` does not contact the addon.
+- **On and off.** `kunai addons disable` stops addon use at the next resolve, including in a session that is already running, and keeps your installed list and preferences. `kunai addons enable` turns them back on; addons that were already loaded can answer again at the next resolve. A Kunai session that started while addons were off never loaded them, so restart that session to use addons, and restart any session to pick up newly installed addons. `kunai addons list` and `kunai addons check` still work while off: they report the disabled state, and `check` does not contact the addon.
 - **What to paste.** The addon's `https://…/manifest.json` address. A `stremio://…/manifest.json` link is the same address and works too. If the addon has a configure page, finish that first and paste the URL it gives you.
 - **Where it sits.** A new addon goes after your other movie and series providers, so it is asked only when the ones before it have nothing. Move it up in **Settings → Sources → Provider priority**, or pause it with its provider switch.
 - **When it applies.** Adding takes effect the next time Kunai starts. Removing inside the app applies on the next title; `kunai addons remove` asks already-running sessions to restart first. Remove deletes the entry; disable keeps it and stops addon use instead.
