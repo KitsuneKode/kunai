@@ -91,7 +91,7 @@ Consequences, both user-visible:
   nothing to read, so `listEpisodes` works only when the raw session id happens to
   already be numeric.
 
-`apps/cli/src/app/playback/PlaybackPhase.ts:4114` hides all of it behind a bare
+`loadAnimeEpisodeOptions` in `apps/cli/src/app/playback/playback-episode-catalog.ts` hides all of it behind a bare
 `catch {}` returning `undefined`.
 
 **Fix.** Build the title through `resolveProviderTitleIdentity(...)` with the module's

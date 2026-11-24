@@ -224,12 +224,10 @@ test("a late subtitle acknowledgement cannot overwrite a replacement stream", as
 });
 
 test("a provider default subtitle is cleared before playback when this session chose Off", async () => {
-  const { PlaybackPhase } = await import("@/app/playback/PlaybackPhase");
+  // Exercise the preparation path that runs after every provider/source resolve.
+  const { preparePlaybackStream: prepare } = await import("@/app/playback/playback-stream-prepare");
   const { container, dispose } = await createIsolatedContainer("off-before-playback");
   const savedProfile = { ...container.config.getRaw().movieLanguageProfile };
-  const phase = new PlaybackPhase();
-  // Exercise the preparation path that runs after every provider/source resolve.
-  const prepare = phase["preparePlaybackStream"].bind(phase);
   try {
     container.stateManager.dispatch({
       type: "SET_SESSION_TRACK_PREFERENCES",
@@ -407,7 +405,7 @@ test("native observations arriving before acknowledgement preserve the accepted 
 test.each(["native-state", "explicit-off", "replaced-file"] as const)(
   "late subtitle lookup preserves newer %s",
   async (change) => {
-    const { PlaybackPhase } = await import("@/app/playback/PlaybackPhase");
+    const { startLateSubtitleResolver } = await import("@/app/playback/late-subtitle-resolver");
     const { container, dispose } = await createIsolatedContainer(`late-lookup-${change}`);
     const title = {
       id: "tmdb:550",
@@ -471,7 +469,7 @@ test.each(["native-state", "explicit-off", "replaced-file"] as const)(
           return { status: "attached", attachedCount: 1 };
         },
       });
-      new PlaybackPhase()["startLateSubtitleResolver"]({
+      startLateSubtitleResolver({
         stream,
         title,
         episode,
@@ -500,7 +498,8 @@ test.each(["native-state", "explicit-off", "replaced-file"] as const)(
 );
 
 test("native subtitle Off clears the selected URL while preserving inventory and language preference", async () => {
-  const { PlaybackPhase } = await import("@/app/playback/PlaybackPhase");
+  const { launchPlayback } = await import("@/app/playback/playback-player-launch");
+  const { PlaybackLedgerSlot } = await import("@/app/playback/playback-ledger-slot");
   const { container, dispose } = await createIsolatedContainer("native-subtitle-off");
   const controller = new AbortController();
   const stream = { ...subtitleStream(), subtitle: subtitleUrl };
@@ -532,15 +531,13 @@ test("native subtitle Off clears the selected URL while preserving inventory and
     value: { ...capabilities, externalSubtitles: false, progressEvents: false },
   });
   try {
-    await new PlaybackPhase()["playStream"](
+    await launchPlayback({
       stream,
       title,
-      { season: 1, episode: 1 },
-      {
-        container,
-        signal: controller.signal,
-      },
-    );
+      episode: { season: 1, episode: 1 },
+      context: { container, signal: controller.signal },
+      ledger: new PlaybackLedgerSlot(),
+    });
     const state = container.stateManager.getState();
     expect(state.stream?.playbackSubtitle).toEqual({ id: 0, visible: true });
     expect(state.stream?.subtitle).toBeUndefined();

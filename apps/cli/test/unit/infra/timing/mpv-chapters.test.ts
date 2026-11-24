@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import type { PlaybackTimingMetadata } from "@/domain/types";
 import {
@@ -102,13 +104,21 @@ test("writeMpvChaptersFile and removeMpvChaptersFile manage chapter files correc
     preview: [],
   };
 
-  const id = `test-${Date.now()}`;
-  const filePath = await writeMpvChaptersFile(timing, id);
-  expect(filePath).not.toBeNull();
-  expect(filePath).toContain(`kunai-chapters-${id}.ffmeta`);
+  // The default cache dir is the developer's real one: the file is removed below, but the
+  // `chapters/` directory it lives in is not, so every run left it in the real profile.
+  const cacheDir = mkdtempSync(join(tmpdir(), "kunai-mpv-chapters-"));
+  try {
+    const id = `test-${Date.now()}`;
+    const filePath = await writeMpvChaptersFile(timing, id, cacheDir);
+    expect(filePath).not.toBeNull();
+    expect(filePath).toContain(`kunai-chapters-${id}.ffmeta`);
+    expect(filePath!.startsWith(cacheDir)).toBe(true);
 
-  expect(existsSync(filePath!)).toBe(true);
+    expect(existsSync(filePath!)).toBe(true);
 
-  await removeMpvChaptersFile(filePath);
-  expect(existsSync(filePath!)).toBe(false);
+    await removeMpvChaptersFile(filePath);
+    expect(existsSync(filePath!)).toBe(false);
+  } finally {
+    rmSync(cacheDir, { recursive: true, force: true });
+  }
 });

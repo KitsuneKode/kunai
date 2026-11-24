@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T12:30:00Z"
+lastReviewed: "2026-11-24T13:00:00Z"
 ---
 
 # Kunai — Testing Strategy
@@ -84,6 +84,10 @@ root itself and child names beginning with dots remain valid.
    with `applyStorageRootEnv` from `test/helpers/storage-env.ts`. Check resolved
    config/data/cache containment against the temporary root before loading a
    profile; do not read the real profile to test whether isolation worked.
+   The CLI test preload (`apps/cli/test/helpers/profile-guard.ts`) stats the real
+   config/data/cache roots, `config.json`, the mpv bridge script and both SQLite
+   files before the run and fails it, naming each path, on any lasting change —
+   it detects, it does not block, and it never creates a missing profile.
 2. Change the failure trigger deliberately: deferred resolve/reject, cancellation,
    injected clock, or fake timer. A sleep is not an acknowledgement. A generous
    test timeout bounds a hang; it does not prove synchronization.
