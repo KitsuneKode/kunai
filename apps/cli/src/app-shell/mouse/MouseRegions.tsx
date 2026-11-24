@@ -216,6 +216,8 @@ export function useMouseRegion(
 
   // Keep a press through unrelated commits (e.g. a poster completing). Only
   // losing ownership, moving the target, or unmounting invalidates the click.
+  // `active` is a trigger, not an input: turning a target off must unregister it.
+  // oxlint-disable-next-line react/exhaustive-effect-dependencies -- deliberate re-run trigger
   useLayoutEffect(() => () => dispatcher?.unregister(id), [dispatcher, id, active]);
 
   useLayoutEffect(() => {

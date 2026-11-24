@@ -1166,7 +1166,7 @@ export function BrowseShell<T>({
     }
     // The corpus is a snapshot per band-open, not per keystroke — re-reading
     // SQLite on every character is wasted work the scorer never sees.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/memo-dependencies, react-hooks/exhaustive-deps -- the corpus is a snapshot per band-open; historyRevision refreshes it
   }, [suggestionBandVisible, loadLocalSuggestions, historyRevision, mode]);
 
   const suggestionBandModel = useMemo(

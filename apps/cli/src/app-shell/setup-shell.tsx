@@ -21,7 +21,7 @@ import {
 } from "@/domain/media/media-preferences";
 import type { CapabilitySnapshot } from "@/ui";
 import { Box, Text, useInput } from "ink";
-import React, { useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 
 import { ROOT_HORIZONTAL_PADDING } from "./layout-policy";
 import { useFrameTick } from "./primitives/SakuraPetal";
@@ -637,7 +637,15 @@ export function SetupShell({
     }
   });
 
-  const pointer: SetupPointerActions = {
+  const pointerRef = useRef<SetupPointerActions | null>(null);
+  const pointer = useMemo<SetupPointerActions>(
+    () => ({
+      pick: (field, value) => pointerRef.current?.pick(field, value),
+      action: (key) => pointerRef.current?.action(key),
+    }),
+    [],
+  );
+  const latestPointer: SetupPointerActions = {
     pick(field, value) {
       if (viewport.tooSmall || rechecking) return;
       if (confirmingAbort) {
@@ -700,6 +708,11 @@ export function SetupShell({
     hasFix: Boolean(depRows[depIdx]?.fix),
     isFirst: screenIdx === 0,
   });
+
+  // The handlers close over this render's state, so the latest set is kept in
+  // a ref and the context gets one stable object that delegates to it: click
+  // targets do not re-render just because setup did.
+  pointerRef.current = latestPointer;
 
   return (
     <SetupPointerContext.Provider value={pointer}>

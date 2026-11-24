@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-18"
+lastReviewed: "2026-11-24T07:52:27Z"
 ---
 
 # Kunai — Repo Infrastructure
@@ -44,17 +44,32 @@ The monorepo uses [Bun catalogs](https://bun.sh/docs/pm/catalogs) in the root
 Prefer npm `latest` (stable) pins in catalogs — not `canary`, `preview`, `rc`,
 or `next` tags.
 
-The October 26 refresh checks every production-workspace direct dependency against
-its registry stable tag. Bun 1.4.4 and TypeScript 7.0.2 are already current;
-Bun's runtime floor, package-manager declaration, types and CI setup agree.
-Ink 8.0.0 was tested (6,638 CLI unit tests passed) but not adopted: its bundle
-was 3,189,750 bytes, above the unchanged 3,170,304-byte cap. Ink 7.1.1 remains
-until a separate runtime-preserving optimization qualifies the upgrade.
-Oxlint/plugins 1.89.0 also require a separate React Compiler migration: the CLI
-reports existing render-time ref and effect patterns as errors. Keep the 1.74.0
-pair until those lifecycle changes are independently qualified; no rules or
-baselines were disabled to make the upgrade pass. Oxfmt is updated to 0.74.0. Research
-workspaces and unpublished Kunai platform packages are not registry-updated.
+The November 24 refresh checks every production-workspace direct dependency
+against its registry stable tag; `bun outdated -r` reports nothing. Bun is
+1.4.5 (a security release: TLS, DNS, fetch, HTTP/3 and SQLite 3.54); the
+package-manager declaration, `@types/bun` and CI (`bun-version-file`) agree,
+and the runtime floor stays `>=1.4.4`. **Ink 8** is adopted: the bundle is
+3,202,977 bytes, inside the 3,135 KiB cap. Its breaking changes were checked:
+React 19.3+ (already), numeric `minWidth`/`maxWidth` (no string widths here),
+generic stream types (`use-viewport-policy` reads its own `ResizeSource`), and
+`useInput` no longer seeing terminal control sequences (mouse SGR reports are
+parsed by the stdin facade in `app-shell/mouse/` before Ink, and the facade
+exposes `isTTY`/`setRawMode`, which Ink 8 now requires for raw mode). A PTY
+drive of the compiled binary confirmed render, arrow-key redraws and Ctrl+C.
+
+Oxlint and `@oxlint/plugins` are 1.95.0 and oxfmt 0.80.0. Oxlint 1.95 adds
+`react/preserve-manual-memoization`, a React Compiler compatibility check; it
+is off with the other compiler rules (`set-state-in-effect`, `refs`, `purity`,
+`immutability`, `globals`) because Kunai does not run the React Compiler. Every
+other new finding was fixed or carries an `oxlint-disable-next-line` with its
+reason (deliberate re-run triggers such as revision ticks and retry tokens);
+lint is 0 errors and 0 warnings. Research workspaces and unpublished Kunai
+platform packages are not registry-updated.
+
+`next build` for `apps/docs` fails locally under Bun's isolated linker
+(Turbopack cannot resolve `victory-vendor/d3-*` or Redux's `combineReducers`
+through recharts); it fails the same way on main, CI's docs job does not run
+`next build`, and Vercel's build (its own install) is the production check.
 
 Changesets 3 requires the matching v2 action (pinned by commit), renamed
 `version-script`/`pr-title`/`commit-message` inputs, and explicit

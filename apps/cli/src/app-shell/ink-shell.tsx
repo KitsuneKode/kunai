@@ -870,6 +870,7 @@ export function AppRoot({ container }: { container: Container }) {
       cancelled = true;
       clearPresenceBootTimer();
     };
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- a presence setting change must re-run the boot status check
   }, [container.presence, presenceDiscordClientId, presenceProvider]);
 
   useEffect(() => {
@@ -896,6 +897,7 @@ export function AppRoot({ container }: { container: Container }) {
   }, [
     container.downloadService,
     stateManager,
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- the status is read from a snapshot; a title or episode change must refresh it
     state.currentTitle?.id,
     state.currentTitle?.type,
     state.currentEpisode?.season,

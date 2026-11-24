@@ -330,6 +330,7 @@ export function usePosterPreview(
     placementSlot,
     preserveTerminalImages,
     requestKey,
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- bumping retryToken is how a failed poster load is retried
     retryToken,
     rows,
     url,

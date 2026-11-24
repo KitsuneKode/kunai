@@ -834,6 +834,7 @@ export function RootOverlayShell({
         expandedSpanIds: diagnosticsExpandedSpanIds,
       }),
     );
+    // oxlint-disable-next-line react/memo-dependencies -- diagnosticsRevision rebuilds the lines when the diagnostics service changes
   }, [container, diagnosticsExpandedSpanIds, diagnosticsRevision, overlay.type]);
   const staticLines =
     overlay.type === "help"
@@ -901,7 +902,7 @@ export function RootOverlayShell({
           overlay.type === "queue" ? container.queueService.listRecoverableSessions().length : 0,
         stale: overlay.type === "queue" ? container.queueService.getStatus().isStale : false,
       }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- queueTick forces a fresh service read after mutations
+    // oxlint-disable-next-line react/memo-dependencies, react-hooks/exhaustive-deps -- queueTick forces a fresh service read after mutations
     [overlay.type, queueTick, queuePosterResolver, container.queueService],
   );
   const title = getRootOverlayTitle(overlay, state);
@@ -1116,6 +1117,7 @@ export function RootOverlayShell({
         ? container.notificationService.listAllActive()
         : container.notificationService.listAllArchived()
       : [];
+    // oxlint-disable-next-line react/memo-dependencies -- notificationRevision invalidates the snapshot after a service change
   }, [container.notificationService, notificationRevision, notificationsState.tab, overlay.type]);
   // Invalidated by either signal. A stale set would keep telling the user an
   // episode is not queued right after they queued it from this very overlay,
@@ -1126,6 +1128,7 @@ export function RootOverlayShell({
     return overlay.type === "notifications"
       ? container.queueService.getQueuedEpisodeKeys()
       : undefined;
+    // oxlint-disable-next-line react/memo-dependencies -- either revision means the queued set may have changed
   }, [container.queueService, notificationRevision, overlay.type, queueTick]);
   const notificationsView = buildNotificationsView({
     records: notificationRecordsAll,
@@ -1146,6 +1149,7 @@ export function RootOverlayShell({
   const notificationUnreadCount = useMemo(() => {
     void notificationRevision;
     return overlay.type === "notifications" ? container.notificationService.countUnread() : 0;
+    // oxlint-disable-next-line react/memo-dependencies -- notificationRevision invalidates the unread count
   }, [container.notificationService, notificationRevision, overlay.type]);
   const notificationRecordsByKey = new Map(
     notificationRecordsAll.map((record) => [record.dedupKey, record] as const),
@@ -1199,12 +1203,14 @@ export function RootOverlayShell({
     if (overlay.type !== "history") return;
     setSelectedIndex(0);
     setHistoryPendingDelete(null);
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- a new history tab or overlay starts from the first row
   }, [historyTab, overlay.type]);
 
   // An armed queue destroy must not survive leaving the queue: without this,
   // returning later and pressing the same key once would mutate.
   useEffect(() => {
     setQueueConfirm(null);
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- leaving the queue overlay must disarm a pending destroy
   }, [overlay.type]);
 
   // Discard any play-now intent left staged by an earlier inbox session.

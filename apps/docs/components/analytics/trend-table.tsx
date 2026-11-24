@@ -73,6 +73,7 @@ export function TrendTable({
     const panel = panelRef.current;
     const row = hoveredRowRef.current;
     if (hoveredDay && panel && row) revealWithin(panel, row, headRef.current?.offsetHeight ?? 0);
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- re-run after rows expand so the hovered row exists to scroll to
   }, [hoveredDay, visibleCount]);
 
   const visible = rows.slice(0, visibleCount);
