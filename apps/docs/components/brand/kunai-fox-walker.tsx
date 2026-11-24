@@ -31,7 +31,7 @@ import { forwardRef, useImperativeHandle, useRef } from "react";
 const BODY = "#ff8fb0";
 const BODY_FAR = "#ec7a9c";
 const LIGHT = "#ffc7d8";
-const INK = "#1c1620";
+const INK = "#131311";
 
 /** Hip joints, in viewBox units. The knee sits `THIGH` below its hip. */
 const FRONT_HIP = { x: 208, y: 230 } as const;
@@ -182,6 +182,7 @@ export const KunaiFoxWalker = forwardRef<FoxWalkerHandle, KunaiFoxWalkerProps>(
         className={["kunai-fox-walker", className].filter(Boolean).join(" ")}
         data-facing={facing}
       >
+        <ellipse cx={158} cy={296} rx={68} ry={6.5} fill="#000000" opacity={0.34} />
         <g data-part="rig" transform={transforms.rig}>
           <g data-part="tail" transform={transforms.tail}>
             <path
@@ -246,8 +247,10 @@ export const KunaiFoxWalker = forwardRef<FoxWalkerHandle, KunaiFoxWalkerProps>(
               strokeWidth={3}
               strokeLinecap="round"
             />
+            <ellipse cx={224} cy={170} rx={9} ry={4.5} fill="#ff6b98" opacity={0.42} />
             <ellipse cx={234} cy={150} rx={8} ry={12.5} fill={INK} />
-            <ellipse cx={236} cy={146} rx={2.3} ry={3.4} fill="#fff4f8" />
+            <ellipse cx={236} cy={146} rx={2.4} ry={3.5} fill="#fff4f8" />
+            <circle cx={231} cy={155} r={1.3} fill="#fff4f8" opacity={0.75} />
             <path
               d="M252,182 Q259,187 267,181"
               fill="none"
@@ -259,6 +262,7 @@ export const KunaiFoxWalker = forwardRef<FoxWalkerHandle, KunaiFoxWalkerProps>(
             {/* The kunai she carries: a ring at the mouth and a short blade. */}
             <circle cx={265} cy={196} r={5} fill="none" stroke={LIGHT} strokeWidth={3} />
             <path d="M268,190 L305,188 L270,201 Z" fill="#ffe6ee" />
+            <path d="M270,191 L301,189 L272,195 Z" fill="#ffffff" opacity={0.55} />
           </g>
         </g>
       </svg>

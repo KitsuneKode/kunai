@@ -7,6 +7,7 @@ import {
   IconSparkles,
   type Icon,
 } from "@tabler/icons-react";
+import type { CSSProperties } from "react";
 
 type Highlight = (typeof homeHighlights)[number];
 
@@ -18,22 +19,13 @@ type HomeBentoProps = {
 /** How many provider names the tile prints before it says "+N more". */
 const PROVIDER_CHIP_LIMIT = 8;
 
-const MODES = ["Series & movies", "Anime", "YouTube"] as const;
+const MODES = [
+  { label: "Series & movies", laneVar: "var(--home-lane-series)" },
+  { label: "Anime", laneVar: "var(--home-lane-anime)" },
+  { label: "YouTube", laneVar: "var(--home-lane-yt)" },
+] as const;
 
-/**
- * What "everything stays one keystroke away" means, shown instead of listed.
- *
- * Four tiles of two sizes (7/5 over 5/7), not three equal cards: each carries a
- * small piece of the thing it describes (the three modes, the real provider names,
- * the commands you reach for when playback stalls), so the section demonstrates
- * the product where the old list of four rows only described it. Everything is
- * server-rendered, with no client JavaScript, and the numbers and names come from
- * the same generated metadata as the rest of the site, so nothing here is typed
- * twice.
- *
- * Each tile is a double bezel: an outer shell with a hairline, an inner plate with
- * its own highlight, and radii that nest (inner = outer minus the shell padding).
- */
+/** Server-rendered bento grid showcasing modes, registered providers, continuation, and recovery. */
 export function HomeBento({ highlights, providers }: HomeBentoProps) {
   const byLabel = new Map(highlights.map((item) => [item.label, item.detail]));
   const providerNames = [...providers]
@@ -52,19 +44,23 @@ export function HomeBento({ highlights, providers }: HomeBentoProps) {
         <div className="mt-6 flex flex-wrap items-center gap-2" aria-hidden="true">
           {MODES.map((mode, index) => (
             <span
-              key={mode}
-              className={`rounded-full border px-3.5 py-1.5 text-sm font-medium ${
-                index === 0
-                  ? "border-[var(--kunai-accent-deep)] bg-[color-mix(in_oklab,var(--kunai-accent)_12%,transparent)] text-[var(--kunai-accent)]"
-                  : "text-fd-muted-foreground border-[var(--kunai-line)]"
-              }`}
+              key={mode.label}
+              style={{ "--lane": mode.laneVar } as CSSProperties}
+              className={`kunai-mode-chip${index === 0 ? " is-primary" : ""}`}
             >
-              {mode}
+              <span className="kunai-lane-dot" />
+              {mode.label}
             </span>
           ))}
-          <kbd className="border-fd-border bg-fd-card text-fd-muted-foreground ml-1 rounded-md border px-2 py-1 font-mono text-xs">
-            Tab
-          </kbd>
+          <kbd className="kunai-inline-kbd ml-1">Tab</kbd>
+        </div>
+        <div
+          className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-[var(--home-hair)] pt-5 font-mono text-xs text-[var(--home-text-4)]"
+          aria-hidden="true"
+        >
+          <span>/series · TMDB movies &amp; shows</span>
+          <span>/anime · sub &amp; dub</span>
+          <span>/youtube · direct stream</span>
         </div>
       </Tile>
 
@@ -74,10 +70,10 @@ export function HomeBento({ highlights, providers }: HomeBentoProps) {
         detail={byLabel.get("Direct providers")}
       >
         <p className="mt-5 flex items-baseline gap-3">
-          <span className="text-fd-foreground font-sans text-5xl leading-none font-semibold tabular-nums">
+          <span className="font-sans text-5xl leading-none font-semibold text-[var(--home-text-1)] tabular-nums">
             {providers.length}
           </span>
-          <span className="text-fd-muted-foreground text-sm">
+          <span className="text-sm text-[var(--home-text-3)]">
             adapters, resolved on your machine
           </span>
         </p>
@@ -85,13 +81,15 @@ export function HomeBento({ highlights, providers }: HomeBentoProps) {
           {shown.map((name) => (
             <li
               key={name}
-              className="text-fd-muted-foreground rounded-md border border-[var(--kunai-line)] px-2 py-1 font-mono text-xs"
+              className="rounded-md border border-[var(--home-hair-strong)] bg-[var(--home-well)] px-2 py-1 font-mono text-xs text-[var(--home-text-3)]"
             >
               {name}
             </li>
           ))}
           {hidden > 0 ? (
-            <li className="text-fd-muted-foreground px-1 py-1 font-mono text-xs">+{hidden} more</li>
+            <li className="px-1 py-1 font-mono text-xs text-[var(--home-text-4)]">
+              +{hidden} more
+            </li>
           ) : null}
         </ul>
       </Tile>
@@ -101,7 +99,7 @@ export function HomeBento({ highlights, providers }: HomeBentoProps) {
         label="Continue watching"
         detail={byLabel.get("Continue watching")}
       >
-        <ul className="m-0 mt-6 grid list-none grid-cols-2 gap-x-4 gap-y-3 p-0">
+        <ul className="m-0 mt-6 grid list-none grid-cols-2 gap-x-4 gap-y-3.5 p-0">
           <Capability icon={IconHistory} label="History" />
           <Capability icon={IconCalendarEvent} label="Release calendar" />
           <Capability icon={IconSparkles} label="Recommendations" />
@@ -114,7 +112,7 @@ export function HomeBento({ highlights, providers }: HomeBentoProps) {
         label="Recovery built in"
         detail={byLabel.get("Recovery built in")}
       >
-        <ol className="m-0 mt-6 flex list-none flex-col gap-2.5 p-0">
+        <ol className="m-0 mt-6 flex list-none flex-col gap-3 p-0">
           <Step command="/recover" meaning="First step when a stream stalls" />
           <Step command="/fallback" meaning="Try another provider (Shift+F during playback)" />
           <Step command="/diagnostics" meaning="See what happened, redacted by default" />
@@ -136,22 +134,22 @@ function Tile({
   readonly children: React.ReactNode;
 }) {
   return (
-    <section className={`kunai-surface-shell ${className ?? ""}`}>
-      <div className="kunai-surface-shell__inner flex h-full flex-col p-6 md:p-7">
-        <h3 className="kunai-step-label m-0">{label}</h3>
-        {detail ? (
-          <p className="kunai-type-body mt-3 max-w-prose text-sm text-pretty">{detail}</p>
-        ) : null}
-        {children}
-      </div>
+    <section className={`kunai-bento-tile kunai-spotlight ${className ?? ""}`}>
+      <h3 className="kunai-bento-tile__label m-0">{label}</h3>
+      {detail ? (
+        <p className="mt-2.5 max-w-prose text-sm leading-relaxed text-pretty text-[var(--home-text-3)]">
+          {detail}
+        </p>
+      ) : null}
+      {children}
     </section>
   );
 }
 
 function Capability({ icon: Glyph, label }: { readonly icon: Icon; readonly label: string }) {
   return (
-    <li className="text-fd-foreground flex items-center gap-2.5 text-sm">
-      <span className="bg-fd-muted text-fd-primary flex size-7 shrink-0 items-center justify-center rounded-lg">
+    <li className="flex items-center gap-2.5 text-sm text-[var(--home-text-1)]">
+      <span className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-[var(--home-hair)] bg-[var(--home-raise-2)] text-[var(--home-lane-kunai)]">
         <Glyph className="size-4" stroke={1.5} />
       </span>
       {label}
@@ -162,10 +160,10 @@ function Capability({ icon: Glyph, label }: { readonly icon: Icon; readonly labe
 function Step({ command, meaning }: { readonly command: string; readonly meaning: string }) {
   return (
     <li className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
-      <code className="text-fd-foreground rounded-md border border-[var(--kunai-line)] px-2 py-0.5 font-mono text-xs">
+      <code className="rounded-md border border-[var(--home-hair-strong)] bg-[var(--home-well)] px-2 py-0.5 font-mono text-xs text-[var(--home-text-1)]">
         {command}
       </code>
-      <span className="text-fd-muted-foreground">{meaning}</span>
+      <span className="text-[var(--home-text-3)]">{meaning}</span>
     </li>
   );
 }

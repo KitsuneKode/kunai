@@ -1,5 +1,6 @@
 "use client";
 
+import { SPRING_SNAP } from "@/components/home/home-stage-context";
 import { OtherInstallPaths } from "@/components/home/other-install-paths";
 import { CopyButton } from "@/components/ui/copy-button";
 import { SectionHeading } from "@/components/ui/section-heading";
@@ -9,6 +10,8 @@ import {
   NATIVE_INSTALL_BY_OS,
   type NativeInstallOs,
 } from "@/lib/install-commands";
+import { IconChevronDown } from "@tabler/icons-react";
+import { domMax, LazyMotion, m, useReducedMotion } from "motion/react";
 import { useRef, useState } from "react";
 
 const OS_ORDER = ["linux", "macos", "windows"] satisfies readonly NativeInstallOs[];
@@ -28,6 +31,7 @@ const PREREQ_COMMAND: Record<NativeInstallOs, string> = {
 export default function HomePageInteractive() {
   const [activeOs, setActiveOs] = useState<NativeInstallOs>("linux");
   const tabRefs = useRef<Partial<Record<NativeInstallOs, HTMLButtonElement | null>>>({});
+  const reduced = useReducedMotion();
 
   const prereqCommand = PREREQ_COMMAND[activeOs];
   const installCommand = NATIVE_INSTALL_BY_OS[activeOs];
@@ -49,105 +53,122 @@ export default function HomePageInteractive() {
   };
 
   return (
-    <section id="install" className="kunai-home-install kunai-flow-section">
-      <SectionHeading
-        eyebrow="Install"
-        title="Install in three steps."
-        description="The preferred path is a self-contained binary, no Bun or Node required. Pick your OS for the exact bootstrap and mpv commands."
-      />
+    <LazyMotion features={domMax}>
+      <section id="install" className="kunai-home-install kunai-home-section">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+          <SectionHeading
+            variant="home"
+            animate={false}
+            className="m-0"
+            title="Install in three steps."
+            description="Self-contained release binary — no Bun or Node required. Pick your OS for the exact mpv and bootstrap commands."
+          />
 
-      <div className="install-section kunai-surface-shell">
-        <div className="kunai-surface-shell__inner p-6 md:p-8">
-          <div
-            className="os-tab-list border-fd-border mb-8 flex gap-3 border-b pb-6"
-            role="tablist"
-            aria-label="Operating system"
-          >
-            {OS_ORDER.map((os) => (
-              <button
-                type="button"
-                key={os}
-                id={`install-tab-${os}`}
-                ref={(node) => {
-                  tabRefs.current[os] = node;
-                }}
-                role="tab"
-                aria-selected={activeOs === os}
-                aria-controls="install-steps"
-                tabIndex={activeOs === os ? 0 : -1}
-                onClick={() => setActiveOs(os)}
-                onKeyDown={handleTabKeyDown}
-                className={`os-tab-button tracking-wider uppercase ${
-                  activeOs === os ? "active" : ""
-                }`}
-              >
-                {OS_LABEL[os]}
-              </button>
-            ))}
+          <div className="os-tab-list" role="tablist" aria-label="Operating system">
+            {OS_ORDER.map((os) => {
+              const active = activeOs === os;
+              return (
+                <button
+                  type="button"
+                  key={os}
+                  id={`install-tab-${os}`}
+                  ref={(node) => {
+                    tabRefs.current[os] = node;
+                  }}
+                  role="tab"
+                  aria-selected={active}
+                  aria-controls="install-steps"
+                  tabIndex={active ? 0 : -1}
+                  onClick={() => setActiveOs(os)}
+                  onKeyDown={handleTabKeyDown}
+                  className={`os-tab-button${active ? " active" : ""}`}
+                >
+                  {active ? (
+                    <m.span
+                      layoutId="install-os-pill"
+                      className="os-tab-button__bg"
+                      transition={reduced ? { duration: 0 } : SPRING_SNAP}
+                    />
+                  ) : null}
+                  <span className="relative z-[1]">{OS_LABEL[os]}</span>
+                </button>
+              );
+            })}
           </div>
+        </div>
 
-          <div
-            id="install-steps"
-            role="tabpanel"
-            aria-labelledby={`install-tab-${activeOs}`}
-            className="grid grid-cols-3 gap-6 max-lg:grid-cols-1"
-          >
-            <div className="install-step-card flex flex-col justify-between">
-              <div>
-                <span className="kunai-step-label">Step 01</span>
-                <h3 className="kunai-type-title mt-2 mb-3 text-lg">Install mpv</h3>
-                <p className="kunai-type-body mb-4 text-xs">
-                  Playback needs <code className="text-fd-foreground font-mono">mpv</code> on your{" "}
-                  <code className="text-fd-foreground font-mono">PATH</code>. The binary install
-                  embeds Bun, so Node and Bun are not needed separately.
-                </p>
-              </div>
+        <div
+          key={activeOs}
+          id="install-steps"
+          role="tabpanel"
+          aria-labelledby={`install-tab-${activeOs}`}
+          className="kunai-tab-panel kunai-install-columns mt-10"
+        >
+          <div className="kunai-install-col">
+            <div>
+              <span className="kunai-install-col__num tabular-nums">01</span>
+              <h3 className="kunai-install-col__title">Install mpv</h3>
+              <p className="kunai-install-col__body">
+                Playback needs <code className="font-mono text-[var(--home-text-1)]">mpv</code> on
+                your <code className="font-mono text-[var(--home-text-1)]">PATH</code>. The binary
+                embeds Bun, so Node and Bun are not needed separately.
+              </p>
+            </div>
+            <div className="kunai-install-col__cmd">
               <code className="kunai-code-row">
                 <span>{prereqCommand}</span>
                 <CopyButton text={prereqCommand} label={`${activeOs}-prereq`} />
               </code>
             </div>
+          </div>
 
-            <div className="install-step-card flex flex-col justify-between">
-              <div>
-                <span className="kunai-step-label">Step 02</span>
-                <h3 className="kunai-type-title mt-2 mb-3 text-lg">Install the Kunai binary</h3>
-                <p className="kunai-type-body mb-4 text-xs">
-                  Downloads the release binary for {OS_LABEL[activeOs]} and puts{" "}
-                  <code className="text-fd-foreground font-mono">kunai</code> on your PATH.
-                </p>
-              </div>
+          <div className="kunai-install-col">
+            <div>
+              <span className="kunai-install-col__num tabular-nums">02</span>
+              <h3 className="kunai-install-col__title">Install the Kunai binary</h3>
+              <p className="kunai-install-col__body">
+                Downloads the release binary for {OS_LABEL[activeOs]} and puts{" "}
+                <code className="font-mono text-[var(--home-text-1)]">kunai</code> on your PATH.
+              </p>
+            </div>
+            <div className="kunai-install-col__cmd">
               <code className="kunai-code-row">
                 <span>{installCommand}</span>
                 <CopyButton text={installCommand} label={`${activeOs}-install`} />
               </code>
             </div>
-
-            <div className="install-step-card flex flex-col justify-between">
-              <div>
-                <span className="kunai-step-label">Step 03</span>
-                <h3 className="kunai-type-title mt-2 mb-3 text-lg">Set up, then search</h3>
-                <p className="kunai-type-body mb-4 text-xs">
-                  Setup writes your config once. After that, the second command opens the shell on a
-                  real search.
-                </p>
-              </div>
-              <div className="flex flex-col gap-2">
-                <code className="kunai-code-row">
-                  <span>{CANONICAL_SETUP}</span>
-                  <CopyButton text={CANONICAL_SETUP} label="setup-cli" />
-                </code>
-                <code className="kunai-code-row">
-                  <span>{FIRST_SEARCH}</span>
-                  <CopyButton text={FIRST_SEARCH} label="first-search" />
-                </code>
-              </div>
-            </div>
           </div>
 
-          <OtherInstallPaths />
+          <div className="kunai-install-col">
+            <div>
+              <span className="kunai-install-col__num tabular-nums">03</span>
+              <h3 className="kunai-install-col__title">Set up, then search</h3>
+              <p className="kunai-install-col__body">
+                Setup writes your config once. After that, the second command opens the shell on a
+                real search.
+              </p>
+            </div>
+            <div className="kunai-install-col__cmd flex flex-col gap-2">
+              <code className="kunai-code-row">
+                <span>{CANONICAL_SETUP}</span>
+                <CopyButton text={CANONICAL_SETUP} label="setup-cli" />
+              </code>
+              <code className="kunai-code-row">
+                <span>{FIRST_SEARCH}</span>
+                <CopyButton text={FIRST_SEARCH} label="first-search" />
+              </code>
+            </div>
+          </div>
         </div>
-      </div>
-    </section>
+
+        <details className="kunai-disclosure kunai-other-disclosure mt-8">
+          <summary className="kunai-other-disclosure__summary">
+            <span>Other install paths (Bun, npm, prebuilt binaries, source)</span>
+            <IconChevronDown className="kunai-other-disclosure__chev size-4" stroke={1.6} />
+          </summary>
+          <OtherInstallPaths />
+        </details>
+      </section>
+    </LazyMotion>
   );
 }

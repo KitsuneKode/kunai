@@ -9,22 +9,7 @@ import { IconArrowUpRight, IconBrandGithub, IconStar } from "@tabler/icons-react
 
 import { WorkshopPreview } from "./workshop-preview";
 
-/**
- * "Also from the workshop": the maintainer's other original projects.
- *
- * Shown on the home page because someone who trusts one tool by a maintainer is
- * the person most likely to want the next one, and because a project with several
- * living siblings reads as maintained rather than abandoned. The footer carries
- * the same list in compressed form; both read `lib/workshop.ts`.
- *
- * A card is a preview, not a pitch: the project's own one-line description, the
- * facts a visitor uses to decide whether to click (language, last updated,
- * stars once there are enough to mean something) and the two places it lives.
- * Facts come from a cached GitHub lookup and degrade to the curated copy.
- */
-export async function WorkshopShowcase() {
-  const meta = await fetchWorkshopMeta();
-
+function WorkshopGrid({ meta }: { readonly meta: ReadonlyMap<string, WorkshopMeta> }) {
   return (
     <ul className="m-0 grid list-none grid-cols-1 gap-4 p-0 sm:grid-cols-2 lg:grid-cols-3">
       {workshop.map((project) => (
@@ -34,6 +19,18 @@ export async function WorkshopShowcase() {
       ))}
     </ul>
   );
+}
+
+const EMPTY_WORKSHOP_META: ReadonlyMap<string, WorkshopMeta> = new Map();
+
+export function WorkshopShowcaseFallback() {
+  return <WorkshopGrid meta={EMPTY_WORKSHOP_META} />;
+}
+
+/** Curated showcase of sibling KitsuneKode projects with cached GitHub metadata. */
+export async function WorkshopShowcase() {
+  const meta = await fetchWorkshopMeta();
+  return <WorkshopGrid meta={meta} />;
 }
 
 function monogram(name: string): string {
@@ -70,55 +67,68 @@ export function ProjectCard({
   const facts = presentWorkshopMeta(project, meta);
   const primaryUrl = project.siteUrl ?? project.repoUrl;
 
+  const primaryHost = (() => {
+    try {
+      return new URL(primaryUrl).hostname;
+    } catch {
+      return project.repo;
+    }
+  })();
+
   return (
-    <article className="kunai-surface-shell group/card has-[a:focus-visible]:ring-ring relative flex w-full flex-col transition-[border-color,box-shadow,transform] duration-180 ease-[cubic-bezier(0.16,1,0.3,1)] hover:-translate-y-0.5 hover:border-[color-mix(in_oklab,var(--kunai-accent)_32%,transparent)] active:scale-[0.98] active:duration-140 has-[a:focus-visible]:ring-2 motion-reduce:transition-none motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100">
-      <div className="kunai-surface-shell__inner flex h-full flex-col gap-4 p-5">
-        <WorkshopPreview project={project} />
-        <header className="flex items-start gap-3">
+    <article className="kunai-workshop-card kunai-spotlight group/card has-[a:focus-visible]:ring-ring relative flex w-full flex-col has-[a:focus-visible]:ring-2">
+      <div className="flex h-full flex-col gap-4 p-5">
+        <div className="kunai-workshop-stage__frame">
+          <WorkshopPreview project={project} />
+          <span className="kunai-workshop-stage__host" aria-hidden="true">
+            {primaryHost}
+          </span>
+        </div>
+        <header className="flex items-center gap-3">
           <span
             aria-hidden="true"
-            className="text-fd-primary flex size-10 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_oklab,var(--kunai-accent)_12%,var(--kunai-surface))] font-mono text-sm font-medium"
+            className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-[var(--home-hair)] bg-[var(--home-raise-2)] font-mono text-xs font-medium text-[var(--home-text-2)]"
           >
             {monogram(project.name)}
           </span>
           <div className="min-w-0 flex-1">
-            <h3 className="m-0 text-base leading-snug font-medium">
+            <h3 className="m-0 text-[0.9375rem] leading-snug font-medium">
               {/* The stretched link: the whole card is the target for the project's
                   main page, while the repository link below sits above it. */}
               <a
                 href={primaryUrl}
                 target="_blank"
                 rel="noreferrer noopener"
-                className="text-fd-foreground after:absolute after:inset-0 after:content-['']"
+                className="text-[var(--home-text-1)] after:absolute after:inset-0 after:content-['']"
               >
                 {project.name}
                 <span className="sr-only"> (opens in a new tab)</span>
               </a>
             </h3>
-            <p className="text-fd-muted-foreground m-0 mt-0.5 text-xs">{project.kind}</p>
+            <p className="m-0 mt-0.5 text-xs text-[var(--home-text-4)]">{project.kind}</p>
           </div>
           <IconArrowUpRight
             aria-hidden="true"
-            className="text-fd-muted-foreground size-4 shrink-0 transition-transform duration-180 ease-[var(--ease-out)] group-hover/card:translate-x-0.5 group-hover/card:-translate-y-0.5"
+            className="hover-fine:group-hover/card:translate-x-0.5 hover-fine:group-hover/card:-translate-y-0.5 size-4 shrink-0 text-[var(--home-text-4)] transition-transform duration-180 ease-[var(--ease-out)]"
             stroke={1.5}
           />
         </header>
 
-        <p className="text-fd-muted-foreground m-0 line-clamp-3 text-sm leading-6 text-pretty">
+        <p className="m-0 line-clamp-3 text-sm leading-6 text-pretty text-[var(--home-text-3)]">
           {project.tagline}
         </p>
 
-        <footer className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-1 text-xs">
-          <span className="text-fd-foreground font-mono">{facts.language}</span>
+        <footer className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-[var(--home-hair)] pt-3 text-xs">
+          <span className="font-mono text-[var(--home-text-2)]">{facts.language}</span>
           {facts.stars !== null ? (
-            <span className="text-fd-muted-foreground inline-flex items-center gap-1 tabular-nums">
+            <span className="inline-flex items-center gap-1 text-[var(--home-text-4)] tabular-nums">
               <IconStar className="size-3.5" stroke={1.5} aria-hidden="true" />
               {new Intl.NumberFormat("en-US").format(facts.stars)}
               <span className="sr-only"> stars</span>
             </span>
           ) : null}
           {facts.updated ? (
-            <span className="text-fd-muted-foreground tabular-nums">
+            <span className="text-[var(--home-text-4)] tabular-nums">
               Updated {formatUpdated(facts.updated)}
             </span>
           ) : null}
@@ -126,7 +136,7 @@ export function ProjectCard({
             href={project.repoUrl}
             target="_blank"
             rel="noreferrer noopener"
-            className="text-fd-muted-foreground hover:text-fd-foreground relative z-10 ml-auto inline-flex items-center gap-1 rounded-md px-1 py-1 transition-colors duration-150"
+            className="relative z-10 ml-auto inline-flex items-center gap-1 rounded-md px-1 py-1 text-[var(--home-text-4)] transition-colors duration-150 hover:text-[var(--home-text-1)]"
           >
             <IconBrandGithub className="size-3.5" stroke={1.5} aria-hidden="true" />
             Source

@@ -1,7 +1,7 @@
 import { DocsStatusBadge } from "@/components/docs/docs-status-badge";
 import { RelatedDocLinks } from "@/components/docs/related-doc-links";
 import { navGroupForHref } from "@/lib/doc-page-nav";
-import { docsEditUrl } from "@/lib/docs-github";
+import { docsEditUrl, docsGithubDiscussionsUrl } from "@/lib/docs-github";
 import {
   breadcrumbListJsonLd,
   faqPageJsonLd,
@@ -109,25 +109,45 @@ export default async function Page({ params }: PageProps) {
           style: "clerk",
         }}
       >
-        <div className="not-prose -mt-2 mb-2 flex justify-end">
-          <ViewOptionsPopover githubUrl={editUrl} />
-        </div>
         <DocsTitle>{page.data.title}</DocsTitle>
         <DocsDescription>{page.data.description}</DocsDescription>
-        <DocsStatusBadge status={pageStatus} />
+        <div className="not-prose mt-3 mb-6 flex flex-wrap items-center gap-2 border-b border-[var(--kunai-line)] pb-4">
+          <DocsStatusBadge status={pageStatus} />
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <ViewOptionsPopover githubUrl={editUrl} />
+          </div>
+        </div>
         <DocsBody>
           <MDX components={components} />
         </DocsBody>
         {navGroup ? <RelatedDocLinks group={navGroup} currentHref={page.url} /> : null}
-        <div className="not-prose border-fd-border mt-8 flex flex-wrap items-center justify-between gap-4 border-t pt-6">
-          <EditOnGitHub href={editUrl} />
-          <div className="flex items-center gap-4">
-            <Link
-              href="/feedback"
-              className="text-fd-muted-foreground hover:text-fd-foreground text-sm transition-colors"
-            >
-              Report an issue or give feedback
-            </Link>
+        <div className="not-prose border-fd-border mt-10 flex flex-col gap-4 rounded-2xl border bg-[#131311] p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="m-0 text-sm font-medium text-[#f5f3ee]">
+              Something unclear or a provider drifted?
+            </p>
+            <div className="flex flex-wrap items-center gap-4 text-xs">
+              <Link href="/feedback" className="text-fd-primary underline-offset-4 hover:underline">
+                Report an issue
+              </Link>
+              <a
+                href={docsGithubDiscussionsUrl()}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="text-fd-muted-foreground hover:text-fd-foreground transition-colors"
+              >
+                Ask in Discussions
+              </a>
+              <Link
+                href="/support"
+                className="text-fd-muted-foreground hover:text-fd-foreground transition-colors"
+              >
+                Support Kunai
+              </Link>
+            </div>
+          </div>
+          <div className="border-fd-border flex flex-wrap items-center justify-between gap-4 border-t pt-4">
+            <EditOnGitHub href={editUrl} />
             {lastModified ? <PageLastUpdate date={lastModified} /> : null}
           </div>
         </div>

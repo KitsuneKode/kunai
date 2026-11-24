@@ -1,16 +1,7 @@
 import { fetchGithubStarCount, formatStarCount, githubStarUrl } from "@/lib/github-stars";
 import { IconBrandGithub, IconStar } from "@tabler/icons-react";
 
-/**
- * Sidebar footer CTA: star the repo, with the live count when GitHub answers.
- *
- * The count is decoration — `fetchGithubStarCount` returns `null` on a rate
- * limited or failed build, and the CTA still renders as a plain link. It must
- * never be the reason a page fails to build.
- */
-export async function GithubStarCta() {
-  const stars = await fetchGithubStarCount();
-
+function GithubStarLink({ stars }: { readonly stars: number | null }) {
   return (
     <a
       href={githubStarUrl()}
@@ -33,4 +24,20 @@ export async function GithubStarCta() {
       )}
     </a>
   );
+}
+
+export function GithubStarCtaFallback() {
+  return <GithubStarLink stars={null} />;
+}
+
+/**
+ * Sidebar footer CTA: star the repo, with the live count when GitHub answers.
+ *
+ * The count is decoration — `fetchGithubStarCount` returns `null` on a rate
+ * limited or failed build, and the CTA still renders as a plain link. It must
+ * never be the reason a page fails to build.
+ */
+export async function GithubStarCta() {
+  const stars = await fetchGithubStarCount();
+  return <GithubStarLink stars={stars} />;
 }

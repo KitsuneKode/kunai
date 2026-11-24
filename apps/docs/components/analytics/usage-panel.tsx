@@ -304,7 +304,7 @@ export function UsagePanel({
             {/* A native disclosure: the changeover detail is reference material for
                 the few who read the day-by-day table closely, so it stays one
                 line until asked for instead of occupying the top of the page. */}
-            <details className="text-muted-foreground basis-full text-xs">
+            <details className="kunai-disclosure text-muted-foreground basis-full text-xs">
               <summary className="hover:text-foreground w-fit cursor-pointer underline decoration-dotted underline-offset-4">
                 Days end at midnight IST
               </summary>

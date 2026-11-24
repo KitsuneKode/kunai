@@ -1,7 +1,6 @@
 import { HeroKindsRow } from "@/components/home/hero-kinds-row";
 import { HeroProofRow } from "@/components/home/hero-proof-row";
-import { HomeStarCta } from "@/components/home/home-star-cta";
-import { CopyButton } from "@/components/ui/copy-button";
+import { InstallDock } from "@/components/home/install-dock";
 import { homeHero } from "@/lib/home-content";
 import { CANONICAL_INSTALL, NATIVE_INSTALL_PS1 } from "@/lib/install-commands";
 import { IconArrowRight } from "@tabler/icons-react";
@@ -16,36 +15,24 @@ export function HomeHeroStatic({ publishedVersion, providerCount }: HomeHeroStat
   const installCommand = homeHero.installCommands[0] ?? CANONICAL_INSTALL;
 
   return (
-    <section className="kunai-hero-static kunai-reveal flex flex-col justify-center">
-      {/* The heading carries its own weight. The eyebrow that used to sit here
-          read "Terminal-first playback" — a label restating the h1 in smaller
-          type, above a page that never once said what Kunai actually plays. */}
-      <h1 className="kunai-display-title text-balance">{homeHero.title}</h1>
-      <p className="kunai-type-body text-fd-muted-foreground mt-4 max-w-2xl text-pretty">
-        {homeHero.description}
-      </p>
+    <div className="kunai-hero-static mx-auto flex max-w-3xl flex-col items-center text-center">
+      <h1 className="kunai-hero-h1 text-balance">{homeHero.title}</h1>
+      <p className="kunai-hero-lead mt-5 text-pretty">{homeHero.description}</p>
 
-      <HeroKindsRow />
-
-      {/* Both platforms sit together: one install decision, made once. The
-          Windows row used to sit below the CTAs, orphaned from its peer. */}
-      <div className="kunai-hero-install mt-7">
-        <code className="kunai-code-row">
-          <span className="kunai-hero-install__os">Linux / macOS</span>
-          <span className="kunai-hero-install__cmd">{installCommand}</span>
-          <CopyButton text={installCommand} label="hero-install" />
-        </code>
-        <code className="kunai-code-row">
-          <span className="kunai-hero-install__os">Windows</span>
-          <span className="kunai-hero-install__cmd">{NATIVE_INSTALL_PS1}</span>
-          <CopyButton text={NATIVE_INSTALL_PS1} label="hero-install-windows" />
-        </code>
+      {/* Kept in server HTML for crawlers and screen readers; visual mode controls live in the ribbon above. */}
+      <div className="sr-only">
+        <HeroKindsRow />
       </div>
 
-      {/* Three levels, not three peers: one primary action, one quiet link out,
-          and the star link — which is here for the count it carries, not as a
-          third thing to decide between. */}
-      <div className="mt-6 flex flex-wrap items-center gap-3">
+      <div className="mt-8 w-full max-w-[38rem]">
+        <InstallDock
+          unixCommand={installCommand}
+          windowsCommand={NATIVE_INSTALL_PS1}
+          labelPrefix="hero-install"
+        />
+      </div>
+
+      <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
         <Link className="kunai-button kunai-button-primary" href={homeHero.primaryCta.href}>
           <span>{homeHero.primaryCta.label}</span>
           <IconArrowRight className="ml-1.5 size-4" stroke={1.5} />
@@ -53,10 +40,9 @@ export function HomeHeroStatic({ publishedVersion, providerCount }: HomeHeroStat
         <Link className="kunai-button kunai-button-quiet" href={homeHero.secondaryCta.href}>
           {homeHero.secondaryCta.label}
         </Link>
-        <HomeStarCta />
       </div>
 
       <HeroProofRow publishedVersion={publishedVersion} providerCount={providerCount} />
-    </section>
+    </div>
   );
 }

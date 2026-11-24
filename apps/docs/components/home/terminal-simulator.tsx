@@ -1,6 +1,13 @@
 "use client";
 
+import { useHomeStage } from "@/components/home/home-stage-context";
+import {
+  KITTY_CATALOG,
+  KittySplitPane,
+  type KittyTitleEntry,
+} from "@/components/home/kitty-split-pane";
 import { commandsForPalette } from "@/lib/home-presenters";
+import type { HeroLane } from "@/lib/provider-sieve";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { simulatedCommandScript } from "./simulated-command-script";
@@ -12,6 +19,7 @@ interface TerminalSimulatorProps {
   readonly paletteCommands: readonly HomeCommandMetadata[];
   readonly allCommands: readonly HomeCommandMetadata[];
   readonly cliVersion: string;
+  readonly publishedVersion?: string;
   readonly runtimeBaseline: { readonly bun: string; readonly mpv: string };
 }
 
@@ -36,10 +44,15 @@ const TerminalSimulator = memo(function TerminalSimulator({
   paletteCommands,
   allCommands,
   cliVersion,
+  publishedVersion,
   runtimeBaseline,
 }: TerminalSimulatorProps) {
+  const versionBadge = publishedVersion ? `v${publishedVersion}` : `v${cliVersion} · next`;
+  const { activeLane, setActiveLane, registerTerminalRunner } = useHomeStage();
+  const [viewMode, setViewMode] = useState<"kitty" | "log">("kitty");
+  const [selectedTitleId, setSelectedTitleId] = useState<string>("frieren");
   const [terminalLogs, setTerminalLogs] = useState<readonly HomeLogEntry[]>([
-    { id: "welcome-1", text: `▌ Kunai Shell v${cliVersion}` },
+    { id: "welcome-1", text: `▌ Kunai Shell ${versionBadge}` },
     {
       id: "welcome-2",
       text: `Requires mpv ${runtimeBaseline.mpv}. The binary install embeds bun ${runtimeBaseline.bun}.`,
@@ -55,6 +68,7 @@ const TerminalSimulator = memo(function TerminalSimulator({
   const terminalBodyRef = useRef<HTMLDivElement>(null);
   const terminalInputRef = useRef<HTMLInputElement>(null);
   const paletteInputRef = useRef<HTMLInputElement>(null);
+  const paletteReturnFocusRef = useRef<HTMLElement | null>(null);
   const terminalStageRef = useRef<HTMLDivElement>(null);
   const scriptTimersRef = useRef<number[]>([]);
   // The demo stops for good the first time the visitor does anything. Held in
@@ -82,7 +96,11 @@ const TerminalSimulator = memo(function TerminalSimulator({
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (terminalStageRef.current && !terminalStageRef.current.contains(event.target as Node)) {
+      if (
+        terminalStageRef.current &&
+        event.target instanceof Node &&
+        !terminalStageRef.current.contains(event.target)
+      ) {
         setCommandPaletteOpen(false);
       }
     }
@@ -154,7 +172,10 @@ const TerminalSimulator = memo(function TerminalSimulator({
 
   const runSimulatedCommand = useCallback(
     (cmdText: string) => {
-      if (terminalState === "running") return;
+      // Interruptible: cancel any in-flight simulated script so external triggers
+      // (mode ribbon, provider preview, bottom dock) always respond immediately.
+      for (const id of scriptTimersRef.current) window.clearTimeout(id);
+      scriptTimersRef.current.length = 0;
 
       setCommandPaletteOpen(false);
       setTerminalState("running");
@@ -164,7 +185,7 @@ const TerminalSimulator = memo(function TerminalSimulator({
         { id: `${Date.now()}-input`, text: `\nkunai > ${cmdText}` },
       ]);
 
-      const script = simulatedCommandScript(cmdText, providers, paletteCommands);
+      const script = simulatedCommandScript(cmdText, providers, allCommands);
       for (const step of script.steps) {
         scriptTimersRef.current.push(
           window.setTimeout(() => {
@@ -181,19 +202,31 @@ const TerminalSimulator = memo(function TerminalSimulator({
         }, script.doneAt),
       );
     },
-    [terminalState, providers, paletteCommands],
+    [providers, allCommands],
   );
 
   useEffect(() => {
     runCommandRef.current = runSimulatedCommand;
-  }, [runSimulatedCommand]);
+    registerTerminalRunner((cmd: string) => {
+      interactedRef.current = true;
+      demoTypingRef.current = false;
+      runSimulatedCommand(cmd);
+    });
+    return () => registerTerminalRunner(null);
+  }, [runSimulatedCommand, registerTerminalRunner]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (commandPaletteOpen) {
       if (e.key === "Escape") {
         e.preventDefault();
         setCommandPaletteOpen(false);
-        focusTerminalInput();
+        const returnTarget = paletteReturnFocusRef.current;
+        paletteReturnFocusRef.current = null;
+        if (returnTarget && returnTarget.isConnected) {
+          returnTarget.focus();
+        } else if (viewMode === "log") {
+          focusTerminalInput();
+        }
         return;
       }
       if (filteredCommands.length === 0) return;
@@ -242,6 +275,9 @@ const TerminalSimulator = memo(function TerminalSimulator({
       return "kunai-log-line kunai-log-line--warn";
     if (text.includes("[PLAY]") || text.includes("mpv"))
       return "kunai-log-line kunai-log-line--play";
+    if (text.includes("[MODE]") || text.includes("[CMD]")) {
+      return "kunai-log-line kunai-log-line--mode";
+    }
     if (
       text.includes("[QUERY]") ||
       text.includes("[FETCH]") ||
@@ -255,14 +291,29 @@ const TerminalSimulator = memo(function TerminalSimulator({
   };
 
   const onPresetClick = (cmd: string) => {
+    setViewMode("log");
     focusTerminalInput();
     runSimulatedCommand(cmd);
   };
 
+  const handleKittySelectLane = (lane: HeroLane) => {
+    setActiveLane(lane, { runDemo: false });
+    const first = KITTY_CATALOG.find((item) => item.lane === lane);
+    if (first) setSelectedTitleId(first.id);
+  };
+
+  const handleKittyPlay = (item: KittyTitleEntry) => {
+    setSelectedTitleId(item.id);
+    setViewMode("log");
+    runSimulatedCommand(item.command);
+  };
+
+  const latestStatusLine =
+    terminalLogs[terminalLogs.length - 1]?.text.replace(/^\n+/, "") ??
+    `Kunai Shell ${versionBadge} · ready`;
+
   return (
     <div className="relative flex w-full items-center justify-center">
-      <div className="kunai-hero-glow" aria-hidden="true" />
-
       <aside
         ref={terminalStageRef}
         className={`kunai-terminal-stage relative w-full overflow-hidden ${
@@ -274,44 +325,86 @@ const TerminalSimulator = memo(function TerminalSimulator({
         onFocusCapture={endDemo}
       >
         <div className="kunai-terminal-top">
-          <span className="text-fd-muted-foreground flex items-center gap-1.5 text-xs">
-            <span className="kunai-status-dot kunai-status-dot--focus" />
-            kunai shell
+          <span className="kunai-window-dots" aria-hidden="true">
+            <span className="kunai-window-dot kunai-window-dot--close" />
+            <span className="kunai-window-dot kunai-window-dot--min" />
+            <span className="kunai-window-dot kunai-window-dot--max" />
+          </span>
+          <span className="kunai-terminal-title">
+            {viewMode === "kitty" ? "kunai — kitty · graphics" : "kunai — zsh"}
           </span>
           <span className="kunai-terminal-badges">
-            <span className="kunai-step-meta tabular-nums">v{cliVersion}</span>
-            <span className="kunai-step-meta">simulated</span>
-          </span>
-        </div>
-
-        <div
-          ref={terminalBodyRef}
-          className="kunai-terminal-body scrollbar block h-[19rem] w-full cursor-text text-left focus:outline-none"
-          onClick={focusTerminalInput}
-          role="presentation"
-        >
-          {terminalLogs.map((line) => (
-            <span key={line.id} className={getLogLineClass(line.text)}>
-              {line.text}
+            <span className="kunai-terminal-view-switch">
+              <button
+                type="button"
+                onClick={() => setViewMode("kitty")}
+                aria-pressed={viewMode === "kitty"}
+                className={`kunai-terminal-view-btn ${viewMode === "kitty" ? "is-active" : ""}`}
+              >
+                Kitty TUI
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("log")}
+                aria-pressed={viewMode === "log"}
+                className={`kunai-terminal-view-btn ${viewMode === "log" ? "is-active" : ""}`}
+              >
+                Shell log
+              </button>
             </span>
-          ))}
-
-          <span className="kunai-terminal-input-row">
-            <span className="kunai-text-accent mr-2 text-xs font-semibold">kunai &gt;</span>
-            <input
-              ref={terminalInputRef}
-              type="text"
-              className="text-fd-foreground focus-visible:ring-ring w-full border-none bg-transparent font-mono text-base outline-none focus-visible:ring-2 sm:text-xs"
-              value={terminalInput}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              placeholder="Type '/' for commands..."
-              disabled={terminalState === "running"}
-              aria-label="Terminal command execution box"
-            />
-            <span className="kunai-cursor shrink-0" />
+            <span className="tabular-nums">{versionBadge}</span>
           </span>
         </div>
+
+        {viewMode === "kitty" ? (
+          <KittySplitPane
+            activeLane={activeLane}
+            selectedId={selectedTitleId}
+            statusLine={latestStatusLine}
+            onSelectLane={handleKittySelectLane}
+            onSelectItem={(item) => setSelectedTitleId(item.id)}
+            onPlayItem={handleKittyPlay}
+            onOpenPalette={() => {
+              paletteReturnFocusRef.current =
+                document.activeElement instanceof HTMLElement ? document.activeElement : null;
+              setCommandPaletteOpen(true);
+              setSearchQuery("");
+              setSelectedPaletteIndex(0);
+            }}
+            onFallback={() => onPresetClick("/recover")}
+          />
+        ) : (
+          <div
+            ref={terminalBodyRef}
+            className="kunai-terminal-body block h-[22rem] w-full cursor-text text-left focus:outline-none"
+            onClick={focusTerminalInput}
+            role="presentation"
+          >
+            {terminalLogs.map((line) => (
+              <span key={line.id} className={getLogLineClass(line.text)}>
+                {line.text}
+              </span>
+            ))}
+
+            <span className="kunai-terminal-input-row">
+              <span className="kunai-text-accent mr-2 shrink-0 text-xs font-semibold whitespace-nowrap">
+                kunai &gt;
+              </span>
+              <input
+                ref={terminalInputRef}
+                type="text"
+                className="text-fd-foreground focus-visible:ring-ring w-full border-none bg-transparent font-mono text-base outline-none focus-visible:ring-2 sm:text-xs"
+                value={terminalInput}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                placeholder="Type '/' for commands..."
+                disabled={terminalState === "running"}
+                aria-label="Terminal command execution box"
+              />
+              <span className="kunai-cursor shrink-0" />
+            </span>
+          </div>
+        )}
 
         {/* The palette hangs off the stage, not the scrolling body: inside
             `.kunai-terminal-body` its `top` resolves against scrolled content,
@@ -324,18 +417,21 @@ const TerminalSimulator = memo(function TerminalSimulator({
           inputRef={paletteInputRef}
           onSearchChange={setSearchQuery}
           onSelectIndex={setSelectedPaletteIndex}
-          onRun={(cmd) => runSimulatedCommand(`/${cmd.id}`)}
+          onRun={(cmd) => {
+            setViewMode("log");
+            runSimulatedCommand(`/${cmd.id}`);
+          }}
           onKeyDown={handleKeyDown}
         />
 
         <div className="kunai-terminal-presets mt-4">
           <span className="kunai-step-meta shrink-0">Try one</span>
-          {["/search Dune", "/discover", "/calendar", "/setup"].map((cmd) => (
+          {["/anime Frieren", "/search Dune", "/discover", "/calendar", "/recover"].map((cmd) => (
             <button
               type="button"
               key={cmd}
               onClick={() => onPresetClick(cmd)}
-              className="border-fd-border bg-fd-card text-fd-muted-foreground hover:border-fd-primary hover:bg-fd-accent hover:text-fd-foreground focus-visible:ring-ring focus-visible:border-fd-primary min-h-[24px] cursor-pointer rounded-lg border px-2.5 py-1 font-mono text-xs transition-[transform,border-color,background-color,color] duration-150 ease-out focus-visible:ring-2 focus-visible:outline-none active:scale-[0.96]"
+              className="focus-visible:ring-ring focus-visible:border-fd-primary min-h-[26px] cursor-pointer rounded-full border border-[var(--home-hair-strong)] bg-[var(--home-raise-1)] px-3 py-1 font-mono text-xs text-[var(--home-text-3)] transition-[transform,border-color,background-color,color] duration-150 ease-[var(--ease-out)] hover:border-[var(--kunai-accent)] hover:bg-[var(--home-raise-2)] hover:text-[var(--home-text-1)] focus-visible:ring-2 focus-visible:outline-none active:scale-[0.97] motion-reduce:transition-none motion-reduce:active:scale-100"
             >
               {cmd}
             </button>

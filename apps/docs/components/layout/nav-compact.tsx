@@ -3,18 +3,24 @@
 import { NAV_COMPACT_AFTER_PX, shouldCompactNav } from "@/lib/nav-compact";
 import { useEffect, useRef } from "react";
 
+/** Pointer approach distance around the compact desktop pill before expanding. */
+const APPROACH_PX = 44;
+/** Hysteresis exit radius so hovering near the pill edge never flickers. */
+const LEAVE_PX = 76;
+/** Brief grace period before re-compacting once pointer leaves the nav zone. */
+const COLLAPSE_DELAY_MS = 180;
+
 /**
- * Shrinks the floating nav once the page has been scrolled.
+ * Smart desktop scroll-shrinking navbar with proximity/hover expansion.
  *
- * It sets `data-nav-compact` on the root element and the stylesheet does the rest,
- * so the component renders nothing visible and no React state changes while
- * scrolling. There is deliberately no scroll listener: an `IntersectionObserver` on
- * a one-pixel sentinel reports the one transition that matters (top of page ->
- * scrolled) and costs nothing between the two.
- *
- * The shrink itself is a `transform: scale()` in CSS, which stays on the
- * compositor. Animating the nav's width or padding would reflow the whole bar on
- * every frame of the transition.
+ * - On scroll past `NAV_COMPACT_AFTER_PX`, sets `data-nav-compact="true"` on
+ *   `<html>` via `IntersectionObserver` (zero scroll listeners).
+ * - On desktop (`min-width: 768px` and `pointer: fine`), approaching within
+ *   `APPROACH_PX` of the floating pill, hovering it, or focusing inside it sets
+ *   `data-nav-expanded="true"` so secondary links smoothly unfurl without
+ *   shifting page content below.
+ * - On mobile/touch viewports, expansion logic stays inert and Fumadocs' native
+ *   mobile popover handles full navigation.
  */
 export function NavCompact() {
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -23,19 +29,141 @@ export function NavCompact() {
     const sentinel = sentinelRef.current;
     if (!sentinel) return undefined;
     const root = document.documentElement;
+    let isCompact = false;
+    let isExpanded = false;
+    let collapseTimer: number | null = null;
+    let rafId: number | null = null;
+
+    const clearCollapseTimer = () => {
+      if (collapseTimer !== null) {
+        window.clearTimeout(collapseTimer);
+        collapseTimer = null;
+      }
+    };
+
+    const setExpanded = (next: boolean) => {
+      if (isExpanded === next) return;
+      isExpanded = next;
+      if (next) root.dataset.navExpanded = "true";
+      else delete root.dataset.navExpanded;
+    };
+
+    const scheduleCollapse = () => {
+      clearCollapseTimer();
+      collapseTimer = window.setTimeout(() => {
+        const nav = document.querySelector("#nd-home-layout #nd-nav");
+        if (nav && nav.contains(document.activeElement)) return;
+        setExpanded(false);
+      }, COLLAPSE_DELAY_MS);
+    };
+
     const observer = new IntersectionObserver(([entry]) => {
       if (!entry) return;
-      const compact = shouldCompactNav({
+      isCompact = shouldCompactNav({
         isIntersecting: entry.isIntersecting,
         top: entry.boundingClientRect.top,
       });
-      if (compact) root.dataset.navCompact = "true";
-      else delete root.dataset.navCompact;
+      if (isCompact) {
+        root.dataset.navCompact = "true";
+      } else {
+        delete root.dataset.navCompact;
+        clearCollapseTimer();
+        setExpanded(false);
+      }
     });
     observer.observe(sentinel);
+
+    const desktopFineQuery = window.matchMedia("(min-width: 768px) and (pointer: fine)");
+
+    const onPointerMove = (event: PointerEvent) => {
+      if (!isCompact || !desktopFineQuery.matches) return;
+      if (rafId !== null) return;
+      const { clientX, clientY } = event;
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null;
+        const pill = document.querySelector("#nd-home-layout #nd-nav > div");
+        if (!pill) return;
+        const rect = pill.getBoundingClientRect();
+        const pad = isExpanded ? LEAVE_PX : APPROACH_PX;
+        const inside =
+          clientX >= rect.left - pad &&
+          clientX <= rect.right + pad &&
+          clientY >= rect.top - pad &&
+          clientY <= rect.bottom + pad;
+        if (inside) {
+          clearCollapseTimer();
+          setExpanded(true);
+        } else if (isExpanded) {
+          scheduleCollapse();
+        }
+      });
+    };
+
+    const onFocusIn = (event: FocusEvent) => {
+      if (!isCompact || !desktopFineQuery.matches) return;
+      const nav = document.querySelector("#nd-home-layout #nd-nav");
+      if (nav && event.target instanceof Node && nav.contains(event.target)) {
+        clearCollapseTimer();
+        setExpanded(true);
+      }
+    };
+
+    const onFocusOut = () => {
+      if (!isCompact || !desktopFineQuery.matches) return;
+      scheduleCollapse();
+    };
+
+    // Gliding hover highlight pill across desktop home nav links
+    let glideEl: HTMLSpanElement | null = null;
+    const ensureGlide = (container: HTMLElement) => {
+      if (glideEl && container.contains(glideEl)) return glideEl;
+      const existing = container.querySelector<HTMLSpanElement>(".kunai-nav-glide");
+      if (existing) {
+        glideEl = existing;
+        return existing;
+      }
+      const span = document.createElement("span");
+      span.className = "kunai-nav-glide";
+      span.setAttribute("aria-hidden", "true");
+      container.prepend(span);
+      glideEl = span;
+      return span;
+    };
+
+    const onNavOver = (event: PointerEvent) => {
+      if (!desktopFineQuery.matches) return;
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      const link = target?.closest<HTMLAnchorElement>("#nd-home-layout #nd-nav ul a");
+      const pill = document.querySelector<HTMLElement>("#nd-home-layout #nd-nav > div");
+      if (!pill) return;
+      if (!link) {
+        glideEl?.classList.remove("is-visible");
+        return;
+      }
+      const glide = ensureGlide(pill);
+      const pillRect = pill.getBoundingClientRect();
+      const linkRect = link.getBoundingClientRect();
+      glide.style.width = `${Math.round(linkRect.width + 12)}px`;
+      glide.style.transform = `translate3d(${Math.round(linkRect.left - pillRect.left - 6)}px, -50%, 0)`;
+      glide.classList.add("is-visible");
+    };
+
+    window.addEventListener("pointermove", onPointerMove, { passive: true });
+    window.addEventListener("pointerover", onNavOver, { passive: true });
+    document.addEventListener("focusin", onFocusIn);
+    document.addEventListener("focusout", onFocusOut);
+
     return () => {
       observer.disconnect();
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerover", onNavOver);
+      document.removeEventListener("focusin", onFocusIn);
+      document.removeEventListener("focusout", onFocusOut);
+      clearCollapseTimer();
+      if (rafId !== null) window.cancelAnimationFrame(rafId);
+      glideEl?.remove();
       delete root.dataset.navCompact;
+      delete root.dataset.navExpanded;
     };
   }, []);
 
