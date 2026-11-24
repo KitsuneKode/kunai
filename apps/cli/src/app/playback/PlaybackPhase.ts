@@ -65,7 +65,10 @@ import {
   canAutoContinueIntoRecommendation,
   canAdvanceIntoRecommendation,
 } from "@/app/playback/playback-postplay-policy";
-import { isPlaybackPresenceUpdateCurrent } from "@/app/playback/playback-presence-freshness";
+import {
+  updatePresenceInBackground,
+  clearPresenceInBackground,
+} from "@/app/playback/playback-presence-writer";
 import {
   playbackAudioPreference,
   playbackEpisodeCatalogLanguages,
@@ -111,7 +114,6 @@ import {
   startFromBeginning,
   startFromEpisodeSelection,
 } from "@/app/playback/playback-start-intent";
-import { type PlaybackStatusSnapshot } from "@/app/playback/playback-status-policy";
 import { shouldFetchPlaybackTiming } from "@/app/playback/playback-timing-fetch-policy";
 import {
   applyPlaybackControlTrackSelection,
@@ -405,77 +407,6 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     }
 
     return outcome;
-  }
-
-  private updatePresenceInBackground(
-    context: PhaseContext,
-    task: string,
-    activity: Parameters<PhaseContext["container"]["presence"]["updatePlayback"]>[0],
-    expected: PlaybackStatusSnapshot | null,
-    correlation?: DiagnosticCorrelation,
-  ): void {
-    runBackgroundTask({
-      task,
-      category: "presence",
-      diagnostics: context.container.diagnosticsService,
-      context: {
-        ...correlation,
-        titleId: activity.title.id,
-        providerId: activity.providerId,
-        season: activity.episode.season,
-        episode: activity.episode.episode,
-      },
-      run: () => {
-        const state = context.container.stateManager.getState();
-        // Read authoritative state immediately before the external mutation:
-        // this task was queued, and the session may have moved on since.
-        if (
-          expected &&
-          !isPlaybackPresenceUpdateCurrent(
-            { status: state.playbackStatus, generation: state.playbackGeneration },
-            expected,
-          )
-        ) {
-          return Promise.resolve();
-        }
-        const shellTitle = state.currentTitle;
-        const detailPoster = peekTitleDetail(activity.title.id, activity.title.type)?.artwork
-          ?.poster;
-        const enrichedTitle =
-          shellTitle && shellTitle.id === activity.title.id
-            ? {
-                ...activity.title,
-                posterUrl:
-                  activity.title.posterUrl ?? shellTitle.posterUrl ?? detailPoster ?? undefined,
-                artwork: activity.title.artwork ?? shellTitle.artwork,
-              }
-            : detailPoster
-              ? {
-                  ...activity.title,
-                  posterUrl: activity.title.posterUrl ?? detailPoster,
-                }
-              : activity.title;
-        return context.container.presence.updatePlayback({
-          ...activity,
-          title: enrichedTitle,
-        });
-      },
-    });
-  }
-
-  private clearPresenceInBackground(
-    context: PhaseContext,
-    task: string,
-    reason: string,
-    correlation?: DiagnosticCorrelation,
-  ): void {
-    runBackgroundTask({
-      task,
-      category: "presence",
-      diagnostics: context.container.diagnosticsService,
-      context: { ...correlation, reason },
-      run: () => context.container.presence.clearPlayback(reason),
-    });
   }
 
   async execute(title: TitleInfo, context: PhaseContext): Promise<PhaseResult<PlaybackOutcome>> {
@@ -3653,7 +3584,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           }
 
           await player.releasePersistentSession();
-          this.clearPresenceInBackground(context, "presence.clearPlaybackIdle", "playback-idle");
+          clearPresenceInBackground(context, "presence.clearPlaybackIdle", "playback-idle");
           preparePostPlaybackSurface(container, episodePrefetch, playbackIterationAbort);
           updatePlaybackFeedback(context, { detail: null, note: null });
           run.playbackSession = transitionPlaybackSession(
@@ -4389,7 +4320,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           });
         },
         onPresenceLaunch: ({ positionSeconds, subtitleCount }) => {
-          this.updatePresenceInBackground(
+          updatePresenceInBackground(
             context,
             "presence.updatePlaybackLaunch",
             { ...presenceBase(), positionSeconds, subtitleCount },
@@ -4398,7 +4329,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           );
         },
         onPresenceStarted: ({ positionSeconds, durationSeconds, snapshot }) => {
-          this.updatePresenceInBackground(
+          updatePresenceInBackground(
             context,
             "presence.updatePlaybackStarted",
             {
@@ -4413,7 +4344,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         },
         onPresenceProgress: ({ positionSeconds, durationSeconds, snapshot }) => {
           this.playbackLedger?.onProgress(positionSeconds, durationSeconds);
-          this.updatePresenceInBackground(
+          updatePresenceInBackground(
             context,
             "presence.updatePlaybackProgress",
             { ...presenceBase(), positionSeconds, durationSeconds },
@@ -4422,7 +4353,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           );
         },
         onPresenceSubtitles: ({ positionSeconds, durationSeconds, trackCount, snapshot }) => {
-          this.updatePresenceInBackground(
+          updatePresenceInBackground(
             context,
             "presence.updatePlaybackSubtitles",
             {
@@ -4437,7 +4368,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         },
         onPresencePaused: ({ positionSeconds, durationSeconds, snapshot }) => {
           this.playbackLedger?.onPaused(positionSeconds, durationSeconds);
-          this.updatePresenceInBackground(
+          updatePresenceInBackground(
             context,
             "presence.updatePlaybackPaused",
             {
@@ -4452,7 +4383,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
         },
         onPresenceResumed: ({ positionSeconds, durationSeconds, snapshot }) => {
           this.playbackLedger?.onResumed(positionSeconds, durationSeconds);
-          this.updatePresenceInBackground(
+          updatePresenceInBackground(
             context,
             "presence.updatePlaybackResumed",
             { ...presenceBase(), positionSeconds, durationSeconds },
