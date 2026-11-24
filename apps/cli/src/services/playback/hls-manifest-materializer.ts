@@ -5,7 +5,7 @@ import type { StreamInfo } from "@/domain/types";
 import { createPrivateTempDir } from "@/infra/fs/temp-dir";
 import { streamNeedsHlsRelay } from "@/infra/player/hls-relay";
 import {
-  absolutizeHostRootHlsManifest,
+  absolutizeHlsManifest,
   fetchGuardedStreamTarget,
   isHlsPlaylistUrl,
   shouldMaterializeHlsManifest,
@@ -21,7 +21,7 @@ const HLS_FETCH_TIMEOUT_MS = 30_000;
 const MAX_MANIFEST_BYTES = 2 * 1024 * 1024;
 
 export {
-  absolutizeHostRootHlsManifest,
+  absolutizeHlsManifest,
   isHlsPlaylistUrl,
   manifestUsesHostRootSegmentPaths,
   shouldMaterializeHlsManifest,
@@ -70,6 +70,9 @@ export async function materializeHlsManifestForPlayback(
     ? AbortSignal.any([callerSignal, controller.signal])
     : controller.signal;
   let manifestText: string;
+  // References resolve against where the playlist was finally served from: a
+  // redirect to another host or path changes what every relative URI means.
+  let manifestBaseUrl = manifestUrl;
   try {
     const outcome = await fetchGuardedStreamTarget({
       fetchImpl: fetch,
@@ -93,6 +96,7 @@ export async function materializeHlsManifestForPlayback(
       return null;
     }
     const response = outcome.response;
+    manifestBaseUrl = outcome.finalUrl;
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
       onSkipped?.("http-error", `HTTP ${response.status}`, response.status);
@@ -124,7 +128,7 @@ export async function materializeHlsManifestForPlayback(
 
   const dir = await createPrivateTempDir("hls");
   const playlistPath = join(dir, "playlist.m3u8");
-  const absolutized = absolutizeHostRootHlsManifest(manifestText, manifestUrl);
+  const absolutized = absolutizeHlsManifest(manifestText, manifestBaseUrl);
   // Signed CDN URLs land in this file — keep it owner-only like the mpv IPC
   // socket dir, not world-readable in a shared tmp.
   await writeFile(playlistPath, absolutized, { encoding: "utf8", mode: 0o600 });

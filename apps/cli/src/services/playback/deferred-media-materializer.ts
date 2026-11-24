@@ -74,11 +74,13 @@ export async function materializeDeferredMediaForPlayback(
     const dir = await createPrivateTempDir("media");
     const mpdPath = join(dir, "stream.mpd");
     await writeFile(mpdPath, buildAllMangaAkMpd(descriptor), { mode: 0o600 });
+    // The stream's headers stay. The MPD is local, but the segments it names
+    // are remote, and the resolve gate probed them with these headers — mpv
+    // must fetch them the same way (Referer/User-Agent included).
     return {
       stream: {
         ...stream,
         url: mpdPath,
-        headers: {},
       },
       cleanup: async () => {
         releaseAllMangaAkDeferredLocator(stream.deferredLocator ?? "");
