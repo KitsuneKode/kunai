@@ -20,13 +20,22 @@ export function shouldUseProviderPlaybackRecovery(
   return provenance !== "local";
 }
 
-/** Ordered source ids from a resolve result (catalog / inventory order). */
+/**
+ * Ordered source ids from a resolve result (catalog / inventory order).
+ *
+ * Sources the provider already reported `failed` or `exhausted` are left out:
+ * failing over onto them spends a recovery attempt on a known-dead mirror.
+ * `skipped` stays in — it marks a known source not tried yet, which a fresh
+ * resolve can still reach.
+ */
 export function listOrderedPlaybackSourceIds(
-  result: ProviderResolveResult | null | undefined,
+  result: Pick<ProviderResolveResult, "sources" | "streams"> | null | undefined,
 ): readonly string[] {
   if (!result) return [];
   if (result.sources && result.sources.length > 0) {
-    return result.sources.map((source) => source.id);
+    return result.sources
+      .filter((source) => source.status !== "failed" && source.status !== "exhausted")
+      .map((source) => source.id);
   }
   const seen = new Set<string>();
   const ids: string[] = [];
@@ -39,7 +48,13 @@ export function listOrderedPlaybackSourceIds(
   return ids;
 }
 
-/** Next catalog source after the current one that has not already been tried. */
+/**
+ * Next untried catalog source after the current one, wrapping to the start.
+ *
+ * Playback often begins on a source that is not first (a saved favourite, a
+ * pinned pick, a provider's own preference), so a forward-only walk never
+ * reached the sources listed before it.
+ */
 export function pickNextCatalogSourceId(
   sourceIds: readonly string[],
   currentSourceId: string | null | undefined,
@@ -48,10 +63,9 @@ export function pickNextCatalogSourceId(
   if (sourceIds.length === 0) return null;
   const current = currentSourceId?.trim() || null;
   const startIndex = current ? sourceIds.indexOf(current) : -1;
-  for (let index = Math.max(0, startIndex + 1); index < sourceIds.length; index += 1) {
-    const candidate = sourceIds[index];
-    if (!candidate || triedSourceIds.has(candidate)) continue;
-    if (candidate === current) continue;
+  for (let step = 1; step <= sourceIds.length; step += 1) {
+    const candidate = sourceIds[(startIndex + step) % sourceIds.length];
+    if (!candidate || candidate === current || triedSourceIds.has(candidate)) continue;
     return candidate;
   }
   return null;
