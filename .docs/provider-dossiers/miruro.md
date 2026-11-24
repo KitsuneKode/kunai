@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-11"
+lastReviewed: "2026-11-24T09:34:20Z"
 ---
 
 # Provider: Miruro
@@ -11,11 +11,11 @@ lastReviewed: "2026-10-11"
 
 - **Runtime class:** Direct HTTP pipe API by AniList ID, with browser harvest as research tooling.
 - **Production module:** `packages/providers/src/miruro/*`.
-- **Current status (2026-09-11):** **second in the anime lane** — HiAnime is the
-  lane default (`animeProvider: "hianime"`, provider-defaults revision 3); Miruro
-  leads the rest of `animeProviderPriority`. Searches and resolves
-  through its own pipe, with no dependency on AniList's API or on AniDB; see the
-  2026-09-11 section. The older sections below are history and say otherwise.
+- **Current status (2026-11-24):** the November 23 hosted sweep received
+  Cloudflare HTTP 403 HTML from multiple pipe mirrors. Kunai identifies the
+  refusal and suggests another anime provider. HiAnime and AnimeGG lead the
+  default order, and Miruro remains selectable from a network or existing
+  metadata relay the upstream accepts. Earlier sections record past behavior.
 
 ## Production status (2026-08-13) — truth and resilience pass
 

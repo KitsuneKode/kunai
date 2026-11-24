@@ -855,37 +855,10 @@ describe("describeMiruroPipeFailure names the failure the mirror actually had", 
   });
 });
 
-describe("the WAF block message advises the cheapest fix that can still work", () => {
-  test("tells a plain-curl user to install curl-impersonate before suggesting a relay", () => {
-    const message = miruroWafBlockMessage({
-      path: "/usr/bin/curl",
-      prefixArgs: [],
-      impersonates: false,
-      profile: null,
-    });
-    expect(message).toContain("curl-impersonate");
-    expect(message.indexOf("curl-impersonate")).toBeLessThan(message.indexOf("providerRelay"));
-  });
-
-  test("tells a user who already impersonated that the block is region-wide", () => {
-    const message = miruroWafBlockMessage({
-      path: "/usr/bin/curl_chrome150",
-      prefixArgs: [],
-      impersonates: true,
-      profile: "chrome150",
-    });
-    expect(message).toContain("chrome150");
-    expect(message).toContain("providerRelay");
-  });
-
-  test("keeps the prefix runProviderCycle keys on", () => {
-    for (const curl of [
-      null,
-      { path: "/usr/bin/curl_chrome150", prefixArgs: [], impersonates: true, profile: "chrome150" },
-    ]) {
-      expect(miruroWafBlockMessage(curl)).toContain("Cloudflare WAF on multiple mirrors");
-    }
-  });
+test("the WAF block message identifies Miruro's refusal and offers another provider", () => {
+  const message = miruroWafBlockMessage();
+  expect(message).toContain("Cloudflare WAF on multiple mirrors (HTTP 403 HTML)");
+  expect(message).toContain("Choose another anime provider.");
 });
 
 /**

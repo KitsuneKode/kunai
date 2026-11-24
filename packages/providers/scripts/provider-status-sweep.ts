@@ -14,7 +14,14 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import type { ProviderModule, ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
+import {
+  isJsonString,
+  type ProviderModule,
+  type ProviderResolveInput,
+  type ProviderResolveResult,
+  type ProviderRuntimeContext,
+  type StreamCandidate,
+} from "@kunai/types";
 
 import { allmangaProviderModule } from "../src/allmanga/direct";
 import { animeggProviderModule } from "../src/animegg/direct";
@@ -26,7 +33,11 @@ import { rivestreamProviderModule } from "../src/rivestream/direct";
 import { videasyProviderModule } from "../src/videasy/index";
 import { vidlinkProviderModule } from "../src/vidlink/direct";
 import { vidrockProviderModule } from "../src/vidrock/direct";
-import { youtubeProviderModule } from "../src/youtube/index";
+import {
+  configureYoutubeProvider,
+  createYoutubeMetadataService,
+  youtubeProviderModule,
+} from "../src/youtube/index";
 
 const OUTPUT_PATH = path.resolve(
   import.meta.dir,
@@ -213,6 +224,8 @@ interface Classification {
   note: string;
 }
 
+const BLOCKED_NOTE = "upstream denied access from the sweep runner";
+
 export function classify(
   upstreamHttp: number | null,
   resolveStatus: string,
@@ -228,7 +241,7 @@ export function classify(
   if (firstFailureCode === "blocked") {
     return {
       status: "blocked",
-      note: "upstream challenges this network (WAF/captcha); relay in an ungated region bypasses",
+      note: BLOCKED_NOTE,
     };
   }
   if (upstreamHttp === 503) {
@@ -252,6 +265,29 @@ export function composeStatusNote(
   return `${classifiedNote} — ${detail}`;
 }
 
+export function summarizeProbeResolution<T extends Pick<StreamCandidate, "metadata">>(
+  providerId: string,
+  upstreamHttp: number | null,
+  result: Pick<ProviderResolveResult, "status" | "failures"> & { readonly streams: readonly T[] },
+): Classification & { readonly streams: readonly T[] } {
+  // A watch URL alone can be handed to mpv even when extraction fails.
+  const streams =
+    providerId === "youtube"
+      ? result.streams.filter((stream) => isJsonString(stream.metadata?.formatId))
+      : result.streams;
+  const failure = result.failures[0];
+  const { status } = result;
+  const classified = classify(upstreamHttp, status, streams.length, failure?.code);
+  if (status !== "resolved" && /captcha|waf|challenge/i.test(failure?.message ?? "")) {
+    classified.status = "blocked";
+    classified.note = BLOCKED_NOTE;
+  }
+  if (providerId === "youtube" && status === "resolved" && streams.length === 0) {
+    classified.note = "yt-dlp did not discover video formats";
+  }
+  return { ...classified, streams, note: composeStatusNote(classified.note, failure?.message) };
+}
+
 async function probe(spec: ProbeSpec): Promise<ProviderRow> {
   const upstreamHttp = await probeFrontDoor(spec.frontDoor);
   const started = Date.now();
@@ -259,9 +295,8 @@ async function probe(spec: ProbeSpec): Promise<ProviderRow> {
   try {
     const result = await spec.module.resolve(spec.input, resolveContext(signal));
     const resolveMs = Date.now() - started;
-    const status = result.status;
-    const streams = result.streams;
-    const failures = result.failures;
+    const summary = summarizeProbeResolution(spec.id, upstreamHttp, result);
+    const { streams } = summary;
     const qualities = [
       ...new Set(streams.map((s) => s.qualityLabel ?? "").filter((q) => q.length > 0)),
     ];
@@ -272,26 +307,19 @@ async function probe(spec: ProbeSpec): Promise<ProviderRow> {
     const subtitleLanes =
       result.subtitles.length ||
       streams.filter((s) => (s.subtitleLanguages?.length ?? 0) > 0).length;
-    const classified = classify(upstreamHttp, status, streams.length, failures[0]?.code);
-    if (status !== "resolved" && /captcha|waf|challenge/i.test(failures[0]?.message ?? "")) {
-      classified.status = "blocked";
-      classified.note =
-        "upstream challenges this network (WAF/captcha); relay in an ungated region bypasses";
-    }
-    const note = composeStatusNote(classified.note, failures[0]?.message);
     return {
       id: spec.id,
       upstreamHttp,
       upstreamReachable: upstreamHttp !== null && upstreamHttp < 500,
-      resolveStatus: status,
+      resolveStatus: result.status,
       resolveMs,
       streams: streams.length,
       qualities,
       servers,
       audioLanguages: audio,
       subtitleLanes,
-      effectiveStatus: classified.status,
-      note,
+      effectiveStatus: summary.status,
+      note: summary.note,
     };
   } catch (error) {
     return {
@@ -312,6 +340,7 @@ async function probe(spec: ProbeSpec): Promise<ProviderRow> {
 }
 
 async function main() {
+  configureYoutubeProvider({ metadataService: createYoutubeMetadataService({}) });
   const rows = await Promise.all(PROBES.map(probe));
   const file: StatusFile = {
     generatedAt: new Date().toISOString(),

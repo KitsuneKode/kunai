@@ -53,6 +53,24 @@ describe("production provider defaults", () => {
     for (const id of DEFAULT_CONFIG.providerPriority) expect(ids).toContain(id);
   });
 
+  test("the production movie, series, and anime routes lead with a healthy provider", async () => {
+    // Frozen observation from the 2026-11-23 sweep, whose YouTube runner lacked
+    // yt-dlp. The daily publication can change independently of shipped defaults.
+    const healthy = new Set(["vidlink", "rivestream", "hianime", "animegg"]);
+    const modules = await loadProductionProviderModules(
+      createProviderPrioritySnapshot(DEFAULT_CONFIG),
+    );
+    for (const kind of ["movie", "series", "anime"] as const) {
+      const lead = modules.find(({ manifest }) => manifest.mediaKinds.includes(kind));
+      expect(healthy.has(lead?.providerId ?? "")).toBe(true);
+    }
+    const anime = modules.filter(({ manifest }) => manifest.mediaKinds.includes("anime"));
+    expect(healthy.has(anime[1]?.providerId ?? "")).toBe(true);
+    expect(modules.find(({ manifest }) => manifest.mediaKinds.includes("video"))?.providerId).toBe(
+      "youtube",
+    );
+  });
+
   test("the production roster is pinned — adding a module fails loudly here", async () => {
     const modules = await loadProductionProviderModules(
       createProviderPrioritySnapshot(DEFAULT_CONFIG),
