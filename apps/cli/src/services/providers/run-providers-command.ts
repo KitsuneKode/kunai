@@ -80,7 +80,7 @@ export async function runProvidersCommand(options: RunProvidersCommandOptions): 
   const action = options.subcommand ?? "status";
 
   if (action === "reset") {
-    const result = resetCachedProviderHotfixManifest({
+    const result = await resetCachedProviderHotfixManifest({
       path: options.cachePath,
       includeBackup: Boolean(options.force),
     });

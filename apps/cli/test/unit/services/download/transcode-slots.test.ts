@@ -16,8 +16,8 @@ describe("transcode slot gate", () => {
       try {
         inFlight += 1;
         peak = Math.max(peak, inFlight);
-        // SAFETY: yields control so all five contenders overlap inside the gate.
-        await Bun.sleep(10);
+        // Yield the turn so the other contenders can enter before this one leaves.
+        await nextTurn();
         inFlight -= 1;
       } finally {
         release();
@@ -46,3 +46,9 @@ describe("transcode slot gate", () => {
     expect(gate.held).toBe(0);
   });
 });
+
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}

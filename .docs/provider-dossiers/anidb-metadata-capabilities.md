@@ -1,12 +1,14 @@
 ---
 status: current
-lastReviewed: "2026-08-18"
+lastReviewed: "2026-11-24"
 ---
 
 # AniDB Metadata And API Capabilities
 
-> Agent-facing (L3). Research dossier for the active `anidb` provider. This is
-> not a claim that AniDB authorizes or operates the stream sources used by
+> Agent-facing (L3). Research dossier for the removed `anidb` provider — the
+> module was removed; only the AniSkip MAL lookup helper
+> (`packages/providers/src/shared/anidb-identity.ts`) remains. This is not a
+> claim that AniDB authorizes or operates the stream sources used by
 > `anidb.app`.
 
 ## Executive Summary
@@ -133,30 +135,23 @@ documentation:
 
 ## Repository Comparison
 
-### Active Provider Flow
+### Former Provider Flow
 
-- `packages/providers/src/anidb/client.ts:18-21` sets the provider base to
-  `https://anidb.app`, not `anidb.net`.
-- `packages/providers/src/anidb/client.ts:116-125` searches scraped browse HTML.
-- `packages/providers/src/anidb/client.ts` retains episode ID, positive numeric
-  episode number, and filler from the stream catalog; the title-page crosswalk
-  and official XML parser provide episode titles, dates, and synopses separately.
-- `packages/providers/src/anidb/client.ts:189-223` retains language code/name
-  and the embed URL, but not a catalog audio-language model.
-- `packages/providers/src/anidb/client.ts:225-231` extracts a `file:` value
-  from the embed page; `:269-282` expands the HLS master into stream links.
-- `packages/providers/src/anidb/direct.ts` does not advertise unprobed audio
-  modes. Its episode list merges official AniDB XML with AniList/Jikan metadata,
-  populating episode names, detail/synopsis, release dates, external ids, and
-  artwork.
-- `packages/providers/src/anidb/direct.ts` returns direct HLS results, the
-  selected episode's release/artwork, external IDs, and an empty `subtitles`
-  array because no concrete track URL is exposed.
-- `packages/providers/src/anidb/manifest.ts:5-54` correctly declares an
-  anime-only direct HTTP stream provider. It does not declare catalog metadata
-  enrichment or subtitle-track support.
-- The module is production-wired by
-  `apps/cli/src/container/bootstrap-providers.ts:36-68`.
+The module was removed. Its implementation used `anidb.app`, not `anidb.net`:
+
+- Search scraped browse HTML. The stream catalog supplied episode IDs, positive
+  episode numbers and filler flags. A title-page crosswalk and official AniDB
+  XML supplied episode titles, dates and synopses.
+- Per-episode responses carried language code, language name and the embed
+  URL, but no catalog-level audio language. The embed supplied an HLS master,
+  which the adapter expanded into stream links.
+- The adapter did not advertise unprobed audio modes. The episode list merged
+  official AniDB XML with AniList/Jikan data for titles, synopses, release dates,
+  external IDs and artwork.
+- Resolve returned direct HLS results, selected episode release/artwork and
+  external IDs. It returned no subtitle tracks because it had no track URL.
+  The manifest declared an anime-only direct HTTP stream provider, with no
+  catalog enrichment or subtitle-track capability.
 
 ### Relevant Contracts
 

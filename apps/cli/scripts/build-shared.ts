@@ -449,14 +449,13 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // November 19 Jikan fallback, Android local-file gateway, sub/dub source cycling,
 // and Termux onboarding additions measured 3,205,426 bytes.
 // November 24 Ink 8 + dependency refresh measured 3,202,977 bytes.
-// November 24 Stremio addon sources (protocol schemas, guarded client, stream
-// classifier, provider module, `kunai addons`, settings rows) measured
-// 3,240,476 bytes: +37,499 of first-party code, no new dependency or asset.
-// Addon media safety (strict direct-media probe, mpv file-local confinement,
-// guarded subtitle localization, stdin add) measured 3,253,769 bytes:
-// +13,293 of first-party code, still no new dependency or asset.
-// 3178 KiB leaves 1,063 bytes; public launcher budgets below are unchanged.
-export const NPM_BUNDLE_BUDGET_KB = 3_178;
+// November 24 streaming relay cap, locked manifest reset, registered toast
+// timer, and unread-body cancels measured 3,210,429 bytes.
+// Merged Stremio addon hardening (strict direct-media probe, mpv file-local
+// confinement, guarded subtitle localization, addon stdin) measured
+// 3,247,553 bytes on the merged tree.
+// 3172 KiB leaves 575 bytes; public launcher budgets below are unchanged.
+export const NPM_BUNDLE_BUDGET_KB = 3_172;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

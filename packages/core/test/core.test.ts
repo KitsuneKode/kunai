@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, jest, test } from "bun:test";
 
 import {
   assertRuntimeAllowed,
@@ -1332,6 +1332,7 @@ function hedgeModule(
         // Abort-aware wait: a real provider hands the signal to fetch, so a
         // cancelled candidate stops immediately rather than running to term.
         await new Promise<void>((resolve, reject) => {
+          // sleep-allow: provider double delay; these hedge tests still order real timers
           const timer = setTimeout(resolve, behaviour.delayMs);
           context.signal?.addEventListener(
             "abort",
@@ -1420,11 +1421,20 @@ test("hedged fallback aborts losing candidates once a winner appears", async () 
     hedgeDelayMs: 30,
   });
 
-  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-  await engine.resolveWithFallback(HEDGE_INPUT as never, ["slow-primary", "fast-hedge"] as never);
-  const abortDeadline = Date.now() + 1_000;
-  while (!log.aborted.includes("slow-primary") && Date.now() < abortDeadline) {
-    await Bun.sleep(5);
+  jest.useFakeTimers();
+  try {
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    const pendingAbort = engine.resolveWithFallback(
+      HEDGE_INPUT as never,
+      ["slow-primary", "fast-hedge"] as never,
+    );
+    for (let step = 0; step < 40 && !log.aborted.includes("slow-primary"); step += 1) {
+      jest.advanceTimersByTime(50);
+      await Promise.resolve();
+    }
+    await pendingAbort;
+  } finally {
+    jest.useRealTimers();
   }
 
   expect(log.aborted).toContain("slow-primary");
@@ -1692,15 +1702,21 @@ test("summarizeProviderTraceEvents prefers canonical cycle events over provider-
  */
 function healthReportingModule(
   id: string,
-  behaviour: { readonly delayMs: number; readonly succeeds: boolean },
+  behaviour: {
+    readonly delayMs: number;
+    readonly succeeds: boolean;
+    readonly onStart?: (id: string) => void;
+  },
 ): CoreProviderModule {
   return {
     // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     providerId: id as never,
     manifest: defineProviderManifest({ ...vidkingManifest, id, displayName: id }),
     async resolve(input, context) {
+      behaviour.onStart?.(id);
       try {
         await new Promise<void>((resolve, reject) => {
+          // sleep-allow: provider double delay; these hedge tests still order real timers
           const timer = setTimeout(resolve, behaviour.delayMs);
           context.signal?.addEventListener(
             "abort",
@@ -1819,7 +1835,7 @@ test("sequential fallback records the in-flight provider as aborted on cancel", 
     ["slow-only"] as never,
     controller.signal,
   );
-  await Bun.sleep(20);
+  await nextTurn();
   controller.abort("playback-loading-command-fallback");
 
   const output = await pending;
@@ -1858,32 +1874,53 @@ test("hedged fallback records the losing candidate as aborted, in candidate orde
 });
 
 test("hedged fallback records every in-flight candidate as aborted on cancel", async () => {
+  const started: string[] = [];
+  const onStart = (id: string) => started.push(id);
   const engine = createProviderEngine({
     modules: [
-      healthReportingModule("slow-a", { delayMs: 5_000, succeeds: true }),
-      healthReportingModule("slow-b", { delayMs: 5_000, succeeds: true }),
+      healthReportingModule("slow-a", { delayMs: 5_000, succeeds: true, onStart }),
+      healthReportingModule("slow-b", { delayMs: 5_000, succeeds: true, onStart }),
     ],
     maxAttempts: 1,
     hedgeDelayMs: 10,
     attemptTimeoutMs: 60_000,
   });
 
-  const controller = new AbortController();
-  const pending = engine.resolveWithFallback(
-    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-    HEDGE_INPUT as never,
-    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-    ["slow-a", "slow-b"] as never,
-    controller.signal,
-  );
-  await Bun.sleep(40);
-  controller.abort("provider-fallback-picker");
+  jest.useFakeTimers();
+  try {
+    const controller = new AbortController();
+    const pending = engine.resolveWithFallback(
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+      HEDGE_INPUT as never,
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+      ["slow-a", "slow-b"] as never,
+      controller.signal,
+    );
+    jest.advanceTimersByTime(20);
+    // Both candidates must really be in flight before the cancel, or the test
+    // would pass on a hedge that was never launched.
+    for (let hop = 0; hop < 50 && started.length < 2; hop += 1) await Promise.resolve();
+    expect(started).toEqual(["slow-a", "slow-b"]);
+    controller.abort("provider-fallback-picker");
+    jest.advanceTimersByTime(1);
+    await Promise.resolve();
 
-  const output = await pending;
-  expect(output.result).toBeNull();
-  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-  expect(output.attempts.map((attempt) => [attempt.providerId, attempt.aborted] as const)).toEqual([
-    ["slow-a", true],
-    ["slow-b", true],
-  ] as never);
+    const output = await pending;
+    expect(output.result).toBeNull();
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    expect(
+      output.attempts.map((attempt) => [attempt.providerId, attempt.aborted] as const),
+    ).toEqual([
+      ["slow-a", true],
+      ["slow-b", true],
+    ] as never);
+  } finally {
+    jest.useRealTimers();
+  }
 });
+
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}

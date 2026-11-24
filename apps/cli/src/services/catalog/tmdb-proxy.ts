@@ -1,4 +1,5 @@
 import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
+import { createKeyedJoiner } from "@/infra/concurrency/keyed-joiner";
 import {
   recordFallbackCatalogAnswer,
   recordPrimaryCatalogAnswer,
@@ -25,8 +26,6 @@ export const TMDB_ALT_BASE = "https://api.tmdb.org/3";
  * the last resort until a Kunai key is injected at build time.
  */
 export const LEGACY_PUBLIC_TMDB_API_KEY = "653bb8af90162bd98fc7ee32bcbbfb3d";
-/** @deprecated use {@link resolveTmdbApiKey}; kept for existing imports. */
-export const TMDB_API_KEY = LEGACY_PUBLIC_TMDB_API_KEY;
 
 /**
  * Which TMDB credential direct requests use, in order:
@@ -201,7 +200,18 @@ export function credentialFreeUrl(url: string): string {
 }
 
 const sessionCache = new Map<string, SessionCacheEntry>();
-const inflightRequests = new Map<string, Promise<JsonValue>>();
+/**
+ * "finish": a follower may opt out of waiting without cancelling the shared
+ * fetch — a superseded type-ahead request still warms the session cache.
+ * Keys carry the session generation (see {@link clearTmdbSessionCache}).
+ */
+const inflightRequests = createKeyedJoiner<JsonValue>({ whenAbandoned: "finish" });
+/**
+ * Bumped by {@link clearTmdbSessionCache}. A request started under an older
+ * generation still answers the callers already waiting on it, but is never
+ * joined by a later caller and never writes either cache.
+ */
+let sessionGeneration = 0;
 /** Epoch ms until which each host is skipped; absent/0 means eligible. */
 const hostRetryAfter = new Map<string, number>();
 /**
@@ -266,20 +276,24 @@ export function isDurableTmdbPath(path: string): boolean {
   return /^\/tv\/\d+(?:\/season\/\d+)?(?:\?[^/]*)?$/.test(path);
 }
 
-/** Clears short-lived TMDB session cache (tests / forced refresh). */
+/**
+ * Clears short-lived TMDB session cache (tests / forced refresh).
+ *
+ * Requests already in flight are detached, not cancelled: the cache is shared
+ * by every surface, so Discover's refresh rejecting them used to cancel an
+ * unrelated title-detail season lookup, which read as a missing season and
+ * was cached as a complete detail. Detached requests still answer their
+ * waiters; later callers start fresh, and a late answer writes nothing.
+ */
 export function clearTmdbSessionCache(): void {
   sessionCache.clear();
-  inflightRequests.clear();
+  sessionGeneration += 1;
   hostRetryAfter.clear();
   rateLimitedUntil.clear();
   halfOpenProbeInFlight = false;
   nextHalfOpenProbeAt = 0;
 }
 
-/**
- * A follower may opt out of waiting without cancelling the leader fetch — the
- * shared TMDB task must not inherit a superseded type-ahead abort signal.
- */
 /** How long a host that answered 429 is rested (shorter than an outage breaker). */
 const RATE_LIMITED_RETRY_AFTER_MS = 30 * 1000;
 
@@ -300,30 +314,6 @@ function abortReasonOf(signal: AbortSignal): Error {
     : new DOMException("The operation was aborted.", "AbortError");
 }
 
-function joinTmdbInflight(task: Promise<JsonValue>, signal?: AbortSignal): Promise<JsonValue> {
-  if (!signal) return task;
-  if (signal.aborted) return Promise.reject(abortReasonOf(signal));
-  return new Promise<JsonValue>((resolve, reject) => {
-    const onAbort = () => {
-      signal.removeEventListener("abort", onAbort);
-      reject(abortReasonOf(signal));
-    };
-    signal.addEventListener("abort", onAbort);
-    void task.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve(value);
-        return undefined;
-      },
-      (error) => {
-        signal.removeEventListener("abort", onAbort);
-        reject(error);
-        return undefined;
-      },
-    );
-  });
-}
-
 /**
  * Proxy + mirror chain with in-flight dedup and a short session cache so
  * trending/recommendations/search do not repeat identical TMDB calls.
@@ -340,22 +330,15 @@ export async function fetchTmdbJsonCached(
   // A caller that already left must not start a request nobody will read.
   if (signal?.aborted) throw abortReasonOf(signal);
 
-  let task = inflightRequests.get(normalized);
-  if (!task) {
-    const durable = isDurableTmdbPath(normalized) ? durableTmdbCache : null;
-    task = fetchTmdbJsonWithFallback(normalized, undefined, timeoutMs)
-      .then((value) => {
-        sessionCacheWrite(normalized, { expiresAt: now + SESSION_CACHE_MS, value });
-        inflightRequests.delete(normalized);
-        // Only a well-formed answer may replace the last good copy.
-        if (durable && isUsableDurableAnswer(normalized, value)) {
-          durable.write(normalized, Date.now(), value);
-          if (isSeasonPath(normalized)) recordEpisodesAnswer(false);
-        }
-        return value;
-      })
-      .catch((error: Error) => {
-        inflightRequests.delete(normalized);
+  const generation = sessionGeneration;
+  return inflightRequests.join(
+    `${generation}:${normalized}`,
+    async (upstream) => {
+      const durable = isDurableTmdbPath(normalized) ? durableTmdbCache : null;
+      let value: JsonValue;
+      try {
+        value = await fetchTmdbJsonWithFallback(normalized, upstream, timeoutMs);
+      } catch (error) {
         // Every host is unreachable: serve the last good answer for this exact
         // request. A definitive 4xx is TMDB's real answer and is never masked.
         const isDefinitive = error instanceof TmdbHttpError && isDefinitiveTmdbStatus(error.status);
@@ -365,16 +348,20 @@ export async function fetchTmdbJsonCached(
           return saved.value;
         }
         throw error;
-      });
-    inflightRequests.set(normalized, task);
-    // The shared task delivers its failure to every joined caller; when they
-    // have all left (aborted), nothing else reads it. Mark it handled so an
-    // offline or 4xx answer cannot surface as an unhandled rejection, which
-    // main.ts treats as fatal.
-    task.catch(() => undefined);
-  }
-
-  return joinTmdbInflight(task, signal);
+      }
+      // A request cleared mid-flight still answers its waiters, but must not
+      // repopulate either cache: the refresh asked for answers fetched after it.
+      if (generation !== sessionGeneration) return value;
+      sessionCacheWrite(normalized, { expiresAt: now + SESSION_CACHE_MS, value });
+      // Only a well-formed answer may replace the last good copy.
+      if (durable && isUsableDurableAnswer(normalized, value)) {
+        durable.write(normalized, Date.now(), value);
+        if (isSeasonPath(normalized)) recordEpisodesAnswer(false);
+      }
+      return value;
+    },
+    { signal },
+  );
 }
 
 /**

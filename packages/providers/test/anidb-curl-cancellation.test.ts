@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 
 import { classifyProviderFailure } from "@kunai/core";
 
-import { runAnidbCurlWithRetry } from "../src/anidb/client";
+import { runAnidbCurlWithRetry } from "../src/shared/anidb-identity";
 
 /**
  * Quitting kunai mid-resolve kills the curl child (exit 130). That message

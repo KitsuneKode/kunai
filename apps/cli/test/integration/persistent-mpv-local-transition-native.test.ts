@@ -69,6 +69,7 @@ async function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
     return await Promise.race([
       promise,
       new Promise<never>((_, reject) => {
+        // sleep-allow: deadline around a real mpv process
         timeout = setTimeout(() => reject(new Error(`${label} timed out`)), 10_000);
       }),
     ]);

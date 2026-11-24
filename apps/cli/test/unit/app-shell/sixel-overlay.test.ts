@@ -55,9 +55,9 @@ describe("sixel overlay placement", () => {
     const overlay = { rect: { x: 1, y: 2, width: 3, height: 4 }, sixel: "pixels" };
 
     manager.register("preview", overlay);
-    await Bun.sleep(5);
+    await nextTurn();
     manager.register("preview", overlay);
-    await Bun.sleep(5);
+    await nextTurn();
 
     expect(writes).toHaveLength(1);
   });
@@ -72,9 +72,9 @@ describe("sixel overlay placement", () => {
     const overlay = { rect: { x: 1, y: 2, width: 3, height: 4 }, sixel: "pixels" };
 
     manager.register("playing-rail", overlay);
-    await Bun.sleep(5);
+    await nextTurn();
     manager.afterInkRender();
-    await Bun.sleep(5);
+    await nextTurn();
 
     expect(writes).toHaveLength(2);
   });
@@ -93,9 +93,9 @@ describe("sixel overlay placement", () => {
     };
 
     manager.register("playing-rail", overlay);
-    await Bun.sleep(5);
+    await nextTurn();
     manager.afterInkRender();
-    await Bun.sleep(5);
+    await nextTurn();
 
     expect(writes).toHaveLength(1);
   });
@@ -110,10 +110,10 @@ describe("sixel overlay placement", () => {
     const overlay = { rect: { x: 1, y: 2, width: 3, height: 4 }, sixel: "pixels" };
 
     manager.commit("playing-rail", overlay);
-    await Bun.sleep(5);
+    await nextTurn();
     writes.length = 0;
     manager.commit("playing-rail", overlay);
-    await Bun.sleep(5);
+    await nextTurn();
 
     expect(writes).toHaveLength(1);
     expect(writes[0]).toContain("pixels");
@@ -130,10 +130,10 @@ describe("sixel overlay placement", () => {
     const rect = { x: 1, y: 2, width: 3, height: 2 };
 
     manager.register("preview", { rect, sixel: "old-pixels" });
-    await Bun.sleep(5);
+    await nextTurn();
     writes.length = 0;
     manager.register("preview", { rect, sixel: "new-pixels" });
-    await Bun.sleep(5);
+    await nextTurn();
 
     expect(writes).toHaveLength(1);
     expect(writes[0]).not.toContain("old-pixels");
@@ -153,11 +153,11 @@ describe("sixel overlay placement", () => {
       rect: { x: 1, y: 2, width: 3, height: 4 },
       sixel: "pixels",
     });
-    await Bun.sleep(5);
+    await nextTurn();
     writes.length = 0;
 
     manager.unregister("preview");
-    await Bun.sleep(5);
+    await nextTurn();
 
     expect(writes).toHaveLength(0);
   });
@@ -175,7 +175,7 @@ describe("sixel overlay placement", () => {
     const manager = new SixelOverlayManager();
     manager.register("preview", { rect: { x: 1, y: 2, width: 3, height: 4 }, sixel: "pixels" });
 
-    await Bun.sleep(5);
+    await nextTurn();
 
     expect(settleCalls).toBe(1);
     expect(writes).toHaveLength(2);
@@ -193,26 +193,32 @@ describe("sixel overlay placement", () => {
 
     // Loading rail and post-play mount the same slotted id in turn.
     manager.register("playing-rail", { rect, sixel: "pixels", owner: "mount-1" });
-    await Bun.sleep(5);
+    await nextTurn();
     manager.register("playing-rail", { rect, sixel: "pixels", owner: "mount-2" });
-    await Bun.sleep(5);
+    await nextTurn();
     writes.length = 0;
 
     // The first mount unmounts: the survivor's registration must stand, so
     // the next Ink frame still repaints it instead of going dark.
     manager.unregister("playing-rail", "mount-1");
     manager.afterInkRender();
-    await Bun.sleep(5);
+    await nextTurn();
 
     expect(writes).toHaveLength(1);
     expect(writes[0]).toContain("pixels");
 
     // The owner itself can still release.
     manager.unregister("playing-rail", "mount-2");
-    await Bun.sleep(5);
+    await nextTurn();
     writes.length = 0;
     manager.afterInkRender();
-    await Bun.sleep(5);
+    await nextTurn();
     expect(writes).toHaveLength(0);
   });
 });
+
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}

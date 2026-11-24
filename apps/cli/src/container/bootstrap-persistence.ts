@@ -2,9 +2,11 @@ import { join } from "node:path";
 
 import { createProviderTitleBridgePort } from "@/infra/storage/provider-title-bridge-port";
 import { dbg, initLogger } from "@/logger";
-import { createCatalogDurableCache } from "@/services/catalog/catalog-durable-cache";
 import { setDefaultCatalogDurableCache } from "@/services/catalog/CatalogDiscoveryService";
-import { createTmdbDurableCache } from "@/services/catalog/tmdb-durable-cache";
+import {
+  createCatalogDurableCache,
+  createTmdbDurableCache,
+} from "@/services/catalog/durable-json-cache";
 import { setTmdbDurableCache, setTmdbUserKeySource } from "@/services/catalog/tmdb-proxy";
 import { runHistoryIdentityConsolidator } from "@/services/history-metadata/HistoryIdentityConsolidator";
 import { runHistoryWatchLedgerBackfill } from "@/services/history-metadata/HistoryWatchLedgerBackfill";

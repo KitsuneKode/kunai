@@ -200,4 +200,41 @@ describe("PlaybackResolveWorkService", () => {
     expect((await foreground).stream?.url).toContain("stream.m3u8");
     expect(physicalSignal?.aborted).toBe(false);
   });
+
+  test("a consumer arriving after every consumer left starts a fresh resolve", async () => {
+    const signals: AbortSignal[] = [];
+    const releases: ((result: PlaybackResolveCoordinatorOutput) => void)[] = [];
+    const service = new PlaybackResolveWorkService({
+      resolve: async (input) => {
+        signals.push(input.signal);
+        return new Promise<PlaybackResolveCoordinatorOutput>((resolve) => {
+          releases.push(resolve);
+        });
+      },
+    });
+    const leaving = new AbortController();
+    const abandoned = service
+      .resolve(
+        { ...baseInput(), signal: leaving.signal },
+        { intentKind: "prefetch", budgetLane: "near-need" },
+      )
+      .catch((error: Error) => error);
+    await Promise.resolve();
+    leaving.abort();
+    expect(await abandoned).toMatchObject({ name: "AbortError" });
+    expect(signals[0]?.aborted).toBe(true);
+
+    // The cancelled resolve has not settled yet; joining it would hand the
+    // new consumer a cancellation it never asked for.
+    const fresh = service.resolve(baseInput(), {
+      intentKind: "playback",
+      budgetLane: "user-blocking",
+    });
+    await Promise.resolve();
+    expect(signals).toHaveLength(2);
+    expect(signals[1]?.aborted).toBe(false);
+    releases[1]?.(output);
+    releases[0]?.(output);
+    expect((await fresh).workLedger.intents).toEqual(["playback"]);
+  });
 });

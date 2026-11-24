@@ -117,6 +117,7 @@ test("guide dates ignore inherited repository-location overrides", async () => {
     const script = `import { createDocLastModified } from ${JSON.stringify(pathToFileURL(path.resolve(import.meta.dir, "../scripts/doc-last-modified.ts")).href)};
       console.log((await createDocLastModified(${JSON.stringify(full)})(${JSON.stringify(path.join(full, "docs/a.mdx"))}))?.toISOString());`;
     const child = Bun.spawn([process.execPath, "--eval", script], {
+      // git-env-allow: this case points GIT_DIR at a foreign fixture repo on purpose
       env: { ...process.env, GIT_DIR: path.join(foreign, ".git"), GIT_WORK_TREE: foreign },
       stdout: "pipe",
       stderr: "pipe",

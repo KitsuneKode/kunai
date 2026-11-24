@@ -2,6 +2,7 @@ import { rmdir, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { SubtitleTrack } from "@/domain/types";
+import { createKeyedJoiner } from "@/infra/concurrency/keyed-joiner";
 import { createPrivateTempDir } from "@/infra/fs/temp-dir";
 import { isAllowedMpvUrl, type MpvUrlKind } from "@/infra/player/mpv-playback-url";
 import {
@@ -29,7 +30,14 @@ type Downloader = (
  */
 export class AddonSubtitleFiles {
   private readonly abort = new AbortController();
-  private readonly jobs = new Map<string, Promise<string | null>>();
+  // Shared dedup for in-flight downloads (one worker per URL); a caller that
+  // leaves early lets the download finish so the result still warms the scope.
+  private readonly joiner = createKeyedJoiner<string | null>({
+    whenAbandoned: "finish",
+  });
+  /** Settled outcomes, `null` included — a refused URL is not retried. */
+  private readonly results = new Map<string, string | null>();
+  private readonly inFlight = new Set<Promise<unknown>>();
   private readonly paths = new Map<string, string>();
   private dirPromise: Promise<string> | null = null;
   private nextIndex = 0;
@@ -54,24 +62,37 @@ export class AddonSubtitleFiles {
    */
   localize(url: string, callerSignal?: AbortSignal): Promise<string | null> {
     if (this.closed || this.abort.signal.aborted) return Promise.resolve(null);
-    const existing = this.jobs.get(url);
-    if (existing) return existing;
-    if (this.jobs.size >= MAX_SUBTITLE_URLS) return Promise.resolve(null);
-    const job = this.localizeOnce(url, callerSignal);
-    this.jobs.set(url, job);
-    return job;
+    if (this.results.has(url)) return Promise.resolve(this.results.get(url) ?? null);
+    if (this.results.size + this.joiner.size() >= MAX_SUBTITLE_URLS) {
+      return Promise.resolve(null);
+    }
+    // The caller's own abort only detaches it; the shared download continues
+    // for other waiters (whenAbandoned: "finish").
+    return this.joiner
+      .join(url, (upstream) => this.track(url, upstream), { signal: callerSignal })
+      .catch(() => null);
   }
 
-  private async localizeOnce(url: string, callerSignal?: AbortSignal): Promise<string | null> {
-    const signal = callerSignal
-      ? AbortSignal.any([this.abort.signal, callerSignal])
-      : this.abort.signal;
+  private async track(url: string, upstream: AbortSignal): Promise<string | null> {
+    const work = this.localizeOnce(url, upstream);
+    this.inFlight.add(work);
+    try {
+      const path = await work;
+      this.results.set(url, path);
+      return path;
+    } finally {
+      this.inFlight.delete(work);
+    }
+  }
+
+  private async localizeOnce(url: string, upstream: AbortSignal): Promise<string | null> {
+    const signal = AbortSignal.any([this.abort.signal, upstream]);
     if (signal.aborted || this.closed) return null;
     const file = await this.download(url, { signal }).catch(() => null);
     if (!file || signal.aborted || this.closed) return null;
     // A temp-dir failure is just another refusal — the track skips.
     const dir = await this.dir().catch(() => null);
-    if (!dir) return null;
+    if (!dir || signal.aborted || this.closed) return null;
     const index = this.nextIndex++;
     const path = join(dir, `${index}.${file.extension}`);
     try {
@@ -92,9 +113,8 @@ export class AddonSubtitleFiles {
     if (this.closed) return;
     this.closed = true;
     this.abort.abort();
-    const jobs = [...this.jobs.values()];
-    this.jobs.clear();
-    await Promise.allSettled(jobs);
+    this.joiner.clear();
+    await Promise.allSettled([...this.inFlight]);
     for (const path of this.paths.values()) {
       await unlink(path).catch(() => {});
     }

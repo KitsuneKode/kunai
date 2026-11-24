@@ -56,7 +56,7 @@ apps/cli shell
 
 - `@kunai/types` — canonical TypeScript contracts: `ProviderModule`, `ProviderResolveResult`, `StreamCandidate`, `SubtitleCandidate`, `ProviderFailure`, `ResolveTrace`
 - `@kunai/core` — `ProviderEngine` (orchestration, retry, timeout, fallback), `CoreProviderManifest`, `defineProviderManifest`, `resolveWithFallback`, cache-policy helpers
-- `@kunai/providers` — direct-provider modules; the production roster is only what `loadProductionProviderModules()` registers (`videasy`, `vidlink`, `rivestream`, `vidrock`, `movy`, `allmanga`, `hianime`, `animegg`, `kickassanime`, `miruro`, `youtube`). The `anidb` package remains for fixtures and historic ids but is not live. Research/candidate modules stay out of the resolver until they pass the provider quality gate. Modules implement `CoreProviderModule` + shared helpers (`resolve-helpers.ts`, `subtitle-helpers.ts`, `source-inventory.ts`, `direct-stream-source.ts`) + manifests co-located with modules.
+- `@kunai/providers` — direct-provider modules; the production roster is only what `loadProductionProviderModules()` registers (`videasy`, `vidlink`, `rivestream`, `vidrock`, `movy`, `allmanga`, `hianime`, `animegg`, `kickassanime`, `miruro`, `youtube`). The standalone `anidb` module was removed; the AniSkip MAL lookup helper (`packages/providers/src/shared/anidb-identity.ts`) and the retired-id config migration remain. Research/candidate modules stay out of the resolver until they pass the provider quality gate. Modules implement `CoreProviderModule` + shared helpers (`resolve-helpers.ts`, `subtitle-helpers.ts`, `source-inventory.ts`, `direct-stream-source.ts`) + manifests co-located with modules.
 - `@kunai/storage` — SQLite cache, history, health, source inventory, trace persistence
 - `@kunai/schemas` — Zod validation schemas for all shared types
 - `apps/cli` — Ink UX, mpv IPC, `ProviderRegistry` (engine compat wrapper), `provider-result-adapter`/`stream-request-adapter` (type conversion), playback orchestration
@@ -308,8 +308,8 @@ here. The rule is _what may be persisted_, not whether to cache:
   window indefinitely.
 - Miss-or-expired must degrade to a refetch, and a port failure degrades to
   `null`/no-op — the provider never fails because the cache did.
-- Namespace keys `<provider>:<purpose>` (`anidb:external-ids`,
-  `hianime:episodes`, `vidlink:enc-dec`) so `/reset-provider-health`-style
+- Namespace keys `<provider>:<purpose>` (`hianime:episodes`,
+  `vidlink:enc-dec`) so `/reset-provider-health`-style
   sweeps can scope them.
 
 **Stream verification has two boundaries.** Production direct providers route
@@ -622,7 +622,6 @@ Use:
 - [.docs/provider-agent-workflow.md](./provider-agent-workflow.md) for repo-local agent instructions
 - [.docs/provider-examples.md](./provider-examples.md) for concrete implementation patterns
 - [.plans/provider-hardening.md](../.plans/provider-hardening.md) for the broader hardening roadmap
-- `packages/providers/src/research.ts` for the current dossier-backed migration queue
 - `packages/providers/src/_template.ts` for the new-provider boilerplate
 
 When the site behavior is unclear, gather evidence first and keep knowns vs unknowns separate.
@@ -784,13 +783,11 @@ only the contracts every provider must honour.
 | VidRock             | [vidrock.md](./provider-dossiers/vidrock.md)                                                                                                                      |
 | YouTube             | [youtube.md](./provider-dossiers/youtube.md)                                                                                                                      |
 
-Cineby is **not** a production provider: it is a research-only Videasy-flavor
-wrapper (`packages/providers/src/cineby`, marked `"research-only"` in
-`packages/providers/src/research.ts`, kept out of
-`loadProductionProviderModules()` until it passes the provider quality gate).
-Its dossiers ([cineby.md](./provider-dossiers/cineby.md) ·
-[cineby-anime.md](./provider-dossiers/cineby-anime.md)) are research material,
-not active contracts — do not cite that table row as a capability.
+Cineby is not a production provider. The standalone Cineby and RGShows
+research modules were removed; the live Cineby-named Videasy flavors remain.
+The [Cineby](./provider-dossiers/cineby.md) and
+[Cineby Anime](./provider-dossiers/cineby-anime.md) dossiers are research
+material, not active contracts.
 
 Active providers are registered in `apps/cli/src/container/bootstrap-providers.ts` via
 `loadProductionProviderModules()`. A module existing under `packages/providers/src/` does not make
@@ -800,9 +797,8 @@ it live, and release signoff derives its cases from that list plus the configure
 `animeProviderPriority: ["kickassanime", "animegg", "allanime", "miruro"]`,
 provider-defaults revision 6). The lead moved off AniDB when anidb.app stopped
 serving the old origin (HTTP 302 to an unrelated site, 2026-10-24), matching
-ani-cli's earlier move to HiAnime (c99221d). AniDB was **retired from
-production** — the module stays in `@kunai/providers` for tests and historic
-records, but `loadProductionProviderModules()` no longer registers it.
+ani-cli's earlier move to HiAnime (c99221d). The AniDB provider module was
+removed; the MAL lookup for AniSkip still handles historic catalog IDs.
 `normalizeRetiredProductionProviderFields` in `@kunai/config` maps any persisted
 `anidb` lane selection to HiAnime, strips the id from priority and disable
 lists, and drops title pins that still name it (without aliasing history ids).
@@ -915,8 +911,9 @@ Provider manifests expose `catalogIdentity` (`provider-native` | `anilist` | `tm
   AniList id or another site's slug is never sent as one. A title from any other catalog is matched
   by name and year — exactly one hit, or the provider steps aside — and the slug is then stored
   through `context.titleBridge` against the AniList id, so later plays ask nothing.
-- **AniDB (`anidb`)** — **retired from production** (2026-10-24). The package and dossiers remain
-  for fixtures and historic `providerNativeIds`; live resolve does not register the module. See
+- **AniDB (`anidb`)** — **removed** (2026-10-24 retired, module since deleted). The
+  AniSkip MAL lookup helper (`packages/providers/src/shared/anidb-identity.ts`) and the retired-id
+  config migration remain; historic `providerNativeIds` stay readable. See
   [anidb-runtime-contract.md](./provider-dossiers/anidb-runtime-contract.md).
 - **AllAnime (`allanime`)** — `provider-native`, registered as a fallback and
   manually selectable. AniList-backed discovery
@@ -930,7 +927,7 @@ Provider manifests expose `catalogIdentity` (`provider-native` | `anilist` | `tm
 - **AllAnime and Miruro episode numbering** — when a request carries both a
   season-relative `episode` and `absoluteEpisode`, their APIs receive the
   season-relative value. Absolute numbering is used only for an absolute-only
-  request. AniDB keeps its separate catalog-proven routing policy in
+  request. AniDB's former catalog-proven routing policy is recorded in
   [its runtime contract](./provider-dossiers/anidb-runtime-contract.md).
 - **AllAnime provider-native episode identity** — episode catalog rows remain
   1-based in Kunai, but each row carries its exact AllAnime string (including
@@ -971,8 +968,7 @@ continuations (AoT's `Season 3 Part 2` is not season 4). The contract:
   current season. Any ambiguity (branching sequels, multiple prequels, a cycle)
   returns `undefined` — the caller fails closed, never guesses by title match.
 
-Per-adapter verdicts: **anidb** — consumes the graph for arc-named seasons
-(fail-closed without it, unchanged); **allmanga** — same contract when its
+Per-adapter verdicts: **allmanga** — same contract when its
 entry mapping lands; **miruro** — already AniList-keyed, nothing needed;
 **hianime** — episode catalogs are season-flat, verdict: not applicable;
 **vidlink/videasy/youtube** — TMDB/movie lanes, not applicable.

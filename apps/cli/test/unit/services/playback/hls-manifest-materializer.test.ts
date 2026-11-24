@@ -45,6 +45,29 @@ describe("hls manifest materializer", () => {
     }
   });
 
+  test("cancels an error response body instead of leaving it unread", async () => {
+    const originalFetch = globalThis.fetch;
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new Uint8Array(32));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
+    globalThis.fetch = (async () => new Response(body, { status: 404 })) as unknown as typeof fetch;
+    try {
+      const result = await materializeHlsManifestForPlayback(createHlsStream());
+      expect(result).toBeNull();
+      expect(cancelled).toBe(true);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test("skips materialize for fingerprint-relay CDN hosts", async () => {
     const stream: StreamInfo = {
       url: "https://vault-06.uwucdn.top/path/index.m3u8",

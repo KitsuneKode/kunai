@@ -100,8 +100,8 @@ function pendingLoadOwners(session: PersistentMpvSession): number {
 }
 
 async function flushAsyncWork(): Promise<void> {
-  await Bun.sleep(0);
-  await Bun.sleep(0);
+  await nextTurn();
+  await nextTurn();
 }
 
 async function waitFor(predicate: () => boolean): Promise<void> {
@@ -1156,6 +1156,7 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
     const commandCountAtReplacement = harness.commands.length;
     // Negative window: must exceed the real 100ms reconnect backoff plus
     // scheduler margin — a shorter wait proves nothing on a loaded runner.
+    // sleep-allow: must outlast the session's real 100ms reconnect backoff
     await Bun.sleep(400);
     await flushAsyncWork();
 
@@ -1800,3 +1801,8 @@ describe("PersistentMpvSession addon strict preflight", () => {
     }
   });
 });
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}

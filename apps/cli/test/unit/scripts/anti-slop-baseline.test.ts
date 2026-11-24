@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   baselineUpdateAllowed,
   countByRule,
+  diagnosticCodesFromOxlintStdout,
   diffBaseline,
 } from "../../../../../scripts/anti-slop-baseline";
 
@@ -82,6 +83,22 @@ describe("anti-slop count baseline", () => {
       const drift = diffBaseline({}, { "anti-slop(rule-a)": 42 });
 
       expect(baselineUpdateAllowed(false, drift)).toBe(true);
+    });
+
+    test("reports oxlint's plain-text failure instead of a JSON SyntaxError", () => {
+      const oxlintText = "Error: Failed to parse config .oxlintrc.anti-slop.json: missing plugin";
+      expect(() => diagnosticCodesFromOxlintStdout(oxlintText)).toThrow(oxlintText);
+      expect(() => diagnosticCodesFromOxlintStdout(oxlintText)).toThrow(/did not return JSON/);
+    });
+
+    test("reads diagnostic codes from a JSON report", () => {
+      expect(
+        diagnosticCodesFromOxlintStdout(
+          JSON.stringify({
+            diagnostics: [{ code: "anti-slop(no-runtime-typeof)" }, { code: "eslint(no-console)" }],
+          }),
+        ),
+      ).toEqual(["anti-slop(no-runtime-typeof)", "eslint(no-console)"]);
     });
 
     test("allows an unchanged rewrite", () => {

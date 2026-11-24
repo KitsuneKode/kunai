@@ -6,11 +6,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./experimental": "./src/experimental.ts",
-    "./research": "./src/research.ts",
     "./allmanga": "./src/allmanga/direct.ts",
     "./allmanga/crypto": "./src/allmanga/crypto.ts",
-    "./anidb": "./src/anidb/direct.ts",
     "./hianime": "./src/hianime/direct.ts",
     "./animegg": "./src/animegg/direct.ts",
     "./kickassanime": "./src/kickassanime/direct.ts",

@@ -18,9 +18,6 @@ export interface QueuePlaybackLaunch {
   readonly title: string;
 }
 
-/** @deprecated Prefer QueuePlaybackLaunch — kept as the bridge promise value alias. */
-export type RootQueueSelection = QueuePlaybackLaunch;
-
 type QueueResolver = (value: QueuePlaybackLaunch | null) => void;
 
 let pendingResolver: QueueResolver | null = null;

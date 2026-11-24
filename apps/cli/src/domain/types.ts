@@ -8,6 +8,7 @@
 import type {
   ProviderArtworkInfo,
   ProviderExternalIds,
+  ProviderLane,
   ProviderLanguageEvidence,
   ProviderEpisodeIdentity,
   ProviderReleaseInfo,
@@ -30,11 +31,11 @@ export type {
   ProviderMediaInventory,
   SelectedMediaTrackState,
 } from "./media/media-track-model";
+export type { ProviderLane };
 export type { QueuePlaybackIntent };
 
 export type ContentType = "movie" | "series";
 export type ShellMode = "series" | "anime" | "youtube";
-export type ProviderLane = "anime" | "series" | "youtube";
 export type YouTubeLiveStatus = "none" | "live" | "upcoming" | "post_live";
 export type YouTubeResultKind = "video" | "short" | "playlist" | "channel";
 

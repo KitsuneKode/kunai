@@ -94,6 +94,7 @@ async function waitUntil(predicate: () => boolean, message: string): Promise<voi
     label: message,
     tick: async (ms) => {
       await act(async () => {
+        // sleep-allow: Ink settings harness debounce; the component clock is not injected
         await new Promise((resolve) => setTimeout(resolve, ms));
       });
     },
@@ -115,6 +116,7 @@ async function waitForPersistedConfig(
     label,
     tick: async (ms) => {
       loaded = await loadConfig();
+      // sleep-allow: Ink settings harness debounce; the component clock is not injected
       if (!predicate(loaded.getRaw())) await Bun.sleep(ms);
     },
   });

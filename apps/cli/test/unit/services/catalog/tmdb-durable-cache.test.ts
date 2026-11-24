@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
 import { catalogAnswersSnapshot } from "@/services/catalog/catalog-source-ledger";
-import { createTmdbDurableCache } from "@/services/catalog/tmdb-durable-cache";
+import { createTmdbDurableCache } from "@/services/catalog/durable-json-cache";
 import {
   clearTmdbSessionCache,
   fetchTmdbJsonCached,
