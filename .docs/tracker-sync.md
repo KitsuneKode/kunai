@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T17:30:00Z"
+lastReviewed: "2026-11-24T20:53:00Z"
 ---
 
 # Tracker Sync
@@ -251,10 +251,19 @@ observe it.
 To remove Kunai's access entirely: disconnect in Kunai, then revoke the
 application from your AniList account settings and delete the session from your
 TMDB account settings. Deleting `configDir/sync-tokens.json` removes the local
-credentials but does not revoke anything remotely. If that file is ever
-unparseable, Kunai quarantines it aside as `sync-tokens.json.corrupt-<ts>.json`
-instead of merging over it, so one corrupt write cannot erase the other
-tracker's credential — re-authenticate the affected tracker afterwards.
+credentials but does not revoke anything remotely.
+
+The token store never invents an empty snapshot. Only an absent file reads as
+"no tokens"; any other read fault (permissions, a directory in its place, I/O)
+rejects, so no patch proceeds and nothing is overwritten. If the file holds
+something that is not a JSON object, Kunai quarantines it aside as
+`sync-tokens.json.corrupt-<ts>.json` before starting fresh, and refuses to write
+if that move fails. Each tracker record is shape-checked on its own: an invalid
+AniList or TMDB record reads as disconnected without taking the other tracker
+down, a patch keeps every slot it does not name (including an invalid record
+and fields a newer build wrote), and an invalid record is never stored. The
+vault backend applies the same checks, and migration to the vault moves only
+valid records, leaving an invalid one in the plaintext file.
 
 ## Not implemented
 
