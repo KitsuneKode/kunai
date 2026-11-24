@@ -2,6 +2,7 @@ import { Box, Text } from "ink";
 import React from "react";
 
 import { barFill } from "../format/bar";
+import { plainModeEnabled, plainProgressPercent } from "../plain-mode";
 import { palette } from "../shell-theme";
 
 export const ProgressBar = React.memo(function ProgressBar({
@@ -15,6 +16,13 @@ export const ProgressBar = React.memo(function ProgressBar({
   width?: number;
   color?: string;
 }) {
+  if (plainModeEnabled()) {
+    return (
+      <Box>
+        <Text color={color}>{`[${plainProgressPercent(value, max)}%]`}</Text>
+      </Box>
+    );
+  }
   const { filled, track } = barFill(value, max, width);
   return (
     <Box>

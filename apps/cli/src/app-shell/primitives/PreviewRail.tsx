@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { plainModeEnabled } from "../plain-mode";
 import type { PosterResult } from "../poster-types";
 import { truncateLine, wrapText } from "../shell-text";
 import { palette } from "../shell-theme";
@@ -37,11 +38,32 @@ export function PreviewRail({
    */
   readonly reserveRows?: number;
 }) {
+  const plain = plainModeEnabled();
   const facts = visiblePreviewFacts(model.facts).slice(0, 4);
-  const posterLabel = getPreviewPosterLabel(model);
-  const hasPosterImage = poster !== undefined && poster.kind !== "none";
   const bodyWidth = Math.max(16, width - 2);
   const overviewLines = model.overview ? wrapText(model.overview, bodyWidth, 3) : [];
+  if (plain) {
+    return (
+      <Box flexDirection="column" marginTop={1}>
+        <Text color={palette.text} bold>
+          {`Preview: ${model.title}`}
+        </Text>
+        {model.subtitle ? <Text color={palette.muted}>{model.subtitle}</Text> : null}
+        {overviewLines.map((line) => (
+          <Text key={line} color={palette.dim}>
+            {line}
+          </Text>
+        ))}
+        {facts.map((fact) => (
+          <Text key={`${fact.label}:${fact.value}`} color={factColor(fact.tone)}>
+            {`${fact.label}: ${fact.value}`}
+          </Text>
+        ))}
+      </Box>
+    );
+  }
+  const posterLabel = getPreviewPosterLabel(model);
+  const hasPosterImage = poster !== undefined && poster.kind !== "none";
   return (
     <Box flexDirection="column" width={width}>
       {/* Poster slot — height-reserved so the metadata below never jumps when

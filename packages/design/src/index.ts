@@ -2,7 +2,8 @@ import { detectTerminalColorLevel, resolveDesignTokens } from "./color-resolutio
 import type { ThemeName } from "./theme-types";
 import { DEFAULT_THEME_NAME, THEMES, isThemeName } from "./themes";
 
-export { detectTerminalColorLevel, resolveDesignTokens } from "./color-resolution";
+export { detectTerminalColorLevel, isNoColorEnv, resolveDesignTokens } from "./color-resolution";
+export { apcaContrastLc, wcagContrastRatio } from "./contrast";
 export type {
   ResolvedDesignTokens,
   ResolvedHeatRamp,
@@ -11,7 +12,13 @@ export type {
   TerminalColorLevel,
 } from "./color-resolution";
 export { DEFAULT_THEME_NAME, THEMES, isThemeName, listThemes } from "./themes";
-export type { ThemeDef, ThemeName, ThemePalette } from "./theme-types";
+export type {
+  ThemeAppearance,
+  ThemeContrast,
+  ThemeDef,
+  ThemeName,
+  ThemePalette,
+} from "./theme-types";
 export { tokens as rawTokens } from "./tokens";
 export type { TokenName, TokenValue } from "./tokens";
 

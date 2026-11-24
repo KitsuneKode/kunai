@@ -174,6 +174,7 @@ import {
   type HistoryPickerOptionsContext,
   sortProvidersByConfigPriority,
 } from "./panel-data";
+import { plainModeEnabled, plainTabLabel } from "./plain-mode";
 import { createQueuePosterResolver } from "./queue-poster-resolver";
 import { QueueShell } from "./queue-shell";
 import type { QueueViewRow } from "./queue-view";
@@ -351,7 +352,7 @@ function findDiagnosticsSpanIdNearScroll(
   return null;
 }
 
-function HelpShell({
+export function HelpShell({
   sections,
   scopeLabel,
   commandMode,
@@ -406,12 +407,14 @@ function HelpShell({
     { isActive: !commandMode },
   );
 
+  const plain = plainModeEnabled();
   const rows = (sectionByGroup.get(safeActiveTab)?.items ?? []).map((hint) => ({
     key: hint.keys,
     desc: hint.label,
   }));
   // Dense reference card: split the active section's rows into two balanced
   // columns so a long surface (player/postPlayback) reads without scrolling.
+  // Plain mode keeps one column so a screen reader hears each binding in order.
   const half = Math.ceil(rows.length / 2);
   const leftRows = rows.slice(0, half);
   const rightRows = rows.slice(half);
@@ -426,33 +429,50 @@ function HelpShell({
       ))}
     </Box>
   );
+  const renderPlainRows = (
+    <Box flexDirection="column" marginTop={1}>
+      {rows.map((row) => (
+        <Text key={row.key} color={palette.text}>
+          {`${row.key}  ${row.desc}`}
+        </Text>
+      ))}
+    </Box>
+  );
 
   return (
     <Box flexDirection="column" flexGrow={1}>
       <Box flexDirection="column" paddingX={1} marginTop={1}>
         <Box flexDirection="row" flexWrap="nowrap">
           <Text color={palette.accent} bold>
-            {"❀ Help"}
+            {plain ? "Help" : "❀ Help"}
           </Text>
-          <Text color={palette.muted}>{`  ·  ${scopeLabel}`}</Text>
+          <Text color={palette.muted}>{plain ? `: ${scopeLabel}` : `  ·  ${scopeLabel}`}</Text>
         </Box>
-        <Text color={palette.dim}>{"Tab / Shift+Tab cycles sections · Esc or ? closes"}</Text>
-        {/* Tab strip */}
+        <Text color={palette.dim}>
+          {plain
+            ? "Tab or Shift+Tab cycles sections. Esc or ? closes"
+            : "Tab / Shift+Tab cycles sections · Esc or ? closes"}
+        </Text>
         <Box flexDirection="row" marginTop={1} marginBottom={0} flexWrap="wrap">
           {tabs.map((tab) => (
             <Box key={tab} marginRight={3} flexDirection="column">
-              <Text color={safeActiveTab === tab ? palette.accent : palette.dim}>{tab}</Text>
-              {safeActiveTab === tab ? (
+              <Text color={safeActiveTab === tab ? palette.accent : palette.dim}>
+                {plainTabLabel(tab, safeActiveTab === tab, plain)}
+              </Text>
+              {!plain && safeActiveTab === tab ? (
                 <Text color={palette.accent}>{"─".repeat(tab.length)}</Text>
               ) : null}
             </Box>
           ))}
         </Box>
-        {/* Tab content — two dense columns */}
-        <Box flexDirection="row" marginTop={1}>
-          {renderColumn(leftRows, "left")}
-          {rightRows.length > 0 ? renderColumn(rightRows, "right") : null}
-        </Box>
+        {plain ? (
+          renderPlainRows
+        ) : (
+          <Box flexDirection="row" marginTop={1}>
+            {renderColumn(leftRows, "left")}
+            {rightRows.length > 0 ? renderColumn(rightRows, "right") : null}
+          </Box>
+        )}
       </Box>
       {commandMode ? (
         <CommandPalette
@@ -463,7 +483,11 @@ function HelpShell({
         />
       ) : null}
       <ShellFooter
-        taskLabel="Tab/Shift+Tab sections · Esc or ? closes"
+        taskLabel={
+          plain
+            ? "Tab or Shift+Tab cycles sections. Esc or ? closes"
+            : "Tab/Shift+Tab sections · Esc or ? closes"
+        }
         actions={footerActions}
         mode="detailed"
         commandMode={commandMode}

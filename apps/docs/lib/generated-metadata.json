@@ -825,6 +825,11 @@
       "description": "Zen mode (bare, ani-cli-style)"
     },
     {
+      "short": "",
+      "long": "--plain",
+      "description": "Plain / screen-reader mode (no animation, no box art, text state)"
+    },
+    {
       "short": "-q",
       "long": "--quick",
       "description": "Quick layout"

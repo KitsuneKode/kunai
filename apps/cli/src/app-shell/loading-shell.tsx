@@ -31,6 +31,7 @@ import type { StageRailItem } from "./loading-shell-runtime";
 import { buildMediaPanel } from "./media-panel-model";
 import { MediaPanel } from "./MediaPanel";
 import { MouseTarget } from "./mouse/MouseRegions";
+import { plainModeEnabled, plainStageStatus, selectionPrefix } from "./plain-mode";
 import { buildPlaybackRecoveryViewModel } from "./playback-recovery-view-model";
 import {
   applyPlaybackShellInputEffect,
@@ -200,6 +201,7 @@ function PlaybackShellInput({
 }
 
 function StageRail({ items }: { items: readonly StageRailItem[] }) {
+  const plain = plainModeEnabled();
   return (
     <Box flexDirection="column">
       {items.map((item) => (
@@ -214,9 +216,9 @@ function StageRail({ items }: { items: readonly StageRailItem[] }) {
                   ? statusColor("info")
                   : palette.dim
           }
-          dimColor={item.tone === "neutral"}
+          dimColor={item.tone === "neutral" && !plain}
         >
-          {item.glyph} {item.label}
+          {plain ? `${plainStageStatus(item.tone)} ${item.label}` : `${item.glyph} ${item.label}`}
         </Text>
       ))}
     </Box>
@@ -242,10 +244,11 @@ const PlaybackRecoveryView = React.memo(function PlaybackRecoveryView({
   state: Pick<LoadingShellState, "currentPosition" | "duration" | "progress">;
   width: number;
 }) {
+  const plain = plainModeEnabled();
   const { state: block } = model;
   const isLiveFault = block.kind === "error";
   const titleColor = isLiveFault ? palette.dangerText : palette.accentDeep;
-  const glyph = isLiveFault ? "×" : "◐";
+  const glyph = plain ? (isLiveFault ? "Error:" : "Recovery:") : isLiveFault ? "×" : "◐";
 
   // Preserved-progress fact: show saved timestamp if we have finite evidence,
   // else % if available. Null means nothing saved — the fallback below says so.
@@ -294,7 +297,7 @@ const PlaybackRecoveryView = React.memo(function PlaybackRecoveryView({
       {primaryAction ? (
         <Box marginTop={1}>
           <Text color={palette.accent} bold>
-            {"▌ "}
+            {selectionPrefix(true, plain)}
           </Text>
           <Text color={palette.accent} bold>
             {padColumnsEnd(primaryAction.label, 16)}
@@ -348,8 +351,14 @@ const BufferHealthBadge = React.memo(function BufferHealthBadge({
       : health === "buffering"
         ? palette.accentDeep
         : palette.dangerText;
-  const label =
-    health === "healthy"
+  const plain = plainModeEnabled();
+  const label = plain
+    ? health === "healthy"
+      ? "[healthy] buffer"
+      : health === "buffering"
+        ? "[buffering] buffer"
+        : "[stalled] buffer"
+    : health === "healthy"
       ? "● buffer healthy"
       : health === "buffering"
         ? "● buffer building"
@@ -877,12 +886,14 @@ export const LoadingShell = React.memo(function LoadingShell({
                 ) : disclosure.showIssue && loadingIssue ? (
                   <Box marginTop={1}>
                     <Text color={palette.accentDeep}>
-                      ⚠ {truncateLine(loadingIssue, Math.max(12, infoWidth - 2))}
+                      {plainModeEnabled()
+                        ? `Warning: ${truncateLine(loadingIssue, Math.max(12, infoWidth - 9))}`
+                        : `⚠ ${truncateLine(loadingIssue, Math.max(12, infoWidth - 2))}`}
                     </Text>
                   </Box>
                 ) : null}
               </Box>
-              {showSidePanel ? (
+              {showSidePanel && !plainModeEnabled() ? (
                 <MediaPanel
                   model={playingPanelModel}
                   railWidth={sidePanelWidth}
@@ -896,14 +907,16 @@ export const LoadingShell = React.memo(function LoadingShell({
 
           {/* ── Playing ───────────────────────────────────────────────────── */}
           {isPlaying && (
-            <Box marginTop={1} flexDirection="row" flexGrow={1}>
+            <Box marginTop={1} flexDirection={plainModeEnabled() ? "column" : "row"} flexGrow={1}>
               <Box flexDirection="column" flexGrow={1}>
                 {/* Control deck (.prototypes/playback-postplay): progress leads,
                   then a single NOW facts line + GO key-hints, then the mpv hint.
                   Title/episode live in the ShellFrame header. */}
-                <Text color={palette.lineSoft}>
-                  {"─".repeat(Math.min(infoWidth, barWidth + 16))}
-                </Text>
+                {plainModeEnabled() ? null : (
+                  <Text color={palette.lineSoft}>
+                    {"─".repeat(Math.min(infoWidth, barWidth + 16))}
+                  </Text>
+                )}
 
                 {/* Progress — the prominent current-watch line */}
                 {state.currentPosition !== undefined &&
@@ -980,7 +993,9 @@ export const LoadingShell = React.memo(function LoadingShell({
                 {playbackTrouble ? (
                   <Box marginTop={1} flexDirection="column">
                     <Text color={palette.dangerText} bold>
-                      {`⚠ ${truncateLine(playbackTrouble, infoWidth - 2)}`}
+                      {plainModeEnabled()
+                        ? `Warning: ${truncateLine(playbackTrouble, infoWidth - 10)}`
+                        : `⚠ ${truncateLine(playbackTrouble, infoWidth - 2)}`}
                     </Text>
                     <Text color={palette.dim}>
                       {`r recover  ·  ${PLAYER_FALLBACK_KEY} fallback  ·  o source  ·  d diagnostics`}
@@ -992,16 +1007,26 @@ export const LoadingShell = React.memo(function LoadingShell({
                   </Box>
                 ) : null}
 
-                {/* Up next on narrow/medium — wide terminals show this on the right rail. */}
-                {!isWidePlaying && state.upNextLabel?.trim() ? (
+                {/* Up next on narrow/medium — wide terminals show this on the right rail.
+                    Plain mode keeps the sentence here too: the rail's mini-card is
+                    text, and hiding this line is how a wide frame dropped "Up next". */}
+                {(!isWidePlaying || plainModeEnabled()) && state.upNextLabel?.trim() ? (
                   <Box marginTop={1}>
-                    <Text color={palette.accent}>{"▶ "}</Text>
-                    <Text color={palette.dim} dimColor>
-                      {"up next  "}
-                    </Text>
-                    <Text color={palette.text}>
-                      {truncateLine(state.upNextLabel, infoWidth - 10)}
-                    </Text>
+                    {plainModeEnabled() ? (
+                      <Text color={palette.text}>
+                        {`Up next: ${truncateLine(state.upNextLabel, infoWidth - 10)}`}
+                      </Text>
+                    ) : (
+                      <>
+                        <Text color={palette.accent}>{"▶ "}</Text>
+                        <Text color={palette.dim} dimColor>
+                          {"up next  "}
+                        </Text>
+                        <Text color={palette.text}>
+                          {truncateLine(state.upNextLabel, infoWidth - 10)}
+                        </Text>
+                      </>
+                    )}
                   </Box>
                 ) : null}
 
