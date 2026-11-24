@@ -108,7 +108,7 @@ PLAYBACK PICKS (this run only — config.json untouched)
       --hdr <mode>         HDR mode: auto | passthrough | tone-map | sdr-only
 
 PLAYER
-      --player <mode>        Player backend: desktop <auto|mpv>; Android/Termux <auto|mpv|vlc>
+      --player <mode>        Player backend: desktop <auto|mpv|vlc>; Android/Termux <auto|mpv|vlc>
 
 mpv
       --mpv-debug            Verbose mpv logging

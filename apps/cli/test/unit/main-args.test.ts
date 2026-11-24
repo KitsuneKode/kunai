@@ -51,9 +51,13 @@ test("every advertised player choice is supported on the named platform", () => 
     for (const choice of choices.split("|")) {
       const parsed = parseArgs(["--player", choice]).player ?? "auto";
       for (const platform of platforms) {
-        expect(resolvePlayerMode({ choice: parsed, platform }).kind).toBe(
-          label === "desktop" ? "managed-mpv" : "android-handoff",
-        );
+        const expected =
+          label !== "desktop"
+            ? "android-handoff"
+            : choice === "vlc"
+              ? "managed-vlc"
+              : "managed-mpv";
+        expect(resolvePlayerMode({ choice: parsed, platform }).kind).toBe(expected);
       }
     }
   }
