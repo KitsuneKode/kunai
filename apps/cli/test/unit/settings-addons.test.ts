@@ -116,7 +116,7 @@ describe("Stremio addon settings", () => {
     const removed = keep.write(config, false);
     const restored = keep.write(removed, true);
 
-    expect(keep.label).toBe("Keep Alpha");
+    expect(keep.label).toBe("Keep addon @ a.example.com");
     expect(keep.detail).toContain("a.example.com");
     expect(keep.detail).not.toContain("SECRETTOKEN");
     expect(keep.read(config)).toBe(true);
@@ -124,7 +124,7 @@ describe("Stremio addon settings", () => {
     expect(removed.provider).toBe(DEFAULT_CONFIG.providerPriority[0] ?? DEFAULT_CONFIG.provider);
     expect(removed.providerPriority).toEqual(DEFAULT_CONFIG.providerPriority);
     expect(keep.read(removed)).toBe(false);
-    expect(restored.stremioAddons).toEqual([{ url: A, name: "Alpha" }]);
+    expect(restored.stremioAddons).toEqual([{ url: A }]);
   });
 
   test("an addon removed in the unsaved draft keeps its row, so it can be put back", () => {
