@@ -2670,6 +2670,17 @@ html:has(.kunai-home) body {
     padding: 0.55rem 0.65rem;
   }
 
+  /* A phone cannot fit the fanned deck without the cards' text colliding.
+     Show only the active lane's card; the lane pill below still switches. */
+  .kunai-scene-card:not(.is-active) {
+    display: none;
+  }
+
+  .kunai-scene-card.is-active {
+    width: min(300px, calc(100vw - 48px));
+    margin-inline: 0;
+  }
+
   .kunai-dir-row__link {
     grid-template-columns: minmax(0, 1fr) auto;
   }
@@ -2707,6 +2718,11 @@ html:has(.kunai-home) body {
   .kunai-scene-card {
     width: 132px;
     margin-inline: -24px;
+  }
+
+  .kunai-scene-card.is-active {
+    width: min(300px, calc(100vw - 48px));
+    margin-inline: 0;
   }
 
   .kunai-terminal-body {
