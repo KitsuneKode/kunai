@@ -48,11 +48,18 @@ describe("service keys in /diagnostics and settings", () => {
 
   test("diagnostics redact any field that ends like a credential", () => {
     expect(
-      redactDiagnosticValue({ tmdbApiKey: "a", wyzieApiKey: "b", someAccessToken: "c", ok: "d" }),
+      redactDiagnosticValue({
+        tmdbApiKey: "a",
+        wyzieApiKey: "b",
+        someAccessToken: "c",
+        poToken: "CLIENT.CONTEXT+TOKEN",
+        ok: "d",
+      }),
     ).toEqual({
       tmdbApiKey: "[redacted]",
       wyzieApiKey: "[redacted]",
       someAccessToken: "[redacted]",
+      poToken: "[redacted]",
       ok: "d",
     });
   });

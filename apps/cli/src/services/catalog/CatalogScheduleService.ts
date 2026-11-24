@@ -145,6 +145,7 @@ type ScheduleCacheEntry<T> = {
 export class CatalogScheduleService {
   private readonly cache = new Map<string, ScheduleCacheEntry<unknown>>();
   private readonly inflight = new Map<string, Promise<unknown>>();
+  private readonly sharedLoads = new Map<string, SharedLoad<unknown>>();
 
   constructor(
     private readonly loaders: CatalogScheduleLoaders = defaultCatalogScheduleLoaders,
@@ -155,6 +156,8 @@ export class CatalogScheduleService {
   clearCache(): void {
     this.cache.clear();
     this.inflight.clear();
+    for (const shared of this.sharedLoads.values()) shared.controller.abort();
+    this.sharedLoads.clear();
   }
 
   private store(key: string, entry: ScheduleCacheEntry<unknown>): void {
@@ -346,10 +349,16 @@ export class CatalogScheduleService {
     signal?: AbortSignal,
   ): Promise<CatalogScheduleItem | null> {
     const key = `next:${input.source}:${input.type}:${input.titleId}:${input.season ?? "-"}:${input.episode ?? "-"}`;
-    return this.loadCached(key, NEXT_RELEASE_TTL_MS, signal, { source: input.source }, async () => {
-      const item = await this.loaders.nextRelease(input, signal);
-      return item ? normalizeScheduleItem(item, this.now()) : null;
-    });
+    return this.loadCached(
+      key,
+      NEXT_RELEASE_TTL_MS,
+      signal,
+      { source: input.source },
+      async (load) => {
+        const item = await this.loaders.nextRelease(input, load);
+        return item ? normalizeScheduleItem(item, this.now()) : null;
+      },
+    );
   }
 
   async getSeriesReleaseProgress(
@@ -358,8 +367,12 @@ export class CatalogScheduleService {
   ): Promise<CatalogSeriesReleaseProgress | null> {
     if (input.source !== "tmdb" || input.type !== "series" || !input.season) return null;
     const key = `progress:${input.source}:${input.type}:${input.titleId}:${input.season}`;
-    return this.loadCached(key, NEXT_RELEASE_TTL_MS, signal, { source: input.source }, async () =>
-      (this.loaders.seriesProgress ?? loadTmdbSeriesReleaseProgress)(input, signal),
+    return this.loadCached(
+      key,
+      NEXT_RELEASE_TTL_MS,
+      signal,
+      { source: input.source },
+      async (load) => (this.loaders.seriesProgress ?? loadTmdbSeriesReleaseProgress)(input, load),
     );
   }
 
@@ -374,8 +387,8 @@ export class CatalogScheduleService {
       RELEASING_TODAY_TTL_MS,
       signal,
       { mode },
-      async () => {
-        const items = await this.loaders.releasingToday(mode, window, signal);
+      async (load) => {
+        const items = await this.loaders.releasingToday(mode, window, load);
         return items.map((item) => normalizeScheduleItem(item, this.now()));
       },
       hasStandInEntries,
@@ -394,8 +407,8 @@ export class CatalogScheduleService {
       RELEASING_TODAY_TTL_MS,
       signal,
       { mode },
-      async () => {
-        const items = await this.loaders.releasingToday(mode, window, signal);
+      async (load) => {
+        const items = await this.loaders.releasingToday(mode, window, load);
         return items.map((item) => normalizeScheduleItem(item, this.now()));
       },
       hasStandInEntries,
@@ -408,32 +421,56 @@ export class CatalogScheduleService {
   ): Promise<readonly CatalogScheduleItem[]> {
     const window = buildLocalWindow(this.now(), days);
     const key = `movie-window:${window.dateKey}:${Math.max(1, Math.trunc(days))}`;
-    return this.loadCached(key, RELEASING_TODAY_TTL_MS, signal, { source: "tmdb" }, async () => {
-      const load = this.loaders.movieWindow ?? loadTmdbMovieUpcoming;
-      const items = await load(window, signal);
-      return items.map((item) => normalizeScheduleItem(item, this.now()));
-    });
+    return this.loadCached(
+      key,
+      RELEASING_TODAY_TTL_MS,
+      signal,
+      { source: "tmdb" },
+      async (load) => {
+        const loadWindow = this.loaders.movieWindow ?? loadTmdbMovieUpcoming;
+        const items = await loadWindow(window, load);
+        return items.map((item) => normalizeScheduleItem(item, this.now()));
+      },
+    );
   }
 
+  /**
+   * Cached, deduplicated load. Concurrent callers for one key share a single
+   * request that runs on its own signal: one caller navigating away must not
+   * cancel the answer another caller is still waiting for. The request is
+   * aborted only when its last waiter has left.
+   */
   private async loadCached<T>(
     key: string,
     ttlMs: number,
-    _signal: AbortSignal | undefined,
+    signal: AbortSignal | undefined,
     metadata: { readonly source?: string; readonly mode?: string },
-    load: () => Promise<T>,
+    load: (signal: AbortSignal) => Promise<T>,
     /** A stand-in answer is kept in memory briefly and never persisted. */
     isStandIn?: (value: T) => boolean,
   ): Promise<T> {
     const cached = this.cache.get(key);
+    // SAFETY: a key always maps to the loader that produced it, so the cached value is its T.
     if (cached && cached.expiresAt > this.now()) return cached.value as T;
 
     const persisted = this.loadPersisted<T>(key);
     if (persisted.found) return persisted.value;
 
-    const inflight = this.inflight.get(key);
-    if (inflight) return (await inflight) as T;
+    signal?.throwIfAborted();
+    const existing = this.sharedLoads.get(key);
+    // A load whose last waiter left is cancelled: start a fresh one instead
+    // of handing a new caller its abort. The identity check in its cleanup
+    // keeps it from removing the replacement.
+    if (existing && !existing.controller.signal.aborted) {
+      // SAFETY: as above — one key, one loader, one T.
+      return joinSharedLoad(existing as SharedLoad<T>, signal);
+    }
 
-    const task = load().then((value) => {
+    const controller = new AbortController();
+    const task = load(controller.signal).then((value) => {
+      // A cancelled load (every waiter left, or clearCache) may have resolved
+      // with partial data from a caught abort: never cache or persist it.
+      if (controller.signal.aborted) return value;
       if (isStandIn?.(value) === true) {
         // Retry the primary soon; a stand-in must not pin itself for the TTL
         // or survive a restart as if it were the catalog's own answer.
@@ -453,13 +490,14 @@ export class CatalogScheduleService {
       });
       return value;
     });
-    this.inflight.set(key, task);
-
-    try {
-      return await task;
-    } finally {
-      this.inflight.delete(key);
-    }
+    const shared: SharedLoad<T> = { promise: task, controller, waiters: 0 };
+    this.sharedLoads.set(key, shared);
+    task
+      .finally(() => {
+        if (this.sharedLoads.get(key) === shared) this.sharedLoads.delete(key);
+      })
+      .catch(() => undefined);
+    return joinSharedLoad(shared, signal);
   }
 
   private loadPersisted<T>(key: string): { found: true; value: T } | { found: false } {
@@ -479,6 +517,48 @@ export class CatalogScheduleService {
       return { found: false };
     }
   }
+}
+
+/** One in-flight schedule request shared by every caller asking for its key. */
+interface SharedLoad<T> {
+  readonly promise: Promise<T>;
+  readonly controller: AbortController;
+  waiters: number;
+}
+
+/**
+ * Wait on a shared load with the caller's own signal. A caller that aborts
+ * leaves on its own; the request is cancelled only when no waiter remains.
+ */
+function joinSharedLoad<T>(shared: SharedLoad<T>, signal: AbortSignal | undefined): Promise<T> {
+  shared.waiters += 1;
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const leave = (abandoned: boolean) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", onAbort);
+      shared.waiters -= 1;
+      if (abandoned && shared.waiters <= 0) shared.controller.abort();
+    };
+    const onAbort = () => {
+      leave(true);
+      reject(signal?.reason ?? new DOMException("The operation was aborted.", "AbortError"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    shared.promise.then(
+      (value) => {
+        leave(false);
+        resolve(value);
+        return undefined;
+      },
+      (error) => {
+        leave(false);
+        reject(error);
+        return undefined;
+      },
+    );
+  });
 }
 
 /** How long a stand-in calendar answer is reused before the primary is retried. */

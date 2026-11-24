@@ -108,6 +108,102 @@ describe("CatalogScheduleService", () => {
     expect(calls).toBe(2);
   });
 
+  test("one caller leaving does not cancel the shared request another caller waits on", async () => {
+    let loadSignal: AbortSignal | undefined;
+    let finish: ((items: never[]) => void) | undefined;
+    const service = new CatalogScheduleService(
+      createLoaders({
+        releasingToday: (_mode, _window, signal) => {
+          loadSignal = signal;
+          return new Promise((resolve) => {
+            finish = resolve;
+          });
+        },
+      }),
+      () => NOW,
+    );
+    const leaving = new AbortController();
+    const first = service
+      .loadReleaseWindow("series", 7, leaving.signal)
+      .catch((error: Error) => error);
+    const second = service.loadReleaseWindow("series", 7);
+    leaving.abort();
+    expect(await first).toBeInstanceOf(Error);
+    // The shared request keeps running for the caller still waiting.
+    expect(loadSignal?.aborted).toBe(false);
+    finish?.([]);
+    await expect(second).resolves.toEqual([]);
+  });
+
+  test("the shared request is cancelled once its last waiter leaves", async () => {
+    let loadSignal: AbortSignal | undefined;
+    const service = new CatalogScheduleService(
+      createLoaders({
+        releasingToday: (_mode, _window, signal) => {
+          loadSignal = signal;
+          return new Promise(() => {});
+        },
+      }),
+      () => NOW,
+    );
+    const a = new AbortController();
+    const b = new AbortController();
+    // Capture outcomes now: each caller's promise rejects the moment it aborts.
+    const first = service.loadReleaseWindow("anime", 7, a.signal).catch((error: Error) => error);
+    const second = service.loadReleaseWindow("anime", 7, b.signal).catch((error: Error) => error);
+    a.abort();
+    expect(loadSignal?.aborted).toBe(false);
+    b.abort();
+    expect(loadSignal?.aborted).toBe(true);
+    expect(await first).toBeInstanceOf(Error);
+    expect(await second).toBeInstanceOf(Error);
+  });
+
+  test("a caller arriving after every waiter left starts a fresh request", async () => {
+    let loads = 0;
+    const service = new CatalogScheduleService(
+      createLoaders({
+        releasingToday: () => {
+          loads += 1;
+          return loads === 1 ? new Promise(() => {}) : Promise.resolve([]);
+        },
+      }),
+      () => NOW,
+    );
+    const leaving = new AbortController();
+    const first = service.loadReleaseWindow("series", 7, leaving.signal).catch(() => "left");
+    leaving.abort();
+    expect(await first).toBe("left");
+    // The cancelled request is still settling; a new caller must not join it.
+    await expect(service.loadReleaseWindow("series", 7)).resolves.toEqual([]);
+    expect(loads).toBe(2);
+  });
+
+  test("a request cancelled by clearCache never repopulates the cache", async () => {
+    let loads = 0;
+    let finish: ((items: never[]) => void) | undefined;
+    const service = new CatalogScheduleService(
+      createLoaders({
+        releasingToday: () => {
+          loads += 1;
+          return loads === 1
+            ? new Promise((resolve) => {
+                finish = resolve;
+              })
+            : Promise.resolve([]);
+        },
+      }),
+      () => NOW,
+    );
+    const pending = service.loadReleaseWindow("anime", 7).catch(() => "cancelled");
+    service.clearCache();
+    // The aborted loader still resolves (a caught abort can yield partial data).
+    finish?.([]);
+    await pending;
+    await service.loadReleaseWindow("anime", 7);
+    expect(loads).toBe(2);
+  });
+
   test("reuses persisted schedule cache across service instances", async () => {
     let calls = 0;
     const store = new MemoryScheduleCache();

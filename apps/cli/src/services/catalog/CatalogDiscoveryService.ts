@@ -218,6 +218,9 @@ export class CatalogDiscoveryService {
     this.cache.clear();
     this.inflight.clear();
     this.sections.clear();
+    // A cleared walk could never commit (the generation moves on), so stop
+    // its requests instead of letting them run to completion for nothing.
+    for (const walk of this.sectionWalks.values()) walk.controller.abort();
     this.sectionWalks.clear();
     this.generation += 1;
   }

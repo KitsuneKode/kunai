@@ -5,10 +5,12 @@ access, where the known gaps are, and how to report barriers.
 
 ## What the environment is
 
-The app runs entirely in a terminal emulator as a keyboard-driven TUI — there
-is no pointer interaction anywhere, and every feature is reachable by keys or
-the command palette. It requires an interactive TTY; scripting contexts get
-plain non-interactive output instead of the shell.
+The app runs entirely in a terminal emulator as a keyboard-driven TUI. Every
+feature is reachable by keys or the command palette. In terminals that report
+mouse events, some targets (browse focus, setup choices, list rows) also accept
+clicks; pointer support is additive and never required. It requires an
+interactive TTY; scripting contexts get plain non-interactive output instead of
+the shell.
 
 ## What works
 
@@ -34,11 +36,12 @@ plain non-interactive output instead of the shell.
 - **Color contrast.** The palette is fixed by the app theme rather than
   reading terminal color preferences, and low-vision contrast has not been
   formally audited.
-- **Motion.** The companion petals honor reduced motion: setting
-  `KUNAI_REDUCED_MOTION=1` (or `NO_MOTION=1`) renders a static mark instead of
-  the animated petals. Progress spinners, shimmer placeholders, and progress
-  bars do not read those variables yet, so motion-sensitive users may still see
-  animation elsewhere — that gap is tracked, not denied.
+- **Motion.** Setting `KUNAI_REDUCED_MOTION=1` (or `NO_MOTION=1`) stops the
+  companion petals, the sakura loader and the shared loading indicator
+  (`LoadingState`): the busy message stays, the glyph stops cycling. Other
+  animated surfaces (shimmer placeholders, progress bars) have not been audited
+  against it yet, so motion-sensitive users may still see some animation —
+  that gap is tracked, not denied.
 - **mpv playback** happens in an external window controlled by mpv's own
   keybindings, which are outside this application's accessibility surface.
 

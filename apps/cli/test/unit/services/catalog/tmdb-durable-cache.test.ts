@@ -94,6 +94,56 @@ describe("TMDB last-known-good for series structure", () => {
     ]);
   });
 
+  test("a 429 is temporary: the next host answers", async () => {
+    setTmdbDurableCache(realCache());
+    let first = true;
+    serve(() => {
+      if (first) {
+        first = false;
+        return new Response("slow down", { status: 429 });
+      }
+      return Response.json(show);
+    });
+    expect(await fetchTmdbJsonCached("/tv/2316")).toEqual(show);
+  });
+
+  test("every host rate limited: the saved copy answers instead of an error", async () => {
+    setTmdbDurableCache(realCache());
+    serve(() => Response.json(show));
+    await fetchTmdbJsonCached("/tv/2316");
+    clearTmdbSessionCache();
+    serve(() => new Response("slow down", { status: 429 }));
+    expect(await fetchTmdbJsonCached("/tv/2316")).toEqual(show);
+  });
+
+  test("rate-limited hosts are not re-probed before their rest ends", async () => {
+    setTmdbDurableCache(realCache());
+    let requests = 0;
+    serve(() => {
+      requests += 1;
+      return new Response("slow down", { status: 429 });
+    });
+    await expect(fetchTmdbJsonCached("/tv/9999")).rejects.toThrow();
+    const afterFirst = requests;
+    // A different request inside the rest: no host is asked again.
+    await expect(fetchTmdbJsonCached("/tv/9998")).rejects.toThrow("rate limited");
+    expect(requests).toBe(afterFirst);
+  });
+
+  test("a mirror's HTTP 200 error payload never replaces a good saved show", async () => {
+    setTmdbDurableCache(realCache());
+    serve(() => Response.json(show));
+    await fetchTmdbJsonCached("/tv/2316");
+    clearTmdbSessionCache();
+    // Every host answers 200 with TMDB's error envelope: a failure, not data.
+    serve(() => Response.json({ success: false, status_code: 34, status_message: "not found" }));
+    expect(await fetchTmdbJsonCached("/tv/2316")).toEqual(show);
+    clearTmdbSessionCache();
+    serve(() => null);
+    // The saved copy is still the good show, not the error object.
+    expect(await fetchTmdbJsonCached("/tv/2316")).toEqual(show);
+  });
+
   test("a definitive 4xx is TMDB's answer and is never masked by a saved copy", async () => {
     setTmdbDurableCache(realCache());
     serve(() => Response.json(show));

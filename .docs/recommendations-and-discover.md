@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T07:11:02Z"
+lastReviewed: "2026-11-24T08:39:16Z"
 ---
 
 # Kunai — Recommendations And Discover
@@ -90,7 +90,17 @@ Trending walks a chain of sources per lane and remembers the last good answer:
 - **TMDB hosts** use a half-open breaker: when every host is inside its
   5-minute failure window, one request at a time probes the host whose window
   ends first, a failed probe holds further probes for 30 seconds, and any
-  answer (including a 4xx) closes the breaker.
+  answer (including a 4xx) closes the breaker. A **429** is not an answer: the
+  host is rested for 30 seconds and the walk moves on (and, with every host
+  rate limited, the saved copy below answers). A mirror that replies HTTP 200
+  with TMDB's error envelope (`success: false`) counts as that host failing.
+- **Cancelled callers** never start a TMDB request, and every shared in-flight
+  request has a handler, so a request that fails after all its callers left can
+  never surface as an unhandled rejection (which `main.ts` treats as fatal).
+- **Calendar loads** (`CatalogScheduleService.loadCached`) run on a request the
+  service owns: each caller waits with its own signal, and the request is
+  aborted only when the last waiter leaves. **Trending refresh**
+  (`clearTrendingCache`) aborts walks it supersedes.
 
 ### Series fallback: last-known-good TMDB
 
@@ -100,8 +110,10 @@ response is also saved to the cache database as a `tmdb:<path>` row
 `bootstrap-persistence.ts`, kept 30 days). When every TMDB host fails with a
 transport error or a 5xx, `fetchTmdbJsonCached` serves the saved copy instead,
 so a series opened in the last month still lists its seasons and episodes, and
-per-title release info (next episode, release progress) still renders. A 4xx is
-an answer, not an outage, and is never masked by a saved copy.
+per-title release info (next episode, release progress) still renders. A 4xx
+other than 429 is an answer, not an outage, and is never masked by a saved
+copy. Only a well-formed answer (a show with a `seasons` array, a season with
+an `episodes` array) may replace the saved copy.
 
 The saved copy is TMDB's own response, so numbering and identity are exactly
 what playback, downloads and history expect. A TVmaze fallback was built and

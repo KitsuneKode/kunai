@@ -316,8 +316,8 @@ describe("fetchTmdbJsonCached", () => {
     const controller = new AbortController();
     controller.abort();
     await expect(fetchTmdbJsonCached("/movie/1", controller.signal)).rejects.toThrow();
-    // The abort spent exactly one request — no direct fallback on a cancelled call.
-    expect(urls).toHaveLength(1);
+    // An already-cancelled call spends no request at all, and so no fallback either.
+    expect(urls).toHaveLength(0);
 
     // The next caller still earns the proxy attempt — aborts are not evidence
     // the proxy is down.
