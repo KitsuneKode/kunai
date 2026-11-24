@@ -11,6 +11,8 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
+import { withoutGitEnv } from "../../helpers/git-env";
+
 const ROOT = resolve(import.meta.dir, "../../../../..");
 const STATUS_PATH = "apps/docs/lib/generated-provider-status.json";
 const WORKFLOW = readFileSync(join(ROOT, ".github/workflows/provider-status-sweep.yml"), "utf8");
@@ -24,7 +26,7 @@ function run(cwd: string, argv: string[], env: NodeJS.ProcessEnv = {}) {
   return Bun.spawnSync(argv, {
     cwd,
     env: {
-      ...process.env,
+      ...withoutGitEnv(),
       HUSKY: "0",
       GIT_CONFIG_NOSYSTEM: "1",
       GIT_CONFIG_GLOBAL: "/dev/null",

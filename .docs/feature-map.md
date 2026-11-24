@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-22"
+lastReviewed: "2026-11-24T13:30:00Z"
 ---
 
 # Feature Map
@@ -94,21 +94,21 @@ callbacks. See [features/pointer-controls.md](./features/pointer-controls.md).
 
 ## Playback
 
-| Feature                                    | Owned by                                                                                                        | Docs                                                                             |
-| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| Playback state machine                     | `apps/cli/src/app/playback/PlaybackPhase.ts`                                                                    | [architecture.md](./architecture.md)                                             |
-| mpv launch + IPC (socket / named pipe)     | `apps/cli/src/infra/player/*`, `apps/cli/src/mpv.ts`                                                            | [quickstart.md](./quickstart.md)                                                 |
-| Android detached handoff + stream gateway  | `apps/cli/src/infra/player/handoff-player-service.ts`, `stream-gateway.ts`, `android-intent-launcher.ts`        | [architecture.md](./architecture.md)                                             |
-| DASH manifest + template routes            | `apps/cli/src/infra/player/dash-gateway-manifest.ts`, `manifest-prefix.ts`                                      | [architecture.md](./architecture.md)                                             |
-| Persistent session + autoplay              | `apps/cli/src/infra/player/PersistentMpvSession.ts`                                                             | [mpv-in-process-reconnect.md](./mpv-in-process-reconnect.md)                     |
-| Intro/credits auto-skip (IntroDB, AniSkip) | `apps/cli/src/aniskip.ts`, `apps/cli/src/introdb.ts`                                                            | [playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md)               |
-| Timing sources and merge                   | `apps/cli/src/infra/timing/*` — `PlaybackTimingAggregator` merges IntroDB, AniSkip, and provider-native timings | [playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md)               |
-| Subtitles                                  | `apps/cli/src/subtitle.ts`                                                                                      | [playback-source-inventory-contract.md](./playback-source-inventory-contract.md) |
-| Recovery / fallback / `/recover`           | `apps/cli/src/domain/recovery/*`                                                                                | [debugging-map.md](./debugging-map.md)                                           |
-| Post-playback actions                      | `apps/cli/src/app/post-play/*`                                                                                  | [ux-architecture.md](./ux-architecture.md)                                       |
-| Playback rules (pure, no I/O)              | `apps/cli/src/domain/playback/*` — progress/completion policy, problem classification, local streams            | [architecture.md](./architecture.md)                                             |
-| Source selection (pure)                    | `apps/cli/src/domain/playback-source/*` — `SourceSelectionEngine`, offline availability                         | [playback-source-inventory-contract.md](./playback-source-inventory-contract.md) |
-| Entry auto-play decision (Enter vs menu)   | `apps/cli/src/app-shell/title-control/smart-auto-launch.ts`                                                     | [ux-architecture.md](./ux-architecture.md)                                       |
+| Feature                                    | Owned by                                                                                                                                                                                                     | Docs                                                                             |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| Playback state machine                     | `apps/cli/src/app/playback/PlaybackPhase.ts` (outline), `playback-episode-bootstrap.ts`, `playback-episode-iteration.ts` (one loop iteration; its stage modules are listed in the `PlaybackPhase.ts` header) | [architecture.md](./architecture.md)                                             |
+| mpv launch + IPC (socket / named pipe)     | `apps/cli/src/infra/player/*`, `apps/cli/src/mpv.ts`                                                                                                                                                         | [quickstart.md](./quickstart.md)                                                 |
+| Android detached handoff + stream gateway  | `apps/cli/src/infra/player/handoff-player-service.ts`, `stream-gateway.ts`, `android-intent-launcher.ts`                                                                                                     | [architecture.md](./architecture.md)                                             |
+| DASH manifest + template routes            | `apps/cli/src/infra/player/dash-gateway-manifest.ts`, `manifest-prefix.ts`                                                                                                                                   | [architecture.md](./architecture.md)                                             |
+| Persistent session + autoplay              | `apps/cli/src/infra/player/PersistentMpvSession.ts`                                                                                                                                                          | [mpv-in-process-reconnect.md](./mpv-in-process-reconnect.md)                     |
+| Intro/credits auto-skip (IntroDB, AniSkip) | `apps/cli/src/aniskip.ts`, `apps/cli/src/introdb.ts`                                                                                                                                                         | [playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md)               |
+| Timing sources and merge                   | `apps/cli/src/infra/timing/*` — `PlaybackTimingAggregator` merges IntroDB, AniSkip, and provider-native timings                                                                                              | [playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md)               |
+| Subtitles                                  | `apps/cli/src/subtitle.ts`                                                                                                                                                                                   | [playback-source-inventory-contract.md](./playback-source-inventory-contract.md) |
+| Recovery / fallback / `/recover`           | `apps/cli/src/domain/recovery/*`                                                                                                                                                                             | [debugging-map.md](./debugging-map.md)                                           |
+| Post-playback actions                      | `apps/cli/src/app/post-play/*`                                                                                                                                                                               | [ux-architecture.md](./ux-architecture.md)                                       |
+| Playback rules (pure, no I/O)              | `apps/cli/src/domain/playback/*` — progress/completion policy, problem classification, local streams                                                                                                         | [architecture.md](./architecture.md)                                             |
+| Source selection (pure)                    | `apps/cli/src/domain/playback-source/*` — `SourceSelectionEngine`, offline availability                                                                                                                      | [playback-source-inventory-contract.md](./playback-source-inventory-contract.md) |
+| Entry auto-play decision (Enter vs menu)   | `apps/cli/src/app-shell/title-control/smart-auto-launch.ts`                                                                                                                                                  | [ux-architecture.md](./ux-architecture.md)                                       |
 
 ## Library and personal state
 
@@ -166,6 +166,7 @@ on, and because guessing wrong here produces a layering violation.
 | OS integration                | `apps/cli/src/infra/os/*` — external open, protocol handler, reveal in file manager                                                 | Backs `--install-protocol-handler` and `kunai://`                                                                                                     |
 | Build-time shims              | `apps/cli/src/infra/build/*` — compiled entrypoint, react-devtools stub                                                             | Only touched by the binary build; not runtime behavior                                                                                                |
 | Cancellation and deadlines    | `apps/cli/src/infra/abort/timeout-signal.ts`                                                                                        | One helper. Do not hand-roll another `AbortSignal` timeout                                                                                            |
+| Joining in-flight work by key | `apps/cli/src/infra/concurrency/keyed-joiner.ts` (`createKeyedJoiner`)                                                              | One helper. A new hand-rolled in-flight `Promise` map fails `keyed-joiner-ratchet.test.ts`                                                            |
 | Structured logging            | `apps/cli/src/infra/logger/*`, `apps/cli/src/logger.ts`                                                                             | `logger.ts` is the legacy flat entry; new work uses `infra/logger`                                                                                    |
 | File and path mechanics       | `apps/cli/src/infra/storage/*` (`FileStorage`, `kunai-paths.ts`)                                                                    | Wraps `packages/storage` paths for the CLI                                                                                                            |
 | Terminal shell-outs           | `apps/cli/src/infra/shell/*` (`open-external-url.ts`)                                                                               | The only place that launches an external program other than mpv and yt-dlp                                                                            |
@@ -205,7 +206,6 @@ as capabilities.
 | `.archive/legacy/apps/cli/src/browser/*`   | Playwright interception reference; awaiting `@kunai/runtime-browser` |
 | `.archive/legacy/apps/cli/src/providers/*` | Pre-`packages/providers` provider reference                          |
 | `.reference/experiments/*`                 | Provider research lab and scratchpads                                |
-| `packages/providers/src/cineby`, `rgshows` | Modules that exist but are not in `loadProductionProviderModules()`  |
 | `apps/docs`                                | The public docs site — content, not runtime                          |
 
 Active runtime code must not import any of the first three; the boundary test

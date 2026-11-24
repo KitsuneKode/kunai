@@ -197,7 +197,7 @@ describe("provider cycling correctness", () => {
     } as unknown as ProviderRuntimeContext;
 
     const pending = resolveStream(buildInput(), context);
-    await Bun.sleep(20);
+    await nextTurn();
     controller.abort();
     const result = await pending;
 
@@ -261,3 +261,9 @@ describe("provider cycling correctness", () => {
     clearRivestreamCachesForTest();
   });
 });
+
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}

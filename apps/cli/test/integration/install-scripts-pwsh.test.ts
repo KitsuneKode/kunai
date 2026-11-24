@@ -65,6 +65,7 @@ async function waitForPaths(paths: readonly string[]): Promise<void> {
   const deadline = Date.now() + 60_000;
   while (paths.some((path) => !existsSync(path))) {
     if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${paths.join(", ")}`);
+    // sleep-allow: waits for a real PowerShell child to spawn
     await Bun.sleep(10);
   }
 }

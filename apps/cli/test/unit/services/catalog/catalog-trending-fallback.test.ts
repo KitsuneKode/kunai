@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 
 import { withFreshnessLabel } from "@/app/discover/discover-sections";
 import type { SearchResult } from "@/domain/types";
-import { createCatalogDurableCache } from "@/services/catalog/catalog-durable-cache";
 import {
   catalogAnswersSnapshot,
   recordCatalogAnswer,
@@ -11,6 +10,7 @@ import {
   CatalogDiscoveryService,
   type CatalogDurableCache,
 } from "@/services/catalog/CatalogDiscoveryService";
+import { createCatalogDurableCache } from "@/services/catalog/durable-json-cache";
 import {
   JikanTrendingUnavailableError,
   loadJikanAnimeTrending,
@@ -430,18 +430,75 @@ describe("shared walks: cancellation, refresh races, hedging", () => {
     const newer = Promise.withResolvers<readonly SearchResult[]>();
     let call = 0;
     const discovery = service(() => (call++ === 0 ? older.promise : newer.promise), down, durable);
-    const a = discovery.loadTrendingSection("anime");
+    const a = discovery.loadTrendingSection("anime").catch((error: Error) => error);
     discovery.clearTrendingCache();
     const b = discovery.loadTrendingSection("anime");
     newer.resolve([item("2", "Newer")]);
     expect((await b).results[0]?.title).toBe("Newer");
     older.resolve([item("1", "Older")]);
-    await a;
+    // The cleared walk's caller is told it was cancelled, not handed its answer.
+    expect(await a).toMatchObject({ name: "AbortError" });
     // The stale walk neither replaced memory nor the durable row.
     expect((await discovery.loadTrendingSection("anime")).results[0]?.title).toBe("Newer");
     expect(durable.read("catalog:trending:anime")?.results.map((entry) => entry.title)).toEqual([
       "Newer",
     ]);
+  });
+
+  test("an abandoned walk that settles late cannot overwrite its retry's answer", async () => {
+    // Leaving /trending aborts the walk without a refresh, so the generation
+    // does not move. A returning caller starts a fresh walk at once; the
+    // abandoned one may still settle afterwards (Jikan handing back a partial
+    // list after one id lookup was cancelled) and must write nothing.
+    const durable = memoryDurable();
+    const abandoned = Promise.withResolvers<readonly SearchResult[]>();
+    const retry = Promise.withResolvers<readonly SearchResult[]>();
+    let call = 0;
+    const discovery = service(
+      () => (call++ === 0 ? abandoned.promise : retry.promise),
+      down,
+      durable,
+    );
+    const leaving = new AbortController();
+    const first = discovery.loadTrendingSection("anime", leaving.signal);
+    leaving.abort();
+    await expect(first).rejects.toThrow();
+
+    const second = discovery.loadTrendingSection("anime");
+    retry.resolve([item("2", "Newer")]);
+    expect((await second).results[0]?.title).toBe("Newer");
+
+    abandoned.resolve([item("1", "Older")]);
+    await abandoned.promise;
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect((await discovery.loadTrendingSection("anime")).results[0]?.title).toBe("Newer");
+    expect(durable.read("catalog:trending:anime")?.results.map((entry) => entry.title)).toEqual([
+      "Newer",
+    ]);
+  });
+
+  test("an abandoned walk whose source answers empty does not move on to a fallback", async () => {
+    const abandoned = Promise.withResolvers<readonly SearchResult[]>();
+    let fallbackCalls = 0;
+    const discovery = service(
+      () => abandoned.promise,
+      async () => {
+        fallbackCalls += 1;
+        return [item("9", "Fallback")];
+      },
+      memoryDurable(),
+    );
+    const leaving = new AbortController();
+    const first = discovery.loadTrendingSection("anime", leaving.signal);
+    leaving.abort();
+    await expect(first).rejects.toThrow();
+    abandoned.resolve([]);
+    await abandoned.promise;
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(fallbackCalls).toBe(0);
   });
 
   test("a slow live chain hands the caller the last good list, then fills the cache", async () => {

@@ -1,4 +1,5 @@
 import type { StreamInfo } from "@/domain/types";
+import { createKeyedJoiner } from "@/infra/concurrency/keyed-joiner";
 
 import {
   PlaybackResolveCoordinator,
@@ -42,15 +43,20 @@ type Consumer = {
   readonly onFeedback?: (feedback: PlaybackResolveFeedback) => void;
 };
 
-type InFlightResolve = {
-  readonly abortController: AbortController;
+/** What every consumer joined onto one physical resolve shares. */
+type ResolveWorkContext = {
   readonly consumers: Set<Consumer>;
   readonly ledger: ResolveWorkLedger;
-  readonly promise: Promise<PlaybackResolveWorkOutput>;
 };
 
 export class PlaybackResolveWorkService {
-  private readonly inFlight = new Map<string, InFlightResolve>();
+  /**
+   * One physical resolve per work key. Each consumer leaves on its own
+   * signal; the last one out aborts the resolve with its reason, which the
+   * commit policy reads to tell "user backed out, keep the warm result" from
+   * "deadline/fallback, discard".
+   */
+  private readonly inFlight = createKeyedJoiner<PlaybackResolveWorkOutput, ResolveWorkContext>();
 
   constructor(
     private readonly coordinator: ResolveCoordinator,
@@ -80,76 +86,63 @@ export class PlaybackResolveWorkService {
     } as const;
     const resolveWorkKey = buildResolveWorkKey(identity);
     const consumer: Consumer = { onEvent: input.onEvent, onFeedback: input.onFeedback };
-    const existing = this.inFlight.get(resolveWorkKey);
 
-    if (existing) {
-      recordLedgerJoin(existing.ledger, {
-        intent: request.intentKind,
-        budgetLane: request.budgetLane,
+    return this.inFlight
+      .join(
+        resolveWorkKey,
+        (signal, { consumers, ledger }) => {
+          const physicalInput: PlaybackResolveInput = {
+            ...input,
+            signal,
+            onEvent: (event) => {
+              recordResolveEvent(ledger, event);
+              for (const waiting of consumers) waiting.onEvent?.(event);
+            },
+            onFeedback: (feedback) => {
+              for (const waiting of consumers) waiting.onFeedback?.(feedback);
+            },
+          };
+          return this.coordinator.resolve(physicalInput).then((output) => {
+            if (output.cacheStatus === "prefetched") recordCacheDecision(ledger, "prefetched");
+            if (output.stream?.providerResolveResult) {
+              recordProviderInventoryFacts(ledger, output.stream.providerResolveResult);
+            }
+            const workLedger = finalizeResolveWorkLedger(
+              ledger,
+              output.stream ? "resolved" : signal.aborted ? "cancelled" : "unavailable",
+            );
+            this.options.onCompletedLedger?.(workLedger);
+            return { ...output, workLedger };
+          });
+        },
+        {
+          signal: input.signal,
+          context: () => ({
+            consumers: new Set<Consumer>(),
+            ledger: createResolveWorkLedger({
+              identity,
+              intent: request.intentKind,
+              budgetLane: request.budgetLane,
+            }),
+          }),
+          onJoin: ({ consumers, ledger }, role) => {
+            if (role === "follower") {
+              recordLedgerJoin(ledger, {
+                intent: request.intentKind,
+                budgetLane: request.budgetLane,
+              });
+            }
+            consumers.add(consumer);
+            return () => consumers.delete(consumer);
+          },
+        },
+      )
+      .catch((error) => {
+        // A consumer that left sees one AbortError shape, whatever reason it
+        // aborted with; the reason itself travels to the physical resolve.
+        if (input.signal.aborted) throw abortError();
+        throw error;
       });
-      existing.consumers.add(consumer);
-      return this.waitForConsumer(existing, consumer, input.signal);
-    }
-
-    if (input.signal.aborted) {
-      throw abortError();
-    }
-
-    const ledger = createResolveWorkLedger({
-      identity,
-      intent: request.intentKind,
-      budgetLane: request.budgetLane,
-    });
-    const abortController = new AbortController();
-    const consumers = new Set<Consumer>([consumer]);
-    const entry = {
-      abortController,
-      consumers,
-      ledger,
-      // SAFETY: the placeholder promise is replaced by the coordinator's real
-      // resolve via Object.assign a few lines below; it only seeds the entry shape.
-      promise: Promise.resolve(null as never),
-    } as InFlightResolve;
-
-    const physicalInput: PlaybackResolveInput = {
-      ...input,
-      signal: abortController.signal,
-      onEvent: (event) => {
-        recordResolveEvent(ledger, event);
-        for (const waiting of consumers) waiting.onEvent?.(event);
-      },
-      onFeedback: (feedback) => {
-        for (const waiting of consumers) waiting.onFeedback?.(feedback);
-      },
-    };
-    const promise = this.coordinator.resolve(physicalInput).then((output) => {
-      if (output.cacheStatus === "prefetched") recordCacheDecision(ledger, "prefetched");
-      if (output.stream?.providerResolveResult) {
-        recordProviderInventoryFacts(ledger, output.stream.providerResolveResult);
-      }
-      const workLedger = finalizeResolveWorkLedger(
-        ledger,
-        output.stream ? "resolved" : abortController.signal.aborted ? "cancelled" : "unavailable",
-      );
-      this.options.onCompletedLedger?.(workLedger);
-      return {
-        ...output,
-        workLedger,
-      };
-    });
-    Object.assign(entry, { promise });
-    this.inFlight.set(resolveWorkKey, entry);
-    void promise.then(
-      () => {
-        if (this.inFlight.get(resolveWorkKey) === entry) this.inFlight.delete(resolveWorkKey);
-        return undefined;
-      },
-      () => {
-        if (this.inFlight.get(resolveWorkKey) === entry) this.inFlight.delete(resolveWorkKey);
-        return undefined;
-      },
-    );
-    return this.waitForConsumer(entry, consumer, input.signal);
   }
 
   async prefetch(
@@ -170,52 +163,6 @@ export class PlaybackResolveWorkService {
       providerId: output.providerId,
       cacheProvenance: output.cacheProvenance,
     };
-  }
-
-  private waitForConsumer(
-    entry: InFlightResolve,
-    consumer: Consumer,
-    signal: AbortSignal,
-  ): Promise<PlaybackResolveWorkOutput> {
-    return new Promise((resolve, reject) => {
-      let settled = false;
-      const detach = () => {
-        if (settled) return;
-        settled = true;
-        signal.removeEventListener("abort", onAbort);
-        entry.consumers.delete(consumer);
-      };
-      const onAbort = () => {
-        detach();
-        // Forward the consumer's reason: the commit policy reads it off the
-        // shared signal to tell "user backed out, keep the warm result" from
-        // "deadline/fallback, discard". A bare abort would land as
-        // `aborted:unknown` and discard every cancel.
-        if (entry.consumers.size === 0) entry.abortController.abort(signal.reason);
-        reject(abortError());
-      };
-      if (signal.aborted) {
-        onAbort();
-        return;
-      }
-      signal.addEventListener("abort", onAbort, { once: true });
-      entry.promise.then(
-        (result) => {
-          detach();
-          if (signal.aborted) {
-            reject(abortError());
-            return undefined;
-          }
-          resolve(result);
-          return undefined;
-        },
-        (error) => {
-          detach();
-          reject(error);
-          return undefined;
-        },
-      );
-    });
   }
 }
 

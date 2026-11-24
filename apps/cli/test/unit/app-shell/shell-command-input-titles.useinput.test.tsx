@@ -67,6 +67,7 @@ const enqueueChars = (stdin: { enqueue: (data: string) => void }, text: string) 
 async function pressEscape(handle: RenderHandle): Promise<void> {
   await act(async () => {
     handle.stdin.enqueue("");
+    // sleep-allow: Ink input debounce; the component clock is not injected
     await new Promise((resolve) => setTimeout(resolve, 60));
   });
 }

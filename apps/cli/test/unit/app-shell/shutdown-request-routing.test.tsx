@@ -56,7 +56,7 @@ test("Ctrl+C from a nested Browse surface routes one intent through the bridge",
   );
   try {
     handle.stdin.enqueue(["\x03"]);
-    await Bun.sleep(0);
+    await nextTurn();
     // Nested surfaces (Browse + its ShellFrame) may each route the same quit;
     // the coordinator collapses duplicates into one in-flight sequence, so the
     // bridge contract is: at least one intent, all of them the same SIGINT.
@@ -93,3 +93,9 @@ test("no app-shell source imports graceful-exit or exits the process directly", 
   scan(appShellDir);
   expect(offenders).toEqual([]);
 });
+
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}

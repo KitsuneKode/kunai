@@ -79,6 +79,3 @@ export const videasyManifest = defineProviderManifest({
     "Do not mark browser-safe because local decrypt/runtime behavior is required.",
   ],
 });
-
-/** @deprecated Use videasyManifest */
-export const vidkingManifest = videasyManifest;

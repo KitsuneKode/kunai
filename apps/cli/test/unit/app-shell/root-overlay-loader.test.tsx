@@ -194,6 +194,7 @@ test("Escape removes a cold loading scaffold through reducer state", async () =>
     await act(async () => {
       handle.stdin.enqueue("\x1b");
       // Ink defers a lone ESC briefly to disambiguate escape sequences.
+      // sleep-allow: Ink overlay debounce; the component clock is not injected
       await new Promise((resolve) => setTimeout(resolve, 60));
     });
 
@@ -215,6 +216,7 @@ test("a failed module load shows the failure state and a later mount can retry",
       label: "failure state rendered",
       tick: async (ms) => {
         await act(async () => {
+          // sleep-allow: Ink overlay debounce; the component clock is not injected
           await new Promise((resolve) => setTimeout(resolve, ms));
         });
       },

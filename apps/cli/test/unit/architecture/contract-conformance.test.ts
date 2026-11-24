@@ -370,7 +370,6 @@ describe("contract conformance", () => {
       import("@kunai/providers/movy"),
       import("@kunai/providers/vidrock"),
       import("@kunai/providers/allmanga"),
-      import("@kunai/providers/anidb"),
       import("@kunai/providers/hianime"),
       import("@kunai/providers/miruro"),
       import("@kunai/providers/animegg"),

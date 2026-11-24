@@ -78,7 +78,6 @@ archive and put only the residue here.
 
 | Track                          | Remaining                                                                                            | Plan                                                                                                 |
 | ------------------------------ | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| 0.3.0 merge train              | Merge order, chain-A publication, regression watch                                                   | [2026-08-24-0-3-0-merge-train.md](./2026-08-24-0-3-0-merge-train.md)                                 |
 | Provider-independent offline   | Candidate fix: downloads survive provider retirement; merge and platform qualification pending       | [offline-provider-independent-playback.md](./offline-provider-independent-playback.md)               |
 | Offline artwork cache          | Library previews                                                                                     | [offline-artwork-cache-and-library-previews.md](./offline-artwork-cache-and-library-previews.md)     |
 | Boundary + downloads           | Reviewed adaptive-download design, not started                                                       | [boundary-hardening-and-adaptive-downloads.md](./boundary-hardening-and-adaptive-downloads.md)       |
@@ -134,7 +133,7 @@ the K-reconciliation below and the commit history both cite them by id.
 | [008](./008-tui-timer-and-poster-perf.md)                         | Download-alert root coupling                                              | BLOCKED (other timer/poster slices landed)        |
 | [010](./010-characterization-tests-for-giants.md)                 | Characterization net for private `AppRoot`                                | PARTIAL (shell-side net landed; harness exists)   |
 | [011](./011-split-shell-workflows.md)                             | Split `shell-workflows.ts`                                                | BLOCKED by 010                                    |
-| [012](./012-decompose-playback-phase.md)                          | Extract `PlaybackPhase` transition core                                   | BLOCKED by 010                                    |
+| [012](./012-decompose-playback-phase.md)                          | Pure planners for the recovery and control-action branches                | PARTIAL (phase split into stage modules landed)   |
 | [013](./013-split-ink-shell-host-surface.md)                      | Split Ink host/surface/overlay winner                                     | BLOCKED by 010                                    |
 | [014](./014-enforce-layering-boundaries.md)                       | Retire remaining baselined layer inversions                               | BLOCKED (boundary ratchet is active)              |
 | [015](./015-retire-legacy-flat-modules.md)                        | Retire legacy flat root modules                                           | BLOCKED by 011 and 012                            |

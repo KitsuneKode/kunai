@@ -1,6 +1,7 @@
 import { stripHtml } from "@/domain/catalog/strip-html";
 import { anilistCatalogStructure } from "@/domain/media/anilist-format";
 import type { SearchResult, ShellMode, TitleAlias } from "@/domain/types";
+import { createKeyedJoiner } from "@/infra/concurrency/keyed-joiner";
 import { AniListRequestError, postAniListGraphql } from "@/services/catalog/anilist-client";
 import { evictOverflowedEntries } from "@/services/catalog/bounded-cache";
 import {
@@ -106,12 +107,6 @@ export type CatalogTrendingSection = {
   readonly staleSince?: number;
 };
 
-type TrendingWalk = {
-  readonly controller: AbortController;
-  waiters: number;
-  readonly promise: Promise<CatalogTrendingSection>;
-};
-
 /**
  * With a last-known-good list on hand, a live chain slower than this hands the
  * caller that list instead (the walk continues and fills the cache). A cold
@@ -196,12 +191,18 @@ export const DEFAULT_TRENDING_FALLBACKS = {
 export class CatalogDiscoveryService {
   private readonly cache = new Map<string, DiscoveryCacheEntry>();
   private readonly sections = new Map<string, CatalogTrendingSection>();
-  private readonly sectionWalks = new Map<string, TrendingWalk>();
+  /**
+   * Concurrent callers share one walk of a lane's whole chain. The walk owns
+   * its own signal: one caller cancelling must not cancel another caller's
+   * fallback, and the walk stops only when its last waiter has gone.
+   */
+  private readonly sectionWalks = createKeyedJoiner<CatalogTrendingSection>();
   /** Fallback source id → epoch ms until which it is skipped after failing. */
   private readonly fallbackBrokenUntil = new Map<string, number>();
   /** Bumped by `clearTrendingCache`; a walk started earlier may not commit. */
   private generation = 0;
-  private readonly inflight = new Map<string, Promise<readonly SearchResult[]>>();
+  /** One surprise load per lane and time bucket, aborted once nobody waits. */
+  private readonly surpriseLoads = createKeyedJoiner<readonly SearchResult[]>();
 
   constructor(
     private readonly loaders: CatalogDiscoveryLoaders = {
@@ -216,11 +217,10 @@ export class CatalogDiscoveryService {
 
   clearTrendingCache(): void {
     this.cache.clear();
-    this.inflight.clear();
+    this.surpriseLoads.clear();
     this.sections.clear();
     // A cleared walk could never commit (the generation moves on), so stop
     // its requests instead of letting them run to completion for nothing.
-    for (const walk of this.sectionWalks.values()) walk.controller.abort();
     this.sectionWalks.clear();
     this.generation += 1;
   }
@@ -253,89 +253,64 @@ export class CatalogDiscoveryService {
     }
     if (signal?.aborted) throw abortReason(signal);
 
-    // Concurrent callers share one walk of the whole chain. The walk owns its
-    // own signal: one caller cancelling must not cancel another caller's
-    // fallback, and the walk stops only when its last waiter has gone.
-    let walk = this.sectionWalks.get(key);
-    if (!walk) {
-      const controller = new AbortController();
-      const created: TrendingWalk = {
-        controller,
-        waiters: 0,
-        promise: this.walkTrendingChain(mode, controller.signal, this.generation),
-      };
-      created.promise
-        .finally(() => {
-          if (this.sectionWalks.get(key) === created) this.sectionWalks.delete(key);
-        })
-        .catch(() => undefined);
-      this.sectionWalks.set(key, created);
-      walk = created;
-    }
-
     const durable = this.durable();
     const stale = durable?.read(this.durableKey(mode)) ?? null;
-    const section = await this.awaitWalk(walk, signal, stale);
+    const section = await this.awaitWalk(mode, signal, stale);
     recordTrendingAnswer(mode, section);
     return section;
   }
 
   /**
-   * One caller's wait on a shared walk. With a last-known-good list on hand,
-   * a slow live chain hands the caller that list after `hedgeAfterMs` (marked
-   * stale) while the walk keeps going and fills the cache for the next render.
+   * One caller's wait on the lane's shared walk. With a last-known-good list
+   * on hand, a slow live chain hands the caller that list after `hedgeAfterMs`
+   * (marked stale) while the walk keeps going and fills the cache for the next
+   * render.
    */
   private awaitWalk(
-    walk: TrendingWalk,
+    mode: ShellMode,
     signal: AbortSignal | undefined,
     stale: { readonly cachedAt: number; readonly results: readonly SearchResult[] } | null,
   ): Promise<CatalogTrendingSection> {
-    walk.waiters += 1;
+    const generation = this.generation;
+    // This caller's place in the walk. It follows the caller's signal until a
+    // hedge answers the caller; from then on it holds the walk open, so the
+    // walk keeps running for the cache even with no caller waiting.
+    const seat = new AbortController();
+    const follow = () => seat.abort(signal?.reason);
+    signal?.addEventListener("abort", follow, { once: true });
+    const unfollow = () => signal?.removeEventListener("abort", follow);
+    const joined = this.sectionWalks.join(
+      mode,
+      (upstream) => this.walkTrendingChain(mode, upstream, generation),
+      { signal: seat.signal },
+    );
+    const hedgeAfterMs = this.options.hedgeAfterMs ?? TRENDING_HEDGE_AFTER_MS;
+    if (!stale || stale.results.length === 0 || hedgeAfterMs < 0) {
+      return joined.finally(unfollow);
+    }
     return new Promise<CatalogTrendingSection>((resolve, reject) => {
-      let settled = false;
-      let hedge: ReturnType<typeof setTimeout> | undefined;
-      const leave = () => {
-        walk.waiters -= 1;
-        if (walk.waiters <= 0) walk.controller.abort();
-      };
-      const finish = (action: () => void, abandonWalk: boolean) => {
-        if (settled) return;
-        settled = true;
-        if (hedge !== undefined) clearTimeout(hedge);
-        signal?.removeEventListener("abort", onAbort);
-        if (abandonWalk) leave();
-        else walk.waiters -= 1;
-        action();
-      };
-      const onAbort = () => finish(() => reject(abortReason(signal)), true);
-      if (signal?.aborted) {
-        // Aborted before we could listen (e.g. during the walk's first
-        // synchronous step): leave now so a sole waiter stops the walk.
-        onAbort();
-        return;
-      }
-      signal?.addEventListener("abort", onAbort, { once: true });
-      walk.promise.then(
-        (section) => finish(() => resolve(section), false),
-        (error) => finish(() => reject(error), false),
+      const hedge = setTimeout(() => {
+        unfollow();
+        resolve({
+          results: stale.results,
+          sourceId: "last-known-good",
+          staleSince: stale.cachedAt,
+        });
+      }, hedgeAfterMs);
+      joined.then(
+        (section) => {
+          clearTimeout(hedge);
+          unfollow();
+          resolve(section);
+          return undefined;
+        },
+        (error) => {
+          clearTimeout(hedge);
+          unfollow();
+          reject(error);
+          return undefined;
+        },
       );
-      const hedgeAfterMs = this.options.hedgeAfterMs ?? TRENDING_HEDGE_AFTER_MS;
-      if (stale && stale.results.length > 0 && hedgeAfterMs >= 0) {
-        hedge = setTimeout(
-          () =>
-            finish(
-              () =>
-                resolve({
-                  results: stale.results,
-                  sourceId: "last-known-good",
-                  staleSince: stale.cachedAt,
-                }),
-              // The walk keeps running for the cache even with no waiters.
-              false,
-            ),
-          hedgeAfterMs,
-        );
-      }
     });
   }
 
@@ -405,29 +380,37 @@ export class CatalogDiscoveryService {
         // is skipped for a while instead of costing its timeout every outage.
         if ((this.fallbackBrokenUntil.get(source.id) ?? 0) > this.now()) continue;
       }
+      let results: readonly SearchResult[];
       try {
-        const results = await source.load(signal);
-        if (results.length === 0) continue;
-        const section: CatalogTrendingSection = { results, sourceId: source.id };
-        if (generation === this.generation) {
-          // A fallback answer is reused only briefly so the primary is
-          // retried soon; one primary timeout must not pin a stand-in for
-          // the full trending TTL.
-          this.commitSection(
-            key,
-            generation,
-            section,
-            isPrimary ? DISCOVERY_CACHE_TTL_MS : STALE_RETRY_AFTER_MS,
-          );
-          durable?.write(durableKey, this.now(), results, source.id);
-        }
-        if (!isPrimary) this.fallbackBrokenUntil.delete(source.id);
-        return section;
+        results = await source.load(signal);
       } catch (error) {
         if (signal.aborted) throw error;
         if (!isPrimary) this.fallbackBrokenUntil.set(source.id, this.now() + FALLBACK_BREAKER_MS);
         lastError = error instanceof Error ? error : new Error(String(error));
+        continue;
       }
+      // An abandoned walk (its last waiter left; no refresh, so the generation
+      // did not move) may still settle — a source that ignores the signal, or
+      // Jikan handing back a partial list after one id lookup was cancelled.
+      // A returning caller has already started a fresh walk; this one must not
+      // write over its answer, nor move on to a fallback for nobody.
+      if (signal.aborted) throw abortReason(signal);
+      if (results.length === 0) continue;
+      const section: CatalogTrendingSection = { results, sourceId: source.id };
+      if (generation === this.generation) {
+        // A fallback answer is reused only briefly so the primary is retried
+        // soon; one primary timeout must not pin a stand-in for the full
+        // trending TTL.
+        this.commitSection(
+          key,
+          generation,
+          section,
+          isPrimary ? DISCOVERY_CACHE_TTL_MS : STALE_RETRY_AFTER_MS,
+        );
+        durable?.write(durableKey, this.now(), results, source.id);
+      }
+      if (!isPrimary) this.fallbackBrokenUntil.delete(source.id);
+      return section;
     }
 
     const stale = durable?.read(durableKey);
@@ -457,47 +440,33 @@ export class CatalogDiscoveryService {
     if (cached && cached.expiresAt > this.now())
       return shuffleResults(cached.results, options.random);
 
-    const inflight = this.inflight.get(key);
-    if (inflight) return shuffleResults(await inflight, options.random);
-
     const loader =
       mode === "anime"
         ? (this.loaders.animeSurprise ?? loadAnimeSurpriseList)
         : mode === "youtube"
           ? (this.loaders.youtubeSurprise ?? loadYoutubeSurpriseList)
           : (this.loaders.tmdbSurprise ?? loadTmdbSurpriseList);
-    const results = await this.runLoad(key, SURPRISE_CACHE_TTL_MS, () => loader(options, signal));
+    // Caches only a load that actually succeeded. A rejection — an offline
+    // blip, an upstream error, or the `AbortError` from navigating away
+    // mid-fetch — leaves the cache untouched and propagates, so the next call
+    // retries instead of serving an empty tray for the rest of the TTL. An
+    // empty list is not cached either: the loaders below reject on failure,
+    // but an injected loader that still folds one into `[]` must not be able
+    // to poison the cache. Concurrent callers share one load; each leaves on
+    // its own signal, and the load is aborted once nobody waits.
+    const results = await this.surpriseLoads.join(
+      key,
+      async (upstream) => {
+        const loaded = await loader(options, upstream);
+        if (!upstream.aborted && loaded.length > 0) {
+          this.cache.set(key, { expiresAt: this.now() + SURPRISE_CACHE_TTL_MS, results: loaded });
+          evictOverflowedEntries(this.cache, MAX_DISCOVERY_CACHE_ENTRIES, this.now());
+        }
+        return loaded;
+      },
+      { signal },
+    );
     return shuffleResults(results, options.random);
-  }
-
-  /**
-   * Runs a loader once per key, caching only a load that actually succeeded.
-   *
-   * A rejection — an offline blip, an upstream error, or the `AbortError` from
-   * navigating away mid-fetch — leaves the cache untouched and propagates, so
-   * the next call retries instead of serving an empty tray for the rest of the
-   * TTL. An empty resolved list is not cached either: the loaders below reject
-   * on failure, but an injected loader that still folds one into `[]` must not
-   * be able to poison the cache through this path. In-flight dedup is
-   * unchanged — concurrent callers share the one promise, success or failure.
-   */
-  private async runLoad(
-    key: string,
-    ttlMs: number,
-    load: () => Promise<readonly SearchResult[]>,
-  ): Promise<readonly SearchResult[]> {
-    const task = load().then((results) => {
-      if (results.length > 0) {
-        this.cache.set(key, { expiresAt: this.now() + ttlMs, results });
-        evictOverflowedEntries(this.cache, MAX_DISCOVERY_CACHE_ENTRIES, this.now());
-      }
-      return results;
-    });
-    this.inflight.set(key, task);
-
-    return task.finally(() => {
-      this.inflight.delete(key);
-    });
   }
 }
 

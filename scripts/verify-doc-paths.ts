@@ -329,14 +329,6 @@ export function checkRoadmap(roadmapText: string, planFiles: readonly string[]):
 export const MAX_ACTIVE_PLAN_AGE_DAYS = 45;
 const MS_PER_DAY = 86_400_000;
 
-/**
- * Shipped plans intentionally left for the maintainer to archive rather than
- * stamped with a synthetic review date. Remove each entry once archived.
- */
-const PENDING_MAINTAINER_ARCHIVE: ReadonlySet<string> = new Set([
-  "2026-08-24-0-3-0-merge-train.md",
-]);
-
 function extractFrontmatter(
   text: string,
 ): { readonly body: string; readonly lineOffset: number } | null {
@@ -481,7 +473,6 @@ if (import.meta.main) {
     planFileNames
       .filter((name) => name !== "roadmap.md" && name.endsWith(".md"))
       .map((name) => ({ name, text: readFileSync(join(plansDir, name), "utf8") })),
-    { exempt: PENDING_MAINTAINER_ARCHIVE },
   );
 
   const findings = [

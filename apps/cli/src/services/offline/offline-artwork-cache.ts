@@ -1,6 +1,7 @@
 import { stat } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 
+import { createKeyedJoiner } from "@/infra/concurrency/keyed-joiner";
 import { writeAtomicBytes } from "@/infra/fs/atomic-write";
 import { readBoundedBody } from "@/services/network/bounded-body";
 import { fetchGuardedStreamTarget } from "@kunai/providers";
@@ -12,7 +13,8 @@ const POSTER_CACHE_TIMEOUT_MS = 10_000;
 // Same budget as the in-shell poster pipeline: a poster beyond this is a
 // mis-labelled or hostile body, not artwork worth keeping beside a download.
 const MAX_OFFLINE_ARTWORK_BYTES = 16 * 1024 * 1024;
-const inFlightPosterWrites = new Map<string, Promise<string | null>>();
+/** One fetch-and-write per target file; callers never cancel, so it always finishes. */
+const inFlightPosterWrites = createKeyedJoiner<string | null>();
 
 export function resolveOfflinePosterArtifactPath(job: DownloadJobRecord): string {
   const ext = posterExtension(job.posterUrl);
@@ -31,14 +33,9 @@ export async function cacheOfflinePosterArtwork(input: {
   if (existing?.isFile() && existing.size > 0) return targetPath;
 
   const workKey = `${targetPath}\n${posterUrl}`;
-  const active = inFlightPosterWrites.get(workKey);
-  if (active) return active;
-
-  const work = fetchAndWritePoster(input.job, targetPath, input.fetchImpl).finally(() => {
-    inFlightPosterWrites.delete(workKey);
-  });
-  inFlightPosterWrites.set(workKey, work);
-  return work;
+  return inFlightPosterWrites.join(workKey, () =>
+    fetchAndWritePoster(input.job, targetPath, input.fetchImpl),
+  );
 }
 
 async function fetchAndWritePoster(

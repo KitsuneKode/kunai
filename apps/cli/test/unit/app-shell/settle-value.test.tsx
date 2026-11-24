@@ -21,6 +21,7 @@ import React, { act, useState } from "react";
 import { render } from "../../harness/render-capture";
 import { waitUntil } from "../../support/wait-until";
 
+// sleep-allow: debounce helper; the settled-value clock is not injected
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Counter surface: each key bumps the live value; the settled value debounces. */
@@ -54,6 +55,7 @@ describe("useSettledValue", () => {
         label: "settled value caught up",
         tick: async (ms) => {
           await act(async () => {
+            // sleep-allow: drives the real settle debounce; useSettledValue takes no injected clock
             await sleep(ms);
           });
         },
@@ -101,6 +103,7 @@ describe("navigation burst frame-count", () => {
         label: "settled preview caught up",
         tick: async (ms) => {
           await act(async () => {
+            // sleep-allow: drives the real settle debounce; useSettledValue takes no injected clock
             await sleep(ms);
           });
         },

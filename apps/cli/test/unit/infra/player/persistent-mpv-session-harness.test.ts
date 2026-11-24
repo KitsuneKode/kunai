@@ -1,4 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import type { PlaybackTimingMetadata, StreamInfo } from "@/domain/types";
 import type { MpvIpcCommandResult, MpvIpcSession } from "@/infra/player/mpv-ipc";
@@ -7,9 +10,24 @@ import type { PersistentMpvSessionRuntime } from "@/infra/player/persistent-mpv-
 import { PersistentMpvSession } from "@/infra/player/PersistentMpvSession";
 import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 
+import { applyStorageRootEnv } from "../../../helpers/storage-env";
 import { waitUntil } from "../../../support/wait-until";
 
 type CapturedCallbacks = Parameters<PersistentMpvSessionRuntime["openIpcSession"]>[0];
+
+// Starting a session installs the mpv bridge script into the config dir
+// (`resolveKunaiMpvBridgeScriptPath`). Without a sandbox that is the
+// developer's real ~/.config/kunai/mpv/kunai-bridge.lua, rewritten every run.
+let sandbox = "";
+let restoreStorageEnv: () => void = () => {};
+beforeAll(() => {
+  sandbox = mkdtempSync(join(tmpdir(), "kunai-persistent-mpv-harness-"));
+  restoreStorageEnv = applyStorageRootEnv(sandbox);
+});
+afterAll(() => {
+  restoreStorageEnv();
+  rmSync(sandbox, { recursive: true, force: true });
+});
 
 function createStream(overrides: Partial<StreamInfo> = {}): StreamInfo {
   return {
@@ -100,8 +118,8 @@ function pendingLoadOwners(session: PersistentMpvSession): number {
 }
 
 async function flushAsyncWork(): Promise<void> {
-  await Bun.sleep(0);
-  await Bun.sleep(0);
+  await nextTurn();
+  await nextTurn();
 }
 
 async function waitFor(predicate: () => boolean): Promise<void> {
@@ -1156,6 +1174,7 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
     const commandCountAtReplacement = harness.commands.length;
     // Negative window: must exceed the real 100ms reconnect backoff plus
     // scheduler margin — a shorter wait proves nothing on a loaded runner.
+    // sleep-allow: must outlast the session's real 100ms reconnect backoff
     await Bun.sleep(400);
     await flushAsyncWork();
 
@@ -1612,3 +1631,9 @@ test.each(["es", "de"])(
     }
   },
 );
+
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}

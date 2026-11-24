@@ -41,6 +41,7 @@ function DebouncedWidthProbe() {
 function Flickering() {
   const [tick, setTick] = useState(0);
   useEffect(() => {
+    // sleep-allow: probe component's own interval; the harness asserts on painted frames
     const id = setInterval(() => setTick((t) => t + 1), 20);
     return () => clearInterval(id);
   }, []);

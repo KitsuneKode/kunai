@@ -92,6 +92,7 @@ mpvTest("a JSON IPC command round-trips over the endpoint", async () => {
   const reply = await new Promise<string>((resolve, reject) => {
     // Binding alone proves the path is right; a command proves the transport
     // actually carries framed JSON both ways, which is what playback depends on.
+    // sleep-allow: deadline around a real mpv IPC socket
     const timer = setTimeout(() => reject(new Error("no IPC reply within 5s")), 5_000);
     let buffer = "";
     void Bun.connect<Record<string, never>>({

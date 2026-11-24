@@ -100,7 +100,7 @@ async function dispatchRpcRequest(
 
   let rpc: RelayRpcRequest;
   try {
-    rpc = await readRpcRequest(request);
+    rpc = await readRpcRequest(request, options.timeoutMs ?? DEFAULT_RELAY_TIMEOUT_MS);
   } catch (error) {
     return relayError(
       error instanceof RelayValidationError ? error.code : "bad-request",
@@ -203,15 +203,15 @@ async function dispatchRpcRequest(
   }
 }
 
-async function readRpcRequest(request: Request): Promise<RelayRpcRequest> {
+async function readRpcRequest(request: Request, timeoutMs: number): Promise<RelayRpcRequest> {
   const contentLength = request.headers.get("content-length");
   if (contentLength && Number(contentLength) > DEFAULT_MAX_REQUEST_BODY_BYTES) {
+    // Start the cancel without waiting: a source whose cancel never settles
+    // must not hold back the 413.
+    void request.body?.cancel().catch(() => undefined);
     throw new RelayValidationError("body-too-large", "Relay envelope is too large", 413);
   }
-  const text = await request.text();
-  if (byteLength(text) > DEFAULT_MAX_REQUEST_BODY_BYTES) {
-    throw new RelayValidationError("body-too-large", "Relay envelope is too large", 413);
-  }
+  const text = await readRequestTextCapped(request, timeoutMs);
 
   let parsed: unknown;
   try {
@@ -475,6 +475,32 @@ function isAbortLike(cause: unknown): boolean {
 
 function byteLength(value: string): number {
   return new TextEncoder().encode(value).byteLength;
+}
+
+/** Cap the envelope while reading. `request.text()` would buffer it first. */
+async function readRequestTextCapped(request: Request, timeoutMs: number): Promise<string> {
+  const stream = request.body;
+  if (!stream) {
+    const text = await request.text();
+    if (byteLength(text) > DEFAULT_MAX_REQUEST_BODY_BYTES) {
+      throw new RelayValidationError("body-too-large", "Relay envelope is too large", 413);
+    }
+    return text;
+  }
+  let bytes: Uint8Array<ArrayBuffer> | null;
+  try {
+    bytes = await readBodyWithin(stream, DEFAULT_MAX_REQUEST_BODY_BYTES, timeoutMs);
+  } catch (error) {
+    // A client that stalls its own upload is not an upstream failure.
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new RelayValidationError("bad-request", "Relay request body timed out", 408);
+    }
+    throw error;
+  }
+  if (!bytes) {
+    throw new RelayValidationError("body-too-large", "Relay envelope is too large", 413);
+  }
+  return new TextDecoder().decode(bytes);
 }
 
 /**

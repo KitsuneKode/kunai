@@ -10,8 +10,8 @@
 // the decoded RGBA together; counting one would under-report by the larger.
 
 import { preparePoster, type PosterPixelBounds, type PreparedPoster } from "@/image/native-image";
+import { createKeyedJoiner } from "@/infra/concurrency/keyed-joiner";
 
-import { createKeyedInflight } from "./inflight";
 import { ByteBudgetLruCache } from "./poster-byte-cache";
 import type { PosterSource } from "./poster-source-cache";
 
@@ -22,7 +22,9 @@ const runtime = {
   preparePoster,
 };
 
-const preparedInflight = createKeyedInflight();
+// "finish": an aborted caller must not strand a decode another surface (or
+// the next scroll) still wants — the completed decode warms the cache.
+const preparedInflight = createKeyedJoiner<PreparedPoster | null>({ whenAbandoned: "finish" });
 const preparedCache = new ByteBudgetLruCache<string, PreparedPoster>({
   maxEntries: MAX_PREPARED_POSTER_CACHE_ENTRIES,
   maxBytes: MAX_PREPARED_POSTER_CACHE_BYTES,
@@ -58,16 +60,20 @@ export async function getPreparedPoster(
   // Decode is the expensive step — the leader finishes it once for every
   // joiner, so an aborted caller cannot strand a second caller's decode.
   // `signal` races this caller's own await only.
-  return preparedInflight.join(
-    key,
-    async () => {
-      const prepared = await runtime.preparePoster(source.bytes, bounds);
-      if (!prepared) return null;
-      preparedCache.set(key, prepared);
-      return prepared;
-    },
-    signal,
-  );
+  // A cancelled caller (or a cleared cache) resolves null, like a failed decode.
+  return preparedInflight
+    .join(
+      key,
+      async (upstream) => {
+        const prepared = await runtime.preparePoster(source.bytes, bounds);
+        if (!prepared) return null;
+        // A decode the cache was cleared under must not repopulate it.
+        if (!upstream.aborted) preparedCache.set(key, prepared);
+        return prepared;
+      },
+      { signal },
+    )
+    .catch(() => null);
 }
 
 export const __testing = {

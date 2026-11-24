@@ -91,6 +91,7 @@ export async function materializeHlsManifestForPlayback(
     }
     const response = outcome.response;
     if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
       onSkipped?.("http-error", `HTTP ${response.status}`, response.status);
       return null;
     }

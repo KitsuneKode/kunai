@@ -15,6 +15,7 @@ import {
 
 export { buildPickerActionContext };
 import { companionFallbackGlyph, companionToggleable } from "@/app-shell/companion-policy";
+import { shellFeedbackTimers } from "@/app-shell/dismiss-timer-registry";
 import { exportLocalSupportBundle } from "@/app-shell/export-local-support-bundle";
 import {
   buildExternalOpenFallback,
@@ -1875,7 +1876,7 @@ export async function enqueueCurrentPlaybackDownload({
       type: "SET_PLAYBACK_FEEDBACK",
       note: successNote,
     });
-    setTimeout(() => {
+    shellFeedbackTimers.schedule(() => {
       if (container.stateManager.getState().playbackNote === successNote) {
         container.stateManager.dispatch({
           type: "SET_PLAYBACK_FEEDBACK",

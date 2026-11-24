@@ -56,4 +56,19 @@ describe("dismiss timer registry", () => {
     expect(fired).toBe(1);
     expect(clock.cleared).toEqual([2]);
   });
+
+  test("flush runs every pending dismissal now, once, and cancels its timer", () => {
+    const clock = createTimerHarness();
+    const registry = createDismissTimerRegistry(clock.timers);
+    const fired: string[] = [];
+
+    registry.schedule(() => fired.push("a"), 3_000);
+    registry.schedule(() => fired.push("b"), 3_000);
+    clock.scheduled[0]?.callback();
+    registry.flush();
+    registry.flush();
+
+    expect(fired).toEqual(["a", "b"]);
+    expect(clock.cleared).toEqual([2]);
+  });
 });

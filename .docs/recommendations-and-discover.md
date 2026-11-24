@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T08:39:16Z"
+lastReviewed: "2026-11-24T13:30:00Z"
 ---
 
 # Kunai — Recommendations And Discover
@@ -20,27 +20,27 @@ and `/random` / `/surprise` discovery surfaces.
 
 ## Current Implementation
 
-| Capability                                    | Canonical location                                                                                                   | Status      |
-| --------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ----------- |
-| Recommendation service contract               | `apps/cli/src/services/recommendations/RecommendationService.ts`                                                     | Implemented |
-| TMDB-backed implementation and cache helpers  | `apps/cli/src/services/recommendations/RecommendationServiceImpl.ts`                                                 | Implemented |
-| SQLite recommendation cache                   | `packages/storage/src/repositories/recommendation-cache.ts`                                                          | Implemented |
-| Shared section builder                        | `apps/cli/src/app/discover/discover-sections.ts`                                                                     | Implemented |
-| Unified discover result loader                | `apps/cli/src/app/discover/discover-results.ts`                                                                      | Implemented |
-| Browse-shell discover loading + SWR           | `apps/cli/src/app-shell/ink-shell.tsx`, `apps/cli/src/app/search/SearchPhase.ts`                                     | Implemented |
-| Release schedule service + SQLite cache       | `apps/cli/src/services/catalog/CatalogScheduleService.ts`, `packages/storage/src/repositories/schedule-cache.ts`     | Implemented |
-| Calendar result loader                        | `apps/cli/src/app/search/calendar-results.ts`                                                                        | Implemented |
-| Random result loader                          | `apps/cli/src/app/discover/random-results.ts`                                                                        | Implemented |
-| Surprise catalog pool                         | `apps/cli/src/services/catalog/CatalogDiscoveryService.ts`, `apps/cli/src/app/discover/discovery-lists.ts`           | Implemented |
-| Trending source chain + last-known-good       | `apps/cli/src/services/catalog/CatalogDiscoveryService.ts`, `apps/cli/src/services/catalog/catalog-durable-cache.ts` | Implemented |
-| Anime trending fallbacks (Kitsu, Jikan → ARM) | `apps/cli/src/services/catalog/kitsu-trending.ts`, `apps/cli/src/services/catalog/jikan-trending.ts`                 | Implemented |
-| Command routing                               | `apps/cli/src/domain/session/command-registry.ts`, `apps/cli/src/app-shell/command-router.ts`                        | Implemented |
-| Search-phase entry                            | `apps/cli/src/app/search/SearchPhase.ts`                                                                             | Implemented |
-| Startup discovery routes                      | `--calendar`, `--random`, `/calendar`, `/random`                                                                     | Implemented |
-| Post-playback nudge/action                    | `apps/cli/src/app/playback/PlaybackPhase.ts`, `apps/cli/src/app-shell/ink-shell.tsx`                                 | Implemented |
-| Startup hint config                           | `discoverShowOnStartup` in config                                                                                    | Implemented |
-| Discover mode + item limit config             | `discoverMode`, `discoverItemLimit` in config                                                                        | Implemented |
-| Minimal mode                                  | `minimalMode` in config and shell layout policy                                                                      | Implemented |
+| Capability                                    | Canonical location                                                                                                                                  | Status      |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| Recommendation service contract               | `apps/cli/src/services/recommendations/RecommendationService.ts`                                                                                    | Implemented |
+| TMDB-backed implementation and cache helpers  | `apps/cli/src/services/recommendations/RecommendationServiceImpl.ts`                                                                                | Implemented |
+| SQLite recommendation cache                   | `packages/storage/src/repositories/recommendation-cache.ts`                                                                                         | Implemented |
+| Shared section builder                        | `apps/cli/src/app/discover/discover-sections.ts`                                                                                                    | Implemented |
+| Unified discover result loader                | `apps/cli/src/app/discover/discover-results.ts`                                                                                                     | Implemented |
+| Browse-shell discover loading + SWR           | `apps/cli/src/app-shell/ink-shell.tsx`, `apps/cli/src/app/search/SearchPhase.ts`                                                                    | Implemented |
+| Release schedule service + SQLite cache       | `apps/cli/src/services/catalog/CatalogScheduleService.ts`, `packages/storage/src/repositories/schedule-cache.ts`                                    | Implemented |
+| Calendar result loader                        | `apps/cli/src/app/search/calendar-results.ts`                                                                                                       | Implemented |
+| Random result loader                          | `apps/cli/src/app/discover/random-results.ts`                                                                                                       | Implemented |
+| Surprise catalog pool                         | `apps/cli/src/services/catalog/CatalogDiscoveryService.ts`, `apps/cli/src/app/discover/discovery-lists.ts`                                          | Implemented |
+| Trending source chain + last-known-good       | `apps/cli/src/services/catalog/CatalogDiscoveryService.ts`, `apps/cli/src/services/catalog/durable-json-cache.ts`                                   | Implemented |
+| Anime trending fallbacks (Kitsu, Jikan → ARM) | `apps/cli/src/services/catalog/kitsu-trending.ts`, `apps/cli/src/services/catalog/jikan-trending.ts`                                                | Implemented |
+| Command routing                               | `apps/cli/src/domain/session/command-registry.ts`, `apps/cli/src/app-shell/command-router.ts`                                                       | Implemented |
+| Search-phase entry                            | `apps/cli/src/app/search/SearchPhase.ts`                                                                                                            | Implemented |
+| Startup discovery routes                      | `--calendar`, `--random`, `/calendar`, `/random`                                                                                                    | Implemented |
+| Post-playback nudge/action                    | `apps/cli/src/app/playback/playback-auto-advance.ts`, `apps/cli/src/app/playback/run-post-playback-menu.ts`, `apps/cli/src/app-shell/ink-shell.tsx` | Implemented |
+| Startup hint config                           | `discoverShowOnStartup` in config                                                                                                                   | Implemented |
+| Discover mode + item limit config             | `discoverMode`, `discoverItemLimit` in config                                                                                                       | Implemented |
+| Minimal mode                                  | `minimalMode` in config and shell layout policy                                                                                                     | Implemented |
 
 ## Data Sources
 
@@ -97,16 +97,32 @@ Trending walks a chain of sources per lane and remembers the last good answer:
 - **Cancelled callers** never start a TMDB request, and every shared in-flight
   request has a handler, so a request that fails after all its callers left can
   never surface as an unhandled rejection (which `main.ts` treats as fatal).
-- **Calendar loads** (`CatalogScheduleService.loadCached`) run on a request the
-  service owns: each caller waits with its own signal, and the request is
-  aborted only when the last waiter leaves. **Trending refresh**
-  (`clearTrendingCache`) aborts walks it supersedes.
+- **Shared requests** — AniList posts, TMDB requests, calendar loads, AniList
+  progress batches, trending walks and surprise loads — all join through
+  `createKeyedJoiner` (`apps/cli/src/infra/concurrency/keyed-joiner.ts`): the
+  request runs on a signal its entry owns, each caller waits with its own
+  signal, and the request is aborted only when the last waiter leaves. TMDB
+  is the exception on purpose: it uses the joiner's `"finish"` mode, so a
+  superseded type-ahead request still warms the session cache. In the default
+  abort mode, a request whose waiters all left is never joined by a later
+  caller; in `"finish"` mode (TMDB, posters) it keeps running and a later caller
+  for the same key joins it. A request that is cancelled or cleared never
+  writes a cache. **Trending refresh**
+  (`clearTrendingCache`) aborts the walks it supersedes, and a walk abandoned
+  without a refresh rechecks its own signal after every source answer, so a
+  late answer cannot overwrite the walk a returning caller started.
+  **Discover's refresh** (`clearCache` → `clearTmdbSessionCache`) detaches
+  in-flight TMDB requests instead of cancelling them: the session cache is
+  shared, so cancelling would also fail a title-detail season lookup that has
+  nothing to do with Discover. A detached request still answers its waiters,
+  is never joined by a later caller, and writes neither cache.
 
 ### Series fallback: last-known-good TMDB
 
 Every successful TMDB show (`/tv/:id`) and season (`/tv/:id/season/:n`)
 response is also saved to the cache database as a `tmdb:<path>` row
-(`apps/cli/src/services/catalog/tmdb-durable-cache.ts`, wired in
+(`createTmdbDurableCache` in `apps/cli/src/services/catalog/durable-json-cache.ts`,
+which also backs the trending last-known-good lists, wired in
 `bootstrap-persistence.ts`, kept 30 days). When every TMDB host fails with a
 transport error or a 5xx, `fetchTmdbJsonCached` serves the saved copy instead,
 so a series opened in the last month still lists its seasons and episodes, and
@@ -217,7 +233,7 @@ identity (`id`, media type, optional source id, title, and year) into the shell,
 but it does not resolve streams or call providers when the user presses a number.
 
 `1`, `2`, and `3` queue the visible picks into the playlist at the end. The
-mutation stays in `PlaybackPhase`; the shell only renders rows and reports the
+mutation stays in the playback phase (`app/playback/playback-recommendation-actions.ts`); the shell only renders rows and reports the
 typed action. This keeps playback context stable and prevents the rail from
 turning into a hidden provider-resolution path.
 

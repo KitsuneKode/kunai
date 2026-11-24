@@ -191,10 +191,6 @@ const VIDEASY_APP_ID = "bc-frontend";
  *  legacy list that is now all route-dead). */
 export const VIDKING_PHASE_A_SERVERS = getPhaseAVidkingServers();
 
-/** @deprecated Legacy Videasy server list (all route-dead). Kept for fallback type narrowing;
- *  runtime fallback now always uses VIDKING_PHASE_A_SERVERS. */
-const VIDKING_SERVERS = ["mb-flix", "cdn", "downloader2", "1movies"] as const;
-
 export const VIDKING_VIDEASY_FETCH_TIMEOUT_MS = 25_000;
 /**
  * Ceiling for one flavor inside the Vidking cycle.
@@ -258,8 +254,7 @@ export function classifyVideasyHttpFailure(statusCode: number): EndpointFailureC
   return statusCode === 404 || statusCode === 410 ? "route-dead" : "transient";
 }
 
-type VidkingServer = (typeof VIDKING_SERVERS)[number];
-type VidkingServerEndpoint = VidkingServer | (string & {});
+type VidkingServerEndpoint = string;
 
 type VidkingCycleCandidateMetadata = {
   readonly server: VidkingServerEndpoint;
@@ -335,9 +330,6 @@ export const videasyProviderModule: CoreProviderModule = {
     });
   },
 };
-
-/** @deprecated Use videasyProviderModule */
-export const vidkingProviderModule = videasyProviderModule;
 
 export async function resolveVideasyDirect(
   input: ProviderResolveInput,
@@ -781,9 +773,6 @@ export async function resolveVideasyDirect(
   });
 }
 
-/** @deprecated Use resolveVideasyDirect */
-export const resolveVidkingDirect = resolveVideasyDirect;
-
 function withVidkingSourceInventory(
   result: ProviderResolveResult,
   sources: readonly ProviderSourceCandidate[],
@@ -1010,7 +999,7 @@ export function createVidkingResultFromPayload({
   readonly engineOptions?: VidKingEngineOptions;
   readonly streamReachabilityVerified?: boolean;
 }): ProviderResolveResult | null {
-  const resolvedServer = (server as VidkingServer | undefined) ?? "wings-cdn";
+  const resolvedServer = server ?? "wings-cdn";
   const policy = cachePolicy;
   const presentation = resolveVidkingPresentation(
     resolvedServer,
@@ -2547,7 +2536,7 @@ function inferLanguageLabel(value: string | undefined): string | undefined {
   return undefined;
 }
 
-function createSourceId(server: VidkingServer | string): string {
+function createSourceId(server: string): string {
   return vidkingSourceIdForEndpoint(server);
 }
 
