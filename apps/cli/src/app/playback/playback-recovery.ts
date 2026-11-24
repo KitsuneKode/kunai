@@ -1,0 +1,552 @@
+// =============================================================================
+// Post-playback recovery
+//
+// Runs right after the player returns. A dead or failed provider stream has its
+// URL blocked and caches invalidated; the player's control action is read once;
+// the result policy then decides between relaunching a local file, refreshing
+// or recovering the provider source (with startup failover across catalog
+// sources, bounded by MAX_AUTO_SOURCE_RECOVER_ATTEMPTS), hopping to a fallback
+// provider, or handing the action on to the control/post-play stages.
+// =============================================================================
+
+import {
+  MAX_AUTO_SOURCE_RECOVER_ATTEMPTS,
+  releasePersistentMpvForTerminalFailure,
+  shouldReleasePersistentMpvBeforePostPlay,
+} from "@/app/playback/mpv-session-lifecycle";
+import { playbackDeadStreamScopeKey } from "@/app/playback/playback-dead-stream-ledger";
+import type { EpisodeAttempt } from "@/app/playback/playback-episode-attempt";
+import {
+  updatePlaybackFeedback,
+  transitionPlaybackSession,
+} from "@/app/playback/playback-phase-feedback";
+import {
+  NEXT_ITERATION,
+  type PlaybackIterationStep,
+  type PlaybackLoopState,
+} from "@/app/playback/playback-phase-session";
+import {
+  isProviderIdFallbackEligible,
+  pickCompatibleFallbackProvider,
+  switchPlaybackProviderFallback,
+} from "@/app/playback/playback-provider-fallback";
+import {
+  didPlaybackFailToStart,
+  resolvePlaybackResultDecision,
+  syncPlaybackSessionState,
+} from "@/app/playback/playback-session-controller";
+import { invalidateEpisodePlaybackCaches } from "@/app/playback/playback-source-cache-invalidation";
+import {
+  listOrderedPlaybackSourceIds,
+  planStartupFailover,
+  shouldUseProviderPlaybackRecovery,
+} from "@/app/playback/playback-source-failover";
+import { startAtResumePoint, startEpisodeNavigation } from "@/app/playback/playback-start-intent";
+import type { AcquiredStream, ReadyEpisodeStream } from "@/app/playback/playback-stream-ready";
+import type { StreamSelectionIntent } from "@/app/playback/source-quality";
+import { toHistoryTimestamp } from "@/domain/playback/playback-history";
+import {
+  buildLocalPlaybackFailureProblem,
+  buildPlayerFailureProblem,
+} from "@/domain/playback/playback-problem";
+import type { EpisodeInfo, PlaybackResult } from "@/domain/types";
+import { classifyPlaybackFailureFromResult } from "@/infra/player/playback-failure-classifier";
+import { buildRecoveryDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
+
+export type QuitThresholdMode =
+  PlaybackLoopState["context"]["container"]["config"]["quitNearEndThresholdMode"];
+
+/** The player's control action, read once after playback and handed to later stages. */
+export type PlaybackControlIntent = {
+  readonly playbackControlAction: ReturnType<
+    PlaybackLoopState["context"]["container"]["playerControl"]["consumeLastAction"]
+  >;
+  readonly confirmedStreamSelection: StreamSelectionIntent | null;
+  readonly confirmedEpisodeSelection: EpisodeInfo | null;
+};
+
+export type PlaybackRecoveryOutcome =
+  | { readonly kind: "exit"; readonly step: PlaybackIterationStep }
+  | ({ readonly kind: "proceed" } & PlaybackControlIntent);
+
+export async function recoverAfterPlayback(
+  loop: PlaybackLoopState,
+  attempt: EpisodeAttempt,
+  acquired: AcquiredStream,
+  ready: ReadyEpisodeStream,
+  result: PlaybackResult,
+  quitThresholdMode: QuitThresholdMode,
+): Promise<PlaybackRecoveryOutcome> {
+  const {
+    context,
+    title,
+    run,
+    selectionCoordinator,
+    getPreferredStreamSelection,
+    deadStreamUrls,
+    invalidateRecentEpisodeStream,
+  } = loop;
+  const { container } = context;
+  const {
+    providerRegistry,
+    stateManager,
+    config,
+    cacheStore,
+    diagnosticsService,
+    playerControl,
+    player,
+  } = container;
+  const { currentEpisode, sourceAuthority, playbackCorrelation } = attempt;
+  const { streamProvenance, consumedBundle } = acquired;
+  const { providerHandoff, effectiveTiming, preparedStream } = ready;
+  const providerRecoveryAllowed =
+    sourceAuthority.kind === "provider" && shouldUseProviderPlaybackRecovery(streamProvenance);
+  const shouldInvalidateStreamCache =
+    providerRecoveryAllowed &&
+    (result.endReason === "error" ||
+      result.suspectedDeadStream === true ||
+      didPlaybackFailToStart(result));
+  if (shouldInvalidateStreamCache) {
+    const invalidateProviderId = providerHandoff.successfulProviderId;
+    const selectedResolveStream = preparedStream.providerResolveResult?.streams.find(
+      (candidate) => candidate.id === preparedStream.providerResolveResult?.selectedStreamId,
+    );
+    deadStreamUrls.record(
+      playbackDeadStreamScopeKey({
+        titleId: title.id,
+        season: currentEpisode.season,
+        episode: currentEpisode.episode,
+        providerEpisodeIdentity: currentEpisode.providerEpisodeIdentity,
+        providerId: invalidateProviderId,
+      }),
+      preparedStream.url,
+    );
+    await invalidateEpisodePlaybackCaches({
+      cacheStore,
+      sourceInventory: container.sourceInventory,
+      providerId: invalidateProviderId,
+      providerManifest: container.providerRegistry.getManifest(invalidateProviderId),
+      title,
+      episode: currentEpisode,
+      mode: stateManager.getState().mode,
+      config,
+      overrides: stateManager.getState().playbackTrackPreferences,
+      selectedSourceId: selectedResolveStream?.sourceId,
+      selectedStreamId: preparedStream.providerResolveResult?.selectedStreamId,
+    });
+    invalidateRecentEpisodeStream(currentEpisode);
+    if (result.suspectedDeadStream === true && result.streamRejectedBeforePlayerLaunch !== true) {
+      container.titleProviderHealth.recordFailure(
+        title.id,
+        invalidateProviderId,
+        undefined,
+        "dead-stream",
+      );
+    }
+    diagnosticsService.record({
+      category: "playback",
+      message: result.suspectedDeadStream
+        ? "Stream ended early — cached URL invalidated for next resolve"
+        : "Stream died — cache entry invalidated for next resolve",
+      context: {
+        provider: invalidateProviderId,
+        titleId: title.id,
+        season: currentEpisode.season,
+        episode: currentEpisode.episode,
+        exitCode: result.playerExitCode,
+        exitSignal: result.playerExitSignal,
+        suspectedDeadStream: result.suspectedDeadStream === true,
+        wasPrefetched: Boolean(consumedBundle),
+      },
+    });
+  }
+
+  const playbackControlAction = playerControl.consumeLastAction();
+  const confirmedStreamSelection =
+    playbackControlAction === "pick-source" ||
+    playbackControlAction === "pick-stream" ||
+    playbackControlAction === "pick-quality"
+      ? playerControl.consumePendingStreamSelection()
+      : null;
+  const confirmedEpisodeSelection =
+    playbackControlAction === "pick-episode"
+      ? playerControl.consumePendingEpisodeSelection()
+      : null;
+  if (playbackControlAction === "switch-title") {
+    // A notification (or other handoff) asked to leave this title's
+    // session entirely: the file stop already landed, so exit with the
+    // target and let SessionController re-enter playback for it.
+    const titleSelection = playerControl.consumePendingTitleSelection();
+    if (titleSelection) {
+      diagnosticsService.record({
+        category: "playback",
+        message: "Switching to a different title from active playback",
+        context: {
+          fromTitleId: title.id,
+          toTitleId: titleSelection.title.id,
+        },
+      });
+      return {
+        kind: "exit",
+        step: {
+          status: "success",
+          value: {
+            type: "history_entry",
+            title: titleSelection.title,
+            episode: titleSelection.episode,
+          },
+        },
+      };
+    }
+  }
+  run.playbackSession = syncPlaybackSessionState(run.playbackSession, {
+    autoplaySessionPaused: stateManager.getState().autoplaySessionPaused,
+    stopAfterCurrent: stateManager.getState().stopAfterCurrent,
+  });
+  const playbackDecision = resolvePlaybackResultDecision({
+    result,
+    controlAction: playbackControlAction,
+    session: run.playbackSession,
+    timing: effectiveTiming.current,
+    endPolicy: {
+      quitNearEndBehavior: config.quitNearEndBehavior,
+      quitNearEndThresholdMode: config.quitNearEndThresholdMode,
+    },
+  });
+  run.playbackSession = playbackDecision.session;
+  // The "interrupted" pause is an internal, per-episode guard so quitting
+  // mid-episode does not immediately auto-advance. It is deliberately NOT
+  // pushed into shell state: doing so rendered "autoplay paused" as if the
+  // user's session preference had changed just because they closed mpv.
+  // Only an explicit toggle changes the visible autoplay setting.
+  let shouldAutoFallbackProvider =
+    playbackDecision.shouldFallbackProvider && sourceAuthority.kind === "provider";
+  if (!providerRecoveryAllowed && playbackDecision.shouldRefreshSource) {
+    const isExplicitLocalRelaunch =
+      playbackControlAction === "refresh" || playbackControlAction === "recover";
+    if (isExplicitLocalRelaunch) {
+      run.pendingStart = startAtResumePoint(
+        toHistoryTimestamp(result, effectiveTiming.current, quitThresholdMode),
+        { suppressResumePrompt: true },
+      );
+      run.episodePlaybackSourceOverride = "local";
+      return { kind: "exit", step: NEXT_ITERATION };
+    }
+
+    const localProblem = buildLocalPlaybackFailureProblem();
+    stateManager.dispatch({
+      type: "SET_PLAYBACK_PROBLEM",
+      problem: localProblem,
+    });
+    diagnosticsService.record({
+      ...playbackCorrelation,
+      category: "playback",
+      operation: "playback.source.local.failed",
+      level: "error",
+      message: localProblem.userMessage,
+      titleId: title.id,
+      season: currentEpisode.season,
+      episode: currentEpisode.episode,
+      context: {
+        cause: localProblem.cause,
+        endReason: result.endReason,
+        playerExitCode: result.playerExitCode,
+      },
+    });
+    await releasePersistentMpvForTerminalFailure({
+      player,
+      playerControl,
+      userMessage: localProblem.userMessage,
+      reason: `local-playback:${classifyPlaybackFailureFromResult(result)}`,
+      diagnostics: diagnosticsService,
+    });
+    return { kind: "exit", step: { status: "success", value: "back_to_results" } };
+  }
+
+  if (providerRecoveryAllowed && playbackDecision.shouldRefreshSource) {
+    const isExplicitSourceRefresh =
+      playbackControlAction === "refresh" || playbackControlAction === "recover";
+    const isAutoSourceRecover =
+      !isExplicitSourceRefresh &&
+      (result.suspectedDeadStream === true || didPlaybackFailToStart(result));
+
+    const selectedResolveStream = preparedStream.providerResolveResult?.streams.find(
+      (candidate) => candidate.id === preparedStream.providerResolveResult?.selectedStreamId,
+    );
+    const currentSourceId =
+      selectedResolveStream?.sourceId ??
+      getPreferredStreamSelection(attempt.resolvedProviderId, currentEpisode).sourceId ??
+      null;
+
+    let skipRefreshContinue = false;
+
+    if (isAutoSourceRecover && run.autoSourceRecoverAttempts >= MAX_AUTO_SOURCE_RECOVER_ATTEMPTS) {
+      diagnosticsService.record({
+        category: "playback",
+        level: "warn",
+        message:
+          "Auto-recover already attempted for this episode; opening post-play instead of looping",
+        context: {
+          provider: attempt.resolvedProviderId,
+          titleId: title.id,
+          season: currentEpisode.season,
+          episode: currentEpisode.episode,
+          endReason: result.endReason,
+          watchedSeconds: result.watchedSeconds,
+        },
+      });
+      if (shouldReleasePersistentMpvBeforePostPlay(result, true)) {
+        const failureClass = classifyPlaybackFailureFromResult(result);
+        const playerProblem = buildPlayerFailureProblem(failureClass);
+        await releasePersistentMpvForTerminalFailure({
+          player,
+          playerControl,
+          userMessage: playerProblem.userMessage,
+          reason: `playback-auto-recover-exhausted:${failureClass}`,
+          diagnostics: diagnosticsService,
+        });
+      }
+      updatePlaybackFeedback(context, {
+        detail: "Could not start playback",
+        note: "Press o for sources, ⇧F for fallback, r to retry, or /diagnostics for details",
+      });
+      skipRefreshContinue = true;
+    } else if (isAutoSourceRecover) {
+      if (currentSourceId && !run.triedFailoverSourceIds.includes(currentSourceId)) {
+        run.triedFailoverSourceIds.push(currentSourceId);
+      }
+
+      const failoverPlan = planStartupFailover({
+        sourceIds: listOrderedPlaybackSourceIds(preparedStream.providerResolveResult),
+        currentSourceId,
+        triedSourceIds: new Set(run.triedFailoverSourceIds),
+        hasFallbackProvider: Boolean(
+          pickCompatibleFallbackProvider({
+            providers: providerRegistry.getCompatible(title, stateManager.getState().mode),
+            currentProviderId: attempt.resolvedProviderId,
+            excludedProviderIds: new Set(stateManager.getState().fallbackTriedProviderIds),
+            isFallbackEligible: (providerId) => isProviderIdFallbackEligible(container, providerId),
+          }),
+        ),
+        failoverAttempts: run.autoSourceRecoverAttempts,
+        maxFailoverAttempts: MAX_AUTO_SOURCE_RECOVER_ATTEMPTS,
+        providerHopUsed: run.startupProviderHopUsed,
+      });
+
+      if (failoverPlan.kind === "advance-source") {
+        await selectionCoordinator.applyAutomaticSourceFailover(
+          attempt.resolvedProviderId,
+          currentEpisode,
+          failoverPlan.sourceId,
+        );
+        diagnosticsService.record({
+          category: "playback",
+          message: "Startup stall failover advancing to next catalog source",
+          context: {
+            operation: "playback.startup-stall.failover",
+            fromSourceId: currentSourceId,
+            toSourceId: failoverPlan.sourceId,
+            provider: attempt.resolvedProviderId,
+            titleId: title.id,
+            season: currentEpisode.season,
+            episode: currentEpisode.episode,
+          },
+        });
+        void playerControl
+          .getActive()
+          ?.setEpisodeTransitionLoading?.(
+            `Kunai · Server unreachable, switching to backup server (${failoverPlan.sourceId})…`,
+          );
+      } else if (failoverPlan.kind === "fallback-provider") {
+        shouldAutoFallbackProvider = true;
+        skipRefreshContinue = true;
+      } else {
+        diagnosticsService.record({
+          category: "playback",
+          level: "warn",
+          message: "Startup failover exhausted catalog sources and provider hops",
+          context: {
+            provider: attempt.resolvedProviderId,
+            titleId: title.id,
+            season: currentEpisode.season,
+            episode: currentEpisode.episode,
+            triedSourceIds: run.triedFailoverSourceIds,
+          },
+        });
+        if (shouldReleasePersistentMpvBeforePostPlay(result, true)) {
+          const failureClass = classifyPlaybackFailureFromResult(result);
+          const playerProblem = buildPlayerFailureProblem(failureClass);
+          await releasePersistentMpvForTerminalFailure({
+            player,
+            playerControl,
+            userMessage: playerProblem.userMessage,
+            reason: `playback-startup-failover-exhausted:${failureClass}`,
+            diagnostics: diagnosticsService,
+          });
+        }
+        updatePlaybackFeedback(context, {
+          detail: "Could not start playback",
+          note: "Press o for sources, ⇧F for fallback, r to retry, or /diagnostics for details",
+        });
+        skipRefreshContinue = true;
+      }
+    }
+
+    if (!skipRefreshContinue) {
+      run.pendingRecomputeSources = playbackControlAction === "recompute";
+      run.pendingStart = startAtResumePoint(
+        toHistoryTimestamp(result, effectiveTiming.current, quitThresholdMode),
+        { suppressResumePrompt: true },
+      );
+      run.pendingSourceRefreshAction =
+        playbackControlAction === "recompute"
+          ? "recover"
+          : result.suspectedDeadStream === true ||
+              didPlaybackFailToStart(result) ||
+              playbackControlAction === "recover"
+            ? "recover"
+            : "refresh";
+      if (isAutoSourceRecover) {
+        run.autoSourceRecoverAttempts += 1;
+      }
+      diagnosticsService.record(
+        buildRecoveryDiagnosticEvent({
+          operation: "playback.source-refresh.requested",
+          stage: run.pendingSourceRefreshAction,
+          status: "started",
+          severity: isAutoSourceRecover ? "recoverable" : "degraded",
+          recommendedAction:
+            run.pendingSourceRefreshAction === "recover" ? "recover" : "refresh-source",
+          message:
+            run.pendingSourceRefreshAction === "recover"
+              ? "Recovery requested for current provider source"
+              : "Refresh requested for current provider source",
+          providerId: attempt.resolvedProviderId,
+          titleId: title.id,
+          season: currentEpisode.season,
+          episode: currentEpisode.episode,
+          context: {
+            provider: attempt.resolvedProviderId,
+            titleId: title.id,
+            season: currentEpisode.season,
+            episode: currentEpisode.episode,
+            resumeSeconds: run.pendingStart.startAt,
+            action: run.pendingSourceRefreshAction,
+            recomputeSources: run.pendingRecomputeSources,
+            autoRecover: isAutoSourceRecover,
+            autoRecoverAttempts: run.autoSourceRecoverAttempts,
+          },
+        }),
+      );
+      run.playbackSession = transitionPlaybackSession(
+        context,
+        run.playbackSession,
+        "recovery-started",
+        {
+          titleId: title.id,
+          season: currentEpisode.season,
+          episode: currentEpisode.episode,
+          provider: attempt.resolvedProviderId,
+          action: run.pendingSourceRefreshAction,
+        },
+      );
+      return { kind: "exit", step: NEXT_ITERATION };
+    }
+  }
+
+  if (shouldAutoFallbackProvider) {
+    run.pendingStart = startEpisodeNavigation({
+      targetResumeSeconds: toHistoryTimestamp(result, effectiveTiming.current, quitThresholdMode),
+    });
+    const fallback = pickCompatibleFallbackProvider({
+      providers: providerRegistry.getCompatible(title, stateManager.getState().mode),
+      currentProviderId: attempt.resolvedProviderId,
+      excludedProviderIds: new Set(stateManager.getState().fallbackTriedProviderIds),
+      isFallbackEligible: (providerId) => isProviderIdFallbackEligible(container, providerId),
+    });
+
+    if (fallback) {
+      run.sessionSoftProviderId = null;
+      const switched = await switchPlaybackProviderFallback({
+        container,
+        fromProviderId: attempt.resolvedProviderId,
+        toProviderId: fallback.metadata.id,
+        title,
+        episode: currentEpisode,
+        mode: stateManager.getState().mode,
+        invalidateRecentEpisodeStream,
+      });
+      attempt.resolvedProviderId = switched.providerId;
+      run.pendingSourceRefreshAction = "recover";
+      run.pendingRecomputeSources = false;
+      run.startupProviderHopUsed = true;
+      run.triedFailoverSourceIds = [];
+      if (playbackControlAction !== "fallback") {
+        run.autoSourceRecoverAttempts += 1;
+      }
+      diagnosticsService.record(
+        buildRecoveryDiagnosticEvent({
+          operation:
+            playbackControlAction === "fallback"
+              ? "playback.provider-fallback.started"
+              : "playback.startup-stall.failover",
+          stage: "fallback-provider",
+          status: "started",
+          severity: "recoverable",
+          recommendedAction: "fallback-provider",
+          message:
+            playbackControlAction === "fallback"
+              ? "Switching to fallback provider after playback control request"
+              : "Startup stall failover hopping to next compatible provider",
+          providerId: switched.providerId,
+          titleId: title.id,
+          season: currentEpisode.season,
+          episode: currentEpisode.episode,
+          context: {
+            from: switched.fromProviderId,
+            fallback: switched.providerId,
+            titleId: title.id,
+            season: currentEpisode.season,
+            episode: currentEpisode.episode,
+            resumeSeconds: run.pendingStart.resumePromptAt,
+            autoFailover: playbackControlAction !== "fallback",
+          },
+        }),
+      );
+      return { kind: "exit", step: NEXT_ITERATION };
+    }
+
+    diagnosticsService.record(
+      buildRecoveryDiagnosticEvent({
+        operation: "playback.provider-fallback.unavailable",
+        stage: "fallback-provider",
+        status: "failed",
+        severity: "blocked",
+        failureClass: "not-found",
+        message: "Fallback playback control requested but no compatible provider was available",
+        providerId: attempt.resolvedProviderId,
+        titleId: title.id,
+        season: currentEpisode.season,
+        episode: currentEpisode.episode,
+        context: {
+          provider: attempt.resolvedProviderId,
+          titleId: title.id,
+          season: currentEpisode.season,
+          episode: currentEpisode.episode,
+        },
+      }),
+    );
+    updatePlaybackFeedback(context, {
+      note: "No untried provider left to fall back to. Press o for sources or /diagnostics.",
+    });
+    // Keep the pending start intent for this episode; re-resolve instead of falling
+    // through to auto-advance / post-playback with a poisoned resume offset.
+    return { kind: "exit", step: NEXT_ITERATION };
+  }
+  return {
+    kind: "proceed",
+    playbackControlAction,
+    confirmedStreamSelection,
+    confirmedEpisodeSelection,
+  };
+}

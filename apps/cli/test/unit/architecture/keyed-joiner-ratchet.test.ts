@@ -30,7 +30,7 @@ const ALLOWED_PROMISE_MAPS = new Map<string, string>([
     "An idempotent teardown latch keyed by container object: disposal must never be cancelled or cleared.",
   ],
   [
-    "apps/cli/src/app/playback/PlaybackPhase.ts",
+    "apps/cli/src/app/playback/playback-episode-context.ts",
     "A memo local to one playback start (`episodeLoadCache`): each season's episode list is fetched once for that start and the settled answer is the point; fetchEpisodes takes no signal and the table dies with the start.",
   ],
   [

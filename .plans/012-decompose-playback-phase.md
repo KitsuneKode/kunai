@@ -11,15 +11,82 @@
 - **Priority**: P2
 - **Effort**: L
 - **Risk**: MED
-- **Depends on**: 010 (characterization tests green first)
+- **Depends on**: 010 (the playback half of the net is in place — see below)
 - **Category**: tech-debt
 - **Planned at**: commit `4b351cb0`, 2026-07-16
+- **State (2026-11-24)**: PARTIAL. The split landed on branch
+  `refactor/playback-phase-split`; what remains is "Remaining steps" below.
+
+## What landed (2026-11-24)
+
+The drift check this plan opens with fired hard: by the time it was executed
+`PlaybackPhase.ts` was 5,042 lines and `execute` alone ran ~3,500 lines. The
+tree won over the plan's step order — the safety net came first, then the
+class's leaf helpers, then `execute` itself was cut along its real seams. Every
+step was its own green commit with byte-identical characterization traces.
+
+- **Safety net.** `apps/cli/test/integration/playback-phase-characterization.test.ts`
+  (fixture `test/integration/fixtures/provider-playback-phase.ts`) drives the real
+  `execute` through seventeen online-provider flows and pins resolve requests,
+  player handoffs, session-phase walks, problems, provider switches and post-play
+  entries. Deliberately breaking source cycling or the auto-recover cap fails it.
+- **Step 2 (event copy).** The reflection-only `describePlayerEvent` wrapper is
+  gone; `test/unit/app/playback/mpv-playback-event-copy.test.ts` tests
+  `describeMpvPlayerEvent` directly with no casts.
+- **Leaf helpers out of the class**: `playback-phase-feedback.ts`,
+  `playback-presence-writer.ts`, `playback-timing-lookup.ts`,
+  `late-subtitle-resolver.ts`, `playback-stream-prepare.ts`,
+  `playback-episode-catalog.ts`, `playback-player-launch.ts` (named input object
+  instead of sixteen positional parameters) and `playback-ledger-slot.ts`
+  (unit-tested). Integration tests that reached privates by bracket access now
+  call these functions.
+- **`execute` is an outline** (`PlaybackPhase.ts`, 151 lines): session
+  (`playback-phase-session.ts`), mpv gate + episode bootstrap
+  (`playback-episode-bootstrap.ts`), then `runEpisodeIteration` until a step
+  leaves the phase.
+- **The iteration is an outline** (`playback-episode-iteration.ts`) over one
+  module per stage, each with explicit inputs and a typed exit/proceed result:
+  `playback-episode-attempt.ts` (resolve control + abort intent, source
+  authority, correlation, `resolvedProviderId`, track-pick helpers),
+  `playback-episode-context.ts`, `playback-stream-acquire.ts`,
+  `playback-stream-ready.ts` (+ pre-play confirm),
+  `playback-next-episode-prefetch.ts` (Step 4's prefetch coordinator),
+  `playEpisode` in `playback-player-launch.ts`, `playback-history-persist.ts`,
+  `playback-recovery.ts`, `playback-control-actions.ts`,
+  `playback-auto-advance.ts` (catalog auto-next, Up Next) and `runPostPlayMenu`
+  in `playback-post-play-entry.ts`.
+- **Pure slices with direct tests** (Step 3, partly): `planSourceCycle` and
+  `planAudioCycle` (`playback-control-actions.ts`). The loop's other decisions
+  were already pure policies with their own tests (`resolvePlaybackResultDecision`,
+  `planStartupFailover`, `planCatalogAutoAdvance`, `planPlaylistAutoAdvance`,
+  `planEpisodeIterationDirective`).
+- Largest file under `app/playback/` is now `run-post-playback-menu.ts` (1,035,
+  untouched); the largest new one is `playback-stream-acquire.ts` (868).
+
+## Remaining steps
+
+1. **Pure recovery planner.** `recoverAfterPlayback` still branches inline over
+   (result decision, provenance, control action, attempts, tried sources). Lift
+   that branching into a pure `planPlaybackRecovery(...)` returning
+   relaunch-local / local-failure / refresh / recover / advance-source /
+   fallback-provider / exhausted / proceed, and keep the module as the effectful
+   shell that applies it. Unit-test the planner; the characterization test must
+   stay unchanged.
+2. **Pure control-action planner.** Same for `applyPlaybackControlAction`'s
+   if-chain: a pure mapping from (action, confirmed selections, availability,
+   inventory) to an intent, then effects.
+3. **Narration out of acquisition (optional).** The fresh-resolve `onEvent`
+   narration in `playback-stream-acquire.ts` (~150 lines of event → copy) is a
+   natural pure `describeResolveEvent` beside `provider-resolve-copy.ts`.
+4. **Characterize the remaining gaps before touching them**: offline-file
+   controls (refresh/recover relaunch), a queue (playlist) Up Next advance and a
+   recommendation Up Next advance are not yet whole-flow-tested.
 
 ## Why this matters
 
 `apps/cli/src/app/playback/PlaybackPhase.ts` is 3,635 lines and 185 commits/3mo — the single most safety-critical file (playback is the product's core path) fuses the playback state machine with at least eight orchestration responsibilities: prefetch, mpv session lifecycle, dead-stream ledger, provider fallback/switch, resume-from-history, post-play menu, catalog/playlist auto-advance, and navigation. The repo's `.docs/runtime-boundary-map.md` says it "is still the playback state machine plus too much surrounding orchestration. Extract only tested transition slices from it." This plan does exactly that: pull out a pure transition core and the already-sibling-shaped orchestration helpers, so the file becomes readable and each concern is testable.
 
-## Current state
+## Current state (as planned, 2026-07-16 — superseded by "What landed")
 
 `PlaybackPhase.ts` already _delegates_ to many sibling modules (its import block `:8-60` references `episode-prefetch`, `mpv-playback-event-copy`, `mpv-session-lifecycle`, `playback-catalog-autoadvance`, `playback-dead-stream-ledger`, `playback-episode-navigation`, `playback-provider-fallback`, `playback-post-play-*`, etc.). The problem is the remaining in-file glue: the big loop that sequences these, plus event→copy mapping still reachable only by reflection in the current test.
 

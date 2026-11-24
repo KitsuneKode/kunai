@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-17"
+lastReviewed: "2026-11-24T10:55:19Z"
 ---
 
 # Kunai — UX Architecture
@@ -395,7 +395,8 @@ that can be aimed at a row.
 
 Plain Enter on a browse result is the play key, not the menu key. The contract
 lives in `apps/cli/src/app-shell/title-control/smart-auto-launch.ts` and is
-resolved once per entry in `PlaybackPhase`:
+resolved once per entry in the playback episode bootstrap
+(`apps/cli/src/app/playback/playback-episode-bootstrap.ts`):
 
 - a live resume position plays in place — no second prompt;
 - a finished last episode plays the next unwatched episode when one is known,

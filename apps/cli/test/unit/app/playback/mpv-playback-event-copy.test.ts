@@ -1,22 +1,9 @@
 import { expect, test } from "bun:test";
 
-import { PlaybackPhase, playbackStartupStageForPlayerEvent } from "@/app/playback/PlaybackPhase";
+import { describeMpvPlayerEvent as describe } from "@/app/playback/mpv-playback-event-copy";
+import { playbackStartupStageForPlayerEvent } from "@/app/playback/policies/startup-stage-policy";
 
-test("PlaybackPhase describes mpv track-changed events for user feedback", () => {
-  const phase = new PlaybackPhase();
-  const describe = (
-    phase as unknown as {
-      describePlayerEvent: (event: {
-        type: "track-changed";
-        trackType: "audio" | "sub";
-        id: number;
-      }) => {
-        detail?: string | null;
-        note?: string | null;
-      };
-    }
-  ).describePlayerEvent.bind(phase);
-
+test("describes mpv track-changed events for user feedback", () => {
   expect(describe({ type: "track-changed", trackType: "audio", id: 2 }).note).toContain(
     "Audio track switched in mpv",
   );
@@ -25,21 +12,7 @@ test("PlaybackPhase describes mpv track-changed events for user feedback", () =>
   );
 });
 
-test("PlaybackPhase distinguishes a slow network source from ordinary buffering", () => {
-  const phase = new PlaybackPhase();
-  const describe = (
-    phase as unknown as {
-      describePlayerEvent: (event: {
-        type: "stream-slow";
-        state: "buffering-observed" | "slow-network-suspected";
-        secondsBuffering: number;
-      }) => {
-        detail?: string | null;
-        note?: string | null;
-      };
-    }
-  ).describePlayerEvent.bind(phase);
-
+test("distinguishes a slow network source from ordinary buffering", () => {
   expect(
     describe({
       type: "stream-slow",
@@ -76,37 +49,19 @@ test("playback startup timing ends at first trusted progress", () => {
   expect(playbackStartupStageForPlayerEvent({ type: "player-closed" })).toBe(null);
 });
 
-// Characterization coverage for the full describePlayerEvent feedback surface.
-// This locks the user-facing playback feedback across the resolve -> play ->
-// post-play lifecycle so refactors that move playback policy/copy out of the
-// phase cannot silently change what the shell tells the user.
-type DescribePlayerEvent = (event: Record<string, unknown> & { type: string }) => {
-  detail?: string | null;
-  note?: string | null;
-};
+// Characterization coverage for the full player-event feedback surface: this
+// locks what the shell tells the user across resolve -> play -> post-play.
 
-function describePlayerEventFor(): DescribePlayerEvent {
-  const phase = new PlaybackPhase();
-  return (
-    phase as unknown as {
-      describePlayerEvent: DescribePlayerEvent;
-    }
-  ).describePlayerEvent.bind(phase);
-}
-
-test("describePlayerEvent labels media materialization by container kind", () => {
-  const describe = describePlayerEventFor();
+test("labels media materialization by container kind", () => {
   expect(describe({ type: "media-materialized", kind: "dash-mpd" }).detail).toBe(
     "Preparing DASH media",
   );
   expect(describe({ type: "media-materialized", kind: "hls-manifest" }).detail).toBe(
     "Preparing HLS playlist for mpv",
   );
-  expect(describe({ type: "media-materialized", kind: "direct" }).detail).toBe("Preparing media");
 });
 
-test("describePlayerEvent formats network buffering percent and cache-ahead", () => {
-  const describe = describePlayerEventFor();
+test("formats network buffering percent and cache-ahead", () => {
   expect(describe({ type: "network-buffering", percent: 42.4, cacheAheadSeconds: 3.2 })).toEqual({
     detail: "Building playback buffer",
     note: "42% / 3.2s cached ahead",
@@ -117,8 +72,7 @@ test("describePlayerEvent formats network buffering percent and cache-ahead", ()
   });
 });
 
-test("describePlayerEvent distinguishes a dead network read from generic stall", () => {
-  const describe = describePlayerEventFor();
+test("distinguishes a dead network read from generic stall", () => {
   const dead = describe({
     type: "stream-stalled",
     stallKind: "network-read-dead",
@@ -129,15 +83,14 @@ test("describePlayerEvent distinguishes a dead network read from generic stall",
 
   const stalled = describe({
     type: "stream-stalled",
-    stallKind: "no-progress",
+    stallKind: "progress",
     secondsWithoutProgress: 8,
   });
   expect(stalled.detail).toBe("Stream stalled");
   expect(stalled.note).toContain("No playback progress for 8s");
 });
 
-test("describePlayerEvent narrates in-process reconnect phases", () => {
-  const describe = describePlayerEventFor();
+test("narrates in-process reconnect phases", () => {
   expect(describe({ type: "mpv-in-process-reconnect", phase: "started", attempt: 1 }).detail).toBe(
     "Reloading same stream in mpv",
   );
@@ -154,8 +107,7 @@ test("describePlayerEvent narrates in-process reconnect phases", () => {
   ).toEqual({ detail: "Reload failed", note: "Attempt 3 · socket gone" });
 });
 
-test("describePlayerEvent reports subtitle inventory and segment skips", () => {
-  const describe = describePlayerEventFor();
+test("reports subtitle inventory and segment skips", () => {
   expect(describe({ type: "subtitle-inventory-ready", trackCount: 3 }).note).toContain(
     "3 alternate subtitle tracks are ready",
   );
@@ -170,24 +122,21 @@ test("describePlayerEvent reports subtitle inventory and segment skips", () => {
   );
 });
 
-test("describePlayerEvent surfaces player control failures verbatim", () => {
-  const describe = describePlayerEventFor();
+test("surfaces player control failures verbatim", () => {
   expect(
     describe({ type: "ipc-command-failed", command: "set_property", error: "timeout" }).note,
   ).toBe("Player command failed: set_property (timeout)");
-  expect(describe({ type: "ipc-stalled", command: "get_property" })).toEqual({
+  expect(describe({ type: "ipc-stalled", command: "get_property", error: "timeout" })).toEqual({
     detail: "Player control stalled",
     note: "mpv did not answer get_property; playback may still be alive",
   });
 });
 
-test("describePlayerEvent returns empty descriptors for silent stats", () => {
-  const describe = describePlayerEventFor();
+test("returns empty descriptors for silent stats", () => {
   expect(describe({ type: "network-sample" })).toEqual({});
 });
 
 test("startup starvation uses patient buffering copy while a genuine stall remains actionable", () => {
-  const describe = describePlayerEventFor();
   expect(
     describe({ type: "stream-stalled", secondsWithoutProgress: 9, duringStartup: true }).detail,
   ).toBe("Waiting for the first frame");

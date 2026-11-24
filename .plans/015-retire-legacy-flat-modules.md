@@ -11,7 +11,7 @@
 - **Priority**: P3
 - **Effort**: M
 - **Risk**: MED
-- **Depends on**: 011 and 012 (soft but real) — re-pointing `tmdb.ts`/`session-flow` importers edits `shell-workflows.ts` (plan 011's file) and `PlaybackPhase.ts` (plan 012's file, including dynamic `import("@/session-flow")` sites at `PlaybackPhase.ts:610/:654/:2843`). Run this plan AFTER 011 and 012 land, never in parallel with them.
+- **Depends on**: 011 and 012 (soft but real) — re-pointing `tmdb.ts`/`session-flow` importers edits `shell-workflows.ts` (plan 011's file) and the playback phase modules (plan 012 split `PlaybackPhase.ts`; the dynamic `import("@/session-flow")` sites now live in `app/playback/playback-episode-bootstrap.ts` and `app/playback/playback-post-play-entry.ts`). Run this plan AFTER 011 and 012 land, never in parallel with them.
 - **Category**: tech-debt
 - **Planned at**: commit `4b351cb0`, 2026-07-16
 
