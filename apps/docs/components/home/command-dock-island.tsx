@@ -33,8 +33,13 @@ export function CommandDockIsland({
       if (requested) return;
       requested = true;
       const run = async () => {
-        const mod = await import("./command-dock");
-        if (!cancelled) setDock(() => mod.CommandDock);
+        try {
+          const mod = await import("./command-dock");
+          if (!cancelled) setDock(() => mod.CommandDock);
+        } catch {
+          // A failed chunk releases the latch: the next scroll or `/` retries.
+          requested = false;
+        }
       };
       void run();
     };

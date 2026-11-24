@@ -193,6 +193,13 @@ html:has(.kunai-home) body {
   margin-bottom: clamp(2rem, 4vw, 3rem);
 }
 
+/* A custom property's var() resolves where it is declared, so an element that
+   sets its own --lane must re-derive the lane mixes or it inherits the hero's. */
+[style*="--lane"] {
+  --home-lane-fill: color-mix(in oklab, var(--lane) 12%, transparent);
+  --home-lane-edge: color-mix(in oklab, var(--lane) 38%, transparent);
+}
+
 .kunai-scene-deck {
   position: relative;
   display: flex;
@@ -210,7 +217,8 @@ html:has(.kunai-home) body {
 .kunai-scene-card {
   position: relative;
   width: 196px;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
   border-radius: 14px;
   background: linear-gradient(180deg, var(--home-raise-2), var(--home-raise-1));
   box-shadow: var(--home-float);
@@ -1331,6 +1339,10 @@ html:has(.kunai-home) body {
 
 .kunai-scanner__seg.is-dimmed {
   opacity: 0.25;
+}
+
+.kunai-scanner__seg.is-dimmed:focus-visible {
+  opacity: 1;
 }
 
 /* Directory controls: pills + sieve input */
@@ -2525,6 +2537,11 @@ html:has(.kunai-home) body {
   outline: 2px solid transparent;
 }
 
+.kunai-drawer-search:has(.kunai-drawer-search__input:focus-visible) {
+  border-color: var(--kunai-accent);
+  box-shadow: 0 0 0 1px var(--kunai-accent);
+}
+
 .kunai-drawer-search__input::placeholder {
   color: var(--home-text-4);
 }
@@ -2652,6 +2669,11 @@ html:has(.kunai-home) body {
   .kunai-editorial-row__desc {
     grid-column: 2 / -1;
   }
+
+  .kunai-editorial-row:not(.kunai-home-open *) > .kunai-row-arrow {
+    grid-row: 1;
+    grid-column: 3;
+  }
 }
 
 @media (max-width: 767.98px) {
@@ -2750,7 +2772,11 @@ html:has(.kunai-home) body {
     display: none;
   }
 
-  .kunai-install-dock__thumb,
+  .kunai-install-dock__thumb {
+    transition: none !important;
+  }
+
+  .kunai-sponsor-slot,
   .kunai-workshop-card,
   .kunai-editorial-row,
   .kunai-preview-try,

@@ -210,6 +210,8 @@ const TerminalSimulator = memo(function TerminalSimulator({
     registerTerminalRunner((cmd: string) => {
       interactedRef.current = true;
       demoTypingRef.current = false;
+      // Kitty view shows one log line; a user command needs the full log.
+      setViewMode("log");
       runSimulatedCommand(cmd);
     });
     return () => registerTerminalRunner(null);
@@ -243,6 +245,7 @@ const TerminalSimulator = memo(function TerminalSimulator({
         e.preventDefault();
         const selected = filteredCommands[selectedIndex];
         if (selected) {
+          setViewMode("log");
           runSimulatedCommand(`/${selected.id}`);
         }
       }
@@ -371,7 +374,7 @@ const TerminalSimulator = memo(function TerminalSimulator({
               setSearchQuery("");
               setSelectedPaletteIndex(0);
             }}
-            onFallback={() => onPresetClick("/recover")}
+            onFallback={() => onPresetClick("/fallback")}
           />
         ) : (
           <div

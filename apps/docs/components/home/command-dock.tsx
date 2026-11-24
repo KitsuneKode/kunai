@@ -109,6 +109,10 @@ export function CommandDock({ commands, providers, initialOpen = false }: Comman
   const bodyMeasureRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  // Arrow keys on the tab list keep focus on the tab (APG automatic activation);
+  // only an open or a pointer tab switch moves focus into the search.
+  const keepTabFocus = useRef(false);
 
   // Show the pill past the hero, hide over install / final CTA / footer, and hide while actively scrolling down.
   useEffect(() => {
@@ -118,18 +122,21 @@ export function CommandDock({ commands, providers, initialOpen = false }: Comman
     const footerEl = document.querySelector(".kunai-site-footer");
 
     let heroVisible = true;
-    let quietZoneVisible = false;
+    // Each quiet-zone target is tracked on its own: one leaving view must not
+    // clear another that is still on screen.
+    const quietZones = new Set<Element>();
     let scrollDownHidden = false;
     let lastScrollY = window.scrollY;
 
-    const sync = () => setVisible(!heroVisible && !quietZoneVisible && !scrollDownHidden);
+    const sync = () => setVisible(!heroVisible && quietZones.size === 0 && !scrollDownHidden);
 
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
           if (entry.target === heroEl) heroVisible = entry.isIntersecting;
           if (entry.target === installEl || entry.target === finalEl || entry.target === footerEl) {
-            quietZoneVisible = entry.isIntersecting;
+            if (entry.isIntersecting) quietZones.add(entry.target);
+            else quietZones.delete(entry.target);
           }
         }
         sync();
@@ -185,6 +192,7 @@ export function CommandDock({ commands, providers, initialOpen = false }: Comman
       setTab("commands");
       setOpenedByKey(true);
       setMorphHeight(false);
+      keepTabFocus.current = false;
       setOpen(true);
     };
     window.addEventListener("keydown", onKeyDown);
@@ -205,13 +213,47 @@ export function CommandDock({ commands, providers, initialOpen = false }: Comman
     // oxlint-disable-next-line react/exhaustive-effect-dependencies
   }, [open, tab, query, surpriseIndex]);
 
+  const focusSearch = useCallback(() => {
+    if (keepTabFocus.current) return;
+    searchInputRef.current?.focus();
+  }, []);
+
+  // Only the open itself focuses from here: on open the tab body has no exit
+  // to wait for. A tab switch focuses the new input from the body's
+  // onExitComplete, after the outgoing panel unmounts.
+  const wasOpen = useRef(false);
   useEffect(() => {
-    if (open && (tab === "commands" || tab === "adapters")) {
-      const timer = window.setTimeout(() => searchInputRef.current?.focus(), 60);
+    const justOpened = open && !wasOpen.current;
+    wasOpen.current = open;
+    if (justOpened && (tab === "commands" || tab === "adapters")) {
+      const timer = window.setTimeout(focusSearch, 60);
       return () => window.clearTimeout(timer);
     }
     return undefined;
-  }, [open, tab]);
+  }, [open, tab, focusSearch]);
+
+  const selectTab = (next: DockTab, viaKeyboard: boolean) => {
+    keepTabFocus.current = viaKeyboard;
+    setMorphHeight(!viaKeyboard);
+    setTab(next);
+    setQuery("");
+    setSelectedIndex(0);
+  };
+
+  const handleTabListKeyDown = (event: React.KeyboardEvent) => {
+    const current = TABS.findIndex((item) => item.id === tab);
+    let next = current;
+    if (event.key === "ArrowRight") next = (current + 1) % TABS.length;
+    else if (event.key === "ArrowLeft") next = (current - 1 + TABS.length) % TABS.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = TABS.length - 1;
+    else return;
+    event.preventDefault();
+    const target = TABS[next];
+    if (!target) return;
+    selectTab(target.id, true);
+    tabRefs.current[next]?.focus();
+  };
 
   const matchedCommands = useMemo(() => filterCommands(commands, query, 12), [commands, query]);
   const matchedProviders = useMemo(
@@ -286,7 +328,10 @@ export function CommandDock({ commands, providers, initialOpen = false }: Comman
       <Dialog.Root
         open={open}
         onOpenChange={(nextOpen) => {
-          if (nextOpen) setOpenedByKey(false);
+          if (nextOpen) {
+            setOpenedByKey(false);
+            keepTabFocus.current = false;
+          }
           setOpen(nextOpen);
           if (!nextOpen) setQuery("");
         }}
@@ -406,7 +451,7 @@ export function CommandDock({ commands, providers, initialOpen = false }: Comman
                           role="tablist"
                           aria-label="Drawer sections"
                         >
-                          {TABS.map((item) => {
+                          {TABS.map((item, index) => {
                             const Icon = item.icon;
                             const active = tab === item.id;
                             return (
@@ -415,19 +460,21 @@ export function CommandDock({ commands, providers, initialOpen = false }: Comman
                                 type="button"
                                 role="tab"
                                 aria-selected={active}
-                                onClick={() => {
-                                  setMorphHeight(true);
-                                  setTab(item.id);
-                                  setQuery("");
-                                  setSelectedIndex(0);
+                                tabIndex={active ? 0 : -1}
+                                ref={(node) => {
+                                  tabRefs.current[index] = node;
                                 }}
+                                onClick={() => selectTab(item.id, false)}
+                                onKeyDown={handleTabListKeyDown}
                                 className={`kunai-drawer-tab${active ? " is-active" : ""}`}
                               >
                                 {active ? (
                                   <m.span
                                     layoutId="dock-tab"
                                     className="kunai-drawer-tab__bg"
-                                    transition={reduced ? { duration: 0 } : SPRING_SNAP}
+                                    transition={
+                                      reduced || !morphHeight ? { duration: 0 } : SPRING_SNAP
+                                    }
                                   />
                                 ) : null}
                                 <Icon className="relative z-[1] size-3.5" stroke={1.6} />
@@ -457,7 +504,7 @@ export function CommandDock({ commands, providers, initialOpen = false }: Comman
                       className="kunai-drawer-body-clip"
                     >
                       <div ref={bodyMeasureRef} className="kunai-drawer-body">
-                        <AnimatePresence mode="wait" initial={false}>
+                        <AnimatePresence mode="wait" initial={false} onExitComplete={focusSearch}>
                           {tab === "commands" ? (
                             <m.div
                               key="tab-commands"

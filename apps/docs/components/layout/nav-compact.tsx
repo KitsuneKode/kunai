@@ -57,23 +57,40 @@ export function NavCompact() {
       }, COLLAPSE_DELAY_MS);
     };
 
-    const observer = new IntersectionObserver(([entry]) => {
-      if (!entry) return;
-      isCompact = shouldCompactNav({
-        isIntersecting: entry.isIntersecting,
-        top: entry.boundingClientRect.top,
-      });
+    const desktopFineQuery = window.matchMedia("(min-width: 768px) and (pointer: fine)");
+    // At 1024px+ the header shows its links inline and hides the menu toggle. A
+    // touch user there cannot hover the pill open, so the nav never compacts.
+    const coarseWideQuery = window.matchMedia("(min-width: 1024px) and (pointer: coarse)");
+    let pastThreshold = false;
+
+    const applyCompact = () => {
+      isCompact = pastThreshold && !coarseWideQuery.matches;
       if (isCompact) {
         root.dataset.navCompact = "true";
+        // Compacting under a focused link would clip it with no way back:
+        // focus did not move, so focusin never fires.
+        const nav = document.querySelector("#nd-home-layout #nd-nav");
+        if (nav && nav.contains(document.activeElement)) {
+          clearCollapseTimer();
+          setExpanded(true);
+        }
       } else {
         delete root.dataset.navCompact;
         clearCollapseTimer();
         setExpanded(false);
       }
+    };
+
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry) return;
+      pastThreshold = shouldCompactNav({
+        isIntersecting: entry.isIntersecting,
+        top: entry.boundingClientRect.top,
+      });
+      applyCompact();
     });
     observer.observe(sentinel);
-
-    const desktopFineQuery = window.matchMedia("(min-width: 768px) and (pointer: fine)");
+    coarseWideQuery.addEventListener("change", applyCompact);
 
     const onPointerMove = (event: PointerEvent) => {
       if (!isCompact || !desktopFineQuery.matches) return;
@@ -159,6 +176,7 @@ export function NavCompact() {
       window.removeEventListener("pointerover", onNavOver);
       document.removeEventListener("focusin", onFocusIn);
       document.removeEventListener("focusout", onFocusOut);
+      coarseWideQuery.removeEventListener("change", applyCompact);
       clearCollapseTimer();
       if (rafId !== null) window.cancelAnimationFrame(rafId);
       glideEl?.remove();

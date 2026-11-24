@@ -37,8 +37,13 @@ export function HomeTerminalIsland({ fallback, ...simulatorProps }: HomeTerminal
     if (requestedRef.current) return;
     requestedRef.current = true;
     const load = async () => {
-      const module = await import("./terminal-simulator");
-      if (mountedRef.current) setSimulator(() => module.TerminalSimulator);
+      try {
+        const module = await import("./terminal-simulator");
+        if (mountedRef.current) setSimulator(() => module.TerminalSimulator);
+      } catch {
+        // The static frame stays up; the next pointer, focus or hero command retries.
+        requestedRef.current = false;
+      }
     };
     void load();
   }, []);

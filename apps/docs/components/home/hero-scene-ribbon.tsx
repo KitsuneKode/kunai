@@ -142,7 +142,8 @@ export function HeroSceneRibbon() {
         <fieldset className="kunai-scene-pill m-0 border-0" aria-label="Preview search mode">
           <legend className="sr-only">Preview search mode</legend>
           <span className="kunai-scene-pill__hint" aria-hidden="true">
-            <kbd>Tab</kbd>
+            <kbd>←</kbd>
+            <kbd>→</kbd>
           </span>
           {SCENE_CARDS.map((card) => {
             const isSelected = card.id === activeLane;
@@ -158,6 +159,11 @@ export function HeroSceneRibbon() {
                   value={card.id}
                   checked={isSelected}
                   onChange={() => selectLane(card.id)}
+                  // Space on the already-checked radio fires click but not change;
+                  // it re-runs the current lane's demo, as clicking its card does.
+                  onClick={() => {
+                    if (isSelected) selectLane(card.id);
+                  }}
                   aria-label={`${card.label} mode`}
                   className="sr-only"
                 />

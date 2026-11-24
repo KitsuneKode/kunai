@@ -2,9 +2,18 @@
 
 import { SPRING_SETTLE } from "@/components/home/home-stage-context";
 import { domAnimation, LazyMotion, m, useInView, useReducedMotion } from "motion/react";
-import { useRef } from "react";
+import { useRef, useSyncExternalStore } from "react";
 
 const DIGITS = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"] as const;
+
+const noopSubscribe = () => () => {};
+/** False in server HTML and during hydration, true once the client has taken over. */
+const useEnhanced = () =>
+  useSyncExternalStore(
+    noopSubscribe,
+    () => true,
+    () => false,
+  );
 
 type OdometerProps = {
   readonly value: number;
@@ -14,13 +23,16 @@ type OdometerProps = {
 
 /**
  * Rolling slot-machine digit reels (kshv.me / Skiper style).
- * Keeps the exact static text inside an accessible span for SSR and assistive tech,
- * and falls back cleanly under `prefers-reduced-motion`.
+ * Renders the exact count as plain digits until the client hydrates, keeps it in an
+ * accessible span for assistive tech, and falls back cleanly under `prefers-reduced-motion`.
  */
 export function Odometer({ value, className, format = true }: OdometerProps) {
   const hostRef = useRef<HTMLSpanElement | null>(null);
   const inView = useInView(hostRef, { once: true, amount: 0.4 });
   const reduced = useReducedMotion();
+  // Server HTML and no-JS visitors see the real count; reels start at 0 and
+  // would otherwise read "0,000" until the client rolls them.
+  const enhanced = useEnhanced();
 
   const formatted = format ? new Intl.NumberFormat("en-US").format(value) : String(value);
   const rawChars = [...formatted];
@@ -48,7 +60,7 @@ export function Odometer({ value, className, format = true }: OdometerProps) {
         <span className="sr-only">{formatted}</span>
         <span aria-hidden="true" className="inline-flex items-baseline">
           {slots.map((slot) => {
-            if (slot.numeric === null || reduced) {
+            if (slot.numeric === null || reduced || !enhanced) {
               return (
                 <span key={slot.key} className="inline-block">
                   {slot.char}

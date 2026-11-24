@@ -417,7 +417,21 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
     }
 
     window.addEventListener("pointermove", onMove, { passive: true });
-    window.addEventListener("resize", refreshExclusionBand, { passive: true });
+    // A height change moves the bottom corridor. The pointer and committed
+    // targets move with it, or a walk begun at the old height can never arrive.
+    function onResize() {
+      refreshExclusionBand();
+      const corridorY = Math.max(size, window.innerHeight - size / 2 - 14);
+      if (pointer.current && pointer.current.y !== corridorY) {
+        pointer.current = { ...pointer.current, y: corridorY };
+      }
+      const state = machine.current;
+      if (state.committed.y !== corridorY) {
+        machine.current = { ...state, committed: { ...state.committed, y: corridorY } };
+      }
+    }
+
+    window.addEventListener("resize", onResize, { passive: true });
     window.addEventListener("kunai:copied", onCopied);
     function syncVisibility() {
       if (document.hidden) {
@@ -430,7 +444,7 @@ export function KunaiFoxRoamer({ size = 58 }: { readonly size?: number }) {
     document.addEventListener("visibilitychange", syncVisibility);
     return () => {
       window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("resize", refreshExclusionBand);
+      window.removeEventListener("resize", onResize);
       window.removeEventListener("kunai:copied", onCopied);
       document.removeEventListener("visibilitychange", syncVisibility);
       stopLoop();
