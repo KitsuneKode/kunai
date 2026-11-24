@@ -124,7 +124,9 @@ export function offendingWaits(source: string): string[] {
       if (definedAt === index) continue;
       const call = new RegExp(`(?<![.\\w])${name}\\s*\\(`);
       const found = call.exec(line);
-      if (found && !HELPER_DEFINITION.test(line.slice(0, found.index + name.length + 1))) {
+      // `function sleep(` / `const sleep =` define the helper; `const x = await sleep(` calls it.
+      const defines = new RegExp(`(?:function\\s+${name}\\s*\\(|(?:const|let)\\s+${name}\\s*=)`);
+      if (found && !defines.test(line)) {
         if (!isZeroDelay(line, found.index + found[0].length - 1, "Bun.sleep")) waits = true;
       }
     }
@@ -152,6 +154,12 @@ test("the ratchet catches every common way to sleep", () => {
   expect(caught("await new Promise((r) => globalThis.setTimeout(r, 50));")).toBe(1);
   expect(caught("setTimeout(callback, 5_000);")).toBe(1);
   expect(caught("setTimeout(() => finish(result, 0), 5_000);")).toBe(1);
+  // A helper call inside a variable initializer is still a call.
+  expect(
+    caught(
+      'import { setTimeout as sleep } from "node:timers/promises";\nconst value = await sleep(1_000, "done");',
+    ),
+  ).toBe(1);
   expect(
     caught('import { setTimeout as sleep } from "node:timers/promises";\nawait sleep(50);'),
   ).toBe(1);
