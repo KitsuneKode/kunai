@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T14:00:00Z"
+lastReviewed: "2026-11-24T20:46:21Z"
 ---
 
 # Kunai — Provider Guide
@@ -339,7 +339,11 @@ the probe races mpv's `loadfile`, so it adds no wait — a definitive dead URL
 fails fast only when mpv itself also fails. Stream age alone used to waive that
 probe for the first five minutes (`recent-resolve`), which let autoplay
 replacements hand mpv URLs no code had ever fetched; the waiver now requires
-attestation (issue #459).
+attestation (issue #459). Attestation belongs to the stream the provider
+selected and probed: picking a sibling from the same inventory (Tracks source
+or quality, an exact stream pin, a blocked-URL skip) sets
+`streamReachabilityVerified` to false, so the new pick is probed at handoff
+(`reselectResolveResultStream` in `services/providers/provider-result-adapter.ts`).
 
 **VidLink needs the browser playback environment (2026-08-24).** Without an
 `x-playback-environment` header, `vidlink.pro/api/b` answers with
