@@ -94,7 +94,7 @@
     "test:vhs:all": "bun run test:vhs:setup && bun run test:vhs:offline && bun run test:vhs:palette && bun run test:vhs:playback",
     "capture:settings": "bun run test/harness/capture-settings.tsx",
     "typecheck": "bun tsc --noEmit",
-    "lint": "oxlint .",
+    "lint": "oxlint --deny-warnings .",
     "fmt": "oxfmt --write .",
     "fmt:check": "oxfmt --check .",
     "check": "bun run typecheck && bun run lint && bun run fmt",
