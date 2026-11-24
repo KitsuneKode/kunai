@@ -82,22 +82,29 @@ const ALLOWED_APP_SHELL_IMPORTS_BY_FILE = new Map<string, readonly string[]>([
       "@/app-shell/title-control/open-title-control-menu",
       "@/app-shell/types",
       "@/app-shell/workflows",
+      // Moved from PlaybackPhase.ts with the post-play menu wiring.
+      "../../app-shell/ink-shell",
     ],
   ],
+  // The edges below were PlaybackPhase.ts's own allowlist; plan 012 split the
+  // phase into stage modules and each edge moved with the code that uses it.
   [
-    "apps/cli/src/app/playback/PlaybackPhase.ts",
+    "apps/cli/src/app/playback/playback-phase-feedback.ts",
     [
       // Same voice seam as run-post-playback-menu: the skip confirmation is
       // the companion's moment, and copy lives where the rest of her does.
       "@/app-shell/companion-policy",
       "@/app-shell/kanna-voice",
       "@/app-shell/playback-shell-error-capture",
-      "@/app-shell/workflows",
-      "@/app-shell/title-control/smart-auto-launch",
-      "@/app/playback/playback-post-play-entry",
-      "../../app-shell/ink-shell",
     ],
   ],
+  [
+    "apps/cli/src/app/playback/playback-episode-bootstrap.ts",
+    ["@/app-shell/title-control/smart-auto-launch"],
+  ],
+  ["apps/cli/src/app/playback/playback-stream-prepare.ts", ["@/app-shell/workflows"]],
+  ["apps/cli/src/app/playback/playback-stream-ready.ts", ["@/app-shell/workflows"]],
+  ["apps/cli/src/app/playback/playback-control-actions.ts", ["@/app-shell/workflows"]],
   [
     "apps/cli/src/app/search/SearchPhase.ts",
     [
