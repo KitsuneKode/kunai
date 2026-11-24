@@ -8,8 +8,8 @@ import { generateSecretKey } from "../src/rivestream/direct";
  * `generateSecretKey` is a local port of the site's MurmurHash + `cArray`
  * salt construction. Upstream rotates every constant at once, and a rotation
  * otherwise surfaces as 401 resolve failures, not a failing test (see the
- * `productionGap` in `src/research.ts` and the known failure modes in
- * `.docs/provider-dossiers/rivestream.md`). These pinned vectors fail fast in
+ * known failure modes in `.docs/provider-dossiers/rivestream.md`). These
+ * pinned vectors fail fast in
  * CI when the salt or hash rotates.
  */
 describe("rivestream secretKey generation", () => {

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-22"
+lastReviewed: "2026-11-24"
 ---
 
 # Feature Map
@@ -205,7 +205,6 @@ as capabilities.
 | `.archive/legacy/apps/cli/src/browser/*`   | Playwright interception reference; awaiting `@kunai/runtime-browser` |
 | `.archive/legacy/apps/cli/src/providers/*` | Pre-`packages/providers` provider reference                          |
 | `.reference/experiments/*`                 | Provider research lab and scratchpads                                |
-| `packages/providers/src/cineby`, `rgshows` | Modules that exist but are not in `loadProductionProviderModules()`  |
 | `apps/docs`                                | The public docs site — content, not runtime                          |
 
 Active runtime code must not import any of the first three; the boundary test

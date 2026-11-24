@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
 import { miruroManifest } from "../src/miruro/manifest";
-import { providerResearchProfiles } from "../src/research";
 import { youtubeManifest } from "../src/youtube/manifest";
 
 /**
@@ -24,26 +23,5 @@ describe("manifests describe what the code does", () => {
   test("declaring a capability does not drop the existing ones", () => {
     expect(youtubeManifest.capabilities).toContain("source-resolve");
     expect(miruroManifest.capabilities).toContain("multi-source");
-  });
-});
-
-describe("research profiles match the production registry", () => {
-  test("providers wired into the runtime registry are not marked candidate", () => {
-    // Both are constructed in apps/cli/src/container/bootstrap-providers.ts.
-    for (const providerId of ["miruro", "rivestream"]) {
-      const profile = providerResearchProfiles.find(
-        (candidate) => candidate.providerId === providerId,
-      );
-      expect(profile?.status).toBe("production");
-    }
-  });
-
-  test("a shipped provider is not still queued for implementation", () => {
-    for (const providerId of ["miruro", "rivestream"]) {
-      const profile = providerResearchProfiles.find(
-        (candidate) => candidate.providerId === providerId,
-      );
-      expect(profile?.migrationAction).not.toBe("implement-from-scratchpad");
-    }
   });
 });
