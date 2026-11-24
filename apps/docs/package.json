@@ -36,7 +36,7 @@
     "react": "catalog:",
     "react-dom": "catalog:",
     "react-markdown": "catalog:web",
-    "recharts": "3.10.1",
+    "recharts": "3.11.1",
     "remark-gfm": "catalog:web",
     "tailwind-merge": "catalog:web",
     "tw-animate-css": "catalog:web"

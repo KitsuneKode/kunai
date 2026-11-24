@@ -420,7 +420,8 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // November 6 dependency alignment measured 3,195,955 bytes.
 // November 19 Jikan fallback, Android local-file gateway, sub/dub source cycling,
 // and Termux onboarding additions measured 3,205,426 bytes.
-// 3135 KiB leaves 4,814 bytes; public launcher budgets below are unchanged.
+// November 24 Ink 8 + dependency refresh measured 3,202,977 bytes.
+// 3135 KiB leaves 7,263 bytes; public launcher budgets below are unchanged.
 export const NPM_BUNDLE_BUDGET_KB = 3_135;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */

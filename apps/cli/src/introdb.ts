@@ -32,8 +32,7 @@ export async function fetchPlaybackTimingMetadataDetailed(opts: {
   }
   if (
     !isUsableTmdbId(tmdbId) ||
-    (type === "series" &&
-      (!Number.isInteger(season) || season! < 0 || !Number.isInteger(episode) || episode! < 1))
+    (type === "series" && (!isIntegerAtLeast(season, 0) || !isIntegerAtLeast(episode, 1)))
   ) {
     return { metadata: null, failureClass: "identity-missing" };
   }
@@ -77,8 +76,7 @@ export async function fetchPlaybackTimingMetadataDetailed(opts: {
     // schema leaves them optional/nullable: absent is fine, a different
     // episode is somebody else's skip window.
     if (
-      !Number.isSafeInteger(payload.tvdb_id) ||
-      payload.tvdb_id! <= 0 ||
+      !isIntegerAtLeast(payload.tvdb_id, 1) ||
       payload.type !== (type === "movie" ? "movie" : "tv") ||
       "versions" in body ||
       "episodes" in body ||
@@ -134,8 +132,8 @@ function normalizeSegment(value: unknown): PlaybackTimingSegment | null {
   const endMs = toOptionalInt(entry.end_ms);
   // v4 documents `end_ms: 0` as "no segment"; a segment ending at 0 is empty.
   if (
-    (entry.start_ms != null && startMs === null) ||
-    (entry.end_ms != null && endMs === null) ||
+    (entry.start_ms !== null && entry.start_ms !== undefined && startMs === null) ||
+    (entry.end_ms !== null && entry.end_ms !== undefined && endMs === null) ||
     (startMs === null && endMs === null) ||
     endMs === 0 ||
     (startMs !== null && endMs !== null && endMs <= startMs)
@@ -146,4 +144,9 @@ function normalizeSegment(value: unknown): PlaybackTimingSegment | null {
 
 function toOptionalInt(value: unknown): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+/** A safe integer no smaller than `min` (absent and non-numbers are not). */
+function isIntegerAtLeast(value: number | null | undefined, min: number): value is number {
+  return value !== null && value !== undefined && Number.isSafeInteger(value) && value >= min;
 }

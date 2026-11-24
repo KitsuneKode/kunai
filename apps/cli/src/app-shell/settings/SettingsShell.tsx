@@ -72,6 +72,7 @@ export function SettingsShell({
     // action, which is when adapter state the draft cannot see may have moved.
     void state.revision;
     return buildSettingsRegistryContext(container, state.draft);
+    // oxlint-disable-next-line react/memo-dependencies -- revision re-runs this after actions (see comment above)
   }, [container, state.draft, state.revision]);
 
   const page = useMemo(

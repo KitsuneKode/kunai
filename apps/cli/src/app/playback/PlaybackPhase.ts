@@ -2383,9 +2383,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               .then(({ resolveHdrCapabilityNotice }) =>
                 resolveHdrCapabilityNotice(noticeStream, config.hdrMode),
               )
-              .then((note) => {
-                if (note) this.updatePlaybackFeedback(context, { note });
-              })
+              .then((note) => (note ? this.updatePlaybackFeedback(context, { note }) : undefined))
               .catch(() => undefined);
           }
           const providerHandoff =

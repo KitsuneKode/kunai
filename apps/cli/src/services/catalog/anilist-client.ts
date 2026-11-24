@@ -272,21 +272,18 @@ function waitFor(entry: Inflight, signal: AbortSignal | undefined): Promise<Json
       reject(abortError(signal));
     };
     signal?.addEventListener("abort", onAbort, { once: true });
+    // Settles this waiter once, from whichever of the shared request or the
+    // caller's abort arrives first.
+    const finish = (settle: () => void): void => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", onAbort);
+      leave(false);
+      settle();
+    };
     entry.promise.then(
-      (value) => {
-        if (settled) return;
-        settled = true;
-        signal?.removeEventListener("abort", onAbort);
-        leave(false);
-        resolve(value);
-      },
-      (error) => {
-        if (settled) return;
-        settled = true;
-        signal?.removeEventListener("abort", onAbort);
-        leave(false);
-        reject(error);
-      },
+      (value) => finish(() => resolve(value)),
+      (error) => finish(() => reject(error)),
     );
   });
 }

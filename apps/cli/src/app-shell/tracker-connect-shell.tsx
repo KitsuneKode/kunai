@@ -86,6 +86,7 @@ export function TrackerConnectShell({
       controller.abort();
       if (controllerRef.current === controller) controllerRef.current = null;
     };
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- bumping attempt is how the user retries a failed connect
   }, [attempt, connect, finishOnce]);
 
   useInput((input, key) => {

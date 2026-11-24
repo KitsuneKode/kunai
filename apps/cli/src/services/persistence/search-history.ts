@@ -74,18 +74,19 @@ export function createSearchHistoryStore(
       const existing = refreshing.get(file);
       if (existing) return existing;
       const revision = revisions.get(file) ?? 0;
+      const reload = async (): Promise<void> => {
+        let history: string[];
+        try {
+          history = await readHistory(file);
+        } catch {
+          history = [];
+        } // A corrupt history cannot block search.
+        // A refresh that raced an accepted local query must not replace its
+        // durable snapshot with older bytes from before the write.
+        if ((revisions.get(file) ?? 0) === revision) publish(file, history);
+      };
       const work = queue
-        .then(async () => {
-          let history: string[];
-          try {
-            history = await readHistory(file);
-          } catch {
-            history = [];
-          } // A corrupt history cannot block search.
-          // A refresh that raced an accepted local query must not replace its
-          // durable snapshot with older bytes from before the write.
-          if ((revisions.get(file) ?? 0) === revision) publish(file, history);
-        })
+        .then(() => reload())
         .finally(() => {
           refreshing.delete(file);
         });
@@ -110,23 +111,24 @@ export function createSearchHistoryStore(
       pending.push(entry);
       revisions.set(entry.file, (revisions.get(entry.file) ?? 0) + 1);
       for (const listener of listeners) listener();
+      const persist = async (): Promise<void> => {
+        await mkdir(dirname(entry.file), { recursive: true });
+        await withConfigLockTransition(
+          `${entry.file}.lock`,
+          Date.now() + CONFIG_LOCK_ACQUIRE_TIMEOUT_MS,
+          {},
+          async () => {
+            // The lock owns the read AND replacement. A per-process promise
+            // chain or atomic rename alone cannot preserve sibling appends.
+            const disk = await readHistory(entry.file);
+            const merged = [...new Set([entry.query, ...disk])].slice(0, MAX_HISTORY);
+            await writeAtomicJson(entry.file, merged);
+            publish(entry.file, merged);
+          },
+        );
+      };
       lastAttempt = queue
-        .then(async () => {
-          await mkdir(dirname(entry.file), { recursive: true });
-          await withConfigLockTransition(
-            `${entry.file}.lock`,
-            Date.now() + CONFIG_LOCK_ACQUIRE_TIMEOUT_MS,
-            {},
-            async () => {
-              // The lock owns the read AND replacement. A per-process promise
-              // chain or atomic rename alone cannot preserve sibling appends.
-              const disk = await readHistory(entry.file);
-              const merged = [...new Set([entry.query, ...disk])].slice(0, MAX_HISTORY);
-              await writeAtomicJson(entry.file, merged);
-              publish(entry.file, merged);
-            },
-          );
-        })
+        .then(() => persist())
         .finally(() => {
           pending.splice(pending.indexOf(entry), 1);
         });

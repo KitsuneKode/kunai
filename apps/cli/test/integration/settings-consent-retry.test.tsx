@@ -119,7 +119,7 @@ async function profile() {
 function mount(
   container: Container,
   initialSectionId?: string,
-  onStatus = (_: string | null) => {},
+  onStatus: (status: string | null) => void = () => {},
 ) {
   return render(
     <SettingsShell

@@ -42,7 +42,8 @@
     "react/refs": "off",
     "react/purity": "off",
     "react/immutability": "off",
-    "react/globals": "off"
+    "react/globals": "off",
+    "react/preserve-manual-memoization": "off"
   },
   "overrides": [
     {
