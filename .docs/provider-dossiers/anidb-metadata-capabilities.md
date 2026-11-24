@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-08-18"
+lastReviewed: "2026-11-24"
 ---
 
 # AniDB Metadata And API Capabilities
