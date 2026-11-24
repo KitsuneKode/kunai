@@ -10,6 +10,7 @@ import type { ProviderHotfixManifest } from "@kunai/providers";
 import { buildProviderRelayRegistry, createRelayFetchPort } from "@kunai/relay";
 import { ProviderCacheRepository } from "@kunai/storage";
 
+import { addStremioAddon } from "../domain/provider/stremio-addons";
 import { PlaybackResolveCoordinator } from "../services/playback/PlaybackResolveCoordinator";
 import { PlaybackResolveWorkService } from "../services/playback/PlaybackResolveWorkService";
 import {
@@ -32,6 +33,7 @@ import {
 import { reloadProviderRegistryPriority } from "../services/providers/provider-registry-hotfix";
 import type { ProviderRegistry } from "../services/providers/ProviderRegistry";
 import { createProviderRegistry } from "../services/providers/ProviderRegistry";
+import { createStremioAddonModules } from "../services/providers/stremio-addon-modules";
 import type { PersistenceBootstrap } from "./bootstrap-persistence";
 import { applyYoutubeProviderConfig } from "./configure-youtube-provider";
 
@@ -48,6 +50,9 @@ export type ProviderBootstrap = {
  */
 export async function loadProductionProviderModules(
   providerPriority: ProviderPriorityInput,
+  // Stremio addons the user installed. Kunai ships none, so the bundled roster
+  // is what this returns when the argument is left out.
+  userAddonModules: readonly CoreProviderModule[] = [],
 ): Promise<readonly CoreProviderModule[]> {
   const [
     { videasyProviderModule },
@@ -88,6 +93,9 @@ export async function loadProductionProviderModules(
       animeggProviderModule,
       kickassanimeProviderModule,
       youtubeProviderModule,
+      // After the bundled providers: an addon the user has not placed in their
+      // provider order is a fallback, never the default.
+      ...userAddonModules,
     ],
     providerPriority,
   );
@@ -114,7 +122,23 @@ export async function bootstrapProviders(
 
   const providerModules = providerModulesOverride
     ? orderProviderModulesByPriority([...providerModulesOverride], providerPriority)
-    : await loadProductionProviderModules(providerPriority);
+    : await loadProductionProviderModules(
+        providerPriority,
+        createStremioAddonModules({
+          getEntries: () => config.stremioAddons,
+          onName: (addon, name) => {
+            const recorded = addStremioAddon(config.stremioAddons, addon.manifestUrl, name);
+            // `added` means the addon was removed since startup; do not put it back.
+            if (!recorded.ok || recorded.added) return;
+            void config
+              .update({ stremioAddons: recorded.entries })
+              .then(() => config.save())
+              .catch(() => {
+                // The name is display-only; the addon keeps working under its host.
+              });
+          },
+        }),
+      );
   const relayRegistry = buildProviderRelayRegistry(providerModules);
   const createProviderFetchPort = (providerId: (typeof providerModules)[number]["providerId"]) =>
     createRelayFetchPort({

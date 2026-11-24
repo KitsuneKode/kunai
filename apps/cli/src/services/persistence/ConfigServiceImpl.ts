@@ -2,6 +2,7 @@
 // Config Service Implementation
 // =============================================================================
 
+import { normalizeStremioAddonEntries } from "@/domain/provider/stremio-addons";
 import { dbg } from "@/logger";
 import type { ContinueSourcePreference } from "@/services/continuation/continuation-source";
 import {
@@ -16,6 +17,7 @@ import {
   normalizeRetiredProductionProviderFields,
   retiredProductionProviderFieldsChanged,
   type PrePlayConfirmMode,
+  type StremioAddonConfigEntry,
 } from "@kunai/config";
 import { migrateLegacyProviderId } from "@kunai/providers";
 import { normalizeRelayBaseUrl as normalizeRelayBaseUrlValue } from "@kunai/relay";
@@ -286,6 +288,7 @@ export class ConfigServiceImpl implements ConfigService {
             ),
           }),
       disabledProviders: normalizeProviderIdList(loaded.disabledProviders),
+      stremioAddons: normalizeStremioAddonEntries(loaded.stremioAddons),
       providerDefaultsRevision: Math.max(
         readProviderDefaultsRevision(loaded),
         CURRENT_PROVIDER_DEFAULTS_REVISION,
@@ -684,6 +687,10 @@ export class ConfigServiceImpl implements ConfigService {
 
   get disabledProviders(): readonly string[] {
     return [...this.config.disabledProviders];
+  }
+
+  get stremioAddons(): readonly StremioAddonConfigEntry[] {
+    return [...this.config.stremioAddons];
   }
 
   get wyzieApiKey(): string {
@@ -1088,6 +1095,9 @@ export class ConfigServiceImpl implements ConfigService {
         : null),
       ...(partial.disabledProviders !== undefined
         ? { disabledProviders: normalizeProviderIdList(partial.disabledProviders) }
+        : null),
+      ...(partial.stremioAddons !== undefined
+        ? { stremioAddons: normalizeStremioAddonEntries(partial.stremioAddons) }
         : null),
       ...(partial.animeLanguageProfile
         ? { animeLanguageProfile: normalizeLanguageProfile(partial.animeLanguageProfile) }

@@ -97,6 +97,11 @@ export type SettingRowDef = SettingRowMetadata &
         readonly sensitive?: boolean;
         readonly placeholder: string;
         readonly read: (config: KitsuneConfig) => string;
+        /**
+         * For a row that adds to a list instead of holding one value: what to
+         * show beside the label, in place of "configured" / "not set".
+         */
+        readonly summarize?: (config: KitsuneConfig) => string;
         readonly apply: (config: KitsuneConfig, value: string) => KitsuneConfig;
         readonly validate: (value: string) => string | null;
         readonly envOverride?: string;

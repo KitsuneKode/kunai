@@ -69,6 +69,8 @@ export async function buildCapabilitiesReport(version: string): Promise<Capabili
       "kunai providers update --url <https-url> --dry-run --json",
       "kunai providers rollback --json",
       "kunai providers reset --json",
+      "kunai addons list --json",
+      "kunai addons check --json",
       "kunai doctor --json",
       "kunai diagnostics recent --format jsonl",
       "kunai -S <query> --json",

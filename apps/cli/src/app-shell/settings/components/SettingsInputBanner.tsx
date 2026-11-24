@@ -30,9 +30,10 @@ export const SettingsInputBanner = React.memo(function SettingsInputBanner({
         <Text color={palette.dim}>▌</Text>
       </Box>
       <Text color={palette.dim} dimColor>
-        {`Saved: ${saved}`}
+        {/* A row that adds to a list holds no saved value to report. */}
+        {def.summarize ? "" : `Saved: ${saved}`}
         {def.envOverride && process.env[def.envOverride]?.trim() ? "  ·  (env override)" : ""}
-        {"  ·  Paste supported · Enter save · Esc cancel · Ctrl+U clear"}
+        {`${def.summarize ? "" : "  ·  "}Paste supported · Enter ${def.summarize ? "add" : "save"} · Esc cancel · Ctrl+U clear`}
       </Text>
     </Box>
   );

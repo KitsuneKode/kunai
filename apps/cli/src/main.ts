@@ -637,6 +637,18 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       }),
     );
   }
+  if (argv[0] === "addons") {
+    const { runAddonsCommand } = await import("./services/providers/run-addons-command");
+    // Positionals only: `kunai addons add <url> --json` and `--json add <url>` both work.
+    const words = argv.slice(1).filter((word) => !word.startsWith("-"));
+    process.exit(
+      await runAddonsCommand({
+        ...(words[0] !== undefined ? { subcommand: words[0] } : {}),
+        ...(words[1] !== undefined ? { target: words[1] } : {}),
+        json: argv.includes("--json"),
+      }),
+    );
+  }
   if (argv[0] === "rollback") {
     const { runRollback } = await import("./services/update/run-rollback");
     const toIdx = argv.indexOf("--to");
@@ -819,6 +831,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
         "  kunai capabilities --json\n" +
         "  kunai providers status --json\n" +
         "  kunai providers verify --json\n" +
+        "  kunai addons list --json\n" +
         "  kunai doctor --json\n" +
         "  kunai -S <query> --json\n" +
         "  kunai -a -S <query> --json\n" +
@@ -1566,6 +1579,7 @@ const FAST_PATH_SUBCOMMANDS = new Set([
   "doctor",
   "capabilities",
   "providers",
+  "addons",
   "rollback",
   "upgrade",
   "uninstall",

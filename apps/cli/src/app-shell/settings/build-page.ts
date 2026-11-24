@@ -59,6 +59,7 @@ function valueSummaryFor(def: SettingRowDef, config: KitsuneConfig): string {
       return def.options.find((option) => option.value === value)?.label ?? value;
     }
     case "text": {
+      if (def.summarize) return def.summarize(config);
       const raw = def.read(config);
       if (def.sensitive) return raw ? "configured" : "not set";
       if (!raw.trim()) return "not set";

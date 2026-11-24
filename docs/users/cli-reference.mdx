@@ -142,6 +142,17 @@ Android handoff reports launch acceptance only. Kunai cannot observe external
 progress, completion, EOF, track changes, or player controls, so it does not
 infer history progress, autoplay, or queue acknowledgement from the intent.
 
+## Stremio addons
+
+| Command                   | What it does                                                         |
+| ------------------------- | -------------------------------------------------------------------- |
+| `kunai addons list`       | List the addons you added: number, name, host, provider id           |
+| `kunai addons add <url>`  | Add an addon by its `https://…/manifest.json` URL                    |
+| `kunai addons remove <n>` | Remove an addon by its number, id, host or name                      |
+| `kunai addons check [n]`  | Ask each addon for its manifest; exits non-zero if one cannot be used |
+
+`list` and `check` accept `--json`. No command prints an addon's full URL. See [Stremio addons](/docs/users/providers#stremio-addons).
+
 ## Providers
 
 Production providers are registered in the CLI container and listed here for reference:

@@ -1041,6 +1041,12 @@
       "description": "Shared quality policy for download jobs via defaultDownloadQuality setting."
     },
     {
+      "id": "stremio-addons",
+      "label": "Stremio addons",
+      "status": "beta",
+      "description": "Add your own Stremio addons as movie and series sources; direct links only, none bundled."
+    },
+    {
       "id": "provider-geo-relay",
       "label": "User-owned provider geo relay",
       "status": "beta",

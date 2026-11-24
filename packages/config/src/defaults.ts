@@ -80,6 +80,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // Revision 6 retires AniDB from production and drops it from shipped defaults.
   providerDefaultsRevision: 6,
   disabledProviders: [],
+  stremioAddons: [],
   youtubeProviderPriority: ["youtube"],
   youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },
   youtubeMetadata: { extractorArgs: DEFAULT_YOUTUBE_EXTRACTOR_ARGS },

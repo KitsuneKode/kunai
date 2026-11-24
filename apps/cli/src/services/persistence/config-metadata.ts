@@ -220,6 +220,17 @@ export const CONFIG_METADATA = [
     editable: true,
   },
   {
+    key: "stremioAddons",
+    label: "Stremio addons",
+    section: "providers",
+    // The provider list is built once per run, so an added addon is used from
+    // the next start. A removed one stops being asked on the next resolve.
+    effect: "after-save",
+    // A configured addon's URL can hold the user's own account token.
+    privacy: "sensitive",
+    editable: true,
+  },
+  {
     key: "videasySessionToken",
     label: "Videasy session token",
     section: "providers",

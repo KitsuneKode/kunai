@@ -449,8 +449,11 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // November 19 Jikan fallback, Android local-file gateway, sub/dub source cycling,
 // and Termux onboarding additions measured 3,205,426 bytes.
 // November 24 Ink 8 + dependency refresh measured 3,202,977 bytes.
-// 3135 KiB leaves 7,263 bytes; public launcher budgets below are unchanged.
-export const NPM_BUNDLE_BUDGET_KB = 3_135;
+// November 24 Stremio addon sources (protocol schemas, guarded client, stream
+// classifier, provider module, `kunai addons`, settings rows) measured
+// 3,240,476 bytes: +37,499 of first-party code, no new dependency or asset.
+// 3172 KiB leaves 7,652 bytes; public launcher budgets below are unchanged.
+export const NPM_BUNDLE_BUDGET_KB = 3_172;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

@@ -147,6 +147,10 @@ MAINTENANCE
   kunai providers verify       Check the cached manifest and AllManga crypto freshness (--json)
   kunai providers rollback     Restore the previous verified hotfix manifest backup
   kunai providers reset        Remove cached hotfix manifest and return to bundled defaults
+  kunai addons list            List the Stremio addons you added (--json)
+  kunai addons add <url>       Add a Stremio addon by its https manifest.json URL
+  kunai addons remove <n>      Remove an addon by its number in the list
+  kunai addons check [n]       Ask each addon for its manifest and report problems (--json)
   kunai uninstall              Remove kunai (add --purge to also delete user data)
   kunai diagnostics recent     Print recent redacted diagnostics from the local cache DB
                                (--format pretty|jsonl|markdown, --limit N, --no-color)
@@ -169,10 +173,14 @@ export const CLI_SUBCOMMANDS: readonly string[] = [
   "doctor",
   "capabilities",
   "providers",
+  "addons",
   "uninstall",
   "diagnostics",
   "completion",
 ];
+
+/** `kunai addons <action>`. The command and the shell completions share this list. */
+export const ADDONS_SUBCOMMANDS = ["list", "add", "remove", "check"] as const;
 
 // Every recognized flag token. Used so a value-consuming flag (e.g. `-S`) never
 // swallows a following *flag* as its value, and so unknown options are rejected

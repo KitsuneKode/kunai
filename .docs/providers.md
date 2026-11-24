@@ -1000,6 +1000,15 @@ All active providers implement `CoreProviderModule` with `resolve(input, context
 Legacy Playwright providers live under `.archive/legacy/apps/cli/src/providers/` as reference-only code.
 For current beta publish scope, Playwright is not a required runtime dependency.
 
+## User-installed Stremio addons
+
+A user can add Stremio addons as extra movie and series providers. They are the
+one kind of provider module that does not come from this repository:
+`loadProductionProviderModules()` appends one module per stored manifest URL
+after the bundled roster, and returns exactly the bundled roster when none is
+installed. Rules, limits and lifecycle are in
+[features/stremio-addons.md](./features/stremio-addons.md).
+
 ## User Overrides
 
 There are none. A `providers.json` override file was documented here with a

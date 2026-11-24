@@ -422,6 +422,31 @@ Environment overrides: `KUNAI_RELAY_BASE_URL`, `KUNAI_RELAY_TOKEN`. Leave the to
 
 Source-checkout smoke and verification steps: [Debugging workflow](/docs/developer/debugging-workflow) and `apps/relay-server/README.md`.
 
+## Stremio addons
+
+You can add [Stremio addons](https://www.stremio.com/addons) as extra sources for movies and series. Kunai includes none: an addon is used only after you add it.
+
+This is a beta feature: it works with addons that return direct video links, and has had less real-world use than the built-in providers.
+
+```sh
+kunai addons add https://example-addon.com/manifest.json
+kunai addons list
+kunai addons check
+kunai addons remove 1
+```
+
+You can also add and remove addons in **Settings → Sources → Stremio addons**.
+
+- **What to paste.** The addon's `https://…/manifest.json` address. A `stremio://…/manifest.json` link is the same address and works too. If the addon has a configure page, finish that first and paste the URL it gives you.
+- **Where it sits.** A new addon goes after your other movie and series providers, so it is asked only when the ones before it have nothing. Move it up in **Settings → Sources → Provider priority**, or pause it with its provider switch.
+- **When it applies.** Adding takes effect the next time Kunai starts. Removing takes effect on the next title.
+- **What plays.** Only direct video links. Kunai has no torrent client, so torrent-only results are skipped, and Kunai tells you when that is all an addon offered. Addons that hand out links through a debrid service you configured do work.
+- **Which titles.** Movies and series that have an IMDb id. Addons are not used in anime mode.
+
+**Treat the URL like a password.** A configured addon keeps your settings, and sometimes an account token, in its URL. Kunai shows only the addon's host, never the full URL, and keeps it out of logs and diagnostics. It is stored in your `config.json`.
+
+**An addon is a third-party server you chose.** Kunai sends it the IMDb id of what you are about to watch. It accepts only JSON from it, runs nothing it sends, and checks that a link answers before handing it to `mpv`.
+
 ## When providers fail (expected behavior)
 
 Provider catalogs drift. Failure is operational, not exceptional.
@@ -439,6 +464,7 @@ If **all** providers fail, Kunai explains why in diagnostics and the shell foote
 - No Kunai-hosted proxy or stream relay; the optional provider geo relay is user-owned and metadata-only by default
 - No guarantee of subtitle language, quality tier, or dub availability
 - No silent provider switching without user action (except configured automatic fallback within policy)
+- No bundled Stremio addons and no torrent playback; an addon you add yourself can only supply direct video links
 
 See [Supported and Unsupported](/docs/users/supported-and-unsupported).
 

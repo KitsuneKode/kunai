@@ -1,0 +1,259 @@
+import { ADDONS_SUBCOMMANDS } from "@/cli-args";
+import {
+  addStremioAddon,
+  cleanStremioAddonName,
+  findInstalledStremioAddon,
+  readInstalledStremioAddons,
+  removeStremioAddonFromConfig,
+  stremioAddonReferenceSlice,
+  type InstalledStremioAddon,
+  type StremioAddonReferenceSlice,
+} from "@/domain/provider/stremio-addons";
+import {
+  describeManifestResources,
+  fetchStremioManifest,
+  manifestServesStream,
+  parseStremioAddonUrl,
+  toDisplayText,
+  type StremioManifest,
+} from "@kunai/providers/stremio-addon";
+import type { ProviderRuntimeContext } from "@kunai/types";
+
+/** The part of the config service this command reads and writes. */
+export interface AddonsConfigPort extends StremioAddonReferenceSlice {
+  update(partial: Partial<StremioAddonReferenceSlice>): Promise<void>;
+  save(): Promise<void>;
+  flushPending(): Promise<void>;
+}
+
+export interface RunAddonsCommandOptions {
+  readonly subcommand?: string;
+  /** `add`: the manifest URL. `remove`/`check`: a number from `list`, an id, a host or a name. */
+  readonly target?: string;
+  readonly json?: boolean;
+  readonly write?: (text: string) => void;
+  /** Defaults to the user's real config, opened the way startup opens it. */
+  readonly openConfig?: () => Promise<AddonsConfigPort>;
+  /** How addons are reached. Defaults to the guarded platform fetch. */
+  readonly context?: ProviderRuntimeContext;
+}
+
+interface AddonSummary {
+  readonly number: number;
+  readonly id: string;
+  readonly name: string;
+  readonly host: string;
+}
+
+/** What may be printed about an addon. The URL is not part of it: its path can hold a token. */
+function summarize(addon: InstalledStremioAddon, index: number): AddonSummary {
+  return { number: index + 1, id: addon.providerId, name: addon.displayName, host: addon.host };
+}
+
+/**
+ * Whether Kunai can ask this addon for the two things it plays. An addon that
+ * only lists catalogs, or only answers ids Kunai cannot map to, would sit in
+ * the provider order and never return a stream.
+ */
+function describeUsability(manifest: StremioManifest): {
+  readonly movie: boolean;
+  readonly series: boolean;
+  readonly reason: string | null;
+} {
+  if (manifest.behaviorHints?.configurationRequired === true) {
+    return {
+      movie: false,
+      series: false,
+      reason:
+        "the addon must be configured on its own page first; add the manifest URL it gives you after that",
+    };
+  }
+  const movie = manifestServesStream(manifest, "movie", "tt0000001");
+  const series = manifestServesStream(manifest, "series", "tt0000001:1:1");
+  if (movie.served || series.served) {
+    return { movie: movie.served, series: series.served, reason: null };
+  }
+  return { movie: false, series: false, reason: movie.reason };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "the addon could not be reached";
+}
+
+export async function runAddonsCommand(options: RunAddonsCommandOptions): Promise<number> {
+  const write = options.write ?? ((text: string) => process.stdout.write(text));
+  const action = options.subcommand ?? "list";
+  const json = Boolean(options.json);
+  const context: ProviderRuntimeContext = options.context ?? {
+    now: () => new Date().toISOString(),
+  };
+  const emit = (payload: Record<string, unknown>, text: string): void => {
+    write(json ? `${JSON.stringify({ schemaVersion: 1, ...payload }, null, 2)}\n` : `${text}\n`);
+  };
+  const fail = (code: 1 | 2, reason: string): number => {
+    emit({ ok: false, error: reason }, `kunai addons ${action}: ${reason}`);
+    return code;
+  };
+
+  if (!ADDONS_SUBCOMMANDS.some((known) => known === action)) {
+    return fail(2, `unknown action. Use one of: ${ADDONS_SUBCOMMANDS.join(", ")}.`);
+  }
+
+  const openConfig =
+    options.openConfig ??
+    (async () => {
+      const { openStandaloneConfig } = await import("@/services/persistence/standalone-config");
+      return openStandaloneConfig();
+    });
+  const config = await openConfig();
+  const installed = readInstalledStremioAddons(config.stremioAddons);
+
+  if (action === "list") {
+    const addons = installed.map(summarize);
+    emit(
+      { ok: true, error: null, addons },
+      addons.length === 0
+        ? "No Stremio addons installed. Add one with: kunai addons add <manifest-url>"
+        : [
+            "Stremio addons (movies and series):",
+            ...addons.map(
+              (addon) => `  ${addon.number}. ${addon.name}  ${addon.host}  ${addon.id}`,
+            ),
+            "",
+            "Order and switches: Settings → Sources. Remove with: kunai addons remove <number>",
+          ].join("\n"),
+    );
+    return 0;
+  }
+
+  if (action === "add") {
+    if (!options.target) return fail(2, "missing the addon's manifest URL.");
+    const parsed = parseStremioAddonUrl(options.target);
+    if (!parsed.ok) return fail(2, parsed.reason);
+
+    // The manifest is read before anything is stored: an address that is not
+    // a Stremio addon, or one Kunai could never get a stream from, is refused
+    // here instead of sitting in the provider order doing nothing.
+    let manifest: StremioManifest;
+    try {
+      manifest = await fetchStremioManifest(parsed.addon, { context });
+    } catch (error) {
+      return fail(1, `${errorMessage(error)}. Nothing was added.`);
+    }
+    const usability = describeUsability(manifest);
+    if (usability.reason) {
+      // The name is the addon's own text; it is printed only after cleaning.
+      const shown = cleanStremioAddonName(manifest.name) ?? parsed.addon.host;
+      return fail(1, `"${shown}" cannot be used: ${usability.reason}. Nothing was added.`);
+    }
+
+    const result = addStremioAddon(config.stremioAddons, parsed.addon.manifestUrl, manifest.name);
+    if (!result.ok) return fail(1, result.reason);
+    await config.update({ stremioAddons: result.entries });
+    await config.save();
+    await config.flushPending();
+
+    const kinds = [usability.movie ? "movies" : null, usability.series ? "series" : null]
+      .filter(Boolean)
+      .join(" and ");
+    emit(
+      {
+        ok: true,
+        error: null,
+        added: result.added,
+        addon: summarize(result.addon, result.entries.length - 1),
+        movie: usability.movie,
+        series: usability.series,
+      },
+      result.added
+        ? [
+            `Added "${result.addon.displayName}" (${result.addon.host}) for ${kinds}.`,
+            "Kunai asks it after your other providers, starting the next time Kunai opens.",
+            "Change its place in the order, or switch it off, in Settings → Sources.",
+          ].join("\n")
+        : `"${result.addon.displayName}" (${result.addon.host}) is already installed.`,
+    );
+    return 0;
+  }
+
+  const targeted = options.target
+    ? findInstalledStremioAddon(installed, options.target)
+    : undefined;
+  if (targeted === "ambiguous") {
+    return fail(2, "more than one addon matches; use its number from `kunai addons list`.");
+  }
+  if (options.target && !targeted) {
+    return fail(1, "no installed addon matches; see `kunai addons list`.");
+  }
+
+  if (action === "remove") {
+    if (!targeted) return fail(2, "say which addon: a number from `kunai addons list`.");
+    await config.update(
+      stremioAddonReferenceSlice(removeStremioAddonFromConfig(config, targeted.providerId)),
+    );
+    await config.save();
+    await config.flushPending();
+    emit(
+      { ok: true, error: null, removed: summarize(targeted, installed.indexOf(targeted)) },
+      `Removed "${targeted.displayName}" (${targeted.host}). A running Kunai stops asking it on the next title.`,
+    );
+    return 0;
+  }
+
+  // check
+  const subjects = targeted ? [targeted] : installed;
+  if (subjects.length === 0) {
+    emit({ ok: true, error: null, addons: [] }, "No Stremio addons installed.");
+    return 0;
+  }
+  const reports = await Promise.all(
+    subjects.map(async (addon) => {
+      const summary = summarize(addon, installed.indexOf(addon));
+      try {
+        const manifest = await fetchStremioManifest(addon, { context });
+        const usability = describeUsability(manifest);
+        const resources = describeManifestResources(manifest);
+        return {
+          ...summary,
+          reachable: true,
+          usable: usability.reason === null,
+          manifestName: cleanStremioAddonName(manifest.name) ?? null,
+          version: toDisplayText(manifest.version, 32) ?? null,
+          movie: usability.movie,
+          series: usability.series,
+          streamTypes: resources.streamTypes,
+          problem: usability.reason,
+        };
+      } catch (error) {
+        return {
+          ...summary,
+          reachable: false,
+          usable: false,
+          manifestName: null,
+          version: null,
+          movie: false,
+          series: false,
+          streamTypes: [],
+          problem: errorMessage(error),
+        };
+      }
+    }),
+  );
+  const ok = reports.every((report) => report.usable);
+  emit(
+    { ok, error: ok ? null : "one or more addons cannot be used", addons: reports },
+    reports
+      .map((report) =>
+        report.usable
+          ? `  ${report.number}. ${report.name}  ${report.host}  ok — ${[
+              report.movie ? "movies" : null,
+              report.series ? "series" : null,
+            ]
+              .filter(Boolean)
+              .join(" and ")}${report.version ? `, v${report.version}` : ""}`
+          : `  ${report.number}. ${report.name}  ${report.host}  problem — ${report.problem}`,
+      )
+      .join("\n"),
+  );
+  return ok ? 0 : 1;
+}

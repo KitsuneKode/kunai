@@ -52,6 +52,18 @@ export interface YouTubeMetadataConfig {
   readonly sponsorblockRemove?: string;
 }
 
+/** One Stremio addon the user added. */
+export interface StremioAddonConfigEntry {
+  /**
+   * The addon's `https://…/manifest.json` address. Treat it as a secret: a
+   * configured addon carries the user's own settings, and sometimes an account
+   * token, in the path. Show the host; never log or export the whole value.
+   */
+  readonly url: string;
+  /** The addon's own name, recorded from its manifest. Display only. */
+  readonly name?: string;
+}
+
 export interface KitsuneConfig {
   defaultMode: "series" | "anime" | "youtube";
   provider: string;
@@ -66,6 +78,14 @@ export interface KitsuneConfig {
    * leaves it empty until the user explicitly re-enables a provider.
    */
   disabledProviders: readonly string[];
+  /**
+   * Stremio addons the user added, as movie and series sources. Empty by
+   * default and never shipped with an entry: Kunai bundles no addon. Each one
+   * becomes a provider whose id is derived from its URL, so it is ordered and
+   * switched off through `providerPriority` and `disabledProviders` like any
+   * other. Read once at startup; a removal is honoured immediately.
+   */
+  stremioAddons: readonly StremioAddonConfigEntry[];
   /**
    * Which revision of the shipped provider defaults this config has been
    * reconciled against. The whole merged config is written on every save, so an
