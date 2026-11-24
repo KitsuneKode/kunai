@@ -45,7 +45,6 @@ const PROVIDER_MODULE_DIR: Record<string, string> = {
   movyProviderModule: "movy",
   vidrockProviderModule: "vidrock",
   allmangaProviderModule: "allmanga",
-  anidbProviderModule: "anidb",
   hianimeProviderModule: "hianime",
   animeggProviderModule: "animegg",
   kickassanimeProviderModule: "kickassanime",
@@ -55,9 +54,7 @@ const PROVIDER_MODULE_DIR: Record<string, string> = {
 
 const PROVIDER_ID_CONSTANTS: Record<string, string> = {
   ALLANIME_PROVIDER_ID: "allanime",
-  ANIDB_PROVIDER_ID: "anidb",
   ANIMEGG_PROVIDER_ID: "animegg",
-  CINEBY_PROVIDER_ID: "cineby",
   HIANIME_PROVIDER_ID: "hianime",
   KICKASSANIME_PROVIDER_ID: "kickassanime",
   MIRURO_PROVIDER_ID: "miruro",

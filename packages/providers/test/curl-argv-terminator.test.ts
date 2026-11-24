@@ -11,9 +11,8 @@ import { expect, test } from "bun:test";
  * helpers, with no seam to observe it from a behavioural test.
  */
 const CURL_ARGV_SITES = [
-  // anidb builds two argv arrays: the `-sL` page fetch and the manual-redirect
-  // `-s` hop fetch.
-  { file: "src/anidb/client.ts", url: "url", occurrences: 2 },
+  // anidb identity builds one argv array: the `-sL` anime-page fetch.
+  { file: "src/shared/anidb-identity.ts", url: "url", occurrences: 1 },
   { file: "src/hianime/client.ts", url: "url", occurrences: 1 },
   { file: "src/miruro/direct.ts", url: "url", occurrences: 1 },
 ] as const;

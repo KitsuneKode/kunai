@@ -162,11 +162,6 @@ export async function waitForMpvIpcEndpoint(
   return false;
 }
 
-/** @deprecated Prefer `waitForMpvIpcEndpoint` + `createMpvIpcEndpoint`; kept for tests and legacy callers. */
-export async function waitForMpvIpcSocket(socketPath: string, timeoutMs = 3_000): Promise<boolean> {
-  return waitForMpvIpcEndpoint({ kind: "unix_socket", path: socketPath }, timeoutMs);
-}
-
 export interface MpvIpcSession {
   send(command: readonly unknown[], timeoutMs?: number): Promise<MpvIpcCommandResult>;
   sendUnchecked(command: readonly unknown[]): void;
