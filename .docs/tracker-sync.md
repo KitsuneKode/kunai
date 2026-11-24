@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T09:36:13Z"
+lastReviewed: "2026-11-24T17:30:00Z"
 ---
 
 # Tracker Sync
@@ -224,9 +224,12 @@ rewriting the other tracker. Malformed or unavailable unrelated credentials
 therefore remain untouched during connect and disconnect. An explicit clear
 still removes both trackers. Full-set reads propagate vault access failures;
 the file backend retains its read/merge/write path. The
-same vault lane holds `videasy.sessionToken`,
-which is scrubbed from `config.json` at the persistence boundary while the
-in-memory config keeps serving it.
+same vault lane holds `videasy.sessionToken`, `tmdb.apiKey`, `wyzie.apiKey`,
+`youtube.poToken`, and `providerRelay.token` (read in parallel at boot), each
+verified via write → read-back → compare before being scrubbed from
+`config.json` at the persistence boundary while the in-memory config keeps
+serving it. When no native vault backend is available (`file` fallback), those
+fields remain in `config.json`.
 
 Dead-letter diagnostics are bounded (64-char code, 256-char detail) and never
 contain payload JSON, since an unparseable row is the likeliest to hold

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import {
   configureYoutubeProvider,
@@ -11,13 +13,16 @@ import { YoutubeMetadataCacheRepository, type KunaiDatabase } from "@kunai/stora
 export const YOUTUBE_METADATA_TTL_MS = 15 * 60 * 1000;
 
 function computeYoutubeConfigFingerprint(meta: KitsuneConfig["youtubeMetadata"]): string {
+  const poToken = meta?.poToken ?? "";
   return JSON.stringify({
     instanceUrl: meta?.instanceUrl ?? "",
     pipedApiUrl: meta?.pipedApiUrl ?? "",
     cookiesFromBrowser: meta?.cookiesFromBrowser ?? "",
     cookiesFile: meta?.cookiesFile ?? "",
     extractorArgs: meta?.extractorArgs ?? "",
-    poToken: meta?.poToken ?? "",
+    // Hash the vaulted PO token before persisting the cache-invalidation
+    // fingerprint to SQLite so plaintext never lands in kunai-cache.sqlite.
+    poTokenHash: poToken ? createHash("sha256").update(poToken).digest("hex") : "",
     sponsorblockRemove: meta?.sponsorblockRemove ?? "",
   });
 }

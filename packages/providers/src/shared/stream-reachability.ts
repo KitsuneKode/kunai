@@ -1,4 +1,5 @@
 import {
+  createDeadlineSignal,
   fetchProbeTarget,
   isGuardedPlatformFetch,
   type StreamReachabilityFetch,
@@ -476,16 +477,13 @@ async function fetchPlaylistText(
     return { status: "fail", result: { status: "timeout" } };
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), remaining());
-  const onParentAbort = () => controller.abort(parentSignal?.reason);
-  parentSignal?.addEventListener("abort", onParentAbort, { once: true });
+  const deadline = createDeadlineSignal(parentSignal, remaining());
 
   try {
     const outcome = await fetchProbeTarget({
       fetchImpl,
       url,
-      init: { method: "GET", headers, signal: controller.signal },
+      init: { method: "GET", headers, signal: deadline.signal },
       remaining,
       parentSignal,
       resolveNamesFor,
@@ -525,7 +523,7 @@ async function fetchPlaylistText(
     }
     return { status: "ok", text, finalUrl: outcome.finalUrl };
   } catch (error) {
-    if (controller.signal.aborted || parentSignal?.aborted) {
+    if (deadline.signal.aborted || parentSignal?.aborted) {
       return { status: "fail", result: { status: "timeout" } };
     }
     const message = error instanceof Error ? error.message : String(error);
@@ -538,8 +536,7 @@ async function fetchPlaylistText(
       },
     };
   } finally {
-    clearTimeout(timeout);
-    parentSignal?.removeEventListener("abort", onParentAbort);
+    deadline.release();
   }
 }
 
@@ -555,10 +552,7 @@ async function probeHlsMediaSegment(
     return { status: "timeout" };
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), remaining());
-  const onParentAbort = () => controller.abort(parentSignal?.reason);
-  parentSignal?.addEventListener("abort", onParentAbort, { once: true });
+  const deadline = createDeadlineSignal(parentSignal, remaining());
 
   try {
     const outcome = await fetchProbeTarget({
@@ -567,7 +561,7 @@ async function probeHlsMediaSegment(
       init: {
         method: "GET",
         headers: { ...headers, Range: SEGMENT_RANGE_HEADER },
-        signal: controller.signal,
+        signal: deadline.signal,
       },
       remaining,
       parentSignal,
@@ -621,7 +615,7 @@ async function probeHlsMediaSegment(
 
     return { status: "reachable" };
   } catch (error) {
-    if (controller.signal.aborted || parentSignal?.aborted) {
+    if (deadline.signal.aborted || parentSignal?.aborted) {
       return { status: "timeout" };
     }
     const message = error instanceof Error ? error.message : String(error);
@@ -631,8 +625,7 @@ async function probeHlsMediaSegment(
       definitive: isDefinitiveNetworkError(message),
     };
   } finally {
-    clearTimeout(timeout);
-    parentSignal?.removeEventListener("abort", onParentAbort);
+    deadline.release();
   }
 }
 
@@ -652,11 +645,7 @@ async function probeHttpStatus(
     return { status: "timeout" };
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), options.remainingMs());
-
-  const onParentAbort = () => controller.abort(options.parentSignal?.reason);
-  options.parentSignal?.addEventListener("abort", onParentAbort, { once: true });
+  const deadline = createDeadlineSignal(options.parentSignal, options.remainingMs());
 
   const healthyStatus =
     options.healthyStatus ?? ((status: number) => status >= 200 && status < 300);
@@ -668,7 +657,7 @@ async function probeHttpStatus(
       init: {
         method: options.method,
         headers: options.headers,
-        signal: controller.signal,
+        signal: deadline.signal,
       },
       remaining: options.remainingMs,
       parentSignal: options.parentSignal,
@@ -693,7 +682,7 @@ async function probeHttpStatus(
     const definitive = isDefinitiveHttpStatus(response.status);
     return { status: "unreachable", reason: `HTTP ${response.status}`, definitive };
   } catch (error) {
-    if (controller.signal.aborted) {
+    if (deadline.signal.aborted) {
       return { status: "timeout" };
     }
     const message = error instanceof Error ? error.message : String(error);
@@ -703,8 +692,7 @@ async function probeHttpStatus(
       definitive: isDefinitiveNetworkError(message),
     };
   } finally {
-    clearTimeout(timeout);
-    options.parentSignal?.removeEventListener("abort", onParentAbort);
+    deadline.release();
   }
 }
 

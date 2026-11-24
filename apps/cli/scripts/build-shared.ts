@@ -475,7 +475,10 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // After merging main and making addons opt-in, Bun 1.4.5 measured 3,270,431
 // bytes. With #734, #745, #744, and the fail-closed prompt, it measured
 // 3,290,941 bytes. 3215 KiB leaves 1,219 bytes; public launcher budgets are unchanged.
-export const NPM_BUNDLE_BUDGET_KB = 3_215;
+// Merged onto main after #737 (nested-secret vaulting, shared deadline
+// combiner), it measured 3,293,492 bytes. 3219 KiB leaves 2,764 bytes; public
+// launcher budgets are unchanged.
+export const NPM_BUNDLE_BUDGET_KB = 3_219;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

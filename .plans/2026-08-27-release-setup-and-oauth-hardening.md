@@ -1,3 +1,7 @@
+---
+lastReviewed: "2026-11-24"
+---
+
 # Release setup and OAuth hardening
 
 **Status:** IN PROGRESS
