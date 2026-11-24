@@ -7,37 +7,50 @@
 // Resolves with the player's result when the file ends.
 // =============================================================================
 
+import { confirmPlaybackStart } from "@/app/playback/confirmed-playback-start";
 import { startLateSubtitleResolver } from "@/app/playback/late-subtitle-resolver";
+import type { EpisodeAttempt } from "@/app/playback/playback-episode-attempt";
 import { episodeIdentityForHistory } from "@/app/playback/playback-history-identity";
 import type { PlaybackLedgerSlot } from "@/app/playback/playback-ledger-slot";
+import type { NextEpisodePrefetch } from "@/app/playback/playback-next-episode-prefetch";
 import {
   updatePlaybackFeedback,
   applyPlaybackStatusSignal,
+  transitionPlaybackSession,
 } from "@/app/playback/playback-phase-feedback";
+import type {
+  PlaybackIterationStep,
+  PlaybackLoopState,
+} from "@/app/playback/playback-phase-session";
 import { updatePresenceInBackground } from "@/app/playback/playback-presence-writer";
 import {
   playbackAudioPreference,
   playbackQualityPreference,
   playbackSubtitlePreference,
 } from "@/app/playback/playback-profile-context";
+import { didPlaybackFailToStart } from "@/app/playback/playback-session-controller";
 import { STARTUP_STALL_TIMEOUT_MS } from "@/app/playback/playback-source-failover";
+import { startFromBeginning } from "@/app/playback/playback-start-intent";
+import type { ReadyEpisodeStream } from "@/app/playback/playback-stream-ready";
 import { runPlaybackSession } from "@/app/playback/run-playback-session";
 import { describePlaybackSubtitleStatus } from "@/app/playback/subtitle-status";
 import type { PhaseContext } from "@/app/session/Phase";
 import { classifyPersistedKind } from "@/domain/media/content-kind";
 import { enrichExternalIdsWithVideoMeta } from "@/domain/media/video-meta";
-import type {
-  TitleInfo,
-  EpisodeInfo,
-  PlaybackTimingMetadata,
-  StreamInfo,
-  PlaybackResult,
+import {
+  type TitleInfo,
+  type EpisodeInfo,
+  type PlaybackTimingMetadata,
+  type StreamInfo,
+  type PlaybackResult,
+  isDetachedHandoffResult,
 } from "@/domain/types";
+import { PlaybackAbortedError } from "@/infra/player/playback-aborted";
 import { PlaybackHistoryLedger } from "@/services/continuation/playback-history-ledger";
-import { type DiagnosticCorrelation } from "@/services/diagnostics/correlation";
+import type { DiagnosticCorrelation } from "@/services/diagnostics/correlation";
 import { buildPlaybackDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
-import { type PlaybackStartupStage } from "@/services/playback/playback-startup-timeline";
+import type { PlaybackStartupStage } from "@/services/playback/playback-startup-timeline";
 
 export type PlayerLaunchInput = {
   readonly stream: StreamInfo;
@@ -353,4 +366,111 @@ export async function launchPlayback(input: PlayerLaunchInput): Promise<Playback
       onPlayerReady: () => {},
     },
   });
+}
+
+export type PlayedEpisode =
+  | { readonly kind: "exit"; readonly step: PlaybackIterationStep }
+  | { readonly kind: "ended"; readonly result: PlaybackResult };
+
+/**
+ * Plays the ready stream once: consumes the pending start (restored when the
+ * file never really started), launches the player, and closes the session
+ * phase as "playback-ended". A session stop or player abort at any point
+ * releases mpv and cancels the phase.
+ */
+export async function playEpisode(
+  loop: PlaybackLoopState,
+  attempt: EpisodeAttempt,
+  ready: ReadyEpisodeStream,
+  prefetch: NextEpisodePrefetch,
+): Promise<PlayedEpisode> {
+  const { context, host, title, run, queueAttempt } = loop;
+  const { container } = context;
+  const { stateManager } = container;
+  const { currentEpisode, playbackIterationAbort, playbackCorrelation, recordStartupMark } =
+    attempt;
+  const { providerHandoff, playbackTiming, preparedStream } = ready;
+  const { maybePrefetchNext } = prefetch;
+  // Play in MPV — consume the pending resume position on the first play only.
+  // Pass loading handle so launchPlayback can update it in-place (no shell flicker).
+  const startIntent = run.pendingStart;
+  run.pendingStart = startFromBeginning();
+
+  if (context.signal.aborted) {
+    stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
+    host.ledger.discard();
+    await container.player.releasePersistentSession();
+    return { kind: "exit", step: { status: "cancelled" } };
+  }
+
+  let result: PlaybackResult;
+  try {
+    queueAttempt?.setStage("player-launch");
+    result = await launchPlayback({
+      stream: preparedStream,
+      title,
+      episode: currentEpisode,
+      context,
+      ledger: host.ledger,
+      startAt: startIntent.startAt,
+      resumePromptAt: startIntent.resumePromptAt,
+      playbackMode: run.playbackSession.mode,
+      timing: playbackTiming,
+      onNearEof: maybePrefetchNext,
+      suppressResumePrompt: startIntent.suppressResumePrompt,
+      correlation: playbackCorrelation,
+      onStartupMark: (stage) => recordStartupMark(stage, preparedStream),
+      successfulProviderId: providerHandoff.successfulProviderId,
+      playbackIterationSignal: playbackIterationAbort.signal,
+      onConfirmedPlaybackStart: () => {
+        run.playbackSession = confirmPlaybackStart({
+          session: run.playbackSession,
+          transition: (session, event) =>
+            transitionPlaybackSession(context, session, event, {
+              titleId: title.id,
+              season: currentEpisode.season,
+              episode: currentEpisode.episode,
+              provider: attempt.resolvedProviderId,
+            }),
+          acknowledgeQueue: () => queueAttempt?.acknowledgeStarted(),
+        });
+      },
+      localPlaybackSource: run.localPlaybackSource ?? undefined,
+    });
+    if (isDetachedHandoffResult(result)) {
+      queueAttempt?.rollbackIfUnacknowledged(
+        "playback-aborted",
+        "external handoff is not observable",
+      );
+    }
+  } catch (error) {
+    run.pendingStart = startIntent;
+    if (error instanceof PlaybackAbortedError || context.signal.aborted) {
+      stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
+      host.ledger.discard();
+      await container.player.releasePersistentSession();
+      return { kind: "exit", step: { status: "cancelled" } };
+    }
+    throw error;
+  }
+
+  if (didPlaybackFailToStart(result) || result.watchedSeconds === 0) {
+    run.pendingStart = startIntent;
+  }
+
+  if (context.signal.aborted) {
+    stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
+    host.ledger.discard();
+    await container.player.releasePersistentSession();
+    return { kind: "exit", step: { status: "cancelled" } };
+  }
+  run.playbackSession = transitionPlaybackSession(context, run.playbackSession, "playback-ended", {
+    titleId: title.id,
+    season: currentEpisode.season,
+    episode: currentEpisode.episode,
+    provider: attempt.resolvedProviderId,
+    endReason: result.endReason,
+    suspectedDeadStream: result.suspectedDeadStream === true,
+  });
+  return { kind: "ended", result };
 }

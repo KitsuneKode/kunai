@@ -10,7 +10,6 @@
 import { openTracksPanel, openPlaybackEpisodePicker } from "@/app-shell/workflows";
 import { episodeInfoFromSelection } from "@/app/bootstrap/episode-info-from-catalog";
 import { resolveTitleHistoryLookupId } from "@/app/bootstrap/title-info";
-import { confirmPlaybackStart } from "@/app/playback/confirmed-playback-start";
 import {
   MAX_AUTO_SOURCE_RECOVER_ATTEMPTS,
   releasePersistentMpvForTerminalFailure,
@@ -38,7 +37,7 @@ import {
   NEXT_ITERATION,
   type PlaybackIterationStep,
 } from "@/app/playback/playback-phase-session";
-import { launchPlayback } from "@/app/playback/playback-player-launch";
+import { playEpisode } from "@/app/playback/playback-player-launch";
 import { planPlaylistAutoAdvance } from "@/app/playback/playback-playlist-autoadvance";
 import {
   createPostPlaybackMenuDeps,
@@ -70,11 +69,7 @@ import {
   planStartupFailover,
   shouldUseProviderPlaybackRecovery,
 } from "@/app/playback/playback-source-failover";
-import {
-  startAtResumePoint,
-  startEpisodeNavigation,
-  startFromBeginning,
-} from "@/app/playback/playback-start-intent";
+import { startAtResumePoint, startEpisodeNavigation } from "@/app/playback/playback-start-intent";
 import { acquireEpisodeStream } from "@/app/playback/playback-stream-acquire";
 import { offerPrePlayConfirm, readyEpisodeStream } from "@/app/playback/playback-stream-ready";
 import type { AutoAdvanceGuards } from "@/app/playback/policies/auto-advance-policy";
@@ -102,8 +97,6 @@ import {
   trustedProgressFromPlaybackResult,
 } from "@/domain/playback/progress-engage-policy";
 import { formatQueueEntryLabel } from "@/domain/queue/queue-entry-label";
-import { type PlaybackResult, isDetachedHandoffResult } from "@/domain/types";
-import { PlaybackAbortedError } from "@/infra/player/playback-aborted";
 import { classifyPlaybackFailureFromResult } from "@/infra/player/playback-failure-classifier";
 import { buildRecoveryDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 import { queueHistoryMirror } from "@/services/media-actions/create-container-media-action-router";
@@ -213,100 +206,15 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
     if (acquired.kind === "exit") return acquired.step;
     const { streamProvenance, consumedBundle } = acquired;
     const ready = await readyEpisodeStream(loop, attempt, episodeContext, acquired);
-    const { providerHandoff, playbackTiming, effectiveTiming, preparedStream } = ready;
+    const { providerHandoff, effectiveTiming, preparedStream } = ready;
     if ((await offerPrePlayConfirm(loop, attempt, preparedStream)) === NEXT_ITERATION) {
       return NEXT_ITERATION;
     }
-    // Play in MPV — consume the pending resume position on the first play only.
-    // Pass loading handle so launchPlayback can update it in-place (no shell flicker).
-    const startIntent = run.pendingStart;
-    run.pendingStart = startFromBeginning();
-
     const nextEpisodePrefetch = createNextEpisodePrefetch(loop, attempt, episodeContext, ready);
-    const { buildNextPrefetchTarget, handoffNextEpisodePrefetch, maybePrefetchNext } =
-      nextEpisodePrefetch;
-    if (context.signal.aborted) {
-      stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
-      host.ledger.discard();
-      await container.player.releasePersistentSession();
-      return { status: "cancelled" };
-    }
-
-    let result: PlaybackResult;
-    try {
-      queueAttempt?.setStage("player-launch");
-      result = await launchPlayback({
-        stream: preparedStream,
-        title,
-        episode: currentEpisode,
-        context,
-        ledger: host.ledger,
-        startAt: startIntent.startAt,
-        resumePromptAt: startIntent.resumePromptAt,
-        playbackMode: run.playbackSession.mode,
-        timing: playbackTiming,
-        onNearEof: maybePrefetchNext,
-        suppressResumePrompt: startIntent.suppressResumePrompt,
-        correlation: playbackCorrelation,
-        onStartupMark: (stage) => recordStartupMark(stage, preparedStream),
-        successfulProviderId: providerHandoff.successfulProviderId,
-        playbackIterationSignal: playbackIterationAbort.signal,
-        onConfirmedPlaybackStart: () => {
-          run.playbackSession = confirmPlaybackStart({
-            session: run.playbackSession,
-            transition: (session, event) =>
-              transitionPlaybackSession(context, session, event, {
-                titleId: title.id,
-                season: currentEpisode.season,
-                episode: currentEpisode.episode,
-                provider: attempt.resolvedProviderId,
-              }),
-            acknowledgeQueue: () => queueAttempt?.acknowledgeStarted(),
-          });
-        },
-        localPlaybackSource: run.localPlaybackSource ?? undefined,
-      });
-      if (isDetachedHandoffResult(result)) {
-        queueAttempt?.rollbackIfUnacknowledged(
-          "playback-aborted",
-          "external handoff is not observable",
-        );
-      }
-    } catch (error) {
-      run.pendingStart = startIntent;
-      if (error instanceof PlaybackAbortedError || context.signal.aborted) {
-        stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
-        host.ledger.discard();
-        await container.player.releasePersistentSession();
-        return { status: "cancelled" };
-      }
-      throw error;
-    }
-
-    if (didPlaybackFailToStart(result) || result.watchedSeconds === 0) {
-      run.pendingStart = startIntent;
-    }
-
-    if (context.signal.aborted) {
-      stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
-      host.ledger.discard();
-      await container.player.releasePersistentSession();
-      return { status: "cancelled" };
-    }
-    run.playbackSession = transitionPlaybackSession(
-      context,
-      run.playbackSession,
-      "playback-ended",
-      {
-        titleId: title.id,
-        season: currentEpisode.season,
-        episode: currentEpisode.episode,
-        provider: attempt.resolvedProviderId,
-        endReason: result.endReason,
-        suspectedDeadStream: result.suspectedDeadStream === true,
-      },
-    );
-
+    const { buildNextPrefetchTarget, handoffNextEpisodePrefetch } = nextEpisodePrefetch;
+    const played = await playEpisode(loop, attempt, ready, nextEpisodePrefetch);
+    if (played.kind === "exit") return played.step;
+    const { result } = played;
     // Save history — use effectiveTiming.current so that a background retry
     // that completed during playback is reflected in completion status.
     const quitThresholdMode = config.quitNearEndThresholdMode;
