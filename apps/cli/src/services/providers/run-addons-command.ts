@@ -1,3 +1,4 @@
+import { writeSync } from "node:fs";
 import type { Readable } from "node:stream";
 
 import { ADDONS_SUBCOMMANDS } from "@/cli-args";
@@ -241,6 +242,9 @@ async function promptAcceptAddonsRisk(
 }
 
 export async function runAddonsCommand(options: RunAddonsCommandOptions): Promise<number> {
+  const trace = (phase: string) => {
+    if (process.env.KUNAI_TEST_ADDONS_TRACE === "1") writeSync(2, `[addons-ci-trace] ${phase}\n`);
+  };
   const write = options.write ?? ((text: string) => process.stdout.write(text));
   const action = options.subcommand ?? "list";
   const json = Boolean(options.json);
@@ -248,7 +252,9 @@ export async function runAddonsCommand(options: RunAddonsCommandOptions): Promis
     now: () => new Date().toISOString(),
   };
   const emit = (payload: AddonsCommandOutput, text: string): void => {
+    trace(`emit ok=${payload.ok}`);
     write(json ? `${JSON.stringify({ schemaVersion: 1, ...payload }, null, 2)}\n` : `${text}\n`);
+    trace("emit returned");
   };
   const fail = (code: 1 | 2, reason: string): number => {
     // The action is caller input and can be a pasted URL holding a token —
@@ -278,7 +284,9 @@ export async function runAddonsCommand(options: RunAddonsCommandOptions): Promis
       const { openStandaloneConfig } = await import("@/services/persistence/standalone-config");
       return openStandaloneConfig();
     });
+  trace("before open config");
   const config = await openConfig();
+  trace("after open config");
   const installed = readInstalledStremioAddons(config.stremioAddons);
   const enabled = stremioAddonsEnabled(config);
   const writeWarning = options.writeWarning ?? ((text: string) => process.stderr.write(text));
@@ -289,6 +297,7 @@ export async function runAddonsCommand(options: RunAddonsCommandOptions): Promis
     (terminal.stdout.isTTY && terminal.stderr.isTTY && terminal.stdin.isTTY
       ? () => promptAcceptAddonsRisk(terminal.stdin, terminal.stderr)
       : undefined);
+  trace(`confirm=${Boolean(confirmEnable)} enabled=${enabled}`);
   // The risk text is shown exactly once ever — while no acknowledgement is on
   // file — whether the enable comes from --accept-risk or the prompt.
   const showRiskWarningOnce = () => {

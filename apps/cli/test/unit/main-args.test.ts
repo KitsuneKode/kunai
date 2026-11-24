@@ -490,7 +490,7 @@ test("`kunai addons enable --accept-risk` writes consent and `disable` keeps it"
   // End-to-end through the real entrypoint in a throwaway profile.
   const root = mkdtempSync(join(tmpdir(), "kunai-addons-enable-"));
   try {
-    const env = { ...process.env, ...storageRootEnv(root) };
+    const env = { ...process.env, ...storageRootEnv(root), KUNAI_TEST_ADDONS_TRACE: "1" };
     const { configDir, configPath } = getKunaiPaths({ env });
     mkdirSync(configDir, { recursive: true });
     writeFileSync(
@@ -511,10 +511,13 @@ test("`kunai addons enable --accept-risk` writes consent and `disable` keeps it"
     const beforeRefusal = readFileSync(configPath, "utf8");
     // Non-interactive enable without the flag fails closed.
     const refused = run("addons", "enable", "--json");
-    const [refusedOut, refusedStatus] = await Promise.all([
+    const [refusedOut, refusedErr, refusedStatus] = await Promise.all([
       new Response(refused.stdout).text(),
+      new Response(refused.stderr).text(),
       refused.exited,
     ]);
+    if (!refusedOut || refusedStatus !== 1)
+      console.error("[addons-ci-trace]", { refusedStatus, refusedOut, refusedErr });
     expect(refusedStatus).toBe(1);
     expect(JSON.parse(refusedOut)).toMatchObject({ ok: false });
     expect(readFileSync(configPath, "utf8")).toBe(beforeRefusal);

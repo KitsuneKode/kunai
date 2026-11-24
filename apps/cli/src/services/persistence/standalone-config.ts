@@ -1,3 +1,5 @@
+import { writeSync } from "node:fs";
+
 import { FileStorage } from "@/infra/storage/FileStorage";
 import { getKunaiPaths } from "@kunai/storage";
 
@@ -14,9 +16,16 @@ import { createCredentialVault } from "./credential-vault-backends";
  * `update()`, `save()`, then `flushPending()` before exiting.
  */
 export async function openStandaloneConfig(): Promise<ConfigServiceImpl> {
+  const trace = (phase: string) => {
+    if (process.env.KUNAI_TEST_ADDONS_TRACE === "1") writeSync(2, `[addons-ci-trace] ${phase}\n`);
+  };
   const storage = new FileStorage(undefined, (message) => {
     process.stderr.write(`kunai: ${message}\n`);
   });
+  trace("before vault");
   const vault = await createCredentialVault({ paths: getKunaiPaths() });
-  return ConfigServiceImpl.load(new ConfigStoreImpl(storage), vault);
+  trace("after vault");
+  const config = await ConfigServiceImpl.load(new ConfigStoreImpl(storage), vault);
+  trace("after config load");
+  return config;
 }
