@@ -33,6 +33,7 @@ import {
   type StartupPriority,
 } from "@kunai/types";
 
+import { persistedAnalyticsConsent, predatesExplicitAnalyticsConsent } from "./analytics-consent";
 import {
   collectDirtyVaultFields,
   preserveUnchangedNestedDiskSecrets,
@@ -45,6 +46,7 @@ import {
 } from "./config-vault-fields";
 import type {
   AnalyticsPingCompletion,
+  PersistedAnalyticsConsent,
   ConfigService,
   KitsuneConfig,
   QuitNearEndBehavior,
@@ -225,18 +227,9 @@ export class ConfigServiceImpl implements ConfigService {
   ): Promise<ConfigServiceImpl> {
     const service = new ConfigServiceImpl(store, vault);
     const loaded = await store.load();
-    // Configs written before explicit consent had no notice marker. Their
-    // enabled value was opt-out state, not evidence of a current opt-in, so
-    // revoke it and erase the old local identifier before startup can send.
-    const requiresExplicitAnalyticsConsent =
-      loaded.analytics === "enabled" && typeof loaded.analyticsNoticeShown !== "boolean";
-    const normalizedAnalytics = requiresExplicitAnalyticsConsent
-      ? "unset"
-      : normalizeAnalyticsPreference(loaded.analytics);
-    const normalizedInstallId =
-      normalizedAnalytics === "enabled" && typeof loaded.installId === "string"
-        ? loaded.installId.trim()
-        : "";
+    const requiresExplicitAnalyticsConsent = predatesExplicitAnalyticsConsent(loaded);
+    const { analytics: normalizedAnalytics, installId: normalizedInstallId } =
+      persistedAnalyticsConsent(loaded);
     const repairedAnalyticsIdentity =
       loaded.installId !== undefined && loaded.installId !== normalizedInstallId;
     const migratedAnimeDefaults = shouldMigrateInheritedAnimeDefaults(loaded);
@@ -529,6 +522,11 @@ export class ConfigServiceImpl implements ConfigService {
       () => undefined,
     );
     return run;
+  }
+
+  async readPersistedAnalyticsConsent(): Promise<PersistedAnalyticsConsent> {
+    // No lock: saves replace the file atomically, and this only reads.
+    return persistedAnalyticsConsent(await this.store.load());
   }
 
   recordStremioAddonName(manifestUrl: string, name: string): Promise<void> {
@@ -1629,10 +1627,6 @@ function normalizeContinueSourcePreference<T>(value: T): ContinueSourcePreferenc
 
 function normalizePrePlayConfirm<T>(value: T): PrePlayConfirmMode {
   return value === "when-choices" ? "when-choices" : value === "always" ? "always" : "off";
-}
-
-function normalizeAnalyticsPreference<T>(value: T): KitsuneConfig["analytics"] {
-  return value === "enabled" ? "enabled" : value === "disabled" ? "disabled" : "unset";
 }
 
 function normalizeStartupPriority<T>(value: T): StartupPriority {

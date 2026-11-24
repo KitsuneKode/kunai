@@ -44,6 +44,12 @@ export type AnalyticsPingCompletion = {
   readonly lastAnalyticsPingAt?: number;
 };
 
+/** Analytics consent and install id exactly as config.json holds them now. */
+export type PersistedAnalyticsConsent = {
+  readonly analytics: KitsuneConfig["analytics"];
+  readonly installId: string;
+};
+
 export interface ConfigService extends KitsuneConfig {
   /** Fully-resolved tuning values (defaults < config override < env). */
   readonly tuning: TuningConfig;
@@ -59,6 +65,13 @@ export interface ConfigService extends KitsuneConfig {
   save(): Promise<void>;
   /** Apply bookkeeping only if persisted consent and identity still match. */
   recordAnalyticsPing(completion: AnalyticsPingCompletion): Promise<boolean>;
+  /**
+   * Re-read config.json's analytics consent and install id, as a sibling
+   * process may have left them. Read-only: memory is not touched, so a pending
+   * local change keeps waiting for its own save. Rejects if the file cannot be
+   * read; the analytics gate treats that as "do not send".
+   */
+  readPersistedAnalyticsConsent(): Promise<PersistedAnalyticsConsent>;
   /**
    * Refresh one installed addon's stored display name from its manifest.
    * Merges over the live file under the store lock and the persist chain, so
