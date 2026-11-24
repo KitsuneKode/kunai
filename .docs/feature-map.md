@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T10:55:19Z"
+lastReviewed: "2026-11-24T13:30:00Z"
 ---
 
 # Feature Map
@@ -166,6 +166,7 @@ on, and because guessing wrong here produces a layering violation.
 | OS integration                | `apps/cli/src/infra/os/*` — external open, protocol handler, reveal in file manager                                                 | Backs `--install-protocol-handler` and `kunai://`                                                                                                     |
 | Build-time shims              | `apps/cli/src/infra/build/*` — compiled entrypoint, react-devtools stub                                                             | Only touched by the binary build; not runtime behavior                                                                                                |
 | Cancellation and deadlines    | `apps/cli/src/infra/abort/timeout-signal.ts`                                                                                        | One helper. Do not hand-roll another `AbortSignal` timeout                                                                                            |
+| Joining in-flight work by key | `apps/cli/src/infra/concurrency/keyed-joiner.ts` (`createKeyedJoiner`)                                                              | One helper. A new hand-rolled in-flight `Promise` map fails `keyed-joiner-ratchet.test.ts`                                                            |
 | Structured logging            | `apps/cli/src/infra/logger/*`, `apps/cli/src/logger.ts`                                                                             | `logger.ts` is the legacy flat entry; new work uses `infra/logger`                                                                                    |
 | File and path mechanics       | `apps/cli/src/infra/storage/*` (`FileStorage`, `kunai-paths.ts`)                                                                    | Wraps `packages/storage` paths for the CLI                                                                                                            |
 | Terminal shell-outs           | `apps/cli/src/infra/shell/*` (`open-external-url.ts`)                                                                               | The only place that launches an external program other than mpv and yt-dlp                                                                            |

@@ -7,6 +7,7 @@
 // Tracker sync (`services/sync/AniListAdapter.ts`) stays separate: it is
 // authenticated, mutating, and owns its own retry policy.
 
+import { createKeyedJoiner } from "@/infra/concurrency/keyed-joiner";
 import { isJsonObject, type JsonObject, type JsonValue } from "@kunai/types";
 
 export const ANILIST_GRAPHQL_URL = "https://graphql.anilist.co";
@@ -45,12 +46,6 @@ export type AniListRequestOptions = {
   readonly fetchImpl?: typeof fetch;
 };
 
-type Inflight = {
-  readonly promise: Promise<JsonObject>;
-  readonly controller: AbortController;
-  waiters: number;
-};
-
 /**
  * Client-owned monotonic clock for the cooldown: a wall-clock jump backwards
  * must not stretch a one-minute cooldown into an hour.
@@ -60,14 +55,14 @@ let clock: () => number = () => performance.now();
 let cooldownUntil = 0;
 /** Bumped by reset; a request started before a reset may not set a cooldown. */
 let generation = 0;
-const inflight = new Map<string, Inflight>();
+/** Identical concurrent requests share one fetch, aborted once nobody waits. */
+const inflight = createKeyedJoiner<JsonObject>();
 
 /** Test seam: clear the shared cooldown and in-flight table. */
 export function resetAniListClientForTest(): void {
   generation += 1;
   cooldownUntil = 0;
   clock = () => performance.now();
-  for (const entry of inflight.values()) entry.controller.abort();
   inflight.clear();
 }
 
@@ -134,23 +129,12 @@ export async function postAniListGraphql(
   // The deadline is part of the key: a 10 ms caller must not wait out a
   // 100 ms leader, nor a long-budget caller fail at a short leader's deadline.
   const key = `${timeoutMs}|${body}`;
-  let entry = inflight.get(key);
-  if (!entry) {
-    const controller = new AbortController();
-    const created: Inflight = {
-      controller,
-      waiters: 0,
-      promise: sendAniList(body, timeoutMs, controller.signal, options.fetchImpl, generation),
-    };
-    created.promise
-      .finally(() => {
-        if (inflight.get(key) === created) inflight.delete(key);
-      })
-      .catch(() => undefined);
-    inflight.set(key, created);
-    entry = created;
-  }
-  return waitFor(entry, options.signal);
+  const startedGeneration = generation;
+  return inflight.join(
+    key,
+    (abandon) => sendAniList(body, timeoutMs, abandon, options.fetchImpl, startedGeneration),
+    { signal: options.signal },
+  );
 }
 
 async function sendAniList(
@@ -255,35 +239,4 @@ function abortError(signal: AbortSignal | undefined): Error {
   return reason instanceof Error
     ? reason
     : new DOMException("The operation was aborted.", "AbortError");
-}
-
-function waitFor(entry: Inflight, signal: AbortSignal | undefined): Promise<JsonObject> {
-  entry.waiters += 1;
-  return new Promise<JsonObject>((resolve, reject) => {
-    let settled = false;
-    const leave = (abandon: boolean) => {
-      entry.waiters -= 1;
-      if (abandon && entry.waiters <= 0) entry.controller.abort();
-    };
-    const onAbort = () => {
-      if (settled) return;
-      settled = true;
-      leave(true);
-      reject(abortError(signal));
-    };
-    signal?.addEventListener("abort", onAbort, { once: true });
-    // Settles this waiter once, from whichever of the shared request or the
-    // caller's abort arrives first.
-    const finish = (settle: () => void): void => {
-      if (settled) return;
-      settled = true;
-      signal?.removeEventListener("abort", onAbort);
-      leave(false);
-      settle();
-    };
-    entry.promise.then(
-      (value) => finish(() => resolve(value)),
-      (error) => finish(() => reject(error)),
-    );
-  });
 }

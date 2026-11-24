@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T10:55:19Z"
+lastReviewed: "2026-11-24T13:30:00Z"
 ---
 
 # Kunai — Recommendations And Discover
@@ -32,7 +32,7 @@ and `/random` / `/surprise` discovery surfaces.
 | Calendar result loader                        | `apps/cli/src/app/search/calendar-results.ts`                                                                                                       | Implemented |
 | Random result loader                          | `apps/cli/src/app/discover/random-results.ts`                                                                                                       | Implemented |
 | Surprise catalog pool                         | `apps/cli/src/services/catalog/CatalogDiscoveryService.ts`, `apps/cli/src/app/discover/discovery-lists.ts`                                          | Implemented |
-| Trending source chain + last-known-good       | `apps/cli/src/services/catalog/CatalogDiscoveryService.ts`, `apps/cli/src/services/catalog/catalog-durable-cache.ts`                                | Implemented |
+| Trending source chain + last-known-good       | `apps/cli/src/services/catalog/CatalogDiscoveryService.ts`, `apps/cli/src/services/catalog/durable-json-cache.ts`                                   | Implemented |
 | Anime trending fallbacks (Kitsu, Jikan → ARM) | `apps/cli/src/services/catalog/kitsu-trending.ts`, `apps/cli/src/services/catalog/jikan-trending.ts`                                                | Implemented |
 | Command routing                               | `apps/cli/src/domain/session/command-registry.ts`, `apps/cli/src/app-shell/command-router.ts`                                                       | Implemented |
 | Search-phase entry                            | `apps/cli/src/app/search/SearchPhase.ts`                                                                                                            | Implemented |
@@ -97,16 +97,32 @@ Trending walks a chain of sources per lane and remembers the last good answer:
 - **Cancelled callers** never start a TMDB request, and every shared in-flight
   request has a handler, so a request that fails after all its callers left can
   never surface as an unhandled rejection (which `main.ts` treats as fatal).
-- **Calendar loads** (`CatalogScheduleService.loadCached`) run on a request the
-  service owns: each caller waits with its own signal, and the request is
-  aborted only when the last waiter leaves. **Trending refresh**
-  (`clearTrendingCache`) aborts walks it supersedes.
+- **Shared requests** — AniList posts, TMDB requests, calendar loads, AniList
+  progress batches, trending walks and surprise loads — all join through
+  `createKeyedJoiner` (`apps/cli/src/infra/concurrency/keyed-joiner.ts`): the
+  request runs on a signal its entry owns, each caller waits with its own
+  signal, and the request is aborted only when the last waiter leaves. TMDB
+  is the exception on purpose: it uses the joiner's `"finish"` mode, so a
+  superseded type-ahead request still warms the session cache. In the default
+  abort mode, a request whose waiters all left is never joined by a later
+  caller; in `"finish"` mode (TMDB, posters) it keeps running and a later caller
+  for the same key joins it. A request that is cancelled or cleared never
+  writes a cache. **Trending refresh**
+  (`clearTrendingCache`) aborts the walks it supersedes, and a walk abandoned
+  without a refresh rechecks its own signal after every source answer, so a
+  late answer cannot overwrite the walk a returning caller started.
+  **Discover's refresh** (`clearCache` → `clearTmdbSessionCache`) detaches
+  in-flight TMDB requests instead of cancelling them: the session cache is
+  shared, so cancelling would also fail a title-detail season lookup that has
+  nothing to do with Discover. A detached request still answers its waiters,
+  is never joined by a later caller, and writes neither cache.
 
 ### Series fallback: last-known-good TMDB
 
 Every successful TMDB show (`/tv/:id`) and season (`/tv/:id/season/:n`)
 response is also saved to the cache database as a `tmdb:<path>` row
-(`apps/cli/src/services/catalog/tmdb-durable-cache.ts`, wired in
+(`createTmdbDurableCache` in `apps/cli/src/services/catalog/durable-json-cache.ts`,
+which also backs the trending last-known-good lists, wired in
 `bootstrap-persistence.ts`, kept 30 days). When every TMDB host fails with a
 transport error or a 5xx, `fetchTmdbJsonCached` serves the saved copy instead,
 so a series opened in the last month still lists its seasons and episodes, and

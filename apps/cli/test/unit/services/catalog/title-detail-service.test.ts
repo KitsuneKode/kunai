@@ -145,7 +145,8 @@ function anilistMediaPayload(overrides: Record<string, unknown> = {}): Record<st
 // Mock fetch setup
 // ---------------------------------------------------------------------------
 
-type RouteHandler = (url: string) => Response | null;
+/** A pending `Promise<Response>` lets a test hold one request open. */
+type RouteHandler = (url: string) => Response | Promise<Response> | null;
 
 // Restores run in afterEach, not only at the end of each test: a test that
 // throws before its own `restore()` used to leave this 404-everything fetch
@@ -653,6 +654,53 @@ describe("TitleDetailService — graceful degradation", () => {
     expect(peekTitleDetail("tmdb:702", "movie")).toBeUndefined();
 
     restore();
+  });
+
+  test("refreshing Discover mid-load does not drop a season the detail is still verifying", async () => {
+    // Discover's refresh (RecommendationServiceImpl.clearCache) clears the
+    // TMDB session cache while a title-detail load waits on a season lookup.
+    // That lookup must still answer its caller: a cancelled lookup read as a
+    // missing season, and the partial detail was cached for five minutes.
+    const seasonRequested = Promise.withResolvers<void>();
+    const seasonAnswer = Promise.withResolvers<Response>();
+    mockFetch((url) => {
+      if (url.includes("/tv/4242/season/1")) {
+        seasonRequested.resolve();
+        return seasonAnswer.promise;
+      }
+      if (url.includes("/tv/4242")) {
+        return jsonResponse({
+          ...tmdbSeriesPayload({
+            id: 4242,
+            name: "Verifying Show",
+            // No air date: the season is listed only once its episodes are seen.
+            seasons: [{ season_number: 1, episode_count: 2, name: "Season 1", air_date: "" }],
+          }),
+          credits: { cast: [] },
+          external_ids: tmdbExternalIdsPayload(),
+          videos: { results: [] },
+        });
+      }
+      return null;
+    });
+
+    const loading = fetchTitleDetail("tmdb:4242", "series");
+    await seasonRequested.promise;
+    clearTmdbSessionCache();
+    seasonAnswer.resolve(
+      jsonResponse({
+        season_number: 1,
+        episodes: [
+          { episode_number: 1, air_date: "2020-01-01", still_path: null },
+          { episode_number: 2, air_date: "2020-01-08", still_path: null },
+        ],
+      }),
+    );
+
+    const detail = await loading;
+    expect(detail.seasons?.map((season) => season.season)).toEqual([1]);
+    // Reopening serves the complete detail, not a partial one.
+    expect(peekTitleDetail("tmdb:4242", "series")?.seasons?.map((s) => s.season)).toEqual([1]);
   });
 
   test("returns a valid TitleDetail when AniList is unreachable", async () => {
