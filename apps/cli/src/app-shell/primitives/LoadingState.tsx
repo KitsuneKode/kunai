@@ -3,6 +3,7 @@ import React from "react";
 
 import { reducedMotionEnabled } from "../motion-policy";
 import { useIsInsideOverlay } from "../overlay-layout-context";
+import { plainModeEnabled } from "../plain-mode";
 import { palette } from "../shell-theme";
 import { STATIC_PETAL } from "./SakuraPetal";
 
@@ -35,13 +36,12 @@ export function LoadingState({
 }) {
   const insideOverlay = useIsInsideOverlay();
   const skipChrome = framed ?? insideOverlay;
-  const spinner = useBrailleSpinner(active);
+  const plain = plainModeEnabled();
+  const spinner = useBrailleSpinner(active && !plain);
 
   return (
     <Box marginTop={skipChrome ? 0 : 1} flexDirection="column">
-      <Text color={palette.accent}>
-        {spinner} {message}
-      </Text>
+      <Text color={palette.accent}>{plain ? `Loading: ${message}` : `${spinner} ${message}`}</Text>
       {subtitle ? <Text color={palette.dim}>{subtitle}</Text> : null}
     </Box>
   );

@@ -3,6 +3,8 @@ import React, { useEffect, useState } from "react";
 
 import { companionMode } from "./companion-policy";
 import { CompanionHost } from "./CompanionHost";
+import { reducedMotionEnabled } from "./motion-policy";
+import { plainModeEnabled } from "./plain-mode";
 import { palette } from "./shell-theme";
 
 type ExitStep = "dim" | "footer-gone" | "fox" | "closing" | "done";
@@ -35,7 +37,9 @@ const GRAPHICS_TIMINGS = {
 } satisfies Record<ExitStep, number>;
 
 export function ExitShell({ onDone }: { onDone: () => void }) {
-  const [step, setStep] = useState<ExitStep>("dim");
+  const plain = plainModeEnabled();
+  const still = reducedMotionEnabled();
+  const [step, setStep] = useState<ExitStep>(() => (still ? "done" : "dim"));
   // Resolved once: the terminal's capabilities do not change mid-quit, and this
   // has to stay stable for the effect below that schedules against it.
   const [timings] = useState(() =>
@@ -43,6 +47,11 @@ export function ExitShell({ onDone }: { onDone: () => void }) {
   );
 
   useEffect(() => {
+    if (still) {
+      onDone();
+      return undefined;
+    }
+
     const timers: ReturnType<typeof setTimeout>[] = [];
 
     const steps: ExitStep[] = ["footer-gone", "fox", "closing", "done"];
@@ -56,7 +65,15 @@ export function ExitShell({ onDone }: { onDone: () => void }) {
     });
 
     return () => timers.forEach(clearTimeout);
-  }, [onDone, timings]);
+  }, [onDone, still, timings]);
+
+  if (plain) {
+    return (
+      <Box flexDirection="column">
+        <Text color={palette.text}>Kunai closed. See you next time.</Text>
+      </Box>
+    );
+  }
 
   const isDim = step === "dim" || step === "footer-gone";
   const showFox = step === "fox" || step === "closing" || step === "done";

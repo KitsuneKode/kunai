@@ -1,3 +1,5 @@
+import { plainModeEnabled } from "../plain-mode";
+
 export type BarSegments = { readonly filled: number; readonly track: number };
 
 /**
@@ -15,9 +17,11 @@ export function barFill(value: number, max: number, width: number): BarSegments 
 /**
  * Compact single-color progress meter (e.g. "▰▰▱▱▱") for single-line list rows —
  * keeps continue-watching rows scannable without a full-width detached bar.
+ * In plain / screen-reader mode, returns percentage text instead of block art.
  */
 export function compactProgressBar(percentage: number, cells = 5): string {
   const safe = Number.isFinite(percentage) ? Math.min(100, Math.max(0, percentage)) : 0;
+  if (plainModeEnabled()) return `${Math.round(safe)}%`;
   // Any started title shows at least one filled cell (Netflix-style sliver) so a
   // low percent never reads as "not started".
   const filled = safe <= 0 ? 0 : Math.max(1, Math.round((safe / 100) * cells));

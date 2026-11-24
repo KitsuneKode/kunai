@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T10:55:19Z"
+lastReviewed: "2026-11-24T16:00:00Z"
 ---
 
 # Kunai Debugging Map
@@ -142,6 +142,8 @@ writer to stdout, and three things in this app are not Ink.
 | The model and the component                                                                   | `media-panel-rail-frame.test.tsx` pins the rendered frame: every section present, each fact value ending at the value, no line wider than the rail, at all four rail widths.                                                                                                                                                                               |
 | `clearRootContentTransitionFrame()` — the raw `ESC[2J ESC[H` on every root-content transition | Drove the real `mountRootContent` transition under a PTY and replayed the bytes through a terminal emulator. Screen was clean: header plus all four rows of the new surface, no stale cells. The `ESC[2J` blanks what the misaimed erase misses, and Ink re-synchronizes on the next frame.                                                                |
 | Ink frames interleaving into a chunked Kitty upload                                           | The chunk loop in `image/kitty-transport.ts` yields to the event loop every 8 chunks, and the graphics protocol requires one transmission's chunks to be contiguous. Measured with both writers instrumented and Ink re-rendering on a 4 ms timer: **0 foreign writes** landed between the 14 chunks. Ink's 30 fps throttle is far slower than the yields. |
+
+`clearRootContentTransitionFrame()` in `shell-screen-clear.ts` writes `ESC[2J` only when the mounted Ink root entered the alternate screen. That fact is recorded in `launchSessionApp` and cleared on release. A mid-session plain-mode toggle does not remount Ink, so turning plain mode off while the root is still on the primary screen must not erase it. With no root mounted, the helper still follows the live plain-mode setting. An unmounted plain-mode call only undisplays image placements. The alternate-screen shell still writes the clear.
 
 Note while reading that code: `ink-external-clear-desync.test.tsx` still pins the
 desync itself (13 erase-line ops, 12 cursor-up ops, aimed at a cursor the clear

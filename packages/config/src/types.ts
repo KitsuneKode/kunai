@@ -149,6 +149,13 @@ export interface KitsuneConfig {
   lastCalendarVisitAt: number;
   minimalMode: boolean;
   zenMode: boolean;
+  /**
+   * Plain / screen-reader mode: disables animations, decorative glyphs, box
+   * borders, and image art, renders linear single-column output, and announces
+   * state and selection in explicit words. Overridable per run with `--plain`
+   * or `KUNAI_PLAIN=1`.
+   */
+  plainMode: boolean;
   powerSaverMode: boolean;
   skipRecap: boolean;
   skipIntro: boolean;

@@ -243,12 +243,21 @@ function isWindowsEnv(env: TerminalColorEnv): boolean {
   return env.WT_SESSION !== undefined || env.ConEmuANSI !== undefined;
 }
 
+/**
+ * Per https://no-color.org/: `NO_COLOR` disables ANSI color when present and
+ * non-empty (regardless of value). An empty string (`NO_COLOR=""`) must be
+ * ignored as if unset.
+ */
+export function isNoColorEnv(env: TerminalColorEnv = currentEnv()): boolean {
+  return env.NO_COLOR !== undefined && env.NO_COLOR !== "";
+}
+
 export function detectTerminalColorLevel(env: TerminalColorEnv = currentEnv()): TerminalColorLevel {
   const forced = env.FORCE_COLOR;
   if (forced === "3") return "truecolor";
   if (forced === "2") return "256";
   if (forced === "1") return "16";
-  if (forced === "0" || env.NO_COLOR !== undefined) return "16";
+  if (forced === "0" || isNoColorEnv(env)) return "16";
 
   if (TRUECOLOR_HINTS.test(env.COLORTERM ?? "")) return "truecolor";
 

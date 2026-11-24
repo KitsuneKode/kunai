@@ -37,6 +37,7 @@ export type CliArgs = {
   mpv: MpvRuntimeOptions;
   player: PlayerChoice;
   minimal: boolean;
+  plain: boolean;
   quick: boolean;
   jump?: number;
   episode?: number;
@@ -94,6 +95,7 @@ LAUNCH
 DISPLAY
   -m, --minimal              Minimal chrome
   -z, --zen                  Zen mode (bare, ani-cli-style)
+      --plain                Plain / screen-reader mode (no animation, no box art, text state)
   -q, --quick                Quick layout
       --jump <n>             Auto-pick the n-th search result (1-based, with -S)
 
@@ -205,6 +207,7 @@ export const KNOWN_FLAGS: ReadonlySet<string> = new Set([
   "--minimal",
   "-z",
   "--zen",
+  "--plain",
   "-q",
   "--quick",
   "--jump",
@@ -292,6 +295,7 @@ type CommanderCliOptions = {
   readonly youtube?: boolean;
   readonly minimal?: boolean;
   readonly zen?: boolean;
+  readonly plain?: boolean;
   readonly quick?: boolean;
   readonly jump?: string;
   readonly episode?: string;
@@ -350,6 +354,7 @@ function createCliCommand(): Command {
     .option("-y, --youtube")
     .option("-m, --minimal")
     .option("-z, --zen")
+    .option("--plain")
     .option("-q, --quick")
     .option("--jump <n>")
     .option("-e, --episode <n>")
@@ -509,6 +514,7 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
     mpv: {},
     player: "auto",
     minimal: false,
+    plain: false,
     quick: false,
     setup: false,
     offline: false,
@@ -555,6 +561,7 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
   }
   args.minimal = Boolean(options.minimal);
   args.zen = Boolean(options.zen);
+  args.plain = Boolean(options.plain);
   args.quick = Boolean(options.quick);
   if (args.zen) {
     // Zen is a *layout*: bare chrome, ani-cli-style. It used to also set

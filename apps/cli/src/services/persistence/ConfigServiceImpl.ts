@@ -1073,6 +1073,10 @@ export class ConfigServiceImpl implements ConfigService {
     return this.sessionOverrides.zenMode ?? this.config.zenMode;
   }
 
+  get plainMode(): boolean {
+    return this.sessionOverrides.plainMode ?? this.config.plainMode;
+  }
+
   get powerSaverMode(): boolean {
     return this.config.powerSaverMode;
   }

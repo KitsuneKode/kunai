@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { plainModeEnabled } from "../plain-mode";
 import { palette } from "../shell-theme";
 
 /** Uppercase section label with an inline trailing rule (Sakura systems shelf bands).
@@ -18,6 +19,16 @@ export const SectionGroup = React.memo(function SectionGroup({
   /** When false, render only the label (+ tag) with no trailing rule. */
   readonly rule?: boolean;
 }) {
+  const plain = plainModeEnabled();
+  if (plain) {
+    return (
+      <Box marginTop={marginTop} marginBottom={0}>
+        <Text color={palette.text} bold>
+          {tag ? `${label.toUpperCase()} (${tag})` : label.toUpperCase()}
+        </Text>
+      </Box>
+    );
+  }
   return (
     <Box
       marginTop={marginTop}

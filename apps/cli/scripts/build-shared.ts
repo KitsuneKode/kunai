@@ -455,9 +455,13 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // boundaries, which minification cannot shorten. No dependency or asset.
 // Merged onto the #740 dead-code prune (providers, aliases, CLI exports), the
 // split measured 3,212,126 bytes: -6,002 against the split alone.
+// November 24 plain/screen-reader mode across app-shell surfaces plus light and
+// high-contrast themes measured 3,224,652 bytes (+21,675).
 // November 24 streaming relay cap, locked manifest reset, registered toast
 // timer, and unread-body cancels measured 3,210,429 bytes.
 // The split merged with #733, #736 and the #740 prune measured 3,211,074 bytes.
+// Plain mode merged with the PlaybackPhase split (#741) and #705 measured
+// 3,228,630 bytes.
 // Merged Stremio addon hardening (strict direct-media probe, mpv file-local
 // confinement, guarded subtitle localization, addon stdin) measured
 // 3,247,553 bytes on the merged tree.
@@ -466,8 +470,9 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // request identity, and playback/config guards); 3175 KiB leaves 705 bytes.
 // Addon beta safety fixes measured 3,253,277 bytes; 3178 KiB leaves 995 bytes.
 // After merging main and making addons opt-in, Bun 1.4.5 measured 3,270,431
-// bytes. 3197 KiB leaves 3,297 bytes; public launcher budgets are unchanged.
-export const NPM_BUNDLE_BUDGET_KB = 3_197;
+// bytes. After merging #734, it measured 3,287,987 bytes. 3214 KiB leaves
+// 3,149 bytes; public launcher budgets are unchanged.
+export const NPM_BUNDLE_BUDGET_KB = 3_214;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

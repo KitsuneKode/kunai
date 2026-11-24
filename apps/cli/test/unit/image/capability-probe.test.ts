@@ -113,6 +113,13 @@ describe("image capability no-colour honesty", () => {
     expect(capability.renderer).toBe("none");
   });
 
+  test("empty NO_COLOR is ignored per no-color.org", () => {
+    withChafa(true);
+    capabilityTesting.resetMemo();
+    const capability = detectImageCapability({ TERM: "xterm-256color", NO_COLOR: "" });
+    expect(capability.renderer).not.toBe("none");
+  });
+
   test("an explicit protocol override still wins over NO_COLOR", () => {
     withChafa(true);
     capabilityTesting.resetMemo();
