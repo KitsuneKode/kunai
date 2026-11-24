@@ -1905,6 +1905,7 @@ html:has(.kunai-home) body {
 }
 
 .kunai-install-col {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
@@ -1934,6 +1935,7 @@ html:has(.kunai-home) body {
 }
 
 .kunai-install-col__cmd .kunai-code-row > span:first-child {
+  min-width: 0;
   overflow-x: auto;
   white-space: nowrap;
   scrollbar-width: none;
@@ -2649,8 +2651,10 @@ html:has(.kunai-home) body {
 /* ── Responsive adjustments ─────────────────────────────────────────────── */
 
 @media (max-width: 960px) {
+  /* minmax(0, …), not 1fr: a bare 1fr track never shrinks below its longest
+     nowrap command, which pushed the Copy button off a phone screen. */
   .kunai-install-columns {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .kunai-install-col {
