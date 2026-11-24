@@ -189,16 +189,13 @@ describe("installLatest", () => {
     const archive = createReleaseArchive(releaseTarget, bytes);
     const sums = sumsFor(releaseTarget.out, sha256Hex(bytes));
     const archiveSums = sumsFor(releaseTarget.archiveName, sha256Hex(archive));
-    const signatures: Record<string, Buffer> = {
-      "SHA256SUMS.sig": signStatement(privateKey, "valid", "1.2.3", "SHA256SUMS", sums),
-      "SHA256SUMS.archives.sig": signStatement(
-        privateKey,
-        "valid",
-        "1.2.3",
-        "SHA256SUMS.archives",
-        archiveSums,
-      ),
-    };
+    const signatures = new Map([
+      ["SHA256SUMS.sig", signStatement(privateKey, "valid", "1.2.3", "SHA256SUMS", sums)],
+      [
+        "SHA256SUMS.archives.sig",
+        signStatement(privateKey, "valid", "1.2.3", "SHA256SUMS.archives", archiveSums),
+      ],
+    ]);
     const requested: string[] = [];
     const result = await installLatest({
       layout,
@@ -209,7 +206,7 @@ describe("installLatest", () => {
         requested.push(name);
         if (name === "SHA256SUMS") return new Response(sums);
         if (name === "SHA256SUMS.archives") return new Response(archiveSums);
-        const signature = signatures[name];
+        const signature = signatures.get(name);
         if (signature) return new Response(signature);
         if (name === releaseTarget.archiveName) return new Response(archive);
         return new Response(null, { status: 404 });

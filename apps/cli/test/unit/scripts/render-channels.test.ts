@@ -120,7 +120,7 @@ describe("committed channel manifests", () => {
   const readCommitted = (rel: string) => Bun.file(join(root, rel)).text();
 
   /** Version + `<archive name> -> sha256` pairs a committed manifest declares. */
-  function inputsFromFormula(text: string): { version: string; sums: Map<string, string> } {
+  function inputsFromFormula(text: string) {
     const version = /^\s*version "([^"]+)"$/m.exec(text)?.[1];
     if (!version) throw new Error("Formula/kunai.rb declares no version");
     const sums = new Map<string, string>();
@@ -131,7 +131,7 @@ describe("committed channel manifests", () => {
     return { version, sums };
   }
 
-  function inputsFromScoop(text: string): { version: string; sums: Map<string, string> } {
+  function inputsFromScoop(text: string) {
     // SAFETY: shape asserted by the byte-equality check below; a wrong shape
     // yields missing entries and the renderer fails closed.
     const parsed = JSON.parse(text) as {

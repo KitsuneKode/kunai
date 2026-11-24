@@ -121,20 +121,18 @@ for (const name of ["install.sh", "install.ps1"] as const) {
             [prefix + "SHA256SUMS"]: { body: sums },
             [prefix + "SHA256SUMS.archives"]:
               scenario === "unsigned archive" || archive ? { body: archiveSums } : { status: 404 },
-            ...(archive
+            [prefix + target.archiveName]: archive ? { body: archive } : { status: 404 },
+            [prefix + "SHA256SUMS.archives.sig"]: archive
               ? {
-                  [prefix + target.archiveName]: { body: archive },
-                  [prefix + "SHA256SUMS.archives.sig"]: {
-                    body: signStatement(
-                      privateKey,
-                      "valid",
-                      VERSION,
-                      "SHA256SUMS.archives",
-                      archiveSums,
-                    ),
-                  },
+                  body: signStatement(
+                    privateKey,
+                    "valid",
+                    VERSION,
+                    "SHA256SUMS.archives",
+                    archiveSums,
+                  ),
                 }
-              : {}),
+              : { status: 404 },
             [prefix + "SHA256SUMS.sig"]:
               scenario === "missing"
                 ? { status: 404 }
