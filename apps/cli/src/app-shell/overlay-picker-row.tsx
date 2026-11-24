@@ -1,5 +1,6 @@
 import { Text } from "ink";
 
+import { plainModeEnabled, selectionPrefix } from "./plain-mode";
 import { truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 
@@ -23,9 +24,10 @@ export function PickerOptionRow({
   /** Force the label hue (destructive rows go red even unselected). Overrides the neutral default. */
   readonly labelColor?: string;
 }) {
+  const plain = plainModeEnabled();
   // Treatment C: a single accent bar marks the selected row (paired with the
   // elevated row surface), instead of a chevron stacked under other markers.
-  const prefix = selected ? "▌ " : "  ";
+  const prefix = selectionPrefix(selected, plain);
   const badgeSuffix = badge ? `  ${badge}` : "";
   // Budget: width minus prefix (2) and badge
   const contentWidth = Math.max(0, width - prefix.length - badgeSuffix.length);

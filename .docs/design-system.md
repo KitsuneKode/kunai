@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-17"
+lastReviewed: "2026-11-24T09:50:19Z"
 ---
 
 # Kunai — Terminal Design System (Sakura)
@@ -143,7 +143,9 @@ The design must read on a plain terminal, not only Kitty + truecolor + 178×41.
 
 ## Accessibility
 
-Color is always paired with a glyph or word (`✓ complete`, `✗ failed`, `● ready`), so state survives color-blindness and 16-color terminals. Keep accent/text contrast within readable range on the dusk-plum base.
+Color is always paired with a glyph or word (`✓ complete`, `✗ failed`, `● ready`), so state survives color-blindness and 16-color terminals. Light (`paper-sakura`) and high-contrast (`high-contrast-dark`, `high-contrast-light`) themes live in `packages/design/src/palettes/` with WCAG 2.1 and APCA contrast helpers in `packages/design/src/contrast.ts`.
+
+Plain / screen-reader mode (`apps/cli/src/app-shell/plain-mode.ts`, activated by `--plain`, `KUNAI_PLAIN=1`, or `config.plainMode`) removes animations, box-drawing borders, decorative glyphs, companion art, and posters; stacks two-column views linearly; and announces selection, focus, active tabs, switches, progress, and state in explicit words. Every animated surface is gated on `reducedMotionEnabled()` (`apps/cli/src/app-shell/motion-policy.ts`) and guarded by `apps/cli/test/unit/app-shell/motion-policy-coverage.test.tsx`. `NO_COLOR` follows no-color.org (`isNoColorEnv` in `packages/design/src/color-resolution.ts`: empty string is treated as unset).
 
 ## Migration Note
 

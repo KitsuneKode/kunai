@@ -2,6 +2,7 @@ import { Box, Text } from "ink";
 import React from "react";
 
 import { composeHeader } from "../format/header";
+import { plainBrandLabel, plainModeEnabled } from "../plain-mode";
 import { measureColumns, truncateLine } from "../shell-text";
 import { APP_LABEL, palette } from "../shell-theme";
 
@@ -31,6 +32,25 @@ export const AppHeader = React.memo(function AppHeader({
   size?: string;
   width?: number;
 }) {
+  const plain = plainModeEnabled();
+  if (plain) {
+    const parts = [
+      brand === APP_LABEL ? plainBrandLabel(true) : brand.replace(/^🦊\s*/u, ""),
+      destination,
+      context?.trim() || undefined,
+      status ? `Status: ${status}` : undefined,
+      size ? `Terminal: ${size}` : undefined,
+    ].filter((part): part is string => Boolean(part));
+    const line = parts.join(" | ");
+    return (
+      <Box>
+        <Text bold color={palette.text}>
+          {width === undefined ? line : truncateLine(line, Math.max(12, width))}
+        </Text>
+      </Box>
+    );
+  }
+
   const h = composeHeader({ brand, destination, context, status, size });
 
   // Budget the crumb against the measured width of the fixed pieces so the

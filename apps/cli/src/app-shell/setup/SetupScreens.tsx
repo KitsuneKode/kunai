@@ -8,6 +8,7 @@ import React from "react";
 
 import { CompanionHost } from "../CompanionHost";
 import { reducedMotionEnabled } from "../motion-policy";
+import { plainDependencyState, plainModeEnabled, selectionPrefix } from "../plain-mode";
 import { BLOOM_FRAMES, STATIC_PETAL } from "../primitives/SakuraPetal";
 import { truncateLine } from "../shell-text";
 import { palette } from "../shell-theme";
@@ -77,6 +78,7 @@ export function DependencyScreen({
   // its place only once name and detail both have room.
   const roleWidth = contentWidth >= PREFIX + nameWidth + MIN_DETAIL + ROLE_WIDTH ? ROLE_WIDTH : 0;
   const detailWidth = Math.max(MIN_DETAIL, contentWidth - PREFIX - nameWidth - roleWidth - 1);
+  const plain = plainModeEnabled();
   const still = reducedMotionEnabled();
   // The petal belongs where the work is. It used to bloom on the *consent*
   // screen, under text the user was reading, while this screen — the only one
@@ -90,12 +92,20 @@ export function DependencyScreen({
   return (
     <Box flexDirection="column">
       <Box marginBottom={1}>
-        <Text color={rechecking ? palette.accent : palette.ok} bold>
-          {petal}
-        </Text>
-        <Text color={palette.text} bold>
-          {"  Let's get you watching"}
-        </Text>
+        {plain ? (
+          <Text color={palette.text} bold>
+            Let's get you watching
+          </Text>
+        ) : (
+          <>
+            <Text color={rechecking ? palette.accent : palette.ok} bold>
+              {petal}
+            </Text>
+            <Text color={palette.text} bold>
+              {"  Let's get you watching"}
+            </Text>
+          </>
+        )}
       </Box>
       <Box marginBottom={1} flexDirection="column">
         <Text color={palette.muted}>Kunai finds playable streams and hands them to mpv.</Text>
@@ -107,6 +117,20 @@ export function DependencyScreen({
       <Box flexDirection="column">
         {rows.map((row, i) => {
           const isSelected = i === selected;
+          if (plain) {
+            return (
+              <Box key={row.id} flexDirection="column">
+                <Text color={row.state === "ok" ? palette.text : palette.textDim} bold={isSelected}>
+                  {`${selectionPrefix(isSelected, true)}${plainDependencyState(row.state)} ${row.name}: ${row.detail}${row.role ? ` (${row.role})` : ""}`}
+                </Text>
+                {isSelected && row.consequence ? (
+                  <Box paddingLeft={2}>
+                    <Text color={palette.muted}>{row.consequence}</Text>
+                  </Box>
+                ) : null}
+              </Box>
+            );
+          }
           return (
             <Box key={row.id} flexDirection="column">
               <Box backgroundColor={isSelected ? palette.accentFill : undefined}>

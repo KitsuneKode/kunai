@@ -13,6 +13,7 @@ import { Box, Text } from "ink";
 import React from "react";
 
 import { reducedMotionEnabled } from "./motion-policy";
+import { plainModeEnabled } from "./plain-mode";
 import { BLOOM_FRAMES, STATIC_PETAL, useFrameTick } from "./primitives/SakuraPetal";
 import { sanitizeTerminalText } from "./shell-text";
 import { palette } from "./shell-theme";
@@ -41,9 +42,18 @@ export function GlimmerLabel({
   ].map((part) => part.segment);
   const chars = segments.length > 0 ? segments : [...label];
   const span = Math.max(1, chars.length);
-  const tick = useFrameTick(active, SHIMMER_INTERVAL_MS);
+  const plain = plainModeEnabled();
+  const tick = useFrameTick(active && !plain, SHIMMER_INTERVAL_MS);
   const animate = active && !reducedMotionEnabled();
   const highlight = stalled ? palette.warn : palette.accent;
+
+  if (plain) {
+    return (
+      <Text color={stalled ? palette.warn : palette.text} bold>
+        {stalled ? `Stalled: ${label}` : label}
+      </Text>
+    );
+  }
 
   if (!animate) {
     return (
@@ -83,7 +93,9 @@ export function SakuraBloom({
   readonly active: boolean;
   readonly stalled: boolean;
 }) {
-  const tick = useFrameTick(active, BLOOM_INTERVAL_MS);
+  const plain = plainModeEnabled();
+  const tick = useFrameTick(active && !plain, BLOOM_INTERVAL_MS);
+  if (plain) return null;
   const animate = active && !reducedMotionEnabled();
   const frame = animate ? tick % BLOOM_FRAMES.length : 0;
   const center = animate ? (BLOOM_FRAMES[frame] ?? STATIC_PETAL) : STATIC_PETAL;
@@ -115,6 +127,18 @@ export function SakuraLoader({
   readonly active?: boolean;
   readonly stalled?: boolean;
 }) {
+  if (plainModeEnabled()) {
+    const cleanLabel = sanitizeTerminalText(label);
+    return (
+      <Box flexDirection="column">
+        <Text color={stalled ? palette.warn : palette.text} bold>
+          {stalled ? `Stalled: ${cleanLabel}` : `Loading: ${cleanLabel}`}
+        </Text>
+        {sublabel ? <Text color={palette.muted}>{sanitizeTerminalText(sublabel)}</Text> : null}
+      </Box>
+    );
+  }
+
   return (
     <Box flexDirection="row" alignItems="center" flexWrap="nowrap">
       <Box marginRight={2}>

@@ -70,6 +70,7 @@ import {
   tickNotificationQueue,
   type NotificationPriority,
 } from "./notification-queue";
+import { plainModeEnabled, selectionPrefix } from "./plain-mode";
 import {
   buildPlaybackSubtitleLine,
   buildPlaybackSubtitleStatusLine,
@@ -1353,13 +1354,14 @@ export function AppRoot({ container }: { container: Container }) {
     return <ExitShell onDone={onExitDone} />;
   }
 
+  const plain = plainModeEnabled();
   return (
     <Box
       flexDirection="column"
       width={shellWidth}
-      height={shellHeight}
-      backgroundColor={palette.bg}
-      paddingX={ROOT_HORIZONTAL_PADDING}
+      height={plain ? undefined : shellHeight}
+      backgroundColor={plain ? undefined : palette.bg}
+      paddingX={plain ? 0 : ROOT_HORIZONTAL_PADDING}
       paddingY={0}
     >
       {/* Single canonical header: brand · destination pill · crumb · status · size */}
@@ -1449,13 +1451,14 @@ export async function launchSessionApp(container: Container) {
   // see them, and dispatches them as semantic pointer events. Keyboard bytes
   // pass through untouched. Opt-out: KUNAI_NO_MOUSE=1, or any non-TTY/dumb
   // terminal.
+  const plain = plainModeEnabled();
   let mouseSession: ReturnType<typeof startMouseSession> = null;
   try {
     mouseSession = startMouseSession({
       stdin: process.stdin,
       stdout: process.stdout,
       host: process,
-      disabled: process.env.KUNAI_NO_MOUSE === "1",
+      disabled: process.env.KUNAI_NO_MOUSE === "1" || plain,
       term: process.env.TERM,
     });
     rootShellInk = render(
@@ -1468,7 +1471,7 @@ export async function launchSessionApp(container: Container) {
       ),
       {
         exitOnCtrlC: false,
-        alternateScreen: true,
+        alternateScreen: !plain,
         // SAFETY: MouseSplitStdin implements the readable/read/setRawMode/isTTY
         // subset Ink's stdin contract calls — verified against ink 7.x source.
         stdin: (mouseSession?.stdin ?? process.stdin) as NodeJS.ReadStream,
@@ -1813,16 +1816,32 @@ function ListShell<T>({
               {`${filteredOptions.length > 0 ? index + 1 : 0} of ${filteredOptions.length}`}
             </Text>
             <Box
-              flexDirection={showCompanion ? "row" : "column"}
+              flexDirection={showCompanion && !plainModeEnabled() ? "row" : "column"}
               marginTop={1}
               justifyContent="space-between"
             >
-              <Box flexDirection="column" width={showCompanion ? listWidth : undefined}>
-                {windowStart > 0 && <Text color={palette.dim}> ▲ ...</Text>}
+              <Box
+                flexDirection="column"
+                width={showCompanion && !plainModeEnabled() ? listWidth : undefined}
+              >
+                {windowStart > 0 && (
+                  <Text color={palette.dim}>
+                    {plainModeEnabled() ? "More items above" : " ▲ ..."}
+                  </Text>
+                )}
                 {visibleOptions.map((option) => {
+                  const plain = plainModeEnabled();
                   const selected = option === selectedOption;
                   const isConfirmed = confirmed && selected;
-                  const itemPrefix = isConfirmed ? "✓" : selected ? "▌" : " ";
+                  const itemPrefix = plain
+                    ? isConfirmed
+                      ? "[confirmed] "
+                      : selectionPrefix(selected, true)
+                    : isConfirmed
+                      ? "✓"
+                      : selected
+                        ? "▌"
+                        : " ";
                   // Availability and consequence have to be legible before the
                   // pick. An unavailable row used to look identical to a live
                   // one, and a row that discards data looked like a row that

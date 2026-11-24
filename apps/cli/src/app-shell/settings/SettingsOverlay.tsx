@@ -3,6 +3,7 @@ import React from "react";
 
 import { MouseTarget } from "../mouse/MouseRegions";
 import { PickerOptionRow } from "../overlay-picker-row";
+import { plainModeEnabled, selectionPrefix } from "../plain-mode";
 import { ClaudeTabRow } from "../primitives/ClaudeTabRow";
 import { StateBlock } from "../primitives/StateBlock";
 import { truncateLine } from "../shell-text";
@@ -86,6 +87,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   readonly hideChromeTitle?: boolean;
   readonly pointer?: (event: SettingsPointerEvent) => void;
 }) {
+  const plain = plainModeEnabled();
   const rowWidth = Math.max(24, width - 4);
   const tabHint = rowWidth >= 100 ? "Tab / Shift+Tab" : undefined;
   const tabLabels = listSettingsTabLabels(registryCtx, rowWidth, tabHint !== undefined);
@@ -141,10 +143,12 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
                   onClick={() => pointer?.({ type: "choice", value: choice.value })}
                   onWheel={(direction) => pointer?.({ type: "scroll", direction })}
                 >
-                  <Box backgroundColor={selected ? palette.accentFill : undefined}>
-                    <Text color={selected ? palette.accent : palette.dim}>
-                      {selected ? "▌ " : "  "}
-                    </Text>
+                  <Box backgroundColor={selected && !plain ? palette.accentFill : undefined}>
+                    {plain ? null : (
+                      <Text color={selected ? palette.accent : palette.dim}>
+                        {selectionPrefix(selected, false)}
+                      </Text>
+                    )}
                     <PickerOptionRow
                       label={choice.label}
                       detail={choice.detail}

@@ -4,8 +4,9 @@ import React from "react";
 import { companionMode, companionToggleable } from "./companion-policy";
 import { type ShellViewportKind, TRANSIENT_ROW_SLOTS } from "./layout-policy";
 import { MouseTarget } from "./mouse/MouseRegions";
+import { plainBrandLabel, plainModeEnabled, selectionPrefix } from "./plain-mode";
 import { measureColumns, padColumnsEnd, sanitizeTerminalText, truncateLine } from "./shell-text";
-import { APP_LABEL, hotkeyLabel, palette, semanticToneColor } from "./shell-theme";
+import { hotkeyLabel, palette, semanticToneColor } from "./shell-theme";
 import type { FooterAction, ShellFooterMode } from "./types";
 import { useDebouncedViewportPolicy, useShellDimensions } from "./use-viewport-policy";
 
@@ -187,6 +188,18 @@ export function Footer({
   // The palette owns its editor and navigation hints.
   if (commandMode) return null;
 
+  if (plainModeEnabled()) {
+    const actionLine = visibleActions
+      .map((action) => `${hotkeyLabel(action.key)} ${action.label}`)
+      .join(", ");
+    return (
+      <Box flexDirection="column" marginTop={1}>
+        <Text color={palette.text}>{truncateLine(taskLabel, taskWidth)}</Text>
+        {actionLine ? <Text color={palette.muted}>{`Actions: ${actionLine}`}</Text> : null}
+      </Box>
+    );
+  }
+
   return (
     <Box flexDirection="column" marginTop={1}>
       <Text color={palette.text}>{truncateLine(taskLabel, taskWidth)}</Text>
@@ -299,7 +312,7 @@ export const ResizeBlocker = React.memo(function ResizeBlocker({
       <Text color={palette.dim}>Zoom out or resize the terminal window.</Text>
       <Box marginTop={1}>
         <Text color={palette.dim} dimColor>
-          {APP_LABEL}
+          {plainBrandLabel()}
         </Text>
       </Box>
     </Box>
@@ -416,8 +429,11 @@ export type SelectableRowStyle = {
   readonly backgroundColor?: string;
 };
 
-/** The single selection treatment: accent rule + accent-tinted fill. */
+/** The single selection treatment: accent rule + accent-tinted fill (or `[selected] ` in plain mode). */
 export function selectableRowStyle(selected: boolean): SelectableRowStyle {
+  if (plainModeEnabled()) {
+    return { prefix: selectionPrefix(selected, true), color: palette.text };
+  }
   if (selected) {
     return { prefix: "▌", color: palette.accentSoft, backgroundColor: palette.accentFill };
   }
@@ -494,6 +510,7 @@ export const ContextStrip = React.memo(function ContextStrip({
 }: {
   items: readonly ContextStripItem[];
 }) {
+  const plain = plainModeEnabled();
   const visibleItems = items.filter((item) => item.label.trim().length > 0);
   if (visibleItems.length === 0) return null;
 
@@ -501,7 +518,7 @@ export const ContextStrip = React.memo(function ContextStrip({
     <Box flexWrap="wrap">
       {visibleItems.map((item, index) => (
         <React.Fragment key={item.label}>
-          {index > 0 ? <Text color={palette.dim}> · </Text> : null}
+          {index > 0 ? <Text color={palette.dim}>{plain ? ", " : " · "}</Text> : null}
           <Text color={semanticToneColor(item.tone)}>{truncateLine(item.label, 34)}</Text>
         </React.Fragment>
       ))}
@@ -518,13 +535,18 @@ export const DetailLine = React.memo(function DetailLine({
   value: string;
   tone?: BadgeTone;
 }) {
+  const plain = plainModeEnabled();
   const valueColor =
-    tone === "accent" ? palette.accentSoft : tone === "neutral" ? "white" : semanticToneColor(tone);
+    tone === "accent"
+      ? palette.accentSoft
+      : tone === "neutral"
+        ? palette.text
+        : semanticToneColor(tone);
 
   return (
     <Box>
       <Text color={palette.dim}>{sanitizeTerminalText(label)}</Text>
-      <Text color={palette.dim}> · </Text>
+      <Text color={palette.dim}>{plain ? ": " : " · "}</Text>
       <Text color={valueColor}>{truncateLine(value, 80)}</Text>
     </Box>
   );
@@ -553,10 +575,11 @@ export const EmptyState = React.memo(function EmptyState({
   subtitle?: string;
   hint?: string;
 }) {
+  const plain = plainModeEnabled();
   return (
-    <Box flexDirection="column" paddingY={1}>
-      <Text color={palette.dim}>
-        {icon} {sanitizeTerminalText(title)}
+    <Box flexDirection="column" paddingY={plain ? 0 : 1}>
+      <Text color={plain ? palette.text : palette.dim}>
+        {plain ? `Empty: ${sanitizeTerminalText(title)}` : `${icon} ${sanitizeTerminalText(title)}`}
       </Text>
       {subtitle ? <Text color={palette.muted}>{sanitizeTerminalText(subtitle)}</Text> : null}
       {hint ? (

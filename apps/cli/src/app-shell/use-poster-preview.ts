@@ -7,6 +7,7 @@ import {
   undisplayRenderedPosterImages,
   type KittyPlacementSlot,
 } from "./image-pane";
+import { plainModeEnabled } from "./plain-mode";
 import type { PosterResult, PosterState } from "./poster-types";
 
 /**
@@ -214,13 +215,16 @@ export function usePosterPreview(
     placementSlot,
   });
 
+  const plain = plainModeEnabled();
+  const effectiveEnabled = enabled && !plain;
+
   useEffect(() => {
     const geometryChanged =
       previousGeometry.current !== null &&
       (previousGeometry.current.rows !== rows || previousGeometry.current.cols !== cols);
     previousGeometry.current = { rows, cols };
 
-    if (!url || !enabled) {
+    if (!url || !effectiveEnabled) {
       releaseOwnedPlacement(placementSlot, preserveTerminalImages);
       dispatch({ type: "reset", posterState: url ? "unavailable" : "idle" });
       return undefined;
@@ -325,7 +329,7 @@ export function usePosterPreview(
     allowSixel,
     cols,
     debounceMs,
-    enabled,
+    effectiveEnabled,
     inkEmbedded,
     placementSlot,
     preserveTerminalImages,
@@ -337,7 +341,7 @@ export function usePosterPreview(
     variant,
   ]);
 
-  const visibleState = visiblePosterPreviewState(state, enabled ? requestKey : null);
+  const visibleState = visiblePosterPreviewState(state, effectiveEnabled ? requestKey : null);
   return {
     poster: visibleState.poster,
     posterState: visibleState.posterState,

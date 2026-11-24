@@ -8,6 +8,7 @@ import type { DetailsSheetModel } from "./details-sheet.model";
 import { useSettledValue } from "./hooks/use-settled-value";
 import { useIsInsideOverlay } from "./overlay-layout-context";
 import { PickerOptionRow } from "./overlay-picker-row";
+import { plainModeEnabled, plainTabLabel } from "./plain-mode";
 import { PosterInitialBlock } from "./poster-initial-block";
 import { suppressPosterWhileNavigating, type PosterResult } from "./poster-types";
 import { LoadingState } from "./primitives/LoadingState";
@@ -32,6 +33,9 @@ const HistoryProgressBar = React.memo(function HistoryProgressBar({
 }: {
   readonly percentage: number;
 }) {
+  if (plainModeEnabled()) {
+    return <>Progress: {Math.round(percentage)}%</>;
+  }
   const totalBlocks = 10;
   const filledBlocks = Math.max(
     0,
@@ -146,6 +150,7 @@ export function OverlayPanel({
   width: number;
   maxLinesOverride?: number;
 }) {
+  const plain = plainModeEnabled();
   const insideOverlay = useIsInsideOverlay();
   const contentWidth = Math.max(24, width - 4);
   const maxLines = maxLinesOverride ?? (overlay.type === "episode-picker" ? 8 : 6);
@@ -193,7 +198,7 @@ export function OverlayPanel({
   // The rail hides first on narrow terminals (spec: responsive). When shown it
   // takes a fixed column so the list width — and every row — stays stable.
   const railColumnWidth = 20;
-  const showPreviewRail = overlay.type === "episode-picker" && contentWidth >= 56;
+  const showPreviewRail = !plain && overlay.type === "episode-picker" && contentWidth >= 56;
   const listContentWidth = showPreviewRail
     ? Math.max(18, contentWidth - railColumnWidth - 2)
     : contentWidth;
@@ -219,22 +224,30 @@ export function OverlayPanel({
                 </Text>
               </>
             ) : overlay.type === "history-picker" && overlay.filterMode ? (
-              <Box flexDirection="row">
-                {(["all", "watching", "completed"] as const).map((mode) => {
-                  const active = overlay.filterMode === mode;
-                  return (
-                    <Box key={mode} marginRight={3} flexDirection="column">
-                      <Text color={active ? palette.accent : palette.muted}>{mode}</Text>
-                      {active ? (
-                        <Text color={palette.accent}>{"─".repeat(mode.length)}</Text>
-                      ) : null}
-                    </Box>
-                  );
-                })}
-                <Text color={palette.dim} dimColor>
-                  Tab cycle
+              plain ? (
+                <Text color={palette.text}>
+                  {`Filter: ${(["all", "watching", "completed"] as const)
+                    .map((mode) => plainTabLabel(mode, overlay.filterMode === mode, true))
+                    .join(" | ")} (Tab to cycle)`}
                 </Text>
-              </Box>
+              ) : (
+                <Box flexDirection="row">
+                  {(["all", "watching", "completed"] as const).map((mode) => {
+                    const active = overlay.filterMode === mode;
+                    return (
+                      <Box key={mode} marginRight={3} flexDirection="column">
+                        <Text color={active ? palette.accent : palette.muted}>{mode}</Text>
+                        {active ? (
+                          <Text color={palette.accent}>{"─".repeat(mode.length)}</Text>
+                        ) : null}
+                      </Box>
+                    );
+                  })}
+                  <Text color={palette.dim} dimColor>
+                    Tab cycle
+                  </Text>
+                </Box>
+              )
             ) : (
               <Text color={palette.dim}>
                 {overlay.type === "provider"
@@ -249,7 +262,9 @@ export function OverlayPanel({
           </Box>
           <Box marginTop={1} flexDirection="row">
             <Box flexDirection="column" flexGrow={1}>
-              {optionWindowStart > 0 ? <Text color={palette.dim}> ▲ ...</Text> : null}
+              {optionWindowStart > 0 ? (
+                <Text color={palette.dim}>{plain ? "More items above" : " ▲ ..."}</Text>
+              ) : null}
               {visibleOptions.map((option, index) => {
                 const optionIndex = optionWindowStart + index;
                 const selected = optionIndex === overlay.selectedIndex;
@@ -263,7 +278,7 @@ export function OverlayPanel({
                       <Text color={usesAccent ? palette.text : palette.dim} bold={usesAccent}>
                         {headerLabel}
                       </Text>
-                      {usesAccent ? (
+                      {usesAccent && !plain ? (
                         <Text color={palette.accent}>{"─".repeat(headerLabel.length)}</Text>
                       ) : null}
                     </Box>
@@ -287,15 +302,15 @@ export function OverlayPanel({
                 const isHistoryPicker = overlay.type === "history-picker";
                 const historyPosterWidth = 4;
                 const prefixWidth =
-                  isHistoryPicker && option.posterTitle ? historyPosterWidth + 1 : 0;
+                  !plain && isHistoryPicker && option.posterTitle ? historyPosterWidth + 1 : 0;
                 const historyRowWidth = Math.max(0, listContentWidth - prefixWidth);
                 return (
                   <Box
                     key={`${option.value}-${optionIndex}`}
-                    backgroundColor={selected ? palette.accentFill : undefined}
+                    backgroundColor={selected && !plain ? palette.accentFill : undefined}
                     flexDirection="row"
                   >
-                    {isHistoryPicker && option.posterTitle ? (
+                    {!plain && isHistoryPicker && option.posterTitle ? (
                       <Box marginRight={1}>
                         <PosterInitialBlock
                           title={option.posterTitle}
@@ -322,7 +337,7 @@ export function OverlayPanel({
                           color={option.historyProgress.completed ? palette.ok : palette.accent}
                         >
                           <HistoryProgressBar percentage={option.historyProgress.percentage} />
-                          {`  ${option.historyProgress.percentage}%`}
+                          {plain ? "" : `  ${option.historyProgress.percentage}%`}
                         </Text>
                       ) : null}
                     </Box>
@@ -330,7 +345,7 @@ export function OverlayPanel({
                 );
               })}
               {optionWindowEnd < overlay.options.length ? (
-                <Text color={palette.dim}> ▼ ...</Text>
+                <Text color={palette.dim}>{plain ? "More items below" : " ▼ ..."}</Text>
               ) : null}
             </Box>
             {showPreviewRail ? (

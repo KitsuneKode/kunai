@@ -34,7 +34,11 @@ const LEGACY_SECTION_TARGETS = new Map<string, string>([
 ]);
 
 function envBadgeFor(def: SettingRowDef): string | undefined {
-  if (def.kind === "text" && def.envOverride && process.env[def.envOverride]?.trim()) {
+  if (
+    (def.kind === "text" || def.kind === "boolean") &&
+    def.envOverride &&
+    process.env[def.envOverride]?.trim()
+  ) {
     return "env";
   }
   return undefined;

@@ -8,7 +8,7 @@ import type { SettingRowDef, SettingsRegistryContext } from "../types";
  * with no settings change — the reverse state (pick any theme back) is the
  * enum itself, and `KUNAI_THEME` overrides per run without touching config.
  */
-export function appearanceSettingsRows(_ctx: SettingsRegistryContext): SettingRowDef[] {
+export function appearanceSettingsRows(_ctx?: SettingsRegistryContext): SettingRowDef[] {
   return [
     {
       kind: "enum",
@@ -26,6 +26,20 @@ export function appearanceSettingsRows(_ctx: SettingsRegistryContext): SettingRo
       write: (config, value) => ({
         ...config,
         theme: isThemeName(value) ? value : config.theme,
+      }),
+    },
+    {
+      kind: "boolean",
+      id: "plainMode",
+      configKeys: ["plainMode"],
+      label: "Plain / screen-reader mode",
+      detail:
+        "No animation, box art, or decorative glyphs; states and selection announced as text (also --plain or KUNAI_PLAIN=1)",
+      envOverride: "KUNAI_PLAIN",
+      read: (config) => config.plainMode,
+      write: (config, value) => ({
+        ...config,
+        plainMode: value,
       }),
     },
   ];

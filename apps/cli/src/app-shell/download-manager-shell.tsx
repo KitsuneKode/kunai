@@ -32,6 +32,7 @@ import type { DownloadJobRecord } from "@/services/storage/storage-read-models";
 import { Box, Text, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { plainModeEnabled, selectionPrefix } from "./plain-mode";
 import { useRootContentSuspended } from "./RootContentSuspension";
 
 /** Fixed queue columns — tuned via computeQueueRowLayout for the active shell width. */
@@ -496,15 +497,18 @@ export function DownloadManagerContent({
       Math.max(1, titleCol - 1),
     );
 
+    const plain = plainModeEnabled();
     return (
       <Box
         key={job.id}
         flexDirection="column"
         width={shellWidth}
-        backgroundColor={isSelected ? palette.accentFill : undefined}
+        backgroundColor={isSelected && !plain ? palette.accentFill : undefined}
       >
         <Box flexDirection="row" width={shellWidth} overflow="hidden">
-          <Text color={isSelected ? palette.accent : palette.dim}>{isSelected ? "▌ " : "  "}</Text>
+          <Text color={isSelected ? palette.accent : palette.dim}>
+            {selectionPrefix(isSelected, plain)}
+          </Text>
           <Box width={titleCol} overflow="hidden">
             <Text
               wrap="truncate"
