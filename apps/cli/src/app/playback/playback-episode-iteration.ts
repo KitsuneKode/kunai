@@ -63,7 +63,6 @@ import {
   pickCompatibleFallbackProvider,
   switchPlaybackProviderFallback,
 } from "@/app/playback/playback-provider-fallback";
-import { resolvePlaybackProviderHandoff } from "@/app/playback/playback-provider-handoff";
 import { promoteSoftFallbackAfterEngage } from "@/app/playback/playback-provider-switch";
 import {
   didPlaybackFailToStart,
@@ -82,21 +81,10 @@ import {
   startFromBeginning,
 } from "@/app/playback/playback-start-intent";
 import { acquireEpisodeStream } from "@/app/playback/playback-stream-acquire";
-import {
-  preparePlaybackStream,
-  resolveEpisodePrefetchBundle,
-} from "@/app/playback/playback-stream-prepare";
-import { shouldFetchPlaybackTiming } from "@/app/playback/playback-timing-fetch-policy";
-import {
-  playbackTimingCacheKey,
-  retryTimingInBackground,
-  getPlaybackTimingMetadata,
-} from "@/app/playback/playback-timing-lookup";
+import { resolveEpisodePrefetchBundle } from "@/app/playback/playback-stream-prepare";
+import { offerPrePlayConfirm, readyEpisodeStream } from "@/app/playback/playback-stream-ready";
 import type { AutoAdvanceGuards } from "@/app/playback/policies/auto-advance-policy";
-import { recentPlaybackStreamKey } from "@/app/playback/recent-playback-stream";
 import {
-  buildPlaybackControlSummary,
-  shouldOfferPrePlayConfirm,
   streamSelectionFromTrackPick,
   type StreamSelectionIntent,
 } from "@/app/playback/source-quality";
@@ -123,8 +111,6 @@ import { formatQueueEntryLabel } from "@/domain/queue/queue-entry-label";
 import { type PlaybackResult, type SearchResult, isDetachedHandoffResult } from "@/domain/types";
 import { PlaybackAbortedError } from "@/infra/player/playback-aborted";
 import { classifyPlaybackFailureFromResult } from "@/infra/player/playback-failure-classifier";
-import { extractProviderNativeTiming, mergeTimingMetadata } from "@/infra/timing";
-import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import { buildRecoveryDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 import { queueHistoryMirror } from "@/services/media-actions/create-container-media-action-router";
 import { listReadyEpisodes } from "@/services/offline/offline-episode-index";
@@ -136,13 +122,11 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
     host,
     title,
     run,
-    playbackTimingByEpisode,
     selectionCoordinator,
     queueAttempt,
     getPreferredStreamSelection,
     historyTitleLookup,
     episodePrefetch,
-    recentEpisodeStreams,
     deadStreamUrls,
     navigatePlaybackEpisode,
     invalidateRecentEpisodeStream,
@@ -223,8 +207,6 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
     const episodeContext = await loadEpisodeContext(loop, attempt);
     const {
       playbackNetworkAllowed,
-      configuredTimingProviderId,
-      timingFetch,
       watchedEntries,
       isAnimePlayback,
       offlineTitleId,
@@ -235,163 +217,12 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
     } = episodeContext;
     const acquired = await acquireEpisodeStream(loop, attempt, episodeContext);
     if (acquired.kind === "exit") return acquired.step;
-    const { stream, streamProvenance, consumedBundle, prefetchWasPrepared } = acquired;
-    if (container.player.capabilities.observation === "managed") {
-      // Fire-and-forget: a capability gap is advice, never a startup gate.
-      const noticeStream = stream;
-      void import("./hdr-capability-notice")
-        .then(({ resolveHdrCapabilityNotice }) =>
-          resolveHdrCapabilityNotice(noticeStream, config.hdrMode),
-        )
-        .then((note) => (note ? updatePlaybackFeedback(context, { note }) : undefined))
-        .catch(() => undefined);
+    const { streamProvenance, consumedBundle } = acquired;
+    const ready = await readyEpisodeStream(loop, attempt, episodeContext, acquired);
+    const { providerHandoff, playbackTiming, effectiveTiming, preparedStream } = ready;
+    if ((await offerPrePlayConfirm(loop, attempt, preparedStream)) === NEXT_ITERATION) {
+      return NEXT_ITERATION;
     }
-    const providerHandoff =
-      sourceAuthority.kind === "provider"
-        ? resolvePlaybackProviderHandoff({
-            configuredProviderId: sourceProviderId,
-            successfulProviderId: attempt.resolvedProviderId,
-          })
-        : { successfulProviderId: sourceProviderId, nextEpisodeProviderId: sourceProviderId };
-
-    // Await timing — stream resolve takes much longer so this is nearly free.
-    // If IntroDB timed out and returned null, schedule a background retry that
-    // injects timing into the running player once it arrives.
-    recordStartupMark("timing-wait-started", stream);
-    const successfulTimingProviderId = providerHandoff.successfulProviderId;
-    const fetchedPlaybackTiming =
-      run.localEpisodeTiming ??
-      (successfulTimingProviderId === configuredTimingProviderId
-        ? await timingFetch
-        : shouldFetchPlaybackTiming({
-              networkAllowed: playbackNetworkAllowed,
-              hasTiming: false,
-            })
-          ? await getPlaybackTimingMetadata(
-              title,
-              currentEpisode,
-              playbackTimingByEpisode,
-              resolveController.signal,
-              stateManager.getState().mode === "anime",
-              successfulTimingProviderId,
-              container.diagnosticsService,
-            )
-          : null);
-    run.localEpisodeTiming = null;
-    recordStartupMark("timing-ready", stream);
-    const playbackTiming = mergeTimingMetadata(
-      fetchedPlaybackTiming,
-      extractProviderNativeTiming(stream, title),
-    );
-    if (playbackTiming) {
-      const timingCacheKey = playbackTimingCacheKey(
-        title,
-        currentEpisode,
-        successfulTimingProviderId,
-      );
-      playbackTimingByEpisode.set(timingCacheKey, playbackTiming);
-    }
-    // effectiveTiming.current tracks the best timing we have — updated in-place
-    // if the background retry resolves while the episode is playing, so all
-    // post-playback decisions (history, autoNext, result classification) use it.
-    const effectiveTiming = { current: playbackTiming };
-    if (
-      shouldFetchPlaybackTiming({
-        networkAllowed: playbackNetworkAllowed,
-        hasTiming: playbackTiming !== null,
-      })
-    ) {
-      runBackgroundTask({
-        task: "playback.retryTiming",
-        category: "playback",
-        diagnostics: container.diagnosticsService,
-        context: {
-          titleId: title.id,
-          season: currentEpisode.season,
-          episode: currentEpisode.episode,
-          providerId: successfulTimingProviderId,
-        },
-        run: () =>
-          retryTimingInBackground(
-            title,
-            currentEpisode,
-            container,
-            effectiveTiming,
-            playbackTimingByEpisode,
-            stateManager.getState().mode === "anime",
-            successfulTimingProviderId,
-          ),
-      });
-    }
-
-    const preparedStream =
-      prefetchWasPrepared || streamProvenance === "local"
-        ? stream
-        : await preparePlaybackStream(stream, title, currentEpisode, context);
-    recordStartupMark("stream-prepared", preparedStream);
-    stateManager.dispatch({ type: "SET_STREAM", stream: preparedStream });
-
-    const episodeKey = recentPlaybackStreamKey(title.id, currentEpisode);
-    if (streamProvenance === "local") {
-      if (run.localPlaybackSource) {
-        recentEpisodeStreams.set(episodeKey, {
-          stream: preparedStream,
-          episode: currentEpisode,
-          selectedProviderId: sourceProviderId,
-          resolvedProviderId: attempt.resolvedProviderId,
-          provenance: "local",
-          localPlaybackSource: run.localPlaybackSource,
-        });
-      }
-    } else {
-      recentEpisodeStreams.set(episodeKey, {
-        stream: preparedStream,
-        episode: currentEpisode,
-        selectedProviderId: sourceProviderId,
-        resolvedProviderId: attempt.resolvedProviderId,
-        provenance: streamProvenance,
-      });
-    }
-    if (recentEpisodeStreams.size > 5) {
-      const first = recentEpisodeStreams.keys().next().value;
-      if (first !== undefined) recentEpisodeStreams.delete(first);
-    }
-    stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "ready" });
-    run.playbackSession = transitionPlaybackSession(context, run.playbackSession, "stream-ready", {
-      titleId: title.id,
-      season: currentEpisode.season,
-      episode: currentEpisode.episode,
-      provider: attempt.resolvedProviderId,
-    });
-
-    // Pre-play confirm: with `prePlayConfirm` armed, the resolved
-    // inventory opens in the Tracks sheet before mpv launches so the
-    // source/quality/track pick is deliberate, not auto-taken. The pick
-    // becomes a restart intent through the same machinery the post-play
-    // pick commands use; Esc falls through to the resolved default.
-    if (
-      !loop.prePlayConfirmOffered &&
-      shouldOfferPrePlayConfirm(config.prePlayConfirm, buildPlaybackControlSummary(preparedStream))
-    ) {
-      loop.prePlayConfirmOffered = true;
-      const picked = await openTracksPanel(preparedStream, {}, container);
-      const selection = picked ? streamSelectionFromTrackPick(picked) : null;
-      if (picked && (selection || picked.section === "subtitle")) {
-        const resumeSeconds = run.pendingStart.startAt || run.pendingStart.resumePromptAt;
-        const trackStart = await completeSourceTrackPick(
-          currentEpisode,
-          picked,
-          selection,
-          resumeSeconds,
-          "pre-play-confirm",
-        );
-        if (trackStart) {
-          run.pendingStart = trackStart;
-          return NEXT_ITERATION;
-        }
-      }
-    }
-
     // Play in MPV — consume the pending resume position on the first play only.
     // Pass loading handle so launchPlayback can update it in-place (no shell flicker).
     const startIntent = run.pendingStart;
