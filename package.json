@@ -128,6 +128,8 @@
     "verify:build-pipeline:all-targets": "bun run scripts/verify-build-pipeline.ts --all-targets",
     "verify:readme:commands": "bun run scripts/verify-readme-commands.ts",
     "verify:doc-paths": "bun run scripts/verify-doc-paths.ts",
+    "wip:audit": "bun run scripts/wip-guard.ts audit",
+    "wip:backup": "bun run scripts/wip-guard.ts backup",
     "verify:doc-coverage": "bun run scripts/verify-doc-coverage.ts",
     "verify:doc-frontmatter": "bun run scripts/verify-doc-frontmatter.ts",
     "verify:parity-references": "bun run scripts/verify-parity-references.ts",
