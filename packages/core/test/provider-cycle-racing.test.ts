@@ -265,4 +265,30 @@ describe("runProviderCycle racing", () => {
 
     expect(result.stopReason).toBe("all-quarantined");
   });
+
+  test("aborting parent settles immediately even when a candidate ignores its signal", async () => {
+    const controller = new AbortController();
+    const started: string[] = [];
+
+    const run = runProviderCycle<string>({
+      providerId: "videasy",
+      hedgeDelayMs: 5_000,
+      candidateTimeoutMs: 10_000,
+      signal: controller.signal,
+      candidates: candidates("hung", "never-started"),
+      resolveCandidate: async (candidate) => {
+        started.push(candidate.id);
+        // Deliberately never resolves and ignores `context.signal`.
+        return await new Promise<string>(() => {});
+      },
+    });
+
+    await Promise.resolve();
+    controller.abort(new DOMException("cancelled", "AbortError"));
+
+    const result = await run;
+    expect(result.cancelled).toBe(true);
+    expect(result.stopReason).toBe("cancelled");
+    expect(started).toEqual(["hung"]);
+  });
 });

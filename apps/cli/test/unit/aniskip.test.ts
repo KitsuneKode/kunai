@@ -259,3 +259,89 @@ test("an AniList failure during the name lookup is not cached as 'no match'", as
   await lookup();
   expect(anilistCalls).toBe(2);
 });
+
+test("transient ARM and AllAnime failures are not cached as permanent misses", async () => {
+  let armAnilistCalls = 0;
+  let armUp = false;
+  let allanimeCalls = 0;
+  let allanimeUp = false;
+
+  // SAFETY: test stub only handles fetch(input) calls made by aniskip helpers.
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    const hostname = hostnameOf(url);
+    if (hostname === "arm.haglund.dev") {
+      if (url.includes("/api/v2/ids")) armAnilistCalls += 1;
+      return armUp
+        ? new Response(JSON.stringify({ myanimelist: 40001, anilist: 991001 }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          })
+        : new Response("Service Unavailable", { status: 503 });
+    }
+    if (hostname === "api.allanime.day") {
+      allanimeCalls += 1;
+      return allanimeUp
+        ? new Response(JSON.stringify({ data: { show: { malId: "40002" } } }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          })
+        : new Response("Bad Gateway", { status: 502 });
+    }
+    if (hostname === "api.aniskip.com") {
+      return new Response(
+        JSON.stringify({
+          found: true,
+          results: [{ skipType: "op", interval: { startTime: 10, endTime: 90 } }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+    return new Response("Not Found", { status: 404 });
+  }) as typeof fetch;
+
+  const firstArm = await fetchAniSkipTimingMetadata({ anilistId: "991001", episode: 1 });
+  expect(firstArm).toBeNull();
+  armUp = true;
+  const secondArm = await fetchAniSkipTimingMetadata({ anilistId: "991001", episode: 1 });
+  expect(secondArm?.intro).toEqual([{ startMs: 10_000, endMs: 90_000 }]);
+  expect(armAnilistCalls).toBe(2);
+
+  const firstAllAnime = await fetchAniSkipTimingMetadata({
+    anilistId: "opaque-allanime-transient-id",
+    providerId: "allanime",
+    episode: 1,
+  });
+  expect(firstAllAnime).toBeNull();
+  allanimeUp = true;
+  const secondAllAnime = await fetchAniSkipTimingMetadata({
+    anilistId: "opaque-allanime-transient-id",
+    providerId: "allanime",
+    episode: 1,
+  });
+  expect(secondAllAnime?.intro).toEqual([{ startMs: 10_000, endMs: 90_000 }]);
+  expect(allanimeCalls).toBe(2);
+});
+
+test("fetchAniSkipTimingMetadata combines a caller signal with its own timeout", async () => {
+  const caller = new AbortController();
+  let seenSignal: AbortSignal | null | undefined;
+  // SAFETY: test stub only captures RequestInit.signal and returns an empty JSON response.
+  globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+    seenSignal = init?.signal;
+    return new Response(JSON.stringify({ found: false, results: [] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+
+  await fetchAniSkipTimingMetadata({
+    anilistId: "opaque",
+    externalIds: { malId: "51234" },
+    episode: 1,
+    signal: caller.signal,
+  });
+
+  expect(seenSignal).toBeDefined();
+  expect(seenSignal).not.toBe(caller.signal);
+});

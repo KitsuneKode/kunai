@@ -12,6 +12,7 @@ import {
   readBoundedTextBody,
 } from "./stream-reachability";
 import { normalizeIsoLanguageCode } from "./subtitle-helpers";
+import { createTimeoutSignal } from "./timeout-signal";
 import { trimTrailingSlashes } from "./trim-trailing-slashes";
 
 export type HlsLadderVariant = {
@@ -123,7 +124,7 @@ export async function expandHlsMasterInventory(
       init: {
         headers: headers ?? {},
       },
-      signal: signal ?? AbortSignal.timeout(12_000),
+      signal: createTimeoutSignal(signal, 12_000),
     });
     if (outcome.kind === "blocked") {
       return empty({ kind: "blocked-target" });
@@ -132,7 +133,9 @@ export async function expandHlsMasterInventory(
       return empty({ kind: "network" });
     }
     const response = outcome.response;
+    const baseUrl = outcome.finalUrl;
     if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
       return empty({ kind: "http-error", httpStatus: response.status });
     }
 
@@ -156,7 +159,7 @@ export async function expandHlsMasterInventory(
     // only labels audio already muxed into each variant, so it does not trip
     // this.
     if (masterVariantsNeedSeparateAudio(text)) {
-      const renditions = parseHlsMasterRenditions(text, masterUrl);
+      const renditions = parseHlsMasterRenditions(text, baseUrl);
       return {
         isHls: true,
         variants: [fallback],
@@ -165,14 +168,14 @@ export async function expandHlsMasterInventory(
       };
     }
 
-    const variants = parseHlsMasterVariants(text, masterUrl);
+    const variants = parseHlsMasterVariants(text, baseUrl);
     if (variants.length === 0) {
       return empty({ kind: "not-master", httpStatus: response.status });
     }
 
     const sorted = [...variants].sort((left, right) => right.qualityRank - left.qualityRank);
     const capped = maxVariants > 0 ? sorted.slice(0, maxVariants) : sorted;
-    const renditions = parseHlsMasterRenditions(text, masterUrl);
+    const renditions = parseHlsMasterRenditions(text, baseUrl);
     return {
       isHls: true,
       variants: capped,

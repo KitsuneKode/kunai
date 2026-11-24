@@ -149,6 +149,48 @@ describe("startLoopbackServer", () => {
   });
 
   /** The browser page is shown to the user and may be screenshotted or shared. */
+  test("does not leave a dangling timeout that crashes if binding fails on an occupied port", async () => {
+    const blocker = createServer();
+    await new Promise<void>((resolve, reject) => {
+      blocker.once("error", reject);
+      blocker.listen(0, "127.0.0.1", resolve);
+    });
+    const address = blocker.address();
+    const port = address !== null && address instanceof Object ? address.port : 0;
+
+    let scheduledTimers = 0;
+    const originalSetTimeout = globalThis.setTimeout;
+    const uncaught: Error[] = [];
+    const onUncaught = (error: Error) => uncaught.push(error);
+    process.on("uncaughtException", onUncaught);
+
+    // Count timers armed during the failing startLoopbackServer call: none may
+    // be created before Bun.serve succeeds.
+    // SAFETY: test spy delegates directly to global setTimeout with identical parameters.
+    globalThis.setTimeout = ((...args: Parameters<typeof setTimeout>) => {
+      scheduledTimers += 1;
+      return originalSetTimeout(...args);
+    }) as typeof setTimeout;
+
+    try {
+      expect(() =>
+        startLoopbackServer({
+          redirectUri: `http://127.0.0.1:${port}/callback`,
+          expectedState: "expected-state",
+          signal: new AbortController().signal,
+          timeoutMs: 10,
+          serviceName: "AniList",
+        }),
+      ).toThrow();
+      expect(scheduledTimers).toBe(0);
+      expect(uncaught).toEqual([]);
+    } finally {
+      globalThis.setTimeout = originalSetTimeout;
+      process.off("uncaughtException", onUncaught);
+      await new Promise<void>((resolve) => blocker.close(() => resolve()));
+    }
+  });
+
   test("never echoes the code or state into the completion page", async () => {
     const loopback = await server();
     try {

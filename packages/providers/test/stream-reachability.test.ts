@@ -728,6 +728,44 @@ describe("stream reachability", () => {
       expect(probe.definitive).toBe(true);
     }
   });
+
+  test("HLS probe resolves relative variant and segment URIs against redirected finalUrl", async () => {
+    const urls: string[] = [];
+    const fetchImpl = async (url: string) => {
+      urls.push(url);
+      if (url === "https://router.example/go/master.m3u8") {
+        return response(302, "", { location: "https://edge-a.example/hls/master.m3u8" });
+      }
+      if (url === "https://edge-a.example/hls/master.m3u8") {
+        return response(200, "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=800000\n1080p/index.m3u8\n");
+      }
+      if (url === "https://edge-a.example/hls/1080p/index.m3u8") {
+        return response(302, "", { location: "https://edge-b.example/vod/1080p/index.m3u8" });
+      }
+      if (url === "https://edge-b.example/vod/1080p/index.m3u8") {
+        return response(200, "#EXTM3U\n#EXTINF:4,\nseg-001.ts\n");
+      }
+      if (url === "https://edge-b.example/vod/1080p/seg-001.ts") {
+        return response(206, mediaBytes());
+      }
+      return response(404, "wrong base");
+    };
+
+    const probe = await probeStreamReachability({
+      url: "https://router.example/go/master.m3u8",
+      fetchImpl,
+      timeoutMs: 500,
+    });
+
+    expect(probe).toEqual({ status: "reachable" });
+    expect(urls).toEqual([
+      "https://router.example/go/master.m3u8",
+      "https://edge-a.example/hls/master.m3u8",
+      "https://edge-a.example/hls/1080p/index.m3u8",
+      "https://edge-b.example/vod/1080p/index.m3u8",
+      "https://edge-b.example/vod/1080p/seg-001.ts",
+    ]);
+  });
 });
 
 describe("isGuardedPlatformFetch", () => {

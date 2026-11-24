@@ -96,4 +96,31 @@ describe("redirects from hotfix-supplied hosts are re-checked per hop", () => {
     );
     expect(calls.length).toBe(6);
   });
+
+  test("strips sensitive headers on cross-origin redirect and ignores non-redirect 304", async () => {
+    activate({ rivestream: { mirrors: ["https://mirror.example"] } });
+    const { context, calls } = contextWith((url) =>
+      url === "https://mirror.example/api"
+        ? redirect("https://cdn.example/final", 302)
+        : new Response("ok", { status: 200 }),
+    );
+    await providerFetch(context, "https://mirror.example/api", {
+      headers: {
+        Authorization: "Bearer secret",
+        Cookie: "session=abc",
+        Referer: "https://mirror.example/",
+      },
+    });
+    const hopHeaders = new Headers(calls[1]?.init?.headers);
+    expect(hopHeaders.get("authorization")).toBeNull();
+    expect(hopHeaders.get("cookie")).toBeNull();
+    expect(hopHeaders.get("referer")).toBe("https://mirror.example/");
+
+    const notModified = contextWith(
+      () => new Response(null, { status: 304, headers: { location: "http://127.0.0.1/nope" } }),
+    );
+    const res304 = await providerFetch(notModified.context, "https://mirror.example/cached");
+    expect(res304.status).toBe(304);
+    expect(notModified.calls).toHaveLength(1);
+  });
 });

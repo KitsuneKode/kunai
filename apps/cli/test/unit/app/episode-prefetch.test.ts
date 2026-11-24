@@ -117,6 +117,58 @@ test("prefetch never aliases provider-native episodes at the same UI index", asy
   expect(handle.takeReadyFor(nativeZero)).toEqual(bundle);
 });
 
+test("background schedule rejection does not surface as an unhandled rejection", async () => {
+  const handle = new EpisodePrefetchHandle();
+  const unhandled: Error[] = [];
+  const onUnhandled = (reason: Error) => unhandled.push(reason);
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    handle.schedule(target, async () => {
+      throw new Error("provider boom");
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(handle.isInFlightFor(target)).toBe(false);
+    expect(handle.hasReadyFor(target)).toBe(false);
+    expect(unhandled).toEqual([]);
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+  }
+});
+
+test("awaitFor clears its timeout timer when prefetch finishes first and marks subtitle mismatches unprepared", async () => {
+  const handle = new EpisodePrefetchHandle();
+  const prefetchedTarget = { ...target, subtitlePreference: "en" };
+  const requestedTarget = { ...target, subtitlePreference: "ja" };
+  const bundle = createBundle({ target: prefetchedTarget, prepared: true });
+
+  let activeTimers = 0;
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  // SAFETY: test spy delegates directly to global setTimeout with identical parameters.
+  globalThis.setTimeout = ((...args: Parameters<typeof setTimeout>) => {
+    activeTimers += 1;
+    return originalSetTimeout(...args);
+  }) as typeof setTimeout;
+  // SAFETY: test spy delegates directly to global clearTimeout with identical parameters.
+  globalThis.clearTimeout = ((id: Parameters<typeof clearTimeout>[0]) => {
+    if (id !== undefined) activeTimers -= 1;
+    return originalClearTimeout(id);
+  }) as typeof clearTimeout;
+
+  try {
+    handle.schedule(prefetchedTarget, async () => bundle);
+    const wait = await handle.awaitFor(requestedTarget, async () => bundle, 8_000);
+    expect(wait.outcome).toBe("completed");
+    expect(wait.bundle?.prepared).toBe(false);
+    expect(wait.bundle?.target.subtitlePreference).toBe("ja");
+    expect(activeTimers).toBe(0);
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+  }
+});
+
 function createBundle(overrides?: Partial<EpisodePrefetchBundle>): EpisodePrefetchBundle {
   return {
     target,

@@ -37,6 +37,7 @@ import { upgradeContentTypeFromAniListFormat } from "@/domain/media/anilist-form
 import type { ContentType } from "@/domain/types";
 import { dbg } from "@/logger";
 import { AniListRequestError, postAniListGraphql } from "@/services/catalog/anilist-client";
+import { evictOverflowedEntries } from "@/services/catalog/bounded-cache";
 import { clearTmdbSessionCache, fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
 import {
   filterPlayableEpisodes,
@@ -65,7 +66,7 @@ const CREDITS_CAST_LIMIT = 15;
 
 interface CacheEntry {
   readonly detail: TitleDetail;
-  readonly fetchedAt: number;
+  readonly expiresAt: number;
 }
 
 // TTL: 5 minutes within a session (enough to survive repeated renders without
@@ -94,6 +95,8 @@ export function isTitleDetailCrosswalkBound(): boolean {
 }
 
 const CACHE_TTL_MS = 5 * 60 * 1_000;
+// Bounded session cache — long browse/search sessions visit hundreds of titles.
+const MAX_DETAIL_CACHE_ENTRIES = 256;
 /** Count of AniList detail fetches that failed in a retryable way (see fetchTitleDetail). */
 let degradedAniListFetches = 0;
 const detailCache = new Map<string, CacheEntry>();
@@ -115,7 +118,7 @@ export function clearTitleDetailCache(): void {
  */
 export function peekTitleDetail(id: string, type: ContentType): TitleDetail | undefined {
   const cached = detailCache.get(cacheKey(id, type));
-  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) return cached.detail;
+  if (cached && cached.expiresAt > Date.now()) return cached.detail;
   return undefined;
 }
 
@@ -141,18 +144,24 @@ export async function fetchTitleDetail(
   const key = cacheKey(id, type);
   const now = Date.now();
   const cached = detailCache.get(key);
-  if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
+  if (cached && cached.expiresAt > now) {
     return cached.detail;
+  }
+
+  if (signal?.aborted) {
+    return mergeDetails(id, type, null, null);
   }
 
   const degradedBefore = degradedAniListFetches;
   const detail = await resolveTitleDetail(id, type, signal, hints);
-  // A detail built while AniList was rate-limited or unreachable is a
-  // placeholder ("Unknown"); caching it would keep it for the full TTL after
-  // AniList recovers. (A concurrent degraded fetch can also skip caching a good
-  // detail here, which only costs a refetch.)
-  if (degradedAniListFetches === degradedBefore) {
-    detailCache.set(key, { detail, fetchedAt: now });
+  // A detail built while a catalog was unreachable, rate-limited, or aborted
+  // produces an empty placeholder ("Unknown") with no contributing sources;
+  // caching it would hide the title's metadata for the full TTL after recovery.
+  const hasRealSource = detail.sources !== undefined && detail.sources.length > 0;
+  if (!signal?.aborted && hasRealSource && degradedAniListFetches === degradedBefore) {
+    const storedAt = Date.now();
+    detailCache.set(key, { detail, expiresAt: storedAt + CACHE_TTL_MS });
+    evictOverflowedEntries(detailCache, MAX_DETAIL_CACHE_ENTRIES, storedAt);
   }
   return detail;
 }
