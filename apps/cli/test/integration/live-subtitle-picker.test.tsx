@@ -406,7 +406,7 @@ test("native observations arriving before acknowledgement preserve the accepted 
 test.each(["native-state", "explicit-off", "replaced-file"] as const)(
   "late subtitle lookup preserves newer %s",
   async (change) => {
-    const { PlaybackPhase } = await import("@/app/playback/PlaybackPhase");
+    const { startLateSubtitleResolver } = await import("@/app/playback/late-subtitle-resolver");
     const { container, dispose } = await createIsolatedContainer(`late-lookup-${change}`);
     const title = {
       id: "tmdb:550",
@@ -470,7 +470,7 @@ test.each(["native-state", "explicit-off", "replaced-file"] as const)(
           return { status: "attached", attachedCount: 1 };
         },
       });
-      new PlaybackPhase()["startLateSubtitleResolver"]({
+      startLateSubtitleResolver({
         stream,
         title,
         episode,
