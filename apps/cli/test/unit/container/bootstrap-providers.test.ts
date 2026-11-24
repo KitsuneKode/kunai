@@ -6,7 +6,10 @@ import { RELAY_CAPABLE_PROVIDER_OPTIONS } from "@/domain/provider-relay-settings
 import { createProviderPrioritySnapshot } from "@/services/providers/provider-priority";
 import { DEFAULT_CONFIG } from "@kunai/config";
 
-import { PROBES as STATUS_SWEEP_PROBES } from "../../../../../packages/providers/scripts/provider-status-sweep.ts";
+import {
+  PROBES as STATUS_SWEEP_PROBES,
+  qualifiesForDefaultPlayback,
+} from "../../../../../packages/providers/scripts/provider-status-sweep.ts";
 import { relayRegistry } from "../../../../relay-server/src/provider-registry";
 
 describe("production provider defaults", () => {
@@ -51,6 +54,43 @@ describe("production provider defaults", () => {
     // unregistered id is a silent no-op that nothing would ever report.
     for (const id of DEFAULT_CONFIG.animeProviderPriority) expect(ids).toContain(id);
     for (const id of DEFAULT_CONFIG.providerPriority) expect(ids).toContain(id);
+  });
+
+  test("the production lane leads and fallback order account for the default attempt budget", async () => {
+    // Successful resolves from the 2026-11-23 hosted sweep, before yt-dlp was
+    // installed. Movie/series share an order and the probe uses a movie fixture.
+    // Freeze the measurements so the daily publication cannot change this test.
+    const resolved = [
+      { id: "vidlink", streams: 1, ms: 938 },
+      { id: "rivestream", streams: 1, ms: 5_783 },
+      { id: "hianime", streams: 1, ms: 3_493 },
+      { id: "animegg", streams: 4, ms: 21_917 },
+    ];
+    const qualified = new Set(
+      resolved
+        .filter(({ streams, ms }) => qualifiesForDefaultPlayback("resolved", streams, ms))
+        .map(({ id }) => id),
+    );
+    const modules = await loadProductionProviderModules(
+      createProviderPrioritySnapshot(DEFAULT_CONFIG),
+    );
+    for (const kind of ["movie", "series", "anime"] as const) {
+      const lead = modules.find(({ manifest }) => manifest.mediaKinds.includes(kind));
+      expect(qualified.has(lead?.providerId ?? "")).toBe(true);
+    }
+    const anime = modules.filter(({ manifest }) => manifest.mediaKinds.includes("anime"));
+    const fallbacks = anime.slice(1);
+    const firstQualified = fallbacks.findIndex(({ providerId }) => qualified.has(providerId));
+    if (firstQualified === -1) {
+      // With no qualified fallback, prefer the only one that returned streams.
+      const resolvedIds = new Set(resolved.map(({ id }) => id));
+      expect(resolvedIds.has(fallbacks[0]?.providerId ?? "")).toBe(true);
+    } else {
+      expect(firstQualified).toBe(0);
+    }
+    expect(modules.find(({ manifest }) => manifest.mediaKinds.includes("video"))?.providerId).toBe(
+      "youtube",
+    );
   });
 
   test("the production roster is pinned — adding a module fails loudly here", async () => {

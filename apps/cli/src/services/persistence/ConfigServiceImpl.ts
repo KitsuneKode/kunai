@@ -1459,6 +1459,11 @@ const INHERITED_ANIME_DEFAULTS: readonly {
     animeProvider: "hianime",
     priorities: [["kickassanime", "animegg", "allanime", "miruro", "anidb"]],
   },
+  {
+    revision: 6,
+    animeProvider: "hianime",
+    priorities: [["kickassanime", "animegg", "allanime", "miruro"]],
+  },
 ];
 
 function retiredProductionProviderFieldSlice(
@@ -1558,6 +1563,9 @@ function shouldMigrateInheritedSeriesDefaults(loaded: Partial<KitsuneConfig>): b
   const provider = isJsonString(loaded.provider) ? loaded.provider.trim() : "";
   const priority = loaded.providerPriority;
   if (migrateLegacyProviderId(provider) === "videasy") {
+    // Revision 7 only changes anime defaults. A revision-6 Videasy pair
+    // already had this migration applied and can be a deliberate re-pick.
+    if (revision >= 6) return false;
     // A missing or unreadable priority cannot carry a deliberate ordering —
     // it normalizes to the shipped list below, so it must not shield the dead
     // provider pick from migration either.

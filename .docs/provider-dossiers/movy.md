@@ -1,11 +1,20 @@
 ---
 status: current
-lastReviewed: "2026-10-26"
+lastReviewed: "2026-11-24T09:34:20Z"
 ---
 
 # Provider: Movy
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
+
+## Production status (2026-11-24)
+
+The November 23 hosted sweep received HTTP 403 on the seed exchange, before
+the adapter could query any stream lane. A November 24 anonymous request to
+`api.wecollege.net/seed?mediaId=550` returned the same status with a
+Cloudflare block page, while [Movy's public site](https://www.movy.sx/)
+returned HTTP 200. No public replacement for the seed API was verified.
+Movy stays as a fallback after VidRock and before Videasy.
 
 ## Summary
 

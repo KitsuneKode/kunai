@@ -49,7 +49,6 @@ import { scrubbedChildEnv } from "../shared/child-env";
 import {
   curlArgvHead,
   curlCipherArgs,
-  type CurlCandidate,
   isCloudflareBlockBody,
   isCloudflareChallengeText,
   resolveCurlCandidate,
@@ -1973,25 +1972,12 @@ async function pipeCall(
 const MIRURO_WAF_BLOCK_PREFIX =
   "Miruro pipe blocked by Cloudflare WAF on multiple mirrors (HTTP 403 HTML).";
 
-/**
- * The remedy depends on what curl we actually used, so ask before advising.
- *
- * A plain-curl TLS handshake is fingerprinted by Cloudflare long before any
- * header is read, and an impersonate build clears it locally — so telling a user
- * on plain curl to stand up a relay sends them to the most expensive fix first.
- * ani-cli reaches the same conclusion from the other direction: it dies with
- * "Blocked by cloudflare. Try installing curl-impersonate" only when
- * `$curl_exe` is still plain `curl` (ani-cli:171, v5.0.4).
- */
-export function miruroWafBlockMessage(curl: CurlCandidate | null = resolveCurlCandidate()): string {
-  if (!curl?.impersonates) {
-    return `${MIRURO_WAF_BLOCK_PREFIX} Install curl-impersonate (a curl_chrome*/curl_firefox* build on PATH) so the TLS handshake is not fingerprinted; a user-owned relay (providerRelay.baseUrl) in an ungated region also bypasses this.`;
-  }
-  return `${MIRURO_WAF_BLOCK_PREFIX} curl-impersonate (${curl.profile}) was already used and still blocked, so the block is region-wide: a user-owned relay (providerRelay.baseUrl) in an ungated region can bypass it.`;
+export function miruroWafBlockMessage(): string {
+  return `${MIRURO_WAF_BLOCK_PREFIX} Choose another anime provider.`;
 }
 
 function isMiruroWafBlockError(error: Error): boolean {
-  return error.message.includes("Cloudflare WAF on multiple mirrors");
+  return error.message.includes(MIRURO_WAF_BLOCK_PREFIX);
 }
 
 /**

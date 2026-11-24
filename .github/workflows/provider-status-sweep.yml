@@ -39,10 +39,23 @@ jobs:
         with:
           turbo-cache-prefix: provider-status
 
-      # The anime lane is mismeasured without this: anidb/miruro sit behind
-      # Cloudflare, which 403s a bare runner handshake in <100ms, so every row
-      # would read "blocked" no matter how healthy the upstream is.
-      - uses: ./.github/actions/setup-curl-impersonate
+      # The official yt-dlp executable bundles its YouTube plugins and uses
+      # Deno as its default JavaScript runtime.
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
+        with:
+          deno-version: "2.9.8"
+
+      - name: Install yt-dlp
+        run: |
+          install_dir="$RUNNER_TEMP/provider-sweep-bin"
+          mkdir -p "$install_dir"
+          cd "$install_dir"
+          curl --fail --silent --show-error --location \
+            https://github.com/yt-dlp/yt-dlp/releases/download/2026.11.23/yt-dlp --output yt-dlp
+          echo 'e8665ed64d6b9172773e812f891fb707a0cb1ee8d9ef4fc1acb00cabee4c5256  yt-dlp' | sha256sum --check --strict
+          chmod +x yt-dlp
+          ./yt-dlp --version
+          echo "$install_dir" >> "$GITHUB_PATH"
 
       - name: Run the provider sweep
         working-directory: packages/providers
