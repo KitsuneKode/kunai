@@ -489,3 +489,61 @@ describe("storage writability", () => {
     expect(report.storage.map((s) => s.label).sort()).toEqual(["cache", "config", "data"]);
   });
 });
+
+describe("buildDoctorReport on Android", () => {
+  const TERMUX_ENV = {
+    TERMUX_VERSION: "0.118.1",
+    PREFIX: "/data/data/com.termux/files/usr",
+  };
+
+  async function reportFor(input: {
+    readonly env: Readonly<Record<string, string | undefined>>;
+    readonly launchers: readonly string[];
+  }) {
+    const { root, layout } = await makeRoot();
+    const asked: boolean[] = [];
+    const report = await buildDoctorReport({
+      layout,
+      now: () => FIXED_DATE,
+      runningExecutable: { path: layout.launcherPath, version: "1.0.0" },
+      pathValue: join(root, "bin"),
+      platform: "linux",
+      fileExists: existsSync,
+      env: input.env,
+      androidIntentRuntime: {
+        which: (command) => (input.launchers.includes(command) ? `/usr/bin/${command}` : null),
+      },
+      probeCapabilities: async (options) => {
+        asked.push(options.requireMpv);
+        return emptyCapabilities();
+      },
+    });
+    return { report, asked };
+  }
+
+  test("a phone install is not broken for lacking desktop mpv", async () => {
+    const android = await reportFor({ env: TERMUX_ENV, launchers: ["termux-am"] });
+    expect(android.asked).toEqual([false]);
+    const desktop = await reportFor({ env: {}, launchers: [] });
+    expect(desktop.asked).toEqual([true]);
+  });
+
+  test("reports the player handoff launcher when one exists", async () => {
+    const { report } = await reportFor({ env: TERMUX_ENV, launchers: ["termux-am"] });
+    expect(report.findings).toContainEqual(
+      expect.objectContaining({ severity: "info", code: "android-player-handoff" }),
+    );
+  });
+
+  test("warns, with the install step, when nothing can hand a video to a player", async () => {
+    const { report } = await reportFor({ env: TERMUX_ENV, launchers: [] });
+    const finding = report.findings.find((f) => f.code === "android-player-handoff-missing");
+    expect(finding?.severity).toBe("warning");
+    expect(finding?.remediation).toContain("pkg install termux-am");
+  });
+
+  test("desktop doctor says nothing about Android", async () => {
+    const { report } = await reportFor({ env: {}, launchers: [] });
+    expect(report.findings.some((f) => f.code.startsWith("android-player-handoff"))).toBe(false);
+  });
+});

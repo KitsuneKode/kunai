@@ -42,17 +42,55 @@ const PLAYER_PACKAGES = {
 const MAX_DIAGNOSTIC_LENGTH = 2_048;
 
 /**
- * Launcher children get a scrubbed environment: the process only needs PATH
- * to find sibling Termux tools and HOME/PREFIX/TMPDIR for its own bookkeeping
- * — never inherited secrets from the shell's environment. Built per-spawn so
- * tests and the agent loop can still redirect the env.
+ * The Android runtime `app_process` needs to boot ART. `termux-am` and
+ * `/system/bin/am` both end in it, so a launcher spawned without these cannot
+ * open a player on a real phone. Android 10+ moved ART, i18n and tzdata into
+ * APEX modules, which is where the `*_ROOT` names beyond ANDROID_ROOT/DATA come
+ * from. `LD_LIBRARY_PATH` and `LD_PRELOAD` are deliberately absent: they point
+ * at Termux's libraries, which break Android's own binaries.
  */
-function scrubbedIntentEnv(): Record<string, string> {
+const ANDROID_RUNTIME_ENV_KEYS = [
+  "ANDROID_ROOT",
+  "ANDROID_DATA",
+  "ANDROID_ART_ROOT",
+  "ANDROID_I18N_ROOT",
+  "ANDROID_TZDATA_ROOT",
+  "ANDROID_RUNTIME_ROOT",
+  "BOOTCLASSPATH",
+  "DEX2OATBOOTCLASSPATH",
+  "SYSTEMSERVERCLASSPATH",
+] as const;
+
+/**
+ * Launcher children get a scrubbed environment: PATH to find sibling Termux
+ * tools, HOME/PREFIX/TMPDIR for their own bookkeeping, and the Android runtime
+ * above — never secrets inherited from the shell. Built per-spawn so tests and
+ * the agent loop can still redirect the env.
+ */
+type AndroidRuntimeEnvKey = (typeof ANDROID_RUNTIME_ENV_KEYS)[number];
+
+/** The whole environment an intent launcher child is given — nothing else. */
+export type IntentLauncherEnv = {
+  readonly PATH: string;
+  readonly HOME: string;
+  readonly PREFIX: string;
+  readonly TMPDIR: string;
+} & Partial<Readonly<Record<AndroidRuntimeEnvKey, string>>>;
+
+export function scrubbedIntentEnv(
+  source: Readonly<Record<string, string | undefined>> = process.env,
+): IntentLauncherEnv {
+  const runtime: Partial<Record<AndroidRuntimeEnvKey, string>> = {};
+  for (const key of ANDROID_RUNTIME_ENV_KEYS) {
+    const value = source[key];
+    if (value) runtime[key] = value;
+  }
   return {
-    PATH: process.env.PATH ?? "/system/bin:/system/xbin",
-    HOME: process.env.HOME ?? "/data/data/com.termux/files/home",
-    PREFIX: process.env.PREFIX ?? "/data/data/com.termux/files/usr",
-    TMPDIR: process.env.TMPDIR ?? "/data/data/com.termux/files/usr/tmp",
+    PATH: source.PATH ?? "/system/bin:/system/xbin",
+    HOME: source.HOME ?? "/data/data/com.termux/files/home",
+    PREFIX: source.PREFIX ?? "/data/data/com.termux/files/usr",
+    TMPDIR: source.TMPDIR ?? "/data/data/com.termux/files/usr/tmp",
+    ...runtime,
   };
 }
 

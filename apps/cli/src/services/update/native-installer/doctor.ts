@@ -4,6 +4,12 @@ import { dirname as nodeDirname, win32 } from "node:path";
 
 const { W_OK } = fsConstants;
 
+import { detectPlayerPlatform } from "@/domain/playback/player-choice";
+import {
+  defaultAndroidIntentRuntime,
+  resolveAndroidIntentCommand,
+  type AndroidIntentRuntime,
+} from "@/infra/player/android-intent-launcher";
 import type { CapabilitySnapshot, CurlCapability } from "@/ui";
 
 import {
@@ -110,8 +116,14 @@ export type BuildDoctorReportInput = {
   readonly platform?: NodeJS.Platform;
   readonly fileExists?: (path: string) => boolean;
   readonly inspectManifest?: () => Promise<InstallManifestInspection>;
-  readonly probeCapabilities?: () => Promise<CapabilitySnapshot>;
+  readonly probeCapabilities?: (options: {
+    readonly requireMpv: boolean;
+  }) => Promise<CapabilitySnapshot>;
   readonly probeStorage?: () => Promise<readonly DoctorStorageInfo[]>;
+  /** Environment seam for Android/Termux detection. Defaults to process.env. */
+  readonly env?: Readonly<Record<string, string | undefined>>;
+  /** Command lookup for the Android player handoff launchers. Injected by tests. */
+  readonly androidIntentRuntime?: Pick<AndroidIntentRuntime, "which">;
 };
 
 /**
@@ -471,11 +483,14 @@ export async function buildDoctorReport(input: BuildDoctorReportInput = {}): Pro
   };
 
   const inspectManifest = input.inspectManifest ?? (() => inspectInstallManifest(layout.configDir));
+  // On Android, playback hands videos to VLC or mpv-android; a desktop mpv is
+  // not part of a working install there, so its absence is not an error.
+  const android = detectPlayerPlatform({ platform, env: input.env ?? process.env }) === "android";
   const probe =
     input.probeCapabilities ??
-    (async () => {
+    (async (options: { readonly requireMpv: boolean }) => {
       const { probeCapabilities } = await import("@/ui");
-      return probeCapabilities();
+      return probeCapabilities(options);
     });
 
   const manifest = await inspectManifest();
@@ -571,7 +586,7 @@ export async function buildDoctorReport(input: BuildDoctorReportInput = {}): Pro
     ...(target ? { targetId: target.id } : {}),
   };
 
-  const dependencies = await probe();
+  const dependencies = await probe({ requireMpv: !android });
   const detectedMethod = detectInstallMethod({
     platform,
     fileExists,
@@ -594,9 +609,40 @@ export async function buildDoctorReport(input: BuildDoctorReportInput = {}): Pro
     storage: await (input.probeStorage ?? (() => probeStorageWritability(layout)))(),
   };
 
+  const findings = collectFindings({ report: base, detectedKind: detectedMethod.kind });
+  if (android) findings.push(androidPlayerHandoffFinding(input.androidIntentRuntime));
+  return { ...base, findings };
+}
+
+/**
+ * Whether Kunai can hand a video to a player on this phone. It needs one of
+ * Termux's intent launchers; without one, every play fails before the player.
+ */
+function androidPlayerHandoffFinding(
+  runtime: Pick<AndroidIntentRuntime, "which"> = defaultAndroidIntentRuntime,
+): DoctorFinding {
+  const command = resolveAndroidIntentCommand({
+    target: "chooser",
+    url: "https://example.invalid/kunai-doctor-check",
+    runtime: { ...defaultAndroidIntentRuntime, which: runtime.which },
+  });
+  if (command.ok) {
+    return {
+      severity: "info",
+      code: "android-player-handoff",
+      message: `Android playback hands videos to VLC or mpv-android through ${command.launcher}.`,
+      remediation: [],
+    };
+  }
   return {
-    ...base,
-    findings: collectFindings({ report: base, detectedKind: detectedMethod.kind }),
+    severity: "warning",
+    code: "android-player-handoff-missing",
+    message:
+      "No Android intent launcher was found, so Kunai cannot hand a video to VLC or mpv-android.",
+    remediation: [
+      "pkg install termux-am",
+      "Install VLC for Android or mpv-android, then run kunai doctor again.",
+    ],
   };
 }
 

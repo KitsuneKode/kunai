@@ -1,5 +1,3 @@
-import type { CapabilitySnapshot } from "@/ui";
-
 import type { InstallManifestInspection } from "./install-manifest";
 import {
   buildDoctorReport,
@@ -21,7 +19,7 @@ export type RunDoctorOptions = {
   readonly platform?: NodeJS.Platform;
   readonly fileExists?: (path: string) => boolean;
   readonly inspectManifest?: () => Promise<InstallManifestInspection>;
-  readonly probeCapabilities?: () => Promise<CapabilitySnapshot>;
+  readonly probeCapabilities?: BuildDoctorReportInput["probeCapabilities"];
 };
 
 /**

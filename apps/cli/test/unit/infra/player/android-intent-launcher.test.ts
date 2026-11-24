@@ -4,6 +4,7 @@ import type { DetachedPlayerTarget } from "@/domain/playback/player-choice";
 import {
   launchAndroidIntent,
   resolveAndroidIntentCommand,
+  scrubbedIntentEnv,
   type AndroidIntentRuntime,
 } from "@/infra/player/android-intent-launcher";
 
@@ -248,5 +249,63 @@ describe("Android intent launch", () => {
       runtime: rt,
     });
     if (chooser.ok) expect(chooser.argv.join(" ")).not.toContain("subs");
+  });
+});
+
+describe("scrubbedIntentEnv", () => {
+  // termux-am and /system/bin/am both end in Android's app_process, which
+  // cannot boot ART without these; a phone that loses them cannot launch a player.
+  const PHONE_ENV = {
+    PATH: "/data/data/com.termux/files/usr/bin",
+    HOME: "/data/data/com.termux/files/home",
+    PREFIX: "/data/data/com.termux/files/usr",
+    TMPDIR: "/data/data/com.termux/files/usr/tmp",
+    ANDROID_ROOT: "/system",
+    ANDROID_DATA: "/data",
+    ANDROID_ART_ROOT: "/apex/com.android.art",
+    ANDROID_I18N_ROOT: "/apex/com.android.i18n",
+    ANDROID_TZDATA_ROOT: "/apex/com.android.tzdata",
+    ANDROID_RUNTIME_ROOT: "/apex/com.android.runtime",
+    BOOTCLASSPATH: "/apex/com.android.art/javalib/core-oj.jar",
+    DEX2OATBOOTCLASSPATH: "/apex/com.android.art/javalib/core-oj.jar",
+    SYSTEMSERVERCLASSPATH: "/system/framework/services.jar",
+    // Termux's own libraries break system binaries such as /system/bin/am.
+    LD_LIBRARY_PATH: "/data/data/com.termux/files/usr/lib",
+    LD_PRELOAD: "/data/data/com.termux/files/usr/lib/libtermux-exec.so",
+    // Secrets the shell happens to carry must never reach the launcher.
+    TMDB_API_KEY: "secret",
+    GITHUB_TOKEN: "secret",
+  };
+
+  test("keeps the Android runtime app_process needs", () => {
+    const env = scrubbedIntentEnv(PHONE_ENV);
+    for (const key of [
+      "ANDROID_ROOT",
+      "ANDROID_DATA",
+      "ANDROID_ART_ROOT",
+      "ANDROID_I18N_ROOT",
+      "ANDROID_TZDATA_ROOT",
+      "ANDROID_RUNTIME_ROOT",
+      "BOOTCLASSPATH",
+      "DEX2OATBOOTCLASSPATH",
+      "SYSTEMSERVERCLASSPATH",
+    ] as const) {
+      expect(env[key]).toBe(PHONE_ENV[key]);
+    }
+    expect(env.PATH).toBe(PHONE_ENV.PATH);
+  });
+
+  test("drops secrets and the library-path variables", () => {
+    const env = scrubbedIntentEnv(PHONE_ENV);
+    expect(Object.keys(env)).not.toContain("TMDB_API_KEY");
+    expect(Object.keys(env)).not.toContain("GITHUB_TOKEN");
+    expect(Object.keys(env)).not.toContain("LD_LIBRARY_PATH");
+    expect(Object.keys(env)).not.toContain("LD_PRELOAD");
+  });
+
+  test("absent variables are left out, and the Termux defaults still apply", () => {
+    const env = scrubbedIntentEnv({});
+    expect(env.ANDROID_ROOT).toBeUndefined();
+    expect(env.PREFIX).toBe("/data/data/com.termux/files/usr");
   });
 });
