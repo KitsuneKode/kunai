@@ -656,6 +656,8 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       );
       process.exit(2);
     }
+    // An unresolved operation must not exit successfully before reporting an outcome.
+    process.exitCode = 1;
     const { runAddonsCommand } = await import("./services/providers/run-addons-command");
     // Positionals only: `kunai addons add <url> --json` and `--json add <url>` both work.
     const words = argv.slice(1).filter((word) => !word.startsWith("-"));

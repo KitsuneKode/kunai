@@ -397,7 +397,7 @@ kunai addons disable
 kunai addons remove 1
 ```
 
-`kunai addons enable` asks you to confirm. Kunai shows the warning the first time and remembers your acknowledgement across disable and re-enable. In a script or CI job, run `kunai addons enable --accept-risk` to accept without a prompt. An interactive `add` can ask you to enable addons in the same step. A non-interactive `add` while addons are off refuses before contacting the addon: run `kunai addons enable` first.
+`kunai addons enable` asks you to confirm when standard input, output, and error are attached to a terminal. An empty answer or closed input declines. Kunai shows the warning the first time and remembers your acknowledgement across disable and re-enable. In a script or CI job, run `kunai addons enable --accept-risk` to accept without a prompt. An interactive `add` can ask you to enable addons in the same step. A non-interactive `add` while addons are off refuses before contacting the addon: run `kunai addons enable` first.
 
 If the URL carries an account token, prefer `--stdin` so it stays out of your
 shell's process list and history. Kunai reads one line of standard input;

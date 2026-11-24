@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24"
+lastReviewed: "2026-11-24T16:54:00Z"
 ---
 
 # Stremio addons
@@ -170,7 +170,8 @@ never re-added.
 - `kunai addons enable | disable | list | add <url> | add --stdin | remove <n> | check [n]`
   (`apps/cli/src/services/providers/run-addons-command.ts`). `enable` requires
   the risk acknowledgement — interactive confirmation, or `--accept-risk` when
-  stdin is not a terminal — and writes the flag plus timestamp together;
+  any standard stream is redirected — and writes the flag plus timestamp
+  together. EOF or an empty answer refuses without recording consent;
   `disable` patches only the flag. While off, `add` refuses before reading
   stdin or contacting the addon, and `list`/`check` report the disabled status
   without touching the network. `add` reads the

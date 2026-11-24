@@ -503,22 +503,21 @@ test("`kunai addons enable --accept-risk` writes consent and `disable` keeps it"
     const run = (...args: string[]) =>
       Bun.spawn([process.execPath, mainTs, ...args], {
         env,
+        stdin: "ignore",
         stdout: "pipe",
         stderr: "pipe",
       });
 
+    const beforeRefusal = readFileSync(configPath, "utf8");
     // Non-interactive enable without the flag fails closed.
     const refused = run("addons", "enable", "--json");
-    const [refusedOut, refusedErr, refusedStatus] = await Promise.all([
+    const [refusedOut, refusedStatus] = await Promise.all([
       new Response(refused.stdout).text(),
-      new Response(refused.stderr).text(),
       refused.exited,
     ]);
-    if (refusedStatus !== 1) {
-      console.error("[DEBUG-addons-consent]", { refusedStatus, refusedOut, refusedErr });
-    }
     expect(refusedStatus).toBe(1);
     expect(JSON.parse(refusedOut)).toMatchObject({ ok: false });
+    expect(readFileSync(configPath, "utf8")).toBe(beforeRefusal);
 
     const enabled = run("addons", "enable", "--accept-risk", "--json");
     const [enabledOut, enabledStatus] = await Promise.all([

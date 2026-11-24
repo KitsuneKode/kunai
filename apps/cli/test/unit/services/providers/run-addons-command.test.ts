@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { PassThrough } from "node:stream";
 
 import {
   readInstalledStremioAddons,
@@ -69,6 +70,7 @@ function memoryConfig(initial: Partial<AddonsConfigPort> = {}) {
     get stremioAddonsRiskAcknowledgedAt() {
       return state.stremioAddonsRiskAcknowledgedAt;
     },
+    readStremioAddonsConsent: () => state,
     update: async (partial) => {
       Object.assign(state, partial);
     },
@@ -718,6 +720,101 @@ describe("experimental opt-in", () => {
     const disable = await run({ subcommand: "disable", target: "1", config: memoryConfig() });
     expect(enable.code).toBe(2);
     expect(disable.code).toBe(2);
+  });
+
+  test.each([
+    { stdout: true, stderr: false },
+    { stdout: false, stderr: true },
+  ])(
+    "a TTY stdin with redirected output refuses even when it could read yes (%j)",
+    async ({ stdout, stderr }) => {
+      const config = memoryConfig();
+      const terminalOut = Object.assign(new PassThrough(), { isTTY: stderr });
+      const input = Object.assign(new PassThrough(), { isTTY: true });
+      input.end("yes\n");
+      const { code, output, warnings } = await run({
+        subcommand: "enable",
+        config,
+        consentTerminal: { stdin: input, stdout: { isTTY: stdout }, stderr: terminalOut },
+      });
+      expect(code).toBe(1);
+      expect(output).toContain("--accept-risk");
+      expect(warnings).toEqual([]);
+      expect(config.state.experimentalStremioAddons).toBe(false);
+      expect(config.state.stremioAddonsRiskAcknowledgedAt).toBe("");
+      expect(config.calls).toEqual({ saved: 0, flushed: 0 });
+    },
+  );
+
+  test.each(["", "\n", "yes"])(
+    "the terminal prompt declines EOF or empty input (%j)",
+    async (answer) => {
+      const config = memoryConfig();
+      const input = Object.assign(new PassThrough(), { isTTY: true });
+      input.end(answer);
+      const output = Object.assign(new PassThrough(), { isTTY: true });
+      const result = await run({
+        subcommand: "enable",
+        config,
+        consentTerminal: { stdin: input, stdout: output, stderr: output },
+      });
+      expect(result.code).toBe(1);
+      expect(result.output).toContain("stayed off");
+      expect(output.read()?.toString()).toContain("Enable Stremio addons?");
+      expect(config.state.experimentalStremioAddons).toBe(false);
+      expect(config.state.stremioAddonsRiskAcknowledgedAt).toBe("");
+      expect(config.calls).toEqual({ saved: 0, flushed: 0 });
+    },
+  );
+
+  test("the terminal prompt declines when the input stream closes without EOF", async () => {
+    const config = memoryConfig();
+    const input = Object.assign(new PassThrough(), { isTTY: true });
+    const output = Object.assign(new PassThrough(), { isTTY: true });
+    output.once("data", () => input.destroy());
+    const result = await run({
+      subcommand: "enable",
+      config,
+      consentTerminal: { stdin: input, stdout: output, stderr: output },
+    });
+    expect(result.code).toBe(1);
+    expect(config.state.stremioAddonsRiskAcknowledgedAt).toBe("");
+    expect(config.calls).toEqual({ saved: 0, flushed: 0 });
+  });
+
+  test("a completed affirmative answer on the terminal saves consent", async () => {
+    const config = memoryConfig();
+    const input = Object.assign(new PassThrough(), { isTTY: true });
+    input.end("yes\r\n");
+    const output = Object.assign(new PassThrough(), { isTTY: true });
+    const result = await run({
+      subcommand: "enable",
+      config,
+      consentTerminal: { stdin: input, stdout: output, stderr: output },
+    });
+    expect(result.code).toBe(0);
+    expect(config.state.experimentalStremioAddons).toBe(true);
+    expect(config.state.stremioAddonsRiskAcknowledgedAt).not.toBe("");
+    expect(config.calls).toEqual({ saved: 1, flushed: 1 });
+  });
+
+  test("enable reports failure if a save did not reach the active config", async () => {
+    const config = memoryConfig();
+    config.port.readStremioAddonsConsent = () => ({
+      experimentalStremioAddons: false,
+      stremioAddonsRiskAcknowledgedAt: "",
+    });
+    const { code, output } = await run({
+      subcommand: "enable",
+      acceptRisk: true,
+      json: true,
+      config,
+    });
+    expect(code).toBe(1);
+    expect(JSON.parse(output)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("active config"),
+    });
   });
 
   test("non-interactive enable without --accept-risk writes nothing", async () => {

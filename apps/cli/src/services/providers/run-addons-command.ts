@@ -1,3 +1,5 @@
+import type { Readable } from "node:stream";
+
 import { ADDONS_SUBCOMMANDS } from "@/cli-args";
 import {
   addStremioAddon,
@@ -29,9 +31,16 @@ import { ProviderHttpError } from "@kunai/types";
 
 /** The part of the config service this command reads and writes. */
 export interface AddonsConfigPort extends StremioAddonReferenceSlice, StremioAddonsConsent {
+  readStremioAddonsConsent(): StremioAddonsConsent;
   update(partial: Partial<StremioAddonReferenceSlice & StremioAddonsConsent>): Promise<void>;
   save(): Promise<void>;
   flushPending(): Promise<void>;
+}
+
+interface ConsentTerminal {
+  readonly stdin: Readable & { readonly isTTY?: boolean };
+  readonly stdout: { readonly isTTY?: boolean };
+  readonly stderr: NodeJS.WritableStream & { readonly isTTY?: boolean };
 }
 
 export interface RunAddonsCommandOptions {
@@ -48,11 +57,10 @@ export interface RunAddonsCommandOptions {
    * explicit opt-in — a non-interactive enable that cannot ask must carry it.
    */
   readonly acceptRisk?: boolean;
-  /**
-   * Ask the user to confirm enabling addons. Injected by tests; by default a
-   * prompt is offered only when stdin and stderr are both terminals.
-   */
+  /** Test override for an interactive confirmation. */
   readonly confirmEnable?: () => Promise<boolean>;
+  /** Defaults to the process terminal streams. */
+  readonly consentTerminal?: ConsentTerminal;
   /** Where the risk warning goes. Defaults to stderr so `--json` stdout stays one object. */
   readonly writeWarning?: (text: string) => void;
   readonly json?: boolean;
@@ -204,26 +212,29 @@ function errorMessage(cause: unknown): string {
   return cause instanceof ProviderHttpError ? cause.message : "the addon could not be reached";
 }
 
-/**
- * Interactive opt-in: the risk text goes to stderr, then one question on
- * stdin. Default is no — only an explicit `y`/`yes` turns addons on, and a
- * closed or aborted prompt fails closed too.
- */
-async function promptAcceptAddonsRisk(): Promise<boolean> {
-  const { createInterface } = await import("node:readline/promises");
-  const rl = createInterface({ input: process.stdin, output: process.stderr });
-  // An ending input (EOF, closed pipe) aborts the pending question — the
-  // prompt fails closed instead of hanging on an answer that cannot come.
-  const controller = new AbortController();
-  rl.once("close", () => controller.abort());
-  try {
-    const answer = await rl.question("Enable Stremio addons? [y/N] ", {
-      signal: controller.signal,
+async function promptAcceptAddonsRisk(
+  input: Readable,
+  output: NodeJS.WritableStream,
+): Promise<boolean> {
+  const { createInterface } = await import("node:readline");
+  if (input.readableEnded || input.destroyed) return false;
+  // One cooked line is enough. Do not switch stdin to raw mode on Windows.
+  const rl = createInterface({ input, output, terminal: false });
+  const result = new Promise<boolean>((resolve) => {
+    const decline = () => resolve(false);
+    input.once("close", decline);
+    rl.once("close", () => {
+      input.off("close", decline);
+      decline();
     });
-    const normalized = answer.trim().toLowerCase();
-    return normalized === "y" || normalized === "yes";
-  } catch {
-    return false;
+    rl.once("error", decline);
+    rl.question("Enable Stremio addons? [y/N] ", (answer) => {
+      const normalized = answer.trim().toLowerCase();
+      resolve(!input.readableEnded && (normalized === "y" || normalized === "yes"));
+    });
+  });
+  try {
+    return await result;
   } finally {
     rl.close();
   }
@@ -271,12 +282,13 @@ export async function runAddonsCommand(options: RunAddonsCommandOptions): Promis
   const installed = readInstalledStremioAddons(config.stremioAddons);
   const enabled = stremioAddonsEnabled(config);
   const writeWarning = options.writeWarning ?? ((text: string) => process.stderr.write(text));
-  // The confirmation exists only where a person can answer it: an injected
-  // callback, else a real terminal. Anything else is non-interactive and must
-  // come with --accept-risk (enable) or fail closed (add).
+  // Check output first so redirected commands never open stdin for a prompt.
+  const terminal = options.consentTerminal ?? process;
   const confirmEnable =
     options.confirmEnable ??
-    (process.stdin.isTTY && process.stderr.isTTY ? promptAcceptAddonsRisk : undefined);
+    (terminal.stdout.isTTY && terminal.stderr.isTTY && terminal.stdin.isTTY
+      ? () => promptAcceptAddonsRisk(terminal.stdin, terminal.stderr)
+      : undefined);
   // The risk text is shown exactly once ever — while no acknowledgement is on
   // file — whether the enable comes from --accept-risk or the prompt.
   const showRiskWarningOnce = () => {
@@ -310,6 +322,9 @@ export async function runAddonsCommand(options: RunAddonsCommandOptions): Promis
     await config.update(enableStremioAddons(config, now()));
     await config.save();
     await config.flushPending();
+    if (!stremioAddonsEnabled(config.readStremioAddonsConsent())) {
+      return fail(1, "could not save addon consent to the active config.");
+    }
     emit(
       { ok: true, error: null, experimentalStremioAddons: true, changed: true },
       "Stremio addons enabled. Restart any running Kunai session that started with addons off; already loaded addons can be used at the next resolve.",
@@ -421,6 +436,9 @@ export async function runAddonsCommand(options: RunAddonsCommandOptions): Promis
     });
     await config.save();
     await config.flushPending();
+    if (grantConsent && !stremioAddonsEnabled(config.readStremioAddonsConsent())) {
+      return fail(1, "could not save addon consent to the active config.");
+    }
 
     const kinds = [usability.movie ? "movies" : null, usability.series ? "series" : null]
       .filter(Boolean)

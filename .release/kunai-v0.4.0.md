@@ -47,7 +47,8 @@ subtitle controls, and safer persistence, downloads and native installation.
   offline playback, including titles with more than 100 downloaded assets.
 - Stremio addons are experimental and off by default. Review and accept the
   playback risk in **Settings > Sources > Experimental: Stremio addons** or
-  with `kunai addons enable`. Then add your own movie and series sources with
+  with `kunai addons enable`. In scripts or with redirected streams, opt in
+  explicitly with `kunai addons enable --accept-risk`. Add movie and series sources with
   `kunai addons add <manifest-url>` (or `--stdin` to keep it out of argv).
   `kunai addons disable` stops addon use at the next resolve and keeps the
   installed list. Only direct video files are supported; downloads and
