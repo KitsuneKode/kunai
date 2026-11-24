@@ -74,12 +74,19 @@ function isComment(trimmed: string): boolean {
   return trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*");
 }
 
+/** The next few lines, for a call whose arguments span lines. */
+function following(lines: readonly string[], index: number): string {
+  return lines.slice(index + 1, index + 12).join("\n");
+}
+
 /** True when the line makes a wall-clock wait that is not a zero-delay turn boundary. */
-function lineWaits(line: string): boolean {
+function lineWaits(line: string, continuation = ""): boolean {
+  // The call may close on a later line; read its arguments across them.
+  const text = continuation ? `${line}\n${continuation}` : line;
   for (const match of line.matchAll(WAIT_CALL)) {
     const callee = match[0].replace(/\s*\($/, "");
     const openParen = (match.index ?? 0) + match[0].length - 1;
-    if (!isZeroDelay(line, openParen, callee)) return true;
+    if (!isZeroDelay(text, openParen, callee)) return true;
   }
   return false;
 }
@@ -98,7 +105,7 @@ function sleepHelperNames(lines: readonly string[]): Map<string, number> {
     }
   }
   lines.forEach((line, index) => {
-    if (FAKE_TIMER_DEFINITION.test(line) || !lineWaits(line)) return;
+    if (FAKE_TIMER_DEFINITION.test(line) || !lineWaits(line, following(lines, index))) return;
     for (let cursor = index; cursor >= Math.max(0, index - 3); cursor -= 1) {
       const definition = HELPER_DEFINITION.exec(lines[cursor] ?? "");
       const name = definition?.[1] ?? definition?.[2];
@@ -119,7 +126,7 @@ export function offendingWaits(source: string): string[] {
     const line = lines[index] ?? "";
     const trimmed = line.trim();
     if (isComment(trimmed) || /^import\b/.test(trimmed)) continue;
-    let waits = !FAKE_TIMER_DEFINITION.test(line) && lineWaits(line);
+    let waits = !FAKE_TIMER_DEFINITION.test(line) && lineWaits(line, following(lines, index));
     for (const [name, definedAt] of helpers) {
       if (definedAt === index) continue;
       const call = new RegExp(`(?<![.\\w])${name}\\s*\\(`);
@@ -177,6 +184,8 @@ test("turn boundaries and fake-timer declarations are not sleeps", () => {
   expect(caught("setTimeout(resolve, 0);")).toBe(0);
   expect(caught("setTimeout(() => done(), 0);")).toBe(0);
   expect(caught("setTimeout(resolve);")).toBe(0);
+  expect(caught("setTimeout(\n  () => {\n    done();\n  },\n  0,\n);")).toBe(0);
+  expect(caught("setTimeout(\n  () => done(),\n  1_000,\n);")).toBe(1);
   expect(caught("  setTimeout(callback: () => void, delayMs: number): number;")).toBe(0);
   expect(caught("      setTimeout(callback, delayMs) {")).toBe(0);
   expect(caught("// sleep-allow: real child process\nawait Bun.sleep(50);")).toBe(0);
