@@ -28,6 +28,8 @@ export function InstallDock({
 
   useEffect(() => {
     const onCopied = (event: Event) => {
+      // SAFETY: "kunai:copied" is only dispatched by CopyButton, always as a
+      // CustomEvent whose detail is { label }; the optional chain below covers absence.
       const detail = (event as CustomEvent<{ label?: string }>).detail;
       if (!detail?.label?.startsWith(labelPrefix)) return;
       setFlashed(true);

@@ -1,4 +1,5 @@
 import type { HomeProviderMetadata } from "@/components/home/types";
+import { withCssVars } from "@/lib/css-vars";
 import type { homeHighlights } from "@/lib/home-content";
 import {
   IconCalendarEvent,
@@ -45,7 +46,7 @@ export function HomeBento({ highlights, providers }: HomeBentoProps) {
           {MODES.map((mode, index) => (
             <span
               key={mode.label}
-              style={{ "--lane": mode.laneVar } as CSSProperties}
+              style={withCssVars({ "--lane": mode.laneVar })}
               className={`kunai-mode-chip${index === 0 ? " is-primary" : ""}`}
             >
               <span className="kunai-lane-dot" />

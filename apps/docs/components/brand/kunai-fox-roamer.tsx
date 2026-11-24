@@ -59,6 +59,9 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
  * that the resting still is up before anyone has looked for it.
  */
 const SETTLE_MS = 160;
+/** How long, per phase, before an unprompted line is due: [min, max] ms. */
+type ChatterWindows = Partial<Record<RoamerPhase, readonly [number, number]>>;
+
 /**
  * How long she goes between unprompted lines, by state.
  *
@@ -66,7 +69,7 @@ const SETTLE_MS = 160;
  * is not asleep — and walking the shortest, because that is when you are most
  * likely to be looking at her.
  */
-const CHATTER_WINDOW_MS: Partial<Record<RoamerPhase, readonly [number, number]>> = {
+const CHATTER_WINDOW_MS: ChatterWindows = {
   walking: [16000, 34000],
   // Arriving and looking at you: she has just moved, so she is not due a line yet.
   sitting: [24000, 52000],

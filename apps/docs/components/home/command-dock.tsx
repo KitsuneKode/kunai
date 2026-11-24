@@ -4,6 +4,7 @@ import { KunaiFox } from "@/components/brand/kunai-fox";
 import { SPRING_SETTLE, SPRING_SNAP, useHomeStage } from "@/components/home/home-stage-context";
 import { InstallDock } from "@/components/home/install-dock";
 import type { HomeCommandMetadata, HomeProviderMetadata } from "@/components/home/types";
+import { withCssVars } from "@/lib/css-vars";
 import { CANONICAL_INSTALL, NATIVE_INSTALL_PS1 } from "@/lib/install-commands";
 import { filterCommands, filterProviders, type MatchRange } from "@/lib/provider-sieve";
 import { Dialog } from "@base-ui/react/dialog";
@@ -581,7 +582,7 @@ export function CommandDock({ commands, providers, initialOpen = false }: Comman
                                         onMouseEnter={() => setSelectedIndex(idx)}
                                         onClick={() => closeAndJumpAdapter(entry.lane)}
                                         className={`kunai-drawer-item${active ? " is-selected" : ""}`}
-                                        style={{ "--lane": laneColor } as React.CSSProperties}
+                                        style={withCssVars({ "--lane": laneColor })}
                                       >
                                         <span className="flex min-w-0 flex-1 items-center gap-2.5">
                                           <span className="kunai-lane-dot" aria-hidden="true" />

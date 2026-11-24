@@ -16,17 +16,17 @@ import { useRef, useState } from "react";
 
 const OS_ORDER = ["linux", "macos", "windows"] satisfies readonly NativeInstallOs[];
 
-const OS_LABEL: Record<NativeInstallOs, string> = {
+const OS_LABEL = {
   linux: "Linux",
   macos: "macOS",
   windows: "Windows",
-};
+} satisfies Record<NativeInstallOs, string>;
 
-const PREREQ_COMMAND: Record<NativeInstallOs, string> = {
+const PREREQ_COMMAND = {
   linux: "sudo apt install mpv yt-dlp curl",
   macos: "brew install mpv yt-dlp curl",
   windows: "winget install mpv",
-};
+} satisfies Record<NativeInstallOs, string>;
 
 export default function HomePageInteractive() {
   const [activeOs, setActiveOs] = useState<NativeInstallOs>("linux");

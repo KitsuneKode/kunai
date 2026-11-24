@@ -16,12 +16,12 @@ export const SPRING_SNAP = { type: "spring", stiffness: 520, damping: 42, mass: 
 export const SPRING_SETTLE = { type: "spring", stiffness: 420, damping: 36, mass: 0.9 } as const;
 export const SPRING_SOFT = { type: "spring", stiffness: 260, damping: 30, mass: 1 } as const;
 
-export const LANE_DEMO_COMMAND: Record<HeroLane, string> = {
+export const LANE_DEMO_COMMAND = {
   anime: "/anime Frieren",
   series: "/series Severance",
   movie: "/series Dune",
   youtube: "/youtube lofi radio",
-};
+} satisfies Record<HeroLane, string>;
 
 type RunOptions = {
   readonly scroll?: boolean;

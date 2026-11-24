@@ -7,6 +7,7 @@ import {
   useHomeStage,
 } from "@/components/home/home-stage-context";
 import type { HomeProviderMetadata } from "@/components/home/types";
+import { withCssVars } from "@/lib/css-vars";
 import {
   countProvidersByLane,
   filterProviders,
@@ -30,10 +31,7 @@ type ProviderDirectoryProps = {
   readonly providers: readonly HomeProviderMetadata[];
 };
 
-const LANE_META: Record<
-  DirectoryLane,
-  { readonly label: string; readonly colorVar: string; readonly command: string }
-> = {
+const LANE_META = {
   anime: {
     label: "Anime",
     colorVar: "var(--home-lane-anime)",
@@ -49,7 +47,10 @@ const LANE_META: Record<
     colorVar: "var(--home-lane-yt)",
     command: "/youtube lofi radio",
   },
-};
+} satisfies Record<
+  DirectoryLane,
+  { readonly label: string; readonly colorVar: string; readonly command: string }
+>;
 
 const CAPABILITIES = [
   { id: "search", label: "Search" },
@@ -217,9 +218,7 @@ export function ProviderDirectory({ providers }: ProviderDirectoryProps) {
                   exit={reduced ? { opacity: 0 } : { opacity: 0, y: -6 }}
                   transition={{ duration: 0.16, ease: [0.23, 1, 0.32, 1] }}
                   className="kunai-scanner__readout"
-                  style={
-                    { "--lane": LANE_META[scannerReadoutLane].colorVar } as React.CSSProperties
-                  }
+                  style={withCssVars({ "--lane": LANE_META[scannerReadoutLane].colorVar })}
                 >
                   <span className="kunai-lane-dot" aria-hidden="true" />
                   <span className="font-medium text-[var(--home-text-1)]">
@@ -292,12 +291,10 @@ export function ProviderDirectory({ providers }: ProviderDirectoryProps) {
                   onBlur={() => setHoveredScannerLane(null)}
                   onClick={() => setDirectoryLane(directoryLane === lane ? "all" : lane)}
                   className={`kunai-scanner__seg${isDimmed ? " is-dimmed" : ""}`}
-                  style={
-                    {
-                      "--lane": LANE_META[lane].colorVar,
-                      flexGrow: isFocused ? total * 1.35 : total,
-                    } as React.CSSProperties
-                  }
+                  style={withCssVars(
+                    { "--lane": LANE_META[lane].colorVar },
+                    { flexGrow: isFocused ? total * 1.35 : total },
+                  )}
                 />
               );
             })}
@@ -317,11 +314,7 @@ export function ProviderDirectory({ providers }: ProviderDirectoryProps) {
                   aria-pressed={active}
                   onClick={() => setDirectoryLane(option.id)}
                   className={`kunai-dir-pill${active ? " is-active" : ""}`}
-                  style={
-                    option.laneVar
-                      ? ({ "--lane": option.laneVar } as React.CSSProperties)
-                      : undefined
-                  }
+                  style={option.laneVar ? withCssVars({ "--lane": option.laneVar }) : undefined}
                 >
                   {active ? (
                     <m.span
@@ -419,7 +412,7 @@ export function ProviderDirectory({ providers }: ProviderDirectoryProps) {
                       className={`kunai-row-item${isActive ? " is-active" : ""}${
                         isDimmed ? " is-dimmed" : ""
                       }`}
-                      style={{ "--lane": laneMeta.colorVar } as React.CSSProperties}
+                      style={withCssVars({ "--lane": laneMeta.colorVar })}
                     >
                       <div className="kunai-dir-row">
                         <Link
@@ -545,11 +538,7 @@ export function ProviderDirectory({ providers }: ProviderDirectoryProps) {
                   onMouseEnter={handlePreviewEnter}
                   onMouseLeave={handleListLeave}
                   className="kunai-preview-card kunai-spotlight"
-                  style={
-                    {
-                      "--lane": LANE_META[activePreview.lane].colorVar,
-                    } as React.CSSProperties
-                  }
+                  style={withCssVars({ "--lane": LANE_META[activePreview.lane].colorVar })}
                 >
                   <AnimatePresence mode="wait" initial={false}>
                     <m.div

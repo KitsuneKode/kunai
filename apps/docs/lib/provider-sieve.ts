@@ -35,10 +35,18 @@ export function providerLane(provider: Pick<HomeProviderMetadata, "mediaKinds">)
   return "anime";
 }
 
+/** Providers per directory lane: how many exist and how many are recommended. */
+export interface LaneCount {
+  total: number;
+  recommended: number;
+}
+
+export type LaneProviderCounts = Record<DirectoryLane, LaneCount>;
+
 export function countProvidersByLane(
   providers: readonly HomeProviderMetadata[],
-): Record<DirectoryLane, { total: number; recommended: number }> {
-  const counts: Record<DirectoryLane, { total: number; recommended: number }> = {
+): LaneProviderCounts {
+  const counts: LaneProviderCounts = {
     anime: { total: 0, recommended: 0 },
     series: { total: 0, recommended: 0 },
     youtube: { total: 0, recommended: 0 },

@@ -1,6 +1,7 @@
 "use client";
 
 import { SPRING_SETTLE, useHomeStage } from "@/components/home/home-stage-context";
+import { withCssVars } from "@/lib/css-vars";
 import type { HeroLane } from "@/lib/provider-sieve";
 import { domAnimation, LazyMotion, m, useReducedMotion } from "motion/react";
 import { useEffect, useId } from "react";
@@ -85,12 +86,10 @@ export function HeroSceneRibbon() {
                 key={card.id}
                 onClick={() => selectLane(card.id)}
                 className={`kunai-scene-card${isActive ? " is-active" : ""}`}
-                style={
-                  {
-                    "--lane": card.laneVar,
-                    zIndex: isActive ? 10 : 4 - distance,
-                  } as React.CSSProperties
-                }
+                style={withCssVars(
+                  { "--lane": card.laneVar },
+                  { zIndex: isActive ? 10 : 4 - distance },
+                )}
                 initial={false}
                 animate={
                   reduced
@@ -151,7 +150,7 @@ export function HeroSceneRibbon() {
               <label
                 key={card.id}
                 className={`kunai-scene-pill__btn${isSelected ? " is-selected" : ""}`}
-                style={{ "--lane": card.laneVar } as React.CSSProperties}
+                style={withCssVars({ "--lane": card.laneVar })}
               >
                 <input
                   type="radio"
