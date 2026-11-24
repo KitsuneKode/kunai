@@ -3,6 +3,7 @@ import React from "react";
 
 import { windowedSegmentGeometry } from "../format/segmented";
 import { MouseTarget } from "../mouse/MouseRegions";
+import { plainModeEnabled, plainTabLabel } from "../plain-mode";
 import { truncateLine } from "../shell-text";
 import { palette } from "../shell-theme";
 
@@ -25,6 +26,18 @@ export const ClaudeTabRow = React.memo(function ClaudeTabRow({
   readonly dense?: boolean;
   readonly pointer?: { readonly id: string; readonly select: (index: number) => void };
 }) {
+  const plain = plainModeEnabled();
+  if (plain) {
+    const line = `Tabs: ${labels.map((label, index) => plainTabLabel(label, index === activeIndex, true)).join(" | ")}${hint ? ` (${hint})` : ""}`;
+    return (
+      <Box marginTop={dense ? 0 : 1} marginBottom={dense ? 0 : 1}>
+        <Text color={palette.text}>
+          {maxWidth === undefined ? line : truncateLine(line, Math.max(12, maxWidth))}
+        </Text>
+      </Box>
+    );
+  }
+
   const tabBudget =
     maxWidth === undefined ? Number.POSITIVE_INFINITY : maxWidth - (hint ? HINT_RESERVE : 0);
   const { segments, hiddenBefore, hiddenAfter } = windowedSegmentGeometry(

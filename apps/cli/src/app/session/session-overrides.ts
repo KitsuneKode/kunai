@@ -11,6 +11,7 @@ import type { HdrMode, MediaLanguageProfile } from "@kunai/config";
 export interface SessionOverrideArgs {
   readonly zen: boolean;
   readonly minimal: boolean;
+  readonly plain?: boolean;
   readonly offline?: boolean;
   readonly quality?: string;
   readonly audio?: string;
@@ -21,6 +22,7 @@ export interface SessionOverrideArgs {
 export interface SessionLayoutConfig {
   readonly zenMode: boolean;
   readonly minimalMode: boolean;
+  readonly plainMode?: boolean;
   readonly offlineMode?: boolean;
   readonly hdrMode?: HdrMode;
   readonly animeLanguageProfile: MediaLanguageProfile;
@@ -31,6 +33,7 @@ export interface SessionLayoutConfig {
 export type SessionConfigOverrides = Partial<{
   zenMode: boolean;
   minimalMode: boolean;
+  plainMode: boolean;
   offlineMode: boolean;
   hdrMode: HdrMode;
   animeLanguageProfile: MediaLanguageProfile;
@@ -62,6 +65,7 @@ export function resolveSessionConfigOverrides(
   const overrides: SessionConfigOverrides = {};
   if (args.zen && !config.zenMode) overrides.zenMode = true;
   if (args.minimal && !config.minimalMode) overrides.minimalMode = true;
+  if (args.plain && !config.plainMode) overrides.plainMode = true;
   if (args.offline && !config.offlineMode) overrides.offlineMode = true;
   if (args.hdr !== undefined && args.hdr !== config.hdrMode) overrides.hdrMode = args.hdr;
 

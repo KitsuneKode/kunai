@@ -16,6 +16,7 @@ import React from "react";
 
 import type { CompanionMoment } from "../companion-moment";
 import { CompanionHost } from "../CompanionHost";
+import { plainBorderStyle, plainModeEnabled, selectionPrefix } from "../plain-mode";
 import { palette } from "../shell-theme";
 import { SetupTarget } from "./SetupPointer";
 
@@ -57,16 +58,17 @@ function FrameBar({
   readonly right: React.ReactNode;
   readonly top: boolean;
 }) {
+  const plain = plainModeEnabled();
   return (
     <Box
       width={width}
-      borderStyle="single"
-      borderTop={!top}
-      borderBottom={top}
+      borderStyle={plainBorderStyle("single", plain)}
+      borderTop={!top && !plain}
+      borderBottom={top && !plain}
       borderLeft={false}
       borderRight={false}
-      borderColor={palette.line}
-      paddingX={2}
+      borderColor={plain ? undefined : palette.line}
+      paddingX={plain ? 0 : 2}
       justifyContent="space-between"
     >
       {/* The left slot owns the squeeze: when its keys exceed the line they
@@ -209,17 +211,24 @@ export function ChoiceRow({
   readonly selected: boolean;
   readonly badge?: string;
 }) {
+  const plain = plainModeEnabled();
   return (
-    <Box backgroundColor={selected ? palette.accentFill : undefined}>
-      <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
+    <Box backgroundColor={selected && !plain ? palette.accentFill : undefined}>
+      <Text color={selected ? palette.accent : palette.dim}>
+        {selectionPrefix(selected, plain)}
+      </Text>
       <Box flexDirection="column">
         <Text>
           <Text color={palette.text} bold={selected}>
             {label}
           </Text>
-          {badge ? <Text color={palette.accent}>{`   ${badge}`}</Text> : null}
+          {badge ? (
+            <Text color={palette.accent}>
+              {plain ? ` (${badge.replace(/^←\s*/u, "")})` : `   ${badge}`}
+            </Text>
+          ) : null}
         </Text>
-        <Text color={selected ? palette.muted : palette.dim} dimColor={!selected}>
+        <Text color={selected ? palette.muted : palette.dim} dimColor={!selected && !plain}>
           {"  "}
           {detail}
         </Text>
@@ -249,11 +258,24 @@ export function ToggleRow({
    */
   readonly kind?: "toggle" | "cycle";
 }) {
-  const glyph = kind === "cycle" ? "↻ " : on ? "◉ " : "○ ";
+  const plain = plainModeEnabled();
+  const glyph = plain
+    ? kind === "cycle"
+      ? "[cycle] "
+      : on
+        ? "[on] "
+        : "[off] "
+    : kind === "cycle"
+      ? "↻ "
+      : on
+        ? "◉ "
+        : "○ ";
   const glyphColor = kind === "cycle" ? palette.muted : on ? palette.ok : palette.dim;
   return (
-    <Box backgroundColor={selected ? palette.accentFill : undefined}>
-      <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
+    <Box backgroundColor={selected && !plain ? palette.accentFill : undefined}>
+      <Text color={selected ? palette.accent : palette.dim}>
+        {selectionPrefix(selected, plain)}
+      </Text>
       <Text color={glyphColor}>{glyph}</Text>
       <Box flexDirection="column" flexShrink={1}>
         <Text color={palette.text} bold={selected}>

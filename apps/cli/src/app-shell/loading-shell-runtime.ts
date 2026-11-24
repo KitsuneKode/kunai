@@ -1,6 +1,7 @@
 import { classifyProviderResolveUserState } from "@/app/playback/provider-resolve-user-state";
 import type { PlaybackProblem } from "@/domain/playback/playback-problem";
 
+import { reducedMotionEnabled } from "./motion-policy";
 import { sanitizeTerminalText } from "./shell-text";
 import type { LoadingShellStage, LoadingShellState, ShellStatusTone } from "./types";
 
@@ -59,7 +60,7 @@ export function getLoadingShellTimerPolicy(input: {
   offscreen?: boolean;
 }): LoadingShellTimerPolicy {
   const supervisingPlayback = isPlaybackSupervisionOperation(input.operation);
-  const animate = !supervisingPlayback;
+  const animate = !supervisingPlayback && !reducedMotionEnabled();
   const offscreen = input.offscreen === true;
   return {
     animate,

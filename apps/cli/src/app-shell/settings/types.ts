@@ -76,6 +76,7 @@ export type SettingRowDef = SettingRowMetadata &
         readonly detail?: string;
         readonly read: (config: KitsuneConfig) => boolean;
         readonly write: (config: KitsuneConfig, value: boolean) => KitsuneConfig;
+        readonly envOverride?: string;
         readonly gate?: SettingGate;
       }
     | {

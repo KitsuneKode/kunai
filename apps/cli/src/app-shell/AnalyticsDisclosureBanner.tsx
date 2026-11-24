@@ -11,6 +11,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { plainBorderStyle, plainModeEnabled } from "./plain-mode";
 import { STATIC_PETAL } from "./primitives/SakuraPetal";
 import { palette } from "./shell-theme";
 
@@ -18,21 +19,30 @@ import { palette } from "./shell-theme";
 export const ANALYTICS_NOTICE_VISIBLE_MS = 15_000;
 
 export function AnalyticsDisclosureBanner({ width }: { readonly width: number }) {
+  const plain = plainModeEnabled();
   return (
     <Box
       flexDirection="column"
-      borderStyle="round"
-      borderColor={palette.accent}
-      paddingX={1}
+      borderStyle={plainBorderStyle("round", plain)}
+      borderColor={plain ? undefined : palette.accent}
+      paddingX={plain ? 0 : 1}
       width={width}
     >
       <Box>
-        <Text color={palette.accent} bold>
-          {STATIC_PETAL}
-        </Text>
-        <Text color={palette.text} bold>
-          {"  Anonymous usage analytics is not enabled"}
-        </Text>
+        {plain ? (
+          <Text color={palette.text} bold>
+            Notice: Anonymous usage analytics is not enabled
+          </Text>
+        ) : (
+          <>
+            <Text color={palette.accent} bold>
+              {STATIC_PETAL}
+            </Text>
+            <Text color={palette.text} bold>
+              {"  Anonymous usage analytics is not enabled"}
+            </Text>
+          </>
+        )}
       </Box>
       <Text color={palette.muted}>
         Once a day Kunai sends installId, version, os, arch, ts — nothing else.

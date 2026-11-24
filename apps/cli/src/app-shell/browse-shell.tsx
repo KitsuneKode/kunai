@@ -130,6 +130,7 @@ import { MouseTarget, useMouseEnabled, useMouseRegion } from "./mouse/MouseRegio
 import type { BrowseOverlay } from "./overlay-panel";
 import { OverlayPanel } from "./overlay-panel";
 import { takePaletteTitleLaunch } from "./palette-title-launch";
+import { plainModeEnabled, selectionPrefix } from "./plain-mode";
 import { prefetchPosterSources } from "./poster-source-cache";
 import { suppressPosterWhileNavigating } from "./poster-types";
 import { computeMediaListRowLayout } from "./primitives/list-row-layout";
@@ -1349,7 +1350,8 @@ export function BrowseShell<T>({
     !commandMode &&
     Boolean(selectedOption) &&
     (listFocused || idleFocused);
-  const companionBesideList = showCompanion && wideBrowse && !mediumBrowse;
+  const plain = plainModeEnabled();
+  const companionBesideList = !plain && showCompanion && wideBrowse && !mediumBrowse;
   const {
     poster,
     posterState: posterPreviewState,
@@ -2330,8 +2332,13 @@ export function BrowseShell<T>({
               flexDirection="column"
               width={companionBesideList ? listWidth : undefined}
             >
+              {plain ? (
+                <Text color={palette.muted}>
+                  {`Focus: ${listFocused ? `Results list (${boundedSelectedIndex + 1} of ${displayOptions.length})` : resultFilterFocused ? "Filter results" : idleFocused ? "Quick picks" : "Search input"}`}
+                </Text>
+              ) : null}
               {(isCalendarView ? calendarWindow.start : windowStart) > 0 ? (
-                <Text color={palette.dim}> ▲ ...</Text>
+                <Text color={palette.dim}>{plain ? "More items above" : " ▲ ..."}</Text>
               ) : null}
               {isCalendarView
                 ? visibleCalendarRows.map((row) => {
@@ -2381,7 +2388,13 @@ export function BrowseShell<T>({
                     // it shifted every title one glyph out of alignment with its
                     // unfavourited neighbours.
                     if (isFavorite?.(option.value)) {
-                      columns.push(listRowStatusColumn("♥", 2, palette.accent));
+                      columns.push(
+                        listRowStatusColumn(
+                          plain ? "[favorite]" : "♥",
+                          plain ? 10 : 2,
+                          palette.accent,
+                        ),
+                      );
                     }
                     return (
                       // Mouse: click a row to select it (same as arrowing to
@@ -2428,7 +2441,7 @@ export function BrowseShell<T>({
                   ? calendarWindow.end < calendarRenderRows.length
                   : windowEnd < displayOptions.length
               ) ? (
-                <Text color={palette.dim}> ▼ ...</Text>
+                <Text color={palette.dim}>{plain ? "More items below" : " ▼ ..."}</Text>
               ) : null}
             </Box>
 
@@ -2582,18 +2595,28 @@ export function BrowseShell<T>({
                 {idleReturnLoopModel.rows.map((row) => (
                   <Text
                     key={row.id}
-                    backgroundColor={row.focused ? palette.accentFill : undefined}
+                    backgroundColor={row.focused && !plain ? palette.accentFill : undefined}
                     color={row.focused ? palette.text : palette.muted}
                   >
-                    {row.focused ? <Text color={palette.accent}>{"▌ "}</Text> : "  "}
-                    <Text color={row.glyphColor}>{row.glyph}</Text>{" "}
+                    {plain ? (
+                      selectionPrefix(row.focused, true)
+                    ) : row.focused ? (
+                      <Text color={palette.accent}>{"▌ "}</Text>
+                    ) : (
+                      "  "
+                    )}
+                    {plain ? null : (
+                      <>
+                        <Text color={row.glyphColor}>{row.glyph}</Text>{" "}
+                      </>
+                    )}
                     <Text color={row.focused ? palette.text : palette.textDim} bold={row.focused}>
                       {row.title}
                     </Text>
                     {row.meta ? <Text color={palette.dim}>{`  ${row.meta}`}</Text> : null}
                     {row.hint ? (
                       <Text color={row.focused ? palette.accent : palette.dim}>
-                        {` · ${row.hint}`}
+                        {plain ? ` (${row.hint})` : ` · ${row.hint}`}
                       </Text>
                     ) : null}
                   </Text>

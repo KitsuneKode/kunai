@@ -4,11 +4,28 @@ import { buildDiagnosticsPanelLinesFromInsight } from "@/app-shell/diagnostics-p
 import { createInitialState } from "@/domain/session/SessionState";
 import { buildDiagnosticsInsight } from "@/services/diagnostics/diagnostics-insight";
 
+const QUIET_MEMORY = {
+  appRssBytes: 0,
+  appHeapUsedBytes: 0,
+  appHeapTotalBytes: 0,
+  playbackChildRssBytes: 0,
+  playbackChildSwapBytes: 0,
+  playbackChildCount: 0,
+  appSwapBytes: 0,
+} as const;
+
 function buildLines(
   input: Parameters<typeof buildDiagnosticsInsight>[0] & { developerMode?: boolean },
 ) {
   const { developerMode, ...insightInput } = input;
-  const insight = buildDiagnosticsInsight(insightInput);
+  // The insight samples live RSS and the process sample buffer when these are
+  // omitted. A loaded suite crosses the warning threshold and invents a
+  // "Needs attention" row this fixture does not own.
+  const insight = buildDiagnosticsInsight({
+    memorySnapshot: QUIET_MEMORY,
+    memorySamples: [],
+    ...insightInput,
+  });
   return buildDiagnosticsPanelLinesFromInsight({ insight, developerMode });
 }
 
