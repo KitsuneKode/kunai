@@ -2,7 +2,11 @@ import { createHash, createPrivateKey, sign } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { verifyChecksumSignature } from "../../apps/cli/src/services/update/checksum-signature";
+import {
+  RELEASE_MANIFEST_NAMES,
+  releaseManifestStatement,
+  verifyReleaseManifestSignature,
+} from "../../apps/cli/src/services/update/checksum-signature";
 import pin from "../../apps/cli/src/services/update/release-key.json";
 import { parseCanonicalVersion } from "../../apps/cli/src/services/update/version";
 import {
@@ -13,7 +17,6 @@ import {
 } from "./render-channels";
 import { renderInstaller } from "./render-installers";
 
-const manifests = ["SHA256SUMS", "SHA256SUMS.archives"] as const;
 export const SUPPLEMENT_NAMES = [
   "SHA256SUMS.sig",
   "SHA256SUMS.archives.sig",
@@ -36,15 +39,23 @@ export function releaseSupplements(input: {
   if (!publicKey) throw new Error("Missing pinned release public key");
   if (parseCanonicalVersion(version) !== version) throw new Error("Invalid release version");
   if (mode === "prepare") mkdirSync(directory, { recursive: true });
-  for (const name of manifests) {
-    const bytes = readFileSync(join(native, name));
+  // Each signature covers the version-bound statement (format in RELEASING.md),
+  // so a signed set from one release never verifies at another release's tag.
+  for (const name of RELEASE_MANIFEST_NAMES) {
+    const manifest = readFileSync(join(native, name));
     const path = join(directory, name + ".sig");
     if (mode === "prepare") {
       if (!input.privateKey) throw new Error("Missing protected checksum signing key");
-      const signature = sign(null, bytes, createPrivateKey(input.privateKey));
-      writeFileSync(path, signature);
+      const statement = Buffer.from(releaseManifestStatement(version, name, manifest));
+      writeFileSync(path, sign(null, statement, createPrivateKey(input.privateKey)));
     }
-    verifyChecksumSignature(bytes, readFileSync(path), publicKey);
+    verifyReleaseManifestSignature({
+      version,
+      name,
+      manifest,
+      signature: readFileSync(path),
+      spki: publicKey,
+    });
   }
   const channel = { version, tag: "v" + version };
   const sums = parseSumsFile(readFileSync(join(native, "SHA256SUMS.archives"), "utf8"));

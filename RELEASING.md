@@ -311,9 +311,41 @@ openssl pkey -in "$keydir/checksums.pem" -pubout -outform DER | openssl base64 -
 ```
 
 The build embeds the public key in native clients. The protected publish job
-signs the original bytes of both manifests and verifies each signature against
-the committed pin before npm publication. It rejects a missing or mismatched
-key. The branded installer build embeds the same pin once the first signed
+signs a version-bound statement for each manifest and verifies each signature
+against the committed pin before npm publication. It rejects a missing or
+mismatched key.
+
+### Signed statement format (`kunai-release-manifest v1`)
+
+`SHA256SUMS.sig` and `SHA256SUMS.archives.sig` are raw 64-byte Ed25519
+signatures. Neither covers the manifest bytes directly. Each covers this
+statement, ASCII, LF line endings, one trailing LF, nothing else:
+
+```text
+kunai-release-manifest v1
+version: <X.Y.Z>
+file: <SHA256SUMS | SHA256SUMS.archives>
+sha256: <64 lowercase hex digits: SHA-256 of the manifest bytes>
+```
+
+`version` is the exact canonical release version with no `v` prefix. Verifiers
+never parse a signed document. The updater, `install.sh` and `install.ps1` each
+rebuild the statement from the version they resolved or were asked for, the
+manifest name they requested, and the SHA-256 of the bytes they downloaded, then
+verify the signature over it. This happens before any archive is extracted or
+any version is activated. As a result:
+
+- An old release's signed manifests, served at a newer tag, are rejected. The
+  attacker would need the signing key to restate the old sums for the new
+  version.
+- A signature for one manifest does not verify the other.
+- No spelling variant verifies: CRLF, trailing spaces, a repeated line, a `v`
+  prefix, upper-case hex or a missing final newline all fail.
+
+The single implementation is `releaseManifestStatement` in
+`apps/cli/src/services/update/checksum-signature.ts`. The installers re-spell it
+in shell, so change all three together. A change to the format needs a new
+`v2` line and a client transition. The branded installer build embeds the same pin once the first signed
 release is recorded as published. Raw checkout scripts are unkeyed templates.
 Keep the key stable across releases. A new pin requires a transition for clients
 that already trust the old key.
@@ -327,6 +359,12 @@ verification the metadata PR updates `Formula/kunai.rb` and `bucket/kunai.json`.
 Merging it advances both in-repository channels, without a separate publishing
 token. Redeploy the docs site from that commit to serve the keyed bootstrap
 scripts at the branded URLs.
+
+The Scoop manifest carries no `checkver` or `autoupdate` block. Scoop's
+autoupdate would take hashes from the unsigned `SHA256SUMS.archives` of whatever
+tag GitHub reports, so it would skip the signature. A Scoop version reaches
+users only through that reviewed manifest commit, the same path as the Homebrew
+formula.
 
 The optional Package channels workflow can mirror signed releases to the
 external tap and bucket with `PACKAGE_CHANNELS_TOKEN`, or to a registered AUR

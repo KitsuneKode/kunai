@@ -7,7 +7,10 @@ import { ConfigServiceImpl } from "@/services/persistence/ConfigServiceImpl";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 import type { CredentialSpawn, CredentialVaultPort } from "@/services/persistence/credential-vault";
 import { CREDENTIAL_KEYS } from "@/services/persistence/credential-vault";
-import { createCredentialVault } from "@/services/persistence/credential-vault-backends";
+import {
+  createCredentialVault,
+  noticeFileFallbackOnce,
+} from "@/services/persistence/credential-vault-backends";
 import {
   migrateSyncTokensToVault,
   vaultSyncTokenFileIo,
@@ -337,6 +340,35 @@ describe("createCredentialVault backend selection", () => {
     });
     expect(vault.backend).toBe("secret-service");
     expect(spawned[0]).toEqual(["secret-tool", "lookup", "service", "kunai", "key", "__probe__"]);
+  });
+});
+
+describe("Windows file-fallback notice", () => {
+  let dir: string;
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "kunai-vault-notice-"));
+  });
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  test("prints once per profile, not on every fallback startup", () => {
+    const lines: string[] = [];
+    const write = (line: string) => lines.push(line);
+    const profile = join(dir, "profile-a");
+    noticeFileFallbackOnce({ configDir: profile, platform: "win32", write });
+    noticeFileFallbackOnce({ configDir: profile, platform: "win32", write });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("user-profile files");
+    // A different profile has not seen it yet.
+    noticeFileFallbackOnce({ configDir: join(dir, "profile-b"), platform: "win32", write });
+    expect(lines).toHaveLength(2);
+  });
+
+  test("stays silent off Windows, where the fallback is a debug line", () => {
+    const lines: string[] = [];
+    noticeFileFallbackOnce({ configDir: dir, platform: "linux", write: (l) => lines.push(l) });
+    expect(lines).toEqual([]);
   });
 });
 

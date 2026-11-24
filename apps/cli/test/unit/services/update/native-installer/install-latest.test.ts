@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createHash, generateKeyPairSync, sign } from "node:crypto";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import {
   chmod,
@@ -37,6 +37,12 @@ import {
 } from "@/services/update/platform-assets";
 
 import { createReleaseArchive } from "../../../../../scripts/build-release-archives";
+import {
+  releaseSigningKeys,
+  SIGNED_STATEMENT_SCENARIOS,
+  signStatement,
+  statementFor,
+} from "../../../../support/release-signing";
 import { waitUntil } from "../../../../support/wait-until";
 
 const made: string[] = [];
@@ -110,34 +116,65 @@ async function expectLauncherPointsTo(launcherPath: string, versionPath: string)
 }
 
 describe("installLatest", () => {
-  test.each(["valid", "wrong bytes", "missing", "unsigned archive"] as const)(
-    "pinned updater checks signatures before activation: %s",
+  test.each([
+    ...SIGNED_STATEMENT_SCENARIOS,
+    "tampered manifest",
+    "missing",
+    "unsigned archive",
+    "archive v1 signature at v2 URL",
+  ] as const)(
+    "pinned updater checks version-bound signatures before activation: %s",
     async (scenario) => {
       const { layout } = await makeLayout();
-      const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+      const { privateKey, spki } = releaseSigningKeys();
       const asset = hostAssetName();
+      const archiveName = hostTarget().archiveName;
       const sums = sumsFor(asset, sha256Hex("binary"));
-      const signature = sign(
-        null,
-        Buffer.from(scenario === "wrong bytes" ? sums + " " : sums),
+      const archiveSums = sumsFor(archiveName, sha256Hex("archive"));
+      const signature = signStatement(
         privateKey,
+        statementFor(scenario),
+        "1.2.3",
+        "SHA256SUMS",
+        scenario === "tampered manifest" ? sums + " " : sums,
       );
+      const archiveSignature = signStatement(
+        privateKey,
+        scenario === "archive v1 signature at v2 URL" ? "v1 signature at v2 URL" : "valid",
+        "1.2.3",
+        "SHA256SUMS.archives",
+        archiveSums,
+      );
+      const requested: string[] = [];
       const result = await installLatest({
         layout,
         version: "1.2.3",
-        releasePublicKey: publicKey.export({ format: "der", type: "spki" }).toString("base64"),
+        releasePublicKey: spki,
         fetchImpl: async (input) => {
-          const name = String(input).split("/").at(-1);
+          const name = String(input).split("/").at(-1) ?? "";
+          requested.push(name);
           if (name === "SHA256SUMS") return new Response(sums);
           if (name === "SHA256SUMS.sig" && scenario !== "missing") return new Response(signature);
-          if (name === "SHA256SUMS.archives" && scenario === "unsigned archive")
-            return new Response(sumsFor(hostTarget().archiveName, sha256Hex("archive")));
+          if (name === "SHA256SUMS.archives" && scenario.includes("archive"))
+            return new Response(archiveSums);
+          if (name === "SHA256SUMS.archives.sig" && scenario === "archive v1 signature at v2 URL")
+            return new Response(archiveSignature);
           if (name === asset) return new Response("binary");
           return new Response(null, { status: 404 });
         },
       });
-      expect(result.status).toBe(scenario === "valid" ? "installed" : "failed");
-      expect(existsSync(layout.launcherPath)).toBe(scenario === "valid");
+      const accepted = scenario === "valid";
+      if (accepted !== (result.status === "installed")) throw new Error(JSON.stringify(result));
+      expect(result.status).toBe(accepted ? "installed" : "failed");
+      expect(existsSync(layout.launcherPath)).toBe(accepted);
+      // A rejected release is never recorded, so the next check does not call it current.
+      expect((await readInstallManifest(layout.configDir))?.activeVersion).toBe(
+        accepted ? "1.2.3" : undefined,
+      );
+      if (!accepted) {
+        expect(requested).not.toContain(archiveName);
+        expect(requested).not.toContain(asset);
+      }
     },
   );
 

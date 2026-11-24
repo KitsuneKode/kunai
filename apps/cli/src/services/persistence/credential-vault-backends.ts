@@ -1,3 +1,4 @@
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { KunaiPaths } from "@kunai/storage";
@@ -305,4 +306,30 @@ export async function createCredentialVault(
   if (picked) return picked;
   deps.onFallback?.("file", `${wanted} backend unavailable on ${platform}`);
   return fileVault(deps.paths);
+}
+
+/** Marker in the profile's config dir: the Windows file-fallback notice was shown. */
+export const FILE_FALLBACK_NOTICE_MARKER = ".credential-file-fallback-noticed";
+
+/**
+ * Tell a Windows user once per profile that credentials went to profile files.
+ * The fallback recurs on every startup on such a machine, so the line used to
+ * print every time. The marker is created exclusively before printing; if it
+ * cannot be written the notice still prints, so a read-only profile is told.
+ */
+export function noticeFileFallbackOnce(input: {
+  readonly configDir: string;
+  readonly platform?: NodeJS.Platform;
+  readonly write: (line: string) => void;
+}): void {
+  if ((input.platform ?? process.platform) !== "win32") return;
+  try {
+    mkdirSync(input.configDir, { recursive: true });
+    writeFileSync(join(input.configDir, FILE_FALLBACK_NOTICE_MARKER), "", { flag: "wx" });
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "EEXIST") return;
+  }
+  input.write(
+    "Windows credential vault unavailable. Kunai will store credentials in user-profile files.\n",
+  );
 }

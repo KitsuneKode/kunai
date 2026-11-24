@@ -633,20 +633,60 @@ bounded_download() {
 	return 1
 }
 
+# True when <candidate> can verify raw Ed25519 (`pkeyutl -rawin`, OpenSSL 3+).
+# Match an option line, not any mention: LibreSSL rejects "-rawin" by name.
+openssl_has_rawin() {
+	local help
+	[[ -x "$1" ]] || return 1
+	help="$("$1" pkeyutl -help 2>&1 || true)"
+	printf '%s\n' "$help" | grep -E '^[[:space:]]*-rawin([[:space:]]|$)' >/dev/null
+}
+
+# Print the first OpenSSL 3. The PATH winner is not enough: macOS ships
+# LibreSSL as /usr/bin/openssl, and Homebrew installs OpenSSL 3 keg-only. The
+# same probe runs on every platform. Bare `brew --prefix` is local; naming a
+# formula can make brew fetch its API index over the network.
+find_openssl3() {
+	local candidate prefix
+	while IFS= read -r candidate; do
+		if openssl_has_rawin "$candidate"; then
+			printf '%s\n' "$candidate"
+			return 0
+		fi
+	done < <(type -aP openssl 2>/dev/null || true)
+	prefix=""
+	if command -v brew >/dev/null 2>&1; then
+		prefix="$(HOMEBREW_NO_AUTO_UPDATE=1 brew --prefix 2>/dev/null || true)"
+	fi
+	for candidate in ${prefix:+"$prefix/opt/openssl@3/bin/openssl"} \
+		/opt/homebrew/opt/openssl@3/bin/openssl /usr/local/opt/openssl@3/bin/openssl; do
+		if openssl_has_rawin "$candidate"; then
+			printf '%s\n' "$candidate"
+			return 0
+		fi
+	done
+	return 1
+}
+
+# Verify <manifest> against <url>.sig for release <version>. The signature
+# covers a statement rebuilt here, never parsed from the download, so a signed
+# manifest from another release or for the other manifest does not verify.
+# Keep in step with releaseManifestStatement in
+# apps/cli/src/services/update/checksum-signature.ts (format: RELEASING.md).
 verify_manifest_signature() {
-	local url="$1" manifest="$2" verifier
+	local url="$1" manifest="$2" name="$3" version="$4" verifier digest
 	[[ -n "$RELEASE_PUBLIC_KEY" ]] || return 0
-	verifier=openssl
-	# Apple's system LibreSSL lacks pkeyutl -rawin. Homebrew installs OpenSSL keg-only.
-	if [[ "$(uname -s)" == Darwin ]] && command -v brew >/dev/null 2>&1; then
-		local prefix
-		prefix="$(brew --prefix openssl@3 2>/dev/null || true)"
-		[[ ! -x "$prefix/bin/openssl" || -z "$prefix" ]] || verifier="$prefix/bin/openssl"
+	if ! verifier="$(find_openssl3)"; then
+		err "Signed installs require OpenSSL 3 (openssl pkeyutl -rawin). macOS: brew install openssl@3."
+		return 1
 	fi
 	bounded_download "$url.sig" "$manifest.sig" 64 "checksum signature" || return 1
+	digest="$(sha256_of "$manifest")"
+	printf 'kunai-release-manifest v1\nversion: %s\nfile: %s\nsha256: %s\n' \
+		"$version" "$name" "$digest" >"$manifest.statement"
 	printf '%s\n' '-----BEGIN PUBLIC KEY-----' "$RELEASE_PUBLIC_KEY" '-----END PUBLIC KEY-----' >"$manifest.pem"
-	if ! "$verifier" pkeyutl -verify -pubin -inkey "$manifest.pem" -rawin -in "$manifest" -sigfile "$manifest.sig" >/dev/null; then
-		err "Checksum signature verification failed. Signed installs require OpenSSL 3."
+	if ! "$verifier" pkeyutl -verify -pubin -inkey "$manifest.pem" -rawin -in "$manifest.statement" -sigfile "$manifest.sig" >/dev/null 2>&1; then
+		err "Checksum signature verification failed: $name is not signed for v$version."
 		return 1
 	fi
 }
@@ -1758,7 +1798,7 @@ install_binary() {
 	fi
 
 	if [[ "$archive_available" == 1 ]]; then
-		verify_manifest_signature "$archive_sums" "$staged_archive_sums" || exit 1
+		verify_manifest_signature "$archive_sums" "$staged_archive_sums" SHA256SUMS.archives "$resolved_version" || exit 1
 		if ! archive_want="$(checksum_for_asset "$staged_archive_sums" "$archive")"; then
 			err "SHA256SUMS.archives must contain exactly one valid entry for $archive."
 			exit 1
@@ -1790,7 +1830,7 @@ install_binary() {
 	if [[ -z "$RELEASE_PUBLIC_KEY" ]]; then
 		warn "No embedded release signing key. Verifying SHA-256 checksums only."
 	fi
-	verify_manifest_signature "$sums" "$staged_sums" || exit 1
+	verify_manifest_signature "$sums" "$staged_sums" SHA256SUMS "$resolved_version" || exit 1
 	if ! want="$(checksum_for_asset "$staged_sums" "$asset")"; then
 		err "SHA256SUMS has no entry for $asset, or has duplicate/malformed entries; the release is incomplete."
 		exit 1

@@ -13,9 +13,9 @@ Kunai supports **zero-prerequisite compiled binaries** (default), global package
 
 ## Install paths
 
-The v0.3.0 native installers check SHA-256 hashes. Starting with v0.4.0, official binaries and the branded installers for signed releases also verify Ed25519 signatures on the checksum manifests. A missing or invalid signature stops installation. You can also download the key-pinned `install.sh` or `install.ps1` from the signed release. Source installers without an embedded key print a checksum-only diagnostic. Existing binaries keep their original verification behavior.
+The v0.3.0 native installers check SHA-256 hashes. Starting with v0.4.0, official binaries and the branded installers for signed releases also verify Ed25519 signatures on the checksum manifests. Each signature names its release version, so an older release cannot be served in place of the one you asked for. A missing or invalid signature stops installation. You can also download the key-pinned `install.sh` or `install.ps1` from the signed release. Source installers without an embedded key print a checksum-only diagnostic. Existing binaries keep their original verification behavior.
 
-Signed shell installs need OpenSSL 3. On macOS use `brew install openssl@3`. On Windows use OpenSSL on PATH or Git for Windows. The compiled updater verifies signatures internally.
+Signed shell installs need OpenSSL 3. They use the first OpenSSL 3 they find: on PATH, then Homebrew's `openssl@3`, then Git for Windows. macOS ships LibreSSL as `openssl`, so run `brew install openssl@3` there. The compiled updater verifies signatures internally.
 
 To check a downloaded archive independently, fetch its manifest and verify GitHub's build attestation before checking the hash. For example, on Linux x64:
 

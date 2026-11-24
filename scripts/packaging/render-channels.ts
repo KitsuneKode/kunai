@@ -123,6 +123,12 @@ end
 `;
 }
 
+/**
+ * No `checkver`/`autoupdate`: Scoop's autoupdate would take hashes from the
+ * unsigned SHA256SUMS.archives at whatever tag GitHub reports. A new version
+ * reaches users only as a reviewed commit rendered from signature-verified
+ * sums, the same path as the Homebrew formula.
+ */
 export function renderScoopManifest(channel: ChannelVersion, sums: SumsMap): string {
   const manifest = {
     version: channel.version,
@@ -142,21 +148,6 @@ export function renderScoopManifest(channel: ChannelVersion, sums: SumsMap): str
       },
     },
     suggest: { mpv: "extras/mpv" },
-    checkver: { github: "https://github.com/KitsuneKode/kunai" },
-    autoupdate: {
-      architecture: {
-        "64bit": {
-          url: `${GITHUB_RELEASE_DOWNLOAD}/v$version/${windowsX64.archiveName}`,
-        },
-        arm64: {
-          url: `${GITHUB_RELEASE_DOWNLOAD}/v$version/${windowsArm64.archiveName}`,
-        },
-      },
-      // sha256sum-style file: Scoop matches the line naming the downloaded file.
-      hash: {
-        url: `${GITHUB_RELEASE_DOWNLOAD}/v$version/SHA256SUMS.archives`,
-      },
-    },
   };
   return `${JSON.stringify(manifest, null, 4)}\n`;
 }

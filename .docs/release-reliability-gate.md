@@ -88,8 +88,13 @@ directory before its first smoke. Protected publication verifies provenance
 before npm receives any package, and draft/public downloads repeat the byte and
 provenance checks.
 
-Starting with v0.4.0, protected publication signs the exact bytes of both
-checksum manifests using Ed25519. Draft and public verification keep the 22
+Starting with v0.4.0, protected publication signs both checksum manifests with
+Ed25519. Each signature covers a statement that binds the release version, the
+manifest name and the SHA-256 of the manifest bytes. The format is
+`kunai-release-manifest v1`, specified in [RELEASING.md](../RELEASING.md).
+Verifiers rebuild that statement from the version they resolved, so an old
+release's signed set served at a newer tag fails before extraction or
+activation. Draft and public verification keep the 22
 native files in their own directory and independently check the two detached
 signatures, the pinned installers and all three rendered package recipes.
 Native clients with an embedded key require a signature for every manifest they

@@ -27,21 +27,5 @@
     },
     "suggest": {
         "mpv": "extras/mpv"
-    },
-    "checkver": {
-        "github": "https://github.com/KitsuneKode/kunai"
-    },
-    "autoupdate": {
-        "architecture": {
-            "64bit": {
-                "url": "https://github.com/KitsuneKode/kunai/releases/download/v$version/kunai-windows-x64.zip"
-            },
-            "arm64": {
-                "url": "https://github.com/KitsuneKode/kunai/releases/download/v$version/kunai-windows-arm64.zip"
-            }
-        },
-        "hash": {
-            "url": "https://github.com/KitsuneKode/kunai/releases/download/v$version/SHA256SUMS.archives"
-        }
     }
 }

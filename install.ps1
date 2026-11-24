@@ -451,19 +451,76 @@ function Invoke-BoundedDownload {
   throw "Download failed for $Label after $DownloadMaxAttempts attempts."
 }
 
-function Assert-ManifestSignature([string]$Url, [string]$Manifest) {
-  if (-not $ReleasePublicKey) { return }
-  $openssl = Get-Command openssl -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-  $opensslPath = if ($openssl) { $openssl.Source }
-  if (-not $opensslPath -and $env:ProgramFiles) {
-    $gitOpenSsl = Join-Path $env:ProgramFiles 'Git/usr/bin/openssl.exe'
-    if (Test-Path -LiteralPath $gitOpenSsl) { $opensslPath = $gitOpenSsl }
+# Run a native tool and read its exit code from the process object. Neither
+# $LASTEXITCODE after a pipeline nor native stderr under
+# ErrorActionPreference=Stop behaves the same on Windows PowerShell 5.1 and
+# pwsh 7, so signature checks never go through either.
+function Invoke-CapturedProcess([string]$Path, [string[]]$Arguments) {
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = $Path
+  $psi.Arguments = ($Arguments | ForEach-Object { '"' + $_ + '"' }) -join ' '
+  $psi.UseShellExecute = $false
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError = $true
+  $psi.CreateNoWindow = $true
+  $process = [System.Diagnostics.Process]::Start($psi)
+  $stdout = $process.StandardOutput.ReadToEndAsync()
+  $stderr = $process.StandardError.ReadToEnd()
+  $process.WaitForExit()
+  return [pscustomobject]@{ ExitCode = $process.ExitCode; Stdout = $stdout.Result; Stderr = $stderr }
+}
+
+# True when $Candidate can verify raw Ed25519 (`pkeyutl -rawin`, OpenSSL 3+).
+# Match an option line, not any mention: LibreSSL rejects "-rawin" by name.
+function Test-OpenSslRawIn([string]$Candidate) {
+  if (-not $Candidate -or -not (Test-Path -LiteralPath $Candidate -PathType Leaf)) { return $false }
+  try { $help = Invoke-CapturedProcess $Candidate @('pkeyutl', '-help') }
+  catch { return $false }
+  return (($help.Stdout + "`n" + $help.Stderr) -match '(?m)^\s*-rawin(\s|$)')
+}
+
+# The first OpenSSL 3. The PATH winner is not enough: macOS ships LibreSSL as
+# /usr/bin/openssl and Homebrew installs OpenSSL 3 keg-only. Same probe on
+# Windows, macOS and Linux. Bare `brew --prefix` is local; naming a formula can
+# make brew fetch its API index over the network.
+function Find-OpenSsl3 {
+  foreach ($command in @(Get-Command openssl -CommandType Application -All -ErrorAction SilentlyContinue)) {
+    if (Test-OpenSslRawIn $command.Source) { return $command.Source }
   }
-  if (-not $opensslPath) { throw 'Signed installs require OpenSSL 3 on PATH or Git for Windows.' }
+  $candidates = @()
+  $brew = Get-Command brew -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($brew) {
+    $env:HOMEBREW_NO_AUTO_UPDATE = '1'
+    try {
+      $prefix = Invoke-CapturedProcess $brew.Source @('--prefix')
+      if ($prefix.ExitCode -eq 0 -and $prefix.Stdout.Trim()) { $candidates += (Join-Path $prefix.Stdout.Trim() 'opt/openssl@3/bin/openssl') }
+    }
+    catch { }
+  }
+  $candidates += @('/opt/homebrew/opt/openssl@3/bin/openssl', '/usr/local/opt/openssl@3/bin/openssl')
+  if ($env:ProgramFiles) { $candidates += (Join-Path $env:ProgramFiles 'Git/usr/bin/openssl.exe') }
+  foreach ($candidate in $candidates) {
+    if (Test-OpenSslRawIn $candidate) { return $candidate }
+  }
+  return $null
+}
+
+# Verify $Manifest against "$Url.sig" for release $ReleaseVersion. The signature
+# covers a statement rebuilt here, never parsed from the download, so a signed
+# manifest from another release or for the other manifest does not verify.
+# Keep in step with releaseManifestStatement in
+# apps/cli/src/services/update/checksum-signature.ts (format: RELEASING.md).
+function Assert-ManifestSignature([string]$Url, [string]$Manifest, [string]$Name, [string]$ReleaseVersion) {
+  if (-not $ReleasePublicKey) { return }
+  $opensslPath = Find-OpenSsl3
+  if (-not $opensslPath) { throw 'Signed installs require OpenSSL 3 (openssl pkeyutl -rawin): install Git for Windows, or on macOS run brew install openssl@3.' }
   Invoke-BoundedDownload -Url "$Url.sig" -DestinationPath "$Manifest.sig" -MaxBytes 64 -Label 'checksum signature'
+  $digest = (Get-FileHash -LiteralPath $Manifest -Algorithm SHA256).Hash.ToLowerInvariant()
+  $statement = "kunai-release-manifest v1`nversion: $ReleaseVersion`nfile: $Name`nsha256: $digest`n"
+  [IO.File]::WriteAllBytes("$Manifest.statement", [Text.Encoding]::ASCII.GetBytes($statement))
   [IO.File]::WriteAllBytes("$Manifest.der", [Convert]::FromBase64String($ReleasePublicKey))
-  & $opensslPath pkeyutl -verify -pubin -keyform DER -inkey "$Manifest.der" -rawin -in $Manifest -sigfile "$Manifest.sig" | Out-Null
-  if ($LASTEXITCODE -ne 0) { throw 'Checksum signature verification failed.' }
+  $result = Invoke-CapturedProcess $opensslPath @('pkeyutl', '-verify', '-pubin', '-keyform', 'DER', '-inkey', "$Manifest.der", '-rawin', '-in', "$Manifest.statement", '-sigfile', "$Manifest.sig")
+  if ($result.ExitCode -ne 0) { throw "Checksum signature verification failed: $Name is not signed for v$ReleaseVersion." }
 }
 
 function Get-ChecksumEntry([string]$ManifestPath, [string]$AssetName) {
@@ -2139,7 +2196,7 @@ function Install-Binary {
     }
 
     if ($archiveAvailable) {
-      Assert-ManifestSignature $archiveSumsUrl $stagedArchiveSums
+      Assert-ManifestSignature $archiveSumsUrl $stagedArchiveSums 'SHA256SUMS.archives' $resolved
       try { $archiveWant = Get-ChecksumEntry $stagedArchiveSums $archive }
       catch { throw "SHA256SUMS.archives must contain exactly one valid entry for $archive. $($_.Exception.Message)" }
       try {
@@ -2180,7 +2237,7 @@ function Install-Binary {
       throw
     }
     if (-not $ReleasePublicKey) { Write-Warn 'No embedded release signing key. Verifying SHA-256 checksums only.' }
-    Assert-ManifestSignature $sumsUrl $stagedSums
+    Assert-ManifestSignature $sumsUrl $stagedSums 'SHA256SUMS' $resolved
     try { $want = Get-ChecksumEntry $stagedSums $asset }
     catch { throw "SHA256SUMS has no entry for $asset, or has duplicate/malformed entries. $($_.Exception.Message)" }
 

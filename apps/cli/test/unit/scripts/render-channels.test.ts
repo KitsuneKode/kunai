@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { join } from "node:path";
 
 import {
   parseSumsFile,
@@ -95,23 +96,27 @@ describe("renderScoopManifest", () => {
     expect(m.architecture.arm64?.bin).toEqual([["kunai-windows-arm64.exe", "kunai"]]);
   });
 
-  test("autoupdate tracks GitHub releases and the sums file", () => {
-    // SAFETY: the renderer emits exactly this manifest shape; the test asserts it.
-    const m = manifest as {
-      checkver: { github: string };
-      autoupdate: {
-        architecture: Record<string, { url: string }>;
-        hash: { url: string };
-      };
-    };
-    expect(m.checkver.github).toBe("https://github.com/KitsuneKode/kunai");
-    expect(m.autoupdate.architecture["64bit"]?.url).toBe(
-      "https://github.com/KitsuneKode/kunai/releases/download/v$version/kunai-windows-x64.zip",
-    );
-    expect(m.autoupdate.hash.url).toBe(
-      "https://github.com/KitsuneKode/kunai/releases/download/v$version/SHA256SUMS.archives",
-    );
+  test("updates only through a reviewed manifest commit, never an unsigned remote hash", () => {
+    // Scoop autoupdate would rewrite `hash` from SHA256SUMS.archives, which Scoop
+    // cannot verify against the release signature. Like the Homebrew formula,
+    // a new version arrives only as a commit rendered from verified sums.
+    const rendered = renderScoopManifest(channel, sums);
+    const keys = Object.keys(JSON.parse(rendered));
+    expect(keys).not.toContain("autoupdate");
+    expect(keys).not.toContain("checkver");
+    expect(rendered).not.toContain("SHA256SUMS");
+    expect(rendered).not.toContain("$version");
   });
+});
+
+test("the committed channel manifests are byte-for-byte the renderer's output", async () => {
+  const root = join(import.meta.dir, "../../../../..");
+  expect(await Bun.file(join(root, "bucket/kunai.json")).text()).toBe(
+    renderScoopManifest(channel, sums),
+  );
+  expect(await Bun.file(join(root, "Formula/kunai.rb")).text()).toBe(
+    renderHomebrewFormula(channel, sums),
+  );
 });
 
 describe("renderPkgbuild + renderSrcinfo", () => {
