@@ -57,6 +57,7 @@ describe("useDwellPrefetch", () => {
         label: "dwell prefetch fired",
         tick: async (ms) => {
           await act(async () => {
+            // sleep-allow: drives the real dwell timer; the prefetch hook takes no injected clock
             await sleep(ms);
           });
         },
@@ -82,6 +83,7 @@ describe("useDwellPrefetch", () => {
         label: "dwell prefetch fired on landing row",
         tick: async (ms) => {
           await act(async () => {
+            // sleep-allow: drives the real dwell timer; the prefetch hook takes no injected clock
             await sleep(ms);
           });
         },
@@ -100,6 +102,7 @@ describe("useDwellPrefetch", () => {
         label: "first dwell prefetch fired",
         tick: async (ms) => {
           await act(async () => {
+            // sleep-allow: drives the real dwell timer; the prefetch hook takes no injected clock
             await sleep(ms);
           });
         },
@@ -112,6 +115,7 @@ describe("useDwellPrefetch", () => {
         label: "second dwell prefetch fired",
         tick: async (ms) => {
           await act(async () => {
+            // sleep-allow: drives the real dwell timer; the prefetch hook takes no injected clock
             await sleep(ms);
           });
         },
@@ -143,6 +147,7 @@ describe("useDwellPrefetch", () => {
         label: "throwing callback ran",
         tick: async (ms) => {
           await act(async () => {
+            // sleep-allow: drives the real dwell timer; the prefetch hook takes no injected clock
             await sleep(ms);
           });
         },

@@ -1702,13 +1702,18 @@ test("summarizeProviderTraceEvents prefers canonical cycle events over provider-
  */
 function healthReportingModule(
   id: string,
-  behaviour: { readonly delayMs: number; readonly succeeds: boolean },
+  behaviour: {
+    readonly delayMs: number;
+    readonly succeeds: boolean;
+    readonly onStart?: (id: string) => void;
+  },
 ): CoreProviderModule {
   return {
     // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     providerId: id as never,
     manifest: defineProviderManifest({ ...vidkingManifest, id, displayName: id }),
     async resolve(input, context) {
+      behaviour.onStart?.(id);
       try {
         await new Promise<void>((resolve, reject) => {
           // sleep-allow: provider double delay; these hedge tests still order real timers
@@ -1869,10 +1874,12 @@ test("hedged fallback records the losing candidate as aborted, in candidate orde
 });
 
 test("hedged fallback records every in-flight candidate as aborted on cancel", async () => {
+  const started: string[] = [];
+  const onStart = (id: string) => started.push(id);
   const engine = createProviderEngine({
     modules: [
-      healthReportingModule("slow-a", { delayMs: 5_000, succeeds: true }),
-      healthReportingModule("slow-b", { delayMs: 5_000, succeeds: true }),
+      healthReportingModule("slow-a", { delayMs: 5_000, succeeds: true, onStart }),
+      healthReportingModule("slow-b", { delayMs: 5_000, succeeds: true, onStart }),
     ],
     maxAttempts: 1,
     hedgeDelayMs: 10,
@@ -1890,7 +1897,10 @@ test("hedged fallback records every in-flight candidate as aborted on cancel", a
       controller.signal,
     );
     jest.advanceTimersByTime(20);
-    await Promise.resolve();
+    // Both candidates must really be in flight before the cancel, or the test
+    // would pass on a hedge that was never launched.
+    for (let hop = 0; hop < 50 && started.length < 2; hop += 1) await Promise.resolve();
+    expect(started).toEqual(["slow-a", "slow-b"]);
     controller.abort("provider-fallback-picker");
     jest.advanceTimersByTime(1);
     await Promise.resolve();

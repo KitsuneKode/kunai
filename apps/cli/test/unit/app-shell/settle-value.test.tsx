@@ -55,6 +55,7 @@ describe("useSettledValue", () => {
         label: "settled value caught up",
         tick: async (ms) => {
           await act(async () => {
+            // sleep-allow: drives the real settle debounce; useSettledValue takes no injected clock
             await sleep(ms);
           });
         },
@@ -102,6 +103,7 @@ describe("navigation burst frame-count", () => {
         label: "settled preview caught up",
         tick: async (ms) => {
           await act(async () => {
+            // sleep-allow: drives the real settle debounce; useSettledValue takes no injected clock
             await sleep(ms);
           });
         },

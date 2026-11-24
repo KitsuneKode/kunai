@@ -781,7 +781,7 @@ describe("urgent refresh after a provider goes down", () => {
     expect(fetches).toBe(1);
   });
 
-  test("reset waits on the manifest lock and writes the hold atomically", async () => {
+  test("reset goes through the manifest lock and writes the hold atomically", async () => {
     const path = makeTempCachePath();
     const statePath = providerManifestStatePath(path);
     writeFileSync(

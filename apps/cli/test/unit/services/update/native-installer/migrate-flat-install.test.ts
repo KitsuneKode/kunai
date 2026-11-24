@@ -67,7 +67,7 @@ describe("migrateFlatInstall activation", () => {
       layout,
     });
     await waitForPath(versionBinaryPath(layout, "1.2.3"));
-    // sleep-allow: waits for a real installer migration child
+    // sleep-allow: negative wait — proves the launcher is not replaced while the lock is held; migration exposes no "waiting on lock" observable
     await Bun.sleep(20);
     expect((await lstat(layout.launcherPath)).isFile()).toBe(true);
 

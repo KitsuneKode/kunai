@@ -679,7 +679,7 @@ export function AppRoot({ container }: { container: Container }) {
   }, [container.statsService, container.syncService, container.queueService, container.config]);
 
   // Download-queued toasts are scheduled outside this component. Clear them
-  // when the shell unmounts so a late dismissal cannot dispatch into a dead tree.
+  // when the shell unmounts so a late dismissal cannot fire into a torn-down session.
   useEffect(() => () => shellFeedbackTimers.dispose(), []);
 
   // Live notification queue. Seed the seen-set on mount so pre-existing

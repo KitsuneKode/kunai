@@ -170,6 +170,39 @@ test("handleRpcRequest rejects oversized upstream request bodies", async () => {
   expect(await response.json()).toMatchObject({ error: { code: "body-too-large" } });
 });
 
+test("a client that stalls its envelope upload gets 408 within the relay's own timeout", async () => {
+  let cancelled = false;
+  const stalled = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode("{"));
+      // ...and the client never sends the rest.
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  // SAFETY: Bun streams a Request body only when duplex is set; this lib's RequestInit omits it.
+  const request = new Request("https://relay.test/rpc/miruro", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: stalled,
+    duplex: "half",
+  } as RequestInit);
+
+  const response = await handleRpcRequest(request, {
+    providerId: "miruro",
+    registry: providerRegistry,
+    authorization: localLoopbackAuthorization,
+    timeoutMs: 5,
+  });
+
+  expect(response.status).toBe(408);
+  expect(await response.json()).toMatchObject({
+    error: { code: "bad-request", message: "Relay request body timed out" },
+  });
+  expect(cancelled).toBe(true);
+});
+
 test("handleRpcRequest stops reading an envelope once it passes the byte cap", async () => {
   let produced = 0;
   let cancelled = false;

@@ -329,8 +329,8 @@ async function readStreamLines(options: {
       buffer += decoder.decode(value, { stream: true });
       emitCompleteLines();
     }
-    // A multibyte character split onto the last chunk stays inside the decoder
-    // until flush. Emitting the trailing line first drops that tail.
+    // Flush the decoder before the trailing line: a stream that ends mid
+    // character would otherwise drop those bytes; flushing yields U+FFFD.
     buffer += decoder.decode();
     emitCompleteLines();
     const trailing = buffer.replace(/\r$/, "");

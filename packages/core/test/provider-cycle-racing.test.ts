@@ -67,6 +67,7 @@ describe("runProviderCycle racing", () => {
       candidates: candidates("slow", "fast"),
       resolveCandidate: async (candidate) => {
         if (candidate.id === "slow") {
+          // sleep-allow: race fixture delay; this file runs runProviderCycle on the real clock (fake-timer port is a follow-up)
           await sleep(1_500);
           return "stream-slow";
         }
@@ -121,6 +122,7 @@ describe("runProviderCycle racing", () => {
       endpointHealth,
       resolveCandidate: async (candidate) => {
         if (candidate.id === "broken") throw new Error("failed to parse candidate response");
+        // sleep-allow: race fixture delay; this file runs runProviderCycle on the real clock (fake-timer port is a follow-up)
         await sleep(50);
         return "stream-good";
       },
@@ -145,6 +147,7 @@ describe("runProviderCycle racing", () => {
         if (candidate.id === "guarded") {
           throw new Error("HTTP 403 Forbidden");
         }
+        // sleep-allow: race fixture delay; this file runs runProviderCycle on the real clock (fake-timer port is a follow-up)
         await sleep(50);
         return "stream-good";
       },
@@ -241,6 +244,7 @@ describe("runProviderCycle racing", () => {
       candidates: candidates("only"),
       now: () => new Date(1_000 + tick++ * 1_000).toISOString(),
       resolveCandidate: async () => {
+        // sleep-allow: race fixture delay; this file runs runProviderCycle on the real clock (fake-timer port is a follow-up)
         await sleep(30);
         return "stream";
       },

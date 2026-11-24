@@ -170,7 +170,7 @@ describe("activation lock", () => {
     // starts so the second's queue time lands inside its own deadline. There
     // is no exported "acquire started" observable; 50ms gives the 5ms poll
     // loop ten turns of headroom under parallel load.
-    // sleep-allow: cross-process install lock held by a real child
+    // sleep-allow: in-process ordering gate; activation-lock polls on the wall clock (no clock seam) and exposes no "acquire started" observable
     await Bun.sleep(50);
     const startedAt = performance.now();
     const second = await tryAcquireActivationLock(layout, "2.0.0", {
@@ -284,7 +284,7 @@ describe("activation lock", () => {
         if (!lock.acquired) return false;
         inside += 1;
         maximumInside = Math.max(maximumInside, inside);
-        // sleep-allow: cross-process install lock held by a real child
+        // sleep-allow: in-process contenders hold the lock briefly so overlap would be observable; activation-lock polls on the wall clock (no clock seam)
         await Bun.sleep(15);
         inside -= 1;
         await lock.release();
@@ -666,7 +666,7 @@ describe("activation lock", () => {
           () => "settled",
           () => "settled",
         ),
-        // sleep-allow: cross-process install lock held by a real child
+        // sleep-allow: hang bound for an in-process acquisition; activation-lock has no clock seam to drive instead
         Bun.sleep(150).then(() => "hung"),
       ]);
       await chmod(layout.locksDir, 0o700);

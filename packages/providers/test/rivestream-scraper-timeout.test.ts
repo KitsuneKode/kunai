@@ -116,6 +116,7 @@ function contextFor(
           recorded.providers.push(provider);
           if (provider === "slowcdn") {
             if (mode === "hung-scraper") return hangUntilAbort(init?.signal);
+            // sleep-allow: delay() runs under jest fake timers in this test; no wall-clock time passes
             await delay(SCRAPER_DELAY_MS);
             return jsonResponse(
               JSON.stringify(sourcePayload("https://slowcdn.example/index.m3u8")),

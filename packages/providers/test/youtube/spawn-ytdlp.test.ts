@@ -107,10 +107,10 @@ describe("runYtDlpProcess", () => {
     expect(lines).toEqual(["[download] 42.0%"]);
   });
 
-  test("flushes a multibyte character split across the final stdout chunks", async () => {
+  test("joins a multibyte character split across stdout chunks (streaming decode, regression guard)", async () => {
     const encoded = new TextEncoder().encode("café");
-    // Split inside é (C3 A9) and end the stream before the sequence completes,
-    // then deliver the tail as its own chunk with no trailing newline.
+    // Split inside é (C3 A9); the tail arrives as its own chunk with no
+    // trailing newline. Streaming decode already joins it.
     const splitAt = 4;
     const lines: string[] = [];
     const proc = createFakeProcess({
