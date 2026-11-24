@@ -57,12 +57,6 @@ const MATRIX: readonly MatrixEntry[] = [
     fixture: "Fight Club (Chrome UA + Referer/Origin)",
   },
   {
-    provider: "anidb",
-    command: ["bun", "-e", "await import('./test/live/anidb-onigiri.smoke.ts')"],
-    media: "anime",
-    fixture: "Onigiri S01E01",
-  },
-  {
     provider: "allanime",
     command: ["bun", "-e", "await import('./test/live/allanime-demonslayer.smoke.ts')"],
     media: "anime",

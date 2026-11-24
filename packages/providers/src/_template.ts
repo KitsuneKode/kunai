@@ -61,7 +61,7 @@ export const templateManifest = defineProviderManifest({
   relaySafe: true,
   // What keeps a new module out of the runtime is not being in
   // `loadProductionProviderModules()`; research standing lives in
-  // `packages/providers/src/research.ts`.
+  // `.docs/provider-intake.md`.
   // List every host the resolver can hit — the relay refuses anything else,
   // and this list is what the deployed relay bakes in.
   relayProfile: {

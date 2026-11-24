@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: 2026-08-14
+lastReviewed: "2026-11-24"
 ---
 
 # Kunai — Glossary
@@ -45,14 +45,11 @@ Both are `"anime" | "series" | "youtube"`. They are not the same thing.
 - **Provider lane** (`ProviderLane`) is provider routing — which providers are
   eligible.
 
-Both in `apps/cli/src/domain/types.ts`. Convert deliberately via
+`ShellMode` is declared in `apps/cli/src/domain/types.ts`, which re-exports
+`ProviderLane` from `packages/types/src/index.ts`. Convert deliberately via
 `shellModeToProviderLane` / `providerLaneToShellMode` in
 `apps/cli/src/domain/provider-lane.ts`; never assign one to the other because
 the unions happen to match.
-
-> **Known defect:** `ProviderLane` is declared twice, identically, in
-> `apps/cli/src/domain/types.ts` and `packages/types/src/index.ts`. Neither is
-> marked canonical. Tracked on `.plans/roadmap.md`.
 
 ## Anime mode: `isAnime` vs `isAnimeProvider`
 

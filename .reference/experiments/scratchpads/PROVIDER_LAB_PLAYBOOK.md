@@ -218,7 +218,7 @@ bun scratchpads/provider-miruro/probe-key-extraction.ts   # when homepage stable
 
 ## Cineby / VidKing lab
 
-`scratchpads/provider-cineby/` is for **flavor discovery** (extra Videasy servers, language query params). Production Cineby module is research-only. Inherit VidKing engine fixes; do not maintain a separate decrypt stack.
+`scratchpads/provider-cineby/` is for **flavor discovery** (extra Videasy servers, language query params). The standalone Cineby module was removed; the Videasy flavors remain. Inherit VidKing engine fixes; do not maintain a separate decrypt stack.
 
 ---
 

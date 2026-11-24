@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-11-23
+Last updated: 2026-11-24
 
 This is the **only index of active work** in `.plans/`. Everything indexed here
 is unfinished. Landed, superseded, and one-shot plans live in
@@ -30,6 +30,8 @@ so it is not re-derived — not because it is scheduled.
 ## Active tracks
 
 Current execution: [watching release candidate](./2026-10-22-watching-release-candidate.md)
+
+Quality push: [road to 9.5 — every reviewed dimension, competitors, workstreams W1–W6](./2026-11-24-road-to-9-5.md).
 
 Watching UX follow-up: [first-run, playback, Tracks and shell coherence](./2026-10-23-watching-ux-coherence.md).
 Watching capability recovery: [provider inventories, playback truth and discoverable controls](./2026-10-24-watching-capability-recovery.md).
@@ -76,7 +78,6 @@ archive and put only the residue here.
 
 | Track                          | Remaining                                                                                            | Plan                                                                                                 |
 | ------------------------------ | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| 0.3.0 merge train              | Merge order, chain-A publication, regression watch                                                   | [2026-08-24-0-3-0-merge-train.md](./2026-08-24-0-3-0-merge-train.md)                                 |
 | Provider-independent offline   | Candidate fix: downloads survive provider retirement; merge and platform qualification pending       | [offline-provider-independent-playback.md](./offline-provider-independent-playback.md)               |
 | Offline artwork cache          | Library previews                                                                                     | [offline-artwork-cache-and-library-previews.md](./offline-artwork-cache-and-library-previews.md)     |
 | Boundary + downloads           | Reviewed adaptive-download design, not started                                                       | [boundary-hardening-and-adaptive-downloads.md](./boundary-hardening-and-adaptive-downloads.md)       |

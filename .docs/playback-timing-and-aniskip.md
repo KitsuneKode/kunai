@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-22"
+lastReviewed: "2026-11-24"
 ---
 
 # Playback timing, IntroDB, and AniSkip
@@ -69,16 +69,12 @@ Reference ecosystem: [synacktraa/ani-skip](https://github.com/synacktraa/ani-ski
 
 **TMDB → MAL fallback is season-1 only.** ARM returns the first mapping for a TMDB TV id, which is the season-1 MAL entry for split-cour shows. AniSkip episode numbers are season-relative, so using that mapping for season 2+ would apply the wrong show's skip windows. When the only remaining resolver is `resolveMALFromTheMovieDbId` and the requested season is known and greater than 1, Kunai skips AniSkip (`identity-missing`) rather than guess. Direct `externalIds.malId`, provider-native lookups, and the AniList ARM path are unaffected.
 
-**AniDB stamps MAL at resolve time.** The AniDB module's `resolve()` calls
-`fetchAnidbMalId()` (in `packages/providers/src/anidb/client.ts`, TTL 1 h cache,
-scrapes `myanimelist.net/anime/{id}` from the anidb.app anime page) when the input
-title carries no `malId`, and stamps the value into the resolve result's
-`externalIds.malId`. AniSkip's direct `externalIds.malId` short-circuit
-(`resolveMalIdForAniSkip`) then wins, so AniDB-sourced titles skip the fuzzy
-AniList title-search fallback entirely. Input `malId` is always preferred over the
-scrape; the scrape is best-effort (undefined on failure), runs **in parallel** with
-stream resolution so it never adds a serial request to the resolve hot path, and
-never blocks resolve.
+**AniDB-sourced ids can still resolve MAL for AniSkip.** Timing resolution uses
+`externalIds.malId` first. For an `anidb` catalog title with a nonnumeric ID,
+`resolveMalIdForAniSkip` next calls `fetchAnidbMalId()` in
+`packages/providers/src/shared/anidb-identity.ts`. It reads the MAL link from
+the anime page and caches the ID or a confirmed absence for one hour. If the
+lookup yields no ID, AniSkip continues through the remaining identity fallbacks.
 
 **Important:** `PlaybackTimingFetchContext.providerId` must match the **manifest provider id** (e.g. `allanime` from `@kunai/core`), because branching keys off that string.
 
