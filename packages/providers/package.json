@@ -13,6 +13,7 @@
     "./kickassanime": "./src/kickassanime/direct.ts",
     "./miruro": "./src/miruro/direct.ts",
     "./rivestream": "./src/rivestream/direct.ts",
+    "./stremio-addon": "./src/stremio-addon/index.ts",
     "./videasy": "./src/videasy/index.ts",
     "./vidlink": "./src/vidlink/direct.ts",
     "./movy": "./src/movy/direct.ts",
@@ -30,7 +31,8 @@
   "dependencies": {
     "@assemblyscript/loader": "catalog:providers",
     "@kunai/core": "workspace:*",
-    "@kunai/types": "workspace:*"
+    "@kunai/types": "workspace:*",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:"

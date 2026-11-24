@@ -249,6 +249,8 @@ export type PersistentLoadfileMediaOptions = {
   readonly subtitlePreference?: string;
   /** Ephemeral chapters file path containing chapter markers. */
   readonly chaptersFile?: string | null;
+  /** Stremio addon file: confine this file's network behavior (see docs). */
+  readonly stremioAddon?: boolean;
 };
 
 export function buildPersistentLoadfileOptions(
@@ -322,6 +324,17 @@ export function buildPersistentLoadfileOptions(
 
   if (ytdlOptions?.isLive) {
     Object.assign(loadOptions, LIVE_DEMUXER_OPTIONS);
+  }
+
+  if (ytdlOptions?.stremioAddon) {
+    // Per-file confinement, best effort: `max_redirects` exists on FFmpeg
+    // 8.1+/7.1.4's HTTP protocol (unknown builds may ignore it — the strict
+    // preflight is the guarantee), and the rest fence off playlists and the
+    // mp4upload TLS exception for this file only.
+    loadOptions["stream-lavf-o"] = "max_redirects=0";
+    loadOptions["load-unsafe-playlists"] = "no";
+    loadOptions["tls-verify"] = "yes";
+    loadOptions.ytdl = "no";
   }
 
   return loadOptions as PersistentLoadfileOptions;

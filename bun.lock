@@ -170,6 +170,7 @@
         "@assemblyscript/loader": "catalog:providers",
         "@kunai/core": "workspace:*",
         "@kunai/types": "workspace:*",
+        "zod": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "catalog:",

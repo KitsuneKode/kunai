@@ -55,6 +55,12 @@ export interface DownloadJobRecord {
   readonly selectedStreamId?: string;
   readonly selectedQualityLabel?: string;
   readonly streamUrl: string;
+  /**
+   * The provider that produced {@link streamUrl}. `lastResolvedProviderId`
+   * predates this column and can carry the wrongly inferred fallback id, so it
+   * cannot serve as the cached URL's producer evidence.
+   */
+  readonly streamProviderId?: ProviderId;
   readonly headers: Record<string, string>;
   readonly status: DownloadJobStatus;
   readonly progressPercent: number;
@@ -117,6 +123,7 @@ interface DownloadJobRow {
   readonly selected_stream_id: string | null;
   readonly selected_quality_label: string | null;
   readonly stream_url: string;
+  readonly stream_provider_id: string | null;
   readonly headers_json: string;
   readonly status: DownloadJobStatus;
   readonly progress_percent: number;
@@ -234,12 +241,12 @@ export class DownloadJobsRepository {
             id, title_id, external_ids_json, title_name, media_kind, content_type, season, episode,
             provider_episode_provider_id, provider_episode_value, provider_id,
             mode, sub_lang, anime_lang, selected_source_id, selected_stream_id, selected_quality_label,
-            stream_url, headers_json,
+            stream_url, stream_provider_id, headers_json,
             status, progress_percent, output_path, temp_path, subtitle_url, subtitle_path, subtitle_language,
             intro_skip_json, poster_url, thumbnail_path, duration_ms, file_size, error_message, retry_count, attempt, max_attempts, next_retry_at,
             started_at, last_heartbeat_at, failure_kind, artifact_status, last_resolved_provider_id,
             created_at, updated_at, completed_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, NULL, NULL, NULL, NULL, ?, NULL, NULL, NULL, NULL, 0, 0, 3, NULL, NULL, NULL, NULL, 'pending', NULL, ?, ?, NULL)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, NULL, NULL, NULL, NULL, ?, NULL, NULL, NULL, NULL, 0, 0, 3, NULL, NULL, NULL, NULL, 'pending', NULL, ?, ?, NULL)
         `,
         )
         .run(
@@ -261,6 +268,7 @@ export class DownloadJobsRepository {
           input.selectedStreamId ?? null,
           input.selectedQualityLabel ?? null,
           input.streamUrl,
+          input.streamProviderId ?? null,
           JSON.stringify(input.headers),
           input.outputPath,
           input.tempPath,
@@ -345,7 +353,7 @@ export class DownloadJobsRepository {
     input: {
       streamUrl: string;
       headers: Record<string, string>;
-      providerId?: ProviderId;
+      providerId: ProviderId;
     },
     updatedAt: string,
     claim?: DownloadClaimRef,
@@ -357,11 +365,18 @@ export class DownloadJobsRepository {
           UPDATE download_jobs
           SET stream_url = ?,
               headers_json = ?,
-              last_resolved_provider_id = COALESCE(?, last_resolved_provider_id),
+              last_resolved_provider_id = ?,
+              stream_provider_id = ?,
               updated_at = ?
           WHERE id = ?
         `,
-        [input.streamUrl, JSON.stringify(input.headers), input.providerId ?? null, updatedAt],
+        [
+          input.streamUrl,
+          JSON.stringify(input.headers),
+          input.providerId,
+          input.providerId,
+          updatedAt,
+        ],
         id,
         claim,
       ) > 0
@@ -1058,6 +1073,7 @@ function mapRow(row: DownloadJobRow): DownloadJobRecord {
     selectedStreamId: row.selected_stream_id ?? undefined,
     selectedQualityLabel: row.selected_quality_label ?? undefined,
     streamUrl: row.stream_url,
+    streamProviderId: row.stream_provider_id ?? undefined,
     headers: parseHeaders(row.headers_json),
     status: row.status,
     progressPercent: row.progress_percent,

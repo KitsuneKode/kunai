@@ -220,6 +220,36 @@ export const CONFIG_METADATA = [
     editable: true,
   },
   {
+    key: "stremioAddons",
+    label: "Stremio addons",
+    section: "providers",
+    // The provider list is built once per run, so an added addon is used from
+    // the next start. A removed one stops being asked on the next resolve.
+    effect: "after-save",
+    // A configured addon's URL can hold the user's own account token.
+    privacy: "sensitive",
+    editable: true,
+  },
+  {
+    key: "experimentalStremioAddons",
+    label: "Experimental: Stremio addons",
+    section: "providers",
+    // A disable is honoured at the next resolve; addons installed while the
+    // feature was off at startup are only loaded after a restart.
+    effect: "next-resolve",
+    privacy: "local",
+    editable: true,
+    options: ["on", "off"],
+  },
+  {
+    key: "stremioAddonsRiskAcknowledgedAt",
+    label: "Stremio addons risk acknowledgement",
+    section: "providers",
+    effect: "next-resolve",
+    privacy: "local",
+    editable: false,
+  },
+  {
     key: "videasySessionToken",
     label: "Videasy session token",
     section: "providers",

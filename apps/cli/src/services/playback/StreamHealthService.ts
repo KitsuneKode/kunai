@@ -10,6 +10,8 @@ import {
   type StreamReachabilityFetch,
 } from "@kunai/providers";
 
+import { isStremioPlayback } from "./stream-health-check";
+
 export type StreamHealthFetch = StreamReachabilityFetch;
 
 export type StreamHealthServiceDeps = {
@@ -51,6 +53,7 @@ export class StreamHealthService {
       cachedAt: stream.timestamp,
       streamReachabilityVerified: stream.providerResolveResult?.streamReachabilityVerified,
       requiresYtdl: stream.requiresYtdl,
+      requireDirectMedia: phase === "playback-preflight" && isStremioPlayback(stream),
       force: options.force,
       fetchImpl: this.deps.fetchImpl,
       timeoutMs: this.deps.timeoutMs,

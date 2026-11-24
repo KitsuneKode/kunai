@@ -167,6 +167,48 @@ describe("mpv URL safety", () => {
     expect(args).toContain("--user-agent=kunai");
   });
 
+  test("an addon file gets file-local confinement and no mp4upload exception", () => {
+    const args = buildMpvArgs(
+      {
+        // An mp4upload host would normally earn the `--tls-verify=no`
+        // exception — the addon flag must suppress it.
+        url: "https://www6.mp4upload.com/d/file.mp4",
+        headers: { Referer: "https://www.mp4upload.com" },
+        subtitle: null,
+        displayTitle: "Addon stream",
+        stremioAddon: true,
+      },
+      null,
+    );
+    const block = args.slice(args.indexOf("--{") + 1, args.indexOf("--}"));
+    expect(block).toEqual([
+      "--stream-lavf-o=max_redirects=0",
+      "--load-unsafe-playlists=no",
+      "--tls-verify=yes",
+      "https://www6.mp4upload.com/d/file.mp4",
+    ]);
+    expect(args).toContain("--ytdl=no");
+    // The mp4upload Referer exception cannot cancel the block's TLS check.
+    expect(args).not.toContain("--tls-verify=no");
+    expect(args).not.toContain("--ytdl=yes");
+  });
+
+  test("a non-addon stream keeps the plain URL tail and normal flags", () => {
+    const args = buildMpvArgs(
+      {
+        url: "https://cdn.example/movie.mp4",
+        headers: {},
+        subtitle: null,
+        displayTitle: "Normal stream",
+      },
+      null,
+    );
+    expect(args).not.toContain("--{");
+    expect(args).not.toContain("--stream-lavf-o=max_redirects=0");
+    expect(args.at(-2)).toBe("--");
+    expect(args.at(-1)).toBe("https://cdn.example/movie.mp4");
+  });
+
   test("skips local subtitle targets on remote playback", () => {
     const args = buildMpvArgs(
       {

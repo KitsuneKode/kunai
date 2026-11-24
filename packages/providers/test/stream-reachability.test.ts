@@ -768,6 +768,226 @@ describe("stream reachability", () => {
   });
 });
 
+describe("direct-media probes", () => {
+  const strict = (
+    body: string | Uint8Array,
+    init?: { status?: number; headers?: Record<string, string> },
+  ) =>
+    probeStreamReachability({
+      url: "https://cdn.example/movie.mp4",
+      fetchImpl: async () => response(init?.status ?? 200, body, init?.headers),
+      requireDirectMedia: true,
+    });
+
+  /** EBML element: pre-encoded id bytes + 1-byte size + payload. */
+  const ebml = (id: Buffer, payload: Buffer): Buffer =>
+    Buffer.concat([id, Buffer.from([0x80 | payload.length]), payload]);
+  /** The EBML header element (`0x1A45DFA3`) wrapping its children. */
+  const ebmlHeader = (...children: Buffer[]): Buffer =>
+    Buffer.concat([
+      Buffer.from([0x1a, 0x45, 0xdf, 0xa3]),
+      Buffer.from([0x80 | Buffer.concat(children).length]),
+      ...children,
+    ]);
+  const EBML_VERSION = ebml(Buffer.from([0x42, 0x86]), Buffer.from([0x01]));
+  const docType = (name: string) => ebml(Buffer.from([0x42, 0x82]), Buffer.from(name, "ascii"));
+
+  /** A Segment element (`0x18538067`) with the "unknown length" size streams use. */
+  const SEGMENT_UNKNOWN = Buffer.from([
+    0x18, 0x53, 0x80, 0x67, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x1f,
+  ]);
+  /** A Segment element with a 1-byte size and payload. */
+  const SEGMENT_SIZED = Buffer.concat([
+    Buffer.from([0x18, 0x53, 0x80, 0x67, 0x84]),
+    Buffer.from([0x15, 0x49, 0xa9, 0x66]),
+  ]);
+
+  test.each([
+    ["webm", Buffer.concat([ebmlHeader(docType("webm")), SEGMENT_UNKNOWN])],
+    ["matroska", Buffer.concat([ebmlHeader(EBML_VERSION, docType("matroska")), SEGMENT_SIZED])],
+  ])("accepts a complete EBML body naming DocType %s with a Segment", async (_name, bytes) => {
+    expect((await strict(bytes)).status).toBe("reachable");
+  });
+
+  test("rejects a complete 200 body that ends at its EBML header", async () => {
+    expect((await strict(ebmlHeader(docType("webm")))).status).toBe("unreachable");
+  });
+
+  test("rejects a complete body whose next element after the header is not a Segment", async () => {
+    const notSegment = Buffer.from([0x1f, 0x43, 0xb6, 0x75, 0x81, 0x00]);
+    expect((await strict(Buffer.concat([ebmlHeader(docType("webm")), notSegment]))).status).toBe(
+      "unreachable",
+    );
+  });
+
+  test("accepts a header-only prefix of a larger file served as a 206", async () => {
+    const header = ebmlHeader(docType("webm"));
+    const probe = await strict(header, {
+      status: 206,
+      headers: { "content-range": `bytes 0-${header.length - 1}/1000000` },
+    });
+    expect(probe.status).toBe("reachable");
+  });
+
+  test.each([
+    [
+      "'webm' bytes under an unrelated element id",
+      ebmlHeader(ebml(Buffer.from([0x42, 0xa7]), Buffer.from("webm", "ascii"))),
+    ],
+    ["an unsupported DocType", ebmlHeader(docType("quicktime"))],
+    ["no DocType at all", ebmlHeader(EBML_VERSION)],
+    ["the magic with no header children", Buffer.from([0x1a, 0x45, 0xdf, 0xa3])],
+    [
+      "a header whose size overruns the body",
+      Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0xff]), EBML_VERSION]),
+    ],
+    [
+      "a truncated DocType payload",
+      Buffer.concat([
+        Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x84, 0x42, 0x82, 0x84]),
+        Buffer.from("we"),
+      ]),
+    ],
+  ])("rejects EBML with %s", async (_name, bytes) => {
+    expect((await strict(bytes)).status).toBe("unreachable");
+  });
+
+  const FTYP = mp4Box("ftyp", Buffer.from("iso60000iso6", "ascii"));
+  const FTYP_MDAT = Buffer.concat([FTYP, mp4Box("mdat", mediaBytes())]);
+
+  test("rejects a complete 200 body that ends at its ftyp box", async () => {
+    expect((await strict(FTYP)).status).toBe("unreachable");
+  });
+
+  test("rejects a complete 200 body that ends one byte into the next box header", async () => {
+    // A trailing byte is not a complete box — it cannot be positive media evidence.
+    expect((await strict(FTYP_MDAT.subarray(0, FTYP.length + 1))).status).toBe("unreachable");
+  });
+
+  test("rejects a complete 200 body that truncates a declared post-ftyp box", async () => {
+    // The mdat header is readable but its declared size overruns the body.
+    expect((await strict(FTYP_MDAT.subarray(0, FTYP_MDAT.length - 1))).status).toBe("unreachable");
+  });
+
+  test("rejects a complete 200 body whose post-ftyp boxes are all unknown", async () => {
+    const body = Buffer.concat([FTYP, mp4Box("zzzz", mediaBytes(64))]);
+    expect((await strict(body)).status).toBe("unreachable");
+  });
+
+  test("accepts a complete 200 body with an unknown ancillary box before media", async () => {
+    // Unknown-but-complete boxes around known media boxes are not a refusal —
+    // only a prefix with no known media box at all is.
+    const body = Buffer.concat([FTYP, mp4Box("junk", mediaBytes(8)), mp4Box("mdat", mediaBytes())]);
+    expect((await strict(body)).status).toBe("reachable");
+  });
+
+  test("accepts a complete 200 body with media after its ftyp box", async () => {
+    expect((await strict(FTYP_MDAT)).status).toBe("reachable");
+  });
+
+  test("accepts a capped 206 prefix whose leading box is ftyp", async () => {
+    const padded = Buffer.concat([FTYP_MDAT, mediaBytes(4096 - FTYP_MDAT.length)]);
+    const probe = await strict(padded, {
+      status: 206,
+      headers: { "content-range": "bytes 0-4095/8192" },
+    });
+    expect(probe.status).toBe("reachable");
+  });
+
+  test("accepts a 206 answer for the requested leading range", async () => {
+    const probe = await strict(FTYP_MDAT, {
+      status: 206,
+      headers: { "content-range": `bytes 0-${FTYP_MDAT.length - 1}/8192` },
+    });
+    expect(probe.status).toBe("reachable");
+  });
+
+  test.each([
+    ["no content-range header", undefined],
+    ["a malformed range", "bytes 0-xx/8192"],
+    ["a nonzero start", `bytes 1-${FTYP_MDAT.length}/8192`],
+    ["an impossible total", `bytes 0-${FTYP_MDAT.length - 1}/${FTYP_MDAT.length - 1}`],
+    ["a range past the probe cap", "bytes 0-4096/8192"],
+  ])("rejects a 206 answer with %s", async (_name, contentRange) => {
+    const probe = await strict(FTYP_MDAT, {
+      status: 206,
+      headers: contentRange === undefined ? {} : { "content-range": contentRange },
+    });
+    expect(probe.status).toBe("unreachable");
+  });
+
+  test("rejects a 206 whose body does not match the declared range length", async () => {
+    const probe = await strict(FTYP_MDAT, {
+      status: 206,
+      headers: { "content-range": "bytes 0-99/8192" },
+    });
+    expect(probe.status).toBe("unreachable");
+  });
+
+  test("rejects a 206 whose body overflows the declared range by one byte", async () => {
+    const padded = Buffer.concat([FTYP_MDAT, mediaBytes(4097 - FTYP_MDAT.length)]);
+    const probe = await strict(padded, {
+      status: 206,
+      headers: { "content-range": "bytes 0-4095/8192" },
+    });
+    expect(probe.status).toBe("unreachable");
+  });
+
+  test("rejects a 206 when the excess byte arrives as a separate stream chunk", async () => {
+    const head = Buffer.concat([FTYP_MDAT, mediaBytes(4096 - FTYP_MDAT.length)]);
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(head);
+        // Byte 4097 — one past the declared range, in its own chunk.
+        controller.enqueue(mediaBytes(1));
+        controller.close();
+      },
+    });
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/movie.mp4",
+      fetchImpl: async () =>
+        new Response(stream, {
+          status: 206,
+          headers: { "content-range": "bytes 0-4095/8192" },
+        }),
+      requireDirectMedia: true,
+    });
+    expect(probe.status).toBe("unreachable");
+  });
+
+  test.each([
+    ["conflicting", "4096"],
+    ["non-numeric", "chunked"],
+  ])("rejects a 206 whose %s content-length disagrees with the range", async (_name, length) => {
+    const probe = await strict(FTYP_MDAT, {
+      status: 206,
+      headers: {
+        "content-range": `bytes 0-${FTYP_MDAT.length - 1}/8192`,
+        "content-length": length,
+      },
+    });
+    expect(probe.status).toBe("unreachable");
+  });
+
+  test("accepts a 206 whose content-length agrees with the range", async () => {
+    const probe = await strict(FTYP_MDAT, {
+      status: 206,
+      headers: {
+        "content-range": `bytes 0-${FTYP_MDAT.length - 1}/8192`,
+        "content-length": `${FTYP_MDAT.length}`,
+      },
+    });
+    expect(probe.status).toBe("reachable");
+  });
+
+  test("a 200 body ignores a content-range header it should not carry", async () => {
+    const probe = await strict(FTYP_MDAT, {
+      headers: { "content-range": "bytes 1-5/8192" },
+    });
+    expect(probe.status).toBe("reachable");
+  });
+});
+
 describe("isGuardedPlatformFetch", () => {
   test("a distinct stub is not the platform fetch, even when assigned to globalThis.fetch", () => {
     const originalFetch = globalThis.fetch;

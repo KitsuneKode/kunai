@@ -462,13 +462,23 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // high-contrast themes measured 3,224,652 bytes (+21,675).
 // November 24 streaming relay cap, locked manifest reset, registered toast
 // timer, and unread-body cancels measured 3,210,429 bytes.
+// The split merged with #733, #736 and the #740 prune measured 3,211,074 bytes.
 // Plain mode merged with the PlaybackPhase split (#741) and #705 measured
-// 3,228,630 bytes. 3156 KiB leaves 3,114 bytes; public launcher budgets below
-// are unchanged.
-// Nested-secret vaulting and the shared deadline combiner (#737), merged onto
-// main after #744 and #745, measured 3,233,690 bytes. 3161 KiB leaves 3,174
-// bytes; public launcher budgets below are unchanged.
-export const NPM_BUNDLE_BUDGET_KB = 3_161;
+// 3,228,630 bytes.
+// Merged Stremio addon hardening (strict direct-media probe, mpv file-local
+// confinement, guarded subtitle localization, addon stdin) measured
+// 3,247,553 bytes on the merged tree.
+// 3172 KiB leaves 575 bytes; public launcher budgets below are unchanged.
+// Stremio review fixes measured 3,250,495 bytes (strict media evidence,
+// request identity, and playback/config guards); 3175 KiB leaves 705 bytes.
+// Addon beta safety fixes measured 3,253,277 bytes; 3178 KiB leaves 995 bytes.
+// After merging main and making addons opt-in, Bun 1.4.5 measured 3,270,431
+// bytes. With #734, #745, #744, and the fail-closed prompt, it measured
+// 3,290,941 bytes. 3215 KiB leaves 1,219 bytes; public launcher budgets are unchanged.
+// Merged onto main after #737 (nested-secret vaulting, shared deadline
+// combiner), it measured 3,293,492 bytes. 3219 KiB leaves 2,764 bytes; public
+// launcher budgets are unchanged.
+export const NPM_BUNDLE_BUDGET_KB = 3_219;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

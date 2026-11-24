@@ -24,7 +24,33 @@ export type SubtitleAttachmentResult =
     };
 
 export class PersistentSubtitleManager {
-  constructor(private readonly isSelectionEnabled: () => boolean = () => true) {}
+  constructor(
+    private readonly isSelectionEnabled: () => boolean = () => true,
+    /**
+     * Optional pre-send resolver (addon subtitle guard). It turns a remote URL
+     * into an owned local file path, or `null` to skip the track. There is no
+     * raw-URL fallback: when a resolver is present its verdict is final.
+     */
+    private readonly resolveSubtitle?: (
+      url: string,
+      kind: MpvUrlKind,
+      track?: SubtitleTrack,
+    ) => Promise<string | null>,
+  ) {}
+
+  private async resolveForMpv(
+    url: string,
+    kind: MpvUrlKind,
+    track: SubtitleTrack | undefined,
+    isCurrent: () => boolean,
+  ): Promise<string | null> {
+    if (this.resolveSubtitle) {
+      const resolved = await this.resolveSubtitle(url, kind, track);
+      // A resolution that outlived its generation must not reach the wire.
+      return isCurrent() ? resolved : null;
+    }
+    return isAllowedMpvUrl(url, kind) ? url : null;
+  }
 
   private observedSubtitleId: number | undefined;
   private explicitlyOff = false;
@@ -66,8 +92,8 @@ export class PersistentSubtitleManager {
     return this.lastTrackList;
   }
 
-  findExternalSubtitleId(url: string): number | undefined {
-    if (!isAllowedMpvUrl(url, "remote") || !Array.isArray(this.lastTrackList)) return undefined;
+  findExternalSubtitleId(url: string, kind: MpvUrlKind = "remote"): number | undefined {
+    if (!isAllowedMpvUrl(url, kind) || !Array.isArray(this.lastTrackList)) return undefined;
     const track = this.lastTrackList.find(
       (value) =>
         isJsonObject(value) &&
@@ -112,12 +138,19 @@ export class PersistentSubtitleManager {
 
     if (!(await this.removeExternalSubtitles(ipcSession, isCurrent))) return;
 
-    const safePrimary =
-      primarySubtitle && isAllowedMpvUrl(primarySubtitle, primarySubtitleKind)
-        ? primarySubtitle
-        : null;
+    // Dedup and metadata always work on the ORIGINAL URLs; only the string
+    // written into the IPC command is the resolved local path.
+    const safePrimary = primarySubtitle
+      ? await this.resolveForMpv(
+          primarySubtitle,
+          primarySubtitleKind,
+          subtitleTracks?.find((track) => track.url === primarySubtitle),
+          isCurrent,
+        )
+      : null;
+    if (!isCurrent()) return;
     if (safePrimary) {
-      const primary = describeSubtitleTrackForMpv(safePrimary, subtitleTracks);
+      const primary = describeSubtitleTrackForMpv(primarySubtitle ?? "", subtitleTracks);
       const result = await ipcSession.send(
         [
           "sub-add",
@@ -131,20 +164,29 @@ export class PersistentSubtitleManager {
       if (!result.ok || !isCurrent()) return;
     }
 
-    const additionalTracks = collectAdditionalSubtitleTracks(safePrimary, subtitleTracks).filter(
-      (track) => isAllowedMpvUrl(track.url, "remote"),
-    );
+    const additionalTracks = collectAdditionalSubtitleTracks(
+      primarySubtitle,
+      subtitleTracks,
+    ).filter((track) => (this.resolveSubtitle ? true : isAllowedMpvUrl(track.url, "remote")));
+    let attachedAdditional = 0;
     for (const track of additionalTracks) {
       if (!isCurrent()) return;
+      const resolved = await this.resolveForMpv(track.url, "remote", track, isCurrent);
+      if (!resolved || !isCurrent()) {
+        if (this.resolveSubtitle) continue;
+        return;
+      }
       const result = await ipcSession.send(
-        ["sub-add", track.url, "auto", track.display ?? "", track.language ?? ""],
+        ["sub-add", resolved, "auto", track.display ?? "", track.language ?? ""],
         MPV_SUBTITLE_ATTACH_TIMEOUT_MS,
       );
       if (!result.ok || !isCurrent()) return;
+      attachedAdditional += 1;
     }
 
     await this.preserveOff(ipcSession, isCurrent);
-    const attachedCount = (safePrimary ? 1 : 0) + additionalTracks.length;
+    const attachedCount =
+      (safePrimary ? 1 : 0) + (this.resolveSubtitle ? attachedAdditional : additionalTracks.length);
     if (attachedCount > 0 && isCurrent()) {
       onAttached?.(attachedCount);
     }
@@ -158,20 +200,28 @@ export class PersistentSubtitleManager {
   ): Promise<SubtitleAttachmentResult> {
     if (!ipcSession || !isCurrent()) return { status: "no-ipc", attachedCount: 0 };
     let attached = 0;
-    const safePrimary =
-      attachment.primarySubtitle && isAllowedMpvUrl(attachment.primarySubtitle, "remote")
-        ? attachment.primarySubtitle
-        : null;
+    const safePrimary = attachment.primarySubtitle
+      ? await this.resolveForMpv(
+          attachment.primarySubtitle,
+          "remote",
+          attachment.subtitleTracks?.find((track) => track.url === attachment.primarySubtitle),
+          isCurrent,
+        )
+      : null;
+    if (!isCurrent()) return { status: "none-requested", attachedCount: 0 };
     const additionalTracks = collectAdditionalSubtitleTracks(
-      safePrimary,
+      attachment.primarySubtitle ?? null,
       attachment.subtitleTracks,
-    ).filter((track) => isAllowedMpvUrl(track.url, "remote"));
+    ).filter((track) => (this.resolveSubtitle ? true : isAllowedMpvUrl(track.url, "remote")));
     if (!safePrimary && additionalTracks.length === 0) {
       return { status: "none-requested", attachedCount: 0 };
     }
 
     if (safePrimary) {
-      const primary = describeSubtitleTrackForMpv(safePrimary, attachment.subtitleTracks);
+      const primary = describeSubtitleTrackForMpv(
+        attachment.primarySubtitle ?? "",
+        attachment.subtitleTracks,
+      );
       const result = await ipcSession.send(
         [
           "sub-add",
@@ -190,8 +240,15 @@ export class PersistentSubtitleManager {
 
     for (const track of additionalTracks) {
       if (!isCurrent()) return { status: "none-requested", attachedCount: 0 };
+      const resolved = this.resolveSubtitle
+        ? await this.resolveForMpv(track.url, "remote", track, isCurrent)
+        : track.url;
+      if (!resolved || !isCurrent()) {
+        if (this.resolveSubtitle) continue;
+        return { status: "none-requested", attachedCount: 0 };
+      }
       const result = await ipcSession.send(
-        ["sub-add", track.url, "auto", track.display ?? "", track.language ?? ""],
+        ["sub-add", resolved, "auto", track.display ?? "", track.language ?? ""],
         MPV_SUBTITLE_ATTACH_TIMEOUT_MS,
       );
       if (!isCurrent()) return { status: "none-requested", attachedCount: 0 };

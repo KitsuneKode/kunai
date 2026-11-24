@@ -237,3 +237,115 @@ test("Off selected while a late attachment is pending wins over its completion",
   await manager.attachSubtitles(ipc, { primarySubtitle: "https://subs.example/en.vtt" });
   expect(commands.at(-1)).toEqual(["set_property", "sid", "no"]);
 });
+
+describe("PersistentSubtitleManager addon resolver", () => {
+  test("IPC carries only resolved local paths; refused tracks are skipped", async () => {
+    const { ipc, commands } = createFakeIpc();
+    const manager = new PersistentSubtitleManager(
+      () => true,
+      async (url) =>
+        url === "https://subs.example/good.srt" ? "/tmp/kunai-addon-subs-x/0.srt" : null,
+    );
+
+    await manager.replaceSubtitleInventory(ipc, "https://subs.example/good.srt", [
+      {
+        url: "https://subs.example/good.srt",
+        display: "English",
+        language: "en",
+      },
+      {
+        url: "https://subs.example/bad.srt",
+        display: "Bad",
+        language: "fr",
+      },
+    ]);
+
+    const subAdds = commands.filter((command) => command[0] === "sub-add");
+    expect(subAdds).toEqual([
+      ["sub-add", "/tmp/kunai-addon-subs-x/0.srt", "select", "English", "en"],
+    ]);
+    expect(commands.join(" ")).not.toContain("subs.example");
+  });
+
+  test("attachSubtitles resolves the primary and skips a refused additional", async () => {
+    const { ipc, commands } = createFakeIpc();
+    const manager = new PersistentSubtitleManager(
+      () => true,
+      async (url) =>
+        url === "https://subs.example/good.srt" ? "/tmp/kunai-addon-subs-x/1.srt" : null,
+    );
+
+    const result = await manager.attachSubtitles(ipc, {
+      primarySubtitle: "https://subs.example/good.srt",
+      subtitleTracks: [
+        { url: "https://subs.example/good.srt", display: "English", language: "en" },
+        { url: "https://subs.example/bad.srt", display: "Bad", language: "fr" },
+      ],
+    });
+
+    expect(result.status).toBe("attached");
+    expect(commands.filter((command) => command[0] === "sub-add")).toEqual([
+      ["sub-add", "/tmp/kunai-addon-subs-x/1.srt", "select", "English", "en"],
+    ]);
+    expect(commands.join(" ")).not.toContain("subs.example");
+  });
+
+  test("the resolver sees the primary's provenance: marked localizes, unmarked stays remote", async () => {
+    const { ipc, commands } = createFakeIpc();
+    const manager = new PersistentSubtitleManager(
+      () => true,
+      (url, _kind, track) => Promise.resolve(track?.guardedAddon ? "/local/owned.srt" : url),
+    );
+
+    await manager.replaceSubtitleInventory(ipc, "https://subs.example/owned.srt", [
+      { url: "https://subs.example/owned.srt", guardedAddon: true },
+    ]);
+    await manager.replaceSubtitleInventory(ipc, "https://subs.example/plain.srt", [
+      { url: "https://subs.example/plain.srt" },
+    ]);
+
+    expect(commands.filter((command) => command[0] === "sub-add")).toEqual([
+      ["sub-add", "/local/owned.srt", "select", "", ""],
+      ["sub-add", "https://subs.example/plain.srt", "select", "", ""],
+    ]);
+  });
+});
+
+describe("PersistentSubtitleManager generation guard", () => {
+  test("replaceSubtitleInventory sends nothing when its generation retires before the primary send", async () => {
+    let isCurrent = true;
+    const { ipc, commands } = createFakeIpc();
+    const manager = new PersistentSubtitleManager();
+
+    const pending = manager.replaceSubtitleInventory(
+      ipc,
+      "https://subs.example/main.vtt",
+      [{ url: "https://subs.example/main.vtt" }],
+      undefined,
+      "remote",
+      () => isCurrent,
+    );
+    await Promise.resolve();
+    isCurrent = false;
+    await pending;
+
+    expect(commands).toEqual([]);
+  });
+
+  test("attachSubtitles sends nothing when its generation retires before the primary resolves", async () => {
+    let isCurrent = true;
+    const { ipc, commands } = createFakeIpc();
+    const manager = new PersistentSubtitleManager();
+
+    const pending = manager.attachSubtitles(
+      ipc,
+      { primarySubtitle: "https://subs.example/main.vtt" },
+      () => isCurrent,
+    );
+    isCurrent = false;
+    const result = await pending;
+
+    expect(result).toEqual({ status: "none-requested", attachedCount: 0 });
+    expect(commands).toEqual([]);
+  });
+});

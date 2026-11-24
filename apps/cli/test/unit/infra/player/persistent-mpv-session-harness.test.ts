@@ -1632,6 +1632,249 @@ test.each(["es", "de"])(
   },
 );
 
+describe("PersistentMpvSession addon strict preflight", () => {
+  function addonStream(overrides: Partial<StreamInfo> = {}): StreamInfo {
+    return createStream({
+      url: "https://cdn.example/episode.mp4",
+      // SAFETY: the strict path only reads providerResolveResult.providerId.
+      providerResolveResult: {
+        providerId: "stremio-addon-example-deadbeef",
+      } as never,
+      ...overrides,
+    });
+  }
+
+  test("a replacement holds loadfile until the strict preflight resolves", async () => {
+    const harness = createHarness();
+    const gate = Promise.withResolvers<
+      | { readonly status: "reachable" }
+      | { readonly status: "unreachable"; readonly reason: string; readonly definitive: boolean }
+      | { readonly status: "timeout" }
+    >();
+    const preflightUrls: string[] = [];
+    harness.runtime.checkAddonPreflight = async (stream) => {
+      preflightUrls.push(stream.url);
+      return gate.promise;
+    };
+    const session = await PersistentMpvSession.create({
+      stream: createStream(),
+      options: { displayTitle: "Episode 1", primarySubtitle: null },
+      // SAFETY: fixture supplies only the reconnect flag it exercises.
+      kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    try {
+      harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+      harness.callbacks().onEndFile({ reason: "eof", observedAt: 2 });
+      await flushAsyncWork();
+      const playback = session.play(addonStream(), {
+        displayTitle: "Addon episode",
+        primarySubtitle: null,
+      });
+      // The seam was entered but loadfile must not be on the wire yet.
+      await waitFor(() => preflightUrls.length === 1);
+      expect(preflightUrls).toEqual(["https://cdn.example/episode.mp4"]);
+      expect(harness.commands.some((command) => command[0] === "loadfile")).toBe(false);
+
+      gate.resolve({ status: "unreachable", reason: "redirect-refused", definitive: true });
+      const result = await playback;
+      expect(result.endReason).toBe("error");
+      expect(harness.commands.some((command) => command[0] === "loadfile")).toBe(false);
+    } finally {
+      harness.endProcess();
+      await session.close();
+    }
+  });
+
+  test("a timed-out addon preflight sends no loadfile", async () => {
+    const harness = createHarness();
+    harness.runtime.checkAddonPreflight = async () => ({ status: "timeout" });
+    const session = await PersistentMpvSession.create({
+      stream: createStream(),
+      options: { displayTitle: "Episode 1", primarySubtitle: null },
+      // SAFETY: fixture supplies only the reconnect flag it exercises.
+      kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    try {
+      harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+      harness.callbacks().onEndFile({ reason: "eof", observedAt: 2 });
+      await flushAsyncWork();
+      const result = await session.play(addonStream(), {
+        displayTitle: "Addon episode",
+        primarySubtitle: null,
+      });
+      expect(result.endReason).toBe("error");
+      expect(harness.commands.some((command) => command[0] === "loadfile")).toBe(false);
+    } finally {
+      harness.endProcess();
+      await session.close();
+    }
+  });
+
+  test("a reachable strict preflight sends exactly one loadfile with file-local confinement", async () => {
+    const harness = createHarness();
+    harness.runtime.checkAddonPreflight = async () => ({ status: "reachable" });
+    const session = await PersistentMpvSession.create({
+      stream: createStream(),
+      options: { displayTitle: "Episode 1", primarySubtitle: null },
+      // SAFETY: fixture supplies only the reconnect flag it exercises.
+      kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    try {
+      harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+      harness.callbacks().onEndFile({ reason: "eof", observedAt: 2 });
+      await flushAsyncWork();
+      const playback = session.play(addonStream(), {
+        displayTitle: "Addon episode",
+        primarySubtitle: null,
+      });
+      await waitFor(() =>
+        harness.commands.some(
+          (command) =>
+            command[0] === "loadfile" && command[1] === "https://cdn.example/episode.mp4",
+        ),
+      );
+      const loads = harness.commands.filter((command) => command[0] === "loadfile");
+      expect(loads).toHaveLength(1);
+      expect(loads[0]?.[4]).toMatchObject({
+        "stream-lavf-o": "max_redirects=0",
+        "load-unsafe-playlists": "no",
+        "tls-verify": "yes",
+        ytdl: "no",
+      });
+      harness.callbacks().onFileLoaded?.({ observedAt: 3 });
+      harness.callbacks().onEndFile({ reason: "eof", observedAt: 4 });
+      await playback;
+    } finally {
+      harness.endProcess();
+      await session.close();
+    }
+  });
+
+  test("a non-addon replacement still takes the lenient concurrent preflight", async () => {
+    const harness = createHarness();
+    let addonCalls = 0;
+    harness.runtime.checkAddonPreflight = async () => {
+      addonCalls++;
+      return { status: "unreachable", reason: "redirect-refused", definitive: true };
+    };
+    const session = await PersistentMpvSession.create({
+      stream: createStream(),
+      options: { displayTitle: "Episode 1", primarySubtitle: null },
+      // SAFETY: fixture supplies only the reconnect flag it exercises.
+      kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    try {
+      harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+      harness.callbacks().onEndFile({ reason: "eof", observedAt: 2 });
+      await flushAsyncWork();
+      const playback = session.play(createStream({ url: "https://video.example/episode-2.m3u8" }), {
+        displayTitle: "Episode 2",
+        primarySubtitle: null,
+      });
+      await waitFor(() => harness.commands.some((command) => command[0] === "loadfile"));
+      expect(addonCalls).toBe(0);
+      harness.callbacks().onFileLoaded?.({ observedAt: 2 });
+      harness.callbacks().onEndFile({ reason: "eof", observedAt: 3 });
+      await playback;
+    } finally {
+      harness.endProcess();
+      await session.close();
+    }
+  });
+
+  test("a quit during a stalled addon preflight loads nothing after the verdict arrives", async () => {
+    const entered = Promise.withResolvers<void>();
+    const gate = Promise.withResolvers<
+      | { readonly status: "reachable" }
+      | { readonly status: "unreachable"; readonly reason: string; readonly definitive: boolean }
+      | { readonly status: "timeout" }
+    >();
+    const harness = createHarness();
+    let preflightCalls = 0;
+    harness.runtime.checkAddonPreflight = async () => {
+      preflightCalls++;
+      if (preflightCalls === 1) return { status: "reachable" };
+      entered.resolve();
+      return gate.promise;
+    };
+    let emitWatchdog!: (event: PlayerPlaybackEvent) => void;
+    harness.runtime.createPlaybackWatchdog = (emit) => {
+      emitWatchdog = emit;
+      return { observe() {}, stop() {}, reset() {} };
+    };
+    const session = await PersistentMpvSession.create({
+      stream: addonStream(),
+      options: { displayTitle: "Addon episode", primarySubtitle: null },
+      // SAFETY: fixture supplies only the reconnect policy it exercises.
+      kitsuneConfig: {
+        mpvInProcessStreamReconnect: true,
+        mpvInProcessStreamReconnectMaxAttempts: 1,
+        mpvKunaiScriptOpts: "",
+      } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    try {
+      harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+      const playback = session.waitForCurrentPlayback();
+      harness.commands.length = 0;
+      emitWatchdog({
+        type: "stream-stalled",
+        stallKind: "network-read-dead",
+        secondsWithoutProgress: 8,
+      });
+      // The reconnect preflight is in flight; the cycle ends before it resolves.
+      await entered.promise;
+      harness.callbacks().onEndFile({ reason: "quit", observedAt: 2 });
+      expect(await playback).toMatchObject({ endReason: "quit" });
+      gate.resolve({ status: "reachable" });
+      await flushAsyncWork();
+      expect(harness.commands.some((command) => command[0] === "loadfile")).toBe(false);
+      expect(pendingLoadOwners(session)).toBe(0);
+    } finally {
+      gate.resolve({ status: "reachable" });
+      harness.endProcess();
+      await session.close();
+    }
+  });
+
+  test("a refused addon initial stream never spawns mpv", async () => {
+    const harness = createHarness();
+    let spawned = 0;
+    harness.runtime.checkAddonPreflight = async () => ({
+      status: "unreachable",
+      reason: "redirect-refused",
+      definitive: true,
+    });
+    const innerSpawn = harness.runtime.spawn;
+    harness.runtime.spawn = (command, options) => {
+      spawned++;
+      return innerSpawn(command, options);
+    };
+    const session = await PersistentMpvSession.create({
+      stream: addonStream(),
+      options: { displayTitle: "Addon episode", primarySubtitle: null },
+      // SAFETY: fixture supplies only the reconnect flag it exercises.
+      kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    try {
+      expect(spawned).toBe(0);
+    } finally {
+      harness.endProcess();
+      await session.close().catch(() => {});
+    }
+  });
+});
 function nextTurn(): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, 0);
