@@ -227,3 +227,35 @@ test("fetchAniSkipTimingMetadata AniList path is unaffected by season > 1", asyn
   ).toBe(true);
   expect(calls.some((url) => url.includes("/30013/5?"))).toBe(true);
 });
+
+test("an AniList failure during the name lookup is not cached as 'no match'", async () => {
+  // Shared AniList client: a transport/HTTP failure (here an HTML 404 from an
+  // edge) is not an answer. Only `Media: null` from AniList is a confirmed miss.
+  let anilistCalls = 0;
+  let anilistUp = false;
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    if (hostnameOf(url) === "graphql.anilist.co") {
+      anilistCalls += 1;
+      return anilistUp
+        ? new Response(JSON.stringify({ data: { Media: { id: 777 } } }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          })
+        : new Response("<html>edge 404</html>", { status: 404 });
+    }
+    return new Response("Not Found", { status: 404 });
+  }) as typeof fetch;
+
+  const lookup = () =>
+    fetchAniSkipTimingMetadataDetailed({
+      anilistId: "opaque-catalog-id-cache-test",
+      titleName: "A Show Only This Test Uses",
+      episode: 1,
+    });
+
+  await lookup();
+  anilistUp = true;
+  await lookup();
+  expect(anilistCalls).toBe(2);
+});

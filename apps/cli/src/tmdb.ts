@@ -7,7 +7,6 @@
 // =============================================================================
 
 import { cleanEpisodeSynopsis, isPlaceholderEpisodeName } from "@/services/catalog/episode-display";
-import { seriesHintFor } from "@/services/catalog/series-hints";
 import { fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
 import {
   filterPlayableEpisodes,
@@ -15,7 +14,6 @@ import {
   seasonHasPlayableEpisodes,
   seasonSummaryNeedsEpisodeVerification,
 } from "@/services/catalog/tmdb-release";
-import { loadTvmazeEpisodesForHint } from "@/services/catalog/tvmaze-client";
 
 export type EpisodeInfo = {
   number: number;
@@ -166,57 +164,6 @@ async function fetchEpisodesRaw(tmdbId: string, season: number): Promise<Episode
     setBounded(epCache, key, eps);
     return eps;
   } catch {
-    // Every TMDB host failed. TVmaze answers are not cached here: the next
-    // call tries TMDB again first, so a recovered TMDB wins immediately.
-    return tvmazeEpisodesForSeason(tmdbId, season);
-  }
-}
-
-/** Episodes of one season from TVmaze, when the session knows the show. */
-async function tvmazeEpisodesForSeason(
-  tmdbId: string,
-  season: number,
-): Promise<EpisodeInfo[] | null> {
-  const hint = seriesHintFor(tmdbId);
-  if (!hint) return null;
-  try {
-    const episodes = await loadTvmazeEpisodesForHint(hint);
-    if (!episodes) return null;
-    const rows = episodes
-      .filter((episode) => episode.season === season)
-      .map((episode): EpisodeInfo => ({
-        number: episode.number,
-        name: episode.name,
-        airDate: episode.airdate,
-        overview: episode.summary,
-        stillPath: episode.imageUrl,
-        runtimeMinutes: episode.runtimeMinutes,
-      }));
-    return rows.length > 0 ? rows : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Seasons with at least one aired episode, from TVmaze. */
-async function tvmazeSeasonSummaries(tmdbId: string): Promise<SeasonSummary[] | null> {
-  const hint = seriesHintFor(tmdbId);
-  if (!hint) return null;
-  try {
-    const episodes = await loadTvmazeEpisodesForHint(hint);
-    if (!episodes) return null;
-    const today = new Date().toISOString().slice(0, 10);
-    const seasons = [
-      ...new Set(
-        episodes
-          .filter((episode) => episode.season > 0 && episode.airdate && episode.airdate <= today)
-          .map((episode) => episode.season),
-      ),
-    ].sort((a, b) => a - b);
-    return seasons.length > 0
-      ? seasons.map((number) => ({ number, name: `Season ${number}` }))
-      : null;
-  } catch {
     return null;
   }
 }
@@ -286,7 +233,7 @@ export async function fetchSeasonSummaries(tmdbId: string): Promise<SeasonSummar
     setBounded(seasonCache, key, summaries);
     return summaries;
   } catch {
-    return tvmazeSeasonSummaries(tmdbId);
+    return null;
   }
 }
 

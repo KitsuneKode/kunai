@@ -66,6 +66,15 @@ export class AniListSearchService implements SearchService {
       );
     } catch (error) {
       if (signal?.aborted) throw error;
+      // Transport failures surface as the original error so connectivity
+      // tracking still recognises "offline" (it reads the message).
+      if (
+        error instanceof AniListRequestError &&
+        error.kind === "network" &&
+        error.cause instanceof Error
+      ) {
+        throw error.cause;
+      }
       const detail =
         error instanceof AniListRequestError ? (error.status ?? error.kind) : "request failed";
       throw new Error(`AniList search failed: ${detail}`, { cause: error });

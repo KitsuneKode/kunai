@@ -3,13 +3,11 @@ import {
   postAniListGraphql as postSharedAniList,
 } from "@/services/catalog/anilist-client";
 import { evictOverflowedEntries } from "@/services/catalog/bounded-cache";
-import { seriesHintFor } from "@/services/catalog/series-hints";
 import { fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
 import {
   summarizeTmdbSeasonEpisodes as summarizeTmdbSeasonEpisodesImpl,
   type TmdbSeasonAiring,
 } from "@/services/catalog/tmdb-release";
-import { loadTvmazeEpisodesForHint } from "@/services/catalog/tvmaze-client";
 import type { ReleaseNewSeason } from "@kunai/types";
 import type { JsonValue } from "@kunai/types";
 
@@ -809,36 +807,15 @@ function dedupeScheduleItems(
   return deduped;
 }
 
-/**
- * A TMDB season's episode rows, or the same rows rebuilt from TVmaze when
- * every TMDB host is down. Rows keep TMDB's field names so the summarisers
- * need no second code path. TVmaze needs to know the show: the session's hint
- * for this TMDB id, else the schedule entry's title (exact name match only).
- */
+/** A TMDB season's episode rows (the TMDB client serves last-known-good during an outage). */
 async function fetchSeasonEpisodeRows(
   titleId: string,
   season: number,
-  titleName: string | undefined,
   signal?: AbortSignal,
 ): Promise<Record<string, unknown>[]> {
-  try {
-    const data = await fetchJson(`/tv/${titleId}/season/${season}`, signal);
-    const episodePayload = readRecord(data).episodes;
-    return Array.isArray(episodePayload) ? episodePayload.map(readRecord) : [];
-  } catch (error) {
-    if (signal?.aborted) throw error;
-    const hint = seriesHintFor(titleId) ?? (titleName ? { name: titleName } : undefined);
-    const episodes = hint ? await loadTvmazeEpisodesForHint(hint, signal).catch(() => null) : null;
-    const rows = (episodes ?? [])
-      .filter((episode) => episode.season === season)
-      .map((episode) => ({
-        episode_number: episode.number,
-        name: episode.name,
-        air_date: episode.airdate,
-      }));
-    if (rows.length === 0) throw error;
-    return rows;
-  }
+  const data = await fetchJson(`/tv/${titleId}/season/${season}`, signal);
+  const episodePayload = readRecord(data).episodes;
+  return Array.isArray(episodePayload) ? episodePayload.map(readRecord) : [];
 }
 
 async function loadTmdbNextRelease(
@@ -846,12 +823,7 @@ async function loadTmdbNextRelease(
   signal?: AbortSignal,
 ): Promise<CatalogScheduleItem | null> {
   if (!input.season || !input.episode) return null;
-  const episodes = await fetchSeasonEpisodeRows(
-    input.titleId,
-    input.season,
-    input.titleName,
-    signal,
-  );
+  const episodes = await fetchSeasonEpisodeRows(input.titleId, input.season, signal);
   const episode = episodes.find((candidate) => Number(candidate.episode_number) === input.episode);
   if (!episode) return null;
 
@@ -874,12 +846,7 @@ async function loadTmdbSeriesReleaseProgress(
   signal?: AbortSignal,
 ): Promise<CatalogSeriesReleaseProgress | null> {
   if (!input.season) return null;
-  const episodes = await fetchSeasonEpisodeRows(
-    input.titleId,
-    input.season,
-    input.titleName,
-    signal,
-  );
+  const episodes = await fetchSeasonEpisodeRows(input.titleId, input.season, signal);
   const today = formatDateKey(new Date());
   const { aired, next } = summarizeTmdbSeasonEpisodes(episodes, today);
   if (!aired && !next) return null;
@@ -919,7 +886,7 @@ async function probeTmdbNextSeason(
   signal?: AbortSignal,
 ): Promise<ReleaseNewSeason | undefined> {
   try {
-    const episodes = await fetchSeasonEpisodeRows(titleId, season, undefined, signal);
+    const episodes = await fetchSeasonEpisodeRows(titleId, season, signal);
     const { aired, next } = summarizeTmdbSeasonEpisodes(episodes, today);
     if (!aired && !next) return undefined;
     return {

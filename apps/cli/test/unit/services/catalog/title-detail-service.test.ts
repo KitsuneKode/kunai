@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 import { ARTWORK_PREFERENCE, episodeThumbKey, mergeArtwork } from "@/domain/catalog/title-detail";
 import { initLogger } from "@/logger";
+import { resetAniListClientForTest } from "@/services/catalog/anilist-client";
 import {
   bindTitleDetailCrosswalk,
   clearTitleDetailCache,
@@ -396,6 +397,27 @@ describe("TitleDetailService — AniList anime", () => {
     expect(detail.artwork?.poster).toBe("https://anilist.co/poster.jpg");
     expect(detail.artwork?.backdrop).toBe("https://anilist.co/banner.jpg");
     expect(detail.artwork?.contributingSources).toContain("anilist");
+
+    restore();
+  });
+
+  test("a rate-limited AniList placeholder is not cached past AniList recovery", async () => {
+    let limited = true;
+    const restore = mockFetch((url) => {
+      if (!url.includes("graphql.anilist.co")) return null;
+      return limited
+        ? new Response("{}", { status: 429, headers: { "retry-after": "1" } })
+        : jsonResponse({ data: { Media: anilistMediaPayload() } });
+    });
+
+    const degraded = await fetchTitleDetail("anilist:21", "series");
+    expect(degraded.title).not.toBe("One Piece");
+
+    // AniList recovers (the test reset clears the client's cooldown in place of waiting).
+    limited = false;
+    resetAniListClientForTest();
+    const recovered = await fetchTitleDetail("anilist:21", "series");
+    expect(recovered.title).toBe("One Piece");
 
     restore();
   });

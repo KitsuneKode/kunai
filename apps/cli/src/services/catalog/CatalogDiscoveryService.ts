@@ -746,7 +746,10 @@ async function postAniList(
     return await postAniListGraphql({ query: body.query, variables }, { signal });
   } catch (error) {
     if (signal?.aborted) throw error;
-    const reason = error instanceof AniListRequestError ? error.kind : "request failed";
+    const reason =
+      error instanceof AniListRequestError
+        ? `${error.kind}${error.status === undefined ? "" : ` ${error.status}`}`
+        : "request failed";
     throw new DiscoveryUnavailableError(source, reason, { cause: error });
   }
 }

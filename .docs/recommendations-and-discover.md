@@ -92,19 +92,23 @@ Trending walks a chain of sources per lane and remembers the last good answer:
   ends first, a failed probe holds further probes for 30 seconds, and any
   answer (including a 4xx) closes the breaker.
 
-### Series fallback: TVmaze
+### Series fallback: last-known-good TMDB
 
-When every TMDB host fails, series season lists, episode lists, and per-title
-release info (next episode, release progress) are rebuilt from TVmaze
-(`apps/cli/src/services/catalog/tvmaze-client.ts`). TVmaze has no TMDB ids, so
-the show is identified from a hint the container records for every selected
-series (`series-hints.ts`: name, year, IMDb id): the IMDb id resolves exactly,
-a name must match the premiere year (±1), and without a year only an exact
-normalised name is trusted. Results stay keyed by the TMDB id, are not cached as
-TMDB data (a recovered TMDB wins on the next call), and only aired seasons are
-offered. TVmaze numbering follows broadcast order, which matches TMDB for most
-scripted TV; long-running or anime-style numbering can differ, which is why it
-is a fallback only. A transport failure skips TVmaze for five minutes.
+Every successful TMDB show (`/tv/:id`) and season (`/tv/:id/season/:n`)
+response is also saved to the cache database as a `tmdb:<path>` row
+(`apps/cli/src/services/catalog/tmdb-durable-cache.ts`, wired in
+`bootstrap-persistence.ts`, kept 30 days). When every TMDB host fails with a
+transport error or a 5xx, `fetchTmdbJsonCached` serves the saved copy instead,
+so a series opened in the last month still lists its seasons and episodes, and
+per-title release info (next episode, release progress) still renders. A 4xx is
+an answer, not an outage, and is never masked by a saved copy.
+
+The saved copy is TMDB's own response, so numbering and identity are exactly
+what playback, downloads and history expect. A TVmaze fallback was built and
+dropped before merge: TVmaze numbers some real shows differently from TMDB
+(The Office US S04E05 is "Local Ad" on TMDB and a different episode on TVmaze),
+so a fallback episode list could start the wrong episode and write the wrong
+history row.
 
 ### AniList client
 
@@ -174,7 +178,7 @@ flow.
 
 - Add stronger visual verification for discover, calendar, and random loading/layout at small and wide terminal sizes.
 - Keep refining the discover companion treatment inside browse so recommendations, calendar entries, and random picks feel native.
-- The global "airing today" calendar has no fallback source and does not show cache age; with no usable schedule cache and TMDB/AniList down it reports "Calendar sources unavailable". TVmaze entries carry TVmaze ids, which the select-and-play flow cannot open, so they are not used there. Per-title release info for followed series does fall back to TVmaze (below).
+- The global "airing today" calendar has no fallback source and does not show cache age; with no usable schedule cache and TMDB/AniList down it reports "Calendar sources unavailable". Per-title release info for followed series does fall back, to the last-known-good TMDB responses (below).
 - Search has no fallback catalog source yet; the `CatalogSource` contract (provider-platform plan, phase 1) is where it lands.
 - Personalized recommendation rows are keyed by the top history seeds and kept for the retention window with no per-namespace cap; add one if the table grows noticeably.
 - Anime recommendation entry points can treat a numeric AniList history id as a TMDB id (pre-existing); route by media kind and external ids.

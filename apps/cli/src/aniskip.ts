@@ -5,7 +5,7 @@ import {
   type PlaybackTimingSourceFetchResult,
 } from "@/infra/timing/PlaybackTimingSource";
 import { dbg } from "@/logger";
-import { AniListRequestError, postAniListGraphql } from "@/services/catalog/anilist-client";
+import { postAniListGraphql } from "@/services/catalog/anilist-client";
 import { fetchArmIdGraph } from "@/services/catalog/arm-client";
 import { fetchAnidbMalId } from "@kunai/providers";
 import { isJsonNumber, isJsonObject } from "@kunai/types";
@@ -212,17 +212,17 @@ async function resolveAniListIdByName(
       { signal, timeoutMs: 5_000 },
     );
     const data = isJsonObject(payload.data) ? payload.data : null;
-    const media = data && isJsonObject(data.Media) ? data.Media : null;
+    // Only a confirmed answer is cached: a Media row, or `Media: null` (also
+    // what AniList's 404 envelope carries). An error-only body is not a miss.
+    if (!data || !("Media" in data)) return null;
+    const media = isJsonObject(data.Media) ? data.Media : null;
     const id = media?.id;
     const result = isJsonNumber(id) ? String(id) : null;
     setCapped(anilistIdByNameCache, key, result);
     return result;
-  } catch (error) {
-    // Only a definitive answer is cached. A transport failure or a rate-limit
-    // cooldown used to be cached as "no match" for the whole session.
-    if (error instanceof AniListRequestError && error.kind === "http" && error.status === 404) {
-      setCapped(anilistIdByNameCache, key, null);
-    }
+  } catch {
+    // A transport failure, an HTTP error or a rate-limit cooldown is not an
+    // answer; it used to be cached as "no match" for the whole session.
     return null;
   }
 }

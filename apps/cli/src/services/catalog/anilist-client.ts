@@ -7,12 +7,11 @@
 // Tracker sync (`services/sync/AniListAdapter.ts`) stays separate: it is
 // authenticated, mutating, and owns its own retry policy.
 
-import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
 import { isJsonObject, type JsonObject, type JsonValue } from "@kunai/types";
 
 export const ANILIST_GRAPHQL_URL = "https://graphql.anilist.co";
 const DEFAULT_TIMEOUT_MS = 3_500;
-/** Without a usable Retry-After, back off this long after a 429. */
+/** Without a usable Retry-After or reset header, back off this long after a 429. */
 const DEFAULT_RATE_LIMIT_BACKOFF_MS = 60_000;
 /** Never honour a server cooldown longer than this; the UI has fallbacks. */
 const MAX_COOLDOWN_MS = 120_000;
@@ -44,34 +43,69 @@ export type AniListRequestOptions = {
   readonly signal?: AbortSignal;
   readonly timeoutMs?: number;
   readonly fetchImpl?: typeof fetch;
-  readonly now?: () => number;
 };
 
-/** Epoch ms until which requests fail fast as rate-limited. */
+type Inflight = {
+  readonly promise: Promise<JsonObject>;
+  readonly controller: AbortController;
+  waiters: number;
+};
+
+/**
+ * Client-owned monotonic clock for the cooldown: a wall-clock jump backwards
+ * must not stretch a one-minute cooldown into an hour.
+ */
+let clock: () => number = () => performance.now();
+/** Monotonic ms until which requests fail fast as rate-limited. */
 let cooldownUntil = 0;
-const inflight = new Map<string, Promise<JsonObject>>();
+/** Bumped by reset; a request started before a reset may not set a cooldown. */
+let generation = 0;
+const inflight = new Map<string, Inflight>();
 
 /** Test seam: clear the shared cooldown and in-flight table. */
 export function resetAniListClientForTest(): void {
+  generation += 1;
   cooldownUntil = 0;
+  clock = () => performance.now();
+  for (const entry of inflight.values()) entry.controller.abort();
   inflight.clear();
 }
 
+/** Test seam: drive the cooldown clock. Pass undefined to restore the real one. */
+export function setAniListClockForTest(next: (() => number) | undefined): void {
+  clock = next ?? (() => performance.now());
+}
+
 /** Remaining cooldown in ms, or 0. Surfaces can show "AniList is busy". */
-export function aniListCooldownRemainingMs(now: number = Date.now()): number {
-  return Math.max(0, cooldownUntil - now);
+export function aniListCooldownRemainingMs(): number {
+  return Math.max(0, cooldownUntil - clock());
 }
 
-function parseRetryAfterMs(value: string | null, now: number): number | undefined {
+/** Seconds, or an HTTP date; anything else (negative, garbage) is ignored. */
+function parseRetryAfterMs(value: string | null): number | undefined {
   if (!value) return undefined;
-  const seconds = Number(value);
-  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
-  const at = Date.parse(value);
-  return Number.isFinite(at) ? Math.max(0, at - now) : undefined;
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) return Number(trimmed) * 1000;
+  const at = Date.parse(trimmed);
+  if (!Number.isFinite(at)) return undefined;
+  const delta = at - Date.now();
+  return delta > 0 ? delta : undefined;
 }
 
-function startCooldown(durationMs: number, now: number): void {
-  cooldownUntil = Math.max(cooldownUntil, now + Math.min(durationMs, MAX_COOLDOWN_MS));
+/** `X-RateLimit-Reset` is an epoch-seconds instant. */
+function parseResetInMs(value: string | null): number | undefined {
+  if (!value || !/^\d+$/.test(value.trim())) return undefined;
+  const delta = Number(value.trim()) * 1000 - Date.now();
+  return delta > 0 ? delta : undefined;
+}
+
+/** Start (or extend) the cooldown; returns the effective, capped delay. */
+function startCooldown(durationMs: number, startedGeneration: number): number {
+  const effective = Math.min(Math.max(durationMs, 0), MAX_COOLDOWN_MS);
+  if (startedGeneration === generation) {
+    cooldownUntil = Math.max(cooldownUntil, clock() + effective);
+  }
+  return effective;
 }
 
 /**
@@ -79,102 +113,137 @@ function startCooldown(durationMs: number, now: number): void {
  *
  * - During a rate-limit cooldown, rejects at once without a request, so the
  *   caller reaches its fallback instead of stalling.
- * - Identical concurrent requests share one fetch. The shared fetch is bounded
- *   by its own timeout; each caller can abandon its wait with its own signal.
- * - A 200 carrying GraphQL errors is returned as-is: callers read `data`.
+ * - Identical concurrent requests with the same deadline share one fetch;
+ *   each caller can abandon its wait with its own signal, and the fetch is
+ *   aborted once no caller is waiting.
+ * - A 200 carrying GraphQL errors, and a 404 carrying the GraphQL envelope
+ *   (AniList's answer for a missing `Media`), are returned as answers.
  */
 export async function postAniListGraphql(
   request: AniListRequest,
   options: AniListRequestOptions = {},
 ): Promise<JsonObject> {
-  const now = options.now?.() ?? Date.now();
-  if (now < cooldownUntil) {
-    throw new AniListRequestError(
-      "rate-limited",
-      "AniList rate limit cooldown",
-      429,
-      cooldownUntil - now,
-    );
+  const remaining = aniListCooldownRemainingMs();
+  if (remaining > 0) {
+    throw new AniListRequestError("rate-limited", "AniList rate limit cooldown", 429, remaining);
   }
   if (options.signal?.aborted) throw abortError(options.signal);
 
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const body = JSON.stringify(request);
-  let task = inflight.get(body);
-  if (!task) {
-    task = sendAniList(body, options).finally(() => {
-      if (inflight.get(body) === task) inflight.delete(body);
-    });
-    inflight.set(body, task);
+  // The deadline is part of the key: a 10 ms caller must not wait out a
+  // 100 ms leader, nor a long-budget caller fail at a short leader's deadline.
+  const key = `${timeoutMs}|${body}`;
+  let entry = inflight.get(key);
+  if (!entry) {
+    const controller = new AbortController();
+    const created: Inflight = {
+      controller,
+      waiters: 0,
+      promise: sendAniList(body, timeoutMs, controller.signal, options.fetchImpl, generation),
+    };
+    created.promise
+      .finally(() => {
+        if (inflight.get(key) === created) inflight.delete(key);
+      })
+      .catch(() => undefined);
+    inflight.set(key, created);
+    entry = created;
   }
-  return joinWithSignal(task, options.signal);
+  return waitFor(entry, options.signal);
 }
 
-async function sendAniList(body: string, options: AniListRequestOptions): Promise<JsonObject> {
-  const fetchImpl = options.fetchImpl ?? fetch;
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+async function sendAniList(
+  body: string,
+  timeoutMs: number,
+  abandon: AbortSignal,
+  fetchImpl: typeof fetch | undefined,
+  startedGeneration: number,
+): Promise<JsonObject> {
+  const deadline = AbortSignal.timeout(timeoutMs);
+  const transport = AbortSignal.any([abandon, deadline]);
+  const timedOut = () => deadline.aborted && !abandon.aborted;
   let response: Response;
   try {
-    response = await fetchImpl(ANILIST_GRAPHQL_URL, {
+    response = await (fetchImpl ?? fetch)(ANILIST_GRAPHQL_URL, {
       method: "POST",
-      signal: withTimeoutSignal(undefined, timeoutMs),
+      signal: transport,
       headers: { "content-type": "application/json", accept: "application/json" },
       body,
     });
   } catch (cause) {
-    const timedOut =
-      cause instanceof Error && (cause.name === "TimeoutError" || cause.name === "AbortError");
+    const isTimeout = timedOut() || (cause instanceof Error && cause.name === "TimeoutError");
     throw new AniListRequestError(
-      timedOut ? "timeout" : "network",
-      timedOut ? "AniList request timed out" : "AniList request failed",
+      isTimeout ? "timeout" : "network",
+      isTimeout ? "AniList request timed out" : "AniList request failed",
       undefined,
       undefined,
       { cause },
     );
   }
 
-  const now = options.now?.() ?? Date.now();
   if (response.status === 429) {
-    const retryAfterMs =
-      parseRetryAfterMs(response.headers.get("retry-after"), now) ?? DEFAULT_RATE_LIMIT_BACKOFF_MS;
-    startCooldown(retryAfterMs, now);
+    const delay = startCooldown(
+      parseRetryAfterMs(response.headers.get("retry-after")) ??
+        parseResetInMs(response.headers.get("x-ratelimit-reset")) ??
+        DEFAULT_RATE_LIMIT_BACKOFF_MS,
+      startedGeneration,
+    );
     await response.body?.cancel().catch(() => undefined);
-    throw new AniListRequestError("rate-limited", "AniList rate limited", 429, retryAfterMs);
+    throw new AniListRequestError("rate-limited", "AniList rate limited", 429, delay);
   }
 
   // Spend the last of the budget gently: stop before the server says 429.
-  // Only a header that is present counts: `Number(null)` is 0, which read a
-  // response without rate-limit headers as "budget exhausted".
+  // Only a header that is present counts (`Number(null)` is 0).
   const remainingHeader = response.headers.get("x-ratelimit-remaining");
-  const resetHeader = response.headers.get("x-ratelimit-reset");
-  const remaining = remainingHeader === null ? Number.NaN : Number(remainingHeader);
-  const resetAtSeconds = resetHeader === null ? Number.NaN : Number(resetHeader);
-  if (Number.isFinite(remaining) && remaining <= LOW_BUDGET_THRESHOLD) {
-    const resetInMs = Number.isFinite(resetAtSeconds) ? resetAtSeconds * 1000 - now : 0;
-    startCooldown(resetInMs > 0 ? resetInMs : DEFAULT_RATE_LIMIT_BACKOFF_MS / 4, now);
+  if (remainingHeader !== null && /^\d+$/.test(remainingHeader.trim())) {
+    if (Number(remainingHeader) <= LOW_BUDGET_THRESHOLD) {
+      startCooldown(
+        parseResetInMs(response.headers.get("x-ratelimit-reset")) ??
+          DEFAULT_RATE_LIMIT_BACKOFF_MS / 4,
+        startedGeneration,
+      );
+    }
   }
 
-  let parsed: JsonValue;
+  let text: string;
   try {
-    parsed = JSON.parse(await response.text());
+    text = await response.text();
   } catch (cause) {
-    if (!response.ok) {
-      throw new AniListRequestError("http", `AniList HTTP ${response.status}`, response.status);
+    // A body that stalls past the deadline is a timeout, not a bad body.
+    if (timedOut()) {
+      throw new AniListRequestError(
+        "timeout",
+        "AniList response timed out",
+        response.status,
+        undefined,
+        { cause },
+      );
     }
     throw new AniListRequestError(
-      "unreadable",
-      "AniList answered with an unreadable body",
+      "network",
+      "AniList response was cut off",
       response.status,
       undefined,
       { cause },
     );
   }
+
+  let parsed: JsonValue | undefined;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    parsed = undefined;
+  }
+  const isEnvelope = isJsonObject(parsed) && ("data" in parsed || "errors" in parsed);
+  if (response.status === 404 && isEnvelope && isJsonObject(parsed)) return parsed;
   if (!response.ok) {
     throw new AniListRequestError("http", `AniList HTTP ${response.status}`, response.status);
   }
   if (!isJsonObject(parsed)) {
     throw new AniListRequestError(
       "unreadable",
-      "AniList answered with a non-object body",
+      "AniList answered with an unreadable body",
       response.status,
     );
   }
@@ -188,18 +257,34 @@ function abortError(signal: AbortSignal | undefined): Error {
     : new DOMException("The operation was aborted.", "AbortError");
 }
 
-function joinWithSignal<T>(task: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
-  if (!signal) return task;
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(abortError(signal));
-    signal.addEventListener("abort", onAbort, { once: true });
-    task.then(
+function waitFor(entry: Inflight, signal: AbortSignal | undefined): Promise<JsonObject> {
+  entry.waiters += 1;
+  return new Promise<JsonObject>((resolve, reject) => {
+    let settled = false;
+    const leave = (abandon: boolean) => {
+      entry.waiters -= 1;
+      if (abandon && entry.waiters <= 0) entry.controller.abort();
+    };
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      leave(true);
+      reject(abortError(signal));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    entry.promise.then(
       (value) => {
-        signal.removeEventListener("abort", onAbort);
+        if (settled) return;
+        settled = true;
+        signal?.removeEventListener("abort", onAbort);
+        leave(false);
         resolve(value);
       },
       (error) => {
-        signal.removeEventListener("abort", onAbort);
+        if (settled) return;
+        settled = true;
+        signal?.removeEventListener("abort", onAbort);
+        leave(false);
         reject(error);
       },
     );

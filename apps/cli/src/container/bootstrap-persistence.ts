@@ -4,6 +4,8 @@ import { createProviderTitleBridgePort } from "@/infra/storage/provider-title-br
 import { dbg, initLogger } from "@/logger";
 import { createCatalogDurableCache } from "@/services/catalog/catalog-durable-cache";
 import { setDefaultCatalogDurableCache } from "@/services/catalog/CatalogDiscoveryService";
+import { createTmdbDurableCache } from "@/services/catalog/tmdb-durable-cache";
+import { setTmdbDurableCache } from "@/services/catalog/tmdb-proxy";
 import { runHistoryIdentityConsolidator } from "@/services/history-metadata/HistoryIdentityConsolidator";
 import { runHistoryWatchLedgerBackfill } from "@/services/history-metadata/HistoryWatchLedgerBackfill";
 import { runOfflineAssetIdentityBackfill } from "@/services/offline/offline-asset-identity-backfill";
@@ -291,6 +293,9 @@ export async function bootstrapPersistence(
   // Trending rails keep a durable last-known-good list in the same table, so
   // an upstream outage or a cold start shows the last answer instead of nothing.
   setDefaultCatalogDurableCache(createCatalogDurableCache(recommendationCache));
+  // Same for series structure: a show opened before still lists its seasons
+  // and episodes, with TMDB numbering, when every TMDB host is down.
+  setTmdbDurableCache(createTmdbDurableCache(recommendationCache));
   const providerHealth = new ProviderHealthRepository(cacheDb);
   const { listDeprecatedVidkingEndpoints } = await import("@kunai/providers/videasy");
   const endpointHealth = new ProviderEndpointHealthService(

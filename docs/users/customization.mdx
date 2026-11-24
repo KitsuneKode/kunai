@@ -189,7 +189,7 @@ Search, trending, recommendations and the calendar come from public catalogs: TM
 
 - **Trending** has fallbacks: anime trending tries Kitsu and then MyAnimeList (Jikan) when AniList is down.
 - **Trending and recommendations** remember their last good answer. If every source is unreachable, Kunai shows that list, marked with its age (`Trending this week · updated 3h ago`), instead of an empty row.
-- **Series episode lists** fall back to TVmaze when TMDB is down, for any series you have opened this session, so you can still pick an episode. Release dates for series you follow use the same fallback.
+- **Series episode lists** keep working when TMDB is down for any series you have opened in the last 30 days: Kunai uses the season and episode list it saved last time, so you can still pick an episode. Release dates for series you follow use the same saved data.
 - **Search and the "airing today" calendar** have no fallback source yet. They need TMDB (movies and series) or AniList (anime) to be reachable.
 - **AniList limits requests.** When it asks Kunai to slow down, AniList-backed rows show their fallback or saved list for up to a couple of minutes instead of waiting.
 

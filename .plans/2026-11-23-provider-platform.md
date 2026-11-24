@@ -81,7 +81,7 @@ Candidate sources, all public APIs with real terms of use:
 | Source                                    | Lane         | Gives                                     | Key           |
 | ----------------------------------------- | ------------ | ----------------------------------------- | ------------- |
 | TMDB (Kunai's **own** key, or the user's) | movie-series | search, trending, discover, recs, artwork | yes           |
-| TVmaze                                    | series       | episodes, schedule, search                | no            |
+| TVmaze (rejected for episodes, see below) | series       | schedule, search                          | no            |
 | AniList                                   | anime        | search, trending, recs, schedule          | no            |
 | Jikan (MAL)                               | anime        | search, recs, schedule                    | no            |
 | Kitsu                                     | anime        | search, trending, episodes                | no            |
@@ -288,8 +288,11 @@ manifest's behaviour.
 - Replace the borrowed TMDB key with a Kunai key plus an optional user key, and
   add TMDB attribution.
 - Durable stale-while-revalidate for trending, discover and recommendations.
-- Add TVmaze (series episodes and schedule) and Kitsu (anime) as fallback
-  sources behind the existing TMDB and AniList calls.
+- Add Kitsu (anime) as a fallback source behind the existing AniList calls.
+  For series episodes, a durable last-known-good copy of TMDB's own show and
+  season responses replaced the planned TVmaze fallback: TVmaze numbers some
+  shows differently from TMDB, so its episode list could start the wrong
+  episode.
 - Health-triggered hotfix-manifest refresh.
 
 ### Phase 1 — catalog contract
