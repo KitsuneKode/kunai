@@ -275,3 +275,122 @@ export async function searchWikidataTmdbTitles(
   );
   return wikidataRowsToSearchResults(text, rows);
 }
+
+/** A show's ids on sites Wikidata links to TMDB. */
+export interface ExternalShowIds {
+  /** IMDb title id (`tt0386676`). */
+  readonly imdb?: string;
+  /** TheTVDB series id. */
+  readonly tvdb?: string;
+}
+
+const IMDB_ID = /^tt\d{5,10}$/;
+const TVDB_ID = /^\d{1,9}$/;
+
+/** Lookup key for one id in {@link mapShowsToTmdbTvIds} results. */
+function externalShowKey(ids: ExternalShowIds): string | null {
+  if (ids.imdb && IMDB_ID.test(ids.imdb)) return `imdb:${ids.imdb}`;
+  if (ids.tvdb && TVDB_ID.test(ids.tvdb)) return `tvdb:${ids.tvdb}`;
+  return null;
+}
+
+/**
+ * The TMDB TV id for a show from a {@link mapShowsToTmdbTvIds} result, or
+ * null when neither id mapped or the IMDb and TheTVDB answers disagree.
+ */
+export function tmdbTvIdForShow(
+  mapping: ReadonlyMap<string, string>,
+  show: ExternalShowIds,
+): string | null {
+  const byImdb = show.imdb ? mapping.get(`imdb:${show.imdb}`) : undefined;
+  const byTvdb = show.tvdb ? mapping.get(`tvdb:${show.tvdb}`) : undefined;
+  if (byImdb && byTvdb && byImdb !== byTvdb) return null;
+  return byImdb ?? byTvdb ?? null;
+}
+
+export function buildShowIdMappingQuery(
+  imdbIds: readonly string[],
+  tvdbIds: readonly string[],
+): string {
+  const branches: string[] = [];
+  if (imdbIds.length > 0) {
+    const values = imdbIds.map((id) => `"${id}"`).join(" ");
+    branches.push(`{ VALUES ?imdb { ${values} } ?item wdt:P345 ?imdb . }`);
+  }
+  if (tvdbIds.length > 0) {
+    const values = tvdbIds.map((id) => `"${id}"`).join(" ");
+    branches.push(`{ VALUES ?tvdb { ${values} } ?item wdt:P4835 ?tvdb . }`);
+  }
+  return `SELECT ?imdb ?tvdb ?tv WHERE { ${branches.join(" UNION ")} ?item wdt:P4983 ?tv . }`;
+}
+
+/**
+ * Reads mapping rows into `key → TMDB TV id`. A key that maps to two different
+ * TMDB ids is ambiguous and left out: no id beats a wrong id.
+ */
+export function readShowIdMapping(payload: JsonValue): Map<string, string> {
+  const candidates = new Map<string, Set<string>>();
+  if (!isJsonObject(payload) || !isJsonObject(payload.results)) return new Map();
+  const bindings = payload.results.bindings;
+  if (!Array.isArray(bindings)) return new Map();
+  for (const binding of bindings) {
+    if (!isJsonObject(binding)) continue;
+    const read = (name: string): string | undefined => {
+      const cell = binding[name];
+      return isJsonObject(cell) && isJsonString(cell.value) ? cell.value : undefined;
+    };
+    const tv = read("tv");
+    if (!tv || !TMDB_ID.test(tv)) continue;
+    const imdb = read("imdb");
+    const tvdb = read("tvdb");
+    const key = externalShowKey({ imdb, tvdb });
+    if (!key) continue;
+    const ids = candidates.get(key) ?? new Set<string>();
+    ids.add(tv);
+    candidates.set(key, ids);
+  }
+  const mapped = new Map<string, string>();
+  for (const [key, ids] of candidates) {
+    const [only] = ids;
+    if (ids.size === 1 && only) mapped.set(key, only);
+  }
+  return mapped;
+}
+
+/**
+ * TMDB TV ids for shows known by IMDb or TheTVDB id, in one SPARQL request.
+ * Read a show's id with {@link tmdbTvIdForShow}. Rejects with `WikidataSearchUnavailableError`
+ * when Wikidata cannot answer.
+ */
+export async function mapShowsToTmdbTvIds(
+  shows: readonly ExternalShowIds[],
+  options: WikidataSearchOptions = {},
+): Promise<Map<string, string>> {
+  const imdbIds = new Set<string>();
+  const tvdbIds = new Set<string>();
+  // Both ids are asked for: a show whose IMDb id Wikidata lacks can still map
+  // through TheTVDB. Callers check that the two answers agree.
+  for (const show of shows) {
+    if (show.imdb && IMDB_ID.test(show.imdb)) imdbIds.add(show.imdb);
+    if (show.tvdb && TVDB_ID.test(show.tvdb)) tvdbIds.add(show.tvdb);
+  }
+  if (imdbIds.size === 0 && tvdbIds.size === 0) return new Map();
+  const payload = await fetchJson(
+    WIKIDATA_SPARQL,
+    {
+      method: "POST",
+      headers: {
+        "user-agent": WIKIDATA_USER_AGENT,
+        accept: "application/sparql-results+json",
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        query: buildShowIdMappingQuery([...imdbIds], [...tvdbIds]),
+      }).toString(),
+    },
+    SPARQL_TIMEOUT_MS,
+    options,
+    "id mapping",
+  );
+  return readShowIdMapping(payload);
+}

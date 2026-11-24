@@ -308,10 +308,13 @@ manifest's behaviour.
 
 - `CatalogSource` contract and registry; move search, trending, discover,
   recommendations and schedules behind it, one capability at a time.
-  **Started:** movie/series search falls back to Wikidata (CC0, keyless,
-  carries TMDB's own ids) when every TMDB route fails; anime search already
-  fails over across anime providers. Still to do: the shared `CatalogSource`
-  interface itself, discover and schedules.
+  **In progress.** Done: movie/series search falls back to Wikidata (CC0,
+  keyless, carries TMDB's own ids); anime search fails over across anime
+  providers; the `CatalogSource` contract and `walkCatalogSources`
+  (`catalog-source.ts`) exist and the calendar uses them, with TVmaze mapped
+  through Wikidata as the series stand-in and partial calendars named in the
+  header. Still to do: move search and trending onto the walker, discover,
+  and an anime calendar stand-in (none with real coverage exists today).
 - `/diagnostics` shows which source answered each catalog request. **Done**
   for search, trending, recommendations and series episodes
   (`catalog-source-ledger.ts`, "Catalog sources" line).

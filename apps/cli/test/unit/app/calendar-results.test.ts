@@ -549,6 +549,40 @@ test("keeps partial rows when one supported source fails and another succeeds", 
 
   const bundle = await pending;
   expect(bundle.results.map((r) => r.title)).toEqual(["Frieren"]);
+  // The missing lane is named, not silently dropped.
+  expect(bundle.subtitle).toContain("series schedule unavailable");
+});
+
+test("a stand-in series schedule is named in the header and on its rows", async () => {
+  const bundle = await loadCalendarResults(
+    // SAFETY: deliberately partial container — the loader reads only the members defined here.
+    withCalendarServices({
+      stateManager: { getState: () => ({ mode: "series" }) },
+      timelineService: {
+        loadReleaseWindow: async (mode: string) =>
+          mode === "anime"
+            ? []
+            : [
+                {
+                  source: "tmdb",
+                  titleId: "1489",
+                  titleName: "Jimmy Kimmel Live",
+                  type: "series",
+                  releaseAt: new Date(Date.now() + 60_000).toISOString(),
+                  releasePrecision: "timestamp",
+                  status: "upcoming",
+                  via: "TVmaze",
+                },
+              ],
+        loadMovieReleaseWindow: async () => [],
+      },
+    }) as never,
+  );
+  expect(bundle.subtitle).toContain("series via TVmaze (TMDB unreachable)");
+  expect(bundle.results[0]).toMatchObject({
+    metadataSource: "TVmaze calendar",
+    externalIds: { tmdbId: "1489" },
+  });
 });
 
 test("rejects with a bounded aggregate when every real source fails and no movie loader exists", async () => {

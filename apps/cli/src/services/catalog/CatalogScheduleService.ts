@@ -3,11 +3,13 @@ import {
   postAniListGraphql as postSharedAniList,
 } from "@/services/catalog/anilist-client";
 import { evictOverflowedEntries } from "@/services/catalog/bounded-cache";
+import { walkCatalogSources, type CatalogSource } from "@/services/catalog/catalog-source";
 import { fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
 import {
   summarizeTmdbSeasonEpisodes as summarizeTmdbSeasonEpisodesImpl,
   type TmdbSeasonAiring,
 } from "@/services/catalog/tmdb-release";
+import { loadTvmazeAiringToday } from "@/services/catalog/tvmaze-schedule";
 import type { ReleaseNewSeason } from "@kunai/types";
 import type { JsonValue } from "@kunai/types";
 
@@ -53,6 +55,12 @@ export type CatalogScheduleItem = {
   readonly releaseAt: string | null;
   readonly releasePrecision: CatalogReleasePrecision;
   readonly status: CatalogReleaseStatus;
+  /**
+   * Set when a stand-in supplied this entry while `source`'s own catalog was
+   * down (the ids are still `source` ids). Shown on the entry and in the
+   * calendar header; such entries are reused only briefly.
+   */
+  readonly via?: string;
 };
 
 export type CatalogScheduleInput = {
@@ -361,10 +369,17 @@ export class CatalogScheduleService {
   ): Promise<readonly CatalogScheduleItem[]> {
     const window = buildLocalDayWindow(this.now());
     const key = `today:${mode}:${window.dateKey}`;
-    return this.loadCached(key, RELEASING_TODAY_TTL_MS, signal, { mode }, async () => {
-      const items = await this.loaders.releasingToday(mode, window, signal);
-      return items.map((item) => normalizeScheduleItem(item, this.now()));
-    });
+    return this.loadCached(
+      key,
+      RELEASING_TODAY_TTL_MS,
+      signal,
+      { mode },
+      async () => {
+        const items = await this.loaders.releasingToday(mode, window, signal);
+        return items.map((item) => normalizeScheduleItem(item, this.now()));
+      },
+      hasStandInEntries,
+    );
   }
 
   async loadReleaseWindow(
@@ -374,10 +389,17 @@ export class CatalogScheduleService {
   ): Promise<readonly CatalogScheduleItem[]> {
     const window = buildLocalWindow(this.now(), days);
     const key = `window:${mode}:${window.dateKey}:${Math.max(1, Math.trunc(days))}`;
-    return this.loadCached(key, RELEASING_TODAY_TTL_MS, signal, { mode }, async () => {
-      const items = await this.loaders.releasingToday(mode, window, signal);
-      return items.map((item) => normalizeScheduleItem(item, this.now()));
-    });
+    return this.loadCached(
+      key,
+      RELEASING_TODAY_TTL_MS,
+      signal,
+      { mode },
+      async () => {
+        const items = await this.loaders.releasingToday(mode, window, signal);
+        return items.map((item) => normalizeScheduleItem(item, this.now()));
+      },
+      hasStandInEntries,
+    );
   }
 
   async loadMovieReleaseWindow(
@@ -399,6 +421,8 @@ export class CatalogScheduleService {
     _signal: AbortSignal | undefined,
     metadata: { readonly source?: string; readonly mode?: string },
     load: () => Promise<T>,
+    /** A stand-in answer is kept in memory briefly and never persisted. */
+    isStandIn?: (value: T) => boolean,
   ): Promise<T> {
     const cached = this.cache.get(key);
     if (cached && cached.expiresAt > this.now()) return cached.value as T;
@@ -410,6 +434,12 @@ export class CatalogScheduleService {
     if (inflight) return (await inflight) as T;
 
     const task = load().then((value) => {
+      if (isStandIn?.(value) === true) {
+        // Retry the primary soon; a stand-in must not pin itself for the TTL
+        // or survive a restart as if it were the catalog's own answer.
+        this.store(key, { expiresAt: this.now() + STAND_IN_REUSE_MS, value });
+        return value;
+      }
       const ttl = ttlForScheduleValue(value, ttlMs, this.now());
       const expiresAt = this.now() + ttl;
       this.store(key, {
@@ -449,6 +479,13 @@ export class CatalogScheduleService {
       return { found: false };
     }
   }
+}
+
+/** How long a stand-in calendar answer is reused before the primary is retried. */
+const STAND_IN_REUSE_MS = 60 * 1000;
+
+function hasStandInEntries(items: readonly CatalogScheduleItem[]): boolean {
+  return items.some((item) => item.via !== undefined);
 }
 
 export function createCatalogScheduleService(
@@ -537,10 +574,29 @@ const defaultCatalogScheduleLoaders: CatalogScheduleLoaders = {
     }
     return null;
   },
-  releasingToday: async (mode, window, signal) =>
-    mode === "anime"
-      ? loadAniListReleasingToday(window, signal)
-      : loadTmdbAiringToday(window, signal),
+  releasingToday: async (mode, window, signal) => {
+    // Anime has no stand-in with real schedule coverage: Kitsu's nextRelease
+    // is sparse and Jikan is unreachable from some networks. The calendar says
+    // so instead of guessing.
+    const sources: readonly CatalogSource<readonly CatalogScheduleItem[]>[] =
+      mode === "anime"
+        ? [{ id: "anilist", name: "AniList", load: (s) => loadAniListReleasingToday(window, s) }]
+        : [
+            { id: "tmdb", name: "TMDB", load: (s) => loadTmdbAiringToday(window, s) },
+            {
+              id: "tvmaze",
+              name: "TVmaze",
+              load: (s) => loadTvmazeAiringToday(window, { signal: s }),
+            },
+          ];
+    const answer = await walkCatalogSources({
+      capability: "calendar",
+      lane: mode === "anime" ? "anime" : "movie-series",
+      sources,
+      signal,
+    });
+    return answer.value;
+  },
   movieWindow: loadTmdbMovieUpcoming,
   seriesProgress: loadTmdbSeriesReleaseProgress,
   animeProgress: loadAniListReleaseProgressBatch,

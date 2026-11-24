@@ -1,6 +1,7 @@
 import { afterEach } from "bun:test";
 
 import { resetAniListClientForTest } from "@/services/catalog/anilist-client";
+import { resetCatalogSourceBreakersForTest } from "@/services/catalog/catalog-source";
 import { resetCatalogSourceLedgerForTest } from "@/services/catalog/catalog-source-ledger";
 
 function configureTestEnvironment(): void {
@@ -41,6 +42,7 @@ function failTestsThatLeakFetch(): void {
     // test's AniList calls.
     resetAniListClientForTest();
     resetCatalogSourceLedgerForTest();
+    resetCatalogSourceBreakersForTest();
 
     if (globalThis.fetch === nativeFetch) return;
     globalThis.fetch = nativeFetch;
