@@ -91,7 +91,8 @@ export class FileStorage implements StorageService {
     let raw: string;
     try {
       if (process.platform !== "win32") await chmod(path, 0o600);
-      raw = await readFile(path, "utf8");
+      // Preserve the BOM handling of Blob.text() for editor-written configs.
+      raw = (await readFile(path, "utf8")).replace(/^\uFEFF/, "");
     } catch (error) {
       // "Not there" is nothing stored, not a read error for the caller to
       // handle. An `exists()` pre-check used to answer this, but it left both
@@ -280,9 +281,10 @@ export class FileStorage implements StorageService {
   readJsonSync<T>(key: string): T | null {
     const path = this.pathFor(key);
     try {
+      const raw = readFileSync(path, "utf8").replace(/^\uFEFF/, "");
       // SAFETY: same boundary contract as `read()` — the caller names the shape
       // it stored under `key`; the file is user-editable, so callers decode.
-      const parsed = JSON.parse(readFileSync(path, "utf8")) as T | null;
+      const parsed = JSON.parse(raw) as T | null;
       return parsed ?? null;
     } catch {
       return null;

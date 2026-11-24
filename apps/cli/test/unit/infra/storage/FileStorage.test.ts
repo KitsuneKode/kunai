@@ -88,6 +88,17 @@ describe("FileStorage default path resolution", () => {
 });
 
 describe("FileStorage", () => {
+  test("reads an editor-written config with a UTF-8 BOM", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "kunai-file-storage-bom-"));
+    tempDirs.push(dir);
+    const path = join(dir, "config.json");
+    const storage = new FileStorage({ config: path });
+    await writeFile(path, '\uFEFF{"experimentalStremioAddons":false}', "utf8");
+    const expected = { experimentalStremioAddons: false };
+    expect(await storage.read("config")).toEqual(expected);
+    expect(storage.readJsonSync("config")).toEqual(expected);
+  });
+
   test.skipIf(process.platform === "win32")(
     "writes config files with owner-only permissions on POSIX",
     async () => {
