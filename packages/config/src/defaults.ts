@@ -1,3 +1,5 @@
+import { DEFAULT_STARTUP_PRIORITY } from "@kunai/types";
+
 import type { KitsuneConfig } from "./types";
 
 export const DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES = 2 * 1024 * 1024 * 1024;
@@ -140,7 +142,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   defaultDownloadQuality: "best",
   autoCleanupWatched: false,
   recoveryMode: "guided",
-  startupPriority: "balanced",
+  startupPriority: DEFAULT_STARTUP_PRIORITY,
   hdrMode: "auto",
   offlineArtworkCacheEnabled: true,
   offlineFreeSpaceReserveBytes: DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,

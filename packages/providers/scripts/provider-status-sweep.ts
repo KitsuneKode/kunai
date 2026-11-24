@@ -14,9 +14,9 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { DEFAULT_CONFIG } from "@kunai/config";
 import { providerAttemptTimeoutMs } from "@kunai/core";
 import {
+  DEFAULT_STARTUP_PRIORITY,
   isJsonString,
   ProviderHttpError,
   type ProviderModule,
@@ -50,7 +50,7 @@ const OUTPUT_PATH = path.resolve(
 
 const RESOLVE_TIMEOUT_MS = 30_000;
 const FRONT_DOOR_TIMEOUT_MS = 12_000;
-const DEFAULT_ATTEMPT_BUDGET_MS = providerAttemptTimeoutMs(DEFAULT_CONFIG.startupPriority);
+const DEFAULT_ATTEMPT_BUDGET_MS = providerAttemptTimeoutMs(DEFAULT_STARTUP_PRIORITY);
 
 export type SweepStatus = "healthy" | "degraded" | "blocked" | "down" | "dead";
 
@@ -336,7 +336,7 @@ async function probe(spec: ProbeSpec): Promise<ProviderRow> {
   const signal = AbortSignal.timeout(RESOLVE_TIMEOUT_MS);
   try {
     const result = await spec.module.resolve(
-      { ...spec.input, startupPriority: DEFAULT_CONFIG.startupPriority },
+      { ...spec.input, startupPriority: DEFAULT_STARTUP_PRIORITY },
       resolveContext(signal),
     );
     const resolveMs = Math.floor(performance.now() - started);
