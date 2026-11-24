@@ -23,6 +23,7 @@ import type { CapabilitySnapshot } from "@/ui";
 import { Box, Text } from "ink";
 import React from "react";
 
+import { plainBorderStyle, plainModeEnabled } from "./plain-mode";
 import { buildDependencyRows, selectStartupIssueRows } from "./setup/dependency-rows";
 import { sanitizeTerminalText } from "./shell-text";
 import { palette } from "./shell-theme";
@@ -48,19 +49,20 @@ export function CapabilityIssueStrip({
 
   if (rows.length === 0) return null;
 
+  const plain = plainModeEnabled();
   return (
     <Box
       flexDirection="column"
-      borderStyle="round"
-      borderColor={palette.warn}
-      paddingX={1}
+      borderStyle={plainBorderStyle("round", plain)}
+      borderColor={plain ? undefined : palette.warn}
+      paddingX={plain ? 0 : 1}
       width={width}
     >
       {rows.map((row) => (
         <Box key={row.id} flexDirection="column">
           <Box>
             <Text color={palette.warn} bold>
-              {"△ "}
+              {plain ? "Warning: " : "△ "}
             </Text>
             <Text color={palette.text}>
               {sanitizeTerminalText(row.consequence ?? `${row.name} not found`)}

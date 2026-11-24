@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { plainModeEnabled, selectionPrefix } from "../plain-mode";
 import { padColumnsEnd, truncateLine } from "../shell-text";
 import { hotkeyLabel, palette } from "../shell-theme";
 import {
@@ -26,7 +27,23 @@ function ActionRow({
   readonly selected?: boolean;
   readonly width?: number;
 }) {
+  const plain = plainModeEnabled();
   const disabled = Boolean(row.disabledReason);
+  if (plain) {
+    const shortcut = row.shortcut ? ` (${hotkeyLabel(normalizeActionShortcut(row.shortcut))})` : "";
+    const detail = row.disabledReason
+      ? ` — unavailable: ${row.disabledReason}`
+      : row.detail
+        ? ` — ${row.detail}`
+        : "";
+    return (
+      <Box>
+        <Text color={disabled ? palette.dim : toneColor(row.tone)} bold={selected && !disabled}>
+          {`${selectionPrefix(selected, true)}${row.label}${shortcut}${detail}`}
+        </Text>
+      </Box>
+    );
+  }
   const detailWidth = Math.max(10, width - 24);
   return (
     <Box>

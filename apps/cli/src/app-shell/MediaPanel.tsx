@@ -14,6 +14,7 @@ import React from "react";
 
 import type { KittyPlacementSlot } from "./kitty-placement-registry";
 import type { MediaPanelFact, MediaPanelMiniCard, MediaPanelModel } from "./media-panel-model";
+import { plainBorderStyle, plainModeEnabled } from "./plain-mode";
 import { MiniPosterTile } from "./primitives/MiniPosterTile";
 import { ProgressBar } from "./primitives/ProgressBar";
 import { SakuraPetal } from "./primitives/SakuraPetal";
@@ -47,6 +48,15 @@ function miniCardPlacementSlot(
 
 function SectionLabel({ label, width }: { readonly label: string; readonly width: number }) {
   const text = label.toLowerCase();
+  if (plainModeEnabled()) {
+    return (
+      <Box marginTop={1}>
+        <Text color={palette.text} bold>
+          {text.toUpperCase()}
+        </Text>
+      </Box>
+    );
+  }
   const sideLen = Math.max(0, width - measureColumns(text) - 2);
   const left = Math.min(2, sideLen);
   const right = Math.max(0, sideLen - left);
@@ -113,6 +123,22 @@ function PosterSlot({
 
 // ── Facts (aligned label / value rows) ──────────────────────────────────────
 
+/** Spoken fact line. The model stores the visual glyphs; plain mode does not. */
+function plainFactLine(fact: MediaPanelFact): string {
+  if (fact.label === "♥" || (fact.label === "favourite" && fact.value === "favourite")) {
+    return "favourite: yes";
+  }
+  if (fact.label === "score") {
+    return `score: ${fact.value.replace(/^★\s*/u, "")}`;
+  }
+  if (fact.label === "live") {
+    if (fact.value.includes("upcoming")) return "[upcoming]";
+    if (fact.value.includes("was live")) return "[was live]";
+    return "[live]";
+  }
+  return `${fact.label}: ${fact.value}`;
+}
+
 function FactRows({
   facts,
   width,
@@ -121,6 +147,20 @@ function FactRows({
   readonly width: number;
 }) {
   if (facts.length === 0) return null;
+  if (plainModeEnabled()) {
+    return (
+      <Box flexDirection="column">
+        {facts.map((fact) => (
+          <Text
+            key={`${fact.label}:${fact.value}`}
+            color={fact.tone ? statusColor(fact.tone) : palette.text}
+          >
+            {plainFactLine(fact)}
+          </Text>
+        ))}
+      </Box>
+    );
+  }
   const valueWidth = Math.max(6, width - FACT_LABEL_WIDTH - 1);
   return (
     <Box flexDirection="column">
@@ -157,9 +197,19 @@ function MiniCard({
   readonly allowSixel: boolean;
   readonly placementSlot?: KittyPlacementSlot;
 }) {
+  const accent = card.kind === "resume" ? palette.accent : palette.text;
+  if (plainModeEnabled()) {
+    return (
+      <Box flexDirection="column" marginTop={1}>
+        <Text color={accent} bold>
+          {truncateLine(card.label, width)}
+        </Text>
+        {card.meta ? <Text color={palette.muted}>{truncateLine(card.meta, width)}</Text> : null}
+      </Box>
+    );
+  }
   const thumbCols = Math.min(MINI_CARD_THUMB_COLS, Math.max(8, width - 10));
   const textWidth = Math.max(6, width - thumbCols - 3);
-  const accent = card.kind === "resume" ? palette.accent : palette.text;
   const useGraphics = allowKitty && Boolean(placementSlot);
   return (
     <Box flexDirection="row" flexWrap="nowrap" marginTop={1}>
@@ -215,7 +265,8 @@ export const MediaPanel = React.memo(function MediaPanel({
   /** Permit framebuffer Sixel output. Keep false on high-frequency surfaces. */
   readonly allowSixel?: boolean;
 }) {
-  const innerWidth = Math.max(12, railWidth - 3);
+  const plain = plainModeEnabled();
+  const innerWidth = Math.max(12, railWidth - (plain ? 0 : 3));
   const synopsisLines = model.synopsis
     ? wrapText(model.synopsis, innerWidth, SYNOPSIS_MAX_LINES)
     : [];
@@ -223,26 +274,28 @@ export const MediaPanel = React.memo(function MediaPanel({
   return (
     <Box
       flexDirection="column"
-      width={railWidth}
-      paddingLeft={2}
-      borderStyle="single"
-      borderColor={palette.lineSoft}
+      width={plain ? undefined : railWidth}
+      paddingLeft={plain ? 0 : 2}
+      borderStyle={plainBorderStyle("single", plain)}
+      borderColor={plain ? undefined : palette.lineSoft}
       borderTop={false}
       borderRight={false}
       borderBottom={false}
     >
-      <PosterSlot
-        url={model.posterUrl}
-        width={innerWidth}
-        active={active}
-        placementSlot={placementSlot}
-        allowKitty={allowKitty}
-        allowSixel={allowSixel}
-      />
+      {plain ? null : (
+        <PosterSlot
+          url={model.posterUrl}
+          width={innerWidth}
+          active={active}
+          placementSlot={placementSlot}
+          allowKitty={allowKitty}
+          allowSixel={allowSixel}
+        />
+      )}
 
       {/* Header: badge + title + secondary line */}
       <Box marginTop={1}>
-        <Text color={palette.accent}>{`❀ ${model.kindBadge}`}</Text>
+        <Text color={palette.accent}>{plain ? model.kindBadge : `❀ ${model.kindBadge}`}</Text>
       </Box>
       <Text color={palette.text} bold>
         {truncateLine(model.title, innerWidth)}

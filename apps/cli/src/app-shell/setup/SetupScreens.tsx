@@ -8,6 +8,12 @@ import React from "react";
 
 import { CompanionHost } from "../CompanionHost";
 import { reducedMotionEnabled } from "../motion-policy";
+import {
+  plainDependencyState,
+  plainModeEnabled,
+  plainTabLabel,
+  selectionPrefix,
+} from "../plain-mode";
 import { BLOOM_FRAMES, STATIC_PETAL } from "../primitives/SakuraPetal";
 import { truncateLine } from "../shell-text";
 import { palette } from "../shell-theme";
@@ -77,6 +83,7 @@ export function DependencyScreen({
   // its place only once name and detail both have room.
   const roleWidth = contentWidth >= PREFIX + nameWidth + MIN_DETAIL + ROLE_WIDTH ? ROLE_WIDTH : 0;
   const detailWidth = Math.max(MIN_DETAIL, contentWidth - PREFIX - nameWidth - roleWidth - 1);
+  const plain = plainModeEnabled();
   const still = reducedMotionEnabled();
   // The petal belongs where the work is. It used to bloom on the *consent*
   // screen, under text the user was reading, while this screen — the only one
@@ -90,12 +97,20 @@ export function DependencyScreen({
   return (
     <Box flexDirection="column">
       <Box marginBottom={1}>
-        <Text color={rechecking ? palette.accent : palette.ok} bold>
-          {petal}
-        </Text>
-        <Text color={palette.text} bold>
-          {"  Let's get you watching"}
-        </Text>
+        {plain ? (
+          <Text color={palette.text} bold>
+            Let's get you watching
+          </Text>
+        ) : (
+          <>
+            <Text color={rechecking ? palette.accent : palette.ok} bold>
+              {petal}
+            </Text>
+            <Text color={palette.text} bold>
+              {"  Let's get you watching"}
+            </Text>
+          </>
+        )}
       </Box>
       <Box marginBottom={1} flexDirection="column">
         <Text color={palette.muted}>Kunai finds playable streams and hands them to mpv.</Text>
@@ -107,6 +122,20 @@ export function DependencyScreen({
       <Box flexDirection="column">
         {rows.map((row, i) => {
           const isSelected = i === selected;
+          if (plain) {
+            return (
+              <Box key={row.id} flexDirection="column">
+                <Text color={row.state === "ok" ? palette.text : palette.textDim} bold={isSelected}>
+                  {`${selectionPrefix(isSelected, true)}${plainDependencyState(row.state)} ${row.name}: ${row.detail}${row.role ? ` (${row.role})` : ""}`}
+                </Text>
+                {isSelected && row.consequence ? (
+                  <Box paddingLeft={2}>
+                    <Text color={palette.muted}>{row.consequence}</Text>
+                  </Box>
+                ) : null}
+              </Box>
+            );
+          }
           return (
             <Box key={row.id} flexDirection="column">
               <Box backgroundColor={isSelected ? palette.accentFill : undefined}>
@@ -196,40 +225,34 @@ function LanguageColumn({
   readonly options: readonly { value: string; label: string; detail: string }[];
   readonly index: number;
 }) {
+  const plain = plainModeEnabled();
   return (
-    <Box flexDirection="column" width="48%">
+    <Box flexDirection="column" {...(plain ? {} : { width: "48%" })}>
       <Text color={focused ? palette.accent : palette.dim} bold>
-        {focused ? "❯ " : "  "}
-        {heading}
-        {focused ? " ↑↓" : ""}
+        {plain
+          ? plainTabLabel(heading, focused, true)
+          : `${focused ? "❯ " : "  "}${heading}${focused ? " ↑↓" : ""}`}
       </Text>
-      {options.map((option, i) => (
-        <SetupTarget
-          key={option.value}
-          field={heading === "Audio" ? "audio" : "subtitle"}
-          value={String(i)}
-        >
-          <Box backgroundColor={focused && i === index ? palette.accentFill : undefined}>
-            <Text
-              color={
-                focused && i === index
-                  ? palette.accent
-                  : i === index
-                    ? palette.accentDim
-                    : palette.dim
-              }
-            >
-              {i === index ? "▌ " : "  "}
-            </Text>
-            <Text
-              color={i === index ? palette.text : palette.textDim}
-              bold={focused && i === index}
-            >
-              {option.label}
-            </Text>
-          </Box>
-        </SetupTarget>
-      ))}
+      {options.map((option, i) => {
+        const chosen = i === index;
+        const selected = focused && chosen;
+        return (
+          <SetupTarget
+            key={option.value}
+            field={heading === "Audio" ? "audio" : "subtitle"}
+            value={String(i)}
+          >
+            <Box backgroundColor={selected && !plain ? palette.accentFill : undefined}>
+              <Text color={selected ? palette.accent : chosen ? palette.accentDim : palette.dim}>
+                {plain ? selectionPrefix(selected, true) : chosen ? "▌ " : "  "}
+              </Text>
+              <Text color={chosen ? palette.text : palette.textDim} bold={selected}>
+                {plain && chosen && !selected ? `[current] ${option.label}` : option.label}
+              </Text>
+            </Box>
+          </SetupTarget>
+        );
+      })}
     </Box>
   );
 }
@@ -256,25 +279,28 @@ export function LanguageScreen({
   readonly subtitleIndex: number;
   readonly focus: "audio" | "subtitle";
 }) {
+  const plain = plainModeEnabled();
   return (
     <Box flexDirection="column">
       <ScreenTitle text="Language" />
-      <Box marginBottom={1} gap={1} flexWrap="wrap">
+      <Box marginBottom={1} gap={1} flexDirection={plain ? "column" : "row"} flexWrap="wrap">
         {lanes.map((lane) => {
           const active = lane.value === activeLane;
           return (
             <SetupTarget key={lane.value} field="lane" value={lane.value}>
-              <Box backgroundColor={active ? palette.accentFill : undefined}>
-                <Text color={active ? palette.accent : palette.dim}>{active ? "▌ " : "  "}</Text>
+              <Box backgroundColor={active && !plain ? palette.accentFill : undefined}>
+                <Text color={active ? palette.accent : palette.dim}>
+                  {plain ? "" : active ? "▌ " : "  "}
+                </Text>
                 <Text color={active ? palette.text : palette.muted} bold={active}>
-                  {lane.label}
+                  {plain ? plainTabLabel(lane.label, active, true) : lane.label}
                 </Text>
               </Box>
             </SetupTarget>
           );
         })}
       </Box>
-      <Box gap={2}>
+      <Box flexDirection={plain ? "column" : "row"} gap={plain ? 0 : 2}>
         <LanguageColumn
           heading="Audio"
           focused={focus === "audio"}
@@ -438,6 +464,7 @@ export function DoneScreen({
   readonly compact?: boolean;
   readonly contentWidth?: number;
 }) {
+  const plain = plainModeEnabled();
   return (
     <Box flexDirection="column">
       {/* The one screen in setup where she is the point rather than decoration:
@@ -445,11 +472,13 @@ export function DoneScreen({
           thing seen before the shell opens. `idle` rather than the wizard's
           `wait` — the waiting is over. */}
       <Box marginBottom={1} flexDirection="row">
-        {!compact ? <CompanionHost moment="settled" rows={3} marginRight={2} /> : null}
+        {!compact && !plain ? <CompanionHost moment="settled" rows={3} marginRight={2} /> : null}
         <Box flexDirection="column">
-          <Text color={palette.ok} bold>
-            {STATIC_PETAL}
-          </Text>
+          {plain ? null : (
+            <Text color={palette.ok} bold>
+              {STATIC_PETAL}
+            </Text>
+          )}
           <Text color={palette.text} bold>
             You're all set
           </Text>
@@ -461,7 +490,7 @@ export function DoneScreen({
         {[...summary, ...outstanding].map((line) => (
           <Box key={line.label}>
             <Text color={line.ok ? palette.ok : palette.warn} bold>
-              {line.ok ? "✓ " : "△ "}
+              {plain ? (line.ok ? "[ok] " : "[warning] ") : line.ok ? "✓ " : "△ "}
             </Text>
             <Text color={palette.text}>{pad(line.label, 22)}</Text>
             <Text color={palette.muted}>
@@ -476,7 +505,9 @@ export function DoneScreen({
         <Box paddingLeft={2} flexDirection="column">
           {!compact ? (
             <Text color={palette.textDim}>
-              type a title, or <Text color={palette.dim}>/discover · /calendar · /random</Text>
+              {plain
+                ? "type a title, or /discover, /calendar, /random"
+                : "type a title, or /discover · /calendar · /random"}
             </Text>
           ) : null}
           <Text color={palette.textDim}>

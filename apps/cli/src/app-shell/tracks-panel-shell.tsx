@@ -11,6 +11,7 @@ import { Box, Text } from "ink";
 import React from "react";
 
 import { MouseTarget } from "./mouse/MouseRegions";
+import { plainModeEnabled, selectionPrefix } from "./plain-mode";
 import { StateBlock } from "./primitives/StateBlock";
 import { getWindowStart, measureColumns, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
@@ -213,15 +214,18 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
     </Box>
   );
 
+  const plain = plainModeEnabled();
   const footer = showNavHint ? (
     <Box marginTop={1}>
       <Text color={palette.dim}>
-        ↑↓ choose · → enter · ⏎ switch ·{showFavoriteHint ? " f favorite ·" : ""} esc back
+        {plain
+          ? `Up/Down choose, Right enter, Enter switch,${showFavoriteHint ? " f favorite," : ""} Esc back`
+          : `↑↓ choose · → enter · ⏎ switch ·${showFavoriteHint ? " f favorite ·" : ""} esc back`}
       </Text>
     </Box>
   ) : null;
 
-  if (width < TWO_PANE_MIN_WIDTH) {
+  if (plain || width < TWO_PANE_MIN_WIDTH) {
     return (
       <Box flexDirection="column" paddingX={1}>
         {header}
@@ -495,10 +499,11 @@ function StackedView({
   const budget = tracksPaneVisibleRows(height);
   const start = getWindowStart(focusedIndex, allRows.length, budget);
   const rows = allRows.slice(start, start + budget);
+  const plain = plainModeEnabled();
   const hiddenRows = allRows.length - start - rows.length;
   return (
     <Box flexDirection="column">
-      {start > 0 ? <Text color={palette.dim}>↑ more</Text> : null}
+      {start > 0 ? <Text color={palette.dim}>{plain ? "More above" : "↑ more"}</Text> : null}
       {rows.map((row) => {
         if (row.kind === "header") {
           return (
@@ -531,6 +536,24 @@ function StackedView({
         const fav =
           capability.section === "source" && isFavoriteSource(favorites, capability.label);
         const statusGlyph = rowStatusGlyph(capability);
+        if (plain) {
+          const tags = [
+            capability.selected ? "[active]" : "",
+            fav ? "[favorite]" : "",
+            capability.risk === "failed" ? "[failed]" : "",
+          ]
+            .filter(Boolean)
+            .join(" ");
+          return (
+            <Text
+              key={`r-${row.group.section}-${capability.value}`}
+              color={rowColor(capability, highlighted)}
+              bold={highlighted || capability.selected}
+            >
+              {`${selectionPrefix(highlighted, true)}${capability.label}${tags ? ` ${tags}` : ""}`}
+            </Text>
+          );
+        }
         return (
           <TrackOptionTarget
             key={`r-${row.group.section}-${capability.value}`}

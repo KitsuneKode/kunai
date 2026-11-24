@@ -6,6 +6,7 @@ import React from "react";
 import type { ResolvedAppCommand } from "./commands";
 import { getCommandPaletteVisibleCommandCount } from "./layout-policy";
 import { MouseTarget } from "./mouse/MouseRegions";
+import { plainModeEnabled, selectionPrefix } from "./plain-mode";
 import {
   COMMAND_GROUP_LABELS,
   CONTEXT_COMMAND_IDS,
@@ -48,14 +49,21 @@ export function LineEditorText({
   }
 
   if (value.length === 0) {
+    if (plainModeEnabled()) {
+      return <Text color={palette.dim}>{visiblePlaceholder ?? ""}</Text>;
+    }
     return (
       <>
-        <Text backgroundColor={palette.accent} color="black">
+        <Text backgroundColor={palette.accent} color={palette.bg}>
           {" "}
         </Text>
         {visiblePlaceholder ? <Text color={palette.dim}>{visiblePlaceholder}</Text> : null}
       </>
     );
+  }
+
+  if (plainModeEnabled()) {
+    return <Text color={palette.text}>{viewport.value}</Text>;
   }
 
   const { before, cursorChar, after } = splitCursor(viewport.value, viewport.cursor);
@@ -71,7 +79,7 @@ export function LineEditorText({
   return (
     <>
       <Text color={palette.text}>{before}</Text>
-      <Text backgroundColor={palette.accent} color="black">
+      <Text backgroundColor={palette.accent} color={palette.bg}>
         {visibleCursor}
       </Text>
       <Text color={palette.text}>{after}</Text>
@@ -212,15 +220,27 @@ function PaletteLocalTitles({
   readonly pointer?: PalettePointerActions | null;
 }) {
   if (matches.length === 0) return null;
+  const plain = plainModeEnabled();
   const selectedTitle = matches[highlightedIndex - commandCount]?.entry;
   return (
     <Box flexDirection="column" marginTop={1}>
-      <Text color={palette.dim} dimColor>
+      <Text color={palette.dim} dimColor={!plain}>
         {truncateLine(paletteTitleSectionLabel(selectedTitle, expanded), width)}
       </Text>
       {matches.map((match, index) => {
         const absoluteIndex = commandCount + index;
         const selected = absoluteIndex === highlightedIndex;
+        if (plain) {
+          return (
+            <Text
+              key={`title:${match.entry.source}:${match.entry.titleId}`}
+              color={selected ? palette.text : palette.textDim}
+              bold={selected}
+            >
+              {`${selectionPrefix(selected, true)}${match.entry.title} — ${match.entry.detail}`}
+            </Text>
+          );
+        }
         const aliasWidth = Math.min(20, Math.max(10, Math.floor(width * 0.28)));
         const titleWidth = Math.max(12, width - aliasWidth - 7);
         const detail = padColumnsEnd(truncateLine(match.entry.detail, aliasWidth), aliasWidth);
@@ -300,11 +320,24 @@ export function CommandPalette({
   const visibleMatches = matches.slice(windowStart, windowEnd);
   const contentWidth = resolveCommandPaletteWidth(Math.min(shellWidth, shellColumns));
 
+  const plain = plainModeEnabled();
   const renderCommand = (command: ResolvedAppCommand, absoluteIndex: number) => {
     // Compare against the raw highlighted index — model.selectedIndex is clamped
     // to command rows, so a highlighted title row must deselect every command.
     const selected = absoluteIndex === highlightedIndex;
     const alias = `/${command.aliases[0]}`;
+    if (plain) {
+      const status = !command.enabled ? ` [unavailable: ${command.reason ?? "unavailable"}]` : "";
+      return (
+        <Text
+          key={command.id}
+          color={!command.enabled ? palette.dim : selected ? palette.text : palette.textDim}
+          bold={selected && command.enabled}
+        >
+          {`${selectionPrefix(selected, true)}${alias} — ${command.description}${status}`}
+        </Text>
+      );
+    }
     const aliasWidth = Math.min(20, Math.max(10, Math.floor(contentWidth * 0.28)));
     const detailWidth = Math.max(10, contentWidth - aliasWidth - 7);
     const detail = padColumnsEnd(truncateLine(command.description, detailWidth), detailWidth);
@@ -371,18 +404,27 @@ export function CommandPalette({
         </MouseTarget>
       ) : null}
       <Box marginTop={0}>
-        <Text color={palette.accent}>/</Text>
-        <LineEditorText
-          value={input}
-          cursor={cursor}
-          focused
-          placeholder="type a command"
-          maxWidth={Math.max(8, contentWidth - 2)}
-        />
+        {plain ? (
+          <Text color={palette.text} bold>
+            {`Command palette (focused): /${input}`}
+          </Text>
+        ) : (
+          <>
+            <Text color={palette.accent}>/</Text>
+            <LineEditorText
+              value={input}
+              cursor={cursor}
+              focused
+              placeholder="type a command"
+              maxWidth={Math.max(8, contentWidth - 2)}
+            />
+          </>
+        )}
       </Box>
-      <Text color={palette.dim} dimColor>
-        Tab autocomplete · ↑↓ choose · Enter run
-        {matches.length > visibleMatches.length ? ` · ${matches.length} commands` : ""}
+      <Text color={palette.dim} dimColor={!plain}>
+        {plain
+          ? `Tab autocomplete, Up/Down choose, Enter run, Esc close${matches.length > visibleMatches.length ? ` (${matches.length} commands)` : ""}`
+          : `Tab autocomplete · ↑↓ choose · Enter run${matches.length > visibleMatches.length ? ` · ${matches.length} commands` : ""}`}
       </Text>
       {reserveTitlePreview ? (
         <PaletteTitlePreview entry={selectedTitle} width={contentWidth} />
@@ -392,7 +434,9 @@ export function CommandPalette({
           <>
             {/* Scroll affordance only when there is actually more above — no empty
                 placeholder line, so the palette stays tight. */}
-            {windowStart > 0 ? <Text color={palette.dim}> ▲ more</Text> : null}
+            {windowStart > 0 ? (
+              <Text color={palette.dim}>{plain ? "More commands above" : " ▲ more"}</Text>
+            ) : null}
             {showGrouped ? (
               <>
                 {(() => {
@@ -424,7 +468,9 @@ export function CommandPalette({
                 return renderCommand(command, absoluteIndex);
               })
             )}
-            {windowEnd < matches.length ? <Text color={palette.dim}> ▼ more</Text> : null}
+            {windowEnd < matches.length ? (
+              <Text color={palette.dim}>{plain ? "More commands below" : " ▼ more"}</Text>
+            ) : null}
           </>
         ) : (
           <Text color={palette.dim}>No matching commands</Text>

@@ -121,6 +121,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   lastCalendarVisitAt: 0,
   minimalMode: false,
   zenMode: false,
+  plainMode: false,
   powerSaverMode: false,
   presenceProvider: "off",
   presencePrivacy: "full",

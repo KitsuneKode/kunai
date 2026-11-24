@@ -19,6 +19,7 @@ import React from "react";
 
 import { buildMediaPanel } from "./media-panel-model";
 import { MediaPanel } from "./MediaPanel";
+import { plainBorderStyle, plainModeEnabled, selectionPrefix } from "./plain-mode";
 import {
   buildPostPlayView,
   type PostPlayActionRow,
@@ -135,11 +136,23 @@ function ActionRows({
     ...actions.map((action) => measureColumns(` [${action.shortcut}]`)),
   );
   const detailWidth = Math.max(0, width - markerWidth - labelWidth - shortcutWidth);
+  const plain = plainModeEnabled();
   const safeSelectedIndex = Math.min(Math.max(0, selectedIndex), Math.max(0, actions.length - 1));
   return (
     <Box flexDirection="column" marginTop={1}>
       {actions.map((action, idx) => {
         const isSelected = idx === safeSelectedIndex;
+        if (plain) {
+          return (
+            <Text
+              key={action.id}
+              color={isSelected ? palette.text : palette.textDim}
+              bold={isSelected}
+            >
+              {`${selectionPrefix(isSelected, true)}${action.label} [${action.shortcut}]${action.detail ? ` — ${action.detail}` : ""}`}
+            </Text>
+          );
+        }
         const shortcut = padColumnsEnd(` [${action.shortcut}]`, shortcutWidth);
         const label = padColumnsEnd(truncateLine(action.label, labelWidth), labelWidth);
         return (
@@ -164,6 +177,15 @@ function ActionRows({
 // ── Group label (discovery heading) ──────────────────────────────────────────
 
 function GroupLabel({ label, width }: { readonly label: string; readonly width: number }) {
+  if (plainModeEnabled()) {
+    return (
+      <Box marginTop={1}>
+        <Text color={palette.text} bold>
+          {label.toUpperCase()}
+        </Text>
+      </Box>
+    );
+  }
   const sideLen = Math.max(0, width - label.length - 2);
   const left = Math.floor(sideLen / 2);
   const right = Math.max(0, sideLen - left);
@@ -195,29 +217,32 @@ function DiscoveryCard({
   readonly kittySlot?: (typeof DISCOVERY_KITTY_SLOTS)[number];
   readonly allowKitty?: boolean;
 }) {
+  const plain = plainModeEnabled();
   const titleWidth = Math.max(8, width - 4);
   const reasonWidth = Math.max(4, width - 4);
   const posterCols = Math.max(8, width - 4);
   return (
     <Box
-      borderStyle="single"
-      borderColor={palette.lineSoft}
-      paddingX={1}
+      borderStyle={plainBorderStyle("single", plain)}
+      borderColor={plain ? undefined : palette.lineSoft}
+      paddingX={plain ? 0 : 1}
       paddingY={0}
       flexDirection="column"
-      width={width}
+      width={plain ? undefined : width}
     >
-      <Box minHeight={3} justifyContent="center" alignItems="center">
-        <MiniPosterTile
-          url={card.posterUrl}
-          title={card.title}
-          cols={posterCols}
-          rows={3}
-          enabled={Boolean(card.posterUrl)}
-          allowKitty={allowKitty}
-          placementSlot={kittySlot}
-        />
-      </Box>
+      {plain ? null : (
+        <Box minHeight={3} justifyContent="center" alignItems="center">
+          <MiniPosterTile
+            url={card.posterUrl}
+            title={card.title}
+            cols={posterCols}
+            rows={3}
+            enabled={Boolean(card.posterUrl)}
+            allowKitty={allowKitty}
+            placementSlot={kittySlot}
+          />
+        </Box>
+      )}
       <Text color={palette.accent} bold>
         {String(card.index)}
       </Text>
@@ -265,25 +290,28 @@ function DiscoveryCards({
       </Box>
     );
   }
+  const plain = plainModeEnabled();
   return (
     <Box flexDirection="column" marginTop={1}>
       {cards.map((card, index) => (
         <Box key={card.id} flexDirection="row" flexWrap="nowrap">
-          <Box width={5}>
-            <MiniPosterTile
-              url={card.posterUrl}
-              title={card.title}
-              cols={4}
-              rows={2}
-              enabled={Boolean(card.posterUrl)}
-              allowKitty={allowKitty && index < DISCOVERY_KITTY_SLOTS.length}
-              placementSlot={
-                allowKitty && index < DISCOVERY_KITTY_SLOTS.length
-                  ? DISCOVERY_KITTY_SLOTS[index]
-                  : undefined
-              }
-            />
-          </Box>
+          {plain ? null : (
+            <Box width={5}>
+              <MiniPosterTile
+                url={card.posterUrl}
+                title={card.title}
+                cols={4}
+                rows={2}
+                enabled={Boolean(card.posterUrl)}
+                allowKitty={allowKitty && index < DISCOVERY_KITTY_SLOTS.length}
+                placementSlot={
+                  allowKitty && index < DISCOVERY_KITTY_SLOTS.length
+                    ? DISCOVERY_KITTY_SLOTS[index]
+                    : undefined
+                }
+              />
+            </Box>
+          )}
           <Text color={palette.accent} bold>
             {String(card.index).padStart(1)}{" "}
           </Text>
@@ -329,6 +357,18 @@ const NEXT_UP_HERO_HEADINGS: Record<PostPlayNextUpHero["kind"], string> = {
   queue: "▶ FROM QUEUE",
 };
 
+function plainHeroLabel(label: string): string {
+  if (!plainModeEnabled()) return label;
+  return label.replace(/^✓\s*/u, "[done] ");
+}
+
+const NEXT_UP_HERO_PLAIN_HEADINGS = {
+  resume: "RESUME",
+  "next-episode": "UP NEXT",
+  "next-season": "NEXT SEASON",
+  queue: "FROM QUEUE",
+} satisfies Record<PostPlayNextUpHero["kind"], string>;
+
 function NextUpHeroCard({
   hero,
   artworkUrl,
@@ -344,6 +384,7 @@ function NextUpHeroCard({
   readonly contentKind?: ContentKind;
   readonly titleType?: ContentType;
 }) {
+  const plain = plainModeEnabled();
   const innerWidth = Math.max(20, width - 4);
   // Larger hero still so Kitty/Sixel episode art reads sharp next to the rail.
   const posterCols = Math.min(16, Math.max(12, Math.floor(innerWidth * 0.28)));
@@ -352,7 +393,7 @@ function NextUpHeroCard({
   const { poster, spinner } = usePosterPreview(artworkUrl, {
     rows: posterRows,
     cols: posterCols,
-    enabled: Boolean(artworkUrl),
+    enabled: !plain && Boolean(artworkUrl),
     variant: "preview",
     allowKitty: true,
     allowSixel: true,
@@ -365,9 +406,26 @@ function NextUpHeroCard({
   // "e episodes" is only offered when there are episodes to open: a movie has
   // no episode list, so advertising the key pointed at nothing.
   const countdownLine = [
-    hero.kind === "resume" ? "↵ resume" : "↵ play",
+    hero.kind === "resume"
+      ? plain
+        ? "Enter resume"
+        : "↵ resume"
+      : plain
+        ? "Enter play"
+        : "↵ play",
     ...(contentKindHasEpisodes(contentKind, titleType) ? ["e episodes"] : []),
-  ].join(" · ");
+  ].join(plain ? ", " : " · ");
+  if (plain) {
+    return (
+      <Box flexDirection="column" marginTop={1}>
+        <Text color={palette.accent} bold>
+          {`${NEXT_UP_HERO_PLAIN_HEADINGS[hero.kind]}: ${hero.label}`}
+        </Text>
+        <Text color={palette.muted}>{hero.meta}</Text>
+        <Text color={palette.dim}>{countdownLine}</Text>
+      </Box>
+    );
+  }
   return (
     <Box
       borderStyle="round"
@@ -528,7 +586,10 @@ export const PostPlayShell = React.memo(function PostPlayShell({
 
   return (
     <ViewportResizeGate kind="playback" message="Resize terminal to see post-play options">
-      <Box flexDirection="row" paddingX={1}>
+      <Box
+        flexDirection={plainModeEnabled() ? "column" : "row"}
+        paddingX={plainModeEnabled() ? 0 : 1}
+      >
         {/* ── Left / body column ─────────────────────────────────────────── */}
         <Box flexDirection="column" width={bodyWidth}>
           {/* Title hero */}
@@ -546,7 +607,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
           {view.celebration ? (
             <Box flexDirection="column" marginTop={1}>
               <Text color={palette.milestoneText} bold>
-                {view.heroLabel}
+                {plainHeroLabel(view.heroLabel)}
               </Text>
               <Text color={palette.muted}>
                 {truncateLine(view.celebration.statLine, bodyWidth)}
@@ -562,7 +623,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
               {/* Hero zone label */}
               <Box marginTop={1}>
                 <Text color={hColor} bold>
-                  {view.heroLabel}
+                  {plainHeroLabel(view.heroLabel)}
                 </Text>
               </Box>
 
@@ -604,8 +665,8 @@ export const PostPlayShell = React.memo(function PostPlayShell({
               <DiscoveryCards
                 cards={view.discovery}
                 width={bodyWidth}
-                layout={isWide ? "cards" : "list"}
-                allowKitty={isWide}
+                layout={!plainModeEnabled() && isWide ? "cards" : "list"}
+                allowKitty={!plainModeEnabled() && isWide}
               />
             </>
           ) : null}
@@ -631,17 +692,26 @@ export const PostPlayShell = React.memo(function PostPlayShell({
               directly above a footer calling it "commands". */}
           <Box marginTop={1}>
             <Text color={palette.dim}>
-              {truncateLine(
-                [
-                  "↑↓ move",
-                  "↵ select",
-                  recommendations.length > 0 ? "1·2·3 picks" : null,
-                  view.nextUpHero ? "x cancel" : null,
-                ]
-                  .filter(Boolean)
-                  .join("   ·   "),
-                bodyWidth,
-              )}
+              {plainModeEnabled()
+                ? [
+                    "Up/Down move",
+                    "Enter select",
+                    recommendations.length > 0 ? "1-3 picks" : null,
+                    view.nextUpHero ? "x cancel" : null,
+                  ]
+                    .filter(Boolean)
+                    .join(", ")
+                : truncateLine(
+                    [
+                      "↑↓ move",
+                      "↵ select",
+                      recommendations.length > 0 ? "1·2·3 picks" : null,
+                      view.nextUpHero ? "x cancel" : null,
+                    ]
+                      .filter(Boolean)
+                      .join("   ·   "),
+                    bodyWidth,
+                  )}
             </Text>
           </Box>
         </Box>
