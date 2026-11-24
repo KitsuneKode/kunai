@@ -91,7 +91,7 @@ test("a dropped finalize write is reported through onWriteError instead of crash
   expect(errors).toHaveLength(1);
 });
 
-test("DNS abandon clears ledger without persisting on shutdown flush", () => {
+test("DNS discard clears ledger without persisting on shutdown flush", () => {
   const { ledger, repo } = makeLedger();
   const oldTimestamp = "2026-06-01T12:00:00.000Z";
 
@@ -108,7 +108,7 @@ test("DNS abandon clears ledger without persisting on shutdown flush", () => {
 
   ledger.start({ title, episode, mediaKind: "series" }, 0);
   ledger.onProgress(0, 1_400);
-  ledger.abandon();
+  ledger.discard();
   ledger.checkpoint();
 
   const row = repo.getProgress(title, episode);

@@ -985,18 +985,6 @@ export function buildAllmangaSourceInventorySeeds(
   });
 }
 
-/** @deprecated Use buildAllmangaSourceInventorySeeds + finalizeCycleSourceInventory */
-export function buildAllmangaSourceCandidates(
-  streams: readonly StreamCandidate[],
-  selectedSourceId: string | undefined,
-  cachePolicy: StreamCandidate["cachePolicy"],
-): ProviderSourceCandidate[] {
-  return buildAllmangaSourceInventorySeeds(streams, cachePolicy).map((source) => ({
-    ...source,
-    status: source.id === selectedSourceId ? "selected" : "available",
-  }));
-}
-
 function formatAllmangaSourceLabel(sourceId: string): string {
   const family = sourceId.split(":").at(-1) ?? sourceId;
   return normalizeProviderDisplayLabel(family) ?? family;

@@ -11,12 +11,14 @@ lastReviewed: "2026-10-27T06:55:37Z"
 old origin (HTTP 302 to `anilab.so`); ani-cli had already moved to HiAnime
 (c99221d). `loadProductionProviderModules()` no longer imports the module;
 `@kunai/config` maps persisted `anidb` selections to HiAnime and strips the id
-from priority, disable, and title-pin fields. The package stays for unit/live
-fixtures and historic cache keys — not for live user resolve.
+from priority, disable, and title-pin fields. The module was removed; the
+AniSkip MAL lookup helper (`packages/providers/src/shared/anidb-identity.ts`)
+and the retired-id migration remain. This file is historical evidence, not a
+description of runnable code.
 
 The retired adapter is excluded from `test:live:providers`; the former
-`test:live:anidb` command was removed. Its retained search-to-resolve script is historical and
-cannot resolve through the production registry. Production anime search/resolve qualification now
+`test:live:anidb` command was removed, and the search-to-resolve smoke script was
+removed with it. Production anime search/resolve qualification now
 uses the configured live provider through `test:live:release-signoff`, rather
 than restoring a retired domain to make a historical smoke run.
 
@@ -44,8 +46,8 @@ fallback or an `unsupported` result carrying filter evidence, each with
 
 ## AniDB browse parsing
 
-`packages/providers/src/anidb/browse-parser.ts` is the single parser for both markup generations,
-used by search and resolve so they cannot drift apart:
+Before the module was removed, `packages/providers/src/anidb/browse-parser.ts` was the single parser for both markup generations,
+used by search and resolve so they could not drift apart:
 
 - It captures the complete anchor opening tag first and only then parses and validates `href`;
   href matching never delimits the attributes used for title extraction.
@@ -125,15 +127,15 @@ The cost model matters as much as the data, because this runs in front of the ep
 - An official response that carries `<error>` (rate limit, ban, bad client credentials) is never
   cached. Caching what it parses to would suppress every episode title for that show for a month
   after the block lifted.
-- AniDB is relay-registered (`/rpc/anidb`, settings toggle). Metadata HTML/JSON uses `context.fetch`
-  with curl fallback. HLS ladder expansion uses the same path so a relay miss does not collapse
-  qualities to a silent `auto` row. Video remains direct from `hls.anidb.app`; the relay has no
-  media route or video fallback configuration.
+- AniDB was relay-registered (`/rpc/anidb`, settings toggle) before the module was removed.
+  Metadata HTML/JSON used `context.fetch` with curl fallback. HLS ladder expansion used the same
+  path so a relay miss did not collapse qualities to a silent `auto` row. Video stayed direct
+  from `hls.anidb.app`; the relay has no media route or video fallback configuration.
 
 ## AniDB season routing and episode numbering
 
-AniDB models each season as its own title, so `routeAnidbSeason()` in
-`packages/providers/src/anidb/season-routing.ts` decides identity and numbering from evidence:
+AniDB models each season as its own title, so `routeAnidbSeason()` in the
+removed `packages/providers/src/anidb/season-routing.ts` decided identity and numbering from evidence (the module was removed):
 
 - Season 1 retains the base title.
 - Season 2+ searches `<normalized base> Season N` and requires both a matching parsed season and
@@ -141,7 +143,7 @@ AniDB models each season as its own title, so `routeAnidbSeason()` in
   structured `not-found` rather than resolving the wrong title. A suffixed title such as
   `Solo Leveling Season 2: Arise from the Shadow` (live `4884`, was `19837`) leaves
   `solo leveling arise from the shadow` and matches via `prefix` (score 1) — covered by
-  `anidb-season-routing.test.ts` prefix test.
+  the `anidb-season-routing.test.ts` prefix test before the module was removed.
 - If no numbered sibling matches, a standalone `Final Season` may route to the ordinal immediately
   after the show's highest explicitly numbered sibling. Movie cards, final-season parts, and
   prefixed spin-off seasons provide no ordinal evidence; ambiguous or arc-named runs fail closed.

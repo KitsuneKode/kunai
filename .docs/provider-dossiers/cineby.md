@@ -9,7 +9,7 @@ lastReviewed: "2026-10-11"
 
 ## Production status (2026-05-27)
 
-- **Module:** `packages/providers/src/cineby/index.ts` — **research wrapper** over the Videasy direct resolver (not the default beta provider order).
+- **Module:** The standalone Cineby module was removed. Cineby-named flavors still run through Videasy.
 - **Flavor table:** shared with Videasy; Cineby **alias** names (Neon, Yoru, …) are diagnostics-only; playback inventory uses the current **Valorant**-themed labels (Yoru, Neon, Sage, …) — the One Piece names (Luffy, Brook, …) survive only as deprecated ids for pin migration (same stable `source:videasy:videasy:{endpoint}` ids).
 - **Selection:** one flavor per resolve from `preferredAudioLanguage` (movies-only flavors skipped on series).
 - **Inherit:** Videasy timeouts, Phase A mirrors, and presentation contract from Videasy — do not maintain a separate decrypt stack.
@@ -19,9 +19,9 @@ lastReviewed: "2026-10-11"
 - **Media kinds:** Movies, TV Series.
 - **Search support:** Yes, proxy to TMDB API.
 - **Episode catalog support:** Yes, TMDB proxy.
-- **Stream resolve support:** Yes — delegates to Videasy (`packages/providers/src/videasy/direct.ts`).
+- **Stream resolve support:** The removed wrapper delegated to Videasy (`packages/providers/src/videasy/direct.ts`); the Videasy flavors still resolve.
 - **Language/audio/subtitle model:** Flavor registry maps agent/endpoint + optional `languageQuery` / `filterQuality` (see `flavors.ts`).
-- **Server/source model:** Cineby “agents” are **display aliases** for Videasy endpoints; Kunai **sources** use the Valorant-themed names (Yoru, Neon, …) when resolved through this wrapper — One Piece names remain only as deprecated pin-migration ids.
+- **Server/source model:** Cineby “agents” were **display aliases** for Videasy endpoints; Kunai **sources** used the Valorant-themed names (Yoru, Neon, …) when resolved through the removed wrapper — One Piece names remain only as deprecated pin-migration ids.
 - **Quality model:** Derived from the final `.m3u8` manifest.
 - **Thumbnail/poster support:** Yes. TMDB proxies for episodes.
 - **Known failure modes:** Upstream WAF changes to the "Agent" routes. If Cineby changes "killjoy" to another agent, the language routing breaks.
@@ -83,7 +83,6 @@ sequenceDiagram
 ## Recommended Contract Changes
 
 - **Implemented:** Flavor → endpoint table in `packages/providers/src/videasy/flavors.ts` (`cinebyAlias` field for Neon / Yoru / …).
-- **Cache key dimensions:** Follow VidKing cache policy; wrapper remaps `providerId` to `cineby` on the resolve result.
+- **Cache key dimensions:** Followed VidKing cache policy; the removed wrapper remapped `providerId` to `cineby` on the resolve result.
 - **Diagnostics events:** WAF / timeout evidence same as VidKing.
-- **Tests:** Wrapper inherits VidKing unit/live tests; dedicated Cineby matrix remains in `.reference/experiments/scratchpads/provider-cineby/` (local notes gitignored).
-- **Promotion:** Keep it listed in `packages/providers/src/research.ts` until the flavor matrix and WAF posture are validated outside lab network.
+- **Tests:** The removed wrapper inherited VidKing unit/live tests; the dedicated Cineby matrix remains in `.reference/experiments/scratchpads/provider-cineby/` (local notes gitignored).

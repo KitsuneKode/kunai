@@ -151,11 +151,6 @@ export class PlaybackHistoryLedger {
     this.durationSeconds = 0;
   }
 
-  /** @deprecated Prefer {@link discard}. */
-  abandon(): void {
-    this.discard();
-  }
-
   checkpoint(): void {
     if (!this.context) return;
     try {

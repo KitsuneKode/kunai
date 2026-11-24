@@ -2,12 +2,13 @@
 # Network-free: the real shells over open-movie fixtures (test/harness/ui-demo-*).
 # Run from apps/cli:  vhs test/vhs/ui-demo.tape
 # The README assets are this recording cropped to the UI area, e.g.
-#   ffmpeg -ss 0.3 -t 19.7 -i test/vhs/golden/ui-demo.mp4 -vf "crop=1200:1020:0:0" \
-#     -c:v libx264 -crf 20 -pix_fmt yuv420p -movflags +faststart demo-ui-walkthrough.mp4
+#   ffmpeg -ss 0.3 -t 19.7 -i test/vhs/captures/ui-demo.mp4 -vf "crop=1200:1020:0:0" \
+#     -c:v libx264 -crf 20 -pix_fmt yuv420p -movflags +faststart \
+#     ../../.reference/design/brand/demo-ui-walkthrough.mp4
 # (the GIF is the same crop at 12 fps, scaled to 880 px wide, with a generated palette).
 # 1200 px wide at 20 px type is a ~95-column terminal — wide enough that the
 # footer and hint lines never truncate in the recording.
-Output test/vhs/golden/ui-demo.mp4
+Output test/vhs/captures/ui-demo.mp4
 
 Set Shell "bash"
 Set FontFamily "JetBrainsMono Nerd Font Mono"
