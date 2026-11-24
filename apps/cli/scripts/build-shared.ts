@@ -478,7 +478,11 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // Merged onto main after #737 (nested-secret vaulting, shared deadline
 // combiner), it measured 3,293,492 bytes. 3219 KiB leaves 2,764 bytes; public
 // launcher budgets are unchanged.
-export const NPM_BUNDLE_BUDGET_KB = 3_219;
+// Decoded-video readiness (playback-output-gate: playback-started and progress
+// wait for a decoded frame, video-not-decoding recovery, video-lost reconnect,
+// both mpv emitters) measured 3,298,787 bytes on that tree: +5,295, no
+// dependency or asset. 3224 KiB leaves 2,589 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_224;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

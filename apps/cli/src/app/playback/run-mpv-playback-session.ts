@@ -34,11 +34,22 @@ import type { DiagnosticCorrelation } from "@/services/diagnostics/correlation";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 import type { PlaybackStartupStage } from "@/services/playback/playback-startup-timeline";
 
+export type StartupAbortReason =
+  | { readonly kind: "no-progress" }
+  | {
+      readonly kind: "video-not-decoding";
+      readonly evidence: Extract<PlayerPlaybackEvent, { type: "video-not-decoding" }>;
+    };
+
 export type MpvPlaybackSessionHooks = {
   readonly onFeedback: (update: MpvPlaybackFeedback) => void;
   readonly onStartupMark?: (stage: PlaybackStartupStage) => void;
-  /** Abort in-flight mpv when the startup stall fires (no first progress within STARTUP_STALL_TIMEOUT_MS). */
-  readonly onStartupStallAbort?: () => void | Promise<void>;
+  /**
+   * Abort in-flight mpv when startup fails: no first progress within
+   * STARTUP_STALL_TIMEOUT_MS, or a selected video track that plays without a
+   * decoded frame. Either way the existing source recovery takes over.
+   */
+  readonly onStartupStallAbort?: (reason: StartupAbortReason) => void | Promise<void>;
   /**
    * Fired once on confirmed `playback-started` (not process spawn / IPC).
    * Queue acknowledgement belongs here.
@@ -146,34 +157,53 @@ export async function runMpvPlaybackSession(
     }
   };
 
+  /** One way out of a failed startup; the reason only changes the copy and diagnostics. */
+  const abortStartup = (reason: StartupAbortReason) => {
+    if (startupStallFired) return;
+    if (!activeGeneration) return;
+    // An old watchdog must not abort a replacement generation.
+    const decision = hooks.applyPlaybackStatusSignal({
+      kind: "startup-stall",
+      generation: activeGeneration,
+    });
+    if (!decision.accepted) return;
+    startupStallFired = true;
+    clearBootstrapStallTimer();
+    const route = formatPlaybackStreamRoute(stream);
+    hooks.onFeedback(
+      reason.kind === "video-not-decoding"
+        ? {
+            detail: "Video isn't decoding — trying next source",
+            note: [
+              `${reason.evidence.codec ? `${reason.evidence.codec} ` : ""}video produced no frames in ${reason.evidence.secondsWithoutVideo}s of playback`,
+              route,
+              "auto failover · o source · ⇧F fallback",
+            ]
+              .filter(Boolean)
+              .join(" · "),
+          }
+        : {
+            detail: "Startup stalled — trying next source",
+            note: [
+              `startup-stall: no playback progress within ${STARTUP_STALL_TIMEOUT_MS / 1000}s`,
+              route,
+              "auto failover · o source · ⇧F fallback",
+            ]
+              .filter(Boolean)
+              .join(" · "),
+          },
+    );
+    void Promise.resolve(hooks.onStartupStallAbort?.(reason)).catch(() => {
+      /* stop best-effort; play() return path marks suspectedDeadStream */
+    });
+  };
+
   const armStartupStallWatchdog = () => {
     if (startupStallArmed || startupStallFired) return;
     startupStallArmed = true;
     clearBootstrapStallTimer();
     bootstrapStallTimer = setTimeout(() => {
-      if (startupStallFired) return;
-      if (!activeGeneration) return;
-      // An old watchdog must not abort a replacement generation.
-      const decision = hooks.applyPlaybackStatusSignal({
-        kind: "startup-stall",
-        generation: activeGeneration,
-      });
-      if (!decision.accepted) return;
-      startupStallFired = true;
-      const route = formatPlaybackStreamRoute(stream);
-      hooks.onFeedback({
-        detail: "Startup stalled — trying next source",
-        note: [
-          `startup-stall: no playback progress within ${STARTUP_STALL_TIMEOUT_MS / 1000}s`,
-          route,
-          "auto failover · o source · ⇧F fallback",
-        ]
-          .filter(Boolean)
-          .join(" · "),
-      });
-      void Promise.resolve(hooks.onStartupStallAbort?.()).catch(() => {
-        /* stop best-effort; play() return path marks suspectedDeadStream */
-      });
+      abortStartup({ kind: "no-progress" });
     }, STARTUP_STALL_TIMEOUT_MS);
   };
 
@@ -250,6 +280,10 @@ export async function runMpvPlaybackSession(
                 }
               : feedback,
           );
+        }
+
+        if (event.type === "video-not-decoding") {
+          abortStartup({ kind: "video-not-decoding", evidence: event });
         }
 
         if (event.type === "playback-started") {

@@ -8,6 +8,7 @@ import { isJsonObject, isJsonNumber, isJsonString } from "@kunai/types";
 import type { MpvIpcSession } from "./mpv-ipc";
 import { applyObservedPropertySample, type PlayerStatsState } from "./mpv-stats";
 import type { PersistentSubtitleManager } from "./persistent-subtitle-manager";
+import type { PlaybackOutputDriver } from "./playback-output-gate";
 import type { MpvRequestedAction } from "./PlayerControlService";
 import type { PlayerPlaybackEvent } from "./PlayerService";
 
@@ -17,7 +18,8 @@ export type PersistentMpvPropertyCycle = {
   stats: PlayerStatsState;
   acceptPlaybackProperties: boolean;
   playerReadyNotified: boolean;
-  playerStartedNotified: boolean;
+  /** Holds `playback-started` and progress until mpv shows output (see playback-output-gate). */
+  output: PlaybackOutputDriver;
   lastPlaybackProgressEventAtMs: number;
   lastPlaybackProgressPositionSeconds: number;
   lastPlaybackProgressDurationSeconds: number;
@@ -147,6 +149,7 @@ export class PersistentMpvPropertyRouter {
 
     if (active.stats.latestIpcSample) {
       this.deps.observeWatchdog(active.stats.latestIpcSample);
+      active.output.observe(active.stats.latestIpcSample);
     }
 
     if ((name === "time-pos" || name === "playback-time") && typeof value === "number") {
@@ -157,11 +160,9 @@ export class PersistentMpvPropertyRouter {
         previousPositionSeconds,
         value,
       );
-      if (value > 0 && !active.playerStartedNotified) {
-        active.playerStartedNotified = true;
-        active.onPlaybackEvent?.({ type: "playback-started" });
-      }
-      this.deps.maybeEmitPlaybackProgress(active, observedAt);
+      // Progress waits for confirmed output: a clock that moves on audio alone
+      // must not cancel the startup watchdog or record watch progress.
+      if (active.output.started) this.deps.maybeEmitPlaybackProgress(active, observedAt);
       void this.deps.handleSegmentSkipProgress(this.deps.getCurrentOptions());
       this.deps.fireNearEofIfNeeded(value);
     }

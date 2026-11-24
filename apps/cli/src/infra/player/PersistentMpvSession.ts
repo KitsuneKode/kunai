@@ -42,7 +42,13 @@ import {
 } from "./kunai-mpv-bridge";
 import { discoverMpvInvocation } from "./mpv-discovery";
 import { probeMpvHdrCapability } from "./mpv-hdr";
-import { computeInProcessReconnectSeek } from "./mpv-in-process-reconnect";
+import {
+  computeInProcessReconnectSeek,
+  isWatchdogReconnectTrigger,
+  watchdogReconnectTrigger,
+  type InProcessReconnectTrigger,
+  type WatchdogReconnectTrigger,
+} from "./mpv-in-process-reconnect";
 import type { MpvIpcSession } from "./mpv-ipc";
 import { openMpvIpcSession, waitForMpvIpcEndpoint } from "./mpv-ipc";
 import {
@@ -53,6 +59,7 @@ import {
   newMpvIpcSessionId,
   shouldUnlinkUnixSocket,
 } from "./mpv-ipc-endpoint";
+import { isSubtitleIpcCommand, mpvIpcFailureEvents } from "./mpv-ipc-failure-events";
 import { shouldEmitPlaybackProgress } from "./mpv-playback-kernel";
 import { needsMpvNetworkPreflight } from "./mpv-playback-url";
 import type { MpvUrlKind } from "./mpv-playback-url";
@@ -76,6 +83,11 @@ import {
   type PersistentResumeStartChoice,
 } from "./persistent-ready-work-policy";
 import { PersistentSubtitleManager } from "./persistent-subtitle-manager";
+import {
+  createPlaybackOutputDriver,
+  readMpvVideoOutput,
+  type PlaybackOutputDriver,
+} from "./playback-output-gate";
 import {
   type ActivePlaybackSkip,
   findActivePlaybackSkip,
@@ -108,8 +120,6 @@ const IN_PROCESS_RECONNECT_MAX_BACKOFF_MS = 16_000;
  * reaches it.
  */
 const RECONNECT_ATTEMPT_CEILING = 12;
-
-type InProcessReconnectTrigger = "network-read-dead" | "premature-eof" | "error";
 
 type MpvProcess = Pick<Bun.Subprocess, "exited" | "killed" | "exitCode" | "kill">;
 
@@ -165,7 +175,7 @@ type PlayerCycleState = {
   resolve: (result: PlaybackResult) => void;
   promise: Promise<PlaybackResult>;
   playerReadyNotified: boolean;
-  playerStartedNotified: boolean;
+  output: PlaybackOutputDriver;
   lastPlaybackProgressEventAtMs: number;
   lastPlaybackProgressPositionSeconds: number;
   lastPlaybackProgressDurationSeconds: number;
@@ -825,14 +835,9 @@ export class PersistentMpvSession {
         noteStreamStall(active.stats, Date.now());
       }
       this.currentCycleOptions().onPlaybackEvent?.(event);
-      if (
-        this.mpvInProcessStreamReconnectEnabled &&
-        this.mpvInProcessStreamReconnectMaxAttempts > 0 &&
-        event.type === "stream-stalled" &&
-        event.stallKind === "network-read-dead"
-      ) {
-        void this.handleNetworkReadDeadReconnect();
-      }
+      // handleWatchdogReconnect checks that in-process reconnect is enabled.
+      const reconnectTrigger = watchdogReconnectTrigger(event);
+      if (reconnectTrigger) void this.handleWatchdogReconnect(reconnectTrigger);
     };
     this.watchdog = (this.runtime.createPlaybackWatchdog ?? createPlaybackWatchdog)(
       emitPlaybackEvent,
@@ -944,20 +949,8 @@ export class PersistentMpvSession {
             this.drainPendingReadyWork();
           },
           onCommandResult: (result) => {
-            if (result.ok) return;
-            const command = String(result.command[0] ?? "unknown");
-            this.currentCycleOptions().onPlaybackEvent?.({
-              type: "ipc-command-failed",
-              command,
-              error: result.error,
-            });
-            if (result.error === "timeout" && !isSubtitleIpcCommand(command)) {
-              this.currentCycleOptions().onPlaybackEvent?.({
-                type: "ipc-stalled",
-                command,
-                error: result.error,
-              });
-            }
+            const emit = this.currentCycleOptions().onPlaybackEvent;
+            for (const event of mpvIpcFailureEvents(result, isSubtitleIpcCommand)) emit?.(event);
           },
         });
       } catch (error) {
@@ -1012,6 +1005,13 @@ export class PersistentMpvSession {
     const promise = new Promise<PlaybackResult>((res) => {
       resolve = res;
     });
+    const output = createPlaybackOutputDriver({
+      gate: this.runtime.createPlaybackOutputGate?.(),
+      stats,
+      readVideoOutput: async () => readMpvVideoOutput(this.ipcSession),
+      isCurrent: () => this.activeCycle === cycle,
+      emit: (event) => cycle.onPlaybackEvent?.(event),
+    });
     const cycle: PlayerCycleState = {
       stats,
       resolve,
@@ -1019,7 +1019,7 @@ export class PersistentMpvSession {
       playerReadyNotified: false,
       onPlayerReady: options.onPlayerReady,
       onPlaybackEvent: options.onPlaybackEvent,
-      playerStartedNotified: false,
+      output,
       lastPlaybackProgressEventAtMs: 0,
       lastPlaybackProgressPositionSeconds: -1,
       lastPlaybackProgressDurationSeconds: 0,
@@ -1781,7 +1781,7 @@ export class PersistentMpvSession {
       reason === "stop" &&
       !this.retired &&
       this.reconnectInFlight &&
-      this.pendingInProcessReconnect?.trigger === "network-read-dead" &&
+      isWatchdogReconnectTrigger(this.pendingInProcessReconnect?.trigger) &&
       this.pendingFileLoad?.generation === this.cycleGeneration
     ) {
       return;
@@ -1842,7 +1842,7 @@ export class PersistentMpvSession {
     active.resolve(result);
   }
 
-  private async handleNetworkReadDeadReconnect(): Promise<void> {
+  private async handleWatchdogReconnect(trigger: WatchdogReconnectTrigger): Promise<void> {
     if (
       !this.mpvInProcessStreamReconnectEnabled ||
       this.mpvInProcessStreamReconnectMaxAttempts <= 0
@@ -1858,7 +1858,7 @@ export class PersistentMpvSession {
       active,
       this.currentPositionSeconds,
       duration,
-      "network-read-dead",
+      trigger,
     );
     if (!reloaded) {
       dbg("mpv-ipc", "in-process-reconnect-skipped", {
@@ -2068,10 +2068,6 @@ export class PersistentMpvSession {
       }
     }
   }
-}
-
-function isSubtitleIpcCommand(command: string): boolean {
-  return command === "sub-add" || command === "sub-remove" || command === "sub-reload";
 }
 
 async function unlinkIfExists(path: string): Promise<void> {

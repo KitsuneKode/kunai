@@ -178,6 +178,7 @@ describe("mpv-ipc", () => {
       "demuxer-via-network",
       "cache-speed",
       "vo-configured",
+      "video-out-params",
       "eof-reached",
       "idle-active",
       "core-idle",
@@ -354,6 +355,37 @@ describe("mpv-ipc", () => {
       emitData(chunk2);
 
       expect(propertyUpdates).toEqual([{ name: "media-title", value: "🦊" }]);
+      await session.close();
+    });
+  });
+
+  test("a property with no value is answered, not reported as a failed command", async () => {
+    await withFakeMpvSocket(true, async ({ emitData, written }) => {
+      const reported: string[] = [];
+      const session = await openMpvIpcSession({
+        endpoint: { kind: "unix_socket", path: "/private/kunai.sock" },
+        onPropertyUpdate() {},
+        onEndFile() {},
+        onCommandResult(result) {
+          if (!result.ok) reported.push(`${String(result.command[0])}:${result.error}`);
+        },
+      });
+      const reply = (error: string) => {
+        const payloads = written();
+        // SAFETY: Harness verifies command payload serialized with request_id
+        const last = JSON.parse(payloads[payloads.length - 1]!) as { request_id: number };
+        emitData(Buffer.from(`${JSON.stringify({ request_id: last.request_id, error })}\n`));
+      };
+
+      const unset = session.send(["get_property", "video-out-params"]);
+      reply("property unavailable");
+      expect(await unset).toMatchObject({ ok: false, error: "property unavailable" });
+
+      const broken = session.send(["set_property", "pause", "x"]);
+      reply("unsupported format for accessing property");
+      await broken;
+
+      expect(reported).toEqual(["set_property:unsupported format for accessing property"]);
       await session.close();
     });
   });

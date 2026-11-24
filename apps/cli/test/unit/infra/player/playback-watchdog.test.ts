@@ -404,4 +404,77 @@ describe("playback-watchdog", () => {
       demuxerViaNetwork: true,
     });
   });
+
+  describe("video lost while the clock runs", () => {
+    const VIDEO = [{ id: 1, type: "video", selected: true, codec: "h264" }];
+    const NO_VIDEO = [{ id: 1, type: "video", selected: false, codec: "h264" }];
+    const at = (
+      positionSeconds: number,
+      extra: Partial<Parameters<ReturnType<typeof createPlaybackWatchdog>["observe"]>[0]> = {},
+    ) => ({
+      source: "ipc" as const,
+      observedAt: positionSeconds * 1000,
+      positionSeconds,
+      durationSeconds: 1400,
+      trackList: VIDEO,
+      ...extra,
+    });
+    const videoLost = (events: PlayerPlaybackEvent[]) =>
+      events.filter((event) => event.type === "stream-stalled" && event.stallKind === "video-lost");
+
+    test("frames that stop for ten clock seconds raise one video-lost stall", () => {
+      const events: PlayerPlaybackEvent[] = [];
+      const watchdog = createPlaybackWatchdog((event) => events.push(event));
+      watchdog.observe(at(100, { videoOutParams: { w: 1920, h: 1080 } }));
+      watchdog.observe(at(101));
+      watchdog.observe(at(110.5));
+      expect(videoLost(events)).toHaveLength(0);
+      watchdog.observe(at(111));
+      watchdog.observe(at(115));
+      expect(videoLost(events)).toEqual([
+        {
+          type: "stream-stalled",
+          secondsWithoutProgress: 10,
+          stallKind: "video-lost",
+          duringStartup: false,
+        },
+      ]);
+      watchdog.stop();
+    });
+
+    test("a returning frame clears the incident, so a later loss is reported again", () => {
+      const events: PlayerPlaybackEvent[] = [];
+      const watchdog = createPlaybackWatchdog((event) => events.push(event), {
+        videoLostAfterSeconds: 2,
+      });
+      watchdog.observe(at(10, { voConfigured: true }));
+      watchdog.observe(at(11));
+      watchdog.observe(at(13));
+      watchdog.observe(at(14, { voConfigured: true }));
+      watchdog.observe(at(15));
+      watchdog.observe(at(17));
+      expect(videoLost(events)).toHaveLength(2);
+      watchdog.stop();
+    });
+
+    test("no stall before the first frame, with video turned off, or while paused or seeking", () => {
+      const events: PlayerPlaybackEvent[] = [];
+      const watchdog = createPlaybackWatchdog((event) => events.push(event), {
+        videoLostAfterSeconds: 2,
+      });
+      // Never decoded: that is the startup gate's call, not a mid-playback stall.
+      watchdog.observe(at(1));
+      watchdog.observe(at(9));
+      watchdog.observe(at(10, { videoOutParams: { w: 2, h: 2 } }));
+      // The user turned video off.
+      watchdog.observe(at(11, { trackList: NO_VIDEO }));
+      watchdog.observe(at(20, { trackList: NO_VIDEO }));
+      // Paused or seeking: the incident clock restarts.
+      watchdog.observe(at(21, { paused: true }));
+      watchdog.observe(at(25, { seeking: true }));
+      watchdog.observe(at(26, { paused: true }));
+      expect(videoLost(events)).toHaveLength(0);
+      watchdog.stop();
+    });
+  });
 });

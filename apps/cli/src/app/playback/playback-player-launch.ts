@@ -233,17 +233,24 @@ export async function launchPlayback(input: PlayerLaunchInput): Promise<Playback
       onFeedback: (update) => updatePlaybackFeedback(context, update),
       onStartupMark,
       onConfirmedPlaybackStart,
-      onStartupStallAbort: () => {
+      onStartupStallAbort: (reason) => {
+        const notDecoding = reason.kind === "video-not-decoding" ? reason.evidence : null;
         diagnosticsService.record(
           buildPlaybackDiagnosticEvent({
-            operation: "playback.startup-stall.aborted",
+            operation: notDecoding
+              ? "playback.startup.video-not-decoding"
+              : "playback.startup-stall.aborted",
             status: "failed",
             severity: "degraded",
-            failureClass: "timeout",
-            message: "Startup stall watchdog aborted mpv",
+            failureClass: notDecoding ? "unknown" : "timeout",
+            message: notDecoding
+              ? "Video track played without a decoded frame; aborting for source recovery"
+              : "Startup stall watchdog aborted mpv",
             correlation,
             context: {
-              timeoutMs: STARTUP_STALL_TIMEOUT_MS,
+              timeoutMs: notDecoding ? null : STARTUP_STALL_TIMEOUT_MS,
+              videoCodec: notDecoding?.codec ?? null,
+              secondsWithoutVideo: notDecoding?.secondsWithoutVideo ?? null,
               streamHost: (() => {
                 try {
                   return new URL(stream.url).hostname;
