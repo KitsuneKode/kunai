@@ -8,7 +8,7 @@ import {
   runProviderCycle,
   type CoreProviderModule,
 } from "@kunai/core";
-import { isJsonNumber, isJsonString } from "@kunai/types";
+import { httpStatusToResolveErrorCode, isJsonNumber, isJsonString } from "@kunai/types";
 import type {
   CachePolicy,
   ProviderCycleCandidate,
@@ -167,7 +167,8 @@ async function fetchMovySeed(
       providerId: MOVY_PROVIDER_ID,
       stage: "seed",
       status: response.status,
-      code: "network-error",
+      code:
+        httpStatusToResolveErrorCode(response.status) === "blocked" ? "blocked" : "network-error",
       retryable: response.status >= 500 || response.status === 429,
     });
   }
@@ -234,14 +235,15 @@ async function fetchMovyLaneSources(
       continue;
     }
     if (!response.ok) {
-      const body = await response.text().catch(() => "");
+      const accessRefused = httpStatusToResolveErrorCode(response.status) === "blocked";
+      const body = accessRefused ? "" : await response.text().catch(() => "");
       const detail = /"message"\s*:\s*"([^"]{3,120})"/.exec(body)?.[1];
       throw new ProviderHttpError({
         message: detail ? `${lane}: ${detail}` : `${lane} sources failed: HTTP ${response.status}`,
         providerId: MOVY_PROVIDER_ID,
         stage: "sources",
         status: response.status,
-        code: "network-error",
+        code: accessRefused ? "blocked" : "network-error",
         retryable: response.status >= 500 || response.status === 429,
       });
     }
@@ -706,14 +708,16 @@ export async function resolveMovyDirect(
         const failure =
           error instanceof ProviderHttpError
             ? {
-                // An HTTP answer is upstream evidence: 5xx/429 retryable
-                // outage, 404/410 a definitive miss. Not a decrypt/parse bug.
+                // Preserve an explicit API refusal and the definitive miss
+                // from 404/410 when translating to a cycle failure.
                 code: error.code,
                 retryable: error.retryable,
                 failureClass:
-                  error.status === 404 || error.status === 410
-                    ? ("candidate-empty" as const)
-                    : ("candidate-network" as const),
+                  error.code === "blocked"
+                    ? ("candidate-blocked" as const)
+                    : error.status === 404 || error.status === 410
+                      ? ("candidate-empty" as const)
+                      : ("candidate-network" as const),
               }
             : error instanceof MovyDecryptError
               ? {
