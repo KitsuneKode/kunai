@@ -271,8 +271,9 @@ async function fetchWithValidatedRedirects(input: {
       });
       if (!REDIRECT_STATUSES.has(response.status)) return response;
       // A redirect is never returned to the caller, so its body is never read:
-      // release the connection now instead of at garbage collection.
-      await response.body?.cancel().catch(() => undefined);
+      // release the connection now instead of at garbage collection. Not
+      // awaited: a transport's cancel may never settle, and must not stall this.
+      void response.body?.cancel().catch(() => undefined);
 
       const location = response.headers.get("location");
       if (!location || redirectCount >= input.maxRedirects) {
@@ -352,7 +353,7 @@ async function relayUpstreamResponse(
 
   const contentLength = upstream.headers.get("content-length");
   if (contentLength && Number(contentLength) > maxResponseBytes) {
-    await upstream.body.cancel().catch(() => undefined);
+    void upstream.body.cancel().catch(() => undefined);
     return relayError(
       "response-too-large",
       providerId,
@@ -498,7 +499,7 @@ async function readBodyWithin(
       if (done) break;
       total += value.byteLength;
       if (total > maxBytes) {
-        await reader.cancel().catch(() => undefined);
+        void reader.cancel().catch(() => undefined);
         return null;
       }
       chunks.push(value);

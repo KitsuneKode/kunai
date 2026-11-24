@@ -204,6 +204,12 @@ const sessionCache = new Map<string, SessionCacheEntry>();
 const inflightRequests = new Map<string, Promise<JsonValue>>();
 /** Epoch ms until which each host is skipped; absent/0 means eligible. */
 const hostRetryAfter = new Map<string, number>();
+/**
+ * Hosts resting after a 429. Kept apart from the outage breaker: a rate
+ * limit is not cleared by a recovery probe, so a rested host is neither
+ * walked nor probed until its rest ends.
+ */
+const rateLimitedUntil = new Map<string, number>();
 /** One half-open recovery probe at a time across all request paths. */
 let halfOpenProbeInFlight = false;
 /**
@@ -265,6 +271,7 @@ export function clearTmdbSessionCache(): void {
   sessionCache.clear();
   inflightRequests.clear();
   hostRetryAfter.clear();
+  rateLimitedUntil.clear();
   halfOpenProbeInFlight = false;
   nextHalfOpenProbeAt = 0;
 }
@@ -452,20 +459,26 @@ export async function fetchTmdbJsonWithFallback(
   let lastError: Error | null = null;
 
   const hosts = tmdbHostOrder();
-  const eligible = hosts.filter((host) => now >= (hostRetryAfter.get(host.base) ?? 0));
+  const resting = (host: TmdbHost) => now < (rateLimitedUntil.get(host.base) ?? 0);
+  const eligible = hosts.filter(
+    (host) => now >= (hostRetryAfter.get(host.base) ?? 0) && !resting(host),
+  );
   let probing = false;
   let candidates = eligible;
   if (eligible.length === 0) {
     // Half-open: every host is inside its breaker window. One request probes
     // the host whose window ends first; concurrent requests fail fast instead
     // of each sending their own probe (20 distinct paths = 20 probes before).
+    // Only an outage is probed early; a rate-limited host keeps its rest.
+    const probeable = hosts.filter((host) => !resting(host));
+    if (probeable.length === 0) throw new Error("TMDB hosts rate limited");
     if (halfOpenProbeInFlight) throw new Error("TMDB hosts unavailable (recovery probe in flight)");
     if (now < nextHalfOpenProbeAt)
       throw new Error("TMDB hosts unavailable (next recovery probe pending)");
     probing = true;
     nextHalfOpenProbeAt = now + HALF_OPEN_PROBE_INTERVAL_MS;
     halfOpenProbeInFlight = true;
-    candidates = [...hosts]
+    candidates = [...probeable]
       .sort((a, b) => (hostRetryAfter.get(a.base) ?? 0) - (hostRetryAfter.get(b.base) ?? 0))
       .slice(0, 1);
   }
@@ -505,7 +518,7 @@ export async function fetchTmdbJsonWithFallback(
           // Rate limited: a temporary refusal by this host, not TMDB's answer
           // to the request. Rest it briefly and let the next host (or, once
           // every host is out, the saved copy) answer.
-          hostRetryAfter.set(host.base, Date.now() + RATE_LIMITED_RETRY_AFTER_MS);
+          rateLimitedUntil.set(host.base, Date.now() + RATE_LIMITED_RETRY_AFTER_MS);
           lastError = error;
           continue;
         }

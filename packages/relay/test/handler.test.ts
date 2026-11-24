@@ -1187,3 +1187,24 @@ test("handleRpcRequest times out a body that stalls after its headers", async ()
   expect(await response.json()).toMatchObject({ error: { code: "upstream-timeout" } });
   expect(cancelled).toBe(true);
 });
+
+test("handleRpcRequest does not wait on a body cancel that never settles", async () => {
+  const neverSettles = new ReadableStream<Uint8Array>({
+    cancel: () => new Promise<void>(() => {}),
+  });
+  const response = await handleRpcRequest(
+    rpcRequest({ method: "GET", upstreamUrl: "https://api.allanime.day/api" }),
+    {
+      providerId: "allanime",
+      registry: providerRegistry,
+      authorization: localLoopbackAuthorization,
+      async transport() {
+        return new Response(neverSettles, {
+          status: 302,
+          headers: { Location: "https://miruro.bz/api" },
+        });
+      },
+    },
+  );
+  expect(response.status).toBe(502);
+});

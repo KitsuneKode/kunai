@@ -116,6 +116,20 @@ describe("TMDB last-known-good for series structure", () => {
     expect(await fetchTmdbJsonCached("/tv/2316")).toEqual(show);
   });
 
+  test("rate-limited hosts are not re-probed before their rest ends", async () => {
+    setTmdbDurableCache(realCache());
+    let requests = 0;
+    serve(() => {
+      requests += 1;
+      return new Response("slow down", { status: 429 });
+    });
+    await expect(fetchTmdbJsonCached("/tv/9999")).rejects.toThrow();
+    const afterFirst = requests;
+    // A different request inside the rest: no host is asked again.
+    await expect(fetchTmdbJsonCached("/tv/9998")).rejects.toThrow("rate limited");
+    expect(requests).toBe(afterFirst);
+  });
+
   test("a mirror's HTTP 200 error payload never replaces a good saved show", async () => {
     setTmdbDurableCache(realCache());
     serve(() => Response.json(show));

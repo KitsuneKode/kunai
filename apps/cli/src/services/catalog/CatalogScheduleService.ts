@@ -458,11 +458,19 @@ export class CatalogScheduleService {
 
     signal?.throwIfAborted();
     const existing = this.sharedLoads.get(key);
-    // SAFETY: as above — one key, one loader, one T.
-    if (existing) return joinSharedLoad(existing as SharedLoad<T>, signal);
+    // A load whose last waiter left is cancelled: start a fresh one instead
+    // of handing a new caller its abort. The identity check in its cleanup
+    // keeps it from removing the replacement.
+    if (existing && !existing.controller.signal.aborted) {
+      // SAFETY: as above — one key, one loader, one T.
+      return joinSharedLoad(existing as SharedLoad<T>, signal);
+    }
 
     const controller = new AbortController();
     const task = load(controller.signal).then((value) => {
+      // A cancelled load (every waiter left, or clearCache) may have resolved
+      // with partial data from a caught abort: never cache or persist it.
+      if (controller.signal.aborted) return value;
       if (isStandIn?.(value) === true) {
         // Retry the primary soon; a stand-in must not pin itself for the TTL
         // or survive a restart as if it were the catalog's own answer.

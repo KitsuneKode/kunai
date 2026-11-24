@@ -373,6 +373,17 @@ describe("secret-service delete reports what really happened", () => {
     await expect(vault.delete("k")).rejects.toThrow("timed out");
   });
 
+  test("exit 1 with an error message is a daemon fault, not an absent entry", async () => {
+    const vault = await linuxVault(() => ({
+      exitCode: 1,
+      stdout: "",
+      stderr: "Cannot autolaunch D-Bus without X11 $DISPLAY",
+      timedOut: false,
+    }));
+    await expect(vault.delete("k")).rejects.toThrow("may still be stored");
+    await expect(vault.get("k")).rejects.toThrow("secret-tool lookup failed");
+  });
+
   test("a failed clear whose entry is still readable is reported", async () => {
     const vault = await linuxVault((argv) =>
       argv[1] === "clear"
