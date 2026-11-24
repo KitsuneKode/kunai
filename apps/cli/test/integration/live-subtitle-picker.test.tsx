@@ -497,7 +497,8 @@ test.each(["native-state", "explicit-off", "replaced-file"] as const)(
 );
 
 test("native subtitle Off clears the selected URL while preserving inventory and language preference", async () => {
-  const { PlaybackPhase } = await import("@/app/playback/PlaybackPhase");
+  const { launchPlayback } = await import("@/app/playback/playback-player-launch");
+  const { PlaybackLedgerSlot } = await import("@/app/playback/playback-ledger-slot");
   const { container, dispose } = await createIsolatedContainer("native-subtitle-off");
   const controller = new AbortController();
   const stream = { ...subtitleStream(), subtitle: subtitleUrl };
@@ -529,15 +530,13 @@ test("native subtitle Off clears the selected URL while preserving inventory and
     value: { ...capabilities, externalSubtitles: false, progressEvents: false },
   });
   try {
-    await new PlaybackPhase()["playStream"](
+    await launchPlayback({
       stream,
       title,
-      { season: 1, episode: 1 },
-      {
-        container,
-        signal: controller.signal,
-      },
-    );
+      episode: { season: 1, episode: 1 },
+      context: { container, signal: controller.signal },
+      ledger: new PlaybackLedgerSlot(),
+    });
     const state = container.stateManager.getState();
     expect(state.stream?.playbackSubtitle).toEqual({ id: 0, visible: true });
     expect(state.stream?.subtitle).toBeUndefined();

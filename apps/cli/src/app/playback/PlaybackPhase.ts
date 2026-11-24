@@ -18,10 +18,7 @@ import {
   type EpisodePrefetchProgress,
   type EpisodePrefetchTarget,
 } from "@/app/playback/episode-prefetch";
-import {
-  resetLateSubtitleLookups,
-  startLateSubtitleResolver,
-} from "@/app/playback/late-subtitle-resolver";
+import { resetLateSubtitleLookups } from "@/app/playback/late-subtitle-resolver";
 import {
   dismissMpvTransitionOverlay,
   MAX_AUTO_SOURCE_RECOVER_ATTEMPTS,
@@ -39,6 +36,7 @@ import { applyPlaybackEpisodeNavigation } from "@/app/playback/playback-episode-
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback/playback-episode-picker";
 import { episodeIdentityForHistory } from "@/app/playback/playback-history-identity";
 import { createPlaybackIteration } from "@/app/playback/playback-iteration";
+import { PlaybackLedgerSlot } from "@/app/playback/playback-ledger-slot";
 import {
   resolvePlaylistAutoNextCountdown,
   type PlaybackOutcome,
@@ -46,9 +44,9 @@ import {
 import {
   updatePlaybackFeedback,
   transitionPlaybackSession,
-  applyPlaybackStatusSignal,
   showPlaybackProblem,
 } from "@/app/playback/playback-phase-feedback";
+import { launchPlayback } from "@/app/playback/playback-player-launch";
 import { planPlaylistAutoAdvance } from "@/app/playback/playback-playlist-autoadvance";
 import {
   createPostPlaybackMenuDeps,
@@ -62,10 +60,7 @@ import {
   canAutoContinueIntoRecommendation,
   canAdvanceIntoRecommendation,
 } from "@/app/playback/playback-postplay-policy";
-import {
-  updatePresenceInBackground,
-  clearPresenceInBackground,
-} from "@/app/playback/playback-presence-writer";
+import { clearPresenceInBackground } from "@/app/playback/playback-presence-writer";
 import {
   playbackAudioPreference,
   playbackEpisodeCatalogLanguages,
@@ -102,7 +97,6 @@ import {
   listOrderedPlaybackSourceIds,
   planStartupFailover,
   shouldUseProviderPlaybackRecovery,
-  STARTUP_STALL_TIMEOUT_MS,
 } from "@/app/playback/playback-source-failover";
 import {
   startAtResumePoint,
@@ -145,7 +139,6 @@ import {
   finalizeResolveTrace,
 } from "@/app/playback/resolve-trace";
 import { planEpisodeIterationDirective } from "@/app/playback/run-playback-episode-iteration";
-import { runPlaybackSession } from "@/app/playback/run-playback-session";
 import {
   applyPreferredStreamSelection,
   buildPlaybackControlSummary,
@@ -157,7 +150,6 @@ import {
   createSourceRefreshCooldownState,
   resolveSourceRefreshDecision,
 } from "@/app/playback/source-refresh-policy";
-import { describePlaybackSubtitleStatus } from "@/app/playback/subtitle-status";
 import { applyTrackPickRestart } from "@/app/playback/track-pick-restart";
 import { runAutoplayAdvanceCountdown } from "@/app/post-play/autoplay-advance-countdown";
 import { PostPlaybackRecommendationRail } from "@/app/post-play/post-playback-recommendations";
@@ -214,19 +206,14 @@ import { classifyPlaybackFailureFromResult } from "@/infra/player/playback-failu
 import { extractProviderNativeTiming, mergeTimingMetadata } from "@/infra/timing";
 import { fetchTitleDetail, peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import { isFinished } from "@/services/continuation/history-progress";
-import { PlaybackHistoryLedger } from "@/services/continuation/playback-history-ledger";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import {
   createCorrelationId,
   type DiagnosticCorrelation,
 } from "@/services/diagnostics/correlation";
-import {
-  buildPlaybackDiagnosticEvent,
-  buildRecoveryDiagnosticEvent,
-} from "@/services/diagnostics/diagnostic-event-helpers";
+import { buildRecoveryDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 import { queueHistoryMirror } from "@/services/media-actions/create-container-media-action-router";
 import { observeResolveNetworkOutcome } from "@/services/network/network-observation";
-import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 import { listReadyEpisodes } from "@/services/offline/offline-episode-index";
 import { findNextReadyEpisode } from "@/services/offline/offline-episode-index";
 import {
@@ -251,8 +238,7 @@ export type { PlaybackOutcome } from "@/app/playback/playback-outcome";
 export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   name = "playback";
 
-  private playbackLedger: PlaybackHistoryLedger | null = null;
-  private unregisterActiveCheckpoint: (() => void) | null = null;
+  private readonly ledger = new PlaybackLedgerSlot();
 
   private async runAutoNextCountdown(
     context: PhaseContext,
@@ -795,7 +781,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       while (true) {
         if (context.signal.aborted) {
           stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
-          this.releasePlaybackLedgerWithoutPersist();
+          this.ledger.discard();
           await container.player.releasePersistentSession();
           return { status: "cancelled" };
         }
@@ -1769,7 +1755,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   fallback: hop.providerId,
                 });
                 run.sessionSoftProviderId = hop.providerId;
-                this.playbackLedger?.alignProvider(hop.providerId);
+                this.ledger.current?.alignProvider(hop.providerId);
                 const fallbackName =
                   providerRegistry.get(hop.providerId)?.metadata.name ?? hop.providerId;
                 updatePlaybackFeedback(context, {
@@ -2030,7 +2016,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   fallback: hop.providerId,
                 });
                 run.sessionSoftProviderId = hop.providerId;
-                this.playbackLedger?.alignProvider(hop.providerId);
+                this.ledger.current?.alignProvider(hop.providerId);
                 const fallbackName =
                   providerRegistry.get(hop.providerId)?.metadata.name ?? hop.providerId;
                 updatePlaybackFeedback(context, {
@@ -2216,7 +2202,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           }
 
           // Play in MPV — consume the pending resume position on the first play only.
-          // Pass loading handle so playStream can update it in-place (no shell flicker).
+          // Pass loading handle so launchPlayback can update it in-place (no shell flicker).
           const startIntent = run.pendingStart;
           run.pendingStart = startFromBeginning();
 
@@ -2373,7 +2359,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           if (context.signal.aborted) {
             stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
-            this.releasePlaybackLedgerWithoutPersist();
+            this.ledger.discard();
             await container.player.releasePersistentSession();
             return { status: "cancelled" };
           }
@@ -2381,22 +2367,23 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
           let result: PlaybackResult;
           try {
             queueAttempt?.setStage("player-launch");
-            result = await this.playStream(
-              preparedStream,
+            result = await launchPlayback({
+              stream: preparedStream,
               title,
-              currentEpisode,
+              episode: currentEpisode,
               context,
-              startIntent.startAt,
-              startIntent.resumePromptAt,
-              run.playbackSession.mode,
-              playbackTiming,
-              maybePrefetchNext,
-              startIntent.suppressResumePrompt,
-              playbackCorrelation,
-              (stage) => recordStartupMark(stage, preparedStream),
-              providerHandoff.successfulProviderId,
-              playbackIterationAbort.signal,
-              () => {
+              ledger: this.ledger,
+              startAt: startIntent.startAt,
+              resumePromptAt: startIntent.resumePromptAt,
+              playbackMode: run.playbackSession.mode,
+              timing: playbackTiming,
+              onNearEof: maybePrefetchNext,
+              suppressResumePrompt: startIntent.suppressResumePrompt,
+              correlation: playbackCorrelation,
+              onStartupMark: (stage) => recordStartupMark(stage, preparedStream),
+              successfulProviderId: providerHandoff.successfulProviderId,
+              playbackIterationSignal: playbackIterationAbort.signal,
+              onConfirmedPlaybackStart: () => {
                 run.playbackSession = confirmPlaybackStart({
                   session: run.playbackSession,
                   transition: (session, event) =>
@@ -2409,8 +2396,8 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                   acknowledgeQueue: () => queueAttempt?.acknowledgeStarted(),
                 });
               },
-              run.localPlaybackSource ?? undefined,
-            );
+              localPlaybackSource: run.localPlaybackSource ?? undefined,
+            });
             if (isDetachedHandoffResult(result)) {
               queueAttempt?.rollbackIfUnacknowledged(
                 "playback-aborted",
@@ -2421,7 +2408,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             run.pendingStart = startIntent;
             if (error instanceof PlaybackAbortedError || context.signal.aborted) {
               stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
-              this.releasePlaybackLedgerWithoutPersist();
+              this.ledger.discard();
               await container.player.releasePersistentSession();
               return { status: "cancelled" };
             }
@@ -2434,7 +2421,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
           if (context.signal.aborted) {
             stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "idle" });
-            this.releasePlaybackLedgerWithoutPersist();
+            this.ledger.discard();
             await container.player.releasePersistentSession();
             return { status: "cancelled" };
           }
@@ -2511,8 +2498,9 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
             const lastWatchedAt = decision.shouldBumpLastWatched
               ? new Date().toISOString()
               : (existingProgress?.lastWatchedAt ?? existingProgress?.updatedAt ?? null);
-            if (this.playbackLedger) {
-              this.playbackLedger.finalize({
+            const activeLedger = this.ledger.current;
+            if (activeLedger) {
+              activeLedger.finalize({
                 positionSeconds: historyTimestamp,
                 durationSeconds: result.duration,
                 completed: shouldMarkCompleted,
@@ -2520,9 +2508,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
                 posterUrl: title.posterUrl,
                 bumpLastWatched: decision.shouldBumpLastWatched,
               });
-              this.playbackLedger = null;
-              this.unregisterActiveCheckpoint?.();
-              this.unregisterActiveCheckpoint = null;
+              this.ledger.release();
             } else {
               container.historyRepository.upsertProgress({
                 title: titleIdentity,
@@ -2601,7 +2587,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               }
             }
           } else {
-            this.releasePlaybackLedgerWithoutPersist();
+            this.ledger.discard();
             diagnosticsService.record({
               category: "playback",
               message: "Skipped history save",
@@ -3770,7 +3756,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       }
     } catch (e) {
       if (context.signal.aborted) {
-        this.releasePlaybackLedgerWithoutPersist();
+        this.ledger.discard();
         updatePlaybackFeedback(context, { detail: null, note: null });
         return { status: "cancelled" };
       }
@@ -3791,315 +3777,5 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
 
     // Fallback return (should not reach here)
     return { status: "success", value: "back_to_search" };
-  }
-
-  /**
-   * Rejected / aborted / skipped-history sessions must not survive coordinated
-   * shutdown flush. Clears ledger state and unregisters only this phase's
-   * active checkpoint (registration-scoped — never `clear()`, which would wipe
-   * a newer playback's callback).
-   */
-  private releasePlaybackLedgerWithoutPersist(): void {
-    this.playbackLedger?.discard();
-    this.playbackLedger = null;
-    this.unregisterActiveCheckpoint?.();
-    this.unregisterActiveCheckpoint = null;
-  }
-
-  private async playStream(
-    stream: StreamInfo,
-    title: TitleInfo,
-    episode: EpisodeInfo,
-    context: PhaseContext,
-    startAt = 0,
-    resumePromptAt = 0,
-    playbackMode: "manual" | "autoplay-chain" = "manual",
-    timing: PlaybackTimingMetadata | null = null,
-    onNearEof?: () => void,
-    suppressResumePrompt = false,
-    correlation?: DiagnosticCorrelation,
-    onStartupMark?: (stage: PlaybackStartupStage) => void,
-    successfulProviderId?: string,
-    playbackIterationSignal?: AbortSignal,
-    onConfirmedPlaybackStart?: () => void,
-    localPlaybackSource?: LocalPlaybackSource,
-  ): Promise<PlaybackResult> {
-    const {
-      player,
-      stateManager,
-      config,
-      historyRepository,
-      playbackEventRepository,
-      playerControl,
-      diagnosticsService,
-    } = context.container;
-
-    if (stream.playbackSubtitle) {
-      stream = { ...stream, playbackSubtitle: undefined };
-      stateManager.dispatch({ type: "SET_STREAM", stream });
-    }
-    const subtitleStatus = describePlaybackSubtitleStatus(
-      stream,
-      playbackSubtitlePreference({
-        overrides: stateManager.getState().playbackTrackPreferences,
-        mode: stateManager.getState().mode,
-        title,
-        config,
-      }),
-    );
-
-    if (player.capabilities.externalSubtitles && !localPlaybackSource)
-      startLateSubtitleResolver({
-        stream,
-        title,
-        episode,
-        context,
-        playbackIterationSignal,
-      });
-
-    const playbackProviderId = successfulProviderId ?? stateManager.getState().provider;
-    // One cycle has one start instant. Recomputing it per update made every
-    // queued presence write claim playback had just begun.
-    const presenceStartedAtMs = Date.now();
-    const presenceBase = () => ({
-      mode: stateManager.getState().mode,
-      title,
-      episode,
-      providerId: playbackProviderId,
-      stream,
-      startedAtMs: presenceStartedAtMs,
-    });
-
-    const ledgerProviderId = playbackProviderId;
-    const persistedKind = classifyPersistedKind(title, stateManager.getState().mode, {
-      providerId: ledgerProviderId,
-    });
-    if (player.capabilities.progressEvents) {
-      this.playbackLedger = new PlaybackHistoryLedger(
-        historyRepository,
-        playbackEventRepository,
-        (error) =>
-          context.container.diagnosticsService.record({
-            category: "playback",
-            operation: "playback.history.persist",
-            level: "warn",
-            message: "Playback history write dropped after a persistence failure",
-            context: { error: error instanceof Error ? error.message : String(error) },
-          }),
-      );
-      // Shutdown flushes this before releasing mpv, so the latest resume
-      // position survives a Ctrl+C mid-playback. Null-safe once finalized.
-      this.unregisterActiveCheckpoint = context.container.activePlaybackCheckpoint.register(() => {
-        this.playbackLedger?.checkpoint();
-      });
-      this.playbackLedger.start(
-        {
-          title: {
-            id: title.id,
-            kind: persistedKind,
-            title: title.name,
-            externalIds: enrichExternalIdsWithVideoMeta(
-              title.externalIds,
-              stateManager.getState().videoMeta,
-            ),
-          },
-          episode: episodeIdentityForHistory(title, episode),
-          providerId: ledgerProviderId,
-          posterUrl: title.posterUrl,
-          mediaKind: persistedKind,
-        },
-        startAt,
-      );
-    }
-
-    return runPlaybackSession({
-      stream,
-      title,
-      episode,
-      player,
-      subtitleStatus,
-      startAt,
-      sessionAborted: context.signal.aborted,
-      iterationAborted: playbackIterationSignal?.aborted ?? false,
-      correlation,
-      timing,
-      localPlaybackSource,
-      shareLinkContext: {
-        mode: stateManager.getState().mode,
-        title,
-        episode:
-          title.type === "series"
-            ? { season: episode.season, episode: episode.episode }
-            : undefined,
-        providerId: playbackProviderId,
-      },
-      playOptions: {
-        abortSignal: context.signal,
-        audioPreference: playbackAudioPreference({
-          overrides: stateManager.getState().playbackTrackPreferences,
-          mode: stateManager.getState().mode,
-          title,
-          config,
-        }),
-        subtitlePreference: playbackSubtitlePreference({
-          overrides: stateManager.getState().playbackTrackPreferences,
-          mode: stateManager.getState().mode,
-          title,
-          config,
-        }),
-        qualityPreference: playbackQualityPreference({
-          overrides: stateManager.getState().playbackTrackPreferences,
-          mode: stateManager.getState().mode,
-          title,
-          config,
-        }),
-        resumePromptAt,
-        attach: false,
-        playbackMode,
-        resumeStartChoicePrompt: suppressResumePrompt ? false : config.resumeStartChoicePrompt,
-        autoSkipEnabled: !stateManager.getState().autoskipSessionPaused,
-        skipRecap: config.skipRecap,
-        skipIntro: config.skipIntro,
-        skipPreview: config.skipPreview,
-        skipCredits: config.skipCredits,
-        onNearEof,
-      },
-      hooks: {
-        onFeedback: (update) => updatePlaybackFeedback(context, update),
-        onStartupMark,
-        onConfirmedPlaybackStart,
-        onStartupStallAbort: () => {
-          diagnosticsService.record(
-            buildPlaybackDiagnosticEvent({
-              operation: "playback.startup-stall.aborted",
-              status: "failed",
-              severity: "degraded",
-              failureClass: "timeout",
-              message: "Startup stall watchdog aborted mpv",
-              correlation,
-              context: {
-                timeoutMs: STARTUP_STALL_TIMEOUT_MS,
-                streamHost: (() => {
-                  try {
-                    return new URL(stream.url).hostname;
-                  } catch {
-                    return null;
-                  }
-                })(),
-              },
-            }),
-          );
-          const active = playerControl.getActive();
-          if (!active) return;
-          void active.stop("startup-stall").catch(() => {
-            /* best-effort abort; suspectedDeadStream is set on return */
-          });
-        },
-        onPresenceLaunch: ({ positionSeconds, subtitleCount }) => {
-          updatePresenceInBackground(
-            context,
-            "presence.updatePlaybackLaunch",
-            { ...presenceBase(), positionSeconds, subtitleCount },
-            null,
-            correlation,
-          );
-        },
-        onPresenceStarted: ({ positionSeconds, durationSeconds, snapshot }) => {
-          updatePresenceInBackground(
-            context,
-            "presence.updatePlaybackStarted",
-            {
-              ...presenceBase(),
-              positionSeconds,
-              durationSeconds,
-              subtitleCount: undefined,
-            },
-            snapshot,
-            correlation,
-          );
-        },
-        onPresenceProgress: ({ positionSeconds, durationSeconds, snapshot }) => {
-          this.playbackLedger?.onProgress(positionSeconds, durationSeconds);
-          updatePresenceInBackground(
-            context,
-            "presence.updatePlaybackProgress",
-            { ...presenceBase(), positionSeconds, durationSeconds },
-            snapshot,
-            correlation,
-          );
-        },
-        onPresenceSubtitles: ({ positionSeconds, durationSeconds, trackCount, snapshot }) => {
-          updatePresenceInBackground(
-            context,
-            "presence.updatePlaybackSubtitles",
-            {
-              ...presenceBase(),
-              positionSeconds,
-              durationSeconds,
-              subtitleCount: trackCount,
-            },
-            snapshot,
-            correlation,
-          );
-        },
-        onPresencePaused: ({ positionSeconds, durationSeconds, snapshot }) => {
-          this.playbackLedger?.onPaused(positionSeconds, durationSeconds);
-          updatePresenceInBackground(
-            context,
-            "presence.updatePlaybackPaused",
-            {
-              ...presenceBase(),
-              positionSeconds,
-              durationSeconds,
-              paused: true,
-            },
-            snapshot,
-            correlation,
-          );
-        },
-        onPresenceResumed: ({ positionSeconds, durationSeconds, snapshot }) => {
-          this.playbackLedger?.onResumed(positionSeconds, durationSeconds);
-          updatePresenceInBackground(
-            context,
-            "presence.updatePlaybackResumed",
-            { ...presenceBase(), positionSeconds, durationSeconds },
-            snapshot,
-            correlation,
-          );
-        },
-        applyPlaybackStatusSignal: (signal) => applyPlaybackStatusSignal(context, signal),
-        onTrackChanged: (event) => {
-          const currentStream = stateManager.getState().stream;
-          if (currentStream && event.trackType === "sub" && event.subtitleState) {
-            const observedStream = { ...currentStream, playbackSubtitle: event.subtitleState };
-            if (event.id === 0) observedStream.subtitle = undefined;
-            stateManager.dispatch({ type: "SET_STREAM", stream: observedStream });
-          } else if (currentStream && event.trackType === "sub" && event.id === 0) {
-            stateManager.dispatch({
-              type: "SET_STREAM",
-              stream: { ...currentStream, subtitle: undefined },
-            });
-          }
-          context.container.diagnosticsService.record({
-            category: "playback",
-            message: "Track changed from mpv",
-            context: {
-              trackType: event.trackType,
-              id: event.id,
-            },
-          });
-        },
-        onShareCopied: (shareCopy) => {
-          updatePlaybackFeedback(context, {
-            note: shareCopy?.copied
-              ? "Share link copied from mpv."
-              : shareCopy
-                ? `Share link (copy manually): ${shareCopy.url}`
-                : "Could not build a share link for this title.",
-          });
-        },
-        onPlayerReady: () => {},
-      },
-    });
   }
 }
