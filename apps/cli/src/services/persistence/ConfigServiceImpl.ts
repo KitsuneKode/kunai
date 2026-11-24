@@ -10,6 +10,7 @@ import {
   DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
 } from "@/services/download/StorageBudgetPolicy";
 import {
+  isHdrMode,
   MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS,
   mergeKitsuneConfig,
   normalizeRetiredProductionProviderFields,
@@ -38,6 +39,35 @@ import type {
 import type { ConfigStore } from "./ConfigStore";
 import { DEFAULT_CONFIG } from "./ConfigStore";
 import { CREDENTIAL_KEYS, type CredentialVaultPort } from "./credential-vault";
+
+/**
+ * Config fields whose values live in the OS credential vault (Keychain,
+ * Windows Credential Manager, Secret Service) when one is available. The
+ * in-memory config keeps serving them, so consumers never learn where they
+ * live; config.json carries "" once the vault holds a verified copy.
+ */
+const VAULTED_CONFIG_FIELDS = ["videasySessionToken", "tmdbApiKey", "wyzieApiKey"] as const;
+type VaultedConfigField = (typeof VAULTED_CONFIG_FIELDS)[number];
+
+const VAULT_KEY_BY_FIELD = {
+  videasySessionToken: CREDENTIAL_KEYS.videasySessionToken,
+  tmdbApiKey: CREDENTIAL_KEYS.tmdbApiKey,
+  wyzieApiKey: CREDENTIAL_KEYS.wyzieApiKey,
+} satisfies Record<VaultedConfigField, string>;
+
+function isVaultedConfigField(key: string): key is VaultedConfigField {
+  return VAULTED_CONFIG_FIELDS.some((field) => field === key);
+}
+
+function scrubVaultedFields(
+  config: KitsuneConfig,
+  scrub: ReadonlySet<VaultedConfigField>,
+): KitsuneConfig {
+  if (scrub.size === 0) return config;
+  const scrubbed = { ...config };
+  for (const field of scrub) scrubbed[field] = "";
+  return scrubbed;
+}
 import type { TuningConfig } from "./tuning";
 import { resolveTuning } from "./tuning";
 
@@ -191,8 +221,8 @@ export class ConfigServiceImpl implements ConfigService {
     this.config = { ...DEFAULT_CONFIG };
   }
 
-  /** Whether the vault holds the videasy token — hydrated or migrated this session. */
-  private videasyTokenVaulted = false;
+  /** Secret fields the vault holds — hydrated or migrated this session. */
+  private readonly vaultedFields = new Set<VaultedConfigField>();
 
   static async load(store: ConfigStore, vault?: CredentialVaultPort): Promise<ConfigServiceImpl> {
     const load = () => ConfigServiceImpl.loadWithinLock(store, vault);
@@ -290,6 +320,7 @@ export class ConfigServiceImpl implements ConfigService {
       continueSourcePreference: normalizeContinueSourcePreference(loaded.continueSourcePreference),
       prePlayConfirm: normalizePrePlayConfirm(loaded.prePlayConfirm),
       startupPriority: normalizeStartupPriority(loaded.startupPriority),
+      hdrMode: normalizeHdrMode(loaded.hdrMode),
       mpvInProcessStreamReconnectMaxAttempts: normalizeMpvReconnectAttempts(
         loaded.mpvInProcessStreamReconnectMaxAttempts,
       ),
@@ -358,25 +389,34 @@ export class ConfigServiceImpl implements ConfigService {
     // no longer carries it, or migrate plaintext that predates the vault. The
     // scrubbed write below is what removes it from disk — the in-memory config
     // keeps serving it so consumers never learn where it lives.
-    let videasyVaultResave = false;
+    let vaultResave = false;
     if (vault && vault.backend !== "file") {
-      try {
-        const key = CREDENTIAL_KEYS.videasySessionToken;
-        if (service.config.videasySessionToken) {
-          await vault.set(key, service.config.videasySessionToken);
-          if ((await vault.get(key)) === service.config.videasySessionToken) {
-            service.videasyTokenVaulted = true;
-            videasyVaultResave = true;
+      // Each vault call can be a subprocess (secret-tool, security, PowerShell),
+      // so the fields are read in parallel: boot pays one round trip, not one
+      // per secret. Each field still migrates or hydrates independently.
+      const outcomes = await Promise.all(
+        VAULTED_CONFIG_FIELDS.map(async (field) => {
+          try {
+            const key = VAULT_KEY_BY_FIELD[field];
+            const plaintext = service.config[field];
+            if (plaintext) {
+              await vault.set(key, plaintext);
+              const verified = (await vault.get(key)) === plaintext;
+              return { field, vaulted: verified, migrated: verified, value: undefined };
+            }
+            const value = await vault.get(key);
+            return { field, vaulted: Boolean(value), migrated: false, value };
+          } catch {
+            // Vault write/read failed — keep the plaintext and retry next launch.
+            return { field, vaulted: false, migrated: false, value: undefined };
           }
-        } else {
-          const vaulted = await vault.get(key);
-          if (vaulted) {
-            service.config = { ...service.config, videasySessionToken: vaulted };
-            service.videasyTokenVaulted = true;
-          }
-        }
-      } catch {
-        // Vault write/read failed — keep the plaintext and retry next launch.
+        }),
+      );
+      for (const outcome of outcomes) {
+        if (!outcome.vaulted) continue;
+        service.vaultedFields.add(outcome.field);
+        if (outcome.migrated) vaultResave = true;
+        if (outcome.value) service.config = { ...service.config, [outcome.field]: outcome.value };
       }
     }
     // Normalization heals on disk: a key whose stored value parsed but
@@ -387,8 +427,9 @@ export class ConfigServiceImpl implements ConfigService {
     for (const key of Object.keys(loaded) as (keyof KitsuneConfig)[]) {
       if (loaded[key] === undefined) continue;
       // Hydration is not permission to overwrite a rotated native token.
-      if (key === "videasySessionToken" && loaded[key] === "" && service.videasyTokenVaulted)
+      if (isVaultedConfigField(key) && loaded[key] === "" && service.vaultedFields.has(key)) {
         continue;
+      }
       if (JSON.stringify(loaded[key]) !== JSON.stringify(service.config[key])) {
         service.dirtyKeys.add(key);
       }
@@ -397,7 +438,7 @@ export class ConfigServiceImpl implements ConfigService {
       requiresExplicitAnalyticsConsent ||
       repairedAnalyticsIdentity ||
       migratedVideasyAppId ||
-      videasyVaultResave ||
+      vaultResave ||
       migratedAnimeDefaults ||
       migratedSeriesDefaults ||
       retiredFieldsChanged
@@ -502,33 +543,30 @@ export class ConfigServiceImpl implements ConfigService {
     const writeOnce = async (): Promise<void> => {
       // Only explicit token changes write the vault. Keep its transition inside
       // the config lock so sibling rotations and the file scrub share an owner.
-      let scrubToken = this.videasyTokenVaulted;
-      if (
-        this.vault &&
-        this.vault.backend !== "file" &&
-        this.dirtyKeys.has("videasySessionToken")
-      ) {
-        const key = CREDENTIAL_KEYS.videasySessionToken;
-        const token = config.videasySessionToken;
-        scrubToken = false;
-        if (token) {
-          this.videasyTokenVaulted = false;
+      const scrub = new Set(this.vaultedFields);
+      for (const field of VAULTED_CONFIG_FIELDS) {
+        if (!this.vault || this.vault.backend === "file" || !this.dirtyKeys.has(field)) continue;
+        const key = VAULT_KEY_BY_FIELD[field];
+        const secret = config[field];
+        scrub.delete(field);
+        if (secret) {
+          this.vaultedFields.delete(field);
           try {
-            await this.vault.set(key, token);
-            if ((await this.vault.get(key)) === token) {
-              this.videasyTokenVaulted = true;
-              scrubToken = true;
+            await this.vault.set(key, secret);
+            if ((await this.vault.get(key)) === secret) {
+              this.vaultedFields.add(field);
+              scrub.add(field);
             }
           } catch {
             // A failed replacement retains its plaintext for a later migration.
           }
         } else {
-          // A sibling may have added a token since hydration. A clear must
+          // A sibling may have added a secret since hydration. A clear must
           // remove it too, and must not claim success if native deletion failed.
           await this.vault.delete(key);
           if ((await this.vault.get(key)) !== undefined)
             throw new Error("Native credential clear could not be verified");
-          this.videasyTokenVaulted = false;
+          this.vaultedFields.delete(field);
         }
       }
       // When this process has updated keys, write per-key over the CURRENT
@@ -567,7 +605,20 @@ export class ConfigServiceImpl implements ConfigService {
           toWrite = config;
         }
       }
-      await this.store.save(scrubToken ? { ...toWrite, videasySessionToken: "" } : toWrite);
+      // Blank only fields whose vault copy matches the value being written. The
+      // scrub set reflects this instance's view; a sibling whose vault write
+      // failed may have left newer plaintext on disk that must survive.
+      const verified = new Set<VaultedConfigField>();
+      for (const field of scrub) {
+        try {
+          if ((await this.vault?.get(VAULT_KEY_BY_FIELD[field])) === toWrite[field]) {
+            verified.add(field);
+          }
+        } catch {
+          // The vault cannot confirm the value: keep the plaintext.
+        }
+      }
+      await this.store.save(scrubVaultedFields(toWrite, verified));
       if (forceFullWrite) this.needsFullConfigWrite = false;
       this.clearPersistedDirtyKeys(mergedKeys, mergedValues ?? toWrite);
     };
@@ -639,16 +690,24 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.wyzieApiKey;
   }
 
+  get tmdbApiKey(): string {
+    return this.config.tmdbApiKey;
+  }
+
+  // Session-overridable getters read `sessionOverrides` first. A getter that reads
+  // `this.config` directly turns its launch flag (`--quality`/`--audio`/`--sub`,
+  // `--offline`, `--hdr`) into a silent no-op: main.ts applies those flags through
+  // applySessionOverrides, never through update().
   get animeLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
-    return this.config.animeLanguageProfile;
+    return this.sessionOverrides.animeLanguageProfile ?? this.config.animeLanguageProfile;
   }
 
   get seriesLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
-    return this.config.seriesLanguageProfile;
+    return this.sessionOverrides.seriesLanguageProfile ?? this.config.seriesLanguageProfile;
   }
 
   get movieLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
-    return this.config.movieLanguageProfile;
+    return this.sessionOverrides.movieLanguageProfile ?? this.config.movieLanguageProfile;
   }
 
   get animeTitlePreference(): "english" | "romaji" | "native" | "provider" {
@@ -768,7 +827,7 @@ export class ConfigServiceImpl implements ConfigService {
   }
 
   get offlineMode(): boolean {
-    return this.config.offlineMode;
+    return this.sessionOverrides.offlineMode ?? this.config.offlineMode;
   }
 
   get maxConcurrentDownloads(): number {
@@ -797,6 +856,10 @@ export class ConfigServiceImpl implements ConfigService {
 
   get startupPriority(): StartupPriority {
     return this.config.startupPriority;
+  }
+
+  get hdrMode(): KitsuneConfig["hdrMode"] {
+    return this.sessionOverrides.hdrMode ?? this.config.hdrMode;
   }
 
   get offlineArtworkCacheEnabled(): boolean {
@@ -965,12 +1028,55 @@ export class ConfigServiceImpl implements ConfigService {
     this.sessionOverrides = { ...this.sessionOverrides, ...partial };
   }
 
-  async update(partial: Partial<KitsuneConfig>): Promise<void> {
+  /**
+   * `--quality`/`--audio`/`--sub` override whole language profiles for the
+   * session, and Settings edits whole profiles seeded from the effective
+   * (overridden) value. Changing one field must not persist the launch flag's
+   * other fields: a field still equal to its override (and different from the
+   * saved value) keeps the saved value on disk and stays overridden for the
+   * session. Only fields the user actually changed are persisted.
+   */
+  private separateProfileOverrides(input: Partial<KitsuneConfig>): ProfileOverrideSplit {
+    const partial: Partial<KitsuneConfig> = { ...input };
+    const keptProfileOverrides: Partial<KitsuneConfig> = {};
+    for (const key of SESSION_PROFILE_KEYS) {
+      const incoming = partial[key];
+      const override = this.sessionOverrides[key];
+      if (!incoming || !override) continue;
+      const saved = this.config[key];
+      const persisted: import("./ConfigService").MediaLanguageProfile = { ...incoming };
+      let keptAny = false;
+      for (const field of PROFILE_FIELDS) {
+        if (override[field] !== saved[field] && incoming[field] === override[field]) {
+          if (saved[field] === undefined) delete persisted[field];
+          else persisted[field] = saved[field];
+          keptAny = true;
+        }
+      }
+      partial[key] = persisted;
+      if (keptAny) {
+        const effective: import("./ConfigService").MediaLanguageProfile = { ...persisted };
+        for (const field of PROFILE_FIELDS) {
+          if (override[field] !== saved[field] && incoming[field] === override[field]) {
+            const value = override[field];
+            if (value === undefined) delete effective[field];
+            else effective[field] = value;
+          }
+        }
+        keptProfileOverrides[key] = effective;
+      }
+    }
+    return { partial, keptProfileOverrides };
+  }
+
+  async update(input: Partial<KitsuneConfig>): Promise<void> {
+    const { partial, keptProfileOverrides } = this.separateProfileOverrides(input);
     // SAFETY: Object.keys of a Partial<KitsuneConfig> only yields its keys.
     for (const key of Object.keys(partial) as (keyof KitsuneConfig)[]) {
       if (key in this.sessionOverrides) delete this.sessionOverrides[key];
       this.dirtyKeys.add(key);
     }
+    Object.assign(this.sessionOverrides, keptProfileOverrides);
     this.config = {
       ...this.config,
       ...partial,
@@ -1033,6 +1139,7 @@ export class ConfigServiceImpl implements ConfigService {
       ...(partial.startupPriority !== undefined
         ? { startupPriority: normalizeStartupPriority(partial.startupPriority) }
         : null),
+      ...(partial.hdrMode !== undefined ? { hdrMode: normalizeHdrMode(partial.hdrMode) } : null),
       ...(partial.mpvInProcessStreamReconnectMaxAttempts !== undefined
         ? {
             mpvInProcessStreamReconnectMaxAttempts: normalizeMpvReconnectAttempts(
@@ -1420,6 +1527,23 @@ function normalizeAnalyticsPreference<T>(value: T): KitsuneConfig["analytics"] {
 
 function normalizeStartupPriority<T>(value: T): StartupPriority {
   return value === "fast" ? "fast" : value === "quality-first" ? "quality-first" : "balanced";
+}
+
+/** An update split into what to persist and which launch-flag fields stay overridden. */
+interface ProfileOverrideSplit {
+  readonly partial: Partial<KitsuneConfig>;
+  readonly keptProfileOverrides: Partial<KitsuneConfig>;
+}
+
+const SESSION_PROFILE_KEYS = [
+  "animeLanguageProfile",
+  "seriesLanguageProfile",
+  "movieLanguageProfile",
+] as const;
+const PROFILE_FIELDS = ["audio", "subtitle", "quality"] as const;
+
+function normalizeHdrMode<T>(value: T): KitsuneConfig["hdrMode"] {
+  return isHdrMode(value) ? value : "auto";
 }
 
 function normalizeBytes<T>(value: T, fallback: number): number {

@@ -14,7 +14,9 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 
 import { ARTWORK_PREFERENCE, episodeThumbKey, mergeArtwork } from "@/domain/catalog/title-detail";
 import { initLogger } from "@/logger";
+import { resetAniListClientForTest } from "@/services/catalog/anilist-client";
 import {
+  bindTitleDetailCrosswalk,
   clearTitleDetailCache,
   fetchTitleDetail,
   peekTitleDetail,
@@ -143,7 +145,14 @@ function anilistMediaPayload(overrides: Record<string, unknown> = {}): Record<st
 // Mock fetch setup
 // ---------------------------------------------------------------------------
 
-type RouteHandler = (url: string) => Response | null;
+/** A pending `Promise<Response>` lets a test hold one request open. */
+type RouteHandler = (url: string) => Response | Promise<Response> | null;
+
+// Restores run in afterEach, not only at the end of each test: a test that
+// throws before its own `restore()` used to leave this 404-everything fetch
+// installed for every later file in the process. In a serial run that broke
+// unrelated suites (all of the stream gateway's), which looked like time-rot.
+const pendingFetchRestores: Array<() => void> = [];
 
 function mockFetch(handler: RouteHandler): () => void {
   const original = globalThis.fetch;
@@ -155,9 +164,11 @@ function mockFetch(handler: RouteHandler): () => void {
     return new Response(JSON.stringify({ status: 404 }), { status: 404 });
   }) as unknown as typeof fetch;
 
-  return () => {
+  const restore = () => {
     globalThis.fetch = original;
   };
+  pendingFetchRestores.push(restore);
+  return restore;
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -173,9 +184,14 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 beforeEach(() => {
   clearTitleDetailCache();
+  // The crosswalk is module state bound by whichever container booted last.
+  // These tests own their catalog answers, so they start with none bound.
+  bindTitleDetailCrosswalk(undefined);
 });
 
 afterEach(() => {
+  // Newest first, so nested mocks unwind to the fetch this test started with.
+  while (pendingFetchRestores.length > 0) pendingFetchRestores.pop()?.();
   clearTitleDetailCache();
   // The tmdb-proxy host breakers are module state — a stubbed 5xx/transport
   // failure must not carry into the next test.
@@ -386,6 +402,27 @@ describe("TitleDetailService — AniList anime", () => {
     restore();
   });
 
+  test("a rate-limited AniList placeholder is not cached past AniList recovery", async () => {
+    let limited = true;
+    const restore = mockFetch((url) => {
+      if (!url.includes("graphql.anilist.co")) return null;
+      return limited
+        ? new Response("{}", { status: 429, headers: { "retry-after": "1" } })
+        : jsonResponse({ data: { Media: anilistMediaPayload() } });
+    });
+
+    const degraded = await fetchTitleDetail("anilist:21", "series");
+    expect(degraded.title).not.toBe("One Piece");
+
+    // AniList recovers (the test reset clears the client's cooldown in place of waiting).
+    limited = false;
+    resetAniListClientForTest();
+    const recovered = await fetchTitleDetail("anilist:21", "series");
+    expect(recovered.title).toBe("One Piece");
+
+    restore();
+  });
+
   test("maps characters as voice cast with kind=voice", async () => {
     const restore = mockFetch((url) => {
       if (url.includes("graphql.anilist.co"))
@@ -580,6 +617,90 @@ describe("TitleDetailService — graceful degradation", () => {
     expect(detail.title).toBe("Unknown");
 
     restore();
+  });
+
+  test("failed or aborted TMDB fetches are not cached as Unknown placeholders", async () => {
+    let available = false;
+    const restore = mockFetch((url) => {
+      if (!available) return new Response("", { status: 503 });
+      if (url.includes("/movie/701") || url.includes("/movie/702")) {
+        return jsonResponse({
+          ...tmdbMoviePayload({ id: 701, title: "Recovered Movie" }),
+          credits: { cast: [] },
+          external_ids: tmdbExternalIdsPayload(),
+          videos: { results: [] },
+        });
+      }
+      return null;
+    });
+
+    const degraded = await fetchTitleDetail("tmdb:701", "movie");
+    expect(degraded.title).toBe("Unknown");
+    expect(peekTitleDetail("tmdb:701", "movie")).toBeUndefined();
+
+    // Clear TMDB proxy host breaker state, then verify the next call succeeds
+    // without having to clear the title detail cache.
+    available = true;
+    clearTmdbSessionCache();
+    const recovered = await fetchTitleDetail("tmdb:701", "movie");
+    expect(recovered.title).toBe("Recovered Movie");
+    expect(peekTitleDetail("tmdb:701", "movie")?.title).toBe("Recovered Movie");
+
+    // An aborted fetch must also never populate the cache.
+    const abortController = new AbortController();
+    abortController.abort();
+    const aborted = await fetchTitleDetail("tmdb:702", "movie", abortController.signal);
+    expect(aborted.title).toBe("Unknown");
+    expect(peekTitleDetail("tmdb:702", "movie")).toBeUndefined();
+
+    restore();
+  });
+
+  test("refreshing Discover mid-load does not drop a season the detail is still verifying", async () => {
+    // Discover's refresh (RecommendationServiceImpl.clearCache) clears the
+    // TMDB session cache while a title-detail load waits on a season lookup.
+    // That lookup must still answer its caller: a cancelled lookup read as a
+    // missing season, and the partial detail was cached for five minutes.
+    const seasonRequested = Promise.withResolvers<void>();
+    const seasonAnswer = Promise.withResolvers<Response>();
+    mockFetch((url) => {
+      if (url.includes("/tv/4242/season/1")) {
+        seasonRequested.resolve();
+        return seasonAnswer.promise;
+      }
+      if (url.includes("/tv/4242")) {
+        return jsonResponse({
+          ...tmdbSeriesPayload({
+            id: 4242,
+            name: "Verifying Show",
+            // No air date: the season is listed only once its episodes are seen.
+            seasons: [{ season_number: 1, episode_count: 2, name: "Season 1", air_date: "" }],
+          }),
+          credits: { cast: [] },
+          external_ids: tmdbExternalIdsPayload(),
+          videos: { results: [] },
+        });
+      }
+      return null;
+    });
+
+    const loading = fetchTitleDetail("tmdb:4242", "series");
+    await seasonRequested.promise;
+    clearTmdbSessionCache();
+    seasonAnswer.resolve(
+      jsonResponse({
+        season_number: 1,
+        episodes: [
+          { episode_number: 1, air_date: "2020-01-01", still_path: null },
+          { episode_number: 2, air_date: "2020-01-08", still_path: null },
+        ],
+      }),
+    );
+
+    const detail = await loading;
+    expect(detail.seasons?.map((season) => season.season)).toEqual([1]);
+    // Reopening serves the complete detail, not a partial one.
+    expect(peekTitleDetail("tmdb:4242", "series")?.seasons?.map((s) => s.season)).toEqual([1]);
   });
 
   test("returns a valid TitleDetail when AniList is unreachable", async () => {

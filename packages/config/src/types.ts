@@ -23,6 +23,13 @@ export type PresencePrivacy = "full" | "private";
 export type AnalyticsPreference = "unset" | "enabled" | "disabled";
 export type DiscoverMode = "auto" | "unified" | "anime-only" | "series-only";
 export type RecoveryMode = "guided" | "fallback-first" | "manual";
+/** Single source of truth for HDR modes: config, settings, `--hdr`, completion, capabilities. */
+export const HDR_MODES = ["auto", "passthrough", "tone-map", "sdr-only"] as const;
+export type HdrMode = (typeof HDR_MODES)[number];
+
+export function isHdrMode(value: unknown): value is HdrMode {
+  return typeof value === "string" && (HDR_MODES as readonly string[]).includes(value);
+}
 
 /** Runtime tuning override bag; CLI tuning module resolves typed values. */
 export type ConfigTuningOverrides = Partial<Record<string, number>>;
@@ -84,6 +91,11 @@ export interface KitsuneConfig {
    * no key the external lookup is skipped and only provider subtitles are used.
    */
   wyzieApiKey: string;
+  /**
+   * The user's own TMDB credential: a v3 API key or a v4 read access token.
+   * Empty uses Kunai's release key, then keyless mirrors.
+   */
+  tmdbApiKey: string;
   animeLanguageProfile: MediaLanguageProfile;
   seriesLanguageProfile: MediaLanguageProfile;
   movieLanguageProfile: MediaLanguageProfile;
@@ -144,6 +156,7 @@ export interface KitsuneConfig {
   autoCleanupWatched: boolean;
   recoveryMode: RecoveryMode;
   startupPriority: StartupPriority;
+  hdrMode: HdrMode;
   offlineArtworkCacheEnabled: boolean;
   offlineFreeSpaceReserveBytes: number;
   offlineUnknownEpisodeEstimateBytes: number;

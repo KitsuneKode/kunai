@@ -107,6 +107,47 @@ describe("runYtDlpProcess", () => {
     expect(lines).toEqual(["[download] 42.0%"]);
   });
 
+  test("joins a multibyte character split across stdout chunks (streaming decode, regression guard)", async () => {
+    const encoded = new TextEncoder().encode("café");
+    // Split inside é (C3 A9); the tail arrives as its own chunk with no
+    // trailing newline. Streaming decode already joins it.
+    const splitAt = 4;
+    const lines: string[] = [];
+    const proc = createFakeProcess({
+      stdout: streamFromChunks([encoded.slice(0, splitAt), encoded.slice(splitAt)]),
+      stderr: streamFromText(""),
+      onKill: () => undefined,
+    });
+
+    const handle = runYtDlpProcess({
+      args: ["--newline"],
+      spawn: () => proc,
+      onStdoutLine: (line) => lines.push(line),
+    });
+
+    await expect(handle.completed).resolves.toMatchObject({ exitCode: 0 });
+    expect(lines).toEqual(["café"]);
+  });
+
+  test("does not drop an incomplete multibyte tail on the trailing line", async () => {
+    const partial = new TextEncoder().encode("café").slice(0, 4);
+    const lines: string[] = [];
+    const proc = createFakeProcess({
+      stdout: streamFromChunks([partial]),
+      stderr: streamFromText(""),
+      onKill: () => undefined,
+    });
+
+    const handle = runYtDlpProcess({
+      args: ["--newline"],
+      spawn: () => proc,
+      onStdoutLine: (line) => lines.push(line),
+    });
+
+    await expect(handle.completed).resolves.toMatchObject({ exitCode: 0 });
+    expect(lines).toEqual(["caf\uFFFD"]);
+  });
+
   test("cancel kills the process", async () => {
     const killSignals: (string | number | undefined)[] = [];
     const proc = createFakeProcess({
@@ -173,9 +214,13 @@ function createFakeProcess(options: {
 }
 
 function streamFromText(text: string): ReadableStream<Uint8Array> {
+  return streamFromChunks([new TextEncoder().encode(text)]);
+}
+
+function streamFromChunks(chunks: readonly Uint8Array[]): ReadableStream<Uint8Array> {
   return new ReadableStream<Uint8Array>({
     start(controller) {
-      controller.enqueue(new TextEncoder().encode(text));
+      for (const chunk of chunks) controller.enqueue(chunk);
       controller.close();
     },
   });

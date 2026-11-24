@@ -1,12 +1,15 @@
 import type { PlaybackTimingMetadata, PlaybackTimingSegment } from "@/domain/types";
+import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
 import {
   classifyTimingHttpStatus,
   classifyTimingThrownError,
   type PlaybackTimingSourceFetchResult,
 } from "@/infra/timing/PlaybackTimingSource";
 import { dbg } from "@/logger";
+import { postAniListGraphql } from "@/services/catalog/anilist-client";
 import { fetchArmIdGraph } from "@/services/catalog/arm-client";
 import { fetchAnidbMalId } from "@kunai/providers";
+import { isJsonNumber, isJsonObject } from "@kunai/types";
 import type { ProviderExternalIds } from "@kunai/types";
 
 const ANISKIP_API = "https://api.aniskip.com/v1/skip-times";
@@ -74,10 +77,10 @@ async function fetchMalIdFromAllAnimeShow(
         "User-Agent": ALLANIME_MAL_LOOKUP_UA,
       },
       body: JSON.stringify({ query, variables: { id: showId } }),
-      signal: signal ?? AbortSignal.timeout(5_000),
+      signal: withTimeoutSignal(signal, 5_000),
     });
     if (!res.ok) {
-      setCapped(malIdFromAllAnimeShowCache, showId, null);
+      await res.body?.cancel().catch(() => undefined);
       return null;
     }
     const data = (await res.json()) as {
@@ -93,7 +96,8 @@ async function fetchMalIdFromAllAnimeShow(
     setCapped(malIdFromAllAnimeShowCache, showId, parsed);
     return parsed;
   } catch {
-    setCapped(malIdFromAllAnimeShowCache, showId, null);
+    // Transient network/timeout/abort failure is not a confirmed miss; leave
+    // the cache unpoisoned so later episodes can still resolve skip timings.
     return null;
   }
 }
@@ -203,30 +207,24 @@ async function resolveAniListIdByName(
     const query = seasonYear
       ? `query ($s: String, $y: Int) { Media(search: $s, type: ANIME, seasonYear: $y) { id } }`
       : `query ($s: String) { Media(search: $s, type: ANIME) { id } }`;
-    const res = await fetch("https://graphql.anilist.co", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        accept: "application/json",
-      },
-      body: JSON.stringify(
-        seasonYear
-          ? { query, variables: { s: name, y: seasonYear } }
-          : { query, variables: { s: name } },
-      ),
-      signal: signal ?? AbortSignal.timeout(5_000),
-    });
-    if (!res.ok) {
-      setCapped(anilistIdByNameCache, key, null);
-      return null;
-    }
-    const data = (await res.json()) as { data?: { Media?: { id?: number } } };
-    const id = data?.data?.Media?.id;
-    const result = typeof id === "number" ? String(id) : null;
+    const payload = await postAniListGraphql(
+      seasonYear
+        ? { query, variables: { s: name, y: seasonYear } }
+        : { query, variables: { s: name } },
+      { signal, timeoutMs: 5_000 },
+    );
+    const data = isJsonObject(payload.data) ? payload.data : null;
+    // Only a confirmed answer is cached: a Media row, or `Media: null` (also
+    // what AniList's 404 envelope carries). An error-only body is not a miss.
+    if (!data || !("Media" in data)) return null;
+    const media = isJsonObject(data.Media) ? data.Media : null;
+    const id = media?.id;
+    const result = isJsonNumber(id) ? String(id) : null;
     setCapped(anilistIdByNameCache, key, result);
     return result;
   } catch {
-    setCapped(anilistIdByNameCache, key, null);
+    // A transport failure, an HTTP error or a rate-limit cooldown is not an
+    // answer; it used to be cached as "no match" for the whole session.
     return null;
   }
 }
@@ -239,6 +237,9 @@ async function resolveMALFromAniListId(
   if (malIdCache.has(cacheKey)) return malIdCache.get(cacheKey) ?? null;
 
   const graph = await fetchArmIdGraph("anilist", anilistId, signal);
+  // `undefined` means a network/HTTP failure; only a confirmed answer or 404
+  // (`null`) may be cached for the session.
+  if (graph === undefined) return null;
   const malId = graph?.malId ? Number.parseInt(graph.malId, 10) : null;
   setCapped(malIdCache, cacheKey, malId);
   return malId;
@@ -267,6 +268,7 @@ async function resolveMALFromTheMovieDbId(
   if (malIdCache.has(cacheKey)) return malIdCache.get(cacheKey) ?? null;
 
   const graph = await fetchArmIdGraph("themoviedb", tmdbId, signal);
+  if (graph === undefined) return null;
   const malId = graph?.malId ? Number.parseInt(graph.malId, 10) : null;
   setCapped(malIdCache, cacheKey, malId);
   return malId;
@@ -396,10 +398,11 @@ export async function fetchAniSkipTimingMetadataDetailed(opts: {
 
   try {
     const res = await fetch(`${ANISKIP_API}/${malId}/${episode}?${params.toString()}`, {
-      signal: signal ?? AbortSignal.timeout(5_000),
+      signal: withTimeoutSignal(signal, 5_000),
       headers: { accept: "application/json" },
     });
     if (!res.ok) {
+      await res.body?.cancel().catch(() => undefined);
       return {
         metadata: null,
         failureClass: classifyTimingHttpStatus(res.status),

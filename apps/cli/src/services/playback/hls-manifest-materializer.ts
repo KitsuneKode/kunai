@@ -27,11 +27,6 @@ export {
   shouldMaterializeHlsManifest,
 } from "@kunai/providers";
 
-/** @deprecated Use isKnownHostRootHlsCdn from @kunai/providers */
-export function shouldMaterializeHlsManifestForHost(url: string): boolean {
-  return isHlsPlaylistUrl(url);
-}
-
 /**
  * Why materialization was skipped. Materializing is an optimization (rewrite
  * host-root segment paths so ffmpeg/mpv parses large playlists). Transport
@@ -99,6 +94,7 @@ export async function materializeHlsManifestForPlayback(
     }
     const response = outcome.response;
     if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
       onSkipped?.("http-error", `HTTP ${response.status}`, response.status);
       return null;
     }

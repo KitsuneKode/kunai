@@ -119,7 +119,7 @@ async function profile() {
 function mount(
   container: Container,
   initialSectionId?: string,
-  onStatus = (_: string | null) => {},
+  onStatus: (status: string | null) => void = () => {},
 ) {
   return render(
     <SettingsShell
@@ -145,6 +145,7 @@ async function keys(handle: ReturnType<typeof mount>, ...input: string[]) {
 const down = "\x1b[B";
 const up = "\x1b[A";
 const enter = "\r";
+const tab = "\t";
 
 for (const caller of ["Settings", "theme picker"] as const) {
   test(`${caller} persists only changed fields over sibling withdrawal and preferences`, async () => {
@@ -204,12 +205,12 @@ test("presence applies only fields edited in its pane", async () => {
 test("failed enable followed by explicit disable and passive edit cannot replay consent", async () => {
   const p = await profile();
   await p.container.usageAnalytics.setConsent("disabled");
-  const handle = mount(p.container);
+  const handle = mount(p.container, "section:privacy");
   try {
     p.failNext();
     const failed = p.nextSave();
     await act(async () => {
-      await keys(handle, down, down, down, down, enter);
+      await keys(handle, enter);
       await failed;
     });
     expect(handle.lastFrame()).toContain("Couldn't save settings");
@@ -218,7 +219,7 @@ test("failed enable followed by explicit disable and passive edit cannot replay 
     await keys(handle, enter);
     const passive = p.nextSave();
     await act(async () => {
-      await keys(handle, up, up, up, enter, down, enter);
+      await keys(handle, tab, down, enter, down, enter);
       await passive;
     });
     const disk = await p.disk();
@@ -237,18 +238,18 @@ test("failed enable followed by explicit disable and passive edit cannot replay 
 test("failed disable remains retryable by an unrelated edit", async () => {
   const p = await profile();
   await p.container.usageAnalytics.setConsent("enabled");
-  const handle = mount(p.container);
+  const handle = mount(p.container, "section:privacy");
   try {
     p.failNext();
     const failed = p.nextSave();
     await act(async () => {
-      await keys(handle, down, down, down, down, enter);
+      await keys(handle, enter);
       await failed;
     });
     expect((await p.disk()).analytics).toBe("enabled");
     const retry = p.nextSave();
     await act(async () => {
-      await keys(handle, up, up, up, enter, down, enter);
+      await keys(handle, tab, down, enter, down, enter);
       await retry;
     });
     const disk = await p.disk();
@@ -363,12 +364,12 @@ test("a later explicit enable survives equal-valued in-flight consent", async ()
 test("a failed withdrawal is retried when the pane closes", async () => {
   const p = await profile();
   await p.container.usageAnalytics.setConsent("enabled");
-  const handle = mount(p.container);
+  const handle = mount(p.container, "section:privacy");
   try {
     p.failNext();
     const failed = p.nextSave();
     await act(async () => {
-      await keys(handle, down, down, down, down, enter);
+      await keys(handle, enter);
       await failed;
     });
     expect((await p.disk()).analytics).toBe("enabled");

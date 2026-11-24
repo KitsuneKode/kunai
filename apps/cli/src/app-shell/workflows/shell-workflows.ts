@@ -15,6 +15,7 @@ import {
 
 export { buildPickerActionContext };
 import { companionFallbackGlyph, companionToggleable } from "@/app-shell/companion-policy";
+import { shellFeedbackTimers } from "@/app-shell/dismiss-timer-registry";
 import { exportLocalSupportBundle } from "@/app-shell/export-local-support-bundle";
 import {
   buildExternalOpenFallback,
@@ -1120,9 +1121,9 @@ async function handleProviderPicker(container: Container): Promise<"handled"> {
   return "handled";
 }
 
-type ProvidersHubChoice = "session" | "defaults" | "toggle";
+type ProvidersHubChoice = "session" | "defaults" | "toggle" | "definitions";
 
-/** Single entry for /providers: session switch vs sticky defaults. */
+/** Single entry for /providers: session switch, sticky defaults, switches, or signed definitions. */
 async function handleProvidersHub(container: Container): Promise<"handled"> {
   const state = container.stateManager.getState();
   const currentName =
@@ -1133,7 +1134,7 @@ async function handleProvidersHub(container: Container): Promise<"handled"> {
 
   const choice = await chooseFromListShell<ProvidersHubChoice>({
     title: "Providers",
-    subtitle: `${currentName} · ${laneLabel}${disabledCount > 0 ? ` · ${disabledCount} off` : ""} · session, defaults, or switches`,
+    subtitle: `${currentName} · ${laneLabel}${disabledCount > 0 ? ` · ${disabledCount} off` : ""} · session, defaults, switches, or definitions`,
     actionContext: buildPickerActionContext({
       container,
       taskLabel: "Choose provider action",
@@ -1155,6 +1156,11 @@ async function handleProvidersHub(container: Container): Promise<"handled"> {
         label: "Turn providers on/off",
         detail: "Enable or disable providers for resolve and fallback",
       },
+      {
+        value: "definitions" as const,
+        label: "Provider definitions (update / rollback)",
+        detail: "Inspect signed hotfix revision, check for updates, or roll back",
+      },
     ],
   });
 
@@ -1167,7 +1173,72 @@ async function handleProvidersHub(container: Container): Promise<"handled"> {
   if (choice === "toggle") {
     return handleProviderToggles(container);
   }
+  if (choice === "definitions") {
+    return handleProviderDefinitions(container);
+  }
   return "handled";
+}
+
+type ProviderDefinitionsAction = "update" | "rollback" | "back";
+
+/** Inspect, update, or roll back signed provider definitions from inside the TUI. */
+async function handleProviderDefinitions(container: Container): Promise<"handled"> {
+  const {
+    readProviderDefinitionsSnapshot,
+    rollbackProviderDefinitionsFromShell,
+    updateProviderDefinitionsFromShell,
+  } = await import("@/app/providers/provider-definitions-actions");
+
+  let statusNote = "";
+  for (;;) {
+    const snapshot = readProviderDefinitionsSnapshot();
+    const revLine =
+      snapshot.activeRevision !== null && snapshot.activeExpiresAt
+        ? `Active rev ${snapshot.activeRevision} · expires ${snapshot.activeExpiresAt.slice(0, 10)}`
+        : "Bundled definitions (no signed hotfix active)";
+    const backupLine =
+      snapshot.backupRevision !== null
+        ? `Rollback available → rev ${snapshot.backupRevision}`
+        : "No backup revision on disk";
+    const action = await chooseFromListShell<ProviderDefinitionsAction>({
+      title: "Provider definitions",
+      subtitle: statusNote ? `${revLine} · ${statusNote}` : `${revLine} · ${backupLine}`,
+      actionContext: buildPickerActionContext({
+        container,
+        taskLabel: "Manage provider definitions",
+        allowed: ["settings", "diagnostics", "help", "quit"],
+      }),
+      options: [
+        {
+          value: "update",
+          label: "Check & apply signed update",
+          detail: container.config.getRaw().offlineMode
+            ? "Offline mode is enabled — disable offline mode to fetch updates"
+            : "Fetch, verify Ed25519 signature, and hot-reload provider definitions",
+        },
+        {
+          value: "rollback",
+          label: "Roll back to previous definitions",
+          detail: backupLine,
+        },
+        {
+          value: "back",
+          label: "Done",
+          detail: "Return to Kunai",
+        },
+      ],
+    });
+    if (!action || action === "back") return "handled";
+
+    if (action === "update") {
+      statusNote = await updateProviderDefinitionsFromShell(container);
+      continue;
+    }
+
+    if (action === "rollback") {
+      statusNote = await rollbackProviderDefinitionsFromShell(container);
+    }
+  }
 }
 
 /** Loop a per-provider on/off checklist until dismissed. */
@@ -1805,7 +1876,7 @@ export async function enqueueCurrentPlaybackDownload({
       type: "SET_PLAYBACK_FEEDBACK",
       note: successNote,
     });
-    setTimeout(() => {
+    shellFeedbackTimers.schedule(() => {
       if (container.stateManager.getState().playbackNote === successNote) {
         container.stateManager.dispatch({
           type: "SET_PLAYBACK_FEEDBACK",

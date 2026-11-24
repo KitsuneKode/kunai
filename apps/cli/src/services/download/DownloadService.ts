@@ -100,10 +100,6 @@ function monotonicNowMs(): number {
 function monotonicNowIso(): string {
   return new Date(monotonicNowMs()).toISOString();
 }
-/** Test seam — queue timestamps are module state shared across cases. */
-export function resetDownloadEnqueueClockForTest(): void {
-  lastQueueTimestampMs = 0;
-}
 /** Small spread so mass retries/deferrals do not re-claim in lockstep. */
 function retryJitterMs(): number {
   return Math.floor(Math.random() * 1000);
@@ -267,6 +263,7 @@ export type DownloadQueueKickSource =
   | "download-manager"
   | "offline-repair"
   | "offline-runway"
+  | "online-resume"
   | "queue-coalesced";
 
 type DownloadEventListener = (event: DownloadEvent) => void;

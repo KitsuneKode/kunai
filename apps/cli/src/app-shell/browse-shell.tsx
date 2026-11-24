@@ -117,7 +117,7 @@ import {
 import { buildDetailsSheet } from "./details-sheet.model";
 import { useCalendarRoute, type CalendarRouteRequest } from "./hooks/use-calendar-route";
 import { useCalendarState } from "./hooks/use-calendar-state";
-import { SUGGESTION_DEBOUNCE_MS, useSearchSuggestions } from "./hooks/use-search-suggestions";
+import { resolveSuggestionDebounceMs, useSearchSuggestions } from "./hooks/use-search-suggestions";
 import { undisplayPlacementsKeepCache } from "./image-pane";
 import { resolveBrowseBindingEffect, resolveKeybinding } from "./keybinding-runtime";
 import { buildFooterActionsFromBindings } from "./keybindings";
@@ -126,7 +126,6 @@ import {
   getBrowseCommandPaletteMaxVisible,
   getBrowseListMaxVisible,
 } from "./layout-policy";
-import { reducedMotionEnabled } from "./motion-policy";
 import { MouseTarget, useMouseEnabled, useMouseRegion } from "./mouse/MouseRegions";
 import type { BrowseOverlay } from "./overlay-panel";
 import { OverlayPanel } from "./overlay-panel";
@@ -695,6 +694,7 @@ export function BrowseShell<T>({
         setFocusZone(processed.options.length > 0 ? "list" : "query");
       } catch (error) {
         if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) return;
+        if (error instanceof Error && error.name === "AbortError") return;
 
         setSearchState("error");
         setOptions([]);
@@ -1146,10 +1146,7 @@ export function BrowseShell<T>({
     enabled: suggestionBandVisible,
     scopeKey: `${mode}:${provider}`,
     onSuggest,
-    // Reduced motion = no keystroke latency: local rows already render in the
-    // same frame; the catalog call also fires immediately (the gate + abort
-    // still coalesce real traffic for superseded drafts).
-    debounceMs: suggestionDebounceMs ?? (reducedMotionEnabled() ? 0 : SUGGESTION_DEBOUNCE_MS),
+    debounceMs: resolveSuggestionDebounceMs(suggestionDebounceMs),
   });
 
   const localSuggestionCorpus = useMemo<readonly SearchSuggestion<T>[]>(() => {
@@ -1169,7 +1166,7 @@ export function BrowseShell<T>({
     }
     // The corpus is a snapshot per band-open, not per keystroke — re-reading
     // SQLite on every character is wasted work the scorer never sees.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/memo-dependencies, react-hooks/exhaustive-deps -- the corpus is a snapshot per band-open; historyRevision refreshes it
   }, [suggestionBandVisible, loadLocalSuggestions, historyRevision, mode]);
 
   const suggestionBandModel = useMemo(

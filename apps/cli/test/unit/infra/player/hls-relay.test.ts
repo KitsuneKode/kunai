@@ -480,4 +480,26 @@ describe("rewriteHlsPlaylistForRelay", () => {
     const input = ["#EXTM3U", "https://evil.example/seg.ts"].join("\n");
     expect(() => rewriteHlsPlaylistForRelay(input, BASE, RELAY)).toThrow(/not allowlisted/);
   });
+
+  test("aborts upstream redirect walks immediately when signal is aborted", async () => {
+    const controller = new AbortController();
+    let calls = 0;
+    await expect(
+      fetchHlsRelayUpstream(
+        "https://vault-06.uwucdn.top/start.m3u8",
+        async () => {
+          calls += 1;
+          controller.abort();
+          return {
+            status: 302,
+            contentType: "text/plain",
+            body: Buffer.alloc(0),
+            redirectUrl: "https://vault-06.uwucdn.top/next.m3u8",
+          };
+        },
+        { signal: controller.signal },
+      ),
+    ).rejects.toThrow("HLS relay stopped");
+    expect(calls).toBe(1);
+  });
 });

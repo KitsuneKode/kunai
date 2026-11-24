@@ -6,6 +6,7 @@ import {
   type ProviderEngine,
   type ProviderPriorityInput,
 } from "@kunai/core";
+import type { ProviderHotfixManifest } from "@kunai/providers";
 import { buildProviderRelayRegistry, createRelayFetchPort } from "@kunai/relay";
 import { ProviderCacheRepository } from "@kunai/storage";
 
@@ -19,9 +20,16 @@ import {
 import { StreamHealthService } from "../services/playback/StreamHealthService";
 import { createProviderCachePort } from "../services/providers/provider-cache-port";
 import {
+  applyHotfixToProviderBootstrap,
+  getActiveProviderHotfixManifest,
+  groupProvidersByLane,
+  maybeUrgentProviderManifestRefresh,
+} from "../services/providers/provider-hotfix-manifest";
+import {
   createProviderPrioritySnapshot,
   filterEnabledProviderModules,
 } from "../services/providers/provider-priority";
+import { reloadProviderRegistryPriority } from "../services/providers/provider-registry-hotfix";
 import type { ProviderRegistry } from "../services/providers/ProviderRegistry";
 import { createProviderRegistry } from "../services/providers/ProviderRegistry";
 import type { PersistenceBootstrap } from "./bootstrap-persistence";
@@ -153,47 +161,29 @@ export async function bootstrapProviders(
     disabledProviderIds: [...config.disabledProviders],
   });
 
-  // The module ordering is a pure function of the priority lists, which change
-  // only via config edits — memoize on the joined lists rather than re-sorting
-  // the module array on every resolve.
-  const getOrderedModules = (() => {
-    let cacheKey: string | null = null;
-    let ordered: readonly CoreProviderModule[] = providerModules;
-    return () => {
-      const priority = createProviderPrioritySnapshot(config);
-      const raw = config.getRaw();
-      const disabled = [...config.disabledProviders];
-      const key = [
-        priority.providerPriority.join(","),
-        priority.animeProviderPriority.join(","),
-        (priority.youtubeProviderPriority ?? []).join(","),
-        raw.providerRelay?.enabled ? "relay-on" : "relay-off",
-        JSON.stringify(raw.providerRelay?.providers ?? {}),
-        disabled.join(","),
-      ].join("|");
-      if (key !== cacheKey) {
-        cacheKey = key;
-        ordered = filterEnabledProviderModules(
-          orderProviderModulesByPriority(providerModules, priority),
-          disabled,
-        );
-      }
-      return ordered;
-    };
-  })();
+  const getOrderedModules = createOrderedModulesGetter(config, providerModules);
+  const getEffectiveProviderPriority = (): ProviderPriorityInput =>
+    applyHotfixToProviderBootstrap(
+      createProviderPrioritySnapshot(config),
+      config.disabledProviders,
+      getActiveProviderHotfixManifest(),
+    ).priority;
   const streamHealthService = new StreamHealthService();
   const playbackResolveWork = new PlaybackResolveWorkService(
     new PlaybackResolveCoordinator({
       engine,
       cacheStore,
       providerHealth,
+      onProviderDown: () => {
+        void refreshHotfixAfterProviderDown(config, providerRegistry, engine.modules);
+      },
       streamHealthService,
       sourceInventory,
       titleProviderHealth,
       endpointHealth,
       titlePlaybackSource: titlePlaybackSource,
       diagnostics: diagnosticsService,
-      getProviderPriority: () => createProviderPrioritySnapshot(config),
+      getProviderPriority: getEffectiveProviderPriority,
       getOrderedModules,
       catalogCrosswalk: persistence.catalogCrosswalk,
     }),
@@ -207,4 +197,70 @@ export async function bootstrapProviders(
     providerRegistry,
     playbackResolveWork,
   };
+}
+
+type OrderedModulesConfig = PersistenceBootstrap["config"];
+
+/**
+ * The provider modules playback may use, in attempt order: user priority and
+ * disables, then the active signed hotfix manifest (lane priority + `disabled`).
+ * The registry and this list must agree, or a provider the manifest disabled is
+ * still replayed from cache and still attempted on fallback. The manifest is
+ * read through the expiry-aware getter on every call, so an expired manifest
+ * stops excluding providers without anyone rewriting state.
+ */
+export function createOrderedModulesGetter(
+  config: OrderedModulesConfig,
+  providerModules: readonly CoreProviderModule[],
+  getManifest: () => ProviderHotfixManifest | null = getActiveProviderHotfixManifest,
+): () => readonly CoreProviderModule[] {
+  let cacheKey: string | null = null;
+  let ordered: readonly CoreProviderModule[] = providerModules;
+  return () => {
+    const manifest = getManifest();
+    const effective = applyHotfixToProviderBootstrap(
+      createProviderPrioritySnapshot(config),
+      config.disabledProviders,
+      manifest,
+    );
+    const raw = config.getRaw();
+    const key = [
+      effective.priority.providerPriority.join(","),
+      effective.priority.animeProviderPriority.join(","),
+      (effective.priority.youtubeProviderPriority ?? []).join(","),
+      raw.providerRelay?.enabled ? "relay-on" : "relay-off",
+      JSON.stringify(raw.providerRelay?.providers ?? {}),
+      effective.disabledProviderIds.join(","),
+    ].join("|");
+    if (key !== cacheKey) {
+      cacheKey = key;
+      ordered = filterEnabledProviderModules(
+        orderProviderModulesByPriority(providerModules, effective.priority),
+        effective.disabledProviderIds,
+      );
+    }
+    return ordered;
+  };
+}
+
+/**
+ * A provider just went down locally. If a signed fix is already published,
+ * fetch it now instead of at the next 6-hour check, and apply it: playback
+ * admission reads the active manifest on every resolve, and the registry copy
+ * is reloaded here. Opt-in and throttled inside `maybeUrgent…`; never throws.
+ */
+async function refreshHotfixAfterProviderDown(
+  config: OrderedModulesConfig,
+  providerRegistry: ProviderRegistry,
+  modules: readonly CoreProviderModule[],
+): Promise<void> {
+  if (config.offlineMode) return;
+  try {
+    const outcome = await maybeUrgentProviderManifestRefresh({
+      knownProvidersByLane: groupProvidersByLane(modules),
+    });
+    if (outcome === "updated") reloadProviderRegistryPriority({ config, providerRegistry });
+  } catch {
+    // Advisory: a failed refresh leaves the current manifest in place.
+  }
 }

@@ -56,8 +56,18 @@ export type SettingRowDef = SettingRowMetadata &
         readonly kind: "section";
         readonly id: string;
         readonly label: string;
+        /** Compact label used in the tab strip when full section names exceed width. */
+        readonly tabLabel?: string;
         readonly detail?: string;
         readonly layout?: SectionLayout;
+      }
+    | {
+        readonly kind: "subheading";
+        readonly id: string;
+        readonly label: string;
+        readonly detail?: string;
+        readonly tone?: "danger";
+        readonly gate?: SettingGate;
       }
     | {
         readonly kind: "boolean";

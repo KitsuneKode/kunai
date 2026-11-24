@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-17T16:15:24.280Z",
+  "generatedAt": "2026-11-23T18:29:21.976Z",
   "schemaVersion": 1,
   "providers": [
     {
@@ -7,21 +7,21 @@
       "upstreamHttp": null,
       "upstreamReachable": false,
       "resolveStatus": "exhausted",
-      "resolveMs": 4111,
+      "resolveMs": 30001,
       "streams": 0,
       "qualities": [],
       "servers": [],
       "audioLanguages": [],
       "subtitleLanes": 0,
       "effectiveStatus": "dead",
-      "note": "upstream unreachable"
+      "note": "upstream unreachable — VidKing source cycling was cancelled"
     },
     {
       "id": "vidlink",
       "upstreamHttp": 200,
       "upstreamReachable": true,
       "resolveStatus": "resolved",
-      "resolveMs": 890,
+      "resolveMs": 938,
       "streams": 1,
       "qualities": ["auto"],
       "servers": ["VidLink"],
@@ -35,63 +35,63 @@
       "upstreamHttp": 200,
       "upstreamReachable": true,
       "resolveStatus": "resolved",
-      "resolveMs": 1953,
+      "resolveMs": 5783,
       "streams": 1,
       "qualities": ["auto"],
-      "servers": ["Apogee"],
-      "audioLanguages": ["de", "en", "es", "fr", "it", "ja", "pl", "pt", "tr"],
-      "subtitleLanes": 5,
+      "servers": ["Rift"],
+      "audioLanguages": [],
+      "subtitleLanes": 32,
       "effectiveStatus": "healthy",
-      "note": ""
+      "note": "Rivestream electra did not return sources"
     },
     {
       "id": "vidrock",
       "upstreamHttp": 200,
       "upstreamReachable": true,
       "resolveStatus": "exhausted",
-      "resolveMs": 27,
+      "resolveMs": 115,
       "streams": 0,
       "qualities": [],
       "servers": [],
       "audioLanguages": [],
       "subtitleLanes": 0,
       "effectiveStatus": "degraded",
-      "note": "upstream up but resolve exhausted"
+      "note": "upstream up but resolve exhausted — VidRock API returned HTTP 403"
     },
     {
       "id": "movy",
       "upstreamHttp": 403,
       "upstreamReachable": true,
       "resolveStatus": "exhausted",
-      "resolveMs": 46,
+      "resolveMs": 71,
       "streams": 0,
       "qualities": [],
       "servers": [],
       "audioLanguages": [],
       "subtitleLanes": 0,
       "effectiveStatus": "degraded",
-      "note": "upstream up but resolve exhausted"
+      "note": "upstream up but resolve exhausted — seed request failed: HTTP 403"
     },
     {
       "id": "allanime",
       "upstreamHttp": 404,
       "upstreamReachable": true,
       "resolveStatus": "exhausted",
-      "resolveMs": 2030,
+      "resolveMs": 1898,
       "streams": 0,
       "qualities": [],
       "servers": [],
       "audioLanguages": [],
       "subtitleLanes": 0,
       "effectiveStatus": "degraded",
-      "note": "upstream up but resolve exhausted"
+      "note": "upstream up but resolve exhausted — AllManga crypto bootstrap stayed stale after refresh"
     },
     {
       "id": "hianime",
       "upstreamHttp": 200,
       "upstreamReachable": true,
       "resolveStatus": "resolved",
-      "resolveMs": 3709,
+      "resolveMs": 3493,
       "streams": 1,
       "qualities": ["1080p"],
       "servers": ["ZokoAnime"],
@@ -105,21 +105,21 @@
       "upstreamHttp": 403,
       "upstreamReachable": true,
       "resolveStatus": "exhausted",
-      "resolveMs": 929,
+      "resolveMs": 1124,
       "streams": 0,
       "qualities": [],
       "servers": [],
       "audioLanguages": [],
       "subtitleLanes": 0,
       "effectiveStatus": "blocked",
-      "note": "upstream challenges this network (WAF/captcha); relay in an ungated region bypasses"
+      "note": "upstream challenges this network (WAF/captcha); relay in an ungated region bypasses — Miruro pipe blocked by Cloudflare WAF on multiple mirrors (HTTP 403 HTML). curl-impersonate (chrome150) was already used and still blocked, "
     },
     {
       "id": "animegg",
-      "upstreamHttp": 200,
-      "upstreamReachable": true,
+      "upstreamHttp": null,
+      "upstreamReachable": false,
       "resolveStatus": "resolved",
-      "resolveMs": 10770,
+      "resolveMs": 21917,
       "streams": 4,
       "qualities": ["360p", "480p", "720p", "1080p"],
       "servers": ["Animegg"],
@@ -133,14 +133,14 @@
       "upstreamHttp": 200,
       "upstreamReachable": true,
       "resolveStatus": "exhausted",
-      "resolveMs": 38,
+      "resolveMs": 93,
       "streams": 0,
       "qualities": [],
       "servers": [],
       "audioLanguages": [],
       "subtitleLanes": 0,
       "effectiveStatus": "blocked",
-      "note": "upstream challenges this network (WAF/captcha); relay in an ungated region bypasses"
+      "note": "upstream challenges this network (WAF/captcha); relay in an ungated region bypasses — KickAssAnime search failed: KickAssAnime returned HTTP 403"
     },
     {
       "id": "youtube",
@@ -154,7 +154,7 @@
       "audioLanguages": [],
       "subtitleLanes": 0,
       "effectiveStatus": "degraded",
-      "note": "upstream up but resolve exhausted"
+      "note": "upstream up but resolve exhausted — yt-dlp is required for YouTube playback. Install yt-dlp and retry."
     }
   ]
 }

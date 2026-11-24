@@ -49,6 +49,3 @@ export function getVideasyKnownCatalog(mediaKind?: string): readonly KnownCatalo
       };
     });
 }
-
-/** @deprecated Use getVideasyKnownCatalog */
-export const getVidkingKnownCatalog = getVideasyKnownCatalog;

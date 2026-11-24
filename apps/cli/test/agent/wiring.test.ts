@@ -57,11 +57,13 @@ describe("agent wiring · settings toggle", () => {
       // renders can be dropped — and "Minimal" matches the open submenu's
       // option row even when nothing was picked, so the frame predicate alone
       // can't tell pick from no-op. Settle, then assert the PICKED state:
-      // the submenu closes and the panel list (with Usage analytics) returns.
+      // the submenu closes and the General panel list returns — Mascot & tips
+      // still lives in General after the five-section merge; Usage analytics
+      // moved to Privacy & System.
       await s.waitSettled();
       s.press(K.down, K.enter);
       await s.waitForFrame(
-        (f) => f.includes("Usage analytics") && f.includes("Minimal"),
+        (f) => f.includes("Mascot & tips") && f.includes("Minimal"),
         "pick applied — panel shows Minimal",
       );
 
@@ -73,14 +75,14 @@ describe("agent wiring · settings toggle", () => {
 
       // Reverse the same path — a one-way door is a bug, not a feature.
       // Verified: the cursor stays on the picked row, so Enter reopens the
-      // submenu with the cursor already on Detailed — no navigation near the
-      // analytics toggle (hazard 3 is a real risk of sloppy key plans).
+      // submenu with the cursor already on Detailed — no navigation through
+      // unrelated sections (hazard 3 is a real risk of sloppy key plans).
       s.press(K.enter);
       await s.waitForFrame((f) => f.includes("Detailed"), "footer-hints submenu again");
       await s.waitSettled();
       s.press(K.enter);
       await s.waitForFrame(
-        (f) => f.includes("Usage analytics") && f.includes("Detailed"),
+        (f) => f.includes("Mascot & tips") && f.includes("Detailed"),
         "pick applied — panel shows Detailed",
       );
       await s.waitForBackend(

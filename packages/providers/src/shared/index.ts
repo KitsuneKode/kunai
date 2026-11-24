@@ -15,5 +15,7 @@ export * from "./resolve-helpers";
 export * from "./resolve-inventory-anomaly";
 export * from "./stream-reachability";
 export * from "./stream-health";
+export * from "./manifest-bundle";
+export * from "./hotfix-runtime";
 export * from "./source-inventory";
 export * from "./subtitle-helpers";

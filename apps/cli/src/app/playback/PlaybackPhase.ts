@@ -2369,11 +2369,22 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               getPreferredStreamSelection(sourceProviderId, currentEpisode),
               playbackQualityPreference(profileContext),
               playbackSubtitlePreference(profileContext),
+              config.hdrMode,
             );
           }
           if (!stream || resolveController.signal.aborted) {
             stateManager.dispatch({ type: "SET_STREAM", stream: null });
             return { status: "success", value: "back_to_results" };
+          }
+          if (container.player.capabilities.observation === "managed") {
+            // Fire-and-forget: a capability gap is advice, never a startup gate.
+            const noticeStream = stream;
+            void import("./hdr-capability-notice")
+              .then(({ resolveHdrCapabilityNotice }) =>
+                resolveHdrCapabilityNotice(noticeStream, config.hdrMode),
+              )
+              .then((note) => (note ? this.updatePlaybackFeedback(context, { note }) : undefined))
+              .catch(() => undefined);
           }
           const providerHandoff =
             sourceAuthority.kind === "provider"
@@ -2660,7 +2671,12 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
               container.config.recommendationRailEnabled &&
               prefetchedRecommendationItems === null &&
               stateManager.getState().mode !== "youtube" &&
-              !title.id.startsWith("youtube")
+              !title.id.startsWith("youtube") &&
+              // TMDB recommendations need a TMDB id. Anime titles carry AniList
+              // ids (often bare numbers), which TMDB would read as an unrelated
+              // show; anime post-play uses the AniList recommendations path.
+              stateManager.getState().mode !== "anime" &&
+              title.isAnime !== true
             ) {
               container.backgroundWorkScheduler.enqueue({
                 id: `recommendation-prefetch:${title.type}:${title.id}`,
@@ -4730,7 +4746,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
       if (!PlaybackPhase.wyzieKeyNoticeShown) {
         PlaybackPhase.wyzieKeyNoticeShown = true;
         this.updatePlaybackFeedback(context, {
-          note: "Preferred subtitles unavailable. Add a Wyzie key in Settings › Language to search for them.",
+          note: "Preferred subtitles unavailable. Add a Wyzie key in Settings › General to search for them.",
         });
       }
       return;

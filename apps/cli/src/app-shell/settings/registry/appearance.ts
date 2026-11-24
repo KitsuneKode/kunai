@@ -11,12 +11,6 @@ import type { SettingRowDef, SettingsRegistryContext } from "../types";
 export function appearanceSettingsRows(_ctx: SettingsRegistryContext): SettingRowDef[] {
   return [
     {
-      kind: "section",
-      id: "section:appearance",
-      label: "Appearance",
-      detail: "Theme and how the shell looks",
-    },
-    {
       kind: "enum",
       id: "theme",
       configKeys: ["theme"],

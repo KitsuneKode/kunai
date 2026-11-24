@@ -204,7 +204,7 @@ export class EpisodePrefetchHandle {
     this.activeTarget = target;
     this.ready = null;
 
-    this.inFlight = (async () => {
+    const task = (async () => {
       try {
         const bundle = await run(abortController.signal);
         if (generation !== this.generation) return null;
@@ -225,6 +225,11 @@ export class EpisodePrefetchHandle {
         }
       }
     })();
+    // Prefetch runs speculatively in the background; attach a no-op rejection
+    // sink so a failure before `awaitFor` (or after navigation/cancel) never
+    // surfaces as an unhandled promise rejection.
+    void task.catch(() => undefined);
+    this.inFlight = task;
   }
 
   async awaitFor(
@@ -233,7 +238,7 @@ export class EpisodePrefetchHandle {
     budgetMs: number,
   ): Promise<EpisodePrefetchWaitResult> {
     const startedAt = Date.now();
-    const immediate = this.peekReady(target);
+    const immediate = this.peekReadyFor(target);
     if (immediate) {
       return { bundle: immediate, outcome: "ready", waitedMs: 0 };
     }
@@ -249,20 +254,12 @@ export class EpisodePrefetchHandle {
 
     const outcome = await racePromiseWithTimeout(promise, budgetMs);
     const waitedMs = Date.now() - startedAt;
-    const bundle = this.peekReady(target);
+    const bundle = this.peekReadyFor(target);
     return {
       bundle,
       outcome: bundle ? (outcome === "timed-out" ? "ready" : outcome) : outcome,
       waitedMs,
     };
-  }
-
-  private peekReady(target: EpisodePrefetchTarget): EpisodePrefetchBundle | null {
-    if (!this.ready) return null;
-    if (!matchesEpisodePrefetchTarget(this.ready.target, target)) {
-      return null;
-    }
-    return this.ready;
   }
 }
 
@@ -270,13 +267,18 @@ async function racePromiseWithTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number,
 ): Promise<"completed" | "timed-out"> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
       promise.then(() => "completed" as const),
-      new Promise<"timed-out">((resolve) => setTimeout(() => resolve("timed-out"), timeoutMs)),
+      new Promise<"timed-out">((resolve) => {
+        timer = setTimeout(() => resolve("timed-out"), timeoutMs);
+      }),
     ]);
   } catch {
     return "completed";
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
   }
 }
 

@@ -287,7 +287,7 @@ export function openPlaybackEpisodePicker(
 }
 
 /**
- * `/theme` palette entry — the same write path as Settings › Appearance
+ * `/theme` palette entry — the same write path as Settings › General
  * (`persistSettingsDraft` → `applySettingsToRuntime`), so a pick here repaints
  * and persists exactly like a pick inside the settings overlay. A set
  * `KUNAI_THEME` is surfaced rather than silently fought: the pick still

@@ -46,6 +46,7 @@ describe("agent driver · real mpv tier", () => {
         while (Date.now() < deadline) {
           pos = await rm.mpvTimePos();
           if (pos !== null && pos > 0) break;
+          // sleep-allow: waits for a real mpv process to paint a frame
           await Bun.sleep(150);
         }
         expect(pos, "mpv IPC time-pos should advance past 0 (mpv really decoded)").toBeGreaterThan(

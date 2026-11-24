@@ -33,6 +33,12 @@ const section: SettingRowDef = {
   layout: "standard",
 };
 
+const subheading: SettingRowDef = {
+  kind: "subheading",
+  id: "subheading:startup-shell",
+  label: "Startup & Shell",
+};
+
 const first: SettingRowDef = {
   kind: "boolean",
   id: "alpha",
@@ -49,14 +55,15 @@ const second: SettingRowDef = {
   write: (config) => config,
 };
 
-test("firstSelectableRowIndex skips the section header", () => {
-  const page = pageOf([section, first, second]);
-  expect(firstSelectableRowIndex(page)).toBe(1);
-  expect(resolveSelectableRowIndex(page, 0)).toBe(1);
-  expect(resolveSelectableRowIndex(page, 1)).toBe(1);
+test("firstSelectableRowIndex skips the section header and subheadings", () => {
+  const page = pageOf([section, subheading, first, second]);
+  expect(firstSelectableRowIndex(page)).toBe(2);
+  expect(resolveSelectableRowIndex(page, 0)).toBe(2);
+  expect(resolveSelectableRowIndex(page, 1)).toBe(2);
+  expect(resolveSelectableRowIndex(page, 2)).toBe(2);
 });
 
 test("moveSelectedIndex from section header lands on the first setting", () => {
-  const page = pageOf([section, first, second]);
-  expect(moveSelectedIndex(page, 0, 1)).toBe(1);
+  const page = pageOf([section, subheading, first, second]);
+  expect(moveSelectedIndex(page, 0, 1)).toBe(2);
 });

@@ -3,9 +3,9 @@
 // Single source of truth for the 3-section discover list composition.
 // Used by both main.ts and PlaybackPhase.ts.
 
-import { loadDiscoveryList } from "@/app/discover/discovery-lists";
+import { loadDiscoverySection } from "@/app/discover/discovery-lists";
 import type { Container } from "@/container";
-import type { SearchResult } from "@/domain/types";
+import { formatRelativeAge } from "@/domain/relative-age";
 import {
   historyContentType,
   readLatestHistoryByTitle,
@@ -43,7 +43,12 @@ export async function buildDiscoverSections(
 
   const topGenres: number[] = [];
   const recentHistoryId = mostRecentCompleted?.[0] ?? null;
-  const hasTmdbLikeRecentId = recentHistoryId !== null && /^\d+$/.test(recentHistoryId);
+  // A bare number is only a TMDB id when the entry came from a series/movie
+  // provider; anime history ids are AniList ids, which TMDB would read as an
+  // unrelated title.
+  const recentIsAnime = animeProviders.has(mostRecentCompleted?.[1].providerId ?? "unknown");
+  const hasTmdbLikeRecentId =
+    recentHistoryId !== null && /^\d+$/.test(recentHistoryId) && !recentIsAnime;
   const completedHistorySeeds = Object.entries(history)
     .filter(([, entry]) => entry.completed)
     .filter(([, entry]) =>
@@ -64,13 +69,18 @@ export async function buildDiscoverSections(
           .getForTitle(recentHistoryId, historyContentType(mostRecentCompleted[1]))
           .then((s) => ({ ...s, label: `Because you watched ${mostRecentCompleted[1].title}` }))
       : null,
-    loadDiscoveryList(mode)
-      .catch((): readonly SearchResult[] => [])
-      .then((items) => ({
-        label: mode === "anime" ? "Anime trending this week" : "Trending this week",
-        reason: "trending" as const,
-        items,
-      })),
+    loadDiscoverySection(mode)
+      .catch(() => ({ results: [], staleSince: undefined }))
+      .then((section): RecommendationSection => {
+        const trending: RecommendationSection = {
+          label: mode === "anime" ? "Anime trending this week" : "Trending this week",
+          reason: "trending",
+          items: section.results,
+        };
+        return section.staleSince === undefined
+          ? trending
+          : { ...trending, staleSince: section.staleSince };
+      }),
     !options.light && mode !== "anime" && completedHistorySeeds.length > 0
       ? container.recommendationService
           .getPersonalizedByHistory(completedHistorySeeds)
@@ -82,5 +92,20 @@ export async function buildDiscoverSections(
         : null,
   ]);
 
-  return results.filter((s): s is RecommendationSection => s !== null);
+  return results
+    .filter((s): s is RecommendationSection => s !== null)
+    .map((section) => withFreshnessLabel(section));
+}
+
+/**
+ * A rail served from the last good answer says so: "Trending this week ·
+ * updated 3h ago". Without it a stale list during an outage passes for live.
+ */
+export function withFreshnessLabel(
+  section: RecommendationSection,
+  now: number = Date.now(),
+): RecommendationSection {
+  if (section.staleSince === undefined) return section;
+  const age = formatRelativeAge(section.staleSince, now);
+  return age ? { ...section, label: `${section.label} · updated ${age}` } : section;
 }

@@ -654,6 +654,7 @@ export class PlayerServiceImpl implements PlayerService {
       mpv: {
         ...this.deps.mpv,
         startupPriority: this.deps.config.startupPriority,
+        hdrMode: this.deps.config.hdrMode,
       },
     });
 
@@ -736,6 +737,7 @@ export class PlayerServiceImpl implements PlayerService {
         mpv: {
           ...this.deps.mpv,
           startupPriority: this.deps.config.startupPriority,
+          hdrMode: this.deps.config.hdrMode,
         },
       });
     } finally {
@@ -803,6 +805,7 @@ export class PlayerServiceImpl implements PlayerService {
         mpv: {
           ...this.deps.mpv,
           startupPriority: this.deps.config.startupPriority,
+          hdrMode: this.deps.config.hdrMode,
         },
         kitsuneConfig: this.deps.config.getRaw(),
         onControlReady: (control) => this.setActiveControlFor(generation, control),

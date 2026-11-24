@@ -1,27 +1,30 @@
 import { expect, test } from "bun:test";
 
 import { generalSettingsRows } from "@/app-shell/settings/registry/general";
+import { privacySettingsRows } from "@/app-shell/settings/registry/privacy";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
+import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 
 function baseConfig(): KitsuneConfig {
   return {
+    ...DEFAULT_CONFIG,
     defaultMode: "series",
-  } as KitsuneConfig;
+    seenTips: [],
+  };
 }
 
-/**
- * `{} as never` used to be enough here because the builder ignored its
- * context. It reads the config now — the analytics row reports when the last
- * ping left — so the fixture has to supply the one field the type always
- * promised was there.
- */
-function rows() {
+function generalRows() {
   // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
   return generalSettingsRows({ config: baseConfig() } as never);
 }
 
+function privacyRowsFor(config: Partial<KitsuneConfig>) {
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+  return privacySettingsRows({ config: { ...baseConfig(), ...config } } as never);
+}
+
 test("defaultMode write preserves youtube startup mode", () => {
-  const row = rows().find((entry) => entry.id === "defaultMode");
+  const row = generalRows().find((entry) => entry.id === "defaultMode");
   expect(row?.kind).toBe("enum");
 
   if (row?.kind !== "enum") {
@@ -32,8 +35,50 @@ test("defaultMode write preserves youtube startup mode", () => {
   expect(next.defaultMode).toBe("youtube");
 });
 
+test("companionPet is labeled Mascot & tips and toggles auto/off", () => {
+  const row = generalRows().find((entry) => entry.id === "companionPet");
+  expect(row?.kind).toBe("boolean");
+  expect(row?.label).toBe("Mascot & tips");
+  if (row?.kind !== "boolean") throw new Error("expected companionPet boolean row");
+
+  expect(row.read({ ...baseConfig(), companionPet: "auto" })).toBe(true);
+  expect(row.read({ ...baseConfig(), companionPet: "off" })).toBe(false);
+  expect(row.write(baseConfig(), false).companionPet).toBe("off");
+  expect(row.write(baseConfig(), true).companionPet).toBe("auto");
+});
+
+test("resetTips clears seenTips via config.update and save", async () => {
+  const row = generalRows().find((entry) => entry.id === "resetTips");
+  expect(row?.kind).toBe("action");
+  expect(row?.label).toBe("Reset tips");
+  if (row?.kind !== "action") throw new Error("expected resetTips action row");
+
+  let patch: Partial<KitsuneConfig> | undefined;
+  let saved = 0;
+  const message = await row.run(
+    // SAFETY: deliberately partial test stub — resetTips only reads/writes config.
+    {
+      container: {
+        config: {
+          seenTips: ["tip-up-next-key", "tip-help-key"],
+          update: async (next: Partial<KitsuneConfig>) => {
+            patch = next;
+          },
+          save: async () => {
+            saved += 1;
+          },
+        },
+      },
+    } as never,
+  );
+
+  expect(patch).toEqual({ seenTips: [] });
+  expect(saved).toBe(1);
+  expect(String(message)).toContain("Reset 2 shortcut tips");
+});
+
 test("usage analytics is a visible opt-in setting that clears the id when disabled", () => {
-  const row = rows().find((entry) => entry.id === "usageAnalytics");
+  const row = privacyRowsFor({}).find((entry) => entry.id === "usageAnalytics");
   expect(row?.kind).toBe("boolean");
 
   if (row?.kind !== "boolean") {
@@ -45,24 +90,21 @@ test("usage analytics is a visible opt-in setting that clears the id when disabl
   expect(row.write(enabled, false)).toMatchObject({ analytics: "disabled", installId: "" });
 });
 
-function rowsFor(config: Partial<KitsuneConfig>) {
-  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-  return generalSettingsRows({ config: { ...baseConfig(), ...config } } as never);
-}
-
 test("rotate is offered only while analytics is enabled", () => {
   // Disabling already clears the id, so offering rotation beside an off switch
   // would imply an identifier still exists.
-  const off = rowsFor({ analytics: "disabled" }).find((entry) => entry.id === "rotateInstallId");
+  const off = privacyRowsFor({ analytics: "disabled" }).find(
+    (entry) => entry.id === "rotateInstallId",
+  );
   if (off?.kind !== "action") throw new Error("expected rotateInstallId action row");
   const predicate = off.gate?.predicate;
   if (!predicate) throw new Error("rotateInstallId must be gated on consent");
-  expect(predicate({ analytics: "disabled" } as KitsuneConfig)).toBe(false);
-  expect(predicate({ analytics: "enabled" } as KitsuneConfig)).toBe(true);
+  expect(predicate({ ...baseConfig(), analytics: "disabled" })).toBe(false);
+  expect(predicate({ ...baseConfig(), analytics: "enabled" })).toBe(true);
 });
 
 test("rotate writes a new id and restarts the ping cadence", async () => {
-  const row = rowsFor({
+  const row = privacyRowsFor({
     analytics: "enabled",
     installId: "11111111-2222-4333-8444-555555555555",
   }).find((entry) => entry.id === "rotateInstallId");
@@ -70,18 +112,21 @@ test("rotate writes a new id and restarts the ping cadence", async () => {
 
   let patch: Partial<KitsuneConfig> | undefined;
   let saved = 0;
-  const message = await row.run({
-    container: {
-      config: {
-        update: async (next: Partial<KitsuneConfig>) => {
-          patch = next;
-        },
-        save: async () => {
-          saved += 1;
+  const message = await row.run(
+    // SAFETY: deliberately partial test stub — rotateInstallId only calls config.update and save.
+    {
+      container: {
+        config: {
+          update: async (next: Partial<KitsuneConfig>) => {
+            patch = next;
+          },
+          save: async () => {
+            saved += 1;
+          },
         },
       },
-    },
-  } as never);
+    } as never,
+  );
 
   expect(patch?.installId).not.toBe("11111111-2222-4333-8444-555555555555");
   expect(patch?.installId).toMatch(/^[0-9a-f-]{36}$/i);
@@ -93,6 +138,8 @@ test("rotate writes a new id and restarts the ping cadence", async () => {
 });
 
 test("the id line survives a config that never wrote installId", () => {
-  const row = rowsFor({ analytics: "enabled" }).find((entry) => entry.id === "rotateInstallId");
+  const row = privacyRowsFor({ analytics: "enabled" }).find(
+    (entry) => entry.id === "rotateInstallId",
+  );
   expect(row?.detail).toBe("No identifier exists yet");
 });

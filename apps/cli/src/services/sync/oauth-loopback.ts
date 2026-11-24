@@ -55,10 +55,12 @@ export function startLoopbackServer(options: LoopbackOptions): LoopbackServer {
    * So the handler only resolves, and the caller closes in a `finally`. Timeout
    * and abort have nothing in flight and tear down immediately.
    */
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
   const settle = (value: LoopbackResult) => {
     if (settled) return;
     settled = true;
-    clearTimeout(timer);
+    if (timer !== undefined) clearTimeout(timer);
     options.signal.removeEventListener("abort", onAbort);
     resolveResult(value);
   };
@@ -69,8 +71,11 @@ export function startLoopbackServer(options: LoopbackOptions): LoopbackServer {
   };
 
   const onAbort = () => teardown({ ok: false, reason: "aborted" });
-  const timer = setTimeout(() => teardown({ ok: false, reason: "timeout" }), options.timeoutMs);
 
+  // Bind the listener before arming the timeout or abort listener: if the
+  // configured port is already taken, Bun.serve throws synchronously and must
+  // not leave a live timer behind that later fires against an uninitialized
+  // `server` binding.
   const server = Bun.serve({
     port: Number(url.port),
     hostname: url.hostname,
@@ -113,8 +118,12 @@ export function startLoopbackServer(options: LoopbackOptions): LoopbackServer {
     },
   });
 
-  if (options.signal.aborted) onAbort();
-  else options.signal.addEventListener("abort", onAbort, { once: true });
+  if (options.signal.aborted) {
+    onAbort();
+  } else {
+    timer = setTimeout(() => teardown({ ok: false, reason: "timeout" }), options.timeoutMs);
+    options.signal.addEventListener("abort", onAbort, { once: true });
+  }
 
   return {
     port: server.port ?? Number(url.port),

@@ -20,35 +20,10 @@ import { existsSync } from "node:fs";
 //
 // This file owns the current fullscreen session runtime, and is the only
 // entrypoint. Keep new architecture work here.
-// (The old `apps/cli/index.ts` compatibility shim was removed in c1d48ffb.)
 // =============================================================================
 
-import { applyShareRefLaunch } from "@/app/bootstrap/apply-resolved-share-target";
-import {
-  formatBootstrapPlan,
-  resolveAutoPickIndex,
-  resolveBootstrapIntent,
-  resolveLaunchMode,
-  resolveLaunchSurfaceName,
-} from "@/app/bootstrap/bootstrap-intent";
-import { parseKunaiHandoffUrl, type KunaiHandoffLaunch } from "@/app/bootstrap/handoff-url";
-import {
-  applyHistorySelectionProvider,
-  episodeFromHistorySelection,
-  historyLaunchSelectionFromContinuation,
-  recordLocalHistorySourceDecision,
-  prepareReplayTitleForProvider,
-  titleFromHistorySelection,
-} from "@/app/bootstrap/launch-entry";
-import { launchShellWithPostPaintStartupWork } from "@/app/bootstrap/post-paint-startup-work";
-import { mapAnimeTitleToProviderNative } from "@/app/bootstrap/resolve-share-target";
-import {
-  isBelowOnboardedFloor,
-  maybeRunStartupSetup,
-  shouldRunSetupWizard,
-} from "@/app/bootstrap/startup-setup";
-import { resolveSessionConfigOverrides } from "@/app/session/session-overrides";
-import { SessionController } from "@/app/session/SessionController";
+import type { KunaiHandoffLaunch } from "@/app/bootstrap/handoff-url";
+import type { SessionController } from "@/app/session/SessionController";
 import {
   createShutdownCoordinator,
   type ShutdownCoordinator,
@@ -56,28 +31,10 @@ import {
 } from "@/app/session/shutdown-coordinator";
 import { bindShutdownRequestHandler } from "@/app/session/shutdown-request";
 import { buildCliHelpText, CliUsageError, parseCliArgs, type CliArgs } from "@/cli-args";
-import { createContainer, disposeContainer } from "@/container";
-import { detectPlayerPlatform, resolvePlayerMode } from "@/domain/playback/player-choice";
-import {
-  parseKunaiShareUrl,
-  type KunaiShareAction,
-  type PlaybackTargetRef,
-} from "@/domain/share/playback-target-ref";
+import type { createContainer } from "@/container";
+import type { KunaiShareAction, PlaybackTargetRef } from "@/domain/share/playback-target-ref";
 import type { EpisodeInfo, SearchResult, TitleInfo } from "@/domain/types";
 import { isProcessEntrypoint } from "@/infra/build/entrypoint";
-import {
-  recordContinuationProjectDecision,
-  recordContinuationSourceResolution,
-} from "@/services/continuation/continuation-diagnostics";
-import { runBackgroundTask } from "@/services/diagnostics/background-task";
-import { recordCliStartupMilestone } from "@/services/diagnostics/cli-startup-milestone";
-import {
-  parseOfflineTitleCleanupPreference,
-  selectDownloadCleanupCandidates,
-} from "@/services/download/download-cleanup-policy";
-import { updateSignalFromCheck } from "@/services/notifications/notification-update-signal";
-import { flushSearchHistory } from "@/services/persistence/search-history";
-import { checkDeps } from "@/ui";
 import type { HistoryProgress, ReleaseProgressProjection } from "@kunai/storage";
 
 import packageJson from "../package.json" with { type: "json" };
@@ -140,7 +97,11 @@ function liveMainShutdownDeps(): MainShutdownDeps {
         await import("./services/update/native-installer/version-lock");
       await releaseCurrentVersionLock();
     },
-    disposeContainer: () => disposeContainer(globalContainer),
+    disposeContainer: async () => {
+      if (!globalContainer) return;
+      const { disposeContainer } = await import("@/container");
+      await disposeContainer(globalContainer);
+    },
     exit: (code) => {
       if (fatalExitError) {
         console.error("Fatal error:", fatalExitError);
@@ -169,7 +130,9 @@ export function createMainShutdownRuntime(deps: MainShutdownDeps): ShutdownRunti
       await Promise.allSettled([
         Promise.resolve().then(() => container.activePlaybackCheckpoint.flush()),
         container.config.flushPending(),
-        flushSearchHistory(),
+        import("@/services/persistence/search-history").then(({ flushSearchHistory }) =>
+          flushSearchHistory(),
+        ),
         container.downloadService.pauseActiveJobsForShutdown("download paused by shutdown", {
           gracefulWaitMs: shutdownWaitBudgetMs,
           forceWaitMs: shutdownWaitBudgetMs,
@@ -260,6 +223,12 @@ async function maybeOpenStartupHistory(
     return { title: launch.title, episode: launch.episode };
   }
 
+  const {
+    applyHistorySelectionProvider,
+    episodeFromHistorySelection,
+    prepareReplayTitleForProvider,
+    titleFromHistorySelection,
+  } = await import("@/app/bootstrap/launch-entry");
   applyHistorySelectionProvider(container, selection);
   return {
     title: await prepareReplayTitleForProvider(
@@ -311,6 +280,20 @@ async function maybeResolveContinueTitle(
     });
     return null;
   }
+  const [
+    {
+      applyHistorySelectionProvider,
+      episodeFromHistorySelection,
+      historyLaunchSelectionFromContinuation,
+      prepareReplayTitleForProvider,
+      recordLocalHistorySourceDecision,
+      titleFromHistorySelection,
+    },
+    { recordContinuationProjectDecision, recordContinuationSourceResolution },
+  ] = await Promise.all([
+    import("@/app/bootstrap/launch-entry"),
+    import("@/services/continuation/continuation-diagnostics"),
+  ]);
   const selection = historyLaunchSelectionFromContinuation(decision);
   applyHistorySelectionProvider(container, selection);
   const preference = container.config.continueSourcePreference ?? "auto";
@@ -451,6 +434,7 @@ async function maybeRunDownloadMode(
     return false;
   }
 
+  const { resolveAutoPickIndex } = await import("@/app/bootstrap/bootstrap-intent");
   const searchResult = bootstrapTitle
     ? ({ status: "success", value: bootstrapTitle } as const)
     : await new (await import("@/app/search/SearchPhase")).SearchPhase().execute(
@@ -566,6 +550,8 @@ async function maybeRunAutoCleanupDownloads(
     entries.push(entry);
     historyByTitle.set(entry.titleId, entries);
   }
+  const { parseOfflineTitleCleanupPreference, selectDownloadCleanupCandidates } =
+    await import("@/services/download/download-cleanup-policy");
   const titlePolicies = new Map(
     container.offlineTitlePolicies
       .listByTitleIds([...titleIds])
@@ -624,6 +610,30 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
         json: argv.includes("--json"),
         strict: argv.includes("--strict"),
         runningExecutable: { path: process.execPath, version: KUNAI_VERSION },
+      }),
+    );
+  }
+  if (argv[0] === "capabilities") {
+    const { runCapabilities } = await import("./services/agent/run-capabilities");
+    process.exit(
+      await runCapabilities({
+        version: KUNAI_VERSION,
+        json: argv.includes("--json"),
+      }),
+    );
+  }
+  if (argv[0] === "providers") {
+    const { runProvidersCommand } = await import("./services/providers/run-providers-command");
+    const sub = argv[1] && !argv[1].startsWith("-") ? argv[1] : "status";
+    const urlIdx = argv.indexOf("--url");
+    const urlArg = urlIdx >= 0 ? argv[urlIdx + 1] : undefined;
+    process.exit(
+      await runProvidersCommand({
+        subcommand: sub,
+        json: argv.includes("--json"),
+        dryRun: argv.includes("--dry-run"),
+        force: argv.includes("--force"),
+        ...(urlArg ? { url: urlArg } : {}),
       }),
     );
   }
@@ -710,7 +720,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   // anyway would block on a keystroke that can never arrive.
   if (args.setup && !(process.stdin.isTTY && process.stdout.isTTY)) {
     console.error(
-      "kunai --setup needs an interactive terminal. Run it directly rather than through a pipe, and unset CI if it is set.",
+      "kunai --onboarding (or --setup) needs an interactive terminal. Run it directly rather than through a pipe, and unset CI if it is set.",
     );
     process.exitCode = 1;
     return;
@@ -741,6 +751,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   // report the share action while still returning before any state changes.
   let pendingShareLaunch: PendingShareLaunch | null = null;
   if (args.openUrl) {
+    const { parseKunaiShareUrl } = await import("@/domain/share/playback-target-ref");
     const parsed = parseKunaiShareUrl(args.openUrl);
     if (!parsed) {
       console.error("Invalid kunai:// share URL passed to --open.");
@@ -749,6 +760,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     }
     pendingShareLaunch = { ...parsed, trusted: true };
   } else if (args.handoffUrl) {
+    const { parseKunaiHandoffUrl } = await import("@/app/bootstrap/handoff-url");
     const handoff = parseKunaiHandoffUrl(args.handoffUrl);
     if (!handoff) {
       console.error("Invalid kunai:// handoff URL. Refusing to run external action.");
@@ -771,6 +783,12 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   // no database, no terminal probe, no dependency check. That is what
   // "without changing state" has to mean.
   if (args.dryRun) {
+    const {
+      formatBootstrapPlan,
+      resolveBootstrapIntent,
+      resolveLaunchMode,
+      resolveLaunchSurfaceName,
+    } = await import("@/app/bootstrap/bootstrap-intent");
     const plan = formatBootstrapPlan({
       intent: resolveBootstrapIntent(args),
       mode: resolveLaunchMode(args) ?? "movie/series",
@@ -793,15 +811,74 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   const setupIsInteractive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
   const compiledSmokeRequested =
     process.env.KUNAI_COMPILED_SMOKE === "1" && Boolean(process.env.KUNAI_COMPILED_SMOKE_SCENARIO);
-  if (!setupIsInteractive && !args.supportBundle && !compiledSmokeRequested) {
+  const headlessSearchRequested = Boolean(args.json && args.search);
+  if (args.json && !args.search) {
+    process.stderr.write(
+      "kunai: --json requires a headless search query or JSON subcommand.\n" +
+        "Supported JSON routes:\n" +
+        "  kunai capabilities --json\n" +
+        "  kunai providers status --json\n" +
+        "  kunai providers verify --json\n" +
+        "  kunai doctor --json\n" +
+        "  kunai -S <query> --json\n" +
+        "  kunai -a -S <query> --json\n" +
+        "  kunai -y -S <query> --json\n",
+    );
+    process.exitCode = 2;
+    return;
+  }
+  if (
+    !setupIsInteractive &&
+    !args.supportBundle &&
+    !compiledSmokeRequested &&
+    !headlessSearchRequested
+  ) {
     process.stderr.write(
       "kunai: this command needs an interactive terminal.\n" +
         "Nothing was started. Pipe-aware routes that do work without a TTY:\n" +
         "  kunai --help | --version | --dry-run\n" +
+        "  kunai capabilities --json | kunai -S <query> --json\n" +
         "  kunai doctor | kunai diagnostics | kunai completion | kunai upgrade --check\n" +
         "  kunai --support-bundle\n",
     );
     process.exitCode = 1;
+    return;
+  }
+
+  if (headlessSearchRequested && args.search) {
+    if (args.offline) {
+      const payload = {
+        ok: false,
+        schemaVersion: 1 as const,
+        error: "--offline cannot be combined with headless search (-S --json)",
+      };
+      process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
+      process.exitCode = 2;
+      return;
+    }
+    const [
+      { runHeadlessSearchJson },
+      { createContainer, disposeContainer },
+      { activateCachedProviderHotfixManifest },
+    ] = await Promise.all([
+      import("./services/agent/run-headless-search"),
+      import("@/container"),
+      import("@/app/providers/provider-definitions-actions"),
+    ]);
+    const container = await createContainer();
+    try {
+      // Same provider state as the interactive shell: a cached mirror fix must
+      // reach headless search too, or it queries the broken bundled host.
+      activateCachedProviderHotfixManifest(container);
+      const mode = args.youtube ? "youtube" : args.anime ? "anime" : "series";
+      process.exitCode = await runHeadlessSearchJson({
+        container,
+        query: args.search,
+        mode,
+      });
+    } finally {
+      await disposeContainer(container);
+    }
     return;
   }
 
@@ -834,7 +911,23 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   // Guard: verify required system dependencies before touching the shell.
   // Silence pre-TUI console output when onboarding will run — the system
   // check slide shows the same information visually inside the TUI.
-  const { getKunaiPaths } = await import("@kunai/storage");
+  const [
+    { getKunaiPaths },
+    { isBelowOnboardedFloor, maybeRunStartupSetup, shouldRunSetupWizard },
+    { detectPlayerPlatform, resolvePlayerMode },
+    { checkDeps },
+    { createContainer, disposeContainer },
+    { resolveSessionConfigOverrides },
+    { resolveBootstrapIntent, resolveLaunchMode },
+  ] = await Promise.all([
+    import("@kunai/storage"),
+    import("@/app/bootstrap/startup-setup"),
+    import("@/domain/playback/player-choice"),
+    import("@/ui"),
+    import("@/container"),
+    import("@/app/session/session-overrides"),
+    import("@/app/bootstrap/bootstrap-intent"),
+  ]);
   const configJson = await (async () => {
     try {
       return (await Bun.file(getKunaiPaths().configPath).json()) as {
@@ -927,6 +1020,13 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   if (Object.keys(sessionOverrides).length > 0) {
     config.applySessionOverrides(sessionOverrides);
   }
+  // A verified, unexpired hotfix manifest cached by an earlier `providers update`
+  // must be live from the first resolve — not only in the process that fetched it.
+  {
+    const { activateCachedProviderHotfixManifest } =
+      await import("@/app/providers/provider-definitions-actions");
+    activateCachedProviderHotfixManifest(container);
+  }
   if (args.supportBundle) {
     await maybeRunAutoCleanupDownloads(container);
     const { exportLocalSupportBundle } = await import("./app-shell/export-local-support-bundle");
@@ -970,6 +1070,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   if (bootstrapTitle?.isAnime) {
     // `-i anilist:`/`mal:` ids are catalog-keyed, but the anime provider still
     // needs the provider-native id — the same mapping a share link runs.
+    const { mapAnimeTitleToProviderNative } = await import("@/app/bootstrap/resolve-share-target");
     const mapped = await mapAnimeTitleToProviderNative(bootstrapTitle, container, "anime");
     bootstrapTitle = mapped.title;
   }
@@ -998,6 +1099,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   }
 
   if (pendingShareLaunch) {
+    const { applyShareRefLaunch } = await import("@/app/bootstrap/apply-resolved-share-target");
     const shareBootstrap = await applyShareRefLaunch(container, pendingShareLaunch);
     if (shareBootstrap.query) {
       bootstrapQuery = shareBootstrap.query;
@@ -1101,6 +1203,8 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
           return;
         }
 
+        const { updateSignalFromCheck } =
+          await import("@/services/notifications/notification-update-signal");
         const result = await container.updateService.checkForUpdate();
         const signal = updateSignalFromCheck(result);
         if (signal) container.notificationService.recordSignals([signal]);
@@ -1233,7 +1337,19 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   }
 
   const shellLoadStartedAt = args.debug ? performance.now() : 0;
-  const { launchSessionApp } = await import("./app-shell/ink-shell");
+  const [
+    { launchSessionApp },
+    { recordCliStartupMilestone },
+    { runBackgroundTask },
+    { launchShellWithPostPaintStartupWork },
+    { SessionController },
+  ] = await Promise.all([
+    import("./app-shell/ink-shell"),
+    import("@/services/diagnostics/cli-startup-milestone"),
+    import("@/services/diagnostics/background-task"),
+    import("@/app/bootstrap/post-paint-startup-work"),
+    import("@/app/session/SessionController"),
+  ]);
   recordCliStartupMilestone(container.diagnosticsService, "shell-module-loaded");
   if (args.debug) {
     logger.info("Ink shell loaded", {
@@ -1261,6 +1377,36 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
           id: "download-cleanup-scan",
           run: () => maybeRunAutoCleanupDownloads(container),
         },
+        ...(!config.offlineMode
+          ? [
+              {
+                id: "provider-manifest-refresh",
+                run: async () => {
+                  const { groupProvidersByLane, maybeBackgroundRefreshProviderManifest } =
+                    await import("./services/providers/provider-hotfix-manifest");
+                  const outcome = await maybeBackgroundRefreshProviderManifest({
+                    knownProvidersByLane: groupProvidersByLane(container.engine.modules),
+                  });
+                  if (outcome === "updated") {
+                    const { getActiveProviderHotfixManifest } = await import("@kunai/providers");
+                    const { reloadProviderRegistryPriority } =
+                      await import("@/app/providers/provider-definitions-actions");
+                    const activeManifest = getActiveProviderHotfixManifest();
+                    reloadProviderRegistryPriority(container);
+                    if (activeManifest) {
+                      container.notificationService.recordSignals([
+                        {
+                          type: "provider-manifest-updated",
+                          revision: activeManifest.revision,
+                          updatedProviders: Object.keys(activeManifest.providers),
+                        },
+                      ]);
+                    }
+                  }
+                },
+              },
+            ]
+          : []),
       ],
     }),
   });
@@ -1416,7 +1562,35 @@ function setupSignalHandlers(): void {
   });
 }
 
+const FAST_PATH_SUBCOMMANDS = new Set([
+  "doctor",
+  "capabilities",
+  "providers",
+  "rollback",
+  "upgrade",
+  "uninstall",
+  "install",
+  "completion",
+  "diagnostics",
+]);
+
+function isFastPathInvocation(argv: readonly string[]): boolean {
+  const first = argv[0];
+  if (!first) return false;
+  if (FAST_PATH_SUBCOMMANDS.has(first)) return true;
+  return (
+    argv.includes("--help") ||
+    argv.includes("-h") ||
+    argv.includes("--version") ||
+    argv.includes("-v")
+  );
+}
+
 export async function startCli(argv = process.argv.slice(2)): Promise<void> {
+  if (isFastPathInvocation(argv)) {
+    await runCli(argv);
+    return;
+  }
   setupSignalHandlers();
   // Always-on memory safety net: a separate-thread watchdog that SIGKILLs a
   // runaway even when the main event loop is jammed (the closed-terminal case).

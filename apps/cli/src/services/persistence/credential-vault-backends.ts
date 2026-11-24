@@ -95,7 +95,7 @@ function secretServiceVault(spawn: CredentialSpawn): CredentialVaultPort {
       if (out.exitCode === 0) return out.stdout.replace(/\n$/, "");
       // exit 1 is the documented not-found; any other failure — including a
       // killed spawn — is a daemon fault and must not read as "absent".
-      if (out.exitCode === 1 && !out.timedOut) return undefined;
+      if (out.exitCode === 1 && !out.timedOut && out.stderr.trim() === "") return undefined;
       throw new Error(
         `secret-tool lookup failed (${out.timedOut ? "timeout" : `exit ${out.exitCode}`})`,
       );
@@ -109,9 +109,20 @@ function secretServiceVault(spawn: CredentialSpawn): CredentialVaultPort {
       if (out.exitCode !== 0) throw new Error(`secret-tool store failed (${out.exitCode})`);
     },
     async delete(key) {
-      // secret-tool exits non-zero when the entry was already absent —
-      // deletion is idempotent, so that is a success, not a failure.
-      await spawn(["secret-tool", "clear", ...attrs(key)], "", SPAWN_TIMEOUT_MS);
+      const out = await spawn(["secret-tool", "clear", ...attrs(key)], "", SPAWN_TIMEOUT_MS);
+      if (out.exitCode === 0) return;
+      // secret-tool exits non-zero when the entry was already absent, which is
+      // success for an idempotent delete. But a killed spawn or a daemon fault
+      // exits non-zero too, so confirm the entry is really gone: a disconnect
+      // must never report success while the credential is still readable.
+      if (out.timedOut) throw new Error("secret-tool clear timed out");
+      const check = await spawn(["secret-tool", "lookup", ...attrs(key)], "", SPAWN_TIMEOUT_MS);
+      // Exit 1 means "not found" only without an error message: libsecret
+      // also exits 1, with stderr, when the daemon fails.
+      if (check.exitCode === 1 && !check.timedOut && check.stderr.trim() === "") return;
+      throw new Error(
+        `secret-tool clear failed (exit ${out.exitCode}); the entry may still be stored`,
+      );
     },
   };
 }

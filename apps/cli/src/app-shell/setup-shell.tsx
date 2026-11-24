@@ -21,9 +21,8 @@ import {
 } from "@/domain/media/media-preferences";
 import type { CapabilitySnapshot } from "@/ui";
 import { Box, Text, useInput } from "ink";
-import React, { useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 
-import packageJson from "../../package.json" with { type: "json" };
 import { ROOT_HORIZONTAL_PADDING } from "./layout-policy";
 import { useFrameTick } from "./primitives/SakuraPetal";
 import { mountRootContent } from "./root-content-state";
@@ -67,13 +66,6 @@ const SCREEN_CONTEXT: Record<Screen, string> = {
   analytics: "usage ping",
   done: "ready",
 };
-
-/**
- * The consent screen must describe *this* machine. It used to print the literal
- * `"version": "0.3.0", "os": "linux", "arch": "x64"`, which made the one screen
- * that has to be exactly true a false statement on macOS and Windows.
- */
-export const KUNAI_VERSION: string = packageJson.version;
 
 /**
  * Three outcomes, because "skipped" was doing two incompatible jobs.
@@ -645,7 +637,15 @@ export function SetupShell({
     }
   });
 
-  const pointer: SetupPointerActions = {
+  const pointerRef = useRef<SetupPointerActions | null>(null);
+  const pointer = useMemo<SetupPointerActions>(
+    () => ({
+      pick: (field, value) => pointerRef.current?.pick(field, value),
+      action: (key) => pointerRef.current?.action(key),
+    }),
+    [],
+  );
+  const latestPointer: SetupPointerActions = {
     pick(field, value) {
       if (viewport.tooSmall || rechecking) return;
       if (confirmingAbort) {
@@ -708,6 +708,11 @@ export function SetupShell({
     hasFix: Boolean(depRows[depIdx]?.fix),
     isFirst: screenIdx === 0,
   });
+
+  // The handlers close over this render's state, so the latest set is kept in
+  // a ref and the context gets one stable object that delegates to it: click
+  // targets do not re-render just because setup did.
+  pointerRef.current = latestPointer;
 
   return (
     <SetupPointerContext.Provider value={pointer}>

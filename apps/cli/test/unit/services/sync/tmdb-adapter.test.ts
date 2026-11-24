@@ -330,3 +330,47 @@ describe("TmdbAdapter.connect reachability", () => {
     expect(prompts).toEqual([]);
   });
 });
+
+describe("TmdbAdapter credential kinds", () => {
+  // A synthetic, unsigned JWT shape built at runtime: a v4 read-token shape, not a credential.
+  const v4Token = [btoa('{"alg":"none"}'), btoa('{"test":1}'), "test"]
+    .map((part) => part.replaceAll("=", ""))
+    .join(".");
+
+  test("a v4 read token is sent as Authorization: Bearer, never as api_key", async () => {
+    const { calls, fetchImpl } = recordingFetch();
+    const adapter = new TmdbAdapter(connectedTokenStore, v4Token, fetchImpl);
+    await adapter.init();
+    await adapter.apply(
+      {
+        version: 1,
+        kind: "list-membership:set",
+        target: movieTarget,
+        list: "watchlist",
+        present: true,
+      },
+      signal(),
+    );
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url.includes("api_key")).toBe(false);
+    expect(calls[0]?.url.includes(v4Token)).toBe(false);
+    expect(calls[0]?.headers.authorization).toBe(`Bearer ${v4Token}`);
+  });
+
+  test("a v3 key still rides in api_key with no Authorization header", async () => {
+    const { calls, fetchImpl } = recordingFetch();
+    const adapter = await connectedAdapter(fetchImpl);
+    await adapter.apply(
+      {
+        version: 1,
+        kind: "list-membership:set",
+        target: movieTarget,
+        list: "watchlist",
+        present: true,
+      },
+      signal(),
+    );
+    expect(calls[0]?.url).toContain("api_key=test-key");
+    expect(calls[0]?.headers.authorization).toBeUndefined();
+  });
+});

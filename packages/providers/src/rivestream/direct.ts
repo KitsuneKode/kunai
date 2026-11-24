@@ -15,6 +15,7 @@ import {
 import type {
   CachePolicy,
   ProviderCycleCandidate,
+  ProviderCycleFailure,
   ProviderFailure,
   ProviderResolveInput,
   ProviderRuntimeContext,
@@ -32,7 +33,8 @@ import {
   isHlsDeadHostStatus,
   type HlsLadderVariant,
 } from "../shared/hls-ladder";
-import { TTLCache } from "../shared/provider-cache";
+import { requireEffectiveProviderHost, getProviderCryptoOverride } from "../shared/hotfix-runtime";
+import { isSafeManifestHttpsUrl } from "../shared/manifest-bundle";
 import {
   cycleExhaustionFailure,
   providerFailureCodeFromCycleFailure,
@@ -51,6 +53,7 @@ import {
   createStreamId,
   createVariantCandidateFromStream,
   createVariantId,
+  detectDynamicRangeFromLabel,
   finalizeCycleSourceInventory,
   normalizeProviderDisplayLabel,
   normalizeQualityLabel,
@@ -61,60 +64,94 @@ import {
 import { selectReadyStream } from "../shared/startup-selection";
 import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { createTimeoutSignal } from "../shared/timeout-signal";
+import { trimTrailingSlashes } from "../shared/trim-trailing-slashes";
 import { rivestreamManifest, RIVESTREAM_PROVIDER_ID } from "./manifest";
 
 export { RIVESTREAM_PROVIDER_ID };
 export const RIVESTREAM_REFERER = "https://www.rivestream.app/";
-export const RIVESTREAM_API_BASE = "https://www.rivestream.app/api/backendfetch";
+/**
+ * Live Watch bundle (2026-11-12, module 2873) calls this host.
+ * `www.rivestream.app/api/backendfetch` hangs and burns the resolve budget.
+ */
+export const RIVESTREAM_SCRAPER_BASE = "https://scrapper.rivestream.app";
+
+export function effectiveRivestreamScraperBase(): string {
+  return trimTrailingSlashes(
+    requireEffectiveProviderHost(RIVESTREAM_PROVIDER_ID, [RIVESTREAM_SCRAPER_BASE]),
+  );
+}
+
+export function effectiveRivestreamReferer(): string {
+  const override = getProviderCryptoOverride(RIVESTREAM_PROVIDER_ID, "referer", "");
+  if (override && isSafeManifestHttpsUrl(override)) {
+    return override;
+  }
+  return RIVESTREAM_REFERER;
+}
 
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
-/**
- * Failure sentinels from `generateSecretKey`. They must never be cached: a
- * single transient generation error would otherwise pin a bad key for a title
- * for the life of the process.
- */
-const RIVESTREAM_SECRET_KEY_SENTINELS = new Set(["rive", "topSecret"]);
-
-/**
- * Memoize secretKey per tmdbId — deterministic and expensive to recompute, but
- * previously an unbounded Map that grew one entry per title for the whole
- * session. A day-long TTL with a hard ceiling keeps it bounded without
- * recomputing on every resolve.
- */
-export const RIVESTREAM_SECRET_KEY_CACHE_LIMIT = 512;
-const secretKeyCache = new TTLCache<string, string>(24 * 60 * 60 * 1000, {
-  maxEntries: RIVESTREAM_SECRET_KEY_CACHE_LIMIT,
-});
+/** Live client adds `cb` only for these two providers (`Date.now()/3e6`). */
+const RIVESTREAM_CACHE_BUSTER_PROVIDERS = new Set(["primevids", "citadel"]);
 const RIVESTREAM_PROVIDER_SERVICES_TTL_MS = 24 * 60 * 60 * 1000;
+/**
+ * `/api/providers` sometimes never answers. The static list is that same
+ * discovery snapshot, so a hung list must not spend the 12s attempt budget.
+ */
+const RIVESTREAM_DISCOVERY_TIMEOUT_MS = 1_500;
+/**
+ * The cycle is sequential and stops at the first playable server. Opening
+ * more than that next server stalls scrapper.rivestream.app, so nothing else
+ * is warmed. Later names are fetched when the cycle actually reaches them.
+ */
+const RIVESTREAM_PREFETCH_WINDOW = 1;
+/**
+ * One hung `GET /api/provider` is the shared front door, not one bad name.
+ * Kept short so a dead scraper costs one try and the engine can move on,
+ * while a healthy name (sub-second on 2026-11-12) still fits.
+ *
+ * Must stay under the clamped candidate timeout (4.8s on fast). The cycle
+ * timer raises the same failure class for a slow CDN probe; only this
+ * deadline's rejection is marked as the shared front door.
+ */
+export const RIVESTREAM_SOURCE_TIMEOUT_MS = 3_500;
 /**
  * Last-resort list for when service discovery is unreachable.
  *
- * Captured from live discovery on 2026-08-24. The previous list had drifted:
- * it still named `ophim`, which upstream no longer serves, and knew none of the
- * six services that now answer. A stale fallback is worse than a short one —
+ * Captured from `GET /api/providers` on 2026-11-12. The previous list still
+ * named hosts the scraper no longer returns (`apex`, `horizon`, `flowcast`,
+ * `hindicast`, `guru`, `ophim`). A stale fallback is worse than a short one —
  * every name here costs a request when discovery is already failing.
  *
- * Pruned 2026-10-14: `solstice`, `quasar`, and `primevids` are demoted backends
- * (see `RIVESTREAM_DEMOTED_BACKENDS`) — serving nothing or 403s live — so they
- * no longer spend fallback attempts either.
+ * `prometheus` is omitted because it is demoted (see
+ * `RIVESTREAM_DEMOTED_BACKENDS`). `primevids` returned sources for Breaking Bad
+ * and Inception on the same day, so it is back in discovery order.
  *
  * Exported for the prune regression test — a re-added dead name must fail
  * loudly here, not as wasted live attempts.
  */
 export const RIVESTREAM_STATIC_PROVIDER_SERVICES = [
-  "apex",
+  "apogee",
+  "vanguard",
+  "oberon",
+  "electra",
+  "fortress",
+  "kismet",
+  "rift",
+  "valiant",
+  "sentinel",
+  "mirage",
+  "lumen",
   "pulse",
-  "horizon",
-  "flowcast",
-  "asiacloud",
+  "primevids",
   "citadel",
-  "hindicast",
-  "guru",
+  "apollo",
+  "asiacloud",
 ] as const;
 let providerServicesCache:
   | {
+      readonly scraperBase: string;
       readonly providers: readonly string[];
       readonly expiresAtMs: number;
     }
@@ -123,28 +160,28 @@ let providerServicesCache:
 /**
  * Reset the module-level caches between tests.
  *
- * `providerServicesCache` and `secretKeyCache` outlive a single test file —
- * module state is per process, not per file — so a test that resolves through
- * this provider leaves discovery already cached for whatever runs next. Tests
- * asserting on discovery call counts then see zero, and only in whatever order
- * the runner happens to pick.
+ * `providerServicesCache` outlives a single test file — module state is per
+ * process, not per file — so a test that resolves through this provider leaves
+ * discovery already cached for whatever runs next. Tests asserting on
+ * discovery call counts then see zero, and only in whatever order the runner
+ * happens to pick.
  */
 export function clearRivestreamCachesForTest(): void {
   providerServicesCache = undefined;
-  secretKeyCache.clear();
 }
 
 /**
- * Backends observed dead live on 2026-10-14: `savannah`, `prometheus`,
- * `quasar`, and `solstice` return no sources for titles other mirrors serve,
- * and `primevids` answers 403. They stay in the walk as a last resort —
+ * Backends observed dead live: `savannah`, `prometheus`, `quasar`, and
+ * `solstice` return no sources for titles other mirrors serve. `primevids`
+ * answered 403 on 2026-10-14 and returned sources again on 2026-11-12, so it
+ * is no longer demoted. Demoted names stay in the walk as a last resort —
  * upstream rotates backends, so a demoted name may recover — but sorted behind
  * every healthy mirror so the sequential cycle reaches a working lane (e.g.
  * citadel) before spending a single attempt on them. Matching is
  * case-insensitive; discovery casing is upstream-controlled.
  */
 export const RIVESTREAM_DEMOTED_BACKENDS: ReadonlySet<string> = new Set(
-  ["savannah", "prometheus", "quasar", "solstice", "primevids"].map((name) => name.toLowerCase()),
+  ["savannah", "prometheus", "quasar", "solstice"].map((name) => name.toLowerCase()),
 );
 
 export function isRivestreamDemotedBackend(provider: string): boolean {
@@ -418,16 +455,6 @@ export const rivestreamProviderModule: CoreProviderModule = {
     });
 
     try {
-      const secretKey =
-        secretKeyCache.get(tmdbId) ??
-        (() => {
-          const key = generateSecretKey(tmdbId);
-          // A sentinel means generation fell back, not that this is the real
-          // key — caching it would serve a broken key until process exit.
-          if (!RIVESTREAM_SECRET_KEY_SENTINELS.has(key)) secretKeyCache.set(tmdbId, key);
-          return key;
-        })();
-      const typeStr = input.mediaKind === "series" ? "tv" : "movie";
       const season = input.episode?.season ?? 1;
       const episode = input.episode?.episode ?? 1;
 
@@ -469,18 +496,16 @@ export const rivestreamProviderModule: CoreProviderModule = {
         cachePolicy,
       );
 
-      // Prefetch every candidate service in parallel — the sequential cycle
-      // then reads settling results, so a slow/dead service no longer
-      // serializes the whole resolve (Rivestream's own frontend races too).
+      // Warm only the next healthy service. Opening several at once stalls
+      // scrapper.rivestream.app, and a later name is fetched on demand if the
+      // cycle reaches it.
       const prefetchedSources = prefetchRivestreamServiceCandidates({
         candidates: cycleCandidates,
         input,
         context,
         tmdbId,
-        typeStr,
         season,
         episode,
-        secretKey,
       });
 
       // The attempt budget caps this, so the gate has to be sized against what
@@ -506,13 +531,10 @@ export const rivestreamProviderModule: CoreProviderModule = {
         titleId: input.title.id,
         maxAttemptsPerCandidate: 1,
         candidateTimeoutMs,
-        // Every service is fetched through the same www.rivestream.app front
-        // door — a block there repeats identically for the rest, so stop
-        // early. Endpoint-scoped refusals name one service's own stream CDN,
-        // not the shared front door: stopping on them forfeits every untried
-        // service to a single dead mirror.
-        shouldStopAfterFailure: (failure) =>
-          failure.failureClass === "candidate-blocked" && failure.endpointScoped !== true,
+        // One shared front door: see shouldStopRivestreamWalk. The cycle timer
+        // stamps `candidate-timeout` on a slow CDN probe too, so the class alone
+        // must not end the walk.
+        shouldStopAfterFailure: (failure) => shouldStopRivestreamWalk(failure),
         resolveCandidate: async (candidate, candidateContext) => {
           const provider = String(candidate.serverId ?? candidate.metadata?.provider ?? "");
           if (!provider) {
@@ -535,10 +557,8 @@ export const rivestreamProviderModule: CoreProviderModule = {
               provider,
               input,
               tmdbId,
-              typeStr,
               season,
               episode,
-              secretKey,
               signal: candidateContext.signal,
             });
 
@@ -554,6 +574,9 @@ export const rivestreamProviderModule: CoreProviderModule = {
               cachePolicy,
               sourceDataPromise,
               signal: candidateContext.signal,
+              // The candidate signal aborts for both a user cancel and the
+              // cycle's own timer. Only the caller's signal is a user cancel.
+              cancelSignal: context.signal,
               gateTimeoutMs,
             });
           } catch (error) {
@@ -874,19 +897,24 @@ export type RivestreamServices = {
 async function getRivestreamProviderServices(
   context: ProviderRuntimeContext,
 ): Promise<RivestreamServices> {
+  const scraperBase = effectiveRivestreamScraperBase();
   const nowMs = Date.parse(context.now());
   const cacheNow = Number.isFinite(nowMs) ? nowMs : Date.now();
-  if (providerServicesCache && providerServicesCache.expiresAtMs > cacheNow) {
+  if (
+    providerServicesCache &&
+    providerServicesCache.scraperBase === scraperBase &&
+    providerServicesCache.expiresAtMs > cacheNow
+  ) {
     return { providers: providerServicesCache.providers, origin: "cache" };
   }
 
   try {
-    const servicesSignal = createTimeoutSignal(context.signal, 8000);
+    const servicesSignal = createTimeoutSignal(context.signal, RIVESTREAM_DISCOVERY_TIMEOUT_MS);
     const provData = await providerJson<RivestreamProviderServicesResponse>(
       context,
-      `${RIVESTREAM_API_BASE}?requestID=VideoProviderServices&secretKey=rive&proxyMode=undefined`,
+      `${scraperBase}/api/providers`,
       {
-        headers: { "User-Agent": USER_AGENT, Referer: RIVESTREAM_REFERER },
+        headers: { "User-Agent": USER_AGENT, Referer: effectiveRivestreamReferer() },
         signal: servicesSignal,
       },
       { providerId: RIVESTREAM_PROVIDER_ID, stage: "source:start" },
@@ -897,6 +925,7 @@ async function getRivestreamProviderServices(
 
     if (providers.length > 0) {
       providerServicesCache = {
+        scraperBase,
         providers,
         expiresAtMs: cacheNow + RIVESTREAM_PROVIDER_SERVICES_TTL_MS,
       };
@@ -914,10 +943,8 @@ function fetchRivestreamSourceData(opts: {
   readonly provider: string;
   readonly input: ProviderResolveInput;
   readonly tmdbId: string;
-  readonly typeStr: "movie" | "tv";
   readonly season: number;
   readonly episode: number;
-  readonly secretKey: string;
   /**
    * Bound to the cycle candidate when the request is made for one specific
    * attempt (on-demand fetch). Prefetch requests stay on `context.signal`:
@@ -925,36 +952,100 @@ function fetchRivestreamSourceData(opts: {
    */
   readonly signal?: AbortSignal;
 }): Promise<RivestreamSourceResponse> {
-  const { context, provider, input, tmdbId, typeStr, season, episode, secretKey, signal } = opts;
-  let url = `${RIVESTREAM_API_BASE}?requestID=${typeStr}VideoProvider&id=${tmdbId}`;
-  if (input.mediaKind === "series") url += `&season=${season}&episode=${episode}`;
-  url += `&service=${provider}&secretKey=${secretKey}&proxyMode=noProxy`;
+  const { context, provider, input, tmdbId, season, episode, signal } = opts;
+  const url = new URL(`${effectiveRivestreamScraperBase()}/api/provider`);
+  url.searchParams.set("provider", provider);
+  url.searchParams.set("id", tmdbId);
+  if (input.mediaKind === "series") {
+    url.searchParams.set("season", String(season));
+    url.searchParams.set("episode", String(episode));
+  }
+  if (RIVESTREAM_CACHE_BUSTER_PROVIDERS.has(provider.toLowerCase())) {
+    const parsed = Date.parse(context.now());
+    const nowMs = Number.isFinite(parsed) ? parsed : Date.now();
+    url.searchParams.set("cb", String(Math.floor(nowMs / 3_000_000)));
+  }
 
   return providerJson<RivestreamSourceResponse>(
     context,
-    url,
+    url.toString(),
     {
-      headers: { "User-Agent": USER_AGENT, Referer: RIVESTREAM_REFERER },
-      signal: createTimeoutSignal(signal ?? context.signal, 8000),
+      headers: { "User-Agent": USER_AGENT, Referer: effectiveRivestreamReferer() },
+      signal: createTimeoutSignal(signal ?? context.signal, RIVESTREAM_SOURCE_TIMEOUT_MS),
     },
     { providerId: RIVESTREAM_PROVIDER_ID, stage: "source:start" },
   );
 }
 
-/** Fire every candidate's source request at once so the cycle reads settling results. */
+/**
+ * Timeouts of `GET /api/provider` — the shared scraper — not of a later CDN probe.
+ *
+ * The cycle engine stamps `candidate-timeout` on whichever step was still
+ * running when its own timer fired. Identity on the failure object is the
+ * only way the stop predicate can tell those apart: the class is the same.
+ */
+const rivestreamScraperTimeouts = new WeakSet<ProviderCycleFailure>();
+
+function isRivestreamScraperTimeout(failure: ProviderCycleFailure): boolean {
+  return rivestreamScraperTimeouts.has(failure);
+}
+
+function isRivestreamScraperFetchTimeout(
+  error: Error,
+  cancelSignal: AbortSignal | undefined,
+): boolean {
+  // A user cancel aborts the in-flight scraper fetch too. That is the
+  // engine's cancellation, not a hung front door.
+  if (cancelSignal?.aborted && isAbortError(error)) return false;
+  return isRivestreamAbortOrTimeoutError(error);
+}
+
+function rivestreamScraperTimeoutFailure(
+  candidate: ProviderCycleCandidate,
+  provider: string,
+  at: string,
+): ProviderCycleFailureError {
+  const error = createProviderCycleFailureError(candidate, {
+    failureClass: "candidate-timeout",
+    message: `Rivestream scraper timed out fetching ${provider}`,
+    retryable: true,
+    at,
+  });
+  rivestreamScraperTimeouts.add(error.failure);
+  return error;
+}
+
+/**
+ * Whether one failure should end the whole Rivestream walk.
+ *
+ * Every service goes through the same scrapper.rivestream.app front door, so a
+ * timeout marked on that `GET /api/provider` repeats for every later name. A
+ * `candidate-timeout` from the cycle timer is one service's manifest or stream
+ * probe, and the next service can still work. An endpoint-scoped refusal names
+ * one service's own stream CDN, so it never ends the walk.
+ */
+export function shouldStopRivestreamWalk(failure: ProviderCycleFailure): boolean {
+  return (
+    isRivestreamScraperTimeout(failure) ||
+    (failure.failureClass === "candidate-blocked" && failure.endpointScoped !== true)
+  );
+}
+
+/** Warm the front of the walk so the first servers settle before later ones are opened. */
 function prefetchRivestreamServiceCandidates(opts: {
   readonly candidates: readonly ProviderCycleCandidate[];
   readonly input: ProviderResolveInput;
   readonly context: ProviderRuntimeContext;
   readonly tmdbId: string;
-  readonly typeStr: "movie" | "tv";
   readonly season: number;
   readonly episode: number;
-  readonly secretKey: string;
 }): Map<string, Promise<RivestreamSourceResponse>> {
-  const { candidates, input, context, tmdbId, typeStr, season, episode, secretKey } = opts;
+  const { candidates, input, context, tmdbId, season, episode } = opts;
   const prefetched = new Map<string, Promise<RivestreamSourceResponse>>();
-  for (const candidate of candidates) {
+  // Same order the cycle walks, so a pinned source is the one warmed rather
+  // than racing a second request against the first array entry.
+  const walkOrder = [...candidates].sort((left, right) => left.priority - right.priority);
+  for (const candidate of walkOrder) {
     const provider = String(candidate.serverId ?? candidate.metadata?.provider ?? "");
     if (!provider || prefetched.has(provider)) continue;
     // A quarantined mirror is skipped by the cycle, so firing its request here
@@ -972,15 +1063,14 @@ function prefetchRivestreamServiceCandidates(opts: {
     if (isRivestreamDemotedBackend(provider)) {
       continue;
     }
+    if (prefetched.size >= RIVESTREAM_PREFETCH_WINDOW) break;
     const promise = fetchRivestreamSourceData({
       context,
       provider,
       input,
       tmdbId,
-      typeStr,
       season,
       episode,
-      secretKey,
     });
     // Mark rejections handled — the engine may resolve before awaiting losers.
     promise.catch(() => {});
@@ -1051,7 +1141,7 @@ export function parseRivestreamProxyHeaders(sourceUrl: string): Record<string, s
 export function resolveRivestreamStreamHeaders(sourceUrl: string): Record<string, string> {
   const proxyHeaders = parseRivestreamProxyHeaders(sourceUrl);
   if (!proxyHeaders) {
-    return { referer: RIVESTREAM_REFERER, "user-agent": USER_AGENT };
+    return { referer: effectiveRivestreamReferer(), "user-agent": USER_AGENT };
   }
   const headers: Record<string, string> = { ...proxyHeaders };
   if (!Object.keys(headers).some((name) => name.toLowerCase() === "user-agent")) {
@@ -1068,6 +1158,7 @@ async function resolveRivestreamProviderCandidate({
   cachePolicy,
   sourceDataPromise,
   signal,
+  cancelSignal,
   gateTimeoutMs,
 }: {
   readonly candidate: ProviderCycleCandidate;
@@ -1077,6 +1168,8 @@ async function resolveRivestreamProviderCandidate({
   readonly cachePolicy: CachePolicy;
   readonly sourceDataPromise: Promise<RivestreamSourceResponse>;
   readonly signal?: AbortSignal;
+  /** The caller's signal. The candidate signal also aborts for the cycle timer. */
+  readonly cancelSignal?: AbortSignal;
   /** Sized against the clamped candidate timeout, never the raw constant. */
   readonly gateTimeoutMs: number;
 }): Promise<RivestreamResolvedCandidate> {
@@ -1084,7 +1177,15 @@ async function resolveRivestreamProviderCandidate({
   const audioSubtitle = inferRivestreamAudioSubtitle(provider);
   const sourceId =
     candidate.sourceId ?? providerInventorySourceId(RIVESTREAM_PROVIDER_ID, provider);
-  const sourceData = await sourceDataPromise;
+  let sourceData: RivestreamSourceResponse;
+  try {
+    sourceData = await sourceDataPromise;
+  } catch (error) {
+    if (error instanceof Error && isRivestreamScraperFetchTimeout(error, cancelSignal)) {
+      throw rivestreamScraperTimeoutFailure(candidate, provider, context.now());
+    }
+    throw error;
+  }
   const rawSources = getRivestreamRawSources(sourceData.data);
   if (rawSources.length === 0) {
     throw createProviderCycleFailureError(candidate, {
@@ -1189,8 +1290,16 @@ async function resolveRivestreamProviderCandidate({
 
     // Expanded masters emit one row per rendition; anything else stays a
     // single row at the API's own quality label.
-    const rows: { url: string; qualityStr: string }[] = ladder
-      ? ladder.map((v) => ({ url: v.url, qualityStr: v.qualityLabel }))
+    const rows: {
+      url: string;
+      qualityStr: string;
+      dynamicRange?: import("@kunai/types").VideoDynamicRange;
+    }[] = ladder
+      ? ladder.map((v) => ({
+          url: v.url,
+          qualityStr: v.qualityLabel,
+          dynamicRange: v.dynamicRange,
+        }))
       : [{ url: source.url, qualityStr }];
 
     for (const row of rows) {
@@ -1207,6 +1316,7 @@ async function resolveRivestreamProviderCandidate({
         url: row.url,
         protocol,
         container: protocol === "hls" ? "m3u8" : protocol === "dash" ? "mpd" : "mp4",
+        dynamicRange: row.dynamicRange ?? detectDynamicRangeFromLabel(row.qualityStr),
         audioLanguages: audioLanguages?.length
           ? audioLanguages
           : normalizedAudioLanguage

@@ -1,6 +1,5 @@
 import { resolveCatalogPosterUrl } from "@/domain/catalog/resolve-catalog-poster-url";
 import type { SearchResult, TitleInfo } from "@/domain/types";
-import { resolveHistoryLookupTitleId } from "@kunai/core";
 
 export { resolveTitleHistoryLookupId } from "@/domain/catalog/title-history-lookup";
 
@@ -46,17 +45,4 @@ export function titleInfoFromSearchResult(
     languageEvidence: result.languageEvidence,
     isAnime: result.isAnime,
   };
-}
-
-/** Map a history row to a TitleIdentity-shaped lookup key. */
-export function resolveHistoryEntryLookupId(entry: {
-  readonly titleId: string;
-  readonly mediaKind: import("@kunai/types").MediaKind;
-  readonly externalIds?: import("@kunai/types").ProviderExternalIds;
-}): string {
-  return resolveHistoryLookupTitleId({
-    id: entry.titleId,
-    kind: entry.mediaKind,
-    externalIds: entry.externalIds,
-  });
 }

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-11"
+lastReviewed: "2026-11-24T08:39:32Z"
 ---
 
 # Kunai Runtime Boundary Map
@@ -190,7 +190,10 @@ Provider geo-relay is a transport seam, not a provider runtime:
 
 - `packages/relay` owns request validation, header filtering, redirect checks,
   request/response limits, registry building from manifests, and the
-  `ProviderFetchPort` implementation.
+  `ProviderFetchPort` implementation. Response bodies are read with a byte cap
+  and their own deadline (a body that stalls after its headers is a 504
+  `upstream-timeout`, an endless one a 502 `response-too-large`), and every
+  redirect or refused response has its body released before the next hop.
 - `packages/providers` owns provider-specific URLs and calls `providerFetch`
   instead of raw `fetch` for relay-eligible metadata work.
 - `packages/core` injects provider-aware runtime context into resolve/search/list

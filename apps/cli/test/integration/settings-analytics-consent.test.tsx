@@ -94,6 +94,7 @@ async function waitUntil(predicate: () => boolean, message: string): Promise<voi
     label: message,
     tick: async (ms) => {
       await act(async () => {
+        // sleep-allow: Ink settings harness debounce; the component clock is not injected
         await new Promise((resolve) => setTimeout(resolve, ms));
       });
     },
@@ -115,6 +116,7 @@ async function waitForPersistedConfig(
     label,
     tick: async (ms) => {
       loaded = await loadConfig();
+      // sleep-allow: Ink settings harness debounce; the component clock is not injected
       if (!predicate(loaded.getRaw())) await Bun.sleep(ms);
     },
   });
@@ -140,12 +142,9 @@ test("Settings enable and an unrelated save preserve one install id on disk", as
   );
 
   try {
-    // Down×4: startup mode → footer hints → shortcut tips → every tip →
-    // usage analytics. Row order is the contract this test navigates by.
-    handle.stdin.enqueue("\x1b[B");
-    handle.stdin.enqueue("\x1b[B");
-    handle.stdin.enqueue("\x1b[B");
-    handle.stdin.enqueue("\x1b[B");
+    // Shift+Tab wraps from General to Privacy & System (where Usage analytics
+    // is the first selectable row).
+    handle.stdin.enqueue("\x1b[Z");
     handle.stdin.enqueue("\r");
 
     await waitUntil(
@@ -165,11 +164,10 @@ test("Settings enable and an unrelated save preserve one install id on disk", as
 
     // Change Footer hints through the same mounted SettingsShell. Its draft was
     // created before analytics minted the id, so this also covers a stale,
-    // unrelated whole-draft save after explicit consent. Up×3 walks back past
-    // the two tip rows and startup mode to footer hints.
-    handle.stdin.enqueue("\x1b[A");
-    handle.stdin.enqueue("\x1b[A");
-    handle.stdin.enqueue("\x1b[A");
+    // unrelated whole-draft save after explicit consent. Tab wraps back to
+    // General (defaultMode → Down → footerHints).
+    handle.stdin.enqueue("\t");
+    handle.stdin.enqueue("\x1b[B");
     handle.stdin.enqueue("\r");
     handle.stdin.enqueue("\x1b[B");
     handle.stdin.enqueue("\r");
@@ -364,6 +362,7 @@ test("mouse clicks focus analytics but never grant keystroke-gated consent", asy
       width={100}
       maxRows={20}
       commandMode={false}
+      initialSectionId="section:privacy"
       onClose={() => {}}
       onStatus={(message) => {
         if (message) status.push(message);

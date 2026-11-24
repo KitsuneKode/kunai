@@ -27,11 +27,11 @@ export function parseSha256sums(content: string): readonly ReleaseBinaryChecksum
   for (const raw of content.split("\n")) {
     const line = raw.trim();
     if (!line) continue;
-    const match = /^([a-f0-9]{64})\s+(\S+)$/.exec(line);
-    if (!match) {
+    const [, sha256, name] = /^([a-f0-9]{64})\s+(\S+)$/.exec(line) ?? [];
+    if (!sha256 || !name) {
       throw new Error(`invalid SHA256SUMS line: ${line}`);
     }
-    assets.push({ sha256: match[1]!, name: match[2]! });
+    assets.push({ sha256, name });
   }
   return assets;
 }

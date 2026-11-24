@@ -242,10 +242,6 @@ export function getRuntimeMemorySamples(): readonly RuntimeMemorySample[] {
   return [...runtimeMemorySamples];
 }
 
-export function resetRuntimeMemorySamples(): void {
-  runtimeMemorySamples.length = 0;
-}
-
 export function getRuntimeMemoryLine(): string {
   return formatRuntimeMemory(recordRuntimeMemorySample().snapshot);
 }

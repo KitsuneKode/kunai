@@ -18,6 +18,7 @@ import {
 } from "@/domain/playback/track-capabilities";
 import { hardSubSatisfiesSubtitlePreference } from "@/domain/subtitle-policy";
 import type { StreamInfo, SubtitleTrack } from "@/domain/types";
+import { formatDynamicRangeBadge, isHdrDynamicRange } from "@/infra/player/mpv-hdr";
 import { projectPlaybackSourceInventory } from "@/services/playback/PlaybackSourceInventoryProjection";
 import type {
   PlaybackLanguageOptionView,
@@ -28,7 +29,7 @@ import {
   resolveYtdlFormatFromCandidate,
   resolveYoutubeYtdlRawOptions,
 } from "@/services/providers/youtube-playback-options";
-import type { PrePlayConfirmMode } from "@kunai/config";
+import type { HdrMode, PrePlayConfirmMode } from "@kunai/config";
 import type { StreamCandidate, SubtitleCandidate } from "@kunai/types";
 
 function isPlayableStreamCandidate(stream: StreamCandidate): boolean {
@@ -194,10 +195,12 @@ export function buildStreamPickerOptions(stream: StreamInfo): readonly StreamOpt
       const source = candidate.sourceId ? sourcesById.get(candidate.sourceId) : undefined;
       const sourceLabel = source?.label ?? source?.host ?? candidate.sourceId ?? result.providerId;
       const qualityLabel = candidate.qualityLabel ?? candidate.container ?? candidate.id;
+      const drBadge = formatDynamicRangeBadge(candidate.dynamicRange);
+      const displayQuality = drBadge ? `${qualityLabel} ${drBadge}` : qualityLabel;
       const selected = candidate.id === result.selectedStreamId;
       return {
         value: candidate.id,
-        label: markCurrentLabel(`${sourceLabel}  ·  ${qualityLabel}`, selected),
+        label: markCurrentLabel(`${sourceLabel}  ·  ${displayQuality}`, selected),
         detail: describeStreamCandidateMediaDetail(candidate, result.subtitles),
         selected,
         rank: candidate.qualityRank ?? 0,
@@ -498,11 +501,19 @@ export function formatPlaybackSessionFactsStrip(input: PlaybackSessionControlInp
   return control.summary;
 }
 
+function hdrPreferenceScore(candidate: StreamCandidate, hdrMode: HdrMode | undefined): number {
+  const isHdr = isHdrDynamicRange(candidate.dynamicRange);
+  if (hdrMode === "sdr-only") return isHdr ? 0 : 1;
+  if (hdrMode === "passthrough") return isHdr ? 1 : 0;
+  return 0;
+}
+
 export function applyPreferredStreamSelection(
   stream: StreamInfo,
   selection: StreamSelectionIntent,
   qualityPreference?: string,
   subtitlePreference?: string,
+  hdrMode?: HdrMode,
 ): StreamInfo {
   const result = stream.providerResolveResult;
   if (!result || result.streams.length === 0) return stream;
@@ -515,7 +526,11 @@ export function applyPreferredStreamSelection(
   if (!selected && selection.sourceId) {
     const candidates = [...result.streams]
       .filter((candidate) => candidate.sourceId === selection.sourceId && candidate.url)
-      .sort((left, right) => (right.qualityRank ?? 0) - (left.qualityRank ?? 0));
+      .sort(
+        (left, right) =>
+          (right.qualityRank ?? 0) - (left.qualityRank ?? 0) ||
+          hdrPreferenceScore(right, hdrMode) - hdrPreferenceScore(left, hdrMode),
+      );
     const preference = qualityPreference?.trim().toLowerCase();
     const automatic = !preference || ["auto", "best", "max"].includes(preference);
     const ceiling = preference === "4k" ? 2160 : Number.parseInt(preference ?? "", 10);

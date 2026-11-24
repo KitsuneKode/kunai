@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-15"
+lastReviewed: "2026-11-24T07:28:48Z"
 ---
 
 # Tracker Sync
@@ -80,6 +80,22 @@ AniList progress is **cour-relative**. Cour 2 episode 3 is absolute 27, and
 sending 27 would jump the entry 24 episodes ahead — so an absolute-only number
 resolves to nothing rather than being guessed at.
 
+A progress operation describes **one episode**; AniList's list status describes
+**the title**. The adapter reads the entry and the episode count first, and
+`decideAniListProgressWrite` (`services/sync/anilist-progress-policy.ts`)
+decides the write:
+
+- `COMPLETED` only when the finished episode is the title's last. An unknown
+  episode count (still airing, unannounced) never completes a title.
+- A title already `COMPLETED` on AniList is not written — re-watching an early
+  episode would otherwise demote it to `CURRENT` and wind progress back.
+- `REPEATING` stays `REPEATING` while progress advances, and completes at the
+  last episode.
+- Progress never moves backward: an entry already at or past the episode is
+  left alone unless this write completes the title.
+
+A skipped write is `ok` with the reason as detail, so the row completes.
+
 ## Delivery
 
 `SyncService` owns a SQLite outbox in the data DB (`sync_outbox`, data migration
@@ -154,10 +170,20 @@ than inheriting the shipped one — which the other application would reject wit
 nothing useful to say about why. The redirect URI must be `http`, a loopback
 host, an explicit port, and exactly `/callback`.
 
-**TMDB** uses a public application key shipped with Kunai, owned by
-`services/catalog/tmdb-proxy.ts`. `KUNAI_TMDB_API_KEY` overrides it; an
-explicitly empty or placeholder override fails closed rather than silently
-falling back.
+**TMDB** keys are owned by `services/catalog/tmdb-proxy.ts`. The shipped key is
+Kunai's own when release CI injects one at build time (`KUNAI_TMDB_BUILD_KEY` →
+`KUNAI_BUNDLED_TMDB_API_KEY`, see `bundledTmdbKeyDefine`), else a legacy public
+key borrowed from another project, which is due for removal.
+`KUNAI_TMDB_API_KEY` overrides both, for sync and for catalog requests alike.
+The **TMDB key** setting (`tmdbApiKey`, Settings → Accounts, kept in the OS
+credential vault) is catalog-only: it accepts a v3 API key or a v4 read
+access token, sends catalog requests to TMDB directly before the keyless
+mirrors, and a key TMDB refuses (401) is set aside for 10 minutes while the
+shipped key and mirrors serve. Sync keeps the env/shipped key, because a TMDB
+session belongs to the key that created it.
+For sync, an explicitly empty or placeholder override fails closed rather than
+silently falling back; catalog requests treat a blank value as unset, because
+the proxy hosts need no key and failing closed there would blank search.
 
 Connecting mints a request token, opens the approval page, then **polls**
 `authentication/session/new` until TMDB stops answering `401`. There is no
@@ -295,6 +321,12 @@ checks the pause before claiming, so a paused queue holds no leases. An
 unparseable timestamp fails open rather than stopping sync with nothing able to
 explain why.
 
+**Offline intent** (saved `offlineMode` or `--offline`) gates delivery the same
+way: `SyncService` takes `isOfflineIntent` and the drain claims nothing while it
+is true, so finishing a downloaded episode offline queues the progress without
+contacting a tracker. Leaving offline mode in Settings calls `deliverSoon()`
+(`apply-settings-to-runtime.ts`), and startup skips the sync pass while offline.
+
 The root status crumb shows `sync✓`, `sync⏸`, `sync⚠`, or `sync✗`. Disconnected
 earns no crumb — it is the default for most users and would be permanent noise.
 
@@ -323,7 +355,8 @@ AniList reports application-level problems inside the envelope, often with a 200
 | status 429                                | rate-limited, using AniList's wait                                           |
 | anything else                             | retry — a wrong retry costs one request, a wrong dead-letter loses the write |
 
-Both membership writes read before they write, and the read is classified too.
+Both membership writes and the progress write read before they write, and the
+read is classified too.
 An unreadable lookup refuses rather than guessing: removing from a watchlist
 used to report _success_ when the lookup was rejected, and `ToggleFavourite` is
 a flip rather than a set, so firing it blind turns a redelivery into a flip-flop.

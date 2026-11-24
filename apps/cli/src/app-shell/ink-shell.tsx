@@ -45,7 +45,7 @@ import { CapabilityIssueStrip } from "./CapabilityIssueStrip";
 import { dispatchAppCommand } from "./command-router";
 import { setContextualTipListener } from "./contextual-tips";
 import { recordRender } from "./diagnostics/render-trace";
-import { createDismissTimerRegistry } from "./dismiss-timer-registry";
+import { createDismissTimerRegistry, shellFeedbackTimers } from "./dismiss-timer-registry";
 import { startDownloadStatusMonitor } from "./download-status-monitor";
 import { ExitShell } from "./exit-shell";
 import { useSettledValue } from "./hooks/use-settled-value";
@@ -678,6 +678,10 @@ export function AppRoot({ container }: { container: Container }) {
     };
   }, [container.statsService, container.syncService, container.queueService, container.config]);
 
+  // Download-queued notes are scheduled outside this component and live in the
+  // container store. Dismiss them on unmount so a remount never shows a stale one.
+  useEffect(() => () => shellFeedbackTimers.flush(), []);
+
   // Live notification queue. Seed the seen-set on mount so pre-existing
   // notifications never toast; arrivals are sequenced with priority, fold, and TTL.
   useEffect(() => {
@@ -870,6 +874,7 @@ export function AppRoot({ container }: { container: Container }) {
       cancelled = true;
       clearPresenceBootTimer();
     };
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- a presence setting change must re-run the boot status check
   }, [container.presence, presenceDiscordClientId, presenceProvider]);
 
   useEffect(() => {
@@ -896,6 +901,7 @@ export function AppRoot({ container }: { container: Container }) {
   }, [
     container.downloadService,
     stateManager,
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- the status is read from a snapshot; a title or episode change must refresh it
     state.currentTitle?.id,
     state.currentTitle?.type,
     state.currentEpisode?.season,

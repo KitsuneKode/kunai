@@ -1,14 +1,21 @@
+import { createKeyedJoiner } from "@/infra/concurrency/keyed-joiner";
+import {
+  AniListRequestError,
+  postAniListGraphql as postSharedAniList,
+} from "@/services/catalog/anilist-client";
 import { evictOverflowedEntries } from "@/services/catalog/bounded-cache";
+import { walkCatalogSources, type CatalogSource } from "@/services/catalog/catalog-source";
 import { fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
 import {
   summarizeTmdbSeasonEpisodes as summarizeTmdbSeasonEpisodesImpl,
   type TmdbSeasonAiring,
 } from "@/services/catalog/tmdb-release";
+import { loadTvmazeAiringToday } from "@/services/catalog/tvmaze-schedule";
 import type { ReleaseNewSeason } from "@kunai/types";
+import type { JsonValue } from "@kunai/types";
 
 export type { TmdbSeasonAiring };
 export const summarizeTmdbSeasonEpisodes = summarizeTmdbSeasonEpisodesImpl;
-const ANILIST_GRAPHQL_URL = "https://graphql.anilist.co";
 const NEXT_RELEASE_TTL_MS = 2 * 60 * 60 * 1000;
 const RELEASING_TODAY_TTL_MS = 30 * 60 * 1000;
 const HISTORICAL_RELEASE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -49,6 +56,12 @@ export type CatalogScheduleItem = {
   readonly releaseAt: string | null;
   readonly releasePrecision: CatalogReleasePrecision;
   readonly status: CatalogReleaseStatus;
+  /**
+   * Set when a stand-in supplied this entry while `source`'s own catalog was
+   * down (the ids are still `source` ids). Shown on the entry and in the
+   * calendar header; such entries are reused only briefly.
+   */
+  readonly via?: string;
 };
 
 export type CatalogScheduleInput = {
@@ -132,7 +145,10 @@ type ScheduleCacheEntry<T> = {
 
 export class CatalogScheduleService {
   private readonly cache = new Map<string, ScheduleCacheEntry<unknown>>();
-  private readonly inflight = new Map<string, Promise<unknown>>();
+  /** One AniList progress batch per id set, shared by every caller asking for it. */
+  private readonly progressBatches = createKeyedJoiner<void>();
+  /** One schedule load per cache key, aborted once its last waiter leaves. */
+  private readonly loads = createKeyedJoiner<unknown>();
 
   constructor(
     private readonly loaders: CatalogScheduleLoaders = defaultCatalogScheduleLoaders,
@@ -142,7 +158,8 @@ export class CatalogScheduleService {
 
   clearCache(): void {
     this.cache.clear();
-    this.inflight.clear();
+    this.progressBatches.clear();
+    this.loads.clear();
   }
 
   private store(key: string, entry: ScheduleCacheEntry<unknown>): void {
@@ -201,35 +218,30 @@ export class CatalogScheduleService {
 
     const uniqueIds = [...new Set(staleIds)].sort();
     const inflightKey = `progress-batch:anilist:${uniqueIds.join(",")}`;
-    const active = this.inflight.get(inflightKey);
-    if (active) {
-      await active;
-      return;
-    }
-
-    const task = (this.loaders.animeProgress ?? loadAniListReleaseProgressBatch)(
-      uniqueIds,
-      signal,
-    ).then((progressById) => {
-      for (const titleId of uniqueIds) {
-        const key = `progress:anilist:anime:${titleId}`;
-        const progress = progressById.get(titleId) ?? null;
-        const expiresAt = nowMs + NEXT_RELEASE_TTL_MS;
-        this.store(key, { expiresAt, value: progress });
-        this.persistentCache?.set(key, JSON.stringify(progress), {
-          expiresAt: new Date(expiresAt).toISOString(),
-          now: new Date(nowMs).toISOString(),
-          source: "anilist",
-        });
-      }
-      return undefined;
-    });
-    this.inflight.set(inflightKey, task);
-    try {
-      await task;
-    } finally {
-      this.inflight.delete(inflightKey);
-    }
+    const loadBatch = this.loaders.animeProgress ?? loadAniListReleaseProgressBatch;
+    // The batch runs on its own signal: one caller leaving must not cancel
+    // the batch another caller still waits on (it used to take the first
+    // caller's signal), and a batch cancelled or cleared mid-flight writes
+    // nothing.
+    await this.progressBatches.join(
+      inflightKey,
+      async (upstream) => {
+        const progressById = await loadBatch(uniqueIds, upstream);
+        if (upstream.aborted) return;
+        for (const titleId of uniqueIds) {
+          const key = `progress:anilist:anime:${titleId}`;
+          const progress = progressById.get(titleId) ?? null;
+          const expiresAt = nowMs + NEXT_RELEASE_TTL_MS;
+          this.store(key, { expiresAt, value: progress });
+          this.persistentCache?.set(key, JSON.stringify(progress), {
+            expiresAt: new Date(expiresAt).toISOString(),
+            now: new Date(nowMs).toISOString(),
+            source: "anilist",
+          });
+        }
+      },
+      { signal },
+    );
   }
 
   /**
@@ -334,10 +346,16 @@ export class CatalogScheduleService {
     signal?: AbortSignal,
   ): Promise<CatalogScheduleItem | null> {
     const key = `next:${input.source}:${input.type}:${input.titleId}:${input.season ?? "-"}:${input.episode ?? "-"}`;
-    return this.loadCached(key, NEXT_RELEASE_TTL_MS, signal, { source: input.source }, async () => {
-      const item = await this.loaders.nextRelease(input, signal);
-      return item ? normalizeScheduleItem(item, this.now()) : null;
-    });
+    return this.loadCached(
+      key,
+      NEXT_RELEASE_TTL_MS,
+      signal,
+      { source: input.source },
+      async (load) => {
+        const item = await this.loaders.nextRelease(input, load);
+        return item ? normalizeScheduleItem(item, this.now()) : null;
+      },
+    );
   }
 
   async getSeriesReleaseProgress(
@@ -346,8 +364,12 @@ export class CatalogScheduleService {
   ): Promise<CatalogSeriesReleaseProgress | null> {
     if (input.source !== "tmdb" || input.type !== "series" || !input.season) return null;
     const key = `progress:${input.source}:${input.type}:${input.titleId}:${input.season}`;
-    return this.loadCached(key, NEXT_RELEASE_TTL_MS, signal, { source: input.source }, async () =>
-      (this.loaders.seriesProgress ?? loadTmdbSeriesReleaseProgress)(input, signal),
+    return this.loadCached(
+      key,
+      NEXT_RELEASE_TTL_MS,
+      signal,
+      { source: input.source },
+      async (load) => (this.loaders.seriesProgress ?? loadTmdbSeriesReleaseProgress)(input, load),
     );
   }
 
@@ -357,10 +379,17 @@ export class CatalogScheduleService {
   ): Promise<readonly CatalogScheduleItem[]> {
     const window = buildLocalDayWindow(this.now());
     const key = `today:${mode}:${window.dateKey}`;
-    return this.loadCached(key, RELEASING_TODAY_TTL_MS, signal, { mode }, async () => {
-      const items = await this.loaders.releasingToday(mode, window, signal);
-      return items.map((item) => normalizeScheduleItem(item, this.now()));
-    });
+    return this.loadCached(
+      key,
+      RELEASING_TODAY_TTL_MS,
+      signal,
+      { mode },
+      async (load) => {
+        const items = await this.loaders.releasingToday(mode, window, load);
+        return items.map((item) => normalizeScheduleItem(item, this.now()));
+      },
+      hasStandInEntries,
+    );
   }
 
   async loadReleaseWindow(
@@ -370,10 +399,17 @@ export class CatalogScheduleService {
   ): Promise<readonly CatalogScheduleItem[]> {
     const window = buildLocalWindow(this.now(), days);
     const key = `window:${mode}:${window.dateKey}:${Math.max(1, Math.trunc(days))}`;
-    return this.loadCached(key, RELEASING_TODAY_TTL_MS, signal, { mode }, async () => {
-      const items = await this.loaders.releasingToday(mode, window, signal);
-      return items.map((item) => normalizeScheduleItem(item, this.now()));
-    });
+    return this.loadCached(
+      key,
+      RELEASING_TODAY_TTL_MS,
+      signal,
+      { mode },
+      async (load) => {
+        const items = await this.loaders.releasingToday(mode, window, load);
+        return items.map((item) => normalizeScheduleItem(item, this.now()));
+      },
+      hasStandInEntries,
+    );
   }
 
   async loadMovieReleaseWindow(
@@ -382,50 +418,67 @@ export class CatalogScheduleService {
   ): Promise<readonly CatalogScheduleItem[]> {
     const window = buildLocalWindow(this.now(), days);
     const key = `movie-window:${window.dateKey}:${Math.max(1, Math.trunc(days))}`;
-    return this.loadCached(key, RELEASING_TODAY_TTL_MS, signal, { source: "tmdb" }, async () => {
-      const load = this.loaders.movieWindow ?? loadTmdbMovieUpcoming;
-      const items = await load(window, signal);
-      return items.map((item) => normalizeScheduleItem(item, this.now()));
-    });
+    return this.loadCached(
+      key,
+      RELEASING_TODAY_TTL_MS,
+      signal,
+      { source: "tmdb" },
+      async (load) => {
+        const loadWindow = this.loaders.movieWindow ?? loadTmdbMovieUpcoming;
+        const items = await loadWindow(window, load);
+        return items.map((item) => normalizeScheduleItem(item, this.now()));
+      },
+    );
   }
 
+  /**
+   * Cached, deduplicated load. Concurrent callers for one key share a single
+   * request that runs on its own signal: one caller navigating away must not
+   * cancel the answer another caller is still waiting for. The request is
+   * aborted only when its last waiter has left.
+   */
   private async loadCached<T>(
     key: string,
     ttlMs: number,
-    _signal: AbortSignal | undefined,
+    signal: AbortSignal | undefined,
     metadata: { readonly source?: string; readonly mode?: string },
-    load: () => Promise<T>,
+    load: (signal: AbortSignal) => Promise<T>,
+    /** A stand-in answer is kept in memory briefly and never persisted. */
+    isStandIn?: (value: T) => boolean,
   ): Promise<T> {
     const cached = this.cache.get(key);
+    // SAFETY: a key always maps to the loader that produced it, so the cached value is its T.
     if (cached && cached.expiresAt > this.now()) return cached.value as T;
 
     const persisted = this.loadPersisted<T>(key);
     if (persisted.found) return persisted.value;
 
-    const inflight = this.inflight.get(key);
-    if (inflight) return (await inflight) as T;
-
-    const task = load().then((value) => {
-      const ttl = ttlForScheduleValue(value, ttlMs, this.now());
-      const expiresAt = this.now() + ttl;
-      this.store(key, {
-        expiresAt,
-        value,
-      });
-      this.persistentCache?.set(key, JSON.stringify(value), {
-        expiresAt: new Date(expiresAt).toISOString(),
-        now: new Date(this.now()).toISOString(),
-        ...metadata,
-      });
-      return value;
-    });
-    this.inflight.set(key, task);
-
-    try {
-      return await task;
-    } finally {
-      this.inflight.delete(key);
-    }
+    // SAFETY: as above — one key, one loader, one T.
+    return this.loads.join(
+      key,
+      async (upstream) => {
+        const value = await load(upstream);
+        // A cancelled load (every waiter left, or clearCache) may have resolved
+        // with partial data from a caught abort: never cache or persist it.
+        if (upstream.aborted) return value;
+        if (isStandIn?.(value) === true) {
+          // Retry the primary soon; a stand-in must not pin itself for the TTL
+          // or survive a restart as if it were the catalog's own answer.
+          this.store(key, { expiresAt: this.now() + STAND_IN_REUSE_MS, value });
+          return value;
+        }
+        const ttl = ttlForScheduleValue(value, ttlMs, this.now());
+        const expiresAt = this.now() + ttl;
+        this.store(key, { expiresAt, value });
+        this.persistentCache?.set(key, JSON.stringify(value), {
+          expiresAt: new Date(expiresAt).toISOString(),
+          now: new Date(this.now()).toISOString(),
+          ...metadata,
+        });
+        return value;
+      },
+      { signal },
+    ) as Promise<T>;
   }
 
   private loadPersisted<T>(key: string): { found: true; value: T } | { found: false } {
@@ -445,6 +498,13 @@ export class CatalogScheduleService {
       return { found: false };
     }
   }
+}
+
+/** How long a stand-in calendar answer is reused before the primary is retried. */
+const STAND_IN_REUSE_MS = 60 * 1000;
+
+function hasStandInEntries(items: readonly CatalogScheduleItem[]): boolean {
+  return items.some((item) => item.via !== undefined);
 }
 
 export function createCatalogScheduleService(
@@ -533,10 +593,29 @@ const defaultCatalogScheduleLoaders: CatalogScheduleLoaders = {
     }
     return null;
   },
-  releasingToday: async (mode, window, signal) =>
-    mode === "anime"
-      ? loadAniListReleasingToday(window, signal)
-      : loadTmdbAiringToday(window, signal),
+  releasingToday: async (mode, window, signal) => {
+    // Anime has no stand-in with real schedule coverage: Kitsu's nextRelease
+    // is sparse and Jikan is unreachable from some networks. The calendar says
+    // so instead of guessing.
+    const sources: readonly CatalogSource<readonly CatalogScheduleItem[]>[] =
+      mode === "anime"
+        ? [{ id: "anilist", name: "AniList", load: (s) => loadAniListReleasingToday(window, s) }]
+        : [
+            { id: "tmdb", name: "TMDB", load: (s) => loadTmdbAiringToday(window, s) },
+            {
+              id: "tvmaze",
+              name: "TVmaze",
+              load: (s) => loadTvmazeAiringToday(window, { signal: s }),
+            },
+          ];
+    const answer = await walkCatalogSources({
+      capability: "calendar",
+      lane: mode === "anime" ? "anime" : "movie-series",
+      sources,
+      signal,
+    });
+    return answer.value;
+  },
   movieWindow: loadTmdbMovieUpcoming,
   seriesProgress: loadTmdbSeriesReleaseProgress,
   animeProgress: loadAniListReleaseProgressBatch,
@@ -803,14 +882,23 @@ function dedupeScheduleItems(
   return deduped;
 }
 
+/** A TMDB season's episode rows (the TMDB client serves last-known-good during an outage). */
+async function fetchSeasonEpisodeRows(
+  titleId: string,
+  season: number,
+  signal?: AbortSignal,
+): Promise<Record<string, unknown>[]> {
+  const data = await fetchJson(`/tv/${titleId}/season/${season}`, signal);
+  const episodePayload = readRecord(data).episodes;
+  return Array.isArray(episodePayload) ? episodePayload.map(readRecord) : [];
+}
+
 async function loadTmdbNextRelease(
   input: CatalogScheduleInput,
   signal?: AbortSignal,
 ): Promise<CatalogScheduleItem | null> {
   if (!input.season || !input.episode) return null;
-  const data = await fetchJson(`/tv/${input.titleId}/season/${input.season}`, signal);
-  const episodePayload = readRecord(data).episodes;
-  const episodes = Array.isArray(episodePayload) ? episodePayload.map(readRecord) : [];
+  const episodes = await fetchSeasonEpisodeRows(input.titleId, input.season, signal);
   const episode = episodes.find((candidate) => Number(candidate.episode_number) === input.episode);
   if (!episode) return null;
 
@@ -833,9 +921,7 @@ async function loadTmdbSeriesReleaseProgress(
   signal?: AbortSignal,
 ): Promise<CatalogSeriesReleaseProgress | null> {
   if (!input.season) return null;
-  const data = await fetchJson(`/tv/${input.titleId}/season/${input.season}`, signal);
-  const episodePayload = readRecord(data).episodes;
-  const episodes = Array.isArray(episodePayload) ? episodePayload.map(readRecord) : [];
+  const episodes = await fetchSeasonEpisodeRows(input.titleId, input.season, signal);
   const today = formatDateKey(new Date());
   const { aired, next } = summarizeTmdbSeasonEpisodes(episodes, today);
   if (!aired && !next) return null;
@@ -875,9 +961,7 @@ async function probeTmdbNextSeason(
   signal?: AbortSignal,
 ): Promise<ReleaseNewSeason | undefined> {
   try {
-    const data = await fetchJson(`/tv/${titleId}/season/${season}`, signal);
-    const episodePayload = readRecord(data).episodes;
-    const episodes = Array.isArray(episodePayload) ? episodePayload.map(readRecord) : [];
+    const episodes = await fetchSeasonEpisodeRows(titleId, season, signal);
     const { aired, next } = summarizeTmdbSeasonEpisodes(episodes, today);
     if (!aired && !next) return undefined;
     return {
@@ -957,21 +1041,12 @@ function formatWindowDateKey(date: Date): string {
 }
 
 async function postAniListGraphql<T>(
-  body: { readonly query: string; readonly variables?: Record<string, unknown> },
+  body: { readonly query: string; readonly variables?: Readonly<Record<string, JsonValue>> },
   signal?: AbortSignal,
 ): Promise<T | null> {
   try {
-    const response = await fetch(ANILIST_GRAPHQL_URL, {
-      method: "POST",
-      signal: signal ?? AbortSignal.timeout(3500),
-      headers: {
-        "content-type": "application/json",
-        accept: "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-    if (!response.ok) throw catalogResponseError(response.status);
-    return (await response.json()) as T;
+    // SAFETY: AniList answers with the documented envelope for this query; callers read optional fields.
+    return (await postSharedAniList(body, { signal })) as T;
   } catch (error) {
     throw normalizeCatalogError(error);
   }
@@ -995,6 +1070,20 @@ function catalogResponseError(status: number): CatalogScheduleRequestError {
 
 function normalizeCatalogError(error: unknown): Error {
   if (error instanceof CatalogScheduleRequestError) return error;
+  if (error instanceof AniListRequestError) {
+    if (error.kind === "rate-limited") {
+      return new CatalogScheduleRequestError("rate-limited", "catalog rate limited", error.status);
+    }
+    if (error.kind === "timeout") {
+      return new CatalogScheduleRequestError("timeout", "catalog request timed out", error.status);
+    }
+    if (error.kind === "network") {
+      return new CatalogScheduleRequestError("network", "catalog network request failed");
+    }
+    return error.status === undefined
+      ? new CatalogScheduleRequestError("unavailable", "catalog unavailable")
+      : catalogResponseError(error.status);
+  }
   if (error instanceof Error && error.name === "AbortError") return error;
   if (error instanceof Error && /timeout|timed out/i.test(error.message)) {
     return new CatalogScheduleRequestError("timeout", "catalog request timed out");

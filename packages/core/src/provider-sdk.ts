@@ -84,11 +84,3 @@ export function assertRuntimeAllowed({
     throw new Error(`${providerId} requires ${runtime}, but that runtime is not allowed`);
   }
 }
-
-export function assertProviderModuleMatchesManifest(module: CoreProviderModule): void {
-  if (module.providerId !== module.manifest.id) {
-    throw new Error(
-      `Provider module id ${module.providerId} does not match manifest id ${module.manifest.id}`,
-    );
-  }
-}

@@ -67,6 +67,11 @@ export type NotificationSignal =
       readonly type: "provider-health";
       readonly providerId: string;
       readonly suggestedProviderId?: string;
+    }
+  | {
+      readonly type: "provider-manifest-updated";
+      readonly revision: number;
+      readonly updatedProviders?: readonly string[];
     };
 
 export interface DerivedNotification {
@@ -78,7 +83,8 @@ export interface DerivedNotification {
     | "download-failed"
     | "app-update"
     | "app-restart-required"
-    | "provider-health";
+    | "provider-health"
+    | "provider-manifest-updated";
   readonly title: string;
   readonly body: string;
   readonly item?: MediaItemIdentity;
@@ -252,6 +258,23 @@ export function deriveNotifications(
         body: signal.suggestedProviderId
           ? `Your default provider is down. Try ${signal.suggestedProviderId} — change it in Settings → Provider order.`
           : "Your default provider is down and no healthy fallback is on record. Check provider status or pick another provider in Settings.",
+        createdAt: input.now,
+        updatedAt: input.now,
+      });
+      continue;
+    }
+
+    if (signal.type === "provider-manifest-updated") {
+      const changed = signal.updatedProviders?.filter(Boolean) ?? [];
+      const summary =
+        changed.length > 0
+          ? `Updated ${changed.slice(0, 4).join(", ")}${changed.length > 4 ? ` (+${changed.length - 4})` : ""}.`
+          : "Signed provider definitions applied.";
+      derived.push({
+        dedupKey: `provider-manifest-updated:${signal.revision}`,
+        kind: "provider-manifest-updated",
+        title: `Provider definitions updated · rev ${signal.revision}`,
+        body: `${summary} Active playback keeps its current stream; use /providers or \`kunai providers rollback\` to inspect or undo.`,
         createdAt: input.now,
         updatedAt: input.now,
       });

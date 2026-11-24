@@ -31,6 +31,7 @@ import type {
 import { providerHttpErrorForStatus } from "@kunai/types";
 
 import { resolveTmdbCatalogId } from "../shared/catalog-id";
+import { getEffectiveProviderMirrors } from "../shared/hotfix-runtime";
 import { readJsonObjectBody } from "../shared/json-body";
 import { decryptOpensslSalted, sha256Hex } from "../shared/openssl-evp";
 import { HealthTracker, TTLCache } from "../shared/provider-cache";
@@ -124,6 +125,10 @@ export const WINGS_API_BASE = "https://api.speedracelight.com";
  * this list when one exists rather than reintroducing a second constant.
  */
 export const WINGS_API_BASES: readonly string[] = [WINGS_API_BASE];
+
+export function effectiveWingsApiBases(): readonly string[] {
+  return getEffectiveProviderMirrors("videasy", WINGS_API_BASES);
+}
 /**
  * TMDB-format catalog mirrors in live-first order. `api.videasy.to` went
  * NXDOMAIN — `db.wingsdatabase.com` serves the identical `/3` contract
@@ -158,7 +163,9 @@ function wingsEndpointToServer(endpoint: string): string {
 
 /** Resolve the correct API base URL for a server endpoint. */
 export function apiBaseForEndpoint(endpoint: string): string {
-  return isWingsdatabaseEndpoint(endpoint) ? WINGS_API_BASE : VIDKING_API_BASE;
+  return isWingsdatabaseEndpoint(endpoint)
+    ? (effectiveWingsApiBases()[0] ?? WINGS_API_BASE)
+    : VIDKING_API_BASE;
 }
 
 /** Resolve the display host label for a server endpoint (used in source metadata). */
@@ -183,10 +190,6 @@ const VIDEASY_APP_ID = "bc-frontend";
  *  the default server list for embed-referer retry fallback (previously used a hardcoded
  *  legacy list that is now all route-dead). */
 export const VIDKING_PHASE_A_SERVERS = getPhaseAVidkingServers();
-
-/** @deprecated Legacy Videasy server list (all route-dead). Kept for fallback type narrowing;
- *  runtime fallback now always uses VIDKING_PHASE_A_SERVERS. */
-const VIDKING_SERVERS = ["mb-flix", "cdn", "downloader2", "1movies"] as const;
 
 export const VIDKING_VIDEASY_FETCH_TIMEOUT_MS = 25_000;
 /**
@@ -251,8 +254,7 @@ export function classifyVideasyHttpFailure(statusCode: number): EndpointFailureC
   return statusCode === 404 || statusCode === 410 ? "route-dead" : "transient";
 }
 
-type VidkingServer = (typeof VIDKING_SERVERS)[number];
-type VidkingServerEndpoint = VidkingServer | (string & {});
+type VidkingServerEndpoint = string;
 
 type VidkingCycleCandidateMetadata = {
   readonly server: VidkingServerEndpoint;
@@ -328,9 +330,6 @@ export const videasyProviderModule: CoreProviderModule = {
     });
   },
 };
-
-/** @deprecated Use videasyProviderModule */
-export const vidkingProviderModule = videasyProviderModule;
 
 export async function resolveVideasyDirect(
   input: ProviderResolveInput,
@@ -485,16 +484,23 @@ export async function resolveVideasyDirect(
       status: deprecated ? "failed" : phase === "A" ? "probing" : "pending",
       confidence: deprecated ? 0 : phase === "A" ? 0.8 : 0.5,
       cachePolicy,
-      metadata: {
-        server,
-        flavorId: presentation.flavorId,
-        flavorArchetype: presentation.subtitle,
-        flavorLabel: presentation.themeLabel,
-        phase,
-        ...(deprecated
-          ? { failureClass: "candidate-unsupported", reason: "deprecated-endpoint" }
-          : {}),
-      },
+      metadata: deprecated
+        ? {
+            server,
+            flavorId: presentation.flavorId,
+            flavorArchetype: presentation.subtitle,
+            flavorLabel: presentation.themeLabel,
+            phase,
+            failureClass: "candidate-unsupported",
+            reason: "deprecated-endpoint",
+          }
+        : {
+            server,
+            flavorId: presentation.flavorId,
+            flavorArchetype: presentation.subtitle,
+            flavorLabel: presentation.themeLabel,
+            phase,
+          },
     });
   }
 
@@ -767,9 +773,6 @@ export async function resolveVideasyDirect(
   });
 }
 
-/** @deprecated Use resolveVideasyDirect */
-export const resolveVidkingDirect = resolveVideasyDirect;
-
 function withVidkingSourceInventory(
   result: ProviderResolveResult,
   sources: readonly ProviderSourceCandidate[],
@@ -996,7 +999,7 @@ export function createVidkingResultFromPayload({
   readonly engineOptions?: VidKingEngineOptions;
   readonly streamReachabilityVerified?: boolean;
 }): ProviderResolveResult | null {
-  const resolvedServer = (server as VidkingServer | undefined) ?? "wings-cdn";
+  const resolvedServer = server ?? "wings-cdn";
   const policy = cachePolicy;
   const presentation = resolveVidkingPresentation(
     resolvedServer,
@@ -1458,7 +1461,7 @@ async function fetchWingsdatabaseSeed(
   mediaId: number,
   context: ProviderRuntimeContext,
   signal?: AbortSignal,
-  hosts: readonly string[] = WINGS_API_BASES,
+  hosts: readonly string[] = effectiveWingsApiBases(),
 ): Promise<WingsSeedTransport | undefined> {
   const requester = context.fetch?.fetch.bind(context.fetch) ?? fetch;
   const effectiveSignal = signal ?? context.signal;
@@ -2533,7 +2536,7 @@ function inferLanguageLabel(value: string | undefined): string | undefined {
   return undefined;
 }
 
-function createSourceId(server: VidkingServer | string): string {
+function createSourceId(server: string): string {
   return vidkingSourceIdForEndpoint(server);
 }
 

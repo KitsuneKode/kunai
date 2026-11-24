@@ -126,10 +126,6 @@ export const CONTEXTUAL_TIPS: readonly ContextualTip[] = [
   },
 ];
 
-export function contextualTipById(id: string): ContextualTip | undefined {
-  return CONTEXTUAL_TIPS.find((tip) => tip.id === id);
-}
-
 /**
  * The tip a palette selection teaches on this surface, or null when the
  * command has no shortcut lesson here.

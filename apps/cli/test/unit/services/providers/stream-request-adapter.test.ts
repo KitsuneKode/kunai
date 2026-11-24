@@ -380,3 +380,39 @@ test("an episode never overrides an identity the title already holds", () => {
 
   expect(input.title.anilistId).toBe("21");
 });
+
+test("forwards non-anime audio languages and strips sentinel subtitle preferences", () => {
+  const hindiMovie = streamRequestToResolveInput(
+    {
+      title: {
+        id: "tmdb:438631",
+        type: "movie",
+        name: "Dune",
+        externalIds: { tmdbId: "438631" },
+      },
+      audioPreference: "hi",
+      subtitlePreference: "interactive",
+      qualityPreference: "2160p",
+    },
+    "series",
+  );
+  expect(hindiMovie.preferredAudioLanguage).toBe("hi");
+  expect(hindiMovie.preferredSubtitleLanguage).toBeUndefined();
+  expect(hindiMovie.qualityPreference).toBe("2160p");
+
+  const originalMovie = streamRequestToResolveInput(
+    {
+      title: {
+        id: "tmdb:438631",
+        type: "movie",
+        name: "Dune",
+        externalIds: { tmdbId: "438631" },
+      },
+      audioPreference: "original",
+      subtitlePreference: "pt",
+    },
+    "series",
+  );
+  expect(originalMovie.preferredAudioLanguage).toBeUndefined();
+  expect(originalMovie.preferredSubtitleLanguage).toBe("pt");
+});

@@ -1,19 +1,26 @@
-import type { ProviderFetchPort } from "@kunai/types";
+import type { ProviderFetchPort, VideoDynamicRange } from "@kunai/types";
 
 import { isHlsMasterPlaylist, isHlsPlaylistUrl } from "./hls-manifest";
-import { normalizeQualityLabel, qualityRankFromLabel } from "./source-inventory";
+import {
+  detectDynamicRangeFromLabel,
+  normalizeQualityLabel,
+  qualityRankFromLabel,
+} from "./source-inventory";
 import {
   blockedLiteralTargetReason,
   fetchGuardedStreamTarget,
   readBoundedTextBody,
 } from "./stream-reachability";
 import { normalizeIsoLanguageCode } from "./subtitle-helpers";
+import { createTimeoutSignal } from "./timeout-signal";
+import { trimTrailingSlashes } from "./trim-trailing-slashes";
 
 export type HlsLadderVariant = {
   readonly url: string;
   readonly qualityLabel: string;
   readonly qualityRank: number;
   readonly bandwidth?: number;
+  readonly dynamicRange?: VideoDynamicRange;
 };
 
 /** A resolved `#EXT-X-MEDIA` rendition — an alternate audio or subtitle playlist. */
@@ -117,7 +124,7 @@ export async function expandHlsMasterInventory(
       init: {
         headers: headers ?? {},
       },
-      signal: signal ?? AbortSignal.timeout(12_000),
+      signal: createTimeoutSignal(signal, 12_000),
     });
     if (outcome.kind === "blocked") {
       return empty({ kind: "blocked-target" });
@@ -126,7 +133,9 @@ export async function expandHlsMasterInventory(
       return empty({ kind: "network" });
     }
     const response = outcome.response;
+    const baseUrl = outcome.finalUrl;
     if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
       return empty({ kind: "http-error", httpStatus: response.status });
     }
 
@@ -150,7 +159,7 @@ export async function expandHlsMasterInventory(
     // only labels audio already muxed into each variant, so it does not trip
     // this.
     if (masterVariantsNeedSeparateAudio(text)) {
-      const renditions = parseHlsMasterRenditions(text, masterUrl);
+      const renditions = parseHlsMasterRenditions(text, baseUrl);
       return {
         isHls: true,
         variants: [fallback],
@@ -159,14 +168,14 @@ export async function expandHlsMasterInventory(
       };
     }
 
-    const variants = parseHlsMasterVariants(text, masterUrl);
+    const variants = parseHlsMasterVariants(text, baseUrl);
     if (variants.length === 0) {
       return empty({ kind: "not-master", httpStatus: response.status });
     }
 
     const sorted = [...variants].sort((left, right) => right.qualityRank - left.qualityRank);
     const capped = maxVariants > 0 ? sorted.slice(0, maxVariants) : sorted;
-    const renditions = parseHlsMasterRenditions(text, masterUrl);
+    const renditions = parseHlsMasterRenditions(text, baseUrl);
     return {
       isHls: true,
       variants: capped,
@@ -250,11 +259,62 @@ export function looksLikeHlsMasterUrl(url: string): boolean {
   if (!isHlsPlaylistUrl(url) && !/\.m3u8(?:[?#]|$)/i.test(url)) return false;
   try {
     const path = new URL(url).pathname.toLowerCase();
-    const leaf = path.replace(/\/+$/, "").split("/").pop() ?? "";
+    const leaf = trimTrailingSlashes(path).split("/").pop() ?? "";
     return leaf === "master.m3u8" || leaf.includes("master") || leaf === "index.m3u8";
   } catch {
     return /\bmaster\.m3u8\b/i.test(url);
   }
+}
+
+/**
+ * Classify `#EXT-X-STREAM-INF` dynamic range per RFC 8216 bis (`VIDEO-RANGE`,
+ * `CODECS` Dolby Vision sample entries `dvh1`/`dvhe`/`dav1`/`dva1`/`dvav`, or
+ * explicit `NAME` tokens).
+ */
+export function detectHlsVariantDynamicRange(streamInfLine: string): VideoDynamicRange | undefined {
+  const codecs = hlsAttribute(streamInfLine, "CODECS");
+  // Dolby Vision sample entries: HEVC (dvh1/dvhe), AV1 (dav1), AVC (dva1/dvav).
+  // A DV layer signalled only in SUPPLEMENTAL-CODECS rides an HDR10/HLG base
+  // layer that plays correctly without DV support, so VIDEO-RANGE decides there.
+  if (codecs && /\b(?:dvh1|dvhe|dav1|dva1|dvav)\./i.test(codecs)) return "dolby-vision";
+  const videoRange = hlsAttribute(streamInfLine, "VIDEO-RANGE")?.toUpperCase();
+  if (videoRange === "PQ") return "hdr10";
+  if (videoRange === "HLG") return "hlg";
+  if (videoRange === "SDR") return "sdr";
+  const name = hlsAttribute(streamInfLine, "NAME");
+  return detectDynamicRangeFromLabel(name);
+}
+
+/** Highest declared variant height (`RESOLUTION=WxH`) in an HLS master playlist. */
+export function parseHlsMasterMaxHeight(manifestText: string): number | undefined {
+  let maxHeight = 0;
+  for (const rawLine of manifestText.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line.startsWith("#EXT-X-STREAM-INF:")) continue;
+    const resMatch = /RESOLUTION=\d+x(\d+)/i.exec(line);
+    const height = resMatch?.[1] ? Number.parseInt(resMatch[1], 10) : 0;
+    if (Number.isFinite(height) && height > maxHeight) {
+      maxHeight = height;
+    }
+  }
+  return maxHeight > 0 ? maxHeight : undefined;
+}
+
+/** Strongest HDR dynamic range declared across `#EXT-X-STREAM-INF` rows in a master playlist. */
+export function detectHlsMasterDynamicRange(manifestText: string): VideoDynamicRange | undefined {
+  let detected: VideoDynamicRange | undefined;
+  const rank = (dr: VideoDynamicRange): number =>
+    dr === "dolby-vision" ? 3 : dr === "hdr10" ? 2 : dr === "hlg" ? 1 : 0;
+  for (const rawLine of manifestText.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line.startsWith("#EXT-X-STREAM-INF:")) continue;
+    const dr = detectHlsVariantDynamicRange(line);
+    if (!dr) continue;
+    if (!detected || rank(dr) > rank(detected)) {
+      detected = dr;
+    }
+  }
+  return detected;
 }
 
 export function parseHlsMasterVariants(
@@ -266,6 +326,7 @@ export function parseHlsMasterVariants(
   let currentResolution = "";
   let currentBandwidth = 0;
   let currentName = "";
+  let currentDynamicRange: VideoDynamicRange | undefined;
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
@@ -276,6 +337,7 @@ export function parseHlsMasterVariants(
       currentBandwidth = bwMatch?.[1] ? Number.parseInt(bwMatch[1], 10) : 0;
       const nameMatch = /NAME="([^"]+)"/i.exec(line);
       currentName = nameMatch?.[1]?.trim() ?? "";
+      currentDynamicRange = detectHlsVariantDynamicRange(line);
       continue;
     }
     if (!line || line.startsWith("#")) continue;
@@ -287,6 +349,7 @@ export function parseHlsMasterVariants(
       currentResolution = "";
       currentBandwidth = 0;
       currentName = "";
+      currentDynamicRange = undefined;
       continue;
     }
 
@@ -299,16 +362,27 @@ export function parseHlsMasterVariants(
       qualityRankFromLabel(currentResolution) ??
       currentBandwidth;
 
-    variants.push({
-      url: absoluteUrl,
-      qualityLabel,
-      qualityRank,
-      bandwidth: currentBandwidth > 0 ? currentBandwidth : undefined,
-    });
+    const variant: HlsLadderVariant =
+      currentDynamicRange !== undefined
+        ? {
+            url: absoluteUrl,
+            qualityLabel,
+            qualityRank,
+            bandwidth: currentBandwidth > 0 ? currentBandwidth : undefined,
+            dynamicRange: currentDynamicRange,
+          }
+        : {
+            url: absoluteUrl,
+            qualityLabel,
+            qualityRank,
+            bandwidth: currentBandwidth > 0 ? currentBandwidth : undefined,
+          };
+    variants.push(variant);
 
     currentResolution = "";
     currentBandwidth = 0;
     currentName = "";
+    currentDynamicRange = undefined;
   }
 
   return dedupeHlsVariantsByUrl(variants);

@@ -36,6 +36,7 @@ function candidates(...ids: string[]): ProviderCycleCandidate[] {
 }
 
 function sleep(ms: number): Promise<void> {
+  // sleep-allow: race fixture delay; the cycle clock is not injected here
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
@@ -66,6 +67,7 @@ describe("runProviderCycle racing", () => {
       candidates: candidates("slow", "fast"),
       resolveCandidate: async (candidate) => {
         if (candidate.id === "slow") {
+          // sleep-allow: race fixture delay; this file runs runProviderCycle on the real clock (fake-timer port is a follow-up)
           await sleep(1_500);
           return "stream-slow";
         }
@@ -90,6 +92,7 @@ describe("runProviderCycle racing", () => {
       resolveCandidate: async (candidate, context) => {
         if (candidate.id === "slow") {
           await new Promise((resolve, reject) => {
+            // sleep-allow: race fixture delay; the cycle clock is not injected here
             const timer = setTimeout(resolve, 1_500);
             context.signal.addEventListener("abort", () => {
               clearTimeout(timer);
@@ -119,6 +122,7 @@ describe("runProviderCycle racing", () => {
       endpointHealth,
       resolveCandidate: async (candidate) => {
         if (candidate.id === "broken") throw new Error("failed to parse candidate response");
+        // sleep-allow: race fixture delay; this file runs runProviderCycle on the real clock (fake-timer port is a follow-up)
         await sleep(50);
         return "stream-good";
       },
@@ -143,6 +147,7 @@ describe("runProviderCycle racing", () => {
         if (candidate.id === "guarded") {
           throw new Error("HTTP 403 Forbidden");
         }
+        // sleep-allow: race fixture delay; this file runs runProviderCycle on the real clock (fake-timer port is a follow-up)
         await sleep(50);
         return "stream-good";
       },
@@ -196,6 +201,7 @@ describe("runProviderCycle racing", () => {
 
   test("cancelling the parent stops the whole race", async () => {
     const controller = new AbortController();
+    // sleep-allow: race fixture delay; the cycle clock is not injected here
     setTimeout(() => controller.abort(), 20);
 
     const result = await runProviderCycle<string>({
@@ -238,6 +244,7 @@ describe("runProviderCycle racing", () => {
       candidates: candidates("only"),
       now: () => new Date(1_000 + tick++ * 1_000).toISOString(),
       resolveCandidate: async () => {
+        // sleep-allow: race fixture delay; this file runs runProviderCycle on the real clock (fake-timer port is a follow-up)
         await sleep(30);
         return "stream";
       },
@@ -264,5 +271,31 @@ describe("runProviderCycle racing", () => {
     });
 
     expect(result.stopReason).toBe("all-quarantined");
+  });
+
+  test("aborting parent settles immediately even when a candidate ignores its signal", async () => {
+    const controller = new AbortController();
+    const started: string[] = [];
+
+    const run = runProviderCycle<string>({
+      providerId: "videasy",
+      hedgeDelayMs: 5_000,
+      candidateTimeoutMs: 10_000,
+      signal: controller.signal,
+      candidates: candidates("hung", "never-started"),
+      resolveCandidate: async (candidate) => {
+        started.push(candidate.id);
+        // Deliberately never resolves and ignores `context.signal`.
+        return await new Promise<string>(() => {});
+      },
+    });
+
+    await Promise.resolve();
+    controller.abort(new DOMException("cancelled", "AbortError"));
+
+    const result = await run;
+    expect(result.cancelled).toBe(true);
+    expect(result.stopReason).toBe("cancelled");
+    expect(started).toEqual(["hung"]);
   });
 });

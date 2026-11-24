@@ -9,6 +9,11 @@ import { markCurrentLabel } from "@/domain/current-label";
 import { formatRelativeAge } from "@/domain/relative-age";
 import type { SessionState } from "@/domain/session/SessionState";
 import type { ProviderMetadata } from "@/domain/types";
+import {
+  describeCatalogAnswers,
+  type CatalogSourceAnswer,
+} from "@/services/catalog/catalog-source-ledger";
+import type { TmdbCredentialStatus } from "@/services/catalog/tmdb-proxy";
 import type { ContinuationProjection } from "@/services/continuation/continuation-policy";
 import { projectContinuationSurface } from "@/services/continuation/continuation-surface-policy";
 import {
@@ -98,6 +103,12 @@ export function buildAboutPanelLines({
       detail: `Bun ${Bun.version}  ·  Node ${process.versions.node}`,
     },
     {
+      // TMDB's terms require this notice wherever its data is shown.
+      label: "Data sources",
+      detail:
+        "This product uses the TMDB API but is not endorsed or certified by TMDB.  ·  Anime data: AniList, Kitsu  ·  Search fallback: Wikidata (CC0)  ·  Schedules: TVmaze",
+    },
+    {
       label: "Current mode",
       detail: `${state.mode}  ·  Provider ${state.provider}`,
     },
@@ -154,7 +165,38 @@ export type DiagnosticsPanelLineInput = {
   developerMode?: boolean;
   /** Override span expand/collapse; null/undefined uses newest-expanded defaults. */
   expandedSpanIds?: ReadonlySet<string> | null;
+  /** Which source last answered each catalog capability (search, trending, …). */
+  catalogAnswers?: readonly CatalogSourceAnswer[];
+  /** Clock for answer ages; defaults to `Date.now()`. */
+  now?: number;
+  /** Which credentials catalog and subtitle requests use. */
+  serviceKeys?: ServiceKeysStatus;
 };
+
+/** What /diagnostics says about keys, without ever showing one. */
+export interface ServiceKeysStatus {
+  readonly tmdb: TmdbCredentialStatus;
+  readonly wyzieConfigured: boolean;
+}
+
+export function describeServiceKeys(status: ServiceKeysStatus): ShellPanelLine {
+  const { active, userKeyRejected } = status.tmdb;
+  const tmdb = userKeyRejected
+    ? `TMDB rejected your key (401) — using ${active.source === "kunai" ? "Kunai's key" : "the fallback key"} until you fix it in Settings → Accounts`
+    : active.source === "user"
+      ? `TMDB: your ${active.kind === "bearer" ? "read token" : "key"} (${active.origin === "env" ? "KUNAI_TMDB_API_KEY" : "settings"}), direct to TMDB`
+      : active.source === "kunai"
+        ? "TMDB: Kunai's key — add your own free key in Settings → Accounts for independent quota"
+        : "TMDB: borrowed fallback key — add your own free key in Settings → Accounts";
+  const subtitles = status.wyzieConfigured
+    ? "subtitle search: your Wyzie key"
+    : "subtitle search: no Wyzie key (online subtitle search off)";
+  return {
+    label: "Service keys",
+    detail: `${tmdb}  ·  ${subtitles}`,
+    tone: userKeyRejected ? "warning" : "info",
+  };
+}
 
 export function buildDiagnosticsPanelLines({
   state,
@@ -170,6 +212,9 @@ export function buildDiagnosticsPanelLines({
   youtubeProbe,
   developerMode = false,
   expandedSpanIds,
+  catalogAnswers,
+  now,
+  serviceKeys,
 }: DiagnosticsPanelLineInput): readonly ShellPanelLine[] {
   const insight = buildDiagnosticsInsight({
     state,
@@ -196,6 +241,17 @@ export function buildDiagnosticsPanelLines({
     youtubeProbe,
     memorySamples,
   });
+  const catalogLine = catalogAnswers
+    ? describeCatalogAnswers(catalogAnswers, now ?? Date.now())
+    : null;
+  if (serviceKeys) supplemental.unshift(describeServiceKeys(serviceKeys));
+  if (catalogLine) {
+    supplemental.unshift({
+      label: "Catalog sources",
+      detail: catalogLine.detail,
+      tone: catalogLine.degraded ? "warning" : "info",
+    });
+  }
 
   if (supplemental.length === 0) return baseLines;
 

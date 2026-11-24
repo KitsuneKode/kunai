@@ -6,6 +6,16 @@ status: shipped
 
 Kunai stores preferences locally. Most settings are editable from `/settings` or `/setup` inside the shell. Advanced users can edit JSON directly.
 
+`/settings` is organized into five sections:
+
+| Section | What lives there |
+| --- | --- |
+| **General** | Startup mode, footer hints, theme, Mascot & tips, shortcut tips (with **Reset tips**), language/subtitle profiles, and Discover |
+| **Sources** | Default providers, fallback priority, provider switches, Videasy session token, user-owned provider relay, and YouTube metadata/cookies/SponsorBlock |
+| **Playback & Offline** | Recovery mode, startup priority, confirm-before-play, autoplay/skip controls, offline downloads, cleanup, and download path |
+| **Accounts & Sync** | AniList & TMDB tracker sync and pause controls, plus local Discord Rich Presence |
+| **Privacy & System** | Usage analytics opt-in/id rotation, update checks, **Advanced → Memory panel**, setup restore, and Danger Zone resets |
+
 <Callout type="info" title="Config locations">
 | File | Purpose |
 | --- | --- |
@@ -132,7 +142,7 @@ See [Media selection](/docs/users/media-selection) for how profiles flow into re
 | `powerSaverMode` | Suppress background network and speculative work |
 | `recommendationRailEnabled` | Show the recommendation rail after playback (default `true`) |
 
-Kunai ships the Ember Dusk brand theme plus seven alternates: Kitsunebi, Nord, Tokyo Night, Catppuccin Mocha, Dracula, Rosé Pine, and Gruvbox. Pick one with `/theme` or in **Settings › Appearance › Theme** (it repaints immediately and persists), set `"theme"` in `config.json`, or override per run with `KUNAI_THEME=nord`. Themes recolor the whole shell; density modes (`zen`, `minimal`) still control how much chrome shows.
+Kunai ships the Ember Dusk brand theme plus seven alternates: Kitsunebi, Nord, Tokyo Night, Catppuccin Mocha, Dracula, Rosé Pine, and Gruvbox. Pick one with `/theme` or in **Settings › General › Theme** (it repaints immediately and persists), set `"theme"` in `config.json`, or override per run with `KUNAI_THEME=nord`. Themes recolor the whole shell; density modes (`zen`, `minimal`) still control how much chrome shows.
 
 ### Motion and decoration overrides
 
@@ -171,7 +181,32 @@ See [Downloads and offline](/docs/users/downloads-and-offline).
 }
 ```
 
-Tokens are stored separately. Sync is **experimental** and fail-closed: nothing leaves the machine until you enable it in Settings › Sync. Pending mutations sit in a local **outbox** and retry; auth failure holds the row until you re-authenticate. Failed-closed rows do not invent progress on AniList/TMDB.
+Tokens are stored separately. Sync is **experimental** and fail-closed: nothing leaves the machine until you enable it in Settings › Accounts & Sync. Pending mutations sit in a local **outbox** and retry; auth failure holds the row until you re-authenticate. Failed-closed rows do not invent progress on AniList/TMDB.
+
+## Catalog sources and your own TMDB key
+
+Search, trending, recommendations and the calendar come from public catalogs: TMDB for movies and series, AniList for anime.
+
+- **Trending** has fallbacks: anime trending tries Kitsu and then MyAnimeList (Jikan) when AniList is down.
+- **Trending and recommendations** remember their last good answer. If every source is unreachable, Kunai shows that list, marked with its age (`Trending this week · updated 3h ago`), instead of an empty row.
+- **Series episode lists** keep working when TMDB is down for any series you have opened in the last 30 days: Kunai uses the season and episode list it saved last time, so you can still pick an episode. Release dates for series you follow use the same saved data.
+- **Movie and series search** falls back to Wikidata when TMDB is unreachable. Results carry the same TMDB ids, so picking one plays the right title; they have no posters, and the header says `Wikidata (TMDB unreachable)`. Filtered searches (`type:`, `year:` and similar) still need TMDB.
+- **Anime search** tries the other anime providers when the active one or AniList fails.
+- **The calendar** keeps its series rows when TMDB is down, using TVmaze's US schedule matched to the same TMDB titles (the header says `series via TVmaze (TMDB unreachable)`; those rows have no episode numbers). The anime calendar needs AniList; when one part of the calendar cannot load, the header says which (`anime schedule unavailable`) instead of quietly showing less.
+- **`/diagnostics`** has a "Catalog sources" line that says which source answered search, trending, recommendations and episode lists, and why a backup was used.
+- **AniList limits requests.** When it asks Kunai to slow down, AniList-backed rows show their fallback or saved list for up to a couple of minutes instead of waiting.
+
+### Your own TMDB key (free, recommended)
+
+Kunai works without any key. Your own free TMDB key makes the catalog faster and keeps it working even if Kunai's key or the keyless mirrors have a bad day:
+
+1. Sign in at [themoviedb.org](https://www.themoviedb.org/settings/api) and request an API key (personal use, free).
+2. Copy either the **API Key** or the **API Read Access Token**.
+3. Open **Settings → Accounts → Your API keys → TMDB key**, paste it, and press Enter.
+
+With your key, Kunai asks TMDB directly first. The key is stored in your system's credential store (macOS Keychain, Windows Credential Manager, or Secret Service on Linux) when one is available, not in `config.json`. If TMDB ever rejects it, Kunai keeps working on its fallbacks and `/diagnostics` says so under **Service keys**.
+
+`KUNAI_TMDB_API_KEY` in your environment overrides the setting, and is also the key TMDB account sync uses.
 
 ## Provider domains
 
@@ -236,7 +271,7 @@ Discord Rich Presence is **off by default** and local-only.
 /presence
 ```
 
-Or use `/settings` and navigate to Presence.
+Or use `/settings` and navigate to Accounts & Sync → Discord Presence.
 </Step>
 <Step>
 ### Choose provider and privacy
@@ -247,7 +282,7 @@ Or use `/settings` and navigate to Presence.
 <Step>
 ### Discord desktop, then connect
 
-The Discord **desktop app** must be running (local IPC). Kunai ships a default application client id; you do not need to create a Discord app for the default path. Override in Settings › Presence or `KUNAI_DISCORD_CLIENT_ID` only if you want your own application. Presence stays **off** until you set the provider to `discord`.
+The Discord **desktop app** must be running (local IPC). Kunai ships a default application client id; you do not need to create a Discord app for the default path. Override in Settings › Accounts & Sync or `KUNAI_DISCORD_CLIENT_ID` only if you want your own application. Presence stays **off** until you set the provider to `discord`.
 </Step>
 <Step>
 ### Connect and verify

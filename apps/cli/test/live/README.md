@@ -12,7 +12,6 @@ bun run test:live:videasy -- --fixture=bloodhounds
 bun run test:live:videasy -- --suite
 bun run test:live:rivestream
 bun run test:live:vidlink
-bun run test:live:anidb
 bun run test:live:allanime "Kimetsu no Yaiba" SJms742bSTrcyJZay
 bun run test:live:miruro 1159 21 "One Piece"
 bun run test:live:youtube
@@ -103,7 +102,7 @@ For each run, the JSON payload should include:
 `bun run test:live:matrix` runs the focused provider smokes as one serial pass and emits a single
 JSON report. It covers every provider `loadProductionProviderModules()` registers, so a default
 lane cannot go dark without a red row. Pass a provider id (`videasy`, `rivestream`, `vidlink`,
-`anidb`, `allanime`, `miruro`, `youtube`) or media bucket (`movie`, `series`, `anime`, `youtube`)
+`allanime`, `miruro`, `youtube`) or media bucket (`movie`, `series`, `anime`, `youtube`)
 to narrow the matrix while debugging. Each smoke has
 a 45-second deadline so a provider outage returns a diagnostic report instead of hanging the pass.
 
@@ -149,7 +148,7 @@ reported through `console.error` — on stderr.
 
 ### Cloudflare-fronted providers need an impersonating curl
 
-`anidb` is behind Cloudflare, which scores the TLS handshake as well as the
+Cloudflare-fronted providers score the TLS handshake as well as the
 source IP. A developer machine on a residential IP gets the real page from a
 plain `curl`, so these smokes pass locally with nothing installed. A
 GitHub-hosted runner making the identical request is answered with

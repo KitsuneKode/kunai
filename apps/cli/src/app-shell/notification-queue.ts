@@ -202,10 +202,6 @@ export function tickNotificationQueue(
   return { state: advanced, toast: formatNotificationToast(nextCurrent) };
 }
 
-export function toastForQueueState(state: NotificationQueueState): string | null {
-  return state.current ? formatNotificationToast(state.current) : null;
-}
-
 export type SyncNotificationQueueInput = {
   readonly state: NotificationQueueState;
   readonly active: readonly ActiveNotification[];

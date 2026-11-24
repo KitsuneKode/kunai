@@ -107,7 +107,7 @@
         "AllManga-compatible client uses local fetch/decode logic for search, catalog, and source resolution.",
         "The active CLI path is browserless; unsupported extracted embeds should return deterministic failure.",
         "Source inventory: Default, Yt-mp4, S-mp4, Mp4 (mp4upload scrape), Luf-Mp4, Ak. Filemoon is gone.",
-        "2026-10: mkissa crypto rotates buildId + every derivation constant together (81 → 119 → 140 → 171 → 177 → 181; 177 moved the boot payload to group/lane/host/buildId/epoch and added an env-gated mask XOR; 181 moved it to buildId:group:host:epoch:lane and split the chunk into four string-table domains) with /client-crypto/v1/bootstrap (x-aa-boot), 7-day epochs. Pinning the buildId alone is rejected invalid_boot_token. ani-cli v5 moved primary to anidb.app."
+        "2026-10: mkissa crypto rotates buildId + every derivation constant together (81 → 119 → 140 → 171 → 177 → 181 → 189; 177 moved the boot payload to group/lane/host/buildId/epoch and added an env-gated mask XOR; 181 moved it to buildId:group:host:epoch:lane; 189 moved it to epoch|lane|group|host|buildId). GET persisted queries miss on 189, so episode resolve POSTs the desktop document once. Pinning the buildId alone is rejected invalid_boot_token. ani-cli v5 moved primary to anidb.app."
       ]
     },
     {
@@ -806,8 +806,13 @@
     },
     {
       "short": "",
+      "long": "--onboarding",
+      "description": "Run the guided onboarding wizard"
+    },
+    {
+      "short": "",
       "long": "--setup",
-      "description": "Run the setup wizard"
+      "description": "Run the guided onboarding wizard"
     },
     {
       "short": "-m",
@@ -842,17 +847,17 @@
     {
       "short": "",
       "long": "--quality",
-      "description": "Stream quality: best | 1080p | 720p | 480p"
+      "description": "Stream quality: best | 2160p | 1440p | 1080p | 720p | 480p"
     },
     {
       "short": "",
       "long": "--audio",
-      "description": "Audio track: original | en | ja | dub"
+      "description": "Audio track: original | en | ja | hi | pt | es | fr | de | dub"
     },
     {
       "short": "",
       "long": "--sub",
-      "description": "Subtitles: en | interactive | none | ar | de | es | fr | ja"
+      "description": "Subtitles: en | interactive | none | hi | pt | ar | de | es | fr | ja"
     },
     {
       "short": "",
@@ -861,8 +866,13 @@
     },
     {
       "short": "",
+      "long": "--hdr",
+      "description": "HDR mode: auto | passthrough | tone-map | sdr-only"
+    },
+    {
+      "short": "",
       "long": "--player",
-      "description": "Player backend (auto chooses for this platform)"
+      "description": "Player backend: desktop <auto|mpv>; Android/Termux <auto|mpv|vlc>"
     },
     {
       "short": "",
@@ -908,6 +918,11 @@
       "short": "",
       "long": "--dry-run",
       "description": "Print what would happen, change nothing"
+    },
+    {
+      "short": "",
+      "long": "--json",
+      "description": "Machine-readable JSON output (with -S, doctor, capabilities)"
     },
     {
       "short": "",

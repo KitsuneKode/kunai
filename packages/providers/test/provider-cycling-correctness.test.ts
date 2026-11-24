@@ -11,7 +11,7 @@ import {
   MIRURO_PIPE_BASE_URLS,
   MIRURO_WAF_FAIL_FAST_THRESHOLD,
 } from "../src/miruro/direct";
-import { rivestreamProviderModule } from "../src/rivestream/direct";
+import { clearRivestreamCachesForTest, rivestreamProviderModule } from "../src/rivestream/direct";
 
 const SERVICES = ["deadmirror", "goodmirror"] as const;
 
@@ -28,10 +28,10 @@ function buildFetch(requested: string[]): ProviderRuntimeContext["fetch"] {
     fetch: (async (url: string | URL | Request) => {
       const href = String(url);
       requested.push(href);
-      if (href.includes("requestID=VideoProviderServices")) {
+      if (href.includes("/api/providers")) {
         return jsonResponse({ data: [...SERVICES] });
       }
-      if (href.includes("service=deadmirror")) {
+      if (href.includes("provider=deadmirror")) {
         return jsonResponse({ data: [] });
       }
       // The resolve gate probes the candidate's own URL — a masterless media
@@ -109,7 +109,7 @@ describe("provider cycling correctness", () => {
     // Health was consulted for both mirrors, but the quarantined one was never
     // asked over HTTP: no prefetch, no source fetch — the cycle skipped it.
     expect(seen).toContain("deadmirror");
-    expect(requested.some((href) => href.includes("service=deadmirror"))).toBe(false);
+    expect(requested.some((href) => href.includes("provider=deadmirror"))).toBe(false);
     expect(successes).toEqual(["goodmirror"]);
     const events = result.trace?.events ?? [];
     expect(
@@ -172,7 +172,7 @@ describe("provider cycling correctness", () => {
         fetch: (async (url: string | URL | Request, init?: RequestInit) => {
           const href = String(url);
           requested.push(href);
-          if (href.includes("requestID=VideoProviderServices")) {
+          if (href.includes("/api/providers")) {
             return jsonResponse({ data: ["goodmirror"] });
           }
           // Hang until cancelled: proves the request is bound to a signal
@@ -197,17 +197,73 @@ describe("provider cycling correctness", () => {
     } as unknown as ProviderRuntimeContext;
 
     const pending = resolveStream(buildInput(), context);
-    await Bun.sleep(20);
+    await nextTurn();
     controller.abort();
     const result = await pending;
 
     expect(fetchedSignals.length).toBe(1);
     expect(fetchedSignals[0]?.aborted).toBe(true);
-    // Settles via cancellation (promptly, not via the 8s fetch timeout):
+    // Settles via cancellation (promptly, not via the source fetch timeout):
     // the cycle reports cancelled and the terminal trace says so, even
     // though the collected per-attempt failures keep the raw abort cause.
     expect(result.status).toBe("exhausted");
     const messages = (result.trace?.events ?? []).map((event) => event.message ?? "");
     expect(messages.some((message) => message.includes("was cancelled"))).toBe(true);
   });
+
+  test("a scraper timeout stops the walk instead of opening the next service", async () => {
+    clearRivestreamCachesForTest();
+    const { resolve: resolveStream } = rivestreamProviderModule;
+    if (!resolveStream) throw new Error("rivestream module must expose resolve");
+
+    const requested: string[] = [];
+    const context: ProviderRuntimeContext = {
+      providerId: "rivestream",
+      now: () => "2026-11-12T00:00:00.000Z",
+      fetch: {
+        runtime: "direct-http",
+        fetch: async (url) => {
+          const href = String(url);
+          requested.push(href);
+          if (href.includes("/api/providers")) {
+            return jsonResponse({ data: ["hung", "healthy"] });
+          }
+          if (href.includes("provider=hung")) {
+            throw new DOMException("The operation timed out.", "TimeoutError");
+          }
+          if (href.endsWith(".m3u8")) {
+            return new Response(
+              "#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.0,\nseg0.ts\n#EXT-X-ENDLIST\n",
+              { status: 200 },
+            );
+          }
+          if (!href.includes("/api/")) {
+            return new Response(new Uint8Array(2048), { status: 200 });
+          }
+          return jsonResponse({
+            data: [{ url: "https://cdn.example/healthy/1080/index.m3u8", quality: "1080" }],
+          });
+        },
+      },
+    };
+
+    const result = await resolveStream(buildInput(), context);
+    expect(result.status).toBe("exhausted");
+    expect(requested.filter((href) => href.includes("/api/provider?"))).toHaveLength(1);
+    expect(requested.some((href) => href.includes("provider=hung"))).toBe(true);
+    expect(requested.some((href) => href.includes("provider=healthy"))).toBe(false);
+    expect(
+      (result.trace?.events ?? []).some(
+        (event) =>
+          event.type === "source:failed" && event.attributes?.failureClass === "candidate-timeout",
+      ),
+    ).toBe(true);
+    clearRivestreamCachesForTest();
+  });
 });
+
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}

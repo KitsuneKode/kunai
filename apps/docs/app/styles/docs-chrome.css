@@ -18,7 +18,7 @@
   /* Positioning wrapper only — glass lives on the inner Fumadocs bar */
   #nd-home-layout #nd-nav {
     position: sticky;
-    top: 0.75rem;
+    inset-block-start: calc(0.75rem + env(safe-area-inset-top, 0px));
     z-index: 40;
     margin-inline: auto;
     max-width: min(96rem, calc(100vw - 1.5rem));
@@ -84,8 +84,10 @@
   }
 }
 
-#nd-nav a[href="/"]:hover .kunai-nav-wordmark {
-  color: var(--color-fd-primary);
+@media (hover: hover) and (pointer: fine) {
+  #nd-nav a[href="/"]:hover .kunai-nav-wordmark {
+    color: var(--color-fd-primary);
+  }
 }
 
 #nd-sidebar {

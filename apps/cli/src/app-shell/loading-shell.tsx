@@ -591,6 +591,7 @@ export const LoadingShell = React.memo(function LoadingShell({
     // toggle happened. Omitting the tick is how a marker stays stale until an
     // unrelated state change happens to rebuild the panel.
     isFavorite,
+    // oxlint-disable-next-line react/memo-dependencies -- the tick says a favorite toggled; isFavorite is a live read
     favoriteTick,
   ]);
 

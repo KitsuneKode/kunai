@@ -4,8 +4,14 @@
 // Falls back from videasy proxy to direct TMDB API on failure.
 
 import type { ContentType, SearchResult } from "@/domain/types";
+import { parseCachedSearchResults } from "@/services/catalog/cached-search-results";
+import {
+  recordFallbackCatalogAnswer,
+  recordPrimaryCatalogAnswer,
+} from "@/services/catalog/catalog-source-ledger";
 import { clearTmdbSessionCache, fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
 import { RecommendationCacheRepository } from "@kunai/storage";
+import { isJsonNumber, isJsonObject, type JsonValue } from "@kunai/types";
 
 import type {
   RecommendationHistorySeed,
@@ -25,6 +31,17 @@ export function isCacheExpired(cachedAt: number, ttlMs: number): boolean {
 
 const TTL_SIMILAR = 24 * 60 * 60 * 1000;
 const TTL_TRENDING = 6 * 60 * 60 * 1000;
+/**
+ * How long a row survives past its freshness TTL as the last good answer.
+ *
+ * Freshness and retention are different clocks. The repository deletes a row
+ * on read once `expires_at` passes, and startup maintenance prunes expired
+ * rows, so writing `expires_at = now + freshness TTL` meant the "stale"
+ * fallback could never find anything older than the TTL: a TMDB outage longer
+ * than 6 hours blanked trending and recommendations. The row now lives for the
+ * retention window; freshness is judged from the payload's `cachedAt`.
+ */
+export const RECOMMENDATION_STALE_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
 
 // ── Fetch helper ──────────────────────────────────────────────────────────────
 
@@ -69,35 +86,59 @@ function toSearchResult(
 export class RecommendationServiceImpl implements RecommendationService {
   constructor(private readonly cacheRepository: RecommendationCacheRepository) {}
 
+  /** Answers cached before this instant are not fresh (a user refresh). */
+  private freshAfter = 0;
+
+  /**
+   * A refresh forces live requests without deleting anything. Deleting the
+   * table (what this used to do, on every Discover open) also deleted the
+   * last-known-good rows — trending lists included — at exactly the moment an
+   * outage would need them.
+   */
   async clearCache(): Promise<void> {
-    this.cacheRepository.clear();
+    this.freshAfter = Date.now();
     clearTmdbSessionCache();
   }
 
   private readCacheEntry(key: string, ttlMs: number): CacheValue | null {
     const parsed = this.readAnyCacheEntry(key);
-    if (!parsed) return null;
-    return isCacheExpired(parsed.cachedAt, ttlMs) ? null : parsed;
+    if (!parsed || parsed.cachedAt <= this.freshAfter) return null;
+    if (isCacheExpired(parsed.cachedAt, ttlMs)) return null;
+    // A fresh entry is a recent live TMDB answer, so it counts as primary.
+    recordRecommendationsAnswer(false);
+    return parsed;
   }
 
   private readAnyCacheEntry(key: string): CacheValue | null {
     const entry = this.cacheRepository.get(key);
     if (!entry) return null;
     try {
-      const parsed = JSON.parse(entry.payloadJson) as CacheValue;
-      if (!parsed || typeof parsed.cachedAt !== "number" || !Array.isArray(parsed.items)) {
-        return null;
-      }
-      return parsed;
+      const parsed: JsonValue = JSON.parse(entry.payloadJson);
+      if (!isJsonObject(parsed) || !isJsonNumber(parsed.cachedAt)) return null;
+      const items = parseCachedSearchResults(parsed.items);
+      return items ? { cachedAt: parsed.cachedAt, items } : null;
     } catch {
       return null;
     }
   }
 
-  private writeCacheEntry(key: string, value: CacheValue, ttlMs: number): void {
+  private writeCacheEntry(key: string, value: CacheValue): void {
+    // Only live TMDB answers are written, so a write is a healthy answer.
+    recordRecommendationsAnswer(false);
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + ttlMs).toISOString();
+    const expiresAt = new Date(now.getTime() + RECOMMENDATION_STALE_RETENTION_MS).toISOString();
     this.cacheRepository.set(key, JSON.stringify(value), expiresAt, now.toISOString());
+  }
+
+  /** The last good answer for `key`, marked stale, or an empty section. */
+  private staleSection(
+    key: string,
+    reason: RecommendationSection["reason"],
+  ): RecommendationSection {
+    const stale = this.readAnyCacheEntry(key);
+    if (!stale || stale.items.length === 0) return { label: "", reason, items: [] };
+    recordRecommendationsAnswer(true);
+    return { label: "", reason, items: stale.items, staleSince: stale.cachedAt };
   }
 
   async getForTitle(tmdbId: string, type: ContentType): Promise<RecommendationSection> {
@@ -108,15 +149,13 @@ export class RecommendationServiceImpl implements RecommendationService {
     }
     const segment = type === "movie" ? "movie" : "tv";
     const data = await fetchRecommendationData(`/${segment}/${tmdbId}/recommendations`);
-    if (!data) {
-      const stale = this.readAnyCacheEntry(key);
-      return { label: "", reason: "similar", items: stale?.items ?? [] };
-    }
+    // A 200 without a `results` array is a broken answer, not an empty one.
+    if (!data || !Array.isArray(data.results)) return this.staleSection(key, "similar");
     const items = (data?.results ?? [])
       .map((r) => toSearchResult(r, segment === "movie" ? "movie" : "tv"))
       .filter((r): r is SearchResult => r !== null)
       .slice(0, 10);
-    this.writeCacheEntry(key, { cachedAt: Date.now(), items }, TTL_SIMILAR);
+    this.writeCacheEntry(key, { cachedAt: Date.now(), items });
     return { label: "", reason: "similar", items };
   }
 
@@ -127,15 +166,12 @@ export class RecommendationServiceImpl implements RecommendationService {
       return { label: "", reason: "trending", items: entry.items };
     }
     const data = await fetchRecommendationData("/trending/all/week");
-    if (!data) {
-      const stale = this.readAnyCacheEntry(key);
-      return { label: "", reason: "trending", items: stale?.items ?? [] };
-    }
+    if (!data || !Array.isArray(data.results)) return this.staleSection(key, "trending");
     const items = (data?.results ?? [])
       .map((r) => toSearchResult(r))
       .filter((r): r is SearchResult => r !== null)
       .slice(0, 10);
-    this.writeCacheEntry(key, { cachedAt: Date.now(), items }, TTL_TRENDING);
+    this.writeCacheEntry(key, { cachedAt: Date.now(), items });
     return { label: "", reason: "trending", items };
   }
 
@@ -199,17 +235,20 @@ export class RecommendationServiceImpl implements RecommendationService {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3)
       .map(([genreId]) => genreId);
-    if (topGenres.length === 0) {
-      const stale = this.readAnyCacheEntry(profileKey);
-      return { label: "", reason: "genre-affinity", items: stale?.items ?? [] };
-    }
+    if (topGenres.length === 0) return this.staleSection(profileKey, "genre-affinity");
 
     const [movieCandidates, tvCandidates] = await Promise.all([
       discoverByGenres(topGenres, "movie"),
       discoverByGenres(topGenres, "tv"),
     ]);
+    // null = that request failed; [] = a valid answer with no matches. Only a
+    // total failure falls back; writing [] there would overwrite the last
+    // good answer with nothing.
+    if (movieCandidates === null && tvCandidates === null) {
+      return this.staleSection(profileKey, "genre-affinity");
+    }
 
-    const scored = [...movieCandidates, ...tvCandidates]
+    const scored = [...(movieCandidates ?? []), ...(tvCandidates ?? [])]
       .filter((candidate) => !watchedTitles.has(normalizeTitle(candidate.item.title)))
       .map((candidate) => ({
         item: candidate.item,
@@ -225,7 +264,7 @@ export class RecommendationServiceImpl implements RecommendationService {
       .slice(0, 10)
       .map((entry) => entry.item);
     const items = best.length > 0 ? best : scored.slice(0, 10).map((entry) => entry.item);
-    this.writeCacheEntry(profileKey, { cachedAt: Date.now(), items }, TTL_SIMILAR);
+    this.writeCacheEntry(profileKey, { cachedAt: Date.now(), items });
     return { label: "", reason: "genre-affinity", items };
   }
 
@@ -245,10 +284,7 @@ export class RecommendationServiceImpl implements RecommendationService {
         `/discover/movie?with_genres=${genres}&sort_by=vote_average.desc&vote_count.gte=200`,
       ).catch(() => null) as Promise<{ results?: Record<string, unknown>[] } | null>,
     ]);
-    if (!tvData && !movieData) {
-      const stale = this.readAnyCacheEntry(key);
-      return { label: "", reason: "genre-affinity", items: stale?.items ?? [] };
-    }
+    if (!tvData && !movieData) return this.staleSection(key, "genre-affinity");
 
     const seen = new Set<string>();
     const items = [...(tvData?.results ?? []), ...(movieData?.results ?? [])]
@@ -261,7 +297,7 @@ export class RecommendationServiceImpl implements RecommendationService {
         return true;
       })
       .slice(0, 10);
-    this.writeCacheEntry(key, { cachedAt: Date.now(), items }, TTL_SIMILAR);
+    this.writeCacheEntry(key, { cachedAt: Date.now(), items });
     return { label: "", reason: "genre-affinity", items };
   }
 }
@@ -341,14 +377,15 @@ async function fetchTmdbGenres(id: string, mediaType: "movie" | "tv"): Promise<r
 async function discoverByGenres(
   genreIds: readonly number[],
   mediaType: "movie" | "tv",
-): Promise<readonly { item: SearchResult; genreIds: readonly number[] }[]> {
+): Promise<readonly { item: SearchResult; genreIds: readonly number[] }[] | null> {
   const genres = genreIds.join(",");
   const data = (await tmdbFetch(
     `/discover/${mediaType}?with_genres=${genres}&sort_by=vote_average.desc&vote_count.gte=200&page=1`,
   ).catch(() => null)) as {
     results?: Record<string, unknown>[];
   } | null;
-  const candidates = (data?.results ?? [])
+  if (!data || !Array.isArray(data.results)) return null;
+  const candidates = data.results
     .map((result) => {
       const item = toSearchResult(result, mediaType);
       if (!item) return null;
@@ -361,4 +398,25 @@ async function discoverByGenres(
       (candidate): candidate is { item: SearchResult; genreIds: number[] } => candidate !== null,
     );
   return candidates;
+}
+
+function recordRecommendationsAnswer(fromSaved: boolean): void {
+  if (fromSaved) {
+    recordFallbackCatalogAnswer(
+      {
+        capability: "recommendations",
+        lane: "movie-series",
+        sourceId: "saved",
+        sourceName: "saved list",
+      },
+      "TMDB unreachable",
+    );
+    return;
+  }
+  recordPrimaryCatalogAnswer({
+    capability: "recommendations",
+    lane: "movie-series",
+    sourceId: "tmdb",
+    sourceName: "TMDB",
+  });
 }

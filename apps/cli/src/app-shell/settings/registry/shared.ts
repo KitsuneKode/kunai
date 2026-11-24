@@ -6,11 +6,13 @@ import {
 import { getConfigMetadata } from "@/services/persistence/config-metadata";
 import type {
   DiscoverMode,
+  HdrMode,
   KitsuneConfig,
   QuitNearEndBehavior,
   QuitNearEndThresholdMode,
 } from "@/services/persistence/ConfigService";
 import { resolvePresenceClientIdSource } from "@/services/presence/PresenceServiceImpl";
+import { HDR_MODES } from "@kunai/config";
 import type { StartupPriority } from "@kunai/types";
 
 import type { EnumOption } from "../types";
@@ -51,6 +53,32 @@ export const PRE_PLAY_CONFIRM_SETTINGS_OPTIONS: readonly EnumOption[] = [
     detail: "Show the Tracks sheet on every play that resolves a stream inventory",
   },
 ];
+
+// Exhaustive by type: a mode added to HDR_MODES fails to compile until it has a row.
+const HDR_MODE_META = {
+  auto: {
+    label: "Auto",
+    detail: "Leave HDR to mpv and your mpv.conf; mpv tone-maps HDR to SDR by default",
+  },
+  passthrough: {
+    label: "HDR passthrough",
+    detail: "HDR displays: output HDR via mpv gpu-next; needs gpu-next, else tone-maps",
+  },
+  "tone-map": {
+    label: "Tone-map to SDR",
+    detail: "Force SDR output, overriding mpv.conf; bt.2446a tone-mapping with gpu-next",
+  },
+  "sdr-only": {
+    label: "Prefer SDR",
+    detail: "Force SDR output; on a picked source, prefer SDR at equal quality",
+  },
+} as const satisfies Record<HdrMode, { readonly label: string; readonly detail: string }>;
+
+export const HDR_MODE_OPTIONS: readonly EnumOption[] = HDR_MODES.map((value) => ({
+  value,
+  label: HDR_MODE_META[value].label,
+  detail: HDR_MODE_META[value].detail,
+}));
 
 export const ANIME_TITLE_SETTINGS_OPTIONS: readonly EnumOption[] = [
   { value: "english", label: "English", detail: "Prefer localized English titles when known" },

@@ -340,6 +340,60 @@ describe("createCredentialVault backend selection", () => {
   });
 });
 
+describe("secret-service delete reports what really happened", () => {
+  function linuxVault(answer: (argv: readonly string[]) => Awaited<ReturnType<CredentialSpawn>>) {
+    return createCredentialVault({
+      paths: fakePaths("/nonexistent-kunai-test"),
+      platform: "linux",
+      env: {},
+      which: (cmd) => (cmd === "secret-tool" ? "/usr/bin/secret-tool" : null),
+      spawn: async (argv) =>
+        argv.includes("__probe__")
+          ? { exitCode: 1, stdout: "", stderr: "", timedOut: false }
+          : answer(argv),
+    });
+  }
+
+  test("an entry that was already absent deletes cleanly", async () => {
+    const vault = await linuxVault(() => ({
+      exitCode: 1,
+      stdout: "",
+      stderr: "",
+      timedOut: false,
+    }));
+    await expect(vault.delete("k")).resolves.toBeUndefined();
+  });
+
+  test("a timed-out clear is a failure, not a disconnect", async () => {
+    const vault = await linuxVault((argv) =>
+      argv[1] === "clear"
+        ? { exitCode: 143, stdout: "", stderr: "", timedOut: true }
+        : { exitCode: 0, stdout: "still-here", stderr: "", timedOut: false },
+    );
+    await expect(vault.delete("k")).rejects.toThrow("timed out");
+  });
+
+  test("exit 1 with an error message is a daemon fault, not an absent entry", async () => {
+    const vault = await linuxVault(() => ({
+      exitCode: 1,
+      stdout: "",
+      stderr: "Cannot autolaunch D-Bus without X11 $DISPLAY",
+      timedOut: false,
+    }));
+    await expect(vault.delete("k")).rejects.toThrow("may still be stored");
+    await expect(vault.get("k")).rejects.toThrow("secret-tool lookup failed");
+  });
+
+  test("a failed clear whose entry is still readable is reported", async () => {
+    const vault = await linuxVault((argv) =>
+      argv[1] === "clear"
+        ? { exitCode: 2, stdout: "", stderr: "daemon fault", timedOut: false }
+        : { exitCode: 0, stdout: "still-here", stderr: "", timedOut: false },
+    );
+    await expect(vault.delete("k")).rejects.toThrow("may still be stored");
+  });
+});
+
 describe("vault read failures abort mutations", () => {
   let dir: string;
   beforeEach(async () => {

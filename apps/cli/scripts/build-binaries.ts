@@ -16,7 +16,7 @@
 //   bun run scripts/build-binaries.ts --output-directory /tmp/kunai-binaries
 
 import { existsSync } from "node:fs";
-import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import {
@@ -26,6 +26,7 @@ import {
 import { RELEASE_BINARY_TARGETS } from "../src/services/update/platform-assets";
 import { buildReleaseArchives } from "./build-release-archives";
 import {
+  assertCompiledBinaryBudget,
   assertNoForbiddenReleaseInputs,
   compileBinaryBuildOptions,
   formatBuildSize,
@@ -111,6 +112,9 @@ async function compileTarget(
   }
 
   await chmod(outfile, 0o755).catch(() => {});
+  // The per-target budget is the early warning; the 128 MiB updater ceiling
+  // checked later by the archive step is the hard wall.
+  assertCompiledBinaryBudget(target.id, (await stat(outfile)).size);
 
   return {
     target,

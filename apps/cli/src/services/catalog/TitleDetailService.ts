@@ -35,8 +35,9 @@ import {
 } from "@/domain/catalog/title-detail";
 import { upgradeContentTypeFromAniListFormat } from "@/domain/media/anilist-format";
 import type { ContentType } from "@/domain/types";
-import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
 import { dbg } from "@/logger";
+import { AniListRequestError, postAniListGraphql } from "@/services/catalog/anilist-client";
+import { evictOverflowedEntries } from "@/services/catalog/bounded-cache";
 import { clearTmdbSessionCache, fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
 import {
   filterPlayableEpisodes,
@@ -46,6 +47,7 @@ import {
   seasonSummaryNeedsEpisodeVerification,
 } from "@/services/catalog/tmdb-release";
 import type { ProviderExternalIds } from "@kunai/types";
+import { isJsonObject } from "@kunai/types";
 
 import { aniListExternalLinks, tmdbExternalLinks, toTrailerUrl } from "./title-detail-extras";
 
@@ -54,7 +56,6 @@ import { aniListExternalLinks, tmdbExternalLinks, toTrailerUrl } from "./title-d
 // ---------------------------------------------------------------------------
 
 const TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p";
-const ANILIST_GRAPHQL = "https://graphql.anilist.co";
 
 const FETCH_TIMEOUT_MS = 8_000;
 const CREDITS_CAST_LIMIT = 15;
@@ -65,7 +66,7 @@ const CREDITS_CAST_LIMIT = 15;
 
 interface CacheEntry {
   readonly detail: TitleDetail;
-  readonly fetchedAt: number;
+  readonly expiresAt: number;
 }
 
 // TTL: 5 minutes within a session (enough to survive repeated renders without
@@ -88,7 +89,16 @@ export function bindTitleDetailCrosswalk(lookup: CatalogCrosswalkLookup | undefi
   boundCrosswalkLookup = lookup;
 }
 
+/** True while a container's crosswalk is bound; dispose must clear it. */
+export function isTitleDetailCrosswalkBound(): boolean {
+  return boundCrosswalkLookup !== undefined;
+}
+
 const CACHE_TTL_MS = 5 * 60 * 1_000;
+// Bounded session cache — long browse/search sessions visit hundreds of titles.
+const MAX_DETAIL_CACHE_ENTRIES = 256;
+/** Count of AniList detail fetches that failed in a retryable way (see fetchTitleDetail). */
+let degradedAniListFetches = 0;
 const detailCache = new Map<string, CacheEntry>();
 
 function cacheKey(id: string, type: ContentType): string {
@@ -108,7 +118,7 @@ export function clearTitleDetailCache(): void {
  */
 export function peekTitleDetail(id: string, type: ContentType): TitleDetail | undefined {
   const cached = detailCache.get(cacheKey(id, type));
-  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) return cached.detail;
+  if (cached && cached.expiresAt > Date.now()) return cached.detail;
   return undefined;
 }
 
@@ -134,12 +144,25 @@ export async function fetchTitleDetail(
   const key = cacheKey(id, type);
   const now = Date.now();
   const cached = detailCache.get(key);
-  if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
+  if (cached && cached.expiresAt > now) {
     return cached.detail;
   }
 
+  if (signal?.aborted) {
+    return mergeDetails(id, type, null, null);
+  }
+
+  const degradedBefore = degradedAniListFetches;
   const detail = await resolveTitleDetail(id, type, signal, hints);
-  detailCache.set(key, { detail, fetchedAt: now });
+  // A detail built while a catalog was unreachable, rate-limited, or aborted
+  // produces an empty placeholder ("Unknown") with no contributing sources;
+  // caching it would hide the title's metadata for the full TTL after recovery.
+  const hasRealSource = detail.sources !== undefined && detail.sources.length > 0;
+  if (!signal?.aborted && hasRealSource && degradedAniListFetches === degradedBefore) {
+    const storedAt = Date.now();
+    detailCache.set(key, { detail, expiresAt: storedAt + CACHE_TTL_MS });
+    evictOverflowedEntries(detailCache, MAX_DETAIL_CACHE_ENTRIES, storedAt);
+  }
   return detail;
 }
 
@@ -754,28 +777,19 @@ async function fetchAniListDetail(
   anilistId: string,
   signal?: AbortSignal,
 ): Promise<AniListDetailResult | null> {
-  const res = await fetch(ANILIST_GRAPHQL, {
-    method: "POST",
-    signal: withTimeoutSignal(signal, FETCH_TIMEOUT_MS),
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({
-      query: ANILIST_DETAIL_QUERY,
-      variables: { id: Number(anilistId) },
-    }),
-  }).catch(() => null);
+  // Shared client: rate-limit cooldown, dedupe, bounded timeout. Any failure
+  // means "no AniList detail", exactly as before; a retryable one is counted
+  // so the caller does not cache the placeholder it produces.
+  const json = await postAniListGraphql(
+    { query: ANILIST_DETAIL_QUERY, variables: { id: Number(anilistId) } },
+    { signal, timeoutMs: FETCH_TIMEOUT_MS },
+  ).catch((error: Error) => {
+    if (error instanceof AniListRequestError && error.kind !== "http") degradedAniListFetches += 1;
+    return null;
+  });
+  const data = json && isJsonObject(json.data) ? json.data : null;
 
-  if (!res || !res.ok) return null;
-
-  const json = (await res.json().catch(() => null)) as {
-    readonly data?: {
-      readonly Media?: unknown;
-    };
-  } | null;
-
-  const media = readRecord(json?.data?.Media);
+  const media = readRecord(data?.Media);
   if (!media.id) return null;
 
   const title =

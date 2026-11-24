@@ -5,7 +5,6 @@ import {
   applyAnimeProviderOrder,
   applySeriesProviderOrder,
   applyYoutubeProviderOrder,
-  describeProviderOrder,
   resolveAnimeProviderOrder,
   resolveSeriesProviderOrder,
   resolveYoutubeProviderOrder,
@@ -59,7 +58,14 @@ export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
   return [
     {
       kind: "section",
-      id: "section:providers",
+      id: "section:sources",
+      label: "Sources",
+      tabLabel: "Sources",
+      detail: "Providers, fallback order, switches, relay, and YouTube metadata",
+    },
+    {
+      kind: "subheading",
+      id: "subheading:providers",
       label: "Providers",
       detail: "Choose a default provider and order your automatic fallbacks",
     },
@@ -124,8 +130,8 @@ export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
       providerOptions: (orderCtx) => orderCtx.youtubeProviderOptions,
     },
     {
-      kind: "section",
-      id: "section:provider-toggles",
+      kind: "subheading",
+      id: "subheading:provider-toggles",
       label: "Provider switches",
       detail: "Off providers stay off; enable a provider to restore an empty lane",
       configKeys: ["disabledProviders"],
@@ -181,8 +187,4 @@ export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
       tone: describeVideasySessionToken(ctx.config) === "missing" ? "warning" : "info",
     },
   ];
-}
-
-export function summarizeProviderOrder(config: SettingsRegistryContext["config"]): string {
-  return describeProviderOrder(resolveSeriesProviderOrder(config));
 }

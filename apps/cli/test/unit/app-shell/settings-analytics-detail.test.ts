@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { analyticsSettingDetail } from "@/app-shell/settings/registry/general";
+import { analyticsSettingDetail } from "@/app-shell/settings/registry/privacy";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
 function config(over: Partial<KitsuneConfig>): KitsuneConfig {

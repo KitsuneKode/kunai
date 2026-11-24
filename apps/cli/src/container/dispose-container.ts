@@ -1,5 +1,8 @@
+import { setDefaultCatalogDurableCache } from "@/services/catalog/CatalogDiscoveryService";
+import { setTmdbDurableCache, setTmdbUserKeySource } from "@/services/catalog/tmdb-proxy";
 import type { KunaiDatabase } from "@kunai/storage";
 
+import { bindTitleDetailCrosswalk } from "../services/catalog/TitleDetailService";
 import { bindNetworkObserver } from "../services/network/network-observation";
 import type { Container } from "./types";
 
@@ -26,7 +29,8 @@ export function abortOrphanDownloadResolve(container: Container): void {
 /**
  * Dispose the container exactly once: concurrent calls share one in-flight
  * promise, every step is failure-isolated (a throwing DB close must not skip
- * the next close), and the network observer is always unbound.
+ * the next close), and the network observer and title-detail crosswalk are
+ * always unbound.
  */
 export function disposeContainer(container: Container | null | undefined): Promise<void> {
   if (!container) return Promise.resolve();
@@ -67,9 +71,19 @@ async function runDisposal(container: Container, handles: ContainerDisposeHandle
     await bestEffort(() => container.syncService.shutdown());
     await bestEffort(() => container.syncTokenStore.whenIdle());
     await bestEffort(() => container.diagnosticsService.flush());
+    // The title-detail crosswalk is a module-level reader of `cacheDb`. Unbind
+    // it before the close, or the next detail lookup in this process — another
+    // container, or the next test file — queries a closed database.
+    bindTitleDetailCrosswalk(undefined);
+    // Same for the trending last-known-good store: unbound before its DB
+    // closes, so a later container or test never writes into a dead handle.
+    setDefaultCatalogDurableCache(null);
+    setTmdbDurableCache(null);
+    setTmdbUserKeySource(null);
     await bestEffort(() => handles.dataDb.close());
     await bestEffort(() => handles.cacheDb.close());
   } finally {
     bindNetworkObserver(undefined);
+    bindTitleDetailCrosswalk(undefined);
   }
 }

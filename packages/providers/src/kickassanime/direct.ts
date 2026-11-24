@@ -26,7 +26,13 @@ import type {
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import { formatAnimeSourceDetail } from "../shared/anime-source-presentation";
 import { directStreamFetchSignal } from "../shared/direct-stream-source";
-import { parseHlsMasterAudioRenditions, type HlsAudioRendition } from "../shared/hls-ladder";
+import {
+  detectHlsMasterDynamicRange,
+  parseHlsMasterAudioRenditions,
+  parseHlsMasterMaxHeight,
+  type HlsAudioRendition,
+} from "../shared/hls-ladder";
+import { getEffectiveProviderMirrors } from "../shared/hotfix-runtime";
 import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
 import { verifyCandidateStream } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
@@ -37,6 +43,7 @@ import {
 } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
 import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
+import { trimTrailingSlashes } from "../shared/trim-trailing-slashes";
 import { kickassanimeManifest, KICKASSANIME_PROVIDER_ID } from "./manifest";
 import {
   kaaEpisodeNumbers,
@@ -65,6 +72,23 @@ const SUB_LOCALE = "ja-JP";
 const DUB_LOCALE = "en-US";
 
 let currentBase = PRIMARY_BASE;
+let lastHotfixSignature = "";
+
+function effectiveKaaMirrors(): readonly string[] {
+  return getEffectiveProviderMirrors(KICKASSANIME_PROVIDER_ID, [PRIMARY_BASE]).map((u) =>
+    trimTrailingSlashes(u),
+  );
+}
+
+export function effectiveKaaBase(): string {
+  const mirrors = effectiveKaaMirrors();
+  const sig = mirrors.join("|");
+  if (sig !== lastHotfixSignature) {
+    lastHotfixSignature = sig;
+    if (mirrors[0]) currentBase = mirrors[0];
+  }
+  return currentBase;
+}
 
 type Requester = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -96,12 +120,23 @@ async function kaaFetch(
       ...(init.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
       signal: directStreamFetchSignal(context.signal, KAA_FETCH_TIMEOUT_MS),
     });
+  const activeBase = effectiveKaaBase();
   try {
-    return await attempt(currentBase);
+    return await attempt(activeBase);
   } catch (error) {
     if (context.signal?.aborted) throw error;
+    for (const candidate of effectiveKaaMirrors()) {
+      if (candidate === activeBase) continue;
+      try {
+        const res = await attempt(candidate);
+        currentBase = candidate;
+        return res;
+      } catch {
+        if (context.signal?.aborted) throw error;
+      }
+    }
     const rotated = await discoverKaaBase(context);
-    if (!rotated || rotated === currentBase) throw error;
+    if (!rotated || rotated === activeBase) throw error;
     currentBase = rotated;
     return attempt(currentBase);
   }
@@ -535,6 +570,8 @@ export const kickassanimeProviderModule: CoreProviderModule = {
       });
     }
     const sourceId = `source:${KICKASSANIME_PROVIDER_ID}:${server.name.toLowerCase()}:${presentation}`;
+    const maxHeight = master ? parseHlsMasterMaxHeight(master) : undefined;
+    const dynamicRange = master ? detectHlsMasterDynamicRange(master) : undefined;
     const stream: StreamCandidate = {
       id: createStreamId(KICKASSANIME_PROVIDER_ID, [slug, episode, presentation, player.manifest]),
       providerId: KICKASSANIME_PROVIDER_ID,
@@ -543,11 +580,14 @@ export const kickassanimeProviderModule: CoreProviderModule = {
       protocol: "hls",
       container: "m3u8",
       headers,
-      // The master is a ladder (360p/540p/720p) mpv picks from, and its variant
-      // playlists are video-only — the audio lives in the rendition group, so splitting the
-      // ladder into per-quality URLs would hand mpv silent video.
-      qualityLabel: "auto",
-      qualityRank: 0,
+      // The master is a ladder mpv picks from, and its variant playlists are
+      // video-only — the audio lives in the rendition group, so splitting the
+      // ladder into per-quality URLs would hand mpv silent video. Keep the
+      // whole master URL while reporting the ladder's true top resolution for
+      // cross-provider quality ranking.
+      qualityLabel: maxHeight ? `${maxHeight}p` : "auto",
+      qualityRank: maxHeight ?? 0,
+      dynamicRange,
       presentation,
       audioLanguages: [selected.language],
       ...(selected.nativeLabel

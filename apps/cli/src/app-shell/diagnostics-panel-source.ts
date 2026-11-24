@@ -1,10 +1,13 @@
 import type { Container } from "@/container";
+import { catalogAnswersSnapshot } from "@/services/catalog/catalog-source-ledger";
+import { tmdbCredentialStatus } from "@/services/catalog/tmdb-proxy";
 import { buildDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 import {
   getRuntimeMemoryLine,
   getRuntimeMemorySamples,
   summarizeRuntimeMemoryTrend,
 } from "@/services/diagnostics/runtime-memory";
+import { resolveWyzieApiKey } from "@/subtitle";
 
 import { buildDiagnosticsPanelModel, type DiagnosticsPanelModel } from "./diagnostics-panel.model";
 import type { DiagnosticsPanelLineInput } from "./panel-data";
@@ -40,6 +43,12 @@ export function buildDiagnosticsPanelInput(
     providers: container.providerRegistry.getAllRegistered().map((provider) => provider.metadata),
     getProviderHealth: (providerId) => container.providerHealth.get(providerId),
     expandedSpanIds: options.expandedSpanIds,
+    catalogAnswers: catalogAnswersSnapshot(),
+    now: Date.now(),
+    serviceKeys: {
+      tmdb: tmdbCredentialStatus(),
+      wyzieConfigured: resolveWyzieApiKey(container.config.wyzieApiKey) !== "",
+    },
   };
 }
 

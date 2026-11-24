@@ -2,6 +2,12 @@ import { join } from "node:path";
 
 import { createProviderTitleBridgePort } from "@/infra/storage/provider-title-bridge-port";
 import { dbg, initLogger } from "@/logger";
+import { setDefaultCatalogDurableCache } from "@/services/catalog/CatalogDiscoveryService";
+import {
+  createCatalogDurableCache,
+  createTmdbDurableCache,
+} from "@/services/catalog/durable-json-cache";
+import { setTmdbDurableCache, setTmdbUserKeySource } from "@/services/catalog/tmdb-proxy";
 import { runHistoryIdentityConsolidator } from "@/services/history-metadata/HistoryIdentityConsolidator";
 import { runHistoryWatchLedgerBackfill } from "@/services/history-metadata/HistoryWatchLedgerBackfill";
 import { runOfflineAssetIdentityBackfill } from "@/services/offline/offline-asset-identity-backfill";
@@ -286,6 +292,12 @@ export async function bootstrapPersistence(
   const playbackEventRepository = new PlaybackEventRepository(dataDb);
   const cacheStore = new SqliteCacheStoreImpl(new StreamCacheRepository(cacheDb));
   const recommendationCache = new RecommendationCacheRepository(cacheDb);
+  // Trending rails keep a durable last-known-good list in the same table, so
+  // an upstream outage or a cold start shows the last answer instead of nothing.
+  setDefaultCatalogDurableCache(createCatalogDurableCache(recommendationCache));
+  // Same for series structure: a show opened before still lists its seasons
+  // and episodes, with TMDB numbering, when every TMDB host is down.
+  setTmdbDurableCache(createTmdbDurableCache(recommendationCache));
   const providerHealth = new ProviderHealthRepository(cacheDb);
   const { listDeprecatedVidkingEndpoints } = await import("@kunai/providers/videasy");
   const endpointHealth = new ProviderEndpointHealthService(
@@ -403,6 +415,8 @@ export async function bootstrapPersistence(
     onFallback: (backend, reason) => dbg("credential-vault", `using ${backend} backend: ${reason}`),
   });
   const config = await ConfigServiceImpl.load(configStore, credentialVault);
+  // Read live per request, so a key saved in settings applies without a restart.
+  setTmdbUserKeySource(() => config.tmdbApiKey);
 
   // Theme applies here, once, before any frame renders: `KUNAI_THEME` is a
   // per-run override that is never persisted; otherwise the configured theme.
@@ -450,6 +464,7 @@ export async function bootstrapPersistence(
     adapters: [anilistAdapter, tmdbAdapter],
     outbox: new SyncOutboxRepository(dataDb),
     config: { read: async () => ({ sync: config.getRaw().sync }) },
+    isOfflineIntent: () => config.offlineMode,
     diagnostics: diagnosticsService,
   });
 

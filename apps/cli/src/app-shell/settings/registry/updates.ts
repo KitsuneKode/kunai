@@ -3,8 +3,8 @@ import type { SettingRowDef, SettingsRegistryContext } from "../types";
 export function updateSettingsRows(_ctx: SettingsRegistryContext): SettingRowDef[] {
   return [
     {
-      kind: "section",
-      id: "section:updates",
+      kind: "subheading",
+      id: "subheading:updates",
       label: "Updates",
       detail: "Release check behavior",
     },

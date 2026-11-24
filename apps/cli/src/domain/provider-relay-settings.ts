@@ -49,10 +49,6 @@ export function describeProviderRelay(config: KitsuneConfig): string {
   return "on";
 }
 
-export function describeProviderRelayFallback(config: KitsuneConfig): string {
-  return config.providerRelay.fallbackToDirect === false ? "off" : "on";
-}
-
 export function describeProviderRelayUrl(config: KitsuneConfig): string {
   const effective = resolveEffectiveRelayFromConfig(config);
   if (!effective.baseUrl) return "not set";
@@ -112,18 +108,4 @@ export function toggleProviderRelayProvider(
   const providers = { ...relay.providers };
   providers[providerId] = { ...providers[providerId], enabled: !currentlyEnabled };
   return { ...relay, providers };
-}
-
-export function setProviderRelayEnabled(
-  relay: KitsuneConfig["providerRelay"],
-  enabled: boolean,
-): KitsuneConfig["providerRelay"] {
-  return { ...relay, enabled };
-}
-
-export function setProviderRelayFallbackToDirect(
-  relay: KitsuneConfig["providerRelay"],
-  fallbackToDirect: boolean,
-): KitsuneConfig["providerRelay"] {
-  return { ...relay, fallbackToDirect };
 }

@@ -30,9 +30,44 @@
 // =============================================================================
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative as relativePath, resolve, sep } from "node:path";
 
 const ROOT = resolve(import.meta.dir, "..");
+
+/**
+ * What a clean checkout contains: tracked files plus untracked ones git would
+ * pick up, and every directory above them. A gitignored file that happens to
+ * exist on this machine is not in it, so the check gives the same answer
+ * locally as in CI. The docs app's gitignored AGENTS.md once passed here and
+ * failed in CI that way.
+ * Falls back to the filesystem when git is unavailable.
+ */
+const CHECKOUT_PATHS: ReadonlySet<string> | undefined = (() => {
+  const listed = Bun.spawnSync(["git", "ls-files", "-z", "-co", "--exclude-standard"], {
+    cwd: ROOT,
+    stdout: "pipe",
+    stderr: "ignore",
+  });
+  if (listed.exitCode !== 0) return undefined;
+  const paths = new Set<string>([""]);
+  for (const file of listed.stdout.toString().split("\0")) {
+    if (!file) continue;
+    paths.add(file);
+    for (let cut = file.lastIndexOf("/"); cut > 0; cut = file.lastIndexOf("/", cut - 1)) {
+      const dir = file.slice(0, cut);
+      if (paths.has(dir)) break;
+      paths.add(dir);
+    }
+  }
+  return paths;
+})();
+
+function existsInCheckout(absolute: string): boolean {
+  if (!CHECKOUT_PATHS) return existsSync(absolute);
+  const rel = relativePath(ROOT, absolute).split(sep).join("/");
+  if (rel.startsWith("..")) return existsSync(absolute);
+  return CHECKOUT_PATHS.has(rel.replace(/\/$/, ""));
+}
 
 /**
  * Docs that route agents. `archive/` is history — its paths are expected to be
@@ -118,7 +153,7 @@ function checkFile(absolute: string): Finding[] {
 
       for (const [, target] of line.matchAll(CODE_PATH)) {
         if (!target || isAllowedMissing(target)) continue;
-        if (!existsSync(join(ROOT, target))) {
+        if (!existsInCheckout(join(ROOT, target))) {
           findings.push({ file: relative, target, line: index + 1 });
         }
       }
@@ -129,7 +164,7 @@ function checkFile(absolute: string): Finding[] {
         // file it sits in, so accepting a repo-root fallback here passed links
         // that were already broken for a human reader — `.docs/providers.md`
         // written from inside `.docs/` is one, and it shipped.
-        if (!existsSync(join(dirname(absolute), target))) {
+        if (!existsInCheckout(join(dirname(absolute), target))) {
           findings.push({ file: relative, target, line: index + 1 });
         }
       }
@@ -201,8 +236,8 @@ function checkSourceFile(relative: string): Finding[] {
       // A path ending a sentence captures its punctuation: `x.md.` or `x.ts),`.
       const target = raw?.replace(/[.,;:)\]]+$/, "");
       if (!target || !CITED_FILE.test(target) || isAllowedMissing(target)) continue;
-      const resolvesInPackage = pkg !== undefined && existsSync(join(ROOT, pkg, target));
-      if (resolvesInPackage || existsSync(join(ROOT, target))) continue;
+      const resolvesInPackage = pkg !== undefined && existsInCheckout(join(ROOT, pkg, target));
+      if (resolvesInPackage || existsInCheckout(join(ROOT, target))) continue;
       findings.push({ file: relative, target, line: span.line });
     }
   }

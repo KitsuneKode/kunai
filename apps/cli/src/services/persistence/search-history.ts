@@ -2,6 +2,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import type { ShellMode } from "@/domain/types";
+import { createKeyedJoiner } from "@/infra/concurrency/keyed-joiner";
 import { writeAtomicJson } from "@/infra/fs/atomic-write";
 import { errorCode } from "@/infra/fs/errno";
 import {
@@ -43,7 +44,7 @@ export function createSearchHistoryStore(
   let queue: Promise<void> = Promise.resolve();
   let lastAttempt: Promise<void> = queue;
   const snapshots = new Map<string, readonly string[]>();
-  const refreshing = new Map<string, Promise<void>>();
+  const refreshing = createKeyedJoiner<void>();
   const revisions = new Map<string, number>();
   const listeners = new Set<() => void>();
   const publish = (file: string, history: readonly string[]) => {
@@ -71,11 +72,11 @@ export function createSearchHistoryStore(
     },
     refresh(mode?: ShellMode): Promise<void> {
       const file = resolveFile(mode);
-      const existing = refreshing.get(file);
-      if (existing) return existing;
-      const revision = revisions.get(file) ?? 0;
-      const work = queue
-        .then(async () => {
+      // One refresh per file; a refresh asked for while one runs joins it.
+      return refreshing.join(file, () => {
+        // Captured as the refresh starts (join runs work synchronously).
+        const revision = revisions.get(file) ?? 0;
+        const reload = async (): Promise<void> => {
           let history: string[];
           try {
             history = await readHistory(file);
@@ -85,12 +86,9 @@ export function createSearchHistoryStore(
           // A refresh that raced an accepted local query must not replace its
           // durable snapshot with older bytes from before the write.
           if ((revisions.get(file) ?? 0) === revision) publish(file, history);
-        })
-        .finally(() => {
-          refreshing.delete(file);
-        });
-      refreshing.set(file, work);
-      return work;
+        };
+        return queue.then(() => reload());
+      });
     },
     get(mode?: ShellMode): readonly string[] {
       const file = resolveFile(mode);
@@ -110,23 +108,24 @@ export function createSearchHistoryStore(
       pending.push(entry);
       revisions.set(entry.file, (revisions.get(entry.file) ?? 0) + 1);
       for (const listener of listeners) listener();
+      const persist = async (): Promise<void> => {
+        await mkdir(dirname(entry.file), { recursive: true });
+        await withConfigLockTransition(
+          `${entry.file}.lock`,
+          Date.now() + CONFIG_LOCK_ACQUIRE_TIMEOUT_MS,
+          {},
+          async () => {
+            // The lock owns the read AND replacement. A per-process promise
+            // chain or atomic rename alone cannot preserve sibling appends.
+            const disk = await readHistory(entry.file);
+            const merged = [...new Set([entry.query, ...disk])].slice(0, MAX_HISTORY);
+            await writeAtomicJson(entry.file, merged);
+            publish(entry.file, merged);
+          },
+        );
+      };
       lastAttempt = queue
-        .then(async () => {
-          await mkdir(dirname(entry.file), { recursive: true });
-          await withConfigLockTransition(
-            `${entry.file}.lock`,
-            Date.now() + CONFIG_LOCK_ACQUIRE_TIMEOUT_MS,
-            {},
-            async () => {
-              // The lock owns the read AND replacement. A per-process promise
-              // chain or atomic rename alone cannot preserve sibling appends.
-              const disk = await readHistory(entry.file);
-              const merged = [...new Set([entry.query, ...disk])].slice(0, MAX_HISTORY);
-              await writeAtomicJson(entry.file, merged);
-              publish(entry.file, merged);
-            },
-          );
-        })
+        .then(() => persist())
         .finally(() => {
           pending.splice(pending.indexOf(entry), 1);
         });

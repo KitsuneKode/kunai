@@ -1,5 +1,4 @@
 import {
-  buildPickerActionContext,
   chooseTextInputShell,
   normalizeTextInputValue,
   type ListShellActionContext,
@@ -33,11 +32,4 @@ export async function promptPlaylistName(
     label: "Playlist name",
   });
   return entered ? normalizeTextInputValue(entered) : null;
-}
-
-export function buildPlaylistWorkflowContext(
-  container: Container,
-  taskLabel: string,
-): ListShellActionContext {
-  return buildPickerActionContext({ container, taskLabel });
 }

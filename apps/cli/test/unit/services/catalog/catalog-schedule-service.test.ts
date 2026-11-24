@@ -6,6 +6,7 @@ import {
   CatalogScheduleRequestError,
   classifyReleaseStatus,
   type CatalogScheduleLoaders,
+  type CatalogSeriesReleaseProgress,
 } from "@/services/catalog/CatalogScheduleService";
 
 const NOW = Date.parse("2026-05-08T12:00:00.000Z");
@@ -72,6 +73,136 @@ describe("CatalogScheduleService", () => {
     expect(second).toEqual(first);
     expect(differentEpisode?.episode).toBe(3);
     expect(calls).toBe(2);
+  });
+
+  test("a stand-in calendar answer is never persisted and is reused only briefly", async () => {
+    let now = NOW;
+    let calls = 0;
+    const store = new MemoryScheduleCache();
+    const service = new CatalogScheduleService(
+      createLoaders({
+        releasingToday: async () => {
+          calls += 1;
+          return [
+            {
+              source: "tmdb",
+              titleId: "1489",
+              titleName: "Jimmy Kimmel Live",
+              type: "series",
+              releaseAt: "2026-05-08T23:35:00.000Z",
+              releasePrecision: "timestamp",
+              status: "unknown",
+              via: "TVmaze",
+            },
+          ];
+        },
+      }),
+      () => now,
+      store,
+    );
+    await service.loadReleaseWindow("series", 7);
+    await service.loadReleaseWindow("series", 7);
+    expect(calls).toBe(1);
+    expect(store.size).toBe(0);
+    now += 61_000;
+    await service.loadReleaseWindow("series", 7);
+    expect(calls).toBe(2);
+  });
+
+  test("one caller leaving does not cancel the shared request another caller waits on", async () => {
+    let loadSignal: AbortSignal | undefined;
+    let finish: ((items: never[]) => void) | undefined;
+    const service = new CatalogScheduleService(
+      createLoaders({
+        releasingToday: (_mode, _window, signal) => {
+          loadSignal = signal;
+          return new Promise((resolve) => {
+            finish = resolve;
+          });
+        },
+      }),
+      () => NOW,
+    );
+    const leaving = new AbortController();
+    const first = service
+      .loadReleaseWindow("series", 7, leaving.signal)
+      .catch((error: Error) => error);
+    const second = service.loadReleaseWindow("series", 7);
+    leaving.abort();
+    expect(await first).toBeInstanceOf(Error);
+    // The shared request keeps running for the caller still waiting.
+    expect(loadSignal?.aborted).toBe(false);
+    finish?.([]);
+    await expect(second).resolves.toEqual([]);
+  });
+
+  test("the shared request is cancelled once its last waiter leaves", async () => {
+    let loadSignal: AbortSignal | undefined;
+    const service = new CatalogScheduleService(
+      createLoaders({
+        releasingToday: (_mode, _window, signal) => {
+          loadSignal = signal;
+          return new Promise(() => {});
+        },
+      }),
+      () => NOW,
+    );
+    const a = new AbortController();
+    const b = new AbortController();
+    // Capture outcomes now: each caller's promise rejects the moment it aborts.
+    const first = service.loadReleaseWindow("anime", 7, a.signal).catch((error: Error) => error);
+    const second = service.loadReleaseWindow("anime", 7, b.signal).catch((error: Error) => error);
+    a.abort();
+    expect(loadSignal?.aborted).toBe(false);
+    b.abort();
+    expect(loadSignal?.aborted).toBe(true);
+    expect(await first).toBeInstanceOf(Error);
+    expect(await second).toBeInstanceOf(Error);
+  });
+
+  test("a caller arriving after every waiter left starts a fresh request", async () => {
+    let loads = 0;
+    const service = new CatalogScheduleService(
+      createLoaders({
+        releasingToday: () => {
+          loads += 1;
+          return loads === 1 ? new Promise(() => {}) : Promise.resolve([]);
+        },
+      }),
+      () => NOW,
+    );
+    const leaving = new AbortController();
+    const first = service.loadReleaseWindow("series", 7, leaving.signal).catch(() => "left");
+    leaving.abort();
+    expect(await first).toBe("left");
+    // The cancelled request is still settling; a new caller must not join it.
+    await expect(service.loadReleaseWindow("series", 7)).resolves.toEqual([]);
+    expect(loads).toBe(2);
+  });
+
+  test("a request cancelled by clearCache never repopulates the cache", async () => {
+    let loads = 0;
+    let finish: ((items: never[]) => void) | undefined;
+    const service = new CatalogScheduleService(
+      createLoaders({
+        releasingToday: () => {
+          loads += 1;
+          return loads === 1
+            ? new Promise((resolve) => {
+                finish = resolve;
+              })
+            : Promise.resolve([]);
+        },
+      }),
+      () => NOW,
+    );
+    const pending = service.loadReleaseWindow("anime", 7).catch(() => "cancelled");
+    service.clearCache();
+    // The aborted loader still resolves (a caught abort can yield partial data).
+    finish?.([]);
+    await pending;
+    await service.loadReleaseWindow("anime", 7);
+    expect(loads).toBe(2);
   });
 
   test("reuses persisted schedule cache across service instances", async () => {
@@ -274,6 +405,91 @@ describe("CatalogScheduleService", () => {
     expect(service.peekAnimeReleaseProgress("21")?.latestAiredEpisode).toBe(28);
   });
 
+  test("a progress batch survives the first caller leaving while a second still waits", async () => {
+    let loadSignal: AbortSignal | undefined;
+    const finish = Promise.withResolvers<ReadonlyMap<string, CatalogSeriesReleaseProgress>>();
+    const service = new CatalogScheduleService(
+      createLoaders({
+        animeProgress: (_ids, signal) => {
+          loadSignal = signal;
+          return finish.promise;
+        },
+      }),
+      () => NOW,
+    );
+
+    const leaving = new AbortController();
+    const first = service
+      .prefetchAnimeReleaseProgressForTitles(["21"], leaving.signal)
+      .catch((error: Error) => error);
+    const staying = new AbortController();
+    const second = service.prefetchAnimeReleaseProgressForTitles(["21"], staying.signal);
+    leaving.abort();
+
+    expect(await first).toBeInstanceOf(Error);
+    // The batch must not have inherited the first caller's signal.
+    expect(loadSignal?.aborted).toBe(false);
+    finish.resolve(
+      new Map([
+        [
+          "21",
+          {
+            latestAiredEpisode: 12,
+            latestKnownReleaseAt: "2026-05-08T00:00:00.000Z",
+            sourceFingerprint: "anilist:21:releasing:12",
+          },
+        ],
+      ]),
+    );
+    await second;
+    expect(service.peekAnimeReleaseProgress("21")?.latestAiredEpisode).toBe(12);
+  });
+
+  test("a progress batch is cancelled once its last caller leaves, and clearCache drops a late answer", async () => {
+    const signals: (AbortSignal | undefined)[] = [];
+    const finishes: ((value: ReadonlyMap<string, CatalogSeriesReleaseProgress>) => void)[] = [];
+    const service = new CatalogScheduleService(
+      createLoaders({
+        animeProgress: (_ids, signal) => {
+          signals.push(signal);
+          return new Promise((resolve) => {
+            finishes.push(resolve);
+          });
+        },
+      }),
+      () => NOW,
+    );
+
+    const only = new AbortController();
+    const abandoned = service
+      .prefetchAnimeReleaseProgressForTitles(["21"], only.signal)
+      .catch(() => "left");
+    only.abort();
+    expect(await abandoned).toBe("left");
+    expect(signals[0]?.aborted).toBe(true);
+
+    const cleared = service
+      .prefetchAnimeReleaseProgressForTitles(["21"], new AbortController().signal)
+      .catch(() => "cleared");
+    expect(signals).toHaveLength(2);
+    service.clearCache();
+    expect(signals[1]?.aborted).toBe(true);
+    const progress = new Map([
+      [
+        "21",
+        {
+          latestAiredEpisode: 3,
+          sourceFingerprint: "anilist:21:late",
+        },
+      ],
+    ]);
+    finishes[0]?.(progress);
+    finishes[1]?.(progress);
+    expect(await cleared).toBe("cleared");
+    await Promise.resolve();
+    expect(service.peekAnimeReleaseProgress("21")).toBeNull();
+  });
+
   test("default AniList progress loader records latest release timestamp for ongoing anime", async () => {
     const releaseAt = new Date(1_715_395_200 * 1000).toISOString();
     const originalFetch = globalThis.fetch;
@@ -397,5 +613,9 @@ class MemoryScheduleCache {
 
   set(key: string, payloadJson: string, options: { expiresAt: string }): void {
     this.entries.set(key, { payloadJson, expiresAt: options.expiresAt });
+  }
+
+  get size(): number {
+    return this.entries.size;
   }
 }

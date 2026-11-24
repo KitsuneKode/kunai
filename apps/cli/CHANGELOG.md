@@ -63,6 +63,9 @@ subtitle controls, and safer persistence, downloads and native installation.
 
 ### State safety and privacy
 
+- AniList sync marks a title Completed only when its last episode is finished.
+  Finishing a middle episode records progress, re-watching an early episode no
+  longer demotes a completed title, and progress never moves backward.
 - Serialize configuration changes and preserve concurrent profile, credential
   and preference updates. Refuse an unlocked save after contention rather than
   overwriting another instance's changes.

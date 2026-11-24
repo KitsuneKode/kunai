@@ -31,7 +31,7 @@ export const MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS = 1;
  * each client into its own failover lane, so leading with a token-gated client
  * spends a whole lane on formats that were never going to be offered.
  *
- * This is a default, not a pin — Settings › YouTube › extractor args overrides it,
+ * This is a default, not a pin — Settings › Sources › YouTube › extractor args overrides it,
  * and it should be revisited whenever yt-dlp's own client order changes.
  */
 export const DEFAULT_YOUTUBE_EXTRACTOR_ARGS = "youtube:player_client=visionos,web";
@@ -84,6 +84,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },
   youtubeMetadata: { extractorArgs: DEFAULT_YOUTUBE_EXTRACTOR_ARGS },
   wyzieApiKey: "",
+  tmdbApiKey: "",
   animeLanguageProfile: { audio: "original", subtitle: "en", quality: "best" },
   seriesLanguageProfile: { audio: "original", subtitle: "none", quality: "best" },
   movieLanguageProfile: { audio: "original", subtitle: "en", quality: "best" },
@@ -140,6 +141,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   autoCleanupWatched: false,
   recoveryMode: "guided",
   startupPriority: "balanced",
+  hdrMode: "auto",
   offlineArtworkCacheEnabled: true,
   offlineFreeSpaceReserveBytes: DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
   offlineUnknownEpisodeEstimateBytes: DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,

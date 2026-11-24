@@ -10,7 +10,7 @@ export type {
   TerminalColorEnv,
   TerminalColorLevel,
 } from "./color-resolution";
-export { DEFAULT_THEME_NAME, THEMES, getThemeLabel, isThemeName, listThemes } from "./themes";
+export { DEFAULT_THEME_NAME, THEMES, isThemeName, listThemes } from "./themes";
 export type { ThemeDef, ThemeName, ThemePalette } from "./theme-types";
 export { tokens as rawTokens } from "./tokens";
 export type { TokenName, TokenValue } from "./tokens";

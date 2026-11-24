@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-27T06:55:37Z"
+lastReviewed: "2026-11-24"
 ---
 
 # Kunai — Provider Guide
@@ -56,7 +56,7 @@ apps/cli shell
 
 - `@kunai/types` — canonical TypeScript contracts: `ProviderModule`, `ProviderResolveResult`, `StreamCandidate`, `SubtitleCandidate`, `ProviderFailure`, `ResolveTrace`
 - `@kunai/core` — `ProviderEngine` (orchestration, retry, timeout, fallback), `CoreProviderManifest`, `defineProviderManifest`, `resolveWithFallback`, cache-policy helpers
-- `@kunai/providers` — direct-provider modules; the production roster is only what `loadProductionProviderModules()` registers (`videasy`, `vidlink`, `rivestream`, `vidrock`, `movy`, `allmanga`, `hianime`, `animegg`, `kickassanime`, `miruro`, `youtube`). The `anidb` package remains for fixtures and historic ids but is not live. Research/candidate modules stay out of the resolver until they pass the provider quality gate. Modules implement `CoreProviderModule` + shared helpers (`resolve-helpers.ts`, `subtitle-helpers.ts`, `source-inventory.ts`, `direct-stream-source.ts`) + manifests co-located with modules.
+- `@kunai/providers` — direct-provider modules; the production roster is only what `loadProductionProviderModules()` registers (`videasy`, `vidlink`, `rivestream`, `vidrock`, `movy`, `allmanga`, `hianime`, `animegg`, `kickassanime`, `miruro`, `youtube`). The standalone `anidb` module was removed; the AniSkip MAL lookup helper (`packages/providers/src/shared/anidb-identity.ts`) and the retired-id config migration remain. Research/candidate modules stay out of the resolver until they pass the provider quality gate. Modules implement `CoreProviderModule` + shared helpers (`resolve-helpers.ts`, `subtitle-helpers.ts`, `source-inventory.ts`, `direct-stream-source.ts`) + manifests co-located with modules.
 - `@kunai/storage` — SQLite cache, history, health, source inventory, trace persistence
 - `@kunai/schemas` — Zod validation schemas for all shared types
 - `apps/cli` — Ink UX, mpv IPC, `ProviderRegistry` (engine compat wrapper), `provider-result-adapter`/`stream-request-adapter` (type conversion), playback orchestration
@@ -215,6 +215,80 @@ same CDN. `not-found` remains in the trace for title-level recovery, but carries
 no provider availability failure delta. Transport, timeout and server failures
 continue to report provider health evidence.
 
+### Signed provider hotfix manifest
+
+Upstream hosts and crypto constants rotate faster than binaries ship, so a
+provider can be patched at runtime by a **signed manifest** instead of a release.
+The manifest (`packages/providers/src/shared/manifest-bundle.ts`) carries, per
+provider, a `baseUrl`, `mirrors`, `deadServers`, `disabled`, and
+`cryptoOverrides`, plus optional per-lane priorities. Adapters read it through
+`packages/providers/src/shared/hotfix-runtime.ts`
+(`getEffectiveProviderMirrors`, `getProviderCryptoOverride`); bundled values are
+always the fallback.
+
+- **Trust.** Envelopes are Ed25519-signed and verified against keys from
+  `KUNAI_PROVIDER_MANIFEST_PUBKEYS`. No key and no URL are baked into the
+  binary — like the relay, the manifest source is operator-owned and the feature
+  is off until both are configured.
+- **Lifecycle.** `kunai providers update --url <https>` fetches, verifies, and
+  caches it (`--dry-run` to inspect); `providers status`, `verify`, `rollback`,
+  and `reset` are the ways back out. The previous manifest is kept as a backup
+  for rollback. An expired manifest (`expiresAt`) drops back to bundled
+  defaults on read.
+- **State file** (`providers-manifest-state.json`) outlives a cache purge. It
+  records `highestRevision` and the `payloadSha256` of that revision's body, so
+  a lower revision, or a different body re-signed under the same revision, is
+  refused without `--force` even after the cache is deleted. `rollback` and
+  `reset` set a `hold` that the background refresh honours (otherwise the next
+  launch would reinstall the newer manifest); an explicit `providers update`
+  clears it. `reset --force` also drops the revision floor.
+- **Install-time checks** beyond the signature: every lane keeps at least one
+  provider, and an `allanime` `cryptoOverrides` that names a `buildId` must be a
+  complete rotation profile, since an incomplete one falls back to the bundled
+  constants without any signal. The state lock waits on a deadline and fails
+  fast if its path is a directory. JSON failures from `kunai providers` share
+  the agent shape `{ ok: false, schemaVersion, error }`.
+- **Runtime guards.** Requests to an origin the manifest introduced (`baseUrl`,
+  `mirrors`, URL-valued `cryptoOverrides`) follow redirects by hand in
+  `providerFetch` (`packages/providers/src/runtime/fetch.ts`), and every hop must
+  pass `isSafeManifestHttpsUrl`; bundled-host traffic keeps normal fetch
+  semantics. Single-host adapters resolve their host through
+  `requireEffectiveProviderHost`, so `deadServers` covering every host throws
+  `ProviderHostsRetiredError` and the engine moves on, instead of calling the
+  retired bundled host.
+- **Startup.** `activateCachedProviderHotfixManifest`
+  (`apps/cli/src/app/providers/provider-definitions-actions.ts`) re-verifies the
+  cached manifest and makes it live before the first resolve, offline included,
+  in the interactive shell and in headless `-S --json` search;
+  without it a manifest would apply only in the process that fetched it.
+- **Background refresh.** `maybeBackgroundRefreshProviderManifest` refreshes at
+  most every six hours, only when `KUNAI_PROVIDER_MANIFEST_URL` and trusted keys
+  are both set, and fails silently offline.
+- **Urgent refresh.** When a provider's health transitions into `down`
+  (`PlaybackResolveService` → `onProviderDown`, wired in
+  `apps/cli/src/container/bootstrap-providers.ts`), Kunai checks the manifest
+  through `maybeUrgentProviderManifestRefresh`: a 15-minute cache-age gate
+  instead of six hours, at most once per 15 minutes per process, same opt-in and
+  offline rules. A fix that is already published applies to the next resolve.
+- **Priority.** `applyHotfixToProviderBootstrap` merges manifest lane priorities
+  and `disabled` flags into the user's priority. Two consumers must agree: the
+  provider registry (pickers, `apps/cli/src/app/providers/provider-definitions-actions.ts`)
+  and playback admission and fallback order (`createOrderedModulesGetter` in
+  `apps/cli/src/container/bootstrap-providers.ts`). The playback side reads the
+  manifest on every resolve through the expiry-aware getter, so an expired
+  manifest stops excluding providers immediately. The registry holds a copy, so
+  `reloadProviderRegistryPriority` arms one unref'd timer for `expiresAt`
+  (clamped to the `setTimeout` ceiling and re-armed) that restores it.
+- **Authoring.** `scripts/generate-hotfix-manifest.ts` builds an unsigned
+  manifest (optionally from a provider status report);
+  `scripts/sign-provider-manifest.ts sign` signs it.
+
+`kunai capabilities --json` (`apps/cli/src/services/agent/run-capabilities.ts`)
+publishes the machine-readable contract scripts and agents can rely on —
+subcommands, flags, themes, HDR modes, the live provider list, the manifest
+schema, and the headless routes — and `kunai -S <query> --json`
+(`run-headless-search.ts`) searches without starting the shell.
+
 ### Persistent provider cache (`context.cache`)
 
 `ProviderCachePort` (SQLite-backed) survives process restarts — a cold Miruro
@@ -234,8 +308,8 @@ here. The rule is _what may be persisted_, not whether to cache:
   window indefinitely.
 - Miss-or-expired must degrade to a refetch, and a port failure degrades to
   `null`/no-op — the provider never fails because the cache did.
-- Namespace keys `<provider>:<purpose>` (`anidb:external-ids`,
-  `hianime:episodes`, `vidlink:enc-dec`) so `/reset-provider-health`-style
+- Namespace keys `<provider>:<purpose>` (`hianime:episodes`,
+  `vidlink:enc-dec`) so `/reset-provider-health`-style
   sweeps can scope them.
 
 **Stream verification has two boundaries.** Production direct providers route
@@ -480,19 +554,19 @@ Third lane provider for standalone videos, Shorts, playlists, and channels.
   not a dead lane to fall through. It never relabels an unclassified video as a
   Short, and is intentionally unsupported in TMDB and AniList modes, just like the
   other YouTube content shapes.
-- **Detail/quality:** `yt-dlp -J` on cache miss (SQLite `youtube_metadata_cache`, 15-minute TTL). Resolve fails with `yt-dlp-missing` when yt-dlp is absent. Default height preference is **1080p** (`youtubeLanguageProfile.quality`); change under `/settings` → Language → YouTube quality. Discovered formats use exact selectors. Without a discovered format, non-live playback uses `bv*[height<=?H]+ba/bv*[height<=?H]/bv*+ba/b/ba`: `bv*` permits premerged renditions and `<=?H` permits unknown heights. The final default fallback may exceed the preference; this is not a strict cap.
+- **Detail/quality:** `yt-dlp -J` on cache miss (SQLite `youtube_metadata_cache`, 15-minute TTL). Resolve fails with `yt-dlp-missing` when yt-dlp is absent. Default height preference is **1080p** (`youtubeLanguageProfile.quality`); change under `/settings` → General → YouTube quality. Discovered formats use exact selectors. Without a discovered format, non-live playback uses `bv*[height<=?H]+ba/bv*[height<=?H]/bv*+ba/b/ba`: `bv*` permits premerged renditions and `<=?H` permits unknown heights. The final default fallback may exceed the preference; this is not a strict cap.
 - **Playback:** canonical `https://www.youtube.com/watch?v=ID` with mpv `--ytdl-format` and `--ytdl-raw-options` (SponsorBlock, live edge via `no-live-from-start=`, PO tokens). Live broadcasts apply a short-buffer demuxer profile (`demuxer-readahead-secs=10`, `demuxer-max-bytes=32MiB`, `cache-pause-wait=1`) at spawn **and** on every persistent loadfile replacement — a replacement inherits nothing from spawn argv, so both paths read one shared constant. Live playback also suppresses the `--start` seek, the loadfile `start`, the watch-later resume prompt, and the in-process reconnect seek: a broadcast has no absolute position to return to. Kunai disables mpv-ytdlautoformat overrides via `--script-opts=ytdlautoformat-domains=` so a user-level `ytdlautoformat` script cannot force 720p. **No full video file is written for play** — mpv streams via yt-dlp; only JSON metadata is cached in SQLite.
 - **Subtitles:** Automatically attaches all human-authored tracks, the original language track (`-orig`), and user-configured language translations while filtering out machine-translation spam and `live_chat` JSON metadata.
 - **Downloads:** explicit queue via `d` / download flows; yt-dlp writes `.mp4` to `downloadPath` (or OS default) with `-f` from the same format selector, `--merge-output-format mp4`, cookies/extractor args, and optional `--sponsorblock-remove`; live streams rejected at enqueue.
 - **Process output is bounded:** metadata mode caps complete stdout/stderr payloads, while download progress mode caps each incomplete output line and retains only a bounded stderr tail. A malformed or stalled yt-dlp process is terminated instead of growing an unbounded in-memory progress buffer.
 - **History:** persisted as `mediaKind: "video"`; resume/continue restores youtube shell mode; playlist rows label `#N`.
 - **Share:** `kunai://` links use `cat=youtube:VIDEO_ID` and `kind=video`.
-- **Settings:** `/settings` → YouTube section for Invidious instance, Piped URL, cookies, extractor args, PO token, SponsorBlock categories (`config.youtubeMetadata.*`). Rebinds provider without restart.
+- **Settings:** `/settings` → Sources → YouTube section for Invidious instance, Piped URL, cookies, extractor args, PO token, SponsorBlock categories (`config.youtubeMetadata.*`). Rebinds provider without restart.
 - **Extractor args are one `youtube:` prefix.** yt-dlp strips `IE_KEY:` exactly once and splits the rest on `;`, so `youtube:a=1;youtube:b=2` parses `b` as the key `youtube:b` and the value is never read. Everything that edits these args goes through the parse/serialize pair in `packages/providers/src/youtube/ytdl-options.ts`. The default is `player_client=visionos,web`, mirroring yt-dlp's own `_DEFAULT_CLIENTS`: `visionos` is the only client with no GVS PO-token policy, and yt-dlp skips rather than attempts formats whose token is missing, so a token-gated client in front wastes a whole failover lane.
 - **Diagnostics:** `/diagnostics` shows yt-dlp version and Invidious health (`youtube.ytdlp.probe`, `youtube.invidious.health` events).
 - **Stats:** watch time aggregates under the `video` kind in `/stats`.
 - **Dependencies:** `yt-dlp` required for playback and downloads; search can work via Invidious/Piped without it.
-- **Age-restricted / members content & PO tokens:** configure `config.youtubeMetadata.cookiesFromBrowser`, `cookiesFile`, or `poToken` under `/settings` → YouTube.
+- **Age-restricted / members content & PO tokens:** configure `config.youtubeMetadata.cookiesFromBrowser`, `cookiesFile`, or `poToken` under `/settings` → Sources → YouTube.
 
 ## When A Browser-Requiring Source Can Become Browser-Less
 
@@ -548,7 +622,6 @@ Use:
 - [.docs/provider-agent-workflow.md](./provider-agent-workflow.md) for repo-local agent instructions
 - [.docs/provider-examples.md](./provider-examples.md) for concrete implementation patterns
 - [.plans/provider-hardening.md](../.plans/provider-hardening.md) for the broader hardening roadmap
-- `packages/providers/src/research.ts` for the current dossier-backed migration queue
 - `packages/providers/src/_template.ts` for the new-provider boilerplate
 
 When the site behavior is unclear, gather evidence first and keep knowns vs unknowns separate.
@@ -710,13 +783,11 @@ only the contracts every provider must honour.
 | VidRock             | [vidrock.md](./provider-dossiers/vidrock.md)                                                                                                                      |
 | YouTube             | [youtube.md](./provider-dossiers/youtube.md)                                                                                                                      |
 
-Cineby is **not** a production provider: it is a research-only Videasy-flavor
-wrapper (`packages/providers/src/cineby`, marked `"research-only"` in
-`packages/providers/src/research.ts`, kept out of
-`loadProductionProviderModules()` until it passes the provider quality gate).
-Its dossiers ([cineby.md](./provider-dossiers/cineby.md) ·
-[cineby-anime.md](./provider-dossiers/cineby-anime.md)) are research material,
-not active contracts — do not cite that table row as a capability.
+Cineby is not a production provider. The standalone Cineby and RGShows
+research modules were removed; the live Cineby-named Videasy flavors remain.
+The [Cineby](./provider-dossiers/cineby.md) and
+[Cineby Anime](./provider-dossiers/cineby-anime.md) dossiers are research
+material, not active contracts.
 
 Active providers are registered in `apps/cli/src/container/bootstrap-providers.ts` via
 `loadProductionProviderModules()`. A module existing under `packages/providers/src/` does not make
@@ -726,9 +797,8 @@ it live, and release signoff derives its cases from that list plus the configure
 `animeProviderPriority: ["kickassanime", "animegg", "allanime", "miruro"]`,
 provider-defaults revision 6). The lead moved off AniDB when anidb.app stopped
 serving the old origin (HTTP 302 to an unrelated site, 2026-10-24), matching
-ani-cli's earlier move to HiAnime (c99221d). AniDB was **retired from
-production** — the module stays in `@kunai/providers` for tests and historic
-records, but `loadProductionProviderModules()` no longer registers it.
+ani-cli's earlier move to HiAnime (c99221d). The AniDB provider module was
+removed; the MAL lookup for AniSkip still handles historic catalog IDs.
 `normalizeRetiredProductionProviderFields` in `@kunai/config` maps any persisted
 `anidb` lane selection to HiAnime, strips the id from priority and disable
 lists, and drops title pins that still name it (without aliasing history ids).
@@ -841,8 +911,9 @@ Provider manifests expose `catalogIdentity` (`provider-native` | `anilist` | `tm
   AniList id or another site's slug is never sent as one. A title from any other catalog is matched
   by name and year — exactly one hit, or the provider steps aside — and the slug is then stored
   through `context.titleBridge` against the AniList id, so later plays ask nothing.
-- **AniDB (`anidb`)** — **retired from production** (2026-10-24). The package and dossiers remain
-  for fixtures and historic `providerNativeIds`; live resolve does not register the module. See
+- **AniDB (`anidb`)** — **removed** (2026-10-24 retired, module since deleted). The
+  AniSkip MAL lookup helper (`packages/providers/src/shared/anidb-identity.ts`) and the retired-id
+  config migration remain; historic `providerNativeIds` stay readable. See
   [anidb-runtime-contract.md](./provider-dossiers/anidb-runtime-contract.md).
 - **AllAnime (`allanime`)** — `provider-native`, registered as a fallback and
   manually selectable. AniList-backed discovery
@@ -856,7 +927,7 @@ Provider manifests expose `catalogIdentity` (`provider-native` | `anilist` | `tm
 - **AllAnime and Miruro episode numbering** — when a request carries both a
   season-relative `episode` and `absoluteEpisode`, their APIs receive the
   season-relative value. Absolute numbering is used only for an absolute-only
-  request. AniDB keeps its separate catalog-proven routing policy in
+  request. AniDB's former catalog-proven routing policy is recorded in
   [its runtime contract](./provider-dossiers/anidb-runtime-contract.md).
 - **AllAnime provider-native episode identity** — episode catalog rows remain
   1-based in Kunai, but each row carries its exact AllAnime string (including
@@ -897,8 +968,7 @@ continuations (AoT's `Season 3 Part 2` is not season 4). The contract:
   current season. Any ambiguity (branching sequels, multiple prequels, a cycle)
   returns `undefined` — the caller fails closed, never guesses by title match.
 
-Per-adapter verdicts: **anidb** — consumes the graph for arc-named seasons
-(fail-closed without it, unchanged); **allmanga** — same contract when its
+Per-adapter verdicts: **allmanga** — same contract when its
 entry mapping lands; **miruro** — already AniList-keyed, nothing needed;
 **hianime** — episode catalogs are season-flat, verdict: not applicable;
 **vidlink/videasy/youtube** — TMDB/movie lanes, not applicable.

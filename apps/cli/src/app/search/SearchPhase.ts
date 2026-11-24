@@ -30,7 +30,7 @@ import { primeShareBootstrapStartSeconds } from "@/app/bootstrap/share-bootstrap
 import { titleInfoFromSearchResult, videoMetaFromSearchResult } from "@/app/bootstrap/title-info";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/discover/anime-provider-mapping";
 import { loadDiscoverResults } from "@/app/discover/discover-results";
-import { loadDiscoveryList } from "@/app/discover/discovery-lists";
+import { describeTrendingSource, loadDiscoverySection } from "@/app/discover/discovery-lists";
 import { loadRandomResults, loadSurpriseResults } from "@/app/discover/random-results";
 import { buildBrowseInitialResults } from "@/app/search/browse-initial-results";
 import { browseLibraryFilterAvailability } from "@/app/search/browse-local-filter-facts";
@@ -39,6 +39,7 @@ import {
   describeSearchResultAvailability,
   toBrowseResultOption,
 } from "@/app/search/browse-option-mappers";
+import { createBrowseSearchAbort } from "@/app/search/browse-search-abort";
 import { launchCalendarContinue } from "@/app/search/calendar-continue-launch";
 import { isCalendarSearchResult, loadCalendarResults } from "@/app/search/calendar-results";
 import { playTrailer } from "@/app/search/details-trailer";
@@ -79,7 +80,11 @@ import { recordCliStartupMilestone } from "@/services/diagnostics/cli-startup-mi
 import { buildSearchDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 import { seedCaughtUpReleaseProgressFromCatalogCount } from "@/services/history-metadata/history-catalog-seed";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
-import { observeOnline } from "@/services/network/network-observation";
+import {
+  observeOnline,
+  recordNetworkFailure,
+  recordNetworkSuccess,
+} from "@/services/network/network-observation";
 import { collectLocalTitleEntries } from "@/services/palette/collect-local-titles";
 import { addSearchQuery } from "@/services/persistence/search-history";
 import {
@@ -148,20 +153,6 @@ import { SEARCH_BROWSE_COMMAND_IDS } from "@/app-shell/search-browse-command-ids
 import { warmTopAnimeEpisodeCache } from "@/services/providers/warm-episode-cache";
 
 export { SEARCH_BROWSE_COMMAND_IDS };
-
-/** Projection-only display title from cached aliases — does not hit providers. */
-export function projectSearchResultDisplayTitle(
-  result: import("@/domain/types").SearchResult,
-  titlePreference: import("@/domain/types").TitleAliasKind | "provider",
-): string {
-  return chooseSearchResultTitle(result, titlePreference);
-}
-
-export function searchResultsHaveCachedTitleAliases(
-  results: readonly import("@/domain/types").SearchResult[],
-): boolean {
-  return results.some((result) => (result.titleAliases?.length ?? 0) > 0);
-}
 
 export { describeSearchResultAvailability };
 
@@ -365,6 +356,8 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
       let pendingSearchEvidence: SearchFilterEvidence | undefined;
       let pendingSearchWarnings: readonly string[] = [];
       let pendingSearchEmptyMessage: string | undefined;
+      /** Source of the bootstrap search, shown in place of "previous search". */
+      let pendingSearchSourceName: string | undefined;
       let initialSearchError: string | undefined;
 
       while (true) {
@@ -445,6 +438,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           });
           const searchMode = stateManager.getState().mode;
           let search: Awaited<ReturnType<typeof searchTitles>>;
+          const searchAbort = createBrowseSearchAbort(context.signal);
           try {
             search = await observeOnline(container, "search-error", () =>
               this.dependencies.searchTitles(searchIntent.intent, {
@@ -452,17 +446,24 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                 providerId: currentState.provider,
                 animeLanguageProfile: container.config.animeLanguageProfile,
                 youtubeLanguageProfile: container.config.youtubeLanguageProfile,
-                signal: context.signal,
+                signal: searchAbort.signal,
                 searchRegistry,
                 providerRegistry,
                 enrichAnimeMetadata: true,
               }),
             );
           } catch (error) {
-            if (context.signal.aborted) throw error;
+            searchAbort.dispose();
+            if (
+              searchAbort.signal.aborted ||
+              (error instanceof Error && error.name === "AbortError")
+            ) {
+              throw error;
+            }
             initialSearchError = containSearchFailure(error, "search.bootstrap.failed").note;
             continue;
           }
+          searchAbort.dispose();
           initialSearchError = undefined;
           const results = search.results;
           this.warmAnimeEpisodesForResults(context, results);
@@ -471,6 +472,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           // addSearchQuery makes a later interactive repeat idempotent.
           addSearchQuery(searchIntent.intent.query, searchMode);
           pendingSearchEvidence = search.evidence;
+          pendingSearchSourceName = search.sourceName;
           pendingSearchWarnings = searchIntent.warnings;
           pendingSearchEmptyMessage =
             search.results.length === 0 ? buildSearchEmptyMessage(search) : undefined;
@@ -627,9 +629,11 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         });
         const initialWarnings = pendingSearchWarnings;
         const initialEmptyMessage = pendingSearchEmptyMessage;
+        const initialSourceName = pendingSearchSourceName;
         pendingSearchEvidence = undefined;
         pendingSearchWarnings = [];
         pendingSearchEmptyMessage = undefined;
+        pendingSearchSourceName = undefined;
 
         // A picker mounted by a detached overlay workflow (e.g. /providers run
         // from Up Next) owns the content slot until the user dismisses it.
@@ -713,7 +717,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               ? browseState.searchQuery.trim().length === 0
                 ? (routeSubtitle ??
                   `${browseState.searchResults.length} recommendation picks · loaded`)
-                : `${countLabel(initialBrowse.options.length, "result")} · previous search${initialBrowse.subtitleSuffix}`
+                : `${countLabel(initialBrowse.options.length, "result")} · ${initialSourceName ?? "previous search"}${initialBrowse.subtitleSuffix}`
               : undefined,
           initialWarnings,
           initialSelectedIndex: browseState.selectedResultIndex,
@@ -891,6 +895,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
 
             const searchMode = stateManager.getState().mode;
             let search: Awaited<ReturnType<typeof searchTitles>>;
+            const searchAbort = createBrowseSearchAbort(context.signal);
             try {
               search = await observeOnline(container, "search-error", () =>
                 this.dependencies.searchTitles(searchIntent.intent, {
@@ -898,17 +903,24 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                   providerId: stateManager.getState().provider,
                   animeLanguageProfile: container.config.animeLanguageProfile,
                   youtubeLanguageProfile: container.config.youtubeLanguageProfile,
-                  signal: context.signal,
+                  signal: searchAbort.signal,
                   searchRegistry,
                   providerRegistry,
                   enrichAnimeMetadata: true,
                 }),
               );
             } catch (error) {
-              if (context.signal.aborted) throw error;
+              searchAbort.dispose();
+              if (
+                searchAbort.signal.aborted ||
+                (error instanceof Error && error.name === "AbortError")
+              ) {
+                throw error;
+              }
               const failure = containSearchFailure(error, "search.query.failed");
               throw new Error(failure.note, { cause: error });
             }
+            searchAbort.dispose();
             initialSearchError = undefined;
             const results = search.results;
             this.warmAnimeEpisodesForResults(context, results);
@@ -962,18 +974,26 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             stateManager.dispatch({ type: "SET_SEARCH_QUERY", query: "" });
             stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "loading" });
             const mode = stateManager.getState().mode;
-            // Trending rejects when the upstream is down, which is what lets
-            // `observeOnline` see the failure at all. Browse still degrades to
-            // the empty-state copy below rather than tearing down the phase.
-            const results = await observeOnline(container, "search-error", () =>
-              loadDiscoveryList(mode, context.signal),
-            ).catch((error: unknown): SearchResult[] => {
-              // A cancelled navigation is not an empty tray. Swallowing it here
-              // recorded a "succeeded / healthy" discovery event and pushed state
-              // into a phase the user had already left.
-              if (context.signal.aborted) throw error;
-              return [];
-            });
+            // Trending rejects when every source and the saved list failed,
+            // which records the failure. A saved list served during an outage
+            // is not evidence the network is up, so only a live answer records
+            // success. Browse still degrades to the empty-state copy below.
+            const section = await loadDiscoverySection(mode, context.signal).then(
+              (loaded) => {
+                if (loaded.staleSince === undefined)
+                  recordNetworkSuccess(container, "search-error");
+                return loaded;
+              },
+              (error: Error) => {
+                // A cancelled navigation is not an empty tray. Swallowing it here
+                // recorded a "succeeded / healthy" discovery event and pushed state
+                // into a phase the user had already left.
+                if (context.signal.aborted) throw error;
+                recordNetworkFailure(container, error, "search-error");
+                return { results: [], sourceId: "none" };
+              },
+            );
+            const results = [...section.results];
 
             logger.info("Discovery list loaded", {
               mode,
@@ -997,9 +1017,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             const freshBrowseContext = await loadBrowseDisplayContext(container, results);
             return {
               options: results.map((r) => mapBrowseResultOption(container, freshBrowseContext, r)),
-              subtitle: `${results.length} trending · ${
-                mode === "anime" ? "AniList" : mode === "youtube" ? "YouTube" : "TMDB"
-              }`,
+              subtitle: `${results.length} trending · ${describeTrendingSource(section)}`,
               emptyMessage: "Trending is unavailable right now. Search still works normally.",
             };
           },
@@ -1095,6 +1113,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             pendingSearchEvidence = consumedSearchEvidence;
             pendingSearchWarnings = initialWarnings;
             pendingSearchEmptyMessage = initialEmptyMessage;
+            pendingSearchSourceName = initialSourceName;
             await waitForRootContentSlot(context.signal);
             if (context.signal.aborted) {
               return { status: "cancelled" };
@@ -1452,18 +1471,16 @@ async function loadSearchRoute(
   const bundle =
     route === "trending"
       ? {
-          results: await loadDiscoveryList(mode, context.signal).catch(
-            (error: unknown): SearchResult[] => {
+          ...(await loadDiscoverySection(mode, context.signal).then(
+            (section) => ({
+              results: [...section.results],
+              subtitle: `${describeTrendingSource(section)} trending`,
+            }),
+            (error: Error) => {
               if (context.signal.aborted) throw error;
-              return [];
+              return { results: [], subtitle: "Trending unavailable" };
             },
-          ),
-          subtitle:
-            mode === "anime"
-              ? "AniList trending"
-              : mode === "youtube"
-                ? "YouTube trending"
-                : "TMDB trending",
+          )),
         }
       : route === "surprise"
         ? await loadSurpriseResults(container, { signal: context.signal })
@@ -1543,6 +1560,9 @@ function buildSearchEmptyMessage(search: Awaited<ReturnType<typeof searchTitles>
   if (failures && failures.length > 0) {
     const names = [...new Set(failures.map((failure) => failure.providerId))].join(", ");
     return `Provider search failed (${names}). Check /diagnostics or switch provider with /provider.`;
+  }
+  if (search.diagnosis?.code === "catalog-fallback") {
+    return "TMDB is unreachable and the backup catalog (Wikidata) found no match. Try the original title, or search again once TMDB is back.";
   }
   if (search.diagnosis?.code === "compatible-catalog-unavailable") {
     return "The active provider can't answer a filtered search like this. Simplify the query or switch provider with /provider.";

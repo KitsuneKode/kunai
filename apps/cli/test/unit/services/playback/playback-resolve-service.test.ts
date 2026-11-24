@@ -2043,6 +2043,56 @@ test("PlaybackResolveService persists consecutive provider failures before marki
   expect(health?.status).toBe("down");
 });
 
+test("PlaybackResolveService reports failures only once a provider is down", async () => {
+  // The container uses this to fetch a published hotfix now rather than at
+  // the next 6-hour check, and throttles it. Healthy or degraded failures do
+  // not report; every failure while down does, so a provider that stays down
+  // after a throttled check is checked again once the window passes.
+  const providerHealth = createMemoryProviderHealth();
+  const downs: string[] = [];
+  const engine = createMockEngine({
+    result: null,
+    providerId: null,
+    attempts: [
+      {
+        providerId: "primary",
+        result: {
+          ...createEmptyProviderResult("primary"),
+          healthDelta: {
+            providerId: "primary",
+            outcome: "failure",
+            resolveMs: 100,
+            at: new Date().toISOString(),
+          },
+        },
+      },
+    ],
+  });
+  const service = new PlaybackResolveService({
+    engine,
+    cacheStore: createMemoryCache(null),
+    // SAFETY: the health stub satisfies the narrow seam this service consumes.
+    providerHealth: providerHealth as never,
+    onProviderDown: (providerId) => downs.push(providerId),
+  });
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    await service.resolve({
+      title,
+      episode: { season: 1, episode: 2 },
+      mode: "series",
+      providerId: "primary",
+      audioPreference: "original",
+      subtitlePreference: "none",
+      signal: new AbortController().signal,
+    });
+  }
+
+  expect(providerHealth.get("primary")?.status).toBe("down");
+  // Down from the 5th consecutive failure: attempts 5–8 report.
+  expect(downs).toEqual(["primary", "primary", "primary", "primary"]);
+});
+
 test("PlaybackResolveService does not poison provider health for offline network results", async () => {
   const providerHealth = createMemoryProviderHealth();
   const offlineResult = {

@@ -4,9 +4,16 @@ import { link, mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { RELEASE_BINARY_TARGETS } from "@/services/update/platform-assets";
+
 import {
+  bytecodeByDefault,
+  COMPILED_BINARY_BUDGET_MIB_BY_TARGET,
+  assertCompiledBinaryBudget,
   assertNoForbiddenReleaseInputs,
   assertNpmBundleBudget,
+  COMPILED_BINARY_BUDGET_MIB,
+  compiledBinaryBudgetMib,
   NPM_BUNDLE_BUDGET_KB,
   forbiddenReleaseInputs,
   formatBuildSize,
@@ -21,6 +28,8 @@ import {
 } from "../../../scripts/build-shared";
 
 function metafile(inputs: readonly string[]): BunBuildMetafile {
+  // SAFETY: deliberately minimal metafile fixture — the guard only reads
+  // `inputs` keys, so `outputs` can stay empty.
   return {
     inputs: Object.fromEntries(inputs.map((input) => [input, { bytes: 1, imports: [] }])),
     outputs: {},
@@ -91,6 +100,19 @@ describe("release build shared options", () => {
     expect(npmBundleBuildOptions(root, { minify: true }).packages).toBe("bundle");
     expect(npmBundleBuildOptions(root, { minify: true }).format).toBe("esm");
     expect(npmBundleBuildOptions(root, { minify: false }).minify).toBe(false);
+  });
+
+  test("externalizes xmldom from the unpublished dev bundle but not compiled binaries", () => {
+    const bundlePlugins = npmBundleBuildOptions(root, { minify: true }).plugins ?? [];
+    const binaryPlugins =
+      compileBinaryBuildOptions(root, {
+        triple: "bun-linux-x64",
+        outfile: "/tmp/kunai",
+      }).plugins ?? [];
+    expect(bundlePlugins.some((plugin) => plugin.name === "kunai-npm-bundle-externals")).toBe(true);
+    expect(binaryPlugins.some((plugin) => plugin.name === "kunai-npm-bundle-externals")).toBe(
+      false,
+    );
   });
 
   test.each(["direct", "symlinked", "hardlinked-manifest"] as const)(
@@ -177,6 +199,8 @@ describe("release build shared options", () => {
   );
 
   test("disables bunfig autoload for compiled binaries", () => {
+    // SAFETY: `compile` narrows to the flags this test asserts; the widened
+    // BunBuildOptions type does not surface them.
     const compile = compileBinaryBuildOptions(root, {
       triple: "bun-linux-x64",
       outfile: "/tmp/kunai",
@@ -203,7 +227,7 @@ describe("release build shared options", () => {
     const out = await mapWithConcurrency([1, 2, 3, 4], 2, async (value) => {
       active += 1;
       peak = Math.max(peak, active);
-      await Bun.sleep(5);
+      await nextTurn();
       active -= 1;
       return value * 2;
     });
@@ -215,8 +239,62 @@ describe("release build shared options", () => {
     // Pinned on purpose: raising the ratchet has to be a deliberate edit with a
     // documented measurement in build-shared.ts, not a number that drifts up
     // whenever a bundle grows.
-    expect(NPM_BUNDLE_BUDGET_KB).toBe(3_120);
-    expect(() => assertNpmBundleBudget(3_194_880)).not.toThrow();
-    expect(() => assertNpmBundleBudget(3_194_881)).toThrow("budget 3120 KiB");
+    expect(NPM_BUNDLE_BUDGET_KB).toBe(3_143);
+    expect(() => assertNpmBundleBudget(3_218_432)).not.toThrow();
+    expect(() => assertNpmBundleBudget(3_218_433)).toThrow("budget 3143 KiB");
+  });
+
+  test("enforces per-target compiled binary size budget and supports bytecode opt-in", () => {
+    const linuxBudgetMib = compiledBinaryBudgetMib("linux-x64");
+    const darwinBudgetMib = compiledBinaryBudgetMib("darwin-arm64");
+    expect(darwinBudgetMib).toBeLessThan(linuxBudgetMib);
+    expect(compiledBinaryBudgetMib("unknown-target")).toBe(COMPILED_BINARY_BUDGET_MIB);
+
+    const linuxBudgetBytes = linuxBudgetMib * 1024 * 1024;
+    expect(() => assertCompiledBinaryBudget("linux-x64", linuxBudgetBytes)).not.toThrow();
+    expect(() => assertCompiledBinaryBudget("linux-x64", linuxBudgetBytes + 1)).toThrow(
+      `budget ${linuxBudgetMib} MiB`,
+    );
+    const darwinBudgetBytes = darwinBudgetMib * 1024 * 1024;
+    expect(() => assertCompiledBinaryBudget("darwin-arm64", darwinBudgetBytes + 1)).toThrow(
+      `budget ${darwinBudgetMib} MiB`,
+    );
+    const withBytecode = compileBinaryBuildOptions(
+      root,
+      { triple: "bun-linux-x64", outfile: "/tmp/kunai" },
+      { bytecode: true },
+    );
+    expect(withBytecode.bytecode).toBe(true);
+    expect(withBytecode.format).toBe("esm");
   });
 });
+
+describe("bytecode and size budgets per release target", () => {
+  test("bytecode is on for Linux and macOS, off for Windows and Android", () => {
+    const onByDefault = RELEASE_BINARY_TARGETS.filter((target) => bytecodeByDefault(target.triple))
+      .map((target) => target.id)
+      .sort();
+    expect(onByDefault).toEqual([
+      "darwin-arm64",
+      "darwin-x64",
+      "linux-arm64",
+      "linux-arm64-musl",
+      "linux-x64",
+      "linux-x64-musl",
+    ]);
+  });
+
+  test("every target has a budget, and every budget fits the ceiling shipped updaters enforce", () => {
+    for (const target of RELEASE_BINARY_TARGETS) {
+      const budget = COMPILED_BINARY_BUDGET_MIB_BY_TARGET[target.id];
+      expect(budget).toBeDefined();
+      expect((budget ?? Infinity) * 1024 * 1024).toBeLessThanOrEqual(target.maxBinaryBytes);
+    }
+  });
+});
+
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}

@@ -512,6 +512,7 @@ async function runProviderCycleRaced<TResolved>(args: {
 
       const outcome = await Promise.race(racers);
       if (hedgeTimer) clearTimeout(hedgeTimer);
+      if (input.signal?.aborted) break;
 
       if (outcome === "hedge") {
         launchNext();
@@ -664,35 +665,50 @@ async function resolveCandidateWithTimeout<TResolved>(input: {
     context: ProviderCycleCandidateContext,
   ) => Promise<TResolved>;
 }): Promise<TResolved> {
+  if (input.parentSignal?.aborted) {
+    throw input.parentSignal.reason ?? new DOMException("Aborted", "AbortError");
+  }
+
   const controller = new AbortController();
-  const onParentAbort = () => controller.abort(input.parentSignal?.reason);
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let rejectAbort: (() => void) | undefined;
+  const onParentAbort = () => {
+    if (timeout !== undefined) clearTimeout(timeout);
+    controller.abort(input.parentSignal?.reason ?? new DOMException("Aborted", "AbortError"));
+    rejectAbort?.();
+  };
   input.parentSignal?.addEventListener("abort", onParentAbort, { once: true });
 
-  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const abortOrTimeout = new Promise<TResolved>((_, reject) => {
+    rejectAbort = () =>
+      reject(input.parentSignal?.reason ?? new DOMException("Aborted", "AbortError"));
+    timeout = setTimeout(() => {
+      controller.abort(new Error("provider cycle candidate timeout"));
+      reject(
+        createProviderCycleFailureError(input.candidate, {
+          failureClass: "candidate-timeout",
+          message: `Provider candidate ${input.candidate.id} timed out`,
+          retryable: true,
+          at: input.now(),
+        }),
+      );
+    }, input.candidateTimeoutMs);
+  });
+
+  const candidatePromise = input.resolveCandidate(input.candidate, {
+    signal: controller.signal,
+    attempt: input.attempt,
+    emit: input.emit,
+  });
+  // If parent abort or timeout wins the race, a late rejection from the
+  // candidate must not become an unhandled rejection.
+  void candidatePromise.catch(() => undefined);
+
   try {
-    return await Promise.race([
-      input.resolveCandidate(input.candidate, {
-        signal: controller.signal,
-        attempt: input.attempt,
-        emit: input.emit,
-      }),
-      new Promise<TResolved>((_, reject) => {
-        timeout = setTimeout(() => {
-          controller.abort(new Error("provider cycle candidate timeout"));
-          reject(
-            createProviderCycleFailureError(input.candidate, {
-              failureClass: "candidate-timeout",
-              message: `Provider candidate ${input.candidate.id} timed out`,
-              retryable: true,
-              at: input.now(),
-            }),
-          );
-        }, input.candidateTimeoutMs);
-      }),
-    ]);
+    return await Promise.race([candidatePromise, abortOrTimeout]);
   } finally {
     input.parentSignal?.removeEventListener("abort", onParentAbort);
-    if (timeout) clearTimeout(timeout);
+    if (timeout !== undefined) clearTimeout(timeout);
   }
 }
 
@@ -907,16 +923,16 @@ function createCycleTraceEvent(
 }
 
 function sleepWithAbort(ms: number, signal?: AbortSignal): Promise<void> {
-  if (signal?.aborted) throw signal.reason;
+  if (signal?.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(resolve, ms);
-    signal?.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
-      },
-      { once: true },
-    );
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
 }

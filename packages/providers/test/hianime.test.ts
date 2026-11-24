@@ -30,6 +30,7 @@ import {
   splitCurlHttpTrailer,
 } from "../src/hianime/direct";
 import { HIANIME_PROVIDER_ID, hianimeManifest } from "../src/hianime/manifest";
+import { asMockFetch } from "./support/mock-fetch";
 
 const NOW = "2026-09-13T00:00:00.000Z";
 
@@ -785,9 +786,7 @@ describe("hianime http failures", () => {
     try {
       // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
       Bun.which = ((_cmd: string) => null) as typeof Bun.which;
-      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-      // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
-      globalThis.fetch = fetchImpl as unknown as typeof fetch;
+      globalThis.fetch = asMockFetch(fetchImpl);
       return await run();
     } finally {
       globalThis.fetch = originalFetch;
@@ -914,12 +913,12 @@ describe("hianime module search and episodes", () => {
       try {
         // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         Bun.which = ((_cmd: string) => null) as typeof Bun.which;
-        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-        // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
-        globalThis.fetch = (async () => {
-          throw new Error("boom");
-          // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
-        }) as unknown as typeof fetch;
+        globalThis.fetch = Object.assign(
+          async () => {
+            throw new Error("boom");
+          },
+          { preconnect: originalFetch.preconnect },
+        );
         return await hianimeProviderModule.search?.({ query: "naruto" }, { now: () => NOW });
       } finally {
         globalThis.fetch = originalFetch;
@@ -988,12 +987,12 @@ describe("hianime relay routing (#460)", () => {
     const originalFetch = globalThis.fetch;
     // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     Bun.which = (() => null) as typeof Bun.which;
-    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
-    globalThis.fetch = (async () => {
-      throw new Error("SENTINEL: direct upstream request happened");
-      // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
-    }) as unknown as typeof fetch;
+    globalThis.fetch = Object.assign(
+      async () => {
+        throw new Error("SENTINEL: direct upstream request happened");
+      },
+      { preconnect: originalFetch.preconnect },
+    );
     try {
       const thrown = await hianimeFetchText("https://hianime.at/search?keyword=x", {
         context,
@@ -1025,12 +1024,12 @@ describe("hianime relay routing (#460)", () => {
     const originalFetch = globalThis.fetch;
     // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     Bun.which = (() => null) as typeof Bun.which;
-    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
-    globalThis.fetch = (async () => {
-      throw new Error("SENTINEL: direct upstream request happened");
-      // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
-    }) as unknown as typeof fetch;
+    globalThis.fetch = Object.assign(
+      async () => {
+        throw new Error("SENTINEL: direct upstream request happened");
+      },
+      { preconnect: originalFetch.preconnect },
+    );
     try {
       const thrown = await hianimeFetchText("https://hianime.at/search?keyword=x", {
         context,
@@ -1062,9 +1061,9 @@ describe("hianime relay routing (#460)", () => {
     const originalFetch = globalThis.fetch;
     // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     Bun.which = (() => null) as typeof Bun.which;
-    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
-    globalThis.fetch = (async () => new Response("direct answer")) as unknown as typeof fetch;
+    globalThis.fetch = Object.assign(async () => new Response("direct answer"), {
+      preconnect: originalFetch.preconnect,
+    });
     try {
       const text = await hianimeFetchText("https://hianime.at/search?keyword=x", { context });
       expect(text).toBe("direct answer");

@@ -32,8 +32,8 @@ import {
 import { HIANIME_PROVIDER_ID, HIANIME_SUPPORTED_SERVER } from "./manifest";
 import {
   chooseHianimeSearchMatch,
-  HIANIME_BASE,
-  HIANIME_REFERER,
+  effectiveHianimeBase,
+  effectiveHianimeReferer,
   HIANIME_USER_AGENT,
   hianimeNumericId,
   looksLikeHianimeShowId,
@@ -270,7 +270,7 @@ export async function hianimeFetchText(
     readonly referer?: string;
   } = {},
 ): Promise<string> {
-  const referer = options.referer ?? HIANIME_REFERER;
+  const referer = options.referer ?? effectiveHianimeReferer();
   if (options.context?.fetch) {
     try {
       const response = await options.context.fetch.fetch(url, {
@@ -392,7 +392,7 @@ export async function searchHianime(
   const trimmed = query.trim();
   if (!trimmed) return [];
   const page = await hianimeFetchText(
-    `${HIANIME_BASE}/search?keyword=${encodeURIComponent(trimmed).replace(/%20/g, "+")}`,
+    `${effectiveHianimeBase()}/search?keyword=${encodeURIComponent(trimmed).replace(/%20/g, "+")}`,
     { signal, context },
   );
   return parseHianimeSearchHtml(page);
@@ -455,10 +455,13 @@ export async function fetchHianimeEpisodeCatalog(
 
   const numeric = hianimeNumericId(showId);
   if (numeric === null) return [];
-  const raw = await hianimeFetchText(`${HIANIME_BASE}/api/theme/episode/list/${numeric}`, {
-    signal,
-    context,
-  });
+  const raw = await hianimeFetchText(
+    `${effectiveHianimeBase()}/api/theme/episode/list/${numeric}`,
+    {
+      signal,
+      context,
+    },
+  );
   let html: string;
   try {
     html = (JSON.parse(raw) as { html?: unknown }).html as string;
@@ -484,7 +487,7 @@ export async function fetchHianimeServers(
   context?: ProviderRuntimeContext,
 ): Promise<readonly HianimeServerEntry[]> {
   const raw = await hianimeFetchText(
-    `${HIANIME_BASE}/api/theme/episode/servers?episodeId=${encodeURIComponent(episodeId)}`,
+    `${effectiveHianimeBase()}/api/theme/episode/servers?episodeId=${encodeURIComponent(episodeId)}`,
     { signal, context },
   );
   let html: string;
@@ -608,7 +611,7 @@ export async function resolveHianimeEpisodeStreams({
     const embedHtml = await hianimeFetchText(embedUrl, {
       signal,
       context,
-      referer: HIANIME_REFERER,
+      referer: effectiveHianimeReferer(),
     });
     const payload = decodeHianimeEmbedPage(embedHtml);
     const ladderHeaders = {

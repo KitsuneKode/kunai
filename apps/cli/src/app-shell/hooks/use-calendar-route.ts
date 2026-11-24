@@ -160,6 +160,7 @@ export function useCalendarRoute<T>({
       cleanedUp = true;
       controller.abort();
     };
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- bumping retryCount is how the calendar load is retried
   }, [requestKey, retryCount]);
 
   return { state, retry };
