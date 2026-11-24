@@ -85,21 +85,21 @@ chat:
   auto_reply: true
   integrations:
     jira:
-      use: false
+      usage: disabled
     linear:
-      use: false
+      usage: disabled
 knowledge_base:
   opt_out: false
   learnings:
     scope: "auto"
   issues:
     scope: "auto"
-  jira_project_keys: []
-  linear_team_keys: []
+  jira:
+    usage: disabled
+  linear:
+    usage: disabled
   pull_requests:
     scope: "auto"
 code_generation:
   docstrings:
     language: "en-US"
-  unit_tests:
-    enabled: false

@@ -1,4 +1,5 @@
 import type { Container } from "@/container";
+import { catalogAnswersSnapshot } from "@/services/catalog/catalog-source-ledger";
 import { buildDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 import {
   getRuntimeMemoryLine,
@@ -40,6 +41,8 @@ export function buildDiagnosticsPanelInput(
     providers: container.providerRegistry.getAllRegistered().map((provider) => provider.metadata),
     getProviderHealth: (providerId) => container.providerHealth.get(providerId),
     expandedSpanIds: options.expandedSpanIds,
+    catalogAnswers: catalogAnswersSnapshot(),
+    now: Date.now(),
   };
 }
 

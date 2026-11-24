@@ -9,6 +9,10 @@ import { markCurrentLabel } from "@/domain/current-label";
 import { formatRelativeAge } from "@/domain/relative-age";
 import type { SessionState } from "@/domain/session/SessionState";
 import type { ProviderMetadata } from "@/domain/types";
+import {
+  describeCatalogAnswers,
+  type CatalogSourceAnswer,
+} from "@/services/catalog/catalog-source-ledger";
 import type { ContinuationProjection } from "@/services/continuation/continuation-policy";
 import { projectContinuationSurface } from "@/services/continuation/continuation-surface-policy";
 import {
@@ -154,6 +158,10 @@ export type DiagnosticsPanelLineInput = {
   developerMode?: boolean;
   /** Override span expand/collapse; null/undefined uses newest-expanded defaults. */
   expandedSpanIds?: ReadonlySet<string> | null;
+  /** Which source last answered each catalog capability (search, trending, …). */
+  catalogAnswers?: readonly CatalogSourceAnswer[];
+  /** Clock for answer ages; defaults to `Date.now()`. */
+  now?: number;
 };
 
 export function buildDiagnosticsPanelLines({
@@ -170,6 +178,8 @@ export function buildDiagnosticsPanelLines({
   youtubeProbe,
   developerMode = false,
   expandedSpanIds,
+  catalogAnswers,
+  now,
 }: DiagnosticsPanelLineInput): readonly ShellPanelLine[] {
   const insight = buildDiagnosticsInsight({
     state,
@@ -196,6 +206,16 @@ export function buildDiagnosticsPanelLines({
     youtubeProbe,
     memorySamples,
   });
+  const catalogLine = catalogAnswers
+    ? describeCatalogAnswers(catalogAnswers, now ?? Date.now())
+    : null;
+  if (catalogLine) {
+    supplemental.unshift({
+      label: "Catalog sources",
+      detail: catalogLine.detail,
+      tone: catalogLine.degraded ? "warning" : "info",
+    });
+  }
 
   if (supplemental.length === 0) return baseLines;
 

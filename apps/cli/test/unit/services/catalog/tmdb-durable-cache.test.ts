@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
+import { catalogAnswersSnapshot } from "@/services/catalog/catalog-source-ledger";
 import { createTmdbDurableCache } from "@/services/catalog/tmdb-durable-cache";
 import {
   clearTmdbSessionCache,
@@ -75,6 +76,22 @@ describe("TMDB last-known-good for series structure", () => {
     serve(() => null);
     expect((await fetchSeasonSummaries("2316"))?.map((season) => season.number)).toEqual([1, 4]);
     expect((await fetchEpisodes("2316", 4))?.[0]).toMatchObject({ number: 5, name: "Local Ad" });
+    // /diagnostics can say the episode list came from the saved copy.
+    expect(catalogAnswersSnapshot()).toMatchObject([
+      { capability: "series-episodes", sourceId: "saved", fallback: true },
+    ]);
+  });
+
+  test("a show-only request (genres for recommendations) does not speak for the episode source", async () => {
+    setTmdbDurableCache(realCache());
+    serve(() => Response.json(show));
+    await fetchTmdbJsonCached("/tv/2316");
+    expect(catalogAnswersSnapshot()).toEqual([]);
+    serve(() => Response.json(season4));
+    await fetchTmdbJsonCached("/tv/2316/season/4?language=en-US");
+    expect(catalogAnswersSnapshot()).toMatchObject([
+      { capability: "series-episodes", sourceId: "tmdb", fallback: false },
+    ]);
   });
 
   test("a definitive 4xx is TMDB's answer and is never masked by a saved copy", async () => {

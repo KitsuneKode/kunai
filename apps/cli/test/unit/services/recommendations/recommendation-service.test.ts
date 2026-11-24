@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
 
 import type { SearchResult } from "@/domain/types";
+import {
+  catalogAnswersSnapshot,
+  recordCatalogAnswer,
+} from "@/services/catalog/catalog-source-ledger";
 import { clearTmdbSessionCache } from "@/services/catalog/tmdb-proxy";
 import {
   buildRecommendCacheKey,
@@ -18,6 +22,33 @@ afterEach(() => {
 });
 
 describe("recommendation cache", () => {
+  test("a fresh cached answer is recorded as TMDB, replacing an earlier fallback record", async () => {
+    const db = openKunaiDatabase(":memory:");
+    runMigrations(db, "cache");
+    const repository = new RecommendationCacheRepository(db);
+    const items: SearchResult[] = [
+      { id: "1", type: "movie", title: "Cached", year: "2026", overview: "", posterPath: null },
+    ];
+    repository.set(
+      buildRecommendCacheKey("trending", "trending"),
+      JSON.stringify({ cachedAt: Date.now(), items }),
+      new Date(Date.now() + RECOMMENDATION_STALE_RETENTION_MS).toISOString(),
+      new Date().toISOString(),
+    );
+    recordCatalogAnswer({
+      capability: "recommendations",
+      lane: "movie-series",
+      sourceId: "saved",
+      sourceName: "saved list",
+      fallback: true,
+      reason: "TMDB unreachable",
+    });
+    const section = await new RecommendationServiceImpl(repository).getTrending();
+    expect(section.items.map((entry) => entry.id)).toEqual(["1"]);
+    expect(catalogAnswersSnapshot()).toMatchObject([{ sourceId: "tmdb", fallback: false }]);
+    db.close();
+  });
+
   test("buildRecommendCacheKey includes id and type", () => {
     const key = buildRecommendCacheKey("438631", "movie");
     expect(key).toBe("recommend:movie:438631");

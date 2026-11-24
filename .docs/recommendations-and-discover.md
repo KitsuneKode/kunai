@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24"
+lastReviewed: "2026-11-24T06:33:28Z"
 ---
 
 # Kunai — Recommendations And Discover
@@ -109,6 +109,32 @@ dropped before merge: TVmaze numbers some real shows differently from TMDB
 (The Office US S04E05 is "Local Ad" on TMDB and a different episode on TVmaze),
 so a fallback episode list could start the wrong episode and write the wrong
 history row.
+
+### Search fallback: Wikidata
+
+When every TMDB route fails, a plain-text movie/series search is answered from
+Wikidata (`apps/cli/src/services/catalog/wikidata-search.ts`, called from the
+registry catch in `SearchRoutingService.ts`). Wikidata is CC0 and keyless and
+records TMDB's own ids (P4947 movie, P4983 TV), so a result carries the exact
+TMDB id; items without one are never returned. Two requests: a CirrusSearch
+query restricted with `haswbstatement:P4947|P4983`, then one SPARQL query for
+the ids, English or `mul` label, earliest date, an anime flag (instance or genre
+of anime) and the sitelink count. Exact title matches rank first, then the most
+linked titles. The result reports `sourceName: "Wikidata (TMDB unreachable)"`
+and `diagnosis.code: "catalog-fallback"`; a filtered (discover-style) search, a
+caller abort, or a Wikidata failure keeps the original TMDB error.
+
+### Catalog source ledger
+
+`apps/cli/src/services/catalog/catalog-source-ledger.ts` keeps the latest
+answer per capability (search, trending, recommendations, series episodes) and
+lane: which source answered, whether it was a fallback, and why. Writers are
+`SearchRoutingService`, `CatalogDiscoveryService.loadTrendingSection`,
+`RecommendationServiceImpl` (live write or saved list) and `tmdb-proxy.ts`
+(live or saved show/season). The reader is the "Catalog sources" line in the
+diagnostics panel (`app-shell/panel-data.ts`, fed by
+`diagnostics-panel-source.ts`), shown as a warning while any answer is a
+fallback.
 
 ### AniList client
 
