@@ -8,7 +8,6 @@ import {
   statSync,
   unlinkSync,
   utimesSync,
-  writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
 
@@ -325,11 +324,16 @@ export function loadCachedProviderHotfixManifest(
   };
 }
 
+async function releaseUnreadBody(response: Response): Promise<void> {
+  await response.body?.cancel().catch(() => undefined);
+}
+
 async function readResponseTextBounded(response: Response, maxBytes: number): Promise<string> {
   const contentLengthHeader = response.headers.get("content-length");
   if (contentLengthHeader) {
     const declared = Number(contentLengthHeader);
     if (Number.isFinite(declared) && declared > maxBytes) {
+      await releaseUnreadBody(response);
       throw new Error(`Manifest exceeds maximum size (${maxBytes} bytes)`);
     }
   }
@@ -433,6 +437,7 @@ export async function fetchAndCacheProviderHotfixManifest(options: {
       signal: controller.signal,
     });
     if (!response.ok) {
+      await releaseUnreadBody(response);
       return {
         status: "rejected",
         path,
@@ -642,46 +647,43 @@ export async function rollbackCachedProviderHotfixManifest(
   });
 }
 
-export function resetCachedProviderHotfixManifest(
+export async function resetCachedProviderHotfixManifest(
   options: {
     readonly path?: string;
     readonly statePath?: string;
     readonly includeBackup?: boolean;
     readonly nowMs?: number;
   } = {},
-): ResetProviderManifestResult {
+): Promise<ResetProviderManifestResult> {
   const path = options.path ?? providerManifestCachePath();
   const statePath = providerManifestStatePath(options.path, options.statePath);
-  let removed = false;
-  if (existsSync(path)) {
-    unlinkSync(path);
-    removed = true;
-  }
-  if (options.includeBackup) {
-    const backup = providerManifestBackupPath(path);
-    if (existsSync(backup)) unlinkSync(backup);
-  }
-  // Bundled defaults until the user asks for an update. Without the hold the
-  // next launch's background refresh reinstalls the published manifest. A
-  // plain reset keeps the revision floor and body pin; --force drops them.
-  const prior = options.includeBackup
-    ? { highestRevision: null, payloadSha256: null }
-    : readProviderManifestState(statePath);
-  mkdirSync(dirname(statePath), { recursive: true });
-  writeFileSync(
-    statePath,
-    `${JSON.stringify(
+  return withManifestLock(statePath, async () => {
+    let removed = false;
+    if (existsSync(path)) {
+      unlinkSync(path);
+      removed = true;
+    }
+    if (options.includeBackup) {
+      const backup = providerManifestBackupPath(path);
+      if (existsSync(backup)) unlinkSync(backup);
+    }
+    // Bundled defaults until the user asks for an update. Without the hold the
+    // next launch's background refresh reinstalls the published manifest. A
+    // plain reset keeps the revision floor and body pin; --force drops them.
+    const prior = options.includeBackup
+      ? { highestRevision: null, payloadSha256: null }
+      : readProviderManifestState(statePath);
+    await writeProviderManifestState(
+      statePath,
       {
         highestRevision: prior.highestRevision,
         payloadSha256: prior.payloadSha256,
         hold: "reset",
-        updatedAt: new Date(options.nowMs ?? Date.now()).toISOString(),
       },
-      null,
-      2,
-    )}\n`,
-  );
-  return { removed, path };
+      options.nowMs ?? Date.now(),
+    );
+    return { removed, path };
+  });
 }
 
 /**

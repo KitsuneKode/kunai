@@ -2934,8 +2934,8 @@ describe("DownloadService", () => {
     try {
       service.kickQueue("startup");
       await waitUntil(() => reporterCalls === 1);
-      await Bun.sleep(0);
-      await Bun.sleep(0);
+      await nextTurn();
+      await nextTurn();
       expect(unhandled).toEqual([]);
     } finally {
       process.off("unhandledRejection", onUnhandled);
@@ -3549,4 +3549,10 @@ function createHangingProbe(
 /** Local signature kept so existing call sites read unchanged. */
 async function waitUntil(predicate: () => boolean, timeoutMs = 5_000): Promise<void> {
   await sharedWaitUntil(predicate, { timeoutMs });
+}
+
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
 }

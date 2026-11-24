@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,6 +16,7 @@ import {
   applyHotfixToProviderBootstrap,
   fetchAndCacheProviderHotfixManifest,
   loadCachedProviderHotfixManifest,
+  MAX_MANIFEST_BYTES,
   maybeBackgroundRefreshProviderManifest,
   maybeUrgentProviderManifestRefresh,
   resetUrgentProviderManifestRefreshForTest,
@@ -218,7 +227,7 @@ describe("provider hotfix manifest runtime", () => {
       expect(loadedAfterRollback.manifest.revision).toBe(4);
     }
 
-    const reset = resetCachedProviderHotfixManifest({ path: cachePath, includeBackup: true });
+    const reset = await resetCachedProviderHotfixManifest({ path: cachePath, includeBackup: true });
     expect(reset.removed).toBe(true);
     expect(
       loadCachedProviderHotfixManifest({ path: cachePath, trustedPublicKeysById: keys }).status,
@@ -438,7 +447,7 @@ describe("provider hotfix manifest runtime", () => {
     }
 
     // Explicit force reset clears the floor.
-    resetCachedProviderHotfixManifest({ path: cachePath, includeBackup: true });
+    await resetCachedProviderHotfixManifest({ path: cachePath, includeBackup: true });
     const afterForceReset = await fetchAndCacheProviderHotfixManifest({
       url: "https://manifests.kunai.test/providers.json",
       trustedPublicKeysById: keys,
@@ -642,7 +651,7 @@ describe("provider hotfix manifest: reset, rollback, and body pinning survive re
     const { path, install, refresh } = setup();
     expect((await install(makeManifest({ revision: 5 }))).status).toBe("updated");
 
-    resetCachedProviderHotfixManifest({ path, nowMs: NOW_MS });
+    await resetCachedProviderHotfixManifest({ path, nowMs: NOW_MS });
     expect(existsSync(path)).toBe(false);
     expect(await refresh(makeManifest({ revision: 5 }))).toBe("skipped");
     expect(existsSync(path)).toBe(false);
@@ -770,6 +779,90 @@ describe("urgent refresh after a provider goes down", () => {
       }),
     ).toBe("skipped");
     expect(fetches).toBe(1);
+  });
+
+  test("reset waits on the manifest lock and writes the hold atomically", async () => {
+    const path = makeTempCachePath();
+    const statePath = providerManifestStatePath(path);
+    writeFileSync(
+      statePath,
+      `${JSON.stringify({ highestRevision: 5, payloadSha256: "ab".repeat(32), hold: null })}\n`,
+    );
+    mkdirSync(`${statePath}.lock`);
+
+    let blocked = false;
+    try {
+      await resetCachedProviderHotfixManifest({ path, nowMs: NOW_MS });
+    } catch {
+      blocked = true;
+    }
+    expect(blocked).toBe(true);
+    expect(readFileSync(statePath, "utf8")).not.toContain('"hold": "reset"');
+
+    rmSync(`${statePath}.lock`, { recursive: true });
+    const reset = await resetCachedProviderHotfixManifest({ path, nowMs: NOW_MS });
+    expect(reset.removed).toBe(false);
+    // SAFETY: reset writes this state file as JSON via writeProviderManifestState.
+    const written = JSON.parse(readFileSync(statePath, "utf8")) as {
+      highestRevision: number;
+      payloadSha256: string;
+      hold: string;
+      updatedAt: string;
+    };
+    expect(written).toEqual({
+      highestRevision: 5,
+      payloadSha256: "ab".repeat(32),
+      hold: "reset",
+      updatedAt: new Date(NOW_MS).toISOString(),
+    });
+  });
+
+  test("a failed or oversized manifest response cancels the unread body", async () => {
+    const path = makeTempCachePath();
+    const { publicPem } = makeKeypair();
+    const trusted = { "key-2026": publicPem };
+    const url = "https://manifests.kunai.test/providers.json";
+
+    const unread = (status: number, contentLength?: string) => {
+      let cancelled = false;
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          controller.enqueue(new Uint8Array(1024));
+        },
+        cancel() {
+          cancelled = true;
+        },
+      });
+      return {
+        cancelled: () => cancelled,
+        response: new Response(body, {
+          status,
+          headers: contentLength ? { "content-length": contentLength } : undefined,
+        }),
+      };
+    };
+
+    const httpError = unread(503);
+    const rejected = await fetchAndCacheProviderHotfixManifest({
+      url,
+      path,
+      trustedPublicKeysById: trusted,
+      nowMs: NOW_MS,
+      fetchImpl: async () => httpError.response,
+    });
+    expect(rejected.status).toBe("rejected");
+    expect(httpError.cancelled()).toBe(true);
+
+    const oversized = unread(200, String(MAX_MANIFEST_BYTES + 1));
+    const tooBig = await fetchAndCacheProviderHotfixManifest({
+      url,
+      path,
+      trustedPublicKeysById: trusted,
+      nowMs: NOW_MS,
+      fetchImpl: async () => oversized.response,
+    });
+    expect(tooBig.status).toBe("rejected");
+    expect(oversized.cancelled()).toBe(true);
   });
 });
 

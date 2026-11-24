@@ -69,6 +69,7 @@ function hangUntilAbort(signal: AbortSignal | null | undefined): Promise<Respons
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
+    // sleep-allow: delay() is only advanced by jest fake timers in this file
     setTimeout(resolve, ms);
   });
 }

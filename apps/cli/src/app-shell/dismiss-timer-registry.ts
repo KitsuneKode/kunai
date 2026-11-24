@@ -5,9 +5,13 @@ export type DismissTimerOperations = {
 
 const defaultTimerOperations: DismissTimerOperations = {
   setTimeout(callback, delayMs) {
-    return setTimeout(callback, delayMs);
+    const handle = setTimeout(callback, delayMs);
+    // A dismissal must not keep the process alive after the shell exits.
+    handle.unref?.();
+    return handle;
   },
   clearTimeout(handle) {
+    // SAFETY: schedule() stores the handle this setTimeout returned.
     clearTimeout(handle as ReturnType<typeof setTimeout>);
   },
 };
@@ -37,3 +41,6 @@ export function createDismissTimerRegistry(
     },
   };
 }
+
+/** Download-queued notes. Unmount clears them; the timer is unref'd. */
+export const shellFeedbackTimers = createDismissTimerRegistry();

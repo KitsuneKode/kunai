@@ -297,6 +297,16 @@ async function readStreamLines(options: {
   };
   options.signal.addEventListener("abort", cancelReader, { once: true });
 
+  const emitCompleteLines = (): void => {
+    while (true) {
+      const newlineIndex = buffer.indexOf("\n");
+      if (newlineIndex < 0) break;
+      const line = buffer.slice(0, newlineIndex).replace(/\r$/, "");
+      buffer = buffer.slice(newlineIndex + 1);
+      options.onLine(line);
+    }
+  };
+
   try {
     while (true) {
       if (options.signal.aborted) throw options.signal.reason;
@@ -317,14 +327,12 @@ async function readStreamLines(options: {
         }
       }
       buffer += decoder.decode(value, { stream: true });
-      while (true) {
-        const newlineIndex = buffer.indexOf("\n");
-        if (newlineIndex < 0) break;
-        const line = buffer.slice(0, newlineIndex).replace(/\r$/, "");
-        buffer = buffer.slice(newlineIndex + 1);
-        options.onLine(line);
-      }
+      emitCompleteLines();
     }
+    // A multibyte character split onto the last chunk stays inside the decoder
+    // until flush. Emitting the trailing line first drops that tail.
+    buffer += decoder.decode();
+    emitCompleteLines();
     const trailing = buffer.replace(/\r$/, "");
     if (trailing.length > 0) {
       options.onLine(trailing);

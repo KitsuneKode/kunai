@@ -201,7 +201,7 @@ describe("PersistentMpvPropertyRouter", () => {
       value: "copy-share",
       observedAt: 1,
     });
-    await Bun.sleep(0);
+    await nextTurn();
 
     expect(copied).toBe(true);
     expect(commands).toContainEqual(["set_property", "user-data/kunai-request", ""]);
@@ -261,3 +261,9 @@ describe("PersistentMpvPropertyRouter", () => {
     expect(clears).toHaveLength(8);
   });
 });
+
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}

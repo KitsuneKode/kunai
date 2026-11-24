@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, jest, test } from "bun:test";
 
 import {
   assertRuntimeAllowed,
@@ -1332,6 +1332,7 @@ function hedgeModule(
         // Abort-aware wait: a real provider hands the signal to fetch, so a
         // cancelled candidate stops immediately rather than running to term.
         await new Promise<void>((resolve, reject) => {
+          // sleep-allow: provider double delay; these hedge tests still order real timers
           const timer = setTimeout(resolve, behaviour.delayMs);
           context.signal?.addEventListener(
             "abort",
@@ -1420,11 +1421,20 @@ test("hedged fallback aborts losing candidates once a winner appears", async () 
     hedgeDelayMs: 30,
   });
 
-  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-  await engine.resolveWithFallback(HEDGE_INPUT as never, ["slow-primary", "fast-hedge"] as never);
-  const abortDeadline = Date.now() + 1_000;
-  while (!log.aborted.includes("slow-primary") && Date.now() < abortDeadline) {
-    await Bun.sleep(5);
+  jest.useFakeTimers();
+  try {
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    const pendingAbort = engine.resolveWithFallback(
+      HEDGE_INPUT as never,
+      ["slow-primary", "fast-hedge"] as never,
+    );
+    for (let step = 0; step < 40 && !log.aborted.includes("slow-primary"); step += 1) {
+      jest.advanceTimersByTime(50);
+      await Promise.resolve();
+    }
+    await pendingAbort;
+  } finally {
+    jest.useRealTimers();
   }
 
   expect(log.aborted).toContain("slow-primary");
@@ -1701,6 +1711,7 @@ function healthReportingModule(
     async resolve(input, context) {
       try {
         await new Promise<void>((resolve, reject) => {
+          // sleep-allow: provider double delay; these hedge tests still order real timers
           const timer = setTimeout(resolve, behaviour.delayMs);
           context.signal?.addEventListener(
             "abort",
@@ -1819,7 +1830,7 @@ test("sequential fallback records the in-flight provider as aborted on cancel", 
     ["slow-only"] as never,
     controller.signal,
   );
-  await Bun.sleep(20);
+  await nextTurn();
   controller.abort("playback-loading-command-fallback");
 
   const output = await pending;
@@ -1868,22 +1879,38 @@ test("hedged fallback records every in-flight candidate as aborted on cancel", a
     attemptTimeoutMs: 60_000,
   });
 
-  const controller = new AbortController();
-  const pending = engine.resolveWithFallback(
-    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-    HEDGE_INPUT as never,
-    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-    ["slow-a", "slow-b"] as never,
-    controller.signal,
-  );
-  await Bun.sleep(40);
-  controller.abort("provider-fallback-picker");
+  jest.useFakeTimers();
+  try {
+    const controller = new AbortController();
+    const pending = engine.resolveWithFallback(
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+      HEDGE_INPUT as never,
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+      ["slow-a", "slow-b"] as never,
+      controller.signal,
+    );
+    jest.advanceTimersByTime(20);
+    await Promise.resolve();
+    controller.abort("provider-fallback-picker");
+    jest.advanceTimersByTime(1);
+    await Promise.resolve();
 
-  const output = await pending;
-  expect(output.result).toBeNull();
-  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-  expect(output.attempts.map((attempt) => [attempt.providerId, attempt.aborted] as const)).toEqual([
-    ["slow-a", true],
-    ["slow-b", true],
-  ] as never);
+    const output = await pending;
+    expect(output.result).toBeNull();
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    expect(
+      output.attempts.map((attempt) => [attempt.providerId, attempt.aborted] as const),
+    ).toEqual([
+      ["slow-a", true],
+      ["slow-b", true],
+    ] as never);
+  } finally {
+    jest.useRealTimers();
+  }
 });
+
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}

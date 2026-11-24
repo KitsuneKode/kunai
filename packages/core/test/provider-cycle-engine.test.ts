@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, jest, test } from "bun:test";
 
 import type { ProviderCycleCandidate } from "@kunai/types";
 import { ProviderHttpError } from "@kunai/types";
@@ -54,21 +54,21 @@ test("runProviderCycle resolves the first successful provider-local candidate", 
 test("runProviderCycle retries a timed out candidate before moving to the next one", async () => {
   const attempts: string[] = [];
 
-  const result = await runProviderCycle({
-    providerId: "allanime",
-    candidates,
-    candidateTimeoutMs: 5,
-    retryDelayMs: 0,
-    maxAttemptsPerCandidate: 2,
-    now: fixedClock(),
-    async resolveCandidate(candidate) {
-      attempts.push(candidate.id);
-      if (candidate.serverId === "kiwi") {
-        await Bun.sleep(20);
-      }
-      return { streamId: candidate.id };
-    },
-  });
+  const result = await finishWithFakeTimers(() =>
+    runProviderCycle({
+      providerId: "allanime",
+      candidates,
+      candidateTimeoutMs: 5,
+      retryDelayMs: 0,
+      maxAttemptsPerCandidate: 2,
+      now: fixedClock(),
+      async resolveCandidate(candidate, context) {
+        attempts.push(candidate.id);
+        if (candidate.serverId === "kiwi") await hangUntilAbort(context.signal);
+        return { streamId: candidate.id };
+      },
+    }),
+  );
 
   expect(result.selected).toEqual({ streamId: "source:telli" });
   expect(attempts).toEqual(["source:kiwi", "source:kiwi", "source:telli"]);
@@ -82,20 +82,22 @@ test("runProviderCycle retries a timed out candidate before moving to the next o
 test("allowTransientCandidateRetry grants an attempt beyond the normal budget", async () => {
   const attempts: string[] = [];
 
-  const result = await runProviderCycle({
-    providerId: "allanime",
-    candidates: [candidates[0]!],
-    candidateTimeoutMs: 5,
-    retryDelayMs: 0,
-    maxAttemptsPerCandidate: 2,
-    allowTransientCandidateRetry: true,
-    now: fixedClock(),
-    async resolveCandidate(candidate) {
-      attempts.push(candidate.id);
-      await Bun.sleep(20);
-      return { streamId: candidate.id };
-    },
-  });
+  const result = await finishWithFakeTimers(() =>
+    runProviderCycle({
+      providerId: "allanime",
+      candidates: [candidates[0]!],
+      candidateTimeoutMs: 5,
+      retryDelayMs: 0,
+      maxAttemptsPerCandidate: 2,
+      allowTransientCandidateRetry: true,
+      now: fixedClock(),
+      async resolveCandidate(candidate, context) {
+        attempts.push(candidate.id);
+        await hangUntilAbort(context.signal);
+        return { streamId: candidate.id };
+      },
+    }),
+  );
 
   // 2 budgeted attempts + 1 transient retry. The flag previously consumed part
   // of the budget instead of extending it, so it never granted anything.
@@ -136,18 +138,20 @@ test("allowTransientCandidateRetry is not spent on non-transient failures", asyn
 test("transient retries wait by default instead of re-firing instantly", async () => {
   const startedAt: number[] = [];
 
-  await runProviderCycle({
-    providerId: "allanime",
-    candidates: [candidates[0]!],
-    candidateTimeoutMs: 5,
-    maxAttemptsPerCandidate: 2,
-    now: fixedClock(),
-    async resolveCandidate(candidate) {
-      startedAt.push(Date.now());
-      await Bun.sleep(20);
-      return { streamId: candidate.id };
-    },
-  });
+  await finishWithFakeTimers(() =>
+    runProviderCycle({
+      providerId: "allanime",
+      candidates: [candidates[0]!],
+      candidateTimeoutMs: 5,
+      maxAttemptsPerCandidate: 2,
+      now: fixedClock(),
+      async resolveCandidate(candidate, context) {
+        startedAt.push(Date.now());
+        await hangUntilAbort(context.signal);
+        return { streamId: candidate.id };
+      },
+    }),
+  );
 
   expect(startedAt).toHaveLength(2);
   // No explicit retryDelayMs, so the transient default applies — retrying a
@@ -484,3 +488,27 @@ describe("hostile candidate rejections", () => {
     expect(result.attempts.every((attempt) => attempt.failure)).toBe(true);
   });
 });
+
+function hangUntilAbort(signal: AbortSignal): Promise<never> {
+  return new Promise((_resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+  });
+}
+
+async function finishWithFakeTimers<T>(work: () => Promise<T>): Promise<T> {
+  jest.useFakeTimers();
+  try {
+    const pending = work();
+    for (let step = 0; step < 40; step += 1) {
+      jest.advanceTimersByTime(100);
+      await Promise.resolve();
+    }
+    return await pending;
+  } finally {
+    jest.useRealTimers();
+  }
+}

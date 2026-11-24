@@ -188,6 +188,7 @@ test("holds launcher and manifest publication ownership across package command a
     },
     layout,
   );
+  // sleep-allow: waits for a real installer ownership child
   await Bun.sleep(25);
   expect(nativeActivated).toBe(false);
 

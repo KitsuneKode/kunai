@@ -204,12 +204,10 @@ async function dispatchRpcRequest(
 async function readRpcRequest(request: Request): Promise<RelayRpcRequest> {
   const contentLength = request.headers.get("content-length");
   if (contentLength && Number(contentLength) > DEFAULT_MAX_REQUEST_BODY_BYTES) {
+    await request.body?.cancel().catch(() => undefined);
     throw new RelayValidationError("body-too-large", "Relay envelope is too large", 413);
   }
-  const text = await request.text();
-  if (byteLength(text) > DEFAULT_MAX_REQUEST_BODY_BYTES) {
-    throw new RelayValidationError("body-too-large", "Relay envelope is too large", 413);
-  }
+  const text = await readRequestTextCapped(request);
 
   let parsed: unknown;
   try {
@@ -472,6 +470,27 @@ function isAbortLike(cause: unknown): boolean {
 
 function byteLength(value: string): number {
   return new TextEncoder().encode(value).byteLength;
+}
+
+/** Cap the envelope while reading. `request.text()` would buffer it first. */
+async function readRequestTextCapped(request: Request): Promise<string> {
+  const stream = request.body;
+  if (!stream) {
+    const text = await request.text();
+    if (byteLength(text) > DEFAULT_MAX_REQUEST_BODY_BYTES) {
+      throw new RelayValidationError("body-too-large", "Relay envelope is too large", 413);
+    }
+    return text;
+  }
+  const bytes = await readBodyWithin(
+    stream,
+    DEFAULT_MAX_REQUEST_BODY_BYTES,
+    DEFAULT_RELAY_TIMEOUT_MS,
+  );
+  if (!bytes) {
+    throw new RelayValidationError("body-too-large", "Relay envelope is too large", 413);
+  }
+  return new TextDecoder().decode(bytes);
 }
 
 /**

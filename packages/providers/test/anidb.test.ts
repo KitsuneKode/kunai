@@ -935,6 +935,7 @@ describe("anidb episode stream inventory", () => {
         }
         if (url.includes("/embed/eng-1")) {
           return await new Promise<Response>((resolve, reject) => {
+            // sleep-allow: fixture holds an upstream response; the adapter clock is not injected
             const timer = setTimeout(
               () => resolve(new Response("file: 'https://cdn.example/eng.m3u8'")),
               400,

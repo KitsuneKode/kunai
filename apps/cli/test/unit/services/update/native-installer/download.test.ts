@@ -547,6 +547,7 @@ describe("downloadToFile", () => {
         destinationPath: path,
         fetchImpl: async () => {
           calls += 1;
+          // sleep-allow: waits for a real download child to observe cancellation
           await Bun.sleep(80);
           return textResponse("fail", { status: 503 });
         },

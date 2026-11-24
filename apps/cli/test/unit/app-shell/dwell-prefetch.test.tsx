@@ -19,6 +19,7 @@ import React, { act, useState } from "react";
 import { render } from "../../harness/render-capture";
 import { waitUntil } from "../../support/wait-until";
 
+// sleep-allow: dwell timer helper; the prefetch clock is not injected
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 type PrefetchCall = {

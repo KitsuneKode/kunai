@@ -67,6 +67,7 @@ describe("migrateFlatInstall activation", () => {
       layout,
     });
     await waitForPath(versionBinaryPath(layout, "1.2.3"));
+    // sleep-allow: waits for a real installer migration child
     await Bun.sleep(20);
     expect((await lstat(layout.launcherPath)).isFile()).toBe(true);
 

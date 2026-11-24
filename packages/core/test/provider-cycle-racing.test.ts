@@ -36,6 +36,7 @@ function candidates(...ids: string[]): ProviderCycleCandidate[] {
 }
 
 function sleep(ms: number): Promise<void> {
+  // sleep-allow: race fixture delay; the cycle clock is not injected here
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
@@ -90,6 +91,7 @@ describe("runProviderCycle racing", () => {
       resolveCandidate: async (candidate, context) => {
         if (candidate.id === "slow") {
           await new Promise((resolve, reject) => {
+            // sleep-allow: race fixture delay; the cycle clock is not injected here
             const timer = setTimeout(resolve, 1_500);
             context.signal.addEventListener("abort", () => {
               clearTimeout(timer);
@@ -196,6 +198,7 @@ describe("runProviderCycle racing", () => {
 
   test("cancelling the parent stops the whole race", async () => {
     const controller = new AbortController();
+    // sleep-allow: race fixture delay; the cycle clock is not injected here
     setTimeout(() => controller.abort(), 20);
 
     const result = await runProviderCycle<string>({

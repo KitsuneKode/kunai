@@ -170,6 +170,7 @@ describe("activation lock", () => {
     // starts so the second's queue time lands inside its own deadline. There
     // is no exported "acquire started" observable; 50ms gives the 5ms poll
     // loop ten turns of headroom under parallel load.
+    // sleep-allow: cross-process install lock held by a real child
     await Bun.sleep(50);
     const startedAt = performance.now();
     const second = await tryAcquireActivationLock(layout, "2.0.0", {
@@ -283,6 +284,7 @@ describe("activation lock", () => {
         if (!lock.acquired) return false;
         inside += 1;
         maximumInside = Math.max(maximumInside, inside);
+        // sleep-allow: cross-process install lock held by a real child
         await Bun.sleep(15);
         inside -= 1;
         await lock.release();
@@ -334,6 +336,7 @@ describe("activation lock", () => {
       const startDeadline = Date.now() + 15000;
       while (!existsSync(process.env.KUNAI_TEST_START_PATH)) {
         if (Date.now() > startDeadline) { console.error("worker-" + workerId + ": start sentinel never appeared"); process.exit(3); }
+        // sleep-allow: cross-process install lock held by a real child
         await Bun.sleep(5);
       }
       const result = await withActivationLock(
@@ -358,6 +361,7 @@ describe("activation lock", () => {
           const releaseDeadline = Date.now() + 15000;
           while (!existsSync(releasePath)) {
             if (Date.now() > releaseDeadline) { console.error("worker-" + workerId + ": release sentinel never appeared"); process.exit(3); }
+            // sleep-allow: cross-process install lock held by a real child
             await Bun.sleep(5);
           }
           if (ownsSentinel) await rm(process.env.KUNAI_TEST_CRITICAL_PATH, { recursive: true });
@@ -412,6 +416,7 @@ describe("activation lock", () => {
             name.startsWith(prefix),
           ).length;
           if (count >= expected) return;
+          // sleep-allow: cross-process install lock held by a real child
           await Bun.sleep(5);
         }
         // A breach of this generous budget is a genuine hang, not a slow runner, so
@@ -661,6 +666,7 @@ describe("activation lock", () => {
           () => "settled",
           () => "settled",
         ),
+        // sleep-allow: cross-process install lock held by a real child
         Bun.sleep(150).then(() => "hung"),
       ]);
       await chmod(layout.locksDir, 0o700);

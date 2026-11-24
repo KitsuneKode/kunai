@@ -50,7 +50,9 @@ function catalogSuggestion(title: string): SearchSuggestion<SearchResult> {
 }
 
 async function nextMacrotask(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
 }
 
 describe("browse search vs type-ahead abort", () => {
