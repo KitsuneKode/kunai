@@ -234,7 +234,8 @@ function LanguageColumn({
           : `${focused ? "❯ " : "  "}${heading}${focused ? " ↑↓" : ""}`}
       </Text>
       {options.map((option, i) => {
-        const selected = focused && i === index;
+        const chosen = i === index;
+        const selected = focused && chosen;
         return (
           <SetupTarget
             key={option.value}
@@ -242,13 +243,11 @@ function LanguageColumn({
             value={String(i)}
           >
             <Box backgroundColor={selected && !plain ? palette.accentFill : undefined}>
-              <Text
-                color={selected ? palette.accent : i === index ? palette.accentDim : palette.dim}
-              >
-                {plain ? selectionPrefix(selected, true) : i === index ? "▌ " : "  "}
+              <Text color={selected ? palette.accent : chosen ? palette.accentDim : palette.dim}>
+                {plain ? selectionPrefix(selected, true) : chosen ? "▌ " : "  "}
               </Text>
-              <Text color={i === index ? palette.text : palette.textDim} bold={selected}>
-                {option.label}
+              <Text color={chosen ? palette.text : palette.textDim} bold={selected}>
+                {plain && chosen && !selected ? `[current] ${option.label}` : option.label}
               </Text>
             </Box>
           </SetupTarget>

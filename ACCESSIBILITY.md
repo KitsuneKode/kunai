@@ -30,13 +30,17 @@ output or JSON (`-S --json`, `doctor --json`, `capabilities --json`).
   - Stacks two-pane views into linear, single-column output. Glyphs, layout,
     and motion follow the setting on the next frame. The screen buffer and
     mouse reporting are sampled when the shell starts, so turning plain mode
-    on or off in Settings changes them on the next launch. A launch that
-    starts in plain mode uses the normal terminal buffer
+    on or off in Settings changes them on the next launch. Root-content
+    clears follow that same launch-time screen, so a session that started on
+    the primary buffer does not erase it after plain mode is turned off. A
+    launch that starts in plain mode uses the normal terminal buffer
     (`alternateScreen: false`) with mouse reporting off.
   - States focus, selection, active tabs, switches, checkboxes, progress, and
-    status explicitly in words (`[selected]`, `[active]`, `[on]`/`[off]`,
-    `[ok]`/`[missing]`, `[done]`/`[in progress]`/`[pending]`, `[42%]`,
-    `Loading:`, `Empty:`, `Error:`, `Warning:`, `Notice:`, `Focus:`).
+    status explicitly in words (`[selected]`, `[active]`, `[current]`,
+    `[on]`/`[off]`, `[ok]`/`[missing]`, `[done]`/`[in progress]`/`[pending]`,
+    `[collapsed]`/`[expanded]`, `[42%]`, `[live]`, `favourite: yes`,
+    `score: 8.7`, `more above`/`more below`, `Loading:`, `Empty:`, `Error:`,
+    `Warning:`, `Notice:`, `Focus:`).
 - **Light and high-contrast themes.** Selectable in **Settings → General →
   Theme**, `/theme`, `config.json` (`theme`), or `KUNAI_THEME=<id>`:
   - `paper-sakura` (**Paper Sakura (Light)**) — warm light surfaces with

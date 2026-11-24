@@ -520,7 +520,9 @@ function LibraryTab({
           </Text>
         </Box>
       ) : null}
-      {showScrollUp ? <Text color={palette.dim}> ▲ ...</Text> : null}
+      {showScrollUp ? (
+        <Text color={palette.dim}>{plainModeEnabled() ? "more above" : " ▲ ..."}</Text>
+      ) : null}
       {items.map((item) => {
         if (item.kind === "section") {
           return <SectionGroup key={`section-${item.label}`} label={item.label} marginTop={1} />;
@@ -564,11 +566,14 @@ function LibraryTab({
           </MouseTarget>
         );
       })}
-      {showScrollDown ? <Text color={palette.dim}> ▼ ...</Text> : null}
+      {showScrollDown ? (
+        <Text color={palette.dim}>{plainModeEnabled() ? "more below" : " ▼ ..."}</Text>
+      ) : null}
       {selectedOfflineGroup && confirmDeleteKey === selectedOfflineGroup.key ? (
         <Box marginTop={1}>
           <Text color={palette.accentDeep}>
-            {"⚠ "}Press x again to delete {selectedOfflineGroup.titleName} and all local files
+            {plainModeEnabled() ? "Warning: " : "⚠ "}Press x again to delete{" "}
+            {selectedOfflineGroup.titleName} and all local files
           </Text>
         </Box>
       ) : null}
@@ -648,10 +653,13 @@ function selectOfflineGroupEntries(
 }
 
 function formatLibraryTitle(group: OfflineLibraryShelfGroup, protectedTitle: boolean): string {
-  const shield = protectedTitle ? " ⚲" : "";
+  const plain = plainModeEnabled();
+  const shield = protectedTitle ? (plain ? " [protected]" : " ⚲") : "";
   const downloaded =
     group.readyCount > 0 && group.entries.length > 0
-      ? ` ↓ ${group.readyCount}/${group.entries.length}`
+      ? plain
+        ? ` ${group.readyCount}/${group.entries.length} ready`
+        : ` ↓ ${group.readyCount}/${group.entries.length}`
       : "";
   return `${group.titleName}${downloaded}${shield}`;
 }
@@ -685,26 +693,33 @@ function formatLibrarySeasonCode(group: OfflineLibraryShelfGroup): string {
 
 function formatLibraryStatus(row: LibraryShelfRow, historyMap: Record<string, HistoryProgress>) {
   const { group } = row;
+  const plain = plainModeEnabled();
   const hist = historyMap[group.titleId];
   if (hist && !isFinished(hist) && (hist.durationSeconds ?? 0) > 0) {
     const pct = Math.round((hist.positionSeconds / (hist.durationSeconds ?? 0)) * 100);
     if (pct > 0 && pct < 95) {
-      return { label: `▸ ${pct}%`, color: palette.accent, dim: false };
+      return { label: plain ? `${pct}%` : `▸ ${pct}%`, color: palette.accent, dim: false };
     }
   }
   if (group.readyCount > 0) {
+    const count = formatMediaItemCount({
+      mediaKind: group.mediaKind,
+      contentType: group.contentType,
+      count: group.readyCount,
+    });
     return {
-      label: `↓ ${formatMediaItemCount({
-        mediaKind: group.mediaKind,
-        contentType: group.contentType,
-        count: group.readyCount,
-      })}`,
+      label: plain ? count : `↓ ${count}`,
       color: palette.ok,
       dim: false,
     };
   }
   if (group.issueCount > 0) {
-    return { label: `${group.issueCount}⚠`, color: palette.accentDeep, dim: false };
+    const issues = group.issueCount === 1 ? "1 issue" : `${group.issueCount} issues`;
+    return {
+      label: plain ? issues : `${group.issueCount}⚠`,
+      color: palette.accentDeep,
+      dim: false,
+    };
   }
   return { label: "needs attention", color: palette.dim, dim: true };
 }

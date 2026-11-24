@@ -123,6 +123,22 @@ function PosterSlot({
 
 // ── Facts (aligned label / value rows) ──────────────────────────────────────
 
+/** Spoken fact line. The model stores the visual glyphs; plain mode does not. */
+function plainFactLine(fact: MediaPanelFact): string {
+  if (fact.label === "♥" || (fact.label === "favourite" && fact.value === "favourite")) {
+    return "favourite: yes";
+  }
+  if (fact.label === "score") {
+    return `score: ${fact.value.replace(/^★\s*/u, "")}`;
+  }
+  if (fact.label === "live") {
+    if (fact.value.includes("upcoming")) return "[upcoming]";
+    if (fact.value.includes("was live")) return "[was live]";
+    return "[live]";
+  }
+  return `${fact.label}: ${fact.value}`;
+}
+
 function FactRows({
   facts,
   width,
@@ -131,6 +147,20 @@ function FactRows({
   readonly width: number;
 }) {
   if (facts.length === 0) return null;
+  if (plainModeEnabled()) {
+    return (
+      <Box flexDirection="column">
+        {facts.map((fact) => (
+          <Text
+            key={`${fact.label}:${fact.value}`}
+            color={fact.tone ? statusColor(fact.tone) : palette.text}
+          >
+            {plainFactLine(fact)}
+          </Text>
+        ))}
+      </Box>
+    );
+  }
   const valueWidth = Math.max(6, width - FACT_LABEL_WIDTH - 1);
   return (
     <Box flexDirection="column">
@@ -167,9 +197,19 @@ function MiniCard({
   readonly allowSixel: boolean;
   readonly placementSlot?: KittyPlacementSlot;
 }) {
+  const accent = card.kind === "resume" ? palette.accent : palette.text;
+  if (plainModeEnabled()) {
+    return (
+      <Box flexDirection="column" marginTop={1}>
+        <Text color={accent} bold>
+          {truncateLine(card.label, width)}
+        </Text>
+        {card.meta ? <Text color={palette.muted}>{truncateLine(card.meta, width)}</Text> : null}
+      </Box>
+    );
+  }
   const thumbCols = Math.min(MINI_CARD_THUMB_COLS, Math.max(8, width - 10));
   const textWidth = Math.max(6, width - thumbCols - 3);
-  const accent = card.kind === "resume" ? palette.accent : palette.text;
   const useGraphics = allowKitty && Boolean(placementSlot);
   return (
     <Box flexDirection="row" flexWrap="nowrap" marginTop={1}>

@@ -53,6 +53,7 @@ export function CalendarDayStrip({
 }) {
   const { windowDays, hasPrev, hasNext } = windowCalendarDayStrip(days, selectedDayKey, narrow);
   const showHint = maxWidth === undefined || maxWidth >= 92;
+  const plain = plainModeEnabled();
 
   return (
     <Box
@@ -63,10 +64,24 @@ export function CalendarDayStrip({
       width={maxWidth}
       overflow="hidden"
     >
-      <Text color={palette.dim}>{hasPrev ? "‹ " : "  "}</Text>
+      <Text color={palette.dim}>
+        {plain ? (hasPrev ? "previous " : "") : hasPrev ? "‹ " : "  "}
+      </Text>
       {windowDays.map((day) => {
         const isSelected = selectedDayKey === day.key;
         const isToday = day.isToday;
+        if (plain) {
+          const markers = [isSelected ? "[active]" : null, isToday ? "(today)" : null, day.label]
+            .filter((part): part is string => part !== null)
+            .join(" ");
+          return (
+            <Box key={day.key} marginRight={1}>
+              <Text color={palette.text} bold={isSelected || isToday}>
+                {` ${markers} `}
+              </Text>
+            </Box>
+          );
+        }
         // Boxed chips with a clear hierarchy: the SELECTED day is the rose accent
         // pill (matches the type tabs); TODAY is a distinct amber pill so it always
         // stands apart; other days are readable text chips (not near-background).
@@ -80,10 +95,12 @@ export function CalendarDayStrip({
           </Box>
         );
       })}
-      <Text color={palette.dim}>{hasNext ? " ›" : "  "}</Text>
+      <Text color={palette.dim}>{plain ? (hasNext ? " next" : "") : hasNext ? " ›" : "  "}</Text>
       {showHint ? (
         <Box marginLeft={1}>
-          <Text color={palette.dim}>{"← → date · Esc close"}</Text>
+          <Text color={palette.dim}>
+            {plain ? "previous/next date, Esc close" : "← → date · Esc close"}
+          </Text>
         </Box>
       ) : null}
     </Box>
@@ -104,11 +121,12 @@ export function CalendarTypeTabs({
   if (compact) return null;
   const labels = CALENDAR_TYPE_TABS.map((tab) => (tab === "TV" ? "Series" : tab));
   const activeIndex = CALENDAR_TYPE_TABS.indexOf(activeTab);
+  const showHint = maxWidth === undefined || maxWidth >= 100;
   return (
     <ClaudeTabRow
       labels={labels}
       activeIndex={activeIndex}
-      hint={maxWidth === undefined || maxWidth >= 100 ? "⇥ Tab cycles type" : undefined}
+      hint={showHint ? (plainModeEnabled() ? "Tab cycles type" : "⇥ Tab cycles type") : undefined}
       maxWidth={maxWidth}
       dense={dense}
     />

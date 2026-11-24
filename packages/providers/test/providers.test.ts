@@ -4,7 +4,7 @@ import { createProviderEngine } from "@kunai/core";
 
 import {
   allmangaProviderModule,
-  buildAllmangaSourceCandidates,
+  buildAllmangaSourceInventorySeeds,
   buildMiruroCycleCandidates,
   createProviderLanguageEvidence,
   createProviderSourceEvidence,
@@ -26,17 +26,12 @@ import {
   parseSourceHost,
   qualityRankFromLabel,
   resolveFlavorEngineOptions,
-  resolveVidkingDirect,
+  resolveVideasyDirect,
   rivestreamProviderModule,
   stableProviderInventoryId,
   videasyProviderModule,
   vidlinkProviderModule,
 } from "../src/index";
-import {
-  getProviderMigrationQueue,
-  getProviderResearchProfile,
-  providerResearchProfiles,
-} from "../src/research";
 import { clearRivestreamCachesForTest } from "../src/rivestream/direct";
 import { encryptOpensslSalted, sha256Hex } from "../src/shared/openssl-evp";
 
@@ -129,34 +124,6 @@ test("provider engine exposes registered modules", () => {
   expect(engine.get("miruro")).toBe(miruroProviderModule);
 });
 
-test("provider research profiles are dossier-backed and migration ordered", () => {
-  const queue = getProviderMigrationQueue();
-
-  expect(queue[0]?.providerId).toBe("videasy");
-  expect(queue[1]?.providerId).toBe("allanime");
-  expect(queue.every((profile) => profile.dossierPath.startsWith(".docs/provider-dossiers/"))).toBe(
-    true,
-  );
-  expect(providerResearchProfiles.length).toBeGreaterThanOrEqual(7);
-});
-
-test("provider research profiles separate direct providers from legacy fallbacks", () => {
-  expect(getProviderResearchProfile("videasy")).toMatchObject({
-    status: "production",
-    migrationAction: "promote-direct-provider",
-    runtimeClass: "direct-http Videasy payload decode",
-  });
-
-  expect(getProviderResearchProfile("cineby")).toMatchObject({
-    status: "research-only",
-    migrationAction: "keep-as-fallback",
-  });
-
-  expect(getProviderResearchProfile("anikai")).toMatchObject({
-    migrationAction: "hold-for-future-runtime",
-  });
-});
-
 test("vidking direct payload creates selected stream, variants, and subtitle inventory", () => {
   const result = createVidkingResultFromPayload({
     apiRoute: "mb-flix",
@@ -221,7 +188,7 @@ test("vidking direct resolver preserves nonretryable direct failure evidence", a
     "https://api.speedracelight.com/seed?mediaId=1668",
     "https://api.wingsdatabase.com/seed?mediaId=1668",
   ]);
-  const result = await resolveVidkingDirect(
+  const result = await resolveVideasyDirect(
     {
       title: {
         id: "1668",
@@ -265,7 +232,7 @@ test("vidking direct resolver preserves nonretryable direct failure evidence", a
 
 test("vidking direct resolver does not retry definitive 404 responses or duplicate year variants for TMDB ids", async () => {
   const requestedUrls: string[] = [];
-  const result = await resolveVidkingDirect(
+  const result = await resolveVideasyDirect(
     {
       title: {
         id: "438631",
@@ -305,7 +272,7 @@ test("vidking direct resolver does not retry definitive 404 responses or duplica
 
 test("vidking direct resolver sends Videasy session headers when provided", async () => {
   const seenHeaders: Headers[] = [];
-  const result = await resolveVidkingDirect(
+  const result = await resolveVideasyDirect(
     {
       title: {
         id: "61700",
@@ -342,7 +309,7 @@ test("vidking direct resolver sends Videasy session headers when provided", asyn
 
 test("vidking direct resolver reads Videasy session token from runtime auth", async () => {
   const seenHeaders: Headers[] = [];
-  const result = await resolveVidkingDirect(
+  const result = await resolveVideasyDirect(
     {
       title: {
         id: "61700",
@@ -386,7 +353,7 @@ test("vidking direct resolver reads Videasy session token from runtime auth", as
 
 test("vidking direct resolver can pair a session with a Bitcine app id", async () => {
   const seenHeaders: Headers[] = [];
-  const result = await resolveVidkingDirect(
+  const result = await resolveVideasyDirect(
     {
       title: {
         id: "61700",
@@ -439,7 +406,7 @@ test("vidking session transport covers every registered Videasy flavor", async (
     const engineOptions = resolveFlavorEngineOptions(flavor.id);
     expect(engineOptions).not.toBeNull();
 
-    const result = await resolveVidkingDirect(
+    const result = await resolveVideasyDirect(
       {
         title: {
           id: "61700",
@@ -515,7 +482,7 @@ test("vidking session transport covers every registered Videasy flavor", async (
 
 test("vidking preferred source targets that flavor then falls back to Phase A mirrors", async () => {
   const requestedUrls: string[] = [];
-  const result = await resolveVidkingDirect(
+  const result = await resolveVideasyDirect(
     {
       title: {
         id: "61700",
@@ -556,7 +523,7 @@ test("vidking stops source fanout after a provider-wide session guard failure", 
     recordFailure: () => {},
     recordSuccess: () => {},
   };
-  const result = await resolveVidkingDirect(
+  const result = await resolveVideasyDirect(
     {
       title: {
         id: "61700",
@@ -591,7 +558,7 @@ test("vidking stops source fanout after a provider-wide session guard failure", 
 });
 
 test("vidking direct resolver classifies Videasy session guard responses as blocked", async () => {
-  const result = await resolveVidkingDirect(
+  const result = await resolveVideasyDirect(
     {
       title: {
         id: "61700",
@@ -650,7 +617,7 @@ test("vidking guarded v2 unwrap is path agnostic for every Videasy flavor", asyn
 
 test("vidking direct resolver can target a flavored endpoint without broad server probing", async () => {
   const requestedUrls: string[] = [];
-  const result = await resolveVidkingDirect(
+  const result = await resolveVideasyDirect(
     {
       title: {
         id: "438631",
@@ -700,7 +667,7 @@ test("vidking direct resolver can target a flavored endpoint without broad serve
 
 test("vidking refresh intent cycles the wider flavor source set", async () => {
   const requestedUrls: string[] = [];
-  const result = await resolveVidkingDirect(
+  const result = await resolveVideasyDirect(
     {
       title: {
         id: "438631",
@@ -1484,7 +1451,7 @@ test("negative fixture maps blocked vidking host to structured failure", async (
   const blocked = await readFixture<{ readonly status: number; readonly body: unknown }>(
     "negative/vidking-blocked.json",
   );
-  const result = await resolveVidkingDirect(
+  const result = await resolveVideasyDirect(
     {
       title: {
         id: "438631",
@@ -1683,7 +1650,7 @@ test("source inventory helpers project streams into source and variant candidate
 });
 
 test("allmanga source candidates preserve separate source families", () => {
-  const sources = buildAllmangaSourceCandidates(
+  const sources = buildAllmangaSourceInventorySeeds(
     [
       {
         id: "stream:hls:1080",
@@ -1712,7 +1679,6 @@ test("allmanga source candidates preserve separate source families", () => {
         },
       },
     ],
-    "source:allanime:fm-hls",
     {
       ttlClass: "stream-manifest",
       scope: "local",
@@ -1724,7 +1690,6 @@ test("allmanga source candidates preserve separate source families", () => {
     "source:allanime:fm-hls",
     "source:allanime:vid-mp4",
   ]);
-  expect(sources.map((source) => source.status)).toEqual(["selected", "available"]);
   expect(sources[0]?.metadata?.streamIds).toBe("stream:hls:1080");
 });
 

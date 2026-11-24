@@ -154,20 +154,6 @@ import { warmTopAnimeEpisodeCache } from "@/services/providers/warm-episode-cach
 
 export { SEARCH_BROWSE_COMMAND_IDS };
 
-/** Projection-only display title from cached aliases — does not hit providers. */
-export function projectSearchResultDisplayTitle(
-  result: import("@/domain/types").SearchResult,
-  titlePreference: import("@/domain/types").TitleAliasKind | "provider",
-): string {
-  return chooseSearchResultTitle(result, titlePreference);
-}
-
-export function searchResultsHaveCachedTitleAliases(
-  results: readonly import("@/domain/types").SearchResult[],
-): boolean {
-  return results.some((result) => (result.titleAliases?.length ?? 0) > 0);
-}
-
 export { describeSearchResultAvailability };
 
 type SearchPhaseDependencies = {

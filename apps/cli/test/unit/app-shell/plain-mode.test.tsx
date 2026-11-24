@@ -1,16 +1,23 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import { AnalyticsDisclosureBanner } from "@/app-shell/AnalyticsDisclosureBanner";
-import { CalendarScheduleRow } from "@/app-shell/calendar-ui";
+import { CalendarDayStrip, CalendarScheduleRow, CalendarTypeTabs } from "@/app-shell/calendar-ui";
 import { CapabilityIssueStrip } from "@/app-shell/CapabilityIssueStrip";
 import { companionMode, companionToggleable } from "@/app-shell/companion-policy";
 import { DetailsSheetUI, TitleDetailSheetUI } from "@/app-shell/details-pane-ui";
 import { DetailsSheet } from "@/app-shell/details-sheet-ui";
-import { downloadQueueStatusLabel } from "@/app-shell/download-manager-shell";
+import {
+  buildDiagnosticsPanelModel,
+  flattenDiagnosticsPanelSpans,
+} from "@/app-shell/diagnostics-panel.model";
+import {
+  DownloadManagerContent,
+  downloadQueueStatusLabel,
+} from "@/app-shell/download-manager-shell";
 import { ExitShell } from "@/app-shell/exit-shell";
 import { compactProgressBar } from "@/app-shell/format/bar";
 import { GuideShell } from "@/app-shell/guide-shell";
-import { libraryResumeCardCopy } from "@/app-shell/library-shell";
+import { LibraryShell, libraryResumeCardCopy } from "@/app-shell/library-shell";
 import { LoadingShell } from "@/app-shell/loading-shell";
 import { MediaPanel } from "@/app-shell/MediaPanel";
 import { reducedMotionEnabled } from "@/app-shell/motion-policy";
@@ -34,28 +41,48 @@ import { BooleanSwitch } from "@/app-shell/primitives/Switch";
 import { HelpShell } from "@/app-shell/root-overlay-shell";
 import { ErrorShell, RootIdleShell } from "@/app-shell/root-status-shells";
 import { SakuraLoader } from "@/app-shell/SakuraLoader";
+import { buildSettingsPage } from "@/app-shell/settings/build-page";
 import { SettingRowBoolean } from "@/app-shell/settings/components/SettingRowBoolean";
 import { SettingRowSubmenu } from "@/app-shell/settings/components/SettingRowSubmenu";
 import { SettingsSearchBar } from "@/app-shell/settings/components/SettingsSearchBar";
 import { appearanceSettingsRows } from "@/app-shell/settings/registry/appearance";
+import { SettingsOverlay } from "@/app-shell/settings/SettingsOverlay";
+import { createSettingsUiState } from "@/app-shell/settings/state";
+import type { SettingsRegistryContext } from "@/app-shell/settings/types";
 import { ChoiceRow, SetupFrame, ToggleRow } from "@/app-shell/setup/SetupFrame";
-import { DependencyScreen, DoneScreen, LanguageScreen } from "@/app-shell/setup/SetupScreens";
+import {
+  DependencyScreen,
+  DoneScreen,
+  LanguageScreen,
+  LibraryScreen,
+  ModeScreen,
+} from "@/app-shell/setup/SetupScreens";
 import { CommandPalette } from "@/app-shell/shell-command-ui";
 import { InputField } from "@/app-shell/shell-frame";
-import { EmptyState, Footer } from "@/app-shell/shell-primitives";
+import { Footer } from "@/app-shell/shell-primitives";
 import { SearchSuggestionBand } from "@/app-shell/suggestion-band-ui";
 import { TracksPanelShell } from "@/app-shell/tracks-panel-shell";
+import type { Container } from "@/container";
+import type { TitleDetail } from "@/domain/catalog/title-detail";
 import { createInitialState } from "@/domain/session/SessionState";
 import { buildHelpText, parseArgs } from "@/main";
+import type { DiagnosticEvent } from "@/services/diagnostics/diagnostic-event";
+import type { OfflineLibraryEntry } from "@/services/offline/offline-library";
+import type { DownloadJobRecord, HistoryProgress } from "@/services/storage/storage-read-models";
+import { SHIPPED_ANILIST_REDIRECT_URI } from "@/services/sync/auth-contract";
 import type { CapabilitySnapshot } from "@/ui";
 import { DEFAULT_CONFIG } from "@kunai/config";
 import { Box, Text } from "ink";
+import { act } from "react";
 
-import { captureFrame } from "../../harness/render-capture";
+import { captureFrame, render, stripAnsi } from "../../harness/render-capture";
 import { readRepoFile } from "../../support/repo-scan";
 
 /** Box-drawing lines and decorative glyphs that screen readers announce as noise. */
 const DECORATIVE_NOISE = /[┌┐└┘─│╭╮╰╯🦊❀✿❁✾▌█┈░▰▱◉○●◆◈▲▼]/u;
+
+/** Glyphs that must not survive a plain-mode render of a root shell. */
+const PLAIN_MODE_GLYPHS = /[─│┌┐└┘╭╮╰╯▌▸▶▼▲●○✓✗↓★♥❀⚠△⚲‹›⇥]/u;
 
 let savedPlain: string | undefined;
 
@@ -153,7 +180,6 @@ describe("plain / screen-reader rendering across every shell surface", () => {
         <StateBlock
           model={{ kind: "empty", title: "Nothing here yet", detail: "Try searching." }}
         />
-        <EmptyState title="No bookmarks" subtitle="Save a title first." />
         <LoadingState message="Fetching catalog" active />
         <SakuraLoader label="Resolving sources" sublabel="esc to cancel" active />
       </Box>,
@@ -215,7 +241,7 @@ describe("plain / screen-reader rendering across every shell surface", () => {
     expect(controls).toContain("[off]");
     expect(controls).toContain("[65%]");
     expect(controls).toContain("Empty: Nothing here yet");
-    expect(controls).toContain("Empty: No bookmarks");
+    expect(controls).toContain("Try searching.");
     expect(controls).toContain("Loading: Fetching catalog");
     expect(controls).toContain("Loading: Resolving sources");
     expect(banners).toContain("Notice: Anonymous usage analytics is not enabled");
@@ -670,6 +696,7 @@ describe("plain / screen-reader rendering across every shell surface", () => {
     expect(setup).toContain("[active] Anime");
     expect(setup).toContain("[active] Audio");
     expect(setup).toContain("[selected] Japanese");
+    expect(setup).toContain("[current] English");
     expect(setup).toContain("Subtitles");
     const audioLine = setup.split("\n").find((line) => line.includes("Audio"));
     expect(audioLine).not.toContain("Subtitles");
@@ -759,5 +786,560 @@ describe("plain / screen-reader rendering across every shell surface", () => {
     expect(frame).toContain("[tracked] Dune");
     expect(frame).toContain("Resume: S01E02 offline (enter)");
     expect(frame).not.toContain("▸");
+  });
+
+  test("a wide playing frame keeps Up next and speaks media facts", () => {
+    enablePlainMode();
+    const frame = captureFrame(
+      <>
+        <LoadingShell
+          state={{
+            title: "Quartz Xenon",
+            subtitle: "S01E01",
+            operation: "playing",
+            contentKind: "series",
+            upNextLabel: "S01E02",
+            hasNextEpisode: true,
+            nextEpisodeLabel: "S01E02",
+            nextEpisodeThumbUrl: "https://img.example/next.jpg",
+            posterUrl: "https://img.example/poster.jpg",
+            titleDetail: seriesDetail,
+            currentPosition: 30,
+            duration: 120,
+          }}
+          isFavorite={() => true}
+        />
+        <LoadingShell
+          state={{
+            title: "Live special",
+            operation: "playing",
+            contentKind: "video",
+            videoMeta: { liveStatus: "live", channelTitle: "Stage" },
+            upNextLabel: "Aftershow",
+          }}
+        />
+        <MediaPanel
+          railWidth={36}
+          placementSlot="playing-rail"
+          model={{
+            kind: "series",
+            kindBadge: "series",
+            title: "Quartz Xenon",
+            posterUrl: "https://img.example/poster.jpg",
+            facts: [
+              { label: "score", value: "★ 8.7" },
+              { label: "live", value: "● live", tone: "error" },
+              { label: "♥", value: "favourite", tone: "success" },
+            ],
+            miniCards: [
+              {
+                kind: "next",
+                section: "up next",
+                label: "S01E02",
+                thumbUrl: "https://img.example/thumb.jpg",
+              },
+            ],
+          }}
+        />
+      </>,
+      { columns: 140, rows: 40 },
+    );
+
+    expect(frame).toContain("Up next: S01E02");
+    expect(frame).toContain("Up next: Aftershow");
+    expect(frame).toContain("score: 8.7");
+    expect(frame).toContain("[live]");
+    expect(frame).toContain("favourite: yes");
+    expect(frame).toContain("S01E02");
+    expect(frame).not.toContain("QX");
+    expect(frame).not.toMatch(PLAIN_MODE_GLYPHS);
+  });
+
+  test("a settled library shelf speaks ready, protected, progress, issues, and delete", async () => {
+    enablePlainMode();
+    const frame = await libraryShelfFrames(80);
+    expect(frame).toContain("Dune 1/1 ready [protected]");
+    expect(frame).toContain("33%");
+    expect(frame).toContain("1 issue");
+    expect(frame).toContain("more above");
+    expect(frame).toContain("more below");
+    expect(frame).toContain("Warning: Press x again to delete Andor");
+    expect(frame).not.toMatch(PLAIN_MODE_GLYPHS);
+  });
+});
+
+const seriesDetail: TitleDetail = {
+  id: "quartz",
+  type: "series",
+  title: "Quartz Xenon",
+  score: 8.7,
+  synopsis: "A colony watches the sky.",
+};
+
+function settingsRegistry(): SettingsRegistryContext {
+  return {
+    config: DEFAULT_CONFIG,
+    presenceSnapshot: null,
+    seriesProviderOptions: [],
+    animeProviderOptions: [],
+    youtubeProviderOptions: [],
+    sync: {
+      adapters: [],
+      authAvailability: {
+        anilist: {
+          available: true as const,
+          redirectUri: SHIPPED_ANILIST_REDIRECT_URI,
+          clientIdSource: "shipped-default" as const,
+        },
+        tmdb: { available: true as const, apiKeySource: "shipped-fallback" as const },
+      },
+      status: {
+        connected: 0,
+        pending: 0,
+        needsReauth: 0,
+        deadLettered: 0,
+        health: "disconnected" as const,
+      },
+    },
+    container: {} as Container,
+  };
+}
+
+function offlineEntry(
+  job: Partial<OfflineLibraryEntry["job"]> &
+    Pick<OfflineLibraryEntry["job"], "id" | "titleId" | "titleName">,
+  status: OfflineLibraryEntry["status"],
+): OfflineLibraryEntry {
+  return {
+    job: {
+      mediaKind: "movie",
+      outputPath: `/tmp/${job.id}.mp4`,
+      tempPath: `/tmp/${job.id}.part`,
+      streamUrl: "https://example/title",
+      headers: {},
+      status: "completed",
+      progressPercent: 100,
+      fileSize: 1000,
+      retryCount: 0,
+      attempt: 1,
+      maxAttempts: 3,
+      createdAt: "2026-08-01T00:00:00.000Z",
+      updatedAt: "2026-08-01T00:00:00.000Z",
+      completedAt: "2026-08-01T00:00:00.000Z",
+      providerId: "vidking",
+      posterUrl: "https://img.example/poster.jpg",
+      ...job,
+    },
+    status,
+  } as OfflineLibraryEntry;
+}
+
+function libraryFixture() {
+  const entries: readonly OfflineLibraryEntry[] = [
+    offlineEntry(
+      {
+        id: "dune-job",
+        titleId: "dune",
+        titleName: "Dune",
+        mediaKind: "movie",
+        completedAt: "2026-08-03T00:00:00.000Z",
+      },
+      "ready",
+    ),
+    offlineEntry(
+      {
+        id: "blade-job",
+        titleId: "blade",
+        titleName: "Blade",
+        mediaKind: "movie",
+        completedAt: "2026-08-02T00:00:00.000Z",
+      },
+      "ready",
+    ),
+    offlineEntry(
+      {
+        id: "andor-job",
+        titleId: "andor",
+        titleName: "Andor",
+        mediaKind: "series",
+        season: 1,
+        episode: 1,
+        completedAt: "2026-08-01T00:00:00.000Z",
+      },
+      "missing",
+    ),
+  ];
+  const history: HistoryProgress = {
+    key: "dune",
+    titleId: "dune",
+    mediaKind: "movie",
+    title: "Dune",
+    positionSeconds: 33,
+    durationSeconds: 100,
+    completed: false,
+    updatedAt: "2026-08-03T00:00:00.000Z",
+    createdAt: "2026-08-01T00:00:00.000Z",
+  };
+  let open!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  const container = {
+    config: {
+      zenMode: false,
+      downloadsEnabled: true,
+      protectedDownloadJobIds: ["dune-job"],
+      update: async () => undefined,
+      save: async () => undefined,
+    },
+    downloadService: {
+      listActive: () => [],
+      listCompleted: () => [],
+      listFailed: () => [],
+      onEvent: () => () => undefined,
+      deleteJob: async () => ({ status: "deleted", jobId: "dune-job" }),
+      abort: async () => undefined,
+      retry: async () => undefined,
+      kickQueue: () => undefined,
+      repairRepairableSidecars: async () => ({
+        checked: 0,
+        repaired: 0,
+        stillRepairable: 0,
+        failed: 0,
+      }),
+    },
+    offlineLibraryService: {
+      listCompletedEntries: async () => {
+        await gate;
+        return entries;
+      },
+    },
+    historyRepository: {
+      listLatestByTitle: () => [history],
+      listByTitle: () => [],
+    },
+    stateManager: { dispatch: () => undefined },
+    connectivity: { isOnline: () => true, subscribe: () => () => undefined },
+  } as unknown as Container;
+  return {
+    container,
+    settle: async () => {
+      open();
+      await gate;
+    },
+  };
+}
+
+/** Frames from the settled shelf, then scrolled, then delete-armed. */
+async function libraryShelfFrames(columns: number): Promise<string> {
+  const { container, settle } = libraryFixture();
+  const handle = render(<LibraryShell container={container} onClose={() => undefined} />, {
+    columns,
+    rows: 22,
+  });
+  try {
+    await act(async () => {
+      await settle();
+    });
+    const frames = [stripAnsi(handle.lastFrame())];
+    handle.stdin.enqueue("\u001b[B");
+    frames.push(stripAnsi(handle.lastFrame()));
+    handle.stdin.enqueue("\u001b[B");
+    frames.push(stripAnsi(handle.lastFrame()));
+    handle.stdin.enqueue("x");
+    frames.push(stripAnsi(handle.lastFrame()));
+    return frames.join("\n");
+  } finally {
+    handle.unmount();
+  }
+}
+
+function completedDownload(): DownloadJobRecord {
+  return {
+    id: "job-1",
+    titleId: "title-1",
+    titleName: "Frieren",
+    status: "completed",
+    mediaKind: "anime",
+    mode: "series",
+    providerId: "videasy",
+    season: 1,
+    episode: 3,
+    createdAt: "2026-06-24T00:00:00.000Z",
+    updatedAt: "2026-06-24T00:00:00.000Z",
+    progressPercent: 100,
+    outputPath: "/tmp/frieren.mp4",
+  } as DownloadJobRecord;
+}
+
+function downloadContainer(): Container {
+  const job = completedDownload();
+  return {
+    stateManager: { dispatch: () => undefined },
+    config: { zenMode: false },
+    downloadService: {
+      listActive: () => [],
+      listCompleted: () => [job],
+      listFailed: () => [],
+      onEvent: () => () => undefined,
+      repairRepairableSidecars: async () => ({
+        checked: 0,
+        repaired: 0,
+        stillRepairable: 0,
+        failed: 0,
+      }),
+      abort: async () => undefined,
+      deleteJob: async () => ({ status: "deleted", jobId: job.id }),
+      retry: async () => undefined,
+      kickQueue: () => undefined,
+    },
+  } as unknown as Container;
+}
+
+function diagnosticSpanLines() {
+  const recentEvents: DiagnosticEvent[] = [
+    {
+      timestamp: 2,
+      level: "error",
+      category: "playback",
+      message: "phase failed",
+      operation: "playback.phase.failed",
+      playbackCycleId: "open",
+      context: { severity: "blocked" },
+    },
+    {
+      timestamp: 1,
+      level: "info",
+      category: "playback",
+      message: "launched",
+      operation: "mpv.launch.started",
+      playbackCycleId: "closed",
+      context: { severity: "healthy" },
+    },
+  ];
+  const model = buildDiagnosticsPanelModel({ recentEvents });
+  return flattenDiagnosticsPanelSpans(model, new Set(["open"])).map((line) => ({
+    label: line.label,
+    detail: line.detail,
+    tone: line.tone,
+  }));
+}
+
+function calendarDays() {
+  return Array.from({ length: 10 }, (_, index) => ({
+    key: `2026-11-${String(index + 1).padStart(2, "0")}`,
+    label: `DAY ${index + 1}`,
+    isToday: index === 5,
+  }));
+}
+
+describe("plain mode glyph guard", () => {
+  beforeEach(() => {
+    savedPlain = process.env.KUNAI_PLAIN;
+  });
+
+  afterEach(() => {
+    setPlainModePreferenceSource(() => false);
+    if (savedPlain === undefined) delete process.env.KUNAI_PLAIN;
+    else process.env.KUNAI_PLAIN = savedPlain;
+  });
+
+  test("root shells and overlays at 80 and 140 columns stay free of decorative glyphs", async () => {
+    enablePlainMode();
+    const days = calendarDays();
+    const registry = settingsRegistry();
+    const page = buildSettingsPage(registry, { activeSectionIndex: 0 });
+    const settingsState = {
+      ...createSettingsUiState(DEFAULT_CONFIG),
+      selectedIndex: Math.floor(page.rows.length / 2),
+    };
+
+    for (const columns of [80, 140]) {
+      const staticFrame = captureFrame(
+        <>
+          <LoadingShell
+            state={{
+              title: "Quartz Xenon",
+              subtitle: "S01E01",
+              operation: "playing",
+              contentKind: "series",
+              upNextLabel: "S01E02",
+              hasNextEpisode: true,
+              nextEpisodeLabel: "S01E02",
+              nextEpisodeThumbUrl: "https://img.example/next.jpg",
+              posterUrl: "https://img.example/poster.jpg",
+              titleDetail: seriesDetail,
+              currentPosition: 40,
+              duration: 120,
+            }}
+            isFavorite={() => true}
+          />
+          <PostPlayShell
+            title="Quartz Xenon"
+            episodeLabel="S01E01"
+            nextEpisodeLabel="S01E02"
+            nextEpisodeThumbUrl="https://img.example/next.jpg"
+            posterUrl="https://img.example/poster.jpg"
+            titleDetail={seriesDetail}
+            isFavorite
+            postPlayState={{ kind: "mid-series" }}
+            selectedActionIndex={0}
+            totalEpisodes={12}
+            watchedEpisodes={3}
+          />
+          <MediaPanel
+            railWidth={36}
+            placementSlot="postplay-rail"
+            model={{
+              kind: "series",
+              kindBadge: "series",
+              title: "Quartz Xenon",
+              facts: [
+                { label: "score", value: "★ 8.7" },
+                { label: "live", value: "● live", tone: "error" },
+                { label: "♥", value: "favourite", tone: "success" },
+              ],
+              miniCards: [
+                {
+                  kind: "next",
+                  section: "up next",
+                  label: "S01E02",
+                  thumbUrl: "https://img.example/thumb.jpg",
+                },
+              ],
+            }}
+          />
+          <HelpShell
+            sections={[
+              {
+                group: "Global",
+                items: [
+                  { keys: "?", label: "Show this help" },
+                  { keys: "esc", label: "Close" },
+                ],
+              },
+            ]}
+            scopeLabel="playing"
+            commandMode={false}
+            commandInput=""
+            commandCursor={0}
+            commands={[]}
+            highlightedIndex={0}
+            footerActions={[]}
+            onClose={() => {}}
+          />
+          <CalendarDayStrip days={days} selectedDayKey={days[4]?.key ?? null} />
+          <CalendarTypeTabs activeTab="TV" compact={false} maxWidth={140} />
+          <CalendarScheduleRow
+            option={{ value: "andor", label: "Andor" }}
+            selected
+            rowWidth={Math.max(40, columns - 8)}
+            timeLabel="20:00"
+            isNew
+          />
+          <SettingsOverlay
+            page={page}
+            state={settingsState}
+            registryCtx={registry}
+            width={columns}
+            maxRows={4}
+            error={null}
+          />
+          <OverlayPanel
+            width={columns}
+            maxLinesOverride={12}
+            overlay={{
+              type: "diagnostics",
+              title: "Diagnostics",
+              subtitle: "Session",
+              lines: diagnosticSpanLines(),
+            }}
+          />
+          <DependencyScreen
+            rows={[
+              {
+                id: "mpv",
+                name: "mpv",
+                state: "ok",
+                detail: "0.38",
+                role: "player",
+                fix: null,
+                scope: "always",
+              },
+            ]}
+            selected={0}
+            rechecking={false}
+            tick={0}
+            showFix={false}
+          />
+          <ModeScreen selected={0} />
+          <LanguageScreen
+            lanes={[{ value: "series", label: "Shows" }]}
+            activeLane="series"
+            audioOptions={[{ value: "ja", label: "Japanese", detail: "Original" }]}
+            subtitleOptions={[
+              { value: "en", label: "English", detail: "Subtitles" },
+              { value: "off", label: "Off", detail: "None" },
+            ]}
+            audioIndex={0}
+            subtitleIndex={0}
+            focus="audio"
+          />
+          <LibraryScreen
+            toggles={{
+              downloadsEnabled: true,
+              downloadQuality: "1080p",
+              autoNext: true,
+              skipIntro: false,
+              skipCredits: false,
+              connectAniList: false,
+              connectTmdb: false,
+              presenceDiscord: false,
+            }}
+            selected={0}
+            ytDlpReady
+            downloadPath="/tmp/kunai"
+          />
+          <DoneScreen
+            headline="Ready"
+            summary={[{ ok: true, label: "Player", detail: "mpv found" }]}
+            outstanding={[{ ok: false, label: "Downloads", detail: "yt-dlp missing" }]}
+          />
+        </>,
+        { columns, rows: 48 },
+      );
+
+      const downloads = render(
+        <DownloadManagerContent container={downloadContainer()} onClose={() => undefined} />,
+        { columns, rows: 30 },
+      );
+      downloads.stdin.enqueue("x");
+      const downloadFrame = stripAnsi(downloads.lastFrame());
+      downloads.unmount();
+
+      const libraryFrame = await libraryShelfFrames(columns);
+      const frame = [staticFrame, downloadFrame, libraryFrame].join("\n");
+
+      expect(frame).toContain("Up next: S01E02");
+      expect(frame).toContain("score: 8.7");
+      expect(frame).toContain("favourite: yes");
+      expect(frame).toContain("[expanded]");
+      expect(frame).toContain("[collapsed]");
+      expect(frame).toContain("Warning:");
+      expect(frame).toContain("1/1 ready");
+      expect(frame).toContain("[protected]");
+      expect(frame).toContain("33%");
+      expect(frame).toContain("1 issue");
+      expect(frame).toContain("more above");
+      expect(frame).toContain("more below");
+      expect(frame).toContain("[current] English");
+      expect(frame).toContain("[active]");
+      expect(frame).toContain("(today)");
+      expect(frame).toContain("previous");
+      expect(frame).toContain("next");
+      expect(frame).toContain("Tab cycles type");
+      expect(frame).toContain("Help");
+      expect(frame).not.toMatch(PLAIN_MODE_GLYPHS);
+    }
   });
 });

@@ -1,9 +1,6 @@
 import { expect, test } from "bun:test";
 
-import {
-  buildApiStreamResolveCacheKey,
-  buildEmbedStreamCacheKey,
-} from "@/services/cache/stream-resolve-cache";
+import { buildApiStreamResolveCacheKey } from "@/services/cache/stream-resolve-cache";
 import {
   allanimeManifest,
   flavorSourceId,
@@ -232,11 +229,6 @@ test("Vyse and Fade stay distinct despite sharing the hdmovie backend", () => {
   });
 
   expect(vyse).not.toBe(fade);
-});
-
-test("buildEmbedStreamCacheKey preserves embed URL", () => {
-  const url = "https://example.com/embed/123";
-  expect(buildEmbedStreamCacheKey(url)).toBe(url);
 });
 
 test("buildApiStreamResolveCacheKey separates YouTube episodes under channel/playlist", () => {

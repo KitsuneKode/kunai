@@ -29,7 +29,7 @@ import { createTimeoutSignal } from "./timeout-signal";
 
 /**
  * Shared engine for "P-Stream-style" direct-stream providers (vidlink, vidrock,
- * rgshows, …). A provider supplies its own `fetchPayload` that returns a simple
+ * …). A provider supplies its own `fetchPayload` that returns a simple
  * list of stream URLs + subtitles; this helper handles input validation, the
  * StreamCandidate/variant/source/trace boilerplate, and failure mapping.
  */

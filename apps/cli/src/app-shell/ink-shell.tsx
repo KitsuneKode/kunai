@@ -104,7 +104,11 @@ import {
 import { CommandPalette } from "./shell-command-ui";
 import { InputField } from "./shell-frame";
 import { LocalSection, ResizeBlocker, ShellFooter, TransientRowSlot } from "./shell-primitives";
-import { clearShellScreenArtifacts } from "./shell-screen-clear";
+import {
+  clearShellScreenArtifacts,
+  recordMountedInkScreen,
+  resetMountedInkScreen,
+} from "./shell-screen-clear";
 import { getWindowStart, padColumnsEnd, truncateLine, wrapText } from "./shell-text";
 import { palette, statusColor } from "./shell-theme";
 import { sixelOverlayManager } from "./sixel-overlay";
@@ -1452,6 +1456,10 @@ export async function launchSessionApp(container: Container) {
   // pass through untouched. Opt-out: KUNAI_NO_MOUSE=1, or any non-TTY/dumb
   // terminal.
   const plain = plainModeEnabled();
+  const alternateScreen = !plain;
+  // Sampled once. Settings can flip plain mode without remounting Ink, and
+  // root-content clears have to follow this buffer rather than the live flag.
+  recordMountedInkScreen(alternateScreen);
   let mouseSession: ReturnType<typeof startMouseSession> = null;
   try {
     mouseSession = startMouseSession({
@@ -1471,7 +1479,7 @@ export async function launchSessionApp(container: Container) {
       ),
       {
         exitOnCtrlC: false,
-        alternateScreen: !plain,
+        alternateScreen,
         // SAFETY: MouseSplitStdin implements the readable/read/setRawMode/isTTY
         // subset Ink's stdin contract calls — verified against ink 7.x source.
         stdin: (mouseSession?.stdin ?? process.stdin) as NodeJS.ReadStream,
@@ -1482,6 +1490,7 @@ export async function launchSessionApp(container: Container) {
     );
   } catch (error) {
     mouseSession?.dispose();
+    resetMountedInkScreen();
     clearInteractiveShellMounted();
     stdinManager.exitShell();
     throw error;
@@ -1493,6 +1502,7 @@ export async function launchSessionApp(container: Container) {
     mouseSession?.dispose();
     rootShellInk = null;
     rootShellExitPromise = null;
+    resetMountedInkScreen();
     clearRootContentSession();
     clearInteractiveShellMounted();
     stdinManager.exitShell();

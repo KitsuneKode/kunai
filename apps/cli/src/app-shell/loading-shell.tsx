@@ -1007,8 +1007,10 @@ export const LoadingShell = React.memo(function LoadingShell({
                   </Box>
                 ) : null}
 
-                {/* Up next on narrow/medium — wide terminals show this on the right rail. */}
-                {!isWidePlaying && state.upNextLabel?.trim() ? (
+                {/* Up next on narrow/medium — wide terminals show this on the right rail.
+                    Plain mode keeps the sentence here too: the rail's mini-card is
+                    text, and hiding this line is how a wide frame dropped "Up next". */}
+                {(!isWidePlaying || plainModeEnabled()) && state.upNextLabel?.trim() ? (
                   <Box marginTop={1}>
                     {plainModeEnabled() ? (
                       <Text color={palette.text}>

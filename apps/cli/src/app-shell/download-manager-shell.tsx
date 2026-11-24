@@ -635,7 +635,7 @@ export function DownloadManagerContent({
       {confirmingSelectedJob ? (
         <Box marginTop={1}>
           <Text color={palette.accentDeep}>
-            {"⚠ "}
+            {plainModeEnabled() ? "Warning: " : "⚠ "}
             {confirmationPrompt}
           </Text>
         </Box>

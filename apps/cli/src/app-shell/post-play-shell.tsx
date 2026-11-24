@@ -357,6 +357,11 @@ const NEXT_UP_HERO_HEADINGS: Record<PostPlayNextUpHero["kind"], string> = {
   queue: "▶ FROM QUEUE",
 };
 
+function plainHeroLabel(label: string): string {
+  if (!plainModeEnabled()) return label;
+  return label.replace(/^✓\s*/u, "[done] ");
+}
+
 const NEXT_UP_HERO_PLAIN_HEADINGS = {
   resume: "RESUME",
   "next-episode": "UP NEXT",
@@ -602,7 +607,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
           {view.celebration ? (
             <Box flexDirection="column" marginTop={1}>
               <Text color={palette.milestoneText} bold>
-                {view.heroLabel}
+                {plainHeroLabel(view.heroLabel)}
               </Text>
               <Text color={palette.muted}>
                 {truncateLine(view.celebration.statLine, bodyWidth)}
@@ -618,7 +623,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
               {/* Hero zone label */}
               <Box marginTop={1}>
                 <Text color={hColor} bold>
-                  {view.heroLabel}
+                  {plainHeroLabel(view.heroLabel)}
                 </Text>
               </Box>
 

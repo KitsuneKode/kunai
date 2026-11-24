@@ -114,20 +114,6 @@ export function selectFooterActions(
   return withPinned(commandAction ? [...primaryActions, commandAction] : primaryActions);
 }
 
-export const InlineBadge = React.memo(function InlineBadge({
-  label,
-  tone = "neutral",
-}: {
-  label: string;
-  tone?: InlineBadgeTone;
-}) {
-  return (
-    <Box marginRight={1}>
-      <Text color={semanticToneColor(tone)}>{truncateLine(label, 28)}</Text>
-    </Box>
-  );
-});
-
 type FooterActionRole = "primary" | "destructive" | "meta" | "normal";
 
 const DESTRUCTIVE_FOOTER = /\b(stop|quit|delete|remove|cancel|clear|discard)\b/i;
@@ -440,26 +426,6 @@ export function selectableRowStyle(selected: boolean): SelectableRowStyle {
   return { prefix: "  ", color: palette.text };
 }
 
-export const SelectableRow = React.memo(function SelectableRow({
-  selected,
-  children,
-}: {
-  selected: boolean;
-  children: React.ReactNode;
-}) {
-  const style = selectableRowStyle(selected);
-  return (
-    <Box>
-      <Text color={selected ? palette.accent : palette.dim} backgroundColor={style.backgroundColor}>
-        {style.prefix}
-      </Text>
-      <Text color={style.color} backgroundColor={style.backgroundColor}>
-        {children}
-      </Text>
-    </Box>
-  );
-});
-
 /** Pads (or truncates) the label to a fixed column for tabular detail rows. */
 export function detailRowColumns(
   label: string,
@@ -548,47 +514,6 @@ export const DetailLine = React.memo(function DetailLine({
       <Text color={palette.dim}>{sanitizeTerminalText(label)}</Text>
       <Text color={palette.dim}>{plain ? ": " : " · "}</Text>
       <Text color={valueColor}>{truncateLine(value, 80)}</Text>
-    </Box>
-  );
-});
-
-export const BrowseTitle = React.memo(function BrowseTitle({ mode }: { mode: "series" | "anime" }) {
-  return (
-    <Text bold color={palette.text}>
-      {mode === "anime" ? "Browse your favorite anime" : "Browse your favorite movies and series"}
-    </Text>
-  );
-});
-
-/**
- * Designed empty state for panels with no data.
- * Provides a consistent visual treatment across the shell instead of raw dim text.
- */
-export const EmptyState = React.memo(function EmptyState({
-  icon = "○",
-  title,
-  subtitle,
-  hint,
-}: {
-  icon?: string;
-  title: string;
-  subtitle?: string;
-  hint?: string;
-}) {
-  const plain = plainModeEnabled();
-  return (
-    <Box flexDirection="column" paddingY={plain ? 0 : 1}>
-      <Text color={plain ? palette.text : palette.dim}>
-        {plain ? `Empty: ${sanitizeTerminalText(title)}` : `${icon} ${sanitizeTerminalText(title)}`}
-      </Text>
-      {subtitle ? <Text color={palette.muted}>{sanitizeTerminalText(subtitle)}</Text> : null}
-      {hint ? (
-        <Box marginTop={1}>
-          <Text color={palette.dim} dimColor>
-            {sanitizeTerminalText(hint)}
-          </Text>
-        </Box>
-      ) : null}
     </Box>
   );
 });

@@ -25,11 +25,6 @@ export function buildApiStreamResolveCacheKey(input: {
   return `api-resolve:${parts.join(":")}`;
 }
 
-/** Embed scrapes key the cache by canonical embed page URL. */
-export function buildEmbedStreamCacheKey(embedPageUrl: string): string {
-  return embedPageUrl;
-}
-
 function buildManifestDrivenPolicyParts(input: {
   readonly providerId: string;
   readonly providerManifest?: CoreProviderManifest;

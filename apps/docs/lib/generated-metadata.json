@@ -877,7 +877,7 @@
     {
       "short": "",
       "long": "--player",
-      "description": "Player backend (auto chooses for this platform)"
+      "description": "Player backend: desktop <auto|mpv>; Android/Termux <auto|mpv|vlc>"
     },
     {
       "short": "",
