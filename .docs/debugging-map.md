@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-11"
+lastReviewed: "2026-11-24T10:55:19Z"
 ---
 
 # Kunai Debugging Map
@@ -21,7 +21,9 @@ or diagnostic surface to inspect.
 
 Start with:
 
-- `apps/cli/src/app/playback/PlaybackPhase.ts`
+- `apps/cli/src/app/playback/PlaybackPhase.ts` (outline) and
+  `apps/cli/src/app/playback/playback-episode-iteration.ts` (one episode's
+  resolve → play → recovery → post-play, one stage module per step)
 - `apps/cli/src/infra/player/PersistentMpvSession.ts`
 - `apps/cli/src/infra/player/persistent-mpv-runtime.ts`
 - `apps/cli/test/unit/infra/player/persistent-mpv-session-harness.test.ts`

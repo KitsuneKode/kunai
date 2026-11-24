@@ -449,8 +449,15 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // November 19 Jikan fallback, Android local-file gateway, sub/dub source cycling,
 // and Termux onboarding additions measured 3,205,426 bytes.
 // November 24 Ink 8 + dependency refresh measured 3,202,977 bytes.
+// November 24 six-review fixes (#731) measured 3,210,160 bytes — 80 bytes left.
+// November 24 PlaybackPhase split into stage modules (plan 012) measured
+// 3,218,128 bytes: +7,968, all property names at the new typed stage
+// boundaries, which minification cannot shorten. No dependency or asset.
+// Merged onto the #740 dead-code prune (providers, aliases, CLI exports), the
+// split measured 3,212,126 bytes: -6,002 against the split alone.
 // November 24 streaming relay cap, locked manifest reset, registered toast
 // timer, and unread-body cancels measured 3,210,429 bytes.
+// The split merged with #733, #736 and the #740 prune measured 3,211,074 bytes.
 // Merged Stremio addon hardening (strict direct-media probe, mpv file-local
 // confinement, guarded subtitle localization, addon stdin) measured
 // 3,247,553 bytes on the merged tree.
