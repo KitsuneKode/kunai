@@ -87,6 +87,22 @@ export interface KitsuneConfig {
    */
   stremioAddons: readonly StremioAddonConfigEntry[];
   /**
+   * Experimental Stremio addons opt-in. Strict `true` is the only on value —
+   * anything else is off. Alone it changes nothing: addon provider modules are
+   * installed only while this is `true` AND `stremioAddonsRiskAcknowledgedAt`
+   * holds a valid ISO timestamp. Disabling stops addon requests at the next
+   * resolve; the installed list and the acknowledgement are kept so a
+   * re-enable does not re-ask consent.
+   */
+  experimentalStremioAddons: boolean;
+  /**
+   * ISO-8601 instant (the `new Date().toISOString()` shape) at which the user
+   * acknowledged the Stremio addon risk warning. Empty means never
+   * acknowledged; a non-ISO or otherwise invalid value normalizes to empty,
+   * which is also off.
+   */
+  stremioAddonsRiskAcknowledgedAt: string;
+  /**
    * Which revision of the shipped provider defaults this config has been
    * reconciled against. The whole merged config is written on every save, so an
    * old default sits on disk looking exactly like a choice; bumping this when a

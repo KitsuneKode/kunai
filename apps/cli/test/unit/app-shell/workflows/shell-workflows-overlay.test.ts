@@ -45,6 +45,7 @@ describe("runShellWorkflowFromOverlay", () => {
  * a movie reported an episode that does not exist.
  */
 describe("enqueueCurrentPlaybackDownload feedback", () => {
+  type EnqueueInput = Parameters<Container["downloadService"]["enqueue"]>[0];
   function createContainer(
     job: Partial<DownloadJobRecord> & Pick<DownloadJobRecord, "titleName" | "mediaKind">,
     playback: {
@@ -56,7 +57,7 @@ describe("enqueueCurrentPlaybackDownload feedback", () => {
     } = {},
   ): { container: Container; notes: (string | null)[]; enqueued: unknown[] } {
     const notes: (string | null)[] = [];
-    const enqueued: unknown[] = [];
+    const enqueued: EnqueueInput[] = [];
     const languageProfile = { audio: "en", subtitle: "en", quality: "1080p" };
     const state = {
       currentTitle: { id: "t1", type: playback.titleType ?? "series", name: job.titleName },
@@ -85,7 +86,7 @@ describe("enqueueCurrentPlaybackDownload feedback", () => {
       playerControl: { waitForActivePlayer: async () => null },
       downloadService: {
         getEnqueueEligibility: () => ({ allowed: true }),
-        enqueue: async (input: unknown) => {
+        enqueue: async (input: EnqueueInput) => {
           enqueued.push(input);
           return {
             id: "job-1",

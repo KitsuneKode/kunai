@@ -71,6 +71,7 @@ import {
   resolveEffectiveProviderHealth,
 } from "@/services/playback/provider-health-policy";
 import type { ResolveAttempt } from "@kunai/core";
+import { isStremioAddonProviderId } from "@kunai/providers";
 import type { ProviderFailure, ProviderId } from "@kunai/types";
 
 export type AcquiredEpisodeStream =
@@ -234,6 +235,21 @@ export async function acquireEpisodeStream(
       sourceRefreshDecision || pendingUserProviderSwitch
         ? null
         : episodePrefetch.takeReadyFor(buildPrefetchTarget(currentEpisode, sourceProviderId));
+    // A prefetched bundle — and later a recent-memory stream — can hold an
+    // addon stream after the user disabled the experimental feature (possibly
+    // from another process). Reuse it only while the producing addon is still
+    // available; built-in providers are never touched by this gate.
+    const canReuseProvider = (providerId: string | null | undefined): boolean =>
+      !providerId ||
+      !isStremioAddonProviderId(providerId) ||
+      providerRegistry.get(providerId) !== undefined;
+    if (
+      consumedBundle &&
+      (!canReuseProvider(consumedBundle.resolvedProviderId) ||
+        !canReuseProvider(consumedBundle.stream.providerResolveResult?.providerId))
+    ) {
+      consumedBundle = null;
+    }
     prefetchWasPrepared = consumedBundle?.prepared === true;
 
     stream = consumedBundle?.stream ?? null;
@@ -287,6 +303,8 @@ export async function acquireEpisodeStream(
       const recent = recentEpisodeStreams.get(recentKey);
       if (
         recent?.provenance !== "local" &&
+        canReuseProvider(recent?.resolvedProviderId) &&
+        canReuseProvider(recent?.stream.providerResolveResult?.providerId) &&
         recentPlaybackStreamMatchesProvider(recent, sourceProviderId, currentEpisode) &&
         recentStreamMatchesPreferred(recent, sourceProviderId, currentEpisode) &&
         isRecentPlaybackStreamFresh(recent)

@@ -194,3 +194,39 @@ describe("IMDb id for a TMDB title", () => {
     await expect(resolveImdbIdFromTmdb({ tmdbId: 4, mediaKind: "movie" })).rejects.toThrow();
   });
 });
+
+describe("the experimental opt-in gate", () => {
+  test("a module created while enabled is not asked after the feature is off", async () => {
+    let enabled = true;
+    const requested: string[] = [];
+    const [module] = createStremioAddonModules({
+      getEntries: () => [{ url: B }],
+      isEnabled: () => enabled,
+      resolveImdbId: async () => "tt1375666",
+    });
+    if (!module) throw new Error("expected one addon module");
+    enabled = false;
+
+    const result = await module.resolve(
+      {
+        mediaKind: "movie",
+        intent: "play",
+        title: { id: "tmdb:27205", kind: "movie", title: "Inception" },
+        allowedRuntimes: ["direct-http"],
+      },
+      {
+        now: () => new Date().toISOString(),
+        fetch: {
+          runtime: "direct-http",
+          fetch: async (input) => {
+            requested.push(String(input));
+            return new Response("{}");
+          },
+        },
+      },
+    );
+
+    expect(result.status).toBe("exhausted");
+    expect(requested).toEqual([]);
+  });
+});

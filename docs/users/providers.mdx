@@ -424,16 +424,22 @@ Source-checkout smoke and verification steps: [Debugging workflow](/docs/develop
 
 ## Stremio addons
 
-You can add [Stremio addons](https://www.stremio.com/addons) as extra sources for movies and series. Kunai includes none: an addon is used only after you add it.
+Stremio addons are experimental and off by default. Kunai ships none. Enable them in Settings → Sources → Experimental: Stremio addons or run kunai addons enable.
 
-This is a beta feature: it works with addons that return direct video links, and has had less real-world use than the built-in providers.
+> Stremio addons are third-party servers you choose. Kunai checks each addon stream, but mpv opens its own connection. A hostile addon server could answer mpv differently and reach a device on your network. Older FFmpeg versions may follow redirects. Downloads and Android handoff do not use addons.
+
+Only install addons you trust.
 
 ```sh
+kunai addons enable
 kunai addons add https://example-addon.com/manifest.json
 kunai addons list
 kunai addons check
+kunai addons disable
 kunai addons remove 1
 ```
+
+`kunai addons enable` asks you to read and accept the risk above; your acknowledgement is stored, so re-enabling after a disable does not ask again. When stdin is not a terminal — a script, a CI job — run `kunai addons enable --accept-risk` to accept without a prompt. Adding while addons are off refuses before contacting the addon: run `kunai addons enable` first.
 
 If the URL carries an account token, prefer `--stdin` so it stays out of your
 shell's process list and history. Kunai reads one line of standard input;
@@ -443,18 +449,19 @@ paste it there, or redirect a file:
 kunai addons add --stdin < addon-url.txt
 ```
 
-You can also add and remove addons in **Settings → Sources → Stremio addons**.
+You can also add and remove addons in **Settings → Sources → Stremio addons**, and turn the whole feature on or off under **Experimental: Stremio addons** there.
 
+- **On and off.** `kunai addons disable` stops addon use at the next resolve — including in a session that is already running — and keeps your installed list and preferences. `kunai addons enable` turns them back on; addons that were already loaded can answer again at the next resolve. A Kunai session that started while addons were off never loaded them, so restart that session to use addons, and restart any session to pick up newly installed addons. `kunai addons list` and `kunai addons check` still work while off — they report the disabled state, and `check` does not contact the addon.
 - **What to paste.** The addon's `https://…/manifest.json` address. A `stremio://…/manifest.json` link is the same address and works too. If the addon has a configure page, finish that first and paste the URL it gives you.
 - **Where it sits.** A new addon goes after your other movie and series providers, so it is asked only when the ones before it have nothing. Move it up in **Settings → Sources → Provider priority**, or pause it with its provider switch.
-- **When it applies.** Adding takes effect the next time Kunai starts. Removing inside the app applies on the next title; `kunai addons remove` asks already-running sessions to restart first.
-- **What plays.** Only direct video files: MP4-family and WebM/Matroska. During the beta, Kunai's probe refuses playlists (HLS, DASH) and redirects, and Kunai re-checks the link with a small ranged request immediately before handing it to `mpv`; that check confirms the file answers, not that it plays in mpv end to end. Kunai has no torrent client, so torrent-only results are skipped, and Kunai tells you when that is all an addon offered. Subtitles an addon offers get the same treatment: they are downloaded through a guarded, size-limited request and must prove they are really WebVTT, SRT, or ASS text (anything else is skipped), and mpv only ever sees the local copy, never the remote URL.
-- **Desktop mpv only.** Addon streams do not support Android player handoff or downloads. If playback falls back to an addon, downloading that stream is still blocked. To download the title, choose a built-in provider.
+- **When it applies.** Adding takes effect the next time Kunai starts. Removing inside the app applies on the next title; `kunai addons remove` asks already-running sessions to restart first. Remove deletes the entry; disable keeps it and stops addon use instead.
+- **What plays.** Only direct video files: MP4-family and WebM/Matroska. Kunai's probe refuses playlists (HLS, DASH) and redirects, and Kunai re-checks the link with a small ranged request immediately before handing it to `mpv`; that check confirms the file answers, not that it plays in mpv end to end. Kunai has no torrent client, so torrent-only results are skipped, and Kunai tells you when that is all an addon offered. Subtitles an addon offers get the same treatment: they are downloaded through a guarded, size-limited request and must prove they are really WebVTT, SRT, or ASS text (anything else is skipped), and mpv only ever sees the local copy, never the remote URL.
+- **Desktop mpv only.** Addon streams do not support Android player handoff or downloads: no addon candidate participates in a download, the cached-stream and enqueue guards stay in place, and a playback fallback that lands on an addon is refused there too. To download the title, choose a built-in provider.
 - **Which titles.** Movies and series that have an IMDb id. Addons are not used in anime mode.
 
 **Treat the URL like a password.** A configured addon keeps your settings, and sometimes an account token, in its URL. Kunai shows a configured addon only as `addon @ host`, never the full URL or its reported name and version, and keeps it out of logs and diagnostics. It is stored in your `config.json`.
 
-**An addon is a third-party server you chose.** Kunai sends it the IMDb id of what you are about to watch. It accepts only JSON from it, runs nothing it sends, and checks that a link answers before handing it to `mpv`; that check confirms the link responds, not that it plays in mpv end to end. mpv opens a separate connection and looks up the host again, so this is not a network sandbox. mpv builds linked against older FFmpeg may still follow an HTTP redirect during playback, even though Kunai's probe refuses it. Install only addons you trust.
+**An addon is a third-party server you chose.** Kunai sends it the IMDb id of what you are about to watch. It accepts only JSON from it, runs nothing it sends, and checks that a link answers before handing it to `mpv`; that check confirms the link responds, not that it plays in mpv end to end. mpv opens a separate connection and looks up the host again, so this is not a network sandbox. mpv builds linked against older FFmpeg may still follow an HTTP redirect during playback, even though Kunai's probe refuses it.
 
 ## When providers fail (expected behavior)
 

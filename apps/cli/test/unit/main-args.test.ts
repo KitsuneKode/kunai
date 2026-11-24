@@ -485,3 +485,74 @@ test("`kunai addons` rejects an unsupported flag with exit 2 and never touches c
     removeTempDir(root);
   }
 });
+
+test("`kunai addons enable --accept-risk` writes consent and `disable` keeps it", async () => {
+  // End-to-end through the real entrypoint in a throwaway profile.
+  const root = mkdtempSync(join(tmpdir(), "kunai-addons-enable-"));
+  try {
+    const env = { ...process.env, ...storageRootEnv(root) };
+    const { configDir, configPath } = getKunaiPaths({ env });
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        stremioAddons: [{ url: "https://a.example.com/SECRETTOKEN/manifest.json", name: "Alpha" }],
+      }),
+    );
+    const mainTs = resolve(import.meta.dir, "../../src/main.ts");
+    const run = (...args: string[]) =>
+      Bun.spawn([process.execPath, mainTs, ...args], {
+        env,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+
+    // Non-interactive enable without the flag fails closed.
+    const refused = run("addons", "enable", "--json");
+    expect(await refused.exited).toBe(1);
+    expect(JSON.parse(await new Response(refused.stdout).text())).toMatchObject({ ok: false });
+
+    const enabled = run("addons", "enable", "--accept-risk", "--json");
+    const [enabledOut, enabledStatus] = await Promise.all([
+      new Response(enabled.stdout).text(),
+      enabled.exited,
+    ]);
+    expect(enabledStatus).toBe(0);
+    // stdout stays a single parseable object; the warning went to stderr.
+    expect(JSON.parse(enabledOut)).toMatchObject({
+      ok: true,
+      experimentalStremioAddons: true,
+    });
+    const onDisk = JSON.parse(readFileSync(configPath, "utf8"));
+    expect(onDisk.experimentalStremioAddons).toBe(true);
+    expect(onDisk.stremioAddonsRiskAcknowledgedAt).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+    );
+    expect(onDisk.stremioAddons).toHaveLength(1);
+    expect(enabledOut).not.toContain("SECRETTOKEN");
+
+    const disabled = run("addons", "disable", "--json");
+    const [disabledOut, disabledStatus] = await Promise.all([
+      new Response(disabled.stdout).text(),
+      disabled.exited,
+    ]);
+    expect(disabledStatus).toBe(0);
+    expect(JSON.parse(disabledOut)).toMatchObject({
+      ok: true,
+      experimentalStremioAddons: false,
+    });
+    const afterDisable = JSON.parse(readFileSync(configPath, "utf8"));
+    expect(afterDisable.experimentalStremioAddons).toBe(false);
+    // The acknowledgement and the installed list survive a disable.
+    expect(afterDisable.stremioAddonsRiskAcknowledgedAt).toBe(
+      onDisk.stremioAddonsRiskAcknowledgedAt,
+    );
+    expect(afterDisable.stremioAddons).toHaveLength(1);
+  } finally {
+    removeTempDir(root);
+  }
+});
+
+test("--accept-risk is an unknown option outside `kunai addons`", () => {
+  expect(() => parseArgs(["-S", "Dune", "--accept-risk"])).toThrow(/unknown option/);
+});

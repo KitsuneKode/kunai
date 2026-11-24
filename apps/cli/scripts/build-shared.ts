@@ -465,7 +465,9 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // Stremio review fixes measured 3,250,495 bytes (strict media evidence,
 // request identity, and playback/config guards); 3175 KiB leaves 705 bytes.
 // Addon beta safety fixes measured 3,253,277 bytes; 3178 KiB leaves 995 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_178;
+// After merging main and making addons opt-in, Bun 1.4.5 measured 3,270,431
+// bytes. 3197 KiB leaves 3,297 bytes; public launcher budgets are unchanged.
+export const NPM_BUNDLE_BUDGET_KB = 3_197;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

@@ -200,3 +200,110 @@ describe("recordStremioAddonName", () => {
     expect(saves()).toBe(0);
   });
 });
+
+describe("experimental opt-in in config", () => {
+  test("a profile with installed addons but no opt-in loads off and keeps the list", async () => {
+    const { store } = memoryStore({
+      stremioAddons: [{ url: A, name: "Alpha" }, { url: B }],
+    });
+
+    const config = await ConfigServiceImpl.load(store);
+
+    expect(config.experimentalStremioAddons).toBe(false);
+    expect(config.stremioAddonsRiskAcknowledgedAt).toBe("");
+    expect(config.stremioAddons).toEqual([{ url: A, name: "Alpha" }, { url: B }]);
+  });
+
+  test("hand-edited invalid types fail closed without losing unrelated fields", async () => {
+    const { store } = memoryStore({ stremioAddons: [{ url: A }], provider: "vidlink" });
+    // JSON.parse round-trip: the malformed consent values a hand-edited file
+    // carries could never be typed literally — parsing is the point.
+    store.load = async () =>
+      JSON.parse(
+        JSON.stringify({
+          ...DEFAULT_CONFIG,
+          experimentalStremioAddons: "yes",
+          stremioAddonsRiskAcknowledgedAt: "recently",
+          stremioAddons: [{ url: A }],
+          provider: "vidlink",
+        }),
+      );
+
+    const config = await ConfigServiceImpl.load(store);
+
+    expect(config.experimentalStremioAddons).toBe(false);
+    expect(config.stremioAddonsRiskAcknowledgedAt).toBe("");
+    expect(config.stremioAddons).toEqual([{ url: A }]);
+    expect(config.provider).toBe("vidlink");
+  });
+
+  test("update normalizes the two keys and save writes them to disk", async () => {
+    const { state, store } = memoryStore({});
+    const config = await ConfigServiceImpl.load(store);
+
+    await config.update(
+      // Malformed values on purpose — update() must normalize them.
+      JSON.parse(
+        '{"experimentalStremioAddons":"yes","stremioAddonsRiskAcknowledgedAt":"not a timestamp"}',
+      ),
+    );
+    await saved(config);
+
+    expect(state.disk.experimentalStremioAddons).toBe(false);
+    expect(state.disk.stremioAddonsRiskAcknowledgedAt).toBe("");
+
+    const ack = new Date().toISOString();
+    await config.update({
+      experimentalStremioAddons: true,
+      stremioAddonsRiskAcknowledgedAt: ack,
+    });
+    await saved(config);
+    expect(state.disk.experimentalStremioAddons).toBe(true);
+    expect(state.disk.stremioAddonsRiskAcknowledgedAt).toBe(ack);
+  });
+});
+
+describe("consent across two writers on one file", () => {
+  test("a standalone disable through one service is visible to a running peer at the next read", async () => {
+    const { mkdtempSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { FileStorage } = await import("@/infra/storage/FileStorage");
+    const { ConfigStoreImpl } = await import("@/services/persistence/ConfigStoreImpl");
+    const { stremioAddonsEnabled } = await import("@/domain/provider/stremio-addons");
+
+    const dir = mkdtempSync(join(tmpdir(), "kunai-consent-"));
+    try {
+      const configPath = join(dir, "config.json");
+      // The running session and the standalone CLI are two services over one file.
+      const session = await ConfigServiceImpl.load(
+        new ConfigStoreImpl(new FileStorage({ config: configPath })),
+      );
+      const standalone = await ConfigServiceImpl.load(
+        new ConfigStoreImpl(new FileStorage({ config: configPath })),
+      );
+
+      await standalone.update({
+        experimentalStremioAddons: true,
+        stremioAddonsRiskAcknowledgedAt: "2026-01-01T00:00:00.000Z",
+      });
+      await standalone.save();
+      await standalone.flushPending();
+      expect(stremioAddonsEnabled(session.readStremioAddonsConsent?.() ?? session.getRaw())).toBe(
+        true,
+      );
+
+      await standalone.update({ experimentalStremioAddons: false });
+      await standalone.save();
+      await standalone.flushPending();
+
+      const seen = session.readStremioAddonsConsent?.() ?? session.getRaw();
+      expect(seen.experimentalStremioAddons).toBe(false);
+      // The acknowledgement the CLI wrote survives to the session's read.
+      expect(seen.stremioAddonsRiskAcknowledgedAt).toBe("2026-01-01T00:00:00.000Z");
+      expect(stremioAddonsEnabled(seen)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

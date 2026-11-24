@@ -1,4 +1,4 @@
-import { DEFAULT_CONFIG, type StremioAddonConfigEntry } from "@kunai/config";
+import { DEFAULT_CONFIG, type KitsuneConfig, type StremioAddonConfigEntry } from "@kunai/config";
 import {
   parseStremioAddonUrl,
   scrubStremioAddonText,
@@ -9,11 +9,54 @@ import {
 } from "@kunai/providers/stremio-addon";
 import { isJsonObject, isJsonString, type LooseJsonValue } from "@kunai/types";
 
+// Layers that must not reach provider runtime (app-shell) use this re-export.
+export { isStremioAddonProviderId } from "@kunai/providers/stremio-addon";
+
 /**
  * Most addons one install may hold. Every installed addon is one more source
  * the fallback walk may ask, so the bound keeps a resolve's worst case finite.
  */
 export const MAX_STREMIO_ADDONS = 12;
+
+/** The two config keys that together decide whether addon providers may run. */
+export type StremioAddonsConsent = Pick<
+  KitsuneConfig,
+  "experimentalStremioAddons" | "stremioAddonsRiskAcknowledgedAt"
+>;
+
+/** Why an installed addon is not being asked while the experimental feature is off. */
+export const STREMIO_ADDONS_DISABLED = "disabled (experimental addons are off)";
+
+/**
+ * The text a user sees before the experimental addon feature may be switched
+ * on. Shown once — `stremioAddonsRiskAcknowledgedAt` records that it was seen.
+ */
+export const STREMIO_ADDONS_RISK_WARNING =
+  "Stremio addons are third-party servers you choose. Kunai checks each addon stream, but mpv opens its own connection. A hostile addon server could answer mpv differently and reach a device on your network. Older FFmpeg versions may follow redirects. Downloads and Android handoff do not use addons.";
+
+/**
+ * Whether addon providers may run. Both halves are required — a flag without
+ * the acknowledgement (or an acknowledgement without the flag) is off.
+ */
+export function stremioAddonsEnabled(config: StremioAddonsConsent): boolean {
+  return (
+    config.experimentalStremioAddons === true && Boolean(config.stremioAddonsRiskAcknowledgedAt)
+  );
+}
+
+/**
+ * The consent half of an enable. The acknowledgement is written the first
+ * time only — disable keeps it, so a re-enable does not re-ask.
+ */
+export function enableStremioAddons(
+  config: StremioAddonsConsent,
+  now: string,
+): StremioAddonsConsent {
+  return {
+    experimentalStremioAddons: true,
+    stremioAddonsRiskAcknowledgedAt: config.stremioAddonsRiskAcknowledgedAt || now,
+  };
+}
 
 const MAX_ADDON_NAME_LENGTH = 60;
 

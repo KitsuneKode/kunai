@@ -2,12 +2,17 @@ import { ADDONS_SUBCOMMANDS } from "@/cli-args";
 import {
   addStremioAddon,
   cleanStremioAddonName,
+  enableStremioAddons,
   findInstalledStremioAddon,
   readInstalledStremioAddons,
+  STREMIO_ADDONS_DISABLED,
+  STREMIO_ADDONS_RISK_WARNING,
+  stremioAddonsEnabled,
   removeStremioAddonFromConfig,
   stremioAddonReferenceSlice,
   type InstalledStremioAddon,
   type StremioAddonReferenceSlice,
+  type StremioAddonsConsent,
 } from "@/domain/provider/stremio-addons";
 import {
   describeManifestResources,
@@ -23,8 +28,8 @@ import type { ProviderRuntimeContext } from "@kunai/types";
 import { ProviderHttpError } from "@kunai/types";
 
 /** The part of the config service this command reads and writes. */
-export interface AddonsConfigPort extends StremioAddonReferenceSlice {
-  update(partial: Partial<StremioAddonReferenceSlice>): Promise<void>;
+export interface AddonsConfigPort extends StremioAddonReferenceSlice, StremioAddonsConsent {
+  update(partial: Partial<StremioAddonReferenceSlice & StremioAddonsConsent>): Promise<void>;
   save(): Promise<void>;
   flushPending(): Promise<void>;
 }
@@ -38,6 +43,18 @@ export interface RunAddonsCommandOptions {
   readonly stdin?: boolean;
   /** Overrides the stdin read. Defaults to one bounded line of process stdin. */
   readonly readInput?: () => Promise<string>;
+  /**
+   * `enable` only: accept the addon risk warning without a TTY prompt. An
+   * explicit opt-in — a non-interactive enable that cannot ask must carry it.
+   */
+  readonly acceptRisk?: boolean;
+  /**
+   * Ask the user to confirm enabling addons. Injected by tests; by default a
+   * prompt is offered only when stdin and stderr are both terminals.
+   */
+  readonly confirmEnable?: () => Promise<boolean>;
+  /** Where the risk warning goes. Defaults to stderr so `--json` stdout stays one object. */
+  readonly writeWarning?: (text: string) => void;
   readonly json?: boolean;
   readonly write?: (text: string) => void;
   /** Defaults to the user's real config, opened the way startup opens it. */
@@ -51,11 +68,20 @@ interface AddonSummary {
   readonly id: string;
   readonly name: string;
   readonly host: string;
+  /** Present only while the experimental feature is off — `"disabled"` with the reason. */
+  readonly status?: "disabled";
+  readonly reason?: string;
 }
 
 /** What may be printed about an addon. The URL is not part of it: its path can hold a token. */
-function summarize(addon: InstalledStremioAddon, index: number): AddonSummary {
-  return { number: index + 1, id: addon.providerId, name: addon.displayName, host: addon.host };
+function summarize(addon: InstalledStremioAddon, index: number, enabled: boolean): AddonSummary {
+  return {
+    number: index + 1,
+    id: addon.providerId,
+    name: addon.displayName,
+    host: addon.host,
+    ...(enabled ? null : { status: "disabled" as const, reason: STREMIO_ADDONS_DISABLED }),
+  };
 }
 
 /** Which of the two things Kunai plays an addon can be asked for. */
@@ -84,7 +110,18 @@ interface AddonCheckReport extends AddonSummary {
  */
 type AddonsCommandOutput =
   | { readonly ok: false; readonly error: string }
-  | { readonly ok: true; readonly error: null; readonly addons: readonly AddonSummary[] }
+  | {
+      readonly ok: true;
+      readonly error: null;
+      readonly experimentalStremioAddons: boolean;
+      readonly addons: readonly AddonSummary[];
+    }
+  | {
+      readonly ok: true;
+      readonly error: null;
+      readonly experimentalStremioAddons: boolean;
+      readonly changed: boolean;
+    }
   | {
       readonly ok: true;
       readonly error: null;
@@ -167,6 +204,31 @@ function errorMessage(cause: unknown): string {
   return cause instanceof ProviderHttpError ? cause.message : "the addon could not be reached";
 }
 
+/**
+ * Interactive opt-in: the risk text goes to stderr, then one question on
+ * stdin. Default is no — only an explicit `y`/`yes` turns addons on, and a
+ * closed or aborted prompt fails closed too.
+ */
+async function promptAcceptAddonsRisk(): Promise<boolean> {
+  const { createInterface } = await import("node:readline/promises");
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  // An ending input (EOF, closed pipe) aborts the pending question — the
+  // prompt fails closed instead of hanging on an answer that cannot come.
+  const controller = new AbortController();
+  rl.once("close", () => controller.abort());
+  try {
+    const answer = await rl.question("Enable Stremio addons? [y/N] ", {
+      signal: controller.signal,
+    });
+    const normalized = answer.trim().toLowerCase();
+    return normalized === "y" || normalized === "yes";
+  } catch {
+    return false;
+  } finally {
+    rl.close();
+  }
+}
+
 export async function runAddonsCommand(options: RunAddonsCommandOptions): Promise<number> {
   const write = options.write ?? ((text: string) => process.stdout.write(text));
   const action = options.subcommand ?? "list";
@@ -190,6 +252,14 @@ export async function runAddonsCommand(options: RunAddonsCommandOptions): Promis
   if (options.stdin && action !== "add") {
     return fail(2, "--stdin is only for `kunai addons add`.");
   }
+  // --accept-risk is the non-interactive form of the enable confirmation; it
+  // cannot be used to smuggle an opt-in into any other action.
+  if (options.acceptRisk && action !== "enable") {
+    return fail(2, "--accept-risk is only for `kunai addons enable`.");
+  }
+  if ((action === "enable" || action === "disable") && options.target) {
+    return fail(2, `\`kunai addons ${action}\` takes no addon.`);
+  }
 
   const openConfig =
     options.openConfig ??
@@ -199,19 +269,92 @@ export async function runAddonsCommand(options: RunAddonsCommandOptions): Promis
     });
   const config = await openConfig();
   const installed = readInstalledStremioAddons(config.stremioAddons);
+  const enabled = stremioAddonsEnabled(config);
+  const writeWarning = options.writeWarning ?? ((text: string) => process.stderr.write(text));
+  // The confirmation exists only where a person can answer it: an injected
+  // callback, else a real terminal. Anything else is non-interactive and must
+  // come with --accept-risk (enable) or fail closed (add).
+  const confirmEnable =
+    options.confirmEnable ??
+    (process.stdin.isTTY && process.stderr.isTTY ? promptAcceptAddonsRisk : undefined);
+  // The risk text is shown exactly once ever — while no acknowledgement is on
+  // file — whether the enable comes from --accept-risk or the prompt.
+  const showRiskWarningOnce = () => {
+    if (!config.stremioAddonsRiskAcknowledgedAt) {
+      writeWarning(`${STREMIO_ADDONS_RISK_WARNING}\n`);
+    }
+  };
+  const now = () => new Date().toISOString();
+
+  if (action === "enable") {
+    if (enabled) {
+      emit(
+        { ok: true, error: null, experimentalStremioAddons: true, changed: false },
+        "Stremio addons are already on.",
+      );
+      return 0;
+    }
+    if (options.acceptRisk) {
+      showRiskWarningOnce();
+    } else if (confirmEnable) {
+      showRiskWarningOnce();
+      if (!(await confirmEnable())) {
+        return fail(1, "Stremio addons stayed off — nothing changed.");
+      }
+    } else {
+      return fail(
+        1,
+        "enabling needs a terminal to confirm the risk, or --accept-risk to accept it non-interactively.",
+      );
+    }
+    await config.update(enableStremioAddons(config, now()));
+    await config.save();
+    await config.flushPending();
+    emit(
+      { ok: true, error: null, experimentalStremioAddons: true, changed: true },
+      "Stremio addons enabled. Restart any running Kunai session that started with addons off; already loaded addons can be used at the next resolve.",
+    );
+    return 0;
+  }
+
+  if (action === "disable") {
+    if (!enabled) {
+      emit(
+        { ok: true, error: null, experimentalStremioAddons: false, changed: false },
+        "Stremio addons are already off.",
+      );
+      return 0;
+    }
+    // Only the flag is patched: the acknowledgement and the installed list
+    // survive, so a re-enable does not re-ask and nothing is forgotten.
+    await config.update({ experimentalStremioAddons: false });
+    await config.save();
+    await config.flushPending();
+    emit(
+      { ok: true, error: null, experimentalStremioAddons: false, changed: true },
+      "Stremio addons disabled. They stop being asked at the next resolve; your installed addons stay listed.",
+    );
+    return 0;
+  }
 
   if (action === "list") {
-    const addons = installed.map(summarize);
+    const addons = installed.map((addon, index) => summarize(addon, index, enabled));
     emit(
-      { ok: true, error: null, addons },
+      { ok: true, error: null, experimentalStremioAddons: enabled, addons },
       addons.length === 0
-        ? "No Stremio addons installed. Add one with: kunai addons add <manifest-url>"
+        ? enabled
+          ? "No Stremio addons installed. Add one with: kunai addons add <manifest-url>"
+          : "Stremio addons are off (experimental). Enable with: kunai addons enable — then add one with: kunai addons add <manifest-url>"
         : [
             "Stremio addons (movies and series):",
             ...addons.map(
-              (addon) => `  ${addon.number}. ${addon.name}  ${addon.host}  ${addon.id}`,
+              (addon) =>
+                `  ${addon.number}. ${addon.name}  ${addon.host}  ${addon.id}${enabled ? "" : `  ${STREMIO_ADDONS_DISABLED}`}`,
             ),
             "",
+            ...(enabled
+              ? []
+              : ["Experimental addons are off — turn them on with: kunai addons enable"]),
             "Order and switches: Settings → Sources. Remove with: kunai addons remove <number>",
           ].join("\n"),
     );
@@ -221,6 +364,24 @@ export async function runAddonsCommand(options: RunAddonsCommandOptions): Promis
   if (action === "add") {
     if (options.stdin && options.target) {
       return fail(2, "use either --stdin or a manifest URL, not both.");
+    }
+    // Opt-in gating happens before the URL is read at all: a non-interactive
+    // add while addons are off never touches stdin or the network. When the
+    // user confirms, consent is held back until the manifest validates, so a
+    // bad addon cannot leave the feature switched on.
+    let grantConsent = false;
+    if (!enabled) {
+      if (!confirmEnable) {
+        return fail(
+          1,
+          "Run `kunai addons enable` first (use `--accept-risk` if running non-interactively).",
+        );
+      }
+      showRiskWarningOnce();
+      if (!(await confirmEnable())) {
+        return fail(1, "Stremio addons stayed off — nothing was added.");
+      }
+      grantConsent = true;
     }
     let target = options.target;
     if (options.stdin) {
@@ -254,7 +415,10 @@ export async function runAddonsCommand(options: RunAddonsCommandOptions): Promis
 
     const result = addStremioAddon(config.stremioAddons, parsed.addon.manifestUrl, manifest.name);
     if (!result.ok) return fail(1, result.reason);
-    await config.update({ stremioAddons: result.entries });
+    await config.update({
+      stremioAddons: result.entries,
+      ...(grantConsent ? enableStremioAddons(config, now()) : null),
+    });
     await config.save();
     await config.flushPending();
 
@@ -271,6 +435,7 @@ export async function runAddonsCommand(options: RunAddonsCommandOptions): Promis
           readInstalledStremioAddons(result.entries).findIndex(
             (entry) => entry.providerId === result.addon.providerId,
           ),
+          true,
         ),
         movie: usability.movie,
         series: usability.series,
@@ -307,7 +472,7 @@ export async function runAddonsCommand(options: RunAddonsCommandOptions): Promis
       {
         ok: true,
         error: null,
-        removed: summarize(targeted, installed.indexOf(targeted)),
+        removed: summarize(targeted, installed.indexOf(targeted), enabled),
         appliesAfterRestart: true,
       },
       `Removed "${targeted.displayName}" (${targeted.host}). Already-running Kunai sessions stop using it after restart.`,
@@ -321,9 +486,35 @@ export async function runAddonsCommand(options: RunAddonsCommandOptions): Promis
     emit({ ok: true, error: null, addons: [] }, "No Stremio addons installed.");
     return 0;
   }
+  // While the experimental feature is off the check reports the real state —
+  // disabled — without ever touching the network, and still exits nonzero.
+  if (!enabled) {
+    const reports: AddonCheckReport[] = subjects.map((addon) => ({
+      ...summarize(addon, installed.indexOf(addon), false),
+      reachable: false,
+      usable: false,
+      manifestName: null,
+      version: null,
+      movie: false,
+      series: false,
+      streamTypes: [],
+      problem: STREMIO_ADDONS_DISABLED,
+    }));
+    emit(
+      { ok: false, error: "addons are disabled", addons: reports },
+      [
+        "Stremio addons are disabled (experimental addons are off).",
+        ...reports.map(
+          (report) => `  ${report.number}. ${report.name}  ${report.host}  ${report.problem}`,
+        ),
+        "Turn them on with: kunai addons enable",
+      ].join("\n"),
+    );
+    return 1;
+  }
   const reports = await Promise.all(
     subjects.map(async (addon): Promise<AddonCheckReport> => {
-      const summary = summarize(addon, installed.indexOf(addon));
+      const summary = summarize(addon, installed.indexOf(addon), true);
       try {
         const manifest = await fetchStremioManifest(addon, { context });
         const usability = describeUsability(manifest);

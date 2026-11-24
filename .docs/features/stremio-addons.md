@@ -7,10 +7,20 @@ lastReviewed: "2026-11-24"
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
-A user can add Stremio addons as movie and series sources. Kunai ships none: an
-addon exists only because the user gave its manifest URL. Each installed addon
-is one provider in the movies and series lane, ordered and switched off like
-any bundled provider.
+Stremio addons are experimental and off by default. Kunai ships none. Enable them in Settings → Sources → Experimental: Stremio addons or run kunai addons enable.
+
+> Stremio addons are third-party servers you choose. Kunai checks each addon stream, but mpv opens its own connection. A hostile addon server could answer mpv differently and reach a device on your network. Older FFmpeg versions may follow redirects. Downloads and Android handoff do not use addons.
+
+Only install addons you trust.
+
+A user can add Stremio addons as movie and series sources. An addon exists only
+because the user gave its manifest URL, and addon providers stay inert until
+both `experimentalStremioAddons` and a stored risk acknowledgement are set —
+`stremioAddonsEnabled` in `apps/cli/src/domain/provider/stremio-addons.ts` is
+the single gate, re-read from the config file each time so a standalone
+`kunai addons disable` stops a running session at the next resolve. Each
+installed addon is one provider in the movies and series lane, ordered and
+switched off like any bundled provider.
 
 ## What an addon may do
 
@@ -31,9 +41,9 @@ Torrents (`infoHash`), YouTube ids, external pages, non-http schemes and
 private-address URLs are not playable. They are counted in a `source:skipped`
 trace event and named in the failure message, never dropped without a trace.
 
-## What an addon stream may be (beta)
+## What an addon stream may be (experimental)
 
-For the beta, an addon stream is playable only when it is one self-contained
+In this experimental release, an addon stream is playable only when it is one self-contained
 direct media file: MP4-family (`ftyp`) or Matroska/WebM (`EBML`). HLS, DASH
 and every other playlist form are refused — a `.m3u8`/`.mpd` URL before any
 request is made, and playlist-shaped bodies (extensionless included) after one
@@ -64,7 +74,7 @@ These are best-effort confinement on known-good builds, not a sandbox.
 
 The initial persistent file's request headers are file-local, like each IPC
 replacement. mpv restores its baseline when the file ends. Addon streams are
-desktop-mpv-only during the beta: Android handoff refuses before launching a
+desktop-mpv-only in this experimental release: Android handoff refuses before launching a
 player or opening a gateway. Offline downloads refuse addon provenance,
 including a fallback, and ignore cached URLs with no recorded producer.
 
@@ -135,12 +145,14 @@ and absolute URLs from addon text before interpretation.
 
 ## Lifecycle
 
-| Action                    | Takes effect                                                       |
-| ------------------------- | ------------------------------------------------------------------ |
-| Add                       | Next start: the provider list is built once per run                |
-| Remove in the app         | Next resolve: each module re-reads the stored list (`isInstalled`) |
-| Remove via `kunai addons` | After restart for sessions that were already running               |
-| Reorder or switch         | Immediately, through `providerPriority` and `disabledProviders`    |
+| Action                    | Takes effect                                                                                   |
+| ------------------------- | ---------------------------------------------------------------------------------------------- |
+| Enable                    | Next resolve for already-loaded addons; sessions started while off never loaded them — restart |
+| Disable                   | Next resolve, including in a running session; installed addons and the acknowledgement persist |
+| Add                       | Next start: the provider list is built once per run; a restart loads newly installed addons    |
+| Remove in the app         | Next resolve: each module re-reads the stored list (`isInstalled`)                             |
+| Remove via `kunai addons` | After restart for sessions that were already running                                           |
+| Reorder or switch         | Immediately, through `providerPriority` and `disabledProviders`                                |
 
 A new addon is appended after the bundled providers, so it is a fallback until
 the user moves it. Removing one also removes its id from the default provider,
@@ -155,8 +167,13 @@ never re-added.
 
 ## Entry points
 
-- `kunai addons list | add <url> | add --stdin | remove <n> | check [n]`
-  (`apps/cli/src/services/providers/run-addons-command.ts`). `add` reads the
+- `kunai addons enable | disable | list | add <url> | add --stdin | remove <n> | check [n]`
+  (`apps/cli/src/services/providers/run-addons-command.ts`). `enable` requires
+  the risk acknowledgement — interactive confirmation, or `--accept-risk` when
+  stdin is not a terminal — and writes the flag plus timestamp together;
+  `disable` patches only the flag. While off, `add` refuses before reading
+  stdin or contacting the addon, and `list`/`check` report the disabled status
+  without touching the network. `add` reads the
   manifest first and refuses an address that is not an addon, needs
   configuring, or cannot serve movie or series streams by IMDb id. With
   `--stdin` the URL is read from standard input instead of argv, so a
@@ -165,9 +182,10 @@ never re-added.
   `--dry-run`, before touching configuration. Manifest prefixes that match
   only some IMDb IDs are accepted; the provider still checks each title
   against the manifest.
-- Settings → Sources → Stremio addons
-  (`apps/cli/src/app-shell/settings/registry/addons.ts`). Adding here does not
-  contact the addon; an unconfigured addon's name is recorded on first use.
+- Settings → Sources → Stremio addons, and the Experimental: Stremio addons
+  submenu beside it (`apps/cli/src/app-shell/settings/registry/addons.ts`).
+  Adding here does not contact the addon; an unconfigured addon's name is
+  recorded on first use.
 
 ## Code
 

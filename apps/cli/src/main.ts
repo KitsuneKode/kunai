@@ -639,8 +639,16 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   }
   if (argv[0] === "addons") {
     const json = argv.includes("--json");
-    if (argv.slice(1).some((arg) => arg.startsWith("-") && arg !== "--json" && arg !== "--stdin")) {
-      const error = "unsupported flag. Use --json or --stdin (add only).";
+    if (
+      argv
+        .slice(1)
+        .some(
+          (arg) =>
+            arg.startsWith("-") && arg !== "--json" && arg !== "--stdin" && arg !== "--accept-risk",
+        )
+    ) {
+      const error =
+        "unsupported flag. Use --json, --stdin (add only), or --accept-risk (enable only).";
       process.stdout.write(
         json
           ? `${JSON.stringify({ schemaVersion: 1, ok: false, error }, null, 2)}\n`
@@ -656,6 +664,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
         subcommand: words[0],
         target: words[1],
         stdin: argv.includes("--stdin"),
+        acceptRisk: argv.includes("--accept-risk"),
         json,
       }),
     );

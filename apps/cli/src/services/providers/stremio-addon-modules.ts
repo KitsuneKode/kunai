@@ -42,6 +42,12 @@ export const resolveImdbIdFromTmdb: StremioImdbIdResolver = async ({
 export interface StremioAddonModuleHost {
   /** The stored list right now. Read on every resolve, so a removal is honoured at once. */
   readonly getEntries: () => readonly StremioAddonConfigEntry[];
+  /**
+   * Whether the experimental addon feature is on right now. Read through
+   * `isInstalled` on every addon contact, so a standalone `kunai addons
+   * disable` stops an already-running session at the next resolve.
+   */
+  readonly isEnabled?: () => boolean;
   readonly resolveImdbId?: StremioImdbIdResolver;
   /** The addon's manifest named it differently from what is stored. */
   readonly onName?: (addon: InstalledStremioAddon, name: string) => void;
@@ -59,7 +65,9 @@ export function createStremioAddonModules(host: StremioAddonModuleHost): CorePro
     createStremioAddonProviderModule({
       addon,
       name: addon.displayName,
-      isInstalled: () => isStremioAddonInstalled(host.getEntries(), addon.providerId),
+      isInstalled: () =>
+        (host.isEnabled?.() ?? true) &&
+        isStremioAddonInstalled(host.getEntries(), addon.providerId),
       resolveImdbId: host.resolveImdbId ?? resolveImdbIdFromTmdb,
       onManifest: (manifest) => {
         if (manifest.name !== addon.entry.name) host.onName?.(addon, manifest.name);

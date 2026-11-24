@@ -7,9 +7,15 @@ import {
   type ProviderPriorityInput,
 } from "@kunai/core";
 import type { ProviderHotfixManifest } from "@kunai/providers";
+import { isStremioAddonProviderId } from "@kunai/providers";
 import { buildProviderRelayRegistry, createRelayFetchPort } from "@kunai/relay";
 import { ProviderCacheRepository } from "@kunai/storage";
 
+import {
+  isStremioAddonInstalled,
+  stremioAddonsEnabled,
+  type StremioAddonsConsent,
+} from "../domain/provider/stremio-addons";
 import { PlaybackResolveCoordinator } from "../services/playback/PlaybackResolveCoordinator";
 import { PlaybackResolveWorkService } from "../services/playback/PlaybackResolveWorkService";
 import {
@@ -119,19 +125,17 @@ export async function bootstrapProviders(
   const providerPriority = createProviderPrioritySnapshot(config);
   applyYoutubeProviderConfig(config.getRaw(), persistence.cacheDb);
 
+  // The opt-in state is re-read from the config file on every check, so a
+  // standalone `kunai addons disable` takes effect in an already-running
+  // session at the next resolve — not only at the next restart. Modules only
+  // exist when addons were enabled at startup; enabling mid-session cannot
+  // conjure modules that were never loaded.
+  const readConsent = (): StremioAddonsConsent =>
+    config.readStremioAddonsConsent?.() ?? config.getRaw();
+  const addonsEnabled = () => stremioAddonsEnabled(readConsent());
   const providerModules = providerModulesOverride
     ? orderProviderModulesByPriority([...providerModulesOverride], providerPriority)
-    : await loadProductionProviderModules(
-        providerPriority,
-        createStremioAddonModules({
-          getEntries: () => config.stremioAddons,
-          onName: (addon, name) => {
-            void config.recordStremioAddonName(addon.manifestUrl, name).catch(() => {
-              // The name is display-only; the addon keeps working under its host.
-            });
-          },
-        }),
-      );
+    : await loadConfiguredProviderModules(config, providerPriority);
   const relayRegistry = buildProviderRelayRegistry(providerModules);
   const createProviderFetchPort = (providerId: (typeof providerModules)[number]["providerId"]) =>
     createRelayFetchPort({
@@ -173,12 +177,27 @@ export async function bootstrapProviders(
     },
   });
 
-  const providerRegistry = createProviderRegistry(engine, {
-    ...providerPriority,
-    disabledProviderIds: [...config.disabledProviders],
-  });
+  // An addon id is available only while the experimental feature is on and the
+  // addon is still installed — read fresh so a standalone disable is honoured
+  // by every registry lookup without restarting.
+  const isProviderAvailable = (id: string) =>
+    !isStremioAddonProviderId(id) ||
+    (addonsEnabled() && isStremioAddonInstalled(config.stremioAddons, id));
+  const providerRegistry = createProviderRegistry(
+    engine,
+    {
+      ...providerPriority,
+      disabledProviderIds: [...config.disabledProviders],
+    },
+    isProviderAvailable,
+  );
 
-  const getOrderedModules = createOrderedModulesGetter(config, providerModules);
+  const getOrderedModules = createOrderedModulesGetter(
+    config,
+    providerModules,
+    getActiveProviderHotfixManifest,
+    (module) => isProviderAvailable(module.providerId),
+  );
   const getEffectiveProviderPriority = (): ProviderPriorityInput =>
     applyHotfixToProviderBootstrap(
       createProviderPrioritySnapshot(config),
@@ -206,6 +225,9 @@ export async function bootstrapProviders(
     }),
     {
       onCompletedLedger: (ledger) => diagnosticsService.recordResolveWorkLedger(ledger),
+      stremioAddonsAvailable: () =>
+        providerModules.some((module) => isStremioAddonProviderId(module.providerId)) &&
+        addonsEnabled(),
     },
   );
 
@@ -219,6 +241,33 @@ export async function bootstrapProviders(
 type OrderedModulesConfig = PersistenceBootstrap["config"];
 
 /**
+ * The production module roster for a configured profile: bundled providers in
+ * priority order, then the user's Stremio addon modules — but only while the
+ * experimental opt-in is enabled. Addon modules carry an `isEnabled` gate
+ * back to this same consent read, so a later standalone disable stops them at
+ * the next resolve even though the module object remains loaded.
+ */
+export async function loadConfiguredProviderModules(
+  config: OrderedModulesConfig,
+  providerPriority: ProviderPriorityInput,
+): Promise<readonly CoreProviderModule[]> {
+  const addonsEnabled = () =>
+    stremioAddonsEnabled(config.readStremioAddonsConsent?.() ?? config.getRaw());
+  const addonModules = addonsEnabled()
+    ? createStremioAddonModules({
+        getEntries: () => config.stremioAddons,
+        isEnabled: addonsEnabled,
+        onName: (addon, name) => {
+          void config.recordStremioAddonName(addon.manifestUrl, name).catch(() => {
+            // The name is display-only; the addon keeps working under its host.
+          });
+        },
+      })
+    : [];
+  return loadProductionProviderModules(providerPriority, addonModules);
+}
+
+/**
  * The provider modules playback may use, in attempt order: user priority and
  * disables, then the active signed hotfix manifest (lane priority + `disabled`).
  * The registry and this list must agree, or a provider the manifest disabled is
@@ -230,6 +279,12 @@ export function createOrderedModulesGetter(
   config: OrderedModulesConfig,
   providerModules: readonly CoreProviderModule[],
   getManifest: () => ProviderHotfixManifest | null = getActiveProviderHotfixManifest,
+  /**
+   * Live admission checked after the memoized ordering, on every call — a
+   * Stremio addon drops out the moment the experimental flag is off, without
+   * waiting for the priority key to change. Keep it cheap: it runs per resolve.
+   */
+  admitModule?: (module: CoreProviderModule) => boolean,
 ): () => readonly CoreProviderModule[] {
   let cacheKey: string | null = null;
   let ordered: readonly CoreProviderModule[] = providerModules;
@@ -256,7 +311,7 @@ export function createOrderedModulesGetter(
         effective.disabledProviderIds,
       );
     }
-    return ordered;
+    return admitModule ? ordered.filter(admitModule) : ordered;
   };
 }
 

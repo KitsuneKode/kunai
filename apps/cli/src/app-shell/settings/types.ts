@@ -113,6 +113,12 @@ export type SettingRowDef = SettingRowMetadata &
         readonly label: string;
         readonly detail?: string;
         readonly summarize: (config: KitsuneConfig) => string;
+        /**
+         * Replaces `summarize` as the submenu's subtitle line — for rows whose
+         * context line is guidance, not state (Ink wraps it; keep it out of
+         * per-choice details, which truncate).
+         */
+        readonly subtitle?: (config: KitsuneConfig) => string;
         readonly buildChoices: (
           ctx: SettingsRegistryContext,
         ) => readonly ShellPickerOption<string>[];

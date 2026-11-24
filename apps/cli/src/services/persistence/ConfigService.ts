@@ -4,6 +4,8 @@
 // Manages user configuration and preferences.
 // =============================================================================
 
+import type { StremioAddonsConsent } from "@/domain/provider/stremio-addons";
+
 import type { TuningConfig } from "./tuning";
 
 export type {
@@ -67,6 +69,14 @@ export interface ConfigService extends KitsuneConfig {
   /** Persist any debounced pending save immediately (shutdown path). */
   flushPending(): Promise<void>;
   reset(): Promise<void>;
+  /**
+   * The Stremio addon opt-in as the live config file records it, with any
+   * pending local edits winning. A standalone `kunai addons enable|disable`
+   * writes the file directly, so a running session reads this rather than its
+   * boot-time snapshot — a disable stops the next resolve. Fail-closed: an
+   * absent or unreadable file reports off.
+   */
+  readStremioAddonsConsent?(): StremioAddonsConsent;
 }
 
 export interface ConfigStore {

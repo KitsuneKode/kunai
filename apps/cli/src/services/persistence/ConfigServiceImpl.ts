@@ -5,6 +5,7 @@
 import {
   normalizeStremioAddonEntries,
   withStremioAddonName,
+  type StremioAddonsConsent,
 } from "@/domain/provider/stremio-addons";
 import { dbg } from "@/logger";
 import type { ContinueSourcePreference } from "@/services/continuation/continuation-source";
@@ -18,6 +19,7 @@ import {
   MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS,
   mergeKitsuneConfig,
   normalizeRetiredProductionProviderFields,
+  normalizeStremioAddonsRiskAcknowledgedAt,
   retiredProductionProviderFieldsChanged,
   type PrePlayConfirmMode,
   type StremioAddonConfigEntry,
@@ -352,6 +354,13 @@ export class ConfigServiceImpl implements ConfigService {
       ...service.config,
       analytics: normalizedAnalytics,
       analyticsNoticeShown: loaded.analyticsNoticeShown === true,
+      // The experimental opt-in is strict `true` plus a valid ISO ack — a
+      // hand-edited `"yes"` or a non-timestamp ack fails closed like the flag
+      // being absent, without discarding the rest of the file.
+      experimentalStremioAddons: loaded.experimentalStremioAddons === true,
+      stremioAddonsRiskAcknowledgedAt: normalizeStremioAddonsRiskAcknowledgedAt(
+        loaded.stremioAddonsRiskAcknowledgedAt,
+      ),
       // Anything but an explicit `false` keeps tips on — a hand-edited `0` or
       // `"no"` must not silently opt a user out of a feature they never saw.
       tipsEnabled: loaded.tipsEnabled !== false,
@@ -719,6 +728,37 @@ export class ConfigServiceImpl implements ConfigService {
 
   get stremioAddons(): readonly StremioAddonConfigEntry[] {
     return [...this.config.stremioAddons];
+  }
+
+  get experimentalStremioAddons(): boolean {
+    return this.config.experimentalStremioAddons;
+  }
+
+  get stremioAddonsRiskAcknowledgedAt(): string {
+    return this.config.stremioAddonsRiskAcknowledgedAt;
+  }
+
+  /**
+   * The opt-in as the live file records it — a standalone `kunai addons
+   * enable|disable` rewrites config.json under a running session, and only a
+   * file read sees that before the next restart. Pending local edits still
+   * win: a consent key this session changed but has not yet saved is answered
+   * from memory, not from the file it is about to update. When the store has
+   * no synchronous read (tests, memory backends) memory is the answer. The
+   * store's own read is fail-closed, so an unreadable file reports off.
+   */
+  readStremioAddonsConsent(): StremioAddonsConsent {
+    const persisted = this.store.readStremioAddonsConsent?.();
+    return {
+      experimentalStremioAddons:
+        this.dirtyKeys.has("experimentalStremioAddons") || persisted === undefined
+          ? this.config.experimentalStremioAddons === true
+          : persisted.experimentalStremioAddons,
+      stremioAddonsRiskAcknowledgedAt:
+        this.dirtyKeys.has("stremioAddonsRiskAcknowledgedAt") || persisted === undefined
+          ? this.config.stremioAddonsRiskAcknowledgedAt
+          : persisted.stremioAddonsRiskAcknowledgedAt,
+    };
   }
 
   get wyzieApiKey(): string {
@@ -1126,6 +1166,16 @@ export class ConfigServiceImpl implements ConfigService {
         : null),
       ...(partial.stremioAddons !== undefined
         ? { stremioAddons: normalizeStremioAddonEntries(partial.stremioAddons) }
+        : null),
+      ...(partial.experimentalStremioAddons !== undefined
+        ? { experimentalStremioAddons: partial.experimentalStremioAddons === true }
+        : null),
+      ...(partial.stremioAddonsRiskAcknowledgedAt !== undefined
+        ? {
+            stremioAddonsRiskAcknowledgedAt: normalizeStremioAddonsRiskAcknowledgedAt(
+              partial.stremioAddonsRiskAcknowledgedAt,
+            ),
+          }
         : null),
       ...(partial.animeLanguageProfile
         ? { animeLanguageProfile: normalizeLanguageProfile(partial.animeLanguageProfile) }

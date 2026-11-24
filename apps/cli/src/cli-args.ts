@@ -148,6 +148,9 @@ MAINTENANCE
   kunai providers rollback     Restore the previous verified hotfix manifest backup
   kunai providers reset        Remove cached hotfix manifest and return to bundled defaults
   kunai addons list            List the Stremio addons you added (--json)
+  kunai addons enable          Turn the experimental addon feature on
+                               (--accept-risk acknowledges the warning non-interactively)
+  kunai addons disable         Turn it off; installed addons stay listed
   kunai addons add <url>       Add a Stremio addon by its https manifest.json URL
                                (--stdin reads the URL from stdin, keeping it out of argv)
   kunai addons remove <n>      Remove an addon by its number in the list
@@ -181,7 +184,7 @@ export const CLI_SUBCOMMANDS: readonly string[] = [
 ];
 
 /** `kunai addons <action>`. The command and the shell completions share this list. */
-export const ADDONS_SUBCOMMANDS = ["list", "add", "remove", "check"] as const;
+export const ADDONS_SUBCOMMANDS = ["list", "add", "remove", "check", "enable", "disable"] as const;
 
 // Every recognized flag token. Used so a value-consuming flag (e.g. `-S`) never
 // swallows a following *flag* as its value, and so unknown options are rejected

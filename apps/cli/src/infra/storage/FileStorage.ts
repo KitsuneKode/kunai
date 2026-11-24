@@ -7,6 +7,7 @@
 // =============================================================================
 
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { chmod, mkdir, open, stat, unlink } from "node:fs/promises";
 import { hostname } from "node:os";
 import { join, dirname } from "node:path";
@@ -266,6 +267,28 @@ export class FileStorage implements StorageService {
     const path = this.lookupPath(key);
     if (!path) throw new Error(`Unknown storage key: ${key}`);
     return path;
+  }
+
+  /**
+   * Read-only synchronous peek at a stored JSON document.
+   *
+   * For readers that must see the live file between this process's own debounced
+   * saves — the Stremio addon consent is the one caller: a standalone
+   * `kunai addons disable` writes the file directly, and a running app picks
+   * that up at the next resolve instead of only at restart. Deliberately has
+   * none of `read()`'s side effects: no chmod, no backup, no quarantine
+   * marking, no warnings — an absent or unreadable file is simply `null`.
+   */
+  readJsonSync<T>(key: string): T | null {
+    const path = this.pathFor(key);
+    try {
+      // SAFETY: same boundary contract as `read()` — the caller names the shape
+      // it stored under `key`; the file is user-editable, so callers decode.
+      const parsed = JSON.parse(readFileSync(path, "utf8")) as T | null;
+      return parsed ?? null;
+    } catch {
+      return null;
+    }
   }
 
   async exists(key: string): Promise<boolean> {

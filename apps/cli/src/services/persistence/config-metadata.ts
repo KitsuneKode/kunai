@@ -231,6 +231,25 @@ export const CONFIG_METADATA = [
     editable: true,
   },
   {
+    key: "experimentalStremioAddons",
+    label: "Experimental: Stremio addons",
+    section: "providers",
+    // A disable is honoured at the next resolve; addons installed while the
+    // feature was off at startup are only loaded after a restart.
+    effect: "next-resolve",
+    privacy: "local",
+    editable: true,
+    options: ["on", "off"],
+  },
+  {
+    key: "stremioAddonsRiskAcknowledgedAt",
+    label: "Stremio addons risk acknowledgement",
+    section: "providers",
+    effect: "next-resolve",
+    privacy: "local",
+    editable: false,
+  },
+  {
     key: "videasySessionToken",
     label: "Videasy session token",
     section: "providers",

@@ -81,6 +81,8 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   providerDefaultsRevision: 6,
   disabledProviders: [],
   stremioAddons: [],
+  experimentalStremioAddons: false,
+  stremioAddonsRiskAcknowledgedAt: "",
   youtubeProviderPriority: ["youtube"],
   youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },
   youtubeMetadata: { extractorArgs: DEFAULT_YOUTUBE_EXTRACTOR_ARGS },

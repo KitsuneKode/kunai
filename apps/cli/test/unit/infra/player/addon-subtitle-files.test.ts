@@ -17,7 +17,8 @@ const SRT = "1\n00:00:01,000 --> 00:00:02,000\nhello\n";
 
 let testRoot: string;
 let restoreStorage: () => void;
-let previousTempDirs: Record<"TMPDIR" | "TMP" | "TEMP", string | undefined>;
+type TempDirEnv = Pick<NodeJS.ProcessEnv, "TMPDIR" | "TMP" | "TEMP">;
+let previousTempDirs: TempDirEnv;
 beforeEach(() => {
   testRoot = mkdtempSync(join(tmpdir(), "kunai-addon-subs-test-"));
   restoreStorage = applyStorageRootEnv(testRoot);

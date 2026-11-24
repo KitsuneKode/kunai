@@ -1,8 +1,12 @@
 import {
   addStremioAddon,
+  enableStremioAddons,
   isStremioAddonInstalled,
   readInstalledStremioAddons,
   removeStremioAddonFromConfig,
+  STREMIO_ADDONS_DISABLED,
+  STREMIO_ADDONS_RISK_WARNING,
+  stremioAddonsEnabled,
   type InstalledStremioAddon,
 } from "@/domain/provider/stremio-addons";
 
@@ -39,7 +43,47 @@ export function addonSettingsRows(ctx: SettingsRegistryContext): SettingRowDef[]
     (addon) => !running.has(addon.providerId),
   );
 
+  const globallyOff = !stremioAddonsEnabled(ctx.config);
   return [
+    {
+      kind: "submenu",
+      id: "experimentalStremioAddons",
+      label: "Experimental: Stremio addons",
+      detail:
+        "Third-party addon servers you choose. Off by default; turning it off stops addons at the next resolve.",
+      configKeys: ["experimentalStremioAddons", "stremioAddonsRiskAcknowledgedAt"],
+      summarize: (config) => (stremioAddonsEnabled(config) ? "On" : "Off"),
+      subtitle: (config) =>
+        stremioAddonsEnabled(config)
+          ? "Disabling addons takes effect at the next resolve. Restart Kunai to load any newly installed addons."
+          : config.stremioAddonsRiskAcknowledgedAt
+            ? "Enable addons for the next resolve if they are already loaded. Restart Kunai if it started with addons off."
+            : STREMIO_ADDONS_RISK_WARNING,
+      // The first choice is always "keep" — Enter on the default selection
+      // can never switch the feature, only an explicit move to Enable does.
+      buildChoices: (choiceCtx) =>
+        stremioAddonsEnabled(choiceCtx.config)
+          ? [
+              { value: "keep-on", label: "Keep addons on" },
+              { value: "disable", label: "Disable addons" },
+            ]
+          : [
+              { value: "keep-off", label: "Keep addons off" },
+              { value: "enable", label: "Enable addons" },
+            ],
+      onPick: (config, value) => {
+        if (value === "enable") {
+          // Reuses the stored acknowledgement when one exists, so a re-enable
+          // does not ask to see the risk text again.
+          return { ...config, ...enableStremioAddons(config, new Date().toISOString()) };
+        }
+        if (value === "disable") {
+          // Only the flag: the acknowledgement and the installed list stay.
+          return { ...config, experimentalStremioAddons: false };
+        }
+        return config;
+      },
+    },
     {
       kind: "subheading",
       id: "subheading:stremio-addons",
@@ -65,11 +109,14 @@ export function addonSettingsRows(ctx: SettingsRegistryContext): SettingRowDef[]
         return count === 0 ? "none installed" : `${count} installed`;
       },
       apply: (config, value) => {
-        if (!value.trim()) return config;
+        if (!value.trim() || !stremioAddonsEnabled(config)) return config;
         const result = addStremioAddon(config.stremioAddons, value);
         return result.ok ? { ...config, stremioAddons: result.entries } : config;
       },
       validate: (value) => {
+        if (!stremioAddonsEnabled(ctx.config)) {
+          return "Experimental Stremio addons are off — enable them in the row above first.";
+        }
         if (!value.trim()) return null;
         const result = addStremioAddon(ctx.config.stremioAddons, value);
         if (!result.ok) return result.reason;
@@ -80,7 +127,7 @@ export function addonSettingsRows(ctx: SettingsRegistryContext): SettingRowDef[]
       kind: "boolean",
       id: `stremioAddon:${addon.providerId}`,
       label: `Keep ${addon.displayName}`,
-      detail: `${addon.host}: turn off to remove this addon and its place in your order. To pause it instead, use its provider switch.`,
+      detail: `${addon.host}: ${globallyOff ? `${STREMIO_ADDONS_DISABLED}. ` : ""}turn off to remove this addon and its place in your order. To pause it instead, use its provider switch.`,
       read: (config) => isStremioAddonInstalled(config.stremioAddons, addon.providerId),
       write: (config, value) => {
         if (!value) return removeStremioAddonFromConfig(config, addon.providerId);
@@ -88,7 +135,7 @@ export function addonSettingsRows(ctx: SettingsRegistryContext): SettingRowDef[]
         return result.ok ? { ...config, stremioAddons: result.entries } : config;
       },
     })),
-    ...(waiting.length > 0
+    ...(waiting.length > 0 && !globallyOff
       ? [
           {
             kind: "status",

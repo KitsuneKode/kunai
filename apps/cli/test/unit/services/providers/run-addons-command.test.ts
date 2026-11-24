@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { readInstalledStremioAddons } from "@/domain/provider/stremio-addons";
+import {
+  readInstalledStremioAddons,
+  STREMIO_ADDONS_RISK_WARNING,
+} from "@/domain/provider/stremio-addons";
 import {
   readAddonInputLine,
   runAddonsCommand,
@@ -14,6 +17,13 @@ import type { LooseJsonValue, ProviderRuntimeContext, ProviderTraceEvent } from 
 const TOKEN = "SECRETTOKEN";
 const A = `https://a.example.com/${TOKEN}/manifest.json`;
 const B = "https://b.example.com/manifest.json";
+
+const ACK = "2026-01-01T00:00:00.000Z";
+/** Seed for every test whose behaviour assumes the experimental feature is on. */
+const ENABLED = {
+  experimentalStremioAddons: true,
+  stremioAddonsRiskAcknowledgedAt: ACK,
+} as const;
 
 const MANIFEST = {
   id: "org.example",
@@ -31,6 +41,9 @@ function memoryConfig(initial: Partial<AddonsConfigPort> = {}) {
     providerPriority: DEFAULT_CONFIG.providerPriority,
     disabledProviders: DEFAULT_CONFIG.disabledProviders,
     titleProviderPreferences: DEFAULT_CONFIG.titleProviderPreferences,
+    // The production default is off — tests opt in explicitly via ENABLED.
+    experimentalStremioAddons: false,
+    stremioAddonsRiskAcknowledgedAt: "",
     ...initial,
   };
   const calls = { saved: 0, flushed: 0 };
@@ -49,6 +62,12 @@ function memoryConfig(initial: Partial<AddonsConfigPort> = {}) {
     },
     get titleProviderPreferences() {
       return state.titleProviderPreferences;
+    },
+    get experimentalStremioAddons() {
+      return state.experimentalStremioAddons;
+    },
+    get stremioAddonsRiskAcknowledgedAt() {
+      return state.stremioAddonsRiskAcknowledgedAt;
     },
     update: async (partial) => {
       Object.assign(state, partial);
@@ -90,6 +109,7 @@ async function run(
   },
 ) {
   let output = "";
+  const warnings: string[] = [];
   const { config, ...rest } = options;
   const code = await runAddonsCommand({
     ...rest,
@@ -97,13 +117,16 @@ async function run(
     write: (text) => {
       output += text;
     },
+    writeWarning: (text) => {
+      warnings.push(text);
+    },
   });
-  return { code, output };
+  return { code, output, warnings };
 }
 
 describe("kunai addons add", () => {
   test("reads the manifest, then stores the URL under the addon's own name", async () => {
-    const config = memoryConfig();
+    const config = memoryConfig(ENABLED);
     const context = contextAnswering(() => manifestResponse());
 
     const { code, output } = await run({ subcommand: "add", target: A, config, context });
@@ -123,7 +146,7 @@ describe("kunai addons add", () => {
   });
 
   test("accepts the stremio:// form of the same address", async () => {
-    const config = memoryConfig();
+    const config = memoryConfig(ENABLED);
 
     const { code } = await run({
       subcommand: "add",
@@ -137,7 +160,7 @@ describe("kunai addons add", () => {
   });
 
   test("a URL that is not a public https manifest is a usage error and nothing is requested", async () => {
-    const config = memoryConfig();
+    const config = memoryConfig(ENABLED);
     const context = contextAnswering(() => manifestResponse());
 
     const { code, output } = await run({
@@ -154,7 +177,7 @@ describe("kunai addons add", () => {
   });
 
   test("an address that does not answer with a manifest adds nothing", async () => {
-    const config = memoryConfig();
+    const config = memoryConfig(ENABLED);
 
     const { code, output } = await run({
       subcommand: "add",
@@ -175,7 +198,7 @@ describe("kunai addons add", () => {
     [{ ...MANIFEST, idPrefixes: ["kitsu:"] }, "does not accept IMDb ids"],
     [{ ...MANIFEST, behaviorHints: { configurationRequired: true } }, "must be configured"],
   ])("an addon Kunai could never get a stream from is refused", async (manifest, reason) => {
-    const config = memoryConfig();
+    const config = memoryConfig(ENABLED);
 
     const { code, output } = await run({
       subcommand: "add",
@@ -190,7 +213,10 @@ describe("kunai addons add", () => {
   });
 
   test("adding an installed addon again says so and keeps one entry", async () => {
-    const config = memoryConfig({ stremioAddons: [{ url: A, name: "Example Streams" }] });
+    const config = memoryConfig({
+      ...ENABLED,
+      stremioAddons: [{ url: A, name: "Example Streams" }],
+    });
 
     const { code, output } = await run({
       subcommand: "add",
@@ -206,6 +232,7 @@ describe("kunai addons add", () => {
 
   test("re-adding an installed addon reports its real list number and keeps the order", async () => {
     const config = memoryConfig({
+      ...ENABLED,
       stremioAddons: [
         { url: A, name: "Alpha" },
         { url: B, name: "Beta" },
@@ -229,7 +256,7 @@ describe("kunai addons add", () => {
   });
 
   test("an addon whose prefixes only admit IMDb ids is usable for both kinds", async () => {
-    const config = memoryConfig();
+    const config = memoryConfig(ENABLED);
     const context = contextAnswering(() => manifestResponse({ ...MANIFEST, idPrefixes: ["tt13"] }));
 
     const { code, output } = await run({
@@ -246,7 +273,7 @@ describe("kunai addons add", () => {
   });
 
   test("a missing URL is a usage error", async () => {
-    const { code } = await run({ subcommand: "add", config: memoryConfig() });
+    const { code } = await run({ subcommand: "add", config: memoryConfig(ENABLED) });
 
     expect(code).toBe(2);
   });
@@ -262,7 +289,7 @@ describe("kunai addons add", () => {
       types: ["movie", `meta-${CANARY}`],
       resources: ["stream", `catalog-${CANARY}`],
     };
-    const config = memoryConfig();
+    const config = memoryConfig(ENABLED);
     const context = contextAnswering(() => manifestResponse(leaky));
 
     const add = await run({ subcommand: "add", target: configured, json: true, config, context });
@@ -297,6 +324,7 @@ describe("kunai addons add", () => {
     // A config written before the scrub existed can hold a canary as the
     // stored name: it is still never shown, logged, or traced.
     const legacy = memoryConfig({
+      ...ENABLED,
       stremioAddons: [{ url: configured, name: `Legacy ${CANARY}` }],
     });
     const legacyList = await run({ subcommand: "list", json: true, config: legacy });
@@ -347,7 +375,7 @@ describe("kunai addons add", () => {
   });
 
   test("add --stdin reads the manifest URL from the input reader, not argv", async () => {
-    const config = memoryConfig();
+    const config = memoryConfig(ENABLED);
     let reads = 0;
 
     const { code } = await run({
@@ -387,7 +415,7 @@ describe("kunai addons add", () => {
   });
 
   test("add --stdin with a positional target fails without reading or asking the addon", async () => {
-    const config = memoryConfig();
+    const config = memoryConfig(ENABLED);
     const context = contextAnswering(() => manifestResponse());
     let reads = 0;
 
@@ -416,7 +444,7 @@ describe("kunai addons add", () => {
       const { code } = await run({
         subcommand,
         stdin: true,
-        config: memoryConfig(),
+        config: memoryConfig(ENABLED),
         readInput: async () => {
           reads += 1;
           return A;
@@ -430,7 +458,10 @@ describe("kunai addons add", () => {
 
 describe("kunai addons list", () => {
   test("lists number, name, host and id, and never the URL", async () => {
-    const config = memoryConfig({ stremioAddons: [{ url: A, name: "Alpha" }, { url: B }] });
+    const config = memoryConfig({
+      ...ENABLED,
+      stremioAddons: [{ url: A, name: "Alpha" }, { url: B }],
+    });
 
     const text = await run({ config });
     const json = await run({ subcommand: "list", json: true, config });
@@ -454,7 +485,7 @@ describe("kunai addons list", () => {
   });
 
   test("an empty list says how to add one", async () => {
-    const { code, output } = await run({ config: memoryConfig() });
+    const { code, output } = await run({ config: memoryConfig(ENABLED) });
 
     expect(code).toBe(0);
     expect(output).toContain("kunai addons add <manifest-url>");
@@ -466,6 +497,7 @@ describe("kunai addons remove", () => {
     const [alpha] = readInstalledStremioAddons([{ url: A }]);
     const alphaId = alpha?.providerId ?? "";
     const config = memoryConfig({
+      ...ENABLED,
       stremioAddons: [{ url: A, name: "Alpha" }, { url: B }],
       provider: alphaId,
       providerPriority: [alphaId, "vidlink"],
@@ -473,7 +505,10 @@ describe("kunai addons remove", () => {
     });
 
     const { code, output } = await run({ subcommand: "remove", target: "1", config });
-    const jsonConfig = memoryConfig({ stremioAddons: [{ url: A, name: "Alpha" }, { url: B }] });
+    const jsonConfig = memoryConfig({
+      ...ENABLED,
+      stremioAddons: [{ url: A, name: "Alpha" }, { url: B }],
+    });
     const json = await run({ subcommand: "remove", target: "1", json: true, config: jsonConfig });
     const jsonPayload = JSON.parse(json.output);
 
@@ -490,7 +525,7 @@ describe("kunai addons remove", () => {
   });
 
   test("an unknown target changes nothing", async () => {
-    const config = memoryConfig({ stremioAddons: [{ url: B }] });
+    const config = memoryConfig({ ...ENABLED, stremioAddons: [{ url: B }] });
 
     const missing = await run({ subcommand: "remove", target: "5", config });
     const unnamed = await run({ subcommand: "remove", config });
@@ -504,7 +539,10 @@ describe("kunai addons remove", () => {
 
 describe("kunai addons check", () => {
   test("reports each addon and fails when one cannot be used", async () => {
-    const config = memoryConfig({ stremioAddons: [{ url: A, name: "Alpha" }, { url: B }] });
+    const config = memoryConfig({
+      ...ENABLED,
+      stremioAddons: [{ url: A, name: "Alpha" }, { url: B }],
+    });
     const context = contextAnswering((url) =>
       url === A ? manifestResponse() : new Response("gone", { status: 503 }),
     );
@@ -531,7 +569,7 @@ describe("kunai addons check", () => {
   });
 
   test("checks one addon when a target is given, and writes nothing", async () => {
-    const config = memoryConfig({ stremioAddons: [{ url: A }, { url: B }] });
+    const config = memoryConfig({ ...ENABLED, stremioAddons: [{ url: A }, { url: B }] });
     const context = contextAnswering(() => manifestResponse());
 
     const { code, output } = await run({ subcommand: "check", target: "2", config, context });
@@ -543,7 +581,7 @@ describe("kunai addons check", () => {
   });
 
   test("a stream resource's own idPrefixes is judged per kind, not by the manifest's", async () => {
-    const config = memoryConfig({ stremioAddons: [{ url: A, name: "Alpha" }] });
+    const config = memoryConfig({ ...ENABLED, stremioAddons: [{ url: A, name: "Alpha" }] });
     const manifest = {
       ...MANIFEST,
       idPrefixes: ["kitsu:"],
@@ -565,14 +603,14 @@ describe("kunai addons check", () => {
 });
 
 test("an unknown action is a usage error", async () => {
-  const { code, output } = await run({ subcommand: "install", config: memoryConfig() });
+  const { code, output } = await run({ subcommand: "install", config: memoryConfig(ENABLED) });
 
   expect(code).toBe(2);
-  expect(output).toContain("list, add, remove, check");
+  expect(output).toContain("list, add, remove, check, enable, disable");
 });
 
 test("an unknown action never echoes the argument — it may be a pasted URL holding a token", async () => {
-  const config = memoryConfig();
+  const config = memoryConfig(ENABLED);
 
   const plain = await run({ subcommand: A, config });
   const json = await run({ subcommand: A, json: true, config });
@@ -584,4 +622,241 @@ test("an unknown action never echoes the argument — it may be a pasted URL hol
   expect(plain.output).toContain("kunai addons:");
   expect(config.state.stremioAddons).toEqual([]);
   expect(config.calls.saved).toBe(0);
+});
+
+describe("experimental opt-in", () => {
+  test("list while off still shows installed addons, marked disabled, without fetching", async () => {
+    const config = memoryConfig({ stremioAddons: [{ url: A, name: "Alpha" }, { url: B }] });
+    const context = contextAnswering(() => manifestResponse());
+
+    const text = await run({ config, context });
+    const json = await run({ subcommand: "list", json: true, config, context });
+    const payload = JSON.parse(json.output);
+
+    expect(text.code).toBe(0);
+    expect(text.output).toContain("disabled (experimental addons are off)");
+    expect(payload).toMatchObject({
+      ok: true,
+      experimentalStremioAddons: false,
+      addons: [
+        { number: 1, status: "disabled", reason: "disabled (experimental addons are off)" },
+        { number: 2, status: "disabled" },
+      ],
+    });
+    // Disabled addons are never contacted — and their URLs never leave config.
+    expect(context.requested).toEqual([]);
+    expect(text.output + json.output).not.toContain(TOKEN);
+    expect(text.output + json.output).not.toContain(A);
+  });
+
+  test("check while off reports disabled statuses and fails without any request", async () => {
+    const config = memoryConfig({ stremioAddons: [{ url: A }, { url: B }] });
+    const context = contextAnswering(() => manifestResponse());
+
+    const { code, output } = await run({ subcommand: "check", json: true, config, context });
+    const payload = JSON.parse(output);
+
+    expect(code).toBe(1);
+    expect(payload.ok).toBe(false);
+    expect(payload.addons).toHaveLength(2);
+    expect(payload.addons[0]).toMatchObject({
+      reachable: false,
+      usable: false,
+      problem: "disabled (experimental addons are off)",
+    });
+    expect(context.requested).toEqual([]);
+    expect(output).not.toContain(A);
+  });
+
+  test("add while off refuses before stdin or network and writes nothing", async () => {
+    const config = memoryConfig();
+    const context = contextAnswering(() => manifestResponse());
+    let reads = 0;
+
+    const { code, output } = await run({
+      subcommand: "add",
+      stdin: true,
+      config,
+      context,
+      readInput: async () => {
+        reads += 1;
+        return A;
+      },
+    });
+
+    expect(code).toBe(1);
+    expect(output).toContain(
+      "Run `kunai addons enable` first (use `--accept-risk` if running non-interactively).",
+    );
+    expect(reads).toBe(0);
+    expect(context.requested).toEqual([]);
+    expect(config.state.stremioAddons).toEqual([]);
+    expect(config.state.experimentalStremioAddons).toBe(false);
+    expect(config.calls.saved).toBe(0);
+  });
+
+  test("--accept-risk is rejected on actions other than enable", async () => {
+    for (const subcommand of ["add", "list", "check", "remove", "disable"]) {
+      const { code, output } = await run({
+        subcommand,
+        acceptRisk: true,
+        config: memoryConfig(),
+        context: contextAnswering(() => manifestResponse()),
+      });
+      expect(code).toBe(2);
+      expect(output).toContain("--accept-risk is only for `kunai addons enable`");
+    }
+  });
+
+  test("enable and disable take no addon argument", async () => {
+    const enable = await run({
+      subcommand: "enable",
+      target: "1",
+      acceptRisk: true,
+      config: memoryConfig(),
+    });
+    const disable = await run({ subcommand: "disable", target: "1", config: memoryConfig() });
+    expect(enable.code).toBe(2);
+    expect(disable.code).toBe(2);
+  });
+
+  test("non-interactive enable without --accept-risk writes nothing", async () => {
+    const config = memoryConfig();
+
+    const { code, output } = await run({ subcommand: "enable", config });
+
+    expect(code).toBe(1);
+    expect(output).toContain("--accept-risk");
+    expect(config.state.experimentalStremioAddons).toBe(false);
+    expect(config.calls.saved).toBe(0);
+  });
+
+  test("enable --accept-risk records flag and acknowledgement, warns once, stays one JSON object", async () => {
+    const config = memoryConfig();
+
+    const { code, output, warnings } = await run({
+      subcommand: "enable",
+      acceptRisk: true,
+      json: true,
+      config,
+    });
+    const payload = JSON.parse(output);
+
+    expect(code).toBe(0);
+    expect(payload).toMatchObject({
+      ok: true,
+      schemaVersion: 1,
+      experimentalStremioAddons: true,
+      changed: true,
+    });
+    expect(config.state.experimentalStremioAddons).toBe(true);
+    expect(config.state.stremioAddonsRiskAcknowledgedAt).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+    );
+    expect(warnings.join("")).toContain(STREMIO_ADDONS_RISK_WARNING);
+    expect(config.calls).toEqual({ saved: 1, flushed: 1 });
+  });
+
+  test("an interactive no writes nothing", async () => {
+    const config = memoryConfig();
+
+    const { code, output, warnings } = await run({
+      subcommand: "enable",
+      confirmEnable: async () => false,
+      config,
+    });
+
+    expect(code).toBe(1);
+    expect(output).toContain("stayed off");
+    expect(warnings.join("")).toContain(STREMIO_ADDONS_RISK_WARNING);
+    expect(config.state.experimentalStremioAddons).toBe(false);
+    expect(config.calls.saved).toBe(0);
+  });
+
+  test("disable patches only the flag — acknowledgement, list and preferences survive", async () => {
+    const [alpha] = readInstalledStremioAddons([{ url: A }]);
+    const alphaId = alpha?.providerId ?? "";
+    const config = memoryConfig({
+      ...ENABLED,
+      stremioAddons: [{ url: A, name: "Alpha" }, { url: B }],
+      provider: alphaId,
+      providerPriority: [alphaId, "vidlink"],
+      titleProviderPreferences: { "tmdb:1": alphaId },
+    });
+
+    const { code, output, warnings } = await run({ subcommand: "disable", json: true, config });
+    const payload = JSON.parse(output);
+
+    expect(code).toBe(0);
+    expect(payload).toMatchObject({ ok: true, experimentalStremioAddons: false, changed: true });
+    expect(config.state.experimentalStremioAddons).toBe(false);
+    expect(config.state.stremioAddonsRiskAcknowledgedAt).toBe(ACK);
+    expect(config.state.stremioAddons).toEqual([{ url: A, name: "Alpha" }, { url: B }]);
+    expect(config.state.provider).toBe(alphaId);
+    expect(config.state.titleProviderPreferences).toEqual({ "tmdb:1": alphaId });
+    expect(warnings).toEqual([]);
+
+    // Re-enabling reuses the stored acknowledgement and never re-warns —
+    // but a non-interactive re-enable still has to say --accept-risk.
+    const again = await run({ subcommand: "enable", config });
+    expect(again.code).toBe(1);
+    const re = await run({ subcommand: "enable", acceptRisk: true, config });
+    expect(re.code).toBe(0);
+    expect(config.state.stremioAddonsRiskAcknowledgedAt).toBe(ACK);
+    expect(re.warnings).toEqual([]);
+  });
+
+  test("interactive disabled add confirms first, then validates the manifest before persisting", async () => {
+    const config = memoryConfig();
+    const context = contextAnswering(() => manifestResponse());
+    let confirms = 0;
+    let reads = 0;
+
+    const { code, warnings } = await run({
+      subcommand: "add",
+      stdin: true,
+      config,
+      context,
+      confirmEnable: async () => {
+        confirms += 1;
+        return true;
+      },
+      readInput: async () => {
+        reads += 1;
+        return A;
+      },
+    });
+
+    expect(code).toBe(0);
+    expect(confirms).toBe(1);
+    expect(reads).toBe(1);
+    expect(warnings.join("")).toContain(STREMIO_ADDONS_RISK_WARNING);
+    expect(config.state.experimentalStremioAddons).toBe(true);
+    expect(config.state.stremioAddonsRiskAcknowledgedAt).not.toBe("");
+    expect(config.state.stremioAddons).toEqual([{ url: A }]);
+  });
+
+  test("interactive disabled add that is declined leaves everything untouched", async () => {
+    const config = memoryConfig();
+    const context = contextAnswering(() => manifestResponse());
+    let reads = 0;
+
+    const { code } = await run({
+      subcommand: "add",
+      stdin: true,
+      config,
+      context,
+      confirmEnable: async () => false,
+      readInput: async () => {
+        reads += 1;
+        return A;
+      },
+    });
+
+    expect(code).toBe(1);
+    expect(reads).toBe(0);
+    expect(context.requested).toEqual([]);
+    expect(config.state.stremioAddons).toEqual([]);
+    expect(config.state.experimentalStremioAddons).toBe(false);
+  });
 });

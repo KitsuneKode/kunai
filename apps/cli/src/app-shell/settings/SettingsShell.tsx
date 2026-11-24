@@ -10,7 +10,7 @@ import { handleSettingsKey, type SettingsKeyResult } from "./controller";
 import { clampSelectedIndex } from "./navigation";
 import { createSettingsDraftWriter } from "./persist";
 import { handleSettingsPointer } from "./pointer";
-import { buildSettingsRegistryContext } from "./registry-context";
+import { buildSettingsRegistryContext, readSettingsConfig } from "./registry-context";
 import { settingsEqual } from "./settings-equal";
 import { SettingsOverlay } from "./SettingsOverlay";
 import { createSettingsUiState } from "./state";
@@ -40,7 +40,9 @@ export function SettingsShell({
 }) {
   const activeActionRef = useRef<{ id: string; controller: AbortController } | null>(null);
   const [state, setState] = useState<SettingsUiState>(() => {
-    const base = createSettingsUiState(container.config.getRaw());
+    // Seed the draft from the live consent too — a standalone `kunai addons
+    // disable` between startup and opening Settings must show "off".
+    const base = createSettingsUiState(readSettingsConfig(container));
     const ctx = buildSettingsRegistryContext(container, base.draft);
     const { activeSectionIndex, selectedIndex } = resolveSettingsInitialLocation(
       ctx,
@@ -53,9 +55,13 @@ export function SettingsShell({
     };
   });
 
+  // The writer's baseline is the exact snapshot the draft was seeded from, so
+  // an enable pick diffs to a real patch even when the file changed outside.
+  const { snapshot } = state;
   const persistence = useMemo(
-    () => createSettingsDraftWriter(container, container.config.getRaw()),
-    [container],
+    () => createSettingsDraftWriter(container, snapshot),
+    // snapshot is fixed at init; the writer only ever needs the seed.
+    [container, snapshot],
   );
   const draftRef = useRef(state.draft);
 
