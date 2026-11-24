@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -490,15 +490,11 @@ test("`kunai addons enable --accept-risk` writes consent and `disable` keeps it"
   // End-to-end through the real entrypoint in a throwaway profile.
   const root = mkdtempSync(join(tmpdir(), "kunai-addons-enable-"));
   try {
-    const env = { ...process.env, ...storageRootEnv(root), KUNAI_TEST_ADDONS_TRACE: "1" };
+    const env = { ...process.env, ...storageRootEnv(root) };
     const { configDir, configPath } = getKunaiPaths({ env });
-    mkdirSync(configDir, { recursive: true });
-    writeFileSync(
-      configPath,
-      JSON.stringify({
-        stremioAddons: [{ url: "https://a.example.com/SECRETTOKEN/manifest.json", name: "Alpha" }],
-      }),
-    );
+    const seeded = JSON.stringify({
+      stremioAddons: [{ url: "https://a.example.com/SECRETTOKEN/manifest.json", name: "Alpha" }],
+    });
     const mainTs = resolve(import.meta.dir, "../../src/main.ts");
     const run = (...args: string[]) =>
       Bun.spawn([process.execPath, mainTs, ...args], {
@@ -508,19 +504,23 @@ test("`kunai addons enable --accept-risk` writes consent and `disable` keeps it"
         stderr: "pipe",
       });
 
-    const beforeRefusal = readFileSync(configPath, "utf8");
-    // Non-interactive enable without the flag fails closed.
-    const refused = run("addons", "enable", "--json");
-    const [refusedOut, refusedErr, refusedStatus] = await Promise.all([
-      new Response(refused.stdout).text(),
-      new Response(refused.stderr).text(),
-      refused.exited,
-    ]);
-    if (!refusedOut || refusedStatus !== 1)
-      console.error("[addons-ci-trace]", { refusedStatus, refusedOut, refusedErr });
-    expect(refusedStatus).toBe(1);
-    expect(JSON.parse(refusedOut)).toMatchObject({ ok: false });
-    expect(readFileSync(configPath, "utf8")).toBe(beforeRefusal);
+    const expectRefusal = async () => {
+      const refused = run("addons", "enable", "--json");
+      const [refusedOut, refusedStatus] = await Promise.all([
+        new Response(refused.stdout).text(),
+        refused.exited,
+      ]);
+      expect(refusedStatus).toBe(1);
+      expect(JSON.parse(refusedOut)).toMatchObject({ ok: false });
+    };
+    // Refusal must finish even when the profile does not yet have config.json.
+    await expectRefusal();
+    expect(existsSync(configPath)).toBe(false);
+
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(configPath, seeded);
+    await expectRefusal();
+    expect(readFileSync(configPath, "utf8")).toBe(seeded);
 
     const enabled = run("addons", "enable", "--accept-risk", "--json");
     const [enabledOut, enabledStatus] = await Promise.all([

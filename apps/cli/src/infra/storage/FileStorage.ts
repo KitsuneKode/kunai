@@ -8,7 +8,7 @@
 
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { chmod, mkdir, open, stat, unlink } from "node:fs/promises";
+import { chmod, mkdir, open, readFile, stat, unlink } from "node:fs/promises";
 import { hostname } from "node:os";
 import { join, dirname } from "node:path";
 
@@ -88,12 +88,10 @@ export class FileStorage implements StorageService {
   async read<T>(key: string): Promise<T | null> {
     const path = this.pathFor(key);
 
-    const file = Bun.file(path);
-
     let raw: string;
     try {
       if (process.platform !== "win32") await chmod(path, 0o600);
-      raw = await file.text();
+      raw = await readFile(path, "utf8");
     } catch (error) {
       // "Not there" is nothing stored, not a read error for the caller to
       // handle. An `exists()` pre-check used to answer this, but it left both
@@ -321,8 +319,10 @@ function backupStamp(): string {
 }
 
 async function readLock(path: string): Promise<string | null> {
+  // An absent lock is normal. Bun's Blob reads can drop the ENOENT
+  // continuation and exit early on Windows (oven-sh/bun#39787).
   try {
-    return await Bun.file(path).text();
+    return await readFile(path, "utf8");
   } catch (error) {
     if (errorCode(error) === "ENOENT") return null;
     throw error;

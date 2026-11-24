@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { existsSync, writeSync } from "node:fs";
+import { existsSync } from "node:fs";
 // =============================================================================
 // Kunai - Canonical Runtime Entry Point
 //
@@ -658,27 +658,18 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     }
     // An unresolved operation must not exit successfully before reporting an outcome.
     process.exitCode = 1;
-    const trace = (phase: string) => {
-      if (process.env.KUNAI_TEST_ADDONS_TRACE === "1") writeSync(2, `[addons-ci-trace] ${phase}\n`);
-    };
-    trace(`entry ${process.platform}`);
-    if (process.env.KUNAI_TEST_ADDONS_TRACE === "1") {
-      process.once("beforeExit", (code) => trace(`beforeExit ${code}`));
-    }
-    trace("before command import");
     const { runAddonsCommand } = await import("./services/providers/run-addons-command");
-    trace("after command import");
     // Positionals only: `kunai addons add <url> --json` and `--json add <url>` both work.
     const words = argv.slice(1).filter((word) => !word.startsWith("-"));
-    const code = await runAddonsCommand({
-      subcommand: words[0],
-      target: words[1],
-      stdin: argv.includes("--stdin"),
-      acceptRisk: argv.includes("--accept-risk"),
-      json,
-    });
-    trace(`command returned ${code}`);
-    process.exit(code);
+    process.exit(
+      await runAddonsCommand({
+        subcommand: words[0],
+        target: words[1],
+        stdin: argv.includes("--stdin"),
+        acceptRisk: argv.includes("--accept-risk"),
+        json,
+      }),
+    );
   }
   if (argv[0] === "rollback") {
     const { runRollback } = await import("./services/update/run-rollback");
