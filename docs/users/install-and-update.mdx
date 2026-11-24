@@ -13,6 +13,18 @@ Kunai supports **zero-prerequisite compiled binaries** (default), global package
 
 ## Install paths
 
+The v0.3.0 native installers check SHA-256 hashes. Starting with v0.4.0, official binaries and the branded installers for signed releases also verify Ed25519 signatures on the checksum manifests. A missing or invalid signature stops installation. You can also download the key-pinned `install.sh` or `install.ps1` from the signed release. Source installers without an embedded key print a checksum-only diagnostic. Existing binaries keep their original verification behavior.
+
+Signed shell installs need OpenSSL 3. On macOS use `brew install openssl@3`. On Windows use OpenSSL on PATH or Git for Windows. The compiled updater verifies signatures internally.
+
+To check a downloaded archive independently, fetch its manifest and verify GitHub's build attestation before checking the hash. For example, on Linux x64:
+
+```sh
+gh release download v0.4.0 -R KitsuneKode/kunai -p kunai-linux-x64.tar.gz -p SHA256SUMS.archives
+gh attestation verify SHA256SUMS.archives -R KitsuneKode/kunai --signer-workflow KitsuneKode/kunai/.github/workflows/release.yml
+sha256sum --ignore-missing -c SHA256SUMS.archives
+```
+
 <Tabs items={["Linux / macOS", "Android (Termux)", "Windows", "Homebrew", "Scoop", "AUR", "Bun global", "npm global", "Source"]}>
 <Tab value="Linux / macOS">
 
@@ -126,42 +138,46 @@ Supported binary targets: `windows-x64`, `windows-arm64`.
 </Tab>
 <Tab value="Homebrew">
 
-For macOS and Linuxbrew users, from `KitsuneKode/homebrew-tap`:
+For macOS and Linuxbrew users, from the Kunai repository:
 
 ```sh
-brew install kitsunekode/tap/kunai
+brew tap kitsunekode/kunai https://github.com/KitsuneKode/kunai
+brew install kitsunekode/kunai/kunai
 ```
 
-The formula fetches the same signed-checksum release archives as the installer
+The formula fetches the same checksum-pinned release archives as the installer
 and installs the binary as `kunai`. `mpv` is your own install (`brew install
 mpv`). Kunai needs it for playback but the formula does not force it as a
-dependency. `kunai upgrade` detects the Cellar path and prints `brew upgrade
-kunai` instead of touching the file; `kunai uninstall` prints `brew uninstall
-kunai` and leaves the binary to Homebrew.
+dependency. Use `brew upgrade kunai` and `brew uninstall kunai` for this install,
+including v0.3.0. Starting with v0.4.0, Kunai detects the Cellar path and
+displays those commands.
 
 </Tab>
 <Tab value="Scoop">
 
-For Windows users, from `KitsuneKode/scoop-bucket`:
+For Windows users, from the Kunai repository:
 
 ```powershell
-scoop bucket add kitsunekode https://github.com/KitsuneKode/scoop-bucket
-scoop install kunai
+scoop bucket add kunai https://github.com/KitsuneKode/kunai
+scoop install kunai/kunai
 ```
 
 The manifest fetches the same `kunai-windows-*.zip` release archives and shims
-the exe as `kunai`. Scoop suggests `extras/mpv` for playback. `kunai upgrade`
-detects the `scoop\apps\kunai` path and prints `scoop update kunai`;
-`kunai uninstall` prints `scoop uninstall kunai`.
+the exe as `kunai`. Scoop suggests `extras/mpv` for playback. Use `scoop update kunai` and
+`scoop uninstall kunai` for this install, including v0.3.0. Starting with
+v0.4.0, Kunai detects the Scoop install and displays those commands.
 
 </Tab>
 <Tab value="AUR">
 
 For Arch Linux, the `kunai-bin` package (binary `-bin` package, built from the
-published release archives):
+published release archives) is available as a PKGBUILD starting with v0.4.0:
 
 ```sh
-yay -S kunai-bin
+mkdir kunai-bin && cd kunai-bin
+gh release download v0.4.0 -R KitsuneKode/kunai -p PKGBUILD
+less PKGBUILD
+makepkg -si
 ```
 
 `mpv` is a hard dependency; `yt-dlp`, `ffmpeg`, and `curl` are optional
@@ -388,7 +404,7 @@ endpoint cannot leave startup checks or `kunai upgrade` waiting indefinitely.
 
 - **Binary installs:** when `autoApplyBinaryUpdates` is enabled (default), Kunai downloads and stages the new version under `versions/` automatically. Restart Kunai to run the new binary. Toggle this from `/update`.
 - **npm/bun/source:** notify-only; run `kunai upgrade` or your package manager manually.
-- **Homebrew/Scoop/AUR:** `kunai upgrade` never self-replaces a package-manager-owned file; it prints your package manager's update command.
+- **Homebrew/Scoop/AUR (v0.4.0 onward):** `kunai upgrade` leaves package-manager-owned files with their manager; it prints your package manager's update command.
 - **Turning it off:** set `updateChecksEnabled` to `false` in `config.json` (default `true`) and Kunai stops checking entirely: no background request, and no update notice.
 
 Manual check from the shell:

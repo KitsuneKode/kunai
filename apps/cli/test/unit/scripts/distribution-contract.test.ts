@@ -16,6 +16,7 @@ import { join } from "node:path";
 import { RELEASE_BINARY_TARGETS } from "@/services/update/platform-assets";
 
 import rootPackage from "../../../../../package.json";
+import { SUPPLEMENT_NAMES } from "../../../../../scripts/packaging/release-supplements";
 import {
   REQUIRED_RELEASE_ASSET_NAMES,
   assertCompleteReleaseAssetSet,
@@ -592,6 +593,38 @@ describe("release workflow candidate-before-publication contract", () => {
     expect(exactVerify).toBeGreaterThanOrEqual(0);
     expect(provenance).toBeGreaterThan(exactVerify);
     expect(npmPublish).toBeGreaterThan(provenance);
+  });
+
+  test("both signatures and every generated distribution file reach draft verification", () => {
+    const pub = publish();
+    const upload = pub.slice(
+      pub.indexOf("Create draft GitHub release"),
+      pub.indexOf("Verify draft release assets"),
+    );
+    for (const name of SUPPLEMENT_NAMES)
+      expect(upload).toContain(`.release-download/channels/${name}`);
+    expect(pub.indexOf("release-supplements.ts prepare")).toBeGreaterThan(
+      pub.indexOf("Verify native provenance before npm publication"),
+    );
+    expect(pub.indexOf("release-supplements.ts verify")).toBeLessThan(pub.search(PUBLISH_STEP));
+    const input = [
+      ...completeSizedAssets(),
+      ...SUPPLEMENT_NAMES.map((name) => ({ name, size: name.endsWith(".sig") ? 64 : 1024 })),
+    ];
+    const names = [...requiredAssetNames, ...SUPPLEMENT_NAMES];
+    expect(() => assertCompleteReleaseAssetSet(input, names)).not.toThrow();
+    expect(() =>
+      assertCompleteReleaseAssetSet(
+        input.filter((asset) => asset.name !== "PKGBUILD"),
+        names,
+      ),
+    ).toThrow("missing");
+    expect(() =>
+      assertCompleteReleaseAssetSet(
+        input.map((asset) => (asset.name === "SHA256SUMS.sig" ? { ...asset, size: 65 } : asset)),
+        names,
+      ),
+    ).toThrow("signature size");
   });
 
   test("protected publication reverifies native bytes immediately before draft creation", () => {

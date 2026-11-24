@@ -412,7 +412,13 @@ export async function bootstrapPersistence(
   const statsFormatter = new StatsFormatter();
   const credentialVault = await createCredentialVault({
     paths,
-    onFallback: (backend, reason) => dbg("credential-vault", `using ${backend} backend: ${reason}`),
+    onFallback: (backend, reason) => {
+      dbg("credential-vault", `using ${backend} backend: ${reason}`);
+      if (process.platform === "win32")
+        process.stderr.write(
+          "Windows credential vault unavailable. Kunai will store credentials in user-profile files.\n",
+        );
+    },
   });
   const config = await ConfigServiceImpl.load(configStore, credentialVault);
   // Read live per request, so a key saved in settings applies without a restart.

@@ -1,0 +1,47 @@
+{
+    "version": "0.3.0",
+    "description": "Terminal-first streaming CLI for anime, series, and movies, played in mpv",
+    "homepage": "https://kunai.kitsunekode.in",
+    "license": "MIT",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/KitsuneKode/kunai/releases/download/v0.3.0/kunai-windows-x64.zip",
+            "hash": "b857e3c28c4bffffdf75a1250a0d343fc4a4c703469ce6b94c79b2429d2ad0aa",
+            "bin": [
+                [
+                    "kunai-windows-x64.exe",
+                    "kunai"
+                ]
+            ]
+        },
+        "arm64": {
+            "url": "https://github.com/KitsuneKode/kunai/releases/download/v0.3.0/kunai-windows-arm64.zip",
+            "hash": "b814bee6f7bafa814aef875c57e21a5775b3fd7d74ff4cee5dfa446c457e5a25",
+            "bin": [
+                [
+                    "kunai-windows-arm64.exe",
+                    "kunai"
+                ]
+            ]
+        }
+    },
+    "suggest": {
+        "mpv": "extras/mpv"
+    },
+    "checkver": {
+        "github": "https://github.com/KitsuneKode/kunai"
+    },
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/KitsuneKode/kunai/releases/download/v$version/kunai-windows-x64.zip"
+            },
+            "arm64": {
+                "url": "https://github.com/KitsuneKode/kunai/releases/download/v$version/kunai-windows-arm64.zip"
+            }
+        },
+        "hash": {
+            "url": "https://github.com/KitsuneKode/kunai/releases/download/v$version/SHA256SUMS.archives"
+        }
+    }
+}

@@ -3,7 +3,7 @@
 .SYNOPSIS
   Kunai installer for Windows — binary-first, channel-aware.
 .EXAMPLE
-  irm https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.ps1 | iex
+  irm https://kunai.kitsunekode.in/install.ps1 | iex
 .EXAMPLE
   .\install.ps1 -Method binary -Version 1.2.3
 .DESCRIPTION
@@ -77,6 +77,7 @@ $DownloadStallMs = if ($env:KUNAI_DOWNLOAD_STALL_MS) { [int]$env:KUNAI_DOWNLOAD_
 $DownloadMaxBytes = if ($env:KUNAI_DOWNLOAD_MAX_BYTES) { [long]$env:KUNAI_DOWNLOAD_MAX_BYTES } else { 268435456 }
 $DownloadArchiveMaxBytes = if ($env:KUNAI_DOWNLOAD_ARCHIVE_MAX_BYTES) { [long]$env:KUNAI_DOWNLOAD_ARCHIVE_MAX_BYTES } else { 67108864 }
 $ExtractedBinaryMaxBytes = if ($env:KUNAI_EXTRACTED_BINARY_MAX_BYTES) { [long]$env:KUNAI_EXTRACTED_BINARY_MAX_BYTES } else { 134217728 }
+$ReleasePublicKey = ''
 $DownloadChecksumMaxBytes = if ($env:KUNAI_DOWNLOAD_CHECKSUM_MAX_BYTES) { [long]$env:KUNAI_DOWNLOAD_CHECKSUM_MAX_BYTES } else { 1048576 }
 $DownloadMaxAttempts = if ($env:KUNAI_DOWNLOAD_MAX_ATTEMPTS) { [int]$env:KUNAI_DOWNLOAD_MAX_ATTEMPTS } else { 3 }
 # Only the platform binary and its archive are worth a progress line; the two
@@ -448,6 +449,21 @@ function Invoke-BoundedDownload {
     }
   }
   throw "Download failed for $Label after $DownloadMaxAttempts attempts."
+}
+
+function Assert-ManifestSignature([string]$Url, [string]$Manifest) {
+  if (-not $ReleasePublicKey) { return }
+  $openssl = Get-Command openssl -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  $opensslPath = if ($openssl) { $openssl.Source }
+  if (-not $opensslPath -and $env:ProgramFiles) {
+    $gitOpenSsl = Join-Path $env:ProgramFiles 'Git/usr/bin/openssl.exe'
+    if (Test-Path -LiteralPath $gitOpenSsl) { $opensslPath = $gitOpenSsl }
+  }
+  if (-not $opensslPath) { throw 'Signed installs require OpenSSL 3 on PATH or Git for Windows.' }
+  Invoke-BoundedDownload -Url "$Url.sig" -DestinationPath "$Manifest.sig" -MaxBytes 64 -Label 'checksum signature'
+  [IO.File]::WriteAllBytes("$Manifest.der", [Convert]::FromBase64String($ReleasePublicKey))
+  & $opensslPath pkeyutl -verify -pubin -keyform DER -inkey "$Manifest.der" -rawin -in $Manifest -sigfile "$Manifest.sig" | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'Checksum signature verification failed.' }
 }
 
 function Get-ChecksumEntry([string]$ManifestPath, [string]$AssetName) {
@@ -2123,6 +2139,7 @@ function Install-Binary {
     }
 
     if ($archiveAvailable) {
+      Assert-ManifestSignature $archiveSumsUrl $stagedArchiveSums
       try { $archiveWant = Get-ChecksumEntry $stagedArchiveSums $archive }
       catch { throw "SHA256SUMS.archives must contain exactly one valid entry for $archive. $($_.Exception.Message)" }
       try {
@@ -2162,6 +2179,8 @@ function Install-Binary {
       Write-Warn 'Or pin a version: -Version X.Y.Z'
       throw
     }
+    if (-not $ReleasePublicKey) { Write-Warn 'No embedded release signing key. Verifying SHA-256 checksums only.' }
+    Assert-ManifestSignature $sumsUrl $stagedSums
     try { $want = Get-ChecksumEntry $stagedSums $asset }
     catch { throw "SHA256SUMS has no entry for $asset, or has duplicate/malformed entries. $($_.Exception.Message)" }
 

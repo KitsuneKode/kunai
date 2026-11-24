@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-27T11:48:19Z"
+lastReviewed: "2026-11-24T12:44:09Z"
 ---
 
 # Kunai Release Reliability Gate
@@ -87,6 +87,13 @@ read permissions they need. Each execution job locally checks the downloaded
 directory before its first smoke. Protected publication verifies provenance
 before npm receives any package, and draft/public downloads repeat the byte and
 provenance checks.
+
+Starting with v0.4.0, protected publication signs the exact bytes of both
+checksum manifests using Ed25519. Draft and public verification keep the 22
+native files in their own directory and independently check the two detached
+signatures, the pinned installers and all three rendered package recipes.
+Native clients with an embedded key require a signature for every manifest they
+consume. Unkeyed builds retain checksum verification and print a diagnostic.
 
 The TypeScript native updater and both native installer scripts consume these
 archives. All three verify the archive against `SHA256SUMS.archives`, permit

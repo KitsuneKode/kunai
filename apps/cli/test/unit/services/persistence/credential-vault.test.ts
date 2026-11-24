@@ -394,6 +394,17 @@ describe("secret-service delete reports what really happened", () => {
   });
 });
 
+function probeReply(argv: readonly string[]) {
+  const script = argv.at(-1) ?? "";
+  if (!script.includes("'__probe__'")) return undefined;
+  return {
+    exitCode: 0,
+    stdout: script.includes("RetrievePassword") ? "kunai-probe" : "",
+    stderr: "",
+    timedOut: false,
+  };
+}
+
 describe("vault read failures abort mutations", () => {
   let dir: string;
   beforeEach(async () => {
@@ -448,7 +459,7 @@ describe("vault read failures abort mutations", () => {
       "security",
       { exitCode: 1, stdout: "", stderr: "could not be found", timedOut: false },
     ],
-    ["wincred", "pwsh", { exitCode: 1, stdout: "", stderr: "", timedOut: false }],
+    ["wincred", "pwsh", { exitCode: 44, stdout: "", stderr: "", timedOut: false }],
   ] as const)(
     "%s reads its documented not-found exit as undefined",
     async (backend, cli, result) => {
@@ -456,7 +467,7 @@ describe("vault read failures abort mutations", () => {
         paths: fakePaths(dir),
         env: { KUNAI_CREDENTIAL_BACKEND: backend },
         which: () => `/usr/bin/${cli}`,
-        spawn: async () => result,
+        spawn: async (argv) => probeReply(argv) ?? result,
       });
       expect(vault.backend).toBe(backend);
       expect(await vault.get(CREDENTIAL_KEYS.anilistTokens)).toBeUndefined();
@@ -472,7 +483,8 @@ describe("vault read failures abort mutations", () => {
     ],
     ["wincred", "pwsh", { exitCode: 3, stdout: "", stderr: "", timedOut: false }],
   ] as const)("%s throws on a non-not-found failure", async (backend, cli, result) => {
-    const spawn: CredentialSpawn = async (argv) => (argv.includes("__probe__") ? ok : result);
+    const spawn: CredentialSpawn = async (argv) =>
+      probeReply(argv) ?? (argv.includes("__probe__") ? ok : result);
     const vault = await createCredentialVault({
       paths: fakePaths(dir),
       env: { KUNAI_CREDENTIAL_BACKEND: backend },
@@ -483,11 +495,70 @@ describe("vault read failures abort mutations", () => {
     await expect(vault.get(CREDENTIAL_KEYS.anilistTokens)).rejects.toThrow();
   });
 
+  test("Keychain receives exactly one quoted command on stdin", async () => {
+    const calls: { argv: readonly string[]; input: string }[] = [];
+    const vault = await createCredentialVault({
+      paths: fakePaths(dir),
+      env: {},
+      platform: "darwin",
+      which: () => "security",
+      spawn: async (argv, input) => {
+        calls.push({ argv, input });
+        return { exitCode: 0, stdout: "", stderr: "", timedOut: false };
+      },
+    });
+    await vault.set("anilist.tokens", '{"token":"a b\\\\c"}');
+    expect(calls).toEqual([
+      {
+        argv: ["security", "-i"],
+        input:
+          String.raw`add-generic-password -U -s kunai -a "anilist.tokens" -w "{\"token\":\"a b\\\\c\"}"` +
+          "\n",
+      },
+    ]);
+    await expect(vault.set("key\nother", "a")).rejects.toThrow("delimiter");
+    await expect(vault.set("key", "é".repeat(2100))).rejects.toThrow("limit");
+    expect(calls).toHaveLength(1);
+  });
+
+  test.each(["mismatch", "delete", "unavailable"] as const)(
+    "Windows probe cleans up and reports fallback on %s",
+    async (fault) => {
+      const scripts: string[] = [];
+      const notices: string[] = [];
+      const vault = await createCredentialVault({
+        paths: fakePaths(dir),
+        platform: "win32",
+        env: {},
+        which: (cmd) => (cmd === "powershell.exe" ? cmd : null),
+        onFallback: (_, reason) => notices.push(reason),
+        spawn: async (argv) => {
+          const script = argv.at(-1)!;
+          scripts.push(script);
+          return {
+            exitCode:
+              fault === "unavailable" || (fault === "delete" && script.includes("$v.Remove"))
+                ? 1
+                : 0,
+            stdout: fault === "mismatch" ? "other" : "kunai-probe",
+            stderr: "",
+            timedOut: false,
+          };
+        },
+      });
+      expect(vault.backend).toBe("file");
+      expect(scripts[0]).toContain("$v.Add");
+      expect(scripts.at(-1)).toContain("$v.Remove");
+      expect(scripts.every((script) => script.includes("ContentType=WindowsRuntime"))).toBe(true);
+      expect(notices).toHaveLength(1);
+    },
+  );
+
   test("wincred spawns the resolved shell, not a hardcoded pwsh", async () => {
     const seen: string[][] = [];
     const spawn: CredentialSpawn = async (argv) => {
       seen.push([...argv]);
-      return { exitCode: 1, stdout: "", stderr: "", timedOut: false };
+      return probeReply(argv) ?? { exitCode: 44, stdout: "", stderr: "", timedOut: false };
     };
     // Inbox PowerShell 5.1 machine: no pwsh, only powershell.
     const vault = await createCredentialVault({

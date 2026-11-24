@@ -43,6 +43,7 @@ export function parseSumsFile(text: string): SumsMap {
     if (!sha || !name) {
       throw new Error(`[render-channels] unparseable SHA256SUMS line: ${line}`);
     }
+    if (sums.has(name.trim())) throw new Error(`Duplicate archive checksum for ${name.trim()}`);
     sums.set(name.trim(), sha.toLowerCase());
   }
   return sums;
@@ -103,6 +104,7 @@ ${block("linux", "arm", linuxArm64.archiveName)}${block("linux", "intel", linuxX
   # Every archive ships exactly one platform-named binary (e.g. kunai-darwin-arm64).
   def install
     bin.install Dir["kunai-*"].first => "kunai"
+    system "/usr/bin/codesign", "--force", "--sign", "-", bin/"kunai" if OS.mac? && Hardware::CPU.arm?
   end
 
   def caveats

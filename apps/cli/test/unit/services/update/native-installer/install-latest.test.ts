@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createHash } from "node:crypto";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { existsSync } from "node:fs";
 import {
   chmod,
@@ -110,6 +110,37 @@ async function expectLauncherPointsTo(launcherPath: string, versionPath: string)
 }
 
 describe("installLatest", () => {
+  test.each(["valid", "wrong bytes", "missing", "unsigned archive"] as const)(
+    "pinned updater checks signatures before activation: %s",
+    async (scenario) => {
+      const { layout } = await makeLayout();
+      const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+      const asset = hostAssetName();
+      const sums = sumsFor(asset, sha256Hex("binary"));
+      const signature = sign(
+        null,
+        Buffer.from(scenario === "wrong bytes" ? sums + " " : sums),
+        privateKey,
+      );
+      const result = await installLatest({
+        layout,
+        version: "1.2.3",
+        releasePublicKey: publicKey.export({ format: "der", type: "spki" }).toString("base64"),
+        fetchImpl: async (input) => {
+          const name = String(input).split("/").at(-1);
+          if (name === "SHA256SUMS") return new Response(sums);
+          if (name === "SHA256SUMS.sig" && scenario !== "missing") return new Response(signature);
+          if (name === "SHA256SUMS.archives" && scenario === "unsigned archive")
+            return new Response(sumsFor(hostTarget().archiveName, sha256Hex("archive")));
+          if (name === asset) return new Response("binary");
+          return new Response(null, { status: 404 });
+        },
+      });
+      expect(result.status).toBe(scenario === "valid" ? "installed" : "failed");
+      expect(existsSync(layout.launcherPath)).toBe(scenario === "valid");
+    },
+  );
+
   test("installs the verified archive member and records transport plus binary provenance", async () => {
     const { layout } = await makeLayout();
     const releaseTarget = hostTarget();

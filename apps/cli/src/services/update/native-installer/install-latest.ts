@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
+import { embeddedReleaseKey, verifyChecksumSignature } from "../checksum-signature";
 import { readInstallManifest, writeInstallManifestUnderActivation } from "../install-manifest";
 import { fetchLatestVersion } from "../latest-version";
 import {
@@ -60,6 +61,8 @@ export type InstallLatestOptions = {
   readonly dlBase?: string;
   readonly layout?: InstallLayoutPaths;
   readonly fetchImpl?: FetchLike;
+  /** Supply a pin when exercising a source build. Compiled clients prefer their own pin. */
+  readonly releasePublicKey?: string;
   readonly libc?: PlatformLibc;
 };
 
@@ -144,7 +147,25 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
           fetchImpl,
           policy: DEFAULT_CHECKSUM_DOWNLOAD_POLICY,
         });
-        const sumsText = await readFile(stagedChecksums, "utf8");
+        const publicKey = embeddedReleaseKey || options.releasePublicKey;
+        async function authenticatedManifest(path: string, url: string): Promise<string> {
+          const bytes = await readFile(path);
+          if (publicKey) {
+            await downloadToFile({
+              url: url + ".sig",
+              destinationPath: path + ".sig",
+              fetchImpl,
+              policy: { ...DEFAULT_CHECKSUM_DOWNLOAD_POLICY, maxBytes: 64 },
+            });
+            verifyChecksumSignature(bytes, await readFile(path + ".sig"), publicKey);
+          }
+          return bytes.toString("utf8");
+        }
+        if (!publicKey)
+          process.stderr.write(
+            "Kunai has no embedded release signing key. Verifying SHA-256 checksums only.\n",
+          );
+        const sumsText = await authenticatedManifest(stagedChecksums, checksumUrl);
         const expected = pickChecksum(sumsText, assetName);
         if (!expected) {
           throw new Error(`No checksum entry for ${assetName}`);
@@ -190,7 +211,10 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
           archiveUrl &&
           stagedArchive
         ) {
-          const archiveSums = await readFile(stagedArchiveChecksums, "utf8");
+          const archiveSums = await authenticatedManifest(
+            stagedArchiveChecksums,
+            archiveChecksumUrl,
+          );
           expectedArchive = pickChecksum(archiveSums, archiveName);
           if (!expectedArchive) throw new Error(`No checksum entry for ${archiveName}`);
           try {

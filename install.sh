@@ -2,7 +2,7 @@
 # Kunai installer — binary-first, channel-aware, cross-platform.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+#   curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
 #   ./install.sh [--method binary|npm|bun|source] [--version X.Y.Z] [--yes] [--dry-run]
 #                [--skip-deps] [--skip-path-update]
 #
@@ -29,6 +29,8 @@
 #   {binDir}/kunai                       launcher symlink -> versioned binary
 #   {configDir}/install.json             schema-2 ownership/provenance manifest
 set -euo pipefail
+
+readonly RELEASE_PUBLIC_KEY=''
 
 KUNAI_REPO="${KUNAI_REPO:-https://github.com/KitsuneKode/kunai.git}"
 KUNAI_PACKAGE="${KUNAI_PACKAGE:-@kitsunekode/kunai}"
@@ -629,6 +631,24 @@ bounded_download() {
 	done
 	rm -f "$dest"
 	return 1
+}
+
+verify_manifest_signature() {
+	local url="$1" manifest="$2" verifier
+	[[ -n "$RELEASE_PUBLIC_KEY" ]] || return 0
+	verifier=openssl
+	# Apple's system LibreSSL lacks pkeyutl -rawin. Homebrew installs OpenSSL keg-only.
+	if [[ "$(uname -s)" == Darwin ]] && command -v brew >/dev/null 2>&1; then
+		local prefix
+		prefix="$(brew --prefix openssl@3 2>/dev/null || true)"
+		[[ ! -x "$prefix/bin/openssl" || -z "$prefix" ]] || verifier="$prefix/bin/openssl"
+	fi
+	bounded_download "$url.sig" "$manifest.sig" 64 "checksum signature" || return 1
+	printf '%s\n' '-----BEGIN PUBLIC KEY-----' "$RELEASE_PUBLIC_KEY" '-----END PUBLIC KEY-----' >"$manifest.pem"
+	if ! "$verifier" pkeyutl -verify -pubin -inkey "$manifest.pem" -rawin -in "$manifest" -sigfile "$manifest.sig" >/dev/null; then
+		err "Checksum signature verification failed. Signed installs require OpenSSL 3."
+		return 1
+	fi
 }
 
 checksum_for_asset() {
@@ -1738,6 +1758,7 @@ install_binary() {
 	fi
 
 	if [[ "$archive_available" == 1 ]]; then
+		verify_manifest_signature "$archive_sums" "$staged_archive_sums" || exit 1
 		if ! archive_want="$(checksum_for_asset "$staged_archive_sums" "$archive")"; then
 			err "SHA256SUMS.archives must contain exactly one valid entry for $archive."
 			exit 1
@@ -1766,6 +1787,10 @@ install_binary() {
 		download_failed_hint "SHA256SUMS"
 		exit 1
 	fi
+	if [[ -z "$RELEASE_PUBLIC_KEY" ]]; then
+		warn "No embedded release signing key. Verifying SHA-256 checksums only."
+	fi
+	verify_manifest_signature "$sums" "$staged_sums" || exit 1
 	if ! want="$(checksum_for_asset "$staged_sums" "$asset")"; then
 		err "SHA256SUMS has no entry for $asset, or has duplicate/malformed entries; the release is incomplete."
 		exit 1
@@ -2261,7 +2286,7 @@ usage() {
 			Kunai installer — binary-first, channel-aware, cross-platform.
 
 			Usage:
-			  curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+			  curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
 			  ./install.sh [--method binary|npm|bun|source] [--version X.Y.Z] [--yes] [--dry-run]
 			               [--skip-deps] [--skip-path-update]
 
