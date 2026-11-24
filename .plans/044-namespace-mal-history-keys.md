@@ -108,6 +108,21 @@ row in the database.
   table. A partial rekey leaves dangling references, which is worse than the
   collision this plan fixes.
 
+## Second case to verify first (added 2026-11-24)
+
+The premise above — "every other lane already namespaces `tmdb:`" — holds only
+when the title carries `externalIds.tmdbId`. TMDB trending rows are built with a
+bare `id: String(record.id)` and no `externalIds`
+(`apps/cli/src/services/catalog/CatalogDiscoveryService.ts`), and for a movie or
+series with no `tmdbId`, `resolveCanonicalCatalogTitleId` falls through to the
+bare id. If no later step adds `tmdbId` before history or
+`titleProviderPreferences` is written, TMDB 1535 and AniList 1535 share a key.
+The dcqwqc/kunai fork hit this for per-title provider pins (its 19b45f6f8 scopes
+movie pins as `movie:<id>`). Before writing the migration, check whether
+enrichment (`app/search/enrich-selected-title.ts`) always supplies `tmdbId` on
+the TMDB lane. If it does not, namespace the bare TMDB fallback in the same
+migration rather than in a second one.
+
 ## Out of scope
 
 Dangling `title_id` references left behind by _consolidation_ — follows, queue,
