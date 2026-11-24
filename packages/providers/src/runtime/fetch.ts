@@ -1,3 +1,4 @@
+import { filterCrossOriginStreamHeaders } from "@kunai/core";
 import {
   httpStatusIsRetryable,
   httpStatusToResolveErrorCode,
@@ -35,6 +36,7 @@ export function providerFetch(
 }
 
 const MAX_CHECKED_REDIRECTS = 5;
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 /**
  * Follow redirects by hand so every hop passes the same public-HTTPS,
@@ -48,13 +50,34 @@ async function fetchWithCheckedRedirects(
   init: RequestInit | undefined,
 ): Promise<Response> {
   let current = url;
-  let options: RequestInit = { ...init, redirect: "manual" };
+  let method = init?.method;
+  let body = init?.body;
+  let headers = init?.headers;
   for (let hop = 0; hop <= MAX_CHECKED_REDIRECTS; hop++) {
-    const response = await send(current, options);
+    const requestInit: RequestInit = {
+      ...init,
+      redirect: "manual",
+      ...(method !== undefined ? { method } : null),
+      ...(body !== undefined ? { body } : { body: undefined }),
+      ...(headers !== undefined ? { headers } : null),
+    };
+    const response = await send(current, requestInit);
     const location = response.headers.get("location");
-    if (response.status < 300 || response.status >= 400 || !location) return response;
+    if (!REDIRECT_STATUSES.has(response.status) || !location) return response;
     await response.body?.cancel().catch(() => undefined);
-    const next = new URL(location, current).href;
+    let nextUrl: URL;
+    try {
+      nextUrl = new URL(location, current);
+    } catch (cause) {
+      throw new ProviderHttpError({
+        message: "Redirect from a hotfix-supplied host carried an unparseable Location header",
+        code: "blocked",
+        retryable: false,
+        status: response.status,
+        cause,
+      });
+    }
+    const next = nextUrl.href;
     if (!isSafeManifestHttpsUrl(next)) {
       throw new ProviderHttpError({
         message:
@@ -64,12 +87,16 @@ async function fetchWithCheckedRedirects(
         status: response.status,
       });
     }
-    const method = (options.method ?? "GET").toUpperCase();
+    if (nextUrl.origin !== new URL(current).origin && headers) {
+      headers = filterCrossOriginStreamHeaders(headers);
+    }
+    const upperMethod = (method ?? "GET").toUpperCase();
     if (
       response.status === 303 ||
-      ((response.status === 301 || response.status === 302) && method === "POST")
+      ((response.status === 301 || response.status === 302) && upperMethod === "POST")
     ) {
-      options = { ...options, method: "GET", body: undefined };
+      method = "GET";
+      body = undefined;
     }
     current = next;
   }

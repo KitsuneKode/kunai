@@ -20,6 +20,29 @@ export type ListOption<T> = {
   detail?: string;
 };
 
+/**
+ * Toggle all currently visible options without losing selections outside the
+ * active filter. If every visible option is already checked, uncheck those
+ * visible options; otherwise check every visible option.
+ */
+export function toggleVisibleChecklistSelection<T>(
+  selected: ReadonlySet<T>,
+  visibleOptions: readonly ListOption<T>[],
+): Set<T> {
+  const next = new Set(selected);
+  if (visibleOptions.length === 0) return next;
+  const allVisibleSelected = visibleOptions.every((option) => next.has(option.value));
+  for (const option of visibleOptions) {
+    if (allVisibleSelected) next.delete(option.value);
+    else next.add(option.value);
+  }
+  return next;
+}
+
+export function formatChecklistSelectionCount(count: number): string {
+  return `${count} ${count === 1 ? "item" : "items"}`;
+}
+
 function ChecklistShell<T>({
   title,
   subtitle,
@@ -93,6 +116,7 @@ function ChecklistShell<T>({
   useInput((input, key) => {
     if ((input === "c" && key.ctrl) || input === "\x03") {
       requestAppShutdown({ reason: "SIGINT", exitCode: 130 });
+      return;
     }
     if (key.escape) {
       if (filterQuery.length > 0) {
@@ -111,12 +135,7 @@ function ChecklistShell<T>({
       return;
     }
     if (input === "a" && key.ctrl) {
-      setSelectedSet((current) => {
-        if (current.size === filteredOptions.length) {
-          return new Set();
-        }
-        return new Set(filteredOptions.map((o) => o.value));
-      });
+      setSelectedSet((current) => toggleVisibleChecklistSelection(current, filteredOptions));
       return;
     }
     if (input === " " && !filterQuery) {
@@ -136,24 +155,24 @@ function ChecklistShell<T>({
     }
     if (key.return) {
       if (!confirmed) {
+        const valuesToSubmit =
+          selectedSet.size > 0
+            ? Array.from(selectedSet)
+            : filteredOptions[index]
+              ? [filteredOptions[index].value]
+              : [];
+        if (valuesToSubmit.length === 0) return;
         setConfirmed(true);
         confirmTimer.current = setTimeout(() => {
-          if (selectedSet.size > 0) {
-            onSubmit(Array.from(selectedSet));
-          } else {
-            const currentSelected = filteredOptions[index];
-            if (currentSelected) {
-              onSubmit([currentSelected.value]);
-            } else {
-              onSubmit([]);
-            }
-          }
+          onSubmit(valuesToSubmit);
         }, 150);
       }
       return;
     }
     filterEditor.handleInput(input, key);
   });
+
+  const confirmedCount = selectedSet.size > 0 ? selectedSet.size : selectedOption ? 1 : 0;
 
   return (
     <Box flexDirection="column" paddingX={1}>
@@ -163,7 +182,7 @@ function ChecklistShell<T>({
             {confirmed ? "Selected" : title}
           </Text>
           <Text color={palette.muted}>
-            {confirmed ? `${selectedSet.size || 1} items` : subtitle}
+            {confirmed ? formatChecklistSelectionCount(confirmedCount) : subtitle}
           </Text>
         </Box>
         <Box paddingY={1}>
@@ -191,6 +210,9 @@ function ChecklistShell<T>({
               justifyContent="space-between"
             >
               <Box flexDirection="column" width={showSelectionCompanion ? listWidth : undefined}>
+                {filteredOptions.length === 0 && (
+                  <Text color={palette.muted}>No matching items</Text>
+                )}
                 {windowStart > 0 && <Text color={palette.dim}> ▲ ...</Text>}
                 {visibleOptions.map((option) => {
                   const highlighted = option === selectedOption;

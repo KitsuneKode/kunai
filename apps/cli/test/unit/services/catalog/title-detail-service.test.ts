@@ -618,6 +618,43 @@ describe("TitleDetailService — graceful degradation", () => {
     restore();
   });
 
+  test("failed or aborted TMDB fetches are not cached as Unknown placeholders", async () => {
+    let available = false;
+    const restore = mockFetch((url) => {
+      if (!available) return new Response("", { status: 503 });
+      if (url.includes("/movie/701") || url.includes("/movie/702")) {
+        return jsonResponse({
+          ...tmdbMoviePayload({ id: 701, title: "Recovered Movie" }),
+          credits: { cast: [] },
+          external_ids: tmdbExternalIdsPayload(),
+          videos: { results: [] },
+        });
+      }
+      return null;
+    });
+
+    const degraded = await fetchTitleDetail("tmdb:701", "movie");
+    expect(degraded.title).toBe("Unknown");
+    expect(peekTitleDetail("tmdb:701", "movie")).toBeUndefined();
+
+    // Clear TMDB proxy host breaker state, then verify the next call succeeds
+    // without having to clear the title detail cache.
+    available = true;
+    clearTmdbSessionCache();
+    const recovered = await fetchTitleDetail("tmdb:701", "movie");
+    expect(recovered.title).toBe("Recovered Movie");
+    expect(peekTitleDetail("tmdb:701", "movie")?.title).toBe("Recovered Movie");
+
+    // An aborted fetch must also never populate the cache.
+    const abortController = new AbortController();
+    abortController.abort();
+    const aborted = await fetchTitleDetail("tmdb:702", "movie", abortController.signal);
+    expect(aborted.title).toBe("Unknown");
+    expect(peekTitleDetail("tmdb:702", "movie")).toBeUndefined();
+
+    restore();
+  });
+
   test("returns a valid TitleDetail when AniList is unreachable", async () => {
     const restore = mockFetch((_url) => {
       throw new Error("Network error");

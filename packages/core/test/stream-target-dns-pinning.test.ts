@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { fetchProbeTarget } from "../src/stream-target-guard";
+import { blockedLiteralTargetReason, fetchProbeTarget } from "../src/stream-target-guard";
 
 describe("stream fetch DNS binding", () => {
   test("connects to the vetted address with the original authority and TLS name", async () => {
@@ -75,4 +75,42 @@ describe("stream fetch DNS binding", () => {
       expect(calls).toBe(0);
     });
   }
+
+  test("blocks trailing-dot loopback/local hostnames and cancels redirect response bodies", async () => {
+    for (const url of [
+      "https://localhost./secret",
+      "https://foo.localhost../secret",
+      "https://printer.local./secret",
+      "https://metadata.internal./secret",
+      "https://intranet./secret",
+    ]) {
+      expect(blockedLiteralTargetReason(url)).not.toBeNull();
+    }
+
+    let cancelled = false;
+    const redirectBody = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("redirecting"));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const result = await fetchProbeTarget({
+      url: "https://media.example/start",
+      init: {},
+      remaining: () => 1000,
+      resolveNamesFor: () => false,
+      fetchImpl: async (url) =>
+        url.endsWith("/start")
+          ? new Response(redirectBody, {
+              status: 302,
+              headers: { Location: "https://cdn.example/final" },
+            })
+          : new Response("ok", { status: 200 }),
+    });
+
+    expect(result.kind).toBe("response");
+    expect(cancelled).toBe(true);
+  });
 });

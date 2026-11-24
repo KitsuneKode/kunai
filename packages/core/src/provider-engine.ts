@@ -791,15 +791,15 @@ export class ProviderEngine {
   private sleepWithAbort(ms: number, signal?: AbortSignal): Promise<void> {
     if (signal?.aborted) throw this.abortError();
     return new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(resolve, ms);
-      signal?.addEventListener(
-        "abort",
-        () => {
-          clearTimeout(timer);
-          reject(this.abortError());
-        },
-        { once: true },
-      );
+      const onAbort = () => {
+        clearTimeout(timer);
+        reject(this.abortError());
+      };
+      const timer = setTimeout(() => {
+        signal?.removeEventListener("abort", onAbort);
+        resolve();
+      }, ms);
+      signal?.addEventListener("abort", onAbort, { once: true });
     });
   }
 

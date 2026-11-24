@@ -119,6 +119,7 @@ export type HlsRelayFetchOptions = {
   readonly maxResponseBytes?: number;
   readonly curlTimeoutMs?: number;
   readonly watchdogTimeoutMs?: number;
+  readonly signal?: AbortSignal;
 };
 
 export type HlsRelayUpstreamResponse = HlsRelayCurlResponse & {
@@ -141,6 +142,9 @@ export async function fetchHlsRelayUpstream(
 
   const remainingMs = (limitMs: number) => Math.max(0, limitMs - Math.max(0, now() - startedAt));
   const assertWithinDeadline = () => {
+    if (options.signal?.aborted) {
+      throw new Error("HLS relay stopped");
+    }
     if (remainingMs(curlTimeoutMs) <= 0) {
       throw new Error(`upstream redirect chain exceeded ${curlTimeoutMs}ms`);
     }
@@ -227,8 +231,12 @@ function curlFetchOnce(
   origin: string,
   budget: HlsRelayCurlBudget,
   curlPath: string,
+  signal?: AbortSignal,
 ): Promise<HlsRelayCurlResponse> {
   assertRelayUpstreamUrl(url);
+  if (signal?.aborted) {
+    return Promise.reject(new Error("HLS relay stopped"));
+  }
   return new Promise((resolve, reject) => {
     const proc = spawn(
       curlPath,
@@ -240,15 +248,19 @@ function curlFetchOnce(
     let stderr = "";
     let settled = false;
 
+    const onAbort = () => fail(new Error("HLS relay stopped"));
+
     // Nothing may settle twice, and the child must never outlive the promise.
     const finish = (outcome: () => void, kill: boolean) => {
       if (settled) return;
       settled = true;
       clearTimeout(watchdog);
+      signal?.removeEventListener("abort", onAbort);
       if (kill) proc.kill("SIGKILL");
       outcome();
     };
     const fail = (error: Error, kill = true) => finish(() => reject(error), kill);
+    signal?.addEventListener("abort", onAbort, { once: true });
 
     // curl's own `--max-time` is the normal deadline, but it only fires if curl
     // is running: a stopped process, or a shim that never execs curl, leaves
@@ -285,6 +297,7 @@ function curlFetchOnce(
       if (settled) return;
       settled = true;
       clearTimeout(watchdog);
+      signal?.removeEventListener("abort", onAbort);
       const buf = Buffer.concat(chunks);
       // Any non-zero exit means curl itself reports a transport failure — the
       // buffered bytes can be a truncated transfer that still carries a
@@ -334,9 +347,12 @@ function curlFetch(
   referer: string,
   origin: string,
   curlPath: string,
+  signal?: AbortSignal,
 ): Promise<HlsRelayUpstreamResponse> {
-  return fetchHlsRelayUpstream(url, (currentUrl, budget) =>
-    curlFetchOnce(currentUrl, referer, origin, budget, curlPath),
+  return fetchHlsRelayUpstream(
+    url,
+    (currentUrl, budget) => curlFetchOnce(currentUrl, referer, origin, budget, curlPath, signal),
+    { signal },
   );
 }
 
@@ -433,6 +449,7 @@ export function startHlsRelay(
 
   let idleTimer: Timer | null = null;
   let stopped = false;
+  const shutdownController = new AbortController();
   let closeRelay: ((reason: HlsRelayStopReason) => void) | null = null;
 
   function resetIdleTimer() {
@@ -465,7 +482,8 @@ export function startHlsRelay(
           return new Response("invalid upstream URL", { status: 403 });
         }
         try {
-          const r = await curlFetch(srcUrl, referer, origin, curlPath);
+          const r = await curlFetch(srcUrl, referer, origin, curlPath, shutdownController.signal);
+          if (stopped) return new Response("relay stopped", { status: 503 });
           if (r.status !== 200) {
             options.onUpstreamError?.({
               status: r.status,
@@ -488,6 +506,7 @@ export function startHlsRelay(
             headers: { "Content-Type": r.contentType },
           });
         } catch (err: unknown) {
+          if (stopped) return new Response("relay stopped", { status: 503 });
           const message = err instanceof Error ? err.message : String(err);
           options.onUpstreamError?.({
             host: new URL(srcUrl).hostname,
@@ -507,7 +526,8 @@ export function startHlsRelay(
           return new Response("invalid upstream URL", { status: 403 });
         }
         try {
-          const r = await curlFetch(srcUrl, referer, origin, curlPath);
+          const r = await curlFetch(srcUrl, referer, origin, curlPath, shutdownController.signal);
+          if (stopped) return new Response("relay stopped", { status: 503 });
           if (r.status !== 200) {
             options.onUpstreamError?.({
               status: r.status,
@@ -532,6 +552,7 @@ export function startHlsRelay(
             status: r.status,
           });
         } catch (err: unknown) {
+          if (stopped) return new Response("relay stopped", { status: 503 });
           const message = err instanceof Error ? err.message : String(err);
           options.onUpstreamError?.({
             host: new URL(srcUrl).hostname,
@@ -550,6 +571,7 @@ export function startHlsRelay(
   const stop = (reason: HlsRelayStopReason = "playback-end") => {
     if (stopped) return;
     stopped = true;
+    shutdownController.abort();
     if (idleTimer) {
       clearTimeout(idleTimer);
       idleTimer = null;

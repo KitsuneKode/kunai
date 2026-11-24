@@ -1,5 +1,7 @@
 import { createPrivateKey, createPublicKey, sign, verify } from "node:crypto";
 
+import { blockedLiteralTargetReason } from "@kunai/core";
+
 import {
   isJsonNumber,
   isJsonObject,
@@ -8,7 +10,7 @@ import {
   type JsonValue,
   type LooseJsonValue,
 } from "./json-value";
-import { trimTrailingDots, trimTrailingSlashes } from "./trim-trailing-slashes";
+import { trimTrailingSlashes } from "./trim-trailing-slashes";
 
 export type ProviderHotfixEntry = {
   readonly baseUrl?: string;
@@ -60,52 +62,7 @@ function hasControlChars(value: string): boolean {
   return false;
 }
 
-function isPrivateIpv4Octets(a: number, b: number): boolean {
-  return (
-    a === 0 ||
-    a === 10 ||
-    a === 127 ||
-    (a === 169 && b === 254) ||
-    (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 168) ||
-    (a === 100 && b >= 64 && b <= 127)
-  );
-}
-
-function isPrivateOrLoopbackHost(rawHost: string): boolean {
-  // A trailing dot is the same name in DNS (`localhost.` resolves to loopback),
-  // so strip it before every comparison below.
-  const host = trimTrailingDots(rawHost.toLowerCase().replace(/^\[|\]$/g, ""));
-  if (host === "localhost" || host.endsWith(".localhost")) {
-    return true;
-  }
-  if (host.includes(":")) {
-    if (
-      host === "::1" ||
-      host === "::" ||
-      host.startsWith("fe80:") ||
-      host.startsWith("fc") ||
-      host.startsWith("fd")
-    ) {
-      return true;
-    }
-    const mappedDotted = /^::ffff:(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
-    if (mappedDotted) {
-      return isPrivateIpv4Octets(Number(mappedDotted[1]), Number(mappedDotted[2]));
-    }
-    const mappedHex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(host);
-    if (mappedHex?.[1]) {
-      const hi = Number.parseInt(mappedHex[1], 16);
-      return isPrivateIpv4Octets((hi >> 8) & 0xff, hi & 0xff);
-    }
-    return false;
-  }
-  const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
-  if (!ipv4) return false;
-  return isPrivateIpv4Octets(Number(ipv4[1]), Number(ipv4[2]));
-}
-
-/** Rejects non-HTTPS, credentialed, control-char, or private/loopback URLs. */
+/** Rejects non-HTTPS, credentialed, control-char, or private/loopback/local URLs. */
 export function isSafeManifestHttpsUrl(value: string): boolean {
   if (!value || value.length > 2048 || hasControlChars(value)) return false;
   let parsed: URL;
@@ -116,8 +73,7 @@ export function isSafeManifestHttpsUrl(value: string): boolean {
   }
   if (parsed.protocol !== "https:") return false;
   if (parsed.username || parsed.password) return false;
-  if (!parsed.hostname || isPrivateOrLoopbackHost(parsed.hostname)) return false;
-  return true;
+  return blockedLiteralTargetReason(value) === null;
 }
 
 function isSafeProviderId(value: string): boolean {

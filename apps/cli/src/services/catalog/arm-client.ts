@@ -96,8 +96,14 @@ export async function fetchArmIdGraph(
       signal: withTimeoutSignal(signal, ARM_TIMEOUT_MS),
       headers: { accept: "application/json" },
     });
-    if (res.status === 404) return null;
-    if (!res.ok) return undefined;
+    if (res.status === 404) {
+      await res.body?.cancel().catch(() => undefined);
+      return null;
+    }
+    if (!res.ok) {
+      await res.body?.cancel().catch(() => undefined);
+      return undefined;
+    }
     const payload = (await res.json()) as unknown;
     return parseArmIdsPayload(payload);
   } catch {

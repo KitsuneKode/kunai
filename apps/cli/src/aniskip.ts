@@ -1,4 +1,5 @@
 import type { PlaybackTimingMetadata, PlaybackTimingSegment } from "@/domain/types";
+import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
 import {
   classifyTimingHttpStatus,
   classifyTimingThrownError,
@@ -76,10 +77,10 @@ async function fetchMalIdFromAllAnimeShow(
         "User-Agent": ALLANIME_MAL_LOOKUP_UA,
       },
       body: JSON.stringify({ query, variables: { id: showId } }),
-      signal: signal ?? AbortSignal.timeout(5_000),
+      signal: withTimeoutSignal(signal, 5_000),
     });
     if (!res.ok) {
-      setCapped(malIdFromAllAnimeShowCache, showId, null);
+      await res.body?.cancel().catch(() => undefined);
       return null;
     }
     const data = (await res.json()) as {
@@ -95,7 +96,8 @@ async function fetchMalIdFromAllAnimeShow(
     setCapped(malIdFromAllAnimeShowCache, showId, parsed);
     return parsed;
   } catch {
-    setCapped(malIdFromAllAnimeShowCache, showId, null);
+    // Transient network/timeout/abort failure is not a confirmed miss; leave
+    // the cache unpoisoned so later episodes can still resolve skip timings.
     return null;
   }
 }
@@ -235,6 +237,9 @@ async function resolveMALFromAniListId(
   if (malIdCache.has(cacheKey)) return malIdCache.get(cacheKey) ?? null;
 
   const graph = await fetchArmIdGraph("anilist", anilistId, signal);
+  // `undefined` means a network/HTTP failure; only a confirmed answer or 404
+  // (`null`) may be cached for the session.
+  if (graph === undefined) return null;
   const malId = graph?.malId ? Number.parseInt(graph.malId, 10) : null;
   setCapped(malIdCache, cacheKey, malId);
   return malId;
@@ -263,6 +268,7 @@ async function resolveMALFromTheMovieDbId(
   if (malIdCache.has(cacheKey)) return malIdCache.get(cacheKey) ?? null;
 
   const graph = await fetchArmIdGraph("themoviedb", tmdbId, signal);
+  if (graph === undefined) return null;
   const malId = graph?.malId ? Number.parseInt(graph.malId, 10) : null;
   setCapped(malIdCache, cacheKey, malId);
   return malId;
@@ -392,10 +398,11 @@ export async function fetchAniSkipTimingMetadataDetailed(opts: {
 
   try {
     const res = await fetch(`${ANISKIP_API}/${malId}/${episode}?${params.toString()}`, {
-      signal: signal ?? AbortSignal.timeout(5_000),
+      signal: withTimeoutSignal(signal, 5_000),
       headers: { accept: "application/json" },
     });
     if (!res.ok) {
+      await res.body?.cancel().catch(() => undefined);
       return {
         metadata: null,
         failureClass: classifyTimingHttpStatus(res.status),

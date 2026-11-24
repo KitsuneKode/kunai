@@ -395,7 +395,7 @@ async function probeHlsManifest(
     return master.result;
   }
 
-  let mediaPlaylistUrl = url;
+  let mediaPlaylistUrl = master.finalUrl;
   let mediaPlaylistText = master.text;
 
   if (isHlsMasterPlaylist(master.text)) {
@@ -409,7 +409,9 @@ async function probeHlsManifest(
     }
     // A playlist can name an absolute URI — the target check inside
     // fetchPlaylistText is what keeps it pointing somewhere public.
-    mediaPlaylistUrl = resolveHlsSegmentUrl(url, variantPath);
+    // Relative variant URIs resolve against the redirected master URL, not the
+    // initial URL before redirects.
+    mediaPlaylistUrl = resolveHlsSegmentUrl(master.finalUrl, variantPath);
     if (parentSignal?.aborted || remaining() <= 0) {
       return { status: "timeout" };
     }
@@ -424,6 +426,7 @@ async function probeHlsManifest(
     if (variant.status !== "ok") {
       return variant.result;
     }
+    mediaPlaylistUrl = variant.finalUrl;
     mediaPlaylistText = variant.text;
   }
 
@@ -456,7 +459,7 @@ async function fetchPlaylistText(
   parentSignal: AbortSignal | undefined,
   resolveNamesFor: (url: string) => boolean,
 ): Promise<
-  | { readonly status: "ok"; readonly text: string }
+  | { readonly status: "ok"; readonly text: string; readonly finalUrl: string }
   | { readonly status: "fail"; readonly result: StreamReachabilityProbeResult }
 > {
   if (parentSignal?.aborted || remaining() <= 0) {
@@ -492,6 +495,7 @@ async function fetchPlaylistText(
     }
     const response = outcome.response;
     if (response.status < 200 || response.status >= 300) {
+      await response.body?.cancel().catch(() => undefined);
       const definitive = isDefinitiveHttpStatus(response.status);
       return {
         status: "fail",
@@ -509,7 +513,7 @@ async function fetchPlaylistText(
         },
       };
     }
-    return { status: "ok", text };
+    return { status: "ok", text, finalUrl: outcome.finalUrl };
   } catch (error) {
     if (controller.signal.aborted || parentSignal?.aborted) {
       return { status: "fail", result: { status: "timeout" } };
@@ -570,6 +574,7 @@ async function probeHlsMediaSegment(
     const response = outcome.response;
     const healthyStatus = (status: number) => (status >= 200 && status < 300) || status === 206;
     if (!healthyStatus(response.status)) {
+      await response.body?.cancel().catch(() => undefined);
       const definitive = isDefinitiveHttpStatus(response.status);
       return {
         status: "unreachable",
@@ -668,6 +673,7 @@ async function probeHttpStatus(
       };
     }
     const response = outcome.response;
+    await response.body?.cancel().catch(() => undefined);
     if (healthyStatus(response.status)) {
       return { status: "reachable" };
     }

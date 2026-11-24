@@ -301,3 +301,51 @@ http://169.254.169.254/private.m3u8
   expect(inventory.variants.map((v) => v.url)).toEqual(["https://cdn.example/480.m3u8"]);
   expect(inventory.subtitleTracks).toEqual([]);
 });
+
+test("expandHlsMasterInventory resolves relative variants and renditions against the redirected finalUrl", async () => {
+  const inventory = await expandHlsMasterInventory({
+    masterUrl: "https://router.example/go/123/master.m3u8",
+    // SAFETY: test fetch stub returns Response matching ExpandHlsMasterPlaylistOptions["fetch"].
+    fetch: (async (url: string | URL | Request) => {
+      if (String(url).startsWith("https://router.example/")) {
+        return new Response(null, {
+          status: 302,
+          headers: { location: "https://edge.example/streams/abc/master.m3u8" },
+        });
+      }
+      return new Response(
+        `#EXTM3U
+#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",LANGUAGE="en",URI="subs/en.m3u8"
+#EXT-X-STREAM-INF:BANDWIDTH=2800000,RESOLUTION=1920x1080
+1080p/index.m3u8
+`,
+        { status: 200, headers: { "content-type": "application/vnd.apple.mpegurl" } },
+      );
+    }) as ExpandHlsMasterPlaylistOptions["fetch"],
+  });
+
+  expect(inventory.variants.map((v) => v.url)).toEqual([
+    "https://edge.example/streams/abc/1080p/index.m3u8",
+  ]);
+  expect(inventory.subtitleTracks.map((t) => t.url)).toEqual([
+    "https://edge.example/streams/abc/subs/en.m3u8",
+  ]);
+});
+
+test("expandHlsMasterInventory combines a caller signal with its own timeout instead of dropping the deadline", async () => {
+  const caller = new AbortController();
+  let seenSignal: AbortSignal | null | undefined;
+  await expandHlsMasterInventory({
+    masterUrl: "https://cdn.example/master.m3u8",
+    signal: caller.signal,
+    // SAFETY: test fetch stub captures RequestInit.signal and returns a playlist Response.
+    fetch: (async (_url: string | URL | Request, init?: RequestInit) => {
+      seenSignal = init?.signal;
+      return new Response(MASTER, { status: 200 });
+    }) as ExpandHlsMasterPlaylistOptions["fetch"],
+  });
+
+  expect(seenSignal).toBeDefined();
+  // Combined signal is distinct from the raw caller signal (carries the 12s deadline too).
+  expect(seenSignal).not.toBe(caller.signal);
+});

@@ -24,7 +24,7 @@ export function blockedLiteralTargetReason(url: string): string | null {
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     return `unsupported scheme ${parsed.protocol.replace(":", "") || "(none)"}`;
   }
-  const host = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  const host = stripTrailingDots(parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase());
   if (!host) return "empty host";
   if (
     host === "localhost" ||
@@ -174,14 +174,17 @@ export async function fetchProbeTarget(options: {
   readonly resolveAddresses?: (host: string) => Promise<readonly string[]>;
 }): Promise<ProbeFetchOutcome> {
   let target = options.url;
-  let init = options.init;
+  let headersInit = options.init.headers;
   for (let hop = 0; ; hop++) {
     const literalBlocked = blockedLiteralTargetReason(target);
     if (literalBlocked) {
       return { kind: "blocked", reason: `${target} -> ${literalBlocked}` };
     }
     let requestTarget = target;
-    let requestInit: RequestInit & { proxy?: false; tls?: { serverName: string } } = init;
+    let requestInit: RequestInit & { proxy?: false; tls?: { serverName: string } } =
+      headersInit === options.init.headers
+        ? options.init
+        : { ...options.init, headers: headersInit };
     // The transport must use the address we checked, not resolve the hostname
     // again. Keep the logical URL for redirect bases and credential boundaries.
     if (options.resolveNamesFor(target) && !options.parentSignal?.aborted) {
@@ -199,11 +202,11 @@ export async function fetchProbeTarget(options: {
       if (!address) return { kind: "blocked", reason: `No vetted DNS address for ${host}` };
       const pinned = new URL(target);
       pinned.hostname = address.includes(":") ? `[${address}]` : address;
-      const headers = new Headers(init.headers);
+      const headers = new Headers(headersInit);
       headers.set("Host", parsed.host);
       requestTarget = pinned.toString();
       requestInit = {
-        ...init,
+        ...options.init,
         headers,
         // Environment proxies would resolve the hostname outside this guard.
         proxy: false,
@@ -226,19 +229,27 @@ export async function fetchProbeTarget(options: {
           const next = new URL(location, target);
           // Match undici's own redirect hygiene: credentials do not cross
           // origins, even when every hop individually validates as public.
-          if (next.origin !== new URL(target).origin && init.headers) {
-            init = { ...init, headers: filterCrossOriginStreamHeaders(init.headers) };
+          if (next.origin !== new URL(target).origin && headersInit) {
+            headersInit = filterCrossOriginStreamHeaders(headersInit);
           }
           target = next.toString();
         } catch {
           // A Location we cannot parse is a response, not a redirect.
           return { kind: "response", response, finalUrl: target };
         }
+        await response.body?.cancel().catch(() => undefined);
         continue;
       }
     }
     return { kind: "response", response, finalUrl: target };
   }
+}
+
+/** Strip trailing DNS root dots in linear time (`localhost.` → `localhost`). */
+function stripTrailingDots(host: string): string {
+  let end = host.length;
+  while (end > 0 && host.charCodeAt(end - 1) === 46) end -= 1;
+  return end === host.length ? host : host.slice(0, end);
 }
 
 const CROSS_ORIGIN_STREAM_HEADERS = new Set([

@@ -202,9 +202,10 @@ export function resolveDownloadOutputPath(input: DownloadPathInput): string {
     join,
   });
 
-  let limits = budget;
-  let safeComponents = components.map((part) => clampComponent(part, limits));
-  let safeFile = buildFile(limits);
+  let maxUtf16 = budget.maxUtf16;
+  const currentLimits = (): ComponentLimits => ({ maxBytes: budget.maxBytes, maxUtf16 });
+  let safeComponents = components.map((part) => clampComponent(part, currentLimits()));
+  let safeFile = buildFile(currentLimits());
 
   if (platform === "win32") {
     // `componentBudget` is an estimate: it shares the overrun across every
@@ -216,12 +217,13 @@ export function resolveDownloadOutputPath(input: DownloadPathInput): string {
     for (let attempt = 0; attempt < 32; attempt += 1) {
       const overrun = join(input.baseDir, ...safeComponents, safeFile).length - cap;
       if (overrun <= 0) break;
-      const next = Math.max(16, limits.maxUtf16 - Math.max(1, Math.ceil(overrun / variableCount)));
+      const next = Math.max(16, maxUtf16 - Math.max(1, Math.ceil(overrun / variableCount)));
       // Floor reached: the base directory alone is too deep. Truncating the
       // title further destroys it without making the path legal, so stop and
       // reject below rather than silently dropping episode identity.
-      if (next === limits.maxUtf16) break;
-      limits = { ...limits, maxUtf16: next };
+      if (next === maxUtf16) break;
+      maxUtf16 = next;
+      const limits = currentLimits();
       safeComponents = components.map((part) => clampComponent(part, limits));
       safeFile = buildFile(limits);
     }

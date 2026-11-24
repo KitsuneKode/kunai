@@ -26,6 +26,7 @@ import {
 import { setActiveProviderHotfixManifest } from "../src/shared/hotfix-runtime";
 import {
   canonicalizeManifestPayload,
+  isSafeManifestHttpsUrl,
   mergeProviderMirrors,
   resolveProviderHotfixEntry,
   signProviderManifest,
@@ -395,5 +396,23 @@ describe("signed hot-update provider manifest bundle", () => {
     expect(effectiveWingsApiBases()[0]).toBe(WINGS_API_BASE);
     expect(effectiveHianimeBase()).toBe(HIANIME_BASE);
     expect(effectiveAnimeggBaseUrl()).toBe(ANIMEGG_BASE_URL);
+  });
+
+  test("isSafeManifestHttpsUrl rejects local, intranet, NAT64, multicast, and broadcast targets", () => {
+    for (const bad of [
+      "https://metadata/",
+      "https://service.internal/api",
+      "https://printer.local/api",
+      "https://router.home.arpa/api",
+      "https://localhost./api",
+      "https://[64:ff9b::7f00:1]/api",
+      "https://[fe90::1]/api",
+      "https://[ff02::1]/api",
+      "https://224.0.0.1/api",
+      "https://255.255.255.255/api",
+    ]) {
+      expect(isSafeManifestHttpsUrl(bad)).toBe(false);
+    }
+    expect(isSafeManifestHttpsUrl("https://mirror.example/api")).toBe(true);
   });
 });
