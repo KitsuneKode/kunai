@@ -108,19 +108,14 @@ describe("@kunai/config parse boundary", () => {
   });
 
   test("anime lane leads with a provider that answers and keeps the rest of the order behind it", () => {
-    // HiAnime leads because search only queries the configured default.
-    // KickAssAnime leads the rest (own stack, soft subs); AllAnime precedes
-    // the dead pair — Miruro's pipe route is gone from their bundle and
-    // AniDB was retired from production when anidb.app began redirecting away
-    // from the old origin (2026-10-24); Miruro stays at the tail for revival.
     expect(DEFAULT_CONFIG.animeProvider).toBe("hianime");
     // The array holds the rest of the order — `createProviderPrioritySnapshot`
     // prepends the lane default — so it must not repeat it.
     expect(DEFAULT_CONFIG.animeProviderPriority).toEqual([
-      "kickassanime",
       "animegg",
-      "allanime",
+      "kickassanime",
       "miruro",
+      "allanime",
     ]);
     expect(DEFAULT_CONFIG.animeProviderPriority).not.toContain(DEFAULT_CONFIG.animeProvider);
   });
@@ -129,7 +124,7 @@ describe("@kunai/config parse boundary", () => {
     // Load migrates an inherited old default only when the on-disk revision is
     // behind this one. Changing a default without bumping it strands every user
     // who saved a setting on the previous default.
-    expect(DEFAULT_CONFIG.providerDefaultsRevision).toBe(6);
+    expect(DEFAULT_CONFIG.providerDefaultsRevision).toBe(7);
   });
 
   test("no providers are disabled by default", () => {

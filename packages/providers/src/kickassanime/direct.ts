@@ -172,19 +172,27 @@ export async function discoverKaaBase(context: ProviderRuntimeContext): Promise<
 
 const KAA_HOST_PATTERN = /^(?:www\.)?(?:kaa|kickass-?anime)\.[a-z]{2,6}$/;
 
+function kaaHttpError(status: number, stage: "catalog" | "player"): ProviderHttpError {
+  const label = stage === "player" ? "KickAssAnime player" : "KickAssAnime";
+  const message =
+    status === 401 || status === 403
+      ? `KickAssAnime denied access (HTTP ${status}). Choose another anime provider.`
+      : `${label} returned HTTP ${status}`;
+  return providerHttpErrorForStatus({
+    providerId: KICKASSANIME_PROVIDER_ID,
+    stage,
+    status,
+    message,
+  });
+}
+
 async function fetchJson(
   context: ProviderRuntimeContext,
   path: string,
   init: { readonly method?: "GET" | "POST"; readonly body?: unknown } = {},
 ): Promise<unknown> {
   const response = await kaaFetch(context, path, init);
-  if (!response.ok)
-    throw providerHttpErrorForStatus({
-      providerId: KICKASSANIME_PROVIDER_ID,
-      stage: "catalog",
-      status: response.status,
-      message: `KickAssAnime returned HTTP ${response.status}`,
-    });
+  if (!response.ok) throw kaaHttpError(response.status, "catalog");
   return response.json();
 }
 
@@ -258,13 +266,7 @@ async function fetchPlayerPage(
     headers: { referer: `${currentBase}/`, "user-agent": USER_AGENT },
     signal: directStreamFetchSignal(context.signal, KAA_FETCH_TIMEOUT_MS),
   });
-  if (!response.ok)
-    throw providerHttpErrorForStatus({
-      providerId: KICKASSANIME_PROVIDER_ID,
-      stage: "player",
-      status: response.status,
-      message: `KickAssAnime player returned HTTP ${response.status}`,
-    });
+  if (!response.ok) throw kaaHttpError(response.status, "player");
   return response.text();
 }
 
@@ -448,7 +450,9 @@ export const kickassanimeProviderModule: CoreProviderModule = {
       if (error instanceof ProviderHttpError)
         return fail(
           error.code,
-          `KickAssAnime ${stage} failed: ${describe(error)}`,
+          error.code === "blocked"
+            ? error.message
+            : `KickAssAnime ${stage} failed: ${describe(error)}`,
           error.retryable,
         );
       if (error instanceof SyntaxError)

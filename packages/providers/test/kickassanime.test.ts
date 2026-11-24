@@ -838,6 +838,11 @@ describe("kickassanimeProviderModule", () => {
         contextWith(() => json({ message: "unavailable" }, status), requests),
       );
       expect(result.failures[0]).toMatchObject({ code, retryable });
+      if (status === 403) {
+        expect(result.failures[0]?.message).toContain(
+          "KickAssAnime denied access (HTTP 403). Choose another anime provider.",
+        );
+      }
       expect(requests.some((request) => request.includes("kickass-anime.ro"))).toBe(false);
     },
   );

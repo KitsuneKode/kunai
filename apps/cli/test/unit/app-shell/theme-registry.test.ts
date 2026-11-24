@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   DEFAULT_THEME_NAME,
   THEMES,
+  apcaContrastLc,
   detectTerminalColorLevel,
   getDesignThemeName,
   isThemeName,
@@ -11,6 +12,7 @@ import {
   resolveDesignTokens,
   setDesignTheme,
   tokens,
+  wcagContrastRatio,
 } from "@kunai/design";
 
 // `setDesignTheme` rewrites `tokens` at the level detection reports for this
@@ -106,4 +108,89 @@ describe("palette-aware degradation", () => {
     const resolved = resolveDesignTokens("256");
     expect(resolved.accent).toBe("#ff87af");
   });
+
+  test("light themes quantize dark text to black and light canvas to white on 16 colors", () => {
+    for (const name of ["paper-sakura", "high-contrast-light"] as const) {
+      const resolved = resolveDesignTokens("16", THEMES[name].palette);
+      expect(resolved.bg).toBe("white");
+      expect(resolved.text).toBe("black");
+    }
+  });
+});
+
+describe("accessible light and high-contrast themes", () => {
+  const SURFACES = ["bg", "surface", "surfaceElevated", "surfaceActive", "accentFill"] as const;
+  const CONTROL_SURFACES = ["bg", "surface", "surfaceElevated"] as const;
+  const READABLE_TEXT_TOKENS = [
+    "text",
+    "textDim",
+    "muted",
+    "accent",
+    "accentSoft",
+    "ok",
+    "warn",
+    "dangerText",
+    "info",
+    "milestoneText",
+  ] as const;
+
+  test("registry ships both light and high-contrast themes selectable by id", () => {
+    const all = listThemes();
+    expect(all.some((theme) => theme.appearance === "light")).toBe(true);
+    expect(all.some((theme) => theme.contrast === "high")).toBe(true);
+    expect(isThemeName("paper-sakura")).toBe(true);
+    expect(isThemeName("high-contrast-dark")).toBe(true);
+    expect(isThemeName("high-contrast-light")).toBe(true);
+    expect(THEMES["paper-sakura"].appearance).toBe("light");
+    expect(THEMES["high-contrast-dark"].contrast).toBe("high");
+    expect(THEMES["high-contrast-light"].appearance).toBe("light");
+    expect(THEMES["high-contrast-light"].contrast).toBe("high");
+  });
+
+  test("Paper Sakura (light) clears WCAG AA (>= 4.5:1) and APCA body/label floors", () => {
+    const p = THEMES["paper-sakura"].palette;
+    for (const token of READABLE_TEXT_TOKENS) {
+      for (const surface of SURFACES) {
+        const wcag = wcagContrastRatio(p[token], p[surface]);
+        const apca = Math.abs(apcaContrastLc(p[token], p[surface]));
+        expect(wcag, `paper-sakura ${token} on ${surface} WCAG`).toBeGreaterThanOrEqual(4.5);
+        expect(apca, `paper-sakura ${token} on ${surface} APCA`).toBeGreaterThanOrEqual(57);
+      }
+    }
+    expect(Math.abs(apcaContrastLc(p.text, p.bg))).toBeGreaterThanOrEqual(90);
+    expect(Math.abs(apcaContrastLc(p.textDim, p.bg))).toBeGreaterThanOrEqual(75);
+    expect(Math.abs(apcaContrastLc(p.dim, p.bg))).toBeGreaterThanOrEqual(45);
+    for (const surface of CONTROL_SURFACES) {
+      expect(
+        wcagContrastRatio(p.lineControl, p[surface]),
+        `paper-sakura lineControl on ${surface}`,
+      ).toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  test.each(["high-contrast-dark", "high-contrast-light"] as const)(
+    "%s clears WCAG AAA (>= 7:1) for text/status and >= 4.5:1 for dim text and controls",
+    (themeName) => {
+      const p = THEMES[themeName].palette;
+      for (const token of READABLE_TEXT_TOKENS) {
+        for (const surface of SURFACES) {
+          const wcag = wcagContrastRatio(p[token], p[surface]);
+          const apca = Math.abs(apcaContrastLc(p[token], p[surface]));
+          expect(wcag, `${themeName} ${token} on ${surface} WCAG AAA`).toBeGreaterThanOrEqual(7);
+          expect(apca, `${themeName} ${token} on ${surface} APCA`).toBeGreaterThanOrEqual(60);
+        }
+      }
+      expect(wcagContrastRatio(p.text, p.bg)).toBeCloseTo(21, 1);
+      for (const surface of CONTROL_SURFACES) {
+        expect(
+          wcagContrastRatio(p.dim, p[surface]),
+          `${themeName} dim on ${surface}`,
+        ).toBeGreaterThanOrEqual(4.5);
+        expect(
+          wcagContrastRatio(p.lineControl, p[surface]),
+          `${themeName} lineControl on ${surface}`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    },
+  );
 });

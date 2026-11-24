@@ -1,11 +1,25 @@
 ---
 status: current
-lastReviewed: "2026-10-24"
+lastReviewed: "2026-11-24T09:34:20Z"
 ---
 
 # Provider: VidRock
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
+
+## Production status (2026-11-24)
+
+The November 23 hosted sweep reached the site and received HTTP 403 from
+its configured `vidrock.net` API. On November 24 the same API returned
+HTTP 200 JSON locally for the sweep's Fight Club fixture. The production
+adapter resolved six probe-accepted streams for that movie and seven for
+Breaking Bad S01E01. This qualifies local resolution. Hosted egress and
+decoded playback are still unverified.
+
+VidRock [announced a move from `vidrock.ru`](https://vidrock.ru/) to
+[`vidrock.to`](https://vidrock.to/). The public move notice names the old
+`.ru` host, and the configured `.net` API still works from this network.
+There is no confirmed request or response change to apply to Kunai's adapter.
 
 ## Summary
 

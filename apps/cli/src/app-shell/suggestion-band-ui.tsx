@@ -12,6 +12,7 @@ import type { ScoredSuggestion, SuggestionBandModel } from "@/domain/search/sugg
 import { Box, Text } from "ink";
 import React from "react";
 
+import { plainBorderStyle, plainModeEnabled, selectionPrefix } from "./plain-mode";
 import { measureColumns, sanitizeTerminalText, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 
@@ -66,6 +67,18 @@ function SuggestionRow<TValue>({
   const badge = suggestion.badge?.trim() ?? "";
   const meta = suggestion.meta?.trim() ?? "";
   const rightText = [meta, badge].filter(Boolean).join("  ·  ");
+  const plain = plainModeEnabled();
+  if (plain) {
+    const suffix = rightText ? ` — ${rightText}` : "";
+    return (
+      <Text color={selected ? palette.text : palette.textDim} bold={selected}>
+        {truncateLine(
+          `${selectionPrefix(selected, true)}${sanitizeTerminalText(suggestion.title)}${suffix}`,
+          rowWidth,
+        )}
+      </Text>
+    );
+  }
   const rightWidth =
     rightText.length > 0
       ? Math.min(measureColumns(rightText), 24, Math.max(0, rowWidth - MARKER_WIDTH - 10))
@@ -140,27 +153,34 @@ export function SearchSuggestionBand<TValue>({
     Math.max(0, selectedRow - capacity + 1),
     Math.max(0, model.rows.length - capacity),
   );
+  const plain = plainModeEnabled();
   const visibleRows = model.rows.slice(start, start + capacity);
   return (
     <Box
       flexDirection="column"
       flexShrink={0}
-      height={rowCount}
+      height={plain ? undefined : rowCount}
       width={width}
-      borderStyle="single"
-      borderColor={palette.line}
-      backgroundColor={palette.surface}
-      paddingX={1}
+      borderStyle={plainBorderStyle("single", plain)}
+      borderColor={plain ? undefined : palette.line}
+      backgroundColor={plain ? undefined : palette.surface}
+      paddingX={plain ? 0 : 1}
     >
       <Text color={palette.textDim} wrap="truncate">
-        {truncateLine("Suggestions · ↑↓ move · Esc dismiss", contentWidth)}
+        {truncateLine(
+          plain ? "Suggestions (Up/Down move, Esc dismiss)" : "Suggestions · ↑↓ move · Esc dismiss",
+          contentWidth,
+        )}
       </Text>
       {visibleRows.map((row, index) => {
         switch (row.kind) {
           case "header":
             return (
               <Text key={`h:${row.label}`} color={palette.muted} wrap="truncate">
-                {truncateLine(`${start > 0 && index === 0 ? "↑ " : ""}${row.label}`, contentWidth)}
+                {truncateLine(
+                  `${start > 0 && index === 0 ? (plain ? "(more above) " : "↑ ") : ""}${row.label}`,
+                  contentWidth,
+                )}
               </Text>
             );
           case "item":
@@ -175,10 +195,12 @@ export function SearchSuggestionBand<TValue>({
           case "skeleton":
             return (
               <Text key={`s:${row.skeletonIndex}`} color={palette.muted} wrap="truncate">
-                {truncateLine(
-                  `  ${"░".repeat(SKELETON_WIDTHS[row.skeletonIndex % SKELETON_WIDTHS.length] ?? 18)}`,
-                  contentWidth,
-                )}
+                {plain
+                  ? "  Loading suggestions..."
+                  : truncateLine(
+                      `  ${"░".repeat(SKELETON_WIDTHS[row.skeletonIndex % SKELETON_WIDTHS.length] ?? 18)}`,
+                      contentWidth,
+                    )}
               </Text>
             );
           case "hint":

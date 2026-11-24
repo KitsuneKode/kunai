@@ -3,6 +3,7 @@ import React from "react";
 
 import { MouseTarget } from "../mouse/MouseRegions";
 import { PickerOptionRow } from "../overlay-picker-row";
+import { plainModeEnabled, selectionPrefix } from "../plain-mode";
 import { ClaudeTabRow } from "../primitives/ClaudeTabRow";
 import { StateBlock } from "../primitives/StateBlock";
 import { truncateLine } from "../shell-text";
@@ -86,6 +87,9 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
   readonly hideChromeTitle?: boolean;
   readonly pointer?: (event: SettingsPointerEvent) => void;
 }) {
+  const plain = plainModeEnabled();
+  const scrollHint = (edge: "above" | "below") =>
+    plain ? `more ${edge}` : edge === "above" ? " ▲ ..." : " ▼ ...";
   const rowWidth = Math.max(24, width - 4);
   const tabHint = rowWidth >= 100 ? "Tab / Shift+Tab" : undefined;
   const tabLabels = listSettingsTabLabels(registryCtx, rowWidth, tabHint !== undefined);
@@ -129,7 +133,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
           </Text>
           <Text color={palette.dim}>{submenu.subtitle}</Text>
           <Box marginTop={1} flexDirection="column">
-            {start > 0 ? <Text color={palette.dim}> ▲ ...</Text> : null}
+            {start > 0 ? <Text color={palette.dim}>{scrollHint("above")}</Text> : null}
             {visible.map((choice, index) => {
               const absolute = start + index;
               const selected = absolute === state.selectedIndex && !state.searchFocused;
@@ -141,10 +145,12 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
                   onClick={() => pointer?.({ type: "choice", value: choice.value })}
                   onWheel={(direction) => pointer?.({ type: "scroll", direction })}
                 >
-                  <Box backgroundColor={selected ? palette.accentFill : undefined}>
-                    <Text color={selected ? palette.accent : palette.dim}>
-                      {selected ? "▌ " : "  "}
-                    </Text>
+                  <Box backgroundColor={selected && !plain ? palette.accentFill : undefined}>
+                    {plain ? null : (
+                      <Text color={selected ? palette.accent : palette.dim}>
+                        {selectionPrefix(selected, false)}
+                      </Text>
+                    )}
                     <PickerOptionRow
                       label={choice.label}
                       detail={choice.detail}
@@ -158,7 +164,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
               );
             })}
             {start + maxRows < submenu.choices.length ? (
-              <Text color={palette.dim}> ▼ ...</Text>
+              <Text color={palette.dim}>{scrollHint("below")}</Text>
             ) : null}
           </Box>
           {error ? <Text color={palette.dangerText}>{error}</Text> : null}
@@ -237,7 +243,7 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
           <SettingsSearchBar query={state.searchQuery} focused={state.searchFocused} />
         </MouseTarget>
         <Box marginTop={1} flexDirection="column">
-          {start > 0 ? <Text color={palette.dim}> ▲ ...</Text> : null}
+          {start > 0 ? <Text color={palette.dim}>{scrollHint("above")}</Text> : null}
           {visible.map((row, index) => {
             const absolute = start + index;
             const selected = absolute === state.selectedIndex && !state.searchFocused;
@@ -268,7 +274,9 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
               </MouseTarget>
             );
           })}
-          {start + maxRows < page.rows.length ? <Text color={palette.dim}> ▼ ...</Text> : null}
+          {start + maxRows < page.rows.length ? (
+            <Text color={palette.dim}>{scrollHint("below")}</Text>
+          ) : null}
         </Box>
         {error ? <Text color={palette.dangerText}>{error}</Text> : null}
       </Box>

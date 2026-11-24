@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24"
+lastReviewed: "2026-11-24T13:06:38Z"
 ---
 
 # Kunai — Provider Guide
@@ -18,10 +18,13 @@ For **auto-skip timing** (IntroDB + AniSkip), **MAL / catalog identity** for ani
 ## Published status observations
 
 The scheduled `.github/workflows/provider-status-sweep.yml` writes the configured
-live probe results to `apps/docs/lib/generated-provider-status.json`. Its current
-eight-probe roster is narrower than the desktop production registry; an omitted
-provider has no measured row. Runner-region results do not prove every user's
-network, title or playback request.
+live probe results to `apps/docs/lib/generated-provider-status.json`. A roster
+parity test keeps the probes aligned with the desktop production registry.
+The sweep allows 30 seconds for a resolve and records whether it returned
+streams before the configured default attempt budget (12 seconds on Balanced).
+Qualification describes that fixture and runner, before player handoff. An
+explicit resolver refusal takes precedence over the front-door HEAD hint, and
+URLs and query strings are stripped before publishing notes or logging them.
 
 `.github/scripts/publish-provider-status.sh` snapshots that output and publishes
 only the status artifact from a fresh detached worktree at the dispatch branch's
@@ -497,7 +500,9 @@ failure used to collapse into one retryable `parse-failed` while resolve still
 returned `status: "resolved"` with the bare watch URL, so nothing fell back and
 playback died inside mpv with no diagnosis near the cause. Transient failures
 (network, 429, timeout) still resolve, because a flaky probe must not destroy a
-working playback path; those streams carry `metadataUnavailable: true`.
+working playback path. Those streams carry `metadataUnavailable: true`.
+Unrecognized errors use the fixed `parse-failed` reason and omit extractor stderr,
+which can contain signed URLs.
 
 **A quality preference is a ceiling, not a wish.** `selectYoutubeQuality`
 (`youtube/quality-selection.ts`) rounds _down_ to the highest rendition at or
@@ -794,17 +799,17 @@ Active providers are registered in `apps/cli/src/container/bootstrap-providers.t
 it live, and release signoff derives its cases from that list plus the configured lane defaults.
 
 `hianime` is the **default** anime provider (`animeProvider: "hianime"`,
-`animeProviderPriority: ["kickassanime", "animegg", "allanime", "miruro"]`,
-provider-defaults revision 6). The lead moved off AniDB when anidb.app stopped
+`animeProviderPriority: ["animegg", "kickassanime", "miruro", "allanime"]`,
+provider-defaults revision 7). The lead moved off AniDB when anidb.app stopped
 serving the old origin (HTTP 302 to an unrelated site, 2026-10-24), matching
 ani-cli's earlier move to HiAnime (c99221d). The AniDB provider module was
 removed; the MAL lookup for AniSkip still handles historic catalog IDs.
 `normalizeRetiredProductionProviderFields` in `@kunai/config` maps any persisted
 `anidb` lane selection to HiAnime, strips the id from priority and disable
 lists, and drops title pins that still name it (without aliasing history ids).
-`miruro` is the tail fallback in shipped defaults — it fronts roughly a dozen
-backends behind one AniList-keyed pipe, so an upstream outage costs a server
-rather than the lane.
+Revision 7 migrates inherited revision-6 priorities and keeps deliberate
+provider selections. AllAnime is last because the upstream retired the build
+used for stream authorization.
 
 Miruro's search goes through its own pipe (`search`, `q` + `type: "ANIME"`),
 which relays AniList's catalog: results carry AniList and MAL ids exactly as the
@@ -845,13 +850,13 @@ from that alone, and ~1.1 s once `pewe` was quarantined.
 
 Miruro's own single point of failure is `miruro.bz`/`.ru` — every one of its
 backends is reached through it, so the providers behind it are the ones that
-share none of that. The shipped fallback order after HiAnime is KickAssAnime,
-AnimeGG, AllAnime, then Miruro. KickAssAnime and AnimeGG have their own catalog,
-site and CDN, but KickAssAnime can also
-take over a title found in _another_ catalog — it matches the show by name and
-year and remembers the result on the title bridge — whereas AnimeGG only plays
-what its own search found. AllAnime supplies the ani-cli parity path ahead of
-Miruro. See
+share none of that. AnimeGG stays the first fallback because its independent
+catalog and stream path returned four streams in the November 23 hosted sweep.
+That resolve took 21.9 seconds and missed the 12-second default attempt budget.
+KickAssAnime and Miruro returned access refusals on that runner, and AllAnime
+had stale stream authorization. KickAssAnime and AnimeGG each have their own
+catalog, site and CDN. Both can match a title from another catalog and remember
+the provider's ID on the title bridge. See
 [the KickAssAnime dossier](./provider-dossiers/kickassanime.md) and
 [the AnimeGG dossier](./provider-dossiers/animegg.md), both of which record why a
 reachability probe cannot judge their streams.

@@ -102,6 +102,26 @@ afterEach(() => {
 });
 
 describe("resolveMovyDirect", () => {
+  test.each([401, 403])("reports a seed API HTTP %d as access refused", async (status) => {
+    const ctx = contextReturning(() => new Response(null, { status }));
+    const result = await movyProviderModule.resolve(MOVIE_INPUT, ctx);
+
+    expect(result.status).toBe("exhausted");
+    expect(result.failures[0]).toMatchObject({ code: "blocked", retryable: false });
+  });
+
+  test.each([401, 403])("reports a sources API HTTP %d as access refused", async (status) => {
+    const ctx = contextReturning((url) =>
+      url.includes("/seed")
+        ? Response.json({ seed: FIXTURE.seed, ttlMs: 30_000 })
+        : new Response(null, { status }),
+    );
+    const result = await movyProviderModule.resolve(MOVIE_INPUT, ctx);
+
+    expect(result.status).toBe("exhausted");
+    expect(result.failures[0]).toMatchObject({ code: "blocked", retryable: false });
+  });
+
   test.each(["refused", "cancelled"])(
     "a %s selected CDN never reports provider success",
     async (outcome) => {

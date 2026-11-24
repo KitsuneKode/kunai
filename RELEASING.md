@@ -294,40 +294,82 @@ bun run scripts/set-release-status.ts <version> published <UTC-ISO>
 
 Then focused release-artifact tests and `release:notes:check` run before a narrow PR containing `.release/kunai-v<version>.json` is opened against main. The branch is keyed by version and workflow run ID, so retrying the metadata job reuses its review branch. Main is updated only through review and required checks. GitHub may require a maintainer to approve workflow runs for this bot-created PR.
 
+## Enroll the release signing key
+
+On a trusted maintainer machine, generate an Ed25519 key outside the checkout.
+Protect the private backup. Store the PEM as an environment secret scoped to
+`release-production` with required reviewers. Commit only the public DER/SPKI
+base64 string in `apps/cli/src/services/update/release-key.json` as
+`ed25519Spki`. Review that pin before building the first signed candidate.
+
+```sh
+umask 077
+keydir="$(mktemp -d)"
+openssl genpkey -algorithm ED25519 -out "$keydir/checksums.pem"
+gh secret set KUNAI_CHECKSUM_SIGNING_KEY --repo KitsuneKode/kunai --env release-production < "$keydir/checksums.pem"
+openssl pkey -in "$keydir/checksums.pem" -pubout -outform DER | openssl base64 -A
+```
+
+The build embeds the public key in native clients. The protected publish job
+signs a version-bound statement for each manifest and verifies each signature
+against the committed pin before npm publication. It rejects a missing or
+mismatched key.
+
+### Signed statement format (`kunai-release-manifest v1`)
+
+`SHA256SUMS.sig` and `SHA256SUMS.archives.sig` are raw 64-byte Ed25519
+signatures. Neither covers the manifest bytes directly. Each covers this
+statement, ASCII, LF line endings, one trailing LF, nothing else:
+
+```text
+kunai-release-manifest v1
+version: <X.Y.Z>
+file: <SHA256SUMS | SHA256SUMS.archives>
+sha256: <64 lowercase hex digits: SHA-256 of the manifest bytes>
+```
+
+`version` is the exact canonical release version with no `v` prefix. Verifiers
+never parse a signed document. The updater, `install.sh` and `install.ps1` each
+rebuild the statement from the version they resolved or were asked for, the
+manifest name they requested, and the SHA-256 of the bytes they downloaded, then
+verify the signature over it. This happens before any archive is extracted or
+any version is activated. As a result:
+
+- An old release's signed manifests, served at a newer tag, are rejected. The
+  attacker would need the signing key to restate the old sums for the new
+  version.
+- A signature for one manifest does not verify the other.
+- No spelling variant verifies: CRLF, trailing spaces, a repeated line, a `v`
+  prefix, upper-case hex or a missing final newline all fail.
+
+The single implementation is `releaseManifestStatement` in
+`apps/cli/src/services/update/checksum-signature.ts`. The installers re-spell it
+in shell, so change all three together. A change to the format needs a new
+`v2` line and a client transition. The branded installer build embeds the same pin once the first signed
+release is recorded as published. Raw checkout scripts are unkeyed templates.
+Keep the key stable across releases. A new pin requires a transition for clients
+that already trust the old key.
+
 ## Package channels (Homebrew, Scoop, AUR)
 
-`.github/workflows/package-channels.yml` runs automatically when a release is
-**published** (prereleases are skipped) and can also be dispatched by hand with
-a `tag` input for backfills. It:
+The release workflow uploads the two key-pinned standalone installers,
+`kunai.rb`, `kunai.json` and `PKGBUILD` with the signed manifests. Draft and public verification reproduce the recipes
+from the release archive hashes and the tagged source license. After public
+verification the metadata PR updates `Formula/kunai.rb` and `bucket/kunai.json`.
+Merging it advances both in-repository channels, without a separate publishing
+token. Redeploy the docs site from that commit to serve the keyed bootstrap
+scripts at the branded URLs.
 
-1. Downloads `SHA256SUMS.archives` and the tag's `LICENSE`, then asserts the
-   release publishes every expected archive
-   (`scripts/verify-github-release-assets.ts`).
-2. Renders the channel files deterministically with
-   `bun run scripts/packaging/render-channels.ts --version <x.y.z> --sums
-   <path> --license <path> --out dist/channels` and uploads them as the
-   `package-channels-<tag>` artifact for review.
-3. Publishes, when credentials exist — each publish step prints a `::notice::`
-   and is skipped when its secret is absent:
-   - `Formula/kunai.rb` → `KitsuneKode/homebrew-tap` and `bucket/kunai.json` →
-     `KitsuneKode/scoop-bucket`, via `https` clone with secret
-     `PACKAGE_CHANNELS_TOKEN` (a PAT with `contents:write` on both repos).
-     Commit message: `kunai <version>`; a no-change render is a no-op push.
-   - `PKGBUILD` + `.SRCINFO` → `ssh://aur@aur.archlinux.org/kunai-bin.git` via
-     secret `AUR_SSH_PRIVATE_KEY` (deploy key registered as the AUR package's
-     co-maintainer; `ssh-keyscan` pins `aur.archlinux.org` at publish time).
+The Scoop manifest carries no `checkver` or `autoupdate` block. Scoop's
+autoupdate would take hashes from the unsigned `SHA256SUMS.archives` of whatever
+tag GitHub reports, so it would skip the signature. A Scoop version reaches
+users only through that reviewed manifest commit, the same path as the Homebrew
+formula.
 
-One-time owner setup:
-
-- Create the `KitsuneKode/homebrew-tap` and `KitsuneKode/scoop-bucket` repos
-  (a `Formula/` and `bucket/` directory respectively are created by the first
-  publish).
-- Create the `kunai-bin` package on AUR and register the deploy key as a
-  (co-)maintainer.
-- Add repository secrets `PACKAGE_CHANNELS_TOKEN` and `AUR_SSH_PRIVATE_KEY`.
-
-None of this is a publish blocker: release assets are self-contained, and each
-channel step degrades to a notice when its secret is missing.
+The optional Package channels workflow can mirror signed releases to the
+external tap and bucket with `PACKAGE_CHANNELS_TOKEN`, or to a registered AUR
+package with `AUR_SSH_PRIVATE_KEY`. The downloadable PKGBUILD works independently
+of AUR registration.
 
 ## npm publication recovery
 

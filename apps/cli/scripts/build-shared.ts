@@ -13,6 +13,8 @@ import { join, resolve } from "node:path";
 import { isJsonString } from "@kunai/types";
 import type { BunPlugin } from "bun";
 
+import releaseKey from "../src/services/update/release-key.json";
+
 export type BunBuildMetafile = NonNullable<Awaited<ReturnType<typeof Bun.build>>["metafile"]>;
 export type BunBuildOptions = NonNullable<Parameters<typeof Bun.build>[0]>;
 
@@ -93,6 +95,7 @@ interface ReleaseDefineMap {
 
 /** Compile-time defines shared by every release artifact. */
 export const RELEASE_DEFINE: ReleaseDefineMap = {
+  "import.meta.kunaiReleasePublicKey": JSON.stringify(releaseKey.ed25519Spki),
   // Pin Ink's optional devtools path off in release builds.
   "process.env.DEV": '"false"',
   // Let React and any small env-gated branches take their production path.
@@ -455,13 +458,17 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // boundaries, which minification cannot shorten. No dependency or asset.
 // Merged onto the #740 dead-code prune (providers, aliases, CLI exports), the
 // split measured 3,212,126 bytes: -6,002 against the split alone.
+// November 24 plain/screen-reader mode across app-shell surfaces plus light and
+// high-contrast themes measured 3,224,652 bytes (+21,675).
 // November 24 streaming relay cap, locked manifest reset, registered toast
 // timer, and unread-body cancels measured 3,210,429 bytes.
-// The split merged with #733, #736 and the #740 prune measured 3,211,074 bytes.
-// November 24 nested-secret vaulting (poToken, providerRelay.token) and the
-// shared deadline combiner, merged onto the above, measured 3,213,619 bytes.
-// 3142 KiB leaves 3,789 bytes; public launcher budgets below are unchanged.
-export const NPM_BUNDLE_BUDGET_KB = 3_142;
+// Plain mode merged with the PlaybackPhase split (#741) and #705 measured
+// 3,228,630 bytes. 3156 KiB leaves 3,114 bytes; public launcher budgets below
+// are unchanged.
+// Nested-secret vaulting and the shared deadline combiner (#737), merged onto
+// main after #744 and #745, measured 3,233,690 bytes. 3161 KiB leaves 3,174
+// bytes; public launcher budgets below are unchanged.
+export const NPM_BUNDLE_BUDGET_KB = 3_161;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

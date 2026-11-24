@@ -1,6 +1,7 @@
 {
   "generatedAt": "2026-11-23T18:29:21.976Z",
   "schemaVersion": 1,
+  "defaultAttemptBudgetMs": 12000,
   "providers": [
     {
       "id": "videasy",
@@ -8,6 +9,8 @@
       "upstreamReachable": false,
       "resolveStatus": "exhausted",
       "resolveMs": 30001,
+      "qualifiedForDefaultPlayback": false,
+      "failureCode": null,
       "streams": 0,
       "qualities": [],
       "servers": [],
@@ -22,13 +25,15 @@
       "upstreamReachable": true,
       "resolveStatus": "resolved",
       "resolveMs": 938,
+      "qualifiedForDefaultPlayback": true,
+      "failureCode": null,
       "streams": 1,
       "qualities": ["auto"],
       "servers": ["VidLink"],
       "audioLanguages": [],
       "subtitleLanes": 15,
       "effectiveStatus": "healthy",
-      "note": ""
+      "note": "qualified for default playback (within 12s)"
     },
     {
       "id": "rivestream",
@@ -36,13 +41,15 @@
       "upstreamReachable": true,
       "resolveStatus": "resolved",
       "resolveMs": 5783,
+      "qualifiedForDefaultPlayback": true,
+      "failureCode": null,
       "streams": 1,
       "qualities": ["auto"],
       "servers": ["Rift"],
       "audioLanguages": [],
       "subtitleLanes": 32,
       "effectiveStatus": "healthy",
-      "note": "Rivestream electra did not return sources"
+      "note": "qualified for default playback (within 12s) — Rivestream electra did not return sources"
     },
     {
       "id": "vidrock",
@@ -50,13 +57,15 @@
       "upstreamReachable": true,
       "resolveStatus": "exhausted",
       "resolveMs": 115,
+      "qualifiedForDefaultPlayback": false,
+      "failureCode": "blocked",
       "streams": 0,
       "qualities": [],
       "servers": [],
       "audioLanguages": [],
       "subtitleLanes": 0,
-      "effectiveStatus": "degraded",
-      "note": "upstream up but resolve exhausted — VidRock API returned HTTP 403"
+      "effectiveStatus": "blocked",
+      "note": "upstream denied access from the sweep runner — VidRock API returned HTTP 403"
     },
     {
       "id": "movy",
@@ -64,13 +73,15 @@
       "upstreamReachable": true,
       "resolveStatus": "exhausted",
       "resolveMs": 71,
+      "qualifiedForDefaultPlayback": false,
+      "failureCode": "blocked",
       "streams": 0,
       "qualities": [],
       "servers": [],
       "audioLanguages": [],
       "subtitleLanes": 0,
-      "effectiveStatus": "degraded",
-      "note": "upstream up but resolve exhausted — seed request failed: HTTP 403"
+      "effectiveStatus": "blocked",
+      "note": "upstream denied access from the sweep runner — seed request failed: HTTP 403"
     },
     {
       "id": "allanime",
@@ -78,6 +89,8 @@
       "upstreamReachable": true,
       "resolveStatus": "exhausted",
       "resolveMs": 1898,
+      "qualifiedForDefaultPlayback": false,
+      "failureCode": null,
       "streams": 0,
       "qualities": [],
       "servers": [],
@@ -92,13 +105,15 @@
       "upstreamReachable": true,
       "resolveStatus": "resolved",
       "resolveMs": 3493,
+      "qualifiedForDefaultPlayback": true,
+      "failureCode": null,
       "streams": 1,
       "qualities": ["1080p"],
       "servers": ["ZokoAnime"],
       "audioLanguages": ["ja"],
       "subtitleLanes": 1,
       "effectiveStatus": "healthy",
-      "note": ""
+      "note": "qualified for default playback (within 12s)"
     },
     {
       "id": "miruro",
@@ -106,13 +121,15 @@
       "upstreamReachable": true,
       "resolveStatus": "exhausted",
       "resolveMs": 1124,
+      "qualifiedForDefaultPlayback": false,
+      "failureCode": "blocked",
       "streams": 0,
       "qualities": [],
       "servers": [],
       "audioLanguages": [],
       "subtitleLanes": 0,
       "effectiveStatus": "blocked",
-      "note": "upstream challenges this network (WAF/captcha); relay in an ungated region bypasses — Miruro pipe blocked by Cloudflare WAF on multiple mirrors (HTTP 403 HTML). curl-impersonate (chrome150) was already used and still blocked, "
+      "note": "upstream denied access from the sweep runner — Miruro pipe blocked by Cloudflare WAF on multiple mirrors (HTTP 403 HTML). curl-impersonate (chrome150) was already used and still blocked"
     },
     {
       "id": "animegg",
@@ -120,13 +137,15 @@
       "upstreamReachable": false,
       "resolveStatus": "resolved",
       "resolveMs": 21917,
+      "qualifiedForDefaultPlayback": false,
+      "failureCode": null,
       "streams": 4,
       "qualities": ["360p", "480p", "720p", "1080p"],
       "servers": ["Animegg"],
       "audioLanguages": ["ja"],
       "subtitleLanes": 0,
-      "effectiveStatus": "healthy",
-      "note": ""
+      "effectiveStatus": "degraded",
+      "note": "resolved within sweep, missed the default 12s attempt budget"
     },
     {
       "id": "kickassanime",
@@ -134,13 +153,15 @@
       "upstreamReachable": true,
       "resolveStatus": "exhausted",
       "resolveMs": 93,
+      "qualifiedForDefaultPlayback": false,
+      "failureCode": "blocked",
       "streams": 0,
       "qualities": [],
       "servers": [],
       "audioLanguages": [],
       "subtitleLanes": 0,
       "effectiveStatus": "blocked",
-      "note": "upstream challenges this network (WAF/captcha); relay in an ungated region bypasses — KickAssAnime search failed: KickAssAnime returned HTTP 403"
+      "note": "upstream denied access from the sweep runner — KickAssAnime search failed: KickAssAnime returned HTTP 403"
     },
     {
       "id": "youtube",
@@ -148,6 +169,8 @@
       "upstreamReachable": true,
       "resolveStatus": "exhausted",
       "resolveMs": 1,
+      "qualifiedForDefaultPlayback": false,
+      "failureCode": "yt-dlp-missing",
       "streams": 0,
       "qualities": [],
       "servers": [],

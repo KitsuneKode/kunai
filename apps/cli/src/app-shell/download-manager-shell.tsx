@@ -32,6 +32,7 @@ import type { DownloadJobRecord } from "@/services/storage/storage-read-models";
 import { Box, Text, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { plainModeEnabled, selectionPrefix } from "./plain-mode";
 import { useRootContentSuspended } from "./RootContentSuspension";
 
 /** Fixed queue columns — tuned via computeQueueRowLayout for the active shell width. */
@@ -48,22 +49,27 @@ function refreshJobLists(container: Container) {
   };
 }
 
+export function downloadQueueStatusLabel(status: DownloadJobRecord["status"]): string {
+  const plain = plainModeEnabled();
+  if (status === "running") return plain ? "[downloading]" : "↓ downloading";
+  if (status === "queued") return plain ? "[queued]" : "○ queued";
+  if (status === "completed") return plain ? "[complete]" : "✓ complete";
+  if (status === "completed-with-notes") return plain ? "[playable]" : "✓ playable";
+  if (status === "repairable") return plain ? "[repairable]" : "◇ repairable";
+  if (status === "failed") return plain ? "[failed]" : "✗ failed";
+  return plain ? "[aborted]" : "— aborted";
+}
+
 function queueStatePresentation(job: DownloadJobRecord): { label: string; color: string } {
-  if (job.status === "running") return { label: "↓ downloading", color: palette.accent };
-  if (job.status === "queued") return { label: "○ queued", color: palette.muted };
+  const label = downloadQueueStatusLabel(job.status);
+  if (job.status === "running") return { label, color: palette.accent };
+  if (job.status === "queued") return { label, color: palette.muted };
   if (job.status === "completed" || job.status === "completed-with-notes") {
-    return {
-      label: job.status === "completed-with-notes" ? "✓ playable" : "✓ complete",
-      color: palette.ok,
-    };
+    return { label, color: palette.ok };
   }
-  if (job.status === "repairable") {
-    return { label: "◇ repairable", color: palette.accent };
-  }
-  if (job.status === "failed") {
-    return { label: "✗ failed", color: palette.dangerText };
-  }
-  return { label: "— aborted", color: palette.dim };
+  if (job.status === "repairable") return { label, color: palette.accent };
+  if (job.status === "failed") return { label, color: palette.dangerText };
+  return { label, color: palette.dim };
 }
 
 export type DownloadLiveStats = {
@@ -496,15 +502,18 @@ export function DownloadManagerContent({
       Math.max(1, titleCol - 1),
     );
 
+    const plain = plainModeEnabled();
     return (
       <Box
         key={job.id}
         flexDirection="column"
         width={shellWidth}
-        backgroundColor={isSelected ? palette.accentFill : undefined}
+        backgroundColor={isSelected && !plain ? palette.accentFill : undefined}
       >
         <Box flexDirection="row" width={shellWidth} overflow="hidden">
-          <Text color={isSelected ? palette.accent : palette.dim}>{isSelected ? "▌ " : "  "}</Text>
+          <Text color={isSelected ? palette.accent : palette.dim}>
+            {selectionPrefix(isSelected, plain)}
+          </Text>
           <Box width={titleCol} overflow="hidden">
             <Text
               wrap="truncate"
@@ -626,7 +635,7 @@ export function DownloadManagerContent({
       {confirmingSelectedJob ? (
         <Box marginTop={1}>
           <Text color={palette.accentDeep}>
-            {"⚠ "}
+            {plainModeEnabled() ? "Warning: " : "⚠ "}
             {confirmationPrompt}
           </Text>
         </Box>

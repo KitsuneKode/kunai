@@ -2,6 +2,7 @@ import type { DiagnosticEvent } from "@/services/diagnostics/diagnostic-event";
 import type { DiagnosticSeverity } from "@/services/diagnostics/diagnostics-insight";
 import { getDiagnosticOperation } from "@/services/diagnostics/operation-taxonomy";
 
+import { plainModeEnabled } from "./plain-mode";
 import type { ShellStatusTone } from "./types";
 
 export type DiagnosticsPanelSpan = {
@@ -166,9 +167,16 @@ export function flattenDiagnosticsPanelSpans(
 
   for (const span of model.spans) {
     const expanded = expandedSpanIds.has(span.id);
+    const marker = plainModeEnabled()
+      ? expanded
+        ? "[expanded]"
+        : "[collapsed]"
+      : expanded
+        ? "▼"
+        : "▶";
     lines.push({
       spanId: span.id,
-      label: `${expanded ? "▼" : "▶"} ${span.headline}`,
+      label: `${marker} ${span.headline}`,
       detail: `${span.eventCount} event${span.eventCount === 1 ? "" : "s"} · ${span.worstSeverity}`,
       tone: diagnosticsSeverityTone(span.worstSeverity),
     });

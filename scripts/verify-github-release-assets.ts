@@ -4,18 +4,20 @@
 //
 // Usage:
 //   bun run scripts/verify-github-release-assets.ts              # latest (names + sizes)
-//   bun run scripts/verify-github-release-assets.ts v0.3.0
-//   bun run scripts/verify-github-release-assets.ts v0.3.0 \
-//     --expect-draft --expected-version 0.3.0 \
+//   bun run scripts/verify-github-release-assets.ts v0.4.0
+//   bun run scripts/verify-github-release-assets.ts v0.4.0 \
+//     --expect-draft --expected-version 0.4.0 \
 //     --attestation-repo KitsuneKode/kunai \
 //     --attestation-source-digest <40-character-commit-sha>
 // =============================================================================
 
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import pin from "../apps/cli/src/services/update/release-key.json";
+import { SUPPLEMENT_NAMES, releaseSupplements } from "./packaging/release-supplements";
 import {
   REQUIRED_RELEASE_ASSET_NAMES,
   assertCompleteReleaseAssetSet,
@@ -233,7 +235,8 @@ async function main(): Promise<void> {
   );
 
   const descriptors = descriptorsFromRelease(release);
-  assertCompleteReleaseAssetSet(descriptors);
+  const requiredNames = [...REQUIRED_RELEASE_ASSET_NAMES, ...SUPPLEMENT_NAMES];
+  assertCompleteReleaseAssetSet(descriptors, requiredNames);
 
   if (expectedVersion) {
     const downloadTag = tag ?? release.tagName;
@@ -245,8 +248,19 @@ async function main(): Promise<void> {
     const tempDir = mkdtempSync(join(tmpdir(), "kunai-gh-release-assets-"));
     try {
       downloadReleaseAssets(downloadTag, tempDir);
-      await verifyDownloadedReleaseAssets({
+      const native = join(tempDir, "native");
+      mkdirSync(native);
+      for (const name of REQUIRED_RELEASE_ASSET_NAMES)
+        renameSync(join(tempDir, name), join(native, name));
+      releaseSupplements({
+        mode: "verify",
+        version: expectedVersion,
+        native,
         directory: tempDir,
+        publicKey: pin.ed25519Spki,
+      });
+      await verifyDownloadedReleaseAssets({
+        directory: native,
         expectedVersion,
         attestationRepository,
         attestationSourceDigest,
@@ -257,7 +271,7 @@ async function main(): Promise<void> {
   }
 
   console.log(
-    `[release-assets] OK — ${REQUIRED_RELEASE_ASSET_NAMES.length} required assets present` +
+    `[release-assets] OK — ${requiredNames.length} required assets present` +
       (tag ? ` on ${tag}` : " on latest") +
       (expectDraft ? " (draft)" : "") +
       (expectPublic ? " (public)" : "") +

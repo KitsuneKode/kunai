@@ -48,7 +48,10 @@ export function assertRequiredReleaseAssets(actualNames: readonly string[]): voi
  * Exact 22-file bridge set: ten archives + ten raw binaries + two manifests.
  * Rejects missing, duplicate, unexpected, and zero-byte assets.
  */
-export function assertCompleteReleaseAssetSet(assets: readonly ReleaseAssetDescriptor[]): void {
+export function assertCompleteReleaseAssetSet(
+  assets: readonly ReleaseAssetDescriptor[],
+  requiredNames: readonly string[] = REQUIRED_RELEASE_ASSET_NAMES,
+): void {
   const seen = new Map<string, number>();
   for (const asset of assets) {
     const count = (seen.get(asset.name) ?? 0) + 1;
@@ -58,14 +61,12 @@ export function assertCompleteReleaseAssetSet(assets: readonly ReleaseAssetDescr
     }
   }
 
-  const unexpected = [...seen.keys()].filter(
-    (name) => !(REQUIRED_RELEASE_ASSET_NAMES as readonly string[]).includes(name),
-  );
+  const unexpected = [...seen.keys()].filter((name) => !requiredNames.includes(name));
   if (unexpected.length > 0) {
     throw new Error(`[release-assets] unexpected asset(s): ${unexpected.sort().join(", ")}`);
   }
 
-  const missing = REQUIRED_RELEASE_ASSET_NAMES.filter((name) => !seen.has(name));
+  const missing = requiredNames.filter((name) => !seen.has(name));
   if (missing.length > 0) {
     throw new Error(
       `[release-assets] release is missing ${missing.length} required asset(s): ${missing.join(", ")}`,
@@ -76,6 +77,9 @@ export function assertCompleteReleaseAssetSet(assets: readonly ReleaseAssetDescr
     if (asset.size <= 0) {
       throw new Error(`[release-assets] zero-byte required asset: ${asset.name}`);
     }
+    if (asset.name.endsWith(".sig") && asset.size !== 64) {
+      throw new Error(`[release-assets] invalid Ed25519 signature size for ${asset.name}`);
+    }
     const target = RELEASE_BINARY_TARGETS.find(
       (entry) => entry.out === asset.name || entry.archiveName === asset.name,
     );
@@ -84,7 +88,9 @@ export function assertCompleteReleaseAssetSet(assets: readonly ReleaseAssetDescr
         ? target.maxBinaryBytes
         : target?.archiveName === asset.name
           ? target.maxArchiveBytes
-          : 64 * 1024;
+          : asset.name === "install.sh" || asset.name === "install.ps1"
+            ? 256 * 1024
+            : 64 * 1024;
     if (asset.size > maxBytes) {
       throw new Error(
         `[release-assets] size budget exceeded for ${asset.name}: ${asset.size} > ${maxBytes}`,

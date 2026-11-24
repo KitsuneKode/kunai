@@ -30,4 +30,9 @@ describe("reducedMotionEnabled", () => {
     expect(reducedMotionEnabled({ KUNAI_REDUCED_MOTION: "0", NO_MOTION: "1" })).toBe(true);
     expect(reducedMotionEnabled({ KUNAI_REDUCED_MOTION: "1", NO_MOTION: "0" })).toBe(true);
   });
+
+  test("plain mode implies reduced motion", () => {
+    expect(reducedMotionEnabled({ KUNAI_PLAIN: "1" })).toBe(true);
+    expect(reducedMotionEnabled({ KUNAI_PLAIN: "0" })).toBe(false);
+  });
 });

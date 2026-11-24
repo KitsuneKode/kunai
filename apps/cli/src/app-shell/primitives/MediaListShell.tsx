@@ -1,6 +1,7 @@
 import { Box } from "ink";
 import React from "react";
 
+import { plainModeEnabled } from "../plain-mode";
 import type { PosterResult } from "../poster-types";
 import { PreviewRail } from "./PreviewRail";
 import { shouldRenderPreviewRail, type PreviewRailModel } from "./PreviewRail.model";
@@ -26,8 +27,24 @@ export const MediaListShell = React.memo(function MediaListShell({
   railModel,
   poster,
 }: MediaListShellProps) {
+  const plain = plainModeEnabled();
   const hasRail = rail !== undefined || (railModel !== undefined && railModel !== null);
-  const showRail = shouldRenderPreviewRail({ columns, hasModel: hasRail });
+  const showRail = plain ? hasRail : shouldRenderPreviewRail({ columns, hasModel: hasRail });
+  if (plain) {
+    return (
+      <Box flexDirection="column" flexGrow={1}>
+        <Box flexDirection="column">{list}</Box>
+        {showRail ? (
+          <Box flexDirection="column">
+            {rail ??
+              (railModel ? (
+                <PreviewRail model={railModel} width={Math.max(40, columns - 2)} poster={poster} />
+              ) : null)}
+          </Box>
+        ) : null}
+      </Box>
+    );
+  }
   return (
     <Box flexDirection={showRail ? "row" : "column"} justifyContent="space-between" flexGrow={1}>
       <Box flexDirection="column" width={showRail ? listWidth : undefined}>
