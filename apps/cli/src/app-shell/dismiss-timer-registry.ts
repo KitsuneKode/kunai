@@ -19,12 +19,14 @@ const defaultTimerOperations: DismissTimerOperations = {
 export type DismissTimerRegistry = {
   readonly schedule: (callback: () => void, delayMs: number) => void;
   readonly dispose: () => void;
+  /** Cancel every pending timer and run its dismissal now. */
+  readonly flush: () => void;
 };
 
 export function createDismissTimerRegistry(
   timers: DismissTimerOperations = defaultTimerOperations,
 ): DismissTimerRegistry {
-  const active = new Set<unknown>();
+  const active = new Map<unknown, () => void>();
 
   return {
     schedule(callback, delayMs) {
@@ -33,14 +35,26 @@ export function createDismissTimerRegistry(
         active.delete(handle);
         callback();
       }, delayMs);
-      active.add(handle);
+      active.set(handle, callback);
     },
     dispose() {
-      for (const handle of active) timers.clearTimeout(handle);
+      for (const handle of active.keys()) timers.clearTimeout(handle);
       active.clear();
+    },
+    flush() {
+      const pending = [...active];
+      active.clear();
+      for (const [handle, callback] of pending) {
+        timers.clearTimeout(handle);
+        callback();
+      }
     },
   };
 }
 
-/** Download-queued notes. Unmount clears them; the timer is unref'd. */
+/**
+ * Download-queued notes. They live in the container store, which outlives the
+ * shell, so unmount dismisses them now (flush) rather than dropping the timer
+ * and leaving the note up for a remount. The timer is unref'd.
+ */
 export const shellFeedbackTimers = createDismissTimerRegistry();

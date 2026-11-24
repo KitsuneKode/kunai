@@ -204,7 +204,9 @@ async function dispatchRpcRequest(
 async function readRpcRequest(request: Request, timeoutMs: number): Promise<RelayRpcRequest> {
   const contentLength = request.headers.get("content-length");
   if (contentLength && Number(contentLength) > DEFAULT_MAX_REQUEST_BODY_BYTES) {
-    await request.body?.cancel().catch(() => undefined);
+    // Start the cancel without waiting: a source whose cancel never settles
+    // must not hold back the 413.
+    void request.body?.cancel().catch(() => undefined);
     throw new RelayValidationError("body-too-large", "Relay envelope is too large", 413);
   }
   const text = await readRequestTextCapped(request, timeoutMs);

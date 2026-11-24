@@ -58,6 +58,8 @@ async function nextMacrotask(): Promise<void> {
 describe("browse search vs type-ahead abort", () => {
   test("submit resolves while a superseded type-ahead is cancelled", async () => {
     const suggest = deferred<readonly SearchSuggestion<SearchResult>[]>();
+    const suggestStarted = deferred<void>();
+    let suggestAborted = false;
     const search = deferred<{ options: []; subtitle: string }>();
 
     const handle = render(
@@ -68,6 +70,7 @@ describe("browse search vs type-ahead abort", () => {
         commands={[]}
         suggestionDebounceMs={0}
         onSuggest={async (_query, signal) => {
+          suggestStarted.resolve();
           await new Promise<void>((resolve, reject) => {
             if (signal.aborted) {
               reject(new DOMException("The operation was aborted.", "AbortError"));
@@ -75,7 +78,10 @@ describe("browse search vs type-ahead abort", () => {
             }
             signal.addEventListener(
               "abort",
-              () => reject(new DOMException("The operation was aborted.", "AbortError")),
+              () => {
+                suggestAborted = true;
+                reject(new DOMException("The operation was aborted.", "AbortError"));
+              },
               { once: true },
             );
             void suggest.promise.then(() => resolve());
@@ -101,6 +107,10 @@ describe("browse search vs type-ahead abort", () => {
         await nextMacrotask();
         await nextMacrotask();
       });
+      // The type-ahead must really be in flight, or Enter supersedes nothing.
+      await act(async () => {
+        await suggestStarted.promise;
+      });
 
       await act(async () => {
         handle.stdin.enqueue("\r");
@@ -119,6 +129,7 @@ describe("browse search vs type-ahead abort", () => {
       expect(frame).toContain("1 result");
       expect(frame).not.toContain("Search service unreachable");
       expect(frame).not.toContain("Search failed:");
+      expect(suggestAborted).toBe(true);
     } finally {
       handle.unmount();
     }
