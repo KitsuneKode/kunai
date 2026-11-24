@@ -11,7 +11,6 @@ import { openTracksPanel, openPlaybackEpisodePicker } from "@/app-shell/workflow
 import { episodeInfoFromSelection } from "@/app/bootstrap/episode-info-from-catalog";
 import { resolveTitleHistoryLookupId } from "@/app/bootstrap/title-info";
 import { confirmPlaybackStart } from "@/app/playback/confirmed-playback-start";
-import { resolveLocalEpisodePlayback } from "@/app/playback/episode-playback-source";
 import {
   adoptEpisodePrefetchBundle,
   EpisodePrefetchHandle,
@@ -27,6 +26,11 @@ import {
 } from "@/app/playback/mpv-session-lifecycle";
 import { planCatalogAutoAdvance } from "@/app/playback/playback-catalog-autoadvance";
 import { playbackDeadStreamScopeKey } from "@/app/playback/playback-dead-stream-ledger";
+import {
+  armEpisodeResolve,
+  createEpisodeAttempt,
+  resolveEpisodeSourceAuthority,
+} from "@/app/playback/playback-episode-attempt";
 import { getAnimeEpisodeOptions } from "@/app/playback/playback-episode-catalog";
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback/playback-episode-picker";
 import { episodeIdentityForHistory } from "@/app/playback/playback-history-identity";
@@ -80,7 +84,6 @@ import {
   resolvePlaybackResultDecision,
   syncPlaybackSessionState,
 } from "@/app/playback/playback-session-controller";
-import { resolvePlaybackSourceAuthority } from "@/app/playback/playback-source-authority";
 import { invalidateEpisodePlaybackCaches } from "@/app/playback/playback-source-cache-invalidation";
 import {
   listOrderedPlaybackSourceIds,
@@ -102,12 +105,7 @@ import {
   retryTimingInBackground,
   getPlaybackTimingMetadata,
 } from "@/app/playback/playback-timing-lookup";
-import {
-  applyPlaybackControlTrackSelection,
-  buildTrackOverrideDiagnosticContext,
-} from "@/app/playback/playback-track-selection-policy";
 import { type AutoAdvanceGuards } from "@/app/playback/policies/auto-advance-policy";
-import { summarizeStartupStreamSource } from "@/app/playback/policies/startup-stage-policy";
 import {
   isRecentPlaybackStreamFresh,
   recentPlaybackStreamKey,
@@ -129,7 +127,6 @@ import {
   type StreamSelectionIntent,
 } from "@/app/playback/source-quality";
 import { resolveSourceRefreshDecision } from "@/app/playback/source-refresh-policy";
-import { applyTrackPickRestart } from "@/app/playback/track-pick-restart";
 import { runAutoplayAdvanceCountdown } from "@/app/post-play/autoplay-advance-countdown";
 import { PostPlaybackRecommendationRail } from "@/app/post-play/post-playback-recommendations";
 import { classifyPersistedKind } from "@/domain/media/content-kind";
@@ -145,7 +142,6 @@ import {
 } from "@/domain/playback/playback-policy";
 import {
   buildLocalPlaybackFailureProblem,
-  buildOfflineFileUnavailableProblem,
   buildPlayerFailureProblem,
   buildProviderResolveProblem,
 } from "@/domain/playback/playback-problem";
@@ -163,7 +159,6 @@ import {
   describeProviderResolveAttemptNote,
 } from "@/domain/playback/provider-resolve-copy";
 import { decideSoftFallbackOnResolve } from "@/domain/playback/soft-fallback-preference-policy";
-import type { DecodedTrackSelection } from "@/domain/playback/track-capabilities";
 import { formatQueueEntryLabel } from "@/domain/queue/queue-entry-label";
 import type { EpisodeInfo, StreamInfo, PlaybackResult, SearchResult } from "@/domain/types";
 import { isDetachedHandoffResult } from "@/domain/types";
@@ -172,22 +167,11 @@ import { classifyPlaybackFailureFromResult } from "@/infra/player/playback-failu
 import { extractProviderNativeTiming, mergeTimingMetadata } from "@/infra/timing";
 import { fetchTitleDetail, peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import { runBackgroundTask } from "@/services/diagnostics/background-task";
-import {
-  createCorrelationId,
-  type DiagnosticCorrelation,
-} from "@/services/diagnostics/correlation";
 import { buildRecoveryDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 import { queueHistoryMirror } from "@/services/media-actions/create-container-media-action-router";
 import { observeResolveNetworkOutcome } from "@/services/network/network-observation";
 import { listReadyEpisodes } from "@/services/offline/offline-episode-index";
 import { findNextReadyEpisode } from "@/services/offline/offline-episode-index";
-import {
-  createPlaybackStartupTimeline,
-  formatPlaybackStartupTimeline,
-  formatStartupPhaseBreakdown,
-  type PlaybackStartupStage,
-  summarizeStartupPhases,
-} from "@/services/playback/playback-startup-timeline";
 import {
   isProviderFallbackEligible,
   resolveEffectiveProviderHealth,
@@ -203,7 +187,6 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
     host,
     title,
     run,
-    isOfflineLaunch,
     animeEpisodeCatalogByProvider,
     playbackTimingByEpisode,
     selectionCoordinator,
@@ -270,268 +253,30 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
     provider: stateManager.getState().provider,
   });
 
-  const resolveController = new AbortController();
-  let resolveAbortIntent: "cancel" | "fallback" | "retry" | null = null;
-  // Abort reasons ride on the signal (as AbortError so fetch-failure
-  // classification is unchanged) — the resolve commit policy reads them
-  // to decide whether a late result is kept or discarded.
-  const abortResolve = (reason: string) =>
-    resolveController.abort(new DOMException(reason, "AbortError"));
-  const abortOnSessionStop = () =>
-    abortResolve(
-      typeof context.signal.reason === "string" ? context.signal.reason : "session-shutdown",
-    );
-  context.signal.addEventListener("abort", abortOnSessionStop, { once: true });
-  resolveController.signal.addEventListener(
-    "abort",
-    () => {
-      if (!context.signal.aborted) {
-        updatePlaybackFeedback(context, {
-          detail:
-            resolveAbortIntent === "fallback"
-              ? "Skipping current provider…"
-              : resolveAbortIntent === "retry"
-                ? "Restarting resolve…"
-                : "Cancelling…",
-          note:
-            resolveAbortIntent === "fallback"
-              ? "Trying the next compatible provider"
-              : resolveAbortIntent === "retry"
-                ? "Refreshing provider sources"
-                : "Returning to results",
-        });
-      }
-    },
-    { once: true },
-  );
-  workControl.setActive({
-    id: `playback-resolve:${title.id}:${currentEpisode.season}:${currentEpisode.episode}`,
-    label: `${title.name} S${String(currentEpisode.season).padStart(2, "0")}E${String(currentEpisode.episode).padStart(2, "0")}`,
-    cancel: (reason) => {
-      resolveAbortIntent = reason?.includes("fallback")
-        ? "fallback"
-        : reason?.includes("recover") || reason?.includes("recompute")
-          ? "retry"
-          : "cancel";
-      abortResolve(reason ?? "user-requested");
-    },
-  });
+  const resolve = armEpisodeResolve(loop, currentEpisode);
+  const { controller: resolveController, abortOnSessionStop } = resolve;
 
   try {
-    const configuredProviderId = stateManager.getState().provider;
-    if (run.sessionSoftProviderId && run.sessionSoftProviderId !== configuredProviderId) {
-      run.sessionSoftProviderId = null;
-    }
-    const sourceAuthority = await resolvePlaybackSourceAuthority({
-      configuredProviderId: run.sessionSoftProviderId ?? configuredProviderId,
-      offlineOnly: isOfflineLaunch,
-      resolveLocal: () =>
-        resolveLocalEpisodePlayback(container, title, currentEpisode, {
-          entrypoint: isOfflineLaunch
-            ? "offline-library"
-            : title.launchSource === "continue"
-              ? "continue"
-              : "online-search",
-          forceOnline:
-            !isOfflineLaunch &&
-            (run.episodePlaybackSourceOverride === "online" ||
-              run.pendingSourceRefreshAction !== null),
-          forceLocal: isOfflineLaunch || run.episodePlaybackSourceOverride === "local",
-        }),
-      getProvider: (id) => providerRegistry.get(id),
+    const authority = await resolveEpisodeSourceAuthority(loop, currentEpisode);
+    if (authority.kind === "exit") return authority.step;
+    const { sourceAuthority, configuredProviderId } = authority;
+    const attempt = createEpisodeAttempt(loop, {
+      currentEpisode,
+      playbackIterationAbort,
+      resolve,
+      sourceAuthority,
+      configuredProviderId,
     });
-    run.episodePlaybackSourceOverride = null;
-    if (sourceAuthority.kind === "provider-unavailable") {
-      return {
-        status: "error",
-        error: {
-          code: "PROVIDER_UNAVAILABLE",
-          message: `Provider ${sourceAuthority.providerId} not found`,
-          retryable: false,
-        },
-      };
-    }
-    if (sourceAuthority.kind === "offline-unavailable") {
-      stateManager.dispatch({ type: "SET_STREAM", stream: null });
-      const problem = buildOfflineFileUnavailableProblem();
-      stateManager.dispatch({ type: "SET_PLAYBACK_PROBLEM", problem });
-      diagnosticsService.record({
-        category: "playback",
-        operation: "playback.source.local.unavailable",
-        message: problem.userMessage,
-        titleId: title.id,
-        season: currentEpisode.season,
-        episode: currentEpisode.episode,
-        context: { cause: problem.cause, recommendedAction: problem.recommendedAction },
-      });
-      return { status: "success", value: "back_to_results" };
-    }
-    // Stored provider identity remains provenance for history/share; only
-    // the provider arm below owns a registered runtime adapter.
-    const sourceProviderId =
-      sourceAuthority.kind === "local"
-        ? sourceAuthority.resolution.source.providerId
-        : sourceAuthority.provider.metadata.id;
-    const localPlayback = sourceAuthority.kind === "local";
-
-    const deadStreamScope = playbackDeadStreamScopeKey({
-      titleId: title.id,
-      season: currentEpisode.season,
-      episode: currentEpisode.episode,
-      providerEpisodeIdentity: currentEpisode.providerEpisodeIdentity,
-      providerId: sourceProviderId,
-    });
-    const providerAttemptId = createCorrelationId("provider");
-    const playbackCorrelation: DiagnosticCorrelation = {
-      sessionId: container.sessionId,
-      playbackCycleId: createCorrelationId("playback"),
-      providerAttemptId,
-      traceId: providerAttemptId,
-    };
-    const startupTimeline = createPlaybackStartupTimeline({
-      source: { providerId: localPlayback ? "local" : sourceProviderId },
-    });
-    let resolvedProviderId = sourceProviderId;
-    const completeSourceTrackPick = async (
-      pickedEpisode: EpisodeInfo,
-      picked: DecodedTrackSelection,
-      selection: StreamSelectionIntent | null,
-      resumeSeconds: number,
-      reason: string,
-    ): Promise<ReturnType<typeof startEpisodeNavigation> | null> => {
-      const { resolveTracksPanelPick } = await import("@/app/playback/tracks-panel-pick");
-      const resolved = await resolveTracksPanelPick(picked, selection, {
-        container,
-        title,
-        episode: pickedEpisode,
-        currentProviderId: resolvedProviderId,
-        playbackSourceKind: sourceAuthority.kind,
-        resumeSeconds,
-        reason,
-      });
-
-      if (resolved.kind === "noop" && sourceAuthority.kind === "local") return null;
-
-      const restart = await applyTrackPickRestart({
-        resolved,
-        currentProviderId: resolvedProviderId,
-        episode: pickedEpisode,
-        resumeSeconds,
-        effects: {
-          applyManualSourcePick: (providerId, targetEpisode, sourceId) =>
-            selectionCoordinator.applyManualSourcePick(providerId, targetEpisode, sourceId),
-          applyEpisodeSelection: (providerId, targetEpisode, streamSelection) =>
-            selectionCoordinator.applyEpisodeSelection(providerId, targetEpisode, streamSelection),
-          invalidateRecentEpisodeStream,
-          prepareStreamSwitchRestart,
-        },
-      });
-
-      resolvedProviderId = restart.resolvedProviderId;
-      if (restart.requiresFreshResolve) {
-        run.pendingSourceRefreshAction = "recover";
-        run.pendingRecomputeSources = false;
-      }
-      if (restart.notice) {
-        updatePlaybackFeedback(context, { note: restart.notice });
-      }
-      return restart.startIntent;
-    };
-    const applyConfirmedPlaybackTrackSelection = async (
-      action: "pick-source" | "pick-stream" | "pick-quality",
-      selection: StreamSelectionIntent,
-      resumeSeconds: number,
-    ) => {
-      const outcome = await applyPlaybackControlTrackSelection({
-        action,
-        providerId: resolvedProviderId,
-        episode: currentEpisode,
-        selection,
-        resumeSeconds,
-        effects: {
-          applyManualSourcePick: (providerId, targetEpisode, sourceId) =>
-            selectionCoordinator.applyManualSourcePick(providerId, targetEpisode, sourceId),
-          applyEpisodeSelection: (providerId, targetEpisode, streamSelection) =>
-            setPreferredStreamSelection(providerId, targetEpisode, streamSelection),
-          prepareStreamSwitchRestart,
-        },
-      });
-
-      diagnosticsService.record({
-        category: "playback",
-        message: outcome.diagnostic.message,
-        context: {
-          ...outcome.diagnostic.context,
-          titleId: title.id,
-          season: currentEpisode.season,
-          episode: currentEpisode.episode,
-        },
-      });
-
-      return outcome.startIntent;
-    };
-    const recordTrackOverrideSelected = (
-      picked: DecodedTrackSelection,
-      selection: StreamSelectionIntent,
-    ) => {
-      diagnosticsService.record({
-        category: "playback",
-        message: "Track override selected",
-        context: {
-          ...buildTrackOverrideDiagnosticContext({
-            section: picked.section,
-            selection,
-          }),
-          titleId: title.id,
-          season: currentEpisode.season,
-          episode: currentEpisode.episode,
-        },
-      });
-    };
-    const recordStartupMark = (stage: PlaybackStartupStage, activeStream?: StreamInfo) => {
-      if (!startupTimeline.mark(stage)) return;
-      const snapshot = startupTimeline.snapshot();
-      diagnosticsService.record({
-        ...playbackCorrelation,
-        category: "playback",
-        operation: "playback.startup.timeline",
-        message: `Playback startup ${stage}`,
-        providerId: activeStream?.providerResolveResult?.providerId ?? resolvedProviderId,
-        titleId: title.id,
-        season: currentEpisode.season,
-        episode: currentEpisode.episode,
-        context: {
-          stage,
-          summary: formatPlaybackStartupTimeline(snapshot),
-          timeline: snapshot,
-          source: summarizeStartupStreamSource(activeStream),
-        },
-      });
-      // Once the first frame lands, emit a single phase-bucketed breakdown
-      // (resolve vs prepare vs spawn vs first-frame) naming the dominant
-      // cost — this is the autonext "stall" instrument. `autoNext` flags
-      // whether this startup was an auto-advance vs a manual start.
-      if (stage === "first-progress") {
-        const phases = summarizeStartupPhases(snapshot);
-        if (phases) {
-          diagnosticsService.record({
-            ...playbackCorrelation,
-            category: "playback",
-            operation: "playback.startup.phases",
-            message: `Playback startup phases (${phases.dominant} dominant)`,
-            providerId: resolvedProviderId,
-            titleId: title.id,
-            season: currentEpisode.season,
-            episode: currentEpisode.episode,
-            context: {
-              autoNext: config.autoNext,
-              breakdown: formatStartupPhaseBreakdown(phases),
-              ...phases,
-            },
-          });
-        }
-      }
-    };
+    const {
+      sourceProviderId,
+      localPlayback,
+      deadStreamScope,
+      playbackCorrelation,
+      completeSourceTrackPick,
+      applyConfirmedPlaybackTrackSelection,
+      recordTrackOverrideSelected,
+      recordStartupMark,
+    } = attempt;
     recordStartupMark("episode-bootstrap-started");
     const playbackNetworkAllowed = !localPlayback && container.connectivity.isOnline();
 
@@ -857,13 +602,13 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
       });
 
       if (consumedBundle) {
-        resolvedProviderId = consumedBundle.resolvedProviderId;
+        attempt.resolvedProviderId = consumedBundle.resolvedProviderId;
         logger.info("Using prefetched stream for episode", {
           titleId: title.id,
           season: currentEpisode.season,
           episode: currentEpisode.episode,
           prepared: prefetchWasPrepared,
-          resolvedProviderId,
+          resolvedProviderId: attempt.resolvedProviderId,
         });
         diagnosticsService.record({
           ...playbackCorrelation,
@@ -876,7 +621,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
             season: currentEpisode.season,
             episode: currentEpisode.episode,
             prepared: prefetchWasPrepared,
-            resolvedProviderId,
+            resolvedProviderId: attempt.resolvedProviderId,
           },
         });
       }
@@ -895,7 +640,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
         ) {
           const restored = restoreRecentPlaybackStream(recent);
           stream = restored.stream;
-          resolvedProviderId = restored.resolvedProviderId;
+          attempt.resolvedProviderId = restored.resolvedProviderId;
           streamProvenance = restored.provenance;
           run.localPlaybackSource = restored.localPlaybackSource;
           diagnosticsService.record({
@@ -1103,7 +848,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
         );
 
         stream = resolveResult.stream;
-        resolvedProviderId = resolveResult.providerId;
+        attempt.resolvedProviderId = resolveResult.providerId;
         observeResolveNetworkOutcome(container, resolveResult);
         // The per-title preference guards the resolve only when the engine
         // landed somewhere the user did NOT ask for. A session-scoped
@@ -1114,14 +859,15 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
           stream &&
           pendingUserProviderSwitch &&
           titlePreferredProviderId &&
-          resolvedProviderId !== titlePreferredProviderId &&
-          resolvedProviderId !== stateManager.getState().provider
+          attempt.resolvedProviderId !== titlePreferredProviderId &&
+          attempt.resolvedProviderId !== stateManager.getState().provider
         ) {
           const preferredName =
             providerRegistry.get(titlePreferredProviderId)?.metadata.name ??
             titlePreferredProviderId;
           const actualName =
-            providerRegistry.get(resolvedProviderId)?.metadata.name ?? resolvedProviderId;
+            providerRegistry.get(attempt.resolvedProviderId)?.metadata.name ??
+            attempt.resolvedProviderId;
           diagnosticsService.record({
             ...playbackCorrelation,
             category: "provider",
@@ -1130,7 +876,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
             context: {
               titleId: title.id,
               preferredProviderId: titlePreferredProviderId,
-              resolvedProviderId,
+              resolvedProviderId: attempt.resolvedProviderId,
             },
           });
           updatePlaybackFeedback(context, {
@@ -1154,36 +900,36 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
           // so a later ⇧F walks forward instead of looping back.
           stateManager.dispatch({
             type: "RECORD_FALLBACK_TRIED_PROVIDERS",
-            providerIds: resolveAttempts.map((attempt) => attempt.providerId),
+            providerIds: resolveAttempts.map((resolveAttempt) => resolveAttempt.providerId),
           });
         }
         if (stream) recordStartupMark("resolve-complete", stream);
 
-        for (const [attemptIndex, attempt] of resolveAttempts.entries()) {
+        for (const [attemptIndex, resolveAttempt] of resolveAttempts.entries()) {
           diagnosticsService.record({
             ...playbackCorrelation,
             category: "provider",
-            message: attempt.aborted
+            message: resolveAttempt.aborted
               ? "Provider resolve attempt aborted"
-              : attempt.stream
+              : resolveAttempt.stream
                 ? "Provider resolve attempt succeeded"
                 : "Provider resolve attempt failed",
             context: {
               stage: "provider-resolve",
               attempt: attemptIndex + 1,
-              provider: attempt.providerId,
+              provider: resolveAttempt.providerId,
               titleId: title.id,
               season: currentEpisode.season,
               episode: currentEpisode.episode,
-              hasTrace: Boolean(attempt.result?.trace),
-              failure: attempt.failure ?? null,
+              hasTrace: Boolean(resolveAttempt.result?.trace),
+              failure: resolveAttempt.failure ?? null,
             },
           });
         }
 
         const hop = decideSoftFallbackOnResolve({
           configuredProviderId: sourceProviderId,
-          resolvedProviderId,
+          resolvedProviderId: attempt.resolvedProviderId,
         });
         if (hop.kind === "session-soft-hop") {
           logger.info("Resolved stream with fallback provider", {
@@ -1245,11 +991,11 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
       container.resolveTraceSink.record(
         finalizeResolveTrace(resolveTrace, {
           endedAt: new Date().toISOString(),
-          selectedProviderId: resolvedProviderId ?? sourceProviderId,
+          selectedProviderId: attempt.resolvedProviderId ?? sourceProviderId,
           selectedStreamId: stream?.providerResolveResult?.streams?.[0]?.id,
           cacheHit: streamProvenance === "cache",
           failures: resolveAttempts
-            .map((attempt) => attempt.failure)
+            .map((resolveAttempt) => resolveAttempt.failure)
             .filter((failure): failure is ProviderFailure => failure !== undefined),
         }),
       );
@@ -1287,7 +1033,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
               ),
           );
         const hasCompatibleFallbackProvider =
-          resolveAborted && resolveAbortIntent === "fallback" ? eligibleFallbackExists : false;
+          resolveAborted && resolve.abortIntent === "fallback" ? eligibleFallbackExists : false;
 
         let problemAction: "dismiss" | "retry" | null = null;
         if (!resolveAborted) {
@@ -1296,9 +1042,9 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
             capabilitySnapshot: container.capabilitySnapshot,
             fallbackAvailable: eligibleFallbackExists,
             hasStreamCandidates: resolveAttempts.some(
-              (attempt) =>
-                (attempt.result?.streams.length ?? 0) > 0 ||
-                (attempt.result?.sources?.length ?? 0) > 0,
+              (resolveAttempt) =>
+                (resolveAttempt.result?.streams.length ?? 0) > 0 ||
+                (resolveAttempt.result?.sources?.length ?? 0) > 0,
             ),
           });
           run.playbackSession = transitionPlaybackSession(
@@ -1320,7 +1066,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
           resolveAborted,
           sessionAborted: context.signal.aborted,
           streamSwitchSelection,
-          resolveAbortIntent,
+          resolveAbortIntent: resolve.abortIntent,
           hasCompatibleFallbackProvider,
           problemAction,
         });
@@ -1439,7 +1185,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
       if (stream && streamProvenance !== "local") {
         const hop = decideSoftFallbackOnResolve({
           configuredProviderId: sourceProviderId,
-          resolvedProviderId,
+          resolvedProviderId: attempt.resolvedProviderId,
         });
         if (hop.kind === "session-soft-hop" && run.sessionSoftProviderId !== hop.providerId) {
           logger.info("Resolved stream with fallback provider", {
@@ -1482,7 +1228,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
       sourceAuthority.kind === "provider"
         ? resolvePlaybackProviderHandoff({
             configuredProviderId: sourceProviderId,
-            successfulProviderId: resolvedProviderId,
+            successfulProviderId: attempt.resolvedProviderId,
           })
         : { successfulProviderId: sourceProviderId, nextEpisodeProviderId: sourceProviderId };
 
@@ -1570,7 +1316,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
           stream: preparedStream,
           episode: currentEpisode,
           selectedProviderId: sourceProviderId,
-          resolvedProviderId,
+          resolvedProviderId: attempt.resolvedProviderId,
           provenance: "local",
           localPlaybackSource: run.localPlaybackSource,
         });
@@ -1580,7 +1326,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
         stream: preparedStream,
         episode: currentEpisode,
         selectedProviderId: sourceProviderId,
-        resolvedProviderId,
+        resolvedProviderId: attempt.resolvedProviderId,
         provenance: streamProvenance,
       });
     }
@@ -1593,7 +1339,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
       titleId: title.id,
       season: currentEpisode.season,
       episode: currentEpisode.episode,
-      provider: resolvedProviderId,
+      provider: attempt.resolvedProviderId,
     });
 
     // Pre-play confirm: with `prePlayConfirm` armed, the resolved
@@ -1811,7 +1557,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
                 titleId: title.id,
                 season: currentEpisode.season,
                 episode: currentEpisode.episode,
-                provider: resolvedProviderId,
+                provider: attempt.resolvedProviderId,
               }),
             acknowledgeQueue: () => queueAttempt?.acknowledgeStarted(),
           });
@@ -1853,7 +1599,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
         titleId: title.id,
         season: currentEpisode.season,
         episode: currentEpisode.episode,
-        provider: resolvedProviderId,
+        provider: attempt.resolvedProviderId,
         endReason: result.endReason,
         suspectedDeadStream: result.suspectedDeadStream === true,
       },
@@ -1886,7 +1632,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
       });
       let historyTimestamp = toHistoryTimestamp(result, effectiveTiming.current, quitThresholdMode);
       const persistedKind = classifyPersistedKind(title, stateManager.getState().mode, {
-        providerId: resolvedProviderId,
+        providerId: attempt.resolvedProviderId,
       });
       const historyTitleId = resolveTitleHistoryLookupId(title, stateManager.getState().mode);
       const episodeIdentity = episodeIdentityForHistory(title, currentEpisode);
@@ -1920,7 +1666,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
           positionSeconds: historyTimestamp,
           durationSeconds: result.duration,
           completed: shouldMarkCompleted,
-          providerId: resolvedProviderId,
+          providerId: attempt.resolvedProviderId,
           posterUrl: title.posterUrl,
           bumpLastWatched: decision.shouldBumpLastWatched,
         });
@@ -1935,7 +1681,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
           watchedSeconds: didComplete ? result.duration : historyTimestamp,
           lastWatchedAt,
           completedAt: shouldMarkCompleted ? new Date().toISOString() : null,
-          providerId: resolvedProviderId,
+          providerId: attempt.resolvedProviderId,
           posterUrl: title.posterUrl,
           updatedAt: new Date().toISOString(),
         });
@@ -2188,7 +1934,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
       );
       const currentSourceId =
         selectedResolveStream?.sourceId ??
-        getPreferredStreamSelection(resolvedProviderId, currentEpisode).sourceId ??
+        getPreferredStreamSelection(attempt.resolvedProviderId, currentEpisode).sourceId ??
         null;
 
       let skipRefreshContinue = false;
@@ -2203,7 +1949,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
           message:
             "Auto-recover already attempted for this episode; opening post-play instead of looping",
           context: {
-            provider: resolvedProviderId,
+            provider: attempt.resolvedProviderId,
             titleId: title.id,
             season: currentEpisode.season,
             episode: currentEpisode.episode,
@@ -2239,7 +1985,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
           hasFallbackProvider: Boolean(
             pickCompatibleFallbackProvider({
               providers: providerRegistry.getCompatible(title, stateManager.getState().mode),
-              currentProviderId: resolvedProviderId,
+              currentProviderId: attempt.resolvedProviderId,
               excludedProviderIds: new Set(stateManager.getState().fallbackTriedProviderIds),
               isFallbackEligible: (providerId) =>
                 isProviderIdFallbackEligible(container, providerId),
@@ -2252,7 +1998,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
 
         if (failoverPlan.kind === "advance-source") {
           await selectionCoordinator.applyAutomaticSourceFailover(
-            resolvedProviderId,
+            attempt.resolvedProviderId,
             currentEpisode,
             failoverPlan.sourceId,
           );
@@ -2263,7 +2009,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
               operation: "playback.startup-stall.failover",
               fromSourceId: currentSourceId,
               toSourceId: failoverPlan.sourceId,
-              provider: resolvedProviderId,
+              provider: attempt.resolvedProviderId,
               titleId: title.id,
               season: currentEpisode.season,
               episode: currentEpisode.episode,
@@ -2283,7 +2029,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
             level: "warn",
             message: "Startup failover exhausted catalog sources and provider hops",
             context: {
-              provider: resolvedProviderId,
+              provider: attempt.resolvedProviderId,
               titleId: title.id,
               season: currentEpisode.season,
               episode: currentEpisode.episode,
@@ -2338,12 +2084,12 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
               run.pendingSourceRefreshAction === "recover"
                 ? "Recovery requested for current provider source"
                 : "Refresh requested for current provider source",
-            providerId: resolvedProviderId,
+            providerId: attempt.resolvedProviderId,
             titleId: title.id,
             season: currentEpisode.season,
             episode: currentEpisode.episode,
             context: {
-              provider: resolvedProviderId,
+              provider: attempt.resolvedProviderId,
               titleId: title.id,
               season: currentEpisode.season,
               episode: currentEpisode.episode,
@@ -2363,7 +2109,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
             titleId: title.id,
             season: currentEpisode.season,
             episode: currentEpisode.episode,
-            provider: resolvedProviderId,
+            provider: attempt.resolvedProviderId,
             action: run.pendingSourceRefreshAction,
           },
         );
@@ -2377,7 +2123,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
       });
       const fallback = pickCompatibleFallbackProvider({
         providers: providerRegistry.getCompatible(title, stateManager.getState().mode),
-        currentProviderId: resolvedProviderId,
+        currentProviderId: attempt.resolvedProviderId,
         excludedProviderIds: new Set(stateManager.getState().fallbackTriedProviderIds),
         isFallbackEligible: (providerId) => isProviderIdFallbackEligible(container, providerId),
       });
@@ -2386,14 +2132,14 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
         run.sessionSoftProviderId = null;
         const switched = await switchPlaybackProviderFallback({
           container,
-          fromProviderId: resolvedProviderId,
+          fromProviderId: attempt.resolvedProviderId,
           toProviderId: fallback.metadata.id,
           title,
           episode: currentEpisode,
           mode: stateManager.getState().mode,
           invalidateRecentEpisodeStream,
         });
-        resolvedProviderId = switched.providerId;
+        attempt.resolvedProviderId = switched.providerId;
         run.pendingSourceRefreshAction = "recover";
         run.pendingRecomputeSources = false;
         run.startupProviderHopUsed = true;
@@ -2441,12 +2187,12 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
           severity: "blocked",
           failureClass: "not-found",
           message: "Fallback playback control requested but no compatible provider was available",
-          providerId: resolvedProviderId,
+          providerId: attempt.resolvedProviderId,
           titleId: title.id,
           season: currentEpisode.season,
           episode: currentEpisode.episode,
           context: {
-            provider: resolvedProviderId,
+            provider: attempt.resolvedProviderId,
             titleId: title.id,
             season: currentEpisode.season,
             episode: currentEpisode.episode,
@@ -2803,7 +2549,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
           nextSeason: nextEpisodeAdvance.season,
           nextEpisode: nextEpisodeAdvance.episode,
           hasPrefetch: episodePrefetch.hasReadyFor(
-            buildPrefetchTarget(nextEpisodeAdvance, resolvedProviderId),
+            buildPrefetchTarget(nextEpisodeAdvance, attempt.resolvedProviderId),
           ),
         });
         diagnosticsService.record({
@@ -2816,7 +2562,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
             nextSeason: nextEpisodeAdvance.season,
             nextEpisode: nextEpisodeAdvance.episode,
             hasPrefetch: episodePrefetch.hasReadyFor(
-              buildPrefetchTarget(nextEpisodeAdvance, resolvedProviderId),
+              buildPrefetchTarget(nextEpisodeAdvance, attempt.resolvedProviderId),
             ),
           },
         });
@@ -2831,7 +2577,10 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
           resetStopAfterCurrent: true,
         });
 
-        const autoplayPrefetchTarget = buildPrefetchTarget(nextEpisodeAdvance, resolvedProviderId);
+        const autoplayPrefetchTarget = buildPrefetchTarget(
+          nextEpisodeAdvance,
+          attempt.resolvedProviderId,
+        );
         await handoffNextEpisodePrefetch(
           autoplayPrefetchTarget,
           "post-playback.autonext.prefetch-wait",
@@ -3013,7 +2762,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
       prefetchedRecommendationItems,
       currentAnimeEpisodes,
       preparedStream,
-      resolvedProviderId,
+      resolvedProviderId: attempt.resolvedProviderId,
       openRecoverySourcePanelOnPostPlay:
         (result.suspectedDeadStream === true &&
           Boolean(preparedStream.providerResolveResult?.streams.length)) ||
@@ -3097,7 +2846,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
       iteration,
       deps: postPlaybackMenuDeps,
     });
-    resolvedProviderId = iteration.resolvedProviderId;
+    attempt.resolvedProviderId = iteration.resolvedProviderId;
     if (postPlaybackResult.kind === "exit") {
       return postPlaybackResult.result;
     }
