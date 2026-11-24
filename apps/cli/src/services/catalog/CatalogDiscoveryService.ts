@@ -380,29 +380,37 @@ export class CatalogDiscoveryService {
         // is skipped for a while instead of costing its timeout every outage.
         if ((this.fallbackBrokenUntil.get(source.id) ?? 0) > this.now()) continue;
       }
+      let results: readonly SearchResult[];
       try {
-        const results = await source.load(signal);
-        if (results.length === 0) continue;
-        const section: CatalogTrendingSection = { results, sourceId: source.id };
-        if (generation === this.generation) {
-          // A fallback answer is reused only briefly so the primary is
-          // retried soon; one primary timeout must not pin a stand-in for
-          // the full trending TTL.
-          this.commitSection(
-            key,
-            generation,
-            section,
-            isPrimary ? DISCOVERY_CACHE_TTL_MS : STALE_RETRY_AFTER_MS,
-          );
-          durable?.write(durableKey, this.now(), results, source.id);
-        }
-        if (!isPrimary) this.fallbackBrokenUntil.delete(source.id);
-        return section;
+        results = await source.load(signal);
       } catch (error) {
         if (signal.aborted) throw error;
         if (!isPrimary) this.fallbackBrokenUntil.set(source.id, this.now() + FALLBACK_BREAKER_MS);
         lastError = error instanceof Error ? error : new Error(String(error));
+        continue;
       }
+      // An abandoned walk (its last waiter left; no refresh, so the generation
+      // did not move) may still settle — a source that ignores the signal, or
+      // Jikan handing back a partial list after one id lookup was cancelled.
+      // A returning caller has already started a fresh walk; this one must not
+      // write over its answer, nor move on to a fallback for nobody.
+      if (signal.aborted) throw abortReason(signal);
+      if (results.length === 0) continue;
+      const section: CatalogTrendingSection = { results, sourceId: source.id };
+      if (generation === this.generation) {
+        // A fallback answer is reused only briefly so the primary is retried
+        // soon; one primary timeout must not pin a stand-in for the full
+        // trending TTL.
+        this.commitSection(
+          key,
+          generation,
+          section,
+          isPrimary ? DISCOVERY_CACHE_TTL_MS : STALE_RETRY_AFTER_MS,
+        );
+        durable?.write(durableKey, this.now(), results, source.id);
+      }
+      if (!isPrimary) this.fallbackBrokenUntil.delete(source.id);
+      return section;
     }
 
     const stale = durable?.read(durableKey);
