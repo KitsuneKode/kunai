@@ -9,7 +9,6 @@
 
 import { openTracksPanel, openPlaybackEpisodePicker } from "@/app-shell/workflows";
 import { episodeInfoFromSelection } from "@/app/bootstrap/episode-info-from-catalog";
-import { resolveTitleHistoryLookupId } from "@/app/bootstrap/title-info";
 import {
   MAX_AUTO_SOURCE_RECOVER_ATTEMPTS,
   releasePersistentMpvForTerminalFailure,
@@ -24,7 +23,7 @@ import {
 } from "@/app/playback/playback-episode-attempt";
 import { loadEpisodeContext } from "@/app/playback/playback-episode-context";
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback/playback-episode-picker";
-import { episodeIdentityForHistory } from "@/app/playback/playback-history-identity";
+import { persistEpisodeHistory } from "@/app/playback/playback-history-persist";
 import { createPlaybackIteration } from "@/app/playback/playback-iteration";
 import { createNextEpisodePrefetch } from "@/app/playback/playback-next-episode-prefetch";
 import { resolvePlaylistAutoNextCountdown } from "@/app/playback/playback-outcome";
@@ -57,7 +56,6 @@ import {
   pickCompatibleFallbackProvider,
   switchPlaybackProviderFallback,
 } from "@/app/playback/playback-provider-fallback";
-import { promoteSoftFallbackAfterEngage } from "@/app/playback/playback-provider-switch";
 import {
   didPlaybackFailToStart,
   resolvePlaybackResultDecision,
@@ -79,29 +77,17 @@ import {
 } from "@/app/playback/source-quality";
 import { runAutoplayAdvanceCountdown } from "@/app/post-play/autoplay-advance-countdown";
 import { PostPlaybackRecommendationRail } from "@/app/post-play/post-playback-recommendations";
-import { classifyPersistedKind } from "@/domain/media/content-kind";
 import type { MediaItemIdentity } from "@/domain/media/media-item-identity";
-import { enrichExternalIdsWithVideoMeta } from "@/domain/media/video-meta";
 import { decodeEpisodeSelectionValue } from "@/domain/playback/episode-selection";
-import { shouldPersistHistory, toHistoryTimestamp } from "@/domain/playback/playback-history";
-import {
-  didPlaybackReachCompletionThreshold,
-  shouldMarkEpisodeCompleted,
-} from "@/domain/playback/playback-policy";
+import { toHistoryTimestamp } from "@/domain/playback/playback-history";
 import {
   buildLocalPlaybackFailureProblem,
   buildPlayerFailureProblem,
 } from "@/domain/playback/playback-problem";
-import {
-  evaluateProgressEngage,
-  trustedProgressFromPlaybackResult,
-} from "@/domain/playback/progress-engage-policy";
 import { formatQueueEntryLabel } from "@/domain/queue/queue-entry-label";
 import { classifyPlaybackFailureFromResult } from "@/infra/player/playback-failure-classifier";
 import { buildRecoveryDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
-import { queueHistoryMirror } from "@/services/media-actions/create-container-media-action-router";
 import { listReadyEpisodes } from "@/services/offline/offline-episode-index";
-import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
 
 export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<PlaybackIterationStep> {
   const {
@@ -183,7 +169,6 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
       configuredProviderId,
     });
     const {
-      sourceProviderId,
       playbackCorrelation,
       completeSourceTrackPick,
       applyConfirmedPlaybackTrackSelection,
@@ -193,7 +178,6 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
     recordStartupMark("episode-bootstrap-started");
     const episodeContext = await loadEpisodeContext(loop, attempt);
     const {
-      playbackNetworkAllowed,
       watchedEntries,
       isAnimePlayback,
       offlineTitleId,
@@ -215,162 +199,8 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
     const played = await playEpisode(loop, attempt, ready, nextEpisodePrefetch);
     if (played.kind === "exit") return played.step;
     const { result } = played;
-    // Save history — use effectiveTiming.current so that a background retry
-    // that completed during playback is reflected in completion status.
     const quitThresholdMode = config.quitNearEndThresholdMode;
-    if (
-      container.player.capabilities.completion &&
-      shouldPersistHistory(result, effectiveTiming.current, quitThresholdMode)
-    ) {
-      const didComplete = didPlaybackReachCompletionThreshold(
-        result,
-        effectiveTiming.current,
-        quitThresholdMode,
-      );
-      // History durability: completed:true is forever — it clears the
-      // resume point. Only a clean natural EOF sets it; voluntary quit,
-      // kill, crash, timeout, or keep-open no-end-file stays resumable
-      // even past the threshold.
-      const shouldMarkCompleted = shouldMarkEpisodeCompleted(
-        result,
-        effectiveTiming.current,
-        quitThresholdMode,
-      );
-      const evidence = trustedProgressFromPlaybackResult(result);
-      const decision = evaluateProgressEngage(evidence, {
-        reachedCompletionThreshold: didComplete,
-      });
-      let historyTimestamp = toHistoryTimestamp(result, effectiveTiming.current, quitThresholdMode);
-      const persistedKind = classifyPersistedKind(title, stateManager.getState().mode, {
-        providerId: attempt.resolvedProviderId,
-      });
-      const historyTitleId = resolveTitleHistoryLookupId(title, stateManager.getState().mode);
-      const episodeIdentity = episodeIdentityForHistory(title, currentEpisode);
-      const titleIdentity = {
-        id: title.id,
-        kind: persistedKind,
-        title: title.name,
-        externalIds: enrichExternalIdsWithVideoMeta(
-          title.externalIds,
-          stateManager.getState().videoMeta,
-        ),
-      };
-      // One read serves both the did-not-start resume check and the
-      // last-watched bump below: this teardown used to issue the same
-      // identity lookup twice (~8 sequential queries each) per episode end.
-      const existingProgress = container.historyRepository.getProgressForTitleIdentity(
-        titleIdentity,
-        episodeIdentity,
-      );
-      if (decision.isDidNotStart) {
-        if (existingProgress && existingProgress.positionSeconds > 0) {
-          historyTimestamp = existingProgress.positionSeconds;
-        }
-      }
-      const lastWatchedAt = decision.shouldBumpLastWatched
-        ? new Date().toISOString()
-        : (existingProgress?.lastWatchedAt ?? existingProgress?.updatedAt ?? null);
-      const activeLedger = host.ledger.current;
-      if (activeLedger) {
-        activeLedger.finalize({
-          positionSeconds: historyTimestamp,
-          durationSeconds: result.duration,
-          completed: shouldMarkCompleted,
-          providerId: attempt.resolvedProviderId,
-          posterUrl: title.posterUrl,
-          bumpLastWatched: decision.shouldBumpLastWatched,
-        });
-        host.ledger.release();
-      } else {
-        container.historyRepository.upsertProgress({
-          title: titleIdentity,
-          episode: episodeIdentity,
-          positionSeconds: historyTimestamp,
-          durationSeconds: result.duration,
-          completed: shouldMarkCompleted,
-          watchedSeconds: didComplete ? result.duration : historyTimestamp,
-          lastWatchedAt,
-          completedAt: shouldMarkCompleted ? new Date().toISOString() : null,
-          providerId: attempt.resolvedProviderId,
-          posterUrl: title.posterUrl,
-          updatedAt: new Date().toISOString(),
-        });
-      }
-      if (sourceAuthority.kind === "provider")
-        await promoteSoftFallbackAfterEngage(container, {
-          title,
-          mode: stateManager.getState().mode,
-          sessionSoftProviderId: run.sessionSoftProviderId,
-          configuredProviderId: sourceProviderId,
-          engaged: decision.isEngaged,
-        });
-      const savedHistoryRow = container.historyRepository.getLatestForTitle(historyTitleId);
-      if (savedHistoryRow) {
-        // Enqueued from the row that was actually persisted, not from the
-        // in-flight result: the outbox must never describe progress the
-        // local history does not have. This only writes SQLite — remote
-        // delivery is the drain's job, so playback never waits on a
-        // tracker, and repeated updates coalesce instead of stacking up.
-        // Admission reads the live opt-in before it writes the outbox.
-        // Keep that asynchronous check outside the playback teardown:
-        // persistence is already complete and tracker work is optional.
-        queueHistoryMirror(container, historyTitleId, savedHistoryRow);
-      }
-      if (playbackNetworkAllowed) {
-        enqueueReleaseReconciliation(
-          container,
-          savedHistoryRow ? [savedHistoryRow] : [],
-          "post-playback",
-          context.signal,
-        );
-      }
-      const providerSuggestion =
-        sourceAuthority.kind === "provider"
-          ? container.titleProviderHealth.getSwitchSuggestion(title.id, sourceProviderId)
-          : null;
-      if (providerSuggestion) {
-        updatePlaybackFeedback(context, {
-          note: `${providerSuggestion.providerId} struggled with this title. ${providerSuggestion.suggestedProviderId} worked; choose it from providers for this title.`,
-        });
-        diagnosticsService.record({
-          category: "provider",
-          operation: "provider.title-health.suggestion",
-          message: "Title-scoped provider switch suggestion available at episode boundary",
-          context: {
-            titleId: title.id,
-            providerId: providerSuggestion.providerId,
-            suggestedProviderId: providerSuggestion.suggestedProviderId,
-          },
-        });
-      }
-      if (shouldMarkCompleted) {
-        const epStr =
-          title.type === "series"
-            ? ` S${String(currentEpisode.season).padStart(2, "0")}E${String(currentEpisode.episode).padStart(2, "0")}`
-            : "";
-        updatePlaybackFeedback(context, {
-          note: `✓ ${title.name}${epStr} · episode complete`,
-        });
-        if (streamProvenance === "local" && run.localPlaybackJobId) {
-          container.offlineRunwayService.enqueueEvaluation(title.id, "offline-playback-complete");
-        }
-      }
-    } else {
-      host.ledger.discard();
-      diagnosticsService.record({
-        category: "playback",
-        message: "Skipped history save",
-        context: {
-          titleId: title.id,
-          season: currentEpisode.season,
-          episode: currentEpisode.episode,
-          watchedSeconds: result.watchedSeconds,
-          duration: result.duration,
-          endReason: result.endReason,
-        },
-      });
-    }
-
+    await persistEpisodeHistory(loop, attempt, episodeContext, acquired, ready, result);
     const providerRecoveryAllowed =
       sourceAuthority.kind === "provider" && shouldUseProviderPlaybackRecovery(streamProvenance);
     const shouldInvalidateStreamCache =
