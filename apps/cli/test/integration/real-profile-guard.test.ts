@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+
+import { getKunaiPaths } from "@kunai/storage";
 
 import { storageRootEnv } from "../helpers/storage-env";
 
@@ -24,7 +26,7 @@ describe("real profile guard", () => {
     rmSync(fakeProfile, { recursive: true, force: true });
   });
 
-  function runFixture(mode: "leak" | "clean", skipGuard = false) {
+  function runFixture(mode: "leak" | "clean", skipGuard = false, extraArgs: string[] = []) {
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       ...storageRootEnv(fakeProfile),
@@ -34,7 +36,7 @@ describe("real profile guard", () => {
     delete env.KUNAI_TEST_SKIP_PROFILE_GUARD;
     if (skipGuard) env.KUNAI_TEST_SKIP_PROFILE_GUARD = "1";
 
-    const result = spawnSync(process.execPath, ["test", FIXTURE], {
+    const result = spawnSync(process.execPath, ["test", ...extraArgs, FIXTURE], {
       cwd: CLI_ROOT,
       env,
       encoding: "utf8",
@@ -43,14 +45,42 @@ describe("real profile guard", () => {
     return { status: result.status, output: `${result.stdout}\n${result.stderr}` };
   }
 
-  test("a run that does not touch the profile passes", () => {
+  test("a run that does not touch the profile passes, and the guard creates nothing", () => {
     const { status, output } = runFixture("clean");
     expect(output).toContain("1 pass");
+    expect(status).toBe(0);
+    // The guard only stats. An absent profile must stay absent.
+    const paths = getKunaiPaths({ env: storageRootEnv(fakeProfile) });
+    for (const dir of [paths.configDir, paths.dataDir, paths.cacheDir]) {
+      expect(existsSync(dir)).toBe(false);
+    }
+  });
+
+  test("a populated profile that nothing touches passes", () => {
+    const paths = getKunaiPaths({ env: storageRootEnv(fakeProfile) });
+    for (const file of [
+      paths.configPath,
+      paths.mpvBridgePath,
+      paths.dataDbPath,
+      paths.cacheDbPath,
+    ]) {
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, "x");
+    }
+    const { status, output } = runFixture("clean");
+    expect(output).not.toContain("changed your real Kunai profile");
     expect(status).toBe(0);
   });
 
   test("a run that writes the profile fails, and names the file", () => {
     const { status, output } = runFixture("leak");
+    expect(output).toContain("changed your real Kunai profile");
+    expect(output).toContain("leaked.json");
+    expect(status).not.toBe(0);
+  });
+
+  test("a parallel run that writes the profile fails too", () => {
+    const { status, output } = runFixture("leak", false, ["--parallel=2"]);
     expect(output).toContain("changed your real Kunai profile");
     expect(output).toContain("leaked.json");
     expect(status).not.toBe(0);

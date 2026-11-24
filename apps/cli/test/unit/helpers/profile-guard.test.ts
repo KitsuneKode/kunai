@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -7,6 +7,7 @@ import {
   describeProfileLeak,
   diffProfile,
   realProfileRoots,
+  realProfileTargets,
   snapshotProfile,
 } from "../../helpers/profile-guard";
 import { storageRootEnv } from "../../helpers/storage-env";
@@ -33,9 +34,32 @@ describe("profile guard", () => {
     expect(before.size).toBe(0);
 
     mkdirSync(root);
+    expect(existsSync(root)).toBe(true);
+    // Creating the empty root is itself a lasting change.
+    expect(diffProfile(before, snapshotProfile([root]))).toEqual([{ kind: "added", path: root }]);
+
     writeFileSync(join(root, "search-history.json"), "[]");
     expect(diffProfile(before, snapshotProfile([root]))).toEqual([
+      { kind: "added", path: root },
       { kind: "added", path: join(root, "search-history.json") },
+    ]);
+  });
+
+  test("snapshotting an absent profile creates nothing", () => {
+    const root = join(dir, "absent");
+    snapshotProfile([root], [join(root, "config.json"), join(root, "mpv", "kunai-bridge.lua")]);
+    expect(existsSync(root)).toBe(false);
+  });
+
+  test("named files are watched even below the walk depth", () => {
+    const deep = join(dir, "a", "b", "c", "d", "kunai-data.sqlite");
+    mkdirSync(join(dir, "a", "b", "c", "d"), { recursive: true });
+    writeFileSync(deep, "1");
+    utimesSync(deep, new Date(2020, 0, 1), new Date(2020, 0, 1));
+    const before = snapshotProfile([dir], [deep]);
+    writeFileSync(deep, "2");
+    expect(diffProfile(before, snapshotProfile([dir], [deep]))).toEqual([
+      { kind: "changed", path: deep },
     ]);
   });
 
@@ -92,6 +116,15 @@ describe("profile guard", () => {
     // Linux collapses config, data and cache into one directory when every XDG variable is the same.
     expect(roots.length).toBeGreaterThanOrEqual(1);
     for (const root of roots) expect(root.startsWith(dir)).toBe(true);
+  });
+
+  test("names the config file, mpv bridge script and both databases", () => {
+    const { files } = realProfileTargets(storageRootEnv(dir));
+    const names = files.map((file) => file.slice(dir.length));
+    expect(names.some((name) => name.endsWith("config.json"))).toBe(true);
+    expect(names.some((name) => name.endsWith("kunai-bridge.lua"))).toBe(true);
+    expect(names.some((name) => name.endsWith("kunai-data.sqlite"))).toBe(true);
+    expect(names.some((name) => name.endsWith("kunai-cache.sqlite"))).toBe(true);
   });
 
   test("the failure message names the files and how to fix and skip it", () => {
