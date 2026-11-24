@@ -19,9 +19,9 @@ Enter
 Show
 
 Sleep 600ms
-Type "bun run dev -- --zen --offline"
+Type "./test/vhs/isolated-kunai.sh --zen --offline"
 Enter
-Wait+Screen /Offline library/
+Wait+Screen /No offline titles yet/
 Sleep 1600ms
 Type "/"
 Sleep 250ms

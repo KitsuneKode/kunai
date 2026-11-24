@@ -20,9 +20,9 @@ Enter
 Show
 
 Sleep 600ms
-Type "bun run dev -- --offline"
+Type "./test/vhs/isolated-kunai.sh --offline"
 Enter
-Wait+Screen /Offline library/
+Wait+Screen /No offline titles yet/
 Sleep 1200ms
 
 # Open the palette and let the command list breathe
@@ -33,7 +33,7 @@ Sleep 1400ms
 Type "help"
 Sleep 300ms
 Enter
-Wait+Screen /Global commands/
+Wait+Screen /cycles sections/
 Sleep 1600ms
 Escape
 Sleep 500ms

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T13:00:00Z"
+lastReviewed: "2026-11-25T00:00:00Z"
 ---
 
 # Kunai — Testing Strategy
@@ -554,6 +554,17 @@ Best target for:
 - before and after UX comparison for major shell redesign passes
 
 Use VHS for terminal UX capture and review, not as the only proof that behavior works.
+
+Every tape launches through `apps/cli/test/vhs/isolated-kunai.sh` (the CLI, or
+`--harness <script>` for a fixture harness). The recorder shell is not a
+`bun test` worker, so the preload's real-profile guard does not cover it; the
+wrapper redirects HOME, XDG, APPDATA and TMPDIR into a sandbox seeded past
+onboarding with analytics unset, and removes it on exit. VHS can kill the
+wrapper before its trap runs when a tape ends mid-program, so each sandbox
+records its owner PID and the next launch sweeps sandboxes whose owner is gone.
+`apps/cli/test/unit/architecture/vhs-tape-isolation.test.ts` fails a tape that
+launches anything else, checks each CLI tape's `Wait+Screen` text still exists
+in `src/`, and runs the wrapper to prove the redirect, the cleanup and the sweep.
 
 For this repo, treat VHS as the primary CLI e2e medium for visual flows.
 Plain non-TTY process tests are often misleading for Ink UIs, so prefer:
