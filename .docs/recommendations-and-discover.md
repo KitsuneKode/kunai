@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T10:41:51Z"
+lastReviewed: "2026-11-24T11:11:45Z"
 ---
 
 # Kunai — Recommendations And Discover
@@ -106,7 +106,14 @@ Trending walks a chain of sources per lane and remembers the last good answer:
   superseded type-ahead request still warms the session cache. A request whose
   waiters all left is never joined by a later caller, and a request that is
   cancelled or cleared never writes a cache. **Trending refresh**
-  (`clearTrendingCache`) and `clearCache` abort the requests they supersede.
+  (`clearTrendingCache`) aborts the walks it supersedes, and a walk abandoned
+  without a refresh rechecks its own signal after every source answer, so a
+  late answer cannot overwrite the walk a returning caller started.
+  **Discover's refresh** (`clearCache` → `clearTmdbSessionCache`) detaches
+  in-flight TMDB requests instead of cancelling them: the session cache is
+  shared, so cancelling would also fail a title-detail season lookup that has
+  nothing to do with Discover. A detached request still answers its waiters,
+  is never joined by a later caller, and writes neither cache.
 
 ### Series fallback: last-known-good TMDB
 
