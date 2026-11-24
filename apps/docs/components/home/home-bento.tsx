@@ -8,7 +8,6 @@ import {
   IconSparkles,
   type Icon,
 } from "@tabler/icons-react";
-import type { CSSProperties } from "react";
 
 type Highlight = (typeof homeHighlights)[number];
 

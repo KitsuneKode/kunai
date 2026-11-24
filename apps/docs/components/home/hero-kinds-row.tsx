@@ -1,6 +1,5 @@
 import { withCssVars } from "@/lib/css-vars";
 import { homeHero } from "@/lib/home-content";
-import type { CSSProperties } from "react";
 
 const KIND_LANE_VAR = {
   Anime: "var(--home-lane-anime)",

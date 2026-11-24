@@ -38,6 +38,9 @@ type CommandDockProps = {
 
 const PEEK_COMMANDS = ["/search Dune", "/recover", "/calendar"] as const;
 
+/** Exits are quicker than entrances: the system is responding, not presenting. */
+const DRAWER_EXIT = { duration: 0.15, ease: [0.23, 1, 0.32, 1] } as const;
+
 const TABS: readonly {
   readonly id: DockTab;
   readonly label: string;
@@ -85,6 +88,11 @@ export function CommandDock({ commands, providers, initialOpen = false }: Comman
   const dragControls = useDragControls();
 
   const [open, setOpen] = useState(initialOpen);
+  // A drawer opened with `/` appears instantly: keyboard actions never animate.
+  const [openedByKey, setOpenedByKey] = useState(false);
+  // Height springs only when a tab or the surprise card swaps the content.
+  // Typing in the search narrows the list on every keystroke, so it snaps.
+  const [morphHeight, setMorphHeight] = useState(false);
   const [visible, setVisible] = useState(false);
   const [hoveredPill, setHoveredPill] = useState(false);
   const [peekIndex, setPeekIndex] = useState(0);
@@ -175,6 +183,8 @@ export function CommandDock({ commands, providers, initialOpen = false }: Comman
       }
       event.preventDefault();
       setTab("commands");
+      setOpenedByKey(true);
+      setMorphHeight(false);
       setOpen(true);
     };
     window.addEventListener("keydown", onKeyDown);
@@ -235,6 +245,7 @@ export function CommandDock({ commands, providers, initialOpen = false }: Comman
   const rollSurprise = useCallback(() => {
     if (commands.length <= 1) return;
     setDiceTurns((n) => n + 1);
+    setMorphHeight(true);
     setSurpriseIndex((prev) => {
       let next = Math.floor(Math.random() * commands.length);
       if (next === prev) next = (prev + 1) % commands.length;
@@ -275,6 +286,7 @@ export function CommandDock({ commands, providers, initialOpen = false }: Comman
       <Dialog.Root
         open={open}
         onOpenChange={(nextOpen) => {
+          if (nextOpen) setOpenedByKey(false);
           setOpen(nextOpen);
           if (!nextOpen) setQuery("");
         }}
@@ -341,9 +353,9 @@ export function CommandDock({ commands, providers, initialOpen = false }: Comman
                 <Dialog.Backdrop
                   render={
                     <m.div
-                      initial={{ opacity: 0 }}
+                      initial={openedByKey ? false : { opacity: 0 }}
                       animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
+                      exit={{ opacity: 0, transition: DRAWER_EXIT }}
                       transition={{ duration: 0.16, ease: [0.23, 1, 0.32, 1] }}
                       className="kunai-drawer-scrim"
                     />
@@ -362,15 +374,17 @@ export function CommandDock({ commands, providers, initialOpen = false }: Comman
                         dragElastic={{ top: 0.04, bottom: 0.5 }}
                         onDragEnd={handleDragEnd}
                         initial={
-                          reduced
-                            ? { opacity: 0 }
-                            : { opacity: 0, y: 36, scale: 0.94, borderRadius: 24 }
+                          openedByKey
+                            ? false
+                            : reduced
+                              ? { opacity: 0 }
+                              : { opacity: 0, y: 36, scale: 0.94, borderRadius: 24 }
                         }
                         animate={{ opacity: 1, y: 0, scale: 1, borderRadius: 20 }}
                         exit={
-                          reduced
-                            ? { opacity: 0 }
-                            : { opacity: 0, y: 24, scale: 0.95, borderRadius: 24 }
+                          reduced || openedByKey
+                            ? { opacity: 0, transition: DRAWER_EXIT }
+                            : { opacity: 0, y: 12, scale: 0.97, transition: DRAWER_EXIT }
                         }
                         transition={reduced ? { duration: 0.15 } : SPRING_SETTLE}
                         className="kunai-drawer-sheet"
@@ -402,6 +416,7 @@ export function CommandDock({ commands, providers, initialOpen = false }: Comman
                                 role="tab"
                                 aria-selected={active}
                                 onClick={() => {
+                                  setMorphHeight(true);
                                   setTab(item.id);
                                   setQuery("");
                                   setSelectedIndex(0);
@@ -438,7 +453,7 @@ export function CommandDock({ commands, providers, initialOpen = false }: Comman
                           ? undefined
                           : { height: contentHeight }
                       }
-                      transition={reduced ? { duration: 0 } : SPRING_SNAP}
+                      transition={reduced || !morphHeight ? { duration: 0 } : SPRING_SNAP}
                       className="kunai-drawer-body-clip"
                     >
                       <div ref={bodyMeasureRef} className="kunai-drawer-body">
@@ -467,6 +482,7 @@ export function CommandDock({ commands, providers, initialOpen = false }: Comman
                                   type="text"
                                   value={query}
                                   onChange={(event) => {
+                                    setMorphHeight(false);
                                     setQuery(event.target.value);
                                     setSelectedIndex(0);
                                   }}
@@ -556,6 +572,7 @@ export function CommandDock({ commands, providers, initialOpen = false }: Comman
                                   type="text"
                                   value={query}
                                   onChange={(event) => {
+                                    setMorphHeight(false);
                                     setQuery(event.target.value);
                                     setSelectedIndex(0);
                                   }}
