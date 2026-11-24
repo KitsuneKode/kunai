@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { join } from "node:path";
 
 import {
   parseSumsFile,
@@ -95,22 +96,90 @@ describe("renderScoopManifest", () => {
     expect(m.architecture.arm64?.bin).toEqual([["kunai-windows-arm64.exe", "kunai"]]);
   });
 
-  test("autoupdate tracks GitHub releases and the sums file", () => {
-    // SAFETY: the renderer emits exactly this manifest shape; the test asserts it.
-    const m = manifest as {
-      checkver: { github: string };
-      autoupdate: {
-        architecture: Record<string, { url: string }>;
-        hash: { url: string };
-      };
+  test("updates only through a reviewed manifest commit, never an unsigned remote hash", () => {
+    // Scoop autoupdate would rewrite `hash` from SHA256SUMS.archives, which Scoop
+    // cannot verify against the release signature. Like the Homebrew formula,
+    // a new version arrives only as a commit rendered from verified sums.
+    const rendered = renderScoopManifest(channel, sums);
+    const keys = Object.keys(JSON.parse(rendered));
+    expect(keys).not.toContain("autoupdate");
+    expect(keys).not.toContain("checkver");
+    expect(rendered).not.toContain("SHA256SUMS");
+    expect(rendered).not.toContain("$version");
+  });
+});
+
+// The committed tap and bucket are rewritten by the release metadata PR for
+// every published version, so this drift check must not pin a fixture
+// release. It reads the version and digests back out of the committed files,
+// re-renders from exactly those inputs, and demands identical bytes: any
+// hand edit, or a renderer change that was not re-rendered, fails here at
+// whatever version is current.
+describe("committed channel manifests", () => {
+  const root = join(import.meta.dir, "../../../../..");
+  const readCommitted = (rel: string) => Bun.file(join(root, rel)).text();
+
+  /** Version + `<archive name> -> sha256` pairs a committed manifest declares. */
+  function inputsFromFormula(text: string) {
+    const version = /^\s*version "([^"]+)"$/m.exec(text)?.[1];
+    if (!version) throw new Error("Formula/kunai.rb declares no version");
+    const sums = new Map<string, string>();
+    for (const match of text.matchAll(/url "[^"]*\/([^"/]+)"\n\s*sha256 "([0-9a-f]{64})"/g)) {
+      const [, name, sha] = match;
+      if (name && sha) sums.set(name, sha);
+    }
+    return { version, sums };
+  }
+
+  function inputsFromScoop(text: string) {
+    // SAFETY: shape asserted by the byte-equality check below; a wrong shape
+    // yields missing entries and the renderer fails closed.
+    const parsed = JSON.parse(text) as {
+      version: string;
+      architecture: Record<string, { url: string; hash: string }>;
     };
-    expect(m.checkver.github).toBe("https://github.com/KitsuneKode/kunai");
-    expect(m.autoupdate.architecture["64bit"]?.url).toBe(
-      "https://github.com/KitsuneKode/kunai/releases/download/v$version/kunai-windows-x64.zip",
-    );
-    expect(m.autoupdate.hash.url).toBe(
-      "https://github.com/KitsuneKode/kunai/releases/download/v$version/SHA256SUMS.archives",
-    );
+    const sums = new Map<string, string>();
+    for (const arch of Object.values(parsed.architecture)) {
+      const name = arch.url.split("/").pop();
+      if (name) sums.set(name, arch.hash);
+    }
+    return { version: parsed.version, sums };
+  }
+
+  const channelFor = (version: string) => ({ version, tag: `v${version}` });
+
+  test("Formula/kunai.rb is byte-for-byte the renderer's output for its own version", async () => {
+    const committed = await readCommitted("Formula/kunai.rb");
+    const { version, sums: formulaSums } = inputsFromFormula(committed);
+    expect(formulaSums.size).toBe(4);
+    expect(committed).toBe(renderHomebrewFormula(channelFor(version), formulaSums));
+  });
+
+  test("bucket/kunai.json is byte-for-byte the renderer's output for its own version", async () => {
+    const committed = await readCommitted("bucket/kunai.json");
+    const { version, sums: scoopSums } = inputsFromScoop(committed);
+    expect(scoopSums.size).toBe(2);
+    expect(committed).toBe(renderScoopManifest(channelFor(version), scoopSums));
+  });
+
+  test("the tap and the bucket advertise the same release", async () => {
+    const formula = inputsFromFormula(await readCommitted("Formula/kunai.rb"));
+    const scoop = inputsFromScoop(await readCommitted("bucket/kunai.json"));
+    expect(scoop.version).toBe(formula.version);
+  });
+
+  test("the drift check follows a re-rendered release instead of pinning one", () => {
+    // What the metadata PR does on the next release: render new files from new
+    // sums. Reading inputs back from that output must reproduce it exactly.
+    const next = channelFor("9.8.7");
+    const nextSums = new Map([...sums].map(([name]) => [name, "f".repeat(64)]));
+    const formula = renderHomebrewFormula(next, nextSums);
+    const scoop = renderScoopManifest(next, nextSums);
+    const fromFormula = inputsFromFormula(formula);
+    const fromScoop = inputsFromScoop(scoop);
+    expect(fromFormula.version).toBe("9.8.7");
+    expect(renderHomebrewFormula(channelFor(fromFormula.version), fromFormula.sums)).toBe(formula);
+    expect(renderScoopManifest(channelFor(fromScoop.version), fromScoop.sums)).toBe(scoop);
   });
 });
 

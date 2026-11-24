@@ -79,7 +79,10 @@ import { ResolveTraceSink } from "../services/diagnostics/ResolveTraceSink";
 import type { ConfigService } from "../services/persistence/ConfigService";
 import { ConfigServiceImpl } from "../services/persistence/ConfigServiceImpl";
 import { ConfigStoreImpl } from "../services/persistence/ConfigStoreImpl";
-import { createCredentialVault } from "../services/persistence/credential-vault-backends";
+import {
+  createCredentialVault,
+  noticeFileFallbackOnce,
+} from "../services/persistence/credential-vault-backends";
 import {
   migrateSyncTokensToVault,
   vaultSyncTokenFileIo,
@@ -412,7 +415,13 @@ export async function bootstrapPersistence(
   const statsFormatter = new StatsFormatter();
   const credentialVault = await createCredentialVault({
     paths,
-    onFallback: (backend, reason) => dbg("credential-vault", `using ${backend} backend: ${reason}`),
+    onFallback: (backend, reason) => {
+      dbg("credential-vault", `using ${backend} backend: ${reason}`);
+      noticeFileFallbackOnce({
+        configDir: paths.configDir,
+        write: (line) => process.stderr.write(line),
+      });
+    },
   });
   const config = await ConfigServiceImpl.load(configStore, credentialVault);
   // Read live per request, so a key saved in settings applies without a restart.

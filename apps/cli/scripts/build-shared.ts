@@ -13,6 +13,8 @@ import { join, resolve } from "node:path";
 import { isJsonString } from "@kunai/types";
 import type { BunPlugin } from "bun";
 
+import releaseKey from "../src/services/update/release-key.json";
+
 export type BunBuildMetafile = NonNullable<Awaited<ReturnType<typeof Bun.build>>["metafile"]>;
 export type BunBuildOptions = NonNullable<Parameters<typeof Bun.build>[0]>;
 
@@ -93,6 +95,7 @@ interface ReleaseDefineMap {
 
 /** Compile-time defines shared by every release artifact. */
 export const RELEASE_DEFINE: ReleaseDefineMap = {
+  "import.meta.kunaiReleasePublicKey": JSON.stringify(releaseKey.ed25519Spki),
   // Pin Ink's optional devtools path off in release builds.
   "process.env.DEV": '"false"',
   // Let React and any small env-gated branches take their production path.

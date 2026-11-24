@@ -3,6 +3,11 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
+import {
+  embeddedReleaseKey,
+  type ReleaseManifestName,
+  verifyReleaseManifestSignature,
+} from "../checksum-signature";
 import { readInstallManifest, writeInstallManifestUnderActivation } from "../install-manifest";
 import { fetchLatestVersion } from "../latest-version";
 import {
@@ -60,6 +65,8 @@ export type InstallLatestOptions = {
   readonly dlBase?: string;
   readonly layout?: InstallLayoutPaths;
   readonly fetchImpl?: FetchLike;
+  /** Supply a pin when exercising a source build. Compiled clients prefer their own pin. */
+  readonly releasePublicKey?: string;
   readonly libc?: PlatformLibc;
 };
 
@@ -144,7 +151,38 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
           fetchImpl,
           policy: DEFAULT_CHECKSUM_DOWNLOAD_POLICY,
         });
-        const sumsText = await readFile(stagedChecksums, "utf8");
+        const publicKey = embeddedReleaseKey || options.releasePublicKey;
+        // The signature binds `resolved`: a correctly signed manifest from another
+        // release, served at this tag, is rejected here before any archive download.
+        const signedVersion: string = resolved;
+        async function authenticatedManifest(
+          name: ReleaseManifestName,
+          path: string,
+          url: string,
+        ): Promise<string> {
+          const bytes = await readFile(path);
+          if (publicKey) {
+            await downloadToFile({
+              url: url + ".sig",
+              destinationPath: path + ".sig",
+              fetchImpl,
+              policy: { ...DEFAULT_CHECKSUM_DOWNLOAD_POLICY, maxBytes: 64 },
+            });
+            verifyReleaseManifestSignature({
+              version: signedVersion,
+              name,
+              manifest: bytes,
+              signature: await readFile(path + ".sig"),
+              spki: publicKey,
+            });
+          }
+          return bytes.toString("utf8");
+        }
+        if (!publicKey)
+          process.stderr.write(
+            "Kunai has no embedded release signing key. Verifying SHA-256 checksums only.\n",
+          );
+        const sumsText = await authenticatedManifest("SHA256SUMS", stagedChecksums, checksumUrl);
         const expected = pickChecksum(sumsText, assetName);
         if (!expected) {
           throw new Error(`No checksum entry for ${assetName}`);
@@ -190,7 +228,11 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
           archiveUrl &&
           stagedArchive
         ) {
-          const archiveSums = await readFile(stagedArchiveChecksums, "utf8");
+          const archiveSums = await authenticatedManifest(
+            "SHA256SUMS.archives",
+            stagedArchiveChecksums,
+            archiveChecksumUrl,
+          );
           expectedArchive = pickChecksum(archiveSums, archiveName);
           if (!expectedArchive) throw new Error(`No checksum entry for ${archiveName}`);
           try {

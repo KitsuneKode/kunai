@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-27T11:48:19Z"
+lastReviewed: "2026-11-24T12:44:09Z"
 ---
 
 # Kunai Release Reliability Gate
@@ -87,6 +87,18 @@ read permissions they need. Each execution job locally checks the downloaded
 directory before its first smoke. Protected publication verifies provenance
 before npm receives any package, and draft/public downloads repeat the byte and
 provenance checks.
+
+Starting with v0.4.0, protected publication signs both checksum manifests with
+Ed25519. Each signature covers a statement that binds the release version, the
+manifest name and the SHA-256 of the manifest bytes. The format is
+`kunai-release-manifest v1`, specified in [RELEASING.md](../RELEASING.md).
+Verifiers rebuild that statement from the version they resolved, so an old
+release's signed set served at a newer tag fails before extraction or
+activation. Draft and public verification keep the 22
+native files in their own directory and independently check the two detached
+signatures, the pinned installers and all three rendered package recipes.
+Native clients with an embedded key require a signature for every manifest they
+consume. Unkeyed builds retain checksum verification and print a diagnostic.
 
 The TypeScript native updater and both native installer scripts consume these
 archives. All three verify the archive against `SHA256SUMS.archives`, permit

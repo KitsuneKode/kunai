@@ -986,6 +986,7 @@ function libraryFixture() {
   const gate = new Promise<void>((resolve) => {
     open = resolve;
   });
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
   const container = {
     config: {
       zenMode: false,
@@ -1013,7 +1014,6 @@ function libraryFixture() {
     offlineLibraryService: {
       listCompletedEntries: async () => {
         await gate;
-        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
         return entries;
       },
     },
