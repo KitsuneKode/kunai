@@ -1,11 +1,10 @@
 import { whichLive } from "../infra/os/which";
 import { debugImage } from "./debug";
-import { getProbedGraphicsSupport } from "./probe";
+import { getProbedGraphicsSupport, type TerminalGraphicsSupport } from "./probe";
+import { canUseTmuxPassthrough, isTmuxPane, tmuxClientHasKitty, tmuxSupportsVersion } from "./tmux";
 import type { ImageCapability, ImageProtocol, ImageRendererId, TerminalId } from "./types";
 
 const DISABLE_VALUES = new Set(["0", "false"]);
-const PROTOCOL_VALUES = new Set(["auto", "none", "kitty", "iterm", "sixel", "half-block"] as const);
-
 type ProtocolOverride = "auto" | "none" | "kitty" | "iterm" | "sixel" | "half-block";
 
 type CapabilityInput = {
@@ -75,17 +74,14 @@ export function detectTerminal(env: NodeJS.ProcessEnv = process.env): TerminalId
 }
 
 export function isKittyCompatible(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (isMultiplexed(env)) return detectImageCapability(env).renderer === "kitty-native";
   const terminal = detectTerminal(env);
   return terminal === "kitty" || terminal === "ghostty";
 }
 
 /**
- * Inside tmux or screen the graphics escapes must be wrapped in the
- * multiplexer's passthrough sequence, which we do not emit. Detection cannot
- * rely on the probe to catch this: `KITTY_WINDOW_ID` is inherited into tmux
- * panes, so the name check would claim kitty-native and every poster would be
- * swallowed by tmux, leaving blank cells where the placeholder grid expects an
- * image. Text renderers pass through a multiplexer untouched, so prefer them.
+ * Multiplexers can swallow graphics. Select them only after checking what the
+ * multiplexer will accept or pass through.
  */
 export function isMultiplexed(env: NodeJS.ProcessEnv = process.env): boolean {
   if (env.TMUX || env.STY) return true;
@@ -112,19 +108,35 @@ function supportsItermInlineImages(terminal: TerminalId, env: NodeJS.ProcessEnv)
   const [major, minor] = (env.TERM_PROGRAM_VERSION ?? "")
     .split(".")
     .map((part) => Number.parseInt(part, 10));
-  if (!Number.isFinite(major) || !Number.isFinite(minor)) return false;
-  if ((major as number) !== VSCODE_INLINE_IMAGE_MINIMUM.major) {
-    return (major as number) > VSCODE_INLINE_IMAGE_MINIMUM.major;
+  if (
+    major === undefined ||
+    minor === undefined ||
+    !Number.isFinite(major) ||
+    !Number.isFinite(minor)
+  ) {
+    return false;
   }
-  return (minor as number) >= VSCODE_INLINE_IMAGE_MINIMUM.minor;
+  return (
+    major > VSCODE_INLINE_IMAGE_MINIMUM.major ||
+    (major === VSCODE_INLINE_IMAGE_MINIMUM.major && minor >= VSCODE_INLINE_IMAGE_MINIMUM.minor)
+  );
 }
 
 function normalizeProtocol(value: string | undefined): ProtocolOverride | "invalid" {
   if (!value) return "auto";
   const normalized = value.trim().toLowerCase();
   if (!normalized) return "auto";
-  if (PROTOCOL_VALUES.has(normalized as ProtocolOverride)) return normalized as ProtocolOverride;
-  return "invalid";
+  switch (normalized) {
+    case "auto":
+    case "none":
+    case "kitty":
+    case "iterm":
+    case "sixel":
+    case "half-block":
+      return normalized;
+    default:
+      return "invalid";
+  }
 }
 
 const runtime = {
@@ -134,16 +146,20 @@ const runtime = {
 
 const capabilityMemo = new Map<string, ImageCapability>();
 
-function capabilityMemoKey(env: NodeJS.ProcessEnv): string {
-  const probe = getProbedGraphicsSupport();
+function capabilityMemoKey(
+  env: NodeJS.ProcessEnv,
+  stdoutTty: boolean,
+  probe: TerminalGraphicsSupport | null,
+): string {
   return JSON.stringify([
     // Part of the key, not just an input: detection runs before the probe
     // answers, so without this the pre-probe result would stay cached forever
     // and the probe would change nothing.
-    probe ? `${String(probe.sixel)}:${String(probe.kittyGraphics)}` : "unprobed",
-    runtime.isStdoutTty(),
+    probe,
+    stdoutTty,
     env.KUNAI_POSTER ?? "",
     env.KUNAI_IMAGE_PROTOCOL ?? "",
+    env.KUNAI_IMAGE_TMUX ?? "",
     env.KITTY_WINDOW_ID ?? "",
     env.TERM_PROGRAM ?? "",
     // Both feed inline-image routing: LC_TERMINAL identifies iTerm2 over ssh and
@@ -165,8 +181,12 @@ function capabilityMemoKey(env: NodeJS.ProcessEnv): string {
   ]);
 }
 
-function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
-  if (!runtime.isStdoutTty()) {
+export function selectImageCapability(
+  env: NodeJS.ProcessEnv,
+  stdoutTty: boolean,
+  probe: TerminalGraphicsSupport | null,
+): ImageCapability {
+  if (!stdoutTty) {
     return noneCapability("unknown", "stdout is not a TTY");
   }
 
@@ -181,12 +201,8 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
   // half-block path — it is ANSI colour markup like everything else. Explicit
   // KUNAI_IMAGE_PROTOCOL overrides still win: the user asked for that
   // protocol specifically.
-  if (override === "auto" && (env.TERM === "dumb" || env.NO_COLOR !== undefined)) {
+  if (override === "auto" && (env.TERM === "dumb" || Boolean(env.NO_COLOR))) {
     return noneCapability(terminal, "terminal reports no colour support");
-  }
-
-  if (override === "invalid") {
-    debugImage(`Invalid KUNAI_IMAGE_PROTOCOL value: ${env.KUNAI_IMAGE_PROTOCOL ?? ""}`);
   }
 
   if (override === "none") {
@@ -194,7 +210,7 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
   }
 
   if (override === "kitty") {
-    if (terminal === "kitty" || terminal === "ghostty") {
+    if (!isMultiplexed(env) && (terminal === "kitty" || terminal === "ghostty")) {
       return buildCapability({
         terminal,
         protocol: "kitty",
@@ -203,10 +219,12 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
         reason: "kitty-compatible terminal requested",
       });
     }
-    return noneCapability(
-      terminal,
-      "KUNAI_IMAGE_PROTOCOL=kitty requires a kitty-compatible terminal",
-    );
+    if (!isMultiplexed(env)) {
+      return noneCapability(
+        terminal,
+        "KUNAI_IMAGE_PROTOCOL=kitty requires a kitty-compatible terminal",
+      );
+    }
   }
 
   if (override === "iterm") {
@@ -223,9 +241,6 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
         reason: "forced iTerm2 inline images",
       });
     }
-    debugImage(
-      `KUNAI_IMAGE_PROTOCOL=iterm ignored: ${terminal} does not report inline-image support`,
-    );
     return halfBlockCapability(terminal, "forced iterm unsupported here; half-block fallback");
   }
 
@@ -244,14 +259,41 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
     return halfBlockCapability(terminal, "forced half-block output");
   }
 
-  // Past this point every branch picks a graphics protocol, and none of them
-  // survive a multiplexer without passthrough wrapping. Explicit
-  // KUNAI_IMAGE_PROTOCOL overrides are handled above and still win.
   if (isMultiplexed(env)) {
-    return halfBlockCapability(
-      terminal,
-      "tmux/screen detected; graphics escapes need passthrough, using half-block",
-    );
+    if (
+      canUseTmuxPassthrough(env, probe?.tmux) &&
+      (tmuxClientHasKitty(probe?.tmux) || probe?.kittyPlaceholders)
+    ) {
+      return {
+        terminal,
+        protocol: "kitty",
+        renderer: "kitty-native",
+        kittyPassthrough: "tmux",
+        available: true,
+        reason: "Kitty graphics through tmux passthrough",
+      };
+    }
+    // tmux answers DA1 itself and advertises attribute 4 in any build with
+    // Sixel support, whatever the outer terminal can do. Only the attached
+    // client's `client_termfeatures` says whether that terminal draws sixel;
+    // otherwise tmux prints "SIXEL IMAGE (WxH)" in place of the poster.
+    if (
+      override !== "kitty" &&
+      isTmuxPane(env) &&
+      probe?.tmux &&
+      tmuxSupportsVersion(probe.tmux, 4) &&
+      probe.sixel &&
+      probe.tmux.clientFeatures.includes("sixel")
+    ) {
+      return buildCapability({
+        terminal,
+        protocol: "sixel",
+        renderer: "sixel",
+        available: true,
+        reason: "tmux reported native sixel support (DA1)",
+      });
+    }
+    return halfBlockCapability(terminal, "multiplexer has no usable graphics support");
   }
 
   if (terminal === "kitty" || terminal === "ghostty") {
@@ -268,7 +310,6 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
   // implies. This is the only way to know a Windows Terminal is >=1.22, or that
   // an unrecognised terminal (foot, contour, mlterm, xterm -ti vt340) does sixel
   // at all — the name heuristics below can never learn either.
-  const probe = getProbedGraphicsSupport();
   // Answering a=q is necessary but not sufficient: kunai places images with
   // Unicode placeholders, which WezTerm's opt-in kitty mode, Konsole, and
   // iTerm2's partial kitty support do not implement. Claiming kitty-native
@@ -339,11 +380,16 @@ function computeImageCapability(env: NodeJS.ProcessEnv): ImageCapability {
 }
 
 export function detectImageCapability(env: NodeJS.ProcessEnv = process.env): ImageCapability {
-  const key = capabilityMemoKey(env);
+  const probe = getProbedGraphicsSupport();
+  const stdoutTty = runtime.isStdoutTty();
+  const key = capabilityMemoKey(env, stdoutTty, probe);
   const cached = capabilityMemo.get(key);
   if (cached) return cached;
 
-  const capability = computeImageCapability(env);
+  if (normalizeProtocol(env.KUNAI_IMAGE_PROTOCOL) === "invalid") {
+    debugImage(`Invalid KUNAI_IMAGE_PROTOCOL value: ${env.KUNAI_IMAGE_PROTOCOL ?? ""}`);
+  }
+  const capability = selectImageCapability(env, stdoutTty, probe);
   capabilityMemo.set(key, capability);
   return capability;
 }

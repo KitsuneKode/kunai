@@ -91,3 +91,100 @@ describe("playback module admission follows the active hotfix manifest", () => {
     expect(getOrdered().map((module) => module.providerId)).toEqual(["s1"]);
   });
 });
+
+describe("stremio addon opt-in admission", () => {
+  test("an addon leaves the resolve roster the moment consent is off — and rejoins on enable", async () => {
+    const { isStremioAddonProviderId } = await import("@kunai/providers");
+    const { stremioAddonsEnabled } = await import("@/domain/provider/stremio-addons");
+    const addon = createModule("stremio-addon-fixture-abc12345", ["movie", "series"]);
+    const modules = [...MODULES, addon];
+    const config = await ConfigServiceImpl.load(
+      new MemoryConfigStore({
+        experimentalStremioAddons: true,
+        stremioAddonsRiskAcknowledgedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+    const isEnabled = () =>
+      stremioAddonsEnabled(config.readStremioAddonsConsent?.() ?? config.getRaw());
+    const getOrdered = createOrderedModulesGetter(
+      config,
+      modules,
+      () => null,
+      (module) => !isStremioAddonProviderId(module.providerId) || isEnabled(),
+    );
+
+    expect(getOrdered().map((module) => module.providerId)).toContain(addon.providerId);
+
+    // A standalone `kunai addons disable` — patched through the same config —
+    // empties the roster's addon seat at the next call, without a restart.
+    await config.update({ experimentalStremioAddons: false });
+    expect(getOrdered().map((module) => module.providerId)).toEqual(["s1", "s2", "s3"]);
+
+    await config.update({ experimentalStremioAddons: true });
+    expect(getOrdered().map((module) => module.providerId)).toContain(addon.providerId);
+  });
+
+  test("a flag without a stored acknowledgement never admits the addon", async () => {
+    const { isStremioAddonProviderId } = await import("@kunai/providers");
+    const { stremioAddonsEnabled } = await import("@/domain/provider/stremio-addons");
+    const addon = createModule("stremio-addon-fixture-abc12345", ["movie", "series"]);
+    const config = await ConfigServiceImpl.load(
+      new MemoryConfigStore({ experimentalStremioAddons: true }),
+    );
+    const getOrdered = createOrderedModulesGetter(
+      config,
+      [...MODULES, addon],
+      () => null,
+      (module) =>
+        !isStremioAddonProviderId(module.providerId) ||
+        stremioAddonsEnabled(config.readStremioAddonsConsent?.() ?? config.getRaw()),
+    );
+
+    expect(getOrdered().map((module) => module.providerId)).toEqual(["s1", "s2", "s3"]);
+  });
+});
+
+describe("production roster construction", () => {
+  test("loadConfiguredProviderModules registers no addon while off — even with a valid install", async () => {
+    const { isStremioAddonProviderId } = await import("@kunai/providers");
+    const { loadConfiguredProviderModules } = await import("@/container/bootstrap-providers");
+    const { createProviderPrioritySnapshot } =
+      await import("@/services/providers/provider-priority");
+    const config = await ConfigServiceImpl.load(
+      new MemoryConfigStore({
+        stremioAddons: [{ url: "https://b.example.com/manifest.json" }],
+      }),
+    );
+
+    const modules = await loadConfiguredProviderModules(
+      config,
+      createProviderPrioritySnapshot(config.getRaw()),
+    );
+
+    // The addon entry is installed and well-formed; consent is simply absent.
+    expect(config.stremioAddons).toHaveLength(1);
+    expect(modules.some((module) => isStremioAddonProviderId(module.providerId))).toBe(false);
+    expect(modules.length).toBeGreaterThan(0);
+  });
+
+  test("loadConfiguredProviderModules includes the addon once enabled — and its gate tracks consent", async () => {
+    const { isStremioAddonProviderId } = await import("@kunai/providers");
+    const { loadConfiguredProviderModules } = await import("@/container/bootstrap-providers");
+    const { createProviderPrioritySnapshot } =
+      await import("@/services/providers/provider-priority");
+    const config = await ConfigServiceImpl.load(
+      new MemoryConfigStore({
+        stremioAddons: [{ url: "https://b.example.com/manifest.json" }],
+        experimentalStremioAddons: true,
+        stremioAddonsRiskAcknowledgedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+
+    const modules = await loadConfiguredProviderModules(
+      config,
+      createProviderPrioritySnapshot(config.getRaw()),
+    );
+
+    expect(modules.some((module) => isStremioAddonProviderId(module.providerId))).toBe(true);
+  });
+});

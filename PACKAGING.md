@@ -20,12 +20,12 @@ must not rebuild, repack, or recompress it.
 - [ ] Candidate upload is immutable
       `kunai-release-candidate-<version>-<commit-sha>` and downstream jobs use
       its numeric artifact id, not a mutable name lookup
-- [ ] Native payload is exactly 18 regular files: eight raw binaries, their
-      eight canonical archives (`.tar.gz` on Linux/macOS, `.zip` on Windows),
+- [ ] Native payload is exactly 22 regular files: ten raw binaries, their
+      ten canonical archives (`.tar.gz` on Linux/macOS, `.zip` on Windows),
       `SHA256SUMS`, and `SHA256SUMS.archives`; no extras or zero-byte files
-- [ ] Candidate contains the preserved launcher `kunai-npm.tgz` plus all eight
+- [ ] Candidate contains the preserved launcher `kunai-npm.tgz` plus all ten
       preserved npm platform-package tarballs
-- [ ] GitHub OIDC attestations cover every one of the 18 native files and bind
+- [ ] GitHub OIDC attestations cover every one of the 22 native files and bind
       them to `KitsuneKode/kunai/.github/workflows/release.yml`, the release
       commit, and the main-branch workflow identity before any downloaded native
       byte is executed
@@ -47,15 +47,9 @@ ROOT="$PWD" && (cd apps/cli && bun pm pack --ignore-scripts --quiet --filename "
 - [ ] **Installer troubleshooting present** — `type -a` / `which -a` (bash), `whence -a` (zsh), `Get-Command kunai -All` (PowerShell), doctor text/JSON, ownership, checksum/404 (`kunai install --force` / pin version), rollback, uninstall-by-owner, unsigned binaries, PATH shadowing ([docs/users/troubleshooting.mdx](docs/users/troubleshooting.mdx#installer-and-path-issues))
 - [ ] **YouTube cookie safety documented** — `cookiesFromBrowser` / absolute `cookiesFile`; never paste contents; review redacted bundles; no DRM bypass claim
 - [ ] **Download path docs are platform-accurate** — default download directory matches storage path resolution on Linux/macOS/Windows
-- [ ] **Package channels rendered** — `package-channels.yml` (release `published`
-      or manual dispatch) renders `Formula/kunai.rb`, `bucket/kunai.json`, and
-      `aur/kunai-bin/{PKGBUILD,.SRCINFO}` from `SHA256SUMS.archives` and uploads
-      them as `package-channels-<tag>`; publishing needs secrets
-      `PACKAGE_CHANNELS_TOKEN` (Homebrew/Scoop pushes) and `AUR_SSH_PRIVATE_KEY`
-      (AUR push), plus the `KitsuneKode/homebrew-tap`, `KitsuneKode/scoop-bucket`,
-      and AUR `kunai-bin` repos — each publish step skips with a notice when its
-      secret is absent (see [RELEASING.md](RELEASING.md#package-channels-homebrew-scoop-aur))
-- [ ] **GitHub Release assets** — exact 18-file native set is present (`bun run scripts/verify-github-release-assets.ts` with full attestation repository/source arguments for byte verification); upload uses `fail_on_unmatched_files: true`
+- [ ] The protected environment holds the Ed25519 private key matching the reviewed public pin. Signing completes and verifies before npm publication.
+- [ ] Draft and public downloads contain all 22 native files plus seven distribution files: two signatures, both pinned installers, the formula, the Scoop manifest, and the Arch PKGBUILD. The verifier checks downloaded signatures and reproduces each generated file.
+- [ ] The release metadata PR updates `Formula/kunai.rb` and `bucket/kunai.json` from the verified public assets.
 - [ ] **musl archive evidence** — x64 and arm64 Alpine cells install the exact
       preserved `.tar.gz` through production `install.sh`, record archive
       provenance in `install.json`, and pass exact `--version` plus non-empty
@@ -65,8 +59,8 @@ ROOT="$PWD" && (cd apps/cli && bun pm pack --ignore-scripts --quiet --filename "
 
 - [ ] Confirmation gate green (`bun run release:confirmation:check`) with fresh provider signoff evidence
 - [ ] Approve GitHub environment `release-production` only after confirmation evidence looks correct
-- [ ] Publish job downloads the immutable preserved candidate, reverifies all 18
-      native attestations, publishes/reconciles all eight platform packages,
+- [ ] Publish job downloads the immutable preserved candidate, reverifies all 22
+      native attestations, publishes/reconciles all ten platform packages,
       then publishes the exact-version launcher last through `bun run release`
 - [ ] Public-registry smoke proves the launcher resolves its physical host
       platform package and executes `--version` / `--help` without Bun

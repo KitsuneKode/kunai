@@ -76,6 +76,7 @@ export type SettingRowDef = SettingRowMetadata &
         readonly detail?: string;
         readonly read: (config: KitsuneConfig) => boolean;
         readonly write: (config: KitsuneConfig, value: boolean) => KitsuneConfig;
+        readonly envOverride?: string;
         readonly gate?: SettingGate;
       }
     | {
@@ -97,6 +98,11 @@ export type SettingRowDef = SettingRowMetadata &
         readonly sensitive?: boolean;
         readonly placeholder: string;
         readonly read: (config: KitsuneConfig) => string;
+        /**
+         * For a row that adds to a list instead of holding one value: what to
+         * show beside the label, in place of "configured" / "not set".
+         */
+        readonly summarize?: (config: KitsuneConfig) => string;
         readonly apply: (config: KitsuneConfig, value: string) => KitsuneConfig;
         readonly validate: (value: string) => string | null;
         readonly envOverride?: string;
@@ -108,6 +114,12 @@ export type SettingRowDef = SettingRowMetadata &
         readonly label: string;
         readonly detail?: string;
         readonly summarize: (config: KitsuneConfig) => string;
+        /**
+         * Replaces `summarize` as the submenu's subtitle line — for rows whose
+         * context line is guidance, not state (Ink wraps it; keep it out of
+         * per-choice details, which truncate).
+         */
+        readonly subtitle?: (config: KitsuneConfig) => string;
         readonly buildChoices: (
           ctx: SettingsRegistryContext,
         ) => readonly ShellPickerOption<string>[];

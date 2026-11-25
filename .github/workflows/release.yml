@@ -1087,6 +1087,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Sign verified manifests and prepare package channels
+        env:
+          KUNAI_CHECKSUM_SIGNING_KEY: ${{ secrets.KUNAI_CHECKSUM_SIGNING_KEY }}
+        run: |
+          bun scripts/packaging/release-supplements.ts prepare "${{ needs.confirmation.outputs.version }}" .release-download/native .release-download/channels
+
+      - name: Verify signatures and package channels before publication
+        run: |
+          bun scripts/packaging/release-supplements.ts verify "${{ needs.confirmation.outputs.version }}" .release-download/native .release-download/channels
+
       # Platform packages first, launcher last, refusing on any version skew.
       # Publishing the launcher first leaves anyone installing in that window
       # resolving optionalDependencies that do not exist yet, i.e. a CLI with no
@@ -1245,6 +1255,13 @@ jobs:
             .release-download/native/kunai-windows-arm64.zip
             .release-download/native/SHA256SUMS
             .release-download/native/SHA256SUMS.archives
+            .release-download/channels/SHA256SUMS.sig
+            .release-download/channels/SHA256SUMS.archives.sig
+            .release-download/channels/PKGBUILD
+            .release-download/channels/kunai.rb
+            .release-download/channels/kunai.json
+            .release-download/channels/install.sh
+            .release-download/channels/install.ps1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -1294,7 +1311,7 @@ jobs:
         timeout-minutes: 10
         run: |
           .github/scripts/smoke-published-installer.sh \
-            "${{ needs.confirmation.outputs.version }}"
+            "${{ needs.confirmation.outputs.version }}" .release-download/channels/install.sh
 
   # ---------------------------------------------------------------------------
   # Post-release: mark .release metadata published after public verification.
@@ -1324,12 +1341,26 @@ jobs:
           turbo-cache-prefix: release-metadata
           skip-turbo-cache: "true"
 
+      - name: Stage verified public package channels for review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.publish.outputs.version }}
+        run: |
+          set -euo pipefail
+          for file in SHA256SUMS SHA256SUMS.archives SHA256SUMS.sig SHA256SUMS.archives.sig kunai.rb kunai.json PKGBUILD install.sh install.ps1; do
+            gh release download "v$VERSION" --pattern "$file" --dir .published
+          done
+          bun scripts/packaging/release-supplements.ts verify "$VERSION" .published .published
+          cp .published/kunai.rb Formula/kunai.rb
+          cp .published/kunai.json bucket/kunai.json
+
       - name: Mark release metadata published
         run: |
           set -euo pipefail
           VERSION="${{ needs.publish.outputs.version }}"
           PUBLISHED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           bun run scripts/set-release-status.ts "${VERSION}" published "${PUBLISHED_AT}"
+          bun run apps/docs/scripts/sync-repo-content.ts
 
       - name: Release artifact unit tests
         run: |

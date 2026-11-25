@@ -18,7 +18,7 @@ import type { ResolveErrorCode } from "@kunai/types";
  *   video may well play, so resolve continues without metadata rather than
  *   destroying a working path over a flaky probe.
  *
- * Matching is on yt-dlp's stderr, which `fetchYtDlpVideoInfo` throws verbatim.
+ * Matching is on yt-dlp's stderr. Only the fixed messages below leave this classifier.
  */
 export type YoutubeMetadataFailure = {
   readonly code: ResolveErrorCode;
@@ -142,17 +142,10 @@ export function classifyYoutubeMetadataFailure(error: unknown): YoutubeMetadataF
     }
   }
 
-  // Unknown failures stay transient on purpose: guessing "terminal" would turn a
-  // yt-dlp quirk into an unplayable video.
+  // Unknown failures stay transient. Stderr can include signed media URLs.
   return {
     code: "parse-failed",
-    message:
-      text.length > 0 ? `yt-dlp metadata failed: ${firstLine(text)}` : "yt-dlp metadata failed",
+    message: "yt-dlp metadata failed",
     terminal: false,
   };
-}
-
-function firstLine(text: string): string {
-  const line = text.split("\n").find((entry) => entry.trim().length > 0) ?? text;
-  return line.replace(/^error:\s*/i, "").trim();
 }

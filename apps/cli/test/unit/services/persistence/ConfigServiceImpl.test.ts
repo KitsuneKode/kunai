@@ -519,6 +519,54 @@ describe("ConfigServiceImpl", () => {
       }
     });
 
+    test("upgrades the revision-6 anime order and preserves a customized order", async () => {
+      const previousDefault = ["kickassanime", "animegg", "allanime", "miruro"];
+      const inherited = new MemoryConfigStore({
+        animeProvider: "hianime",
+        animeProviderPriority: previousDefault,
+        providerDefaultsRevision: 6,
+      });
+      const service = await ConfigServiceImpl.load(inherited);
+      expect(service.animeProviderPriority).toEqual([
+        "animegg",
+        "kickassanime",
+        "miruro",
+        "allanime",
+      ]);
+      expect((await inherited.load()).providerDefaultsRevision).toBe(7);
+
+      const customOrder = ["miruro", "kickassanime", "animegg", "allanime"];
+      const custom = new MemoryConfigStore({
+        animeProvider: "hianime",
+        animeProviderPriority: customOrder,
+        providerDefaultsRevision: 6,
+      });
+      expect((await ConfigServiceImpl.load(custom)).animeProviderPriority).toEqual(customOrder);
+
+      await service.update({ animeProviderPriority: previousDefault });
+      const saving = service.save();
+      await service.flushPending();
+      await saving;
+      expect((await ConfigServiceImpl.load(inherited)).animeProviderPriority).toEqual(
+        previousDefault,
+      );
+    });
+
+    test("upgrading the anime defaults preserves a revision-6 Videasy selection", async () => {
+      const store = new MemoryConfigStore({
+        provider: "videasy",
+        providerPriority: ["rivestream", "vidlink"],
+        animeProvider: "hianime",
+        animeProviderPriority: ["kickassanime", "animegg", "allanime", "miruro"],
+        providerDefaultsRevision: 6,
+      });
+      const service = await ConfigServiceImpl.load(store);
+      expect(service.provider).toBe("videasy");
+      expect(service.providerPriority).toEqual(["rivestream", "vidlink"]);
+      expect(service.animeProviderPriority).toEqual(DEFAULT_CONFIG.animeProviderPriority);
+      expect((await store.load()).provider).toBe("videasy");
+    });
+
     test("maps a stamped AniDB re-pick at revision 1 to the live default", async () => {
       const store = new MemoryConfigStore({
         animeProvider: "anidb",
@@ -975,13 +1023,10 @@ describe("ConfigServiceImpl untrusted-shape hardening", () => {
       });
       const service = await ConfigServiceImpl.load(store);
 
-      expect(service.animeProviderPriority).toEqual([
-        "kickassanime",
-        "animegg",
-        "allanime",
-        "miruro",
-      ]);
-      expect((await store.load()).providerDefaultsRevision).toBe(6);
+      expect(service.animeProviderPriority).toEqual(DEFAULT_CONFIG.animeProviderPriority);
+      expect((await store.load()).providerDefaultsRevision).toBe(
+        DEFAULT_CONFIG.providerDefaultsRevision,
+      );
     });
 
     test("normalizes anidb away on update as well as load", async () => {

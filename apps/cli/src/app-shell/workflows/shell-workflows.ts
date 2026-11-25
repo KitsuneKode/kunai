@@ -1798,7 +1798,7 @@ export async function enqueueCurrentPlaybackDownload({
       title: state.currentTitle,
       episode: state.currentEpisode,
       ...(state.stream ? { stream: state.stream } : {}),
-      providerId: state.provider,
+      providerId: state.stream?.providerResolveResult?.providerId ?? state.provider,
       mode: state.mode,
       posterUrl: state.currentTitle.posterUrl,
       audioPreference:

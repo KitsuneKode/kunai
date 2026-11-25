@@ -5,6 +5,8 @@
 // =============================================================================
 
 export type { KitsuneConfig } from "./ConfigService";
+import type { StremioAddonsConsent } from "@/domain/provider/stremio-addons";
+
 import type { KitsuneConfig } from "./ConfigService";
 
 export { DEFAULT_CONFIG } from "@kunai/config";
@@ -18,4 +20,10 @@ export interface ConfigStore {
    * Optional — stores without a real file backend run `fn` directly.
    */
   withLock?<T>(fn: () => Promise<T>): Promise<T>;
+  /**
+   * Synchronous peek at the two Stremio addon consent keys in the live file.
+   * Optional — stores without a synchronous read leave it unimplemented and
+   * the service falls back to its in-memory value.
+   */
+  readStremioAddonsConsent?(): StremioAddonsConsent;
 }

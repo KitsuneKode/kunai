@@ -4,6 +4,7 @@ import React from "react";
 
 import { companionFallbackGlyph, companionMode } from "../companion-policy";
 import { companionLineFor } from "../kanna-voice";
+import { plainModeEnabled, plainStatePrefix } from "../plain-mode";
 import { palette, semanticToneColor } from "../shell-theme";
 import { ActionList } from "./ActionList";
 import {
@@ -36,6 +37,7 @@ export function StateBlock({
   readonly model: StateBlockModel;
   readonly width?: number;
 }) {
+  const plain = plainModeEnabled();
   const tone = getStateBlockTone(model.kind);
   const color = colorForTone(tone);
   // Fixed when this surface mounts, so re-rendering the pane (a keystroke, a
@@ -46,7 +48,8 @@ export function StateBlock({
   return (
     <Box flexDirection="column">
       <Text color={color} bold>
-        {getStateBlockGlyph(model.kind)} {sanitizeTerminalText(model.title)}
+        {plain ? plainStatePrefix(model.kind) : getStateBlockGlyph(model.kind)}{" "}
+        {sanitizeTerminalText(model.title)}
       </Text>
       {model.detail ? (
         <Text color={palette.muted}>{sanitizeTerminalText(model.detail)}</Text>

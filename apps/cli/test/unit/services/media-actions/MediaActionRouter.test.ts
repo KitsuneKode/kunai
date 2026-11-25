@@ -215,3 +215,29 @@ test("unknown action ids fail loudly instead of resolving as a silent no-op", as
     }),
   ).rejects.toThrow("media action is unsupported: not-a-real-action");
 });
+
+test("a download that admitted no job is not reported as handled", async () => {
+  // The inbox marks a notice read and says "Download queued" only on handled;
+  // a refused enqueue (missing yt-dlp, a failed write) must carry its reason.
+  const refused = new MediaActionRouter({
+    downloads: { queueDownload: async () => ({ queuedCount: 0, reason: "yt-dlp is missing" }) },
+  });
+  expect(await refused.run({ actionId: "download", item, source: "notification" })).toEqual({
+    status: "unsupported",
+    actionId: "download",
+    reason: "yt-dlp is missing",
+  });
+
+  const admitted = new MediaActionRouter({
+    downloads: { queueDownload: async () => ({ queuedCount: 1 }) },
+  });
+  expect((await admitted.run({ actionId: "download", item, source: "notification" })).status).toBe(
+    "handled",
+  );
+
+  // An executor that reports for itself (the interactive download screen) stays handled.
+  const interactive = new MediaActionRouter({ downloads: { queueDownload: async () => {} } });
+  expect(
+    (await interactive.run({ actionId: "download", item, source: "notification" })).status,
+  ).toBe("handled");
+});

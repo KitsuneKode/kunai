@@ -18,19 +18,19 @@ Live registry synced from the CLI when docs are generated. Click a provider name
 
 Mode defaults at a glance:
 
-- **Movies / series:** VidLink first, then Rivestream, then Videasy (from `providerPriority`). Videasy's canonical metadata host has stopped resolving at DNS, so it is a fallback rather than the lead; its stream resolve path still answers
-- **Anime:** HiAnime first, then Miruro, then KickAssAnime, then AnimeGG, then AniDB, then AllManga (from `animeProviderPriority`). Every registered provider is tried automatically; the list sets the order, not who is included
-- **YouTube:** dedicated video mode via Invidious search + yt-dlp playback
+- **Movies / series** start with VidLink, then try Rivestream, VidRock, Movy, and Videasy.
+- **Anime** starts with HiAnime, then tries AnimeGG, KickAssAnime, Miruro, and AllManga. AniDB has been retired.
+- **YouTube** has a dedicated video mode with Invidious search and yt-dlp playback.
 
 Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only, not registered for production resolve.
 
 <ProviderDocSection id="videasy" title="Videasy">
 
-**Adapter role:** registered movies/series adapter, last in the automatic lane. Its metadata host `api.videasy.to` has stopped resolving at DNS (title enrichment degrades), while the wings stream endpoints it resolves through still answer, which is why it stays a fallback rather than the lead or removed.
+**Adapter role:** registered movies/series adapter, last in the automatic lane. The operator announced a shutdown, and the latest sweep could not resolve a stream. A separate catalog mirror can still supply title metadata.
 
 **Config id:** `videasy` (legacy alias `vidking` still accepted).
 
-**Caveats:** catalog and source availability can change; use `/recover` then `/fallback` (or `⇧F` during playback) when a stream dies.
+**Caveats:** choose another provider if Videasy is unavailable.
 
 </ProviderDocSection>
 
@@ -38,7 +38,7 @@ Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only
 
 **Adapter role:** registered default for movies and series; also carries the best subtitle inventory of the lane.
 
-**Config id:** `vidlink`. The automatic order is VidLink, Rivestream, then Videasy.
+**Config id:** `vidlink`.
 
 **Caveats:** subtitle language coverage is not guaranteed for every title.
 
@@ -54,44 +54,38 @@ Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only
 
 </ProviderDocSection>
 
+<ProviderDocSection id="vidrock" title="VidRock">
+
+**Adapter role:** third in the movies/series order. Offers multiple audio and quality options where the source provides them.
+
+**Config id:** `vidrock`.
+
+**Caveats:** the stream API has refused some networks with HTTP 403. Availability can vary by network and title.
+
+</ProviderDocSection>
+
 <ProviderDocSection id="kickassanime" title="KickAssAnime">
 
-**Adapter role:** the anime backup, third in the default order. It has its own catalogue, site and
-video servers, so a HiAnime or Miruro outage does not reach it. Unlike the others it can pick up
-a show Kunai found anywhere, by matching the name and year against its own catalogue.
+**Adapter role:** third in the anime order. It matches titles against its own catalogue by name and year.
 
 **Config id:** `kickassanime`.
 
-```json
-{
-  "animeProvider": "hianime",
-  "animeProviderPriority": ["miruro", "kickassanime", "animegg", "anidb", "allanime"]
-}
-```
-
-**Caveats:** anime mode must be active. This is the one anime source with real subtitle tracks
-rather than subtitles burned into the picture, so `/tracks` can switch languages during playback.
-Dubs usually live inside the same video file as extra audio tracks; when a show has no English
-audio Kunai plays the subbed version and says so in the playback trace. If it cannot tell which
-show you mean, it steps aside rather than playing the wrong one.
+**Caveats:** the provider denied access from the sweep runner. If it accepts your network, you can
+select it in anime mode. Use `/tracks` to switch available subtitle languages. When an episode
+has no English audio, Kunai reports the fallback to subbed playback in the trace.
 
 </ProviderDocSection>
 
 <ProviderDocSection id="animegg" title="AnimeGG">
 
-**Adapter role:** the fourth anime source, behind HiAnime, Miruro and KickAssAnime. AnimeGG has its own
-catalogue, its own site and its own video servers, so it keeps working when the earlier providers do
-not, which is the whole reason it is there. It picks up a show Kunai found anywhere by matching its
-name against AnimeGG's own catalogue. Sub and dub both come from AnimeGG's own episode tabs.
+**Adapter role:** first anime fallback after HiAnime. AnimeGG matches titles against its own
+catalogue and serves sub and dub from separate episode tabs.
 
 **Config id:** `animegg`.
 
-```json
-{
-  "animeProvider": "hianime",
-  "animeProviderPriority": ["miruro", "kickassanime", "animegg", "anidb", "allanime"]
-}
-```
+**Sweep result:** on November 23, 2026, AnimeGG was the only anime fallback to return streams.
+It took 21.9 seconds, exceeding the default 12-second attempt budget. Its independent
+catalogue and that result are why it stays first among the fallbacks.
 
 **Caveats:** anime mode must be active. Subtitles are burned into the picture on subbed episodes, so
 there is no separate subtitle track to switch. Not every show has a dub, and Kunai says so in the
@@ -102,61 +96,36 @@ when more than one of its shows could be the one you picked, it steps aside rath
 
 <ProviderDocSection id="movy" title="Movy">
 
-**Adapter role:** registered movies/series adapter backed by the movy.sx source aggregator. Each upstream lane (`denver`, `atlanta`, and so on) is a separate source, so `/source` switches lanes directly.
+**Adapter role:** fourth in the movies/series order. Each upstream lane is a separate source that
+you can select with `/source`.
 
 **Config id:** `movy`.
 
-**Caveats:** lanes are independent upstream scrapers; coverage varies per title and individual lanes may 500 while others still resolve. A `seed` exchange precedes each resolve; a stale seed is retried once automatically.
-
-</ProviderDocSection>
-
-<ProviderDocSection id="anidb" title="AniDB">
-
-**Adapter role:** fifth in the default anime order, behind HiAnime, Miruro, KickAssAnime and AnimeGG.
-Selected directly, Kunai searches AniDB, routes each season to its own AniDB title, and resolves
-streams from that title. It was the lane default until anidb.app started answering 503 at the
-origin; ani-cli moved off it the same way.
-
-**Config id:** `anidb` for `animeProvider` / `animeProviderPriority`. To use it as your lead anyway:
-
-```json
-{
-  "animeProvider": "anidb",
-  "animeProviderPriority": ["hianime", "miruro", "kickassanime", "animegg", "allanime"]
-}
-```
-
-**Caveats:** anime mode must be active (`-a` or anime mode in the shell). Some networks need `curl`
-installed for AniDB requests to get past Cloudflare. If a season cannot be matched unambiguously,
-Kunai reports that rather than playing a different season. AniDB does not advertise hardsub tracks.
+**Caveats:** the website can load while the stream API denies access. The sweep observed HTTP 403
+before any source could be fetched.
 
 </ProviderDocSection>
 
 <ProviderDocSection id="allanime" title="AllManga">
 
-**Adapter role:** last in the default anime order, behind HiAnime, Miruro, KickAssAnime, AnimeGG and AniDB. Display name is AllManga; the runtime id is `allanime`. It carries the ani-cli parity path, which is why it stays registered even when its stream API is gated.
+**Adapter role:** last in the default anime order.
 
-**Config id:** `allanime`. The display name is not the config id.
+**Config id:** `allanime`.
 
-**Caveats:** anime mode must be active (`-a` or anime mode in the shell). Some networks hit a captcha/Cloudflare gate on stream sources while the episode catalog still loads, so the episode list can look healthy and still not play. Its decryption keys rotate often; a key change shows up as resolve failures until Kunai is updated.
+**Caveats:** the episode list may load while playback fails. The upstream retired the build Kunai
+uses to authorize stream requests. Choose another anime provider if AllManga reports that its
+stream authorization is out of date.
 
 </ProviderDocSection>
 
 <ProviderDocSection id="hianime" title="HiAnime">
 
 **Adapter role:** the default anime provider, first in the order. HiAnime has its own catalogue and
-search, so anime search keeps working when AniList or AniDB are down. It resolves the ZokoAnime
+search. It resolves the ZokoAnime
 server for each episode, the same one ani-cli uses, and hands the HLS ladder and subtitle tracks
 to the player.
 
 **Config id:** `hianime`.
-
-```json
-{
-  "animeProvider": "hianime",
-  "animeProviderPriority": ["miruro", "kickassanime", "animegg", "anidb", "allanime"]
-}
-```
 
 **Caveats:** anime mode must be active. Sub and dub are separate episode fetches; a show without
 English audio plays subbed and says so in the playback trace. Each season is its own entry in
@@ -168,26 +137,14 @@ networks where Kunai's own HTTP client meets Cloudflare, it falls back to `curl`
 
 <ProviderDocSection id="miruro" title="Miruro">
 
-**Adapter role:** second in the default anime order, behind HiAnime. Miruro fronts roughly a dozen
-streaming backends behind one AniList-keyed service, so when one of them goes down Kunai moves to
-the next server instead of failing the episode. Anime search goes through Miruro too, so it keeps
-working when AniList is down; if Miruro's search finds nothing, Kunai asks AniList.
+**Adapter role:** fourth in the anime order. Miruro can try multiple streaming backends for an
+AniList title and also provides its own anime search.
 
 **Config id:** `miruro`.
 
-```json
-{
-  "animeProvider": "miruro",
-  "animeProviderPriority": ["hianime", "kickassanime", "animegg", "anidb", "allanime"]
-}
-```
-
-**Caveats:** anime mode must be active. Kunai tries its own HTTP client first, but Cloudflare
-refuses it at Miruro's API, so in practice `curl` is what gets through; a provider relay answers
-on Kunai's behalf if you run one. Some servers burn subtitles into the video
-rather than shipping a separate track, and one opens on a short site bumper before the episode.
-If `miruro.bz` itself is unreachable, every one of its backends is too, and Kunai falls back to
-the providers behind it.
+**Caveats:** Miruro's API refused the sweep runner on multiple mirrors. If the provider accepts
+your network or your existing metadata relay, Miruro is still selectable. Subtitle availability
+depends on the server and some subtitles are burned into the video.
 
 </ProviderDocSection>
 
@@ -297,9 +254,9 @@ Configure order in `/settings` or `~/.config/kunai/config.json`:
 ```json
 {
   "provider": "vidlink",
-  "providerPriority": ["rivestream", "vidrock", "videasy"],
+  "providerPriority": ["rivestream", "vidrock", "movy", "videasy"],
   "animeProvider": "hianime",
-  "animeProviderPriority": ["miruro", "kickassanime", "animegg", "anidb", "allanime"]
+  "animeProviderPriority": ["animegg", "kickassanime", "miruro", "allanime"]
 }
 ```
 
@@ -307,10 +264,9 @@ The anime client shows as **AllManga** in the UI; the config id remains `allanim
 registered anime provider is tried automatically when the selected one fails. The priority list
 sets the order, it does not decide who is included.
 
-If you saved settings while AniDB was the default, Kunai moves that inherited default to the order
-above once, on the first launch after updating. It only does this when your anime settings are
-still exactly the old default; if you had changed them, they are left alone, and if you pick AniDB
-again afterwards, it stays picked.
+On the first launch after updating, Kunai upgrades a saved anime order if the provider and
+priority list exactly match the defaults for that configuration's revision. Custom orders are
+preserved. A saved AniDB selection maps to HiAnime, and retired AniDB entries are removed.
 
 Rules:
 
@@ -387,7 +343,9 @@ Installed binaries: leave `providerRelay.baseUrl` empty (the default) for direct
 
 ### Deploying your own relay
 
-A relay only helps when it reaches the provider from a network that is not blocked. A captcha gate (`NEED_CAPTCHA`) or a regional block is tied to your IP, so the relay has to run somewhere else: a free serverless host, or a machine in an ungated region. Both deploy from a source checkout, since the relay imports the `@kunai/relay` and `@kunai/providers` workspace packages.
+A relay requires a network from which the provider accepts metadata requests. If the provider
+asks for a CAPTCHA or denies access, choose another provider. Both deployment options use a
+source checkout because the relay imports the `@kunai/relay` and `@kunai/providers` workspace packages.
 
 **On Vercel.** Full steps and the reason handler bundling is required are in `apps/relay-server/README.md`:
 
@@ -422,6 +380,47 @@ Environment overrides: `KUNAI_RELAY_BASE_URL`, `KUNAI_RELAY_TOKEN`. Leave the to
 
 Source-checkout smoke and verification steps: [Debugging workflow](/docs/developer/debugging-workflow) and `apps/relay-server/README.md`.
 
+## Stremio addons
+
+Stremio addons are experimental and off by default. Kunai ships none. Enable them in Settings → Sources → Experimental: Stremio addons or run kunai addons enable.
+
+> Stremio addons are third-party servers you choose. Kunai checks each addon stream, but mpv opens its own connection. A hostile addon server could answer mpv differently and reach a device on your network. Older FFmpeg versions may follow redirects. Downloads and Android handoff do not use addons.
+
+Only install addons you trust.
+
+```sh
+kunai addons enable
+kunai addons add https://example-addon.com/manifest.json
+kunai addons list
+kunai addons check
+kunai addons disable
+kunai addons remove 1
+```
+
+`kunai addons enable` asks you to confirm when standard input, output, and error are attached to a terminal. An empty answer or closed input declines. Kunai shows the warning the first time and remembers your acknowledgement across disable and re-enable. In a script or CI job, run `kunai addons enable --accept-risk` to accept without a prompt. An interactive `add` can ask you to enable addons in the same step. A non-interactive `add` while addons are off refuses before contacting the addon: run `kunai addons enable` first.
+
+If the URL carries an account token, prefer `--stdin` so it stays out of your
+shell's process list and history. Kunai reads one line of standard input;
+paste it there, or redirect a file:
+
+```sh
+kunai addons add --stdin < addon-url.txt
+```
+
+You can also add and remove addons in **Settings → Sources → Stremio addons**, and turn the whole feature on or off under **Experimental: Stremio addons** there.
+
+- **On and off.** `kunai addons disable` stops addon use at the next resolve, including in a session that is already running, and keeps your installed list and preferences. `kunai addons enable` turns them back on; addons that were already loaded can answer again at the next resolve. A Kunai session that started while addons were off never loaded them, so restart that session to use addons, and restart any session to pick up newly installed addons. `kunai addons list` and `kunai addons check` still work while off: they report the disabled state, and `check` does not contact the addon.
+- **What to paste.** The addon's `https://…/manifest.json` address. A `stremio://…/manifest.json` link is the same address and works too. If the addon has a configure page, finish that first and paste the URL it gives you.
+- **Where it sits.** A new addon goes after your other movie and series providers, so it is asked only when the ones before it have nothing. Move it up in **Settings → Sources → Provider priority**, or pause it with its provider switch.
+- **When it applies.** Adding takes effect the next time Kunai starts. Removing inside the app applies on the next title; `kunai addons remove` asks already-running sessions to restart first. Remove deletes the entry; disable keeps it and stops addon use instead.
+- **What plays.** Only direct video files: MP4-family and WebM/Matroska. Kunai's probe refuses playlists (HLS, DASH) and redirects, and Kunai re-checks the link with a small ranged request immediately before handing it to `mpv`; that check confirms the file answers, not that it plays in mpv end to end. Kunai has no torrent client, so torrent-only results are skipped, and Kunai tells you when that is all an addon offered. Subtitles an addon offers get the same treatment: they are downloaded through a guarded, size-limited request and must prove they are really WebVTT, SRT, or ASS text (anything else is skipped), and mpv only ever sees the local copy, never the remote URL.
+- **Desktop mpv only.** Addon streams do not support Android player handoff or downloads: no addon candidate participates in a download, the cached-stream and enqueue guards stay in place, and a playback fallback that lands on an addon is refused there too. To download the title, choose a built-in provider.
+- **Which titles.** Movies and series that have an IMDb id. Addons are not used in anime mode.
+
+**Treat the URL like a password.** A configured addon keeps your settings, and sometimes an account token, in its URL. Kunai shows a configured addon only as `addon @ host`, never the full URL or its reported name and version, and keeps it out of logs and diagnostics. It is stored in your `config.json`.
+
+**An addon is a third-party server you chose.** Kunai sends it the IMDb id of what you are about to watch. It accepts only JSON from it, runs nothing it sends, and checks that a link answers before handing it to `mpv`; that check confirms the link responds, not that it plays in mpv end to end. mpv opens a separate connection and looks up the host again, so this is not a network sandbox. mpv builds linked against older FFmpeg may still follow an HTTP redirect during playback, even though Kunai's probe refuses it.
+
 ## When providers fail (expected behavior)
 
 Provider catalogs drift. Failure is operational, not exceptional.
@@ -439,6 +438,7 @@ If **all** providers fail, Kunai explains why in diagnostics and the shell foote
 - No Kunai-hosted proxy or stream relay; the optional provider geo relay is user-owned and metadata-only by default
 - No guarantee of subtitle language, quality tier, or dub availability
 - No silent provider switching without user action (except configured automatic fallback within policy)
+- No bundled Stremio addons and no torrent playback; an addon you add yourself can only supply direct video links
 
 See [Supported and Unsupported](/docs/users/supported-and-unsupported).
 
@@ -450,3 +450,8 @@ Before playback starts:
 - `/source` or `/tracks` during playback when inventory supports switching without full re-resolve.
 
 After explicit pick, Kunai stores per-title preference for future resume.
+
+That preference is where the next resolve starts, not a lock. If the picked provider fails for an
+episode, **Settings → Recovery mode** set to **Balanced recovery** or **Fast fallback** still hands
+you a working stream from another provider. Only **Ask before switching** (or `/recompute`) keeps
+the request to exactly the provider you picked.

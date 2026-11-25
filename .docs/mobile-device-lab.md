@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-08"
+lastReviewed: "2026-11-25"
 ---
 
 # Mobile device lab
@@ -195,7 +195,10 @@ Run these cases with the same checksummed artifact:
 
 The artifact exits `0` for help, version, cancellation, and an accepted handoff;
 `2` for invalid commands or URLs; and `1` for state, HTTP, or handoff failure.
-An accepted handoff still requires visible-playback observation.
+Once `lastResult: "handoff-accepted"` is written the run is final: a Ctrl+C or a
+terminal that fails to render the confirmation afterwards still exits `0` and
+leaves `handoff-accepted` in place. An accepted handoff still requires
+visible-playback observation.
 
 ### Android missing-current-state recovery
 

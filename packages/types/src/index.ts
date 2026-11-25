@@ -68,6 +68,9 @@ export type SubtitleDelivery = "hardcoded" | "embedded" | "external";
 
 export type StartupPriority = "fast" | "balanced" | "quality-first";
 
+/** The startup priority a fresh install uses; the provider sweep qualifies resolves against it. */
+export const DEFAULT_STARTUP_PRIORITY: StartupPriority = "balanced";
+
 export type VideoDynamicRange = "sdr" | "hdr10" | "hlg" | "dolby-vision";
 
 export type ProviderSelectionReason =

@@ -37,6 +37,7 @@ export type CliArgs = {
   mpv: MpvRuntimeOptions;
   player: PlayerChoice;
   minimal: boolean;
+  plain: boolean;
   quick: boolean;
   jump?: number;
   episode?: number;
@@ -94,6 +95,7 @@ LAUNCH
 DISPLAY
   -m, --minimal              Minimal chrome
   -z, --zen                  Zen mode (bare, ani-cli-style)
+      --plain                Plain / screen-reader mode (no animation, no box art, text state)
   -q, --quick                Quick layout
       --jump <n>             Auto-pick the n-th search result (1-based, with -S)
 
@@ -147,6 +149,14 @@ MAINTENANCE
   kunai providers verify       Check the cached manifest and AllManga crypto freshness (--json)
   kunai providers rollback     Restore the previous verified hotfix manifest backup
   kunai providers reset        Remove cached hotfix manifest and return to bundled defaults
+  kunai addons list            List the Stremio addons you added (--json)
+  kunai addons enable          Turn the experimental addon feature on
+                               (--accept-risk acknowledges the warning non-interactively)
+  kunai addons disable         Turn it off; installed addons stay listed
+  kunai addons add <url>       Add a Stremio addon by its https manifest.json URL
+                               (--stdin reads the URL from stdin, keeping it out of argv)
+  kunai addons remove <n>      Remove an addon by its number in the list
+  kunai addons check [n]       Ask each addon for its manifest and report problems (--json)
   kunai uninstall              Remove kunai (add --purge to also delete user data)
   kunai diagnostics recent     Print recent redacted diagnostics from the local cache DB
                                (--format pretty|jsonl|markdown, --limit N, --no-color)
@@ -169,10 +179,14 @@ export const CLI_SUBCOMMANDS: readonly string[] = [
   "doctor",
   "capabilities",
   "providers",
+  "addons",
   "uninstall",
   "diagnostics",
   "completion",
 ];
+
+/** `kunai addons <action>`. The command and the shell completions share this list. */
+export const ADDONS_SUBCOMMANDS = ["list", "add", "remove", "check", "enable", "disable"] as const;
 
 // Every recognized flag token. Used so a value-consuming flag (e.g. `-S`) never
 // swallows a following *flag* as its value, and so unknown options are rejected
@@ -193,6 +207,7 @@ export const KNOWN_FLAGS: ReadonlySet<string> = new Set([
   "--minimal",
   "-z",
   "--zen",
+  "--plain",
   "-q",
   "--quick",
   "--jump",
@@ -243,6 +258,7 @@ export const KNOWN_FLAGS: ReadonlySet<string> = new Set([
   "--force",
   "--list",
   "--to",
+  "--stdin",
 ]);
 
 export const VALUE_FLAGS: ReadonlySet<string> = new Set([
@@ -279,6 +295,7 @@ type CommanderCliOptions = {
   readonly youtube?: boolean;
   readonly minimal?: boolean;
   readonly zen?: boolean;
+  readonly plain?: boolean;
   readonly quick?: boolean;
   readonly jump?: string;
   readonly episode?: string;
@@ -337,6 +354,7 @@ function createCliCommand(): Command {
     .option("-y, --youtube")
     .option("-m, --minimal")
     .option("-z, --zen")
+    .option("--plain")
     .option("-q, --quick")
     .option("--jump <n>")
     .option("-e, --episode <n>")
@@ -496,6 +514,7 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
     mpv: {},
     player: "auto",
     minimal: false,
+    plain: false,
     quick: false,
     setup: false,
     offline: false,
@@ -542,6 +561,7 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
   }
   args.minimal = Boolean(options.minimal);
   args.zen = Boolean(options.zen);
+  args.plain = Boolean(options.plain);
   args.quick = Boolean(options.quick);
   if (args.zen) {
     // Zen is a *layout*: bare chrome, ani-cli-style. It used to also set

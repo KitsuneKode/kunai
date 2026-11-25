@@ -128,3 +128,11 @@ apps/docs/CLAUDE.md
 
 # husky regenerates its hook shims on `prepare`
 .husky/_/
+
+# Branded installers rendered with the published checksum pin at docs build time.
+/apps/docs/public/install.sh
+/apps/docs/public/install.ps1
+
+# Bun transpiler cache. An empty XDG_CACHE_HOME makes Bun write it relative to
+# the working directory as bun/@t@/*.pile; it is machine-local and never source.
+@t@/

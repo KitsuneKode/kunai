@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 import type { PlaybackTimingMetadata, StreamInfo } from "@/domain/types";
 import type { MpvIpcCommandResult, MpvIpcSession } from "@/infra/player/mpv-ipc";
@@ -9,9 +9,13 @@ import { LOCAL_HLS_DEMUXER_LAVF_OPTIONS } from "@/infra/player/mpv-stream-http-h
 import type { PersistentMpvSessionRuntime } from "@/infra/player/persistent-mpv-runtime";
 import { PersistentMpvSession } from "@/infra/player/PersistentMpvSession";
 import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
+import { fetchRemoteSubtitle } from "@/services/playback/remote-subtitle-download";
 
 import { applyStorageRootEnv } from "../../../helpers/storage-env";
 import { waitUntil } from "../../../support/wait-until";
+
+const TEST_SUBTITLE = "WEBVTT\n\n00:01.000 --> 00:02.000\nHello\n";
+const ownedSubtitlePath = expect.stringMatching(/^(?:\/|[A-Za-z]:[\\/]).+\.vtt$/);
 
 type CapturedCallbacks = Parameters<PersistentMpvSessionRuntime["openIpcSession"]>[0];
 
@@ -58,11 +62,13 @@ function createFakeProcess() {
 function createHarness(
   harnessOptions: {
     readonly beforeSend?: (command: readonly unknown[]) => Promise<void> | void;
+    readonly downloadSubtitle?: PersistentMpvSessionRuntime["downloadSubtitle"];
   } = {},
 ) {
   let callbacks!: CapturedCallbacks;
   let resolveExit!: (code: number) => void;
   const commands: unknown[][] = [];
+  const argv: string[] = [];
   const proc = {
     exited: new Promise<number>((resolve) => {
       resolveExit = resolve;
@@ -93,7 +99,13 @@ function createHarness(
   };
   const runtime: PersistentMpvSessionRuntime = {
     which: () => "/usr/bin/mpv",
-    spawn: () => proc,
+    spawn: (command) => {
+      argv.push(...command);
+      return proc;
+    },
+    downloadSubtitle:
+      harnessOptions.downloadSubtitle ??
+      (async () => ({ bytes: new TextEncoder().encode(TEST_SUBTITLE), extension: "vtt" })),
     waitForIpcEndpoint: async () => true,
     async openIpcSession(options) {
       callbacks = options;
@@ -102,6 +114,7 @@ function createHarness(
   };
   return {
     runtime,
+    argv,
     commands,
     callbacks: () => callbacks,
     endProcess(code = 0) {
@@ -367,13 +380,7 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
       harness.callbacks().onFileLoaded?.({ observedAt: 5 });
       await completed.promise;
       expect(harness.commands).toContainEqual(["seek", 100, "absolute"]);
-      expect(harness.commands).toContainEqual([
-        "sub-add",
-        "https://subs.example/episode.vtt",
-        "select",
-        "",
-        "",
-      ]);
+      expect(harness.commands).toContainEqual(["sub-add", ownedSubtitlePath, "select", "", ""]);
       const playback = session.waitForCurrentPlayback();
       harness.callbacks().onEndFile({ reason: "quit", observedAt: 6 });
       expect(await playback).toMatchObject({ endReason: "quit" });
@@ -519,9 +526,16 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
     harness.callbacks().onEndFile({ reason: "eof", observedAt: 2 });
     await firstPlayback;
 
+    const subtitleAttached = Promise.withResolvers<void>();
     const nextPlayback = session.play(
       createStream({ url: "https://video.example/episode-2.m3u8" }),
-      { displayTitle: "Episode 2", primarySubtitle: "https://subs.example/episode-2.vtt" },
+      {
+        displayTitle: "Episode 2",
+        primarySubtitle: "https://subs.example/episode-2.vtt",
+        onPlaybackEvent(event) {
+          if (event.type === "subtitle-attached") subtitleAttached.resolve();
+        },
+      },
     );
     await waitFor(() =>
       harness.commands.some(
@@ -537,20 +551,14 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
     harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 444, observedAt: 4 });
     await flushAsyncWork();
     harness.callbacks().onFileLoaded?.({ observedAt: 5 });
-    await flushAsyncWork();
+    await subtitleAttached.promise;
     harness.callbacks().onPropertyUpdate({ name: "duration", value: 800, observedAt: 6 });
     harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 20, observedAt: 7 });
     harness.callbacks().onEndFile({ reason: "eof", observedAt: 8 });
     const result = await nextPlayback;
 
     expect(harness.commands).toContainEqual(["sub-remove", 9]);
-    expect(harness.commands).toContainEqual([
-      "sub-add",
-      "https://subs.example/episode-2.vtt",
-      "select",
-      "",
-      "",
-    ]);
+    expect(harness.commands).toContainEqual(["sub-add", ownedSubtitlePath, "select", "", ""]);
     expect(result.watchedSeconds).toBe(20);
   });
 
@@ -945,13 +953,7 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
         "demuxer-lavf-o-clr": "",
       },
     ]);
-    expect(harness.commands).toContainEqual([
-      "sub-add",
-      "https://subs.example/episode-1.vtt",
-      "select",
-      "",
-      "",
-    ]);
+    expect(harness.commands).toContainEqual(["sub-add", ownedSubtitlePath, "select", "", ""]);
     expect(events).toContainEqual(
       expect.objectContaining({ type: "mpv-in-process-reconnect", phase: "complete" }),
     );
@@ -1271,13 +1273,7 @@ test("persistent Off survives late subtitles and a new file carries its own lang
   // SAFETY: onControlReady supplies this declared control type before the fixture uses it.
   const active = control as import("@/infra/player/PlayerControlService").ActivePlayerControl;
   await active.attachSubtitles?.({ primarySubtitle: "https://subs.example/en.vtt" });
-  expect(harness.commands).toContainEqual([
-    "sub-add",
-    "https://subs.example/en.vtt",
-    "auto",
-    "",
-    "",
-  ]);
+  expect(harness.commands).toContainEqual(["sub-add", ownedSubtitlePath, "auto", "", ""]);
   expect(harness.commands).toContainEqual(["set_property", "sid", "no"]);
   harness.callbacks().onEndFile({ reason: "eof", observedAt: 2 });
   await flushAsyncWork();
@@ -1364,7 +1360,7 @@ describe("live subtitle facts", () => {
     await nativeControl?.attachSubtitles?.({ primarySubtitle: "https://subs.example/late.vtt" });
     expect(harness.commands.slice(start)).toContainEqual([
       "sub-add",
-      "https://subs.example/late.vtt",
+      ownedSubtitlePath,
       "auto",
       "",
       "",
@@ -1508,7 +1504,7 @@ test("a preferred late subtitle activates when the file initially has no subtitl
     await active?.attachSubtitles?.({ primarySubtitle: "https://subs.example/en.vtt" });
     expect(harness.commands.slice(start)).toContainEqual([
       "sub-add",
-      "https://subs.example/en.vtt",
+      ownedSubtitlePath,
       "select",
       "",
       "",
@@ -1587,6 +1583,9 @@ test.each(["es", "de"])(
     try {
       harness.callbacks().onFileLoaded?.({ observedAt: 1 });
       await flushAsyncWork();
+      const control = session.getControl();
+      await control.attachSubtitles?.({ subtitleTracks: tracks.slice(0, 3) });
+      const attachedPaths = harness.commands.filter((command) => command[0] === "sub-add");
       harness.callbacks().onPropertyUpdate({
         name: "track-list",
         observedAt: 2,
@@ -1594,13 +1593,12 @@ test.each(["es", "de"])(
           id: index + 1,
           type: "sub",
           external: true,
-          "external-filename": track.url,
+          "external-filename": attachedPaths[index]?.[1],
           lang: track.language,
         })),
       });
       const start = harness.commands.length;
       const eventStart = events.length;
-      const control = session.getControl();
       expect(
         await control.selectSubtitle?.({
           subtitleUrl: `https://subs.example/${language}.vtt`,
@@ -1612,7 +1610,7 @@ test.each(["es", "de"])(
         expect(additions).toEqual([]);
         expect(harness.commands.slice(start)).toContainEqual(["set_property", "sid", 2]);
       } else {
-        expect(additions.map((command) => command[1])).toEqual(["https://subs.example/de.vtt"]);
+        expect(additions.map((command) => command[1])).toEqual([ownedSubtitlePath]);
       }
       expect(
         events.slice(eventStart).filter((event) => event.type === "late-subtitles-attached"),
@@ -1632,8 +1630,422 @@ test.each(["es", "de"])(
   },
 );
 
+describe("PersistentMpvSession addon strict preflight", () => {
+  function addonStream(overrides: Partial<StreamInfo> = {}): StreamInfo {
+    return createStream({
+      url: "https://cdn.example/episode.mp4",
+      // SAFETY: the strict path only reads providerResolveResult.providerId.
+      providerResolveResult: {
+        providerId: "stremio-addon-example-deadbeef",
+      } as never,
+      ...overrides,
+    });
+  }
+
+  test("a replacement holds loadfile until the strict preflight resolves", async () => {
+    const harness = createHarness();
+    const gate = Promise.withResolvers<
+      | { readonly status: "reachable" }
+      | { readonly status: "unreachable"; readonly reason: string; readonly definitive: boolean }
+      | { readonly status: "timeout" }
+    >();
+    const preflightUrls: string[] = [];
+    harness.runtime.checkAddonPreflight = async (stream) => {
+      preflightUrls.push(stream.url);
+      return gate.promise;
+    };
+    const session = await PersistentMpvSession.create({
+      stream: createStream(),
+      options: { displayTitle: "Episode 1", primarySubtitle: null },
+      // SAFETY: fixture supplies only the reconnect flag it exercises.
+      kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    try {
+      harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+      harness.callbacks().onEndFile({ reason: "eof", observedAt: 2 });
+      await flushAsyncWork();
+      const playback = session.play(addonStream(), {
+        displayTitle: "Addon episode",
+        primarySubtitle: null,
+      });
+      // The seam was entered but loadfile must not be on the wire yet.
+      await waitFor(() => preflightUrls.length === 1);
+      expect(preflightUrls).toEqual(["https://cdn.example/episode.mp4"]);
+      expect(harness.commands.some((command) => command[0] === "loadfile")).toBe(false);
+
+      gate.resolve({ status: "unreachable", reason: "redirect-refused", definitive: true });
+      const result = await playback;
+      expect(result.endReason).toBe("error");
+      expect(harness.commands.some((command) => command[0] === "loadfile")).toBe(false);
+    } finally {
+      harness.endProcess();
+      await session.close();
+    }
+  });
+
+  test("a timed-out addon preflight sends no loadfile", async () => {
+    const harness = createHarness();
+    harness.runtime.checkAddonPreflight = async () => ({ status: "timeout" });
+    const session = await PersistentMpvSession.create({
+      stream: createStream(),
+      options: { displayTitle: "Episode 1", primarySubtitle: null },
+      // SAFETY: fixture supplies only the reconnect flag it exercises.
+      kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    try {
+      harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+      harness.callbacks().onEndFile({ reason: "eof", observedAt: 2 });
+      await flushAsyncWork();
+      const result = await session.play(addonStream(), {
+        displayTitle: "Addon episode",
+        primarySubtitle: null,
+      });
+      expect(result.endReason).toBe("error");
+      expect(harness.commands.some((command) => command[0] === "loadfile")).toBe(false);
+    } finally {
+      harness.endProcess();
+      await session.close();
+    }
+  });
+
+  test("a reachable strict preflight sends exactly one loadfile with file-local confinement", async () => {
+    const harness = createHarness();
+    harness.runtime.checkAddonPreflight = async () => ({ status: "reachable" });
+    const session = await PersistentMpvSession.create({
+      stream: createStream(),
+      options: { displayTitle: "Episode 1", primarySubtitle: null },
+      // SAFETY: fixture supplies only the reconnect flag it exercises.
+      kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    try {
+      harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+      harness.callbacks().onEndFile({ reason: "eof", observedAt: 2 });
+      await flushAsyncWork();
+      const playback = session.play(addonStream(), {
+        displayTitle: "Addon episode",
+        primarySubtitle: null,
+      });
+      await waitFor(() =>
+        harness.commands.some(
+          (command) =>
+            command[0] === "loadfile" && command[1] === "https://cdn.example/episode.mp4",
+        ),
+      );
+      const loads = harness.commands.filter((command) => command[0] === "loadfile");
+      expect(loads).toHaveLength(1);
+      expect(loads[0]?.[4]).toMatchObject({
+        "stream-lavf-o": "max_redirects=0",
+        "load-unsafe-playlists": "no",
+        "tls-verify": "yes",
+        ytdl: "no",
+      });
+      harness.callbacks().onFileLoaded?.({ observedAt: 3 });
+      harness.callbacks().onEndFile({ reason: "eof", observedAt: 4 });
+      await playback;
+    } finally {
+      harness.endProcess();
+      await session.close();
+    }
+  });
+
+  test("a non-addon replacement still takes the lenient concurrent preflight", async () => {
+    const harness = createHarness();
+    let addonCalls = 0;
+    harness.runtime.checkAddonPreflight = async () => {
+      addonCalls++;
+      return { status: "unreachable", reason: "redirect-refused", definitive: true };
+    };
+    const session = await PersistentMpvSession.create({
+      stream: createStream(),
+      options: { displayTitle: "Episode 1", primarySubtitle: null },
+      // SAFETY: fixture supplies only the reconnect flag it exercises.
+      kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    try {
+      harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+      harness.callbacks().onEndFile({ reason: "eof", observedAt: 2 });
+      await flushAsyncWork();
+      const playback = session.play(createStream({ url: "https://video.example/episode-2.m3u8" }), {
+        displayTitle: "Episode 2",
+        primarySubtitle: null,
+      });
+      await waitFor(() => harness.commands.some((command) => command[0] === "loadfile"));
+      expect(addonCalls).toBe(0);
+      harness.callbacks().onFileLoaded?.({ observedAt: 2 });
+      harness.callbacks().onEndFile({ reason: "eof", observedAt: 3 });
+      await playback;
+    } finally {
+      harness.endProcess();
+      await session.close();
+    }
+  });
+
+  test("a quit during a stalled addon preflight loads nothing after the verdict arrives", async () => {
+    const entered = Promise.withResolvers<void>();
+    const gate = Promise.withResolvers<
+      | { readonly status: "reachable" }
+      | { readonly status: "unreachable"; readonly reason: string; readonly definitive: boolean }
+      | { readonly status: "timeout" }
+    >();
+    const harness = createHarness();
+    let preflightCalls = 0;
+    harness.runtime.checkAddonPreflight = async () => {
+      preflightCalls++;
+      if (preflightCalls === 1) return { status: "reachable" };
+      entered.resolve();
+      return gate.promise;
+    };
+    let emitWatchdog!: (event: PlayerPlaybackEvent) => void;
+    harness.runtime.createPlaybackWatchdog = (emit) => {
+      emitWatchdog = emit;
+      return { observe() {}, stop() {}, reset() {} };
+    };
+    const session = await PersistentMpvSession.create({
+      stream: addonStream(),
+      options: { displayTitle: "Addon episode", primarySubtitle: null },
+      // SAFETY: fixture supplies only the reconnect policy it exercises.
+      kitsuneConfig: {
+        mpvInProcessStreamReconnect: true,
+        mpvInProcessStreamReconnectMaxAttempts: 1,
+        mpvKunaiScriptOpts: "",
+      } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    try {
+      harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+      const playback = session.waitForCurrentPlayback();
+      harness.commands.length = 0;
+      emitWatchdog({
+        type: "stream-stalled",
+        stallKind: "network-read-dead",
+        secondsWithoutProgress: 8,
+      });
+      // The reconnect preflight is in flight; the cycle ends before it resolves.
+      await entered.promise;
+      harness.callbacks().onEndFile({ reason: "quit", observedAt: 2 });
+      expect(await playback).toMatchObject({ endReason: "quit" });
+      gate.resolve({ status: "reachable" });
+      await flushAsyncWork();
+      expect(harness.commands.some((command) => command[0] === "loadfile")).toBe(false);
+      expect(pendingLoadOwners(session)).toBe(0);
+    } finally {
+      gate.resolve({ status: "reachable" });
+      harness.endProcess();
+      await session.close();
+    }
+  });
+
+  test("a start cancelled while its subtitle downloads never spawns mpv", async () => {
+    const cancel = new AbortController();
+    const harness = createHarness({
+      downloadSubtitle: async () => {
+        cancel.abort();
+        return { bytes: new TextEncoder().encode(TEST_SUBTITLE), extension: "vtt" };
+      },
+    });
+    let spawned = 0;
+    const innerSpawn = harness.runtime.spawn;
+    harness.runtime.spawn = (command, options) => {
+      spawned++;
+      return innerSpawn(command, options);
+    };
+    const session = await PersistentMpvSession.create({
+      stream: createStream(),
+      options: {
+        displayTitle: "Episode 1",
+        primarySubtitle: "https://subs.example/episode.vtt",
+        abortSignal: cancel.signal,
+      },
+      // SAFETY: fixture supplies only the reconnect flag it exercises.
+      kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    try {
+      expect(cancel.signal.aborted).toBe(true);
+      expect(spawned).toBe(0);
+    } finally {
+      harness.endProcess();
+      await session.close().catch(() => {});
+    }
+  });
+
+  test("a refused addon initial stream never spawns mpv", async () => {
+    const harness = createHarness();
+    let spawned = 0;
+    harness.runtime.checkAddonPreflight = async () => ({
+      status: "unreachable",
+      reason: "redirect-refused",
+      definitive: true,
+    });
+    const innerSpawn = harness.runtime.spawn;
+    harness.runtime.spawn = (command, options) => {
+      spawned++;
+      return innerSpawn(command, options);
+    };
+    const session = await PersistentMpvSession.create({
+      stream: addonStream(),
+      options: { displayTitle: "Addon episode", primarySubtitle: null },
+      // SAFETY: fixture supplies only the reconnect flag it exercises.
+      kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    try {
+      expect(spawned).toBe(0);
+    } finally {
+      harness.endProcess();
+      await session.close().catch(() => {});
+    }
+  });
+});
 function nextTurn(): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, 0);
   });
 }
+
+function createSubtitleGuardHarness() {
+  const requests: string[] = [];
+  const harness = createHarness({
+    downloadSubtitle: (url, options) =>
+      fetchRemoteSubtitle(url, {
+        ...options,
+        resolveAddresses: async (host) => {
+          if (host === "loopback.example") return ["127.0.0.1"];
+          if (host === "private.example") return ["10.0.0.5"];
+          return ["93.184.216.34"];
+        },
+        fetchImpl: async (target) => {
+          requests.push(target);
+          if (target.endsWith("/redirect.vtt")) {
+            return new Response(null, {
+              status: 302,
+              headers: { location: "https://private.example/en.vtt" },
+            });
+          }
+          return new Response(TEST_SUBTITLE);
+        },
+      }),
+  });
+  return { ...harness, requests };
+}
+
+const providerSubtitleTracks = [
+  { url: "https://loopback.example/en.vtt", language: "en", sourceName: "provider" },
+  { url: "https://private.example/es.vtt", language: "es", sourceName: "provider" },
+  { url: "https://public.example/redirect.vtt", language: "fr", sourceName: "provider" },
+  { url: "https://public.example/ja.vtt", language: "ja", sourceName: "provider" },
+];
+
+test("bundled provider startup argv contains only guarded, owned subtitle files", async () => {
+  const harness = createSubtitleGuardHarness();
+  const session = await PersistentMpvSession.create({
+    stream: createStream(),
+    options: {
+      displayTitle: "Provider subtitles",
+      primarySubtitle: providerSubtitleTracks[0]!.url,
+      subtitleTracks: providerSubtitleTracks,
+    },
+    // SAFETY: the harness supplies runtime; no user config is loaded.
+    kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+    onControlReady: () => {},
+    runtime: harness.runtime,
+  });
+  let path: string | undefined;
+  try {
+    const subtitleArgs = harness.argv.filter((arg) => arg.startsWith("--sub-file="));
+    expect(subtitleArgs).toHaveLength(1);
+    path = subtitleArgs[0]?.slice("--sub-file=".length);
+    expect(path && isAbsolute(path)).toBe(true);
+    expect(await Bun.file(path!).text()).toBe(TEST_SUBTITLE);
+    expect(harness.requests.sort()).toEqual([
+      "https://93.184.216.34/ja.vtt",
+      "https://93.184.216.34/redirect.vtt",
+    ]);
+  } finally {
+    harness.endProcess();
+    await session.close();
+  }
+  expect(await Bun.file(path!).exists()).toBe(false);
+});
+
+test("persistent late attach and interactive selection guard bundled provider subtitle URLs", async () => {
+  const harness = createSubtitleGuardHarness();
+  const session = await PersistentMpvSession.create({
+    stream: createStream(),
+    options: { displayTitle: "Provider subtitles", primarySubtitle: null },
+    // SAFETY: the harness supplies runtime; no user config is loaded.
+    kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+    onControlReady: () => {},
+    runtime: harness.runtime,
+  });
+  try {
+    harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+    const control = session.getControl();
+    await control.attachSubtitles?.({
+      primarySubtitle: providerSubtitleTracks[0]!.url,
+      subtitleTracks: providerSubtitleTracks,
+    });
+    const additions = harness.commands.filter((command) => command[0] === "sub-add");
+    expect(additions).toHaveLength(1);
+    const path = String(additions[0]?.[1]);
+    expect(isAbsolute(path)).toBe(true);
+    expect(await Bun.file(path).text()).toBe(TEST_SUBTITLE);
+    expect(
+      await control.selectSubtitle?.({
+        subtitleUrl: providerSubtitleTracks[1]!.url,
+        subtitleTracks: providerSubtitleTracks,
+      }),
+    ).toBe(false);
+    expect(
+      await control.selectSubtitle?.({
+        subtitleUrl: providerSubtitleTracks[3]!.url,
+        subtitleTracks: providerSubtitleTracks,
+      }),
+    ).toBe(true);
+    expect(
+      harness.commands.filter((command) => command[0] === "sub-add").map((cmd) => cmd[1]),
+    ).toEqual([path, path]);
+    expect(harness.requests).toEqual([
+      "https://93.184.216.34/redirect.vtt",
+      "https://93.184.216.34/ja.vtt",
+    ]);
+  } finally {
+    harness.endProcess();
+    await session.close();
+  }
+});
+
+test("verified local-library subtitles retain their startup path", async () => {
+  const harness = createSubtitleGuardHarness();
+  const subtitlePath = join(sandbox, "library.en.vtt");
+  const session = await PersistentMpvSession.create({
+    stream: createStream(),
+    options: {
+      displayTitle: "Local subtitle",
+      primarySubtitle: subtitlePath,
+      subtitleUrlKind: "local",
+    },
+    // SAFETY: the harness supplies runtime; no user config is loaded.
+    kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+    onControlReady: () => {},
+    runtime: harness.runtime,
+  });
+  try {
+    expect(harness.argv).toContain(`--sub-file=${subtitlePath}`);
+    expect(harness.requests).toEqual([]);
+  } finally {
+    harness.endProcess();
+    await session.close();
+  }
+});

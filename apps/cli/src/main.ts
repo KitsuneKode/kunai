@@ -23,6 +23,7 @@ import { existsSync } from "node:fs";
 // =============================================================================
 
 import type { KunaiHandoffLaunch } from "@/app/bootstrap/handoff-url";
+import { launchNeedsYtDlp } from "@/app/bootstrap/launch-dependencies";
 import type { SessionController } from "@/app/session/SessionController";
 import {
   createShutdownCoordinator,
@@ -637,6 +638,40 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       }),
     );
   }
+  if (argv[0] === "addons") {
+    const json = argv.includes("--json");
+    if (
+      argv
+        .slice(1)
+        .some(
+          (arg) =>
+            arg.startsWith("-") && arg !== "--json" && arg !== "--stdin" && arg !== "--accept-risk",
+        )
+    ) {
+      const error =
+        "unsupported flag. Use --json, --stdin (add only), or --accept-risk (enable only).";
+      process.stdout.write(
+        json
+          ? `${JSON.stringify({ schemaVersion: 1, ok: false, error }, null, 2)}\n`
+          : `kunai addons: ${error}\n`,
+      );
+      process.exit(2);
+    }
+    // An unresolved operation must not exit successfully before reporting an outcome.
+    process.exitCode = 1;
+    const { runAddonsCommand } = await import("./services/providers/run-addons-command");
+    // Positionals only: `kunai addons add <url> --json` and `--json add <url>` both work.
+    const words = argv.slice(1).filter((word) => !word.startsWith("-"));
+    process.exit(
+      await runAddonsCommand({
+        subcommand: words[0],
+        target: words[1],
+        stdin: argv.includes("--stdin"),
+        acceptRisk: argv.includes("--accept-risk"),
+        json,
+      }),
+    );
+  }
   if (argv[0] === "rollback") {
     const { runRollback } = await import("./services/update/run-rollback");
     const toIdx = argv.indexOf("--to");
@@ -819,6 +854,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
         "  kunai capabilities --json\n" +
         "  kunai providers status --json\n" +
         "  kunai providers verify --json\n" +
+        "  kunai addons list --json\n" +
         "  kunai doctor --json\n" +
         "  kunai -S <query> --json\n" +
         "  kunai -a -S <query> --json\n" +
@@ -972,7 +1008,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   const capabilitySnapshot = await checkDeps(KUNAI_VERSION, {
     silent: onboardingWillRun,
     requireMpv: startupPlayerMode.kind === "managed-mpv",
-    requireYtDlp: !args.offline && (args.youtube || configJson.defaultMode === "youtube"),
+    requireYtDlp: launchNeedsYtDlp(args, configJson.defaultMode, pendingShareLaunch?.ref.kind),
   });
 
   const { loadCompiledSmokeProviderOverride, loadCompiledSmokeSearchDefinitions } =
@@ -1111,9 +1147,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       bootstrapEpisode = shareBootstrap.episode ?? null;
       bootstrapQuery = undefined;
     }
-    if (shareBootstrap.download) {
-      args.download = true;
-    }
+    if (shareBootstrap.download) args.download = true;
   }
 
   for (const entry of bootstrapIntent.logs) {
@@ -1566,6 +1600,7 @@ const FAST_PATH_SUBCOMMANDS = new Set([
   "doctor",
   "capabilities",
   "providers",
+  "addons",
   "rollback",
   "upgrade",
   "uninstall",

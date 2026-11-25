@@ -131,6 +131,12 @@ function toggleBoolean(
   state: SettingsUiState,
   def: Extract<SettingRowDef, { kind: "boolean" }>,
 ): SettingsKeyResult {
+  if (def.envOverride && process.env[def.envOverride]?.trim()) {
+    return {
+      handled: true,
+      state: { ...state, error: `Unset ${def.envOverride} to change this.` },
+    };
+  }
   const next = def.write(state.draft, !def.read(state.draft));
   return {
     handled: true,

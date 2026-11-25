@@ -80,14 +80,16 @@ describe("youtube metadata failure classification", () => {
   });
 
   test("an unrecognised failure stays transient rather than guessing", () => {
-    const classified = classifyYoutubeMetadataFailure(new Error("ERROR: something entirely new"));
+    const classified = classifyYoutubeMetadataFailure(
+      new Error("ERROR: unexpected extractor reply at https://cdn.example/video?sig=SENTINEL"),
+    );
     expect(classified.terminal).toBe(false);
     expect(classified.code).toBe("parse-failed");
-    expect(classified.message).toContain("something entirely new");
+    expect(classified.message).toBe("yt-dlp metadata failed");
   });
 
   test("a non-Error rejection does not crash the classifier", () => {
     expect(classifyYoutubeMetadataFailure(undefined).terminal).toBe(false);
-    expect(classifyYoutubeMetadataFailure("boom").message).toContain("boom");
+    expect(classifyYoutubeMetadataFailure("boom").message).toBe("yt-dlp metadata failed");
   });
 });

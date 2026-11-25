@@ -21,6 +21,18 @@ describe("resolveSessionConfigOverrides", () => {
     });
   });
 
+  test("--plain flips plainMode for the session without mutating persisted config", () => {
+    expect(resolveSessionConfigOverrides({ zen: false, minimal: false, plain: true }, off)).toEqual(
+      { plainMode: true },
+    );
+    expect(
+      resolveSessionConfigOverrides(
+        { zen: false, minimal: false, plain: true },
+        { ...off, plainMode: true },
+      ),
+    ).toEqual({});
+  });
+
   test("--zen (implies minimal) flips both zen and minimal layout fields", () => {
     expect(resolveSessionConfigOverrides({ zen: true, minimal: true }, off)).toEqual({
       zenMode: true,

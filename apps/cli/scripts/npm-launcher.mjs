@@ -169,7 +169,7 @@ function runLauncher() {
         `This usually means the install skipped optional dependencies.\n` +
         `Reinstall with:  ${reinstallCommand()}\n\n` +
         `Or use the native installer, which does not depend on a package manager:\n` +
-        `  curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash`,
+        `  curl -fsSL https://kunai.kitsunekode.in/install.sh | bash`,
     );
     process.exit(1);
   }

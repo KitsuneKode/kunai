@@ -23,7 +23,7 @@ Enter
 Show
 
 Sleep 600ms
-Type "bun test/harness/playback-walkthrough.ts"
+Type "./test/vhs/isolated-kunai.sh --harness test/harness/playback-walkthrough.ts"
 Enter
 Wait+Screen /Search for a title/
 Sleep 900ms

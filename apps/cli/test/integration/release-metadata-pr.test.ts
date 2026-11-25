@@ -57,6 +57,14 @@ for (const scenario of [
         git("config", "commit.gpgsign", "false");
         mkdirSync(join(repo, ".release"));
         writeFileSync(join(repo, ".release/kunai-v1.2.3.json"), '{"status":"staged"}\n');
+        for (const file of [
+          "Formula/kunai.rb",
+          "bucket/kunai.json",
+          "apps/docs/lib/generated-release-notes.json",
+        ]) {
+          mkdirSync(join(repo, file, ".."), { recursive: true });
+          writeFileSync(join(repo, file), "previous version");
+        }
         git("add", ".");
         git("commit", "-m", "fixture");
         git("remote", "add", "origin", remote);
@@ -70,9 +78,23 @@ for (const scenario of [
         writeFileSync(join(repo, ".release/kunai-v1.2.3.json"), '{"status":"published"}\n');
         writeFileSync(join(repo, "unrelated.txt"), "not part of release metadata");
         const branch = "release/published-v1.2.3-123";
+        if (scenario === "new" || scenario === "pushed") {
+          for (const file of [
+            "Formula/kunai.rb",
+            "bucket/kunai.json",
+            "apps/docs/lib/generated-release-notes.json",
+          ])
+            writeFileSync(join(repo, file), "published version");
+        }
         if (scenario === "pushed") {
           git("switch", "-c", branch);
-          git("add", ".release/kunai-v1.2.3.json");
+          git(
+            "add",
+            ".release/kunai-v1.2.3.json",
+            "Formula/kunai.rb",
+            "bucket/kunai.json",
+            "apps/docs/lib/generated-release-notes.json",
+          );
           git("commit", "-m", "interrupted metadata job");
           git("push", "origin", branch);
           git("switch", "main");
@@ -103,7 +125,9 @@ for (const scenario of [
           return;
         }
         expect(git("ls-remote", "origin", `refs/heads/${branch}`)).toContain(branch);
-        expect(git("diff", "--name-only", before, branch)).toBe(".release/kunai-v1.2.3.json");
+        expect(git("diff", "--name-only", before, branch)).toBe(
+          ".release/kunai-v1.2.3.json\nFormula/kunai.rb\napps/docs/lib/generated-release-notes.json\nbucket/kunai.json",
+        );
         const args = readFileSync(join(root, "gh-args"), "utf8").split("\n");
         expect(args.slice(0, 2)).toEqual(["pr", "create"]);
         expect(args[args.indexOf("--base") + 1]).toBe("main");

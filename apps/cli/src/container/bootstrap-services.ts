@@ -4,6 +4,7 @@ import { ActivePlaybackCheckpoint } from "@/services/continuation/active-playbac
 
 import { setCompanionPreferenceSource } from "../app-shell/companion-policy";
 import { isInteractiveShellMounted } from "../app-shell/interactive-shell-state";
+import { setPlainModePreferenceSource } from "../app-shell/plain-mode";
 import { detectPlayerPlatform, resolvePlayerMode } from "../domain/playback/player-choice";
 import { shouldRecoverQueueOwner } from "../domain/queue/queue-owner-recovery";
 import { SessionStateManagerImpl } from "../domain/session/SessionStateManager";
@@ -166,6 +167,7 @@ export function bootstrapServices(input: {
   // and the settings row take effect on the next render — no restart, and no
   // separate state to drift out of sync with config.json.
   setCompanionPreferenceSource(() => config.companionPet);
+  setPlainModePreferenceSource(() => config.plainMode);
   const connectivity = new Connectivity(() => config.offlineMode);
   const notificationSinkRegistry = new NotificationSinkRegistry();
   notificationSinkRegistry.register(

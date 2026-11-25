@@ -1,3 +1,7 @@
+---
+lastReviewed: "2026-11-24"
+---
+
 # KitsuneSnipe — Persistent Shell Implementation Plan
 
 Status: In Progress

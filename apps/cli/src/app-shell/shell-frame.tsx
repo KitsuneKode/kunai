@@ -6,6 +6,7 @@ import React from "react";
 
 import type { AppCommandId, ResolvedAppCommand } from "./commands";
 import { isHardGlobalQuit, routeShellInput } from "./input-router";
+import { plainModeEnabled } from "./plain-mode";
 import { useRootContentSuspended } from "./RootContentSuspension";
 import { useShellInput } from "./shell-command-input";
 import { ShellCommandModeProvider } from "./shell-command-mode";
@@ -125,6 +126,7 @@ export function ShellFrame({
     onUnhandledInput?.(input, key);
   });
 
+  const plain = plainModeEnabled();
   const { cols: shellCols, rows: shellRows } = useShellDimensions();
   const cols = terminalWidthProp ?? shellCols;
   const rows = terminalRowsProp ?? shellRows;
@@ -139,10 +141,17 @@ export function ShellFrame({
       flexDirection="column"
       flexGrow={1}
       justifyContent="space-between"
-      backgroundColor={palette.bg}
+      backgroundColor={plain ? undefined : palette.bg}
     >
       <Box flexDirection="column" flexGrow={1}>
-        {contentOnlyChrome ? null : (
+        {contentOnlyChrome ? null : plain ? (
+          <>
+            <Text bold color={palette.text}>
+              {statusLabel ? `${title} (Status: ${statusLabel})` : title}
+            </Text>
+            {subtitle ? <Text color={palette.muted}>{subtitle}</Text> : null}
+          </>
+        ) : (
           <>
             <Box justifyContent="space-between">
               <Text bold color={palette.text}>
@@ -249,6 +258,18 @@ export function InputField({
     }
     editor.handleInput(input, key);
   });
+
+  const plain = plainModeEnabled();
+  if (plain) {
+    return (
+      <Box marginTop={1} flexDirection="column">
+        <Text color={palette.text} bold={focus}>
+          {`${label}${focus ? " (focused)" : ""}: ${value || placeholder || ""}`}
+        </Text>
+        {renderedHint ? <Text color={palette.muted}>{renderedHint}</Text> : null}
+      </Box>
+    );
+  }
 
   return (
     <Box marginTop={1} flexDirection="column">

@@ -24,6 +24,7 @@ export {
   resolveAnidbCurl,
 } from "./shared/anidb-identity";
 export * from "./shared";
+export * from "./stremio-addon";
 export * from "./videasy";
 export * from "./vidlink/direct";
 export * from "./vidlink/manifest";
