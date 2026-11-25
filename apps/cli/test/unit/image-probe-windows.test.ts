@@ -64,11 +64,32 @@ describe("canProbeTerminal on Windows", () => {
 });
 
 describe("probeTerminalGraphics", () => {
+  test("queries color registers after xterm affirms Sixel in DA1", async () => {
+    const stdin = new FakeStdin();
+    const writes: string[] = [];
+    const stdout = {
+      isTTY: true,
+      write(chunk: string) {
+        writes.push(chunk);
+        if (chunk === "\x1b[?1;1;0S") stdin.emit("data", "\x1b[?1;0;16S");
+        else stdin.emit("data", "\x1b[?63;4;22c");
+      },
+    };
+    expect(
+      await probeTerminalGraphics({ stdin, stdout, env: { TERM: "xterm-256color" } }),
+    ).toMatchObject({ sixel: true, sixelColorRegisters: 16 });
+    expect(writes).toEqual(["\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\x1b[c", "\x1b[?1;1;0S"]);
+  });
+
   test("asks tmux for DA1 directly when passthrough is off", async () => {
     const stdin = new FakeStdin();
     const stdout = {
       isTTY: true,
       write(chunk: string) {
+        if (chunk === "\x1b[?1;1;0S") {
+          stdin.emit("data", "\x1b[?1;3;0S");
+          return;
+        }
         expect(chunk).toBe("\x1b[c");
         stdin.emit("data", "\x1b[?1;2;4c");
       },

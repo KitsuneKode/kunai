@@ -65,6 +65,14 @@ describe("medianCut", () => {
 });
 
 describe("quantize", () => {
+  test("diffuses palette error across repeated midtones", () => {
+    const tones = [0, 0, 100, 100, 100, 100, 100, 100, 100, 100, 255, 255, 255];
+    const rgba = rgbaOf(tones.map((tone) => [tone, tone, tone, 255]));
+    const { indices } = quantize(rgba, tones.length, 1, 3);
+
+    expect(new Set(indices.slice(2, 10)).size).toBe(2);
+  });
+
   test("reserves index 0 for transparency and never assigns it to a visible pixel", () => {
     const rgba = rgbaOf([
       [255, 0, 0, 255],
@@ -130,8 +138,8 @@ describe("encodeSixel", () => {
       Array.from({ length: 4 * 8 * 3 }, (_, i) => (i * 37) % 256),
     );
     const sixel = renderSixelFromImage(decodePng(png), { maxWidth: 4, maxHeight: 8 });
-    expect(sixel).not.toBeNull();
-    expect(dataBytesAreInRange(sixel as string)).toBe(true);
+    if (!sixel) throw new Error("expected Sixel data");
+    expect(dataBytesAreInRange(sixel)).toBe(true);
   });
 
   test("skips a fully transparent band rather than painting it", () => {
@@ -178,17 +186,17 @@ describe("renderSixelFromImage", () => {
     const noisy = Array.from({ length: 64 * 48 * 3 }, (_, i) => (i * 37 + (i >> 2)) % 256);
     const decoded = decodePng(makeRgbPng(64, 48, noisy));
     const unbounded = renderSixelFromImage(decoded, { maxWidth: 64, maxHeight: 48 });
-    expect(unbounded).not.toBeNull();
+    if (!unbounded) throw new Error("expected Sixel data");
 
-    const cap = Math.floor((unbounded as string).length / 2);
+    const cap = Math.floor(unbounded.length / 2);
     const degraded = renderSixelFromImage(decoded, {
       maxWidth: 64,
       maxHeight: 48,
       maxBytes: cap,
     });
-    expect(degraded).not.toBeNull();
-    expect((degraded as string).length).toBeLessThanOrEqual(cap);
-    expect(dataBytesAreInRange(degraded as string)).toBe(true);
+    if (!degraded) throw new Error("encoding could not meet the byte cap");
+    expect(degraded.length).toBeLessThanOrEqual(cap);
+    expect(dataBytesAreInRange(degraded)).toBe(true);
   });
 
   test("fails closed to null when even the smallest render exceeds maxBytes", () => {
