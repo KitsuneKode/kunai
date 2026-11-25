@@ -142,6 +142,56 @@ When on, Kunai sends at most one tiny ping per day:
 
 Preview the exact JSON with `/analytics show`.
 
+### What the ingest accepts next
+
+Current releases send the ping above. The ingest already accepts a second,
+less linkable shape that a future release will send instead, so that release
+works on its first day:
+
+```json
+{
+  "id": "<64-hex>",
+  "cohort": "YYYY-MM",
+  "day": "YYYY-MM-DD",
+  "version": "<semver>",
+  "os": "<platform>",
+  "arch": "<arch>"
+}
+```
+
+- `id` is an HMAC of your local install id **and the current month**, made on
+  your machine. It changes every calendar month, so the ingest cannot link one
+  month of your activity to the next
+- `cohort` is the month you turned analytics on. It lets the page show new
+  installs per month and how many are still active one to six months later,
+  without any lasting per-install record
+- `day` is your machine's date, checked to be within a day of the ingest's own,
+  in place of the exact `ts` clock reading
+- `os` may also be `android`, so Android installs are counted as themselves
+  rather than as Linux
+- A seventh key is rejected, exactly as a sixth is for the current ping
+
+Both shapes stay accepted: releases already installed keep sending the current
+one for as long as they run.
+
+### Downloads, monthly numbers, and badges
+
+- **Download counts need nothing from you.** Once a day the ingest reads the
+  public download counters GitHub keeps for each release asset and npm keeps for
+  each package, Android builds included, and publishes them per release and per
+  platform. They count downloads, not people: CI re-downloads and mirrors count
+  too. Future releases add two tiny marker files that the installer and updater
+  fetch once, so GitHub's own counter can tell installs from updates
+- Monthly active installs, and new installs and retention per monthly cohort,
+  are published for **complete months only**, with the same **fewer than 5**
+  rule. A retention figure also needs a cohort of at least 10 with at least 5
+  installs on each side of it, so it can never reveal that only a few left
+- Badges for downloads, installs, and opted-in active installs are built from
+  those same published numbers. The active badge counts the last complete
+  calendar month, and only installs that turned analytics on
+- Repeat pings from one install on the same day are no longer written at all,
+  and once the ingest's daily ceiling is reached it stops writing entirely
+
 If you turn analytics on, pings go to `analytics.kunai.kitsunekode.in`. Point
 them somewhere else by setting a **non-empty** `KUNAI_ANALYTICS_URL` or
 `analyticsEndpoint`. That address must use **https**; `http://localhost`, `127.0.0.1`, and `[::1]`

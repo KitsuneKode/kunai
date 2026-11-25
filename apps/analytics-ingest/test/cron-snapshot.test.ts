@@ -12,10 +12,12 @@ import { describe, expect, test } from "bun:test";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { createSnapshotHandler } from "../api/cron/snapshot";
+import type { DistributionFetch } from "../src/distribution-sources";
 import { loadAnalyticsLimits } from "../src/limits";
 import { snapshotDayKey } from "../src/public-metrics";
 import type { AnalyticsRuntimeConfig } from "../src/runtime-config";
 import type { AnalyticsStore, DailyRollup } from "../src/store";
+import { inertStoreMethods } from "./support/inert-store";
 
 const CRON_SECRET = "cron-secret-value";
 
@@ -34,12 +36,11 @@ function rollup(day: string): DailyRollup {
 
 function createStore(overrides: Partial<AnalyticsStore> = {}): AnalyticsStore {
   return {
-    recordPing: async () => ({ admitted: true }),
+    ...inertStoreMethods(),
     rollUpDay: async (day) => rollup(day),
     readRollup: async (day) => rollup(day),
     readLatestRollupAtOrBefore: async (day) => rollup(day),
     readRollups: async () => [],
-    findDaysNeedingRollup: async () => [],
     pruneRawBefore: async () => 3,
     pruneLifetimeBefore: async () => ({ retired: 2 }),
     ...overrides,
@@ -51,6 +52,7 @@ function createConfig(store: AnalyticsStore): AnalyticsRuntimeConfig {
     hashSecret: "hash-secret",
     cronSecret: CRON_SECRET,
     adminToken: "admin-token",
+    githubToken: "",
     limits: loadAnalyticsLimits({}),
     store,
   };
@@ -58,11 +60,24 @@ function createConfig(store: AnalyticsStore): AnalyticsRuntimeConfig {
 
 type Captured = { status: number; body: Record<string, unknown> };
 
+/**
+ * Answers every distribution request with an empty, well-formed body. No test
+ * here reaches the network: the handler's only fetch is this one.
+ */
+const emptyDistribution: DistributionFetch = async (url) =>
+  new Response(url.includes("api.github.com") ? "[]" : JSON.stringify({ downloads: [] }));
+
+type RunOptions = { authorization?: string | null; fetch?: DistributionFetch; now?: number };
+
 async function run(
   store: AnalyticsStore,
-  { authorization = `Bearer ${CRON_SECRET}` }: { authorization?: string | null } = {},
+  { authorization = `Bearer ${CRON_SECRET}`, fetch = emptyDistribution, now }: RunOptions = {},
 ): Promise<{ captured: Captured; logs: string[] }> {
-  const handler = createSnapshotHandler({ loadConfig: () => createConfig(store) });
+  const handler = createSnapshotHandler({
+    loadConfig: () => createConfig(store),
+    fetch,
+    now: now === undefined ? undefined : () => now,
+  });
 
   const req = {
     method: "GET",
@@ -201,5 +216,90 @@ describe("cron snapshot failure reporting", () => {
 
     expect(captured.status).toBe(401);
     expect(touched).toBe(false);
+  });
+
+  test("a failing distribution stage leaves the rollup at 200 with deferred set", async () => {
+    let written = false;
+    const { captured, logs } = await run(
+      createStore({
+        writeDistributionSnapshot: async () => {
+          written = true;
+          return 0;
+        },
+      }),
+      {
+        fetch: async () => {
+          throw new Error("getaddrinfo ENOTFOUND https://api.github.com/repos/x");
+        },
+      },
+    );
+
+    expect(captured.status).toBe(200);
+    expect(captured.body.ok).toBe(true);
+    expect(captured.body.rolledUp).toEqual([snapshotDayKey()]);
+    expect(captured.body.deferred).toEqual(["distribution"]);
+    // All or nothing: a partial snapshot would publish a false spike tomorrow.
+    expect(written).toBe(false);
+    expect(logs.join("\n")).toContain("distribution failed");
+    expect(logs.join("\n")).not.toContain("api.github.com");
+  });
+
+  test("an upstream error status defers the distribution stage too", async () => {
+    const { captured } = await run(createStore(), {
+      fetch: async () => new Response("rate limited", { status: 403 }),
+    });
+    expect(captured.status).toBe(200);
+    expect(captured.body.deferred).toEqual(["distribution"]);
+  });
+
+  test("a healthy distribution stage writes today's snapshot", async () => {
+    const snapshots: { day: string; count: number }[] = [];
+    const { captured } = await run(
+      createStore({
+        writeDistributionSnapshot: async (day, entries) => {
+          snapshots.push({ day, count: entries.length });
+          return entries.length;
+        },
+      }),
+    );
+    expect(captured.body.deferred).toEqual([]);
+    // Launcher plus every platform package, each a zero from the empty fake.
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]?.count).toBe(11);
+    expect(captured.body.distribution).toBe(11);
+  });
+
+  test("a failed month rollup keeps its rows: the prune is deferred with it", async () => {
+    let pruned = false;
+    const { captured } = await run(
+      createStore({
+        rollUpMonths: async () => {
+          throw new Error("deadlock detected");
+        },
+        pruneMonthActiveBefore: async () => {
+          pruned = true;
+          return 0;
+        },
+      }),
+    );
+    expect(captured.status).toBe(200);
+    expect(captured.body.deferred).toEqual(["monthRollup", "pruneMonth"]);
+    expect(pruned).toBe(false);
+  });
+
+  test("month rows are pruned only once the following month is a week old", async () => {
+    const asked: string[] = [];
+    const store = createStore({
+      pruneMonthActiveBefore: async (month) => {
+        asked.push(month);
+        return 0;
+      },
+    });
+    // 19:00 UTC is 00:30 IST the next day: these runs are labelled the 7th
+    // and the 8th of December. November's rows survive the first and go after
+    // the second, whose month rollup has already read them.
+    await run(store, { now: Date.parse("2026-12-06T19:00:00.000Z") });
+    await run(store, { now: Date.parse("2026-12-07T19:00:00.000Z") });
+    expect(asked).toEqual(["2026-11", "2026-12"]);
   });
 });
