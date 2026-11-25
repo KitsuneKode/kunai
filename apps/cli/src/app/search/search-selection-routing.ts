@@ -1,6 +1,7 @@
+import { primeShareBootstrapStartSeconds } from "@/app/bootstrap/share-bootstrap-start";
 import type { Container } from "@/container";
 import { providerLaneToShellMode } from "@/domain/provider-lane";
-import type { SearchResult, ShellMode } from "@/domain/types";
+import type { EpisodeInfo, SearchResult, ShellMode, TitleInfo } from "@/domain/types";
 
 function isYoutubeSearchResult(result: SearchResult): boolean {
   return (
@@ -46,4 +47,26 @@ export function applySearchSelectionSessionRouting(
     provider,
   });
   return targetMode;
+}
+
+/**
+ * Select a routed history entry (a `/watch` link, a history pick) and carry a
+ * share link's start time into playback. One implementation for the startup
+ * and in-session routes: the in-session copy had dropped the start time, so a
+ * `t=` link pasted into `/watch` from search started at 0:00.
+ */
+export function adoptHistoryEntry(
+  container: Pick<Container, "stateManager">,
+  entry: {
+    readonly title: TitleInfo;
+    readonly episode?: EpisodeInfo;
+    readonly startSeconds?: number;
+  },
+): TitleInfo {
+  primeShareBootstrapStartSeconds(entry.startSeconds);
+  container.stateManager.dispatch({ type: "SELECT_TITLE", title: entry.title });
+  if (entry.episode) {
+    container.stateManager.dispatch({ type: "SELECT_EPISODE", episode: entry.episode });
+  }
+  return entry.title;
 }
