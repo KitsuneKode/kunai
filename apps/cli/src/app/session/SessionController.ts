@@ -6,6 +6,7 @@
 // =============================================================================
 
 import { primeShareBootstrapStartSeconds } from "@/app/bootstrap/share-bootstrap-start";
+import { alignSessionLane } from "@/app/playback/launch-lane";
 import { playlistAdvanceEpisode } from "@/app/playback/playback-outcome";
 import type { SearchPhaseInput } from "@/app/search/SearchPhase";
 import {
@@ -244,14 +245,7 @@ export class SessionController {
             // cleared by RESET_CONTENT and SELECT_TITLE before playback read it,
             // so an explicit Up Next S02E07 opened the starting picker.
             pending.initialEpisode = playlistAdvanceEpisode(outcome);
-            const targetMode = outcome.mode;
-            if (targetMode !== stateManager.getState().mode) {
-              stateManager.dispatch({
-                type: "SET_MODE",
-                mode: targetMode,
-                provider: stateManager.getState().defaultProviders[targetMode],
-              });
-            }
+            alignSessionLane(this.container, { mode: outcome.mode, title: outcome.titleInfo });
             pending.preserveExistingSearch = false;
             stateManager.dispatch({ type: "RESET_CONTENT" });
             continue;

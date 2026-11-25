@@ -30,7 +30,7 @@ import {
 } from "@/app-shell/root-library-playback-bridge";
 import { openDiagnosticsOverlay, openRootOwnedOverlay } from "@/app-shell/root-overlay-bridge";
 import {
-  applyShareLaneAndProviderHint,
+  alignSessionToShareTarget,
   noteShareTarget,
 } from "@/app/bootstrap/apply-resolved-share-target";
 import { resolveShareTarget } from "@/app/bootstrap/resolve-share-target";
@@ -2405,9 +2405,8 @@ async function handleWatch(container: Container): Promise<ShellWorkflowResult> {
   }
   const resolved = await resolveShareTarget(ref, container);
   noteShareTarget(container, resolved);
-  // Same lane routing as a launch-time link: a movie link pasted while in anime
-  // mode must not play through anime providers, and the provider hint applies.
-  applyShareLaneAndProviderHint(container, resolved, ref);
+  // The same lane step as `--open` and protocol links, for both branches.
+  alignSessionToShareTarget(container, resolved, ref);
   if (resolved.searchQuery) {
     container.stateManager.dispatch({ type: "SET_SEARCH_QUERY", query: resolved.searchQuery });
     return "handled";

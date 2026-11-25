@@ -4,6 +4,7 @@ import type {
 } from "@/domain/queue/queue-playback-intent";
 import type { EpisodeInfo, ShellMode, TitleInfo } from "@/domain/types";
 
+import { shellModeForQueueIntent } from "./launch-lane";
 /** Browse routes post-play can hand back to search; each opens as its browse command does. */
 export type PostPlaybackBrowseRoute = "calendar" | "anime-calendar" | "series-calendar" | "random";
 
@@ -65,7 +66,7 @@ export function playlistAdvanceFromQueueIntent(input: {
       ...(input.intent.externalIds ? { externalIds: input.intent.externalIds } : {}),
       queuePlaybackIntent: input.intent,
     },
-    mode: input.intent.mediaKind === "anime" ? "anime" : "series",
+    mode: shellModeForQueueIntent(input.intent),
     season,
     episode,
   };

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T21:02:30Z"
+lastReviewed: "2026-11-25T21:06:54Z"
 ---
 
 # Share Links & PlaybackTargetRef
@@ -39,6 +39,16 @@ kunai://play?q=<query>&kind=...
 | `n`       | Human label (not required for resolution)                                                                            |
 
 Parser returns `null` when neither `cat` nor `q` is present, or when the catalog namespace is invalid.
+
+## Lane
+
+A resolved link plays in its own lane (anime, series or youtube), whatever the
+recipient's session was in. `alignSessionToShareTarget` applies it through the
+shared `alignSessionLane` for `--open`, confirmed protocol links and `/watch`
+(both its catalog and search branches). The `src` hint is used only when that
+provider serves the link's lane; otherwise the lane's default stands. Queue
+rows, post-play advances and inbox play-now take the same step, so no launch
+inherits the previous lane's provider chain.
 
 ## Code map
 

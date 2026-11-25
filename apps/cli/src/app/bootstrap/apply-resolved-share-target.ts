@@ -1,11 +1,9 @@
 import { resolveShareTarget, type ResolvedShareTarget } from "@/app/bootstrap/resolve-share-target";
 import { setShareBootstrapStartSeconds } from "@/app/bootstrap/share-bootstrap-start";
+import { alignSessionLane } from "@/app/playback/launch-lane";
 import type { Container } from "@/container";
-import { providerMetadataMatchesLane, shellModeToProviderLane } from "@/domain/provider-lane";
-import { sessionTargetForMode } from "@/domain/session/mode-target";
 import type { KunaiShareAction, PlaybackTargetRef } from "@/domain/share/playback-target-ref";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
-import { resolveProviderIdAlias } from "@kunai/core";
 
 export type ShareBootstrapLaunch = {
   readonly query?: string;
@@ -40,41 +38,28 @@ export function applyResolvedShareSideEffects(
   if (resolved.startSeconds !== undefined) {
     setShareBootstrapStartSeconds(resolved.startSeconds);
   }
-  applyShareLaneAndProviderHint(container, resolved, ref);
+  alignSessionToShareTarget(container, resolved, ref);
 }
 
 /**
- * Put the session in the share's lane, then honour a provider hint that belongs
- * to that lane.
- *
- * Every lane switches, not only anime: a TMDB movie link opened while the
- * session is in anime mode would otherwise resolve through anime providers and
- * fail before the first frame. Already in the right lane, the session keeps the
- * provider it has. Shared by launch-time links and `/watch`, which must not
- * also prime the start mailbox (its caller carries `startSeconds` itself).
+ * The lane a share link plays in — every lane, not only anime. A YouTube or
+ * TMDB link opened in another lane used to keep the recipient's previous mode
+ * and provider. Shared by `--open`, protocol handoff and `/watch`.
  */
-export function applyShareLaneAndProviderHint(
-  container: Pick<Container, "stateManager" | "providerRegistry">,
-  resolved: Pick<ResolvedShareTarget, "mode" | "note">,
-  ref: Pick<PlaybackTargetRef, "hint">,
+export function alignSessionToShareTarget(
+  container: Container,
+  resolved: ResolvedShareTarget,
+  ref: PlaybackTargetRef,
 ): void {
-  const state = container.stateManager.getState();
-  if (state.mode !== resolved.mode) {
-    container.stateManager.dispatch({
-      type: "SET_MODE",
-      ...sessionTargetForMode(state, resolved.mode),
-    });
-  }
   const hintedProviderId = ref.hint?.providerId?.trim();
-  if (!hintedProviderId || resolved.note?.includes("isn't available")) return;
-  const normalized = resolveProviderIdAlias(hintedProviderId);
-  const provider = container.providerRegistry.get(normalized);
-  if (
-    provider &&
-    providerMetadataMatchesLane(provider.metadata, shellModeToProviderLane(resolved.mode))
-  ) {
-    container.stateManager.dispatch({ type: "SET_PROVIDER", provider: normalized });
-  }
+  alignSessionLane(container, {
+    mode: resolved.mode,
+    preferredProviderId:
+      hintedProviderId && !resolved.note?.includes("isn't available")
+        ? hintedProviderId
+        : undefined,
+    title: resolved.title ?? undefined,
+  });
 }
 
 function resolvedShareToBootstrap(resolved: ResolvedShareTarget): ShareBootstrapLaunch {
