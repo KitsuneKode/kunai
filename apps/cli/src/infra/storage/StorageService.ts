@@ -17,4 +17,9 @@ export interface StorageService {
    * simply run `fn`.
    */
   withLock?<T>(key: string, fn: () => Promise<T>): Promise<T>;
+  /**
+   * Synchronous read-only peek at the stored JSON — none of `read()`'s
+   * quarantine side effects. Optional: only file-backed stores implement it.
+   */
+  readJsonSync?<T>(key: string): T | null;
 }

@@ -1,3 +1,7 @@
+---
+lastReviewed: "2026-11-24"
+---
+
 # Integration, test privacy and checkout recovery
 
 Status: ACTIVE. Existing watching candidate based on `f3e893ce7`; fetched main

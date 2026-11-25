@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to package (e.g. v0.3.0)"
+        description: "Published signed release tag to package (e.g. v0.4.0)"
         required: true
         type: string
 
@@ -31,20 +31,28 @@ jobs:
       TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
       GH_TOKEN: ${{ github.token }}
     steps:
+      - name: Resolve the published stable tag
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          state="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq '[.isDraft, .isPrerelease] | any')"
+          [[ "$state" == false ]]
+
+      # Use the renderer, license and installer templates that produced this
+      # release. A backfill after main changes must reproduce the same bytes.
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
+        with:
+          ref: refs/tags/${{ env.TAG }}
 
       - uses: ./.github/actions/setup-bun-monorepo
 
-      - name: Fetch release checksums and license
+      - name: Fetch and verify signed distribution files
         run: |
           set -euo pipefail
-          mkdir -p .channels-src
-          gh release download "$TAG" \
-            --pattern 'SHA256SUMS.archives' \
-            --dir .channels-src \
-            --clobber
-          curl -fsSL "https://raw.githubusercontent.com/KitsuneKode/kunai/${TAG}/LICENSE" \
-            -o .channels-src/LICENSE
+          for file in SHA256SUMS SHA256SUMS.archives SHA256SUMS.sig SHA256SUMS.archives.sig kunai.rb kunai.json PKGBUILD install.sh install.ps1; do
+            gh release download "$TAG" --pattern "$file" --dir .channels-src
+          done
+          bun scripts/packaging/release-supplements.ts verify "${TAG#v}" .channels-src .channels-src
 
       - name: Assert release publishes every expected archive
         run: bun run scripts/verify-github-release-assets.ts "$TAG"
@@ -54,14 +62,14 @@ jobs:
           bun run scripts/packaging/render-channels.ts \
             --version "${TAG#v}" \
             --sums .channels-src/SHA256SUMS.archives \
-            --license .channels-src/LICENSE \
+            --license LICENSE \
             --out dist/channels
           find dist/channels -type f -print | sort
 
       - name: Upload rendered channels
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact@v7
         with:
-          name: package-channels-$TAG
+          name: package-channels-${{ env.TAG }}
           if-no-files-found: error
           path: dist/channels/
 

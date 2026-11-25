@@ -1,3 +1,7 @@
+---
+lastReviewed: "2026-11-24"
+---
+
 # Plan: Release readiness after the October audits
 
 > **Drift check (run first):** every row cites a `path:line` verified on

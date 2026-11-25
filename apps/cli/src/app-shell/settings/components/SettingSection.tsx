@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { plainModeEnabled, selectionPrefix } from "../../plain-mode";
 import { SectionGroup } from "../../primitives/SectionGroup";
 import { palette, semanticToneColor } from "../../shell-theme";
 import type { SectionLayout } from "../layouts";
@@ -70,11 +71,14 @@ export const SettingRowAction = React.memo(function SettingRowAction({
   readonly rowWidth: number;
 }) {
   if (row.def.kind !== "action") return null;
+  const plain = plainModeEnabled();
   const danger = row.def.tone === "danger";
   return (
-    <Box width={rowWidth} backgroundColor={selected ? palette.accentFill : undefined}>
-      <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
-      {danger ? <Text color={palette.dangerText}>! </Text> : null}
+    <Box width={rowWidth} backgroundColor={selected && !plain ? palette.accentFill : undefined}>
+      <Text color={selected ? palette.accent : palette.dim}>
+        {selectionPrefix(selected, plain)}
+      </Text>
+      {danger ? <Text color={palette.dangerText}>{plain ? "[danger] " : "! "}</Text> : null}
       <Text
         bold={selected}
         color={danger ? palette.dangerText : selected ? palette.text : palette.textDim}

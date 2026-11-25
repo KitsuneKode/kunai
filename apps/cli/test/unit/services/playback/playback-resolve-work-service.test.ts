@@ -237,4 +237,38 @@ describe("PlaybackResolveWorkService", () => {
     releases[0]?.(output);
     expect((await fresh).workLedger.intents).toEqual(["playback"]);
   });
+
+  test("a caller after a disable never joins a resolve started while addons were on", async () => {
+    let calls = 0;
+    let addonsAvailable = true;
+    const releases: Array<(result: PlaybackResolveCoordinatorOutput) => void> = [];
+    const coordinator = {
+      resolve: async () => {
+        calls += 1;
+        return new Promise<PlaybackResolveCoordinatorOutput>((resolve) => {
+          releases.push(resolve);
+        });
+      },
+    };
+    const service = new PlaybackResolveWorkService(coordinator, {
+      stremioAddonsAvailable: () => addonsAvailable,
+    });
+
+    const held = service.resolve(baseInput(), {
+      intentKind: "playback",
+      budgetLane: "user-blocking",
+    });
+    // The feature went off while the first resolve is still in flight — the
+    // identical caller starting now must run its own work, not inherit the
+    // pre-disable flight's addon-era result.
+    addonsAvailable = false;
+    const second = service.resolve(baseInput(), {
+      intentKind: "playback",
+      budgetLane: "user-blocking",
+    });
+
+    expect(calls).toBe(2);
+    releases.forEach((release) => release(output));
+    await Promise.all([held, second]);
+  });
 });

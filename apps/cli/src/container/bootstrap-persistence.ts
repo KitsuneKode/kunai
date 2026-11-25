@@ -79,7 +79,10 @@ import { ResolveTraceSink } from "../services/diagnostics/ResolveTraceSink";
 import type { ConfigService } from "../services/persistence/ConfigService";
 import { ConfigServiceImpl } from "../services/persistence/ConfigServiceImpl";
 import { ConfigStoreImpl } from "../services/persistence/ConfigStoreImpl";
-import { createCredentialVault } from "../services/persistence/credential-vault-backends";
+import {
+  createCredentialVault,
+  noticeFileFallbackOnce,
+} from "../services/persistence/credential-vault-backends";
 import {
   migrateSyncTokensToVault,
   vaultSyncTokenFileIo,
@@ -99,6 +102,7 @@ import {
   resolveTmdbAuth,
   type SyncAuthAvailability,
 } from "../services/sync/auth-contract";
+import { initSyncAdapters } from "../services/sync/init-sync-adapters";
 import { SyncService } from "../services/sync/SyncService";
 import { TmdbAdapter } from "../services/sync/TmdbAdapter";
 import type { ContainerOptions } from "./types";
@@ -412,7 +416,13 @@ export async function bootstrapPersistence(
   const statsFormatter = new StatsFormatter();
   const credentialVault = await createCredentialVault({
     paths,
-    onFallback: (backend, reason) => dbg("credential-vault", `using ${backend} backend: ${reason}`),
+    onFallback: (backend, reason) => {
+      dbg("credential-vault", `using ${backend} backend: ${reason}`);
+      noticeFileFallbackOnce({
+        configDir: paths.configDir,
+        write: (line) => process.stderr.write(line),
+      });
+    },
   });
   const config = await ConfigServiceImpl.load(configStore, credentialVault);
   // Read live per request, so a key saved in settings applies without a restart.
@@ -459,7 +469,18 @@ export async function bootstrapPersistence(
   );
   const anilistAdapter = new AniListAdapter(syncTokenStore, undefined, anilistAuth);
   const tmdbAdapter = new TmdbAdapter(syncTokenStore, tmdbAuth.apiKey ?? "");
-  await Promise.all([anilistAdapter.init(), tmdbAdapter.init()]);
+  await initSyncAdapters([anilistAdapter, tmdbAdapter], (trackerId) => {
+    const message =
+      "Tracker credentials could not be read; stored data kept. Repair them, then reconnect.";
+    logger.warn(message, { trackerId });
+    diagnosticsService.record({
+      level: "warn",
+      category: "runtime",
+      operation: "sync.credentials.unavailable",
+      message,
+      context: { trackerId },
+    });
+  });
   const syncService = new SyncService({
     adapters: [anilistAdapter, tmdbAdapter],
     outbox: new SyncOutboxRepository(dataDb),

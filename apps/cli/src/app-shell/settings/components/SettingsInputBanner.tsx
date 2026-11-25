@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { plainModeEnabled } from "../../plain-mode";
 import { palette } from "../../shell-theme";
 import type { SettingRowDef } from "../types";
 
@@ -13,7 +14,13 @@ export const SettingsInputBanner = React.memo(function SettingsInputBanner({
   readonly buffer: string;
   readonly seed: string;
 }) {
-  const display = def.sensitive && buffer ? "•".repeat(Math.min(buffer.length, 24)) : buffer;
+  const plain = plainModeEnabled();
+  const display =
+    def.sensitive && buffer
+      ? plain
+        ? `(${buffer.length} characters hidden)`
+        : "•".repeat(Math.min(buffer.length, 24))
+      : buffer;
   const saved = def.sensitive && seed ? "configured" : seed || "not set";
 
   return (
@@ -23,16 +30,17 @@ export const SettingsInputBanner = React.memo(function SettingsInputBanner({
       </Text>
       <Text color={palette.dim}>{def.placeholder}</Text>
       <Box marginTop={1}>
-        <Text color={palette.accent}>Input: </Text>
+        <Text color={palette.accent}>{plain ? "Input (focused): " : "Input: "}</Text>
         <Text color={palette.text} bold>
           {display}
         </Text>
-        <Text color={palette.dim}>▌</Text>
+        {plain ? null : <Text color={palette.dim}>▌</Text>}
       </Box>
       <Text color={palette.dim} dimColor>
-        {`Saved: ${saved}`}
+        {/* A row that adds to a list holds no saved value to report. */}
+        {def.summarize ? "" : `Saved: ${saved}`}
         {def.envOverride && process.env[def.envOverride]?.trim() ? "  ·  (env override)" : ""}
-        {"  ·  Paste supported · Enter save · Esc cancel · Ctrl+U clear"}
+        {`${def.summarize ? "" : "  ·  "}Paste supported · Enter ${def.summarize ? "add" : "save"} · Esc cancel · Ctrl+U clear`}
       </Text>
     </Box>
   );

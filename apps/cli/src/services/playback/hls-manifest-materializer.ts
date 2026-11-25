@@ -2,6 +2,7 @@ import { rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { StreamInfo } from "@/domain/types";
+import { createDeadlineSignal } from "@/infra/abort/timeout-signal";
 import { createPrivateTempDir } from "@/infra/fs/temp-dir";
 import { streamNeedsHlsRelay } from "@/infra/player/hls-relay";
 import {
@@ -63,12 +64,8 @@ export async function materializeHlsManifestForPlayback(
   }
 
   const headers = stream.headers ?? {};
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), HLS_FETCH_TIMEOUT_MS);
   // A user abort must cancel the fetch, not wait out the deadline.
-  const fetchSignal = callerSignal
-    ? AbortSignal.any([callerSignal, controller.signal])
-    : controller.signal;
+  const deadline = createDeadlineSignal(callerSignal, HLS_FETCH_TIMEOUT_MS);
   let manifestText: string;
   // References resolve against where the playlist was finally served from: a
   // redirect to another host or path changes what every relative URI means.
@@ -83,7 +80,7 @@ export async function materializeHlsManifestForPlayback(
           ...headers,
         },
       },
-      signal: fetchSignal,
+      signal: deadline.signal,
     });
     if (outcome.kind === "blocked") {
       // A private or non-http target is terminal, not a skip — letting mpv
@@ -118,7 +115,7 @@ export async function materializeHlsManifestForPlayback(
     onSkipped?.("fetch-failed", error instanceof Error ? error.message : String(error));
     return null;
   } finally {
-    clearTimeout(timeout);
+    deadline.release();
   }
 
   if (!shouldMaterializeHlsManifest(manifestUrl, manifestText)) {

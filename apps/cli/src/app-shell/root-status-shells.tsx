@@ -7,6 +7,7 @@ import React from "react";
 
 import { extractErrorDebugExcerpt } from "./error-debug-excerpt";
 import { MouseTarget } from "./mouse/MouseRegions";
+import { plainModeEnabled } from "./plain-mode";
 import { buildErrorRows, type ErrorRow, type ErrorRowTone } from "./playback-error-rows";
 import type { PlaybackFailureWaterfallModel } from "./playback-failure-waterfall";
 import { SakuraLoader } from "./SakuraLoader";
@@ -65,13 +66,14 @@ export function RootIdleShell({ state }: { state: SessionState }) {
         ).padStart(2, "0")}`
       : null;
 
+  const plain = plainModeEnabled();
   return (
     <Box flexDirection="column" flexGrow={1}>
       {hasSession ? (
         <Box flexDirection="column" gap={0}>
           <Text color={palette.dim}>{resolveContentKind(currentTitle, state.mode)}</Text>
           <Box marginTop={1}>
-            <Text color={palette.accent}>{"⏸  "}</Text>
+            <Text color={palette.accent}>{plain ? "Paused: " : "⏸  "}</Text>
             <Text color={palette.text} bold>
               {currentTitle?.name?.trim()
                 ? truncateLine(currentTitle.name.trim(), 60)
@@ -81,20 +83,22 @@ export function RootIdleShell({ state }: { state: SessionState }) {
           </Box>
           <Box marginTop={1}>
             <Text color={palette.dim}>
-              {"/history to continue  ·  /calendar for today  ·  / for commands"}
+              {plain
+                ? "/history to continue, /calendar for today, / for commands"
+                : "/history to continue  ·  /calendar for today  ·  / for commands"}
             </Text>
           </Box>
         </Box>
       ) : (
         <Box flexDirection="column" gap={0}>
           <Text color={palette.text} bold>
-            {"◈  welcome to kunai"}
+            {plain ? "Welcome to Kunai" : "◈  welcome to kunai"}
           </Text>
           <Box marginTop={1}>
             <Text color={palette.dim}>
-              {
-                "search for a title to begin  ·  /guide for the tour  ·  /discover for recommendations"
-              }
+              {plain
+                ? "Search for a title to begin, /guide for the tour, /discover for recommendations"
+                : "search for a title to begin  ·  /guide for the tour  ·  /discover for recommendations"}
             </Text>
           </Box>
         </Box>
@@ -129,11 +133,19 @@ function toneColor(tone: ErrorRowTone): string {
 }
 
 /** Failure text is static: recovery actions own feedback, not decorations. */
-function ErrorRowLine({ row, width }: { readonly row: ErrorRow; readonly width: number }) {
-  let remaining = width - TEXT_COLUMN;
+function ErrorRowLine({
+  row,
+  width,
+  plain,
+}: {
+  readonly row: ErrorRow;
+  readonly width: number;
+  readonly plain: boolean;
+}) {
+  let remaining = width - (plain ? 0 : TEXT_COLUMN);
   return (
     <Text>
-      <Text color={palette.dangerDim}>│ </Text>
+      {plain ? null : <Text color={palette.dangerDim}>│ </Text>}
       {row.segments.map((segment, index) => {
         const text = truncateLine(segment.text, Math.max(0, remaining));
         remaining -= measureColumns(text);
@@ -202,21 +214,16 @@ export function ErrorShell({
     [message, scenario, waterfall, debugExcerpt, onRetry, width],
   );
 
-  return (
-    <Box
-      flexDirection="column"
-      marginTop={1}
-      borderStyle="round"
-      borderColor={palette.danger}
-      paddingX={1}
-      width={width + 4}
-    >
+  const plain = plainModeEnabled();
+  const content = (
+    <>
       {rows.map((row, index) => (
         <ErrorRowLine
           // eslint-disable-next-line react/no-array-index-key -- rows are positional by construction
           key={`row-${index}`}
           row={row}
           width={width}
+          plain={plain}
         />
       ))}
       {onProviders ? (
@@ -226,6 +233,27 @@ export function ErrorShell({
           </Text>
         </MouseTarget>
       ) : null}
+    </>
+  );
+
+  if (plain) {
+    return (
+      <Box flexDirection="column" marginTop={1} width={width + 4}>
+        {content}
+      </Box>
+    );
+  }
+
+  return (
+    <Box
+      flexDirection="column"
+      marginTop={1}
+      borderStyle="round"
+      borderColor={palette.danger}
+      paddingX={1}
+      width={width + 4}
+    >
+      {content}
     </Box>
   );
 }

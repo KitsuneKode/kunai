@@ -3,6 +3,11 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
+import {
+  embeddedReleaseKey,
+  type ReleaseManifestName,
+  verifyReleaseManifestSignature,
+} from "../checksum-signature";
 import { readInstallManifest, writeInstallManifestUnderActivation } from "../install-manifest";
 import { fetchLatestVersion } from "../latest-version";
 import {
@@ -13,7 +18,11 @@ import {
   type PlatformLibc,
 } from "../platform-assets";
 import { pickChecksum, verifyChecksum } from "../self-replace";
-import { normalizeRequestedVersion, parseCanonicalVersion } from "../version";
+import {
+  compareCanonicalVersions,
+  normalizeRequestedVersion,
+  parseCanonicalVersion,
+} from "../version";
 import { withActivationLock } from "./activation-lock";
 import { cleanupOldVersions } from "./cleanup-versions";
 import {
@@ -51,15 +60,19 @@ import { writeInstalledVersionMetadata } from "./version-metadata";
 export type InstallLatestResult =
   | { readonly status: "up-to-date"; readonly version: string }
   | { readonly status: "installed"; readonly version: string; readonly versionPath: string }
+  | { readonly status: "superseded"; readonly activeVersion: string }
   | { readonly status: "skipped"; readonly reason: "lock-contention" }
   | { readonly status: "failed"; readonly error: string };
 
 export type InstallLatestOptions = {
+  readonly intent: "upgrade" | "install-latest" | "explicit";
   readonly version?: string;
   readonly force?: boolean;
   readonly dlBase?: string;
   readonly layout?: InstallLayoutPaths;
   readonly fetchImpl?: FetchLike;
+  /** Supply a pin when exercising a source build. Compiled clients prefer their own pin. */
+  readonly releasePublicKey?: string;
   readonly libc?: PlatformLibc;
 };
 
@@ -69,7 +82,7 @@ let inFlightInstall: Promise<InstallLatestResult> | null = null;
  * Download, verify, and install the latest (or pinned) binary into the versioned
  * store, then update the launcher symlink. Module-level singleflight.
  */
-export function installLatest(options: InstallLatestOptions = {}): Promise<InstallLatestResult> {
+export function installLatest(options: InstallLatestOptions): Promise<InstallLatestResult> {
   if (inFlightInstall) return inFlightInstall;
   const promise = installLatestImpl(options).finally(() => {
     if (inFlightInstall === promise) inFlightInstall = null;
@@ -108,12 +121,25 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
   const archiveChecksumUrl = `${dlBase}/download/${tag}/SHA256SUMS.archives`;
   const versionPath = versionBinaryPath(layout, resolved);
 
-  if (!options.force && existsSync(versionPath) && manifest?.activeVersion === resolved) {
+  if (
+    options.intent !== "upgrade" &&
+    !options.force &&
+    existsSync(versionPath) &&
+    manifest?.activeVersion === resolved
+  ) {
     return { status: "up-to-date", version: resolved };
   }
 
   try {
     const result = await withVersionLock(layout, resolved, async () => {
+      if (options.intent === "upgrade") {
+        // The launcher may be a symlink to this exact file. Check under the
+        // version lock before writing the store, even if force was requested.
+        const current = await readInstallManifest(layout.configDir);
+        if (current?.method === "binary" && current.activeVersion === resolved) {
+          return { status: "superseded" as const, activeVersion: resolved };
+        }
+      }
       await cleanupAbandonedTransactions(layout).catch(() => {});
       await rm(stagingDirForVersion(layout, resolved), { recursive: true, force: true }).catch(
         () => {},
@@ -144,7 +170,38 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
           fetchImpl,
           policy: DEFAULT_CHECKSUM_DOWNLOAD_POLICY,
         });
-        const sumsText = await readFile(stagedChecksums, "utf8");
+        const publicKey = embeddedReleaseKey || options.releasePublicKey;
+        // The signature binds `resolved`: a correctly signed manifest from another
+        // release, served at this tag, is rejected here before any archive download.
+        const signedVersion: string = resolved;
+        async function authenticatedManifest(
+          name: ReleaseManifestName,
+          path: string,
+          url: string,
+        ): Promise<string> {
+          const bytes = await readFile(path);
+          if (publicKey) {
+            await downloadToFile({
+              url: url + ".sig",
+              destinationPath: path + ".sig",
+              fetchImpl,
+              policy: { ...DEFAULT_CHECKSUM_DOWNLOAD_POLICY, maxBytes: 64 },
+            });
+            verifyReleaseManifestSignature({
+              version: signedVersion,
+              name,
+              manifest: bytes,
+              signature: await readFile(path + ".sig"),
+              spki: publicKey,
+            });
+          }
+          return bytes.toString("utf8");
+        }
+        if (!publicKey)
+          process.stderr.write(
+            "Kunai has no embedded release signing key. Verifying SHA-256 checksums only.\n",
+          );
+        const sumsText = await authenticatedManifest("SHA256SUMS", stagedChecksums, checksumUrl);
         const expected = pickChecksum(sumsText, assetName);
         if (!expected) {
           throw new Error(`No checksum entry for ${assetName}`);
@@ -190,7 +247,11 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
           archiveUrl &&
           stagedArchive
         ) {
-          const archiveSums = await readFile(stagedArchiveChecksums, "utf8");
+          const archiveSums = await authenticatedManifest(
+            "SHA256SUMS.archives",
+            stagedArchiveChecksums,
+            archiveChecksumUrl,
+          );
           expectedArchive = pickChecksum(archiveSums, archiveName);
           if (!expectedArchive) throw new Error(`No checksum entry for ${archiveName}`);
           try {
@@ -283,6 +344,14 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
               "Install ownership changed while downloading; refusing to replace a non-native publication",
             );
           }
+          const activeVersion =
+            activeManifest && parseCanonicalVersion(activeManifest.activeVersion);
+          if (options.intent !== "explicit" && activeVersion) {
+            const order = compareCanonicalVersions(resolved, activeVersion);
+            if (order < 0 || (order === 0 && options.intent === "upgrade")) {
+              return { status: "superseded" as const, activeVersion };
+            }
+          }
           const launcherPath = activeManifest?.launcherPath ?? layout.launcherPath;
           const launcherSnapshot = await captureLauncherSnapshot(launcherPath);
           let preserveSnapshot = false;
@@ -337,6 +406,7 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
         if (activated === null) {
           return { status: "skipped" as const, reason: "lock-contention" as const };
         }
+        if (activated) return activated;
 
         // Fire-and-forget must never reject: a cleanup failure surfacing as an
         // unhandled rejection would turn a completed install into a crash.

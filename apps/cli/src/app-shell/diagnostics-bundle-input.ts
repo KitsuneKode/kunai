@@ -20,8 +20,19 @@ export function buildSupportBundleInputFromContainer(
   panelInput: DiagnosticsPanelLineInput = buildDiagnosticsPanelInput(container),
 ): SupportBundleInputFromContainer {
   const state = panelInput.state;
+  const capabilitySnapshot = container.capabilitySnapshot;
   return {
-    capabilities: container.capabilitySnapshot as unknown as Record<string, unknown> | null,
+    capabilities:
+      // A boolean only — the acknowledgement timestamp and addon URLs stay
+      // out of the bundle. Null stays null when neither source exists.
+      capabilitySnapshot !== null || panelInput.stremioAddonsEnabled !== undefined
+        ? {
+            ...capabilitySnapshot,
+            ...(panelInput.stremioAddonsEnabled !== undefined
+              ? { experimentalStremioAddons: panelInput.stremioAddonsEnabled }
+              : null),
+          }
+        : null,
     playbackSourceInventory: state.stream?.providerResolveResult
       ? buildPlaybackSourceInventoryDiagnosticsSummary(state.stream.providerResolveResult, {
           selectedSubtitleUrl: state.stream.subtitle,

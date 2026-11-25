@@ -840,6 +840,13 @@ export const dataMigrations: readonly Migration[] = [
       ALTER TABLE download_jobs ADD COLUMN publication_ino TEXT;
     `,
   },
+  {
+    id: "047_data_download_stream_provenance",
+    database: "data",
+    sql: `
+      ALTER TABLE download_jobs ADD COLUMN stream_provider_id TEXT;
+    `,
+  },
 ];
 
 export const cacheMigrations: readonly Migration[] = [

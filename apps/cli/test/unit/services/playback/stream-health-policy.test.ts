@@ -102,6 +102,39 @@ describe("stream health cache policy", () => {
     });
   });
 
+  test("strict direct-media preflight probes even on a fresh verified attestation", () => {
+    // The resolve-gate attestation proves the URL it probed; a strict addon
+    // preflight re-checks the media answer at handoff, so the trust window
+    // must not skip it.
+    expect(
+      planStreamHealth({
+        phase: "playback-preflight",
+        url: "https://cdn.example/movie.mp4",
+        cachedAt: now - 30_000,
+        now,
+        streamReachabilityVerified: true,
+        requireDirectMedia: true,
+      }),
+    ).toMatchObject({
+      shouldProbe: true,
+      strategy: "range-direct-media",
+      policyReason: "forced-direct",
+    });
+    // The same input without the strict flag takes the attestation shortcut.
+    expect(
+      planStreamHealth({
+        phase: "playback-preflight",
+        url: "https://cdn.example/movie.mp4",
+        cachedAt: now - 30_000,
+        now,
+        streamReachabilityVerified: true,
+      }),
+    ).toMatchObject({
+      shouldProbe: false,
+      skipReason: "provider-attested",
+    });
+  });
+
   test("skips youtube watch URLs even when cache is stale", () => {
     expect(
       planCacheRevalidate({

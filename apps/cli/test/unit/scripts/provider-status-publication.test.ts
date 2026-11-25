@@ -18,6 +18,14 @@ const STATUS_PATH = "apps/docs/lib/generated-provider-status.json";
 const WORKFLOW = readFileSync(join(ROOT, ".github/workflows/provider-status-sweep.yml"), "utf8");
 const roots: string[] = [];
 
+test("provider sweep makes yt-dlp available on PATH before probing", () => {
+  const installStep = WORKFLOW.split("      - name: Install yt-dlp\n")[1];
+  expect(installStep).toBeDefined();
+  const [install, probe] = installStep?.split("      - name: Run the provider sweep\n") ?? [];
+  expect(install).toContain('>> "$GITHUB_PATH"');
+  expect(probe).toContain("bun run scripts/provider-status-sweep.ts");
+});
+
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });

@@ -1013,7 +1013,7 @@ export async function resolveEpisodeSources(opts: {
           providerId: ALLANIME_PROVIDER_ID,
           stage: "episode-sources",
           code: "provider-unavailable",
-          message: "AllManga crypto bootstrap stayed stale after refresh",
+          message: "AllManga's stream authorization is out of date. Choose another anime provider.",
           retryable: true,
         });
       }

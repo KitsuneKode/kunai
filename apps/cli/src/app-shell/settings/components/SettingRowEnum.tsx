@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { plainModeEnabled, selectionPrefix } from "../../plain-mode";
 import { SegmentedControl } from "../../primitives/SegmentedControl";
 import { palette } from "../../shell-theme";
 import type { BuiltSettingsRow } from "../types";
@@ -15,6 +16,7 @@ export const SettingRowEnum = React.memo(function SettingRowEnum({
   readonly rowWidth: number;
 }) {
   if (row.def.kind !== "enum" || row.def.presentation === "submenu") return null;
+  const plain = plainModeEnabled();
   const activeIndex = Math.max(
     0,
     row.def.options.findIndex((option) => option.label === row.valueSummary),
@@ -23,11 +25,13 @@ export const SettingRowEnum = React.memo(function SettingRowEnum({
   return (
     <Box
       width={rowWidth}
-      backgroundColor={selected ? palette.accentFill : undefined}
+      backgroundColor={selected && !plain ? palette.accentFill : undefined}
       flexDirection="column"
     >
       <Box>
-        <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
+        <Text color={selected ? palette.accent : palette.dim}>
+          {selectionPrefix(selected, plain)}
+        </Text>
         <Text bold={selected} color={selected ? palette.text : palette.textDim}>
           {row.def.label}
         </Text>

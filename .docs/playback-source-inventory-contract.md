@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T15:43:22Z"
+lastReviewed: "2026-11-25T20:14:06Z"
 ---
 
 # Playback Source Inventory Contract
@@ -284,6 +284,67 @@ provider inventory satisfies the preference without that search. Preserve an
 explicit interactive selection and an attached track without language evidence.
 Late search still requires online playback, proven TMDB identity, and the user's
 Wyzie key; disabled subtitles and satisfying hard subtitles suppress it.
+
+### Subtitle track identity
+
+Two subtitle tracks are the same track only when their URLs match without the query and
+hash **and** their languages agree. Comparing without the query absorbs the rotating
+tokens providers use to re-sign one file. Checking the language keeps tracks that differ
+only by query apart, such as YouTube `timedtext?lang=en` and `?lang=fr`. A track with no
+known language stays distinct from every other URL. An extra row costs nothing, but a
+lost language cannot be recovered. One helper,
+`apps/cli/src/domain/subtitle-track-identity.ts`, makes this decision for the inventory
+merge and ranking dedupe in `apps/cli/src/subtitle.ts`, the mpv attach dedupe, and the
+download sidecar's language label. The interactive picker numbers rows that would
+otherwise share a label and detail.
+
+YouTube is the only production provider whose caption URLs differ by query alone. The
+other adapters pass through upstream file URLs that differ by path and at most carry a
+signing token. A Stremio addon with private configuration drops the subtitle language,
+so its tracks are kept apart. The language is the normalized two-letter code, so script
+variants that normalize alike, such as `zh-Hans` and `zh-Hant`, still count as one track.
+
+## Desktop subtitle fetch boundary
+
+Kunai downloads external subtitle URLs before handing a file to mpv. The rule
+applies to the primary and alternatives at launch, persistent replacements
+and reconnects, interactive picks, and late attachments. It applies to both
+TMDB and anime inventories, Wyzie results, and user-installed Stremio addons.
+The boundary checks the actual URL regardless of the adapter's track label.
+
+The shared downloader pins a public address and validates every redirect before
+connecting. It caps each request at three seconds and 512 KiB, and derives the
+file extension from a WebVTT, SRT, or ASS body. Playback stores the result in an
+owner-only file under a private directory, with at most 64 distinct URLs per
+scope. The launch or playback cycle owns cancellation and cleanup. Refused
+tracks produce a diagnostic without the URL or headers, and playback continues.
+
+Media request headers apply to the media origin. KickAssAnime's caption CDN
+gets the player Origin header only. All provider-supplied headers are dropped
+on cross-origin redirects. Stremio subtitle requests carry no addon headers.
+The scoped media origin comes from the original stream even when the media is
+materialized into a local manifest or handed to a playback relay.
+
+Downloads use the same fetch and format validation for the selected subtitle
+sidecar. A refused download leaves the video playable and the sidecar
+repairable. Verified local-library tracks retain their existing paths. mpv's
+built-in demuxing of media tracks is separate from Kunai's external inventory.
+YouTube supplies captions from resolved metadata. Desktop mpv and yt-dlp
+downloads leave those caption URLs to Kunai's guarded fetch.
+
+| Production provider | Remote subtitle candidates                             |
+| ------------------- | ------------------------------------------------------ |
+| Videasy             | Captions from the API response                         |
+| VidLink             | API captions and manifest renditions                   |
+| VidRock             | Captions discovered in HLS worker manifests            |
+| Rivestream          | Captions from lane payloads and HLS manifests          |
+| MOVY                | Captions from lane payloads and HLS manifests          |
+| AllManga            | Source-provided primary and alternate caption URLs     |
+| HiAnime             | Caption URLs from the embed response                   |
+| Miruro              | Caption URLs from the source response                  |
+| AnimeGG             | None                                                   |
+| KickAssAnime        | Caption URLs from the player page                      |
+| YouTube             | Manual and automatic caption URLs from yt-dlp metadata |
 
 ## Anime Title Aliases And Search Display
 

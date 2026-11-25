@@ -1,3 +1,7 @@
+---
+lastReviewed: "2026-11-24"
+---
+
 # KitsuneSnipe — Fullscreen Root Shell Redesign
 
 Status: In Progress

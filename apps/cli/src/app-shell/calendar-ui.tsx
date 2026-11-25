@@ -10,6 +10,7 @@ import {
   type CalendarDay,
   type CalendarTypeTab,
 } from "./calendar-ui.model";
+import { plainModeEnabled } from "./plain-mode";
 import { ClaudeTabRow } from "./primitives/ClaudeTabRow";
 import { buildCalendarRowColumns, computeCalendarRowLayout } from "./primitives/list-row-layout";
 import { ListRow } from "./primitives/ListRow";
@@ -52,6 +53,7 @@ export function CalendarDayStrip({
 }) {
   const { windowDays, hasPrev, hasNext } = windowCalendarDayStrip(days, selectedDayKey, narrow);
   const showHint = maxWidth === undefined || maxWidth >= 92;
+  const plain = plainModeEnabled();
 
   return (
     <Box
@@ -62,10 +64,24 @@ export function CalendarDayStrip({
       width={maxWidth}
       overflow="hidden"
     >
-      <Text color={palette.dim}>{hasPrev ? "‹ " : "  "}</Text>
+      <Text color={palette.dim}>
+        {plain ? (hasPrev ? "previous " : "") : hasPrev ? "‹ " : "  "}
+      </Text>
       {windowDays.map((day) => {
         const isSelected = selectedDayKey === day.key;
         const isToday = day.isToday;
+        if (plain) {
+          const markers = [isSelected ? "[active]" : null, isToday ? "(today)" : null, day.label]
+            .filter((part): part is string => part !== null)
+            .join(" ");
+          return (
+            <Box key={day.key} marginRight={1}>
+              <Text color={palette.text} bold={isSelected || isToday}>
+                {` ${markers} `}
+              </Text>
+            </Box>
+          );
+        }
         // Boxed chips with a clear hierarchy: the SELECTED day is the rose accent
         // pill (matches the type tabs); TODAY is a distinct amber pill so it always
         // stands apart; other days are readable text chips (not near-background).
@@ -79,10 +95,12 @@ export function CalendarDayStrip({
           </Box>
         );
       })}
-      <Text color={palette.dim}>{hasNext ? " ›" : "  "}</Text>
+      <Text color={palette.dim}>{plain ? (hasNext ? " next" : "") : hasNext ? " ›" : "  "}</Text>
       {showHint ? (
         <Box marginLeft={1}>
-          <Text color={palette.dim}>{"← → date · Esc close"}</Text>
+          <Text color={palette.dim}>
+            {plain ? "previous/next date, Esc close" : "← → date · Esc close"}
+          </Text>
         </Box>
       ) : null}
     </Box>
@@ -103,11 +121,12 @@ export function CalendarTypeTabs({
   if (compact) return null;
   const labels = CALENDAR_TYPE_TABS.map((tab) => (tab === "TV" ? "Series" : tab));
   const activeIndex = CALENDAR_TYPE_TABS.indexOf(activeTab);
+  const showHint = maxWidth === undefined || maxWidth >= 100;
   return (
     <ClaudeTabRow
       labels={labels}
       activeIndex={activeIndex}
-      hint={maxWidth === undefined || maxWidth >= 100 ? "⇥ Tab cycles type" : undefined}
+      hint={showHint ? (plainModeEnabled() ? "Tab cycles type" : "⇥ Tab cycles type") : undefined}
       maxWidth={maxWidth}
       dense={dense}
     />
@@ -158,7 +177,8 @@ function CalendarScheduleRowInner<T>({
   const status = statusLabel ?? presentation.label;
   const color = statusColor ?? presentation.color;
   const dim = statusDim ?? presentation.dim;
-  const glyph = statusGlyph ?? presentation.glyph.trim();
+  const plain = plainModeEnabled();
+  const glyph = plain ? "" : (statusGlyph ?? presentation.glyph.trim());
   const innerWidth = Math.max(16, rowWidth - CALENDAR_ROW_LEAD_WIDTH);
   const layout = computeCalendarRowLayout(innerWidth);
   const statusText = compactCalendarStatusLabel(
@@ -171,12 +191,13 @@ function CalendarScheduleRowInner<T>({
   // Distinct glyphs, not just distinct tints: "new for you" and "tracked" used to
   // share ● and differ only by colour, which is unreadable at a glance and
   // invisible to a colourblind reader.
-  const marker = isNew ? "●" : tracked ? "★" : "";
+  const marker = plain ? "" : isNew ? "●" : tracked ? "★" : "";
   const markerColor = isNew ? palette.accent : palette.ok;
+  const titlePrefix = plain ? (isNew ? "[new] " : tracked ? "[tracked] " : "") : "";
 
   const columns = buildCalendarRowColumns({
     timeLabel,
-    title: option.label,
+    title: `${titlePrefix}${option.label}`,
     marker,
     markerColor,
     episodeCode: ep,

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 
 import { DETACHED_HANDOFF_CAPABILITIES } from "@/domain/playback/player-capabilities";
 import type { StreamInfo } from "@/domain/types";
@@ -138,6 +138,50 @@ describe("HandoffPlayerService", () => {
       stopSharedStreamGateway();
     }
   });
+
+  test.each<{ label: string; headers: Record<string, string> }>([
+    { label: "headerless", headers: {} },
+    { label: "with a Referer", headers: { Referer: "https://fixture.example/" } },
+  ])(
+    "rejects a Stremio addon stream before any gateway or launch effect ($label)",
+    async ({ headers }) => {
+      const fixture = runtime();
+      const spawn = mock(fixture.spawn);
+      const player = new HandoffPlayerService({
+        target: "mpv",
+        runtime: { ...fixture, spawn },
+      });
+      try {
+        await expect(
+          player.play(
+            {
+              ...STREAM,
+              headers,
+              providerResolveResult: {
+                providerId: "stremio-addon-example-1234",
+                streams: [],
+                subtitles: [],
+                failures: [],
+                status: "resolved",
+                trace: {
+                  id: "handoff",
+                  startedAt: "2026-01-01T00:00:00Z",
+                  title: { id: "tmdb:1", kind: "movie", title: "Fixture" },
+                  cacheHit: false,
+                  steps: [],
+                  failures: [],
+                },
+              },
+            },
+            { url: STREAM.url, displayTitle: "Example" },
+          ),
+        ).rejects.toThrow("Stremio addon streams play only in desktop mpv for now");
+        expect(spawn).not.toHaveBeenCalled();
+      } finally {
+        player.beginShutdown();
+      }
+    },
+  );
 
   test("a deferred locator is served through the gateway document route", async () => {
     const locator = registerAllMangaAkDeferredDescriptor({

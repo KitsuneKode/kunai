@@ -26,7 +26,7 @@ else
   status=$?
   [[ "$status" == 2 ]] || exit "$status"
   [[ -z "$(git diff --cached --name-only)" ]] || { echo 'Unexpected staged changes' >&2; exit 1; }
-  git add -- "$artifact"
+  git add -- "$artifact" Formula/kunai.rb bucket/kunai.json apps/docs/lib/generated-release-notes.json
   if git diff --cached --quiet; then
     echo 'No release metadata change to review.'
     exit 0
@@ -43,7 +43,7 @@ fi
 body="$(mktemp)"
 trap 'rm -f "$body"' EXIT
 cat > "$body" <<EOF
-Public release v${version} passed publication verification. This PR records its published status; it does not publish packages or binaries.
+Public release v${version} passed publication verification. This PR updates the in-repo Homebrew tap and Scoop bucket and records its published status; it does not publish packages or binaries.
 
 Review the narrow metadata diff, approve the bot-created workflow runs if GitHub requests it, and merge only after required checks pass. Do not rerun publication to repair metadata.
 EOF

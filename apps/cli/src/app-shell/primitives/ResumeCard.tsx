@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { plainModeEnabled } from "../plain-mode";
 import { truncateLine } from "../shell-text";
 import { palette } from "../shell-theme";
 
@@ -13,6 +14,15 @@ export const ResumeCard = React.memo(function ResumeCard({
   readonly action?: string;
   readonly width?: number;
 }) {
+  if (plainModeEnabled()) {
+    return (
+      <Box marginTop={1}>
+        <Text color={palette.text} bold>
+          {action ? `Resume: ${label} (${action})` : `Resume: ${label}`}
+        </Text>
+      </Box>
+    );
+  }
   return (
     <Box
       marginTop={1}

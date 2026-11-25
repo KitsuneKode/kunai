@@ -1,4 +1,5 @@
 import type { SettingRowDef, SettingsRegistryContext } from "../types";
+import { addonSettingsRows } from "./addons";
 import { generalSettingsRows } from "./general";
 import { keySettingsRows } from "./keys";
 import { playbackSettingsRows } from "./playback";
@@ -13,6 +14,7 @@ export function buildSettingsRegistry(ctx: SettingsRegistryContext): SettingRowD
   return [
     ...generalSettingsRows(ctx),
     ...providerSettingsRows(ctx),
+    ...addonSettingsRows(ctx),
     ...relaySettingsRows(ctx),
     ...youtubeSettingsRows(ctx),
     ...playbackSettingsRows(ctx),

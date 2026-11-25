@@ -9,27 +9,37 @@ This README is the operator's guide; the contract wins on any disagreement.
 
 ## What it does
 
-- Accepts `POST /api/ping` with exactly five keys:
-  `{ installId, version, os, arch, ts }`. A sixth key is rejected.
+- Accepts `POST /api/ping` in exactly one of two shapes: v1
+  `{ installId, version, os, arch, ts }`, sent by every release so far, and v2
+  `{ id, cohort, day, version, os, arch }`, whose `id` rotates monthly. Any
+  other key is rejected. **This ingest must deploy before any client sends
+  v2**: published clients treat a 4xx as permanent for 24 hours.
 - Validates every dimension: strict semver `version`, closed allowlists for
-  `os` and `arch`, so a hostile client cannot invent a bucket.
+  `os` (`linux`, `darwin`, `win32`, `android`) and `arch`, so a hostile client
+  cannot invent a bucket. A v2 `day` must be within a day of the ingest's own.
 - Stores an **HMAC-SHA256 hash** of the install id — never the raw UUID.
 - **Never reads a client IP.** There is no rate-limit key derived from one.
   Abuse protection is the 512-byte body cap, Vercel's platform DDoS
   mitigation, and the `(day, install_hash)` primary key, which caps a real
-  install at one row per day no matter how often it pings.
+  install at one row per day no matter how often it pings. A repeat ping
+  writes nothing and spends no budget, and once the daily ceiling is reached
+  a ping performs no database write at all.
 - Publishes a daily aggregate JSON with dimension buckets under **5 installs**
   folded into `other`. This is per-dimension small-cell suppression, not a
   joint k-anonymity guarantee.
 
 ## Tables
 
-| Table              | Holds                                                       | Retention             |
-| ------------------ | ----------------------------------------------------------- | --------------------- |
-| `ping_day`         | `(day, HMAC(installId), version, os, arch)`; PK is the gate | 35 days               |
-| `install_lifetime` | one hashed row per install + first-seen/last-seen dates     | retired after silence |
-| `lifetime_retired` | a counter holding installs folded out of `install_lifetime` | permanent             |
-| `daily_rollup`     | counts only, no identity                                    | permanent             |
+| Table                | Holds                                                       | Retention               |
+| -------------------- | ----------------------------------------------------------- | ----------------------- |
+| `ping_day`           | `(day, HMAC(installId), version, os, arch)`; PK is the gate | 35 days                 |
+| `install_lifetime`   | one hashed row per install + first-seen/last-seen dates     | retired after silence   |
+| `lifetime_retired`   | a counter holding installs folded out of `install_lifetime` | permanent               |
+| `daily_rollup`       | counts only, no identity                                    | permanent               |
+| `month_active`       | `(month, HMAC(id), v2 cohort)`, one row per install a month | to the next month's 8th |
+| `month_rollup`       | unique actives per month, counts only                       | permanent               |
+| `cohort_rollup`      | v2 installs of each cohort active each month, counts only   | permanent               |
+| `distribution_daily` | GitHub and npm download counters; no client data            | permanent               |
 
 `install_lifetime` is a durable pseudonymous record — the cost of a durable
 lifetime figure — and its `first_seen` is what makes the per-day first-seen
@@ -42,12 +52,16 @@ describe it as equivalent to a probabilistic sketch.
 
 ## Endpoints
 
-| Route                     | Auth                    | Purpose                                   |
-| ------------------------- | ----------------------- | ----------------------------------------- |
-| `POST /api/ping`          | none                    | Ingest. Returns `204` with no body.       |
-| `GET /metrics/daily.json` | none                    | Public aggregates, k-anonymised.          |
-| `GET /api/cron/snapshot`  | `CRON_SECRET`           | Rolls up yesterday, then prunes raw rows. |
-| `GET /api/metrics/admin`  | `ANALYTICS_ADMIN_TOKEN` | Last 30 days, **unsuppressed**.           |
+| Route                                          | Auth                    | Purpose                                                           |
+| ---------------------------------------------- | ----------------------- | ----------------------------------------------------------------- |
+| `POST /api/ping`                               | none                    | Ingest. Returns `204` with no body.                               |
+| `GET /metrics/daily.json`                      | none                    | Public aggregates, k-anonymised.                                  |
+| `GET /metrics/series.json`                     | none                    | Day-by-day aggregates.                                            |
+| `GET /metrics/monthly.json`                    | none                    | Complete-month actives and cohorts.                               |
+| `GET /metrics/distribution.json`               | none                    | Downloads per release/platform, deltas.                           |
+| `GET /badges/{downloads,active,installs}.json` | none                    | shields.io endpoint badges.                                       |
+| `GET /api/cron/snapshot`                       | `CRON_SECRET`           | Rolls up yesterday, prunes, rolls up months, snapshots downloads. |
+| `GET /api/metrics/admin`                       | `ANALYTICS_ADMIN_TOKEN` | Last 30 days, **unsuppressed**.                                   |
 
 Cron runs at `0 19 * * *` (see `vercel.json`). The analytics day closes at
 midnight IST (18:30 UTC); hour 19 is the first hour that cannot fire before the
@@ -58,12 +72,13 @@ close — Hobby may run a job anywhere inside its scheduled hour.
 1. Create a Neon project and copy the **pooled** connection string.
 2. Set these environment variables in Vercel:
 
-   | Variable                | Purpose                                     |
-   | ----------------------- | ------------------------------------------- |
-   | `DATABASE_URL`          | Neon pooled connection string               |
-   | `ANALYTICS_HASH_SECRET` | Long random secret for the install-id HMAC  |
-   | `CRON_SECRET`           | Bearer token the cron job presents          |
-   | `ANALYTICS_ADMIN_TOKEN` | Bearer token for the admin metrics endpoint |
+   | Variable                | Purpose                                           |
+   | ----------------------- | ------------------------------------------------- |
+   | `DATABASE_URL`          | Neon pooled connection string                     |
+   | `ANALYTICS_HASH_SECRET` | Long random secret for the install-id HMAC        |
+   | `CRON_SECRET`           | Bearer token the cron job presents                |
+   | `ANALYTICS_ADMIN_TOKEN` | Bearer token for the admin metrics endpoint       |
+   | `GITHUB_TOKEN`          | Optional; public-data token for the releases read |
 
 3. Apply the schema (idempotent, safe to re-run):
 
