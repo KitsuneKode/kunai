@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T05:22:20Z"
+lastReviewed: "2026-11-25T20:14:32Z"
 ---
 
 # Kunai — Runtime Architecture
@@ -143,7 +143,12 @@ storage (`packages/storage` queue repository) and applied by domain/app adapters
 - Lifecycle is exactly `pending → in-flight → played` (plus `skipped` / `failed`
   for non-playback exits).
 - Only confirmed `playback-started` acknowledges a claimed row. Process spawn and
-  IPC connection are insufficient.
+  IPC connection are insufficient. A row naming an episode is consumed only by
+  that episode starting (`startedEpisodeMatchesClaim`; anime by absolute or
+  mapped number); if the viewer starts another, the row rolls back to pending.
+  The handoff carries the row's episode as the next iteration's
+  `initialEpisode`, like a history entry, so it opens on that episode rather
+  than the starting picker.
 - Android intent acceptance is also insufficient. Detached handoff restores the
   exact claimed row to pending because Kunai cannot observe media start.
 - Every handoff carries the exact queue entry ID and absolute anime episode

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  playlistAdvanceEpisode,
   playlistAdvanceFromQueueIntent,
   resolvePlaylistAutoNextCountdown,
 } from "@/app/playback/playback-outcome";
@@ -148,5 +149,34 @@ describe("resolvePlaylistAutoNextCountdown", () => {
     expect(advanced.outcome.titleInfo.queuePlaybackIntent?.queueEntryId).toBe(selected.id);
 
     db.close();
+  });
+});
+
+/**
+ * SessionController hands this to the next iteration as the pending episode.
+ * A SELECT_EPISODE dispatched instead was cleared by RESET_CONTENT and
+ * SELECT_TITLE before playback read it (Sol review #1).
+ */
+describe("playlistAdvanceEpisode", () => {
+  test("an explicit row, an abs-only anime row, and a movie", () => {
+    const series: QueuePlaybackIntent = {
+      queueEntryId: "qe-s2e7",
+      titleId: "tmdb:7",
+      mediaKind: "series",
+      season: 2,
+      episode: 7,
+    };
+    expect(
+      playlistAdvanceEpisode(playlistAdvanceFromQueueIntent({ intent: series, title: "Show" })),
+    ).toEqual({ season: 2, episode: 7 });
+    expect(
+      playlistAdvanceEpisode(
+        playlistAdvanceFromQueueIntent({ intent: ABS_ONLY_INTENT, title: "Abs Anime" }),
+      ),
+    ).toEqual({ season: 1, episode: 13 });
+    const movie: QueuePlaybackIntent = { queueEntryId: "m", titleId: "tmdb:1", mediaKind: "movie" };
+    expect(
+      playlistAdvanceEpisode(playlistAdvanceFromQueueIntent({ intent: movie, title: "Film" })),
+    ).toBeNull();
   });
 });
