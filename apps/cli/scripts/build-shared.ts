@@ -479,7 +479,11 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // combiner), it measured 3,293,492 bytes. 3219 KiB leaves 2,764 bytes; public
 // launcher budgets are unchanged. The tmux graphics path measured 3,297,643
 // bytes; 3223 KiB leaves 2,709 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_223;
+// Finishing playlist editing, playlist export progress and Up Next failed-start
+// reasons measured 3,301,781 bytes: no dependency or asset. 3227 KiB leaves
+// 2,667 bytes. Whichever of this and the clickable-key-hints raise merges
+// second re-measures the combined tree.
+export const NPM_BUNDLE_BUDGET_KB = 3_227;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
