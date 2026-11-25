@@ -2,8 +2,8 @@
 
 ## Status
 
-- **Status:** ACCEPTED in part (2026-11-25): decisions 1 and 3 are made, so Phases 1 and 2 may
-  start. Decisions 2 and 4 are still open.
+- **Status:** ACCEPTED in part (2026-11-25): decisions 1, 3 and 4 are made; Phases 1 and 2 are
+  implemented (#797, #800). Decision 2 (usage buckets) is still open.
 - **Date:** 2026-11-24, rewritten 2026-11-25 after the maintainer asked for analytics that are
   less invasive yet still give exact, publishable numbers (downloads, updates, installs, active
   users, Android included).
@@ -195,7 +195,8 @@ dropped: weekly only.
 2. **Usage buckets (Section 4): OPEN.** Ship nothing from Section 4 until this is decided.
 3. **Install/update marker assets: DECIDED 2026-11-25, yes.** Release N adds `install.marker`
    and `update.marker`.
-4. **Badge wording: OPEN.** The default until decided is "active (opted in, 30d)".
+4. **Badge wording: DECIDED 2026-11-25, "active last month (opted in)".** The figure is the last
+   complete calendar month, so the label names it (#814).
 
 ## 9. Dropped, as not worth the privacy cost
 
