@@ -27,7 +27,7 @@ export {
 export type { ProbeFetchOutcome, StreamReachabilityFetch } from "@kunai/core";
 
 export type StreamReachabilityProbeResult =
-  | { readonly status: "reachable" }
+  | { readonly status: "reachable"; readonly contentType?: string }
   | { readonly status: "unreachable"; readonly reason: string; readonly definitive: boolean }
   | { readonly status: "timeout" };
 
@@ -290,6 +290,11 @@ function hasFragmentedMp4Prefix(prefix: Uint8Array): boolean {
   return false;
 }
 
+/** Content-types HLS manifests are served under, extensionless URLs included. */
+function isHlsContentType(contentType: string | undefined): boolean {
+  return contentType?.toLowerCase().includes("mpegurl") ?? false;
+}
+
 /** Quick manifest/segment probe used before accepting a provider candidate or handing off to mpv. */
 export async function probeStreamReachability(
   input: ProbeStreamReachabilityInput,
@@ -329,7 +334,19 @@ export async function probeStreamReachability(
       parentSignal: input.signal,
       resolveNamesFor,
     });
-    if (head.status === "reachable") return head;
+    if (head.status === "reachable") {
+      if (isHlsContentType(head.contentType)) {
+        return probeHlsManifest(
+          fetchImpl,
+          input.url,
+          headers,
+          remaining,
+          input.signal,
+          resolveNamesFor,
+        );
+      }
+      return head;
+    }
     if (head.status === "timeout") return head;
     if (head.status === "unreachable" && head.definitive) return head;
   } catch {
@@ -338,7 +355,7 @@ export async function probeStreamReachability(
 
   if (Date.now() >= deadline) return { status: "timeout" };
 
-  return probeHttpStatus(fetchImpl, input.url, {
+  const get = await probeHttpStatus(fetchImpl, input.url, {
     method: "GET",
     headers: { ...headers, Range: "bytes=0-0" },
     remainingMs: remaining,
@@ -346,6 +363,17 @@ export async function probeStreamReachability(
     resolveNamesFor,
     healthyStatus: (status) => (status >= 200 && status < 300) || status === 206,
   });
+  if (get.status === "reachable" && isHlsContentType(get.contentType)) {
+    return probeHlsManifest(
+      fetchImpl,
+      input.url,
+      headers,
+      remaining,
+      input.signal,
+      resolveNamesFor,
+    );
+  }
+  return get;
 }
 
 /** Provider resolve gates allow slow CDNs through as unverified; only definitive failures block. */
@@ -685,7 +713,11 @@ async function probeHttpStatus(
     const response = outcome.response;
     await response.body?.cancel().catch(() => undefined);
     if (healthyStatus(response.status)) {
-      return { status: "reachable" };
+      const contentType = response.headers.get("content-type");
+      return {
+        status: "reachable",
+        ...(contentType ? { contentType } : null),
+      };
     }
     if (options.method === "HEAD" && (response.status === 403 || response.status === 405)) {
       throw new Error(`HEAD ${response.status}`);
