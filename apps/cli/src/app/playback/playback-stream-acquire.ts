@@ -38,6 +38,7 @@ import {
   resolvePlaybackResolvePolicy,
 } from "@/app/playback/playback-resolve-policy";
 import { invalidateEpisodePlaybackCaches } from "@/app/playback/playback-source-cache-invalidation";
+import { capQualityPreference } from "@/app/playback/playback-source-failover";
 import {
   isRecentPlaybackStreamFresh,
   recentPlaybackStreamKey,
@@ -872,7 +873,8 @@ export async function acquireEpisodeStream(
     stream = applyPreferredStreamSelection(
       stream,
       getPreferredStreamSelection(sourceProviderId, currentEpisode),
-      playbackQualityPreference(profileContext),
+      // A recovery step-down caps quality for the rest of this episode.
+      capQualityPreference(playbackQualityPreference(profileContext), run.recoveryQualityCeiling),
       playbackSubtitlePreference(profileContext),
       config.hdrMode,
     );
