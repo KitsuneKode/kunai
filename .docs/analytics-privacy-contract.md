@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25"
+lastReviewed: "2026-11-25T04:21:00Z"
 ---
 
 # Analytics Privacy Contract
@@ -39,8 +39,9 @@ Read this before touching `apps/cli/src/services/analytics/`,
   cadence/retry fields only, never the identity. A rejected completion refreshes
   non-dirty local analytics fields from disk so a stale session stops sending.
 - The send itself is gated on disk too. Immediately before a request,
-  `maybePing` re-reads `config.json` (`readPersistedAnalyticsConsent`, read-only,
-  no memory change) and sends only if the file still says `enabled` with the
+  `maybePing` re-reads `config.json` (`readPersistedAnalyticsConsent`, no memory
+  change; it uses the normal store load, so a corrupt file is quarantined as at
+  startup and reads as the default `unset`) and sends only if the file still says `enabled` with the
   exact install id this process holds, and memory still agrees after the read.
   The file is read with the same rule startup uses (an `enabled` with no notice
   marker reads as `unset`). A sibling's disable or rotation since startup, an
