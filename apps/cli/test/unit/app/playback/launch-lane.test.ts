@@ -28,14 +28,11 @@ class TestSessionStateManager implements SessionStateManager {
   initialize(): void {}
 }
 
-const LANES: Record<
-  string,
-  { readonly isAnimeProvider: boolean; readonly isYoutubeProvider: boolean }
-> = {
-  vidking: { isAnimeProvider: false, isYoutubeProvider: false },
-  miruro: { isAnimeProvider: true, isYoutubeProvider: false },
-  youtube: { isAnimeProvider: false, isYoutubeProvider: true },
-};
+const LANES = new Map([
+  ["vidking", { isAnimeProvider: false, isYoutubeProvider: false }],
+  ["miruro", { isAnimeProvider: true, isYoutubeProvider: false }],
+  ["youtube", { isAnimeProvider: false, isYoutubeProvider: true }],
+]);
 
 function containerIn(mode: "series" | "anime" | "youtube") {
   const stateManager = new TestSessionStateManager();
@@ -52,7 +49,7 @@ function containerIn(mode: "series" | "anime" | "youtube") {
     config: { getRaw: () => DEFAULT_CONFIG },
     providerRegistry: {
       get: (id: string) => {
-        const lane = LANES[id];
+        const lane = LANES.get(id);
         return lane ? { metadata: { id, ...lane } } : undefined;
       },
     },
