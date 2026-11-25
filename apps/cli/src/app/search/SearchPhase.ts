@@ -26,7 +26,6 @@ import {
   prepareReplayTitleForProvider,
   titleFromHistorySelection,
 } from "@/app/bootstrap/launch-entry";
-import { primeShareBootstrapStartSeconds } from "@/app/bootstrap/share-bootstrap-start";
 import { titleInfoFromSearchResult, videoMetaFromSearchResult } from "@/app/bootstrap/title-info";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/discover/anime-provider-mapping";
 import { loadDiscoverResults } from "@/app/discover/discover-results";
@@ -50,9 +49,14 @@ import {
   shouldRunBootstrapSearch,
 } from "@/app/search/search-failure-policy";
 import { buildSearchFilterChipOptions } from "@/app/search/search-filter-chips";
-import { applySearchSelectionSessionRouting } from "@/app/search/search-selection-routing";
 import {
+  adoptHistoryEntry,
+  applySearchSelectionSessionRouting,
+} from "@/app/search/search-selection-routing";
+import {
+  isCalendarStartupRoute,
   shouldDeferBrowseIdleContext,
+  type CalendarStartupRoute,
   type SearchStartupRoute,
 } from "@/app/search/search-startup-policy";
 import { loadLocalSuggestionCorpus, toCatalogSuggestions } from "@/app/search/search-suggestions";
@@ -408,17 +412,12 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               return { status: "quit" };
             }
             if (typeof routedAction === "object" && routedAction.type === "history-entry") {
-              primeShareBootstrapStartSeconds(routedAction.startSeconds);
-              stateManager.dispatch({ type: "SELECT_TITLE", title: routedAction.title });
-              if (routedAction.episode) {
-                stateManager.dispatch({ type: "SELECT_EPISODE", episode: routedAction.episode });
-              }
-              return { status: "success", value: routedAction.title };
+              return { status: "success", value: adoptHistoryEntry(container, routedAction) };
             }
             continue;
           }
-          if (pendingInitialRoute === "calendar") {
-            beginCalendarRoute();
+          if (isCalendarStartupRoute(pendingInitialRoute)) {
+            beginCalendarRoute(SEEDED_CALENDAR_TYPE_TABS[pendingInitialRoute]);
             pendingInitialRoute = undefined;
             continue;
           }
@@ -1364,11 +1363,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             return { status: "quit" };
           }
           if (typeof routedAction === "object" && routedAction.type === "history-entry") {
-            stateManager.dispatch({ type: "SELECT_TITLE", title: routedAction.title });
-            if (routedAction.episode) {
-              stateManager.dispatch({ type: "SELECT_EPISODE", episode: routedAction.episode });
-            }
-            return { status: "success", value: routedAction.title };
+            return { status: "success", value: adoptHistoryEntry(container, routedAction) };
           }
           if (routedAction === "mode-switch" || routedAction === "handled") {
             continue;
@@ -1384,10 +1379,8 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           originalSelected.calendar?.continuation?.playable
         ) {
           const launch = await launchCalendarContinue(container, originalSelected);
-          if (launch) {
-            stateManager.dispatch({ type: "SELECT_TITLE", title: launch.title });
-            return { status: "success", value: launch.title };
-          }
+          // Already selected, title then episode, by the launcher.
+          if (launch) return { status: "success", value: launch.title };
         }
         const deferAnimeProviderMapping =
           !!input && "deferAnimeProviderMapping" in input && input.deferAnimeProviderMapping;
@@ -1459,7 +1452,7 @@ function syncSelectedResultIndex(
 async function loadSearchRoute(
   // The calendar deliberately does NOT route through here: it mounts first and
   // loads under its own surface (see `beginCalendarRoute`).
-  route: Exclude<NonNullable<SearchPhaseInput["initialRoute"]>, "history" | "calendar">,
+  route: Exclude<NonNullable<SearchPhaseInput["initialRoute"]>, "history" | CalendarStartupRoute>,
   context: PhaseContext,
 ): Promise<string | undefined> {
   const { container } = context;

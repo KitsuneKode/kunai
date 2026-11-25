@@ -5,6 +5,8 @@ import type {
 import type { EpisodeInfo, ShellMode, TitleInfo } from "@/domain/types";
 
 import { shellModeForQueueIntent } from "./launch-lane";
+/** Browse routes post-play can hand back to search; each opens as its browse command does. */
+export type PostPlaybackBrowseRoute = "calendar" | "anime-calendar" | "series-calendar" | "random";
 
 /** Terminal outcomes from PlaybackPhase.execute() — shared by the phase and post-play menu. */
 export type PlaybackOutcome =
@@ -13,7 +15,7 @@ export type PlaybackOutcome =
   | "back_to_history"
   | "mode_switch"
   | "quit"
-  | { type: "browse_route"; route: "calendar" | "random" }
+  | { type: "browse_route"; route: PostPlaybackBrowseRoute }
   | { type: "history_entry"; title: TitleInfo; episode?: EpisodeInfo; startSeconds?: number }
   | {
       type: "playlist-advance";
@@ -22,6 +24,15 @@ export type PlaybackOutcome =
       season?: number;
       episode?: number;
     };
+
+/** The episode a playlist advance starts on; null for a title-level row. */
+export function playlistAdvanceEpisode(
+  outcome: Extract<PlaybackOutcome, { type: "playlist-advance" }>,
+): EpisodeInfo | null {
+  return outcome.episode !== undefined
+    ? { season: outcome.season ?? 1, episode: outcome.episode }
+    : null;
+}
 
 /**
  * Build a playlist-advance outcome that carries the exact claimed queue intent

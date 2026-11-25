@@ -29,7 +29,10 @@ import {
   waitForRootLibraryPlaybackLaunch,
 } from "@/app-shell/root-library-playback-bridge";
 import { openDiagnosticsOverlay, openRootOwnedOverlay } from "@/app-shell/root-overlay-bridge";
-import { alignSessionToShareTarget } from "@/app/bootstrap/apply-resolved-share-target";
+import {
+  alignSessionToShareTarget,
+  noteShareTarget,
+} from "@/app/bootstrap/apply-resolved-share-target";
 import { resolveShareTarget } from "@/app/bootstrap/resolve-share-target";
 import { titleInfoFromSearchResult } from "@/app/bootstrap/title-info";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/discover/anime-provider-mapping";
@@ -1165,9 +1168,7 @@ async function handleProvidersHub(container: Container): Promise<"handled"> {
     ],
   });
 
-  if (choice === "session") {
-    return handleProviderPicker(container);
-  }
+  if (choice === "session") return handleProviderPicker(container);
   if (choice === "defaults") {
     return handleSettings(container, { initialSectionId: "section:providers" });
   }
@@ -2403,9 +2404,7 @@ async function handleWatch(container: Container): Promise<ShellWorkflowResult> {
     return "handled";
   }
   const resolved = await resolveShareTarget(ref, container);
-  if (resolved.note) {
-    container.stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note: resolved.note });
-  }
+  noteShareTarget(container, resolved);
   // The same lane step as `--open` and protocol links, for both branches.
   alignSessionToShareTarget(container, resolved, ref);
   if (resolved.searchQuery) {

@@ -7,6 +7,8 @@ import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 
 export type ShareBootstrapLaunch = {
   readonly query?: string;
+  /** A search link's episode, armed like `-e` once the search picks its title. */
+  readonly requestedEpisode?: { readonly season: number; readonly episode: number };
   readonly title?: TitleInfo | null;
   readonly episode?: EpisodeInfo | null;
   readonly autoPickSearchResultIndex?: number;
@@ -64,6 +66,14 @@ function resolvedShareToBootstrap(resolved: ResolvedShareTarget): ShareBootstrap
   if (resolved.searchQuery) {
     return {
       query: resolved.searchQuery,
+      ...(resolved.episode
+        ? {
+            requestedEpisode: {
+              season: resolved.episode.season,
+              episode: resolved.episode.episode,
+            },
+          }
+        : null),
       autoPickSearchResultIndex: resolved.autoPickIndex,
       ...(resolved.download ? { download: true } : {}),
     };
@@ -73,4 +83,32 @@ function resolvedShareToBootstrap(resolved: ResolvedShareTarget): ShareBootstrap
     episode: resolved.episode ?? null,
     ...(resolved.download ? { download: true } : {}),
   };
+}
+
+/**
+ * Feedback for `/watch`. A search link opens the query mid-session and leaves
+ * the pick to the viewer, so the episode and time it names are said, not
+ * silently dropped; `--open` arms them instead (see `requestedEpisode`).
+ */
+export function noteShareTarget(
+  container: Pick<Container, "stateManager">,
+  resolved: ResolvedShareTarget,
+): void {
+  const named = resolved.searchQuery ? shareCoordinates(resolved) : undefined;
+  const pick = named ? `This link names ${named}: choose the title, then that episode.` : undefined;
+  const note = [resolved.note, pick].filter(Boolean).join(" ");
+  if (note) container.stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note });
+}
+
+function shareCoordinates(resolved: ResolvedShareTarget): string | undefined {
+  const { episode, startSeconds } = resolved;
+  const code = episode
+    ? `S${String(episode.season).padStart(2, "0")}E${String(episode.episode).padStart(2, "0")}`
+    : undefined;
+  const at =
+    startSeconds !== undefined
+      ? `${Math.floor(startSeconds / 60)}:${String(Math.floor(startSeconds % 60)).padStart(2, "0")}`
+      : undefined;
+  if (code && at) return `${code} at ${at}`;
+  return code ?? (at ? `a start time of ${at}` : undefined);
 }
