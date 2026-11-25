@@ -78,6 +78,8 @@ subtitle controls, and safer persistence, downloads and native installation.
 - Show Kitty poster previews inside tmux 3.3+ when passthrough is enabled and
   the outer terminal supports Unicode placeholders.
 - Show native Sixel previews when tmux 3.4+ reports Sixel support.
+- Reduce banding in Sixel posters and use more colours on terminals that report
+  a larger palette.
 
 - Add direct title launches from the command palette, notification episode
   launches and bounded detail prefetching. Keep command matching and title

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T12:00:00Z"
+lastReviewed: "2026-11-25T14:39:00Z"
 ---
 
 # Analytics Privacy Contract
@@ -272,10 +272,11 @@ previous snapshot counts from zero; a counter that went down contributes zero.
 also fetches a platform package. These are downloads, not users.
 
 shields.io endpoint badges: `/badges/downloads.json`, `/badges/active.json`
-labelled "active (opted in, 30d)", which reads the last complete calendar month
-of `month_rollup`, and `/badges/installs.json`, which reads "unavailable" until
-marker assets exist. The badge wording is an open maintainer decision; that
-label is its default. Every badge applies the floor of 5, and a missing figure
+labelled "active last month (opted in)", which reads the last complete calendar
+month of `month_rollup`, and `/badges/installs.json`, which reads "unavailable"
+until marker assets exist. The wording is a maintainer decision (2026-11-25): it
+names the calendar month the figure covers rather than a rolling window it does
+not compute. Every badge applies the floor of 5, and a missing figure
 reads "unavailable", never zero.
 
 The distribution stage, the month rollup, and its prune each run on their own,
