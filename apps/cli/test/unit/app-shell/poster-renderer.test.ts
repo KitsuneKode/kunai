@@ -368,7 +368,13 @@ describe("renderPreparedPoster", () => {
       selectImageCapability({ TMUX: "/tmp/posters,123,0", TERM: "tmux-256color" }, true, {
         sixel: true,
         kittyGraphics: false,
-        tmux: { major: 3, minor: 4, passthrough: "off", clientTerm: "foot" },
+        tmux: {
+          major: 3,
+          minor: 4,
+          passthrough: "off",
+          clientTerm: "foot",
+          clientFeatures: ["sixel"],
+        },
       });
     const size = { rows: 2, cols: 3 };
     const plan = resolvePosterRenderPlan(size);

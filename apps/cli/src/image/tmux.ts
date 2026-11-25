@@ -3,6 +3,12 @@ export type TmuxGraphicsContext = {
   readonly minor: number;
   readonly passthrough: string;
   readonly clientTerm: string;
+  /**
+   * `client_termfeatures` of the single attached client. tmux answers DA1 for
+   * itself, so this is the only evidence that the terminal behind tmux can draw
+   * sixel; without `sixel` here tmux replaces the image with placeholder text.
+   */
+  readonly clientFeatures: readonly string[];
 };
 
 export function isTmuxPane(env: NodeJS.ProcessEnv): boolean {
@@ -47,13 +53,15 @@ export async function readTmuxGraphicsContext(
         "-p",
         "-t",
         env.TMUX_PANE,
-        "#{version}|#{allow-passthrough}|#{client_termname}|#{session_attached}",
+        "#{version}|#{allow-passthrough}|#{client_termname}|#{session_attached}|#{client_termfeatures}",
       ],
       { env, stdout: "pipe", stderr: "ignore", timeout: 100 },
     );
     const [output, code] = await Promise.all([command.stdout.text(), command.exited]);
     if (code !== 0) return;
-    const [version, passthrough = "", clientTerm = "", attached] = output.trim().split("|");
+    const [version, passthrough = "", clientTerm = "", attached, features = ""] = output
+      .trim()
+      .split("|");
     const parts = /^(\d+)\.(\d+)[a-z]*$/.exec(version ?? "");
     if (!parts) return;
     // With multiple clients we cannot assume every receiver speaks Kitty.
@@ -62,6 +70,7 @@ export async function readTmuxGraphicsContext(
       minor: Number(parts[2]),
       passthrough,
       clientTerm: attached === "1" ? clientTerm : "",
+      clientFeatures: attached === "1" ? features.split(",").filter(Boolean) : [],
     };
   } catch {
     return;
