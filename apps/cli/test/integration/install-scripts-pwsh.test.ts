@@ -28,6 +28,7 @@ import {
   windowsShellEnvDefaults,
   withCommandPath,
   withReleaseFixture,
+  type ReleaseFixtureRoute,
 } from "./helpers/installer-script-harness";
 
 const REPO_ROOT = join(import.meta.dirname, "../../../..");
@@ -1042,30 +1043,28 @@ describePwsh("install.ps1 install.marker", () => {
     const digest = createHash("sha256")
       .update(options.corruptChecksum ? "other" : body)
       .digest("hex");
-    const sandbox = createInstallerSandbox("install-sh-marker");
-    let outcome: { status: number; stdout: string; stderr: string; requests: string[] } | null =
-      null;
+    const routes: [string, ReleaseFixtureRoute][] = [
+      [`/download/v9.8.7/${asset}`, { body }],
+      ["/download/v9.8.7/SHA256SUMS", { body: `${digest}  ${asset}\n` }],
+    ];
+    if (marker) routes.push([MARKER, { status: marker.status, body: "marker" }]);
+    const sandbox = createInstallerSandbox("install-ps1-marker");
+    const outcomes: { status: number; stdout: string; stderr: string; requests: string[] }[] = [];
     try {
-      await withReleaseFixture(
-        {
-          [`/download/v9.8.7/${asset}`]: { body },
-          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
-          ...(marker ? { [MARKER]: { status: marker.status, body: "marker" } } : {}),
-        },
-        async (baseUrl, evidence) => {
-          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
-            ...sandbox.env,
-            ...env,
-            KUNAI_DL_BASE: baseUrl,
-          });
-          outcome = { ...result, requests: [...evidence.requests] };
-        },
-      );
+      await withReleaseFixture(Object.fromEntries(routes), async (baseUrl, evidence) => {
+        const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
+          ...sandbox.env,
+          ...env,
+          KUNAI_DL_BASE: baseUrl,
+        });
+        outcomes.push({ ...result, requests: [...evidence.requests] });
+      });
     } finally {
       sandbox.cleanup();
     }
+    const outcome = outcomes[0];
     if (!outcome) throw new Error("installer did not run");
-    return outcome as { status: number; stdout: string; stderr: string; requests: string[] };
+    return outcome;
   }
 
   test("is fetched once, after the install succeeded", async () => {

@@ -560,8 +560,7 @@ describe("the wire carries a monthly HMAC, never the stored id", () => {
     // Everything an observer of the wire could try with one month's id in
     // hand. The key is the stored id, which never leaves the machine, so none
     // of these reaches another month.
-    const sha256 = (value: string) =>
-      new Bun.CryptoHasher("sha256").update(value).digest("hex") as string;
+    const sha256 = (value: string) => new Bun.CryptoHasher("sha256").update(value).digest("hex");
     const months = Array.from({ length: 36 }, (_, i) => analyticsMonthKey(Date.UTC(2026, i, 15)));
     const ids = months.map((month) => monthlyWireId(UUID, month));
     expect(new Set(ids).size).toBe(months.length);

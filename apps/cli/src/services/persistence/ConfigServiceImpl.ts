@@ -345,8 +345,6 @@ export class ConfigServiceImpl implements ConfigService {
       // `"no"` must not silently opt a user out of a feature they never saw.
       tipsEnabled: loaded.tipsEnabled !== false,
       seenTips: normalizeStringList(loaded.seenTips),
-      analyticsEndpoint:
-        typeof loaded.analyticsEndpoint === "string" ? loaded.analyticsEndpoint.trim() : "",
     };
     // One debug line, not per-field: enough to see what normalization did on a
     // bug report without spamming --debug. Secrets never land here — tokens are

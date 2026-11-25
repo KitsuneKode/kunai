@@ -55,7 +55,7 @@ describe("the client's day rule matches the ingest's", () => {
 
   test("a cohort label is a real month", () => {
     expect(isAnalyticsMonth("2026-11")).toBe(true);
-    for (const bad of ["2026-13", "2026-00", "2026-1", "26-11", "2026-11-01", "", 202611, null]) {
+    for (const bad of ["2026-13", "2026-00", "2026-1", "26-11", "2026-11-01", "", undefined]) {
       expect(isAnalyticsMonth(bad)).toBe(false);
     }
   });

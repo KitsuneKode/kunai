@@ -32,15 +32,21 @@ export function persistedAnalyticsConsent(
 }
 
 /**
- * Every analytics key a loaded config.json grants, normalized, for startup.
- * The cohort is kept only beside the identity it belongs to: one without an
- * enabled, present install id is residue and reads as empty.
+ * Every analytics key a loaded config.json grants, normalized, for startup and
+ * for `kunai analytics preview`. The cohort is kept only beside the identity it
+ * belongs to: one without an enabled, present install id is residue and reads
+ * as empty.
  */
 export function loadedAnalyticsFields(
   loaded: Partial<KitsuneConfig>,
 ): Pick<
   KitsuneConfig,
-  "analytics" | "installId" | "analyticsCohort" | "lastAnalyticsPingAt" | "analyticsRetryAfter"
+  | "analytics"
+  | "installId"
+  | "analyticsCohort"
+  | "lastAnalyticsPingAt"
+  | "analyticsRetryAfter"
+  | "analyticsEndpoint"
 > {
   const consent = persistedAnalyticsConsent(loaded);
   const hasIdentity = consent.analytics === "enabled" && consent.installId !== "";
@@ -50,6 +56,8 @@ export function loadedAnalyticsFields(
       hasIdentity && isAnalyticsMonth(loaded.analyticsCohort) ? loaded.analyticsCohort : "",
     lastAnalyticsPingAt: nonNegativeEpochMs(loaded.lastAnalyticsPingAt),
     analyticsRetryAfter: nonNegativeEpochMs(loaded.analyticsRetryAfter),
+    analyticsEndpoint:
+      typeof loaded.analyticsEndpoint === "string" ? loaded.analyticsEndpoint.trim() : "",
   };
 }
 
@@ -63,19 +71,19 @@ export function analyticsCompletionPatch(
   current: Pick<KitsuneConfig, "analyticsCohort">,
   completion: AnalyticsPingCompletion,
 ): Partial<KitsuneConfig> {
-  return {
-    analyticsRetryAfter: completion.analyticsRetryAfter,
-    ...(completion.lastAnalyticsPingAt !== undefined
-      ? { lastAnalyticsPingAt: completion.lastAnalyticsPingAt }
-      : {}),
-    ...(completion.analyticsCohort && !isAnalyticsMonth(current.analyticsCohort)
-      ? { analyticsCohort: completion.analyticsCohort }
-      : {}),
-  };
+  const patch: Partial<KitsuneConfig> = { analyticsRetryAfter: completion.analyticsRetryAfter };
+  if (completion.lastAnalyticsPingAt !== undefined) {
+    patch.lastAnalyticsPingAt = completion.lastAnalyticsPingAt;
+  }
+  if (completion.analyticsCohort && !isAnalyticsMonth(current.analyticsCohort)) {
+    patch.analyticsCohort = completion.analyticsCohort;
+  }
+  return patch;
 }
 
-function nonNegativeEpochMs(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
+/** A hand-edited or corrupt timestamp reads as "never". */
+function nonNegativeEpochMs(value: number | undefined): number {
+  return value !== undefined && Number.isFinite(value) ? Math.max(0, value) : 0;
 }
 
 function normalizeAnalyticsPreference<T>(value: T): KitsuneConfig["analytics"] {

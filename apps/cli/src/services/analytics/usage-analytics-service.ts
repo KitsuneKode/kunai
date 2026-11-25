@@ -405,7 +405,7 @@ export class UsageAnalyticsService {
       installId,
       // An install that opted in before cohorts existed keeps the cohort its
       // first v2 ping carried, or every month would report it as new again.
-      ...(isAnalyticsMonth(identity.analyticsCohort) ? {} : { analyticsCohort: payload.cohort }),
+      analyticsCohort: isAnalyticsMonth(identity.analyticsCohort) ? undefined : payload.cohort,
       ...(outcome === "retry"
         ? { analyticsRetryAfter: now + ANALYTICS_RETRY_BACKOFF_MS }
         : { lastAnalyticsPingAt: now, analyticsRetryAfter: 0 }),

@@ -17,6 +17,7 @@ import { join } from "node:path";
 
 import { writeAtomicSecretJson } from "@/infra/fs/atomic-write";
 import { getKunaiPaths } from "@kunai/storage";
+import { z } from "zod";
 
 /** How many pings `kunai analytics log` can show. Older entries are dropped. */
 export const PING_LOG_LIMIT = 50;
@@ -40,6 +41,15 @@ export interface PingLog {
 
 type PingLogDocument = { readonly schemaVersion: 1; readonly pings: readonly PingLogEntry[] };
 
+const pingLogEntrySchema = z.object({
+  sentAt: z.string(),
+  endpoint: z.string(),
+  body: z.string(),
+});
+
+/** Entries are decoded one by one, so a single bad row does not hide the rest. */
+const pingLogDocumentSchema = z.object({ pings: z.array(z.unknown()) });
+
 /** Lives in the OS data dir beside `kunai-data.sqlite`. */
 export function pingLogPath(dataDir: string = getKunaiPaths().dataDir): string {
   return join(dataDir, PING_LOG_FILE_NAME);
@@ -53,12 +63,16 @@ export function filePingLog(path: string): PingLog {
     } catch {
       return [];
     }
+    let parsed: z.infer<typeof pingLogDocumentSchema>;
     try {
-      const parsed = JSON.parse(raw) as Partial<PingLogDocument> | null;
-      return Array.isArray(parsed?.pings) ? parsed.pings.filter(isPingLogEntry) : [];
+      parsed = pingLogDocumentSchema.parse(JSON.parse(raw));
     } catch {
       return [];
     }
+    return parsed.pings.flatMap((ping) => {
+      const entry = pingLogEntrySchema.safeParse(ping);
+      return entry.success ? [entry.data] : [];
+    });
   };
   return {
     read,
@@ -71,14 +85,4 @@ export function filePingLog(path: string): PingLog {
       await rm(path, { force: true });
     },
   };
-}
-
-function isPingLogEntry(value: unknown): value is PingLogEntry {
-  if (typeof value !== "object" || value === null) return false;
-  const entry = value as Record<string, unknown>;
-  return (
-    typeof entry.sentAt === "string" &&
-    typeof entry.endpoint === "string" &&
-    typeof entry.body === "string"
-  );
 }

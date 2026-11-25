@@ -70,13 +70,13 @@ describe("analytics payload documentation drift", () => {
    * field ship while this file stayed green and both documents still said six,
    * which is the precise failure this gate exists to prevent.
    */
-  const DOCUMENTED_SHAPE = `\`{ ${ANALYTICS_PAYLOAD_FIELDS.join(", ")} }\``;
+  const DOCUMENTED_PAYLOAD = `\`{ ${ANALYTICS_PAYLOAD_FIELDS.join(", ")} }\``;
 
   for (const [label, path] of docs) {
     test(`${label} names exactly the six wire keys, in wire order`, () => {
       // Matching each key alone proves nothing: `id`, `day` and `os` occur in
       // any English paragraph. The documented shape has to match the code's.
-      expect(prose(path)).toContain(DOCUMENTED_SHAPE);
+      expect(prose(path)).toContain(DOCUMENTED_PAYLOAD);
     });
 
     test(`${label} states the id rotates monthly and is never the raw id`, () => {

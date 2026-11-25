@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 
 import { monthlyWireId } from "@/services/analytics/install-id";
 import {
@@ -110,7 +110,7 @@ describe("kunai analytics preview", () => {
   test("before consent it shows placeholders and creates nothing", async () => {
     const h = harness({ analytics: "unset", installId: "" });
     await h.run("preview", "--json");
-    const payload = JSON.parse(h.out) as { id: string; cohort: string };
+    const payload = JSON.parse(h.out);
     expect(payload.id).toBe(UNSET_INSTALL_ID_PLACEHOLDER);
     expect(payload.cohort).toBe(UNSET_COHORT_PLACEHOLDER);
     expect(h.pingLog.exists).toBe(false);
@@ -119,7 +119,7 @@ describe("kunai analytics preview", () => {
   test("an enabled value from before explicit consent is not treated as consent", async () => {
     const h = harness({ analytics: "enabled", installId: UUID });
     await h.run("preview", "--json");
-    expect((JSON.parse(h.out) as { id: string }).id).toBe(UNSET_INSTALL_ID_PLACEHOLDER);
+    expect(JSON.parse(h.out).id).toBe(UNSET_INSTALL_ID_PLACEHOLDER);
   });
 
   test("names an env block", async () => {
@@ -131,20 +131,19 @@ describe("kunai analytics preview", () => {
 
 describe("kunai analytics is never a way in", () => {
   test("neither subcommand sends, and an unknown one prints usage", async () => {
-    const realFetch = globalThis.fetch;
-    let calls = 0;
-    globalThis.fetch = (async () => {
-      calls += 1;
-      return new Response(null, { status: 204 });
-    }) as unknown as typeof fetch;
+    const fetchSpy = spyOn(globalThis, "fetch").mockImplementation(
+      Object.assign(async () => new Response(null, { status: 204 }), {
+        preconnect: fetch.preconnect,
+      }),
+    );
     try {
       for (const argv of [["log"], ["preview"], ["enable"], ["on"], []]) {
         await harness({ analytics: "unset", installId: "" }).run(...argv);
       }
+      expect(fetchSpy).not.toHaveBeenCalled();
     } finally {
-      globalThis.fetch = realFetch;
+      fetchSpy.mockRestore();
     }
-    expect(calls).toBe(0);
   });
 
   test("there is no enable subcommand", async () => {

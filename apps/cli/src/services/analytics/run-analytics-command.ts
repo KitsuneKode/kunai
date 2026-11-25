@@ -57,10 +57,10 @@ export async function runAnalyticsCommand(
 
   const loaded = await ports.readConfig();
   // Startup's reading of the file, so preview and the real ping agree.
-  const identity: AnalyticsIdentity = loadedAnalyticsFields(loaded);
+  const fields = loadedAnalyticsFields(loaded);
 
-  if (sub === "log") return printLog(identity, ports, json);
-  return printPreview(identity, loaded, options.version, ports, json);
+  if (sub === "log") return printLog(fields, ports, json);
+  return printPreview(fields, options.version, ports, json);
 }
 
 async function printLog(
@@ -92,8 +92,7 @@ async function printLog(
 }
 
 function printPreview(
-  identity: AnalyticsIdentity,
-  loaded: Partial<KitsuneConfig>,
+  identity: AnalyticsIdentity & Pick<KitsuneConfig, "analyticsEndpoint">,
   version: string,
   ports: AnalyticsCommandPorts,
   json: boolean,
@@ -105,13 +104,12 @@ function printPreview(
     now: ports.now(),
   });
   ports.out(`${JSON.stringify(payload, null, 2)}\n`);
-  if (!json) ports.out(`${previewStatus(identity, loaded, ports.env)}\nNothing was sent.\n`);
+  if (!json) ports.out(`${previewStatus(identity, ports.env)}\nNothing was sent.\n`);
   return 0;
 }
 
 function previewStatus(
-  identity: AnalyticsIdentity,
-  loaded: Partial<KitsuneConfig>,
+  identity: AnalyticsIdentity & Pick<KitsuneConfig, "analyticsEndpoint">,
   env: AnalyticsCommandPorts["env"],
 ): string {
   const blocked = envBlockFlag(env);
@@ -119,8 +117,7 @@ function previewStatus(
   if (identity.analytics !== "enabled") {
     return "Analytics is off. This is what a ping would contain if you turned it on.";
   }
-  const configured = typeof loaded.analyticsEndpoint === "string" ? loaded.analyticsEndpoint : "";
-  const endpoint = resolveAnalyticsEndpoint(env, configured);
+  const endpoint = resolveAnalyticsEndpoint(env, identity.analyticsEndpoint);
   if (!endpoint)
     return "Analytics is on, but the endpoint override is not https, so nothing is sent.";
   return `Analytics is on. At most one ping a day goes to ${new URL(endpoint).host}.`;

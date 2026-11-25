@@ -413,7 +413,7 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
               dlBase,
               version: resolved,
               marker: options.releaseMarker,
-              ...(options.markerEnv ? { env: options.markerEnv } : {}),
+              env: options.markerEnv,
               fetchImpl: (url, init) => fetchImpl(url, init),
             })
           : null;
@@ -422,7 +422,7 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
           status: "installed" as const,
           version: resolved,
           versionPath,
-          ...(releaseMarker ? { releaseMarker } : {}),
+          releaseMarker: releaseMarker ?? undefined,
         };
       } catch (error) {
         await finishInstallTransaction(layout, transaction.id).catch(() => {});

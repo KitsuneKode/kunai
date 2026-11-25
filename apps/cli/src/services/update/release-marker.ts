@@ -59,7 +59,7 @@ export function startReleaseMarkerFetch(input: {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), input.timeoutMs ?? RELEASE_MARKER_TIMEOUT_MS);
   // A pending marker must never hold a short-lived `kunai upgrade` open.
-  (timer as { unref?: () => void }).unref?.();
+  timer.unref();
   return fetchImpl(url, { signal: controller.signal })
     .then((response) => response.body?.cancel())
     .catch(() => undefined)

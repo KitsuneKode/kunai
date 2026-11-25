@@ -32,6 +32,6 @@ export function analyticsMonthKey(now: number): string {
 }
 
 /** True for a well-formed `YYYY-MM` cohort label. */
-export function isAnalyticsMonth(value: unknown): value is string {
-  return typeof value === "string" && MONTH_RE.test(value);
+export function isAnalyticsMonth(value: string | undefined): value is string {
+  return value !== undefined && MONTH_RE.test(value);
 }
