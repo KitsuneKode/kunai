@@ -2,9 +2,24 @@ export type SearchStartupRoute =
   | "trending"
   | "recommendation"
   | "calendar"
+  // The schedule opened on its Anime or Series tab, as the browse commands do.
+  | "anime-calendar"
+  | "series-calendar"
   | "random"
   | "surprise"
   | "history";
+
+/** Startup routes that open the schedule, on the tab the name says. */
+export type CalendarStartupRoute = Extract<
+  SearchStartupRoute,
+  "calendar" | "anime-calendar" | "series-calendar"
+>;
+
+export function isCalendarStartupRoute(
+  route: SearchStartupRoute | undefined,
+): route is CalendarStartupRoute {
+  return route === "calendar" || route === "anime-calendar" || route === "series-calendar";
+}
 
 export function shouldDeferBrowseIdleContext({
   query,

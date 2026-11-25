@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  sharedStartOverride,
   startAtResumePoint,
   startEpisodeNavigation,
   startFromBeginning,
@@ -56,5 +57,29 @@ describe("playback start intent", () => {
       resumePromptAt: 612,
       suppressResumePrompt: false,
     });
+  });
+});
+
+describe("sharedStartOverride", () => {
+  test("a shared timestamp starts there and skips the resume prompt", () => {
+    expect(sharedStartOverride(120)).toEqual({
+      startAt: 120,
+      resumePromptAt: 0,
+      suppressResumePrompt: true,
+    });
+  });
+
+  test("t=0 is an explicit restart, not a missing timestamp", () => {
+    expect(sharedStartOverride(0)).toEqual({
+      startAt: 0,
+      resumePromptAt: 0,
+      suppressResumePrompt: true,
+    });
+  });
+
+  test("no usable timestamp leaves the history-driven start alone", () => {
+    expect(sharedStartOverride(undefined)).toBeNull();
+    expect(sharedStartOverride(-5)).toBeNull();
+    expect(sharedStartOverride(Number.NaN)).toBeNull();
   });
 });

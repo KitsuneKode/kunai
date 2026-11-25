@@ -12,7 +12,13 @@ const originalIsTty = capabilityTesting.runtime.isStdoutTty;
 
 describe("Kitty through tmux", () => {
   const env = { TMUX: "/tmp/posters,123,0", TERM: "tmux-256color", KITTY_WINDOW_ID: "1" };
-  const tmux = { major: 3, minor: 3, passthrough: "on", clientTerm: "xterm-kitty" } as const;
+  const tmux = {
+    major: 3,
+    minor: 3,
+    passthrough: "on",
+    clientTerm: "xterm-kitty",
+    clientFeatures: [],
+  } as const;
   const probe = { sixel: false, kittyGraphics: false, tmux };
 
   test("selects wrapped Kitty for an eligible pane with a Kitty client", () => {
@@ -37,7 +43,7 @@ describe("Kitty through tmux", () => {
     for (const context of [
       { ...tmux, minor: 2 },
       { ...tmux, passthrough: "off" },
-      { ...tmux, clientTerm: "foot" },
+      { ...tmux, clientTerm: "foot", clientFeatures: ["sixel"] },
     ] as const) {
       expect(selectImageCapability(env, true, { ...probe, tmux: context }).renderer).toBe(
         "half-block",
@@ -62,6 +68,63 @@ describe("Kitty through tmux", () => {
     ).toBe("tmux");
     expect(
       selectImageCapability({ ...env, KUNAI_IMAGE_PROTOCOL: "kitty" }, true, null).renderer,
+    ).toBe("half-block");
+  });
+});
+
+describe("native Sixel in tmux", () => {
+  const env = { TMUX: "/tmp/posters,123,0", TERM: "tmux-256color", KUNAI_IMAGE_TMUX: "0" };
+  const tmux = {
+    major: 3,
+    minor: 4,
+    passthrough: "off",
+    clientTerm: "foot",
+    clientFeatures: ["sixel"],
+  };
+  const probe = { sixel: true, kittyGraphics: false, tmux };
+
+  test("routes tmux's DA1 sixel answer to the existing overlay", () => {
+    expect(selectImageCapability(env, true, probe).renderer).toBe("sixel");
+  });
+
+  test("stays on half-block without tmux 3.4 and its own sixel attribute", () => {
+    expect(selectImageCapability(env, true, { ...probe, sixel: false }).renderer).toBe(
+      "half-block",
+    );
+    expect(
+      selectImageCapability(env, true, { ...probe, tmux: { ...tmux, minor: 3 } }).renderer,
+    ).toBe("half-block");
+    expect(selectImageCapability({ ...env, STY: "screen" }, true, probe).renderer).toBe(
+      "half-block",
+    );
+    expect(selectImageCapability({ TERM: "tmux-256color" }, true, probe).renderer).toBe(
+      "half-block",
+    );
+  });
+
+  test("a client whose terminal cannot draw sixel stays on half-block", () => {
+    // tmux 3.8 inside kitty 0.51 (passthrough off) still answers DA1 with
+    // sixel; only client_termfeatures shows the terminal lacks it.
+    const kittyClient = {
+      ...tmux,
+      clientTerm: "xterm-kitty",
+      clientFeatures: ["bpaste", "ccolour", "clipboard", "cstyle", "focus", "RGB", "sync", "title"],
+    };
+    expect(selectImageCapability(env, true, { ...probe, tmux: kittyClient }).renderer).toBe(
+      "half-block",
+    );
+    const alacritty = { ...tmux, clientTerm: "alacritty", clientFeatures: ["RGB", "title"] };
+    expect(selectImageCapability(env, true, { ...probe, tmux: alacritty }).renderer).toBe(
+      "half-block",
+    );
+  });
+
+  test("honors a text or Kitty override ahead of automatic sixel", () => {
+    expect(
+      selectImageCapability({ ...env, KUNAI_IMAGE_PROTOCOL: "half-block" }, true, probe).renderer,
+    ).toBe("half-block");
+    expect(
+      selectImageCapability({ ...env, KUNAI_IMAGE_PROTOCOL: "kitty" }, true, probe).renderer,
     ).toBe("half-block");
   });
 });

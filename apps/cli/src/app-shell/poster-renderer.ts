@@ -1,5 +1,6 @@
 import { detectImageCapability } from "@/image";
 import type { TerminalId } from "@/image";
+import { getTerminalCellPixels } from "@/image/cell-size";
 import { debugImage } from "@/image/debug";
 import { uploadKittyPayload } from "@/image/kitty-transport";
 import { type PosterPixelBounds, type PreparedPoster } from "@/image/native-image";
@@ -26,10 +27,11 @@ const runtime: PosterRuntime = {
   detectImageCapability: () => detectImageCapability(),
 };
 
-// Interactive overlays are encoded on the JS thread and replayed through the
-// PTY after Ink frames. 256 colours roughly doubles both encode time and bytes
-// on the wire without a meaningful gain at terminal-poster dimensions.
-const APP_SHELL_SIXEL_MAX_COLORS = 64;
+// 128, not 256: on real art at HiDPI cell sizes 256 colours plus dithering
+// roughly doubled encode time (synchronous, on the input thread) and bytes
+// for every overlay replay, without a visible gain.
+const APP_SHELL_SIXEL_MAX_COLORS = 128;
+const APP_SHELL_SIXEL_UNPROBED_COLORS = 64;
 // Every repaint re-sends every byte through the PTY; past this the stream
 // degrades (fewer colours, smaller) and then fails closed to half-block.
 const APP_SHELL_SIXEL_MAX_BYTES = 256 * 1024;
@@ -139,6 +141,7 @@ export type PosterRenderPlan = {
   readonly renderer: PosterRenderer;
   readonly bounds: PosterPixelBounds;
   readonly kittyPassthrough?: "tmux";
+  readonly exactPixels?: boolean;
 };
 
 /**
@@ -188,32 +191,36 @@ export function resolvePosterRenderPlan(options: PreparedRenderOptions): PosterR
   const capability = runtime.detectImageCapability();
   if (!capability.available || capability.renderer === "none") return null;
 
+  const budget = pixelBudgetForCells(cols, rows);
+  const bounds = { maxWidthPx: budget.maxWidth, maxHeightPx: budget.maxHeight };
   if (
     capability.renderer === "kitty-native" &&
     (capability.kittyPassthrough || supportsKittyPlaceholders(capability.terminal))
   ) {
-    const budget = pixelBudgetForCells(cols, rows);
     return {
       renderer: "kitty-native",
       kittyPassthrough: capability.kittyPassthrough,
-      bounds: { maxWidthPx: budget.maxWidth, maxHeightPx: budget.maxHeight },
+      bounds,
     };
   }
   // Gated on allowSixel for the same reason sixel is: both are measured
   // overlays written outside Ink's frame, so a surface that repaints constantly
   // suppresses them together.
   if (capability.renderer === "iterm-inline" && allowSixel) {
-    const budget = pixelBudgetForCells(cols, rows);
     return {
       renderer: "iterm-inline",
-      bounds: { maxWidthPx: budget.maxWidth, maxHeightPx: budget.maxHeight },
+      bounds,
+      exactPixels: getTerminalCellPixels() !== null,
     };
   }
-  if (capability.renderer === "sixel" && allowSixel) {
-    const budget = pixelBudgetForCells(cols, rows);
+  if (
+    capability.renderer === "sixel" &&
+    allowSixel &&
+    getProbedGraphicsSupport()?.sixelColorRegisters !== 1
+  ) {
     return {
       renderer: "sixel",
-      bounds: { maxWidthPx: budget.maxWidth, maxHeightPx: budget.maxHeight },
+      bounds,
     };
   }
   // Everything else — a Kitty build without Unicode placeholders, an inline-image
@@ -243,7 +250,11 @@ export async function renderPreparedPoster(
       return await uploadPreparedKitty(poster, options, plan.kittyPassthrough);
     }
     if (plan.renderer === "iterm-inline") {
-      const escapes = buildItermInlineImage(poster.png, { rows, cols });
+      const escapes = buildItermInlineImage(poster.png, {
+        rows,
+        cols,
+        pixelSize: plan.exactPixels ? poster.image : undefined,
+      });
       if (!escapes) return { kind: "none" };
       // Carried as a sixel result because it is the same kind of thing: escape
       // bytes the overlay manager writes at a measured rect, erased the same way.
@@ -259,13 +270,17 @@ export async function renderPreparedPoster(
       const sixel = renderSixelFromImage(
         poster.image,
         {
-          ...pixelBudgetForCells(cols, rows),
-          maxColors: APP_SHELL_SIXEL_MAX_COLORS,
+          maxWidth: plan.bounds.maxWidthPx,
+          maxHeight: plan.bounds.maxHeightPx,
+          maxColors: Math.min(
+            APP_SHELL_SIXEL_MAX_COLORS,
+            getProbedGraphicsSupport()?.sixelColorRegisters ?? APP_SHELL_SIXEL_UNPROBED_COLORS,
+          ),
           maxBytes: APP_SHELL_SIXEL_MAX_BYTES,
         },
         signal,
       );
-      if (!sixel) return { kind: "none" };
+      if (!sixel) return renderPreparedHalfBlock(poster, rows, cols);
       return {
         kind: "sixel",
         sixel,
@@ -374,6 +389,5 @@ export function hashTitleToColor(title: string): PosterFallbackColor {
 }
 
 export const __testing = {
-  APP_SHELL_SIXEL_MAX_COLORS,
   runtime,
 };

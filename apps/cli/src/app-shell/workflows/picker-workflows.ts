@@ -5,6 +5,10 @@ import {
   chooseSeasonFromOptions,
   type ListShellActionContext,
 } from "@/app-shell/pickers";
+import {
+  buildSubtitlePickerOptions,
+  type SubtitlePickerEntry,
+} from "@/app-shell/subtitle-picker-options";
 import { buildTracksPanelData } from "@/app-shell/tracks-panel-data";
 import type { ShellPickerOption } from "@/app-shell/types";
 import type { Container } from "@/container";
@@ -49,58 +53,21 @@ export async function openProviderPicker({
 }
 
 export async function openSubtitlePicker(
-  entries: ReadonlyArray<{
-    url: string;
-    display?: string;
-    language?: string;
-    release?: string;
-    sourceKind?: "embedded" | "external";
-    sourceName?: string;
-  }>,
+  entries: readonly SubtitlePickerEntry[],
   actionContext?: ListShellActionContext,
   container?: Container,
 ): Promise<string | null> {
-  const describeSubtitleEntry = (entry: {
-    language?: string;
-    release?: string;
-    sourceKind?: "embedded" | "external";
-    sourceName?: string;
-  }): string => {
-    const parts = [entry.language ?? "unknown"];
-    if (entry.sourceKind === "embedded") {
-      parts.push("built-in");
-    } else if (entry.sourceKind === "external") {
-      parts.push("external");
-    }
-    if (entry.sourceName) {
-      parts.push(entry.sourceName);
-    }
-    if (entry.release) {
-      parts.push(entry.release);
-    }
-    return parts.join("  ·  ");
-  };
+  const options = buildSubtitlePickerOptions(entries);
 
   if (container) {
-    return await openSessionPicker(container.stateManager, {
-      type: "subtitle_picker",
-      options: entries.map((entry) => ({
-        value: entry.url,
-        label: entry.display ?? entry.language ?? "Unknown track",
-        detail: describeSubtitleEntry(entry),
-      })),
-    });
+    return await openSessionPicker(container.stateManager, { type: "subtitle_picker", options });
   }
 
   return chooseFromListShell({
     title: "Choose subtitles",
     subtitle: `${entries.length} tracks available`,
     actionContext,
-    options: entries.map((entry) => ({
-      value: entry.url,
-      label: entry.display ?? entry.language ?? "Unknown track",
-      detail: describeSubtitleEntry(entry),
-    })),
+    options,
   });
 }
 
