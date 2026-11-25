@@ -103,6 +103,49 @@ function hasTransportStreamSync(prefix: Uint8Array): boolean {
   );
 }
 
+/**
+ * Positive magic bytes of an image container — evidence the bytes are a decoy,
+ * never a media segment. Vidrock's top lanes serve literal PNG files as HLS
+ * segments: the manifest probes clean, the segment answers 206 with an
+ * `image/png` content-type and a large enough body, and mpv dies on decode.
+ * The inverse disguise exists too — working lanes serve TS bytes mislabeled
+ * `image/jpeg` — so the discriminator is the magic bytes, never the label.
+ *
+ * Ordered after the media checks by the caller: a body with real TS sync or an
+ * fMP4 box is playable whatever its first bytes coincidentally resemble.
+ */
+function hasImageContainerMagic(prefix: Uint8Array): boolean {
+  if (prefix.byteLength < 4) return false;
+  // PNG: 89 50 4E 47
+  if (prefix[0] === 0x89 && prefix[1] === 0x50 && prefix[2] === 0x4e && prefix[3] === 0x47) {
+    return true;
+  }
+  // JPEG: FF D8 FF
+  if (prefix[0] === 0xff && prefix[1] === 0xd8 && prefix[2] === 0xff) {
+    return true;
+  }
+  // GIF87a/GIF89a: 47 49 46 38 — colliding with TS requires the media checks to
+  // have already failed on a sub-377-byte read plus three specific PID bytes.
+  if (prefix[0] === 0x47 && prefix[1] === 0x49 && prefix[2] === 0x46 && prefix[3] === 0x38) {
+    return true;
+  }
+  // WebP: RIFF ???? WEBP
+  if (
+    prefix.byteLength >= 12 &&
+    prefix[0] === 0x52 &&
+    prefix[1] === 0x49 &&
+    prefix[2] === 0x46 &&
+    prefix[3] === 0x46 &&
+    prefix[8] === 0x57 &&
+    prefix[9] === 0x45 &&
+    prefix[10] === 0x42 &&
+    prefix[11] === 0x50
+  ) {
+    return true;
+  }
+  return false;
+}
+
 type IsoBoxPrefix = { readonly type: string; readonly payload: number; readonly end: number };
 
 function readIsoBox(view: DataView, offset: number): IsoBoxPrefix | null {
@@ -558,6 +601,21 @@ async function probeHlsMediaSegment(
         definitive: true,
       };
     }
+    // An image container with no media evidence is a definitive decoy. The
+    // media checks run first because the inverse disguise is real: working
+    // lanes serve TS bytes mislabeled image/jpeg, and those must still pass.
+    if (
+      !hasTransportStreamSync(firstBytes) &&
+      !hasFragmentedMp4Prefix(firstBytes) &&
+      hasImageContainerMagic(firstBytes)
+    ) {
+      return {
+        status: "unreachable",
+        reason: "HLS segment unreachable: image-container decoy, not media",
+        definitive: true,
+      };
+    }
+
     if (firstBytes.byteLength < HLS_SEGMENT_PROBE_MIN_BYTES) {
       return {
         status: "unreachable",
