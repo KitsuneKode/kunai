@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25"
+lastReviewed: "2026-11-25T14:39:00Z"
 ---
 
 # Analytics Privacy Contract
@@ -39,8 +39,9 @@ Read this before touching `apps/cli/src/services/analytics/`,
   cadence/retry fields only, never the identity. A rejected completion refreshes
   non-dirty local analytics fields from disk so a stale session stops sending.
 - The send itself is gated on disk too. Immediately before a request,
-  `maybePing` re-reads `config.json` (`readPersistedAnalyticsConsent`, read-only,
-  no memory change) and sends only if the file still says `enabled` with the
+  `maybePing` re-reads `config.json` (`readPersistedAnalyticsConsent`, no memory
+  change; it uses the normal store load, so a corrupt file is quarantined as at
+  startup and reads as the default `unset`) and sends only if the file still says `enabled` with the
   exact install id this process holds, and memory still agrees after the read.
   The file is read with the same rule startup uses (an `enabled` with no notice
   marker reads as `unset`). A sibling's disable or rotation since startup, an
@@ -129,9 +130,42 @@ Settings exercises. Normal user installs retain their explicit opt-in behavior.
 
 ## Payload and ingest
 
-The exact payload is `{ installId, version, os, arch, ts }`. A sixth key is
-rejected. Titles, queries, providers, provider results, URLs, file paths, raw
-UUIDs, and client IPs are never accepted or stored.
+The ingest accepts exactly two wire shapes, and nothing between them:
+
+- **v1**, sent by every release so far: `{ installId, version, os, arch, ts }`.
+  A sixth key is rejected.
+- **v2**, sent by no client yet: `{ id, cohort, day, version, os, arch }`. A
+  seventh key is rejected, and so is any mixture of the two key sets.
+
+Titles, queries, providers, provider results, URLs, file paths, raw UUIDs, and
+client IPs are never accepted or stored, in either shape.
+
+**Rollout order is a deployment constraint.** The ingest must deploy v2
+acceptance, `os: android`, and the `day` check before any client sends them:
+every published client treats any 4xx as permanent for 24 hours, so a v2 ping
+that reaches an ingest without v2 support loses a day of that install. v1 is
+accepted forever, for the same reason the UUID branch below is.
+
+v2 fields:
+
+- `id`: 64 hex, the client's `HMAC-SHA256(localSecret, "YYYY-MM")`, where
+  `localSecret` is the local install id that never leaves the machine. It
+  rotates every calendar month, so the server cannot link one month of an
+  install to the next. Lower-cased, then HMAC'd with `ANALYTICS_HASH_SECRET`
+  exactly as v1 is.
+- `cohort`: `YYYY-MM`, the month analytics was enabled. No earlier than
+  `2024-01`, and no later than the month of `day`.
+- `day`: the client's own `YYYY-MM-DD` label. It must be within ±1 day of the
+  ingest's `analytics-day.ts` label, which replaces the v1 `ts` skew check; an
+  out-of-window day answers 400 `day_out_of_window`. The month a v2 ping counts
+  toward is the month of this `day`, because that is the month its id belongs to.
+
+`os` is one of `linux`, `darwin`, `win32`, `android` in both shapes. `android`
+was added so an Android build can be counted as itself; Bun on Android reports
+`linux`, so it only appears once a client sends it deliberately. For the
+`other`-bucket elimination guard the `os` value space stays the three desktop
+values: counting a value almost nobody reports as a candidate would let `other`
+be read as `win32` by elimination.
 
 `installId` on the wire is `sha256` of the locally stored id, not the id
 itself. The stored UUID never leaves the machine that generated it, so no
@@ -156,11 +190,28 @@ section, where retirement makes it cumulative observations rather than unique
 installs.
 
 `ping_day` stores an HMAC of the id plus version, OS, and architecture for 35
-days. `install_lifetime` stores one HMAC row per install with first-seen and
-last-seen dates until long silence retires it into `lifetime_retired`; that
+days. `install_lifetime` stores one HMAC row per **v1** install with first-seen
+and last-seen dates until long silence retires it into `lifetime_retired`; that
 durable pseudonymous record is the cost of any durable lifetime figure at all.
-The two writes occur in one SQL statement. `daily_rollup` holds aggregate counts
-only and is permanent. The ingest never reads a client IP.
+A v2 ping never writes it: its id rotates monthly, so a durable row would be a
+fresh "install" every month. v1 keeps using `install_lifetime` until the v2
+share of actives passes about 80%; dropping those reads is a later, separate
+step, and the tables keep serving v1 pings until those stop.
+
+`month_active` stores one HMAC row per install per calendar month, with the v2
+cohort (null for v1). Rows for a month are deleted once the following month is
+seven days old, so a per-install row lives at most about 38 days, close to
+`ping_day`. Before that, every cron run folds every month still holding rows
+into `month_rollup` (unique actives per month, v1 and v2) and `cohort_rollup`
+(v2 installs of cohort C active in month M). Row (C, C) is cohort C's size,
+which is the new-install count for month C; Σ over cohorts is a total that only
+goes up. Row (C, C+k) is Mk retention. Both rollups hold counts only and are
+permanent; a month is final once its rows are pruned. An install that upgrades
+from v1 to v2 is counted again once, in its upgrade month, because no link to
+its old id is kept: a dated seam, accepted at today's numbers.
+
+All writes of one ping occur in one SQL statement. `daily_rollup` holds
+aggregate counts only and is permanent. The ingest never reads a client IP.
 
 `ANALYTICS_HASH_SECRET` is an operationally stable secret: do not rotate it in
 place, because that would count existing installs again. A rotation requires a
@@ -185,6 +236,55 @@ function log, with any connection string reduced to its scheme. So
 `computed_at` stays the rollup signal and `deferred` is the retention one;
 neither masks the other, and retention that could not run today is retried on
 the next run rather than being lost.
+
+### Monthly actives and cohorts
+
+`/metrics/monthly.json` publishes complete months only, up to 12 of them: unique
+active installs per month, and per v2 cohort its size (`newInstalls`) and its
+M1…M6 retention. A partial month would step every day, which is the
+differencing channel the series avoids. Monthly actives and cohort sizes under
+the floor of 5 are `null`. A retention cell is published only when the cohort
+has at least 10 installs and `5 <= retained <= cohort_size - 5`; otherwise it is
+`null`, because publishing `retained` beside the size also publishes the
+installs that left. No total is published, since a total beside suppressed
+cells would reveal them by subtraction.
+
+### Distribution counts and badges
+
+Distribution counts involve **no client data**. A cron stage reads the GitHub
+Releases API for `KitsuneKode/kunai` asset `download_count`s and
+`api.npmjs.org/downloads/range` for `@kitsunekode/kunai` and every
+`@kitsunekode/kunai-*` platform package, Android included, and writes one
+snapshot per day to `distribution_daily(day, source, release, platform,
+cumulative)`. Binaries and archives map to their platform; checksums and
+signatures are ignored. `install.marker` and `update.marker` assets are counted
+apart, as installs and updates, once releases carry them. An optional
+`GITHUB_TOKEN` authenticates the GitHub read; it is never sent to npm. A
+snapshot is written all or nothing, so a partial read cannot publish a false
+spike.
+
+`/metrics/distribution.json` publishes per-release and per-platform totals from
+the newest snapshot and daily deltas from consecutive snapshots. The first
+snapshot is an opening total, not a day's downloads; a series new since the
+previous snapshot counts from zero; a counter that went down contributes zero.
+`totals.downloads` is GitHub assets plus npm platform packages and sums
+`perPlatform`; the npm launcher is reported apart because every npm install
+also fetches a platform package. These are downloads, not users.
+
+shields.io endpoint badges: `/badges/downloads.json`, `/badges/active.json`
+labelled "active last month (opted in)", which reads the last complete calendar
+month of `month_rollup`, and `/badges/installs.json`, which reads "unavailable"
+until marker assets exist. The wording is a maintainer decision (2026-11-25): it
+names the calendar month the figure covers rather than a rolling window it does
+not compute. Every badge applies the floor of 5, and a missing figure
+reads "unavailable", never zero.
+
+The distribution stage, the month rollup, and its prune each run on their own,
+after the daily rollup. A failure is named in `deferred` (`distribution`,
+`monthRollup`, `pruneMonth`) and never turns the committed rollup into a 503. A
+failed month rollup defers its prune too, so no month loses rows it has not been
+rolled up from. The distribution stage is aborted after 15 seconds rather than
+being allowed to push the function past `maxDuration`.
 
 ### Where a day begins
 
@@ -250,7 +350,17 @@ observed, deduplicated only within the retained window — not as a unique-insta
 total.
 
 The ingest body is capped at 512 bytes and a real install is limited by the
-`(day, install_hash)` primary key. Before production enablement, configure a
+`(day, install_hash)` primary key.
+
+The daily admission budget (`ANALYTICS_MAX_PINGS_PER_DAY`) counts distinct
+installs, not requests. The ping statement reads first: a repeat ping from an
+install that already has today's row writes nothing and spends no budget, and
+once the ceiling is reached the budget row is no longer updated, so an
+over-budget request performs **no database write** at all. The upsert re-checks
+the ceiling, so requests racing for the last slot cannot overshoot it; two
+racing copies of the same new ping may spend one extra slot between them. This
+bounds database writes and row contention, not function invocations, which is
+why the platform rate rule below still matters. Before production enablement, configure a
 Vercel firewall/request-rate rule that does not use application IP collection,
 and database/platform budget alerts. Review their thresholds after a live smoke.
 

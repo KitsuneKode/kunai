@@ -1,27 +1,33 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import {
   clearKittyPlacementRegistry,
   getKittyPlacement,
+  releaseKittySlot,
 } from "@/app-shell/kitty-placement-registry";
 import {
   __testing as rendererTesting,
   commitKittyPlacementCandidate,
+  deleteAllTerminalImages,
   deleteUncommittedKittyCandidate,
   hashTitleToColor,
   renderPreparedPoster,
   resolvePosterRenderPlan,
   type PosterRenderPlan,
 } from "@/app-shell/poster-renderer";
+import { __testing as overlayTesting, SixelOverlayManager } from "@/app-shell/sixel-overlay";
 import type { ImageCapability } from "@/image";
+import { selectImageCapability } from "@/image/capability";
+import { setTerminalCellPixels } from "@/image/cell-size";
 import { preparePoster, type PreparedPoster } from "@/image/native-image";
 import { __testing as probeTesting } from "@/image/probe";
 
 import { makeRgbJpeg, makeRgbPng } from "../../support/image-fixtures";
 
 const originalDetect = rendererTesting.runtime.detectImageCapability;
-const originalStdoutWrite = process.stdout.write.bind(process.stdout);
-const originalTransportEnv = process.env.KUNAI_IMAGE_TRANSPORT;
+const originalOverlayRuntime = { ...overlayTesting.runtime };
+let outputSpy: ReturnType<typeof spyOn<typeof process.stdout, "write">> | undefined;
+let originalTransportEnv: string | undefined;
 
 function capability(renderer: ImageCapability["renderer"]): ImageCapability {
   if (renderer === "none") {
@@ -98,28 +104,79 @@ function planFor(renderer: PosterRenderPlan["renderer"], rows = 4, cols = 8): Po
   };
 }
 
-function captureStdout(): { writes: string[] } {
+function captureStdout() {
   const writes: string[] = [];
-  process.stdout.write = ((chunk: string | Uint8Array) => {
-    writes.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+  outputSpy = spyOn(process.stdout, "write").mockImplementation((chunk) => {
+    writes.push(chunk instanceof Uint8Array ? Buffer.from(chunk).toString("utf8") : String(chunk));
     return true;
-  }) as typeof process.stdout.write;
+  });
   return { writes };
 }
 
+beforeEach(() => {
+  originalTransportEnv = process.env.KUNAI_IMAGE_TRANSPORT;
+});
+
 afterEach(() => {
   rendererTesting.runtime.detectImageCapability = originalDetect;
-  process.stdout.write = originalStdoutWrite;
+  Object.assign(overlayTesting.runtime, originalOverlayRuntime);
+  outputSpy?.mockRestore();
+  outputSpy = undefined;
   if (originalTransportEnv === undefined) {
     delete process.env.KUNAI_IMAGE_TRANSPORT;
   } else {
     process.env.KUNAI_IMAGE_TRANSPORT = originalTransportEnv;
   }
   probeTesting.reset();
+  setTerminalCellPixels(null);
   clearKittyPlacementRegistry();
 });
 
 describe("resolvePosterRenderPlan", () => {
+  test("fits graphics to measured cell pixels and keeps the half-block grid", () => {
+    setTerminalCellPixels({ width: 9, height: 21 });
+    const size = { rows: 3, cols: 7 };
+    for (const renderer of ["kitty-native", "sixel", "iterm-inline"] as const) {
+      rendererTesting.runtime.detectImageCapability = () => capability(renderer);
+      expect(resolvePosterRenderPlan(size)?.bounds).toEqual({
+        maxWidthPx: 63,
+        maxHeightPx: 63,
+      });
+    }
+    rendererTesting.runtime.detectImageCapability = () => capability("half-block");
+    expect(resolvePosterRenderPlan(size)?.bounds).toEqual({ maxWidthPx: 7, maxHeightPx: 6 });
+  });
+
+  test("cleans up tmux placements by id, leaving images from other panes alone", async () => {
+    rendererTesting.runtime.detectImageCapability = () => ({
+      ...capability("kitty-native"),
+      kittyPassthrough: "tmux",
+    });
+    const image = await prepared();
+    const { writes } = captureStdout();
+    const plan = resolvePosterRenderPlan({ rows: 2, cols: 3 });
+    expect(plan).toBeDefined();
+    if (!plan) return;
+    const first = await renderPreparedPoster(image, plan, { rows: 2, cols: 3 });
+    const second = await renderPreparedPoster(image, plan, { rows: 2, cols: 3 });
+    if (first.kind !== "kitty-upload" || second.kind !== "kitty-upload") {
+      throw new Error("expected two Kitty uploads");
+    }
+    commitKittyPlacementCandidate(first, "postplay-hero");
+    commitKittyPlacementCandidate(second, "postplay-rail");
+    expect(first.placeholder).toContain("\u{10EEEE}");
+    writes.length = 0;
+
+    releaseKittySlot("postplay-hero");
+    expect(getKittyPlacement("postplay-rail")).toBe(second.imageId);
+    deleteAllTerminalImages();
+    expect(writes).toEqual([
+      `\x1bPtmux;\x1b\x1b_Ga=d,d=I,i=${first.imageId},q=2;\x1b\x1b\\\x1b\\`,
+      `\x1bPtmux;\x1b\x1b_Ga=d,d=I,i=${second.imageId},q=2;\x1b\x1b\\\x1b\\`,
+    ]);
+    expect(getKittyPlacement("postplay-rail")).toBeUndefined();
+  });
+
   test("routes a kitty terminal to kitty with a pixel budget", () => {
     rendererTesting.runtime.detectImageCapability = () => capability("kitty-native");
 
@@ -322,6 +379,47 @@ describe("renderPreparedPoster", () => {
     }
   });
 
+  test("writes native tmux sixel at the measured slot and stops after removal", async () => {
+    rendererTesting.runtime.detectImageCapability = () =>
+      selectImageCapability({ TMUX: "/tmp/posters,123,0", TERM: "tmux-256color" }, true, {
+        sixel: true,
+        kittyGraphics: false,
+        tmux: {
+          major: 3,
+          minor: 4,
+          passthrough: "off",
+          clientTerm: "foot",
+          clientFeatures: ["sixel"],
+        },
+      });
+    const size = { rows: 2, cols: 3 };
+    const plan = resolvePosterRenderPlan(size);
+    if (!plan) throw new Error("expected a render plan");
+    const candidate = await renderPreparedPoster(await prepared(1, 1), plan, size);
+    if (candidate.kind !== "sixel") throw new Error("expected an overlay");
+
+    const writes: string[] = [];
+    const queued: (() => void)[] = [];
+    overlayTesting.runtime.isWindows = () => false;
+    overlayTesting.runtime.write = (bytes) => {
+      writes.push(bytes);
+    };
+    overlayTesting.runtime.schedule = (flush) => {
+      queued.push(flush);
+    };
+    const manager = new SixelOverlayManager();
+    const { overlayId, sixel } = candidate;
+    manager.register(overlayId, { rect: { x: 1, y: 2, width: 3, height: 2 }, sixel });
+    queued.shift()?.();
+    expect(writes).toEqual(['\x1b7\x1b[3;2H\x1bP0;1;0q"1;1;1;1#1;2;0;9;18#1@-\x1b\\\x1b8']);
+
+    manager.unregister(overlayId);
+    queued.shift()?.();
+    manager.afterInkRender();
+    expect(queued).toHaveLength(0);
+    expect(writes).toHaveLength(1);
+  });
+
   test("bounds the interactive sixel palette to keep ConPTY payloads responsive", async () => {
     rendererTesting.runtime.detectImageCapability = () => capability("sixel");
 
@@ -332,7 +430,20 @@ describe("renderPreparedPoster", () => {
 
     if (candidate.kind !== "sixel") throw new Error("expected sixel");
     const registers = new Set(candidate.sixel.match(/#(\d+);2;/g) ?? []);
-    expect(registers.size).toBeLessThanOrEqual(rendererTesting.APP_SHELL_SIXEL_MAX_COLORS);
+    expect(registers.size).toBeLessThan(64);
+    expect(candidate.sixel.length).toBeLessThanOrEqual(256 * 1024);
+  });
+
+  test("limits every emitted sixel register to the terminal's reported range", async () => {
+    probeTesting.setProbed({ sixel: true, kittyGraphics: false, sixelColorRegisters: 8 });
+    const candidate = await renderPreparedPoster(await prepared(), planFor("sixel"), {
+      rows: 4,
+      cols: 8,
+    });
+    if (candidate.kind !== "sixel") throw new Error("expected sixel");
+
+    const registers = [...candidate.sixel.matchAll(/#(\d+);2;/g)].map(([, id]) => Number(id));
+    expect(Math.max(...registers)).toBe(7);
   });
 
   test("emits an iTerm2 inline image carrying the prepared PNG", async () => {

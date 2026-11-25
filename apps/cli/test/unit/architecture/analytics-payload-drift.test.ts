@@ -8,6 +8,11 @@ import {
 } from "@/services/analytics/usage-analytics-service";
 
 import { IST_DAY_BOUNDARY_FROM } from "../../../../analytics-ingest/src/analytics-day";
+import {
+  ANALYTICS_PAYLOAD_KEYS as INGEST_V1_KEYS,
+  ANALYTICS_PAYLOAD_V2_KEYS as INGEST_V2_KEYS,
+} from "../../../../analytics-ingest/src/ingest";
+import { ALLOWED_OS } from "../../../../analytics-ingest/src/payload-validation";
 
 const ROOT = join(import.meta.dir, "../../../../..");
 const CONTRACT = join(ROOT, ".docs/analytics-privacy-contract.md");
@@ -17,8 +22,13 @@ const USER_DOC = join(ROOT, "docs/users/reliability-and-privacy.mdx");
  * Imported, never re-declared. A local copy would let a sixth wire field ship
  * while this file stayed green and both documents still said five — which is
  * the precise failure this gate exists to prevent.
+ *
+ * The client sends one shape; the ingest accepts two. v1 is what every release
+ * so far sends, and v2 is accepted ahead of the release that sends it, so both
+ * documents name the keys of both.
  */
 const PAYLOAD_KEYS = ANALYTICS_PAYLOAD_KEYS;
+const WIRE_KEYS = [...new Set([...INGEST_V1_KEYS, ...INGEST_V2_KEYS])];
 
 /**
  * Prose in both documents is hard-wrapped, so a phrase can straddle a newline.
@@ -56,11 +66,39 @@ describe("analytics payload documentation drift", () => {
     expect(ANALYTICS_PAYLOAD_KEYS).toHaveLength(5);
   });
 
+  test("the ingest accepts what the client sends, plus exactly the v2 shape", () => {
+    // The client's shape must be one the ingest accepts, or every ping 400s and
+    // the client backs off for a day.
+    expect([...PAYLOAD_KEYS]).toEqual([...INGEST_V1_KEYS]);
+    expect([...INGEST_V2_KEYS]).toEqual(["arch", "cohort", "day", "id", "os", "version"]);
+  });
+
   for (const [label, path] of docs) {
-    test(`${label} names exactly the five wire keys`, () => {
+    test(`${label} names every key of both wire shapes`, () => {
       const body = prose(path);
-      for (const key of PAYLOAD_KEYS) {
+      for (const key of WIRE_KEYS) {
         expect(body).toContain(key);
+      }
+      // `id` and `day` are ordinary words, so each shape must also appear whole:
+      // as a `{ a, b, … }` key list or as the keys of a JSON block.
+      const listed = new Set(
+        [...body.matchAll(/`\{ ([\w, ]+) \}`/g)].map((match) =>
+          (match[1] ?? "").split(", ").sort().join(","),
+        ),
+      );
+      const jsonKeys = new Set([...body.matchAll(/"(\w+)":/g)].map((match) => match[1]));
+      for (const wireKeys of [INGEST_V1_KEYS, INGEST_V2_KEYS]) {
+        const whole =
+          listed.has([...wireKeys].join(",")) || wireKeys.every((key) => jsonKeys.has(key));
+        expect(whole, `${label} states the payload ${wireKeys.join(", ")}`).toBe(true);
+      }
+    });
+
+    test(`${label} names every os value the ingest accepts, android included`, () => {
+      const body = prose(path);
+      expect(body).toContain("android");
+      if (label === "contract") {
+        for (const os of ALLOWED_OS) expect(body).toContain(`\`${os}\``);
       }
     });
 

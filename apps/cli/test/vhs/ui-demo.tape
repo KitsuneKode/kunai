@@ -23,7 +23,7 @@ Set Theme { "name": "Kunai Sakura", "black": "#100b0f", "red": "#ff5d5d", "green
 
 # The launch command stays out of the recording so it opens on the app itself.
 Hide
-Type "bun test/harness/ui-demo.ts"
+Type "./test/vhs/isolated-kunai.sh --harness test/harness/ui-demo.ts"
 Enter
 Wait+Screen@20s /Search/
 Sleep 600ms

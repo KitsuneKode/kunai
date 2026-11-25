@@ -1,6 +1,6 @@
 // Characterization net for `PlaybackPhase.execute` on the online provider path
 // (plan 010 step 2 / plan 012 step 1). Each scenario drives the real phase
-// through `fixtures/provider-playback-phase.ts` in an isolated child process
+// through `fixtures/provider-playback-phase.ts` in a shared isolated child
 // and pins what a user can observe: the phase result, every resolve the phase
 // asked for (provider, source pin, recovery intent, blocked dead URLs), every
 // stream handed to the player (with its start/resume offset), the session
@@ -8,72 +8,54 @@
 //
 // These traces were recorded before `PlaybackPhase` was split into modules.
 // A refactor that changes any of them changed behavior.
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { storageRootEnv } from "../helpers/storage-env";
+import type { ScenarioReply } from "./fixtures/provider-playback-phase";
 
-type ResolveCall = {
-  readonly providerId: string;
-  readonly episode: number;
-  readonly selectedSourceId: string | null;
-  readonly selectedStreamId: string | null;
-  readonly preferFreshStream: boolean | null;
-  readonly forceHealthCheck: boolean | null;
-  readonly resolveIntent: string | null;
-  readonly blockedStreamUrls: readonly string[];
-  readonly intentKind: string;
-};
+type Report = Extract<ScenarioReply, { report: unknown }>["report"];
+type ResolveCall = Report["resolves"][number];
 
-type Report = {
-  readonly result: unknown;
-  readonly resolves: readonly ResolveCall[];
-  readonly prefetches: readonly { providerId: string; episode: number }[];
-  readonly played: readonly {
-    url: string;
-    startAt: number;
-    resumePromptAt: number;
-    episode: number | null;
-    provider: string;
-  }[];
-  readonly feedback: readonly { detail?: string | null; note?: string | null }[];
-  readonly phases: readonly string[];
-  readonly problems: readonly string[];
-  readonly providersSet: readonly string[];
-  readonly shellCalls: readonly string[];
-  readonly provider: string;
-  readonly currentEpisode: number | null;
-  readonly playbackStatus: string;
-};
+let root: string | undefined;
+let worker: ReturnType<typeof startWorker> | undefined;
+let pending: ReturnType<typeof Promise.withResolvers<ScenarioReply>> | undefined;
 
-async function runScenario(scenario: string): Promise<Report> {
-  const dir = mkdtempSync(join(tmpdir(), "kunai-playback-phase-"));
+function startWorker(dir: string, ready: () => void) {
+  const child = Bun.spawn({
+    cmd: [process.execPath, join(import.meta.dir, "fixtures/provider-playback-phase.ts"), dir],
+    cwd: join(import.meta.dir, "../.."),
+    env: { ...process.env, ...storageRootEnv(dir) },
+    stdout: "ignore",
+    stderr: "pipe",
+    ipc(message: "ready" | ScenarioReply) {
+      if (message === "ready") ready();
+      else pending?.resolve(message);
+    },
+  });
+  const stderr = new Response(child.stderr).text();
+  const failed = child.exited.then(async (code) => {
+    throw new Error(`Playback fixture worker exited (${code}): ${await stderr}`);
+  });
+  return { child, failed };
+}
+
+async function runScenario(scenario: ScenarioReply["scenario"]): Promise<Report> {
+  if (!worker) throw new Error("Playback fixture worker has not started");
+  if (pending) throw new Error("The previous playback scenario is still running");
+  pending = Promise.withResolvers<ScenarioReply>();
   try {
-    const child = Bun.spawn(
-      [process.execPath, join(import.meta.dir, "fixtures/provider-playback-phase.ts"), scenario],
-      {
-        cwd: join(import.meta.dir, "../.."),
-        env: { ...process.env, ...storageRootEnv(dir) },
-        stdout: "pipe",
-        stderr: "pipe",
-        // A regression that parks the phase on a UI wait must fail, not hang.
-        timeout: 20_000,
-      },
-    );
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    expect(code, stderr).toBe(0);
-    const record = stdout.split("\n").find((line) => line.startsWith("RESULT "));
-    if (!record) throw new Error(`missing fixture result: ${stderr}`);
-    const report: Report = JSON.parse(record.slice(7));
-    return report;
+    if (worker.child.exitCode !== null) return await worker.failed;
+    worker.child.send(scenario);
+    const reply = await Promise.race([pending.promise, worker.failed]);
+    if (reply.scenario !== scenario)
+      throw new Error(`Unexpected fixture reply for ${reply.scenario}`);
+    if ("error" in reply) throw new Error(reply.error);
+    return reply.report;
   } finally {
-    rmSync(dir, { recursive: true, force: true, maxRetries: 10 });
+    pending = undefined;
   }
 }
 
@@ -105,6 +87,23 @@ const PLAY = ["resolving", "ready", "playing"];
 const PLAY_ENDED = [...PLAY, "ending"];
 
 describe("PlaybackPhase.execute characterization (online provider path)", () => {
+  beforeAll(async () => {
+    root = mkdtempSync(join(tmpdir(), "kunai-playback-phase-"));
+    const ready = Promise.withResolvers<void>();
+    worker = startWorker(root, ready.resolve);
+    await Promise.race([ready.promise, worker.failed]);
+  });
+
+  afterAll(async () => {
+    if (worker) {
+      // Each reply follows scenario disposal. Kill the idle worker, or interrupt
+      // a scenario that failed to finish, before removing its isolated storage.
+      worker.child.kill();
+      await worker.child.exited;
+    }
+    if (root) rmSync(root, { recursive: true, force: true, maxRetries: 10 });
+  });
+
   test("resolve → play → quit opens post-play once and leaves for search", async () => {
     const report = await runScenario("movie-postplay");
     expect(report.result).toEqual({ status: "success", value: "back_to_search" });
@@ -283,6 +282,7 @@ describe("PlaybackPhase.execute characterization (online provider path)", () => 
     expect(report.feedback).toContainEqual({
       note: "✓ Fixture Anime S01E01 · episode complete",
     });
+    expect(report.feedback.filter(({ detail }) => detail === "Auto-next ready")).toHaveLength(3);
     expect(report.feedback).toContainEqual({ detail: "Loading next episode", note: "S01E02" });
   });
 
