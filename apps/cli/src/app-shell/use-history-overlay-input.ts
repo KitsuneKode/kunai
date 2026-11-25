@@ -6,6 +6,7 @@ import {
   buildRootHistorySelection,
   type RootHistorySelection,
 } from "@/app-shell/root-history-bridge";
+import { titleFromHistorySelection } from "@/app/bootstrap/launch-entry";
 import type { Container } from "@/container";
 import type { MediaActionId } from "@/domain/media/media-action-policy";
 import { mediaItemFromHistoryEntry } from "@/domain/media/media-item-adapters";
@@ -88,6 +89,7 @@ export function resolveHistoryOverlayKey(
 export type HistoryRowIntent =
   | { readonly kind: "media-action"; readonly actionId: MediaActionId; readonly status: string }
   | { readonly kind: "resume" }
+  | { readonly kind: "share" }
   | { readonly kind: "delegate" };
 
 export function historyRowIntentForShellAction(action: string): HistoryRowIntent {
@@ -112,6 +114,10 @@ export function historyRowIntentForShellAction(action: string): HistoryRowIntent
       };
     case "resume":
       return { kind: "resume" };
+    // `/share` shares the session's title; over a History row that is the
+    // wrong one, so the row's own title and episode are shared instead.
+    case "share":
+      return { kind: "share" };
     default:
       // Session-scoped actions (diagnostics) are correct as the shell runs them.
       return { kind: "delegate" };
@@ -179,6 +185,22 @@ async function openHistoryTitleControlMenu(
         { sourcePreference: ctx.sourcePreference },
       ),
     );
+    return;
+  }
+  if (intent.kind === "share") {
+    const { shareTarget } = await import("@/app-shell/workflows/share-workflow");
+    const kind = entry.mediaKind;
+    await shareTarget(ctx.container, {
+      title: titleFromHistorySelection(selected),
+      mode: kind === "anime" ? "anime" : kind === "video" ? "youtube" : "series",
+      mediaKind: kind,
+      episode:
+        entry.season !== undefined && entry.episode !== undefined
+          ? { season: entry.season, episode: entry.episode }
+          : undefined,
+      providerId: entry.providerId,
+    });
+    ctx.onRedraw();
     return;
   }
   if (intent.kind === "media-action") {
