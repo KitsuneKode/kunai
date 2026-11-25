@@ -5,6 +5,7 @@ import {
   type StreamReachabilityFetch,
 } from "@kunai/core";
 
+import { MAX_PROBE_BODY_BYTES, readBoundedTextBody } from "./bounded-text-body";
 import {
   HLS_SEGMENT_PROBE_MIN_BYTES,
   isHlsMasterPlaylist,
@@ -57,7 +58,6 @@ const FMP4_PROBE_PREFIX_BYTES = 64 * 1024;
 const SEGMENT_RANGE_HEADER = `bytes=0-${FMP4_PROBE_PREFIX_BYTES - 1}`;
 // A body read past this after the prefix is already gathered is a server
 // ignoring Range and dumping the whole segment on us — cap the bleed.
-const MAX_PROBE_BODY_BYTES = 256 * 1024;
 
 /** Capture a bounded prefix; stop early once positive media evidence is sufficient. */
 async function readPrefixBytes(
@@ -247,53 +247,6 @@ function hasFragmentedMp4Prefix(prefix: Uint8Array): boolean {
   return false;
 }
 
-/**
- * Read a full body as text only when it fits `maxBytes`; returns `null` on
- * overflow — a truncated M3U can still parse as valid markup, so the caller
- * must see "too large" rather than half a playlist. Mid-body errors rethrow
- * into the caller's classifier, matching `readPrefixBytes`.
- */
-export async function readBoundedTextBody(
-  body: ReadableStream<Uint8Array> | null,
-  maxBytes: number = MAX_PROBE_BODY_BYTES,
-): Promise<string | null> {
-  if (!body) return null;
-  const reader = body.getReader();
-  const chunks: Uint8Array[] = [];
-  let seen = 0;
-  try {
-    while (seen <= maxBytes) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value) {
-        chunks.push(value);
-        seen += value.byteLength;
-      }
-    }
-    if (seen > maxBytes) {
-      await reader.cancel("too-large").catch(() => {});
-      return null;
-    }
-    return new TextDecoder().decode(concatBytes(chunks, seen));
-  } catch (error) {
-    await reader.cancel("probe-failed").catch(() => {});
-    throw error;
-  } finally {
-    reader.releaseLock();
-  }
-}
-
-function concatBytes(chunks: readonly Uint8Array[], total: number): Uint8Array {
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    out.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return out;
-}
-
-/**
 /** Quick manifest/segment probe used before accepting a provider candidate or handing off to mpv. */
 export async function probeStreamReachability(
   input: ProbeStreamReachabilityInput,
