@@ -21,6 +21,15 @@ export type PlaybackOutcome =
       episode?: number;
     };
 
+/** The episode a playlist advance starts on; null for a title-level row. */
+export function playlistAdvanceEpisode(
+  outcome: Extract<PlaybackOutcome, { type: "playlist-advance" }>,
+): EpisodeInfo | null {
+  return outcome.episode !== undefined
+    ? { season: outcome.season ?? 1, episode: outcome.episode }
+    : null;
+}
+
 /**
  * Build a playlist-advance outcome that carries the exact claimed queue intent
  * on `titleInfo` so the next PlaybackPhase can acknowledge only after mpv starts.

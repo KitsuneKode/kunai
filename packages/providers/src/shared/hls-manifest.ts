@@ -83,17 +83,36 @@ export function parseFirstHlsMediaSegmentPath(manifestText: string): string | nu
   return null;
 }
 
-export function absolutizeHostRootHlsManifest(manifestText: string, manifestUrl: string): string {
-  const origin = new URL(manifestUrl).origin;
+/**
+ * Rewrite every reference in a playlist to an absolute URL.
+ *
+ * A materialized playlist is read by mpv from a local temp file, so anything
+ * left relative resolves against that file's directory. That covers segment
+ * lines and the `URI="…"` attributes of `#EXT-X-KEY` (AES keys), `#EXT-X-MAP`
+ * (fMP4 init segments) and `#EXT-X-MEDIA` (audio/subtitle renditions) —
+ * host-root (`/a/b`) and plain relative (`seg-1.ts`) alike. `manifestUrl` must
+ * be the URL the playlist was finally served from, after redirects.
+ */
+export function absolutizeHlsManifest(manifestText: string, manifestUrl: string): string {
+  const absolute = (reference: string): string => {
+    try {
+      return new URL(reference, manifestUrl).toString();
+    } catch {
+      return reference;
+    }
+  };
   return manifestText
     .split(/\r?\n/)
     .map((line) => {
       const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) return line;
-      if (trimmed.startsWith("/") && !trimmed.startsWith("//")) {
-        return `${origin}${trimmed}`;
+      if (!trimmed) return line;
+      if (trimmed.startsWith("#")) {
+        return line.replace(
+          /(\bURI=")([^"]*)(")/g,
+          (_match, open, reference, close) => `${open}${absolute(reference)}${close}`,
+        );
       }
-      return line;
+      return absolute(trimmed);
     })
     .join("\n");
 }
