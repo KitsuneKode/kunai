@@ -86,10 +86,11 @@ archive and put only the residue here.
 
 ### Analytics
 
-| Track                    | Remaining                                                                                                                                            | Plan                                                                                                          |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Usage analytics redesign | Explicit opt-in and the live aggregate endpoint are deployed; stable-secret, firewall, retention, cron, cost, and live opt-in/disable signoff remain | [usage-analytics-redesign.md](./usage-analytics-redesign.md) · [design](./usage-analytics-redesign-design.md) |
-| Analytics day boundary   | Task 8 only: schedule is now `0 19 * * *`; prove the IST clock is live in prod before merge, then verify the first run                               | [2026-09-11-analytics-ist-day-boundary.md](./2026-09-11-analytics-ist-day-boundary.md)                        |
+| Track                    | Remaining                                                                                                                                                                                                                          | Plan                                                                                                          |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Usage analytics redesign | Explicit opt-in and the live aggregate endpoint are deployed; stable-secret, firewall, retention, cron, cost, and live opt-in/disable signoff remain                                                                               | [usage-analytics-redesign.md](./usage-analytics-redesign.md) · [design](./usage-analytics-redesign-design.md) |
+| Analytics day boundary   | Task 8 only: schedule is now `0 19 * * *`; prove the IST clock is live in prod before merge, then verify the first run                                                                                                             | [2026-09-11-analytics-ist-day-boundary.md](./2026-09-11-analytics-ist-day-boundary.md)                        |
+| Credible usage analytics | Zero-collection download/install/update counts (GitHub assets, npm, Android), less invasive opt-in ping (monthly-rotating id, cohort month, no durable per-install record, Android `os`), neutral consent, `analytics log`, badges | [2026-11-24-analytics-credible-usage.md](./2026-11-24-analytics-credible-usage.md)                            |
 
 ### Docs
 
