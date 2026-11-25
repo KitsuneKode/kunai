@@ -20,6 +20,7 @@ import {
 } from "../src/distribution-sources";
 import { buildPublicDistribution, computeDistributionDeltas } from "../src/public-distribution";
 import type { DistributionRow } from "../src/store";
+import { isGitHubApiUrl } from "./support/github-host";
 
 const CLI_PACKAGE = join(import.meta.dir, "../../cli/package.json");
 
@@ -132,7 +133,7 @@ describe("fetchDistributionEntries", () => {
 
   test("reads GitHub and every npm package, with an optional token", async () => {
     const fake = fakeFetch((url) =>
-      url.includes("api.github.com")
+      isGitHubApiUrl(url)
         ? new Response(
             JSON.stringify([
               { tag_name: "v0.4.0", assets: [{ name: "kunai-android-arm64", download_count: 5 }] },
@@ -160,7 +161,7 @@ describe("fetchDistributionEntries", () => {
     });
     expect(entries.filter((entry) => entry.source === "npm")).toHaveLength(11);
 
-    const githubIndex = fake.urls.findIndex((url) => url.includes("api.github.com"));
+    const githubIndex = fake.urls.findIndex((url) => isGitHubApiUrl(url));
     expect(fake.urls[githubIndex]).toBe(
       "https://api.github.com/repos/KitsuneKode/kunai/releases?per_page=100&page=1",
     );
@@ -176,7 +177,7 @@ describe("fetchDistributionEntries", () => {
 
   test("a package npm has never seen counts zero; any other failure rejects", async () => {
     const missing = fakeFetch((url) =>
-      url.includes("api.github.com")
+      isGitHubApiUrl(url)
         ? new Response("[]")
         : new Response(JSON.stringify({ error: "not found" }), { status: 404 }),
     );
@@ -184,7 +185,7 @@ describe("fetchDistributionEntries", () => {
     expect(entries.every((entry) => entry.cumulative === 0)).toBe(true);
 
     const broken = fakeFetch((url) =>
-      url.includes("api.github.com") ? new Response("[]") : new Response("", { status: 500 }),
+      isGitHubApiUrl(url) ? new Response("[]") : new Response("", { status: 500 }),
     );
     await expect(
       fetchDistributionEntries({ fetch: broken.fetch, today: "2026-11-25" }),

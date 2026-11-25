@@ -17,6 +17,7 @@ import { loadAnalyticsLimits } from "../src/limits";
 import { snapshotDayKey } from "../src/public-metrics";
 import type { AnalyticsRuntimeConfig } from "../src/runtime-config";
 import type { AnalyticsStore, DailyRollup } from "../src/store";
+import { isGitHubApiUrl } from "./support/github-host";
 import { inertStoreMethods } from "./support/inert-store";
 
 const CRON_SECRET = "cron-secret-value";
@@ -65,7 +66,7 @@ type Captured = { status: number; body: Record<string, unknown> };
  * here reaches the network: the handler's only fetch is this one.
  */
 const emptyDistribution: DistributionFetch = async (url) =>
-  new Response(url.includes("api.github.com") ? "[]" : JSON.stringify({ downloads: [] }));
+  new Response(isGitHubApiUrl(url) ? "[]" : JSON.stringify({ downloads: [] }));
 
 type RunOptions = { authorization?: string | null; fetch?: DistributionFetch; now?: number };
 
