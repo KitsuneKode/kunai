@@ -81,14 +81,16 @@ describe("analytics payload documentation drift", () => {
       }
       // `id` and `day` are ordinary words, so each shape must also appear whole:
       // as a `{ a, b, … }` key list or as the keys of a JSON block.
-      const listed = [...body.matchAll(/`\{ ([\w, ]+) \}`/g)].map((match) =>
-        (match[1] ?? "").split(", ").sort().join(","),
+      const listed = new Set(
+        [...body.matchAll(/`\{ ([\w, ]+) \}`/g)].map((match) =>
+          (match[1] ?? "").split(", ").sort().join(","),
+        ),
       );
-      const jsonKeys = [...body.matchAll(/"(\w+)":/g)].map((match) => match[1]);
-      for (const shape of [INGEST_V1_KEYS, INGEST_V2_KEYS]) {
+      const jsonKeys = new Set([...body.matchAll(/"(\w+)":/g)].map((match) => match[1]));
+      for (const wireKeys of [INGEST_V1_KEYS, INGEST_V2_KEYS]) {
         const whole =
-          listed.includes([...shape].join(",")) || shape.every((key) => jsonKeys.includes(key));
-        expect(whole, `${label} states the shape ${shape.join(", ")}`).toBe(true);
+          listed.has([...wireKeys].join(",")) || wireKeys.every((key) => jsonKeys.has(key));
+        expect(whole, `${label} states the payload ${wireKeys.join(", ")}`).toBe(true);
       }
     });
 
