@@ -266,4 +266,57 @@ describe("SyncTokenStore on the real filesystem", () => {
     expect(quarantine).toBeDefined();
     expect(await readFile(join(paths.configDir, quarantine ?? ""), "utf8")).toBe(garbage);
   });
+
+  test("an unreadable token file rejects load and patches, and is never replaced", async () => {
+    // A directory where the file should be: EISDIR, a read fault rather than
+    // absence or corruption. It must not read as "no tokens" or move aside.
+    await mkdir(tokenPath, { recursive: true });
+    const store = new SyncTokenStore(paths);
+
+    await expect(store.load()).rejects.toThrow();
+    await expect(store.patchTmdb(TMDB)).rejects.toThrow();
+
+    expect((await stat(tokenPath)).isDirectory()).toBe(true);
+    const siblings = await readdir(paths.configDir);
+    expect(siblings.filter((name) => name.includes(".corrupt-"))).toEqual([]);
+  });
+
+  test("an invalid tracker record reads as absent and survives the other tracker's patch", async () => {
+    await mkdir(paths.configDir, { recursive: true });
+    const broken = { accessToken: 5, userId: "seven" };
+    const future = { token: "kept" };
+    await writeFile(tokenPath, JSON.stringify({ anilist: broken, tmdb: TMDB, future }), "utf8");
+    const store = new SyncTokenStore(paths);
+
+    // One bad record does not disconnect the other tracker.
+    expect(await store.load()).toEqual({ tmdb: TMDB });
+
+    await store.patchTmdb({ ...TMDB, sessionId: "tmdb-rotated" });
+
+    // The invalid record and unknown fields are left byte-for-byte as they were.
+    expect(JSON.parse(await readFile(tokenPath, "utf8"))).toEqual({
+      anilist: broken,
+      tmdb: { ...TMDB, sessionId: "tmdb-rotated" },
+      future,
+    });
+  });
+
+  test("reconnecting the tracker whose record is invalid replaces only that record", async () => {
+    await mkdir(paths.configDir, { recursive: true });
+    await writeFile(tokenPath, JSON.stringify({ anilist: { userId: 7 }, tmdb: TMDB }), "utf8");
+    const store = new SyncTokenStore(paths);
+
+    await store.patchAniList(ANILIST);
+
+    expect(await store.load()).toEqual({ anilist: ANILIST, tmdb: TMDB });
+  });
+
+  test("a patch carrying an invalid record is refused before anything is written", async () => {
+    const store = new SyncTokenStore(paths);
+    await store.patchTmdb(TMDB);
+
+    await expect(store.patchAniList({ accessToken: " ", userId: 7 })).rejects.toThrow();
+
+    expect(JSON.parse(await readFile(tokenPath, "utf8"))).toEqual({ tmdb: TMDB });
+  });
 });
