@@ -16,6 +16,7 @@ export interface ImageCapability {
   readonly terminal: TerminalId;
   readonly protocol: ImageProtocol;
   readonly renderer: ImageRendererId;
+  readonly kittyPassthrough?: "tmux";
   readonly available: boolean;
   readonly reason: string;
 }
