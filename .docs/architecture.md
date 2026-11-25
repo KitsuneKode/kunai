@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T10:55:19Z"
+lastReviewed: "2026-11-25T10:43:36Z"
 ---
 
 # Kunai — Runtime Architecture
@@ -265,7 +265,13 @@ Observability matters here too: failures around stream resolution, cache reuse, 
 
 Config startup holds the shared file lock from its initial read through any
 migration write. Later saves merge only changed keys under the same lock.
-A lock timeout rejects before the write callback runs.
+A lock timeout rejects before the write callback runs. Inside a nested key such
+as `sync`, the unit is the leaf: `update()` records which leaves changed
+(`DirtyConfigLeaves`), and the save replays only those onto the key's value on
+disk, so two instances that each flip one tracker preference keep both. Keys
+owning a vaulted secret (`youtubeMetadata`, `providerRelay`) stay whole. Settings
+rebases a draft's nested edits onto the live config before writing
+(`rebaseNestedPatch`), so a draft opened before a tracker connect cannot revert it.
 
 Native credential hydration is a read; unrelated config saves never rewrite a
 hydrated token. Explicit replacements and clears share the config lock with their

@@ -8,20 +8,15 @@ import {
   type StremioAddonsConsent,
 } from "@/domain/provider/stremio-addons";
 import { dbg } from "@/logger";
-import type { ContinueSourcePreference } from "@/services/continuation/continuation-source";
 import {
   DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
-  DEFAULT_OFFLINE_RUNWAY_TARGET,
   DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
 } from "@/services/download/StorageBudgetPolicy";
 import {
-  isHdrMode,
-  MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS,
   mergeKitsuneConfig,
   normalizeRetiredProductionProviderFields,
   normalizeStremioAddonsRiskAcknowledgedAt,
   retiredProductionProviderFieldsChanged,
-  type PrePlayConfirmMode,
   type StremioAddonConfigEntry,
 } from "@kunai/config";
 import { migrateLegacyProviderId } from "@kunai/providers";
@@ -34,6 +29,18 @@ import {
 } from "@kunai/types";
 
 import { persistedAnalyticsConsent, predatesExplicitAnalyticsConsent } from "./analytics-consent";
+import { DirtyConfigLeaves } from "./config-leaf-merge";
+import {
+  normalizeBytes,
+  normalizeContinueSourcePreference,
+  normalizeHdrMode,
+  normalizeMaxConcurrentDownloads,
+  normalizeMpvReconnectAttempts,
+  normalizePrePlayConfirm,
+  normalizeRecoveryMode,
+  normalizeRunwayTarget,
+  normalizeStartupPriority,
+} from "./config-scalar-normalizers";
 import {
   collectDirtyVaultFields,
   preserveUnchangedNestedDiskSecrets,
@@ -199,6 +206,11 @@ export class ConfigServiceImpl implements ConfigService {
    * Persist merges `{onDisk, dirtyKeys}` — per-key last-writer-wins — instead.
    */
   private readonly dirtyKeys = new Set<keyof KitsuneConfig>();
+  /** The nested leaves behind a dirty key, so a save merges them, not the key. */
+  private readonly dirtyLeaves = new DirtyConfigLeaves<KitsuneConfig>(
+    // SAFETY: a vaulted field path always starts with its owning config key.
+    new Set(VAULTED_CONFIG_FIELDS.map((field) => field.split(".")[0] as keyof KitsuneConfig)),
+  );
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private saveTimeoutMs = 300;
   /** Set when load() auto-migrated legacy videasyAppId to bc-frontend. */
@@ -425,6 +437,7 @@ export class ConfigServiceImpl implements ConfigService {
       if (loaded[key] === undefined) continue;
       if (JSON.stringify(loaded[key]) !== JSON.stringify(comparableConfig[key])) {
         service.dirtyKeys.add(key);
+        service.dirtyLeaves.markWhole(key);
       }
     }
     if (
@@ -611,12 +624,16 @@ export class ConfigServiceImpl implements ConfigService {
         mergedKeys = new Set(this.dirtyKeys);
         try {
           const onDisk = await this.store.load();
+          const live = { ...DEFAULT_CONFIG, ...onDisk };
           const dirtySubset: Partial<KitsuneConfig> = {};
+          const persistedSubset: Partial<KitsuneConfig> = {};
           for (const key of mergedKeys) {
             Object.assign(dirtySubset, { [key]: config[key] });
+            const value = this.dirtyLeaves.persistedValue(key, config[key], onDisk[key]);
+            Object.assign(persistedSubset, { [key]: value });
           }
           toWrite = preserveUnchangedNestedDiskSecrets(
-            { ...DEFAULT_CONFIG, ...onDisk, ...dirtySubset },
+            { ...live, ...persistedSubset },
             onDisk,
             mergedKeys,
             this.dirtyVaultFields,
@@ -654,7 +671,12 @@ export class ConfigServiceImpl implements ConfigService {
       }
       await this.store.save(scrubVaultedFields(toWrite, verified));
       if (forceFullWrite) this.needsFullConfigWrite = false;
-      this.clearPersistedDirtyKeys(mergedKeys, mergedValues ?? toWrite, persistedVaultSecrets);
+      this.clearPersistedDirtyKeys(
+        mergedKeys,
+        mergedValues ?? toWrite,
+        persistedVaultSecrets,
+        toWrite,
+      );
     };
 
     const withLock = this.store.withLock?.bind(this.store);
@@ -669,6 +691,7 @@ export class ConfigServiceImpl implements ConfigService {
     mergedKeys: ReadonlySet<keyof KitsuneConfig> | null,
     written: Partial<KitsuneConfig>,
     persistedVaultSecrets: ReadonlyMap<VaultedConfigField, string>,
+    onDiskNow: KitsuneConfig,
   ): void {
     // A key re-dirtied while the write was in flight keeps its flag — the
     // next persist carries the newer value instead of reverting to what was
@@ -676,7 +699,13 @@ export class ConfigServiceImpl implements ConfigService {
     // current dirty set is the comparison set.
     const keys = mergedKeys ?? [...this.dirtyKeys];
     for (const key of keys) {
-      if (this.config[key] === written[key]) this.dirtyKeys.delete(key);
+      if (this.config[key] !== written[key]) continue;
+      this.dirtyKeys.delete(key);
+      // A leaf-merged key now holds what disk holds, siblings' leaves included.
+      if (this.dirtyLeaves.isLeafMerged(key)) {
+        this.config = { ...this.config, [key]: onDiskNow[key] };
+      }
+      this.dirtyLeaves.clear(key);
     }
     for (const [field, secret] of persistedVaultSecrets) {
       if (readVaultedField(this.config, field) === secret) this.dirtyVaultFields.delete(field);
@@ -1273,6 +1302,10 @@ export class ConfigServiceImpl implements ConfigService {
         : null),
     };
     this.config = applyRetiredProductionProviderNormalization(this.config);
+    // SAFETY: Object.keys of a Partial<KitsuneConfig> only yields its keys.
+    for (const key of Object.keys(partial) as (keyof KitsuneConfig)[]) {
+      this.dirtyLeaves.record(key, previous[key], this.config[key]);
+    }
     for (const field of collectDirtyVaultFields(previous, this.config, partial)) {
       this.dirtyVaultFields.add(field);
     }
@@ -1358,6 +1391,7 @@ export class ConfigServiceImpl implements ConfigService {
     // SAFETY: Object.keys of DEFAULT_CONFIG only yields KitsuneConfig keys.
     for (const key of Object.keys(DEFAULT_CONFIG) as (keyof KitsuneConfig)[]) {
       this.dirtyKeys.add(key);
+      this.dirtyLeaves.markWhole(key);
     }
     for (const field of VAULTED_CONFIG_FIELDS) {
       this.dirtyVaultFields.add(field);
@@ -1611,28 +1645,6 @@ function normalizeVideasyAppId<T>(value: T, sessionToken = ""): KitsuneConfig["v
   return "bc-frontend";
 }
 
-function normalizeRecoveryMode<T>(value: T): RecoveryMode {
-  return value === "manual" ? "manual" : value === "fallback-first" ? "fallback-first" : "guided";
-}
-
-function normalizeContinueSourcePreference<T>(value: T): ContinueSourcePreference {
-  return value === "local"
-    ? "local"
-    : value === "stream"
-      ? "stream"
-      : value === "ask"
-        ? "ask"
-        : "auto";
-}
-
-function normalizePrePlayConfirm<T>(value: T): PrePlayConfirmMode {
-  return value === "when-choices" ? "when-choices" : value === "always" ? "always" : "off";
-}
-
-function normalizeStartupPriority<T>(value: T): StartupPriority {
-  return value === "fast" ? "fast" : value === "quality-first" ? "quality-first" : "balanced";
-}
-
 /** An update split into what to persist and which launch-flag fields stay overridden. */
 interface ProfileOverrideSplit {
   readonly partial: Partial<KitsuneConfig>;
@@ -1645,32 +1657,6 @@ const SESSION_PROFILE_KEYS = [
   "movieLanguageProfile",
 ] as const;
 const PROFILE_FIELDS = ["audio", "subtitle", "quality"] as const;
-
-function normalizeHdrMode<T>(value: T): KitsuneConfig["hdrMode"] {
-  return isHdrMode(value) ? value : "auto";
-}
-
-function normalizeBytes<T>(value: T, fallback: number): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
-  return Math.max(0, Math.trunc(value));
-}
-
-function normalizeRunwayTarget<T>(value: T): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_OFFLINE_RUNWAY_TARGET;
-  return Math.max(1, Math.min(24, Math.trunc(value)));
-}
-
-function normalizeMpvReconnectAttempts<T>(value: T): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS;
-  }
-  return Math.max(0, Math.min(MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS, Math.trunc(value)));
-}
-
-function normalizeMaxConcurrentDownloads<T>(value: T): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) return 3;
-  return Math.max(1, Math.min(5, Math.trunc(value)));
-}
 
 /** Host-only relay URL for debug logs: the full URL can carry path/query. */
 function relayHostForDebug(baseUrl: string | undefined): string {
