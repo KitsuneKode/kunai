@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T14:42:21Z"
+lastReviewed: "2026-11-25T20:02:00Z"
 ---
 
 # Poster and terminal image output

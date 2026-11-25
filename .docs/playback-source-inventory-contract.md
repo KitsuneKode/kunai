@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T05:20:56Z"
+lastReviewed: "2026-11-25T14:59:53Z"
 ---
 
 # Playback Source Inventory Contract
@@ -284,6 +284,25 @@ provider inventory satisfies the preference without that search. Preserve an
 explicit interactive selection and an attached track without language evidence.
 Late search still requires online playback, proven TMDB identity, and the user's
 Wyzie key; disabled subtitles and satisfying hard subtitles suppress it.
+
+### Subtitle track identity
+
+Two subtitle tracks are the same track only when their URLs match without the query and
+hash **and** their languages agree. Comparing without the query absorbs the rotating
+tokens providers use to re-sign one file. Checking the language keeps tracks that differ
+only by query apart, such as YouTube `timedtext?lang=en` and `?lang=fr`. A track with no
+known language stays distinct from every other URL. An extra row costs nothing, but a
+lost language cannot be recovered. One helper,
+`apps/cli/src/domain/subtitle-track-identity.ts`, makes this decision for the inventory
+merge and ranking dedupe in `apps/cli/src/subtitle.ts`, the mpv attach dedupe, and the
+download sidecar's language label. The interactive picker numbers rows that would
+otherwise share a label and detail.
+
+YouTube is the only production provider whose caption URLs differ by query alone. The
+other adapters pass through upstream file URLs that differ by path and at most carry a
+signing token. A Stremio addon with private configuration drops the subtitle language,
+so its tracks are kept apart. The language is the normalized two-letter code, so script
+variants that normalize alike, such as `zh-Hans` and `zh-Hant`, still count as one track.
 
 ## Desktop subtitle fetch boundary
 

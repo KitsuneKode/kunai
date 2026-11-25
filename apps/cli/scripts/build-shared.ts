@@ -479,8 +479,9 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // combiner), it measured 3,293,492 bytes. 3219 KiB leaves 2,764 bytes; public
 // launcher budgets are unchanged. The tmux graphics path measured 3,297,643
 // bytes. With measured terminal cell sizing the bundle measured 3,300,575
-// bytes; 3226 KiB leaves 2,849 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_226;
+// bytes; 3226 KiB leaves 2,849 bytes. Direct Kitty placement for Konsole and
+// WezTerm measured 3,302,340 bytes; 3228 KiB leaves 3,132 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_228;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
