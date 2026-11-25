@@ -12,11 +12,16 @@ bun run smoke:posters -- --terminal kitty
 bun run smoke:posters -- --terminal tmux
 bun run smoke:posters -- --terminal foot
 bun run smoke:posters -- --terminal xterm
+bun run smoke:posters -- --terminal konsole
+bun run smoke:posters -- --terminal wezterm
 bun run smoke:posters -- --terminal current --expect half-block
 ```
 
 `tmux` starts a private server inside a new Kitty window with passthrough enabled.
-`xterm` launches with `-ti vt340`. `current` needs an open terminal at least
+`xterm` launches with `-ti vt340`. `konsole` and `wezterm` expect direct Kitty
+placement. The launcher enables WezTerm's Kitty graphics setting in its private
+window and reports a skip when the requested emulator is missing.
+`current` needs an open terminal at least
 124 columns wide so the Library preview rail fits. `--out NEW_DIR` chooses a
 new evidence directory. The harness otherwise prints the temporary directory it
 created. `--expect` checks the renderer without forcing it. Existing image
@@ -28,9 +33,15 @@ the fixtures, resizes its private Kitty window when available, and quits with
 Ctrl+C. `terminal.ansi` contains the PTY transcript. `report.json` records the
 selected protocol, exit status, and any failure. Kitty can also capture
 composed text. X11 windows can capture PNGs with ImageMagick's `import`.
-For Kitty screenshots, the harness checks that the selected fixture colours
-appear and that both are absent after exit. On other targets, review available
-screenshots for framebuffer behavior. CI does not launch these smokes.
+Use X11 or Xvfb for screenshot evidence on Konsole and WezTerm, and install
+`xdotool` to find the private WezTerm window. For Kitty protocols, including
+direct placement, the harness checks that the selected fixture colours appear
+and that both are absent after exit when screenshots are available. CI does not
+launch these smokes.
+
+The launcher gives the emulator access to Wayland when the display and runtime
+directory are both available. The CLI uses an isolated profile. SIGINT, SIGTERM
+and SIGHUP close the private terminal, stop its tmux server and remove the profile.
 
 ## Local evidence
 

@@ -11,7 +11,7 @@ export function visibleTerminalText(transcript: string): string {
 }
 
 export function hasPrintableGraphicsLeak(transcript: string): boolean {
-  return /_G(?:a|i|m|f|t)=|\]1337;File=|Ptmux;|\[?\d*(?:;\d+)*q(?=["#])/.test(
+  return /_G(?:a|i|m|f|t)=|\]1337;File=|Ptmux;|\d+;\d+;\d+q(?=["#])/.test(
     visibleTerminalText(transcript),
   );
 }

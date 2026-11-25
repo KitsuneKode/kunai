@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T14:46:34Z"
+lastReviewed: "2026-11-25T15:19:36Z"
 ---
 
 # Poster and terminal image output
@@ -135,8 +135,9 @@ not require or spawn `ffmpeg` for normal playback or offline artwork.
 
 Use the opt-in `bun run smoke:posters -- --terminal kitty` for the offline
 fixture path. Use `--terminal tmux` to wrap the run in a private tmux server,
-`--terminal foot` or `--terminal xterm` for Sixel, or `--terminal current` to
-use the open terminal. The harness drives the real CLI, captures the PTY
+`--terminal foot` or `--terminal xterm` for Sixel, `--terminal konsole` or
+`--terminal wezterm` for direct Kitty placement, or `--terminal current` to
+use the open terminal. This command requires a source checkout. The harness drives the real CLI, captures the PTY
 transcript, checks printable text for graphics escapes, and captures screenshots
 when supported. The [release smoke plan](../.plans/poster-protocol-release-smokes.md)
 records the live evidence and remaining terminal coverage.

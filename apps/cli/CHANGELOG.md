@@ -78,7 +78,6 @@ subtitle controls, and safer persistence, downloads and native installation.
 - Fit graphics posters to measured terminal cell sizes and refresh them on
   resize.
 - Display Kitty posters in Konsole and in WezTerm with Kitty graphics enabled.
-- Add an opt-in poster smoke command that records terminal output and screenshots.
 
 - Add direct title launches from the command palette, notification episode
   launches and bounded detail prefetching. Keep command matching and title

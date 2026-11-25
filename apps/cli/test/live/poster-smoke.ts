@@ -1,6 +1,6 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 
 import { decodePng } from "@/image/decode";
 import {
@@ -18,10 +18,19 @@ import {
   posterProtocol,
   visibleTerminalText,
 } from "../support/poster-smoke-evidence";
+import { posterSmokeWaylandEnv, runPosterSmokeTerminal } from "../support/poster-smoke-launcher";
 
 const ROOT = resolve(import.meta.dirname, "../..");
 const BUN = process.execPath;
-const TARGETS = new Set(["kitty", "tmux", "xterm", "foot", "current"]);
+const TARGETS = new Map([
+  ["kitty", "kitty-native"],
+  ["tmux", "kitty-tmux"],
+  ["xterm", "sixel"],
+  ["foot", "sixel"],
+  ["konsole", "kitty-direct"],
+  ["wezterm", "kitty-direct"],
+  ["current", undefined],
+]);
 const GRAPHICS_OVERRIDES = new Set([
   "KUNAI_IMAGE_PROTOCOL",
   "KUNAI_IMAGE_TMUX",
@@ -39,6 +48,7 @@ type SmokeOptions = {
   readonly out: string;
   readonly socket?: string;
   readonly expected?: string;
+  readonly terminalHome?: string;
 };
 
 function cleanEnv(home: string): NodeJS.ProcessEnv {
@@ -53,7 +63,7 @@ function cleanEnv(home: string): NodeJS.ProcessEnv {
 }
 
 function commandFor(options: SmokeOptions, child: string[]): string[] {
-  const { emulator, socket } = options;
+  const { emulator, socket, terminalHome } = options;
   if (emulator === "kitty" || emulator === "tmux") {
     if (!socket) throw new Error("Kitty requires the harness's private control socket");
     return [
@@ -76,6 +86,34 @@ function commandFor(options: SmokeOptions, child: string[]): string[] {
   if (emulator === "xterm") return ["xterm", "-ti", "vt340", "-geometry", "132x42", "-e", ...child];
   if (emulator === "foot")
     return ["foot", "--config=/dev/null", "--window-size-chars=132x42", ...child];
+  if (emulator === "konsole")
+    return [
+      "konsole",
+      "--separate",
+      "-p",
+      "TerminalColumns=132",
+      "-p",
+      "TerminalRows=42",
+      "-e",
+      ...child,
+    ];
+  if (emulator === "wezterm" && terminalHome)
+    return [
+      "wezterm",
+      "--skip-config",
+      "--config",
+      "enable_kitty_graphics=true",
+      "--config",
+      "initial_cols=132",
+      "--config",
+      "initial_rows=42",
+      "start",
+      "--always-new-process",
+      "--class",
+      basename(terminalHome),
+      "--",
+      ...child,
+    ];
   return child;
 }
 
@@ -160,21 +198,15 @@ function showsColor(rgba: Uint8Array, color: readonly [number, number, number]):
 }
 
 async function captureFrame(options: SmokeOptions, name: FrameName): Promise<void> {
-  const window = process.env.WINDOWID;
-  if (
-    options.emulator !== "current" &&
-    process.env.DISPLAY &&
-    window &&
-    /^\d+$/.test(window) &&
-    Bun.which("import")
-  ) {
+  const window = await screenshotWindow(options);
+  if (window) {
     const path = join(options.out, `${name}.png`);
     const deadline = Date.now() + 3_000;
     for (;;) {
       await runCommand(["import", "-window", window, `PNG24:${path}`]);
       // The terminal can acknowledge bytes before its compositor paints them.
       // Use the deterministic fixture colours to select a settled screenshot.
-      if (options.expected !== "kitty-native" && options.expected !== "kitty-tmux") break;
+      if (!options.expected?.startsWith("kitty-")) break;
       const { rgba } = decodePng(await Bun.file(path).bytes());
       const first = showsColor(rgba, POSTER_COLORS[0]);
       const second = showsColor(rgba, POSTER_COLORS[1]);
@@ -211,10 +243,34 @@ async function captureFrame(options: SmokeOptions, name: FrameName): Promise<voi
   }
 }
 
+async function screenshotWindow(options: SmokeOptions): Promise<string | undefined> {
+  if (options.emulator === "current" || !process.env.DISPLAY || !Bun.which("import")) return;
+  const window = process.env.WINDOWID;
+  if (window && /^[1-9]\d*$/.test(window)) return window;
+  // WezTerm does not export an X11 WINDOWID. Find only this run's window.
+  if (
+    options.emulator === "wezterm" &&
+    options.terminalHome &&
+    !process.env.WAYLAND_DISPLAY &&
+    Bun.which("xdotool")
+  ) {
+    const windows = await runCommand([
+      "xdotool",
+      "search",
+      "--onlyvisible",
+      "--class",
+      `^${basename(options.terminalHome)}$`,
+    ]);
+    const id = windows.trim();
+    if (!/^[1-9]\d*$/.test(id)) throw new Error("expected one private WezTerm X11 window");
+    return id;
+  }
+}
+
 async function drivePosterSmoke(options: SmokeOptions): Promise<void> {
   if (!process.stdin.isTTY || !process.stdout.isTTY)
     throw new Error("poster smoke requires a real TTY");
-  const home = mkdtempSync(join(tmpdir(), "kunai-poster-profile-"));
+  const home = mkdtempSync(join(options.terminalHome ?? tmpdir(), "kunai-poster-profile-"));
   const env = cleanEnv(home);
   for (const key of Object.keys(env)) {
     if (
@@ -370,14 +426,14 @@ async function drivePosterSmoke(options: SmokeOptions): Promise<void> {
 
 async function main(args: string[]): Promise<void> {
   if (args[0] === "--inside") {
-    const [, out, emulator, socket, expected] = args;
-    if (!out || !emulator) throw new Error("missing internal smoke arguments");
-    await drivePosterSmoke({ out, emulator, socket: socket || undefined, expected });
+    const [, out, emulator, socket, expected, terminalHome] = args;
+    if (!out || !emulator || !terminalHome) throw new Error("missing internal smoke arguments");
+    await drivePosterSmoke({ out, emulator, socket: socket || undefined, expected, terminalHome });
     return;
   }
   if (args.includes("--help")) {
     console.log(
-      "Usage: bun run smoke:posters -- --terminal kitty|tmux|xterm|foot|current [--out NEW_DIR] [--expect PROTOCOL]",
+      `Usage: bun run smoke:posters -- --terminal ${[...TARGETS.keys()].join("|")} [--out NEW_DIR] [--expect PROTOCOL]`,
     );
     return;
   }
@@ -386,61 +442,91 @@ async function main(args: string[]): Promise<void> {
   const pick = (flag: string) => (args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined);
   const emulator = pick("--terminal") ?? "current";
   if (!TARGETS.has(emulator)) throw new Error(`unsupported terminal: ${emulator}`);
+  const binaries = emulator === "tmux" ? ["tmux", "kitty"] : [emulator];
+  const missing =
+    emulator === "current" ? undefined : binaries.find((binary) => !Bun.which(binary));
+  if (missing) {
+    console.log(`Skipping ${emulator} poster smoke: ${missing} is not installed.`);
+    return;
+  }
   const output = pick("--out");
   const out = output ? resolve(output) : mkdtempSync(join(tmpdir(), "kunai-poster-smoke-"));
   if (output) mkdirSync(out, { mode: 0o700 });
-  const expected =
-    pick("--expect") ??
-    (emulator === "kitty"
-      ? "kitty-native"
-      : emulator === "tmux"
-        ? "kitty-tmux"
-        : emulator === "current"
-          ? undefined
-          : "sixel");
+  const expected = pick("--expect") ?? TARGETS.get(emulator);
   if (emulator === "current") {
     await drivePosterSmoke({ out, emulator, expected });
   } else {
-    const privateHome = mkdtempSync(join(tmpdir(), "kunai-poster-terminal-"));
-    const tmuxSocket = join(privateHome, "tmux");
-    try {
-      const env = cleanEnv(privateHome);
-      for (const key of ["TMUX", "TMUX_PANE", "STY", "KITTY_WINDOW_ID", "KITTY_LISTEN_ON"])
-        delete env[key];
-      // foot needs the host's Wayland socket. Kunai's child environment still
-      // clears every XDG variable through cleanEnv.
-      if (emulator === "foot") env.XDG_RUNTIME_DIR = process.env.XDG_RUNTIME_DIR;
-      const socket =
-        emulator === "kitty" || emulator === "tmux" ? `unix:${join(privateHome, "kitty")}` : "";
-      const inside = [BUN, import.meta.path, "--inside", out, emulator, socket, expected ?? ""];
-      if (emulator === "tmux") {
-        const tmuxConfig = join(privateHome, "tmux.conf");
-        await Bun.write(tmuxConfig, "set -g allow-passthrough on\n");
-        inside.unshift("tmux", "-S", tmuxSocket, "-f", tmuxConfig, "new-session", "-s", "posters");
-      }
-      await runCommandWithTty(commandFor({ emulator, out, socket }, inside), env);
-      const report = await Bun.file(join(out, "report.json")).json();
-      if (report.failure) throw new Error(report.failure);
-    } finally {
-      if (emulator === "tmux") {
-        await runCommand(["tmux", "-S", tmuxSocket, "kill-server"]).catch(() => {});
-      }
-      rmSync(privateHome, { recursive: true, force: true });
+    const code = await launchSmoke({ emulator, out, expected });
+    if (code) {
+      process.exitCode = code;
+      return;
     }
   }
   console.log(`Poster smoke evidence: ${out}`);
 }
 
-async function runCommandWithTty(args: string[], env: NodeJS.ProcessEnv): Promise<void> {
-  const child = Bun.spawn(args, {
-    env,
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-    timeout: 65_000,
+async function launchSmoke({ emulator, out, expected }: SmokeOptions): Promise<number> {
+  const terminalHome = mkdtempSync(join(tmpdir(), "kunai-poster-terminal-"));
+  const tmuxSocket = join(terminalHome, "tmux");
+  return runPosterSmokeTerminal(process, {
+    launch: () => {
+      const env = cleanEnv(terminalHome);
+      for (const key of [
+        "TMUX",
+        "TMUX_PANE",
+        "STY",
+        "ZELLIJ",
+        "ZELLIJ_SESSION_NAME",
+        "KITTY_WINDOW_ID",
+        "KITTY_LISTEN_ON",
+        "KONSOLE_VERSION",
+        "TERM_PROGRAM",
+        "TERM_PROGRAM_VERSION",
+        "WEZTERM_UNIX_SOCKET",
+        "WEZTERM_PANE",
+        "WINDOWID",
+        "WAYLAND_DISPLAY",
+        "WAYLAND_SOCKET",
+      ])
+        delete env[key];
+      // Only the emulator needs access to the host's Wayland socket.
+      Object.assign(env, posterSmokeWaylandEnv(process.env));
+      const socket =
+        emulator === "kitty" || emulator === "tmux" ? `unix:${join(terminalHome, "kitty")}` : "";
+      const inside = [
+        BUN,
+        import.meta.path,
+        "--inside",
+        out,
+        emulator,
+        socket,
+        expected ?? "",
+        terminalHome,
+      ];
+      if (emulator === "tmux") {
+        const tmuxConfig = join(terminalHome, "tmux.conf");
+        writeFileSync(tmuxConfig, "set -g allow-passthrough on\n");
+        inside.unshift("tmux", "-S", tmuxSocket, "-f", tmuxConfig, "new-session", "-s", "posters");
+      }
+      return Bun.spawn(commandFor({ emulator, out, socket, terminalHome }, inside), {
+        env,
+        stdin: "inherit",
+        stdout: "inherit",
+        stderr: "inherit",
+        timeout: 65_000,
+      });
+    },
+    stopTmux: async () => {
+      if (emulator === "tmux") {
+        await runCommand(["tmux", "-S", tmuxSocket, "kill-server"]).catch(() => {});
+      }
+    },
+    removeHome: () => rmSync(terminalHome, { recursive: true, force: true }),
+    readEvidence: async () => {
+      const report = await Bun.file(join(out, "report.json")).json();
+      if (report.failure) throw new Error(report.failure);
+    },
   });
-  const code = await child.exited;
-  if (code !== 0) throw new Error(`${args[0]} exited with code ${code}`);
 }
 
 if (import.meta.main) {
