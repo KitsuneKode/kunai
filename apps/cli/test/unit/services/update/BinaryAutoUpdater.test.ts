@@ -149,7 +149,11 @@ describe("BinaryAutoUpdater.runOnce", () => {
       getPendingRestartVersion: async () => null,
       resolveLatestVersion: async () => "0.4.0",
       installLatest: async (options) => {
-        expect(options).toEqual({ intent: "upgrade", version: "0.4.0" });
+        expect(options).toEqual({
+          intent: "upgrade",
+          version: "0.4.0",
+          releaseMarker: "update.marker",
+        });
         return { status: "superseded", activeVersion: "0.5.0" };
       },
     });
