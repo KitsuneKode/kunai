@@ -80,7 +80,7 @@ subtitle controls, and safer persistence, downloads and native installation.
   a larger palette.
 - Fit graphics posters to measured terminal cell sizes and refresh them on
   resize.
-- Display Kitty posters in Konsole and in WezTerm with Kitty graphics enabled.
+- Display Kitty posters in WezTerm with Kitty graphics enabled.
 
 - Add direct title launches from the command palette, notification episode
   launches and bounded detail prefetching. Keep command matching and title

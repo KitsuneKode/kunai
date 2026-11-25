@@ -423,7 +423,7 @@ describe("renderPreparedPoster", () => {
 
   test("places Kitty at measured cells and frees only its own image", async () => {
     rendererTesting.runtime.detectImageCapability = () =>
-      selectImageCapability({ KONSOLE_VERSION: "240800" }, true, {
+      selectImageCapability({ TERM_PROGRAM: "WezTerm" }, true, {
         sixel: false,
         kittyGraphics: true,
         kittyQueryAccepted: true,

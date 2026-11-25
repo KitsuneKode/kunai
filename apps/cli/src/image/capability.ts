@@ -200,8 +200,11 @@ export function selectImageCapability(
 
   const terminal = detectTerminal(env);
   const override = normalizeProtocol(env.KUNAI_IMAGE_PROTOCOL);
-  const directKitty =
-    probe?.kittyQueryAccepted && (terminal === "konsole" || terminal === "wezterm");
+  // WezTerm only. Konsole (24.08) accepts Kitty images but treats `d=I` like
+  // `d=i`: it removes placements and never frees the stored image, so every
+  // browsed poster would stay in memory until the shell exits. Konsole keeps
+  // its probe-confirmed sixel path instead.
+  const directKitty = probe?.kittyQueryAccepted && terminal === "wezterm";
 
   // A dumb terminal or an explicit no-colour request cannot render even the
   // half-block path — it is ANSI colour markup like everything else. Explicit

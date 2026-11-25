@@ -148,7 +148,20 @@ afterEach(() => {
 });
 
 describe("image capability with a terminal probe", () => {
-  test.each([{ KONSOLE_VERSION: "240800" }, { TERM_PROGRAM: "WezTerm" }])(
+  test("Konsole stays on sixel: it never frees Kitty image data", () => {
+    // Konsole 24.08 treats d=I like d=i, removing placements but keeping the
+    // stored image, so direct placement would leak every browsed poster.
+    const env = { KONSOLE_VERSION: "240800" };
+    const good = parseDeviceAttributes("\x1b_Gi=31;OK\x1b\\\x1b[?61;4c");
+    const kittyOnly = parseDeviceAttributes("\x1b_Gi=31;OK\x1b\\\x1b[?61c");
+    expect(selectImageCapability(env, true, good).renderer).toBe("sixel");
+    expect(selectImageCapability(env, true, kittyOnly).renderer).not.toBe("kitty-direct");
+    expect(
+      selectImageCapability({ ...env, KUNAI_IMAGE_PROTOCOL: "kitty" }, true, good).renderer,
+    ).not.toBe("kitty-direct");
+  });
+
+  test.each([{ TERM_PROGRAM: "WezTerm" }, { WEZTERM_EXECUTABLE: "/usr/bin/wezterm" }])(
     "selects direct Kitty placement only with a successful probe for %j",
     (env) => {
       const good = parseDeviceAttributes("\x1b_Gi=31;OK\x1b\\\x1b[?61;4c");
