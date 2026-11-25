@@ -1,6 +1,8 @@
 import { resolveShareTarget, type ResolvedShareTarget } from "@/app/bootstrap/resolve-share-target";
 import { setShareBootstrapStartSeconds } from "@/app/bootstrap/share-bootstrap-start";
 import type { Container } from "@/container";
+import { providerMetadataMatchesLane, shellModeToProviderLane } from "@/domain/provider-lane";
+import { sessionTargetForMode } from "@/domain/session/mode-target";
 import type { KunaiShareAction, PlaybackTargetRef } from "@/domain/share/playback-target-ref";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import { resolveProviderIdAlias } from "@kunai/core";
@@ -38,24 +40,40 @@ export function applyResolvedShareSideEffects(
   if (resolved.startSeconds !== undefined) {
     setShareBootstrapStartSeconds(resolved.startSeconds);
   }
-  if (resolved.mode === "anime") {
+  applyShareLaneAndProviderHint(container, resolved, ref);
+}
+
+/**
+ * Put the session in the share's lane, then honour a provider hint that belongs
+ * to that lane.
+ *
+ * Every lane switches, not only anime: a TMDB movie link opened while the
+ * session is in anime mode would otherwise resolve through anime providers and
+ * fail before the first frame. Already in the right lane, the session keeps the
+ * provider it has. Shared by launch-time links and `/watch`, which must not
+ * also prime the start mailbox (its caller carries `startSeconds` itself).
+ */
+export function applyShareLaneAndProviderHint(
+  container: Pick<Container, "stateManager" | "providerRegistry">,
+  resolved: Pick<ResolvedShareTarget, "mode" | "note">,
+  ref: Pick<PlaybackTargetRef, "hint">,
+): void {
+  const state = container.stateManager.getState();
+  if (state.mode !== resolved.mode) {
     container.stateManager.dispatch({
       type: "SET_MODE",
-      mode: "anime",
-      provider: container.config.animeProvider,
+      ...sessionTargetForMode(state, resolved.mode),
     });
   }
   const hintedProviderId = ref.hint?.providerId?.trim();
-  if (hintedProviderId && !resolved.note?.includes("isn't available")) {
-    const normalized = resolveProviderIdAlias(hintedProviderId);
-    const provider = container.providerRegistry.get(normalized);
-    if (provider) {
-      if (resolved.mode === "anime" && provider.metadata.isAnimeProvider) {
-        container.stateManager.dispatch({ type: "SET_MODE", mode: "anime", provider: normalized });
-      } else if (resolved.mode !== "anime" && !provider.metadata.isAnimeProvider) {
-        container.stateManager.dispatch({ type: "SET_PROVIDER", provider: normalized });
-      }
-    }
+  if (!hintedProviderId || resolved.note?.includes("isn't available")) return;
+  const normalized = resolveProviderIdAlias(hintedProviderId);
+  const provider = container.providerRegistry.get(normalized);
+  if (
+    provider &&
+    providerMetadataMatchesLane(provider.metadata, shellModeToProviderLane(resolved.mode))
+  ) {
+    container.stateManager.dispatch({ type: "SET_PROVIDER", provider: normalized });
   }
 }
 

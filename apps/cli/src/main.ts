@@ -23,6 +23,7 @@ import { existsSync } from "node:fs";
 // =============================================================================
 
 import type { KunaiHandoffLaunch } from "@/app/bootstrap/handoff-url";
+import { launchNeedsYtDlp } from "@/app/bootstrap/launch-dependencies";
 import type { SessionController } from "@/app/session/SessionController";
 import {
   createShutdownCoordinator,
@@ -245,10 +246,9 @@ async function maybeResolveContinueTitle(
   container: Awaited<ReturnType<typeof createContainer>>,
 ): Promise<StartupHistoryTarget | null> {
   if (!args.continuePlayback) return null;
-  // Only the head of the recency scan feeds startup: the continuation anchor
-  // is the newest row's title (always row 0), and the batch reads below are
-  // keyed by title. 100 rows keeps every plausible anchor plus prefetch
-  // margin at a fifth of the old scan.
+  // Only the head of the recency scan feeds startup: the batch reads below are
+  // keyed by its titles, and the candidate is the newest of them with
+  // something to play.
   const recentEntries = container.historyRepository.listRecent(100);
   const titleIds = [...new Set(recentEntries.map((entry) => entry.titleId))];
   const releaseProgress = container.releaseProgressCache.getByTitleIds(titleIds);
@@ -259,9 +259,9 @@ async function maybeResolveContinueTitle(
   );
   const nextReadyByTitle = readNextReadyOfflineEpisodes(recentEntries, container);
   const decision = container.continueWatchingService.startupCandidate({
-    // Limit-1 decision: the anchor is the newest row's title bucket, which a
-    // recency-ordered scan always yields first — 50 rows is margin, not need.
-    scanLimit: 50,
+    // The same 100 rows the signals above were read for: the newest title with
+    // something to play, which is not always the newest title.
+    scanLimit: 100,
     signalsByTitle: (titleId) =>
       buildStartupContinuationSignals({
         releaseProgress: releaseProgress.get(titleId),
@@ -1007,7 +1007,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   const capabilitySnapshot = await checkDeps(KUNAI_VERSION, {
     silent: onboardingWillRun,
     requireMpv: startupPlayerMode.kind === "managed-mpv",
-    requireYtDlp: !args.offline && (args.youtube || configJson.defaultMode === "youtube"),
+    requireYtDlp: launchNeedsYtDlp(args, configJson.defaultMode, pendingShareLaunch?.ref.kind),
   });
 
   const { loadCompiledSmokeProviderOverride, loadCompiledSmokeSearchDefinitions } =

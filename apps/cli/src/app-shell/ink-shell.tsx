@@ -61,7 +61,7 @@ import {
   getPickerListMaxVisible,
   ROOT_HORIZONTAL_PADDING,
 } from "./layout-policy";
-import { startMouseSession } from "./mouse/mouse-session";
+import { shouldMeasurePosterCells, startMouseSession } from "./mouse/mouse-session";
 import { MouseDispatchProvider } from "./mouse/MouseRegions";
 import {
   createNotificationQueueState,
@@ -1457,8 +1457,10 @@ export async function launchSessionApp(container: Container) {
   // real stdin itself (so Ink's readable/read loop is untouched by a second
   // consumer), splits SGR mouse reports out before Ink's keypress parser can
   // see them, and dispatches them as semantic pointer events. Keyboard bytes
-  // pass through untouched. Opt-out: KUNAI_NO_MOUSE=1, or any non-TTY/dumb
-  // terminal.
+  // pass through untouched.
+  // The facade stays active when tracking is disabled and a graphics renderer
+  // requests pixel dimensions, so resize replies cannot become keyboard input.
+  // Plain mode disables both.
   const plain = plainModeEnabled();
   const alternateScreen = !plain;
   // Sampled once. Settings can flip plain mode without remounting Ink, and
@@ -1472,9 +1474,10 @@ export async function launchSessionApp(container: Container) {
       host: process,
       disabled: process.env.KUNAI_NO_MOUSE === "1" || plain,
       term: process.env.TERM,
+      measureCells: !plain && shouldMeasurePosterCells(),
     });
     rootShellInk = render(
-      mouseSession ? (
+      mouseSession?.tracking ? (
         <MouseDispatchProvider dispatcher={mouseSession.dispatcher}>
           <AppRoot container={container} />
         </MouseDispatchProvider>
@@ -1547,10 +1550,7 @@ type ListShellSubmitResult<T> =
 
 const EMPTY_TITLE_ENTRIES: readonly LocalTitleEntry[] = [];
 
-function normalizeReservedCommandInput(nextValue: string): {
-  value: string;
-  openCommandPalette: boolean;
-} {
+function normalizeReservedCommandInput(nextValue: string) {
   if (!nextValue.includes("/")) {
     return { value: nextValue, openCommandPalette: false };
   }

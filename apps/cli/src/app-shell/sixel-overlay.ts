@@ -33,6 +33,9 @@ const runtime = {
   write: (text: string): void => {
     process.stdout.write(text);
   },
+  schedule: (flush: () => void): void => {
+    setTimeout(flush, 0);
+  },
   settleConPty: (): void => {
     // Yazi sleeps while holding its exclusive TTY lock. `Bun.sleep()` would
     // yield JavaScript here, letting Ink write a frame between cursor movement
@@ -151,10 +154,10 @@ export class SixelOverlayManager {
   private scheduleFlush(): void {
     if (this.flushQueued) return;
     this.flushQueued = true;
-    setTimeout(() => {
+    runtime.schedule(() => {
       this.flushQueued = false;
       this.flush();
-    }, 0);
+    });
   }
 
   private writeAt(rect: SixelRect, content: string): void {
