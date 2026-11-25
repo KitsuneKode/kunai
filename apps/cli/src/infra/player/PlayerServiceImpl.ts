@@ -27,6 +27,7 @@ import type { LocalPlaybackSource } from "@/services/offline/local-playback-sour
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { isTerminalHlsHttpStatus } from "@/services/playback/hls-manifest-materializer";
 import { materializePlaybackMediaForPlayback } from "@/services/playback/playback-media-materializer";
+import { isStremioPlayback } from "@/services/playback/stream-health-check";
 
 import {
   startHlsRelay,
@@ -40,7 +41,7 @@ import { classifyMpvLaunchError } from "./mpv-launch-error";
 import { killActiveMpvProcessesSync as killRegisteredMpvProcesses } from "./mpv-process-registry";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
 import { normalizeStreamHttpHeaders } from "./mpv-stream-http-headers";
-import { PersistentMpvSession } from "./PersistentMpvSession";
+import { PersistentMpvSession, type PlayerCycleOptions } from "./PersistentMpvSession";
 import { PlaybackAbortedError } from "./playback-aborted";
 import {
   classifyPlaybackFailureFromEvent,
@@ -60,6 +61,8 @@ import type {
   PlayerPlaybackEventEnvelope,
   PlayerService,
 } from "./PlayerService";
+
+type PlaybackTargets = Pick<PlayerCycleOptions, "urlKind" | "subtitleUrlKind" | "subtitleMedia">;
 
 export class PlayerServiceImpl implements PlayerService {
   readonly capabilities = MANAGED_MPV_CAPABILITIES;
@@ -187,34 +190,47 @@ export class PlayerServiceImpl implements PlayerService {
     );
     let terminalHlsFailure: { readonly detail?: string; readonly httpStatus?: number } | null =
       null;
-    const materialized = await materializePlaybackMediaForPlayback(
-      stream,
-      (reason, detail, httpStatus) => {
-        if (
-          reason === "blocked-target" ||
-          (reason === "http-error" && isTerminalHlsHttpStatus(httpStatus))
-        ) {
-          terminalHlsFailure = { detail, httpStatus };
-          return;
+    // Addon streams are remote direct-media files that must reach mpv exactly
+    // as verified: no manifest materialization and no HLS relay.
+    const stremioAddon = isStremioPlayback(stream);
+    const materialized = stremioAddon
+      ? {
+          stream,
+          kind: "none" as const,
+          cleanup: async () => {},
         }
-        // Falling through to the direct URL is fine, but a CDN that blocks our
-        // fetch must not be invisible — it is the first thing to look at when a
-        // stream plays in a browser yet fails here.
-        if (reason !== "fetch-failed" && reason !== "http-error") return;
-        this.deps.diagnostics.record(
-          buildPlaybackDiagnosticEvent({
-            operation: "mpv.hls-manifest.materialize-skipped",
-            status: "failed",
-            severity: "degraded",
-            failureClass: "http",
-            message: "HLS manifest prefetch failed — using the direct stream URL",
-            correlation: options.correlation,
-            context: { reason, detail: detail?.slice(0, 160), streamHost: safeUrlHost(stream.url) },
-          }),
+      : await materializePlaybackMediaForPlayback(
+          stream,
+          (reason, detail, httpStatus) => {
+            if (
+              reason === "blocked-target" ||
+              (reason === "http-error" && isTerminalHlsHttpStatus(httpStatus))
+            ) {
+              terminalHlsFailure = { detail, httpStatus };
+              return;
+            }
+            // Falling through to the direct URL is fine, but a CDN that blocks our
+            // fetch must not be invisible — it is the first thing to look at when a
+            // stream plays in a browser yet fails here.
+            if (reason !== "fetch-failed" && reason !== "http-error") return;
+            this.deps.diagnostics.record(
+              buildPlaybackDiagnosticEvent({
+                operation: "mpv.hls-manifest.materialize-skipped",
+                status: "failed",
+                severity: "degraded",
+                failureClass: "http",
+                message: "HLS manifest prefetch failed — using the direct stream URL",
+                correlation: options.correlation,
+                context: {
+                  reason,
+                  detail: detail?.slice(0, 160),
+                  streamHost: safeUrlHost(stream.url),
+                },
+              }),
+            );
+          },
+          options.abortSignal,
         );
-      },
-      options.abortSignal,
-    );
     if (terminalHlsFailure !== null) {
       const failure = terminalHlsFailure as {
         readonly detail?: string;
@@ -266,17 +282,16 @@ export class PlayerServiceImpl implements PlayerService {
 
     // Stop any prior cycle relay before starting a new one (autoplay-chain source swaps).
     this.stopActiveHlsRelay("session-release");
-    playbackStream = this.maybeStartHlsRelay(playbackStream, options);
+    if (!stremioAddon) playbackStream = this.maybeStartHlsRelay(playbackStream, options);
 
     publish({ type: "launching-player" });
     const presentation = this.deps.presentation ?? nonInteractivePlayerPresentation;
     if (!presentation.isInteractiveShellMounted()) {
       process.stderr.write(`Starting playback: ${options.displayTitle}\n`);
-      process.stderr.write(
-        playbackStream.subtitle
-          ? "Subtitle attached before playback.\n"
-          : `${options.subtitleStatus ?? "Subtitles not attached"}; playback will start without a subtitle file.\n`,
-      );
+      const subtitleStatus = playbackStream.subtitle
+        ? "Preparing subtitles."
+        : options.subtitleStatus;
+      if (subtitleStatus) process.stderr.write(`${subtitleStatus}\n`);
     }
 
     this.deps.logger.info("Launching MPV", {
@@ -324,21 +339,20 @@ export class PlayerServiceImpl implements PlayerService {
         playbackStream.subtitle && verifiedLocalSource?.subtitlePath === playbackStream.subtitle
           ? "local"
           : "remote";
+      const targets: PlaybackTargets = { urlKind, subtitleUrlKind, subtitleMedia: stream };
       const result =
         options.playbackMode === "autoplay-chain"
           ? await this.playAutoplayChainStream(
               playbackStream,
               options,
-              urlKind,
-              subtitleUrlKind,
+              targets,
               publish,
               retiredGeneration,
             )
           : await this.playOneShotStream(
               playbackStream,
               options,
-              urlKind,
-              subtitleUrlKind,
+              targets,
               publish,
               retiredGeneration,
             );
@@ -681,8 +695,7 @@ export class PlayerServiceImpl implements PlayerService {
   private async playOneShotStream(
     stream: StreamInfo,
     options: PlayerOptions,
-    urlKind: "remote" | "local",
-    subtitleUrlKind: "remote" | "local",
+    targets: PlaybackTargets,
     publish: (event: PlayerPlaybackEvent) => void,
     retiredGeneration: PlaybackGeneration | null,
   ): Promise<PlaybackResult> {
@@ -702,10 +715,9 @@ export class PlayerServiceImpl implements PlayerService {
       }
       return await (this.deps.launchMpv ?? launchMpv)({
         url: stream.url,
-        urlKind,
+        ...targets,
         headers: stream.headers ?? {},
         subtitle: stream.subtitle ?? null,
-        subtitleUrlKind,
         audioPreference: options.audioPreference,
         subtitlePreference: options.subtitlePreference,
         subtitleTracks: stream.subtitleList,
@@ -717,6 +729,8 @@ export class PlayerServiceImpl implements PlayerService {
         isLive: stream.isLive,
         attach: options.attach,
         timing: options.timing,
+        stremioAddon: isStremioPlayback(stream),
+        abortSignal: options.abortSignal,
         autoSkipEnabled: options.autoSkipEnabled,
         skipRecap: options.skipRecap,
         skipIntro: options.skipIntro,
@@ -748,8 +762,7 @@ export class PlayerServiceImpl implements PlayerService {
   private async playAutoplayChainStream(
     stream: StreamInfo,
     options: PlayerOptions,
-    urlKind: "remote" | "local",
-    subtitleUrlKind: "remote" | "local",
+    targets: PlaybackTargets,
     publish: (event: PlayerPlaybackEvent) => void,
     retiredGeneration: PlaybackGeneration | null,
   ): Promise<PlaybackResult> {
@@ -768,8 +781,7 @@ export class PlayerServiceImpl implements PlayerService {
 
     const sharedOptions = {
       displayTitle: options.displayTitle,
-      urlKind,
-      subtitleUrlKind,
+      ...targets,
       audioPreference: options.audioPreference,
       subtitlePreference: options.subtitlePreference,
       primarySubtitle: stream.subtitle ?? null,
@@ -795,6 +807,7 @@ export class PlayerServiceImpl implements PlayerService {
       },
       onNearEof: options.onNearEof,
       shareLinkContext: options.shareLinkContext,
+      abortSignal: options.abortSignal,
     };
 
     if (!this.persistentSession) {

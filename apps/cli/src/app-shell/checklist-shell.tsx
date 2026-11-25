@@ -4,6 +4,7 @@ import {
   getPickerListMaxVisible,
 } from "@/app-shell/layout-policy";
 import { useLineEditor } from "@/app-shell/line-editor";
+import { plainCheckboxText, plainModeEnabled, selectionPrefix } from "@/app-shell/plain-mode";
 import { mountRootContent } from "@/app-shell/root-content-state";
 import { LineEditorText } from "@/app-shell/shell-command-ui";
 import { ShellFooter, ResizeBlocker } from "@/app-shell/shell-primitives";
@@ -185,8 +186,8 @@ function ChecklistShell<T>({
             {confirmed ? formatChecklistSelectionCount(confirmedCount) : subtitle}
           </Text>
         </Box>
-        <Box paddingY={1}>
-          <Text color={palette.accent}>⌕ </Text>
+        <Box paddingY={plainModeEnabled() ? 0 : 1}>
+          <Text color={palette.accent}>{plainModeEnabled() ? "Filter (focused): " : "⌕ "}</Text>
           <LineEditorText
             value={filterQuery}
             cursor={filterEditor.cursor}
@@ -205,20 +206,28 @@ function ChecklistShell<T>({
         ) : (
           <>
             <Box
-              flexDirection={showSelectionCompanion ? "row" : "column"}
+              flexDirection={showSelectionCompanion && !plainModeEnabled() ? "row" : "column"}
               marginTop={1}
               justifyContent="space-between"
             >
-              <Box flexDirection="column" width={showSelectionCompanion ? listWidth : undefined}>
+              <Box
+                flexDirection="column"
+                width={showSelectionCompanion && !plainModeEnabled() ? listWidth : undefined}
+              >
                 {filteredOptions.length === 0 && (
                   <Text color={palette.muted}>No matching items</Text>
                 )}
-                {windowStart > 0 && <Text color={palette.dim}> ▲ ...</Text>}
+                {windowStart > 0 && (
+                  <Text color={palette.dim}>
+                    {plainModeEnabled() ? "More items above" : " ▲ ..."}
+                  </Text>
+                )}
                 {visibleOptions.map((option) => {
+                  const plain = plainModeEnabled();
                   const highlighted = option === selectedOption;
                   const isChecked = selectedSet.has(option.value);
                   const isConfirmed = confirmed && isChecked;
-                  const itemPrefix = isChecked ? "☑" : "☐";
+                  const itemPrefix = plainCheckboxText(isChecked, plain);
                   const itemTone = isConfirmed
                     ? palette.ok
                     : highlighted
@@ -233,11 +242,12 @@ function ChecklistShell<T>({
                   return (
                     <Box key={`${option.label}-${option.detail ?? ""}`}>
                       <Text
-                        backgroundColor={highlighted ? palette.accentFill : undefined}
-                        color={highlighted ? palette.text : "white"}
+                        backgroundColor={highlighted && !plain ? palette.accentFill : undefined}
+                        color={highlighted ? palette.text : palette.textDim}
                         bold={highlighted || isChecked}
-                        dimColor={!highlighted && !isChecked}
+                        dimColor={!highlighted && !isChecked && !plain}
                       >
+                        {plain ? selectionPrefix(highlighted, true) : null}
                         <Text
                           color={highlighted ? palette.accent : itemTone}
                         >{`${itemPrefix} `}</Text>
@@ -246,7 +256,11 @@ function ChecklistShell<T>({
                     </Box>
                   );
                 })}
-                {windowEnd < filteredOptions.length && <Text color={palette.dim}> ▼ ...</Text>}
+                {windowEnd < filteredOptions.length && (
+                  <Text color={palette.dim}>
+                    {plainModeEnabled() ? "More items below" : " ▼ ..."}
+                  </Text>
+                )}
               </Box>
             </Box>
           </>

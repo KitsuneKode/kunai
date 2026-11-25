@@ -108,19 +108,14 @@ describe("@kunai/config parse boundary", () => {
   });
 
   test("anime lane leads with a provider that answers and keeps the rest of the order behind it", () => {
-    // HiAnime leads because search only queries the configured default.
-    // KickAssAnime leads the rest (own stack, soft subs); AllAnime precedes
-    // the dead pair — Miruro's pipe route is gone from their bundle and
-    // AniDB was retired from production when anidb.app began redirecting away
-    // from the old origin (2026-10-24); Miruro stays at the tail for revival.
     expect(DEFAULT_CONFIG.animeProvider).toBe("hianime");
     // The array holds the rest of the order — `createProviderPrioritySnapshot`
     // prepends the lane default — so it must not repeat it.
     expect(DEFAULT_CONFIG.animeProviderPriority).toEqual([
-      "kickassanime",
       "animegg",
-      "allanime",
+      "kickassanime",
       "miruro",
+      "allanime",
     ]);
     expect(DEFAULT_CONFIG.animeProviderPriority).not.toContain(DEFAULT_CONFIG.animeProvider);
   });
@@ -129,7 +124,7 @@ describe("@kunai/config parse boundary", () => {
     // Load migrates an inherited old default only when the on-disk revision is
     // behind this one. Changing a default without bumping it strands every user
     // who saved a setting on the previous default.
-    expect(DEFAULT_CONFIG.providerDefaultsRevision).toBe(6);
+    expect(DEFAULT_CONFIG.providerDefaultsRevision).toBe(7);
   });
 
   test("no providers are disabled by default", () => {
@@ -167,4 +162,75 @@ test("non-object input still degrades to an empty partial", () => {
   expect(parseKitsuneConfigPartial(null)).toEqual({});
   expect(parseKitsuneConfigPartial("config")).toEqual({});
   expect(parseKitsuneConfigPartial([1, 2])).toEqual({});
+});
+
+describe("experimental stremio addons opt-in parse", () => {
+  test("absent keys use the defaults: off, no acknowledgement", () => {
+    const parsed = parseKitsuneConfigPartial({});
+    expect(parsed.experimentalStremioAddons).toBeUndefined();
+    expect(DEFAULT_CONFIG.experimentalStremioAddons).toBe(false);
+    expect(DEFAULT_CONFIG.stremioAddonsRiskAcknowledgedAt).toBe("");
+    expect(mergeKitsuneConfig(DEFAULT_CONFIG, parsed).experimentalStremioAddons).toBe(false);
+  });
+
+  test("only strict true turns the flag on; any other truthy value fails closed", () => {
+    for (const value of [true, 1, "true", "yes", [true], { on: true }, false, null]) {
+      const parsed = parseKitsuneConfigPartial({ experimentalStremioAddons: value });
+      expect(parsed.experimentalStremioAddons).toBe(value === true);
+    }
+  });
+
+  test("the acknowledgement keeps only an ISO timestamp shape", () => {
+    const iso = "2026-01-02T03:04:05.006Z";
+    expect(
+      parseKitsuneConfigPartial({ stremioAddonsRiskAcknowledgedAt: iso })
+        .stremioAddonsRiskAcknowledgedAt,
+    ).toBe(iso);
+    for (const value of [
+      "2026-01-02",
+      "2026-01-02T03:04:05Z",
+      "not a date",
+      "2026-13-99T99:99:99.999Z",
+      0,
+      null,
+      true,
+    ]) {
+      const parsed = parseKitsuneConfigPartial({ stremioAddonsRiskAcknowledgedAt: value });
+      expect(parsed.stremioAddonsRiskAcknowledgedAt).toBe("");
+    }
+  });
+
+  test("malformed opt-in fields never discard unrelated settings", () => {
+    const parsed = parseKitsuneConfigPartial({
+      experimentalStremioAddons: "yes",
+      stremioAddonsRiskAcknowledgedAt: 42,
+      provider: "vidlink",
+      stremioAddons: [{ url: "https://a.example.com/manifest.json" }],
+    });
+    expect(parsed).toMatchObject({
+      experimentalStremioAddons: false,
+      stremioAddonsRiskAcknowledgedAt: "",
+      provider: "vidlink",
+      stremioAddons: [{ url: "https://a.example.com/manifest.json" }],
+    });
+  });
+
+  test("mergeKitsuneConfig normalizes both fields", () => {
+    const merged = mergeKitsuneConfig(
+      DEFAULT_CONFIG,
+      // Malformed values on purpose — merge must normalize them.
+      JSON.parse(
+        '{"experimentalStremioAddons":"yes","stremioAddonsRiskAcknowledgedAt":"tomorrow"}',
+      ),
+    );
+    expect(merged.experimentalStremioAddons).toBe(false);
+    expect(merged.stremioAddonsRiskAcknowledgedAt).toBe("");
+
+    const on = mergeKitsuneConfig(DEFAULT_CONFIG, {
+      experimentalStremioAddons: true,
+      stremioAddonsRiskAcknowledgedAt: "2026-01-02T03:04:05.006Z",
+    });
+    expect(on.experimentalStremioAddons).toBe(true);
+    expect(on.stremioAddonsRiskAcknowledgedAt).toBe("2026-01-02T03:04:05.006Z");
+  });
 });

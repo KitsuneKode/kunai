@@ -1,3 +1,5 @@
+import { DEFAULT_STARTUP_PRIORITY } from "@kunai/types";
+
 import type { KitsuneConfig } from "./types";
 
 export const DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES = 2 * 1024 * 1024 * 1024;
@@ -58,8 +60,8 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // rest (eleven-service local cycle behind the shared resolve gate, so one
   // dead mirror costs a candidate, not the lane); VidRock follows (multi-lane
   // AES-GCM payloads behind the direct-stream gate). Movy is named explicitly
-  // ahead of Videasy: unlisted it floated to the very end, behind a provider
-  // whose upstream is gone, while its own aggregator still resolves. Videasy
+  // ahead of Videasy: unlisted it floated behind a provider whose stream
+  // upstream is gone. Videasy
   // stays named and last rather than floating: its session/turnstile path and
   // rotted `videasy.to` domain make it the fallback, not the lead — registered,
   // not removed.
@@ -67,19 +69,22 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // Ordering, not an allowlist: every registered anime module stays reachable.
   // `createProviderPrioritySnapshot` prepends `animeProvider`, so this array
   // holds the *rest* of the order and must not repeat the lane default.
-  // KickAssAnime leads the rest (own catalog, own site, own CDN, soft VTT
-  // subs); AnimeGG follows (multi-rung MP4, hardsubbed). AllAnime precedes
-  // Miruro at the tail — its `/api/secure/pipe` route is gone from their
-  // shipped bundle (2026-10-13) but the module stays registered for revival.
-  animeProviderPriority: ["kickassanime", "animegg", "allanime", "miruro"],
+  // On 2026-11-23 HiAnime fit the default attempt budget. AnimeGG was the
+  // only fallback to resolve, in 21.9s. KickAssAnime and Miruro refused the
+  // runner's requests, and AllManga's stream bootstrap was stale.
+  animeProviderPriority: ["animegg", "kickassanime", "miruro", "allanime"],
   // Bump alongside any lane-default change above; see `providerDefaultsRevision`.
   // Revision 3 leads with VidLink + HiAnime and covers both lanes.
   // Revision 4 reorders dead/degraded tails: Movy is named before Videasy in
   // the series lane and AllAnime precedes AniDB in the anime lane.
   // Revision 5 demoted Miruro and AniDB behind AllAnime while both stayed live.
   // Revision 6 retires AniDB from production and drops it from shipped defaults.
-  providerDefaultsRevision: 6,
+  // Revision 7 moves AnimeGG ahead of blocked fallbacks and puts AllManga last.
+  providerDefaultsRevision: 7,
   disabledProviders: [],
+  stremioAddons: [],
+  experimentalStremioAddons: false,
+  stremioAddonsRiskAcknowledgedAt: "",
   youtubeProviderPriority: ["youtube"],
   youtubeLanguageProfile: { audio: "original", subtitle: "en", quality: "1080p" },
   youtubeMetadata: { extractorArgs: DEFAULT_YOUTUBE_EXTRACTOR_ARGS },
@@ -119,6 +124,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   lastCalendarVisitAt: 0,
   minimalMode: false,
   zenMode: false,
+  plainMode: false,
   powerSaverMode: false,
   presenceProvider: "off",
   presencePrivacy: "full",
@@ -140,7 +146,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   defaultDownloadQuality: "best",
   autoCleanupWatched: false,
   recoveryMode: "guided",
-  startupPriority: "balanced",
+  startupPriority: DEFAULT_STARTUP_PRIORITY,
   hdrMode: "auto",
   offlineArtworkCacheEnabled: true,
   offlineFreeSpaceReserveBytes: DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,

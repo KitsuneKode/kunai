@@ -1,3 +1,7 @@
+---
+lastReviewed: "2026-11-24"
+---
+
 # Kunai — Phase 1.8 Single Mounted Content Tree
 
 Status: **In progress**

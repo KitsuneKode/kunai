@@ -12,7 +12,12 @@ import {
   flattenDiagnosticsPanelSpans,
   resolveDiagnosticsExpandedSpanIds,
 } from "./diagnostics-panel.model";
+import { VISUAL_SECTION_RULE } from "./plain-mode";
 import type { ShellPanelLine } from "./types";
+
+function sectionHeader(title: string): ShellPanelLine {
+  return { label: `${VISUAL_SECTION_RULE}${title}`, detail: "", tone: "info" };
+}
 
 const HEALTH_SUBSYSTEM_LABELS: Record<DiagnosticsSubsystem, string> = {
   playback: "Playback",
@@ -75,24 +80,21 @@ export function buildDiagnosticsPanelLinesFromInsight({
     verdictDetail,
     healthLines.map((line) => line.detail ?? ""),
   )
-    ? [
-        { label: "─── Verdict", detail: "", tone: "info" },
-        { label: "Verdict", detail: verdictDetail, tone: verdictTone },
-      ]
+    ? [sectionHeader("Verdict"), { label: "Verdict", detail: verdictDetail, tone: verdictTone }]
     : [];
 
   return [
     ...verdictLines,
     ...healthSections.flatMap((section) => [
-      { label: `─── ${section.title}`, detail: "", tone: "info" as const },
+      sectionHeader(section.title),
       ...section.rows.map((row) => healthRowToPanelLine(row)),
     ]),
-    { label: "─── Current Playback Evidence", detail: "", tone: "info" },
+    sectionHeader("Current Playback Evidence"),
     ...buildCurrentPlaybackLines(insight),
     ...buildDecisionTimelineLines(insight, developerMode),
-    { label: "─── Developer Evidence", detail: "", tone: "info" },
+    sectionHeader("Developer Evidence"),
     ...buildDeveloperEvidenceLines(insight, developerMode, expandedSpanIds),
-    { label: "─── Export And Report", detail: "", tone: "info" },
+    sectionHeader("Export And Report"),
     { label: "/export-diagnostics", detail: "Write a redacted support bundle to disk" },
     { label: "e", detail: "Export support bundle from this overlay (shows path)" },
     { label: "/report-issue", detail: "Open the GitHub issue template with context" },
@@ -254,7 +256,7 @@ function buildDecisionTimelineLines(
   const decisions = insight.developerEvidence.recentEvents.filter(isDecisionEvent);
   if (decisions.length === 0) return [];
   return [
-    { label: "─── Recent Decisions", detail: "", tone: "info" },
+    sectionHeader("Recent Decisions"),
     ...decisions.slice(0, developerMode ? 12 : 6).map((event) => ({
       label: `${event.category}.${event.operation}`,
       detail: [event.message, formatTimelineCorrelation(event)].filter(Boolean).join("  ·  "),

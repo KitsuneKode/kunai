@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-11"
+lastReviewed: "2026-11-24T13:06:38Z"
 ---
 
 # Provider: AnimeGG
@@ -128,7 +128,9 @@ resolved end to end.
 
 ## Implementation Handoff Notes
 
-Registered in `loadProductionProviderModules()` and second in the default anime
-order, behind Miruro. It is the fallback that does not share Miruro's single
-point of failure — not a replacement for it: Miruro still has far broader
-catalogue coverage through its dozen backends.
+Registered in `loadProductionProviderModules()` and first fallback after
+HiAnime in the default anime order. The November 23 hosted sweep resolved four
+streams from AnimeGG in 21.9 seconds, outside the 12-second default attempt
+budget. AnimeGG stays first among fallbacks because it reaches its own catalog
+directly and was the only fallback to resolve in that sweep. KickAssAnime and
+Miruro refused access and AllManga's stream authorization was stale.

@@ -68,6 +68,67 @@ describe("runMobileApplication", () => {
     expect(fake.committedStates.at(-1)?.lastResult).toBe("cancelled");
   });
 
+  // Once `handoff-accepted` is committed the run's outcome is final: VLC has the
+  // stream. Nothing that fails afterwards — the confirmation render, or a late
+  // Ctrl+C — may rewrite that record to `failed` or `cancelled`.
+  const ACCEPTED_COPY = "VLC handoff was accepted";
+
+  test("a render failure after the accepted handoff keeps the accepted result", async () => {
+    const fake = new FakeMobileEnvironment();
+    fake.choices.push({ kind: "selected", value: "continue" });
+    fake.renderHook = (lines) => {
+      if (lines.some((line) => line.includes(ACCEPTED_COPY))) {
+        throw new Error("terminal closed");
+      }
+    };
+    const result = await run(fake);
+    expect(result).toEqual({ code: 0, reason: "handoff" });
+    expect(fake.committedStates.at(-1)?.lastResult).toBe("handoff-accepted");
+    expect(fake.rendered.join("\n")).not.toContain("failed");
+  });
+
+  test("a cancellation during the accepted-handoff render keeps the accepted result", async () => {
+    const fake = new FakeMobileEnvironment();
+    const controller = new AbortController();
+    fake.choices.push({ kind: "selected", value: "continue" });
+    fake.renderHook = (lines) => {
+      if (lines.some((line) => line.includes(ACCEPTED_COPY))) {
+        controller.abort();
+        throw new Error("aborted during terminal render");
+      }
+    };
+    const result = await runMobileApplication({
+      argv: HOST_PROOF_ARGS,
+      version: "test",
+      environment: { ...fake.environment, signal: controller.signal },
+    });
+    expect(result).toEqual({ code: 0, reason: "handoff" });
+    expect(fake.committedStates.at(-1)?.lastResult).toBe("handoff-accepted");
+  });
+
+  test("a cancellation that lands just after the accepted commit keeps the accepted result", async () => {
+    const fake = new FakeMobileEnvironment();
+    const controller = new AbortController();
+    fake.choices.push({ kind: "selected", value: "continue" });
+    const result = await runMobileApplication({
+      argv: HOST_PROOF_ARGS,
+      version: "test",
+      environment: {
+        ...fake.environment,
+        signal: controller.signal,
+        state: {
+          load: fake.environment.state.load,
+          async commit(next) {
+            await fake.environment.state.commit(next);
+            if (next.lastResult === "handoff-accepted") controller.abort();
+          },
+        },
+      },
+    });
+    expect(result).toEqual({ code: 0, reason: "handoff" });
+    expect(fake.committedStates.at(-1)?.lastResult).toBe("handoff-accepted");
+  });
+
   test("renders help and version without loading state or contacting adapters", async () => {
     for (const [argv, copy] of [
       [["--help"], "Usage: kunai-mobile"],

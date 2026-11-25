@@ -122,12 +122,6 @@ export async function runMobileApplication(input: {
       hostProofRuns: nextRunCount,
       lastResult: "handoff-accepted",
     });
-    input.environment.signal?.throwIfAborted();
-    await input.environment.terminal.render([
-      "VLC handoff was accepted. Playback progress cannot be observed.",
-    ]);
-    input.environment.signal?.throwIfAborted();
-    return { code: 0, reason: "handoff" };
   } catch {
     if (input.environment.signal?.aborted) {
       try {
@@ -146,4 +140,17 @@ export async function runMobileApplication(input: {
     await renderFailure(input.environment);
     return { code: 1, reason: "failed" };
   }
+
+  // `handoff-accepted` is committed: VLC has the stream, so the outcome is final.
+  // This sits outside the failure handler on purpose — a confirmation render that
+  // fails, or a Ctrl+C that lands now, must not rewrite the record to `failed` or
+  // `cancelled`. The copy is best-effort.
+  try {
+    await input.environment.terminal.render([
+      "VLC handoff was accepted. Playback progress cannot be observed.",
+    ]);
+  } catch {
+    // The terminal is gone; the committed result already says what happened.
+  }
+  return { code: 0, reason: "handoff" };
 }

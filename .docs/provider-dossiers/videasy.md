@@ -1,13 +1,23 @@
 ---
 status: current
-lastReviewed: "2026-10-07"
+lastReviewed: "2026-11-24T09:34:20Z"
 ---
 
 # Provider: Videasy
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
-## Production status (2026-11) — catalog host moved
+## Production status (2026-11-24)
+
+The November 23 hosted sweep returned no stream and could not reach the
+configured front door. An anonymous check on November 24 timed out resolving
+`api.videasy.to`, timed out reaching `api.speedracelight.com`, and could not
+verify the TLS certificate for `player.videasy.to`. Videasy and VidKing
+[announced a shutdown](https://www.videasy.to/) for September 15, 2026. No
+public replacement for the stream API was verified. Videasy remains registered
+at the end of the default movie and series order.
+
+## Catalog mirror (2026-11)
 
 `api.videasy.to` and `db.videasy.to` are **NXDOMAIN** on public resolvers —
 the TMDB-format catalog (`/3/search/multi`, `/{movie|tv}/{id}?append_to_response=external_ids`)
@@ -34,16 +44,8 @@ The whole videasy deployment is being dismantled, not rotating:
 - Cloudflare DoH (`1.1.1.1/dns-query`) confirms `videasy.to` has **no A
   record** — this is upstream truth, not a local resolver artifact.
 
-**Verdict:** operator shutdown (likely DMCA-class). Recovery is not a code
-change — if the operator resurfaces it will be a new domain and a manifest
-edit, not a crypto/scheme fix. The adapter is kept in production loading on
-purpose: it is `DEFAULT_CONFIG.provider`, so removal would leave stored
-configs naming an unloaded module, and the endpoint-health circuit breaker
-already does the right job — one bounded probe per heal TTL, honest
-`network-error` reporting, automatic resurrection if upstream ever returns.
-Re-evaluate removal only if the upstream stays dead for months or a
-replacement default provider is chosen deliberately. (They resurfaced on a
-new domain — see the 2026-11 entry above.)
+The operator shutdown explains the stream API outage. The later catalog
+mirror supplies metadata independently of playback.
 
 ## Production status (2026-08-13) — cache and transport hardening
 

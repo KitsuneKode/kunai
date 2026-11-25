@@ -71,11 +71,15 @@ describe.skipIf(!TEST_DATABASE_URL)("postgres admission budget", () => {
     expect((await ping(store, "1999-04-03", 12)).admitted).toBe(true);
   });
 
-  test("repeat pings from one install still cost budget but store one row", async () => {
-    const store = storeWith({ maxPingsPerDay: 10 });
+  test("repeat pings from one install spend no budget and store one row", async () => {
+    const store = storeWith({ maxPingsPerDay: 2 });
     const day = "1999-04-04";
-    for (let i = 0; i < 4; i += 1) await ping(store, day, 20);
-    expect((await store.rollUpDay(day)).activeInstalls).toBe(1);
+    for (let i = 0; i < 4; i += 1) {
+      expect(await ping(store, day, 20)).toEqual({ admitted: true, duplicate: i > 0 });
+    }
+    // The repeats left room for a second install.
+    expect((await ping(store, day, 21)).admitted).toBe(true);
+    expect((await store.rollUpDay(day)).activeInstalls).toBe(2);
   });
 });
 

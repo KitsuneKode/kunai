@@ -1,9 +1,11 @@
 import {
+  createDeadlineSignal,
   fetchProbeTarget,
   isGuardedPlatformFetch,
   type StreamReachabilityFetch,
 } from "@kunai/core";
 
+import { MAX_PROBE_BODY_BYTES, readBoundedTextBody } from "./bounded-text-body";
 import {
   HLS_SEGMENT_PROBE_MIN_BYTES,
   isHlsMasterPlaylist,
@@ -41,6 +43,12 @@ export type ProbeStreamReachabilityInput = {
    * as remote-resolving and the real `fetch` as local.
    */
   readonly resolvesLocally?: (url: string) => boolean;
+  /**
+   * Strict mode for addon streams (beta): refuse playlists, redirects and
+   * anything that is not positive direct-media evidence in a bounded prefix —
+   * a `reachable` verdict then means one self-contained file was confirmed.
+   */
+  readonly requireDirectMedia?: boolean;
   readonly timeoutMs?: number;
   readonly signal?: AbortSignal;
 };
@@ -50,7 +58,6 @@ const FMP4_PROBE_PREFIX_BYTES = 64 * 1024;
 const SEGMENT_RANGE_HEADER = `bytes=0-${FMP4_PROBE_PREFIX_BYTES - 1}`;
 // A body read past this after the prefix is already gathered is a server
 // ignoring Range and dumping the whole segment on us — cap the bleed.
-const MAX_PROBE_BODY_BYTES = 256 * 1024;
 
 /** Capture a bounded prefix; stop early once positive media evidence is sufficient. */
 async function readPrefixBytes(
@@ -240,53 +247,6 @@ function hasFragmentedMp4Prefix(prefix: Uint8Array): boolean {
   return false;
 }
 
-/**
- * Read a full body as text only when it fits `maxBytes`; returns `null` on
- * overflow — a truncated M3U can still parse as valid markup, so the caller
- * must see "too large" rather than half a playlist. Mid-body errors rethrow
- * into the caller's classifier, matching `readPrefixBytes`.
- */
-export async function readBoundedTextBody(
-  body: ReadableStream<Uint8Array> | null,
-  maxBytes: number = MAX_PROBE_BODY_BYTES,
-): Promise<string | null> {
-  if (!body) return null;
-  const reader = body.getReader();
-  const chunks: Uint8Array[] = [];
-  let seen = 0;
-  try {
-    while (seen <= maxBytes) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value) {
-        chunks.push(value);
-        seen += value.byteLength;
-      }
-    }
-    if (seen > maxBytes) {
-      await reader.cancel("too-large").catch(() => {});
-      return null;
-    }
-    return new TextDecoder().decode(concatBytes(chunks, seen));
-  } catch (error) {
-    await reader.cancel("probe-failed").catch(() => {});
-    throw error;
-  } finally {
-    reader.releaseLock();
-  }
-}
-
-function concatBytes(chunks: readonly Uint8Array[], total: number): Uint8Array {
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    out.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return out;
-}
-
-/**
 /** Quick manifest/segment probe used before accepting a provider candidate or handing off to mpv. */
 export async function probeStreamReachability(
   input: ProbeStreamReachabilityInput,
@@ -302,6 +262,10 @@ export async function probeStreamReachability(
   // undefined`: defaulting to a stubbed `globalThis.fetch` used to keep DNS
   // on and treat documentation hosts as blocked-target.
   const resolveNamesFor = input.resolvesLocally ?? (() => isGuardedPlatformFetch(fetchImpl));
+
+  if (input.requireDirectMedia) {
+    return probeDirectMedia(input, fetchImpl, resolveNamesFor);
+  }
 
   if (isHlsPlaylistUrl(input.url)) {
     return probeHlsManifest(
@@ -466,16 +430,13 @@ async function fetchPlaylistText(
     return { status: "fail", result: { status: "timeout" } };
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), remaining());
-  const onParentAbort = () => controller.abort(parentSignal?.reason);
-  parentSignal?.addEventListener("abort", onParentAbort, { once: true });
+  const deadline = createDeadlineSignal(parentSignal, remaining());
 
   try {
     const outcome = await fetchProbeTarget({
       fetchImpl,
       url,
-      init: { method: "GET", headers, signal: controller.signal },
+      init: { method: "GET", headers, signal: deadline.signal },
       remaining,
       parentSignal,
       resolveNamesFor,
@@ -515,7 +476,7 @@ async function fetchPlaylistText(
     }
     return { status: "ok", text, finalUrl: outcome.finalUrl };
   } catch (error) {
-    if (controller.signal.aborted || parentSignal?.aborted) {
+    if (deadline.signal.aborted || parentSignal?.aborted) {
       return { status: "fail", result: { status: "timeout" } };
     }
     const message = error instanceof Error ? error.message : String(error);
@@ -528,8 +489,7 @@ async function fetchPlaylistText(
       },
     };
   } finally {
-    clearTimeout(timeout);
-    parentSignal?.removeEventListener("abort", onParentAbort);
+    deadline.release();
   }
 }
 
@@ -545,10 +505,7 @@ async function probeHlsMediaSegment(
     return { status: "timeout" };
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), remaining());
-  const onParentAbort = () => controller.abort(parentSignal?.reason);
-  parentSignal?.addEventListener("abort", onParentAbort, { once: true });
+  const deadline = createDeadlineSignal(parentSignal, remaining());
 
   try {
     const outcome = await fetchProbeTarget({
@@ -557,7 +514,7 @@ async function probeHlsMediaSegment(
       init: {
         method: "GET",
         headers: { ...headers, Range: SEGMENT_RANGE_HEADER },
-        signal: controller.signal,
+        signal: deadline.signal,
       },
       remaining,
       parentSignal,
@@ -611,7 +568,7 @@ async function probeHlsMediaSegment(
 
     return { status: "reachable" };
   } catch (error) {
-    if (controller.signal.aborted || parentSignal?.aborted) {
+    if (deadline.signal.aborted || parentSignal?.aborted) {
       return { status: "timeout" };
     }
     const message = error instanceof Error ? error.message : String(error);
@@ -621,8 +578,7 @@ async function probeHlsMediaSegment(
       definitive: isDefinitiveNetworkError(message),
     };
   } finally {
-    clearTimeout(timeout);
-    parentSignal?.removeEventListener("abort", onParentAbort);
+    deadline.release();
   }
 }
 
@@ -642,11 +598,7 @@ async function probeHttpStatus(
     return { status: "timeout" };
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), options.remainingMs());
-
-  const onParentAbort = () => controller.abort(options.parentSignal?.reason);
-  options.parentSignal?.addEventListener("abort", onParentAbort, { once: true });
+  const deadline = createDeadlineSignal(options.parentSignal, options.remainingMs());
 
   const healthyStatus =
     options.healthyStatus ?? ((status: number) => status >= 200 && status < 300);
@@ -658,7 +610,7 @@ async function probeHttpStatus(
       init: {
         method: options.method,
         headers: options.headers,
-        signal: controller.signal,
+        signal: deadline.signal,
       },
       remaining: options.remainingMs,
       parentSignal: options.parentSignal,
@@ -683,7 +635,7 @@ async function probeHttpStatus(
     const definitive = isDefinitiveHttpStatus(response.status);
     return { status: "unreachable", reason: `HTTP ${response.status}`, definitive };
   } catch (error) {
-    if (controller.signal.aborted) {
+    if (deadline.signal.aborted) {
       return { status: "timeout" };
     }
     const message = error instanceof Error ? error.message : String(error);
@@ -693,8 +645,288 @@ async function probeHttpStatus(
       definitive: isDefinitiveNetworkError(message),
     };
   } finally {
-    clearTimeout(timeout);
-    options.parentSignal?.removeEventListener("abort", onParentAbort);
+    deadline.release();
+  }
+}
+
+/** Strict addon probes read this many bytes of evidence and nothing more. */
+const DIRECT_MEDIA_PROBE_PREFIX_BYTES = 4096;
+/** Playlist-looking paths are refused before any request is dispatched. */
+const DIRECT_MEDIA_URL_DENY = /\.(?:m3u8?|mpd)$/i;
+
+interface EbmlVint {
+  readonly value: number;
+  readonly end: number;
+}
+
+/**
+ * One EBML variable-length integer at `offset`. With `keepMarker` the leading
+ * marker bit stays in the value (element IDs); without it the marker is
+ * stripped (element sizes) and the all-ones "unknown length" form is refused.
+ */
+function readEbmlVint(
+  view: DataView,
+  offset: number,
+  limit: number,
+  keepMarker: boolean,
+): EbmlVint | null {
+  if (offset >= limit) return null;
+  const first = view.getUint8(offset);
+  if (first === 0) return null;
+  let marker = 0x80;
+  let width = 1;
+  while ((first & marker) === 0) {
+    marker >>= 1;
+    width += 1;
+  }
+  const end = offset + width;
+  if (end > limit || (keepMarker && width > 4)) return null;
+  let value = keepMarker ? first : first & (marker - 1);
+  let allOnes = value === marker - 1;
+  for (let index = offset + 1; index < end; index += 1) {
+    const byte = view.getUint8(index);
+    value = value * 256 + byte;
+    allOnes = allOnes && byte === 0xff;
+  }
+  return Number.isSafeInteger(value) && (keepMarker || !allOnes) ? { value, end } : null;
+}
+
+/**
+ * The EBML magic is only a container claim; the DocType element inside the
+ * header is what names the format as "webm" or "matroska". Anything else —
+ * a truncated header, an unsupported DocType, "webm" bytes under an unrelated
+ * element ID — is not positive media evidence.
+ */
+/** Where the EBML header ends when it names a webm/matroska DocType, else null. */
+function matroskaHeaderEnd(view: DataView): number | null {
+  const header = readEbmlVint(view, 4, view.byteLength, false);
+  if (!header) return null;
+  const end = header.end + header.value;
+  if (end > view.byteLength) return null;
+  let docType: string | undefined;
+  for (let offset = header.end; offset < end;) {
+    const id = readEbmlVint(view, offset, end, true);
+    if (!id) return null;
+    const size = readEbmlVint(view, id.end, end, false);
+    if (!size || size.value > end - size.end) return null;
+    offset = size.end + size.value;
+    if (id.value !== 0x4282) continue;
+    if (docType !== undefined) return null;
+    const bytes = new Uint8Array(view.buffer, view.byteOffset + size.end, size.value);
+    let decoded = new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes);
+    while (decoded.endsWith("\0")) decoded = decoded.slice(0, -1);
+    docType = decoded;
+  }
+  return docType === "webm" || docType === "matroska" ? end : null;
+}
+
+const MATROSKA_SEGMENT_ID = 0x18538067;
+
+/**
+ * A complete Matroska/WebM body must continue past its EBML header into a
+ * Segment element with payload; a body that ends at the header is a header
+ * with no media. The Segment size may be the "unknown length" form streams use.
+ */
+function hasMatroskaSegment(view: DataView, headerEnd: number): boolean {
+  const id = readEbmlVint(view, headerEnd, view.byteLength, true);
+  if (!id || id.value !== MATROSKA_SEGMENT_ID || id.end >= view.byteLength) return false;
+  const first = view.getUint8(id.end);
+  if (first === 0) return false;
+  let width = 1;
+  for (let marker = 0x80; (first & marker) === 0; marker >>= 1) width += 1;
+  return id.end + width < view.byteLength;
+}
+
+interface DirectMediaRange {
+  readonly length: number;
+  readonly complete: boolean;
+}
+
+/**
+ * The only partial answer with evidentiary value is `bytes 0-N` — the same
+ * leading span the probe asked for. A missing, malformed, nonzero-offset, or
+ * impossible Content-Range means the server did not honor the request shape.
+ */
+function parseDirectMediaRange(value: string | null): DirectMediaRange | null {
+  const match = /^bytes 0-([0-9]+)\/([0-9]+|\*)$/i.exec(value ?? "");
+  if (!match) return null;
+  const last = Number(match[1]);
+  if (!Number.isSafeInteger(last) || last >= DIRECT_MEDIA_PROBE_PREFIX_BYTES) return null;
+  const length = last + 1;
+  if (match[2] === "*") return { length, complete: false };
+  const total = Number(match[2]);
+  return Number.isSafeInteger(total) && total >= length
+    ? { length, complete: total === length }
+    : null;
+}
+
+/**
+ * Positive identification of a self-contained media file prefix.
+ *
+ * MP4-family files open with an `ftyp` box whose own payload must hold a major
+ * brand and minor version; on a *complete* body the prefix must run past that
+ * first box, because a file that ends at its `ftyp` is a header with no media.
+ * Matroska/WebM open with the EBML magic and name their DocType inside the
+ * header, so the magic alone is not enough either.
+ */
+function isDirectMediaPrefix(prefix: Uint8Array, complete: boolean): boolean {
+  if (prefix.byteLength < 8) return false;
+  const view = new DataView(prefix.buffer, prefix.byteOffset, prefix.byteLength);
+  if (view.getUint32(0) === 0x1a45dfa3) {
+    const headerEnd = matroskaHeaderEnd(view);
+    if (headerEnd === null) return false;
+    return !complete || hasMatroskaSegment(view, headerEnd);
+  }
+  const box = readIsoBox(view, 0);
+  if (!box || box.type !== "ftyp" || box.end - box.payload < 8 || box.end > view.byteLength) {
+    return false;
+  }
+  // A complete body must also hold at least one more complete, known top-level
+  // box — an ftyp header alone, or trailing bytes that parse as nothing, is a
+  // header with no media.
+  return !complete || hasCompleteMp4Boxes(view, box.end);
+}
+
+/** Top-level ISO boxes that count as media evidence after `ftyp`. */
+const MP4_TOP_LEVEL_BOXES = new Set([
+  "moov",
+  "mdat",
+  "moof",
+  "free",
+  "skip",
+  "wide",
+  "sidx",
+  "styp",
+  "pdin",
+  "meta",
+  "mfra",
+]);
+
+/**
+ * Every box after `ftyp` must parse and fit the body. Unknown-but-complete
+ * boxes are tolerated either side of the media boxes — `known` requires at
+ * least one recognized top-level box, so a prefix of nothing but foreign
+ * boxes still refuses.
+ */
+function hasCompleteMp4Boxes(view: DataView, offset: number): boolean {
+  let known = false;
+  while (offset < view.byteLength) {
+    const next = readIsoBox(view, offset);
+    if (!next) return false;
+    const end = next.end === Number.POSITIVE_INFINITY ? view.byteLength : next.end;
+    if (end > view.byteLength || (next.type === "uuid" && end - next.payload < 16)) return false;
+    known ||= MP4_TOP_LEVEL_BOXES.has(next.type);
+    offset = end;
+  }
+  return known;
+}
+
+/**
+ * The addon strict probe: one redirect-free range GET whose body must prove a
+ * direct MP4-family or Matroska/WebM file. Playlist URLs are refused before
+ * the request exists, and every non-2xx answer — including any redirect —
+ * ends the probe. A rotating manifest can never answer this shape, which is
+ * the point: `reachable` here attests a bounded media object, not just a live
+ * URL.
+ */
+async function probeDirectMedia(
+  input: ProbeStreamReachabilityInput,
+  fetchImpl: StreamReachabilityFetch,
+  resolveNamesFor: (url: string) => boolean,
+): Promise<StreamReachabilityProbeResult> {
+  try {
+    if (DIRECT_MEDIA_URL_DENY.test(new URL(input.url).pathname)) {
+      return { status: "unreachable", reason: "unsupported-direct-media", definitive: true };
+    }
+  } catch {
+    // An unparseable URL is refused by the guarded fetch below.
+  }
+  const headers = input.headers ?? {};
+  // A supplied Range/If-Range is a request shape this probe cannot reproduce
+  // honestly — refuse the candidate instead of overriding it.
+  const hasCustomRange = Object.keys(headers).some((name) => {
+    const lower = name.toLowerCase();
+    return lower === "range" || lower === "if-range";
+  });
+  if (hasCustomRange) {
+    return { status: "unreachable", reason: "unsupported-direct-media", definitive: true };
+  }
+  const signal = input.signal
+    ? AbortSignal.any([
+        input.signal,
+        AbortSignal.timeout(input.timeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS),
+      ])
+    : AbortSignal.timeout(input.timeoutMs ?? DEFAULT_PROBE_TIMEOUT_MS);
+  try {
+    const outcome = await fetchProbeTarget({
+      fetchImpl,
+      url: input.url,
+      init: {
+        method: "GET",
+        headers: { ...headers, Range: `bytes=0-${DIRECT_MEDIA_PROBE_PREFIX_BYTES - 1}` },
+        signal,
+      },
+      // The timeout lives on the signal, so the guard's deadline never
+      // short-circuits early.
+      remaining: () => 1,
+      parentSignal: signal,
+      resolveNamesFor,
+      followRedirects: false,
+    });
+    if (outcome.kind === "timeout") return { status: "timeout" };
+    if (outcome.kind === "blocked") {
+      return { status: "unreachable", reason: "blocked-target", definitive: true };
+    }
+    const response = outcome.response;
+    if (response.status >= 300 && response.status < 400) {
+      await response.body?.cancel().catch(() => undefined);
+      return { status: "unreachable", reason: "redirect-refused", definitive: true };
+    }
+    if (response.status < 200 || response.status >= 300) {
+      await response.body?.cancel().catch(() => undefined);
+      return {
+        status: "unreachable",
+        reason: `HTTP ${response.status}`,
+        definitive: isDefinitiveHttpStatus(response.status),
+      };
+    }
+    const range =
+      response.status === 206 ? parseDirectMediaRange(response.headers.get("content-range")) : null;
+    const declaredLength = response.headers.get("content-length");
+    if (
+      response.status === 206 &&
+      (!range ||
+        (declaredLength !== null &&
+          (!/^\d+$/.test(declaredLength) || Number(declaredLength) !== range.length)))
+    ) {
+      // A partial answer without a verifiable `bytes 0-N` range — or one whose
+      // Content-Length contradicts that range — did not honor the request
+      // shape: there is no evidence to read.
+      await response.body?.cancel().catch(() => undefined);
+      return { status: "unreachable", reason: "unsupported-direct-media", definitive: true };
+    }
+    // One byte past the target distinguishes EOF exactly at the range from an
+    // overflow — an excess byte, even in a separate chunk, is a body that does
+    // not match its own contract.
+    const bytes = await readPrefixBytes(
+      response.body,
+      (range?.length ?? DIRECT_MEDIA_PROBE_PREFIX_BYTES) + 1,
+    );
+    if (range && bytes.byteLength !== range.length) {
+      return { status: "unreachable", reason: "unsupported-direct-media", definitive: true };
+    }
+    // Complete means the prefix provably holds the whole object: a 206 whose
+    // range covered the full length, or a 200 that ended inside the read cap.
+    const complete = range?.complete ?? bytes.byteLength <= DIRECT_MEDIA_PROBE_PREFIX_BYTES;
+    const prefix = bytes.subarray(0, DIRECT_MEDIA_PROBE_PREFIX_BYTES);
+    if (isDirectMediaPrefix(prefix, complete)) {
+      return { status: "reachable" };
+    }
+    return { status: "unreachable", reason: "unsupported-direct-media", definitive: true };
+  } catch {
+    if (signal.aborted) return { status: "timeout" };
+    // No raw cause: a transport message can quote the URL it failed on.
+    return { status: "unreachable", reason: "network-error", definitive: false };
   }
 }
 

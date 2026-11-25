@@ -30,6 +30,7 @@
   },
 
   "ignorePatterns": [
+    "bucket/kunai.json",
     ".archive/**",
     ".reference/**",
     "apps/cli/dist/**",

@@ -7,7 +7,10 @@ import { ConfigServiceImpl } from "@/services/persistence/ConfigServiceImpl";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 import type { CredentialSpawn, CredentialVaultPort } from "@/services/persistence/credential-vault";
 import { CREDENTIAL_KEYS } from "@/services/persistence/credential-vault";
-import { createCredentialVault } from "@/services/persistence/credential-vault-backends";
+import {
+  createCredentialVault,
+  noticeFileFallbackOnce,
+} from "@/services/persistence/credential-vault-backends";
 import {
   migrateSyncTokensToVault,
   vaultSyncTokenFileIo,
@@ -113,6 +116,24 @@ describe("vault-backed SyncTokenFileIo", () => {
     expect(vault.store.has(CREDENTIAL_KEYS.anilistTokens)).toBe(false);
     expect(vault.store.get(CREDENTIAL_KEYS.tmdbTokens)).toBe("unchanged-fixture-bytes");
   });
+
+  test("a vault record with the wrong shape reads as absent; the other tracker stays", async () => {
+    const vault = fakeVault();
+    vault.store.set(CREDENTIAL_KEYS.anilistTokens, JSON.stringify({ accessToken: 1 }));
+    vault.store.set(CREDENTIAL_KEYS.tmdbTokens, JSON.stringify({ sessionId: "fixture-tmdb" }));
+    const store = new SyncTokenStore(fakePaths(dir), vaultSyncTokenFileIo(vault));
+
+    expect(await store.load()).toEqual({ tmdb: { sessionId: "fixture-tmdb" } });
+  });
+
+  test("a patch carrying an invalid record is refused and the vault is untouched", async () => {
+    const vault = fakeVault();
+    const store = new SyncTokenStore(fakePaths(dir), vaultSyncTokenFileIo(vault));
+
+    await expect(store.patchTmdb({ sessionId: "" })).rejects.toThrow();
+
+    expect(vault.store.size).toBe(0);
+  });
 });
 
 describe("migrateSyncTokensToVault", () => {
@@ -155,6 +176,18 @@ describe("migrateSyncTokensToVault", () => {
     ]);
     await expect(readFile(file(dir), "utf8")).rejects.toThrow();
     expect(JSON.parse(vault.store.get(CREDENTIAL_KEYS.anilistTokens)!)).toEqual(plaintext.anilist);
+  });
+
+  test("an invalid plaintext record stays in the file; the valid one migrates", async () => {
+    const broken = { accessToken: "", userId: 9 };
+    await writeFile(file(dir), JSON.stringify({ anilist: broken, tmdb: plaintext.tmdb }));
+    const vault = fakeVault();
+
+    await migrateSyncTokensToVault({ paths: fakePaths(dir), vault });
+
+    expect(vault.store.has(CREDENTIAL_KEYS.anilistTokens)).toBe(false);
+    expect(JSON.parse(vault.store.get(CREDENTIAL_KEYS.tmdbTokens)!)).toEqual(plaintext.tmdb);
+    expect(JSON.parse(await readFile(file(dir), "utf8"))).toEqual({ anilist: broken });
   });
 
   test("read-back mismatch keeps the plaintext (never write→delete)", async () => {
@@ -340,6 +373,35 @@ describe("createCredentialVault backend selection", () => {
   });
 });
 
+describe("Windows file-fallback notice", () => {
+  let dir: string;
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), "kunai-vault-notice-"));
+  });
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  test("prints once per profile, not on every fallback startup", () => {
+    const lines: string[] = [];
+    const write = (line: string) => lines.push(line);
+    const profile = join(dir, "profile-a");
+    noticeFileFallbackOnce({ configDir: profile, platform: "win32", write });
+    noticeFileFallbackOnce({ configDir: profile, platform: "win32", write });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("user-profile files");
+    // A different profile has not seen it yet.
+    noticeFileFallbackOnce({ configDir: join(dir, "profile-b"), platform: "win32", write });
+    expect(lines).toHaveLength(2);
+  });
+
+  test("stays silent off Windows, where the fallback is a debug line", () => {
+    const lines: string[] = [];
+    noticeFileFallbackOnce({ configDir: dir, platform: "linux", write: (l) => lines.push(l) });
+    expect(lines).toEqual([]);
+  });
+});
+
 describe("secret-service delete reports what really happened", () => {
   function linuxVault(answer: (argv: readonly string[]) => Awaited<ReturnType<CredentialSpawn>>) {
     return createCredentialVault({
@@ -393,6 +455,17 @@ describe("secret-service delete reports what really happened", () => {
     await expect(vault.delete("k")).rejects.toThrow("may still be stored");
   });
 });
+
+function probeReply(argv: readonly string[]) {
+  const script = argv.at(-1) ?? "";
+  if (!script.includes("'__probe__'")) return undefined;
+  return {
+    exitCode: 0,
+    stdout: script.includes("RetrievePassword") ? "kunai-probe" : "",
+    stderr: "",
+    timedOut: false,
+  };
+}
 
 describe("vault read failures abort mutations", () => {
   let dir: string;
@@ -448,7 +521,7 @@ describe("vault read failures abort mutations", () => {
       "security",
       { exitCode: 1, stdout: "", stderr: "could not be found", timedOut: false },
     ],
-    ["wincred", "pwsh", { exitCode: 1, stdout: "", stderr: "", timedOut: false }],
+    ["wincred", "pwsh", { exitCode: 44, stdout: "", stderr: "", timedOut: false }],
   ] as const)(
     "%s reads its documented not-found exit as undefined",
     async (backend, cli, result) => {
@@ -456,7 +529,7 @@ describe("vault read failures abort mutations", () => {
         paths: fakePaths(dir),
         env: { KUNAI_CREDENTIAL_BACKEND: backend },
         which: () => `/usr/bin/${cli}`,
-        spawn: async () => result,
+        spawn: async (argv) => probeReply(argv) ?? result,
       });
       expect(vault.backend).toBe(backend);
       expect(await vault.get(CREDENTIAL_KEYS.anilistTokens)).toBeUndefined();
@@ -472,7 +545,8 @@ describe("vault read failures abort mutations", () => {
     ],
     ["wincred", "pwsh", { exitCode: 3, stdout: "", stderr: "", timedOut: false }],
   ] as const)("%s throws on a non-not-found failure", async (backend, cli, result) => {
-    const spawn: CredentialSpawn = async (argv) => (argv.includes("__probe__") ? ok : result);
+    const spawn: CredentialSpawn = async (argv) =>
+      probeReply(argv) ?? (argv.includes("__probe__") ? ok : result);
     const vault = await createCredentialVault({
       paths: fakePaths(dir),
       env: { KUNAI_CREDENTIAL_BACKEND: backend },
@@ -483,11 +557,70 @@ describe("vault read failures abort mutations", () => {
     await expect(vault.get(CREDENTIAL_KEYS.anilistTokens)).rejects.toThrow();
   });
 
+  test("Keychain receives exactly one quoted command on stdin", async () => {
+    const calls: { argv: readonly string[]; input: string }[] = [];
+    const vault = await createCredentialVault({
+      paths: fakePaths(dir),
+      env: {},
+      platform: "darwin",
+      which: () => "security",
+      spawn: async (argv, input) => {
+        calls.push({ argv, input });
+        return { exitCode: 0, stdout: "", stderr: "", timedOut: false };
+      },
+    });
+    await vault.set("anilist.tokens", '{"token":"a b\\\\c"}');
+    expect(calls).toEqual([
+      {
+        argv: ["security", "-i"],
+        input:
+          String.raw`add-generic-password -U -s kunai -a "anilist.tokens" -w "{\"token\":\"a b\\\\c\"}"` +
+          "\n",
+      },
+    ]);
+    await expect(vault.set("key\nother", "a")).rejects.toThrow("delimiter");
+    await expect(vault.set("key", "é".repeat(2100))).rejects.toThrow("limit");
+    expect(calls).toHaveLength(1);
+  });
+
+  test.each(["mismatch", "delete", "unavailable"] as const)(
+    "Windows probe cleans up and reports fallback on %s",
+    async (fault) => {
+      const scripts: string[] = [];
+      const notices: string[] = [];
+      const vault = await createCredentialVault({
+        paths: fakePaths(dir),
+        platform: "win32",
+        env: {},
+        which: (cmd) => (cmd === "powershell.exe" ? cmd : null),
+        onFallback: (_, reason) => notices.push(reason),
+        spawn: async (argv) => {
+          const script = argv.at(-1)!;
+          scripts.push(script);
+          return {
+            exitCode:
+              fault === "unavailable" || (fault === "delete" && script.includes("$v.Remove"))
+                ? 1
+                : 0,
+            stdout: fault === "mismatch" ? "other" : "kunai-probe",
+            stderr: "",
+            timedOut: false,
+          };
+        },
+      });
+      expect(vault.backend).toBe("file");
+      expect(scripts[0]).toContain("$v.Add");
+      expect(scripts.at(-1)).toContain("$v.Remove");
+      expect(scripts.every((script) => script.includes("ContentType=WindowsRuntime"))).toBe(true);
+      expect(notices).toHaveLength(1);
+    },
+  );
+
   test("wincred spawns the resolved shell, not a hardcoded pwsh", async () => {
     const seen: string[][] = [];
     const spawn: CredentialSpawn = async (argv) => {
       seen.push([...argv]);
-      return { exitCode: 1, stdout: "", stderr: "", timedOut: false };
+      return probeReply(argv) ?? { exitCode: 44, stdout: "", stderr: "", timedOut: false };
     };
     // Inbox PowerShell 5.1 machine: no pwsh, only powershell.
     const vault = await createCredentialVault({

@@ -175,4 +175,38 @@ describe("flattenDiagnosticsPanelSpans", () => {
     expect(closedSection.some((line) => line.label.startsWith("  "))).toBe(false);
     expect(closedSection.some((line) => line.detail?.includes("launched"))).toBe(false);
   });
+
+  test("plain mode names expanded and collapsed spans in words", () => {
+    const saved = process.env.KUNAI_PLAIN;
+    process.env.KUNAI_PLAIN = "1";
+    try {
+      const model = buildDiagnosticsPanelModel({
+        recentEvents: [
+          event({
+            timestamp: 2,
+            playbackCycleId: "open",
+            operation: "playback.phase.failed",
+            level: "error",
+            message: "phase failed",
+            context: { severity: "blocked" },
+          }),
+          event({
+            timestamp: 1,
+            playbackCycleId: "closed",
+            operation: "mpv.launch.started",
+            message: "launched",
+            context: { severity: "healthy" },
+          }),
+        ],
+      });
+      const lines = flattenDiagnosticsPanelSpans(model, new Set(["open"]));
+      const headers = lines.filter((line) => line.spanId);
+      expect(headers[0]?.label.startsWith("[expanded] ")).toBe(true);
+      expect(headers[1]?.label.startsWith("[collapsed] ")).toBe(true);
+      expect(lines.map((line) => line.label).join("\n")).not.toMatch(/[▶▼]/u);
+    } finally {
+      if (saved === undefined) delete process.env.KUNAI_PLAIN;
+      else process.env.KUNAI_PLAIN = saved;
+    }
+  });
 });

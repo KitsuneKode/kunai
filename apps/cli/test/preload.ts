@@ -4,6 +4,8 @@ import { resetAniListClientForTest } from "@/services/catalog/anilist-client";
 import { resetCatalogSourceBreakersForTest } from "@/services/catalog/catalog-source";
 import { resetCatalogSourceLedgerForTest } from "@/services/catalog/catalog-source-ledger";
 
+import { installProfileGuard } from "./helpers/profile-guard";
+
 function configureTestEnvironment(): void {
   /** Block xdg-open / browser spawns during `bun test` unless a test opts out explicitly. */
   process.env.KUNAI_DISABLE_EXTERNAL_URL ??= "1";
@@ -60,3 +62,10 @@ try {
 } catch {
   // Not under `bun test`.
 }
+
+/**
+ * Fail the run if a test changed the developer's real Kunai profile. Registered
+ * here, before any test file runs, so the snapshot sees the real HOME/XDG/APPDATA
+ * rather than a test's sandbox. See helpers/profile-guard.ts.
+ */
+installProfileGuard();

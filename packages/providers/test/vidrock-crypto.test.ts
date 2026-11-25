@@ -28,6 +28,25 @@ describe("VidRock stream-url decryption", () => {
 });
 
 describe("VidRock stream-host header contract", () => {
+  test.each([401, 403])("reports API HTTP %d as access refused", async (status) => {
+    const result = await vidrockProviderModule.resolve(
+      {
+        title: { id: "tmdb:550", kind: "movie", title: "Fight Club", tmdbId: "550" },
+        mediaKind: "movie",
+        intent: "play",
+        allowedRuntimes: ["direct-http"],
+      },
+      {
+        providerId: "vidrock",
+        now: () => "2026-11-24T00:00:00.000Z",
+        fetch: { runtime: "direct-http", fetch: async () => new Response(null, { status }) },
+      },
+    );
+
+    expect(result.status).toBe("exhausted");
+    expect(result.failures[0]).toMatchObject({ code: "blocked", retryable: false });
+  });
+
   test("probes carry the browser UA and vidrock referer, never the legacy space UA", async () => {
     // Regression (verified live 2026-10-13): the CDN hosts 403/404/challenge
     // the old single-space UA and serve valid playlists to browser headers.

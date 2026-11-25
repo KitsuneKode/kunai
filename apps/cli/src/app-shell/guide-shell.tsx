@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import type { ResolvedAppCommand } from "./commands";
 import { GUIDE_SURFACE_TAGS, type GuideRow, type GuideSectionRows } from "./guide-model";
 import { useOverlayLayout } from "./overlay-layout-context";
+import { plainModeEnabled, selectionPrefix } from "./plain-mode";
 import { CommandPalette } from "./shell-command-ui";
 import { ShellFooter } from "./shell-primitives";
 import { palette } from "./shell-theme";
@@ -114,17 +115,22 @@ export function GuideShell({
   }
   const visibleLines = lines.slice(windowStart, windowEnd);
 
+  const plain = plainModeEnabled();
   return (
     <Box flexDirection="column" flexGrow={1}>
-      <Box flexDirection="column" paddingX={1} marginTop={1}>
+      <Box flexDirection="column" paddingX={plain ? 0 : 1} marginTop={1}>
         <Box flexDirection="row" flexWrap="nowrap">
           <Text color={palette.accent} bold>
-            {"❀ Guide"}
+            {plain ? "Guide" : "❀ Guide"}
           </Text>
-          <Text color={palette.muted}>{"  ·  everything Kunai can do"}</Text>
+          <Text color={palette.muted}>
+            {plain ? " — everything Kunai can do" : "  ·  everything Kunai can do"}
+          </Text>
         </Box>
         <Text color={palette.dim}>
-          {"Enter runs it — rows marked → live on another screen · ? shows keybindings"}
+          {plain
+            ? "Enter runs the selected command; ? shows keybindings"
+            : "Enter runs it — rows marked → live on another screen · ? shows keybindings"}
         </Text>
         {statusNote ? <Text color={palette.accent}>{statusNote}</Text> : null}
         <Box flexDirection="column" marginTop={1}>
@@ -166,6 +172,7 @@ export function GuideShell({
 }
 
 function GuideRowLine({ row, selected }: { readonly row: GuideRow; readonly selected: boolean }) {
+  const plain = plainModeEnabled();
   const { contentColumns } = useOverlayLayout();
   const tag = GUIDE_SURFACE_TAGS[row.surface];
   const inactive = !row.enabled;
@@ -177,6 +184,16 @@ function GuideRowLine({ row, selected }: { readonly row: GuideRow; readonly sele
   const detail = `${row.description}${row.note ? ` · ${row.note}` : ""}${
     inactive && row.reason ? ` — ${row.reason}` : ""
   }`;
+  if (plain) {
+    return (
+      <Text
+        color={selected ? palette.text : inactive ? palette.dim : palette.textDim}
+        bold={selected}
+      >
+        {`${selectionPrefix(selected, true)}${row.invocation} — ${detail}${tagText}`}
+      </Text>
+    );
+  }
   const detailWidth = Math.max(8, contentColumns - 2 - 2 - 24 - tagText.length);
   return (
     <Box flexDirection="row" flexWrap="nowrap">

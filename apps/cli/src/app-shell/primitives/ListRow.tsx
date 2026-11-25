@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { plainModeEnabled, selectionPrefix } from "../plain-mode";
 import { padColumnsEnd, padColumnsStart, truncateLine } from "../shell-text";
 import { palette } from "../shell-theme";
 import type { ListRowColumn } from "./ListRow.model";
@@ -40,6 +41,22 @@ export const ListRow = React.memo(function ListRow({
    *  aligned and the title — not a fixed column — gets the slack. */
   readonly flexColumnIndex?: number;
 }) {
+  const plain = plainModeEnabled();
+  if (plain) {
+    const parts = columns
+      .map((col) => col.text.trim())
+      .filter((text) => text.length > 0)
+      .join(" | ");
+    const line = `${selectionPrefix(selected, true)}${parts}`;
+    return (
+      <Box>
+        <Text color={selected ? palette.text : palette.textDim} bold={selected}>
+          {truncateLine(line, Math.max(12, rowWidth))}
+        </Text>
+      </Box>
+    );
+  }
+
   const columnWidths = listRowColumnWidths(columns, rowWidth, flexColumnIndex);
 
   return (

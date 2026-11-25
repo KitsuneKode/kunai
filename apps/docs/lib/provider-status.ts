@@ -17,6 +17,8 @@ export type ProviderStatusRow = {
   readonly upstreamReachable: boolean;
   readonly resolveStatus: string;
   readonly resolveMs: number | null;
+  readonly qualifiedForDefaultPlayback: boolean;
+  readonly failureCode: string | null;
   readonly streams: number;
   readonly qualities: readonly string[];
   readonly servers: readonly string[];
@@ -29,6 +31,7 @@ export type ProviderStatusRow = {
 export type ProviderStatusFile = {
   readonly generatedAt: string;
   readonly schemaVersion: 1;
+  readonly defaultAttemptBudgetMs: number;
   readonly providers: readonly ProviderStatusRow[];
 };
 

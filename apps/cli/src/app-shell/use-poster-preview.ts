@@ -1,4 +1,9 @@
-import { startTransition, useEffect, useReducer, useRef } from "react";
+import {
+  getTerminalCellPixels,
+  subscribeTerminalCellPixels,
+  type CellPixels,
+} from "@/image/cell-size";
+import { startTransition, useEffect, useReducer, useRef, useSyncExternalStore } from "react";
 
 import {
   fetchPoster,
@@ -7,6 +12,7 @@ import {
   undisplayRenderedPosterImages,
   type KittyPlacementSlot,
 } from "./image-pane";
+import { plainModeEnabled } from "./plain-mode";
 import type { PosterResult, PosterState } from "./poster-types";
 
 /**
@@ -115,6 +121,7 @@ function posterRequestKey(
     readonly allowSixel: boolean;
     readonly inkEmbedded: boolean;
     readonly placementSlot: KittyPlacementSlot | undefined;
+    readonly cellPixels?: CellPixels | null;
   },
 ): string | null {
   if (!url) return null;
@@ -127,6 +134,7 @@ function posterRequestKey(
     options.allowSixel ? "sixel" : "no-sixel",
     options.inkEmbedded ? "ink" : "terminal",
     options.placementSlot ?? "unslotted",
+    options.cellPixels,
   ]);
 }
 
@@ -190,9 +198,15 @@ export function usePosterPreview(
     /** Named Kitty slot — per-fetch cleanup deletes only this slot. */
     placementSlot?: KittyPlacementSlot;
   },
-): { poster: PosterResult; posterState: PosterState; spinner: boolean } {
+) {
   const [state, dispatch] = useReducer(posterPreviewReducer, initialPosterPreviewState);
-  const previousGeometry = useRef<{ readonly rows: number; readonly cols: number } | null>(null);
+  const measuredCells = useSyncExternalStore(subscribeTerminalCellPixels, getTerminalCellPixels);
+  const cellPixels = allowKitty && !inkEmbedded ? measuredCells : null;
+  const previousGeometry = useRef<{
+    readonly rows: number;
+    readonly cols: number;
+    readonly cellPixels: CellPixels | null;
+  } | null>(null);
   // Bounded delayed retries per requestKey: transient failures (busy machine
   // right after mpv teardown, a TMDB edge blip) used to leave the initials
   // fallback up forever after a single retry. Two attempts with backoff give
@@ -212,15 +226,21 @@ export function usePosterPreview(
     allowSixel,
     inkEmbedded,
     placementSlot,
+    cellPixels,
   });
+
+  const plain = plainModeEnabled();
+  const effectiveEnabled = enabled && !plain;
 
   useEffect(() => {
     const geometryChanged =
       previousGeometry.current !== null &&
-      (previousGeometry.current.rows !== rows || previousGeometry.current.cols !== cols);
-    previousGeometry.current = { rows, cols };
+      (previousGeometry.current.rows !== rows ||
+        previousGeometry.current.cols !== cols ||
+        previousGeometry.current.cellPixels !== cellPixels);
+    previousGeometry.current = { rows, cols, cellPixels };
 
-    if (!url || !enabled) {
+    if (!url || !effectiveEnabled) {
       releaseOwnedPlacement(placementSlot, preserveTerminalImages);
       dispatch({ type: "reset", posterState: url ? "unavailable" : "idle" });
       return undefined;
@@ -323,9 +343,10 @@ export function usePosterPreview(
   }, [
     allowKitty,
     allowSixel,
+    cellPixels,
     cols,
     debounceMs,
-    enabled,
+    effectiveEnabled,
     inkEmbedded,
     placementSlot,
     preserveTerminalImages,
@@ -337,7 +358,7 @@ export function usePosterPreview(
     variant,
   ]);
 
-  const visibleState = visiblePosterPreviewState(state, enabled ? requestKey : null);
+  const visibleState = visiblePosterPreviewState(state, effectiveEnabled ? requestKey : null);
   return {
     poster: visibleState.poster,
     posterState: visibleState.posterState,

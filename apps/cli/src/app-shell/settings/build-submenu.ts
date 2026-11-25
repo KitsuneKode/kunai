@@ -33,7 +33,7 @@ export function buildSettingsSubmenuView(
   if (def.kind === "submenu") {
     return {
       title: def.label,
-      subtitle: def.summarize(ctx.config),
+      subtitle: def.subtitle?.(ctx.config) ?? def.summarize(ctx.config),
       choices: def.buildChoices(ctx),
     };
   }

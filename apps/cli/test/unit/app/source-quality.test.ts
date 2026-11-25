@@ -434,6 +434,23 @@ test("applyPreferredStreamSelection prefers explicit stream id override", () => 
   expect(next.providerResolveResult?.selectedStreamId).toBe("stream-720");
 });
 
+test("applyPreferredStreamSelection drops reachability attestation when the selection changes", () => {
+  const verified = {
+    ...streamWithCandidates,
+    providerResolveResult: {
+      ...streamWithCandidates.providerResolveResult!,
+      streamReachabilityVerified: true,
+    },
+  } satisfies StreamInfo;
+
+  const switched = applyPreferredStreamSelection(verified, streamSelectionFromStream("stream-720"));
+  expect(switched.providerResolveResult?.selectedStreamId).toBe("stream-720");
+  expect(switched.providerResolveResult?.streamReachabilityVerified).toBe(false);
+
+  const noop = applyPreferredStreamSelection(verified, streamSelectionFromStream("stream-1080"));
+  expect(noop.providerResolveResult?.streamReachabilityVerified).toBe(true);
+});
+
 test("isCurrentStreamSelection detects no-op stream and source selections", () => {
   expect(
     isCurrentStreamSelection(streamWithCandidates, streamSelectionFromStream("stream-1080")),
@@ -762,7 +779,7 @@ test("YouTube format and connection picks update the options shipped to mpv", ()
   );
   expect(formatPick.ytdlFormat).toBe("248+ba");
   expect(formatPick.ytdlRawOptions).toContain("player_client=web");
-  expect(formatPick.ytdlRawOptions).toContain("sub-langs=%3%all");
+  expect(formatPick.ytdlRawOptions).not.toContain("sub-langs=");
   const withoutSubtitles = applyPreferredStreamSelection(
     youtube,
     streamSelectionFromStream("web-248"),

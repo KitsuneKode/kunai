@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T12:30:00Z"
+lastReviewed: "2026-11-25T15:00:08Z"
 ---
 
 # Kunai — Testing Strategy
@@ -84,13 +84,22 @@ root itself and child names beginning with dots remain valid.
    with `applyStorageRootEnv` from `test/helpers/storage-env.ts`. Check resolved
    config/data/cache containment against the temporary root before loading a
    profile; do not read the real profile to test whether isolation worked.
+   The CLI test preload (`apps/cli/test/helpers/profile-guard.ts`) stats the real
+   config/data/cache roots, `config.json`, the mpv bridge script and both SQLite
+   files before the run and fails it, naming each path, on any lasting change —
+   it detects, it does not block, and it never creates a missing profile.
 2. Change the failure trigger deliberately: deferred resolve/reject, cancellation,
    injected clock, or fake timer. A sleep is not an acknowledgement. A generous
    test timeout bounds a hang; it does not prove synchronization.
    `apps/cli/test/unit/architecture/no-real-test-sleep.test.ts` fails when a
-   test file gains a `Bun.sleep`, `setTimeout`, or `setInterval` that is not
-   already allowlisted. An allowlist entry is for a real process or an OS wait
-   that has no clock seam, and it has to say why.
+   test or integration fixture gains a `Bun.sleep`, `setTimeout`, or
+   `setInterval` that is not already allowlisted. An allowlist entry is for a
+   real process or an OS wait that has no clock seam, and it has to say why.
+   The PlaybackPhase characterization suite shares an isolated fixture process
+   and awaits an IPC reply after each scenario disposes its container. Each
+   scenario opens its own storage root. The fake player emits control events
+   directly, the autoplay clock advances on each tick, and prefetch waits for
+   the fixture provider's promise with an injected deadline.
 3. For a regression test, temporarily remove the behavior it protects and confirm
    the assertion fails. Restore it before broader validation. Do not mutate source
    while another verification command is reading the same tree.
@@ -550,6 +559,17 @@ Best target for:
 - before and after UX comparison for major shell redesign passes
 
 Use VHS for terminal UX capture and review, not as the only proof that behavior works.
+
+Every tape launches through `apps/cli/test/vhs/isolated-kunai.sh` (the CLI, or
+`--harness <script>` for a fixture harness). The recorder shell is not a
+`bun test` worker, so the preload's real-profile guard does not cover it; the
+wrapper redirects HOME, XDG, APPDATA and TMPDIR into a sandbox seeded past
+onboarding with analytics unset, and removes it on exit. VHS can kill the
+wrapper before its trap runs when a tape ends mid-program, so each sandbox
+records its owner PID and the next launch sweeps sandboxes whose owner is gone.
+`apps/cli/test/unit/architecture/vhs-tape-isolation.test.ts` fails a tape that
+launches anything else, checks each CLI tape's `Wait+Screen` text still exists
+in `src/`, and runs the wrapper to prove the redirect, the cleanup and the sweep.
 
 For this repo, treat VHS as the primary CLI e2e medium for visual flows.
 Plain non-TTY process tests are often misleading for Ink UIs, so prefer:

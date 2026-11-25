@@ -1,16 +1,13 @@
 import type { ProviderFetchPort, VideoDynamicRange } from "@kunai/types";
 
+import { readBoundedTextBody } from "./bounded-text-body";
 import { isHlsMasterPlaylist, isHlsPlaylistUrl } from "./hls-manifest";
 import {
   detectDynamicRangeFromLabel,
   normalizeQualityLabel,
   qualityRankFromLabel,
 } from "./source-inventory";
-import {
-  blockedLiteralTargetReason,
-  fetchGuardedStreamTarget,
-  readBoundedTextBody,
-} from "./stream-reachability";
+import { blockedLiteralTargetReason, fetchGuardedStreamTarget } from "./stream-reachability";
 import { normalizeIsoLanguageCode } from "./subtitle-helpers";
 import { createTimeoutSignal } from "./timeout-signal";
 import { trimTrailingSlashes } from "./trim-trailing-slashes";

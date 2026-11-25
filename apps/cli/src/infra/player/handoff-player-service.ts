@@ -12,6 +12,7 @@ import {
 } from "@/infra/player/android-intent-launcher";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 import { materializeDeferredMediaDocument } from "@/services/playback/deferred-media-materializer";
+import { isStremioPlayback } from "@/services/playback/stream-health-check";
 
 import type { PlayerOptions, PlayerService } from "./PlayerService";
 import {
@@ -23,6 +24,7 @@ import {
 export type HandoffPlaybackErrorReason =
   | "unsupported-stream"
   | "local-source-unsupported"
+  | "addon-source-unsupported"
   | "player-shutting-down"
   | AndroidIntentFailure;
 
@@ -38,6 +40,7 @@ const BLOCKER_COPY = {
 
 const FAILURE_COPY = {
   "local-source-unsupported": "Android handoff does not support local files yet.",
+  "addon-source-unsupported": "Stremio addon streams play only in desktop mpv for now.",
   "player-shutting-down": "The player is shutting down.",
   "intent-launcher-missing":
     "No Android intent launcher was found. Run `pkg install termux-am` and try again.",
@@ -80,6 +83,7 @@ export class HandoffPlayerService implements PlayerService {
   async play(stream: StreamInfo, options: PlayerOptions): Promise<PlaybackResult> {
     if (this.shuttingDown) throw new HandoffPlaybackError("player-shutting-down");
     if (options.abortSignal?.aborted) throw new DOMException("playback aborted", "AbortError");
+    if (isStremioPlayback(stream)) throw new HandoffPlaybackError("addon-source-unsupported");
 
     // A deferred locator becomes an in-memory MPD the gateway can serve; when
     // it is expired or unknown the plan reports deferred-source as before.

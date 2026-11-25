@@ -1,6 +1,7 @@
 ---
 status: active
 created: "2026-10-11"
+lastReviewed: "2026-11-24"
 ---
 
 # Mobile parity and the phone web surface

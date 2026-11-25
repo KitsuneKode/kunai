@@ -49,13 +49,16 @@ type QuantizedImage = {
   readonly palette: readonly Rgb[];
 };
 
-type Box = {
-  readonly pixels: Uint32Array;
-  readonly offset: number;
-  readonly length: number;
+type BoxSpread = {
   /** Widest channel spread in this box, and the channel it belongs to. */
   readonly spread: number;
   readonly channel: 0 | 1 | 2;
+};
+
+type Box = BoxSpread & {
+  readonly pixels: Uint32Array;
+  readonly offset: number;
+  readonly length: number;
 };
 
 /**
@@ -67,11 +70,7 @@ type Box = {
  * two boxes it produces — re-measuring every surviving box on every iteration
  * made palette building O(colours x pixels x 3) when it is naturally linear.
  */
-function measureBox(
-  pixels: Uint32Array,
-  offset: number,
-  length: number,
-): { spread: number; channel: 0 | 1 | 2 } {
+function measureBox(pixels: Uint32Array, offset: number, length: number): BoxSpread {
   let minR = 255;
   let maxR = 0;
   let minG = 255;
@@ -80,7 +79,7 @@ function measureBox(
   let maxB = 0;
 
   for (let p = offset; p < offset + length; p += 1) {
-    const packed = pixels[p] as number;
+    const packed = pixels[p] ?? 0;
     const r = packed & 0xff;
     const g = (packed >>> 8) & 0xff;
     const b = (packed >>> 16) & 0xff;
@@ -128,8 +127,7 @@ function medianCut(pixels: Uint32Array, maxColors: number): Rgb[] {
     let target = -1;
     let targetSpread = 0;
 
-    for (let i = 0; i < boxes.length; i += 1) {
-      const box = boxes[i] as Box;
+    for (const [i, box] of boxes.entries()) {
       if (box.length < 2) continue;
       if (box.spread > targetSpread) {
         targetSpread = box.spread;
@@ -138,9 +136,8 @@ function medianCut(pixels: Uint32Array, maxColors: number): Rgb[] {
     }
 
     // Every remaining box is a single colour: more registers cannot help.
-    if (target === -1 || targetSpread === 0) break;
-
-    const box = boxes[target] as Box;
+    const box = boxes[target];
+    if (!box || targetSpread === 0) break;
     const targetChannel = box.channel;
     const slice = box.pixels.subarray(box.offset, box.offset + box.length);
     slice.sort((a, b) => channelAt(a, targetChannel) - channelAt(b, targetChannel));
@@ -162,7 +159,7 @@ function medianCut(pixels: Uint32Array, maxColors: number): Rgb[] {
     let g = 0;
     let b = 0;
     for (let p = box.offset; p < box.offset + box.length; p += 1) {
-      const packed = box.pixels[p] as number;
+      const packed = box.pixels[p] ?? 0;
       r += channelAt(packed, 0);
       g += channelAt(packed, 1);
       b += channelAt(packed, 2);
@@ -185,7 +182,9 @@ function buildMapper(palette: readonly Rgb[]): (packed: number) => number {
     let best = 0;
     let bestDistance = Number.POSITIVE_INFINITY;
     for (let i = 0; i < palette.length; i += 1) {
-      const entry = palette[i] as Rgb;
+      // The loop bounds the index to the dense palette built by medianCut.
+      // oxlint-disable-next-line eslint/no-non-null-assertion
+      const entry = palette[i]!;
       const dr = r - entry.r;
       const dg = g - entry.g;
       const db = b - entry.b;
@@ -198,6 +197,58 @@ function buildMapper(palette: readonly Rgb[]): (packed: number) => number {
     cache.set(packed, best);
     return best;
   };
+}
+
+function correctedChannel(pixel: number, error: number): number {
+  return Math.min(255, Math.max(0, Math.round(pixel + error)));
+}
+
+/** Floyd–Steinberg diffusion to the next pixel and three in the next row. */
+function diffuseError(
+  current: Float32Array,
+  next: Float32Array,
+  offset: number,
+  error: number,
+): void {
+  const weight = error / 16;
+  current[offset + 3] = (current[offset + 3] ?? 0) + weight * 7;
+  next[offset - 3] = (next[offset - 3] ?? 0) + weight * 3;
+  next[offset] = (next[offset] ?? 0) + weight * 5;
+  next[offset + 3] = (next[offset + 3] ?? 0) + weight;
+}
+
+function ditherPixels(
+  rgba: Uint8Array,
+  width: number,
+  height: number,
+  palette: readonly Rgb[],
+): Uint8Array {
+  const indices = new Uint8Array(width * height);
+  const map = buildMapper(palette);
+  // Padding catches error diffused beyond the left and right image edges.
+  let current = new Float32Array((width + 2) * 3);
+  let next = new Float32Array(current.length);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const pixel = y * width + x;
+      const start = pixel * 4;
+      if ((rgba[start + 3] ?? 0) < ALPHA_VISIBILITY_THRESHOLD) continue;
+      const offset = (x + 1) * 3;
+      const r = correctedChannel(rgba[start] ?? 0, current[offset] ?? 0);
+      const g = correctedChannel(rgba[start + 1] ?? 0, current[offset + 1] ?? 0);
+      const b = correctedChannel(rgba[start + 2] ?? 0, current[offset + 2] ?? 0);
+      const index = map(r | (g << 8) | (b << 16));
+      const color = palette[index];
+      if (!color) continue;
+      indices[pixel] = index + 1;
+      diffuseError(current, next, offset, r - color.r);
+      diffuseError(current, next, offset + 1, g - color.g);
+      diffuseError(current, next, offset + 2, b - color.b);
+    }
+    [current, next] = [next, current];
+    next.fill(0);
+  }
+  return indices;
 }
 
 export function quantize(
@@ -213,11 +264,9 @@ export function quantize(
   const opaque = new Uint32Array(pixelCount);
   let opaqueCount = 0;
   for (let i = 0; i < pixelCount; i += 1) {
-    if ((rgba[i * 4 + 3] as number) < ALPHA_VISIBILITY_THRESHOLD) continue;
+    if ((rgba[i * 4 + 3] ?? 0) < ALPHA_VISIBILITY_THRESHOLD) continue;
     opaque[opaqueCount] =
-      (rgba[i * 4] as number) |
-      ((rgba[i * 4 + 1] as number) << 8) |
-      ((rgba[i * 4 + 2] as number) << 16);
+      (rgba[i * 4] ?? 0) | ((rgba[i * 4 + 1] ?? 0) << 8) | ((rgba[i * 4 + 2] ?? 0) << 16);
     opaqueCount += 1;
   }
 
@@ -225,23 +274,7 @@ export function quantize(
   // `subarray` is a view, and median cut sorts its ranges in place — which is
   // exactly what it wants, and why this must not be a copy.
   const palette = medianCut(opaque.subarray(0, opaqueCount), Math.max(1, maxColors - 1));
-  const map = buildMapper(palette);
-
-  const indices = new Uint8Array(width * height);
-  for (let i = 0; i < width * height; i += 1) {
-    if ((rgba[i * 4 + 3] as number) < ALPHA_VISIBILITY_THRESHOLD) {
-      indices[i] = TRANSPARENT_INDEX;
-      continue;
-    }
-    const packed =
-      (rgba[i * 4] as number) |
-      ((rgba[i * 4 + 1] as number) << 8) |
-      ((rgba[i * 4 + 2] as number) << 16);
-    // +1 because index 0 belongs to transparency.
-    indices[i] = map(packed) + 1;
-  }
-
-  return { width, height, indices, palette };
+  return { width, height, indices: ditherPixels(rgba, width, height, palette), palette };
 }
 
 /** Emit one band row for a colour, run-length encoding repeated masks. */
@@ -272,8 +305,7 @@ export function encodeSixel(image: QuantizedImage): string {
   // right area before any data arrives.
   out.push(`"1;1;${width};${height}`);
 
-  for (let i = 0; i < palette.length; i += 1) {
-    const { r, g, b } = palette[i] as Rgb;
+  for (const [i, { r, g, b }] of palette.entries()) {
     out.push(`#${i + 1};2;${toSixelChannel(r)};${toSixelChannel(g)};${toSixelChannel(b)}`);
   }
 
@@ -288,7 +320,7 @@ export function encodeSixel(image: QuantizedImage): string {
     for (let row = 0; row < rows; row += 1) {
       const base = (top + row) * width;
       for (let x = 0; x < width; x += 1) {
-        const index = indices[base + x] as number;
+        const index = indices[base + x] ?? TRANSPARENT_INDEX;
         if (index !== TRANSPARENT_INDEX) present.add(index);
       }
     }
@@ -308,7 +340,7 @@ export function encodeSixel(image: QuantizedImage): string {
       for (let x = 0; x < width; x += 1) {
         let mask = 0;
         for (let row = 0; row < rows; row += 1) {
-          if ((indices[(top + row) * width + x] as number) === colorIndex) mask |= 1 << row;
+          if (indices[(top + row) * width + x] === colorIndex) mask |= 1 << row;
         }
         if (mask === runMask) {
           runLength += 1;
@@ -368,7 +400,11 @@ export function renderSixelFromImage(
     // per-band passes), then dimensions. Either step alone may suffice, and
     // the loop bounds the extra encode work on the failure path.
     if (colors > 2) {
-      colors = Math.max(2, Math.floor(colors / 2));
+      // Payload size tracks palette size, so cut by the overshoot (at least
+      // half): a stream far over budget reaches 16 or 8 colours within the
+      // same attempts instead of falling back to half-block.
+      const byRatio = Math.floor((colors * options.maxBytes) / sixel.length);
+      colors = Math.max(2, Math.min(Math.floor(colors / 2), byRatio));
     } else {
       width = Math.max(1, Math.floor(width * 0.75));
       height = Math.max(1, Math.floor(height * 0.75));

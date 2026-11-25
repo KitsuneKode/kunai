@@ -171,6 +171,12 @@ export type DiagnosticsPanelLineInput = {
   now?: number;
   /** Which credentials catalog and subtitle requests use. */
   serviceKeys?: ServiceKeysStatus;
+  /**
+   * Effective Stremio-addon opt-in, read fresh when the panel opens so a
+   * standalone `kunai addons disable` is already reflected. Boolean only —
+   * the acknowledgement date is not diagnostics data.
+   */
+  stremioAddonsEnabled?: boolean;
 };
 
 /** What /diagnostics says about keys, without ever showing one. */
@@ -215,6 +221,7 @@ export function buildDiagnosticsPanelLines({
   catalogAnswers,
   now,
   serviceKeys,
+  stremioAddonsEnabled,
 }: DiagnosticsPanelLineInput): readonly ShellPanelLine[] {
   const insight = buildDiagnosticsInsight({
     state,
@@ -241,6 +248,13 @@ export function buildDiagnosticsPanelLines({
     youtubeProbe,
     memorySamples,
   });
+  if (stremioAddonsEnabled !== undefined) {
+    supplemental.push({
+      label: "Experimental: Stremio addons",
+      detail: stremioAddonsEnabled ? "on — third-party addon servers may be asked" : "off",
+      tone: stremioAddonsEnabled ? "info" : "neutral",
+    });
+  }
   const catalogLine = catalogAnswers
     ? describeCatalogAnswers(catalogAnswers, now ?? Date.now())
     : null;

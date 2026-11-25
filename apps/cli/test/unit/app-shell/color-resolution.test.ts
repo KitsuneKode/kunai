@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   detectTerminalColorLevel,
+  isNoColorEnv,
   resolveDesignTokens,
   type TerminalColorLevel,
 } from "@kunai/design";
@@ -126,6 +127,38 @@ describe("design color resolution", () => {
       expect(detectTerminalColorLevel({ OS: "Windows_NT", FORCE_COLOR: "1" })).toBe("16");
       // A real TERM means the Unix hints already classified it.
       expect(detectTerminalColorLevel({ OS: "Windows_NT", TERM: "xterm" })).toBe("16");
+    });
+  });
+
+  describe("NO_COLOR follows no-color.org (empty string = unset)", () => {
+    test("isNoColorEnv ignores unset and empty values, and honors any non-empty value", () => {
+      expect(isNoColorEnv({})).toBe(false);
+      expect(isNoColorEnv({ NO_COLOR: undefined })).toBe(false);
+      expect(isNoColorEnv({ NO_COLOR: "" })).toBe(false);
+      expect(isNoColorEnv({ NO_COLOR: "1" })).toBe(true);
+      expect(isNoColorEnv({ NO_COLOR: "0" })).toBe(true);
+      expect(isNoColorEnv({ NO_COLOR: "true" })).toBe(true);
+      expect(isNoColorEnv({ NO_COLOR: " " })).toBe(true);
+    });
+
+    test("empty NO_COLOR does not degrade truecolor, 256-color, or Windows detection", () => {
+      expect(
+        detectTerminalColorLevel({ COLORTERM: "truecolor", TERM: "xterm-256color", NO_COLOR: "" }),
+      ).toBe("truecolor");
+      expect(detectTerminalColorLevel({ TERM: "xterm-256color", NO_COLOR: "" })).toBe("256");
+      expect(detectTerminalColorLevel({ OS: "Windows_NT", NO_COLOR: "" })).toBe("truecolor");
+    });
+
+    test("any non-empty NO_COLOR degrades truecolor and 256-color to 16", () => {
+      for (const value of ["1", "0", "yes", "anything"]) {
+        expect(
+          detectTerminalColorLevel({
+            COLORTERM: "truecolor",
+            TERM: "xterm-256color",
+            NO_COLOR: value,
+          }),
+        ).toBe("16");
+      }
     });
   });
 });

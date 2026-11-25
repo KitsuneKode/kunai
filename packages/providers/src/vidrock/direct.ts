@@ -1,4 +1,5 @@
 import type { CoreProviderModule } from "@kunai/core";
+import { httpStatusToResolveErrorCode } from "@kunai/types";
 import type {
   ProviderResolveInput,
   ProviderResolveResult,
@@ -112,15 +113,21 @@ export function resolveVidrockDirect(
         signal: directStreamFetchSignal(ctx.signal, VIDROCK_FETCH_TIMEOUT_MS),
       });
       if (!response.ok) {
+        const { status } = response;
         throw new ProviderHttpError({
-          message: `VidRock API returned HTTP ${response.status}`,
+          message: `VidRock API returned HTTP ${status}`,
           providerId: VIDROCK_PROVIDER_ID,
           stage: "api",
-          status: response.status,
+          status,
           // A 404/410 means the title is not on this upstream — a definitive
           // catalog answer, not a retryable outage.
-          code: response.status === 404 || response.status === 410 ? "not-found" : "network-error",
-          retryable: response.status >= 500 || response.status === 429,
+          code:
+            status === 404 || status === 410
+              ? "not-found"
+              : httpStatusToResolveErrorCode(status) === "blocked"
+                ? "blocked"
+                : "network-error",
+          retryable: status >= 500 || status === 429,
         });
       }
 

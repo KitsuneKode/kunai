@@ -37,6 +37,11 @@ function createFakeIpc(failCommand?: string): {
   return { ipc, commands, timeouts };
 }
 
+async function fakeLocalize(url: string): Promise<string | null> {
+  const prefix = "https://subs.example/";
+  return url.startsWith(prefix) ? `/local/${url.slice(prefix.length)}` : null;
+}
+
 describe("PersistentSubtitleManager", () => {
   test("accepts a verified local primary subtitle during persistent replacement", async () => {
     const { ipc, commands } = createFakeIpc();
@@ -57,17 +62,17 @@ describe("PersistentSubtitleManager", () => {
 
   test("skips local subtitle targets on remote persistent playback", async () => {
     const { ipc, commands } = createFakeIpc();
-    const manager = new PersistentSubtitleManager();
+    const manager = new PersistentSubtitleManager(() => true, fakeLocalize);
     const result = await manager.attachSubtitles(ipc, {
       primarySubtitle: "file:///etc/passwd",
       subtitleTracks: [
         { url: "file:///etc/shadow", language: "bad" },
-        { url: "https://sub.example/en.vtt", language: "en" },
+        { url: "https://subs.example/en.vtt", language: "en" },
       ],
     });
 
     expect(result).toEqual({ status: "attached", attachedCount: 1 });
-    expect(commands).toEqual([["sub-add", "https://sub.example/en.vtt", "auto", "", "en"]]);
+    expect(commands).toEqual([["sub-add", "/local/en.vtt", "auto", "", "en"]]);
   });
 
   test("removes only cached external subtitle ids", async () => {
@@ -91,7 +96,7 @@ describe("PersistentSubtitleManager", () => {
 
   test("replaces subtitle inventory and reports attached count", async () => {
     const { ipc, commands } = createFakeIpc();
-    const manager = new PersistentSubtitleManager();
+    const manager = new PersistentSubtitleManager(() => true, fakeLocalize);
     manager.updateTrackList([{ id: 7, type: "sub", external: true }]);
     const attachedCounts: number[] = [];
 
@@ -119,8 +124,8 @@ describe("PersistentSubtitleManager", () => {
 
     expect(commands).toEqual([
       ["sub-remove", 7],
-      ["sub-add", "https://subs.example/main.vtt", "select", "English", "en"],
-      ["sub-add", "https://subs.example/alt.vtt", "auto", "Spanish", "es"],
+      ["sub-add", "/local/main.vtt", "select", "English", "en"],
+      ["sub-add", "/local/alt.vtt", "auto", "Spanish", "es"],
     ]);
     expect(attachedCounts).toEqual([2]);
   });
@@ -154,7 +159,7 @@ describe("PersistentSubtitleManager", () => {
 
   test("uses a longer mpv deadline for remote subtitle attachment", async () => {
     const { ipc, timeouts } = createFakeIpc();
-    const manager = new PersistentSubtitleManager();
+    const manager = new PersistentSubtitleManager(() => true, fakeLocalize);
 
     await manager.attachSubtitles(ipc, {
       primarySubtitle: "https://subs.example/main.vtt",
@@ -185,7 +190,7 @@ describe("PersistentSubtitleManager", () => {
 
   test("late subtitle attachment classifies failed sub-add commands", async () => {
     const { ipc } = createFakeIpc("sub-add");
-    const manager = new PersistentSubtitleManager();
+    const manager = new PersistentSubtitleManager(() => true, fakeLocalize);
 
     const result = await manager.attachSubtitles(ipc, {
       primarySubtitle: "https://subs.example/main.vtt",
@@ -210,7 +215,7 @@ describe("PersistentSubtitleManager", () => {
 
 test("Off retains subtitle inventory without selecting it", async () => {
   const { ipc, commands } = createFakeIpc();
-  const manager = new PersistentSubtitleManager(() => false);
+  const manager = new PersistentSubtitleManager(() => false, fakeLocalize);
   const result = await manager.attachSubtitles(ipc, {
     primarySubtitle: "https://subs.example/en.vtt",
     subtitleTracks: [{ url: "https://subs.example/es.vtt", language: "es" }],
@@ -233,7 +238,111 @@ test("Off selected while a late attachment is pending wins over its completion",
     if (command[0] === "sub-add") enabled = false;
     return result;
   };
-  const manager = new PersistentSubtitleManager(() => enabled);
+  const manager = new PersistentSubtitleManager(() => enabled, fakeLocalize);
   await manager.attachSubtitles(ipc, { primarySubtitle: "https://subs.example/en.vtt" });
   expect(commands.at(-1)).toEqual(["set_property", "sid", "no"]);
+});
+
+describe("PersistentSubtitleManager guarded resolver", () => {
+  test("IPC carries only resolved local paths; refused tracks are skipped", async () => {
+    const { ipc, commands } = createFakeIpc();
+    const manager = new PersistentSubtitleManager(
+      () => true,
+      async (url) =>
+        url === "https://subs.example/good.srt" ? "/tmp/kunai-addon-subs-x/0.srt" : null,
+    );
+
+    await manager.replaceSubtitleInventory(ipc, "https://subs.example/good.srt", [
+      {
+        url: "https://subs.example/good.srt",
+        display: "English",
+        language: "en",
+      },
+      {
+        url: "https://subs.example/bad.srt",
+        display: "Bad",
+        language: "fr",
+      },
+    ]);
+
+    const subAdds = commands.filter((command) => command[0] === "sub-add");
+    expect(subAdds).toEqual([
+      ["sub-add", "/tmp/kunai-addon-subs-x/0.srt", "select", "English", "en"],
+    ]);
+    expect(commands.join(" ")).not.toContain("subs.example");
+  });
+
+  test("attachSubtitles resolves the primary and skips a refused additional", async () => {
+    const { ipc, commands } = createFakeIpc();
+    const manager = new PersistentSubtitleManager(
+      () => true,
+      async (url) =>
+        url === "https://subs.example/good.srt" ? "/tmp/kunai-addon-subs-x/1.srt" : null,
+    );
+
+    const result = await manager.attachSubtitles(ipc, {
+      primarySubtitle: "https://subs.example/good.srt",
+      subtitleTracks: [
+        { url: "https://subs.example/good.srt", display: "English", language: "en" },
+        { url: "https://subs.example/bad.srt", display: "Bad", language: "fr" },
+      ],
+    });
+
+    expect(result.status).toBe("attached");
+    expect(commands.filter((command) => command[0] === "sub-add")).toEqual([
+      ["sub-add", "/tmp/kunai-addon-subs-x/1.srt", "select", "English", "en"],
+    ]);
+    expect(commands.join(" ")).not.toContain("subs.example");
+  });
+
+  test("a resolver cannot put a remote URL on IPC", async () => {
+    const { ipc, commands } = createFakeIpc();
+    const manager = new PersistentSubtitleManager(
+      () => true,
+      async (url) => url,
+    );
+
+    await manager.replaceSubtitleInventory(ipc, "https://subs.example/remote.srt");
+
+    expect(commands).toEqual([]);
+  });
+});
+
+describe("PersistentSubtitleManager generation guard", () => {
+  test("replaceSubtitleInventory sends nothing when its generation retires before the primary send", async () => {
+    let isCurrent = true;
+    const { ipc, commands } = createFakeIpc();
+    const manager = new PersistentSubtitleManager();
+
+    const pending = manager.replaceSubtitleInventory(
+      ipc,
+      "https://subs.example/main.vtt",
+      [{ url: "https://subs.example/main.vtt" }],
+      undefined,
+      "remote",
+      () => isCurrent,
+    );
+    await Promise.resolve();
+    isCurrent = false;
+    await pending;
+
+    expect(commands).toEqual([]);
+  });
+
+  test("attachSubtitles sends nothing when its generation retires before the primary resolves", async () => {
+    let isCurrent = true;
+    const { ipc, commands } = createFakeIpc();
+    const manager = new PersistentSubtitleManager();
+
+    const pending = manager.attachSubtitles(
+      ipc,
+      { primarySubtitle: "https://subs.example/main.vtt" },
+      () => isCurrent,
+    );
+    isCurrent = false;
+    const result = await pending;
+
+    expect(result).toEqual({ status: "none-requested", attachedCount: 0 });
+    expect(commands).toEqual([]);
+  });
 });
