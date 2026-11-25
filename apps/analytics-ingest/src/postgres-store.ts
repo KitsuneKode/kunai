@@ -3,42 +3,123 @@ import { neon } from "@neondatabase/serverless";
 import { DEFAULT_ANALYTICS_LIMITS, type AnalyticsLimits } from "./limits.js";
 import type {
   AnalyticsStore,
+  CohortRollup,
   DailyRollup,
+  DistributionEntry,
+  DistributionRow,
+  DistributionSource,
+  MonthRollup,
   PruneLifetimeResult,
   RecordPingInput,
   RecordPingResult,
 } from "./store.js";
 
+/** `YYYY-MM` → the `date` a month column stores. */
+function monthDate(month: string): string {
+  return `${month}-01`;
+}
+
 /**
- * One statement, three effects: charge the day's admission budget, record the
- * ping, record the install.
+ * One statement: decide, then charge the budget and record the ping.
  *
- * The budget upsert returns the post-increment count, and both inserts select
- * from it, which forces the ordering a bare list of data-modifying CTEs would
- * not guarantee and makes "over budget" mean "insert zero rows" rather than a
- * second round trip. Each table keeps its own conflict target, so idempotency
- * is unchanged.
+ * Two reads come first, and nothing below them writes unless both pass:
  *
- * `last_seen` is refreshed only when it moves forward, so a repeat ping on a
- * day already recorded stays a genuine no-op instead of rewriting the row.
+ * - `seen`: this install already has today's row. A repeat ping is a no-op, so
+ *   it spends no budget — admission counts distinct installs, not requests,
+ *   and a retrying client cannot crowd anyone else out.
+ * - `gate`: the day's budget still has room. Once the ceiling is reached the
+ *   counter is no longer touched, so an over-budget request writes nothing at
+ *   all — not even the budget row every other request would contend on.
+ *
+ * The budget upsert re-checks the ceiling in its `where`, so two requests
+ * racing past `gate` at the last slot cannot overshoot it. Two racing copies
+ * of the same new ping can each spend one slot; only one row results. Every
+ * insert selects from `admitted`, which forces the ordering a bare list of
+ * data-modifying CTEs would not guarantee.
+ *
+ * `install_lifetime` is v1 only ($9). `last_seen` is refreshed only when it
+ * moves forward. `month_active` keeps one row per install per month ($7), with
+ * the v2 cohort ($8, null for v1).
  */
-export const RECORD_PING_SQL = `with budget as (
-  insert into ingest_budget (day, attempts) values ($1::date, 1)
+export const RECORD_PING_SQL = `with seen as (
+  select exists (
+    select 1 from ping_day where day = $1::date and install_hash = decode($2, 'hex')
+  ) as duplicate
+), gate as (
+  select 1 as open from seen
+  where not seen.duplicate
+    and coalesce((select attempts from ingest_budget where day = $1::date), 0) < $6::bigint
+), budget as (
+  insert into ingest_budget (day, attempts) select $1::date, 1 from gate
   on conflict (day) do update set attempts = ingest_budget.attempts + 1
+  where ingest_budget.attempts < $6::bigint
   returning attempts
 ), admitted as (
-  select 1 as ok from budget where attempts <= $6::bigint
+  select 1 as ok from budget
 ), ping_day_insert as (
   insert into ping_day (day, install_hash, version, os, arch)
   select $1::date, decode($2, 'hex'), $3::text, $4::text, $5::text from admitted
   on conflict (day, install_hash) do nothing
 ), install_lifetime_insert as (
   insert into install_lifetime (install_hash, first_seen, last_seen)
-  select decode($2, 'hex'), $1::date, $1::date from admitted
+  select decode($2, 'hex'), $1::date, $1::date from admitted where $9::boolean
   on conflict (install_hash) do update set last_seen = excluded.last_seen
   where install_lifetime.last_seen < excluded.last_seen
+), month_active_insert as (
+  insert into month_active (month, install_hash, cohort)
+  select $7::date, decode($2, 'hex'), $8::date from admitted
+  on conflict (month, install_hash) do nothing
 )
-select (select count(*)::int from admitted) as admitted`;
+select (select count(*)::int from admitted) as admitted,
+       (select duplicate from seen) as duplicate`;
+
+/**
+ * Every month still holding `month_active` rows, recomputed in one statement.
+ *
+ * Months whose rows are already pruned are not touched, so their rollups are
+ * final. `month_active` holds at most two months at a time, so this is bounded.
+ */
+export const ROLL_UP_MONTHS_SQL = `with monthly as (
+  insert into month_rollup (month, active_installs, computed_at)
+  select month, count(*)::int, now() from month_active group by month
+  on conflict (month) do update set
+    active_installs = excluded.active_installs,
+    computed_at = excluded.computed_at
+  returning month
+), cohorts as (
+  insert into cohort_rollup (cohort, month, installs, computed_at)
+  select cohort, month, count(*)::int, now() from month_active
+  where cohort is not null group by cohort, month
+  on conflict (cohort, month) do update set
+    installs = excluded.installs,
+    computed_at = excluded.computed_at
+  returning 1
+)
+select to_char(month, 'YYYY-MM') as month, (select count(*)::int from cohorts) as cohort_rows
+from monthly order by month`;
+
+/**
+ * Replace one day's distribution snapshot in a single statement: upsert every
+ * entry, and delete that day's rows the new snapshot no longer lists. The two
+ * touch disjoint keys, so their order inside the statement does not matter.
+ */
+export const WRITE_DISTRIBUTION_SQL = `with entries as (
+  select e.source, e.release, e.platform, e.cumulative
+  from jsonb_to_recordset($2::jsonb) as e(source text, release text, platform text, cumulative bigint)
+), upserted as (
+  insert into distribution_daily (day, source, release, platform, cumulative)
+  select $1::date, source, release, platform, cumulative from entries
+  on conflict (day, source, release, platform) do update set cumulative = excluded.cumulative
+  returning 1
+), stale as (
+  delete from distribution_daily d
+  where d.day = $1::date
+    and not exists (
+      select 1 from entries e
+      where e.source = d.source and e.release = d.release and e.platform = d.platform
+    )
+)
+select count(*)::int as n from upserted`;
 
 /**
  * Delete unseen installs and add them to the retired counter in one statement,
@@ -175,8 +256,13 @@ export function createPostgresAnalyticsStore(
         input.os,
         input.arch,
         limits.maxPingsPerDay,
-      ])) as { admitted: number }[];
-      return { admitted: Number(rows[0]?.admitted ?? 0) > 0 };
+        monthDate(input.v2?.activeMonth ?? input.day.slice(0, 7)),
+        input.v2 ? monthDate(input.v2.cohort) : null,
+        !input.v2,
+      ])) as { admitted: number; duplicate: boolean }[];
+      const duplicate = rows[0]?.duplicate === true;
+      // A duplicate is not a refusal: the install is already counted today.
+      return { admitted: duplicate || Number(rows[0]?.admitted ?? 0) > 0, duplicate };
     },
 
     async rollUpDay(day: string): Promise<DailyRollup> {
@@ -246,6 +332,87 @@ export function createPostgresAnalyticsStore(
     async pruneLifetimeBefore(day: string): Promise<PruneLifetimeResult> {
       const rows = (await sql.query(PRUNE_LIFETIME_SQL, [day])) as { n: number }[];
       return { retired: Number(rows[0]?.n ?? 0) };
+    },
+
+    async rollUpMonths(): Promise<readonly string[]> {
+      // SAFETY: the statement's final select names exactly these columns.
+      const rows = (await sql.query(ROLL_UP_MONTHS_SQL)) as { month: string }[];
+      return rows.map((row) => String(row.month));
+    },
+
+    async pruneMonthActiveBefore(month: string): Promise<number> {
+      // SAFETY: the statement's final select names exactly this column.
+      const rows = (await sql.query(
+        `with deleted as (delete from month_active where month < $1::date returning 1)
+         select count(*)::int as n from deleted`,
+        [monthDate(month)],
+      )) as { n: number }[];
+      return Number(rows[0]?.n ?? 0);
+    },
+
+    async readMonthRollups(fromMonth: string, toMonth: string): Promise<readonly MonthRollup[]> {
+      // SAFETY: the select list names exactly these columns.
+      const rows = (await sql.query(
+        `select to_char(month, 'YYYY-MM') as month, active_installs, computed_at::text as computed_at
+         from month_rollup where month >= $1::date and month <= $2::date order by month asc`,
+        [monthDate(fromMonth), monthDate(toMonth)],
+      )) as { month: string; active_installs: number; computed_at: string }[];
+      return rows.map((row) => ({
+        month: String(row.month),
+        activeInstalls: Number(row.active_installs),
+        computedAt: String(row.computed_at),
+      }));
+    },
+
+    async readCohortRollups(fromCohort: string): Promise<readonly CohortRollup[]> {
+      // SAFETY: the select list names exactly these columns.
+      const rows = (await sql.query(
+        `select to_char(cohort, 'YYYY-MM') as cohort, to_char(month, 'YYYY-MM') as month,
+                installs, computed_at::text as computed_at
+         from cohort_rollup where cohort >= $1::date order by cohort asc, month asc`,
+        [monthDate(fromCohort)],
+      )) as { cohort: string; month: string; installs: number; computed_at: string }[];
+      return rows.map((row) => ({
+        cohort: String(row.cohort),
+        month: String(row.month),
+        installs: Number(row.installs),
+        computedAt: String(row.computed_at),
+      }));
+    },
+
+    async writeDistributionSnapshot(
+      day: string,
+      entries: readonly DistributionEntry[],
+    ): Promise<number> {
+      // SAFETY: the statement's final select names exactly this column.
+      const rows = (await sql.query(WRITE_DISTRIBUTION_SQL, [day, JSON.stringify(entries)])) as {
+        n: number;
+      }[];
+      return Number(rows[0]?.n ?? 0);
+    },
+
+    async readDistribution(fromDay: string, toDay: string): Promise<readonly DistributionRow[]> {
+      // SAFETY: the select list names exactly these columns, and `source` is
+      // only ever written from the closed DistributionSource union.
+      const rows = (await sql.query(
+        `select day::text as day, source, release, platform, cumulative::text as cumulative
+         from distribution_daily where day >= $1::date and day <= $2::date
+         order by day asc, source asc, release asc, platform asc`,
+        [fromDay, toDay],
+      )) as {
+        day: string;
+        source: DistributionSource;
+        release: string;
+        platform: string;
+        cumulative: string;
+      }[];
+      return rows.map((row) => ({
+        day: String(row.day),
+        source: row.source,
+        release: String(row.release),
+        platform: String(row.platform),
+        cumulative: Number(row.cumulative),
+      }));
     },
   };
 }
