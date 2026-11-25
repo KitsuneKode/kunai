@@ -7,6 +7,7 @@ import {
   mkdtemp,
   readFile,
   readlink,
+  readdir,
   rm,
   symlink,
   writeFile,
@@ -29,6 +30,7 @@ import {
   versionMetadataPath,
 } from "@/services/update/native-installer/install-layout";
 import { isMuslEnvironmentSync } from "@/services/update/native-installer/musl";
+import { executeRollback } from "@/services/update/native-installer/rollback";
 import { verifyStoredVersion } from "@/services/update/native-installer/version-metadata";
 import {
   releaseAssetName,
@@ -115,7 +117,134 @@ async function expectLauncherPointsTo(launcherPath: string, versionPath: string)
   expect(await readlink(launcherPath)).toBe(versionPath);
 }
 
+function releaseFixture(
+  layout: Awaited<ReturnType<typeof makeLayout>>["layout"],
+  version: string,
+  intent: "explicit" | "install-latest" | "upgrade",
+  content = `binary ${version}`,
+) {
+  const asset = hostAssetName();
+  const checksum = sumsFor(asset, sha256Hex(content));
+  return {
+    layout,
+    version,
+    intent,
+    force: true,
+    dlBase: "https://example.test/releases",
+    fetchImpl: async (input: string | URL | Request) => {
+      const name = String(input).split("/").at(-1);
+      if (name === "SHA256SUMS") return new Response(checksum);
+      if (name === asset) return new Response(content);
+      return new Response(null, { status: 404 });
+    },
+  };
+}
+
 describe("installLatest", () => {
+  test.each(["upgrade", "install-latest"] as const)(
+    "leaves the newer publication intact when an older %s finishes last",
+    async (intent) => {
+      const { layout } = await makeLayout();
+      const manifestPath = join(layout.configDir, "install.json");
+      expect(await installLatest(releaseFixture(layout, "2.0.0", "explicit"))).toMatchObject({
+        status: "installed",
+      });
+      expect(await installLatest(releaseFixture(layout, "0.9.0", "explicit"))).toMatchObject({
+        status: "installed",
+      });
+
+      const late = releaseFixture(layout, "1.0.0", intent);
+      let newerManifest = "";
+      const result = await installLatest({
+        ...late,
+        fetchImpl: async (input) => {
+          if (String(input).endsWith("/SHA256SUMS")) {
+            // Publish 2.0.0 through another activation path after the upgrade
+            // read 0.9.0, while its download still owns only the 1.0.0 lock.
+            expect(await executeRollback({ layout, to: "2.0.0" })).toMatchObject({
+              status: "rolled-back",
+              toVersion: "2.0.0",
+            });
+            newerManifest = await readFile(manifestPath, "utf8");
+          }
+          return late.fetchImpl(input);
+        },
+      });
+
+      expect(result).toEqual({ status: "superseded", activeVersion: "2.0.0" });
+      expect(await readFile(manifestPath, "utf8")).toBe(newerManifest);
+      await expectLauncherPointsTo(layout.launcherPath, versionBinaryPath(layout, "2.0.0"));
+      expect(existsSync(stagingDirForVersion(layout, "1.0.0"))).toBe(false);
+      expect(await readdir(layout.transactionsDir)).toEqual([]);
+    },
+  );
+
+  test("leaves the active binary intact when a forced upgrade resolves the same version", async () => {
+    const { layout } = await makeLayout();
+    expect(await installLatest(releaseFixture(layout, "2.0.0", "explicit"))).toMatchObject({
+      status: "installed",
+    });
+    const manifestPath = join(layout.configDir, "install.json");
+    const manifest = await readFile(manifestPath, "utf8");
+
+    expect(
+      await installLatest(releaseFixture(layout, "2.0.0", "upgrade", "replacement binary")),
+    ).toEqual({ status: "superseded", activeVersion: "2.0.0" });
+    expect(await readFile(manifestPath, "utf8")).toBe(manifest);
+    expect(await readFile(layout.launcherPath, "utf8")).toBe("binary 2.0.0");
+    expect(await verifyStoredVersion(layout, "2.0.0")).toMatchObject({ status: "verified" });
+  });
+
+  test("an explicit install can activate an older requested version", async () => {
+    const { layout } = await makeLayout();
+    expect(await installLatest(releaseFixture(layout, "2.0.0", "explicit"))).toMatchObject({
+      status: "installed",
+    });
+
+    expect(await installLatest(releaseFixture(layout, "1.0.0", "explicit"))).toMatchObject({
+      status: "installed",
+      version: "1.0.0",
+    });
+    await expectLauncherPointsTo(layout.launcherPath, versionBinaryPath(layout, "1.0.0"));
+    expect(await readInstallManifest(layout.configDir)).toMatchObject({
+      activeVersion: "1.0.0",
+      previousVersion: "2.0.0",
+    });
+  });
+
+  test("a forced install of latest can repair the active version", async () => {
+    const { layout } = await makeLayout();
+    expect(await installLatest(releaseFixture(layout, "2.0.0", "explicit"))).toMatchObject({
+      status: "installed",
+    });
+
+    expect(
+      await installLatest(releaseFixture(layout, "2.0.0", "install-latest", "repaired binary")),
+    ).toMatchObject({ status: "installed", version: "2.0.0" });
+    expect(await readFile(layout.launcherPath, "utf8")).toBe("repaired binary");
+  });
+
+  test("rollback can restore the verified version replaced by an upgrade", async () => {
+    const { layout } = await makeLayout();
+    expect(await installLatest(releaseFixture(layout, "1.0.0", "explicit"))).toMatchObject({
+      status: "installed",
+    });
+    expect(await installLatest(releaseFixture(layout, "2.0.0", "upgrade"))).toMatchObject({
+      status: "installed",
+    });
+
+    expect(await executeRollback({ layout })).toMatchObject({
+      status: "rolled-back",
+      fromVersion: "2.0.0",
+      toVersion: "1.0.0",
+    });
+    await expectLauncherPointsTo(layout.launcherPath, versionBinaryPath(layout, "1.0.0"));
+    expect(await readInstallManifest(layout.configDir)).toMatchObject({
+      activeVersion: "1.0.0",
+      previousVersion: "2.0.0",
+    });
+  });
+
   test.each([
     ...SIGNED_STATEMENT_SCENARIOS,
     "tampered manifest",
@@ -147,6 +276,7 @@ describe("installLatest", () => {
       );
       const requested: string[] = [];
       const result = await installLatest({
+        intent: "explicit",
         layout,
         version: "1.2.3",
         releasePublicKey: spki,
@@ -198,6 +328,7 @@ describe("installLatest", () => {
     ]);
     const requested: string[] = [];
     const result = await installLatest({
+      intent: "explicit",
       layout,
       version: "1.2.3",
       releasePublicKey: spki,
@@ -239,6 +370,7 @@ describe("installLatest", () => {
     const requested: string[] = [];
 
     const result = await installLatest({
+      intent: "explicit",
       version: "3.2.0",
       force: true,
       layout,
@@ -293,6 +425,7 @@ describe("installLatest", () => {
     const requested: string[] = [];
 
     const result = await installLatest({
+      intent: "explicit",
       version: "2.9.0",
       force: true,
       layout,
@@ -332,6 +465,7 @@ describe("installLatest", () => {
       const requested: string[] = [];
 
       const result = await installLatest({
+        intent: "explicit",
         version: "2.9.1",
         force: true,
         layout,
@@ -384,6 +518,7 @@ describe("installLatest", () => {
     const rawRequested: string[] = [];
 
     const result = await installLatest({
+      intent: "explicit",
       version: "2.9.2",
       force: true,
       layout,
@@ -417,6 +552,7 @@ describe("installLatest", () => {
     const rawRequested: string[] = [];
 
     const result = await installLatest({
+      intent: "explicit",
       version: "3.0.0",
       force: true,
       layout,
@@ -447,6 +583,7 @@ describe("installLatest", () => {
     const archive = createReleaseArchive(releaseTarget, bytes);
 
     const result = await installLatest({
+      intent: "explicit",
       version: "3.0.1",
       force: true,
       layout,
@@ -494,6 +631,7 @@ describe("installLatest", () => {
     const archive = createReleaseArchive(releaseTarget, bytes);
 
     const result = await installLatest({
+      intent: "explicit",
       version: "2.0.0",
       force: true,
       layout,
@@ -542,6 +680,7 @@ describe("installLatest", () => {
     const badSums = sumsFor(assetName, "0".repeat(64));
 
     const result = await installLatest({
+      intent: "explicit",
       version: "2.0.0",
       force: true,
       layout,
@@ -571,6 +710,7 @@ describe("installLatest", () => {
     const digest = sha256Hex(bytes);
 
     const result = await installLatest({
+      intent: "explicit",
       version: "3.1.4",
       force: true,
       layout,
@@ -610,6 +750,7 @@ describe("installLatest", () => {
     const bytes = new TextEncoder().encode("WAITING-TO-ACTIVATE");
     const digest = sha256Hex(bytes);
     const install = installLatest({
+      intent: "explicit",
       version: "2.0.0",
       force: true,
       layout,
@@ -646,6 +787,7 @@ describe("installLatest", () => {
     const bytes = new TextEncoder().encode("DOWNLOADED-BUT-NOT-ACTIVATED");
     const digest = sha256Hex(bytes);
     const install = installLatest({
+      intent: "explicit",
       version: "2.0.0",
       force: true,
       layout,
@@ -707,6 +849,7 @@ describe("installLatest", () => {
     const bytes = new TextEncoder().encode("MANIFEST-WILL-FAIL");
     const digest = sha256Hex(bytes);
     const result = await installLatest({
+      intent: "explicit",
       version: "4.0.0",
       force: true,
       layout,
@@ -755,6 +898,7 @@ describe("installLatest", () => {
       let result;
       try {
         result = await installLatest({
+          intent: "explicit",
           version: "2.0.0",
           force: true,
           layout,
@@ -805,6 +949,7 @@ describe("installLatest", () => {
       let result;
       try {
         result = await installLatest({
+          intent: "explicit",
           version: "2.0.0",
           force: true,
           layout,

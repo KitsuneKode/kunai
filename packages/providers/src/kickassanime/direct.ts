@@ -612,8 +612,7 @@ export const kickassanimeProviderModule: CoreProviderModule = {
       cachePolicy,
     };
 
-    // Tracks need the same Origin as the segments; mpv sends the stream's
-    // headers on subtitle requests too, so nothing per-track is attached.
+    // The guarded subtitle downloader scopes the player Origin to the caption CDN.
     const subtitles: SubtitleCandidate[] = player.subtitles.map((track) => ({
       id: `subtitle:${KICKASSANIME_PROVIDER_ID}:${Bun.hash(track.src).toString(36)}`,
       providerId: KICKASSANIME_PROVIDER_ID,

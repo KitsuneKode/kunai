@@ -177,6 +177,7 @@ export async function runInstall(
     const version = positional ?? "latest";
     console.log(`Installing kunai (${version})…`);
     const result = await installLatest({
+      intent: version === "latest" ? "install-latest" : "explicit",
       version: version === "latest" ? undefined : version,
       force,
     });
@@ -187,6 +188,10 @@ export async function runInstall(
     if (result.status === "skipped") {
       console.error("Install skipped: another install is in progress.");
       return 1;
+    }
+    if (result.status === "superseded") {
+      console.log(`Kunai ${result.activeVersion} is already active on disk.`);
+      return 0;
     }
 
     const setup = await checkInstall();

@@ -33,3 +33,8 @@ export function isYoutubeWatchUrl(url: string): boolean {
 export function needsMpvNetworkPreflight(url: string, kind: MpvUrlKind = "remote"): boolean {
   return !(kind === "local" && isAllowedMpvUrl(url, "local") && !isAllowedMpvUrl(url, "remote"));
 }
+
+/** Only a verified library path or a subtitle file owned by this playback may reach mpv. */
+export function isLocalSubtitlePath(path: string): boolean {
+  return isAllowedMpvUrl(path, "local") && !isAllowedMpvUrl(path, "remote");
+}
