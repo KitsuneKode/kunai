@@ -70,14 +70,19 @@ stops at the list boundaries; keyboard arrows still wrap. Covered results do
 not accept clicks while an overlay or command palette owns focus. This does
 not imply click support for every surface.
 
-Library, Up Next, History and every `OverlayPanel` picker (season, episode,
-subtitle, provider, recommendation) use the same select-then-open gesture,
-through one rule (`app-shell/mouse/row-tap.ts`): the first tap on a row selects
-it, a second tap on that same still-selected row runs the Enter path. Picker and
-History taps call the same functions Enter calls (`root-overlay-taps.ts`,
-`activateSelectedHistoryRow`). Termux delivers phone taps as clicks, so this is
-the touch model too. Library tabs switch
-views directly. Mouse selection and wheel movement never delete files or remove
+Library, Up Next, History, Notifications (the inbox and its action and
+play-now pickers), the download manager, `/guide`, the Schedule and every
+`OverlayPanel` picker (season, episode, subtitle, provider, recommendation) use
+the same select-then-open gesture, through one rule
+(`app-shell/mouse/row-tap.ts`): the first tap on a row selects it, a second tap
+on that same still-selected row runs the Enter path. Taps call the functions
+Enter calls (`root-overlay-taps.ts`, `activateSelectedHistoryRow`, the download
+manager's `runJobAction`, `hooks/use-calendar-cursor.ts`). Termux delivers phone
+taps as clicks, so this is the touch model too. Library tabs, Schedule type tabs
+and Schedule date chips switch directly. The checklist (multi-select) is the one
+exception: a tap toggles its row at once, because a check is undone by another
+tap and nothing runs until confirm; its footer's confirm, all-in-view, toggle
+and back are tappable too. Section and date headers are never targets. Mouse selection and wheel movement never delete files or remove
 queue entries; their existing keyboard confirmation rules remain in effect.
 Up Next uses the same exact-row claim as Enter and refuses items already starting
 or played. Large queues keep only the selected window on screen.
