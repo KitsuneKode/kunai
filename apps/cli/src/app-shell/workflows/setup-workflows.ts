@@ -18,6 +18,7 @@ import type { KitsuneConfig } from "@kunai/config";
 
 import { runSetupFlow, type SetupInitialState } from "../setup-shell";
 import { openTrackerConnectShell, type TrackerConnectOutcome } from "../tracker-connect-shell";
+import { turnOnTrackerSync } from "./tracker-connect";
 
 export type { SetupWizardResult } from "@/app/bootstrap/startup-setup";
 
@@ -261,15 +262,14 @@ export async function runSetupWizard({
   //
   // This runs *after* config commits and outside the wizard's own lifetime, so
   // a browser that never opens costs an account link and not the whole setup.
-  // `enabled` flips only on a successful connect: a standing "yes" in config
+  // Sync turns on only on a successful connect: a standing "yes" in config
   // with no token behind it is the silent lie this ordering exists to prevent
-  // (#232).
-  let anilistLinked = false;
-  let tmdbLinked = false;
+  // (#232). A fresh link turns it on inside `connectNamedTracker`; an account
+  // that was already linked is turned on here, because the tick asked for it.
   if (outcome !== "aborted") {
-    for (const [tracker, wanted, linkedFlag] of [
-      ["anilist", prefs.connectAniList, () => (anilistLinked = true)],
-      ["tmdb", prefs.connectTmdb, () => (tmdbLinked = true)],
+    for (const [tracker, wanted] of [
+      ["anilist", prefs.connectAniList],
+      ["tmdb", prefs.connectTmdb],
     ] as const) {
       if (!wanted) continue;
       let connectOutcome: TrackerConnectOutcome;
@@ -285,7 +285,7 @@ export async function runSetupWizard({
         continue;
       }
       if (connectOutcome.status === "connected") {
-        linkedFlag();
+        if (connectOutcome.alreadyConnected) await turnOnTrackerSync(container, tracker);
       } else {
         container.diagnosticsService.record({
           category: "session",
@@ -296,17 +296,6 @@ export async function runSetupWizard({
           note(container, `${tracker} not linked — connect it from Settings → Accounts & Sync.`);
         }
       }
-    }
-
-    if (anilistLinked || tmdbLinked) {
-      await container.config.update({
-        sync: {
-          ...current.sync,
-          ...(anilistLinked ? { anilist: { ...current.sync.anilist, enabled: true } } : {}),
-          ...(tmdbLinked ? { tmdb: { ...current.sync.tmdb, enabled: true } } : {}),
-        },
-      });
-      await container.config.save();
     }
   }
 
