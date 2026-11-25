@@ -33,6 +33,7 @@ function createConfig(): ConfigService {
     applySessionOverrides: () => undefined,
     save: async () => undefined,
     recordAnalyticsPing: async () => false,
+    readPersistedAnalyticsConsent: async () => ({ analytics: "unset", installId: "" }),
     recordStremioAddonName: async () => undefined,
     flushPending: async () => undefined,
     reset: async () => undefined,
