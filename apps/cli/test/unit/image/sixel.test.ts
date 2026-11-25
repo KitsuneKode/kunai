@@ -199,6 +199,27 @@ describe("renderSixelFromImage", () => {
     expect(dataBytesAreInRange(degraded)).toBe(true);
   });
 
+  test("a stream far over budget still fits at full size by cutting the palette", () => {
+    const noisy = Array.from({ length: 64 * 48 * 3 }, (_, i) => (i * 37 + (i >> 2)) % 256);
+    const decoded = decodePng(makeRgbPng(64, 48, noisy));
+    const full = renderSixelFromImage(decoded, { maxWidth: 64, maxHeight: 48, maxColors: 128 });
+    const eight = renderSixelFromImage(decoded, { maxWidth: 64, maxHeight: 48, maxColors: 8 });
+    if (!full || !eight) throw new Error("expected Sixel data");
+    // Room for an 8-colour stream but far less than a 128-colour one: halving
+    // alone (128 → 64 → 32 → 16) would run out of attempts or shrink the image.
+    const cap = Math.ceil(eight.length * 1.05);
+    expect(cap).toBeLessThan(full.length / 4);
+    const degraded = renderSixelFromImage(decoded, {
+      maxWidth: 64,
+      maxHeight: 48,
+      maxColors: 128,
+      maxBytes: cap,
+    });
+    if (!degraded) throw new Error("encoding could not meet the byte cap");
+    expect(degraded.length).toBeLessThanOrEqual(cap);
+    expect(degraded).toContain('"1;1;64;48');
+  });
+
   test("fails closed to null when even the smallest render exceeds maxBytes", () => {
     const png = makeRgbPng(2, 2, [255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 0]);
     expect(
