@@ -1,5 +1,6 @@
 import { detectImageCapability } from "@/image";
 import type { TerminalId } from "@/image";
+import { getTerminalCellPixels } from "@/image/cell-size";
 import { debugImage } from "@/image/debug";
 import { uploadKittyPayload } from "@/image/kitty-transport";
 import { type PosterPixelBounds, type PreparedPoster } from "@/image/native-image";
@@ -8,6 +9,7 @@ import { buildHalfBlockOutput } from "@/image/renderers/half-block";
 import { buildItermInlineImage } from "@/image/renderers/iterm-inline";
 import { pixelBudgetForCells } from "@/image/renderers/sixel";
 import { renderSixelFromImage } from "@/image/sixel";
+import { wrapTmuxPassthrough } from "@/image/tmux";
 
 import {
   clearKittyPlacementRegistry,
@@ -25,10 +27,11 @@ const runtime: PosterRuntime = {
   detectImageCapability: () => detectImageCapability(),
 };
 
-// Interactive overlays are encoded on the JS thread and replayed through the
-// PTY after Ink frames. 256 colours roughly doubles both encode time and bytes
-// on the wire without a meaningful gain at terminal-poster dimensions.
-const APP_SHELL_SIXEL_MAX_COLORS = 64;
+// 128, not 256: on real art at HiDPI cell sizes 256 colours plus dithering
+// roughly doubled encode time (synchronous, on the input thread) and bytes
+// for every overlay replay, without a visible gain.
+const APP_SHELL_SIXEL_MAX_COLORS = 128;
+const APP_SHELL_SIXEL_UNPROBED_COLORS = 64;
 // Every repaint re-sends every byte through the PTY; past this the stream
 // degrades (fewer colours, smaller) and then fails closed to half-block.
 const APP_SHELL_SIXEL_MAX_BYTES = 256 * 1024;
@@ -40,24 +43,28 @@ function allocId(): number {
   return id;
 }
 
-function canRenderKitty(): boolean {
-  const capability = runtime.detectImageCapability();
-  return capability.renderer === "kitty-native";
-}
+const tmuxImages = new Set<number>();
+// Kitty ids belong to the outer terminal, shared by all its tmux panes.
+let nextTmuxId = 1 + Math.floor(Math.random() * 0xffffff);
 
 export function deleteKittyImage(imageId: number): void {
-  if (!canRenderKitty()) return;
+  if (tmuxImages.delete(imageId)) {
+    process.stdout.write(wrapTmuxPassthrough(`\x1b_Ga=d,d=I,i=${imageId},q=2;\x1b\\`));
+    return;
+  }
+  const capability = runtime.detectImageCapability();
+  if (capability.renderer !== "kitty-native" || capability.kittyPassthrough) return;
   process.stdout.write(`\x1b_Ga=d,d=I,i=${imageId};\x1b\\`);
 }
 
 setKittyPlacementDeleteFn(deleteKittyImage);
 
 export function deleteAllTerminalImages(): void {
-  if (!canRenderKitty()) {
-    clearKittyPlacementRegistry();
-    return;
+  for (const imageId of tmuxImages) deleteKittyImage(imageId);
+  const capability = runtime.detectImageCapability();
+  if (capability.renderer === "kitty-native" && !capability.kittyPassthrough) {
+    process.stdout.write("\x1b_Ga=d,d=A;\x1b\\");
   }
-  process.stdout.write("\x1b_Ga=d,d=A;\x1b\\");
   clearKittyPlacementRegistry();
 }
 
@@ -133,6 +140,8 @@ export type PosterRenderer = "kitty-native" | "iterm-inline" | "sixel" | "half-b
 export type PosterRenderPlan = {
   readonly renderer: PosterRenderer;
   readonly bounds: PosterPixelBounds;
+  readonly kittyPassthrough?: "tmux";
+  readonly exactPixels?: boolean;
 };
 
 /**
@@ -182,28 +191,36 @@ export function resolvePosterRenderPlan(options: PreparedRenderOptions): PosterR
   const capability = runtime.detectImageCapability();
   if (!capability.available || capability.renderer === "none") return null;
 
-  if (capability.renderer === "kitty-native" && supportsKittyPlaceholders(capability.terminal)) {
-    const budget = pixelBudgetForCells(cols, rows);
+  const budget = pixelBudgetForCells(cols, rows);
+  const bounds = { maxWidthPx: budget.maxWidth, maxHeightPx: budget.maxHeight };
+  if (
+    capability.renderer === "kitty-native" &&
+    (capability.kittyPassthrough || supportsKittyPlaceholders(capability.terminal))
+  ) {
     return {
       renderer: "kitty-native",
-      bounds: { maxWidthPx: budget.maxWidth, maxHeightPx: budget.maxHeight },
+      kittyPassthrough: capability.kittyPassthrough,
+      bounds,
     };
   }
   // Gated on allowSixel for the same reason sixel is: both are measured
   // overlays written outside Ink's frame, so a surface that repaints constantly
   // suppresses them together.
   if (capability.renderer === "iterm-inline" && allowSixel) {
-    const budget = pixelBudgetForCells(cols, rows);
     return {
       renderer: "iterm-inline",
-      bounds: { maxWidthPx: budget.maxWidth, maxHeightPx: budget.maxHeight },
+      bounds,
+      exactPixels: getTerminalCellPixels() !== null,
     };
   }
-  if (capability.renderer === "sixel" && allowSixel) {
-    const budget = pixelBudgetForCells(cols, rows);
+  if (
+    capability.renderer === "sixel" &&
+    allowSixel &&
+    getProbedGraphicsSupport()?.sixelColorRegisters !== 1
+  ) {
     return {
       renderer: "sixel",
-      bounds: { maxWidthPx: budget.maxWidth, maxHeightPx: budget.maxHeight },
+      bounds,
     };
   }
   // Everything else — a Kitty build without Unicode placeholders, an inline-image
@@ -230,10 +247,14 @@ export async function renderPreparedPoster(
   try {
     if (signal?.aborted) return { kind: "none" };
     if (plan.renderer === "kitty-native") {
-      return await uploadPreparedKitty(poster, rows, cols, signal);
+      return await uploadPreparedKitty(poster, options, plan.kittyPassthrough);
     }
     if (plan.renderer === "iterm-inline") {
-      const escapes = buildItermInlineImage(poster.png, { rows, cols });
+      const escapes = buildItermInlineImage(poster.png, {
+        rows,
+        cols,
+        pixelSize: plan.exactPixels ? poster.image : undefined,
+      });
       if (!escapes) return { kind: "none" };
       // Carried as a sixel result because it is the same kind of thing: escape
       // bytes the overlay manager writes at a measured rect, erased the same way.
@@ -249,13 +270,17 @@ export async function renderPreparedPoster(
       const sixel = renderSixelFromImage(
         poster.image,
         {
-          ...pixelBudgetForCells(cols, rows),
-          maxColors: APP_SHELL_SIXEL_MAX_COLORS,
+          maxWidth: plan.bounds.maxWidthPx,
+          maxHeight: plan.bounds.maxHeightPx,
+          maxColors: Math.min(
+            APP_SHELL_SIXEL_MAX_COLORS,
+            getProbedGraphicsSupport()?.sixelColorRegisters ?? APP_SHELL_SIXEL_UNPROBED_COLORS,
+          ),
           maxBytes: APP_SHELL_SIXEL_MAX_BYTES,
         },
         signal,
       );
-      if (!sixel) return { kind: "none" };
+      if (!sixel) return renderPreparedHalfBlock(poster, rows, cols);
       return {
         kind: "sixel",
         sixel,
@@ -287,12 +312,12 @@ function renderPreparedHalfBlock(
 
 async function uploadPreparedKitty(
   poster: PreparedPoster,
-  rows: number,
-  cols: number,
-  signal?: AbortSignal,
+  { rows, cols, signal }: PreparedRenderOptions,
+  passthrough: PosterRenderPlan["kittyPassthrough"],
 ): Promise<RenderedPosterCandidate> {
   if (poster.png.byteLength === 0) return { kind: "none" };
-  const imageId = allocId();
+  const imageId = passthrough ? nextTmuxId : allocId();
+  if (passthrough) nextTmuxId = (nextTmuxId % 0xffffff) + 1;
   // The prepared PNG *is* the payload: no deflate, no RGBA transport, no
   // external conversion.
   await uploadKittyPayload(
@@ -303,8 +328,10 @@ async function uploadPreparedKitty(
       cols,
       unicodePlaceholder: true,
       preferFileTransmission: true,
+      passthrough,
     },
   );
+  if (passthrough) tmuxImages.add(imageId);
   if (signal?.aborted) {
     // Upload finished after cancel — delete the orphan so it cannot clobber a
     // winner. Direct deletion, not a registry release: it owns no slot yet.
@@ -362,6 +389,5 @@ export function hashTitleToColor(title: string): PosterFallbackColor {
 }
 
 export const __testing = {
-  APP_SHELL_SIXEL_MAX_COLORS,
   runtime,
 };
