@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-11-24
+Last updated: 2026-11-25
 
 This is the **only index of active work** in `.plans/`. Everything indexed here
 is unfinished. Landed, superseded, and one-shot plans live in
@@ -104,6 +104,12 @@ archive and put only the residue here.
 | -------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | Install channels           | Homebrew tap, AUR `kunai-bin`, Scoop bucket on top of the release pipeline  | [competitive-parity-and-growth.md](./competitive-parity-and-growth.md) |
 | Localization and community | Localized READMEs, community surface, topics + comparison-table positioning | [competitive-parity-and-growth.md](./competitive-parity-and-growth.md) |
+
+### Security review
+
+| Track                           | Remaining                                                                                                                  | Plan                                                                                          |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Security and improvement review | Close the remote subtitle and media handoff gaps, qualify release signing, and address analytics admission and CI findings | [2026-11-25 security and improvement review](./2026-11-25-security-and-improvement-review.md) |
 
 ### Verification and CI
 
