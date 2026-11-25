@@ -29,6 +29,7 @@ import {
   waitForRootLibraryPlaybackLaunch,
 } from "@/app-shell/root-library-playback-bridge";
 import { openDiagnosticsOverlay, openRootOwnedOverlay } from "@/app-shell/root-overlay-bridge";
+import { noteShareTarget } from "@/app/bootstrap/apply-resolved-share-target";
 import { resolveShareTarget } from "@/app/bootstrap/resolve-share-target";
 import { titleInfoFromSearchResult } from "@/app/bootstrap/title-info";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/discover/anime-provider-mapping";
@@ -2402,9 +2403,7 @@ async function handleWatch(container: Container): Promise<ShellWorkflowResult> {
     return "handled";
   }
   const resolved = await resolveShareTarget(ref, container);
-  if (resolved.note) {
-    container.stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note: resolved.note });
-  }
+  noteShareTarget(container, resolved);
   if (resolved.searchQuery) {
     container.stateManager.dispatch({ type: "SET_SEARCH_QUERY", query: resolved.searchQuery });
     if (resolved.mode === "anime") {

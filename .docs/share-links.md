@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-17"
+lastReviewed: "2026-11-25T11:19:28Z"
 ---
 
 # Share Links & PlaybackTargetRef
@@ -69,6 +69,14 @@ Parser returns `null` when neither `cat` nor `q` is present, or when the catalog
 ## Timestamp resume
 
 Shared `t=` is applied once on the first mpv launch via `resolveBootstrapStartSeconds` (max of shared vs local history). Normal per-episode history resume takes over afterward.
+
+A search-anchored link (`q=`, used for titles without a portable catalog id)
+keeps its `s`/`e`/`abs` too. At startup (`--open`, protocol handoff) the
+episode becomes the session's `requestedEpisode` — the same channel as `-e`,
+which still wins — and is armed once the auto-picked title is known, so the
+timestamp lands on the episode the link names. `/watch` opens the query
+mid-session and leaves the pick to the viewer, so it says which episode and time
+the link names instead of dropping them (`noteShareTarget`).
 
 ## Examples
 
