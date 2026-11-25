@@ -2,7 +2,7 @@
 title: Kunai CLI Keybindings
 description: Screen-by-screen keybinding map for the Kunai terminal shell.
 status: current
-lastReviewed: "2026-11-17"
+lastReviewed: "2026-11-25"
 ---
 
 # Kunai CLI Keybindings
@@ -88,6 +88,18 @@ it runs the same enabled command as typing `/provider` and Enter. While resolvin
 blocks provider changes, it opens the filtered palette with the existing disabled
 reason instead. A failure offers `r` Recover only when a recovery handler exists.
 Cancel uses the cancellable-resolve route; Stop uses the active-player route.
+
+Every other footer chip that names one key (`r`, `enter`, `esc`, `⇧F`,
+`ctrl+a`) presses that key when clicked: `Footer` injects the keystroke through
+`MouseSplitStdin.inject`, so it reaches the same `useInput` handlers a typed key
+does and a click cannot disagree with the keyboard. Chips whose label reads as
+destructive (stop, quit, delete, remove, cancel, clear, discard) and chips that
+name a pair, a word or a typed command stay display-only. Action rows in
+`ActionList`, post-play and the details sheet press their own letter
+(`PressRow`); arrow-driven lists such as the download confirmation use
+select-then-activate (`PickRow`). The details sheet scrolls with ↑/↓, PgUp/PgDn
+or the wheel when it is taller than the panel. Setup renders its own footer and
+never routes a click into analytics consent.
 
 Set `KUNAI_NO_MOUSE=1` before launching to retain ordinary terminal mouse
 behavior. Mouse tracking is disabled automatically for piped input/output and

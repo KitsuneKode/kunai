@@ -178,6 +178,17 @@ export class MouseSplitStdin extends EventEmitter {
     }
   }
 
+  /**
+   * Deliver keystrokes as if typed: a click on a key hint presses that key,
+   * through Ink's own parser and every active `useInput`, so the click and the
+   * key can never mean different things.
+   */
+  inject(keys: string): void {
+    if (this.detached || !keys) return;
+    this.buffer.push(keys);
+    this.emit("readable");
+  }
+
   /** Ink pushes bytes back (e.g. kitty-protocol leftovers). Re-queue them. */
   unshift(chunk: StdinChunk | null | undefined): void {
     if (chunk === undefined || chunk === null) return;

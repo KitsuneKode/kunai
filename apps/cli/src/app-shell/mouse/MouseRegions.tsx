@@ -49,6 +49,8 @@ type MouseRegion = {
 };
 
 export class MouseDispatcher {
+  /** Presses keys as if typed (the session wires its stdin facade here). */
+  pressKey: ((keys: string) => void) | null = null;
   private regions = new Map<string, MouseRegion>();
   private orderCounter = 0;
   /** Press target held until release decides click vs miss. */
@@ -183,6 +185,15 @@ export const MouseDispatchContext = createContext<MouseDispatcher | null>(null);
 
 export function useMouseEnabled(): boolean {
   return useContext(MouseDispatchContext) !== null;
+}
+
+/**
+ * Press keys as if typed, or null when there is no mouse session. Resolved at
+ * click time, so a press wired after the first render still works.
+ */
+export function usePressKey(): ((keys: string) => void) | null {
+  const dispatcher = useContext(MouseDispatchContext);
+  return dispatcher ? (keys) => dispatcher.pressKey?.(keys) : null;
 }
 
 /** Test/debug seam: swap the dispatcher a tree dispatches into. */

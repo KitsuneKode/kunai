@@ -3,7 +3,8 @@ import React from "react";
 
 import { companionMode, companionToggleable } from "./companion-policy";
 import { type ShellViewportKind, TRANSIENT_ROW_SLOTS } from "./layout-policy";
-import { MouseTarget } from "./mouse/MouseRegions";
+import { footerKeySequence } from "./mouse/footer-key-sequence";
+import { MouseTarget, usePressKey } from "./mouse/MouseRegions";
 import { plainBrandLabel, plainModeEnabled, selectionPrefix } from "./plain-mode";
 import { measureColumns, padColumnsEnd, sanitizeTerminalText, truncateLine } from "./shell-text";
 import { hotkeyLabel, palette, semanticToneColor } from "./shell-theme";
@@ -151,6 +152,20 @@ export function Footer({
   onActivate?: (action: FooterAction) => void;
 }) {
   const footerId = React.useId();
+  const pressKey = usePressKey();
+  // A chip with a wired action runs it. Any other chip naming a real key
+  // presses that key — the surface's own handler decides, so a click means
+  // exactly what the key means. Destructive chips (delete, stop, clear…) stay
+  // keyboard-only: mouse navigation never deletes or removes.
+  const activateFooter = (
+    action: FooterAction,
+    role: FooterActionRole,
+  ): (() => void) | undefined => {
+    if (action.disabled) return undefined;
+    if (onActivate && action.action) return () => onActivate(action);
+    const keys = pressKey && role !== "destructive" ? footerKeySequence(action.key) : null;
+    return keys && pressKey ? () => pressKey(keys) : undefined;
+  };
   const { cols } = useShellDimensions();
   const terminalWidth = terminalWidthProp ?? cols;
   const taskWidth = Math.max(20, terminalWidth - 4);
@@ -213,13 +228,9 @@ export function Footer({
             return (
               <MouseTarget
                 id={`${footerId}:footer:${action.key}:${action.action ?? "hint"}:${action.label}`}
-                active={Boolean(onActivate && action.action && !action.disabled)}
-                onClick={
-                  onActivate && action.action && !action.disabled
-                    ? () => onActivate(action)
-                    : undefined
-                }
-                feedback={Boolean(onActivate && action.action && !action.disabled)}
+                active={Boolean(activateFooter(action, role))}
+                onClick={activateFooter(action, role)}
+                feedback={Boolean(activateFooter(action, role))}
                 key={`${action.key}-${action.label}`}
               >
                 <Box marginRight={index === visibleActions.length - 1 ? 0 : 2} marginBottom={1}>
