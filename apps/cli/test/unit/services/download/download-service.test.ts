@@ -2101,7 +2101,7 @@ describe("DownloadService", () => {
     expect(completed?.subtitlePath).toBeUndefined();
   });
 
-  test("keeps completed video repairable when an expected subtitle sidecar fails", async () => {
+  test("keeps completed video repairable when a purported subtitle is HTML", async () => {
     const service = buildService({
       repo,
       downloadsEnabled: true,
@@ -2112,7 +2112,7 @@ describe("DownloadService", () => {
           url: "https://fresh.example/master.m3u8",
           headers: { Referer: "https://fresh.example" },
           timestamp: 0,
-          subtitle: "https://fresh.example/subs/en.vtt",
+          subtitle: "https://fresh.example/subs/en.vtt?token=test-token",
           subtitleList: [{ url: "https://fresh.example/subs/en.vtt", language: "en" }],
         },
         providerId: "vidking",
@@ -2130,8 +2130,9 @@ describe("DownloadService", () => {
         exited: Promise.resolve(0),
       } as never;
     });
+    const htmlFetch = mock(async () => new Response("<html>Not a subtitle</html>"));
     // SAFETY: test stub — supplies only the surface this test exercises.
-    globalThis.fetch = mock(async () => new Response("", { status: 503 })) as never;
+    globalThis.fetch = htmlFetch as never;
 
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
@@ -2147,7 +2148,11 @@ describe("DownloadService", () => {
     expect(repairable?.status).toBe("repairable");
     expect(repairable?.artifactStatus).toBe("expected-missing");
     expect(repairable?.repairMetadataJson).toContain("subtitle");
+    expect(repairable?.repairMetadataJson).not.toContain("test-token");
+    expect(repairable?.subtitlePath).toBeUndefined();
     expect(existsSync(repairable?.outputPath ?? "")).toBe(true);
+    // The HTML body reached the format check: the request was actually made.
+    expect(htmlFetch).toHaveBeenCalled();
   });
 
   test("repairs missing subtitle sidecars without re-downloading the video", async () => {

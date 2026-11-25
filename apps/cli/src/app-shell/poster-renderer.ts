@@ -27,7 +27,10 @@ const runtime: PosterRuntime = {
   detectImageCapability: () => detectImageCapability(),
 };
 
-const APP_SHELL_SIXEL_MAX_COLORS = 256;
+// 128, not 256: on real art at HiDPI cell sizes 256 colours plus dithering
+// roughly doubled encode time (synchronous, on the input thread) and bytes
+// for every overlay replay, without a visible gain.
+const APP_SHELL_SIXEL_MAX_COLORS = 128;
 const APP_SHELL_SIXEL_UNPROBED_COLORS = 64;
 // Every repaint re-sends every byte through the PTY; past this the stream
 // degrades (fewer colours, smaller) and then fails closed to half-block.

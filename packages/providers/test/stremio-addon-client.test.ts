@@ -2,12 +2,9 @@ import { describe, expect, test } from "bun:test";
 
 import { ProviderHttpError, type LooseJsonValue, type ProviderRuntimeContext } from "@kunai/types";
 
+import { fetchRemoteSubtitle } from "../src/shared/remote-subtitle";
 import { parseStremioAddonUrl } from "../src/stremio-addon/addon-url";
-import {
-  fetchStremioManifest,
-  fetchStremioStreams,
-  fetchStremioSubtitle,
-} from "../src/stremio-addon/client";
+import { fetchStremioManifest, fetchStremioStreams } from "../src/stremio-addon/client";
 import { STREMIO_ADDON_LIMITS } from "../src/stremio-addon/protocol";
 
 const TOKEN = "SECRETTOKEN";
@@ -422,7 +419,7 @@ describe("addon stream request", () => {
   });
 });
 
-describe("fetchStremioSubtitle (guarded download)", () => {
+describe("fetchRemoteSubtitle (guarded download)", () => {
   const SRT = "1\n00:00:01,000 --> 00:00:02,000\nhello\n";
   const VTT = "WEBVTT\n\n00:01.000 --> 00:02.000\nhi\n";
 
@@ -438,7 +435,7 @@ describe("fetchStremioSubtitle (guarded download)", () => {
 
   test("private DNS answer blocks the request before fetch is called", async () => {
     const { requested, impl } = fetchLogging(() => new Response(SRT));
-    const file = await fetchStremioSubtitle("https://subs.example.com/en.srt", {
+    const file = await fetchRemoteSubtitle("https://subs.example.com/en.srt", {
       fetchImpl: impl,
       resolveAddresses: async () => ["10.0.0.5"],
     });
@@ -457,7 +454,7 @@ describe("fetchStremioSubtitle (guarded download)", () => {
       }
       return new Response(SRT);
     });
-    const file = await fetchStremioSubtitle("https://subs.example.com/en.srt", {
+    const file = await fetchRemoteSubtitle("https://subs.example.com/en.srt", {
       fetchImpl: impl,
       resolveAddresses: async (host) =>
         host === "subs.example.com" ? ["93.184.216.34"] : ["10.0.0.5"],
@@ -469,7 +466,7 @@ describe("fetchStremioSubtitle (guarded download)", () => {
 
   test("oversized body is dropped", async () => {
     const { impl } = fetchLogging(() => new Response(SRT.repeat(200_000)));
-    const file = await fetchStremioSubtitle("https://subs.example.com/big.srt", {
+    const file = await fetchRemoteSubtitle("https://subs.example.com/big.srt", {
       fetchImpl: impl,
       resolveAddresses: async () => ["93.184.216.34"],
     });
@@ -478,28 +475,62 @@ describe("fetchStremioSubtitle (guarded download)", () => {
 
   test("non-subtitle body is dropped", async () => {
     const { impl } = fetchLogging(() => new Response("<html><body>404</body></html>"));
-    const file = await fetchStremioSubtitle("https://subs.example.com/nope", {
+    const file = await fetchRemoteSubtitle("https://subs.example.com/nope", {
       fetchImpl: impl,
       resolveAddresses: async () => ["93.184.216.34"],
     });
     expect(file).toBeNull();
   });
 
+  test("a legacy-codepage SRT keeps its original bytes for mpv to decode", async () => {
+    // Windows-1252 "Café": 0xE9 is invalid UTF-8 and must not become U+FFFD.
+    const body = new Uint8Array([
+      ...new TextEncoder().encode("1\n00:00:01,000 --> 00:00:02,000\nCaf"),
+      0xe9,
+      0x0a,
+    ]);
+    const { impl } = fetchLogging(() => new Response(body));
+    const file = await fetchRemoteSubtitle("https://subs.example.com/fr.srt", {
+      fetchImpl: impl,
+      resolveAddresses: async () => ["93.184.216.34"],
+    });
+    expect(file?.extension).toBe("srt");
+    expect(file?.bytes).toEqual(body);
+  });
+
+  test("a UTF-16 subtitle with a byte-order mark is accepted as served", async () => {
+    const text = "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nこんにちは\n";
+    const utf16 = new Uint8Array(2 + text.length * 2);
+    utf16.set([0xff, 0xfe]);
+    for (let i = 0; i < text.length; i += 1) {
+      const code = text.charCodeAt(i);
+      utf16[2 + i * 2] = code & 0xff;
+      utf16[3 + i * 2] = code >> 8;
+    }
+    const { impl } = fetchLogging(() => new Response(utf16));
+    const file = await fetchRemoteSubtitle("https://subs.example.com/ja.vtt", {
+      fetchImpl: impl,
+      resolveAddresses: async () => ["93.184.216.34"],
+    });
+    expect(file?.extension).toBe("vtt");
+    expect(file?.bytes).toEqual(utf16);
+  });
+
   test("valid SRT yields srt; valid WebVTT yields vtt; extension comes from body", async () => {
     const srtFetch = fetchLogging(() => new Response(SRT));
     expect(
-      await fetchStremioSubtitle("https://subs.example.com/track.bin", {
+      await fetchRemoteSubtitle("https://subs.example.com/track.bin", {
         fetchImpl: srtFetch.impl,
         resolveAddresses: async () => ["93.184.216.34"],
       }),
-    ).toEqual({ text: SRT, extension: "srt" });
+    ).toEqual({ bytes: new TextEncoder().encode(SRT), extension: "srt" });
     const vttFetch = fetchLogging(() => new Response(VTT));
     expect(
-      await fetchStremioSubtitle("https://subs.example.com/track", {
+      await fetchRemoteSubtitle("https://subs.example.com/track", {
         fetchImpl: vttFetch.impl,
         resolveAddresses: async () => ["93.184.216.34"],
       }),
-    ).toEqual({ text: VTT, extension: "vtt" });
+    ).toEqual({ bytes: new TextEncoder().encode(VTT), extension: "vtt" });
   });
 
   test("a declared-oversize SRT is dropped unread; the same SRT undeclared passes", async () => {
@@ -507,7 +538,7 @@ describe("fetchStremioSubtitle (guarded download)", () => {
       () => new Response(SRT, { headers: { "content-length": String(513 * 1024) } }),
     );
     expect(
-      await fetchStremioSubtitle("https://subs.example.com/en.srt", {
+      await fetchRemoteSubtitle("https://subs.example.com/en.srt", {
         fetchImpl: declared.impl,
         resolveAddresses: async () => ["93.184.216.34"],
       }),
@@ -515,17 +546,17 @@ describe("fetchStremioSubtitle (guarded download)", () => {
 
     const plain = fetchLogging(() => new Response(SRT));
     expect(
-      await fetchStremioSubtitle("https://subs.example.com/en.srt", {
+      await fetchRemoteSubtitle("https://subs.example.com/en.srt", {
         fetchImpl: plain.impl,
         resolveAddresses: async () => ["93.184.216.34"],
       }),
-    ).toEqual({ text: SRT, extension: "srt" });
+    ).toEqual({ bytes: new TextEncoder().encode(SRT), extension: "srt" });
   });
 
   test("non-2xx is refused", async () => {
     const { impl } = fetchLogging(() => new Response("nope", { status: 404 }));
     expect(
-      await fetchStremioSubtitle("https://subs.example.com/en.srt", {
+      await fetchRemoteSubtitle("https://subs.example.com/en.srt", {
         fetchImpl: impl,
         resolveAddresses: async () => ["93.184.216.34"],
       }),
@@ -539,9 +570,69 @@ test("a declared Content-Length over the cap is refused", async () => {
       headers: { "content-length": String(600 * 1024) },
     });
   expect(
-    await fetchStremioSubtitle("https://subs.example.com/big.srt", {
+    await fetchRemoteSubtitle("https://subs.example.com/big.srt", {
       fetchImpl: impl,
       resolveAddresses: async () => ["93.184.216.34"],
     }),
   ).toBeNull();
+});
+
+test("subtitle headers stay on their authorized origin through redirects", async () => {
+  const requests: Array<{ host: string | null; origin: string | null; cookie: string | null }> = [];
+  const options = {
+    media: {
+      url: "https://hls.krussdomi.com/master.m3u8",
+      headers: { Origin: "https://player.example", Cookie: "media-only" },
+    },
+    resolveAddresses: async () => ["93.184.216.34"],
+    fetchImpl: async (url: string, init: RequestInit) => {
+      const headers = new Headers(init.headers);
+      requests.push({
+        host: headers.get("host"),
+        origin: headers.get("origin"),
+        cookie: headers.get("cookie"),
+      });
+      if (url.endsWith("/en.vtt")) {
+        return Response.redirect("https://subst.krussdomi.com/second.vtt");
+      }
+      if (url.endsWith("/second.vtt")) {
+        return Response.redirect("https://cdn.example/final.vtt");
+      }
+      return new Response("WEBVTT\n\n00:01.000 --> 00:02.000\nHello\n");
+    },
+  };
+  expect(await fetchRemoteSubtitle("https://subst.krussdomi.com/en.vtt", options)).not.toBeNull();
+  expect(requests).toEqual([
+    { host: "subst.krussdomi.com", origin: "https://player.example", cookie: null },
+    { host: "subst.krussdomi.com", origin: "https://player.example", cookie: null },
+    { host: "cdn.example", origin: null, cookie: null },
+  ]);
+});
+
+test("caller cancellation releases a pending subtitle body", async () => {
+  const controller = new AbortController();
+  const reading = Promise.withResolvers<void>();
+  const cancelled = Promise.withResolvers<void>();
+  const result = fetchRemoteSubtitle("https://subs.example.com/en.vtt", {
+    signal: controller.signal,
+    resolveAddresses: async () => ["93.184.216.34"],
+    fetchImpl: async () =>
+      new Response(
+        new ReadableStream<Uint8Array>(
+          {
+            pull() {
+              reading.resolve();
+            },
+            cancel() {
+              cancelled.resolve();
+            },
+          },
+          { highWaterMark: 0 },
+        ),
+      ),
+  });
+  await reading.promise;
+  controller.abort();
+  expect(await result).toBeNull();
+  await cancelled.promise;
 });

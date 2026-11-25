@@ -64,12 +64,20 @@ jobs:
         env:
           KUNAI_MATRIX_ARTIFACT: ${{ github.workspace }}/artifacts/provider-matrix.json
           # No shared relay URL or credentials. Operators may inject secrets later.
+          # The selection arrives through the environment, never as shell source
+          # (security review L2, #777), and each token is checked before use.
+          PROVIDERS_INPUT: ${{ github.event.inputs.providers }}
         run: |
           set +e
-          providers="${{ github.event.inputs.providers }}"
-          if [ -n "$providers" ]; then
-            # shellcheck disable=SC2086
-            bun run test:live:matrix $providers
+          read -r -a providers <<< "${PROVIDERS_INPUT:-}"
+          for token in "${providers[@]}"; do
+            if [[ ! "$token" =~ ^[a-z0-9][a-z0-9-]{0,39}$ ]]; then
+              echo "::error::invalid provider id or lane: $(printf '%q' "$token")"
+              exit 1
+            fi
+          done
+          if [ "${#providers[@]}" -gt 0 ]; then
+            bun run test:live:matrix "${providers[@]}"
           else
             bun run test:live:matrix
           fi

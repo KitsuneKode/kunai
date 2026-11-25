@@ -279,14 +279,17 @@ export function selectImageCapability(
         reason: "Kitty graphics through tmux passthrough",
       };
     }
-    // tmux answers DA1 itself and advertises attribute 4 only in builds
-    // with Sixel support. It forwards pixels only to Sixel-capable clients.
+    // tmux answers DA1 itself and advertises attribute 4 in any build with
+    // Sixel support, whatever the outer terminal can do. Only the attached
+    // client's `client_termfeatures` says whether that terminal draws sixel;
+    // otherwise tmux prints "SIXEL IMAGE (WxH)" in place of the poster.
     if (
       override !== "kitty" &&
       isTmuxPane(env) &&
       probe?.tmux &&
       tmuxSupportsVersion(probe.tmux, 4) &&
-      probe.sixel
+      probe.sixel &&
+      probe.tmux.clientFeatures.includes("sixel")
     ) {
       return buildCapability({
         terminal,

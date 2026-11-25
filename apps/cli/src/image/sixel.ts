@@ -400,7 +400,11 @@ export function renderSixelFromImage(
     // per-band passes), then dimensions. Either step alone may suffice, and
     // the loop bounds the extra encode work on the failure path.
     if (colors > 2) {
-      colors = Math.max(2, Math.floor(colors / 2));
+      // Payload size tracks palette size, so cut by the overshoot (at least
+      // half): a stream far over budget reaches 16 or 8 colours within the
+      // same attempts instead of falling back to half-block.
+      const byRatio = Math.floor((colors * options.maxBytes) / sixel.length);
+      colors = Math.max(2, Math.min(Math.floor(colors / 2), byRatio));
     } else {
       width = Math.max(1, Math.floor(width * 0.75));
       height = Math.max(1, Math.floor(height * 0.75));
