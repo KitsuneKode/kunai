@@ -338,20 +338,25 @@ type CliFlagOptions = {
   readonly version?: boolean;
 };
 
-/** Short flags, as their long form. */
-const SHORT_FLAG_ALIASES: Readonly<Record<string, string>> = {
-  "-S": "--search",
-  "-i": "--id",
-  "-t": "--type",
-  "-a": "--anime",
-  "-y": "--youtube",
-  "-m": "--minimal",
-  "-z": "--zen",
-  "-q": "--quick",
-  "-e": "--episode",
-  "-h": "--help",
-  "-v": "--version",
+type FlagTokenRead = {
+  readonly options: CliFlagOptions;
+  readonly positionals: readonly string[];
 };
+
+/** Short flags, as their long form. */
+const SHORT_FLAG_ALIASES: ReadonlyMap<string, string> = new Map([
+  ["-S", "--search"],
+  ["-i", "--id"],
+  ["-t", "--type"],
+  ["-a", "--anime"],
+  ["-y", "--youtube"],
+  ["-m", "--minimal"],
+  ["-z", "--zen"],
+  ["-q", "--quick"],
+  ["-e", "--episode"],
+  ["-h", "--help"],
+  ["-v", "--version"],
+]);
 
 /** The launch flags this parser reads into `CliFlagOptions`; the rest belong to subcommands. */
 const LAUNCH_FLAGS: ReadonlySet<string> = new Set([
@@ -409,10 +414,7 @@ const LAUNCH_FLAGS: ReadonlySet<string> = new Set([
  * flags (`--check`, `--to`, …) are skipped with their value, never read as a
  * search word.
  */
-function readFlagTokens(argv: readonly string[]): {
-  readonly options: CliFlagOptions;
-  readonly positionals: readonly string[];
-} {
+function readFlagTokens(argv: readonly string[]): FlagTokenRead {
   const options: Record<string, string | boolean> = {};
   const positionals: string[] = [];
   for (let index = 0; index < argv.length; index += 1) {
@@ -423,7 +425,7 @@ function readFlagTokens(argv: readonly string[]): {
     }
     const takesValue = VALUE_FLAGS.has(token);
     const value = takesValue ? argv[(index += 1)] : undefined;
-    const flag = SHORT_FLAG_ALIASES[token] ?? token;
+    const flag = SHORT_FLAG_ALIASES.get(token) ?? token;
     if (!LAUNCH_FLAGS.has(flag)) continue;
     if (flag === "--no-user-mpv-config") {
       options.userMpvConfig = false;
