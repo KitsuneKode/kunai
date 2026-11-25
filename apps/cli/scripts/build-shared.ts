@@ -480,7 +480,11 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // launcher budgets are unchanged. The tmux graphics path measured 3,297,643
 // bytes. With measured terminal cell sizing the bundle measured 3,300,575
 // bytes; 3226 KiB leaves 2,849 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_226;
+// Provider DNS-over-HTTPS measured 3,316,821 bytes against main's 3,300,932
+// (+15,889): the relay's pinned transport now ships in the CLI (7.2 KB), plus
+// the resolver (3.3 KB) and DoH fetch (2.4 KB). No dependency or asset.
+// 3242 KiB leaves 2,987 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_242;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
