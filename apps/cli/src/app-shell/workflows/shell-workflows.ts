@@ -29,6 +29,7 @@ import {
   waitForRootLibraryPlaybackLaunch,
 } from "@/app-shell/root-library-playback-bridge";
 import { openDiagnosticsOverlay, openRootOwnedOverlay } from "@/app-shell/root-overlay-bridge";
+import { applyShareLaneAndProviderHint } from "@/app/bootstrap/apply-resolved-share-target";
 import { resolveShareTarget } from "@/app/bootstrap/resolve-share-target";
 import { titleInfoFromSearchResult } from "@/app/bootstrap/title-info";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/discover/anime-provider-mapping";
@@ -2405,15 +2406,11 @@ async function handleWatch(container: Container): Promise<ShellWorkflowResult> {
   if (resolved.note) {
     container.stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note: resolved.note });
   }
+  // Same lane routing as a launch-time link: a movie link pasted while in anime
+  // mode must not play through anime providers, and the provider hint applies.
+  applyShareLaneAndProviderHint(container, resolved, ref);
   if (resolved.searchQuery) {
     container.stateManager.dispatch({ type: "SET_SEARCH_QUERY", query: resolved.searchQuery });
-    if (resolved.mode === "anime") {
-      container.stateManager.dispatch({
-        type: "SET_MODE",
-        mode: "anime",
-        provider: container.config.animeProvider,
-      });
-    }
     return "handled";
   }
   return {

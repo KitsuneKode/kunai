@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-17"
+lastReviewed: "2026-11-24T15:37:23Z"
 ---
 
 # Share Links & PlaybackTargetRef
@@ -66,9 +66,23 @@ Parser returns `null` when neither `cat` nor `q` is present, or when the catalog
 - mpv `Ctrl+Shift+S` — copy the HTTPS link at live `time-pos`
 - Discord Rich Presence — **Play on Kunai** button carrying the https web-share URL, plus an https catalog button; the `kunai://` ref also stays in presence text (Discord only allows http(s) button URLs, so the play button uses the web route)
 
+## Lane and provider
+
+A share link's `kind` chooses the lane (`anime`, `video` → YouTube, anything
+else → series/movie). Launch-time links and `/watch` both go through
+`applyShareLaneAndProviderHint`: when the session is in another lane it
+switches to that lane's default provider; already in the lane, it keeps the
+session's provider. A `src=` hint applies only when that provider belongs to the
+link's lane, so an anime provider hint never lands on a TMDB movie.
+
 ## Timestamp resume
 
-Shared `t=` is applied once on the first mpv launch via `resolveBootstrapStartSeconds` (max of shared vs local history). Normal per-episode history resume takes over afterward.
+A shared `t=` is an instruction: it sets the start of the first episode of the
+launch, wins over local history, and skips the resume prompt
+(`sharedStartOverride` in `apps/cli/src/app/playback/playback-start-intent.ts`).
+`t=0` means "from the beginning", not "no timestamp". It is consumed once from
+the start mailbox, so every later episode (auto-advance, navigation) resumes
+from its own history.
 
 ## Examples
 
