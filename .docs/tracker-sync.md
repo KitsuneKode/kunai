@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T20:53:00Z"
+lastReviewed: "2026-11-25T00:00:00Z"
 ---
 
 # Tracker Sync
@@ -264,6 +264,12 @@ down, a patch keeps every slot it does not name (including an invalid record
 and fields a newer build wrote), and an invalid record is never stored. The
 vault backend applies the same checks, and migration to the vault moves only
 valid records, leaving an invalid one in the plaintext file.
+
+A rejected read never stops startup. `initSyncAdapters` loads each tracker on
+its own; a tracker whose credentials cannot be read starts disconnected, with a
+`sync.credentials.unavailable` warning that names only the tracker, while local
+playback and the other tracker carry on. Fix the file or vault entry, then
+reconnect.
 
 ## Not implemented
 
