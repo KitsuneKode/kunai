@@ -42,6 +42,7 @@ import {
 import { createBrowseSearchAbort } from "@/app/search/browse-search-abort";
 import { launchCalendarContinue } from "@/app/search/calendar-continue-launch";
 import { isCalendarSearchResult, loadCalendarResults } from "@/app/search/calendar-results";
+import { detailsSheetContextFor } from "@/app/search/details-sheet-context";
 import { playTrailer } from "@/app/search/details-trailer";
 import { enrichSelectedTitleIdentity } from "@/app/search/enrich-selected-title";
 import { prefetchBrowseEntrySelection } from "@/app/search/prefetch-browse-entry";
@@ -404,9 +405,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               container,
             });
             pendingInitialRoute = undefined;
-            if (routedAction === "quit") {
-              return { status: "quit" };
-            }
+            if (routedAction === "quit") return { status: "quit" };
             if (typeof routedAction === "object" && routedAction.type === "history-entry") {
               primeShareBootstrapStartSeconds(routedAction.startSeconds);
               stateManager.dispatch({ type: "SELECT_TITLE", title: routedAction.title });
@@ -764,6 +763,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           },
           loadLocalSuggestions: () =>
             loadLocalSuggestionCorpus(container, stateManager.getState().mode),
+          detailsContextFor: (titleId) => detailsSheetContextFor(container, titleId),
           // Dwell prefetch (~500ms on a rested row): warms exactly what the
           // select path below pays — provider mapping, identity enrich, title
           // detail, and the episode catalog — so Enter resolves from cache.
