@@ -95,8 +95,9 @@ describe("DownloadService youtube argv contract", () => {
       expect.arrayContaining([
         "--merge-output-format",
         "mp4",
-        "--write-subs",
-        "--write-auto-subs",
+        "--no-write-subs",
+        "--no-write-auto-subs",
+        "--no-embed-subs",
         "--cookies-from-browser",
         "firefox",
         "--cookies",

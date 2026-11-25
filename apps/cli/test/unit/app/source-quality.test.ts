@@ -779,7 +779,7 @@ test("YouTube format and connection picks update the options shipped to mpv", ()
   );
   expect(formatPick.ytdlFormat).toBe("248+ba");
   expect(formatPick.ytdlRawOptions).toContain("player_client=web");
-  expect(formatPick.ytdlRawOptions).toContain("sub-langs=%3%all");
+  expect(formatPick.ytdlRawOptions).not.toContain("sub-langs=");
   const withoutSubtitles = applyPreferredStreamSelection(
     youtube,
     streamSelectionFromStream("web-248"),
