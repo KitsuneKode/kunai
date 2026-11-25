@@ -8,6 +8,7 @@ import { buildHalfBlockOutput } from "@/image/renderers/half-block";
 import { buildItermInlineImage } from "@/image/renderers/iterm-inline";
 import { pixelBudgetForCells } from "@/image/renderers/sixel";
 import { renderSixelFromImage } from "@/image/sixel";
+import { wrapTmuxPassthrough } from "@/image/tmux";
 
 import {
   clearKittyPlacementRegistry,
@@ -40,24 +41,28 @@ function allocId(): number {
   return id;
 }
 
-function canRenderKitty(): boolean {
-  const capability = runtime.detectImageCapability();
-  return capability.renderer === "kitty-native";
-}
+const tmuxImages = new Set<number>();
+// Kitty ids belong to the outer terminal, shared by all its tmux panes.
+let nextTmuxId = 1 + Math.floor(Math.random() * 0xffffff);
 
 export function deleteKittyImage(imageId: number): void {
-  if (!canRenderKitty()) return;
+  if (tmuxImages.delete(imageId)) {
+    process.stdout.write(wrapTmuxPassthrough(`\x1b_Ga=d,d=I,i=${imageId},q=2;\x1b\\`));
+    return;
+  }
+  const capability = runtime.detectImageCapability();
+  if (capability.renderer !== "kitty-native" || capability.kittyPassthrough) return;
   process.stdout.write(`\x1b_Ga=d,d=I,i=${imageId};\x1b\\`);
 }
 
 setKittyPlacementDeleteFn(deleteKittyImage);
 
 export function deleteAllTerminalImages(): void {
-  if (!canRenderKitty()) {
-    clearKittyPlacementRegistry();
-    return;
+  for (const imageId of tmuxImages) deleteKittyImage(imageId);
+  const capability = runtime.detectImageCapability();
+  if (capability.renderer === "kitty-native" && !capability.kittyPassthrough) {
+    process.stdout.write("\x1b_Ga=d,d=A;\x1b\\");
   }
-  process.stdout.write("\x1b_Ga=d,d=A;\x1b\\");
   clearKittyPlacementRegistry();
 }
 
@@ -133,6 +138,7 @@ export type PosterRenderer = "kitty-native" | "iterm-inline" | "sixel" | "half-b
 export type PosterRenderPlan = {
   readonly renderer: PosterRenderer;
   readonly bounds: PosterPixelBounds;
+  readonly kittyPassthrough?: "tmux";
 };
 
 /**
@@ -182,10 +188,14 @@ export function resolvePosterRenderPlan(options: PreparedRenderOptions): PosterR
   const capability = runtime.detectImageCapability();
   if (!capability.available || capability.renderer === "none") return null;
 
-  if (capability.renderer === "kitty-native" && supportsKittyPlaceholders(capability.terminal)) {
+  if (
+    capability.renderer === "kitty-native" &&
+    (capability.kittyPassthrough || supportsKittyPlaceholders(capability.terminal))
+  ) {
     const budget = pixelBudgetForCells(cols, rows);
     return {
       renderer: "kitty-native",
+      kittyPassthrough: capability.kittyPassthrough,
       bounds: { maxWidthPx: budget.maxWidth, maxHeightPx: budget.maxHeight },
     };
   }
@@ -230,7 +240,7 @@ export async function renderPreparedPoster(
   try {
     if (signal?.aborted) return { kind: "none" };
     if (plan.renderer === "kitty-native") {
-      return await uploadPreparedKitty(poster, rows, cols, signal);
+      return await uploadPreparedKitty(poster, options, plan.kittyPassthrough);
     }
     if (plan.renderer === "iterm-inline") {
       const escapes = buildItermInlineImage(poster.png, { rows, cols });
@@ -287,12 +297,12 @@ function renderPreparedHalfBlock(
 
 async function uploadPreparedKitty(
   poster: PreparedPoster,
-  rows: number,
-  cols: number,
-  signal?: AbortSignal,
+  { rows, cols, signal }: PreparedRenderOptions,
+  passthrough: PosterRenderPlan["kittyPassthrough"],
 ): Promise<RenderedPosterCandidate> {
   if (poster.png.byteLength === 0) return { kind: "none" };
-  const imageId = allocId();
+  const imageId = passthrough ? nextTmuxId : allocId();
+  if (passthrough) nextTmuxId = (nextTmuxId % 0xffffff) + 1;
   // The prepared PNG *is* the payload: no deflate, no RGBA transport, no
   // external conversion.
   await uploadKittyPayload(
@@ -303,8 +313,10 @@ async function uploadPreparedKitty(
       cols,
       unicodePlaceholder: true,
       preferFileTransmission: true,
+      passthrough,
     },
   );
+  if (passthrough) tmuxImages.add(imageId);
   if (signal?.aborted) {
     // Upload finished after cancel — delete the orphan so it cannot clobber a
     // winner. Direct deletion, not a registry release: it owns no slot yet.

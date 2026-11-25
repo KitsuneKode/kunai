@@ -70,6 +70,9 @@ subtitle controls, and safer persistence, downloads and native installation.
 
 ### Search and terminal interaction
 
+- Show Kitty poster previews inside tmux 3.3+ when passthrough is enabled and
+  the outer terminal supports Unicode placeholders.
+
 - Add direct title launches from the command palette, notification episode
   launches and bounded detail prefetching. Keep command matching and title
   matching distinct, and prevent palette typing from firing playback hotkeys.

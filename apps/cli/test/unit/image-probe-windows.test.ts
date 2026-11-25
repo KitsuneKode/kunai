@@ -21,7 +21,7 @@ class FakeStdin extends EventEmitter {
   }
 }
 
-function fakeStdout(): { isTTY: boolean; written: string[]; write(chunk: string): boolean } {
+function fakeStdout() {
   const written: string[] = [];
   return {
     isTTY: true,
@@ -64,14 +64,40 @@ describe("canProbeTerminal on Windows", () => {
 });
 
 describe("probeTerminalGraphics", () => {
+  test("waits for the wrapped Kitty reply after tmux answers DA1", async () => {
+    const stdin = new FakeStdin();
+    const writes: string[] = [];
+    const stdout = {
+      isTTY: true,
+      write(chunk: string) {
+        writes.push(chunk);
+        stdin.emit("data", "\x1b[?1;2c");
+        stdin.emit("data", "\x1b_Gi=31,e=T,");
+        stdin.emit("data", "U=1;OK\x1b\\");
+        return true;
+      },
+    };
+    const tmux = { major: 3, minor: 3, passthrough: "on", clientTerm: "custom" };
+    expect(
+      await probeTerminalGraphics({
+        stdin,
+        stdout,
+        env: { TERM: "tmux-256color", TMUX: "/tmp/posters,123,0" },
+        tmux,
+      }),
+    ).toEqual({ sixel: false, kittyGraphics: true, kittyPlaceholders: true, tmux });
+    expect(writes).toEqual(["\x1bPtmux;\x1b\x1b_Ga=q,i=31,e=T,U=1\x1b\x1b\\\x1b\\\x1b[c"]);
+    expect(stdin.rawModeCalls).toEqual([true, false]);
+  });
+
   test("resolves sixel support from a reply that arrives after a delay", async () => {
     const stdin = new FakeStdin();
     const stdout = fakeStdout();
 
     const pending = probeTerminalGraphics({
       timeoutMs: 1000,
-      stdin: stdin as unknown as NodeJS.ReadStream,
-      stdout: stdout as unknown as NodeJS.WriteStream,
+      stdin,
+      stdout,
       env: { OS: "Windows_NT", WT_SESSION: "abc" },
     });
 
@@ -90,8 +116,8 @@ describe("probeTerminalGraphics", () => {
 
     const result = await probeTerminalGraphics({
       timeoutMs: 30,
-      stdin: stdin as unknown as NodeJS.ReadStream,
-      stdout: stdout as unknown as NodeJS.WriteStream,
+      stdin,
+      stdout,
       env: { OS: "Windows_NT", WT_SESSION: "abc" },
     });
 
