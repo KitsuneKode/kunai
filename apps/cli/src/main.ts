@@ -430,9 +430,7 @@ async function maybeRunDownloadMode(
   container: Awaited<ReturnType<typeof createContainer>>,
   bootstrapTitle: TitleInfo | null,
 ): Promise<boolean> {
-  if (!args.download) {
-    return false;
-  }
+  if (!args.download) return false;
 
   const { resolveAutoPickIndex } = await import("@/app/bootstrap/bootstrap-intent");
   const searchResult = bootstrapTitle

@@ -1168,9 +1168,7 @@ async function handleProvidersHub(container: Container): Promise<"handled"> {
     ],
   });
 
-  if (choice === "session") {
-    return handleProviderPicker(container);
-  }
+  if (choice === "session") return handleProviderPicker(container);
   if (choice === "defaults") {
     return handleSettings(container, { initialSectionId: "section:providers" });
   }
