@@ -1,6 +1,20 @@
-import { gunzipSync, inflateRawSync } from "node:zlib";
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { open, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { pipeline } from "node:stream/promises";
+import {
+  createGunzip,
+  createZstdDecompress,
+  gunzipSync,
+  inflateRawSync,
+  zstdDecompressSync,
+} from "node:zlib";
 
-import type { ReleaseBinaryTarget } from "../platform-assets";
+import {
+  releaseArchiveFormatOf,
+  type ReleaseArchiveFormat,
+  type ReleaseBinaryTarget,
+} from "../platform-assets";
 
 const TAR_BLOCK_BYTES = 512;
 const TAR_TRAILER_BYTES = TAR_BLOCK_BYTES * 2;
@@ -59,70 +73,170 @@ function isZeroBlock(bytes: Uint8Array): boolean {
   return bytes.every((byte) => byte === 0);
 }
 
-function extractTarGz(archive: Uint8Array, target: ReleaseBinaryTarget): Uint8Array {
+/** A rejection by the archive's own rules, as opposed to a decoder failure. */
+export class ReleaseArchiveError extends Error {}
+
+const DECOMPRESSION_FAILED =
+  "Archive decompression exceeded the binary output budget or is invalid";
+
+/** Decompressed bytes a canonical one-member tar of `target` can occupy. */
+function tarOutputBudget(target: ReleaseBinaryTarget): number {
   const paddedBudget = Math.ceil(target.maxBinaryBytes / TAR_BLOCK_BYTES) * TAR_BLOCK_BYTES;
-  const outputBudget = TAR_BLOCK_BYTES + paddedBudget + TAR_TRAILER_BYTES;
-  let tar: Uint8Array;
-  try {
-    tar = new Uint8Array(gunzipSync(archive, { maxOutputLength: outputBudget }));
-  } catch (error) {
-    throw new Error(`Archive decompression exceeded the binary output budget or is invalid`, {
-      cause: error,
-    });
-  }
-  if (tar.length < TAR_BLOCK_BYTES + TAR_TRAILER_BYTES || tar.length % TAR_BLOCK_BYTES !== 0) {
-    throw new Error("Invalid tar container size");
+  return TAR_BLOCK_BYTES + paddedBudget + TAR_TRAILER_BYTES;
+}
+
+type TarReaderState = "header" | "body" | "padding" | "trailer";
+
+/**
+ * Strict reader for the release tar shape: exactly one regular file named
+ * `target.archiveEntryName`, then a zero trailer of at least two blocks and
+ * nothing else. It takes the decompressed tar in chunks of any size, so the
+ * updater can stream a 120 MB binary to disk; the buffered path feeds it once.
+ */
+class SingleMemberTarReader {
+  private readonly header = new Uint8Array(TAR_BLOCK_BYTES);
+  private headerFill = 0;
+  private state: TarReaderState = "header";
+  private remaining = 0;
+  private entrySize = 0;
+  private trailerBytes = 0;
+  private total = 0;
+  private readonly budget: number;
+
+  constructor(private readonly target: ReleaseBinaryTarget) {
+    this.budget = tarOutputBudget(target);
   }
 
-  let offset = 0;
-  let extracted: Uint8Array | undefined;
-  let sawTrailer = false;
-  while (offset + TAR_BLOCK_BYTES <= tar.length) {
-    const header = tar.subarray(offset, offset + TAR_BLOCK_BYTES);
-    if (isZeroBlock(header)) {
-      const second = tar.subarray(offset + TAR_BLOCK_BYTES, offset + TAR_TRAILER_BYTES);
-      if (second.length !== TAR_BLOCK_BYTES || !isZeroBlock(second)) {
-        throw new Error("Tar archive is missing its two-block trailer");
+  /** Consume one chunk; returns the member-body slices it contained, in order. */
+  push(chunk: Uint8Array): Uint8Array[] {
+    this.total += chunk.length;
+    if (this.total > this.budget) throw new ReleaseArchiveError(DECOMPRESSION_FAILED);
+    const body: Uint8Array[] = [];
+    let offset = 0;
+    while (offset < chunk.length) {
+      const available = chunk.length - offset;
+      if (this.state === "header") {
+        const take = Math.min(TAR_BLOCK_BYTES - this.headerFill, available);
+        this.header.set(chunk.subarray(offset, offset + take), this.headerFill);
+        this.headerFill += take;
+        offset += take;
+        if (this.headerFill === TAR_BLOCK_BYTES) this.acceptHeader();
+      } else if (this.state === "body") {
+        const take = Math.min(this.remaining, available);
+        body.push(chunk.subarray(offset, offset + take));
+        this.remaining -= take;
+        offset += take;
+        if (this.remaining === 0) this.enterPadding();
+      } else if (this.state === "padding") {
+        const take = Math.min(this.remaining, available);
+        this.remaining -= take;
+        offset += take;
+        if (this.remaining === 0) this.state = "trailer";
+      } else {
+        this.checkTrailer(chunk.subarray(offset));
+        offset = chunk.length;
       }
-      if (!isZeroBlock(tar.subarray(offset + TAR_TRAILER_BYTES))) {
-        throw new Error("Tar archive contains data after its trailer");
-      }
-      sawTrailer = true;
-      break;
     }
-    if (extracted) throw new Error("Release archive must contain exactly one regular file");
+    return body;
+  }
 
+  /** Assert the tar ended where a canonical archive ends. */
+  finish(): void {
+    if (this.state === "body") throw new ReleaseArchiveError("Tar entry is truncated");
+    if (this.state !== "trailer" || this.trailerBytes % TAR_BLOCK_BYTES !== 0) {
+      throw new ReleaseArchiveError("Invalid tar container size");
+    }
+    if (this.trailerBytes < TAR_TRAILER_BYTES) {
+      throw new ReleaseArchiveError("Tar archive is missing its two-block trailer");
+    }
+  }
+
+  private acceptHeader(): void {
+    const header = this.header;
+    if (isZeroBlock(header)) {
+      throw new ReleaseArchiveError("Release archive must contain exactly one regular file");
+    }
     const storedChecksum = parseTarOctal(header.subarray(148, 156), "header checksum");
     const checksumHeader = new Uint8Array(header);
     checksumHeader.fill(0x20, 148, 156);
     const actualChecksum = checksumHeader.reduce((sum, byte) => sum + byte, 0);
-    if (storedChecksum !== actualChecksum) throw new Error("Invalid tar header checksum");
+    if (storedChecksum !== actualChecksum) {
+      throw new ReleaseArchiveError("Invalid tar header checksum");
+    }
 
     const name = decodeNullTerminated(header.subarray(0, 100));
     if (!isZeroBlock(header.subarray(345, 500))) {
-      throw new Error("Tar path prefixes are forbidden");
+      throw new ReleaseArchiveError("Tar path prefixes are forbidden");
     }
-    assertExpectedEntryName(name, target);
+    assertExpectedEntryName(name, this.target);
     const type = header[156];
     if (type !== 0 && type !== 0x30) {
-      throw new Error("Release archive entry must be a regular file; links are forbidden");
-    }
-    const size = parseTarOctal(header.subarray(124, 136), "entry size");
-    if (size <= 0 || size > target.maxBinaryBytes) {
-      throw new Error(
-        `Extracted binary size ${size} exceeds the ${target.maxBinaryBytes} byte budget`,
+      throw new ReleaseArchiveError(
+        "Release archive entry must be a regular file; links are forbidden",
       );
     }
-    const bodyStart = offset + TAR_BLOCK_BYTES;
-    const bodyEnd = bodyStart + size;
-    if (bodyEnd > tar.length) throw new Error("Tar entry is truncated");
-    extracted = tar.slice(bodyStart, bodyEnd);
-    offset = bodyStart + Math.ceil(size / TAR_BLOCK_BYTES) * TAR_BLOCK_BYTES;
+    const size = parseTarOctal(header.subarray(124, 136), "entry size");
+    if (size <= 0 || size > this.target.maxBinaryBytes) {
+      throw new ReleaseArchiveError(
+        `Extracted binary size ${size} exceeds the ${this.target.maxBinaryBytes} byte budget`,
+      );
+    }
+    this.state = "body";
+    this.entrySize = size;
+    this.remaining = size;
   }
 
-  if (!sawTrailer) throw new Error("Tar archive is missing its two-block trailer");
-  if (!extracted) throw new Error("Release archive must contain exactly one regular file");
-  return extracted;
+  private enterPadding(): void {
+    // The body's block is zero-padded to 512; the header itself is one block.
+    const misalignment = this.entrySize % TAR_BLOCK_BYTES;
+    this.remaining = misalignment === 0 ? 0 : TAR_BLOCK_BYTES - misalignment;
+    this.state = this.remaining === 0 ? "trailer" : "padding";
+  }
+
+  private checkTrailer(bytes: Uint8Array): void {
+    for (let index = 0; index < bytes.length; index++) {
+      if (bytes[index] === 0) continue;
+      const position = this.trailerBytes + index;
+      if (position < TAR_BLOCK_BYTES) {
+        throw new ReleaseArchiveError("Release archive must contain exactly one regular file");
+      }
+      if (position < TAR_TRAILER_BYTES) {
+        throw new ReleaseArchiveError("Tar archive is missing its two-block trailer");
+      }
+      throw new ReleaseArchiveError("Tar archive contains data after its trailer");
+    }
+    this.trailerBytes += bytes.length;
+  }
+}
+
+function decompressTarSync(
+  archive: Uint8Array,
+  format: ReleaseArchiveFormat,
+  budget: number,
+): Uint8Array {
+  try {
+    return new Uint8Array(
+      format === "tar.zst"
+        ? zstdDecompressSync(archive, { maxOutputLength: budget })
+        : gunzipSync(archive, { maxOutputLength: budget }),
+    );
+  } catch (error) {
+    throw new ReleaseArchiveError(DECOMPRESSION_FAILED, { cause: error });
+  }
+}
+
+function extractTarSync(
+  archive: Uint8Array,
+  format: ReleaseArchiveFormat,
+  target: ReleaseBinaryTarget,
+): Uint8Array {
+  const reader = new SingleMemberTarReader(target);
+  const pieces = reader.push(decompressTarSync(archive, format, tarOutputBudget(target)));
+  reader.finish();
+  if (pieces.length !== 1 || !pieces[0]) {
+    throw new ReleaseArchiveError("Release archive must contain exactly one regular file");
+  }
+  return pieces[0].slice();
 }
 
 function findZipEnd(archive: Uint8Array): number {
@@ -236,20 +350,80 @@ function extractZip(archive: Uint8Array, target: ReleaseBinaryTarget): Uint8Arra
   return binary;
 }
 
+function assertArchiveSize(size: number, target: ReleaseBinaryTarget): void {
+  if (size <= 0 || size > target.maxArchiveBytes) {
+    throw new ReleaseArchiveError(
+      `Release archive size ${size} exceeds the ${target.maxArchiveBytes} byte budget`,
+    );
+  }
+}
+
 /**
  * Parse a release archive in-process and return its only verified regular-file
  * member. No platform extractor is invoked, so archive names never become argv.
+ * `format` defaults to the target's compatibility archive.
  */
 export function extractReleaseArchive(
   archive: Uint8Array,
   target: ReleaseBinaryTarget,
+  format: ReleaseArchiveFormat = target.archiveFormat,
 ): Uint8Array {
-  if (archive.length <= 0 || archive.length > target.maxArchiveBytes) {
-    throw new Error(
-      `Release archive size ${archive.length} exceeds the ${target.maxArchiveBytes} byte budget`,
-    );
+  assertArchiveSize(archive.length, target);
+  return format === "zip" ? extractZip(archive, target) : extractTarSync(archive, format, target);
+}
+
+export type ExtractedReleaseBinary = {
+  readonly sha256: string;
+  readonly sizeBytes: number;
+};
+
+/**
+ * Stream a checksum-verified archive at `archivePath` into `outputPath`,
+ * hashing as it goes. A tar archive never sits in memory whole — the
+ * decompressed tar for a 120 MB binary used to be buffered, then copied. Zip
+ * (Windows) needs its central directory first, so it takes the buffered path.
+ */
+export async function extractReleaseArchiveFile(input: {
+  readonly archivePath: string;
+  readonly archiveName: string;
+  readonly target: ReleaseBinaryTarget;
+  readonly outputPath: string;
+}): Promise<ExtractedReleaseBinary> {
+  const { archivePath, target, outputPath } = input;
+  const format = releaseArchiveFormatOf(input.archiveName);
+  assertArchiveSize((await stat(archivePath)).size, target);
+
+  if (format === "zip") {
+    const binary = extractZip(new Uint8Array(await readFile(archivePath)), target);
+    await writeFile(outputPath, binary);
+    return { sha256: createHash("sha256").update(binary).digest("hex"), sizeBytes: binary.length };
   }
-  return target.archiveFormat === "zip"
-    ? extractZip(archive, target)
-    : extractTarGz(archive, target);
+
+  const reader = new SingleMemberTarReader(target);
+  const hash = createHash("sha256");
+  let sizeBytes = 0;
+  const output = await open(outputPath, "w");
+  try {
+    await pipeline(
+      createReadStream(archivePath),
+      format === "tar.zst" ? createZstdDecompress() : createGunzip(),
+      async (source: AsyncIterable<Uint8Array>) => {
+        for await (const chunk of source) {
+          for (const piece of reader.push(chunk)) {
+            hash.update(piece);
+            sizeBytes += piece.length;
+            await output.write(piece);
+          }
+        }
+      },
+    );
+    reader.finish();
+  } catch (error) {
+    await output.close().catch(() => {});
+    await rm(outputPath, { force: true }).catch(() => {});
+    if (error instanceof ReleaseArchiveError) throw error;
+    throw new ReleaseArchiveError(DECOMPRESSION_FAILED, { cause: error });
+  }
+  await output.close();
+  return { sha256: hash.digest("hex"), sizeBytes };
 }

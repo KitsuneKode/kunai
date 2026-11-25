@@ -48,7 +48,7 @@ ROOT="$PWD" && (cd apps/cli && bun pm pack --ignore-scripts --quiet --filename "
 - [ ] **YouTube cookie safety documented** — `cookiesFromBrowser` / absolute `cookiesFile`; never paste contents; review redacted bundles; no DRM bypass claim
 - [ ] **Download path docs are platform-accurate** — default download directory matches storage path resolution on Linux/macOS/Windows
 - [ ] The protected environment holds the Ed25519 private key matching the reviewed public pin. Signing completes and verifies before npm publication.
-- [ ] Draft and public downloads contain all 22 native files plus seven distribution files: two signatures, both pinned installers, the formula, the Scoop manifest, and the Arch PKGBUILD. The verifier checks downloaded signatures and reproduces each generated file.
+- [ ] Draft and public downloads contain all 30 native files plus seven distribution files: two signatures, both pinned installers, the formula, the Scoop manifest, and the Arch PKGBUILD. The verifier checks downloaded signatures and reproduces each generated file.
 - [ ] Both marker assets are on the release, `install.marker` and `update.marker`, with the fixed bytes `scripts/packaging/release-markers.ts` renders. Installers and the native updater fetch them so GitHub's download count separates installs from updates; Kunai receives nothing. A missing marker fails `verify-github-release-assets.ts`.
 - [ ] The release metadata PR updates `Formula/kunai.rb` and `bucket/kunai.json` from the verified public assets.
 - [ ] **musl archive evidence** — x64 and arm64 Alpine cells install the exact
@@ -60,7 +60,7 @@ ROOT="$PWD" && (cd apps/cli && bun pm pack --ignore-scripts --quiet --filename "
 
 - [ ] Confirmation gate green (`bun run release:confirmation:check`) with fresh provider signoff evidence
 - [ ] Approve GitHub environment `release-production` only after confirmation evidence looks correct
-- [ ] Publish job downloads the immutable preserved candidate, reverifies all 22
+- [ ] Publish job downloads the immutable preserved candidate, reverifies all 30
       native attestations, publishes/reconciles all ten platform packages,
       then publishes the exact-version launcher last through `bun run release`
 - [ ] Public-registry smoke proves the launcher resolves its physical host

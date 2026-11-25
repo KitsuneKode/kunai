@@ -12,7 +12,7 @@ import { isAndroidRuntime } from "@/domain/platform-runtime";
 export type PlatformOs = "linux" | "android" | "darwin" | "windows";
 export type PlatformArch = "x64" | "arm64";
 export type PlatformLibc = "gnu" | "musl" | "bionic";
-export type ReleaseArchiveFormat = "tar.gz" | "zip";
+export type ReleaseArchiveFormat = "tar.gz" | "tar.zst" | "zip";
 
 const MAX_RELEASE_BINARY_BYTES = 128 * 1024 * 1024;
 const MAX_RELEASE_ARCHIVE_BYTES = 64 * 1024 * 1024;
@@ -24,8 +24,15 @@ export type ReleaseBinaryTarget = {
   readonly os: PlatformOs;
   readonly arch: PlatformArch;
   readonly libc?: PlatformLibc;
+  /** The compatibility archive every installer can read: `.tar.gz`, or `.zip` on Windows. */
   readonly archiveName: string;
   readonly archiveFormat: ReleaseArchiveFormat;
+  /**
+   * The smaller zstd archive (~20% under gzip), published beside `archiveName`
+   * for tar targets since 0.3.x. Installers take it only when the signed
+   * `SHA256SUMS.archives` lists it, so older releases fall back to gzip.
+   */
+  readonly zstdArchiveName: string | undefined;
   readonly archiveEntryName: string;
   readonly archiveMode: number;
   readonly maxBinaryBytes: number;
@@ -36,6 +43,7 @@ type ReleaseBinaryTargetInput = Omit<
   ReleaseBinaryTarget,
   | "archiveName"
   | "archiveFormat"
+  | "zstdArchiveName"
   | "archiveEntryName"
   | "archiveMode"
   | "maxBinaryBytes"
@@ -49,6 +57,7 @@ function releaseBinaryTarget(input: ReleaseBinaryTargetInput): ReleaseBinaryTarg
     ...input,
     archiveName: `${archiveStem}.${archiveFormat}`,
     archiveFormat,
+    zstdArchiveName: archiveFormat === "zip" ? undefined : `${archiveStem}.tar.zst`,
     archiveEntryName: input.out,
     archiveMode: 0o755,
     maxBinaryBytes: MAX_RELEASE_BINARY_BYTES,
@@ -133,6 +142,21 @@ export const RELEASE_BINARY_TARGETS: readonly ReleaseBinaryTarget[] = [
     arch: "arm64",
   }),
 ];
+
+/** Every published archive name for a target: the compatibility one first. */
+export function releaseArchiveNames(target: ReleaseBinaryTarget): readonly string[] {
+  return target.zstdArchiveName
+    ? [target.archiveName, target.zstdArchiveName]
+    : [target.archiveName];
+}
+
+/** The container format a published archive name carries. */
+export function releaseArchiveFormatOf(archiveName: string): ReleaseArchiveFormat {
+  if (archiveName.endsWith(".tar.zst")) return "tar.zst";
+  if (archiveName.endsWith(".tar.gz")) return "tar.gz";
+  if (archiveName.endsWith(".zip")) return "zip";
+  throw new Error(`Unknown release archive format: ${archiveName}`);
+}
 
 export type DetectedPlatform = {
   readonly os?: PlatformOs;

@@ -738,13 +738,14 @@ checksum_for_asset() {
 	' "$manifest"
 }
 
-extract_release_tar_gz() {
-	local archive="$1" tar_path="$2" expected="$3" output="$4"
-	local tar_budget read_blocks gzip_status dd_status tar_size name prefix type size_field size
+# extract_release_tar <archive> <tar-scratch> <member> <output> <gzip|zstd>
+extract_release_tar() {
+	local archive="$1" tar_path="$2" expected="$3" output="$4" decompressor="$5"
+	local tar_budget read_blocks decompress_status dd_status tar_size name prefix type size_field size
 	local checksum_field stored_checksum header_sum checksum_sum actual_checksum expected_tar_size
 	local -a pipeline_status
 
-	require gzip
+	require "$decompressor"
 	require "$ARCHIVE_TAR_COMMAND"
 	require od
 
@@ -755,9 +756,9 @@ extract_release_tar_gz() {
 	# Tar streams are block-aligned, so an oversized container crosses the bound.
 	read_blocks=$(((tar_budget + 512) / 512))
 	set +o pipefail
-	gzip -dc "$archive" 2>/dev/null | dd of="$tar_path" bs=512 count="$read_blocks" iflag=fullblock 2>/dev/null
+	"$decompressor" -dc "$archive" 2>/dev/null | dd of="$tar_path" bs=512 count="$read_blocks" iflag=fullblock 2>/dev/null
 	pipeline_status=("${PIPESTATUS[@]}")
-	gzip_status="${pipeline_status[0]}"
+	decompress_status="${pipeline_status[0]}"
 	dd_status="${pipeline_status[1]}"
 	set -o pipefail
 	tar_size="$(wc -c <"$tar_path" | tr -d ' ')"
@@ -765,8 +766,8 @@ extract_release_tar_gz() {
 		err "Archive decompressed size exceeds the $tar_budget byte budget."
 		return 1
 	fi
-	if [[ "$gzip_status" -ne 0 || "$dd_status" -ne 0 ]]; then
-		err "Archive decompression failed (gzip status $gzip_status, bounded reader status $dd_status)."
+	if [[ "$decompress_status" -ne 0 || "$dd_status" -ne 0 ]]; then
+		err "Archive decompression failed ($decompressor status $decompress_status, bounded reader status $dd_status)."
 		return 1
 	fi
 	if [[ "$tar_size" -lt 1536 || $((tar_size % 512)) -ne 0 ]]; then
@@ -1732,6 +1733,7 @@ install_binary() {
 	url="$base/$asset"
 	sums="$base/SHA256SUMS"
 	archive="${asset}.tar.gz"
+	archive_decompressor=gzip
 	archive_url="$base/$archive"
 	archive_sums="$base/SHA256SUMS.archives"
 
@@ -1831,6 +1833,16 @@ install_binary() {
 
 	if [[ "$archive_available" == 1 ]]; then
 		verify_manifest_signature "$archive_sums" "$staged_archive_sums" SHA256SUMS.archives "$resolved_version" || exit 1
+		# Releases from 0.3.x also sign a ~20% smaller .tar.zst. Take it when this
+		# host can decompress it; an older release, or a host without zstd,
+		# keeps the .tar.gz every installer understands.
+		if command -v zstd >/dev/null 2>&1 &&
+			checksum_for_asset "$staged_archive_sums" "$asset.tar.zst" >/dev/null; then
+			archive="$asset.tar.zst"
+			archive_decompressor=zstd
+			archive_url="$base/$archive"
+			staged_archive="$staging/$archive"
+		fi
 		if ! archive_want="$(checksum_for_asset "$staged_archive_sums" "$archive")"; then
 			err "SHA256SUMS.archives must contain exactly one valid entry for $archive."
 			exit 1
@@ -1869,7 +1881,7 @@ install_binary() {
 	fi
 
 	if [[ "$archive_available" == 1 ]]; then
-		if ! extract_release_tar_gz "$staged_archive" "$staged_tar" "$asset" "$staged_bin"; then
+		if ! extract_release_tar "$staged_archive" "$staged_tar" "$asset" "$staged_bin" "$archive_decompressor"; then
 			exit 1
 		fi
 		archive_size="$(wc -c <"$staged_archive" | tr -d ' ')"

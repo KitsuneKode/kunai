@@ -38,7 +38,10 @@ import {
   type ReleaseBinaryTarget,
 } from "@/services/update/platform-assets";
 
-import { createReleaseArchive } from "../../../../../scripts/build-release-archives";
+import {
+  createReleaseArchive,
+  createZstdReleaseArchive,
+} from "../../../../../scripts/build-release-archives";
 import {
   releaseSigningKeys,
   SIGNED_STATEMENT_SCENARIOS,
@@ -359,6 +362,87 @@ describe("installLatest", () => {
       archiveSha256: sha256Hex(archive),
     });
   });
+
+  test.skipIf(!hostTarget().zstdArchiveName)(
+    "takes the smaller .tar.zst when the signed archive manifest lists it",
+    async () => {
+      const { layout } = await makeLayout();
+      const releaseTarget = hostTarget();
+      const zstdName = releaseTarget.zstdArchiveName ?? "";
+      const bytes = new TextEncoder().encode("ZSTD-ARCHIVED-BINARY");
+      const gzip = createReleaseArchive(releaseTarget, bytes);
+      const zstd = createZstdReleaseArchive(releaseTarget, bytes);
+      const requested: string[] = [];
+
+      const result = await installLatest({
+        intent: "explicit",
+        version: "3.3.0",
+        force: true,
+        layout,
+        dlBase: "https://example.test/releases",
+        fetchImpl: async (input) => {
+          const name = String(input).split("/").at(-1) ?? "";
+          requested.push(name);
+          if (name === "SHA256SUMS.archives") {
+            return new Response(
+              sumsFor(releaseTarget.archiveName, sha256Hex(gzip)) +
+                sumsFor(zstdName, sha256Hex(zstd)),
+            );
+          }
+          if (name === "SHA256SUMS")
+            return new Response(sumsFor(releaseTarget.out, sha256Hex(bytes)));
+          if (name === zstdName) return new Response(zstd);
+          if (name === releaseTarget.archiveName) return new Response(gzip);
+          return new Response(null, { status: 404 });
+        },
+      });
+
+      expect(result).toMatchObject({ status: "installed", version: "3.3.0" });
+      expect(requested).toContain(zstdName);
+      expect(requested).not.toContain(releaseTarget.archiveName);
+      expect(requested).not.toContain(releaseTarget.out);
+      expect(await Bun.file(versionBinaryPath(layout, "3.3.0")).text()).toBe(
+        "ZSTD-ARCHIVED-BINARY",
+      );
+      expect(await readInstallManifest(layout.configDir)).toMatchObject({
+        archiveName: zstdName,
+        archiveSha256: sha256Hex(zstd),
+        artifactSha256: sha256Hex(bytes),
+      });
+    },
+  );
+
+  test.skipIf(!hostTarget().zstdArchiveName)(
+    "rejects a .tar.zst whose bytes do not match the signed archive manifest",
+    async () => {
+      const { layout } = await makeLayout();
+      const releaseTarget = hostTarget();
+      const zstdName = releaseTarget.zstdArchiveName ?? "";
+      const bytes = new TextEncoder().encode("ZSTD-ARCHIVED-BINARY");
+      const zstd = createZstdReleaseArchive(releaseTarget, bytes);
+      const tampered = createZstdReleaseArchive(releaseTarget, new TextEncoder().encode("EVIL"));
+
+      const result = await installLatest({
+        intent: "explicit",
+        version: "3.3.1",
+        force: true,
+        layout,
+        dlBase: "https://example.test/releases",
+        fetchImpl: async (input) => {
+          const name = String(input).split("/").at(-1) ?? "";
+          if (name === "SHA256SUMS.archives")
+            return new Response(sumsFor(zstdName, sha256Hex(zstd)));
+          if (name === "SHA256SUMS")
+            return new Response(sumsFor(releaseTarget.out, sha256Hex(bytes)));
+          if (name === zstdName) return new Response(tampered);
+          return new Response(null, { status: 404 });
+        },
+      });
+
+      expect(result).toMatchObject({ status: "failed" });
+      expect(existsSync(versionBinaryPath(layout, "3.3.1"))).toBe(false);
+    },
+  );
 
   test("installs the verified archive member and records transport plus binary provenance", async () => {
     const { layout } = await makeLayout();

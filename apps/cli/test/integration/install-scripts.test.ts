@@ -23,7 +23,10 @@ import { verifyStoredVersion } from "@/services/update/native-installer/version-
 import { RELEASE_BINARY_TARGETS } from "@/services/update/platform-assets";
 import { getKunaiPaths } from "@kunai/storage";
 
-import { createReleaseArchive } from "../../scripts/build-release-archives";
+import {
+  createReleaseArchive,
+  createZstdReleaseArchive,
+} from "../../scripts/build-release-archives";
 import { describePosixOnly as describe } from "../helpers/platform-gates";
 import {
   createInstallerSandbox,
@@ -520,6 +523,58 @@ describe("install.sh root and stdin-execution guards", () => {
 });
 
 describe("install.sh release asset failures", () => {
+  // The fallback half — no `zstd` on the host — runs in the glibc docker
+  // image; the manifest-without-.tar.zst half is every other test here.
+  test.skipIf(!Bun.which("zstd"))(
+    "takes the signed .tar.zst when the host has zstd and records it as the archive",
+    async () => {
+      const target = hostInstallShTarget();
+      const zstdName = target.zstdArchiveName;
+      if (!zstdName) throw new Error("install.sh targets are tar targets");
+      const body = "#!/bin/sh\necho zstd-kunai\n";
+      const bytes = new TextEncoder().encode(body);
+      const gzip = createReleaseArchive(target, bytes);
+      const zstd = createZstdReleaseArchive(target, bytes);
+      const sha = (data: Uint8Array | string) => createHash("sha256").update(data).digest("hex");
+      const sandbox = createInstallerSandbox("install-sh-archive-zstd");
+      try {
+        await withReleaseFixture(
+          {
+            [`/download/v9.8.6/${target.archiveName}`]: { body: gzip },
+            [`/download/v9.8.6/${zstdName}`]: { body: zstd },
+            "/download/v9.8.6/SHA256SUMS.archives": {
+              body: `${sha(gzip)}  ${target.archiveName}\n${sha(zstd)}  ${zstdName}\n`,
+            },
+            "/download/v9.8.6/SHA256SUMS": { body: `${sha(body)}  ${target.out}\n` },
+          },
+          async (baseUrl, evidence) => {
+            const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.6"], {
+              ...sandbox.env,
+              KUNAI_DL_BASE: baseUrl,
+            });
+
+            expect(result.status, result.stderr).toBe(0);
+            expect(evidence.requests).toEqual([
+              "/download/v9.8.6/SHA256SUMS.archives",
+              `/download/v9.8.6/${zstdName}`,
+              "/download/v9.8.6/SHA256SUMS",
+            ]);
+            expect(readFileSync(join(sandbox.dataDir, "versions", "9.8.6", "kunai"), "utf8")).toBe(
+              body,
+            );
+            expect(readInstallerManifest(sandbox.configDir)).toMatchObject({
+              archiveName: zstdName,
+              archiveSha256: sha(zstd),
+              archiveSourceUrl: `${baseUrl}/download/v9.8.6/${zstdName}`,
+            });
+          },
+        );
+      } finally {
+        sandbox.cleanup();
+      }
+    },
+  );
+
   test("installs the verified tar.gz member and records archive provenance", async () => {
     const target = hostInstallShTarget();
     const body = "#!/bin/sh\necho archived-kunai\n";
