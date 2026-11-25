@@ -66,6 +66,40 @@ describe("Kitty through tmux", () => {
   });
 });
 
+describe("native Sixel in tmux", () => {
+  const env = { TMUX: "/tmp/posters,123,0", TERM: "tmux-256color", KUNAI_IMAGE_TMUX: "0" };
+  const tmux = { major: 3, minor: 4, passthrough: "off", clientTerm: "foot" };
+  const probe = { sixel: true, kittyGraphics: false, tmux };
+
+  test("routes tmux's DA1 sixel answer to the existing overlay", () => {
+    expect(selectImageCapability(env, true, probe).renderer).toBe("sixel");
+  });
+
+  test("stays on half-block without tmux 3.4 and its own sixel attribute", () => {
+    expect(selectImageCapability(env, true, { ...probe, sixel: false }).renderer).toBe(
+      "half-block",
+    );
+    expect(
+      selectImageCapability(env, true, { ...probe, tmux: { ...tmux, minor: 3 } }).renderer,
+    ).toBe("half-block");
+    expect(selectImageCapability({ ...env, STY: "screen" }, true, probe).renderer).toBe(
+      "half-block",
+    );
+    expect(selectImageCapability({ TERM: "tmux-256color" }, true, probe).renderer).toBe(
+      "half-block",
+    );
+  });
+
+  test("honors a text or Kitty override ahead of automatic sixel", () => {
+    expect(
+      selectImageCapability({ ...env, KUNAI_IMAGE_PROTOCOL: "half-block" }, true, probe).renderer,
+    ).toBe("half-block");
+    expect(
+      selectImageCapability({ ...env, KUNAI_IMAGE_PROTOCOL: "kitty" }, true, probe).renderer,
+    ).toBe("half-block");
+  });
+});
+
 function withChafa(available: boolean): void {
   capabilityTesting.runtime.which = (command: string) =>
     command === "chafa" && available ? "/usr/bin/chafa" : null;

@@ -15,13 +15,16 @@ import {
   resolvePosterRenderPlan,
   type PosterRenderPlan,
 } from "@/app-shell/poster-renderer";
+import { __testing as overlayTesting, SixelOverlayManager } from "@/app-shell/sixel-overlay";
 import type { ImageCapability } from "@/image";
+import { selectImageCapability } from "@/image/capability";
 import { preparePoster, type PreparedPoster } from "@/image/native-image";
 import { __testing as probeTesting } from "@/image/probe";
 
 import { makeRgbJpeg, makeRgbPng } from "../../support/image-fixtures";
 
 const originalDetect = rendererTesting.runtime.detectImageCapability;
+const originalOverlayRuntime = { ...overlayTesting.runtime };
 let outputSpy: ReturnType<typeof spyOn<typeof process.stdout, "write">> | undefined;
 let originalTransportEnv: string | undefined;
 
@@ -115,6 +118,7 @@ beforeEach(() => {
 
 afterEach(() => {
   rendererTesting.runtime.detectImageCapability = originalDetect;
+  Object.assign(overlayTesting.runtime, originalOverlayRuntime);
   outputSpy?.mockRestore();
   outputSpy = undefined;
   if (originalTransportEnv === undefined) {
@@ -357,6 +361,41 @@ describe("renderPreparedPoster", () => {
       expect(candidate.sixel.startsWith("P")).toBe(true);
       expect(candidate.overlayId).toBe("browse-preview");
     }
+  });
+
+  test("writes native tmux sixel at the measured slot and stops after removal", async () => {
+    rendererTesting.runtime.detectImageCapability = () =>
+      selectImageCapability({ TMUX: "/tmp/posters,123,0", TERM: "tmux-256color" }, true, {
+        sixel: true,
+        kittyGraphics: false,
+        tmux: { major: 3, minor: 4, passthrough: "off", clientTerm: "foot" },
+      });
+    const size = { rows: 2, cols: 3 };
+    const plan = resolvePosterRenderPlan(size);
+    if (!plan) throw new Error("expected a render plan");
+    const candidate = await renderPreparedPoster(await prepared(1, 1), plan, size);
+    if (candidate.kind !== "sixel") throw new Error("expected an overlay");
+
+    const writes: string[] = [];
+    const queued: (() => void)[] = [];
+    overlayTesting.runtime.isWindows = () => false;
+    overlayTesting.runtime.write = (bytes) => {
+      writes.push(bytes);
+    };
+    overlayTesting.runtime.schedule = (flush) => {
+      queued.push(flush);
+    };
+    const manager = new SixelOverlayManager();
+    const { overlayId, sixel } = candidate;
+    manager.register(overlayId, { rect: { x: 1, y: 2, width: 3, height: 2 }, sixel });
+    queued.shift()?.();
+    expect(writes).toEqual(['\x1b7\x1b[3;2H\x1bP0;1;0q"1;1;1;1#1;2;0;9;18#1@-\x1b\\\x1b8']);
+
+    manager.unregister(overlayId);
+    queued.shift()?.();
+    manager.afterInkRender();
+    expect(queued).toHaveLength(0);
+    expect(writes).toHaveLength(1);
   });
 
   test("bounds the interactive sixel palette to keep ConPTY payloads responsive", async () => {

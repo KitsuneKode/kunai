@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25"
+lastReviewed: "2026-11-25T09:44:14Z"
 ---
 
 # Poster and terminal image output
@@ -28,6 +28,7 @@ Use `@/image` or `apps/cli/src/image/index.ts` (the old `apps/cli/src/image.ts` 
 - **Overrides**: `KUNAI_IMAGE_PROTOCOL=auto|none|kitty|iterm|sixel|symbols|half-block` (invalid values fall back to auto with optional debug log). Overrides are resolved before every heuristic below and always win.
 - **Startup probe**: one Kitty-graphics query + DA1 is sent before Ink mounts (`image/probe.ts`). What the terminal _answers_ beats what its name implies — it is the only way to learn that a Windows Terminal is ≥1.22 or that an unrecognised terminal does sixel.
 - **Multiplexers**: tmux 3.3+ can forward Kitty graphics when the pane's effective `allow-passthrough` option is `on` or `all`, and the outer terminal is Kitty or Ghostty or confirms Unicode placeholders. Add `set -g allow-passthrough on` to your tmux configuration. Kunai checks the attached client's terminal name because pane environment variables can outlive a reattach. It uses half-block for screen, Zellij, and tmux sessions without sufficient capability evidence.
+- **Native Sixel in tmux**: when Kitty passthrough is unavailable, tmux 3.4+ selects the measured Sixel overlay only if the running server advertises sixel in its own DA1 reply. The query and the pixels go directly to tmux. It handles the attached terminals and requires a Sixel-capable client to draw pixels. `KUNAI_IMAGE_TMUX=0` controls Kitty passthrough only.
 - **Auto path**: Kitty/Ghostty → `kitty-native`; probe-confirmed kitty graphics → `kitty-native`; iTerm2 or VSCode ≥1.80 → `iterm-inline`; probe-confirmed sixel or WezTerm → `sixel`; otherwise **half-block**. The app shell renders both `iterm-inline` and sixel as measured post-frame overlays, never as Ink text.
 - **`iterm-inline` outranks sixel deliberately.** It transmits the prepared PNG verbatim, while this path quantises sixel to 64 colours (`APP_SHELL_SIXEL_MAX_COLORS`). iTerm2 answers the DA1 sixel query too, so taking sixel there would be a needless downgrade.
 - **iTerm2 detection accepts `LC_TERMINAL`,** which iTerm2 forwards through ssh where `TERM_PROGRAM` is lost. It is checked after the kitty-compatible names so an inherited value cannot outrank the terminal actually in front of the user.

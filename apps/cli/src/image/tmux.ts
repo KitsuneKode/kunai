@@ -9,6 +9,10 @@ export function isTmuxPane(env: NodeJS.ProcessEnv): boolean {
   return Boolean(env.TMUX && !env.STY && !env.ZELLIJ && !env.ZELLIJ_SESSION_NAME);
 }
 
+export function tmuxSupportsVersion(tmux: TmuxGraphicsContext, minor: number): boolean {
+  return tmux.major > 3 || (tmux.major === 3 && tmux.minor >= minor);
+}
+
 export function canUseTmuxPassthrough(
   env: NodeJS.ProcessEnv,
   tmux: TmuxGraphicsContext | undefined,
@@ -17,7 +21,7 @@ export function canUseTmuxPassthrough(
     tmux &&
     isTmuxPane(env) &&
     env.KUNAI_IMAGE_TMUX !== "0" &&
-    (tmux.major > 3 || (tmux.major === 3 && tmux.minor >= 3)) &&
+    tmuxSupportsVersion(tmux, 3) &&
     (tmux.passthrough === "on" || tmux.passthrough === "all") &&
     tmux.clientTerm &&
     !/^(?:screen|tmux)(?:-|$)/i.test(tmux.clientTerm),
