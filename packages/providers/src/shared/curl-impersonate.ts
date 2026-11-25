@@ -17,6 +17,8 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { delimiter as PATH_DELIMITER, posix as posixPath, win32 as win32Path } from "node:path";
 
+import { getProviderDohResolver, proxyAppliesTo } from "@kunai/core";
+
 export type CurlCandidate = {
   readonly path: string;
   /** Prefix args required before request-specific flags/URL. */
@@ -203,17 +205,35 @@ export function curlArgvHead(curl: CurlCandidate): readonly string[] {
 }
 
 /**
- * DNS-over-HTTPS through Cloudflare's IP-literal endpoint (no bootstrap
- * resolution needed). Provider frontends and APIs are exactly the domains
- * ISP-grade DNS poisoning sinkholes in the regions that need them most —
- * verified live: `scrapper.rivestream.app` resolves to a blackhole on a
- * poisoned resolver and answers 200 through this flag on the same network.
- * SNI is plaintext either way, so this is a strict privacy and reachability
- * improvement for streaming endpoints. Every curl since 7.62 (2018) supports
- * it, and the impersonate builds always do.
+ * Pin curl to the shared DoH answer for `url`'s host with `--resolve`.
+ *
+ * `--doh-url` would be simpler, but curl does not fall back to system DNS when
+ * the DoH endpoint is blocked, so every curl fetch would fail on such a
+ * network. Going through the process-wide resolver instead shares its cache
+ * and breaker with the fetch port: no answer, no flag, and curl resolves the
+ * way it always has. TLS still verifies against the hostname in the URL.
+ * Redirect targets (`-L`) resolve through the system, as before.
  */
-export function curlDohArgs(): readonly string[] {
-  return ["--doh-url", "https://1.1.1.1/dns-query"];
+export async function curlResolveArgs(
+  url: string,
+  signal?: AbortSignal,
+): Promise<readonly string[]> {
+  const resolver = getProviderDohResolver();
+  if (!resolver) return [];
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return [];
+  }
+  if (proxyAppliesTo(parsed, process.env)) return [];
+  const answers = await resolver.resolve(parsed.hostname, signal).catch(() => null);
+  if (!answers || answers.length === 0) return [];
+  const port = parsed.port || (parsed.protocol === "http:" ? "80" : "443");
+  const addresses = answers
+    .map((answer) => (answer.family === 6 ? `[${answer.address}]` : answer.address))
+    .join(",");
+  return ["--resolve", `${parsed.hostname}:${port}:${addresses}`];
 }
 
 /**
@@ -238,6 +258,15 @@ export function curlCipherArgs(
 ): readonly string[] {
   if (impersonates || platform !== "darwin") return [];
   return ["--ciphers", CURL_CIPHERS, "--tls13-ciphers", CURL_TLS13_CIPHERS];
+}
+
+/** Every per-request transport flag a curl fetch needs: TLS ciphers, then the DoH pin. */
+export async function curlTransportArgs(
+  curl: CurlCandidate,
+  url: string,
+  signal?: AbortSignal,
+): Promise<readonly string[]> {
+  return [...curlCipherArgs(curl.impersonates), ...(await curlResolveArgs(url, signal))];
 }
 
 /**

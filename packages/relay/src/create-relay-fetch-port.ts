@@ -1,22 +1,21 @@
 import { RELAYED_RESPONSE_HEADER, relayErrorCodeFromResponse } from "@kunai/types";
 
-import { createDohTransport } from "./doh-transport";
+import { createDohFetch } from "./doh-transport";
 import { resolveEffectiveProviderRelayConfig } from "./resolve-relay-config";
 import type { RelayRpcRequest } from "./types";
-import type { RelayFetchPort, RelayFetchPortOptions } from "./types";
+import type { RelayFetch, RelayFetchPort, RelayFetchPortOptions } from "./types";
 
 type RelayHeadersInit = ConstructorParameters<typeof Headers>[0];
 
 export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetchPort {
-  // The direct path resolves through DNS-over-HTTPS unless disabled: provider
-  // frontends are exactly what ISP DNS poisoning sinkholes, and a fallback-on-
-  // failure design cannot help — poisoned connections hang into the caller's
-  // own timeout rather than throwing. KUNAI_DOH_DISABLE=1 is the reverse state.
-  const defaultDirect =
-    process.env.KUNAI_DOH_DISABLE === "1"
-      ? fetch
-      : adaptTransportToFetch(createDohTransport(fetch));
-  const fetchImpl = options.fetch ?? defaultDirect;
+  const systemFetch: RelayFetch = options.fetch ?? ((input, init) => fetch(input, init));
+  // Metadata resolves through DoH when the caller supplies a resolver (the
+  // user's `providerDns` setting). Probes never do: the player resolves media
+  // hosts with system DNS, so a probe that used DoH could pass a stream the
+  // player then cannot reach.
+  const metadataFetch: RelayFetch = options.dohResolver
+    ? createDohFetch({ resolver: options.dohResolver, baseFetch: systemFetch })
+    : systemFetch;
   const relay = resolveEffectiveProviderRelayConfig(options.relayConfig, options.env);
   const baseUrl = relay.baseUrl;
   const fallbackToDirect = relay.fallbackToDirect ?? true;
@@ -36,10 +35,9 @@ export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetch
     return options.registry.isHostAllowed(entry.providerId, upstreamUrl, "metadata");
   };
 
-  return {
-    runtime: "direct-http",
-    resolvesLocally: (url) => !wouldRelay(url),
-    async fetch(input, init) {
+  const makeFetch =
+    (fetchImpl: RelayFetch): RelayFetch =>
+    async (input, init) => {
       if (!baseUrl) return fetchImpl(input, init);
 
       const requestInfo = await toRelayRequest(input, init);
@@ -84,7 +82,13 @@ export function createRelayFetchPort(options: RelayFetchPortOptions): RelayFetch
         if (!fallbackToDirect) throw error;
         return fetchImpl(input, init);
       }
-    },
+    };
+
+  return {
+    runtime: "direct-http",
+    resolvesLocally: (url) => !wouldRelay(url),
+    fetch: makeFetch(metadataFetch),
+    probeFetch: makeFetch(systemFetch),
   };
 }
 
@@ -189,31 +193,4 @@ async function bodyToString(
   if (init?.body) return new Response(init.body).text();
   if (input instanceof Request) return input.clone().text();
   return undefined;
-}
-
-/**
- * The relay fetch port speaks `{input, init}` with `Request` objects included;
- * the transport is URL-shaped. Rebuild the request pieces the transport needs.
- */
-function adaptTransportToFetch(
-  transport: (input: string | URL, init?: RequestInit) => Promise<Response>,
-) {
-  return async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
-    const url =
-      input instanceof Request ? input.url : input instanceof URL ? input : new URL(String(input));
-    const headers = new Headers(input instanceof Request ? input.headers : undefined);
-    new Headers(init?.headers).forEach((value, key) => headers.set(key, value));
-    const body =
-      init?.body !== undefined
-        ? init.body
-        : input instanceof Request && input.method !== "GET" && input.method !== "HEAD"
-          ? await input.clone().text()
-          : undefined;
-    return transport(url as URL, {
-      method: init?.method ?? (input instanceof Request ? input.method : "GET"),
-      headers,
-      body: body as BodyInit,
-      signal: init?.signal ?? (input instanceof Request ? input.signal : undefined),
-    });
-  };
 }

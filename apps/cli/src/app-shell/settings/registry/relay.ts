@@ -12,6 +12,7 @@ import type { SettingRowDef, SettingsRegistryContext } from "../types";
 
 export function relaySettingsRows(ctx: SettingsRegistryContext): SettingRowDef[] {
   return [
+    ...providerDnsSettingsRows(),
     {
       kind: "subheading",
       id: "subheading:relay",
@@ -113,6 +114,29 @@ export function relaySettingsRows(ctx: SettingsRegistryContext): SettingRowDef[]
       label: "Relay status",
       detail: describeRelaySectionSummary(ctx.config),
       tone: "info",
+    },
+  ];
+}
+
+/** Settings › Sources › Provider lookups. Needs no context: it reads only config. */
+export function providerDnsSettingsRows(): SettingRowDef[] {
+  return [
+    {
+      kind: "subheading",
+      id: "subheading:provider-dns",
+      label: "Provider lookups",
+      detail: "How Kunai finds provider sites when your network's DNS blocks them",
+      configKeys: ["providerDns"],
+    },
+    {
+      kind: "boolean",
+      id: "providerDns",
+      label: "DNS-over-HTTPS",
+      detail:
+        "On: provider site names are looked up through Cloudflare (1.1.1.1), falling back to your system DNS. Off: system DNS only. Video always uses system DNS",
+      envOverride: "KUNAI_DOH_DISABLE",
+      read: (config) => config.providerDns !== "system",
+      write: (config, value) => ({ ...config, providerDns: value ? "doh" : "system" }),
     },
   ];
 }

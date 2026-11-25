@@ -18,6 +18,14 @@ For the short statement of what leaves your machine, see
 - Startup maintenance may prune expired cache rows. It must not delete durable
   history, playlists, download jobs, lists, follows, or notifications.
 
+## Provider Lookups
+
+To reach providers on networks that block them by DNS, Kunai asks Cloudflare's
+DNS-over-HTTPS service (`1.1.1.1`) for the addresses of provider sites. That
+lookup carries only the site name, never what you are watching. Video hosts,
+local addresses and proxied requests use your normal DNS. Turn it off in
+**Settings › Sources › DNS-over-HTTPS** or with `KUNAI_DOH_DISABLE=1`.
+
 ## Recovery Behavior
 
 Playback recovery is conservative:

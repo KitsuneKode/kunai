@@ -1,8 +1,12 @@
 import {
+  createDohResolver,
   createProviderEngine,
   isVideasyFamilyProvider,
   orderProviderModulesByPriority,
+  setProviderDohResolver,
   type CoreProviderModule,
+  type DohAddress,
+  type DohResolver,
   type ProviderEngine,
   type ProviderPriorityInput,
 } from "@kunai/core";
@@ -16,6 +20,7 @@ import {
   stremioAddonsEnabled,
   type StremioAddonsConsent,
 } from "../domain/provider/stremio-addons";
+import { createKeyedJoiner } from "../infra/concurrency/keyed-joiner";
 import { PlaybackResolveCoordinator } from "../services/playback/PlaybackResolveCoordinator";
 import { PlaybackResolveWorkService } from "../services/playback/PlaybackResolveWorkService";
 import {
@@ -137,9 +142,21 @@ export async function bootstrapProviders(
     ? orderProviderModulesByPriority([...providerModulesOverride], providerPriority)
     : await loadConfiguredProviderModules(config, providerPriority);
   const relayRegistry = buildProviderRelayRegistry(providerModules);
+  const dohResolver = createProviderDnsResolver(
+    () => config.getRaw().providerDns,
+    (reason) =>
+      diagnosticsService.record({
+        category: "network",
+        operation: "provider-dns.doh-unreachable",
+        message: `DNS-over-HTTPS unreachable (${reason}); using system DNS for 10 minutes`,
+      }),
+  );
+  // curl-impersonate fetchers read the same resolver, so they share its cache and breaker.
+  setProviderDohResolver(dohResolver);
   const createProviderFetchPort = (providerId: (typeof providerModules)[number]["providerId"]) =>
     createRelayFetchPort({
       providerId,
+      dohResolver,
       registry: relayRegistry,
       relayConfig: config.getRaw().providerRelay,
       env: {
@@ -335,4 +352,30 @@ async function refreshHotfixAfterProviderDown(
   } catch {
     // Advisory: a failed refresh leaves the current manifest in place.
   }
+}
+
+/**
+ * One resolver for the session, gated on the live setting so flipping
+ * Settings › DNS-over-HTTPS applies to the next lookup without a restart.
+ * `KUNAI_DOH_DISABLE=1` forces system DNS regardless of the setting.
+ */
+export function createProviderDnsResolver(
+  readMode: () => "doh" | "system",
+  onUnreachable: (reason: string) => void,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): DohResolver {
+  const doh = createDohResolver({ onBreakerOpen: onUnreachable });
+  // A provider's first burst asks for the same host several times at once:
+  // join those into one bounded lookup, which still finishes (and fills the
+  // cache) if every caller leaves.
+  const lookups = createKeyedJoiner<readonly DohAddress[] | null>({ whenAbandoned: "finish" });
+  return {
+    resolve: (hostname, signal) =>
+      env.KUNAI_DOH_DISABLE === "1" || readMode() !== "doh"
+        ? Promise.resolve(null)
+        : lookups.join(hostname.toLowerCase(), (upstream) => doh.resolve(hostname, upstream), {
+            signal,
+          }),
+    stats: () => doh.stats(),
+  };
 }

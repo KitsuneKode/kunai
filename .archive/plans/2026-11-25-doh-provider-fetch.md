@@ -1,8 +1,15 @@
 ---
-lastReviewed: 2026-11-25
+status: archived
+lastReviewed: "2026-11-26"
 ---
 
 # DoH for the provider fetch port
+
+> Archived 2026-11-26: landed with changes. The shipped design lives in
+> `.docs/providers.md` (Provider DNS). Differences from this plan: one shared,
+> TTL-cached resolver with a breaker in `@kunai/core`; media probes keep system
+> DNS so they match the player; curl uses `--resolve` from the shared resolver
+> instead of `--doh-url`; the setting is `providerDns` (`doh` | `system`).
 
 ## Evidence (2026-11-25, this worktree)
 
@@ -54,31 +61,5 @@ lastReviewed: 2026-11-25
 
 ## Status
 
-Not started. Curl-layer DoH (`--doh-url` on curl-impersonate callsites) is
-committed at `cfd97b614` and already covers the miruro/hianime/anidb paths.
-
-## Addendum: anitaku (gogoanime successor) lane — implementation spec
-
-Ecosystem evidence 2026-11-25: gogoanime canonical domains parked/for-sale
-(gogoanime.mom, anitaku.pe), anitaku.bz/.to connection-dead even through DoH.
-**`anitaku.io` is alive**: 301 → /browse/ → 200, 115KB real catalog HTML.
-The backend is the same gogoanime database under the anitaku rebrand.
-
-Implementation notes for the provider build:
-
-- Search: anitaku.io/search.html?keyword= returns list HTML (verify shape —
-  first extraction attempt returned empty, needs a real RE pass with the
-  page's actual markup)
-- Embed chain: gogocdn/vidstreaming-style with AES-encrypted embed params —
-  the hardest extraction genre in the scene; keys rotate
-- Legal exposure: aniyomi removed this source after DMCA — expect the hottest
-  domain-rotation treadmill in the roster. Hotfix-manifest domain override
-  support is mandatory, not optional.
-- Value despite cost: largest independent anime catalog + real dub coverage,
-  and the backend half the FMHY frontends wrap — implementing it directly
-  removes the middleman layer those skins add.
-
-Prerequisite decision: confirm whether search extraction is plain HTML or
-JS-rendered before scoping. If JS-rendered, the cost likely exceeds the value
-vs. fixing allmanga crypto (which restores a multi-host aggregator covering
-much of the same catalog).
+Landed. The remaining check, `test:live:rivestream` from a poisoned network,
+needs a network that sinkholes provider names and is tracked on the roadmap.

@@ -1,4 +1,4 @@
-import type { CoreProviderManifest } from "@kunai/core";
+import type { CoreProviderManifest, DohResolver } from "@kunai/core";
 import type {
   ProviderFetchPort,
   ProviderId,
@@ -107,6 +107,11 @@ export interface RelayFetchPortOptions {
   readonly registry: ProviderRelayRegistry;
   readonly fetch?: RelayFetch;
   readonly providerId?: string;
+  /**
+   * Resolve metadata hostnames through DNS-over-HTTPS. Omitted: system DNS,
+   * the behaviour every caller had before. `probeFetch` ignores it.
+   */
+  readonly dohResolver?: DohResolver;
 }
 
 export type RelayFetchPort = ProviderFetchPort;

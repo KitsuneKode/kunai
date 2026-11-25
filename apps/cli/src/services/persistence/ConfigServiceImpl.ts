@@ -8,7 +8,6 @@ import {
   type StremioAddonsConsent,
 } from "@/domain/provider/stremio-addons";
 import { dbg } from "@/logger";
-import type { ContinueSourcePreference } from "@/services/continuation/continuation-source";
 import {
   DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
   DEFAULT_OFFLINE_RUNWAY_TARGET,
@@ -21,7 +20,6 @@ import {
   normalizeRetiredProductionProviderFields,
   normalizeStremioAddonsRiskAcknowledgedAt,
   retiredProductionProviderFieldsChanged,
-  type PrePlayConfirmMode,
   type StremioAddonConfigEntry,
 } from "@kunai/config";
 import { migrateLegacyProviderId } from "@kunai/providers";
@@ -34,6 +32,13 @@ import {
 } from "@kunai/types";
 
 import { persistedAnalyticsConsent, predatesExplicitAnalyticsConsent } from "./analytics-consent";
+import {
+  normalizeContinueSourcePreference,
+  normalizePrePlayConfirm,
+  normalizeProviderDns,
+  normalizeRecoveryMode,
+  normalizeStartupPriority,
+} from "./config-enum-normalizers";
 import {
   collectDirtyVaultFields,
   preserveUnchangedNestedDiskSecrets,
@@ -304,6 +309,7 @@ export class ConfigServiceImpl implements ConfigService {
       continueSourcePreference: normalizeContinueSourcePreference(loaded.continueSourcePreference),
       prePlayConfirm: normalizePrePlayConfirm(loaded.prePlayConfirm),
       startupPriority: normalizeStartupPriority(loaded.startupPriority),
+      providerDns: normalizeProviderDns(loaded.providerDns),
       hdrMode: normalizeHdrMode(loaded.hdrMode),
       mpvInProcessStreamReconnectMaxAttempts: normalizeMpvReconnectAttempts(
         loaded.mpvInProcessStreamReconnectMaxAttempts,
@@ -931,6 +937,10 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.startupPriority;
   }
 
+  get providerDns(): "doh" | "system" {
+    return this.config.providerDns;
+  }
+
   get hdrMode(): KitsuneConfig["hdrMode"] {
     return this.sessionOverrides.hdrMode ?? this.config.hdrMode;
   }
@@ -1232,6 +1242,9 @@ export class ConfigServiceImpl implements ConfigService {
         : null),
       ...(partial.startupPriority !== undefined
         ? { startupPriority: normalizeStartupPriority(partial.startupPriority) }
+        : null),
+      ...(partial.providerDns !== undefined
+        ? { providerDns: normalizeProviderDns(partial.providerDns) }
         : null),
       ...(partial.hdrMode !== undefined ? { hdrMode: normalizeHdrMode(partial.hdrMode) } : null),
       ...(partial.mpvInProcessStreamReconnectMaxAttempts !== undefined
@@ -1609,28 +1622,6 @@ function normalizeVideasyAppId<T>(value: T, sessionToken = ""): KitsuneConfig["v
   // session token, the vidking app id resolves embed-tier HLS that stalls in mpv.
   if (appId === "vidking" && normalizeOptionalSecret(sessionToken)) return "vidking";
   return "bc-frontend";
-}
-
-function normalizeRecoveryMode<T>(value: T): RecoveryMode {
-  return value === "manual" ? "manual" : value === "fallback-first" ? "fallback-first" : "guided";
-}
-
-function normalizeContinueSourcePreference<T>(value: T): ContinueSourcePreference {
-  return value === "local"
-    ? "local"
-    : value === "stream"
-      ? "stream"
-      : value === "ask"
-        ? "ask"
-        : "auto";
-}
-
-function normalizePrePlayConfirm<T>(value: T): PrePlayConfirmMode {
-  return value === "when-choices" ? "when-choices" : value === "always" ? "always" : "off";
-}
-
-function normalizeStartupPriority<T>(value: T): StartupPriority {
-  return value === "fast" ? "fast" : value === "quality-first" ? "quality-first" : "balanced";
 }
 
 /** An update split into what to persist and which launch-flag fields stay overridden. */
