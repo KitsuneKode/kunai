@@ -203,6 +203,20 @@ export class PlaylistsRepository {
   removeItem(itemId: string): void {
     this.db.query(`DELETE FROM user_playlist_items WHERE id = ?`).run(itemId);
   }
+
+  /**
+   * Rewrite `sort_order` to match `orderedIds`, in one transaction so a failed
+   * write never leaves two items sharing a slot. Ids outside the playlist are
+   * ignored by the `playlist_id` predicate.
+   */
+  reorderItems(playlistId: string, orderedIds: readonly string[]): void {
+    const update = this.db.query(
+      `UPDATE user_playlist_items SET sort_order = ? WHERE id = ? AND playlist_id = ?`,
+    );
+    this.db.transaction(() => {
+      orderedIds.forEach((id, index) => update.run(index, id, playlistId));
+    })();
+  }
 }
 
 function serializeExternalIds(externalIds: ProviderExternalIds | undefined): string | null {
