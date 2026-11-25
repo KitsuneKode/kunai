@@ -6,7 +6,11 @@ import {
   type ConsentEnv,
 } from "@/domain/analytics/consent-policy";
 import { dbgErr } from "@/logger";
-import type { AnalyticsPingCompletion, KitsuneConfig } from "@/services/persistence/ConfigService";
+import type {
+  AnalyticsPingCompletion,
+  KitsuneConfig,
+  PersistedAnalyticsConsent,
+} from "@/services/persistence/ConfigService";
 
 import { ensureInstallId, installIdDigest, isValidInstallId } from "./install-id";
 
@@ -83,6 +87,7 @@ type AnalyticsConfig = {
   update(partial: Partial<KitsuneConfig>): Promise<void>;
   save(): Promise<void>;
   recordAnalyticsPing(completion: AnalyticsPingCompletion): Promise<boolean>;
+  readPersistedAnalyticsConsent(): Promise<PersistedAnalyticsConsent>;
 };
 
 export type UsageAnalyticsServiceDeps = {
@@ -248,6 +253,12 @@ export class UsageAnalyticsService {
     // Identity creation and repair require an explicit consent choice.
     if (!isValidInstallId(config.installId)) return;
     const installId = config.installId;
+
+    // Everything above read this process's snapshot. A sibling kunai may have
+    // disabled analytics or rotated the id since, so nothing is sent until the
+    // file agrees; the completion's own re-check only guards the bookkeeping,
+    // after the request has already left.
+    if (!(await this.persistedConsentAllows(installId))) return;
     const payload: AnalyticsPayload = {
       // The digest, never the stored id. `installId` below is persisted locally
       // so the identity survives restarts; only this hash is transmitted.
@@ -266,6 +277,23 @@ export class UsageAnalyticsService {
         ? { analyticsRetryAfter: now + ANALYTICS_RETRY_BACKOFF_MS }
         : { lastAnalyticsPingAt: now, analyticsRetryAfter: 0 }),
     });
+  }
+
+  /**
+   * True only when config.json still says `enabled` with this exact id and this
+   * process has not changed its mind while the file was read. Fails closed: a
+   * file that cannot be read or parsed sends nothing.
+   */
+  private async persistedConsentAllows(installId: string): Promise<boolean> {
+    let onDisk: PersistedAnalyticsConsent;
+    try {
+      onDisk = await this.deps.config.readPersistedAnalyticsConsent();
+    } catch {
+      return false;
+    }
+    if (onDisk.analytics !== "enabled" || onDisk.installId !== installId) return false;
+    const local = this.deps.config.getRaw();
+    return local.analytics === "enabled" && local.installId === installId;
   }
 
   /**

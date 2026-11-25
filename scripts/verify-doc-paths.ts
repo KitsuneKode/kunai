@@ -17,6 +17,8 @@
 // Plus the mechanical half of the `.plans/` index contract:
 //   4. roadmap.md indexes every `.plans/*.md`, and LANDED rows point into
 //      `.archive/` — a landed plan does not stay in `.plans/`.
+//   5. Active / in-progress plans carry a `lastReviewed` ISO date no older than
+//      45 days (read from the file, not git history, so shallow CI clones work).
 //
 // (3) exists because a comment is documentation that no doc checker could see.
 // Three files pointed at `docs/superpowers/` and two at a plan that had been
@@ -315,6 +317,137 @@ export function checkRoadmap(roadmapText: string, planFiles: readonly string[]):
   return findings;
 }
 
+// ---------------------------------------------------------------------------
+// Active plan freshness
+// ---------------------------------------------------------------------------
+//
+// `.plans/` holds unfinished work only, yet shipped plans can linger with
+// `Status: active`. CI uses shallow clones, so freshness is read from an
+// explicit `lastReviewed` field in the plan file (same YAML frontmatter
+// convention as `.docs/`), never from git dates.
+
+export const MAX_ACTIVE_PLAN_AGE_DAYS = 45;
+const MS_PER_DAY = 86_400_000;
+
+function extractFrontmatter(
+  text: string,
+): { readonly body: string; readonly lineOffset: number } | null {
+  const normalized = text.replaceAll("\r\n", "\n");
+  if (!normalized.startsWith("---\n")) return null;
+  const end = normalized.indexOf("\n---", 4);
+  if (end === -1) return null;
+  return { body: normalized.slice(4, end), lineOffset: 2 };
+}
+
+function isActiveOrInProgressPlan(text: string): boolean {
+  const normalized = text.replaceAll("\r\n", "\n");
+  const frontmatter = extractFrontmatter(normalized);
+  if (frontmatter && /^status:\s*["']?(?:active|in[\s-]progress)\b/im.test(frontmatter.body)) {
+    return true;
+  }
+  const lines = normalized.split("\n").slice(0, 40);
+  for (const raw of lines) {
+    const cleaned = raw
+      .trim()
+      .replace(/^-\s+/, "")
+      .replace(/^#+\s*/, "")
+      .replace(/[*_`]/g, "")
+      .trim();
+    if (/^status\s*:\s*(?:active|in[\s-]progress)\b/i.test(cleaned)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function extractPlanLastReviewed(
+  text: string,
+): { readonly value: string; readonly line: number } | null {
+  const normalized = text.replaceAll("\r\n", "\n");
+  const frontmatter = extractFrontmatter(normalized);
+  if (frontmatter) {
+    const fmLines = frontmatter.body.split("\n");
+    for (let i = 0; i < fmLines.length; i++) {
+      const match = /^lastReviewed:\s*["']?([^"'\s#]+)["']?\s*$/.exec(fmLines[i] ?? "");
+      if (match?.[1]) return { value: match[1], line: frontmatter.lineOffset + i };
+    }
+  }
+  const headLines = normalized.split("\n").slice(0, 40);
+  for (let i = 0; i < headLines.length; i++) {
+    const cleaned = (headLines[i] ?? "").trim().replace(/^-\s+/, "").replace(/[*_`]/g, "");
+    const match = /^lastReviewed\s*:\s*["']?([^"'\s#]+)["']?\s*$/i.exec(cleaned);
+    if (match?.[1]) return { value: match[1], line: i + 1 };
+  }
+  return null;
+}
+
+function parseIsoReviewDateMs(raw: string): number | null {
+  if (!/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}Z)?$/.test(raw)) return null;
+  const parsed = Date.parse(raw);
+  if (!Number.isFinite(parsed)) return null;
+  const canonical = new Date(parsed).toISOString().replace(".000Z", "Z").slice(0, raw.length);
+  return canonical === raw ? parsed : null;
+}
+
+export type PlanDocument = {
+  readonly name: string;
+  readonly text: string;
+};
+
+export type ActivePlanCheckOptions = {
+  readonly nowMs?: number;
+  readonly maxAgeDays?: number;
+  readonly exempt?: ReadonlySet<string>;
+};
+
+export function checkActivePlans(
+  plans: readonly PlanDocument[],
+  options: ActivePlanCheckOptions = {},
+): Finding[] {
+  const nowMs = options.nowMs ?? Date.now();
+  const maxAgeDays = options.maxAgeDays ?? MAX_ACTIVE_PLAN_AGE_DAYS;
+  const exempt = options.exempt ?? new Set<string>();
+  const findings: Finding[] = [];
+
+  for (const { name, text } of plans) {
+    if (name === "roadmap.md" || !name.endsWith(".md") || exempt.has(name)) continue;
+    if (!isActiveOrInProgressPlan(text)) continue;
+
+    const reviewed = extractPlanLastReviewed(text);
+    if (!reviewed) {
+      findings.push({
+        file: `.plans/${name}`,
+        line: 1,
+        target:
+          'active/in-progress plan missing lastReviewed (add frontmatter lastReviewed: "YYYY-MM-DD")',
+      });
+      continue;
+    }
+
+    const reviewedMs = parseIsoReviewDateMs(reviewed.value);
+    if (reviewedMs === null) {
+      findings.push({
+        file: `.plans/${name}`,
+        line: reviewed.line,
+        target: `lastReviewed '${reviewed.value}' is not a valid ISO date`,
+      });
+      continue;
+    }
+
+    const ageMs = nowMs - reviewedMs;
+    if (ageMs > maxAgeDays * MS_PER_DAY) {
+      const ageDays = Math.floor(ageMs / MS_PER_DAY);
+      findings.push({
+        file: `.plans/${name}`,
+        line: reviewed.line,
+        target: `active/in-progress plan lastReviewed '${reviewed.value}' is ${ageDays}d old (max ${maxAgeDays}d — re-verify or archive)`,
+      });
+    }
+  }
+
+  return findings;
+}
+
 // `import.meta.main` keeps the executable half out of the test import —
 // pulling in `checkRoadmap` must not run the repo-wide scan or exit.
 if (import.meta.main) {
@@ -326,20 +459,27 @@ if (import.meta.main) {
 
   const files = SCANNED_ROOTS.flatMap(collectMarkdown);
 
-  const roadmapPath = join(ROOT, ".plans/roadmap.md");
-  const roadmapFindings = existsSync(roadmapPath)
-    ? checkRoadmap(
-        readFileSync(roadmapPath, "utf8"),
-        readdirSync(join(ROOT, ".plans"), { withFileTypes: true })
-          .filter((entry) => entry.isFile())
-          .map((entry) => entry.name),
-      )
+  const plansDir = join(ROOT, ".plans");
+  const planFileNames = existsSync(plansDir)
+    ? readdirSync(plansDir, { withFileTypes: true })
+        .filter((entry) => entry.isFile())
+        .map((entry) => entry.name)
     : [];
+  const roadmapPath = join(plansDir, "roadmap.md");
+  const roadmapFindings = existsSync(roadmapPath)
+    ? checkRoadmap(readFileSync(roadmapPath, "utf8"), planFileNames)
+    : [];
+  const activePlanFindings = checkActivePlans(
+    planFileNames
+      .filter((name) => name !== "roadmap.md" && name.endsWith(".md"))
+      .map((name) => ({ name, text: readFileSync(join(plansDir, name), "utf8") })),
+  );
 
   const findings = [
     ...files.flatMap(checkFile),
     ...sourceFiles.flatMap(checkSourceFile),
     ...roadmapFindings,
+    ...activePlanFindings,
   ];
 
   if (findings.length > 0) {

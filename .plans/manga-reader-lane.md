@@ -1,6 +1,7 @@
 ---
 status: active
 created: "2026-10-10"
+lastReviewed: "2026-11-24"
 ---
 
 # Manga reader lane

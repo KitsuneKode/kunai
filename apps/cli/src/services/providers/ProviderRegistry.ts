@@ -52,6 +52,12 @@ export class ProviderRegistryImpl implements ProviderRegistry {
   constructor(
     private readonly engine: ProviderEngine,
     private options: ProviderRegistryOptions = {},
+    /**
+     * Runtime admission for ids that can go live or dark without a restart —
+     * installed Stremio addons while the experimental feature is off. Manual
+     * `disabledProviderIds` switches are untouched by it.
+     */
+    private readonly isAvailable: (id: string) => boolean = () => true,
   ) {
     this.rebuildPriorityRanks();
     for (const module of engine.modules) {
@@ -166,26 +172,36 @@ export class ProviderRegistryImpl implements ProviderRegistry {
   }
 
   get(id: string): Provider | undefined {
-    return this.providersById.get(resolveProviderId(id));
+    const resolved = resolveProviderId(id);
+    if (!this.isAvailable(resolved)) return undefined;
+    return this.providersById.get(resolved);
   }
 
   getManifest(id: string): CoreProviderManifest | undefined {
+    if (!this.isAvailable(id)) return undefined;
     return this.engine.getManifest(id);
   }
 
   getAll(): Provider[] {
-    const sorted = this.sortByPriority([...this.providersById.values()]);
+    const sorted = this.sortByPriority(this.registered());
     const disabled = this.options.disabledProviderIds;
     if (!disabled || disabled.length === 0) return sorted;
     return this.enabledInLane(sorted);
   }
 
   getAllRegistered(): Provider[] {
-    return this.sortByPriority([...this.providersById.values()]);
+    return this.sortByPriority(this.registered());
   }
 
   getAllIds(): string[] {
-    return this.engine.getProviderIds();
+    return this.engine.getProviderIds().filter((id) => this.isAvailable(id));
+  }
+
+  /** Registered providers the runtime may actually use right now. */
+  private registered(): Provider[] {
+    return [...this.providersById.values()].filter((provider) =>
+      this.isAvailable(provider.metadata.id),
+    );
   }
 
   getCompatible(title: TitleInfo, mode?: ShellMode): Provider[] {
@@ -204,9 +220,7 @@ export class ProviderRegistryImpl implements ProviderRegistry {
   getDefaultForMode(mode: ShellMode): Provider {
     const lane = shellModeToProviderLane(mode);
     const registeredInLane = this.sortByPriority(
-      [...this.providersById.values()].filter(
-        (provider) => provider.metadata.providerLane === lane,
-      ),
+      this.registered().filter((provider) => provider.metadata.providerLane === lane),
     );
     const laneProviders = this.enabledInLane(registeredInLane);
     const preferred = this.getPriorityForLane(lane)
@@ -230,7 +244,9 @@ export class ProviderRegistryImpl implements ProviderRegistry {
   }
 
   getMetadata(id: string): ProviderMetadata | undefined {
-    return this.providersById.get(resolveProviderId(id))?.metadata;
+    const resolved = resolveProviderId(id);
+    if (!this.isAvailable(resolved)) return undefined;
+    return this.providersById.get(resolved)?.metadata;
   }
 
   setPriority(options: ProviderRegistryOptions): void {
@@ -283,6 +299,7 @@ export class ProviderRegistryImpl implements ProviderRegistry {
 export function createProviderRegistry(
   engine: ProviderEngine,
   options?: ProviderRegistryOptions,
+  isAvailable?: (id: string) => boolean,
 ): ProviderRegistry {
-  return new ProviderRegistryImpl(engine, options);
+  return new ProviderRegistryImpl(engine, options, isAvailable);
 }

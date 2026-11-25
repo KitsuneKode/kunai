@@ -13,7 +13,7 @@ import { dirname, join } from "node:path";
 
 import { writeAtomicJson } from "@/infra/fs/atomic-write";
 import { getKunaiPaths } from "@/services/storage/storage-read-models";
-import type { ProviderPriorityInput } from "@kunai/core";
+import { createDeadlineSignal, type ProviderPriorityInput } from "@kunai/core";
 import {
   canonicalizeManifestPayload,
   describeAllMangaCryptoOverrideProblem,
@@ -426,15 +426,14 @@ export async function fetchAndCacheProviderHotfixManifest(options: {
   const fetchFn: ManifestFetch = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? MANIFEST_FETCH_TIMEOUT_MS;
   const maxBytes = options.maxBytes ?? MAX_MANIFEST_BYTES;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const deadline = createDeadlineSignal(undefined, timeoutMs);
 
   let parsed: JsonValue;
   try {
     const response = await fetchFn(options.url, {
       headers: { Accept: "application/json" },
       redirect: "error",
-      signal: controller.signal,
+      signal: deadline.signal,
     });
     if (!response.ok) {
       await releaseUnreadBody(response);
@@ -447,14 +446,14 @@ export async function fetchAndCacheProviderHotfixManifest(options: {
     const text = await readResponseTextBounded(response, maxBytes);
     parsed = parseJsonPayload(text);
   } catch (error) {
-    const detail = controller.signal.aborted
+    const detail = deadline.signal.aborted
       ? `Manifest fetch timed out after ${timeoutMs}ms`
       : error instanceof Error
         ? error.message
         : String(error);
     return { status: "rejected", path, reason: `Manifest fetch failed: ${detail}` };
   } finally {
-    clearTimeout(timer);
+    deadline.release();
   }
 
   const verified = verifySignedProviderManifest(parsed, trusted, options.nowMs);

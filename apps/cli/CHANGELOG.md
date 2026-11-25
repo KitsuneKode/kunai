@@ -59,6 +59,14 @@ subtitle controls, and safer persistence, downloads and native installation.
   silently mark an unfinished episode watched.
 - Improve provider-native season/episode identity, dub selection and validated
   offline playback, including titles with more than 100 downloaded assets.
+- Stremio addons are experimental and off by default. Review and accept the
+  playback risk in **Settings > Sources > Experimental: Stremio addons** or
+  with `kunai addons enable`. In scripts or with redirected streams, opt in
+  explicitly with `kunai addons enable --accept-risk`. Add movie and series sources with
+  `kunai addons add <manifest-url>` (or `--stdin` to keep it out of argv).
+  `kunai addons disable` stops addon use at the next resolve and keeps the
+  installed list. Only direct video files are supported; downloads and
+  Android handoff do not use addons. Full addon URLs are never shown or logged.
 
 ### Search and terminal interaction
 

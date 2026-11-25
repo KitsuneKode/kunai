@@ -51,6 +51,10 @@ function makeConfig(overrides: Partial<KitsuneConfig> = {}) {
         raw = { ...raw, lastAnalyticsPingAt: completion.lastAnalyticsPingAt };
       return true;
     },
+    // This fake's memory is its disk, as with a single kunai process.
+    async readPersistedAnalyticsConsent() {
+      return { analytics: raw.analytics, installId: raw.installId };
+    },
     get rawRef() {
       return raw;
     },

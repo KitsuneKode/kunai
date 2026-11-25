@@ -22,6 +22,9 @@ function fixtureConfig(enabled = false) {
     async recordAnalyticsPing() {
       return true;
     },
+    async readPersistedAnalyticsConsent() {
+      return { analytics: raw.analytics, installId: raw.installId };
+    },
   };
 }
 
@@ -65,6 +68,7 @@ test("test preload blocks a local explicit opt-in despite inherited DNT=0 and CI
         async update(patch) { raw = { ...raw, ...patch }; },
         async save() {},
         async recordAnalyticsPing() { return true; },
+        async readPersistedAnalyticsConsent() { return { analytics: raw.analytics, installId: raw.installId }; },
       },
       currentVersion: '0.3.0',
       endpoint: 'https://analytics.example.test/api/ping',

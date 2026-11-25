@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-25"
+lastReviewed: "2026-11-25"
 ---
 
 # Analytics Privacy Contract
@@ -38,6 +38,13 @@ Read this before touching `apps/cli/src/services/analytics/`,
   under the same cross-process lock and save chain as settings writes. It updates
   cadence/retry fields only, never the identity. A rejected completion refreshes
   non-dirty local analytics fields from disk so a stale session stops sending.
+- The send itself is gated on disk too. Immediately before a request,
+  `maybePing` re-reads `config.json` (`readPersistedAnalyticsConsent`, read-only,
+  no memory change) and sends only if the file still says `enabled` with the
+  exact install id this process holds, and memory still agrees after the read.
+  The file is read with the same rule startup uses (an `enabled` with no notice
+  marker reads as `unset`). A sibling's disable or rotation since startup, an
+  unsaved local enable, or a file that cannot be read or parsed sends nothing.
 - Passive Settings saves preserve the current analytics preference and identity
   unless the user explicitly changes the consent option. Connecting presence
   applies only presence fields, so a stale pane cannot restore withdrawn consent

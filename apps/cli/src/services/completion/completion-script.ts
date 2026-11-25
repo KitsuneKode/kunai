@@ -1,4 +1,4 @@
-import { CLI_SUBCOMMANDS, KNOWN_FLAGS, VALUE_FLAGS } from "@/cli-args";
+import { ADDONS_SUBCOMMANDS, CLI_SUBCOMMANDS, KNOWN_FLAGS, VALUE_FLAGS } from "@/cli-args";
 import { HDR_MODES } from "@kunai/config";
 
 /**
@@ -84,6 +84,8 @@ _kunai_complete() {
       COMPREPLY=( $(compgen -W "${COMPLETION_SHELLS.join(" ")}" -- "$cur") ); return ;;
     providers)
       COMPREPLY=( $(compgen -W "${PROVIDERS_SUBCOMMANDS.join(" ")}" -- "$cur") ); return ;;
+    addons)
+      COMPREPLY=( $(compgen -W "${ADDONS_SUBCOMMANDS.join(" ")}" -- "$cur") ); return ;;
     ${valueFlags().join("|")})
       COMPREPLY=(); return ;;
   esac
@@ -105,13 +107,14 @@ function zshScript(): string {
 # or append to ~/.zshrc:
 #   eval "$(kunai completion zsh)"
 _kunai() {
-  local -a subcommands flags shells providers_subs types qualities audios subs players hdrs formats
+  local -a subcommands flags shells providers_subs addons_subs types qualities audios subs players hdrs formats
   subcommands=(${CLI_SUBCOMMANDS.map((c) => `'${c}'`).join(" ")})
   flags=(${allFlags()
     .map((f) => `'${f}'`)
     .join(" ")})
   shells=(${COMPLETION_SHELLS.map((s) => `'${s}'`).join(" ")})
   providers_subs=(${PROVIDERS_SUBCOMMANDS.map((p) => `'${p}'`).join(" ")})
+  addons_subs=(${ADDONS_SUBCOMMANDS.map((a) => `'${a}'`).join(" ")})
   types=(${TYPE_VALUES.map((t) => `'${t}'`).join(" ")})
   qualities=(${QUALITY_VALUES.map((q) => `'${q}'`).join(" ")})
   audios=(${AUDIO_VALUES.map((a) => `'${a}'`).join(" ")})
@@ -131,6 +134,7 @@ _kunai() {
     --download-path|--mpv-log-file) _files -/; return ;;
     completion) _describe 'shell' shells; return ;;
     providers) _describe 'providers action' providers_subs; return ;;
+    addons) _describe 'addons action' addons_subs; return ;;
   esac
 
   if (( CURRENT == 2 )) && [[ "\${words[CURRENT]}" != -* ]]; then
@@ -154,6 +158,7 @@ function fishScript(): string {
     `complete -c kunai -n "not __fish_seen_subcommand_from ${sub}" -a "${sub}"`,
     `complete -c kunai -n "__fish_seen_subcommand_from completion" -a "${COMPLETION_SHELLS.join(" ")}"`,
     `complete -c kunai -n "__fish_seen_subcommand_from providers" -a "${PROVIDERS_SUBCOMMANDS.join(" ")}"`,
+    `complete -c kunai -n "__fish_seen_subcommand_from addons" -a "${ADDONS_SUBCOMMANDS.join(" ")}"`,
     `complete -c kunai -s t -l type -x -a "${TYPE_VALUES.join(" ")}"`,
     `complete -c kunai -l quality -x -a "${QUALITY_VALUES.join(" ")}"`,
     `complete -c kunai -l audio -x -a "${AUDIO_VALUES.join(" ")}"`,
@@ -187,6 +192,7 @@ Register-ArgumentCompleter -Native -CommandName kunai -ScriptBlock {
     .join(", ")})
   $shells = @(${COMPLETION_SHELLS.map((s) => `'${s}'`).join(", ")})
   $providersSubs = @(${PROVIDERS_SUBCOMMANDS.map((p) => `'${p}'`).join(", ")})
+  $addonsSubs = @(${ADDONS_SUBCOMMANDS.map((a) => `'${a}'`).join(", ")})
   $types = @(${TYPE_VALUES.map((t) => `'${t}'`).join(", ")})
   $qualities = @(${QUALITY_VALUES.map((q) => `'${q}'`).join(", ")})
   $audios = @(${AUDIO_VALUES.map((a) => `'${a}'`).join(", ")})
@@ -209,6 +215,7 @@ Register-ArgumentCompleter -Native -CommandName kunai -ScriptBlock {
     '--format' { $formats }
     'completion' { $shells }
     'providers' { $providersSubs }
+    'addons' { $addonsSubs }
     default {
       if ($elements.Count -le 2 -and -not $wordToComplete.StartsWith('-')) { $subcommands } else { $flags }
     }

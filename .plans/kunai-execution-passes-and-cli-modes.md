@@ -1,3 +1,7 @@
+---
+lastReviewed: "2026-11-24"
+---
+
 # Kunai — Execution passes, CLI modes, and when we plan work
 
 Status: Active  

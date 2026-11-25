@@ -10,7 +10,11 @@ import {
 
 export type StreamHealthPhase = "resolve-gate" | "cache-revalidate" | "playback-preflight";
 
-export type StreamHealthStrategy = "none" | "hls-manifest-get" | "head-then-range";
+export type StreamHealthStrategy =
+  | "none"
+  | "hls-manifest-get"
+  | "head-then-range"
+  | "range-direct-media";
 
 export type StreamHealthSkipReason = "provider-attested" | "fresh-cache";
 
@@ -64,6 +68,8 @@ export type StreamHealthCheckInput = {
   readonly staleAfterMs?: number;
   readonly playbackTrustMs?: number;
   readonly requiresYtdl?: boolean;
+  /** Strict addon media proof: no playlists, no redirects, verified prefix only. */
+  readonly requireDirectMedia?: boolean;
 };
 
 export type StreamHealthResult = {
@@ -98,8 +104,14 @@ export function planStreamHealth(input: StreamHealthCheckInput): StreamHealthPla
       (input.phase === "playback-preflight"
         ? STREAM_HEALTH_DEFAULTS.preflightTimeoutMs
         : STREAM_HEALTH_DEFAULTS.resolveGateTimeoutMs),
-    strategy: probeStrategyForUrl(input.url),
+    strategy: input.requireDirectMedia ? "range-direct-media" : probeStrategyForUrl(input.url),
   };
+
+  // A strict preflight always probes: a fresh resolve attestation covers the
+  // URL it verified, not an addon's right to skip the strict media check.
+  if (input.requireDirectMedia && input.phase === "playback-preflight") {
+    return probePlan(context, "forced");
+  }
 
   switch (input.phase) {
     case "resolve-gate":
@@ -134,23 +146,33 @@ export async function runStreamHealthCheck(
     headers: input.headers,
     fetchImpl: input.fetchImpl,
     resolvesLocally: input.resolvesLocally,
+    requireDirectMedia: input.requireDirectMedia,
     timeoutMs: plan.timeoutMs,
     signal: input.signal,
   });
 
-  if (input.phase === "resolve-gate" && shouldRetryResolveGateProbe(probe)) {
+  if (
+    input.phase === "resolve-gate" &&
+    !(input.requireDirectMedia && input.signal?.aborted) &&
+    shouldRetryResolveGateProbe(probe)
+  ) {
     probe = await probeStreamReachability({
       url: input.url,
       headers: input.headers,
       fetchImpl: input.fetchImpl,
       resolvesLocally: input.resolvesLocally,
-      timeoutMs: Math.max(plan.timeoutMs, 1_500),
+      requireDirectMedia: input.requireDirectMedia,
+      timeoutMs: plan.timeoutMs,
       signal: input.signal,
     });
   }
 
   return {
-    healthy: evaluateStreamHealth(input.phase, probe),
+    // A strict probe answers "is there a playable file", not "is the URL
+    // alive" — anything short of positive evidence fails it.
+    healthy: input.requireDirectMedia
+      ? probe.status === "reachable"
+      : evaluateStreamHealth(input.phase, probe),
     probed: true,
     strategy: plan.strategy,
     policyReason: plan.policyReason,

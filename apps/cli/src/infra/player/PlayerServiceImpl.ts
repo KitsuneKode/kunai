@@ -27,6 +27,7 @@ import type { LocalPlaybackSource } from "@/services/offline/local-playback-sour
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { isTerminalHlsHttpStatus } from "@/services/playback/hls-manifest-materializer";
 import { materializePlaybackMediaForPlayback } from "@/services/playback/playback-media-materializer";
+import { isStremioPlayback } from "@/services/playback/stream-health-check";
 
 import {
   startHlsRelay,
@@ -187,34 +188,47 @@ export class PlayerServiceImpl implements PlayerService {
     );
     let terminalHlsFailure: { readonly detail?: string; readonly httpStatus?: number } | null =
       null;
-    const materialized = await materializePlaybackMediaForPlayback(
-      stream,
-      (reason, detail, httpStatus) => {
-        if (
-          reason === "blocked-target" ||
-          (reason === "http-error" && isTerminalHlsHttpStatus(httpStatus))
-        ) {
-          terminalHlsFailure = { detail, httpStatus };
-          return;
+    // Addon streams are remote direct-media files that must reach mpv exactly
+    // as verified: no manifest materialization and no HLS relay.
+    const stremioAddon = isStremioPlayback(stream);
+    const materialized = stremioAddon
+      ? {
+          stream,
+          kind: "none" as const,
+          cleanup: async () => {},
         }
-        // Falling through to the direct URL is fine, but a CDN that blocks our
-        // fetch must not be invisible — it is the first thing to look at when a
-        // stream plays in a browser yet fails here.
-        if (reason !== "fetch-failed" && reason !== "http-error") return;
-        this.deps.diagnostics.record(
-          buildPlaybackDiagnosticEvent({
-            operation: "mpv.hls-manifest.materialize-skipped",
-            status: "failed",
-            severity: "degraded",
-            failureClass: "http",
-            message: "HLS manifest prefetch failed — using the direct stream URL",
-            correlation: options.correlation,
-            context: { reason, detail: detail?.slice(0, 160), streamHost: safeUrlHost(stream.url) },
-          }),
+      : await materializePlaybackMediaForPlayback(
+          stream,
+          (reason, detail, httpStatus) => {
+            if (
+              reason === "blocked-target" ||
+              (reason === "http-error" && isTerminalHlsHttpStatus(httpStatus))
+            ) {
+              terminalHlsFailure = { detail, httpStatus };
+              return;
+            }
+            // Falling through to the direct URL is fine, but a CDN that blocks our
+            // fetch must not be invisible — it is the first thing to look at when a
+            // stream plays in a browser yet fails here.
+            if (reason !== "fetch-failed" && reason !== "http-error") return;
+            this.deps.diagnostics.record(
+              buildPlaybackDiagnosticEvent({
+                operation: "mpv.hls-manifest.materialize-skipped",
+                status: "failed",
+                severity: "degraded",
+                failureClass: "http",
+                message: "HLS manifest prefetch failed — using the direct stream URL",
+                correlation: options.correlation,
+                context: {
+                  reason,
+                  detail: detail?.slice(0, 160),
+                  streamHost: safeUrlHost(stream.url),
+                },
+              }),
+            );
+          },
+          options.abortSignal,
         );
-      },
-      options.abortSignal,
-    );
     if (terminalHlsFailure !== null) {
       const failure = terminalHlsFailure as {
         readonly detail?: string;
@@ -266,7 +280,7 @@ export class PlayerServiceImpl implements PlayerService {
 
     // Stop any prior cycle relay before starting a new one (autoplay-chain source swaps).
     this.stopActiveHlsRelay("session-release");
-    playbackStream = this.maybeStartHlsRelay(playbackStream, options);
+    if (!stremioAddon) playbackStream = this.maybeStartHlsRelay(playbackStream, options);
 
     publish({ type: "launching-player" });
     const presentation = this.deps.presentation ?? nonInteractivePlayerPresentation;
@@ -717,6 +731,8 @@ export class PlayerServiceImpl implements PlayerService {
         isLive: stream.isLive,
         attach: options.attach,
         timing: options.timing,
+        stremioAddon: isStremioPlayback(stream),
+        abortSignal: options.abortSignal,
         autoSkipEnabled: options.autoSkipEnabled,
         skipRecap: options.skipRecap,
         skipIntro: options.skipIntro,
@@ -795,6 +811,7 @@ export class PlayerServiceImpl implements PlayerService {
       },
       onNearEof: options.onNearEof,
       shareLinkContext: options.shareLinkContext,
+      abortSignal: options.abortSignal,
     };
 
     if (!this.persistentSession) {

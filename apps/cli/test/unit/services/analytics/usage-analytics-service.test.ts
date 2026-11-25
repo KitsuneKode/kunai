@@ -47,6 +47,9 @@ function makeConfig(overrides: Partial<KitsuneConfig> = {}) {
       persisted = { ...raw };
       return true;
     },
+    async readPersistedAnalyticsConsent() {
+      return { analytics: persisted.analytics, installId: persisted.installId };
+    },
     get persisted() {
       return persisted;
     },
@@ -59,8 +62,19 @@ function makeConfig(overrides: Partial<KitsuneConfig> = {}) {
   };
 }
 
+/**
+ * `onSessionStart` fires the ping in the background, and the send now waits on
+ * the persisted-consent read first. Every fake here resolves at once, so one
+ * macrotask turn lets that chain finish; assertions on what was (not) sent run
+ * after it, not before.
+ */
+const settleBackgroundPing = () => new Promise<void>((resolve) => setImmediate(resolve));
+
 function makeService(
-  config: Pick<ConfigServiceImpl, "getRaw" | "update" | "save" | "recordAnalyticsPing">,
+  config: Pick<
+    ConfigServiceImpl,
+    "getRaw" | "update" | "save" | "recordAnalyticsPing" | "readPersistedAnalyticsConsent"
+  >,
   options: {
     fetchImpl?: AnalyticsFetch;
     env?: { DO_NOT_TRACK?: string; CI?: string };
@@ -196,6 +210,7 @@ describe("pending ping identity", () => {
           getRaw: () => config.getRaw(),
           update: (patch) => config.update(patch),
           save: () => config.save(),
+          readPersistedAnalyticsConsent: () => config.readPersistedAnalyticsConsent(),
           recordAnalyticsPing: async (completion) => {
             started.resolve();
             await release.promise;
@@ -252,6 +267,7 @@ describe("onSessionStart", () => {
     });
 
     const outcome = await service.onSessionStart({ isInteractive: true });
+    await settleBackgroundPing();
 
     expect(outcome).toEqual({ kind: "needs-disclosure" });
     expect(calls).toEqual([]);
@@ -271,6 +287,7 @@ describe("onSessionStart", () => {
     });
 
     const outcome = await service.onSessionStart({ isInteractive: true });
+    await settleBackgroundPing();
 
     expect(outcome).toEqual({ kind: "pinged" });
     expect(calls).toEqual([TEST_ENDPOINT]);
@@ -279,6 +296,7 @@ describe("onSessionStart", () => {
   test("no TTY stays unset — writes nothing, sends nothing", async () => {
     const config = makeConfig({ analytics: "unset" });
     const outcome = await makeService(config).onSessionStart({ isInteractive: false });
+    await settleBackgroundPing();
     expect(outcome).toEqual({ kind: "quiet" });
     expect(config.rawRef.analytics).toBe("unset");
     expect(config.saveCount).toBe(0);
@@ -295,6 +313,7 @@ describe("onSessionStart", () => {
     });
 
     expect(await service.onSessionStart({ isInteractive: false })).toEqual({ kind: "quiet" });
+    await settleBackgroundPing();
     expect(calls).toEqual([]);
   });
 
@@ -317,6 +336,7 @@ describe("onSessionStart", () => {
     const outcome = await makeService(config, { env: { CI: "true" } }).onSessionStart({
       isInteractive: true,
     });
+    await settleBackgroundPing();
     expect(outcome).toEqual({ kind: "quiet" });
     expect(config.rawRef.analytics).toBe("disabled");
     expect(config.rawRef.installId).toBe("");
@@ -333,6 +353,7 @@ describe("onSessionStart", () => {
       },
     });
     await service.onSessionStart({ isInteractive: true });
+    await settleBackgroundPing();
     expect(config.rawRef.analytics).toBe("enabled");
     expect(calls).toHaveLength(1);
   });
@@ -471,6 +492,7 @@ describe("the wire carries a digest, never the stored id", () => {
     });
 
     await service.onSessionStart({ isInteractive: true });
+    await settleBackgroundPing();
 
     const sent = JSON.parse(body) as { installId: string };
     expect(sent.installId).toBe(installIdDigest(UUID));
@@ -513,6 +535,7 @@ describe("the wire carries a digest, never the stored id", () => {
       },
     });
     await service.onSessionStart({ isInteractive: true });
+    await settleBackgroundPing();
     expect((JSON.parse(body) as { installId: string }).installId).toBe(preview.installId);
   });
 
@@ -532,6 +555,7 @@ describe("the wire carries a digest, never the stored id", () => {
       },
     });
     await service.onSessionStart({ isInteractive: true });
+    await settleBackgroundPing();
     expect(Object.keys(JSON.parse(body) as object).sort()).toEqual([...ANALYTICS_PAYLOAD_KEYS]);
   });
 });

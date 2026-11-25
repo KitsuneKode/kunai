@@ -1,4 +1,5 @@
 import type { Container } from "@/container";
+import { stremioAddonsEnabled } from "@/domain/provider/stremio-addons";
 import { catalogAnswersSnapshot } from "@/services/catalog/catalog-source-ledger";
 import { tmdbCredentialStatus } from "@/services/catalog/tmdb-proxy";
 import { buildDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
@@ -49,6 +50,10 @@ export function buildDiagnosticsPanelInput(
       tmdb: tmdbCredentialStatus(),
       wyzieConfigured: resolveWyzieApiKey(container.config.wyzieApiKey) !== "",
     },
+    // Fresh consent read — the file is the truth, not the boot-time snapshot.
+    stremioAddonsEnabled: stremioAddonsEnabled(
+      container.config.readStremioAddonsConsent?.() ?? container.config.getRaw(),
+    ),
   };
 }
 

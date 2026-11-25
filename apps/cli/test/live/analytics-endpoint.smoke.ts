@@ -81,6 +81,9 @@ async function main(): Promise<void> {
         raw = { ...raw, lastAnalyticsPingAt: completion.lastAnalyticsPingAt };
       return true;
     },
+    async readPersistedAnalyticsConsent() {
+      return { analytics: raw.analytics, installId: raw.installId };
+    },
   };
   let pingStatus: number | null = null;
   const service = new UsageAnalyticsService({
