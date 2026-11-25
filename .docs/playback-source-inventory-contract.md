@@ -395,3 +395,19 @@ the available inventory and session language preference. Live Off takes
 precedence over the visibility flag when no track is selected; visibility Off
 with a selected track is reported as hidden. Native On and visibility changes
 remain file-local observations rather than saved language preferences.
+
+## Local manifest materialization
+
+Some streams reach mpv as a local file instead of their URL: an HLS playlist
+whose CDN uses host-root segment paths mpv's partial read mishandles
+(`services/playback/hls-manifest-materializer.ts`), and AllManga Ak's deferred
+DASH pair written as an MPD (`services/playback/deferred-media-materializer.ts`).
+The file is local; what it names is not, so two rules hold:
+
+- Every reference is made absolute against the URL the playlist was finally
+  served from, after redirects: segment lines and the `URI="…"` of
+  `#EXT-X-KEY`, `#EXT-X-MAP` and `#EXT-X-MEDIA`, relative or host-root
+  (`absolutizeHlsManifest`). Anything left relative resolves against the temp
+  directory.
+- The stream keeps its request headers. The resolve gate probed the remote
+  media with them, and mpv must fetch it the same way.
