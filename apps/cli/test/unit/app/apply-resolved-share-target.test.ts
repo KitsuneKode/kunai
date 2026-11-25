@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import {
   applyResolvedShareSideEffects,
   applyShareRefLaunch,
+  noteShareTarget,
 } from "@/app/bootstrap/apply-resolved-share-target";
 import {
   consumeShareBootstrapStartSeconds,
@@ -77,6 +78,29 @@ describe("applyShareRefLaunch", () => {
     });
     expect(launch).toEqual({
       query: "naruto",
+      autoPickSearchResultIndex: 1,
+    });
+    expect(consumeShareBootstrapStartSeconds()).toBe(42);
+  });
+
+  // Sol review #8: a search-anchored link kept its timestamp and dropped its
+  // episode, so the time landed on whatever episode opened.
+  it("carries a search link's episode as a requested episode, like -e", async () => {
+    setShareBootstrapStartSeconds(undefined);
+    const { container } = createApplyContainer();
+    const launch = await applyShareRefLaunch(container, {
+      action: "play",
+      ref: {
+        anchor: { by: "search", query: "provider native show" },
+        kind: "series",
+        season: 2,
+        episode: 7,
+        startSeconds: 42,
+      },
+    });
+    expect(launch).toEqual({
+      query: "provider native show",
+      requestedEpisode: { season: 2, episode: 7 },
       autoPickSearchResultIndex: 1,
     });
     expect(consumeShareBootstrapStartSeconds()).toBe(42);
@@ -183,5 +207,32 @@ describe("applyResolvedShareSideEffects", () => {
       },
     );
     expect(providers).toEqual([]);
+  });
+});
+
+describe("noteShareTarget", () => {
+  it("names a search link's episode and time for /watch, after any resolver note", () => {
+    const { container, notes } = createApplyContainer();
+    noteShareTarget(container, {
+      title: { id: "search:show", type: "series", name: "Show" },
+      mode: "series",
+      searchQuery: "show",
+      episode: { season: 2, episode: 7 },
+      startSeconds: 42,
+      note: "Shared source isn't available here.",
+    });
+    expect(notes).toEqual([
+      "Shared source isn't available here. This link names S02E07 at 0:42: choose the title, then that episode.",
+    ]);
+  });
+
+  it("adds nothing for a catalog link, which carries its episode itself", () => {
+    const { container, notes } = createApplyContainer();
+    noteShareTarget(container, {
+      title: { id: "tmdb:1", type: "series", name: "Show" },
+      mode: "series",
+      episode: { season: 1, episode: 2 },
+    });
+    expect(notes).toEqual([]);
   });
 });

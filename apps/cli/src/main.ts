@@ -430,9 +430,7 @@ async function maybeRunDownloadMode(
   container: Awaited<ReturnType<typeof createContainer>>,
   bootstrapTitle: TitleInfo | null,
 ): Promise<boolean> {
-  if (!args.download) {
-    return false;
-  }
+  if (!args.download) return false;
 
   const { resolveAutoPickIndex } = await import("@/app/bootstrap/bootstrap-intent");
   const searchResult = bootstrapTitle
@@ -1110,6 +1108,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     bootstrapTitle = mapped.title;
   }
   let bootstrapEpisode: EpisodeInfo | null = null;
+  let shareRequestedEpisode: { season: number; episode: number } | undefined;
   let autoPickSearchResultIndex = bootstrapIntent.autoPickSearchResultIndex;
 
   // Untrusted handoffs confirm before any share resolution: mapping an anime
@@ -1140,6 +1139,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       bootstrapQuery = shareBootstrap.query;
       bootstrapTitle = null;
       bootstrapEpisode = null;
+      shareRequestedEpisode = shareBootstrap.requestedEpisode;
       autoPickSearchResultIndex = shareBootstrap.autoPickSearchResultIndex ?? 1;
     } else if (shareBootstrap.title) {
       bootstrapTitle = shareBootstrap.title;
@@ -1523,7 +1523,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       requestedEpisode:
         args.episode !== undefined
           ? { season: args.season ?? 1, episode: args.episode }
-          : undefined,
+          : shareRequestedEpisode,
       initialRoute:
         args.initialRoute ??
         (freshInstall && !bootstrapTitle && !bootstrapQuery && !args.offline

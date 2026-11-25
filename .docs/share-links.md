@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T15:37:23Z"
+lastReviewed: "2026-11-25T21:02:30Z"
 ---
 
 # Share Links & PlaybackTargetRef
@@ -83,6 +83,14 @@ launch, wins over local history, and skips the resume prompt
 `t=0` means "from the beginning", not "no timestamp". It is consumed once from
 the start mailbox, so every later episode (auto-advance, navigation) resumes
 from its own history.
+
+A search-anchored link (`q=`, used for titles without a portable catalog id)
+keeps its `s`/`e`/`abs` too. At startup (`--open`, protocol handoff) the
+episode becomes the session's `requestedEpisode` — the same channel as `-e`,
+which still wins — and is armed once the auto-picked title is known, so the
+timestamp lands on the episode the link names. `/watch` opens the query
+mid-session and leaves the pick to the viewer, so it says which episode and time
+the link names instead of dropping them (`noteShareTarget`).
 
 ## Examples
 
