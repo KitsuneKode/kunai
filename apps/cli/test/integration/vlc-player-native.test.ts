@@ -108,3 +108,99 @@ nativeTest(
   },
   30_000,
 );
+
+function headlessService(spawned: string[][]) {
+  let active: Parameters<PlayerControlService["setActive"]>[0] = null;
+  const service = new VlcPlayerService({
+    playerControl: { setActive: (control) => (active = control), getActive: () => active },
+    runtime: {
+      ...defaultVlcRuntime,
+      spawn: (argv) => {
+        spawned.push([...argv]);
+        return defaultVlcRuntime.spawn(argv);
+      },
+      extraArgs: ["--intf=dummy", "--vout=dummy", "--aout=dummy"],
+      createPlaybackOutputGate: () => createPlaybackOutputGate(2),
+    },
+  });
+  return service;
+}
+
+nativeTest(
+  "real VLC: autoplay-chain plays the next episode in the same window",
+  async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "kunai-vlc-native-"));
+    const first = join(tempDir, "ep1.mp4");
+    const second = join(tempDir, "ep 2.mp4");
+    await makeClip(first, 4);
+    await makeClip(second, 4);
+    const spawned: string[][] = [];
+    const service = headlessService(spawned);
+    const play = async (path: string) => {
+      const events: PlayerPlaybackEvent[] = [];
+      const result = await service.play(
+        { url: path, headers: {}, timestamp: Date.now() },
+        {
+          url: path,
+          displayTitle: "Kunai VLC chain",
+          playbackMode: "autoplay-chain",
+          onPlaybackEvent: ({ event }) => events.push(event),
+        },
+      );
+      return { result, events };
+    };
+    try {
+      const one = await play(first);
+      expect(one.result.endReason).toBe("eof");
+      // A local path with a space reaches in_play as a file URI.
+      const two = await play(second);
+      expect(two.result.endReason).toBe("eof");
+      expect(two.events.map((event) => event.type)).toContain("playback-started");
+      expect(spawned).toHaveLength(1);
+    } finally {
+      await service.releasePersistentSession();
+    }
+  },
+  45_000,
+);
+
+nativeTest(
+  "real VLC: an intro is skipped by seeking past it",
+  async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "kunai-vlc-native-"));
+    const clip = join(tempDir, "intro.mp4");
+    await makeClip(clip, 12);
+    const service = headlessService([]);
+    const events: PlayerPlaybackEvent[] = [];
+    const positions: Array<number | "skipped"> = [];
+    const result = await service.play(
+      { url: clip, headers: {}, timestamp: Date.now() },
+      {
+        url: clip,
+        displayTitle: "Kunai VLC skip",
+        timing: {
+          tmdbId: "1",
+          type: "series",
+          recap: [],
+          intro: [{ startMs: 1_000, endMs: 9_000 }],
+          credits: [],
+          preview: [],
+        },
+        onPlaybackEvent: ({ event }) => {
+          events.push(event);
+          if (event.type === "segment-skipped") positions.push("skipped");
+        },
+        onProgress: (seconds) => positions.push(seconds),
+      },
+    );
+    expect(events).toContainEqual({ type: "segment-skipped", kind: "intro", automatic: true });
+    expect(result.endReason).toBe("eof");
+    // The seek lands before Kunai reports the skip: every later position is past the intro.
+    const after = positions
+      .slice(positions.indexOf("skipped") + 1)
+      .filter((entry): entry is number => entry !== "skipped");
+    expect(after.length).toBeGreaterThan(0);
+    expect(Math.min(...after)).toBeGreaterThanOrEqual(8.5);
+  },
+  30_000,
+);

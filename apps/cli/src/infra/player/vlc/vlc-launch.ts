@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, posix, win32 } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { whichLive } from "../../os/which";
 
@@ -95,17 +96,60 @@ export async function writeVlcSessionConfig(input: {
   return path;
 }
 
-export type VlcLaunchInput = {
-  readonly port: number;
-  readonly configPath: string;
+/** One file VLC plays: its URL and the options that belong to it alone. */
+export type VlcItem = {
   readonly url: string;
   readonly title: string;
   readonly startAtSeconds?: number;
   /** One subtitle, attached to this input only (a global one leaks into the next). */
   readonly subtitle?: string;
+};
+
+export type VlcLaunchInput = VlcItem & {
+  readonly port: number;
+  readonly configPath: string;
+  /**
+   * Keep the window open when the file ends (`--play-and-stop`), so the next
+   * episode can play in it; otherwise VLC exits with the file.
+   */
+  readonly keepOpen?: boolean;
   /** Test and headless hooks (`--intf=dummy`, `--vout=dummy`); empty in normal use. */
   readonly extraArgs?: readonly string[];
 };
+
+/**
+ * The per-input options for one item. Measured: they apply to that input only,
+ * on the command line and through `in_play` alike, and none carries into the
+ * next item.
+ */
+export function vlcItemOptions(item: VlcItem): string[] {
+  const options = [`:meta-title=${item.title}`];
+  if (item.startAtSeconds !== undefined && item.startAtSeconds > 0) {
+    options.push(`:start-time=${Math.floor(item.startAtSeconds)}`);
+  }
+  if (item.subtitle) {
+    // Measured: `:input-slave` loads an HTTP subtitle; `:sub-file` does not.
+    options.push(
+      /^https?:\/\//i.test(item.subtitle)
+        ? `:input-slave=${item.subtitle}`
+        : `:sub-file=${item.subtitle}`,
+    );
+  }
+  return options;
+}
+
+/** A URL as VLC's `in_play` wants it: local paths become `file://` URIs. */
+function vlcInputUri(url: string): string {
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(url) ? url : pathToFileURL(url).href;
+}
+
+/** The query that plays `item` in a running VLC (`/requests/status.json?…`). */
+export function buildVlcInPlayQuery(item: VlcItem): string {
+  const options = vlcItemOptions(item)
+    .map((option) => `&option=${encodeURIComponent(option)}`)
+    .join("");
+  return `command=in_play&input=${encodeURIComponent(vlcInputUri(item.url))}${options}`;
+}
 
 /**
  * argv for one VLC session. VLC keeps its own interface (the user's GUI); Kunai
@@ -113,7 +157,7 @@ export type VlcLaunchInput = {
  * otherwise break observation.
  */
 export function buildVlcArgs(input: VlcLaunchInput): string[] {
-  const args = [
+  return [
     "--extraintf=http",
     "--http-host=127.0.0.1",
     `--http-port=${input.port}`,
@@ -126,23 +170,11 @@ export function buildVlcArgs(input: VlcLaunchInput): string[] {
     "--no-loop",
     "--no-repeat",
     "--no-random",
-    "--play-and-exit",
+    input.keepOpen ? "--play-and-stop" : "--play-and-exit",
     "--no-video-title-show",
     "--no-qt-privacy-ask",
     ...(input.extraArgs ?? []),
     input.url,
-    `:meta-title=${input.title}`,
+    ...vlcItemOptions(input),
   ];
-  if (input.startAtSeconds !== undefined && input.startAtSeconds > 0) {
-    args.push(`:start-time=${Math.floor(input.startAtSeconds)}`);
-  }
-  if (input.subtitle) {
-    // Measured: `:input-slave` loads an HTTP subtitle; `:sub-file` does not.
-    args.push(
-      /^https?:\/\//i.test(input.subtitle)
-        ? `:input-slave=${input.subtitle}`
-        : `:sub-file=${input.subtitle}`,
-    );
-  }
-  return args;
 }

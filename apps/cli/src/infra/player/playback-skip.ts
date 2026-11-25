@@ -39,6 +39,27 @@ function segmentGroups(timing: PlaybackTimingMetadata | null | undefined): reado
   ] as const;
 }
 
+/** The skip toggles a player reads from its options; `autoSkipEnabled: false` turns every one off. */
+export type PlaybackSkipOptions = {
+  readonly autoSkipEnabled?: boolean;
+  readonly skipRecap?: boolean;
+  readonly skipIntro?: boolean;
+  readonly skipCredits?: boolean;
+  readonly autoNextEnabled?: boolean;
+};
+
+/** One reading of the skip toggles, shared by mpv and VLC so both skip the same segments. */
+export function playbackSkipConfig(options: PlaybackSkipOptions): PlaybackSkipConfig {
+  const on = options.autoSkipEnabled !== false;
+  return {
+    skipRecap: on && (options.skipRecap ?? true),
+    skipIntro: on && (options.skipIntro ?? true),
+    skipPreview: false,
+    skipCredits: on && (options.skipCredits ?? true),
+    autoNextEnabled: on && (options.autoNextEnabled ?? false),
+  };
+}
+
 export function isPlaybackAutoSkipEnabled(
   kind: PlaybackSkipKind,
   config: PlaybackSkipConfig,
