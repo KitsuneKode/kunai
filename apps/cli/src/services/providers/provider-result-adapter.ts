@@ -1,7 +1,6 @@
 import type { StreamInfo, SubtitleTrack } from "@/domain/types";
 import { selectAutomaticSubtitle } from "@/subtitle";
 import {
-  isStremioAddonProviderId,
   looksLikeHiSubtitle,
   normalizeIsoLanguageCode,
   subtitleLanguageDisplayName,
@@ -126,7 +125,6 @@ export function subtitleCandidateToTrack(candidate: SubtitleCandidate): Subtitle
 
   return {
     url: candidate.url,
-    guardedAddon: isStremioAddonProviderId(candidate.providerId) || undefined,
     display: displayName ?? candidate.label,
     language: normalizedLang,
     release: candidate.syncEvidence,

@@ -42,11 +42,12 @@ test("buildMpvArgs attaches full subtitle inventory during initial launch", () =
     {
       url: "https://cdn.example/master.m3u8",
       headers: { referer: "https://www.vidking.net/", "user-agent": "Mozilla/5.0" },
-      subtitle: "https://sub.example/en.srt",
+      subtitle: "/owned/en.srt",
+      localSubtitlePaths: new Set(["/owned/en.srt", "/owned/ar.srt", "/owned/fr.srt"]),
       subtitleTracks: [
-        { url: "https://sub.example/ar.srt", language: "ar" },
-        { url: "https://sub.example/fr.srt", language: "fr" },
-        { url: "https://sub.example/en.srt", language: "en" },
+        { url: "/owned/ar.srt", language: "ar" },
+        { url: "/owned/fr.srt", language: "fr" },
+        { url: "/owned/en.srt", language: "en" },
       ],
       displayTitle: "Friends - S01E03",
     },
@@ -66,13 +67,13 @@ test("buildMpvArgs attaches full subtitle inventory during initial launch", () =
   expect(args).toContain("--demuxer-max-bytes=200MiB");
   expect(args).toContain("--input-ipc-server=/tmp/kunai-test.sock");
   expect(args.filter((arg) => arg.startsWith("--sub-file="))).toEqual([
-    "--sub-file=https://sub.example/en.srt",
-    "--sub-file=https://sub.example/ar.srt",
-    "--sub-file=https://sub.example/fr.srt",
+    "--sub-file=/owned/en.srt",
+    "--sub-file=/owned/ar.srt",
+    "--sub-file=/owned/fr.srt",
   ]);
 });
 
-test("buildMpvArgs rejects option-injection subtitle URLs from launch inventory", () => {
+test("buildMpvArgs rejects raw remote and option-injection subtitle URLs from launch inventory", () => {
   const args = buildMpvArgs(
     {
       url: "https://cdn.example/master.m3u8",
@@ -87,10 +88,7 @@ test("buildMpvArgs rejects option-injection subtitle URLs from launch inventory"
     null,
   );
 
-  expect(args.filter((arg) => arg.startsWith("--sub-file="))).toEqual([
-    "--sub-file=https://sub.example/en.srt",
-    "--sub-file=https://sub.example/ar.srt",
-  ]);
+  expect(args.filter((arg) => arg.startsWith("--sub-file="))).toEqual([]);
 });
 
 test("buildMpvArgs uses fast-start demuxer profile when startupPriority is fast", () => {
