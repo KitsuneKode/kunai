@@ -15,6 +15,19 @@ export function parsePlayerChoice(value: string | undefined): PlayerChoice {
   throw new Error(`Invalid --player value "${value}"; expected auto, mpv, or vlc.`);
 }
 
+/**
+ * The player for this launch: an explicit `--player` wins, then the choice
+ * saved in Settings, then auto. A hand-edited, unknown saved value is auto
+ * rather than a startup error.
+ */
+export function effectivePlayerChoice(
+  flag: PlayerChoice | undefined,
+  saved: string | undefined,
+): PlayerChoice {
+  if (flag) return flag;
+  return saved === "mpv" || saved === "vlc" ? saved : "auto";
+}
+
 export function normalizePlayerPlatform(platform: string): SupportedPlayerPlatform {
   if (
     platform === "android" ||

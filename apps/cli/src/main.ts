@@ -949,7 +949,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   const [
     { getKunaiPaths },
     { isBelowOnboardedFloor, maybeRunStartupSetup, shouldRunSetupWizard },
-    { detectPlayerPlatform, resolvePlayerMode },
+    { detectPlayerPlatform, effectivePlayerChoice, resolvePlayerMode },
     { checkDeps },
     { createContainer, disposeContainer },
     { resolveSessionConfigOverrides },
@@ -963,19 +963,17 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     import("@/app/session/session-overrides"),
     import("@/app/bootstrap/bootstrap-intent"),
   ]);
-  const configJson = await (async () => {
+  type ConfigPeek = {
+    onboardingVersion?: number;
+    downloadOnboardingDismissed?: boolean;
+    defaultMode?: string;
+    player?: string;
+  };
+  const configJson = await (async (): Promise<ConfigPeek> => {
     try {
-      return (await Bun.file(getKunaiPaths().configPath).json()) as {
-        onboardingVersion?: number;
-        downloadOnboardingDismissed?: boolean;
-        defaultMode?: string;
-      };
+      return (await Bun.file(getKunaiPaths().configPath).json()) as ConfigPeek;
     } catch {
-      return {} as {
-        onboardingVersion?: number;
-        downloadOnboardingDismissed?: boolean;
-        defaultMode?: string;
-      };
+      return {};
     }
   })();
   // Interactivity is part of the question: this decides whether `checkDeps`
@@ -1000,6 +998,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   // afterwards would have every report claim the pre-probe fallback.
   await graphicsProbeReady;
 
+  args.player = effectivePlayerChoice(args.player, configJson.player);
   const startupPlayerMode = resolvePlayerMode({
     choice: args.player,
     platform: detectPlayerPlatform(),

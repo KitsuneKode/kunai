@@ -35,7 +35,7 @@ export type CliArgs = {
   supportBundle: boolean;
   zen: boolean;
   mpv: MpvRuntimeOptions;
-  player: PlayerChoice;
+  player: PlayerChoice | undefined;
   minimal: boolean;
   plain: boolean;
   quick: boolean;
@@ -687,7 +687,8 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
     ...(options.userMpvConfig === false ? { noUserConfig: true } : {}),
     ...(options.mpvLogFile ? { logFile: options.mpvLogFile } : {}),
   };
-  args.player = parsePlayerChoice(options.player);
+  // Unset unless given, so a saved Settings choice can apply (`effectivePlayerChoice`).
+  args.player = options.player === undefined ? undefined : parsePlayerChoice(options.player);
   args.help = Boolean(options.help);
   args.version = Boolean(options.version);
 

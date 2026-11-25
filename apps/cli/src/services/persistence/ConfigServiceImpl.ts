@@ -97,9 +97,7 @@ function normalizeQualityPreference<T>(value: T): string {
 }
 
 function normalizeLanguageProfile<T>(profile: T): KitsuneConfig["animeLanguageProfile"] {
-  if (!isJsonObject(profile)) {
-    return { audio: "original", subtitle: "none", quality: "best" };
-  }
+  if (!isJsonObject(profile)) return { audio: "original", subtitle: "none", quality: "best" };
   return {
     audio: isJsonString(profile.audio) && profile.audio ? profile.audio : "original",
     subtitle: normalizeSubtitlePreference(profile.subtitle),
@@ -930,7 +928,9 @@ export class ConfigServiceImpl implements ConfigService {
   get startupPriority(): StartupPriority {
     return this.config.startupPriority;
   }
-
+  get player(): KitsuneConfig["player"] {
+    return this.config.player;
+  }
   get hdrMode(): KitsuneConfig["hdrMode"] {
     return this.sessionOverrides.hdrMode ?? this.config.hdrMode;
   }
