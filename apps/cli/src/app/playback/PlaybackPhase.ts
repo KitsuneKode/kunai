@@ -21,6 +21,7 @@
 //     playback-post-play-entry.ts    the post-play menu
 // =============================================================================
 
+import type { EpisodePrefetchTiming } from "@/app/playback/episode-prefetch";
 import { resetLateSubtitleLookups } from "@/app/playback/late-subtitle-resolver";
 import {
   bootstrapPlaybackEpisode,
@@ -43,10 +44,17 @@ import type { TitleInfo, EpisodeInfo } from "@/domain/types";
 
 export type { PlaybackOutcome } from "@/app/playback/playback-outcome";
 
+type PlaybackPhaseTiming = {
+  readonly countdownSleep?: (ms: number) => Promise<void>;
+  readonly prefetchTiming?: EpisodePrefetchTiming;
+};
+
 export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
   name = "playback";
 
   private readonly ledger = new PlaybackLedgerSlot();
+
+  constructor(private readonly timing: PlaybackPhaseTiming = {}) {}
 
   private async runAutoNextCountdown(
     context: PhaseContext,
@@ -69,7 +77,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     const outcome = await runAutoplayAdvanceCountdown({
       seconds: 3,
       signal: context.signal,
-      sleep: (ms) => Bun.sleep(ms),
+      sleep: this.timing.countdownSleep ?? ((ms) => Bun.sleep(ms)),
       onTick: (remaining) => {
         updatePlaybackFeedback(context, {
           detail: "Auto-next ready",
@@ -110,7 +118,7 @@ export class PlaybackPhase implements Phase<TitleInfo, PlaybackOutcome> {
     resetLateSubtitleLookups();
     const session = createPlaybackPhaseSession(title, context, {
       ledger: this.ledger,
-      // Late-bound so a test can replace the countdown on the instance.
+      prefetchTiming: this.timing.prefetchTiming,
       runAutoNextCountdown: (episode) => this.runAutoNextCountdown(context, episode),
     });
     const { queueAttempt } = session;

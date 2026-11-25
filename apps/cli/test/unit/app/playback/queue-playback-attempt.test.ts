@@ -1,6 +1,9 @@
 import { describe, expect, mock, test } from "bun:test";
 
-import { createQueuePlaybackAttempt } from "@/app/playback/queue-playback-attempt";
+import {
+  createQueuePlaybackAttempt,
+  startedEpisodeMatchesClaim,
+} from "@/app/playback/queue-playback-attempt";
 import type { QueuePlaybackIntent } from "@/domain/queue/queue-playback-intent";
 import type { QueuePlaybackFailureContext } from "@/domain/queue/QueueService";
 
@@ -72,5 +75,60 @@ describe("createQueuePlaybackAttempt", () => {
     expect(attempt.acknowledgeStarted()).toBe(false);
     expect(attempt.acknowledged).toBe(false);
     expect(attempt.rollbackIfUnacknowledged("playback-aborted")).toBe(true);
+  });
+});
+
+/**
+ * Sol review #1: a claimed S02E07 was acknowledged by row id when the viewer
+ * started S01E01 instead, so the row they meant to watch was marked played.
+ */
+describe("a claim naming an episode is consumed only by that episode", () => {
+  const SERIES: QueuePlaybackIntent = {
+    queueEntryId: "qe-2",
+    titleId: "tmdb:7",
+    mediaKind: "series",
+    season: 2,
+    episode: 7,
+  };
+
+  test("a different episode starting leaves the row for rollback", () => {
+    const acknowledgePlaybackStarted = mock(() => true);
+    const rollbackBeforeStart = mock(() => true);
+    const attempt = createQueuePlaybackAttempt(
+      { acknowledgePlaybackStarted, rollbackBeforeStart },
+      SERIES,
+    );
+
+    expect(attempt.acknowledgeStarted(undefined, { season: 1, episode: 1 })).toBe(false);
+    expect(acknowledgePlaybackStarted).not.toHaveBeenCalled();
+    // The phase's exit then restores it to pending.
+    expect(attempt.rollbackIfUnacknowledged("playback-aborted")).toBe(true);
+  });
+
+  test("the named episode starting consumes it", () => {
+    const acknowledgePlaybackStarted = mock(() => true);
+    const attempt = createQueuePlaybackAttempt(
+      { acknowledgePlaybackStarted, rollbackBeforeStart: mock(() => true) },
+      SERIES,
+    );
+
+    expect(attempt.acknowledgeStarted(undefined, { season: 2, episode: 7 })).toBe(true);
+    expect(acknowledgePlaybackStarted).toHaveBeenCalledTimes(1);
+  });
+
+  test("anime matches by absolute number in either field; title-level rows match anything", () => {
+    expect(startedEpisodeMatchesClaim(INTENT, { season: 1, episode: 13 })).toBe(true);
+    expect(startedEpisodeMatchesClaim(INTENT, { season: 2, episode: 1, absoluteEpisode: 13 })).toBe(
+      true,
+    );
+    expect(startedEpisodeMatchesClaim(INTENT, { season: 1, episode: 12 })).toBe(false);
+    const titleLevel: QueuePlaybackIntent = {
+      queueEntryId: "q",
+      titleId: "t",
+      mediaKind: "series",
+    };
+    expect(startedEpisodeMatchesClaim(titleLevel, { season: 3, episode: 4 })).toBe(true);
+    const movie: QueuePlaybackIntent = { queueEntryId: "m", titleId: "t", mediaKind: "movie" };
+    expect(startedEpisodeMatchesClaim(movie, { season: 1, episode: 1 })).toBe(true);
   });
 });

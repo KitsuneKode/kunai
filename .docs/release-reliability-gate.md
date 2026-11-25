@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T12:44:09Z"
+lastReviewed: "2026-11-25T05:06:00Z"
 ---
 
 # Kunai Release Reliability Gate
@@ -202,7 +202,20 @@ The activation critical section contains only the shared launcher replacement
 and `install.json` publication. Artifact download, checksum verification,
 versioned binary installation, and `version.json` publication remain under the
 independent per-version lock and must complete without holding the activation
-lock. If manifest publication fails after launcher replacement, the previous
+lock.
+
+Native auto-update and `kunai upgrade` re-read `install.json` under the activation
+lock and publish only a version newer than the one active on disk. An upgrade
+for the active version also checks under the per-version lock before writing to
+the store, because the Unix launcher can point directly at that binary. A
+superseded upgrade leaves the launcher and manifest intact, finishes its
+transaction, and removes its staging files. Any verified copy in the version
+store follows normal retention. An unpinned `kunai install` also refuses to
+activate an older release and can repair the active version with `--force`.
+A pinned `kunai install X.Y.Z` or a verified local rollback can activate an
+older version.
+
+If manifest publication fails after launcher replacement, the previous
 launcher is restored before the activation lock is released. The lifecycle lock
 also excludes new installs while uninstall is active. Its purge-safe guard at
 `{dataDir}.lifecycle.lock` remains outside the removable data root; uninstall

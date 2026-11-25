@@ -113,10 +113,14 @@ export class BinaryAutoUpdater {
       }
 
       const result: InstallLatestResult = await (this.deps.installLatest ?? installLatest)({
+        intent: "upgrade",
         version: latest,
       });
       if (result.status === "installed") {
         return { status: "installed", version: result.version };
+      }
+      if (result.status === "superseded") {
+        return { status: "pending-restart", version: result.activeVersion };
       }
       if (result.status === "up-to-date") {
         return { status: "up-to-date" };

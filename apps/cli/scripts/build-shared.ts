@@ -477,8 +477,13 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // 3,290,941 bytes. 3215 KiB leaves 1,219 bytes; public launcher budgets are unchanged.
 // Merged onto main after #737 (nested-secret vaulting, shared deadline
 // combiner), it measured 3,293,492 bytes. 3219 KiB leaves 2,764 bytes; public
-// launcher budgets are unchanged.
-export const NPM_BUNDLE_BUDGET_KB = 3_219;
+// launcher budgets are unchanged. The tmux graphics path measured 3,297,643
+// bytes. With measured terminal cell sizing the bundle measured 3,300,575
+// bytes; 3226 KiB leaves 2,849 bytes.
+// Merge-train batch 1 (#750 #751 #752 #782 #753 #786 #805 #783: playback
+// failover and correctness fixes) measured 3,303,435 bytes together, 11 over.
+// No dependency or asset. 3227 KiB leaves 1,013 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_227;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
@@ -581,21 +586,21 @@ export const COMPILED_BINARY_BUDGET_MIB = 120;
  * android-x64 117.8. Every value stays under the 128 MiB ceiling shipped
  * updaters enforce. Raising one is a deliberate edit with a new measurement.
  */
-export const COMPILED_BINARY_BUDGET_MIB_BY_TARGET: Readonly<Record<string, number>> = {
-  "darwin-arm64": 104,
-  "darwin-x64": 112,
-  "linux-arm64": 122,
-  "linux-arm64-musl": 115,
-  "linux-x64": 122,
-  "linux-x64-musl": 116,
-  "android-arm64": 116,
-  "android-x64": 121,
-  "windows-x64": 117,
-  "windows-arm64": 103,
-};
+export const COMPILED_BINARY_BUDGET_MIB_BY_TARGET = new Map([
+  ["darwin-arm64", 104],
+  ["darwin-x64", 112],
+  ["linux-arm64", 122],
+  ["linux-arm64-musl", 115],
+  ["linux-x64", 122],
+  ["linux-x64-musl", 116],
+  ["android-arm64", 116],
+  ["android-x64", 121],
+  ["windows-x64", 117],
+  ["windows-arm64", 103],
+]);
 
 export function compiledBinaryBudgetMib(targetId: string): number {
-  return COMPILED_BINARY_BUDGET_MIB_BY_TARGET[targetId] ?? COMPILED_BINARY_BUDGET_MIB;
+  return COMPILED_BINARY_BUDGET_MIB_BY_TARGET.get(targetId) ?? COMPILED_BINARY_BUDGET_MIB;
 }
 
 export function assertCompiledBinaryBudget(targetId: string, bytes: number): void {

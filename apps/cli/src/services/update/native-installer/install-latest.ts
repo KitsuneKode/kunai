@@ -18,7 +18,11 @@ import {
   type PlatformLibc,
 } from "../platform-assets";
 import { pickChecksum, verifyChecksum } from "../self-replace";
-import { normalizeRequestedVersion, parseCanonicalVersion } from "../version";
+import {
+  compareCanonicalVersions,
+  normalizeRequestedVersion,
+  parseCanonicalVersion,
+} from "../version";
 import { withActivationLock } from "./activation-lock";
 import { cleanupOldVersions } from "./cleanup-versions";
 import {
@@ -56,10 +60,12 @@ import { writeInstalledVersionMetadata } from "./version-metadata";
 export type InstallLatestResult =
   | { readonly status: "up-to-date"; readonly version: string }
   | { readonly status: "installed"; readonly version: string; readonly versionPath: string }
+  | { readonly status: "superseded"; readonly activeVersion: string }
   | { readonly status: "skipped"; readonly reason: "lock-contention" }
   | { readonly status: "failed"; readonly error: string };
 
 export type InstallLatestOptions = {
+  readonly intent: "upgrade" | "install-latest" | "explicit";
   readonly version?: string;
   readonly force?: boolean;
   readonly dlBase?: string;
@@ -76,7 +82,7 @@ let inFlightInstall: Promise<InstallLatestResult> | null = null;
  * Download, verify, and install the latest (or pinned) binary into the versioned
  * store, then update the launcher symlink. Module-level singleflight.
  */
-export function installLatest(options: InstallLatestOptions = {}): Promise<InstallLatestResult> {
+export function installLatest(options: InstallLatestOptions): Promise<InstallLatestResult> {
   if (inFlightInstall) return inFlightInstall;
   const promise = installLatestImpl(options).finally(() => {
     if (inFlightInstall === promise) inFlightInstall = null;
@@ -115,12 +121,25 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
   const archiveChecksumUrl = `${dlBase}/download/${tag}/SHA256SUMS.archives`;
   const versionPath = versionBinaryPath(layout, resolved);
 
-  if (!options.force && existsSync(versionPath) && manifest?.activeVersion === resolved) {
+  if (
+    options.intent !== "upgrade" &&
+    !options.force &&
+    existsSync(versionPath) &&
+    manifest?.activeVersion === resolved
+  ) {
     return { status: "up-to-date", version: resolved };
   }
 
   try {
     const result = await withVersionLock(layout, resolved, async () => {
+      if (options.intent === "upgrade") {
+        // The launcher may be a symlink to this exact file. Check under the
+        // version lock before writing the store, even if force was requested.
+        const current = await readInstallManifest(layout.configDir);
+        if (current?.method === "binary" && current.activeVersion === resolved) {
+          return { status: "superseded" as const, activeVersion: resolved };
+        }
+      }
       await cleanupAbandonedTransactions(layout).catch(() => {});
       await rm(stagingDirForVersion(layout, resolved), { recursive: true, force: true }).catch(
         () => {},
@@ -325,6 +344,14 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
               "Install ownership changed while downloading; refusing to replace a non-native publication",
             );
           }
+          const activeVersion =
+            activeManifest && parseCanonicalVersion(activeManifest.activeVersion);
+          if (options.intent !== "explicit" && activeVersion) {
+            const order = compareCanonicalVersions(resolved, activeVersion);
+            if (order < 0 || (order === 0 && options.intent === "upgrade")) {
+              return { status: "superseded" as const, activeVersion };
+            }
+          }
           const launcherPath = activeManifest?.launcherPath ?? layout.launcherPath;
           const launcherSnapshot = await captureLauncherSnapshot(launcherPath);
           let preserveSnapshot = false;
@@ -379,6 +406,7 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
         if (activated === null) {
           return { status: "skipped" as const, reason: "lock-contention" as const };
         }
+        if (activated) return activated;
 
         // Fire-and-forget must never reject: a cleanup failure surfacing as an
         // unhandled rejection would turn a completed install into a crash.

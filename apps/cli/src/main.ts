@@ -23,6 +23,7 @@ import { existsSync } from "node:fs";
 // =============================================================================
 
 import type { KunaiHandoffLaunch } from "@/app/bootstrap/handoff-url";
+import { launchNeedsYtDlp } from "@/app/bootstrap/launch-dependencies";
 import type { SessionController } from "@/app/session/SessionController";
 import {
   createShutdownCoordinator,
@@ -1006,7 +1007,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   const capabilitySnapshot = await checkDeps(KUNAI_VERSION, {
     silent: onboardingWillRun,
     requireMpv: startupPlayerMode.kind === "managed-mpv",
-    requireYtDlp: !args.offline && (args.youtube || configJson.defaultMode === "youtube"),
+    requireYtDlp: launchNeedsYtDlp(args, configJson.defaultMode, pendingShareLaunch?.ref.kind),
   });
 
   const { loadCompiledSmokeProviderOverride, loadCompiledSmokeSearchDefinitions } =
@@ -1145,9 +1146,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       bootstrapEpisode = shareBootstrap.episode ?? null;
       bootstrapQuery = undefined;
     }
-    if (shareBootstrap.download) {
-      args.download = true;
-    }
+    if (shareBootstrap.download) args.download = true;
   }
 
   for (const entry of bootstrapIntent.logs) {

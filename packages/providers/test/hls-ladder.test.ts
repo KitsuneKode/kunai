@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   expandHlsMasterInventory,
+  hlsResolutionQualityClass,
   isHlsDeadHostStatus,
   looksLikeHlsMasterUrl,
   parseHlsMasterRenditions,
@@ -162,7 +163,28 @@ v-1080/playlist.m3u8
       fetch: (async () => new Response(mixedGroup)) as ExpandHlsMasterPlaylistOptions["fetch"],
     });
     expect(variants).toEqual([
-      { url: "https://cdn.example/master.m3u8", qualityLabel: "auto", qualityRank: 0 },
+      { url: "https://cdn.example/master.m3u8", qualityLabel: "auto", qualityRank: 1080 },
+    ]);
+  });
+
+  test("a whole multi-audio master still ranks by the top rung it declares", async () => {
+    const multiAudio = `#EXTM3U
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="Japanese",LANGUAGE="jpn",DEFAULT=YES
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="English",LANGUAGE="eng",URI="a-eng/playlist.m3u8"
+#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720,AUDIO="aac"
+v-720/playlist.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=13298235,RESOLUTION=1920x1080,AUDIO="aac"
+v-1080/playlist.m3u8
+`;
+    const { variants } = await expandHlsMasterInventory({
+      masterUrl: "https://cdn.example/master.m3u8",
+      // SAFETY: stub returns Response like fetch; the option type expects the full fetch signature.
+      fetch: (async () => new Response(multiAudio)) as ExpandHlsMasterPlaylistOptions["fetch"],
+    });
+    // Still one whole-master row (splitting would drop the English dub), but
+    // it competes with other sources as the 1080p it is, not as rank 0.
+    expect(variants).toEqual([
+      { url: "https://cdn.example/master.m3u8", qualityLabel: "auto", qualityRank: 1080 },
     ]);
   });
 
@@ -348,4 +370,61 @@ test("expandHlsMasterInventory combines a caller signal with its own timeout ins
   expect(seenSignal).toBeDefined();
   // Combined signal is distinct from the raw caller signal (carries the 12s deadline too).
   expect(seenSignal).not.toBe(caller.signal);
+});
+
+describe("hls variant quality evidence", () => {
+  const parse = (text: string) => parseHlsMasterVariants(text, "https://cdn.example/master.m3u8");
+
+  test("RESOLUTION outranks a NAME the packager typed", () => {
+    const [variant] = parse(`#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720,NAME="4K"
+v.m3u8
+`);
+    expect(variant?.qualityLabel).toBe("720p");
+    expect(variant?.qualityRank).toBe(720);
+  });
+
+  test("a letterboxed 1080p encode is 1080p, not 804p", () => {
+    expect(hlsResolutionQualityClass("#EXT-X-STREAM-INF:RESOLUTION=1920x804")).toBe(1080);
+    expect(hlsResolutionQualityClass("#EXT-X-STREAM-INF:RESOLUTION=3840x1600")).toBe(2160);
+    expect(hlsResolutionQualityClass("#EXT-X-STREAM-INF:RESOLUTION=1440x1080")).toBe(1080);
+    expect(hlsResolutionQualityClass("#EXT-X-STREAM-INF:RESOLUTION=1080x1920")).toBe(1080);
+    expect(hlsResolutionQualityClass("#EXT-X-STREAM-INF:BANDWIDTH=1")).toBeUndefined();
+  });
+
+  test("a row with no size and a word for a NAME never ranks by raw bandwidth", () => {
+    const variants = parse(`#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=9000000,NAME="Main"
+main.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=12000000,RESOLUTION=3840x2160
+uhd.m3u8
+`);
+    const main = variants.find((v) => v.url.endsWith("main.m3u8"));
+    const uhd = variants.find((v) => v.url.endsWith("uhd.m3u8"));
+    expect(main?.qualityRank).toBe(0);
+    expect(uhd?.qualityRank).toBe(2160);
+  });
+
+  test("AVERAGE-BANDWIDTH listed first is not read as the peak", () => {
+    const [variant] = parse(`#EXTM3U
+#EXT-X-STREAM-INF:AVERAGE-BANDWIDTH=1000000,BANDWIDTH=3000000,RESOLUTION=1920x1080
+v.m3u8
+`);
+    expect(variant?.bandwidth).toBe(3000000);
+  });
+
+  test("equal rungs sort by bandwidth so the richer encode leads", async () => {
+    const { variants } = await expandHlsMasterInventory({
+      masterUrl: "https://cdn.example/master.m3u8",
+      // SAFETY: stub returns Response like fetch; the option type expects the full fetch signature.
+      fetch: (async () =>
+        new Response(`#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=3000000,RESOLUTION=1920x1080
+lean.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=8000000,RESOLUTION=1920x1080
+rich.m3u8
+`)) as ExpandHlsMasterPlaylistOptions["fetch"],
+    });
+    expect(variants.map((v) => v.url.split("/").pop())).toEqual(["rich.m3u8", "lean.m3u8"]);
+  });
 });
