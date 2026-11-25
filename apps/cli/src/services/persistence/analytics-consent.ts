@@ -31,6 +31,20 @@ export function persistedAnalyticsConsent(
   return { analytics, installId };
 }
 
+/** The keys a rotation writes: a new identity, its cohort, and a fresh cadence. */
+export const ANALYTICS_IDENTITY_KEYS = [
+  "installId",
+  "analyticsCohort",
+  "lastAnalyticsPingAt",
+  "analyticsRetryAfter",
+] as const satisfies readonly (keyof KitsuneConfig)[];
+
+/** Every analytics key a completion or a refused rotation refreshes from disk. */
+export const ANALYTICS_STATE_KEYS = [
+  "analytics",
+  ...ANALYTICS_IDENTITY_KEYS,
+] as const satisfies readonly (keyof KitsuneConfig)[];
+
 /**
  * Every analytics key a loaded config.json grants, normalized, for startup and
  * for `kunai analytics preview`. The cohort is kept only beside the identity it

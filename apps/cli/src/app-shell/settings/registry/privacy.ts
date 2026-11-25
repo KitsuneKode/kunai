@@ -86,8 +86,9 @@ export function privacySettingsRows(ctx: SettingsRegistryContext): SettingRowDef
       run: async (actionCtx) => {
         // The service owns what a rotation writes: a new id, a new cohort and
         // cadence, and no log of pings sent under the old one.
-        const { installId: next } = await actionCtx.container.usageAnalytics.rotateIdentity();
-        return `New install id ${next.slice(0, 8)}… — earlier pings cannot be linked to it.`;
+        const rotated = await actionCtx.container.usageAnalytics.rotateIdentity();
+        if (!rotated) return "Analytics was turned off in another Kunai window; nothing to rotate.";
+        return `New install id ${rotated.installId.slice(0, 8)}… — earlier pings cannot be linked to it.`;
       },
     },
     ...updateSettingsRows(ctx),

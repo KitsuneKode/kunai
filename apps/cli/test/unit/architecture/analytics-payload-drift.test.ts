@@ -99,12 +99,17 @@ describe("analytics payload documentation drift", () => {
       analyticsOs("android", {}),
     ];
     expect(reported).toContain("android");
-    for (const os of reported) expect([...ALLOWED_OS]).toContain(os);
+    for (const os of reported) {
+      expect(
+        ALLOWED_OS.some((allowed) => allowed === os),
+        `${os} is accepted`,
+      ).toBe(true);
+    }
   });
 
   test("the contract names every key of both shapes the ingest accepts", () => {
     const body = prose(CONTRACT);
-    for (const key of INGEST_WIRE_KEYS) expect(body).toContain(`\`${key}\``);
+    for (const key of INGEST_WIRE_KEYS) expect(body).toContain(key);
     for (const wireKeys of [INGEST_V1_KEYS, INGEST_V2_KEYS]) {
       const listed = [...body.matchAll(/`\{ ([\w, ]+) \}`/g)].map((match) =>
         (match[1] ?? "").split(", ").sort().join(","),

@@ -1074,12 +1074,14 @@ exec ${quoteShellArgument(realDd)} "$@"
 });
 
 /**
- * `install.marker`: one best-effort request after a successful install, so
- * GitHub's download count tells installs from updates. Kunai receives nothing.
+ * Release markers: one best-effort request after a successful install,
+ * `install.marker` for a fresh install and `update.marker` over an existing
+ * one, so GitHub's download count tells installs from updates. Kunai receives
+ * nothing.
  * The sandbox forces DO_NOT_TRACK=1, so every other test here also proves the
  * opt-out; these turn it off explicitly to see the request at all.
  */
-describe("install.sh install.marker", () => {
+describe("install.sh release markers", () => {
   const MARKER = "/download/v9.8.7/install.marker";
   const TRACKING_ALLOWED = { DO_NOT_TRACK: "0", CI: "0", KUNAI_NO_MARKER: "" } as const;
 
@@ -1118,7 +1120,7 @@ describe("install.sh install.marker", () => {
     return outcome;
   }
 
-  test("is fetched once, after the install succeeded", async () => {
+  test("a fresh install fetches install.marker once, after it succeeded", async () => {
     const result = await installWith(TRACKING_ALLOWED, { status: 200 });
     expect(result.status).toBe(0);
     expect(result.requests.filter((path) => path === MARKER)).toHaveLength(1);
@@ -1140,6 +1142,45 @@ describe("install.sh install.marker", () => {
       expect(result.requests).not.toContain(MARKER);
     },
   );
+
+  test("an upgrade over an existing install counts as an update; a same-version reinstall as neither", async () => {
+    const asset = hostInstallShAsset();
+    const body = "#! /bin/sh\necho kunai-fixture\n";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const routes: [string, ReleaseFixtureRoute][] = [];
+    for (const version of ["9.8.7", "9.8.8"]) {
+      routes.push([`/download/v${version}/${asset}`, { body }]);
+      routes.push([`/download/v${version}/SHA256SUMS`, { body: `${digest}  ${asset}\n` }]);
+      routes.push([`/download/v${version}/install.marker`, { body: "marker" }]);
+      routes.push([`/download/v${version}/update.marker`, { body: "marker" }]);
+    }
+    const sandbox = createInstallerSandbox("install-sh-marker-upgrade");
+    const markersPerRun: string[][] = [];
+    try {
+      await withReleaseFixture(Object.fromEntries(routes), async (baseUrl, evidence) => {
+        for (const version of ["9.8.7", "9.8.8", "9.8.8"]) {
+          const before = evidence.requests.length;
+          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", version], {
+            ...sandbox.env,
+            ...TRACKING_ALLOWED,
+            KUNAI_DL_BASE: baseUrl,
+            PATH: `${sandbox.binDir}${delimiter}${sandbox.env.PATH ?? ""}`,
+          });
+          expect(result.status, `${result.stderr}${result.stdout}`).toBe(0);
+          markersPerRun.push(
+            evidence.requests.slice(before).filter((path) => path.endsWith(".marker")),
+          );
+        }
+      });
+    } finally {
+      sandbox.cleanup();
+    }
+    expect(markersPerRun).toEqual([
+      ["/download/v9.8.7/install.marker"],
+      ["/download/v9.8.8/update.marker"],
+      [],
+    ]);
+  });
 
   test("is not fetched when the install fails", async () => {
     const result = await installWith(TRACKING_ALLOWED, { status: 200 }, { corruptChecksum: true });

@@ -754,6 +754,7 @@ describe("installLatest", () => {
       const bytes = new TextEncoder().encode("VERIFIED-BINARY");
       const markers: string[] = [];
       const result = await installLatest({
+        intent: "upgrade",
         version: "3.1.4",
         force: true,
         layout,

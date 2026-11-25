@@ -49,6 +49,12 @@ export type AnalyticsPingCompletion = {
   readonly analyticsCohort?: string;
 };
 
+/** What the explicit rotate action writes: a new identity and a fresh cadence. */
+export type AnalyticsIdentityRotation = Pick<
+  BaseKitsuneConfig,
+  "installId" | "analyticsCohort" | "lastAnalyticsPingAt" | "analyticsRetryAfter"
+>;
+
 /** Analytics consent and install id exactly as config.json holds them now. */
 export type PersistedAnalyticsConsent = {
   readonly analytics: KitsuneConfig["analytics"];
@@ -70,6 +76,13 @@ export interface ConfigService extends KitsuneConfig {
   save(): Promise<void>;
   /** Apply bookkeeping only if persisted consent and identity still match. */
   recordAnalyticsPing(completion: AnalyticsPingCompletion): Promise<boolean>;
+  /**
+   * Compare-and-set for the explicit rotate action: write the new identity only
+   * while memory and config.json both still say `enabled`. Otherwise refresh the
+   * analytics fields this process has not edited from the file and return
+   * false, so a stale process cannot put an identity back beside `disabled`.
+   */
+  rotateAnalyticsIdentity(rotation: AnalyticsIdentityRotation): Promise<boolean>;
   /**
    * Re-read config.json's analytics consent and install id, as a sibling
    * process may have left them. Memory is not touched, so a pending local change

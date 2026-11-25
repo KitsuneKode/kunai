@@ -244,8 +244,9 @@ Every release carries `install.marker` and `update.marker`, fixed version-free
 bytes written by `scripts/packaging/release-markers.ts`, uploaded by the
 release workflow and required by `verify-github-release-assets.ts`.
 `install.sh` and `install.ps1` fetch `install.marker` once after a successful
-**fresh** binary install, and `update.marker` instead when they replaced an
-existing install. The native updater fetches `update.marker` once after a
+**fresh** binary install, and `update.marker` instead when they replaced
+another version (judged from `install.json` under the activation lock); a
+same-version reinstall fetches neither. The native updater fetches `update.marker` once after a
 verified activation (`kunai upgrade` and the background auto-updater, not a
 fresh `kunai install`). **GitHub counts the download; Kunai receives
 nothing.** The request goes to the release host that just served the binary

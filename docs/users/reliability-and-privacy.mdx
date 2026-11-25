@@ -168,7 +168,8 @@ Every release carries two tiny files, `install.marker` and `update.marker`.
 After a successful fresh binary install, `install.sh` and `install.ps1`
 download `install.marker` once; when they replace an install that was already
 there, they download `update.marker` instead, and so does Kunai's own updater
-after a verified update. **GitHub counts the download; we receive nothing.** The
+after a verified update. Reinstalling the version you already have fetches
+neither. **GitHub counts the download; we receive nothing.** The
 request goes to the same GitHub release that just served the binary, carries
 nothing that download did not, and its answer is ignored. It is one attempt with
 a short timeout, never retried, and a failure is silent and never fails the

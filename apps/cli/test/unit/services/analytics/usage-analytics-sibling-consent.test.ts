@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { FileStorage } from "@/infra/storage/FileStorage";
+import { filePingLog, type PingLog } from "@/services/analytics/ping-log";
 import {
   type AnalyticsFetch,
   UsageAnalyticsService,
@@ -162,5 +164,81 @@ describe("pre-send persisted consent check", () => {
     expect(disk.lastAnalyticsPingAt).toBe(NOW);
     expect(disk.analytics).toBe("enabled");
     expect(disk.installId === UUID).toBe(true);
+  });
+});
+
+describe("the local ping log and rotation respect a sibling's disable", () => {
+  function serviceWith(config: ConfigServiceImpl, pingLog: PingLog) {
+    const sent = { count: 0 };
+    const service = new UsageAnalyticsService({
+      pingLog,
+      config,
+      currentVersion: "0.4.0",
+      endpoint: TEST_ENDPOINT,
+      fetchImpl: async () => {
+        sent.count += 1;
+        return new Response(null, { status: 204 });
+      },
+      now: () => NOW,
+      platform: { os: "linux", arch: "x64" },
+      env: {},
+    });
+    return { service, sent };
+  }
+
+  test("a disable that lands while the log is written sends nothing and leaves no log", async () => {
+    const dir = await sandbox(ENABLED);
+    const logPath = join(dirname(dir.configPath), "analytics-pings.json");
+    const a = await dir.load();
+    const b = await dir.load();
+    const sibling = serviceWith(b, filePingLog(logPath));
+    const real = filePingLog(logPath);
+    // The sibling's disable (which removes the log) runs inside A's append,
+    // so A's entry is written after the file was already removed.
+    const racingLog: PingLog = {
+      ...real,
+      append: async (entry) => {
+        await sibling.service.setConsent("disabled");
+        await real.append(entry);
+      },
+    };
+    const { service, sent } = serviceWith(a, racingLog);
+
+    await service.maybePing({ isInteractive: true });
+
+    expect(sent.count).toBe(0);
+    expect(existsSync(logPath)).toBe(false);
+    expect((await dir.readDisk()).analytics).toBe("disabled");
+  });
+
+  test("rotating after a sibling disabled writes nothing back beside disabled", async () => {
+    const dir = await sandbox({ ...ENABLED, analyticsCohort: "2026-10" });
+    const a = await dir.load();
+    const b = await dir.load();
+    await serviceWith(b, memoryPingLog()).service.setConsent("disabled");
+
+    // A's memory still says enabled, which is all the Settings gate reads.
+    expect(a.getRaw().analytics).toBe("enabled");
+    const rotated = await serviceWith(a, memoryPingLog()).service.rotateIdentity();
+
+    expect(rotated).toBeNull();
+    const disk = await dir.readDisk();
+    expect(disk.analytics).toBe("disabled");
+    expect(disk.installId === "").toBe(true);
+    expect(disk.analyticsCohort).toBe("");
+    // The refused rotation refreshed A from the file, so it stops offering it.
+    expect(a.getRaw().analytics).toBe("disabled");
+  });
+
+  test("rotating while the file still says enabled writes the new identity", async () => {
+    const dir = await sandbox({ ...ENABLED, analyticsCohort: "2026-03" });
+    const a = await dir.load();
+    const rotated = await serviceWith(a, memoryPingLog()).service.rotateIdentity();
+
+    expect(rotated).not.toBeNull();
+    const disk = await dir.readDisk();
+    expect(disk.analytics).toBe("enabled");
+    expect(disk.installId === rotated?.installId).toBe(true);
+    expect(disk.analyticsCohort).toBe("2026-10");
   });
 });

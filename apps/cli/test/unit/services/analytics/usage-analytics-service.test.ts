@@ -53,6 +53,13 @@ function makeConfig(overrides: Partial<KitsuneConfig> = {}) {
       persisted = { ...raw };
       return true;
     },
+    async rotateAnalyticsIdentity(rotation: Partial<KitsuneConfig>) {
+      if (raw.analytics !== "enabled" || persisted.analytics !== "enabled") return false;
+      raw = { ...raw, ...rotation };
+      saves += 1;
+      persisted = { ...raw };
+      return true;
+    },
     async readPersistedAnalyticsConsent() {
       return { analytics: persisted.analytics, installId: persisted.installId };
     },
@@ -79,7 +86,12 @@ const settleBackgroundPing = () => new Promise<void>((resolve) => setImmediate(r
 function makeService(
   config: Pick<
     ConfigServiceImpl,
-    "getRaw" | "update" | "save" | "recordAnalyticsPing" | "readPersistedAnalyticsConsent"
+    | "getRaw"
+    | "update"
+    | "save"
+    | "recordAnalyticsPing"
+    | "rotateAnalyticsIdentity"
+    | "readPersistedAnalyticsConsent"
   >,
   options: {
     fetchImpl?: AnalyticsFetch;
@@ -231,6 +243,7 @@ describe("pending ping identity", () => {
           update: (patch) => config.update(patch),
           save: () => config.save(),
           readPersistedAnalyticsConsent: () => config.readPersistedAnalyticsConsent(),
+          rotateAnalyticsIdentity: (rotation) => config.rotateAnalyticsIdentity(rotation),
           recordAnalyticsPing: async (completion) => {
             started.resolve();
             await release.promise;
@@ -656,7 +669,9 @@ describe("cohort", () => {
       analyticsCohort: "2026-03",
       lastAnalyticsPingAt: NOW - 1000,
     });
-    const { installId } = await makeService(config).rotateIdentity();
+    const rotated = await makeService(config).rotateIdentity();
+    if (!rotated) throw new Error("an enabled install must rotate");
+    const { installId } = rotated;
     expect(installId).not.toBe(UUID);
     expect(config.rawRef.installId).toBe(installId);
     expect(config.rawRef.analyticsCohort).toBe("2026-08");

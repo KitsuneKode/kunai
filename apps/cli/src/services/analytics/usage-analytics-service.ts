@@ -13,6 +13,7 @@ import {
 import { isAndroidRuntime } from "@/domain/platform-runtime";
 import { dbgErr } from "@/logger";
 import type {
+  AnalyticsIdentityRotation,
   AnalyticsPingCompletion,
   KitsuneConfig,
   PersistedAnalyticsConsent,
@@ -162,6 +163,7 @@ type AnalyticsConfig = {
   update(partial: Partial<KitsuneConfig>): Promise<void>;
   save(): Promise<void>;
   recordAnalyticsPing(completion: AnalyticsPingCompletion): Promise<boolean>;
+  rotateAnalyticsIdentity(rotation: AnalyticsIdentityRotation): Promise<boolean>;
   readPersistedAnalyticsConsent(): Promise<PersistedAnalyticsConsent>;
 };
 
@@ -238,10 +240,14 @@ export class UsageAnalyticsService {
    * A fresh identity, from the explicit rotate action. The new id starts its
    * own cohort and cadence, and the log of pings sent under the old one goes:
    * a rotation that kept the old ids beside the new one would not be one.
+   *
+   * `null` when config.json no longer says `enabled` (a sibling disabled it):
+   * the write is a locked compare-and-set, so a stale process cannot put an
+   * identity back beside `disabled`.
    */
-  async rotateIdentity(): Promise<{ readonly installId: string }> {
+  async rotateIdentity(): Promise<{ readonly installId: string } | null> {
     const installId = rotateInstallId();
-    await this.deps.config.update({
+    const rotated = await this.deps.config.rotateAnalyticsIdentity({
       installId,
       analyticsCohort: analyticsMonthKey(this.now()),
       // Carrying the old timestamps forward would suppress the first ping
@@ -249,9 +255,9 @@ export class UsageAnalyticsService {
       lastAnalyticsPingAt: 0,
       analyticsRetryAfter: 0,
     });
-    await this.deps.config.save();
+    // Either way the old pings go: rotated, or analytics is off on disk.
     await this.deps.pingLog.remove().catch(() => undefined);
-    return { installId };
+    return rotated ? { installId } : null;
   }
 
   /**
@@ -380,11 +386,6 @@ export class UsageAnalyticsService {
     if (!isValidInstallId(config.installId)) return;
     const installId = config.installId;
 
-    // Everything above read this process's snapshot. A sibling kunai may have
-    // disabled analytics or rotated the id since, so nothing is sent until the
-    // file agrees; the completion's own re-check only guards the bookkeeping,
-    // after the request has already left.
-    if (!(await this.persistedConsentAllows(installId))) return;
     // This month's HMAC of the stored id, never the id itself. `installId`
     // below is persisted locally so the identity survives restarts.
     const identity = this.deps.config.getRaw();
@@ -397,11 +398,23 @@ export class UsageAnalyticsService {
     const body = JSON.stringify(payload);
     // A ping the log cannot record is not sent: `kunai analytics log` promises
     // every ping, and a gap would make it a sample.
-    if (!(await this.recordInPingLog(endpoint, body, installId, now))) return;
+    if (!(await this.recordInPingLog(endpoint, body, now))) return;
+
+    // Everything above read this process's snapshot. A sibling kunai may have
+    // disabled analytics or rotated the id since, so nothing is sent until the
+    // file agrees. This re-read is the last await before the request, after
+    // the log append, so a disable that lands while the log is being written
+    // is still seen here; the entry just written goes with it, because the log
+    // exists only while analytics is enabled. The completion's own re-check
+    // only guards the bookkeeping, after the request has already left.
+    if (!(await this.persistedConsentAllows(installId))) {
+      await this.deps.pingLog.remove().catch(() => undefined);
+      return;
+    }
 
     const outcome = await this.send(endpoint, body);
 
-    await this.deps.config.recordAnalyticsPing({
+    const recorded = await this.deps.config.recordAnalyticsPing({
       installId,
       // An install that opted in before cohorts existed keeps the cohort its
       // first v2 ping carried, or every month would report it as new again.
@@ -410,28 +423,20 @@ export class UsageAnalyticsService {
         ? { analyticsRetryAfter: now + ANALYTICS_RETRY_BACKOFF_MS }
         : { lastAnalyticsPingAt: now, analyticsRetryAfter: 0 }),
     });
+    // A rejected completion means consent or identity moved while the request
+    // was in flight. The rejection refreshed memory from disk, so settling
+    // removes the log if that move was a disable.
+    if (!recorded) await this.settleLocalPingLog();
   }
 
-  /**
-   * Appends the exact body to the local log. If consent changed while the
-   * append ran, the disable already removed the file, so the entry this wrote
-   * is removed again rather than outliving the consent it was written under.
-   */
-  private async recordInPingLog(
-    endpoint: string,
-    body: string,
-    installId: string,
-    now: number,
-  ): Promise<boolean> {
+  /** Appends the exact body to the local log; false when it cannot. */
+  private async recordInPingLog(endpoint: string, body: string, now: number): Promise<boolean> {
     try {
       await this.deps.pingLog.append({ sentAt: new Date(now).toISOString(), endpoint, body });
+      return true;
     } catch {
       return false;
     }
-    const local = this.deps.config.getRaw();
-    if (local.analytics === "enabled" && local.installId === installId) return true;
-    await this.deps.pingLog.remove().catch(() => undefined);
-    return false;
   }
 
   /**

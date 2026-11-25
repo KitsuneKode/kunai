@@ -360,8 +360,9 @@ metadata and package-channel jobs, which re-verify channels for any tag
 including ones published before markers existed, never look for them.
 
 `install.sh` and `install.ps1` fetch `install.marker` once after a successful
-binary install; the native updater fetches `update.marker` once after a
-verified activation. GitHub's per-asset `download_count` is the whole
+fresh binary install, and `update.marker` when they replaced another version
+(a same-version reinstall fetches neither); the native updater fetches
+`update.marker` once after a verified activation. GitHub's per-asset `download_count` is the whole
 measurement: Kunai receives nothing. Each fetch is one attempt with a short
 timeout, failures are silent, and `DO_NOT_TRACK`, `CI` and `KUNAI_NO_MARKER`
 skip it. The user-facing statement is in
