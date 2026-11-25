@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-15"
+lastReviewed: "2026-11-25"
 ---
 
 # Poster and terminal image output
@@ -27,7 +27,7 @@ Use `@/image` or `apps/cli/src/image/index.ts` (the old `apps/cli/src/image.ts` 
 - **TTY / disable**: non-TTY stdout or `KUNAI_POSTER=0|false` → no posters.
 - **Overrides**: `KUNAI_IMAGE_PROTOCOL=auto|none|kitty|iterm|sixel|symbols|half-block` (invalid values fall back to auto with optional debug log). Overrides are resolved before every heuristic below and always win.
 - **Startup probe**: one Kitty-graphics query + DA1 is sent before Ink mounts (`image/probe.ts`). What the terminal _answers_ beats what its name implies — it is the only way to learn that a Windows Terminal is ≥1.22 or that an unrecognised terminal does sixel.
-- **Multiplexers**: inside tmux/screen every graphics protocol needs passthrough wrapping that Kunai does not emit, so detection short-circuits to half-block output. `KITTY_WINDOW_ID` is inherited into tmux panes, so the name check alone would otherwise claim `kitty-native` and every poster would be swallowed.
+- **Multiplexers**: tmux 3.3+ can forward Kitty graphics when the pane's effective `allow-passthrough` option is `on` or `all`, and the outer terminal is Kitty or Ghostty or confirms Unicode placeholders. Add `set -g allow-passthrough on` to your tmux configuration. Kunai checks the attached client's terminal name because pane environment variables can outlive a reattach. It uses half-block for screen, Zellij, and tmux sessions without sufficient capability evidence.
 - **Auto path**: Kitty/Ghostty → `kitty-native`; probe-confirmed kitty graphics → `kitty-native`; iTerm2 or VSCode ≥1.80 → `iterm-inline`; probe-confirmed sixel or WezTerm → `sixel`; otherwise **half-block**. The app shell renders both `iterm-inline` and sixel as measured post-frame overlays, never as Ink text.
 - **`iterm-inline` outranks sixel deliberately.** It transmits the prepared PNG verbatim, while this path quantises sixel to 64 colours (`APP_SHELL_SIXEL_MAX_COLORS`). iTerm2 answers the DA1 sixel query too, so taking sixel there would be a needless downgrade.
 - **iTerm2 detection accepts `LC_TERMINAL`,** which iTerm2 forwards through ssh where `TERM_PROGRAM` is lost. It is checked after the kitty-compatible names so an inherited value cannot outrank the terminal actually in front of the user.
@@ -50,6 +50,7 @@ Details live in `apps/cli/src/image/capability.ts`.
 | `KUNAI_IMAGE_DEBUG`     | `1` enables `[kunai:image]` debug lines                                                                                                                |
 | `KUNAI_IMAGE_PROBE`     | `0` / `false` skips the startup graphics probe (falls back to name heuristics)                                                                         |
 | `KUNAI_IMAGE_TRANSPORT` | `file` / `direct` / `auto` — how Kitty pixel data reaches the terminal (see below)                                                                     |
+| `KUNAI_IMAGE_TMUX`      | `0` disables Kitty passthrough in tmux                                                                                                                 |
 
 ### `KUNAI_IMAGE_TRANSPORT`
 
@@ -66,7 +67,9 @@ probe on an unknown name — uses chunks, which work anywhere the protocol works
 
 Set `direct` to force chunks (the fix if posters silently fail to appear on a
 kitty-compatible terminal), or `file` to force the fast path. Invalid values fall
-back to auto with a debug line.
+back to auto with a debug line. tmux always uses chunked transmission, including
+when `file` is requested. Each chunk and delete is wrapped in tmux passthrough,
+while the Unicode placeholders travel through the normal text grid.
 
 ## Tools
 
@@ -80,7 +83,7 @@ were retired, and `jpeg-js` is test-support only.
 - **`sixel`**: In-process encoded pixels + dimensions and a named overlay id;
   `SixelPosterPane` reserves/measures the Ink rectangle and the overlay manager
   writes the payload after the frame.
-- **`text`**: in-process half-block output as placeholder text. Covers every terminal without a graphics protocol, and every multiplexer.
+- **`text`**: in-process half-block output as placeholder text. Covers terminals and multiplexers without usable graphics support.
 - **`none`**: Silent skip; UI shows “Poster unavailable” when appropriate.
 
 In Ink, browse and playback companion panes both render `placeholder` for **`kitty`** and **`text`**; only **`none`** (or missing URL while loading) shows the unavailable copy.
@@ -120,7 +123,7 @@ not require or spawn `ffmpeg` for normal playback or offline artwork.
 ## Multi-image Kitty (Ink)
 
 - Each `usePosterPreview` / `fetchPoster` call that owns Kitty graphics should pass a `placementSlot`.
-- Slot cleanup deletes **only that image id** (`d=I`). Global wipe (`d=A`) is reserved for surface exit, terminal resize (unslotted), and capability loss.
+- Slot cleanup deletes **only that image id** (`d=I`). Outside tmux, surface exit or terminal resize (unslotted) can use the global wipe (`d=A`). Inside tmux, these paths delete Kunai's image ids individually because other panes share the outer terminal.
 - Post-play wide budget: hero + rail primary + prev/next mini-cards as Kitty/Sixel, plus up to **3** discovery cards. Now Playing may also render the up-next mini-card as Kitty/Sixel (`playing-next`). Unslotted list tiles use in-process half-block text.
 - Unsupported or invalid image bytes degrade to the visible text-only state instead of invoking a fallback process.
 

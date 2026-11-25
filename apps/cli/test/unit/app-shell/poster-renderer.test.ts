@@ -1,12 +1,14 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 
 import {
   clearKittyPlacementRegistry,
   getKittyPlacement,
+  releaseKittySlot,
 } from "@/app-shell/kitty-placement-registry";
 import {
   __testing as rendererTesting,
   commitKittyPlacementCandidate,
+  deleteAllTerminalImages,
   deleteUncommittedKittyCandidate,
   hashTitleToColor,
   renderPreparedPoster,
@@ -20,8 +22,8 @@ import { __testing as probeTesting } from "@/image/probe";
 import { makeRgbJpeg, makeRgbPng } from "../../support/image-fixtures";
 
 const originalDetect = rendererTesting.runtime.detectImageCapability;
-const originalStdoutWrite = process.stdout.write.bind(process.stdout);
-const originalTransportEnv = process.env.KUNAI_IMAGE_TRANSPORT;
+let outputSpy: ReturnType<typeof spyOn<typeof process.stdout, "write">> | undefined;
+let originalTransportEnv: string | undefined;
 
 function capability(renderer: ImageCapability["renderer"]): ImageCapability {
   if (renderer === "none") {
@@ -98,18 +100,23 @@ function planFor(renderer: PosterRenderPlan["renderer"], rows = 4, cols = 8): Po
   };
 }
 
-function captureStdout(): { writes: string[] } {
+function captureStdout() {
   const writes: string[] = [];
-  process.stdout.write = ((chunk: string | Uint8Array) => {
-    writes.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+  outputSpy = spyOn(process.stdout, "write").mockImplementation((chunk) => {
+    writes.push(chunk instanceof Uint8Array ? Buffer.from(chunk).toString("utf8") : String(chunk));
     return true;
-  }) as typeof process.stdout.write;
+  });
   return { writes };
 }
 
+beforeEach(() => {
+  originalTransportEnv = process.env.KUNAI_IMAGE_TRANSPORT;
+});
+
 afterEach(() => {
   rendererTesting.runtime.detectImageCapability = originalDetect;
-  process.stdout.write = originalStdoutWrite;
+  outputSpy?.mockRestore();
+  outputSpy = undefined;
   if (originalTransportEnv === undefined) {
     delete process.env.KUNAI_IMAGE_TRANSPORT;
   } else {
@@ -120,6 +127,36 @@ afterEach(() => {
 });
 
 describe("resolvePosterRenderPlan", () => {
+  test("cleans up tmux placements by id, leaving images from other panes alone", async () => {
+    rendererTesting.runtime.detectImageCapability = () => ({
+      ...capability("kitty-native"),
+      kittyPassthrough: "tmux",
+    });
+    const image = await prepared();
+    const { writes } = captureStdout();
+    const plan = resolvePosterRenderPlan({ rows: 2, cols: 3 });
+    expect(plan).toBeDefined();
+    if (!plan) return;
+    const first = await renderPreparedPoster(image, plan, { rows: 2, cols: 3 });
+    const second = await renderPreparedPoster(image, plan, { rows: 2, cols: 3 });
+    if (first.kind !== "kitty-upload" || second.kind !== "kitty-upload") {
+      throw new Error("expected two Kitty uploads");
+    }
+    commitKittyPlacementCandidate(first, "postplay-hero");
+    commitKittyPlacementCandidate(second, "postplay-rail");
+    expect(first.placeholder).toContain("\u{10EEEE}");
+    writes.length = 0;
+
+    releaseKittySlot("postplay-hero");
+    expect(getKittyPlacement("postplay-rail")).toBe(second.imageId);
+    deleteAllTerminalImages();
+    expect(writes).toEqual([
+      `\x1bPtmux;\x1b\x1b_Ga=d,d=I,i=${first.imageId},q=2;\x1b\x1b\\\x1b\\`,
+      `\x1bPtmux;\x1b\x1b_Ga=d,d=I,i=${second.imageId},q=2;\x1b\x1b\\\x1b\\`,
+    ]);
+    expect(getKittyPlacement("postplay-rail")).toBeUndefined();
+  });
+
   test("routes a kitty terminal to kitty with a pixel budget", () => {
     rendererTesting.runtime.detectImageCapability = () => capability("kitty-native");
 

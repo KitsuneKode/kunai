@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T09:34:20Z"
+lastReviewed: "2026-11-25T05:20:56Z"
 ---
 
 # Provider: KickAssAnime
@@ -108,9 +108,8 @@ picks; `qualityRank` stays 0 rather than inventing a height.
 The referer alone is refused by the segment host, and it **rotates**
 (`st1.advancedairesearchlab.xyz` on 2026-09-11, `st1.narutokun.xyz` on
 2026-09-12), so it is never hardcoded — both headers are derived from the
-player's own origin. mpv applies the stream's headers to `--sub-file` and
-`sub-add` too, so the `.vtt` tracks attach with nothing per-track
-(verified: `● Subs --sid=1 … (webvtt) [external]`).
+player's own origin. The guarded subtitle downloader sends that Origin
+header to the known caption CDN and hands mpv the resulting local WebVTT file.
 
 `ffmpeg` fails on this master where mpv succeeds; it is not a reachability
 signal, and no probe over these URLs should be trusted to judge the stream.

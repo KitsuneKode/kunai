@@ -1,10 +1,70 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
-import { __testing as capabilityTesting, detectImageCapability } from "@/image/capability";
+import {
+  __testing as capabilityTesting,
+  detectImageCapability,
+  selectImageCapability,
+} from "@/image/capability";
 import { __testing as probeTesting } from "@/image/probe";
 
 const originalWhich = capabilityTesting.runtime.which;
 const originalIsTty = capabilityTesting.runtime.isStdoutTty;
+
+describe("Kitty through tmux", () => {
+  const env = { TMUX: "/tmp/posters,123,0", TERM: "tmux-256color", KITTY_WINDOW_ID: "1" };
+  const tmux = { major: 3, minor: 3, passthrough: "on", clientTerm: "xterm-kitty" } as const;
+  const probe = { sixel: false, kittyGraphics: false, tmux };
+
+  test("selects wrapped Kitty for an eligible pane with a Kitty client", () => {
+    expect(selectImageCapability(env, true, probe)).toMatchObject({
+      renderer: "kitty-native",
+      kittyPassthrough: "tmux",
+    });
+    expect(
+      selectImageCapability(env, true, { ...probe, tmux: { ...tmux, passthrough: "all" } })
+        .kittyPassthrough,
+    ).toBe("tmux");
+  });
+
+  test("accepts an outer terminal that confirmed Unicode placeholders", () => {
+    const response = { ...probe, tmux: { ...tmux, clientTerm: "custom" }, kittyPlaceholders: true };
+    expect(selectImageCapability({ TMUX: env.TMUX, TERM: env.TERM }, true, response).renderer).toBe(
+      "kitty-native",
+    );
+  });
+
+  test("falls back for old tmux, disabled passthrough, and stale Kitty variables", () => {
+    for (const context of [
+      { ...tmux, minor: 2 },
+      { ...tmux, passthrough: "off" },
+      { ...tmux, clientTerm: "foot" },
+    ] as const) {
+      expect(selectImageCapability(env, true, { ...probe, tmux: context }).renderer).toBe(
+        "half-block",
+      );
+    }
+    expect(selectImageCapability(env, true, null).renderer).toBe("half-block");
+  });
+
+  test("honors the tmux opt-out and explicit protocol overrides", () => {
+    expect(selectImageCapability({ ...env, KUNAI_IMAGE_TMUX: "0" }, true, probe).renderer).toBe(
+      "half-block",
+    );
+    expect(selectImageCapability({ ...env, STY: "screen" }, true, probe).renderer).toBe(
+      "half-block",
+    );
+    expect(
+      selectImageCapability({ ...env, KUNAI_IMAGE_PROTOCOL: "none" }, true, probe).renderer,
+    ).toBe("none");
+    expect(
+      selectImageCapability({ ...env, KUNAI_IMAGE_PROTOCOL: "kitty" }, true, probe)
+        .kittyPassthrough,
+    ).toBe("tmux");
+    expect(
+      selectImageCapability({ ...env, KUNAI_IMAGE_PROTOCOL: "kitty" }, true, null).renderer,
+    ).toBe("half-block");
+  });
+});
 
 function withChafa(available: boolean): void {
   capabilityTesting.runtime.which = (command: string) =>

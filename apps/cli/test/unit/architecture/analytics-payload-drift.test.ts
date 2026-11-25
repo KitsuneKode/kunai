@@ -5,16 +5,28 @@ import { join } from "node:path";
 import {
   ANALYTICS_PAYLOAD_FIELDS,
   ANALYTICS_PAYLOAD_KEYS,
+  analyticsOs,
   describeAnalyticsPayload,
   type AnalyticsPayload,
 } from "@/services/analytics/usage-analytics-service";
 import { RELEASE_MARKER_NAMES } from "@/services/update/release-marker";
 
 import { IST_DAY_BOUNDARY_FROM } from "../../../../analytics-ingest/src/analytics-day";
+import {
+  ANALYTICS_PAYLOAD_KEYS as INGEST_V1_KEYS,
+  ANALYTICS_PAYLOAD_V2_KEYS as INGEST_V2_KEYS,
+} from "../../../../analytics-ingest/src/ingest";
+import { ALLOWED_OS } from "../../../../analytics-ingest/src/payload-validation";
 
 const ROOT = join(import.meta.dir, "../../../../..");
 const CONTRACT = join(ROOT, ".docs/analytics-privacy-contract.md");
 const USER_DOC = join(ROOT, "docs/users/reliability-and-privacy.mdx");
+
+/**
+ * The client sends one shape (v2); the ingest accepts two. v1 is what every
+ * earlier release sends and stays accepted, so the contract names both.
+ */
+const INGEST_WIRE_KEYS = [...new Set([...INGEST_V1_KEYS, ...INGEST_V2_KEYS])];
 
 /**
  * Prose in both documents is hard-wrapped, so a phrase can straddle a newline.
@@ -71,6 +83,36 @@ describe("analytics payload documentation drift", () => {
    * which is the precise failure this gate exists to prevent.
    */
   const DOCUMENTED_PAYLOAD = `\`{ ${ANALYTICS_PAYLOAD_FIELDS.join(", ")} }\``;
+
+  test("the ingest accepts exactly what the client sends", () => {
+    // The client's shape must be one the ingest accepts, or every ping 400s and
+    // the client backs off for a day.
+    expect([...ANALYTICS_PAYLOAD_KEYS]).toEqual([...INGEST_V2_KEYS]);
+  });
+
+  test("every os the client can report is one the ingest accepts", () => {
+    const reported = [
+      analyticsOs("linux", {}),
+      analyticsOs("darwin", {}),
+      analyticsOs("win32", {}),
+      analyticsOs("linux", { TERMUX_VERSION: "0.118.1" }),
+      analyticsOs("android", {}),
+    ];
+    expect(reported).toContain("android");
+    for (const os of reported) expect([...ALLOWED_OS]).toContain(os);
+  });
+
+  test("the contract names every key of both shapes the ingest accepts", () => {
+    const body = prose(CONTRACT);
+    for (const key of INGEST_WIRE_KEYS) expect(body).toContain(`\`${key}\``);
+    for (const wireKeys of [INGEST_V1_KEYS, INGEST_V2_KEYS]) {
+      const listed = [...body.matchAll(/`\{ ([\w, ]+) \}`/g)].map((match) =>
+        (match[1] ?? "").split(", ").sort().join(","),
+      );
+      expect(listed, `contract states ${wireKeys.join(", ")}`).toContain([...wireKeys].join(","));
+    }
+    for (const os of ALLOWED_OS) expect(body).toContain(`\`${os}\``);
+  });
 
   for (const [label, path] of docs) {
     test(`${label} names exactly the six wire keys, in wire order`, () => {

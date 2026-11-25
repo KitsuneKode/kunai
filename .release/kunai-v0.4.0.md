@@ -68,6 +68,9 @@ subtitle controls, and safer persistence, downloads and native installation.
 
 ### Search and terminal interaction
 
+- Show Kitty poster previews inside tmux 3.3+ when passthrough is enabled and
+  the outer terminal supports Unicode placeholders.
+
 - Add direct title launches from the command palette, notification episode
   launches and bounded detail prefetching. Keep command matching and title
   matching distinct, and prevent palette typing from firing playback hotkeys.
@@ -124,7 +127,9 @@ subtitle controls, and safer persistence, downloads and native installation.
 - Strengthen native update, rollback and activation locking on Linux, macOS and
   Windows. Verify archive contents, size bounds and both transport/payload
   checksums before activation; malformed or failed downloads leave the active
-  installation intact.
+  installation intact. An upgrade that finishes after a newer version was
+  installed no longer rolls it back; pinned installs and rollback can still
+  select an older version.
 - Keep the npm launcher separate from native platform payloads. Synchronize all
   ten optional platform-package versions and preserve exact candidate bytes,
   checksum manifests and attestations through the protected release workflow.

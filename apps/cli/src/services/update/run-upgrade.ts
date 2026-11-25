@@ -146,6 +146,7 @@ export async function runUpgrade(opts: RunUpgradeOptions): Promise<number> {
   if (channel === "binary" || plan.kind === "self-replace") {
     await migrateFlatInstall({ manifest, currentVersion: opts.currentVersion });
     const result = await installLatest({
+      intent: "upgrade",
       version: latest,
       dlBase,
       force: true,
@@ -161,6 +162,10 @@ export async function runUpgrade(opts: RunUpgradeOptions): Promise<number> {
     }
     if (result.status === "up-to-date") {
       console.log(`kunai is up to date (${opts.currentVersion}).`);
+      return 0;
+    }
+    if (result.status === "superseded") {
+      console.log(`Kunai ${result.activeVersion} is already active on disk.`);
       return 0;
     }
     if (result.status === "skipped") {

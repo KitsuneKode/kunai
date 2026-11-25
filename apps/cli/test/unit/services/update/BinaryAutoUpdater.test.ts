@@ -135,6 +135,30 @@ describe("BinaryAutoUpdater.runOnce", () => {
     });
     expect(resolvedLatest).toBe(false);
   });
+
+  test("reports the active version as pending restart when another update supersedes it", async () => {
+    const instance = new BinaryAutoUpdater({
+      config: {
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+        getRaw: () => enabled as never,
+        update: async () => {},
+        save: async () => {},
+      },
+      currentVersion: "0.3.0",
+      readInstallManifest: async () => binaryManifest(),
+      getPendingRestartVersion: async () => null,
+      resolveLatestVersion: async () => "0.4.0",
+      installLatest: async (options) => {
+        expect(options).toEqual({ intent: "upgrade", version: "0.4.0" });
+        return { status: "superseded", activeVersion: "0.5.0" };
+      },
+    });
+
+    await expect(instance.runOnce({ force: true })).resolves.toEqual({
+      status: "pending-restart",
+      version: "0.5.0",
+    });
+  });
 });
 
 describe("resolveAutoUpdateGate", () => {
