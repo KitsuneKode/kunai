@@ -104,6 +104,31 @@ test("derives a download-failed notification", () => {
   expect(n?.dedupKey).toContain("download-failed:t1");
 });
 
+test("anime download failures stay one notice per episode and carry their job", () => {
+  const failed = (episode: number) => ({
+    type: "download-failed" as const,
+    downloadJobId: `job-${episode}`,
+    titleId: "anilist:1",
+    mediaKind: "anime",
+    title: "Frieren",
+    absoluteEpisode: episode,
+    error: "network",
+  });
+  const notices = deriveNotifications({
+    signals: [failed(11), failed(12)],
+    mutedTitleIds: new Set(),
+    now: "2026-06-14T01:00:00.000Z",
+  });
+
+  // Keyed on season/episode alone, both collapsed into "download-failed:anilist:1:-:-".
+  expect(new Set(notices.map((notice) => notice.dedupKey)).size).toBe(2);
+  expect(notices.map((notice) => notice.title)).toEqual([
+    "Download failed · Frieren E11",
+    "Download failed · Frieren E12",
+  ]);
+  expect(notices.map((notice) => notice.downloadJobId)).toEqual(["job-11", "job-12"]);
+});
+
 test("derives an app-update notification", () => {
   const [n] = deriveNotifications({
     signals: [{ type: "app-update", currentVersion: "1.2.0", latestVersion: "1.3.0" }],

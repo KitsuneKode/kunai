@@ -42,6 +42,7 @@ import {
 import { buildUiDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 import { readCatalogBoundsForHistoryEntries } from "@/services/history-metadata/history-catalog-seed";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
+import { createNotificationDownloadRetry } from "@/services/notifications/notification-download-retry";
 import {
   NotificationActionRouter,
   type NotificationActionId,
@@ -1305,6 +1306,7 @@ export function RootOverlayShell({
     setNotificationsState((current) => ({ ...current, selectedDedupKey: dedupKey }));
 
     const router = new NotificationActionRouter({
+      downloads: createNotificationDownloadRetry(container.downloadService),
       playlist: {
         // Restore through the shared path so a notification-driven restore gets
         // the same resume head as the overlay's `r` key.
@@ -1580,13 +1582,7 @@ export function RootOverlayShell({
   };
 
   useInput((input, key) => {
-    if (commandMode) {
-      return;
-    }
-
-    if (overlay.type === "settings") {
-      return;
-    }
+    if (commandMode || overlay.type === "settings") return;
 
     const cancelActive = isOverlayCancelActive({
       overlay,
