@@ -73,7 +73,13 @@ describe("probeTerminalGraphics", () => {
         stdin.emit("data", "\x1b[?1;2;4c");
       },
     };
-    const tmux = { major: 3, minor: 4, passthrough: "off", clientTerm: "foot" };
+    const tmux = {
+      major: 3,
+      minor: 4,
+      passthrough: "off",
+      clientTerm: "foot",
+      clientFeatures: ["sixel"],
+    };
     expect(
       await probeTerminalGraphics({
         stdin,
@@ -98,7 +104,13 @@ describe("probeTerminalGraphics", () => {
         return true;
       },
     };
-    const tmux = { major: 3, minor: 3, passthrough: "on", clientTerm: "custom" };
+    const tmux = {
+      major: 3,
+      minor: 3,
+      passthrough: "on",
+      clientTerm: "custom",
+      clientFeatures: [],
+    };
     expect(
       await probeTerminalGraphics({
         stdin,
