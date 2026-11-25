@@ -67,9 +67,11 @@ export interface ConfigService extends KitsuneConfig {
   recordAnalyticsPing(completion: AnalyticsPingCompletion): Promise<boolean>;
   /**
    * Re-read config.json's analytics consent and install id, as a sibling
-   * process may have left them. Read-only: memory is not touched, so a pending
-   * local change keeps waiting for its own save. Rejects if the file cannot be
-   * read; the analytics gate treats that as "do not send".
+   * process may have left them. Memory is not touched, so a pending local change
+   * keeps waiting for its own save. The read goes through the normal store load:
+   * a missing or corrupt file resolves to the defaults (`unset`, which never
+   * sends), and a corrupt file is quarantined exactly as at startup. A read that
+   * rejects is treated by the analytics gate as "do not send" as well.
    */
   readPersistedAnalyticsConsent(): Promise<PersistedAnalyticsConsent>;
   /**
