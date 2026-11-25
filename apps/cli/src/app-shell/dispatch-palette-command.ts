@@ -81,6 +81,7 @@ export const PALETTE_WORKFLOW_ACTIONS: ReadonlySet<ShellAction> = new Set([
   "unfollow",
   "mute",
   "share",
+  "share-qr",
   "mark-watched",
   "mark-unwatched",
   "mark-season-watched",
