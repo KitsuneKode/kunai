@@ -376,6 +376,12 @@ export function DownloadManagerContent({
   useInput(
     (input, key) => {
       if (key.escape) {
+        // Esc backs out of an armed delete first, like every other key that
+        // is not the confirming one; it closed the whole manager before.
+        if (confirmingDeletion !== null) {
+          setConfirmingDeletion(null);
+          return;
+        }
         onClose();
         return;
       }
@@ -486,8 +492,6 @@ export function DownloadManagerContent({
     20,
     shellWidth - 2 - queueLayout.stateWidth - queueLayout.progressWidth - queueLayout.metaWidth - 4,
   );
-  const isConfirming = (index: number) =>
-    confirmingDeletion?.jobId === allJobs[index]?.id && selectedIndex === index;
 
   const renderJob = (job: DownloadJobRecord, index: number) => {
     const isSelected = index === selectedIndex;
@@ -583,13 +587,6 @@ export function DownloadManagerContent({
               ) : null}
             </Box>
           </Box>
-          {isConfirming(index) ? (
-            <Box marginLeft={2}>
-              <Text color={palette.accentDeep} bold>
-                {confirmationPrompt}
-              </Text>
-            </Box>
-          ) : null}
         </Box>
       </MouseTarget>
     );
