@@ -2130,8 +2130,9 @@ describe("DownloadService", () => {
         exited: Promise.resolve(0),
       } as never;
     });
+    const htmlFetch = mock(async () => new Response("<html>Not a subtitle</html>"));
     // SAFETY: test stub — supplies only the surface this test exercises.
-    globalThis.fetch = mock(async () => new Response("<html>Not a subtitle</html>")) as never;
+    globalThis.fetch = htmlFetch as never;
 
     const job = await service.enqueue({
       title: { id: "tmdb:1", type: "series", name: "Example" },
@@ -2150,6 +2151,8 @@ describe("DownloadService", () => {
     expect(repairable?.repairMetadataJson).not.toContain("test-token");
     expect(repairable?.subtitlePath).toBeUndefined();
     expect(existsSync(repairable?.outputPath ?? "")).toBe(true);
+    // The HTML body reached the format check: the request was actually made.
+    expect(htmlFetch).toHaveBeenCalled();
   });
 
   test("repairs missing subtitle sidecars without re-downloading the video", async () => {

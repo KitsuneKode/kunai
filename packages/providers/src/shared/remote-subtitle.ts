@@ -1,11 +1,17 @@
 import { fetchGuardedStreamTarget, type StreamReachabilityFetch } from "@kunai/core";
 
-import { readBoundedTextBody } from "./bounded-text-body";
+import { readBoundedBytes } from "./bounded-text-body";
 import { createTimeoutSignal } from "./timeout-signal";
 
 /** A subtitle file that passed the guarded download and format check. */
 export interface RemoteSubtitleFile {
-  readonly text: string;
+  /**
+   * The body exactly as served. Writing these bytes, not a re-encoded string,
+   * leaves codepage detection to mpv (`--sub-codepage=auto`), as when it
+   * fetched the URL itself: a Windows-1252, CP1251 or Shift-JIS file is not
+   * turned into U+FFFD by a UTF-8 decode.
+   */
+  readonly bytes: Uint8Array;
   /** Extension derived from the verified body, never from the URL. */
   readonly extension: "srt" | "vtt" | "ass";
 }
@@ -17,6 +23,24 @@ const WEBVTT_BODY = /^WEBVTT(?:[ \t]|\r?\n|$)/;
 const SRT_BODY =
   /^(?:[ \t]*\r?\n)*[ \t]*\d+[ \t]*\r?\n\d{2}:\d{2}:\d{2}[,.]\d{3}[ \t]+-->[ \t]+\d{2}:\d{2}:\d{2}[,.]\d{3}/;
 const ASS_BODY = /^\uFEFF?\[Script Info\]/;
+
+/**
+ * Text for the format check only. A BOM picks its decoder; otherwise a
+ * byte-for-byte decode reads the ASCII cue and header syntax correctly in any
+ * legacy codepage.
+ */
+function sniffableText(bytes: Uint8Array): string {
+  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+    return new TextDecoder("utf-8").decode(bytes.subarray(3));
+  }
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) {
+    return new TextDecoder("utf-16le").decode(bytes.subarray(2));
+  }
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) {
+    return new TextDecoder("utf-16be").decode(bytes.subarray(2));
+  }
+  return new TextDecoder("latin1").decode(bytes);
+}
 
 function subtitleExtensionFor(text: string): RemoteSubtitleFile["extension"] | null {
   const unbombed = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
@@ -88,11 +112,13 @@ export async function fetchRemoteSubtitle(
       await response.body?.cancel().catch(() => undefined);
       return null;
     }
-    const text = await readBoundedTextBody(response.body, SUBTITLE_BODY_BYTES, signal);
-    if (!text || signal.aborted || text.includes("\0")) return null;
+    const bytes = await readBoundedBytes(response.body, SUBTITLE_BODY_BYTES, signal);
+    if (!bytes || bytes.byteLength === 0 || signal.aborted) return null;
+    const text = sniffableText(bytes);
+    if (text.includes("\0")) return null;
     const extension = subtitleExtensionFor(text);
     if (!extension) return null;
-    return { text, extension };
+    return { bytes, extension };
   } catch {
     return null;
   }

@@ -482,6 +482,40 @@ describe("fetchRemoteSubtitle (guarded download)", () => {
     expect(file).toBeNull();
   });
 
+  test("a legacy-codepage SRT keeps its original bytes for mpv to decode", async () => {
+    // Windows-1252 "Café": 0xE9 is invalid UTF-8 and must not become U+FFFD.
+    const body = new Uint8Array([
+      ...new TextEncoder().encode("1\n00:00:01,000 --> 00:00:02,000\nCaf"),
+      0xe9,
+      0x0a,
+    ]);
+    const { impl } = fetchLogging(() => new Response(body));
+    const file = await fetchRemoteSubtitle("https://subs.example.com/fr.srt", {
+      fetchImpl: impl,
+      resolveAddresses: async () => ["93.184.216.34"],
+    });
+    expect(file?.extension).toBe("srt");
+    expect(file?.bytes).toEqual(body);
+  });
+
+  test("a UTF-16 subtitle with a byte-order mark is accepted as served", async () => {
+    const text = "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nこんにちは\n";
+    const utf16 = new Uint8Array(2 + text.length * 2);
+    utf16.set([0xff, 0xfe]);
+    for (let i = 0; i < text.length; i += 1) {
+      const code = text.charCodeAt(i);
+      utf16[2 + i * 2] = code & 0xff;
+      utf16[3 + i * 2] = code >> 8;
+    }
+    const { impl } = fetchLogging(() => new Response(utf16));
+    const file = await fetchRemoteSubtitle("https://subs.example.com/ja.vtt", {
+      fetchImpl: impl,
+      resolveAddresses: async () => ["93.184.216.34"],
+    });
+    expect(file?.extension).toBe("vtt");
+    expect(file?.bytes).toEqual(utf16);
+  });
+
   test("valid SRT yields srt; valid WebVTT yields vtt; extension comes from body", async () => {
     const srtFetch = fetchLogging(() => new Response(SRT));
     expect(
@@ -489,14 +523,14 @@ describe("fetchRemoteSubtitle (guarded download)", () => {
         fetchImpl: srtFetch.impl,
         resolveAddresses: async () => ["93.184.216.34"],
       }),
-    ).toEqual({ text: SRT, extension: "srt" });
+    ).toEqual({ bytes: new TextEncoder().encode(SRT), extension: "srt" });
     const vttFetch = fetchLogging(() => new Response(VTT));
     expect(
       await fetchRemoteSubtitle("https://subs.example.com/track", {
         fetchImpl: vttFetch.impl,
         resolveAddresses: async () => ["93.184.216.34"],
       }),
-    ).toEqual({ text: VTT, extension: "vtt" });
+    ).toEqual({ bytes: new TextEncoder().encode(VTT), extension: "vtt" });
   });
 
   test("a declared-oversize SRT is dropped unread; the same SRT undeclared passes", async () => {
@@ -516,7 +550,7 @@ describe("fetchRemoteSubtitle (guarded download)", () => {
         fetchImpl: plain.impl,
         resolveAddresses: async () => ["93.184.216.34"],
       }),
-    ).toEqual({ text: SRT, extension: "srt" });
+    ).toEqual({ bytes: new TextEncoder().encode(SRT), extension: "srt" });
   });
 
   test("non-2xx is refused", async () => {

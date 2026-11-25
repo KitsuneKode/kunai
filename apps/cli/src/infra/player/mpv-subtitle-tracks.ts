@@ -4,6 +4,35 @@ import { normalizeSubtitleUrl } from "@/subtitle";
 
 import { isLocalSubtitlePath, type MpvUrlKind } from "./mpv-playback-url";
 
+/**
+ * Two subtitle URLs are the same track when they match after dropping the
+ * query and hash (providers re-sign one file with rotating tokens) **and**
+ * their language agrees. The language check keeps query-distinct tracks such
+ * as `timedtext?lang=en` and `?lang=fr` apart. When a URL's language cannot
+ * be told, tracks stay separate: an extra attach is harmless, a lost
+ * language is not.
+ */
+const languageOf = (track: SubtitleTrack | undefined) =>
+  track?.language?.trim().toLowerCase() || undefined;
+
+function inventoryMatch(
+  url: string,
+  subtitleTracks: readonly SubtitleTrack[] | undefined,
+): SubtitleTrack | undefined {
+  const trimmed = url.trim();
+  const exact = subtitleTracks?.find((track) => track.url.trim() === trimmed);
+  if (exact) return exact;
+  const base = normalizeSubtitleUrl(url);
+  const candidates = (subtitleTracks ?? []).filter(
+    (track) => normalizeSubtitleUrl(track.url) === base,
+  );
+  const languages = new Set(candidates.map(languageOf));
+  return languages.size === 1 ? candidates[0] : undefined;
+}
+
+const trackKey = (url: string, language: string | undefined) =>
+  `${normalizeSubtitleUrl(url)}\u0000${language ?? `?${url.trim()}`}`;
+
 export function collectAdditionalSubtitleTracks(
   primarySubtitle: string | null,
   subtitleTracks?: readonly SubtitleTrack[],
@@ -11,10 +40,12 @@ export function collectAdditionalSubtitleTracks(
   const collected: SubtitleTrack[] = [];
   const seen = new Set<string>();
   if (primarySubtitle) {
-    seen.add(normalizeSubtitleUrl(primarySubtitle));
+    seen.add(
+      trackKey(primarySubtitle, languageOf(inventoryMatch(primarySubtitle, subtitleTracks))),
+    );
   }
   for (const track of subtitleTracks ?? []) {
-    const key = normalizeSubtitleUrl(track.url);
+    const key = trackKey(track.url, languageOf(track));
     if (!track.url || seen.has(key)) {
       continue;
     }
@@ -58,8 +89,7 @@ export function describeSubtitleTrackForMpv(
   url: string,
   subtitleTracks?: readonly SubtitleTrack[],
 ) {
-  const key = normalizeSubtitleUrl(url);
-  const match = subtitleTracks?.find((track) => normalizeSubtitleUrl(track.url) === key);
+  const match = inventoryMatch(url, subtitleTracks);
   const language = match?.language?.trim() ?? "";
   const title =
     match?.display?.trim() ||
@@ -67,4 +97,9 @@ export function describeSubtitleTrackForMpv(
       .filter((part): part is string => Boolean(part))
       .join(" ");
   return { title, language };
+}
+
+/** IPC commands whose timeout is a subtitle problem, not a dead player. */
+export function isSubtitleIpcCommand(command: string): boolean {
+  return command === "sub-add" || command === "sub-remove" || command === "sub-reload";
 }

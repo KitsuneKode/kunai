@@ -15,6 +15,7 @@ import type {
 } from "@/domain/types";
 import { scrubbedChildEnv } from "@/infra/os/child-env";
 import { registerMpvProcess, terminateMpvProcess } from "@/infra/player/mpv-process-registry";
+import { isSubtitleIpcCommand } from "@/infra/player/mpv-subtitle-tracks";
 import {
   SubtitleFiles,
   prepareLaunchSubtitles,
@@ -208,7 +209,7 @@ export class PersistentMpvSession {
       resolvePlayerSubtitle(
         url,
         kind,
-        this.subtitleFiles(),
+        this.retired ? undefined : this.subtitleFiles(),
         this.currentCycleOptions().abortSignal,
       ),
   );
@@ -762,6 +763,9 @@ export class PersistentMpvSession {
       { ...this.initialOptions, subtitle: this.initialOptions.primarySubtitle },
       this.subtitleFiles(),
     );
+    if (this.initialOptions.abortSignal?.aborted || this.retired) {
+      return this.handleProcessTermination({ code: 1, signal: null });
+    }
     const args = buildMpvArgs(
       {
         url: this.initialStream.url,
@@ -1313,7 +1317,7 @@ export class PersistentMpvSession {
     const result = await this.subtitleManager.attachSubtitles(
       this.ipcSession,
       attachment,
-      () => this.isGenerationCurrent(generation),
+      () => !this.retired && this.isGenerationCurrent(generation),
       this.subtitleManager.shouldSelectLatePrimary(),
     );
     if (!this.isGenerationCurrent(generation)) return result;
@@ -2050,10 +2054,6 @@ export class PersistentMpvSession {
       }
     }
   }
-}
-
-function isSubtitleIpcCommand(command: string): boolean {
-  return command === "sub-add" || command === "sub-remove" || command === "sub-reload";
 }
 
 async function unlinkIfExists(path: string): Promise<void> {

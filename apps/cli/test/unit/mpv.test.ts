@@ -307,6 +307,23 @@ test("buildMpvArgs keeps legacy fzf subtitle mode compatibility without slang", 
   expect(args.some((arg) => arg.startsWith("--slang="))).toBe(false);
 });
 
+test("collectAdditionalSubtitleTracks keeps tracks that differ only by query", () => {
+  const en = "https://www.youtube.com/api/timedtext?v=abc&lang=en";
+  const fr = "https://www.youtube.com/api/timedtext?v=abc&lang=fr";
+  expect(
+    collectAdditionalSubtitleTracks(en, [
+      { url: en, language: "en" },
+      { url: fr, language: "fr" },
+    ]).map((track) => track.language),
+  ).toEqual(["fr"]);
+  expect(
+    describeSubtitleTrackForMpv(fr, [
+      { url: en, language: "en" },
+      { url: fr, language: "fr" },
+    ]).language,
+  ).toBe("fr");
+});
+
 test("collectAdditionalSubtitleTracks excludes the primary subtitle and dedupes extras", () => {
   expect(
     collectAdditionalSubtitleTracks("https://sub.example/en.srt", [

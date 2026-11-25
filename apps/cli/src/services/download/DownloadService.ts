@@ -2180,7 +2180,7 @@ export class DownloadService {
         );
       }
       const targetPath = resolveSubtitleArtifactPath(job.outputPath, file.extension);
-      const data = new TextEncoder().encode(file.text);
+      const data = file.bytes;
       if (claim) {
         const stagedPath = join(claim.stagingDir, "subtitle" + extname(targetPath));
         await writeAtomicBytes(stagedPath, data);

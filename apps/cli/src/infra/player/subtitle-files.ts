@@ -107,7 +107,7 @@ export class SubtitleFiles {
     const index = this.nextIndex++;
     const path = join(dir, `${index}.${file.extension}`);
     try {
-      await writeFile(path, file.text, { mode: 0o600, flag: "wx" });
+      await writeFile(path, file.bytes, { mode: 0o600, flag: "wx" });
     } catch {
       await unlink(path).catch(() => {});
       return null;
@@ -152,11 +152,14 @@ export interface PreparedLaunchSubtitles {
 export function resolvePlayerSubtitle(
   url: string,
   kind: MpvUrlKind,
-  files: SubtitleFiles,
+  /** `undefined` once the owning session is retired: no new scope, no download. */
+  files: SubtitleFiles | undefined,
   signal?: AbortSignal,
 ): Promise<string | null> {
   if (signal?.aborted) return Promise.resolve(null);
-  if (isAllowedMpvUrl(url, "remote")) return files.localize(url, signal);
+  if (isAllowedMpvUrl(url, "remote")) {
+    return files ? files.localize(url, signal) : Promise.resolve(null);
+  }
   if (kind === "local" && isLocalSubtitlePath(url)) return Promise.resolve(url);
   dbg("mpv", "subtitle-target-rejected", { reason: "unsupported-target" });
   return Promise.resolve(null);

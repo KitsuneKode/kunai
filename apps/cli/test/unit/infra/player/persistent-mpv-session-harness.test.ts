@@ -104,7 +104,8 @@ function createHarness(
       return proc;
     },
     downloadSubtitle:
-      harnessOptions.downloadSubtitle ?? (async () => ({ text: TEST_SUBTITLE, extension: "vtt" })),
+      harnessOptions.downloadSubtitle ??
+      (async () => ({ bytes: new TextEncoder().encode(TEST_SUBTITLE), extension: "vtt" })),
     waitForIpcEndpoint: async () => true,
     async openIpcSession(options) {
       callbacks = options;
@@ -1840,6 +1841,41 @@ describe("PersistentMpvSession addon strict preflight", () => {
       gate.resolve({ status: "reachable" });
       harness.endProcess();
       await session.close();
+    }
+  });
+
+  test("a start cancelled while its subtitle downloads never spawns mpv", async () => {
+    const cancel = new AbortController();
+    const harness = createHarness({
+      downloadSubtitle: async () => {
+        cancel.abort();
+        return { bytes: new TextEncoder().encode(TEST_SUBTITLE), extension: "vtt" };
+      },
+    });
+    let spawned = 0;
+    const innerSpawn = harness.runtime.spawn;
+    harness.runtime.spawn = (command, options) => {
+      spawned++;
+      return innerSpawn(command, options);
+    };
+    const session = await PersistentMpvSession.create({
+      stream: createStream(),
+      options: {
+        displayTitle: "Episode 1",
+        primarySubtitle: "https://subs.example/episode.vtt",
+        abortSignal: cancel.signal,
+      },
+      // SAFETY: fixture supplies only the reconnect flag it exercises.
+      kitsuneConfig: { mpvInProcessStreamReconnect: false } as never,
+      onControlReady: () => {},
+      runtime: harness.runtime,
+    });
+    try {
+      expect(cancel.signal.aborted).toBe(true);
+      expect(spawned).toBe(0);
+    } finally {
+      harness.endProcess();
+      await session.close().catch(() => {});
     }
   });
 

@@ -11,6 +11,16 @@ export async function readBoundedTextBody(
   maxBytes: number = MAX_PROBE_BODY_BYTES,
   signal?: AbortSignal,
 ): Promise<string | null> {
+  const bytes = await readBoundedBytes(body, maxBytes, signal);
+  return bytes ? new TextDecoder().decode(bytes) : null;
+}
+
+/** {@link readBoundedTextBody} without decoding: the body's bytes exactly as served. */
+export async function readBoundedBytes(
+  body: ReadableStream<Uint8Array> | null,
+  maxBytes: number = MAX_PROBE_BODY_BYTES,
+  signal?: AbortSignal,
+): Promise<Uint8Array | null> {
   if (!body) return null;
   const reader = body.getReader();
   const cancel = () => void reader.cancel().catch(() => undefined);
@@ -32,7 +42,7 @@ export async function readBoundedTextBody(
       return null;
     }
     if (signal?.aborted) return null;
-    return new TextDecoder().decode(concatBytes(chunks, seen));
+    return concatBytes(chunks, seen);
   } catch (error) {
     await reader.cancel("probe-failed").catch(() => {});
     throw error;

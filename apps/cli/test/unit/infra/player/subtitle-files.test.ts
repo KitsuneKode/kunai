@@ -38,8 +38,8 @@ afterEach(() => {
   removeTempDir(testRoot);
 });
 
-const okDownload = async (): Promise<{ text: string; extension: "srt" }> => ({
-  text: SRT,
+const okDownload = async (): Promise<{ bytes: Uint8Array; extension: "srt" }> => ({
+  bytes: new TextEncoder().encode(SRT),
   extension: "srt",
 });
 
@@ -72,11 +72,11 @@ describe("SubtitleFiles", () => {
   });
 
   test("close is idempotent and aborts late work", async () => {
-    let release: (v: { text: string; extension: "srt" } | null) => void = () => {};
+    let release: (v: { bytes: Uint8Array; extension: "srt" } | null) => void = () => {};
     const files = new SubtitleFiles(() => new Promise((resolve) => (release = resolve)));
     const pending = files.localize("https://subs.example.com/en.srt");
     const closing = files.close();
-    release({ text: SRT, extension: "srt" });
+    release({ bytes: new TextEncoder().encode(SRT), extension: "srt" });
     await closing;
     expect(await pending).toBeNull();
     await files.close();
@@ -130,8 +130,8 @@ describe("prepareLaunchSubtitles", () => {
 
   test("a refused track drops out of the launch inventory entirely", async () => {
     const files = new SubtitleFiles(
-      async (url): Promise<{ text: string; extension: "srt" } | null> =>
-        url.includes("en.srt") ? { text: SRT, extension: "srt" } : null,
+      async (url): Promise<{ bytes: Uint8Array; extension: "srt" } | null> =>
+        url.includes("en.srt") ? { bytes: new TextEncoder().encode(SRT), extension: "srt" } : null,
     );
     const prepared = await prepareLaunchSubtitles(
       {
