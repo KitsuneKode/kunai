@@ -75,6 +75,8 @@ subtitle controls, and safer persistence, downloads and native installation.
 - Show native Sixel previews when tmux 3.4+ reports Sixel support.
 - Reduce banding in Sixel posters and use more colours on terminals that report
   a larger palette.
+- Fit graphics posters to measured terminal cell sizes and refresh them on
+  resize.
 
 - Add direct title launches from the command palette, notification episode
   launches and bounded detail prefetching. Keep command matching and title
