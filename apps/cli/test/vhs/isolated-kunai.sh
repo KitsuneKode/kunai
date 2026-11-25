@@ -24,9 +24,11 @@ SANDBOX_PARENT="${TMPDIR:-/tmp}"
 # terminal down hard when a tape ends while the program still runs, and then no
 # trap fires. Each sandbox records its owner's PID, so the next launch removes
 # any sandbox whose owner is gone. A live owner's sandbox is never touched.
+# Two launches can race for the same stale sandbox, so a pid file that vanishes
+# between the check and the read is skipped rather than aborting under `set -e`.
 for stale in "$SANDBOX_PARENT"/kunai-vhs.*; do
-  [[ -d "$stale" && -f "$stale/.owner-pid" ]] || continue
-  owner="$(<"$stale/.owner-pid")"
+  [[ -d "$stale" ]] || continue
+  owner="$(cat "$stale/.owner-pid" 2>/dev/null)" || continue
   [[ "$owner" =~ ^[0-9]+$ ]] || continue
   ps -p "$owner" >/dev/null 2>&1 || rm -rf "$stale"
 done
