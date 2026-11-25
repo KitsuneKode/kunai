@@ -341,6 +341,9 @@ local function clear_resume_prompt_bindings()
 	pcall(function()
 		mp.remove_key_binding("kunai-resume-mbtn-mid")
 	end)
+	pcall(function()
+		mp.remove_key_binding("kunai-resume-mbtn-right")
+	end)
 end
 
 local function hide_resume_prompt()
@@ -415,6 +418,9 @@ local function resume_card_path(w, h, r)
 	)
 end
 
+-- Where the resume card was last drawn, in OSD pixels, for click hit-testing.
+local resume_card_rect = nil
+
 local function draw_resume_prompt(at_sec)
 	local dim = mp.get_property_native("osd-dimensions", {})
 	local w = dim.w or 1280
@@ -429,6 +435,7 @@ local function draw_resume_prompt(at_sec)
 	local margin_right = tonumber(o.margin_right) or 44
 	local card_x = math.floor(w - card_w - margin_right)
 	local card_y = 44
+	resume_card_rect = { x = card_x, y = card_y, w = card_w, h = card_h }
 	cx = card_x + math.floor(card_w / 2)
 	local title_fs = clamp(math.floor(h * 0.022), 18, 28)
 	local action_fs = clamp(math.floor(h * 0.044), 30, 54)
@@ -444,7 +451,7 @@ local function draw_resume_prompt(at_sec)
 	local line1 = esc_ass(title)
 	local line2 = esc_ass("Resume at " .. label)
 	local line3 = esc_ass("from where you left off")
-	local line4 = esc_ass("[Enter] / mid-click resume   ·   [Esc] / click dismiss")
+	local line4 = esc_ass("[Enter] / click resume   ·   [Esc] / right-click dismiss")
 
 	-- Join with a real newline so each block is a SEPARATE ASS event with its own
 	-- \pos/\an. Using "\\N" (an in-event line break) collapses everything into one
@@ -522,15 +529,25 @@ local function show_resume_prompt(at_sec)
 	mp.add_forced_key_binding("ENTER", "kunai-resume-enter", function()
 		commit_resume_choice("resume")
 	end)
-	-- The prompt is a passive corner offer; ESC or a left click just dismisses it
-	-- ("do nothing" = keep playing from where it loaded, same as the auto-timeout).
-	-- A middle click is the explicit "resume here" = seek to the saved position.
-	-- All three are scoped to while the prompt is shown (cleared on hide) so normal
-	-- mouse/keys behave everywhere else.
+	-- The card reads "Resume at mm:ss", so clicking it resumes. A left click
+	-- used to dismiss it and play from 0:00 — the opposite of what the card
+	-- offers. Clicks elsewhere on the video do nothing; ESC or a right click
+	-- dismiss ("keep playing from where it loaded", same as the auto-timeout).
+	-- All are scoped to while the prompt is shown (cleared on hide).
 	mp.add_forced_key_binding("ESC", "kunai-resume-esc", function()
 		commit_resume_choice("start")
 	end)
-	mp.add_forced_key_binding("MBTN_LEFT", "kunai-resume-mbtn-left", function()
+	mp.add_forced_key_binding("MBTN_LEFT", "kunai-resume-mbtn-left", function(e)
+		if e and e.event ~= "up" then
+			return
+		end
+		local pos = mp.get_property_native("mouse-pos", {})
+		local r = resume_card_rect
+		if pos and pos.x and r and pos.x >= r.x and pos.x <= r.x + r.w and pos.y >= r.y and pos.y <= r.y + r.h then
+			commit_resume_choice("resume")
+		end
+	end, { complex = true })
+	mp.add_forced_key_binding("MBTN_RIGHT", "kunai-resume-mbtn-right", function()
 		commit_resume_choice("start")
 	end)
 	mp.add_forced_key_binding("MBTN_MID", "kunai-resume-mbtn-mid", function()
@@ -1121,22 +1138,47 @@ mp.add_forced_key_binding("PREV", "kunai-prev-media", do_previous, { repeatable 
 -- Skip intro / recap / credits.
 -- Safe: does nothing unless user-data/kunai-skip-to is active.
 mp.add_key_binding("b", "kunai-skip", do_skip, { repeatable = false })
+-- Keys in the mpv window mean what `?` help says they mean in the terminal
+-- (the `player` scope in apps/cli/src/app-shell/keybindings.ts, which
+-- `mpv-bridge-keys.test.ts` checks against this file). They used to diverge:
+-- s/S chose a source, a/d cycled audio and v/V picked quality here, while the
+-- help said reload subtitles / return to search, autoplay / diagnostics, and
+-- left mpv's own v (subtitle visibility) alone.
+--
+-- A help key the bridge has no verb for is sent as `key:<binding id>`; the
+-- terminal resolves that id through the same handler a keypress there uses.
+local function help_key(binding_id)
+	return function()
+		signal("key:" .. binding_id)
+	end
+end
+
 mp.add_forced_key_binding("k", "kunai-quality", do_quality, { repeatable = false })
 mp.add_forced_key_binding("K", "kunai-quality-shift", do_quality, { repeatable = false })
-mp.add_forced_key_binding("v", "kunai-quality-alt", do_quality, { repeatable = false })
-mp.add_forced_key_binding("V", "kunai-quality-alt-shift", do_quality, { repeatable = false })
 
--- Server / source selection and in-player cycling:
-mp.add_forced_key_binding("s", "kunai-source", do_source, { repeatable = false })
-mp.add_forced_key_binding("S", "kunai-source-shift", do_source, { repeatable = false })
+-- Source: o picks (as in the terminal); c cycles to the next one in place.
+mp.add_forced_key_binding("o", "kunai-source", do_source, { repeatable = false })
 mp.add_forced_key_binding("c", "kunai-cycle-source", do_cycle_source, { repeatable = false })
 mp.add_forced_key_binding("C", "kunai-cycle-source-shift", do_cycle_source, { repeatable = false })
 
--- Audio cycling (toggles internal audio tracks if multi-audio, or switches Sub/Dub variants):
-mp.add_forced_key_binding("a", "kunai-cycle-audio", do_cycle_audio, { repeatable = false })
-mp.add_forced_key_binding("A", "kunai-cycle-audio-shift", do_cycle_audio, { repeatable = false })
-mp.add_forced_key_binding("d", "kunai-cycle-audio-alt", do_cycle_audio, { repeatable = false })
-mp.add_forced_key_binding("D", "kunai-cycle-audio-alt-shift", do_cycle_audio, { repeatable = false })
+-- Audio: A cycles internal tracks, or switches the Sub/Dub variant.
+mp.add_forced_key_binding("A", "kunai-cycle-audio", do_cycle_audio, { repeatable = false })
+
+local HELP_KEYS = {
+	{ "s", "player-reload-subtitles" },
+	{ "S", "player-return-search" },
+	{ "a", "player-autoplay" },
+	{ "u", "player-autoskip" },
+	{ "x", "player-stop-after-current" },
+	{ "e", "player-episode" },
+	{ "F", "player-fallback" },
+	{ "l", "player-favorite" },
+	{ "m", "title-control-menu" },
+	{ "d", "player-diagnostics" },
+}
+for _, entry in ipairs(HELP_KEYS) do
+	mp.add_forced_key_binding(entry[1], "kunai-help-" .. entry[2], help_key(entry[2]), { repeatable = false })
+end
 
 -- Same episode: re-resolve the stream URL (cache bust) and resume from the saved position.
 mp.add_key_binding("ctrl+r", "kunai-refresh", do_refresh, { repeatable = false })

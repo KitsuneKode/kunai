@@ -1,6 +1,7 @@
 import type { LineEditorKey } from "@/app-shell/line-editor";
 
 import { resolveKeybinding, resolvePlaybackBindingEffect } from "./keybinding-runtime";
+import { KEYBINDINGS } from "./keybindings";
 import type { ShellAction } from "./types";
 
 export type PlaybackShellInputHandlers = {
@@ -95,15 +96,35 @@ function resolveBootstrapKeys(
 }
 
 function resolvePlayingKeys(
-  input: string,
+  _input: string,
   key: string,
   ctx: PlaybackShellInputContext,
 ): PlaybackShellInputEffect | null {
   const { handlers } = ctx;
   if (key === "r" && handlers.onRecover) return { kind: "recover" };
-  // mpv maps quality to v; the terminal footer uses k from the keybinding registry.
-  if (key === "v" && handlers.onPickQuality) return { kind: "pick-quality" };
   return null;
+}
+
+/**
+ * A key pressed in the mpv window, by keybinding id: the same effect the key
+ * has in the terminal, so the two windows share one definition of each key.
+ */
+export function resolvePlayerKeyRequest(
+  bindingId: string,
+  ctx: PlaybackShellInputContext,
+): PlaybackShellInputEffect | null {
+  const binding = KEYBINDINGS.find(
+    (candidate) =>
+      candidate.id === bindingId && (candidate.scope === "player" || candidate.scope === "loading"),
+  );
+  if (!binding) return null;
+  return resolvePlaybackBindingEffect(binding, {
+    isPlaying: ctx.operation === "playing",
+    cancellable: ctx.cancellable,
+    fallbackAvailable: ctx.fallbackAvailable,
+    canOpenSourcePicker: ctx.canOpenSourcePicker,
+    handlers: ctx.handlers,
+  });
 }
 
 export function resolvePlaybackShellInput(

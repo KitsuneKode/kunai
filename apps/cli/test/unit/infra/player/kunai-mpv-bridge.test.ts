@@ -71,15 +71,11 @@ describe("kunai mpv bridge server and audio cycling", () => {
     expect(source).toContain('mp.add_forced_key_binding("c", "kunai-cycle-source"');
     expect(source).toContain('mp.add_forced_key_binding("C", "kunai-cycle-source-shift"');
 
-    // Terminal source selection bindings
-    expect(source).toContain('mp.add_forced_key_binding("s", "kunai-source"');
-    expect(source).toContain('mp.add_forced_key_binding("S", "kunai-source-shift"');
+    // Source picker on o, as in the terminal (s is reload subtitles there).
+    expect(source).toContain('mp.add_forced_key_binding("o", "kunai-source"');
 
-    // Audio cycling bindings
-    expect(source).toContain('mp.add_forced_key_binding("a", "kunai-cycle-audio"');
-    expect(source).toContain('mp.add_forced_key_binding("A", "kunai-cycle-audio-shift"');
-    expect(source).toContain('mp.add_forced_key_binding("d", "kunai-cycle-audio-alt"');
-    expect(source).toContain('mp.add_forced_key_binding("D", "kunai-cycle-audio-alt-shift"');
+    // Audio cycling on A (a is autoplay and d diagnostics in ? help).
+    expect(source).toContain('mp.add_forced_key_binding("A", "kunai-cycle-audio"');
 
     // Logic checks
     expect(source).toContain('signal("cycle-source")');
