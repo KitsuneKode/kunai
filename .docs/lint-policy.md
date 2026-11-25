@@ -1,13 +1,14 @@
 ---
 status: current
-lastReviewed: "2026-11-12"
+lastReviewed: "2026-11-25"
 ---
 
 # Lint policy (beta)
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
-- **Gate:** `bun run lint` (oxlint) must exit **zero** in CI — **errors are blocking**; warnings may exist during beta burn-down.
+- **Gate:** `bun run lint` (oxlint) must exit **zero** in CI — **errors are blocking**.
+- **Warnings:** `apps/cli` and `packages/providers` run `oxlint --deny-warnings .`, so a warning fails their lint task too. Both reached zero warnings in #729; the flag keeps them there. Other packages and the root tooling task still report warnings without failing.
 - **Budget:** no per-warning budget file — fix new warnings in the same PR that introduces them; burn down existing warnings in focused batches when touching a file anyway.
 - **Rationale:** keeps signal high for agents and humans without blocking unrelated refactors on legacy debt.
 

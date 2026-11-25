@@ -123,12 +123,12 @@ describe("committed channel manifests", () => {
   function inputsFromFormula(text: string) {
     const version = /^\s*version "([^"]+)"$/m.exec(text)?.[1];
     if (!version) throw new Error("Formula/kunai.rb declares no version");
-    const sums = new Map<string, string>();
+    const digests = new Map<string, string>();
     for (const match of text.matchAll(/url "[^"]*\/([^"/]+)"\n\s*sha256 "([0-9a-f]{64})"/g)) {
       const [, name, sha] = match;
-      if (name && sha) sums.set(name, sha);
+      if (name && sha) digests.set(name, sha);
     }
-    return { version, sums };
+    return { version, sums: digests };
   }
 
   function inputsFromScoop(text: string) {
@@ -138,12 +138,12 @@ describe("committed channel manifests", () => {
       version: string;
       architecture: Record<string, { url: string; hash: string }>;
     };
-    const sums = new Map<string, string>();
+    const digests = new Map<string, string>();
     for (const arch of Object.values(parsed.architecture)) {
       const name = arch.url.split("/").pop();
-      if (name) sums.set(name, arch.hash);
+      if (name) digests.set(name, arch.hash);
     }
-    return { version: parsed.version, sums };
+    return { version: parsed.version, sums: digests };
   }
 
   const channelFor = (version: string) => ({ version, tag: `v${version}` });
