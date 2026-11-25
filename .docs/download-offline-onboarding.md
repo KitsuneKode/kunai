@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-17"
+lastReviewed: "2026-11-25T05:36:46Z"
 ---
 
 # Kunai — Download, Offline Library, And Onboarding
@@ -368,6 +368,9 @@ was looked up as `tmdb:1339713` and a healthy file reported "Downloaded file una
   admitted by explicit local authority. HTTP(S) targets still receive network preflight,
   including an HTTP(S) URL accidentally tagged local. The URL and exact-path trust gates
   remain intact; provider URLs never gain local-file permission from a display marker.
+  Both paths pass the resolve gate's evidence (`cachedAt`, `streamReachabilityVerified`)
+  to that preflight, so a URL verified moments earlier is not probed again as mpv opens
+  it; past the trust window it is probed as before.
 - mpv's shutdown can clear duration while retaining position. Playback results keep
   the duration observed in that playback cycle for both history and premature-EOF
   checks, even when a later position event arrives after duration is cleared. This retained value

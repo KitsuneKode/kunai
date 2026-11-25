@@ -23,11 +23,7 @@ import {
   shouldEmitPlaybackProgress,
 } from "@/infra/player/mpv-playback-kernel";
 import { isLocalHlsManifestPlaybackUrl } from "@/infra/player/mpv-playback-url";
-import {
-  isAllowedMpvUrl,
-  needsMpvNetworkPreflight,
-  type MpvUrlKind,
-} from "@/infra/player/mpv-playback-url";
+import { isAllowedMpvUrl, type MpvUrlKind } from "@/infra/player/mpv-playback-url";
 import {
   registerMpvProcess,
   terminateMpvProcess,
@@ -62,6 +58,7 @@ import {
   resolvePlayerSubtitle,
 } from "@/infra/player/addon-subtitle-files";
 import { MpvLaunchError } from "@/infra/player/mpv-launch-error";
+import { launchPreflight, type ResolveGateStream } from "@/infra/player/mpv-launch-preflight";
 import {
   applyEndFileEvent,
   applyObservedPropertySample,
@@ -81,7 +78,6 @@ import { removeMpvChaptersFile, writeMpvChaptersFile } from "@/infra/timing";
 import { dbg } from "@/logger";
 import {
   checkStremioPlaybackPreflight,
-  checkStreamPreflight,
   shouldAbortPlaybackForPreflight,
 } from "@/services/playback/stream-health-check";
 import type { StreamPreflightResult } from "@/services/playback/stream-health-check";
@@ -101,6 +97,8 @@ export async function launchMpv(opts: {
   displayTitle: string;
   startAt?: number;
   requiresYtdl?: boolean;
+  /** The resolved stream: what its gate proved, and when. A fresh pass skips the launch probe. */
+  resolveGate?: ResolveGateStream;
   ytdlFormat?: string;
   ytdlRawOptions?: string;
   isLive?: boolean;
@@ -411,25 +409,17 @@ async function launchMpvInner(
     signal: mpv.killed ? ("SIGTERM" as NodeJS.Signals) : null,
   }));
 
-  const preflight = // Addon streams already passed the strict pre-spawn check; the lenient
-    // concurrent probe would only duplicate it.
-    (
-      opts.stremioAddon || !needsMpvNetworkPreflight(opts.url, opts.urlKind)
-        ? Promise.resolve<StreamPreflightResult>({ status: "reachable" })
-        : checkStreamPreflight(opts.url, opts.headers, 3_000, {
-            requiresYtdl: opts.requiresYtdl,
-          })
-    ).then((result) => {
-      if (shouldAbortLaunchForDefinitivePreflight(result, ipcSession !== null)) {
-        dbg("mpv", "preflight-definitive-failure", {
-          reason: result.reason,
-          phase: "launch",
-          ipcConnected: ipcSession !== null,
-        });
-        mpv.kill("SIGTERM");
-      }
-      return result;
-    });
+  const preflight = launchPreflight(opts).then((result) => {
+    if (shouldAbortLaunchForDefinitivePreflight(result, ipcSession !== null)) {
+      dbg("mpv", "preflight-definitive-failure", {
+        reason: result.reason,
+        phase: "launch",
+        ipcConnected: ipcSession !== null,
+      });
+      mpv.kill("SIGTERM");
+    }
+    return result;
+  });
 
   const ipcBootstrap = (async () => {
     const ipcBootstrapStarted = Date.now();
