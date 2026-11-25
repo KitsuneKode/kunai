@@ -478,7 +478,9 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // Merged onto main after #737 (nested-secret vaulting, shared deadline
 // combiner), it measured 3,293,492 bytes. 3219 KiB leaves 2,764 bytes; public
 // launcher budgets are unchanged.
-export const NPM_BUNDLE_BUDGET_KB = 3_219;
+// Dropping commander (argv naming now lives in cli-args.ts' flag tables)
+// measured 3,254,618 bytes. 3181 KiB leaves 2,726 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_181;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

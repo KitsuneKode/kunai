@@ -32,7 +32,7 @@ The monorepo uses [Bun catalogs](https://bun.sh/docs/pm/catalogs) in the root
 `package.json` to pin shared versions once:
 
 - `catalog:` — TypeScript 7, React, React DOM, `@types/*`, Zod
-- `catalog:cli` — `commander`, `ink` (CLI runtime)
+- `catalog:cli` — `ink` (CLI runtime; argv parsing is hand-rolled in `apps/cli/src/cli-args.ts`)
 - `catalog:lint` — `oxlint`, `oxfmt` (root only; turbo package scripts +
   lint-staged resolve them via workspace hoist)
 - `catalog:providers` — `@assemblyscript/loader`; provider crypto uses built-in APIs
