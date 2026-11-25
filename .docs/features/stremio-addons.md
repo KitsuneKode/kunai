@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T16:54:00Z"
+lastReviewed: "2026-11-25T05:20:56Z"
 ---
 
 # Stremio addons
@@ -91,18 +91,10 @@ mpv can decode and play it.
 
 ## Subtitles an addon offers
 
-mpv only ever sees local subtitle files for addon playback — at startup argv,
-persistent inventory replacement and reconnect, late selection, and `sub-add`
-alike. Every remote addon subtitle URL goes through the same guarded download
-(`fetchStremioSubtitle`): public DNS pinning re-checked per redirect hop, a
-3 s deadline, a 512 KiB body cap, and no addon credentials or headers sent to
-the subtitle host. The body itself must prove a plain format — WebVTT, SRT, or
-ASS — and the file extension comes from the verified body, never the URL; an
-HTML page, playlist, binary, or unrecognized body is dropped and the track
-skipped. Accepted bodies are written owner-only (`0600`) under a private temp
-dir with numeric names, at most 64 distinct URLs per scope; the scope is
-closed and its files deleted when the playback retires. A refused subtitle is
-skipped, never substituted with its raw URL.
+Addon subtitle URLs go through the shared
+[desktop subtitle fetch boundary](../playback-source-inventory-contract.md#desktop-subtitle-fetch-boundary).
+Kunai sends no addon credentials or headers to subtitle hosts. mpv receives
+an owned local file for each accepted track.
 
 ## Identity
 
