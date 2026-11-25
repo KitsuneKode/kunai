@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T14:56:33Z"
+lastReviewed: "2026-11-26T10:49:23Z"
 ---
 
 # Kunai — Download, Offline Library, And Onboarding
@@ -109,6 +109,15 @@ accounts, usage ping, done. Implementation is
   bookkeeping and analytics consent are deliberately not among them. The write is
   best effort and never blocks setup; `/settings` → Privacy & System → _Undo the last
   setup run_ restores it.
+- **What setup writes applies now.** A completing run and _Undo the last setup
+  run_ both write through `applySettingsToRuntime`, the path Settings uses, so
+  the chosen mode, language profiles, providers, theme and presence take effect
+  in the same session. A bare config write used to leave a first-run user who
+  picked Anime in Movies & Series until restart. Analytics passes through the
+  consent service there, unchanged: only an explicit choice reaches it.
+- **Presence follows the toggle both ways.** It hydrates from config, so an
+  unticked Discord toggle writes `off`; writing the current value back made
+  turning presence off from setup impossible.
 
 ## Desired Download Behavior
 

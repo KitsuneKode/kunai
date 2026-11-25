@@ -197,7 +197,9 @@ export async function runSetupWizard({
       // Presence is a local IPC connection, so it can be switched on here.
       // AniList and TMDB are not: both need a browser round-trip, which runs
       // after this commit so a failed handoff never costs the whole wizard.
-      presenceProvider: prefs.presenceDiscord ? "discord" : current.presenceProvider,
+      // The toggle hydrates from config, so unticked means off: writing the
+      // current value back made turning Discord off here impossible.
+      presenceProvider: prefs.presenceDiscord ? "discord" : "off",
       // An explicit turn-off commits here. Turning one ON does NOT commit
       // `enabled: true` up front — that flag is a standing decision, and
       // committing it before OAuth succeeds leaves config claiming a link it
@@ -246,8 +248,13 @@ export async function runSetupWizard({
       });
     }
 
-    await container.config.update(patch);
-    await container.config.save();
+    // Through the same path as Settings, so the chosen mode, language
+    // profiles and presence take effect in this session. A bare config write
+    // left a first-run user who picked Anime in Movies & Series, on the old
+    // languages, until they restarted. Analytics goes through it too: the
+    // consent service turns the explicit choice into config, as in Settings.
+    const { applySettingsToRuntime } = await import("@/app/bootstrap/apply-settings-to-runtime");
+    await applySettingsToRuntime({ container, next: patch });
     // A "don't share" answer removes the local ping log with the id.
     await container.usageAnalytics.settleLocalPingLog();
     // A restore point nobody knows about is not a feature.

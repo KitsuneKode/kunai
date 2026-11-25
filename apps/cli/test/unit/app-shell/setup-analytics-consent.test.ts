@@ -45,7 +45,7 @@ function fakeContainer(overrides: Partial<Parameters<typeof runSetupWizard>[0]["
   const notes: string[] = [];
   const container = {
     config: {
-      getRaw: () => config,
+      getRaw: () => ({ ...config }),
       update: async (patch: Partial<typeof config>) => {
         Object.assign(config, patch);
       },
@@ -82,8 +82,13 @@ function fakeContainer(overrides: Partial<Parameters<typeof runSetupWizard>[0]["
       dispatch: (action: { type: string; note?: string }) => {
         if (action.type === "SET_PLAYBACK_FEEDBACK" && action.note) notes.push(action.note);
       },
-      getState: () => ({ activeModals: [] as unknown[] }),
+      getState: () => ({ activeModals: [] as unknown[], mode: config.defaultMode }),
     },
+    // What setup's runtime apply touches; inert here.
+    providerRegistry: { setPriority: () => undefined },
+    presence: { disconnect: async () => undefined },
+    connectivity: { notifyIntentChanged: () => undefined },
+    downloadService: { kickQueue: () => undefined },
     syncService: {
       adapters: [],
       resumeAfterReauth: () => 0,

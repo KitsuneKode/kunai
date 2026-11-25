@@ -99,10 +99,13 @@ function fakeContainer(
   };
   const notes: string[] = [];
   const diagnostics: string[] = [];
+  // The live session the wizard runs inside: it starts in the saved default.
+  const session = { mode: String(config.defaultMode) };
   const adapters = adapterDefs.map((def) => ({ ...def, connectCalls: 0 }));
   const container = {
     config: {
-      getRaw: () => config,
+      // A copy, as ConfigServiceImpl returns: callers diff before against after.
+      getRaw: () => ({ ...config }),
       update: async (patch: Partial<typeof config>) => {
         Object.assign(config, patch);
       },
@@ -138,11 +141,17 @@ function fakeContainer(
       record: (entry: { message: string }) => diagnostics.push(entry.message),
     },
     stateManager: {
-      dispatch: (action: { type: string; note?: string }) => {
+      dispatch: (action: { type: string; note?: string; mode?: string }) => {
         if (action.type === "SET_PLAYBACK_FEEDBACK" && action.note) notes.push(action.note);
+        if (action.type === "SET_MODE" && action.mode) session.mode = action.mode;
       },
-      getState: () => ({ activeModals: [] as unknown[] }),
+      getState: () => ({ activeModals: [] as unknown[], mode: session.mode }),
     },
+    // What the runtime apply path touches; inert here.
+    providerRegistry: { setPriority: () => undefined },
+    presence: { disconnect: async () => undefined },
+    connectivity: { notifyIntentChanged: () => undefined },
+    downloadService: { kickQueue: () => undefined },
     syncService: {
       adapters: adapters.map((a) => ({
         id: a.id,
@@ -164,7 +173,7 @@ function fakeContainer(
     },
     analyticsDisclosurePending: false,
   } as unknown as Container;
-  return { container, config, notes, diagnostics, adapters };
+  return { container, config, notes, diagnostics, adapters, session };
 }
 
 const BASE_PREFS: SetupFlowPayload["prefs"] = {
@@ -635,4 +644,26 @@ describe("setupPatchIsRestorable", () => {
       }),
     ).toBe(true);
   });
+});
+
+test("a first run that picks Anime is in anime mode now, not after a restart", async () => {
+  const { container, config, session } = fakeContainer();
+  expect(session.mode).toBe("series");
+
+  const pending = runSetupWizard({ container, force: true });
+  expect(forceCloseRootContent(payload({ prefs: { mode: "anime" } }))).toBe(true);
+  await pending;
+
+  expect(config.defaultMode).toBe("anime");
+  expect(session.mode).toBe("anime");
+});
+
+test("unticking Discord in setup turns presence off", async () => {
+  const { container, config } = fakeContainer({ presenceProvider: "discord" });
+
+  const pending = runSetupWizard({ container, force: true });
+  expect(forceCloseRootContent(payload({ prefs: { presenceDiscord: false } }))).toBe(true);
+  await pending;
+
+  expect(config.presenceProvider).toBe("off");
 });
