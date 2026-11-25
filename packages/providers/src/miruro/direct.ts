@@ -49,6 +49,7 @@ import { scrubbedChildEnv } from "../shared/child-env";
 import {
   curlArgvHead,
   curlCipherArgs,
+  curlDohArgs,
   isCloudflareBlockBody,
   isCloudflareChallengeText,
   resolveCurlCandidate,
@@ -1761,6 +1762,7 @@ export async function fetchMiruroPipeBody(
   const args = [
     ...curlArgvHead(curl),
     ...curlCipherArgs(curl.impersonates),
+    ...curlDohArgs(),
     "-sS",
     ...(hasCurlHttp2 ? ["--http2"] : []),
     "-L",

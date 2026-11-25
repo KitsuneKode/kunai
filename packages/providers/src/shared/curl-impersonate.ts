@@ -203,6 +203,20 @@ export function curlArgvHead(curl: CurlCandidate): readonly string[] {
 }
 
 /**
+ * DNS-over-HTTPS through Cloudflare's IP-literal endpoint (no bootstrap
+ * resolution needed). Provider frontends and APIs are exactly the domains
+ * ISP-grade DNS poisoning sinkholes in the regions that need them most —
+ * verified live: `scrapper.rivestream.app` resolves to a blackhole on a
+ * poisoned resolver and answers 200 through this flag on the same network.
+ * SNI is plaintext either way, so this is a strict privacy and reachability
+ * improvement for streaming endpoints. Every curl since 7.62 (2018) supports
+ * it, and the impersonate builds always do.
+ */
+export function curlDohArgs(): readonly string[] {
+  return ["--doh-url", "https://1.1.1.1/dns-query"];
+}
+
+/**
  * ani-cli sets cipher flags only on Darwin, and that restriction is
  * load-bearing: Windows `curl.exe` links Schannel, which rejects
  * `--tls13-ciphers` and does not understand OpenSSL cipher names, so passing
