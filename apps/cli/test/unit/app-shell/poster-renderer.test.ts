@@ -414,7 +414,20 @@ describe("renderPreparedPoster", () => {
 
     if (candidate.kind !== "sixel") throw new Error("expected sixel");
     const registers = new Set(candidate.sixel.match(/#(\d+);2;/g) ?? []);
-    expect(registers.size).toBeLessThanOrEqual(rendererTesting.APP_SHELL_SIXEL_MAX_COLORS);
+    expect(registers.size).toBeLessThan(64);
+    expect(candidate.sixel.length).toBeLessThanOrEqual(256 * 1024);
+  });
+
+  test("limits every emitted sixel register to the terminal's reported range", async () => {
+    probeTesting.setProbed({ sixel: true, kittyGraphics: false, sixelColorRegisters: 8 });
+    const candidate = await renderPreparedPoster(await prepared(), planFor("sixel"), {
+      rows: 4,
+      cols: 8,
+    });
+    if (candidate.kind !== "sixel") throw new Error("expected sixel");
+
+    const registers = [...candidate.sixel.matchAll(/#(\d+);2;/g)].map(([, id]) => Number(id));
+    expect(Math.max(...registers)).toBe(7);
   });
 
   test("emits an iTerm2 inline image carrying the prepared PNG", async () => {

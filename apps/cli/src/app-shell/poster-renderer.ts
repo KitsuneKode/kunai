@@ -26,10 +26,11 @@ const runtime: PosterRuntime = {
   detectImageCapability: () => detectImageCapability(),
 };
 
-// Interactive overlays are encoded on the JS thread and replayed through the
-// PTY after Ink frames. 256 colours roughly doubles both encode time and bytes
-// on the wire without a meaningful gain at terminal-poster dimensions.
-const APP_SHELL_SIXEL_MAX_COLORS = 64;
+// 128, not 256: on real art at HiDPI cell sizes 256 colours plus dithering
+// roughly doubled encode time (synchronous, on the input thread) and bytes
+// for every overlay replay, without a visible gain.
+const APP_SHELL_SIXEL_MAX_COLORS = 128;
+const APP_SHELL_SIXEL_UNPROBED_COLORS = 64;
 // Every repaint re-sends every byte through the PTY; past this the stream
 // degrades (fewer colours, smaller) and then fails closed to half-block.
 const APP_SHELL_SIXEL_MAX_BYTES = 256 * 1024;
@@ -209,7 +210,11 @@ export function resolvePosterRenderPlan(options: PreparedRenderOptions): PosterR
       bounds: { maxWidthPx: budget.maxWidth, maxHeightPx: budget.maxHeight },
     };
   }
-  if (capability.renderer === "sixel" && allowSixel) {
+  if (
+    capability.renderer === "sixel" &&
+    allowSixel &&
+    getProbedGraphicsSupport()?.sixelColorRegisters !== 1
+  ) {
     const budget = pixelBudgetForCells(cols, rows);
     return {
       renderer: "sixel",
@@ -260,12 +265,15 @@ export async function renderPreparedPoster(
         poster.image,
         {
           ...pixelBudgetForCells(cols, rows),
-          maxColors: APP_SHELL_SIXEL_MAX_COLORS,
+          maxColors: Math.min(
+            APP_SHELL_SIXEL_MAX_COLORS,
+            getProbedGraphicsSupport()?.sixelColorRegisters ?? APP_SHELL_SIXEL_UNPROBED_COLORS,
+          ),
           maxBytes: APP_SHELL_SIXEL_MAX_BYTES,
         },
         signal,
       );
-      if (!sixel) return { kind: "none" };
+      if (!sixel) return renderPreparedHalfBlock(poster, rows, cols);
       return {
         kind: "sixel",
         sixel,
@@ -374,6 +382,5 @@ export function hashTitleToColor(title: string): PosterFallbackColor {
 }
 
 export const __testing = {
-  APP_SHELL_SIXEL_MAX_COLORS,
   runtime,
 };
