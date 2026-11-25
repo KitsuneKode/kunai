@@ -137,7 +137,7 @@ describe("badge endpoints", () => {
     await store.rollUpMonths();
     const reply = await call(createBadgeHandler, store, "/?badge=active");
     expect(reply.body.label).toBe(ACTIVE_BADGE_LABEL);
-    expect(reply.body.label).toBe("active (opted in, 30d)");
+    expect(reply.body.label).toBe("active last month (opted in)");
     expect(reply.body.message).toBe("7");
   });
 

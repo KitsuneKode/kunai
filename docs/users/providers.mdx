@@ -450,3 +450,8 @@ Before playback starts:
 - `/source` or `/tracks` during playback when inventory supports switching without full re-resolve.
 
 After explicit pick, Kunai stores per-title preference for future resume.
+
+That preference is where the next resolve starts, not a lock. If the picked provider fails for an
+episode, **Settings → Recovery mode** set to **Balanced recovery** or **Fast fallback** still hands
+you a working stream from another provider. Only **Ask before switching** (or `/recompute`) keeps
+the request to exactly the provider you picked.

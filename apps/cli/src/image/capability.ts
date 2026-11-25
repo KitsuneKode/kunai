@@ -1,7 +1,7 @@
 import { whichLive } from "../infra/os/which";
 import { debugImage } from "./debug";
 import { getProbedGraphicsSupport, type TerminalGraphicsSupport } from "./probe";
-import { canUseTmuxPassthrough, tmuxClientHasKitty } from "./tmux";
+import { canUseTmuxPassthrough, isTmuxPane, tmuxClientHasKitty, tmuxSupportsVersion } from "./tmux";
 import type { ImageCapability, ImageProtocol, ImageRendererId, TerminalId } from "./types";
 
 const DISABLE_VALUES = new Set(["0", "false"]);
@@ -273,10 +273,27 @@ export function selectImageCapability(
         reason: "Kitty graphics through tmux passthrough",
       };
     }
-    return halfBlockCapability(
-      terminal,
-      "tmux/screen detected; graphics escapes need passthrough, using half-block",
-    );
+    // tmux answers DA1 itself and advertises attribute 4 in any build with
+    // Sixel support, whatever the outer terminal can do. Only the attached
+    // client's `client_termfeatures` says whether that terminal draws sixel;
+    // otherwise tmux prints "SIXEL IMAGE (WxH)" in place of the poster.
+    if (
+      override !== "kitty" &&
+      isTmuxPane(env) &&
+      probe?.tmux &&
+      tmuxSupportsVersion(probe.tmux, 4) &&
+      probe.sixel &&
+      probe.tmux.clientFeatures.includes("sixel")
+    ) {
+      return buildCapability({
+        terminal,
+        protocol: "sixel",
+        renderer: "sixel",
+        available: true,
+        reason: "tmux reported native sixel support (DA1)",
+      });
+    }
+    return halfBlockCapability(terminal, "multiplexer has no usable graphics support");
   }
 
   if (terminal === "kitty" || terminal === "ghostty") {

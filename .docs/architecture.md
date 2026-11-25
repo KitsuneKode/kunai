@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T10:59:21Z"
+lastReviewed: "2026-11-25T20:14:32Z"
 ---
 
 # Kunai — Runtime Architecture
@@ -163,6 +163,31 @@ storage (`packages/storage` queue repository) and applied by domain/app adapters
 Contract proof (fake-player / render-capture, no live providers):
 `apps/cli/test/integration/queue-playback-lifecycle.test.ts`. Product vocabulary:
 [.docs/features/queue.md](./features/queue.md).
+
+### Startup source failover
+
+When a stream stalls before its first frame, recovery
+(`app/playback/playback-recovery.ts`, planned by
+`app/playback/playback-source-failover.ts`) first tries the provider's other
+sources, then one compatible provider, within a per-episode attempt budget:
+
+- Candidates come from the resolve's source inventory, minus sources the
+  provider already reported `failed` or `exhausted`. `skipped` (known, not yet
+  tried) stays eligible.
+- The walk starts after the current source and wraps, so a session that began
+  on a pinned or favourite source still reaches the ones listed before it.
+- Each attempt records both the source that played and the source it asked
+  for. A provider that refuses the target and lands on the previous source
+  cannot make recovery bounce between the two until the budget runs out.
+- Before leaving a source, a failing rung above 1080p steps down to 1080p on
+  that same source (`planQualityStepDown`), once per source and within the same
+  attempt budget. The step-down is a quality ceiling for the rest of the
+  episode (`run.recoveryQualityCeiling`, applied through `capQualityPreference`
+  at stream selection), not a pinned stream id: ids hash the URL, and the
+  re-resolve after a failure can rotate CDN tokens. A 4K rung that failed for
+  bandwidth or a missing HEVC decoder would fail the same way on the next
+  source, so the cap is not per-source. The pin is in memory only, like every
+  automatic failover.
 
 ### Android detached-player flow
 
