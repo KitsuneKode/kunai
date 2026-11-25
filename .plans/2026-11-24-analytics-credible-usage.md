@@ -1,241 +1,205 @@
-# Plan: Credible Opt-In Usage Analytics
+# Plan: Credible, Less Invasive Usage Numbers
 
 ## Status
 
-- **Status:** PROPOSED (design plan — no code changes in this PR).
-- **Date:** 2026-11-24 (recorded decision in [2026-11-24-road-to-9-5.md](./2026-11-24-road-to-9-5.md)).
-- **Supersedes in scope:** Extends [usage-analytics-redesign.md](./usage-analytics-redesign.md) and [2026-08-26-analytics-series-and-social-cards.md](./2026-08-26-analytics-series-and-social-cards.md) without reopening [2026-09-11-analytics-ist-day-boundary.md](./2026-09-11-analytics-ist-day-boundary.md).
-- **Owner:** Unassigned; **Phase 0 requires one maintainer decision** (consent screen default, Section 4).
+- **Status:** PROPOSED. Design only; no code in this PR.
+- **Date:** 2026-11-24, rewritten 2026-11-25 after the maintainer asked for analytics that are
+  less invasive yet still give exact, publishable numbers (downloads, updates, installs, active
+  users, Android included).
+- **Extends:** [usage-analytics-redesign.md](./usage-analytics-redesign.md) and
+  [2026-08-26-analytics-series-and-social-cards.md](./2026-08-26-analytics-series-and-social-cards.md).
+  It does not reopen [2026-09-11-analytics-ist-day-boundary.md](./2026-09-11-analytics-ist-day-boundary.md).
+- **Maintainer decisions needed:** listed in Section 8.
 
 ## Problem
 
-On 2026-11-24 the maintainer decided to **keep and improve** opt-in usage analytics to get credible evidence of who uses Kunai and how. Today's system is privacy-solid but nearly blind at real traffic:
+The maintainer wants numbers that are **real** (good enough to put on a project page),
+**predictable** (they mean the same thing every day), and **less invasive** than today.
 
-- **Observed baseline:** 69 first-seen installs in 30 days; 2–10 active installs/day (median 6).
-- **Total breakdown collapse:** `SMALL_CELL_FLOOR = 5` plus `sealResidual` (binary `arch` collapses to 100% `other` whenever either `x64` or `arm64` is 1–4) and `windowPublishableBuckets` (any single day `< 5` suppresses a bucket across the entire 90-day series) fold every `version`, `os`, and `arch` bucket into `other`.
-- **No usage or retention signal:** The 5-key ping (`{ installId, version, os, arch, ts }`) cannot answer which lanes are used, whether playback succeeds, whether offline/downloads are used, which install channel users came from, or whether new installs return in week 1–4.
-- **Immutable clients:** Shipped v0.3.0 sends 5 keys (64-hex `sha256(installId)`) and treats any 4xx — including `400` and `410` — as `"permanent"` for 24h (`usage-analytics-service.ts:289`). Pre-0.3.0 installs still send raw UUIDs. Both must keep working against `POST /api/ping`.
+Today:
 
-## Hard constraints
+- **Baseline:** 69 first-seen installs in 30 days; 2–10 active installs a day (median 6).
+  `SMALL_CELL_FLOOR = 5` folds almost every version/OS/arch bucket into `other`.
+- **Linkable over time.** The wire id is a fixed `sha256(installId)`, so one install can be
+  followed day after day. `install_lifetime` keeps a durable first/last-seen row per install.
+- **`lifetimeInstalls` is unreliable by its own contract:** it can fall, and it counts a
+  returning install twice.
+- **Android is invisible.** The client sends raw `process.platform`, and the ingest allows
+  only `linux`, `darwin`, `win32` (`payload-validation.ts:17`). An Android build that reports
+  `android` is rejected with 400 (and v0.3.0 then backs off 24h). One that reports `linux` is
+  counted as Linux. Either way Android does not show up.
+- **No distribution numbers at all**, even though GitHub and npm already count downloads
+  without anyone sending us anything.
+- **The consent screen pre-selects "on"** (`ANALYTICS_ON_INDEX = 0`). It needs a keystroke,
+  but it nudges.
 
-1. **Keystroke-only consent (AGENTS.md hazard #3):** Only an explicit keystroke on the consent screen or in `/settings` / `/analytics` may enable analytics or mint `installId`. No skip (`s`), accept-all (`S`), non-interactive/non-TTY run, `DO_NOT_TRACK`, or `CI` path may enable it, create an id, accumulate local usage counters, or send.
-2. **Forbidden data stays forbidden:** Never collect, accept, or store titles, queries, provider IDs, provider results, stream URLs, file paths, raw UUIDs (on new clients), or client IPs.
-3. **Pinned endpoint:** `DEFAULT_ANALYTICS_ENDPOINT` stays `https://analytics.kunai.kitsunekode.in/api/ping` (gated by `analytics-endpoint-pin.test.ts`).
-4. **Lockstep contract and gates:** Any wire, retention, or suppression change lands with `.docs/analytics-privacy-contract.md`, `docs/users/reliability-and-privacy.mdx`, and `analytics-payload-drift.test.ts` in one PR.
-5. **Backward compatibility:** Ingest accepts v1 (5-key) and v2 (10-key) payloads permanently; `/metrics/daily.json` keeps its 8-key `schemaVersion: 2` contract untouched.
-6. **Zero first-paint cost:** Analytics never queries SQLite or touches the network before first paint, and never delays CLI exit.
+## Hard constraints (unchanged)
 
----
-
-## 1. Breakdowns that survive the floor
-
-| Option                                                    | Verdict                          | Reasoning                                                                                                                                                                                                                                                                                                                                                     |
-| --------------------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Non-overlapping ISO weekly + calendar monthly rollups** | **Adopt (primary)**              | Aggregates distinct `install_hash` over 7d (N≈15–30) and calendar months (N≈35–70) from `ping_day` (35d retention). Clears `SMALL_CELL_FLOOR = 5` and `sealResidual` on `os`, `arch`, `version`, and `channel` without lowering the floor. Non-overlapping periods prevent day-to-day sliding-window differencing.                                            |
-| **Coarser version bucketing**                             | **Adopt (prerelease fold only)** | Fold prerelease/build tags (`0.4.0-rc.1+abc` → `0.4.0-pre`) in rollups while keeping `major.minor.patch` so biweekly hotfix adoption stays legible at monthly N≥25. Do **not** publish `major.minor` alongside `major.minor.patch` in the same period: subtracting them leaks sub-floor patch cells.                                                          |
-| **Calibrated noise (Differential Privacy / Laplace)**     | **Reject (for now)**             | At DAU=6, `ε = 1.0` adds `Lap(1)` (`σ ≈ 1.41`, 95% interval `±3`), turning `{ linux: 4, darwin: 1, win32: 1 }` into random rankings. Annual composition (`ε_annual ≤ 4`) pushes per-day `σ` to 7–28, destroying signal. Also adds seeded-noise state and harms auditability on a trust surface. Revisit only if Kunai needs high-cardinality cuts at N > 500. |
-
-**Why not daily-stepping 28-day rolling windows?** Publishing `[D-27..D]` and `[D-26..D+1]` daily lets anyone subtract adjacent snapshots to recover single-day changes of size 1. Fixed **closed ISO weeks (Mon–Sun, IST)** and **closed calendar months (`YYYY-MM`, IST)** share zero rows between adjacent periods.
-
-**Rules kept intact:** `SMALL_CELL_FLOOR = 5` and `sealResidual` apply unchanged to every weekly/monthly breakdown. `daily_rollup` and `/metrics/daily.json` continue powering the daily `activeInstalls` / `newInstalls` / `lifetimeInstalls` pulse; per-day breakdown suppression stays on `daily.json` / `series.json` for compatibility, while the public dashboard moves its breakdown charts to weekly/monthly rollups.
-
----
-
-## 2. Coarse usage counters ("how" Kunai is used)
-
-Add **five fixed, bounded top-level fields** to the wire payload (v2), raising the key count from 5 to 10 while staying under `MAX_BODY_BYTES = 512` (~235 bytes worst case):
-
-| Field          | Type / Closed bounds                                                                    | Answers                                                  | Contract justification                                                                                                                     |
-| -------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `channel`      | Closed enum (8): `npm`, `bun`, `brew`, `scoop`, `binary`, `system`, `source`, `unknown` | Which distribution channels carry active users (W4).     | Maps 1:1 from existing `detectInstallMethod()` (`install-method.ts`); no paths sent. Same sensitivity class as `os`/`arch`.                |
-| `lanes`        | Sorted unique array, subset of `["anime", "series", "youtube"]` (0–3 items)             | Which product lanes (`ProviderLane`) are actually used.  | At most 3 bits/period. No titles, queries, or providers. Published only as per-lane marginal distinct-install counts (`floor = 5`).        |
-| `playAttempts` | Integer `0..20`                                                                         | How often playback is attempted; denominator for health. | Local counter stops incrementing past 20 per period (unbiased sample, prevents binge fingerprinting and single-ping inflation).            |
-| `playSuccess`  | Integer `0..20`, invariant `playSuccess <= playAttempts`                                | Real-world playback reliability across users.            | Published only as aggregate install-level success rate (`>= 5` attempting installs) and capped attempt rate (`>= 20` attempts).            |
-| `offlineUsed`  | Boolean                                                                                 | Whether offline playback / downloads see real use.       | 1 bit/period (`offlineAsset` play or download job queued/completed). Published as distinct installs (`floor = 5` + binary `sealResidual`). |
-
-**Timing & local accumulation (critical for avoiding a silent no-op):**
-
-- Kunai pings **once per 24h at startup** (`main.ts:1274`), before the current session plays anything.
-- Therefore, v2 counters summarize **completed activity since the previous successful ping** — never the in-flight session. This keeps pings at 1/24h, decouples network timing from watch actions, and never sends on exit.
-- Counters are recorded in a 1-row table (`analytics_pending`) in `kunai-data.sqlite` **if and only if `config.analytics === "enabled"`** (and env is not blocked). Disabling analytics or calling `rotateInstallId()` immediately wipes `analytics_pending`.
-- A successful (`outcome === "permanent"`) ping clears only the counters snapshotted for that send (preserving any activity recorded while the HTTP request was in flight, matching the completion-fence discipline in `.docs/analytics-privacy-contract.md`).
-- **Rollout denominator hygiene:** v1 (v0.3.0) rows store `NULL` (not `0`/`false`) in the new `ping_day` columns. Weekly/monthly rollups record `reporting_installs` (distinct installs that sent v2 fields) so partial-rollout adoption never dilutes usage percentages.
+1. **Keystroke-only consent** (AGENTS.md hazard #3). No skip, accept-all, non-TTY, `CI` or
+   `DO_NOT_TRACK` path may enable analytics, create an id or send.
+2. **Forbidden data stays forbidden:** titles, queries, providers, URLs, file paths, raw
+   UUIDs, client IPs.
+3. **Pinned endpoint** `https://analytics.kunai.kitsunekode.in/api/ping`.
+4. **Lockstep:** `.docs/analytics-privacy-contract.md`, `docs/users/reliability-and-privacy.mdx`
+   and `analytics-payload-drift.test.ts` change in the same PR as any wire or retention change.
+5. **Old clients keep working.** v0.3.0 sends a 64-hex digest; older builds send a UUID; both
+   treat any 4xx as permanent for 24h. The ingest must accept every new shape **before** a
+   client ships it.
+6. **Zero first-paint and exit cost.**
 
 ---
 
-## 3. Retention by first-seen cohort week (and month)
+## The three tiers of numbers
 
-**Zero new client fields, zero new identity tables.** `install_lifetime` already stores `(install_hash, first_seen, last_seen)` for 400 days, and `ping_day` stores `(day, install_hash)` for 35 days.
+| Tier              | What it counts                                                     | Needs consent?         | Exact?                             | Source                     |
+| ----------------- | ------------------------------------------------------------------ | ---------------------- | ---------------------------------- | -------------------------- |
+| A. Distribution   | Downloads, installs and updates, per platform including Android    | No: we collect nothing | Exact counts of downloads          | GitHub release assets, npm |
+| B. Active use     | Unique active installs per day/week/month, new installs, retention | Yes, opt-in            | Exact **among those who opted in** | Opt-in ping, redesigned    |
+| C. Public numbers | Badges and the `/analytics` page                                   | —                      | Labelled honestly                  | A + B                      |
 
-- **Materialization before prune:** At each closed ISO week `W` (Monday cron after Sunday midnight IST), join `ping_day` for week `W` against `install_lifetime.first_seen` to compute `retained_installs` for every cohort week `C` with `week_offset = (W - C) / 7` in `0..12` (13 rows/week, permanent aggregate-only table `cohort_week_retention`).
-- **Monthly cohorts too:** At each closed calendar month `M`, materialize `cohort_month_retention` for `month_offset` in `0..6`. At ~16 new installs/week today, weekly cohorts hover near the floor, whereas monthly cohorts (N≈40–70) are immediately publishable.
-- **Cohort privacy floor (complementary-cell safe):**
-  - Suppress an entire cohort row if `cohort_size < 10`.
-  - Inside a qualifying cohort (`cohort_size >= 10`), publish exact `retained_installs` only when `5 <= retained_installs <= cohort_size - 5`. Cells `< 5` or `> cohort_size - 5` serialize as `retained: null, suppressed: true` (rendered as `"< 5"` or `"> N-5"`, never `0%` or `100%`), preventing churn-subtraction leaks.
-- **Explicit caveats:** `Rotate install id` and disable→re-enable mint a new UUID, counting as churn in the old cohort and a new install in the later cohort. Retention is therefore an honest **lower bound** on returning installs.
-
----
-
-## 4. Honest consent copy & neutral recommendation on the setup default
-
-### Copy improvements (no dark patterns)
-
-1. **Single source of truth for payload preview:** Replace the hardcoded 5-key string in `apps/cli/src/app-shell/setup/AnalyticsScreen.tsx` with a formatter driven by `usageAnalytics.describePayload()` (still side-effect free; uses `"<sha256 of a local id>"` when `unset`, never minting an id).
-2. **Explain why it helps the user (plainly, without guilt):**
-   - Headline: `Help keep Kunai working on your platform`
-   - Detail: `One daily startup ping tells us which OS, install channels, and lanes are used — and whether playback actually succeeds. Public results: kunai.kitsunekode.in/analytics`
-   - Preview caption: `Exact JSON sent (usage fields summarize prior sessions, capped at 20 plays):`
-   - Negative guarantee line (kept verbatim): `Never: titles · queries · providers · URLs · paths · your IP`
-   - Reversibility line: `Raw id stays on this machine. Off in /settings or /analytics deletes it and clears local counters.`
-3. **Fix existing copy drift:** Update `/analytics` (`apps/cli/src/app-shell/workflows/shell-workflows.ts:1614`, which still says `"Off by default"` despite setup pre-selecting On), Settings (`apps/cli/src/app-shell/settings/registry/privacy.ts:9`), and the one-time upgrader banner (`ink-shell.tsx:530`) to list all 10 fields accurately.
-
-### Setup default (`ANALYTICS_ON_INDEX = 0`) — Maintainer decision required
-
-`AnalyticsScreen.tsx` currently pre-selects `"Turn it on"` with badge `"← recommended"`, while `s` selects off and `S` (accept all) stops on the screen. **This plan does not change that default unilaterally**; the maintainer must choose one option before Phase 3 merges:
-
-| Option                                                                     | Behavior                                                                                 | Trade-off                                                                                                                                                                                                                                                                                 |
-| -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **A. Keep "Turn it on" pre-selected, drop `"← recommended"` badge**        | Cursor starts on `"Turn it on"`, Enter confirms; `s` still selects off, `S` still stops. | Preserves opt-in sample size while active base is <200, so weekly cohorts clear floor 5 sooner. Still draws skepticism from privacy-strict CLI users who hit Enter quickly, especially now that coarse usage counters are included.                                                       |
-| **B. Default cursor to "Keep it off" (or require un-preselected `y`/`n`)** | Enter leaves analytics off; enabling requires moving cursor or pressing `y`.             | Eliminates dark-pattern critique completely, matches the higher sensitivity of v2 behavioral counters, and resolves the open privacy-review note in `2026-11-24-road-to-9-5.md`. Likely lowers opt-in rate 2–4× until W4 distribution (Homebrew/Scoop/AUR + v0.4.0) grows total installs. |
-
-**Neutral recommendation:** Because v2 expands from passive system metadata (5 keys) to coarse usage behavior (10 keys), **Option B** is the cleaner long-term trust posture — especially once W4 distribution ships. If the maintainer prefers **Option A** during v0.4.x to keep weekly cells above the floor, removing the `"← recommended"` badge and showing the full 10-key JSON above the fold is the minimum honesty bar. Record the decision in `.docs/analytics-privacy-contract.md` before Phase 3.
+Tier A is the big win: it is the "how many people use this" number most projects publish, it is
+exact, and it costs users nothing.
 
 ---
 
-## 5. Public `/analytics` dashboard changes
+## 1. Tier A: distribution counts (no client data)
 
-Updates to `apps/docs/app/analytics/page.tsx` and `apps/docs/components/analytics/`:
+**GitHub release assets.** Every binary install or update downloads a release asset from
+`github.com/KitsuneKode/kunai/releases/download/…`. That covers `install.sh`, `install.ps1`,
+the native auto-updater, and the Homebrew tap, Scoop bucket and AUR package, which all pull the
+same assets. GitHub keeps a cumulative `download_count` per asset. Per release and per platform
+(`kunai-linux-*`, `kunai-darwin-*`, `kunai-windows-*`, `kunai-android-arm64/x64`) that gives an
+exact download count, and Android comes for free.
 
-1. **Headline KPI row (`SectionCards`):** Replace `"Below the floor: 100%"` with **Active (last closed month)** (distinct installs) alongside **Active (last closed week)**, **Active yesterday**, and **Lifetime installs** (with non-monotonic retirement note). Keep suppression transparency as a subtle footnote per card.
-2. **Working breakdowns (`BreakdownSection` + `ShareSection`):** Read from `/metrics/monthly.json` (default) with a **Month / Week** toggle (`/metrics/weekly.json`), showing `byVersion`, `byOs`, `byArch`, and `byChannel`. Display denominator explicitly (`N distinct opted-in installs`; for v2-only fields, `M of N reporting v0.4+`).
-3. **New "How Kunai is used" section (v2):**
-   - **Lanes:** Horizontal bars for Anime, Movies & TV (`series`), YouTube as `% of reporting installs` (explicitly noting installs can use multiple lanes so percentages need not sum to 100%).
-   - **Playback reliability:** Install-level success rate + capped attempt success rate (hidden behind an honest `"below floor"` note until `>= 5` attempting installs and `>= 20` attempts).
-   - **Offline / downloads:** `% of reporting installs` using offline/downloads (gated by floor 5 + binary `sealResidual`).
-4. **New "Cohort retention" section:** Reads `/metrics/cohorts.json`. Defaults to monthly cohorts when weekly cohorts have `< 10` installs; shows weekly `W0..W12` once weeks clear 10. Suppressed cells show `< 5`, never `0%`.
-5. **Independent downloads next to opt-in pulse:** Keep `NpmSection` on its own axis and add a sibling **GitHub Release downloads** card (fetched at ISR time in `apps/docs/lib/analytics-github.ts` from the public Releases API, cached 1h, zero user tracking). Frame both under a concise **"Opt-in pulse vs. independent downloads"** callout explaining self-selection bias: opt-in telemetry is a **lower bound** (excludes opt-outs, non-TTY, CI, `DO_NOT_TRACK`), while download counters are an **upper-ish channel pulse** (includes reinstalls, upgrades, mirrors).
-6. **Trust section & `HowToRead`:** Update `PayloadContractCard` to the 10-key v2 JSON (noting v0.3.0's 5-key compatibility), and document weekly/monthly windows, cohort floors, and rotation caveats.
+**npm.** `api.npmjs.org/downloads/range/<period>/<pkg>` gives daily downloads for
+`@kitsunekode/kunai` and each platform package, including `@kitsunekode/kunai-android-*`.
 
----
+**Installs versus updates.** A plain asset count mixes the two. To split them without any
+identifier, add two tiny marker assets to every release: `install.marker`, fetched once by
+`install.sh`/`install.ps1` on a fresh install, and `update.marker`, fetched once by the native
+updater after a verified update. GitHub only counts them; nothing about the user is sent to us.
+GitHub already sees these requests, because it serves the binary itself. _Decision 3._
 
-## 6. First-paint & exit cost
+**Implementation.**
 
-Measured architecture review of `apps/cli/src/main.ts:1267-1284` and `usage-analytics-service.ts:181-296`:
+- A daily cron in `apps/analytics-ingest` reads the GitHub Releases API and the npm downloads
+  API with no client data involved.
+- It stores aggregate snapshots in a new `distribution_daily(day, source, release, platform,
+  cumulative)` table. Daily deltas come from consecutive cumulative snapshots.
+- It publishes them as `/metrics/distribution.json`.
+- Never scrape; use the documented APIs with a token scoped to public data. GitHub counts are
+  cumulative from the first snapshot, so earlier history is one opening total.
 
-1. **Keep pre-paint `onSessionStart` purely in-memory:** Only inspect `config.getRaw()` + `env` + `isInteractive` to settle `analyticsDisclosurePending` before Ink mounts (zero SQLite, zero network, `< 1 ms`; the rare `DO_NOT_TRACK` wipe of a stale `enabled` config remains awaited so the id is cleared immediately).
-2. **Defer `pingInBackground` strictly past first paint:** Trigger the background ping from a post-mount effect / `setImmediate` after Ink renders frame 1, never before `render(...)`.
-3. **Lazy counter read:** Only read `analytics_pending` from `kunai-data.sqlite` inside `maybePing()` **after** passing the 24h cadence and retry-backoff checks — so 95%+ of sessions do **0 extra SQLite reads**.
-4. **Reuse `detectedInstall`:** Pass the `InstallMethodKind` already resolved in `apps/cli/src/container/bootstrap-services.ts:499` into `UsageAnalyticsService` (zero extra `realpathSync` or filesystem probes).
-5. **Never block exit:** Call `timer.unref?.()` on the `2_500 ms` `AbortController` timeout (`usage-analytics-service.ts:277` currently lacks `.unref()`, which can keep the event loop alive up to 2.5s on quick exit) and abort any in-flight ping on shell unmount.
-6. **Guardrail:** Add a unit/startup test asserting `onSessionStart` triggers 0 store reads and 0 fetches before first paint, and a hung 10s fetch adds 0 ms to mount or process exit.
+**What it can't tell us:** whether a download was then run, and CI or mirror re-downloads. Say
+so on the page: "downloads", not "users".
 
----
+## 2. Tier B: the opt-in ping, redesigned to be less invasive
 
-## 7. Exact wire payload schema diff (v1 → v2)
+The aim: the server can no longer follow an install across months, and keeps no lasting
+per-install record. Every count stays exact.
 
-```diff
- {
-   "installId": "<sha256-hex>",
-   "version": "0.4.0",
-   "os": "linux",
-   "arch": "x64",
--  "ts": 1795478400000
-+  "ts": 1795478400000,
-+  "channel": "binary",
-+  "lanes": ["anime", "series"],
-+  "playAttempts": 4,
-+  "playSuccess": 4,
-+  "offlineUsed": false
- }
-```
+| Change                                                                                                                                                                       | Keeps                                                                                                              | Makes impossible                                     |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| The wire id becomes `HMAC-SHA256(localSecret, "YYYY-MM")` and rotates every calendar month. `localSecret` is the existing local `installId`, which never leaves the machine. | Exact daily, month-aligned weekly and monthly unique actives                                                       | Linking one install from one month to the next       |
+| The client sends `cohort: "YYYY-MM"`, the month analytics was enabled, stored locally and cleared on disable                                                                 | Exact new installs per month, exact cohort retention (M0…M6), a lifetime total that only goes up (Σ new per month) | Nothing new: the server could already see first-seen |
+| `ts` is replaced by the client's local day label; the ingest checks it against its own clock (±1 day)                                                                        | Replay and skew protection                                                                                         | A precise client clock signature                     |
+| `os` is sent as `android` when `isAndroidRuntime()` is true, and the ingest accepts it                                                                                       | Android active installs                                                                                            | Android hidden inside Linux                          |
+| `install_lifetime` and `lifetime_retired` are dropped. `ping_day` keeps 35 days, as now                                                                                      | All published numbers (rebuilt from the cohort sums)                                                               | A durable per-install record                         |
 
-- **Key-set validation (`apps/analytics-ingest/src/ingest.ts`):** Accept **either** exact v1 5-key set (`["arch","installId","os","ts","version"]`) **or** exact v2 10-key set (`["arch","channel","installId","lanes","offlineUsed","os","playAttempts","playSuccess","ts","version"]`). Reject any partial subset (6–9 keys) or extra key (`>= 11` keys, or 6th key on v1) with `400 invalid_payload`.
-- **Field validators (`payload-validation.ts`):**
-  - `channel`: closed allowlist `["npm","bun","brew","scoop","binary","system","source","unknown"]`.
-  - `lanes`: array of 0–3 unique strings from `["anime","series","youtube"]`, strictly sorted ascending (`lanes[i] > lanes[i-1]`) to reject duplicates/arbitrary order.
-  - `playAttempts`, `playSuccess`: safe integers, `0 <= playSuccess <= playAttempts <= 20`.
-  - `offlineUsed`: strict `typeof === "boolean"`.
-- **Body limit:** Keep `MAX_BODY_BYTES = 512` unchanged (worst-case v2 JSON is ~235 bytes).
+**Weeks are month-aligned** (days 1–7, 8–14, 15–21, 22–28, 29–end). That keeps a weekly id
+from bridging two months, which would let the two monthly ids be linked.
 
----
+**Payload v2:** `{ id, cohort, day, version, os, arch }`. That's six keys, under the 512-byte
+cap. Usage fields (Section 4) are optional extra keys, behind Decision 2.
 
-## 8. Ingest schema migration, endpoints & retention
+**Re-enabling after a disable** clears `localSecret` and `cohort`, so it counts as a new
+install, as it does today.
 
-**New idempotent migration `apps/analytics-ingest/sql/004_credible_usage.sql`:**
+**Upgrade seam:** installs that upgrade are counted again once, in their upgrade month, because
+no link to their old id is kept. This was accepted at `lifetimeInstalls = 2` for 0.3.0, and it
+is cheap at today's numbers. Document it as a dated seam, not a fault.
 
-1. **`ping_day` (raw, 35-day retention unchanged):** Add nullable typed columns with `CHECK` constraints (keeping `extra jsonb` empty):
-   - `channel text check (channel in ('npm','bun','brew','scoop','binary','system','source','unknown'))`
-   - `used_anime boolean`, `used_series boolean`, `used_youtube boolean`
-   - `play_attempts smallint check (play_attempts between 0 and 20)`
-   - `play_success smallint check (play_success between 0 and play_attempts)`
-   - `offline_used boolean`
-   - Add covering index `ping_day_day_v2_idx on ping_day (day, install_hash, channel)` for weekly/monthly distinct aggregation.
-2. **Permanent aggregate-only tables (no identity, never pruned):**
-   - `weekly_rollup (week_start date primary key, active_installs int, new_installs int, reporting_installs int, by_version jsonb, by_os jsonb, by_arch jsonb, by_channel jsonb, lane_installs jsonb, play_attempting_installs int, play_succeeding_installs int, play_attempts_sum int, play_success_sum int, offline_installs int, computed_at timestamptz)`
-   - `monthly_rollup (month_start date primary key, ...same aggregate columns...)`
-   - **Per-install rollup semantics:** Dimension counts (`by_version`, `by_os`, `by_arch`, and `by_channel` over non-null v2 rows) take each install's latest ping in the period (`DISTINCT ON (install_hash) ORDER BY install_hash, day DESC`) so every breakdown sums cleanly to its denominator (`active_installs` or `reporting_installs`). Boolean usage metrics (`lane_installs`, `offline_installs`) take `bool_or(...)` per `install_hash` across the period and apply complementary binary suppression (`5 <= count <= reporting_installs - 5`). `play_attempting_installs` / `play_succeeding_installs` count installs with `sum(play_attempts) > 0` / `sum(play_success) > 0`.
-   - `cohort_week_retention (cohort_week date, week_offset smallint check (week_offset between 0 and 12), cohort_size int, retained_installs int, computed_at timestamptz, primary key (cohort_week, week_offset))`
-   - `cohort_month_retention (cohort_month date, month_offset smallint check (month_offset between 0 and 6), cohort_size int, retained_installs int, computed_at timestamptz, primary key (cohort_month, month_offset))`
-3. **Retention unchanged:** `ping_day` + `ingest_budget` stay **35 days**; `install_lifetime` stays **400 days** (`lifetime_retired` permanent). No new pseudonymous tables.
-4. **Cron (`/api/cron/snapshot`):** Continues running daily at `0 19 * * *`. After `rollUpDay`:
-   - On Mondays (or backfill of missed closed ISO weeks inside the 35d raw window, capped at 4 weeks/run), materialize `weekly_rollup` + `cohort_week_retention` (`week_offset 0..12`).
-   - On the 1st of each IST month (or missed closed month inside 35d raw window), materialize `monthly_rollup` + `cohort_month_retention` (`month_offset 0..6`).
-   - Prune runs strictly **after** weekly/monthly/cohort rollups commit, preserving the existing separate-transaction `deferred` reporting contract.
-5. **New public read endpoints (`vercel.json` rewrites + same `PUBLIC_METRICS_CACHE_CONTROL`):**
-   - `GET /metrics/weekly.json` (`schemaVersion: 1`, last 26 closed weeks, per-period small-cell suppression + `sealResidual`)
-   - `GET /metrics/monthly.json` (`schemaVersion: 1`, last 12 closed months, same suppression rules)
-   - `GET /metrics/cohorts.json` (`schemaVersion: 1`, weekly + monthly cohort matrices with `cohort_size >= 10` and `5 <= retained <= cohort_size - 5` cell guards)
-   - `GET /metrics/daily.json` and `GET /metrics/series.json` remain **unchanged** (`schemaVersion: 2`).
+## 3. Honest consent
 
----
+- The setup screen gets **no pre-selection**. Both "Share anonymous usage" and "Don't share"
+  need a keystroke. Copy is generated from `describePayload()`, so it can't drift from the
+  wire. _Decision 1._
+- `kunai analytics log` prints the last 50 pings exactly as sent, from a local file kept only
+  while enabled and cleared on disable. Users can verify the claim instead of trusting it.
+- `kunai analytics preview` prints the payload the next ping would send.
 
-## 9. Contract-doc & gate/test changes
+## 4. Coarse usage counters (optional, Decision 2)
 
-Land together in Phase 1 (ingest/rollup clauses) and Phase 3 (wire payload + CLI consent clauses):
+These are only accumulated locally while enabled, cleared on disable, and sent as buckets,
+never exact counts, once per month-aligned week:
 
-- **`.docs/analytics-privacy-contract.md` & `docs/users/reliability-and-privacy.mdx`:**
-  - Document the 10-key v2 wire payload alongside permanent v1 (5-key) ingest support, local `analytics_pending` storage (enabled-only, cleared on disable/rotate), and prior-period startup reporting.
-  - Document non-overlapping weekly/monthly rollups, `cohort_week_retention` / `cohort_month_retention` (`cohort_size >= 10`, complementary cell guard `5 <= retained <= cohort_size - 5`), and GitHub release downloads alongside npm.
-  - Record the maintainer's Phase 0 decision on the setup default.
-- **`apps/cli/test/unit/architecture/analytics-payload-drift.test.ts`:**
-  - Update `ANALYTICS_PAYLOAD_KEYS` length assertion from `5` to `10` and `sample: AnalyticsPayload` to all 10 keys.
-  - Keep checking that both contract and user doc name every key in `ANALYTICS_PAYLOAD_KEYS`, keystroke-only consent, floor of 5 without joint anonymity, reversible Settings control, id deletion on disable, and IST cutover.
-  - Add assertions that both docs state local usage counters clear on disable/rotate and that weekly/monthly + cohort floors are documented.
-- **`apps/cli/test/unit/architecture/analytics-disclosure-once.test.ts`:**
-  - Keep all 5 existing assertions; add assertions that `AnalyticsScreen.tsx` renders its preview via `describePayload()` / shared payload formatter (never a hardcoded key list) and that `analytics_pending` writes are gated on `analytics === "enabled"`.
-- **`apps/cli/test/unit/architecture/analytics-endpoint-pin.test.ts`:** Unchanged — remains green.
-- **Additional test suites:**
-  - `apps/analytics-ingest/test/`: v1+v2 `payload-validation` & `ingest` tests (rejecting 6–9 and 11+ keys), `weekly-monthly-rollup.test.ts` (including `NULL` denominator isolation for v1 pings), `cohort-retention.test.ts` (including `cohort_size < 10` and complementary-cell `cohort_size - retained < 5` suppression), and real-Postgres `test:pg` lifecycle coverage for `004_credible_usage.sql`.
-  - `apps/cli/test/unit/`: `UsageAnalyticsService` counter accumulation/cap-at-20/fence-on-send/clear-on-disable-and-rotate, zero pre-paint reads/fetches, and `.unref()` exit-safety test.
-  - `apps/docs/test/`: parser & UI tests for weekly/monthly/cohort views, GitHub downloads (`analytics-github.test.ts`), and `analytics-clarity.test.tsx` updates.
+- `lanes`: which of anime / series / movies / youtube were used, as a bitmask
+- `plays`: `0`, `1-5`, `6-20`, `21+`
+- `playOk`: the share of plays that reached a decoded frame, as `<50%`, `50-90%`, `>90%`
+- `offline`: whether downloads were used, a boolean
+- `channel`: the install method from the install manifest (`binary`, `npm`, `brew`, `scoop`,
+  `aur`, `source`)
 
----
+The existing 5-install floor applies to every published cell. Per-day publication of these is
+dropped: weekly only.
 
-## 10. Rollout order across releases
+## 5. Public numbers and badges (Tier C)
 
-Deployment order is a **hard constraint** because published CLI binaries are immutable and v0.3.0 treats `400`/`410` as permanent for 24h:
+- **`/analytics` page:** distribution first (downloads per release and per platform, installs
+  versus updates), then opt-in activity (weekly/monthly unique active installs, new installs,
+  cohort retention), each with a one-line definition.
+- **Badge endpoints** in shields.io endpoint format, on the existing ingest:
+  - `/badges/downloads.json`: "downloads 12.3k"
+  - `/badges/active.json`: "active (opted in, 30d) 140"
+  - `/badges/installs.json`: "installs 2.1k", when the markers exist
+    These go in the README and on project pages.
+- **Never extrapolate** opt-in counts to "total users" on the page. If an estimate is wanted,
+  show it separately as "est." with the method: active opt-in pings ÷ (update.marker
+  downloads of the current release / its age).
+- The small-cell floor and the window-wide suppression stay as they are.
 
-1. **Phase 0 — Maintainer sign-off:** Decide consent-screen default (Section 4 Option A vs Option B).
-2. **Phase 1 — Ingest deploy FIRST (`apps/analytics-ingest`, independent of CLI):**
-   - Run `004_credible_usage.sql` against Neon; deploy ingest accepting v1 (5-key) + v2 (10-key) pings and serving `/metrics/{weekly,monthly,cohorts}.json`.
-   - Backfill the last 4 closed ISO weeks + last closed month + cohorts immediately from existing `ping_day` + `install_lifetime`. **OS, arch, version, and cohort retention become readable immediately from existing v0.3.0 traffic.**
-3. **Phase 2 — Docs `/analytics` deploy (`apps/docs`, independent of CLI):**
-   - Ship weekly/monthly breakdowns, cohort table, GitHub release downloads alongside npm, and opt-in vs. download caveats. Usage cards render conditionally once v2 `reporting_installs >= 5`.
-4. **Phase 3 — CLI release (`v0.4.0` or `v0.4.1`, single atomic PR with contract + gates):**
-   - Ship v2 10-key payload, `analytics_pending` SQLite store, post-first-paint deferred send + `.unref()`, dynamic `AnalyticsScreen.tsx` preview + copy fixes, updated contract/user docs, and updated drift/disclosure gates.
-5. **Phase 4 — Verification:** Run `bun run test:live:analytics` against local disposable Postgres verifying v1 5-key (`204`), v2 10-key (`204`), and 6-key / 11-key extra-field probes (`400`); verify first prod Monday cron populates `weekly_rollup` and `cohort_week_retention` with empty `deferred`.
+## 6. Android specifics
 
----
+- **Tier A:** `kunai-android-arm64/x64` assets plus the `@kitsunekode/kunai-android-*` npm
+  packages, as their own row.
+- **Tier B:** the `os: "android"` fix (client and ingest), with a test that an Android runtime
+  sends `android`.
+- **The mobile app (`apps/mobile`):** keep it out of scope until it ships through a store. If
+  it does, store install counts (Play Console) are Tier A data with no client code.
 
-## 11. Dropped as not worth the privacy cost
+## 7. Rollout order
 
-| Candidate signal                                                               | Why dropped                                                                                                                                                |
-| ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Provider IDs** (`allmanga`, `miruro`, `vidrock`, …)                          | Explicitly forbidden by contract; reveals which third-party host a user contacted. Provider health belongs in synthetic sweeps (W1), never user telemetry. |
-| **Error codes, stack traces, failure messages**                                | High risk of leaking URLs, paths, or titles; unbounded cardinality. Diagnostics stay strictly local until explicit `/export-diagnostics`.                  |
-| **Session duration, watch minutes, episode counts, hour-of-day**               | Behavioral viewing profile; high fingerprinting risk with little engineering payoff beyond `lanes` + capped `playAttempts`/`playSuccess`.                  |
-| **Tracker/presence posture** (AniList, TMDB OAuth, Discord RPC)                | Reveals linked third-party accounts; erodes trust for low product value.                                                                                   |
-| **Terminal emulator / graphics protocol** (`kitty`, `iterm2`, `sixel`, `tmux`) | High-entropy fingerprint when combined with `os`/`arch`/`channel`.                                                                                         |
-| **Country, timezone, locale, audio/sub language**                              | Geolocation/identity proxy in a small user base.                                                                                                           |
-| **Relay URL, Stremio addons, custom TMDB key flags**                           | Sensitive user infrastructure posture; stays local.                                                                                                        |
-| **Per-event / playback-triggered / exit pings**                                | Breaks the 1/24h contract, correlates network timing with watching, and risks slowing exit.                                                                |
+1. **Ingest first:** accept v2 payloads, `os: android`, and the `day` field. Add the
+   distribution cron, the `distribution_daily` table and the badge endpoints. Keep v1 working
+   forever.
+2. **Release N:** client v2 (rotating id, cohort, day, Android `os`), neutral consent screen,
+   `analytics log` and `preview`. Add marker assets to the release workflow and the
+   installers/updater (Decision 3).
+3. **Release N+1:** the usage buckets, if Decision 2 is yes.
+4. **After the v2 share passes about 80% of actives:** drop `install_lifetime` and
+   `lifetime_retired` reads from the published numbers. The tables keep serving v1 pings until
+   those pings stop.
+
+**Gates and docs:**
+
+- Update `analytics-payload-drift` with the v2 keys and the allowed OS list.
+- Add a test that no monthly id is derivable from another month's.
+- Add a test that `cohort` is cleared on disable.
+- Update the contract doc and the user privacy page in the same PRs.
+
+## 8. Decisions for the maintainer
+
+1. **Consent default:** neutral (no pre-selection), as recommended, or keep "on" pre-selected.
+2. **Usage buckets (Section 4):** yes, no, or a subset.
+3. **Install/update marker assets:** yes or no. Without them, Tier A shows combined downloads
+   only.
+4. **Badge wording:** confirm "active (opted in, 30d)" rather than plain "active users".
+
+## 9. Dropped, as not worth the privacy cost
+
+- Per-install history beyond the current month.
+- Exact play counts, titles and providers, of any kind.
+- Daily-stepping rolling windows (differencing risk).
+- Laplace noise at the current N: it destroys the signal without adding real protection
+  over the floor.
+- IP-based uniqueness or geography.
