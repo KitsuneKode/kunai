@@ -7,7 +7,11 @@ import {
   shouldUseProviderPlaybackRecovery,
   STARTUP_STALL_TIMEOUT_MS,
 } from "@/app/playback/playback-source-failover";
-import type { ProviderResolveResult } from "@kunai/types";
+import type {
+  ProviderResolveResult,
+  ProviderSourceCandidate,
+  ProviderSourceStatus,
+} from "@kunai/types";
 
 describe("playback-source-failover", () => {
   test("verified local playback never enters provider stream recovery", () => {
@@ -121,5 +125,69 @@ describe("playback-source-failover", () => {
     } as unknown as ProviderResolveResult;
 
     expect(listOrderedPlaybackSourceIds(result)).toEqual(["source:yoru", "source:neon"]);
+  });
+
+  test("pickNextCatalogSourceId wraps to sources listed before the current one", () => {
+    // Playback started on c (a favourite or pinned pick); a and b come first.
+    expect(
+      pickNextCatalogSourceId(
+        ["source:a", "source:b", "source:c"],
+        "source:c",
+        new Set(["source:c"]),
+      ),
+    ).toBe("source:a");
+    expect(
+      pickNextCatalogSourceId(
+        ["source:a", "source:b", "source:c"],
+        "source:b",
+        new Set(["source:b", "source:c"]),
+      ),
+    ).toBe("source:a");
+  });
+
+  test("a refused target is not retried when the provider lands back on the previous source", () => {
+    // Recovery asked for b; the provider refused it and played a again. With b
+    // recorded as tried, the next plan moves on instead of asking for b again.
+    expect(
+      planStartupFailover({
+        sourceIds: ["a", "b", "c"],
+        currentSourceId: "a",
+        triedSourceIds: new Set(["a", "b"]),
+        hasFallbackProvider: true,
+        failoverAttempts: 1,
+      }),
+    ).toEqual({ kind: "advance-source", sourceId: "c" });
+    expect(
+      planStartupFailover({
+        sourceIds: ["a", "b"],
+        currentSourceId: "a",
+        triedSourceIds: new Set(["a", "b"]),
+        hasFallbackProvider: true,
+        failoverAttempts: 1,
+      }),
+    ).toEqual({ kind: "fallback-provider" });
+  });
+
+  test("listOrderedPlaybackSourceIds leaves out failed and exhausted sources but keeps skipped", () => {
+    const source = (id: string, status: ProviderSourceStatus): ProviderSourceCandidate => ({
+      id,
+      providerId: "videasy",
+      kind: "provider-api",
+      label: id,
+      host: "x",
+      status,
+      confidence: 1,
+    });
+    const result = {
+      sources: [
+        source("source:live", "selected"),
+        source("source:dead", "failed"),
+        source("source:spent", "exhausted"),
+        source("source:known", "skipped"),
+      ],
+      streams: [],
+    };
+
+    expect(listOrderedPlaybackSourceIds(result)).toEqual(["source:live", "source:known"]);
   });
 });

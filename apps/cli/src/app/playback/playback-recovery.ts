@@ -334,6 +334,12 @@ export async function recoverAfterPlayback(
       });
 
       if (failoverPlan.kind === "advance-source") {
+        // Record the target, not only what played. A provider may refuse the
+        // requested source and land on the previous one, and only noting the
+        // played source let recovery bounce A→B→A until the budget ran out.
+        if (!run.triedFailoverSourceIds.includes(failoverPlan.sourceId)) {
+          run.triedFailoverSourceIds.push(failoverPlan.sourceId);
+        }
         await selectionCoordinator.applyAutomaticSourceFailover(
           attempt.resolvedProviderId,
           currentEpisode,

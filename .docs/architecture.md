@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T10:55:19Z"
+lastReviewed: "2026-11-24T15:24:32Z"
 ---
 
 # Kunai — Runtime Architecture
@@ -158,6 +158,22 @@ storage (`packages/storage` queue repository) and applied by domain/app adapters
 Contract proof (fake-player / render-capture, no live providers):
 `apps/cli/test/integration/queue-playback-lifecycle.test.ts`. Product vocabulary:
 [.docs/features/queue.md](./features/queue.md).
+
+### Startup source failover
+
+When a stream stalls before its first frame, recovery
+(`app/playback/playback-recovery.ts`, planned by
+`app/playback/playback-source-failover.ts`) first tries the provider's other
+sources, then one compatible provider, within a per-episode attempt budget:
+
+- Candidates come from the resolve's source inventory, minus sources the
+  provider already reported `failed` or `exhausted`. `skipped` (known, not yet
+  tried) stays eligible.
+- The walk starts after the current source and wraps, so a session that began
+  on a pinned or favourite source still reaches the ones listed before it.
+- Each attempt records both the source that played and the source it asked
+  for. A provider that refuses the target and lands on the previous source
+  cannot make recovery bounce between the two until the budget runs out.
 
 ### Android detached-player flow
 
