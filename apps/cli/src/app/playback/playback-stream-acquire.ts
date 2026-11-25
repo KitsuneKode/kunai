@@ -740,9 +740,7 @@ export async function acquireEpisodeStream(
         problemAction,
       });
 
-      if (iterationDirective.kind === "continue") {
-        return { kind: "exit", step: NEXT_ITERATION };
-      }
+      if (iterationDirective.kind === "continue") return { kind: "exit", step: NEXT_ITERATION };
 
       if (iterationDirective.kind === "restart") {
         if (iterationDirective.reason === "stream-switch-during-resolve" && streamSwitchSelection) {
