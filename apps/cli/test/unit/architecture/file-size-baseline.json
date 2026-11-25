@@ -7,7 +7,7 @@
   "apps/cli/src/app-shell/post-play-view.ts": 991,
   "apps/cli/src/app-shell/root-overlay-shell.tsx": 2825,
   "apps/cli/src/app-shell/setup-shell.tsx": 983,
-  "apps/cli/src/app-shell/workflows/shell-workflows.ts": 3620,
+  "apps/cli/src/app-shell/workflows/shell-workflows.ts": 2991,
   "apps/cli/src/app/playback/playback-stream-acquire.ts": 886,
   "apps/cli/src/app/playback/run-post-playback-menu.ts": 1035,
   "apps/cli/src/app/playback/source-quality.ts": 807,
