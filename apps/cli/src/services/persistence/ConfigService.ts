@@ -42,6 +42,11 @@ export type AnalyticsPingCompletion = {
   readonly installId: string;
   readonly analyticsRetryAfter: number;
   readonly lastAnalyticsPingAt?: number;
+  /**
+   * The cohort the ping carried, for an install that had none stored (it opted
+   * in before cohorts existed). Written only if the file still has none.
+   */
+  readonly analyticsCohort?: string;
 };
 
 /** Analytics consent and install id exactly as config.json holds them now. */

@@ -6,6 +6,7 @@ import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 
 import { storageRootEnv } from "../helpers/storage-env";
+import { memoryPingLog } from "../support/analytics-fixtures";
 
 function fixtureConfig(enabled = false) {
   let raw: KitsuneConfig = {
@@ -33,6 +34,7 @@ for (const enabled of [false, true]) {
     const config = fixtureConfig(enabled);
     let sends = 0;
     const service = new UsageAnalyticsService({
+      pingLog: memoryPingLog(),
       config,
       currentVersion: "0.3.0",
       endpoint: "https://analytics.example.test/api/ping",
@@ -63,6 +65,7 @@ test("test preload blocks a local explicit opt-in despite inherited DNT=0 and CI
     let raw = { ...DEFAULT_CONFIG };
     let sends = 0;
     const service = new UsageAnalyticsService({
+      pingLog: { append: async () => {}, read: async () => [], remove: async () => {} },
       config: {
         getRaw: () => raw,
         async update(patch) { raw = { ...raw, ...patch }; },

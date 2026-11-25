@@ -30,7 +30,13 @@ import {
   type ShutdownRuntime,
 } from "@/app/session/shutdown-coordinator";
 import { bindShutdownRequestHandler } from "@/app/session/shutdown-request";
-import { buildCliHelpText, CliUsageError, parseCliArgs, type CliArgs } from "@/cli-args";
+import {
+  buildCliHelpText,
+  CLI_SUBCOMMANDS,
+  CliUsageError,
+  parseCliArgs,
+  type CliArgs,
+} from "@/cli-args";
 import type { createContainer } from "@/container";
 import type { KunaiShareAction, PlaybackTargetRef } from "@/domain/share/playback-target-ref";
 import type { EpisodeInfo, SearchResult, TitleInfo } from "@/domain/types";
@@ -709,6 +715,10 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     }
     process.stdout.write(renderCompletionScript(requested));
     process.exit(0);
+  }
+  if (argv[0] === "analytics") {
+    const { runAnalyticsCommand } = await import("./services/analytics/run-analytics-command");
+    process.exit(await runAnalyticsCommand(argv.slice(1), { version: KUNAI_VERSION }));
   }
   if (argv[0] === "diagnostics") {
     const { runDiagnosticsRecentCommand } =
@@ -1597,18 +1607,8 @@ function setupSignalHandlers(): void {
   });
 }
 
-const FAST_PATH_SUBCOMMANDS = new Set([
-  "doctor",
-  "capabilities",
-  "providers",
-  "addons",
-  "rollback",
-  "upgrade",
-  "uninstall",
-  "install",
-  "completion",
-  "diagnostics",
-]);
+// Every maintenance subcommand runs before the shell boots; one list feeds both.
+const FAST_PATH_SUBCOMMANDS = new Set(CLI_SUBCOMMANDS);
 
 function isFastPathInvocation(argv: readonly string[]): boolean {
   const first = argv[0];

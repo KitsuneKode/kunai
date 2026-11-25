@@ -349,6 +349,26 @@ resolve_published_version() {
 	printf '%s\n' "$canonical"
 }
 
+is_truthy_env() {
+	case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+	1 | true | yes) return 0 ;;
+	esac
+	return 1
+}
+
+# One request for this release's install.marker after a successful install.
+# GitHub's download count for it is how installs are told apart from updates;
+# Kunai receives nothing, and the request goes to the host that just served
+# the binary. Best effort only: no retry, a short timeout, every failure
+# ignored and silent. DO_NOT_TRACK, CI and KUNAI_NO_MARKER each turn it off.
+fetch_install_marker() {
+	is_truthy_env "${DO_NOT_TRACK:-}" && return 0
+	is_truthy_env "${CI:-}" && return 0
+	is_truthy_env "${KUNAI_NO_MARKER:-}" && return 0
+	have curl || return 0
+	curl -fsSL --max-time 3 -o /dev/null "$1/install.marker" >/dev/null 2>&1 || true
+}
+
 download_failed_hint() {
 	local asset="$1"
 	err "Download failed for $asset."
@@ -1938,6 +1958,7 @@ install_binary() {
 	trap - EXIT
 
 	info "Installed kunai → $BIN_DIR/kunai (v$resolved_version at $version_path)"
+	fetch_install_marker "$base"
 	report_path_winner
 	path_hint "$BIN_DIR"
 }

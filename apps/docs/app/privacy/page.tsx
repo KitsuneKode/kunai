@@ -115,18 +115,29 @@ export default function PrivacyPage() {
       <Section n={5} title="The one thing you can turn on">
         <P>
           Usage analytics are opt-in only. No code path can enable them without an explicit action
-          from you. Skipping setup leaves them off. On, current builds send at most one ping a day:
+          from you, and setup pre-selects neither answer. Skipping setup leaves them off. On,
+          current builds send at most one ping a day:
         </P>
         <Ul>
-          <Li>sha256 of a local install id (the id itself stays on the machine)</Li>
+          <Li>
+            an HMAC of a local install id, keyed by that id, that changes every calendar month (the
+            id itself stays on the machine)
+          </Li>
+          <Li>the month you turned it on</Li>
+          <Li>the day</Li>
           <Li>version</Li>
-          <Li>operating system</Li>
+          <Li>operating system, with Android reported as Android</Li>
           <Li>architecture</Li>
-          <Li>timestamp</Li>
         </Ul>
         <P>
-          No titles, queries, providers, stream URLs, or file paths. The hash can tie one day to the
-          next until you rotate the id or turn this off.
+          No titles, queries, providers, stream URLs, or file paths, and no timestamp. The id ties
+          the days of one month together and nothing more: next month's id cannot be linked to this
+          one. <code className="font-mono text-xs">kunai analytics log</code> shows every ping
+          exactly as sent.
+        </P>
+        <P>
+          Installers and the updater also download a tiny marker file from the GitHub release once
+          per install or update. GitHub counts the download; we receive nothing.
         </P>
         <P>
           Pings go to <code className="font-mono text-xs">analytics.kunai.kitsunekode.in</code>. You

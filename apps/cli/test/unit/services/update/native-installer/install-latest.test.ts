@@ -601,6 +601,84 @@ describe("installLatest", () => {
     expect(await verifyStoredVersion(layout, "3.1.4")).toMatchObject({ status: "verified" });
   });
 
+  describe("update.marker", () => {
+    async function installWithMarker(
+      options: {
+        readonly releaseMarker?: "update.marker";
+        readonly markerEnv?: Record<string, string>;
+      },
+      onMarker: () => Promise<Response>,
+    ) {
+      const { layout } = await makeLayout();
+      const assetName = hostAssetName();
+      const bytes = new TextEncoder().encode("VERIFIED-BINARY");
+      const markers: string[] = [];
+      const result = await installLatest({
+        version: "3.1.4",
+        force: true,
+        layout,
+        dlBase: "https://example.test/releases",
+        ...options,
+        fetchImpl: async (input) => {
+          const url = String(input);
+          if (url.endsWith(".marker")) {
+            markers.push(url);
+            return onMarker();
+          }
+          if (url.endsWith("/SHA256SUMS.archives")) return new Response("missing", { status: 404 });
+          if (url.includes("SHA256SUMS")) return new Response(sumsFor(assetName, sha256Hex(bytes)));
+          if (url.includes(assetName)) return new Response(bytes);
+          return new Response("missing", { status: 404 });
+        },
+      });
+      return { result, markers };
+    }
+
+    test("is requested after a verified activation and never awaited by the update", async () => {
+      // The marker request never answers. If the update awaited it, this
+      // install would never resolve.
+      const { result, markers } = await installWithMarker(
+        { releaseMarker: "update.marker", markerEnv: {} },
+        () => new Promise<Response>(() => {}),
+      );
+      expect(result.status).toBe("installed");
+      expect(markers).toEqual(["https://example.test/releases/download/v3.1.4/update.marker"]);
+      expect(result.status === "installed" && result.releaseMarker).toBeInstanceOf(Promise);
+    });
+
+    test("a failing marker never fails the update", async () => {
+      const { result } = await installWithMarker(
+        { releaseMarker: "update.marker", markerEnv: {} },
+        async () => {
+          throw new Error("offline");
+        },
+      );
+      expect(result.status).toBe("installed");
+      if (result.status === "installed")
+        await expect(result.releaseMarker).resolves.toBeUndefined();
+    });
+
+    test.each([[{ DO_NOT_TRACK: "1" }], [{ CI: "true" }], [{ KUNAI_NO_MARKER: "1" }]])(
+      "is skipped under %j",
+      async (markerEnv) => {
+        const { result, markers } = await installWithMarker(
+          { releaseMarker: "update.marker", markerEnv },
+          async () => new Response("ok"),
+        );
+        expect(result.status).toBe("installed");
+        expect(markers).toEqual([]);
+      },
+    );
+
+    test("is not requested by a plain install", async () => {
+      const { markers } = await installWithMarker(
+        { markerEnv: {} },
+        async () => new Response("ok"),
+      );
+      expect(markers).toEqual([]);
+    });
+  });
+
   test("downloads and installs the version before waiting to activate shared state", async () => {
     const { layout } = await makeLayout();
     const held = await tryAcquireActivationLock(layout, "1.0.0");

@@ -12,6 +12,7 @@ import {
 import type { AnalyticsPingCompletion, KitsuneConfig } from "@/services/persistence/ConfigService";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 
+import { memoryPingLog } from "../support/analytics-fixtures";
 import { createProviderSmokeProfile, providerSmokeProfilePayload } from "./provider-smoke";
 
 async function main(): Promise<void> {
@@ -87,6 +88,7 @@ async function main(): Promise<void> {
   };
   let pingStatus: number | null = null;
   const service = new UsageAnalyticsService({
+    pingLog: memoryPingLog(),
     config,
     currentVersion: "0.3.0",
     endpoint,
@@ -104,7 +106,7 @@ async function main(): Promise<void> {
   const keys = Object.keys(payload).sort();
   if (JSON.stringify(keys) !== JSON.stringify(ANALYTICS_PAYLOAD_KEYS))
     failures.push("payload-keys");
-  if (!/^[0-9a-f]{64}$/.test(payload.installId)) failures.push("install-id-not-hashed");
+  if (!/^[0-9a-f]{64}$/.test(payload.id)) failures.push("install-id-not-hashed");
 
   // Validate BEFORE any network side effect; await delivery rather than treating
   // a fire-and-forget startup outcome as proof that the ingest accepted a ping.
@@ -124,7 +126,7 @@ async function main(): Promise<void> {
           signal: AbortSignal.timeout(2_500),
         }).catch(() => null);
   if (failures.length === 0 && rejected?.status !== 400) {
-    failures.push(`sixth-key-not-rejected:${rejected?.status ?? "none"}`);
+    failures.push(`extra-key-not-rejected:${rejected?.status ?? "none"}`);
   }
 
   console.log(
@@ -134,7 +136,7 @@ async function main(): Promise<void> {
       endpoint,
       pingStatus,
       payloadKeys: keys,
-      sixthKeyStatus: rejected?.status ?? null,
+      extraKeyStatus: rejected?.status ?? null,
       failures,
       ...providerSmokeProfilePayload(profile),
     }),

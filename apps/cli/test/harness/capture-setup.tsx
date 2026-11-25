@@ -13,6 +13,7 @@ import type { CapabilitySnapshot } from "@/ui";
 import { Box } from "ink";
 import React from "react";
 
+import { UNSET_PAYLOAD_FIXTURE } from "../support/analytics-fixtures";
 import { CAPTURE_WIDTHS, render, stripAnsi, type CaptureWidth } from "./render-capture";
 
 const CAPTURE_DIR = path.join(import.meta.dir, "..", "__captures__");
@@ -48,11 +49,20 @@ export function setupFrameAt(step: number, columns: number): string {
   try {
     const handle = render(
       <Box width={columns} paddingX={1} flexDirection="column">
-        <SetupShell snapshot={READY} finish={() => {}} downloadPath="~/.local/share/kunai" />
+        <SetupShell
+          analyticsPayload={UNSET_PAYLOAD_FIXTURE}
+          snapshot={READY}
+          finish={() => {}}
+          downloadPath="~/.local/share/kunai"
+        />
       </Box>,
       { columns, rows: SETUP_ROWS },
     );
-    for (let i = 0; i < step; i += 1) handle.stdin.enqueue("\r");
+    // Enter waits on the consent screen until a row is chosen, so it is
+    // answered with its own key ("don't share") to reach the review.
+    for (let i = 0; i < step; i += 1) {
+      handle.stdin.enqueue(SETUP_SCREENS[i] === "analytics" ? "s" : "\r");
+    }
     const frame = stripAnsi(handle.lastFrame()).replace(/\s+$/, "");
     handle.unmount();
     return frame;

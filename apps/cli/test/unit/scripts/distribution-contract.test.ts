@@ -16,6 +16,11 @@ import { join } from "node:path";
 import { RELEASE_BINARY_TARGETS } from "@/services/update/platform-assets";
 
 import rootPackage from "../../../../../package.json";
+import {
+  RELEASE_MARKER_NAMES,
+  releaseMarkerBody,
+  releaseMarkers,
+} from "../../../../../scripts/packaging/release-markers";
 import { SUPPLEMENT_NAMES } from "../../../../../scripts/packaging/release-supplements";
 import {
   REQUIRED_RELEASE_ASSET_NAMES,
@@ -625,6 +630,61 @@ describe("release workflow candidate-before-publication contract", () => {
         names,
       ),
     ).toThrow("signature size");
+  });
+
+  test("both marker assets are prepared, uploaded, and required by the asset verifier", () => {
+    // install.marker / update.marker split installs from updates in GitHub's
+    // own download count. A marker the release does not carry is a 404 every
+    // installer quietly swallows, so the count would silently stay at zero.
+    const pub = publish();
+    const upload = pub.slice(
+      pub.indexOf("Create draft GitHub release"),
+      pub.indexOf("Verify draft release assets"),
+    );
+    for (const name of RELEASE_MARKER_NAMES) {
+      expect(upload).toContain(`.release-download/markers/${name}`);
+    }
+    const prepare = pub.indexOf("release-markers.ts prepare .release-download/markers");
+    expect(prepare).toBeGreaterThan(-1);
+    expect(prepare).toBeLessThan(pub.indexOf("Create draft GitHub release"));
+    const verifier = readFileSync(
+      join(REPO_ROOT, "scripts/verify-github-release-assets.ts"),
+      "utf8",
+    );
+    expect(verifier).toContain("...RELEASE_MARKER_NAMES");
+    expect(verifier).toContain('releaseMarkers("verify"');
+
+    const names = [...requiredAssetNames, ...SUPPLEMENT_NAMES, ...RELEASE_MARKER_NAMES];
+    const assets = [
+      ...completeSizedAssets(),
+      ...SUPPLEMENT_NAMES.map((name) => ({ name, size: name.endsWith(".sig") ? 64 : 1024 })),
+      ...RELEASE_MARKER_NAMES.map((name) => ({ name, size: releaseMarkerBody(name).length })),
+    ];
+    expect(() => assertCompleteReleaseAssetSet(assets, names)).not.toThrow();
+    expect(() =>
+      assertCompleteReleaseAssetSet(
+        assets.filter((asset) => asset.name !== "update.marker"),
+        names,
+      ),
+    ).toThrow("missing");
+  });
+
+  test("marker bytes are fixed and verified", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kunai-markers-"));
+    try {
+      releaseMarkers("prepare", dir);
+      releaseMarkers("verify", dir);
+      for (const name of RELEASE_MARKER_NAMES) {
+        const body = readFileSync(join(dir, name), "utf8");
+        expect(body).toBe(releaseMarkerBody(name));
+        // Version-free: one rendering serves every release.
+        expect(body).not.toMatch(/\d+\.\d+\.\d+/);
+      }
+      writeFileSync(join(dir, "install.marker"), "changed");
+      expect(() => releaseMarkers("verify", dir)).toThrow("install.marker");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test("protected publication reverifies native bytes immediately before draft creation", () => {

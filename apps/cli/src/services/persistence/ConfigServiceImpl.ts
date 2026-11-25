@@ -33,7 +33,12 @@ import {
   type StartupPriority,
 } from "@kunai/types";
 
-import { persistedAnalyticsConsent, predatesExplicitAnalyticsConsent } from "./analytics-consent";
+import {
+  analyticsCompletionPatch,
+  loadedAnalyticsFields,
+  persistedAnalyticsConsent,
+  predatesExplicitAnalyticsConsent,
+} from "./analytics-consent";
 import {
   collectDirtyVaultFields,
   preserveUnchangedNestedDiskSecrets,
@@ -228,10 +233,9 @@ export class ConfigServiceImpl implements ConfigService {
     const service = new ConfigServiceImpl(store, vault);
     const loaded = await store.load();
     const requiresExplicitAnalyticsConsent = predatesExplicitAnalyticsConsent(loaded);
-    const { analytics: normalizedAnalytics, installId: normalizedInstallId } =
-      persistedAnalyticsConsent(loaded);
+    const analyticsFields = loadedAnalyticsFields(loaded);
     const repairedAnalyticsIdentity =
-      loaded.installId !== undefined && loaded.installId !== normalizedInstallId;
+      loaded.installId !== undefined && loaded.installId !== analyticsFields.installId;
     const migratedAnimeDefaults = shouldMigrateInheritedAnimeDefaults(loaded);
     const migratedSeriesDefaults = shouldMigrateInheritedSeriesDefaults(loaded);
     // mergeKitsuneConfig supplies the base: object-valued keys (sync and its
@@ -328,7 +332,7 @@ export class ConfigServiceImpl implements ConfigService {
     );
     service.config = {
       ...service.config,
-      analytics: normalizedAnalytics,
+      ...analyticsFields,
       analyticsNoticeShown: loaded.analyticsNoticeShown === true,
       // The experimental opt-in is strict `true` plus a valid ISO ack — a
       // hand-edited `"yes"` or a non-timestamp ack fails closed like the flag
@@ -341,17 +345,6 @@ export class ConfigServiceImpl implements ConfigService {
       // `"no"` must not silently opt a user out of a feature they never saw.
       tipsEnabled: loaded.tipsEnabled !== false,
       seenTips: normalizeStringList(loaded.seenTips),
-      installId: normalizedInstallId,
-      lastAnalyticsPingAt:
-        typeof loaded.lastAnalyticsPingAt === "number" &&
-        Number.isFinite(loaded.lastAnalyticsPingAt)
-          ? Math.max(0, loaded.lastAnalyticsPingAt)
-          : 0,
-      analyticsRetryAfter:
-        typeof loaded.analyticsRetryAfter === "number" &&
-        Number.isFinite(loaded.analyticsRetryAfter)
-          ? Math.max(0, loaded.analyticsRetryAfter)
-          : 0,
       analyticsEndpoint:
         typeof loaded.analyticsEndpoint === "string" ? loaded.analyticsEndpoint.trim() : "",
     };
@@ -493,9 +486,7 @@ export class ConfigServiceImpl implements ConfigService {
           onDisk.analytics === "enabled" && onDisk.installId === completion.installId;
         const current = { ...DEFAULT_CONFIG, ...onDisk };
         if (matchesDisk) {
-          current.analyticsRetryAfter = completion.analyticsRetryAfter;
-          if (completion.lastAnalyticsPingAt !== undefined)
-            current.lastAnalyticsPingAt = completion.lastAnalyticsPingAt;
+          Object.assign(current, analyticsCompletionPatch(current, completion));
           // Never persist the pre-send identity: this write owns cadence only.
           await this.store.save(current);
         }
@@ -505,6 +496,7 @@ export class ConfigServiceImpl implements ConfigService {
         const analyticsKeys: readonly (keyof KitsuneConfig)[] = [
           "analytics",
           "installId",
+          "analyticsCohort",
           "lastAnalyticsPingAt",
           "analyticsRetryAfter",
         ];
@@ -997,6 +989,10 @@ export class ConfigServiceImpl implements ConfigService {
 
   get installId(): string {
     return this.config.installId;
+  }
+
+  get analyticsCohort(): string {
+    return this.config.analyticsCohort;
   }
 
   get lastAnalyticsPingAt(): number {

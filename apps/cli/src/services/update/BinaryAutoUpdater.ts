@@ -114,6 +114,8 @@ export class BinaryAutoUpdater {
 
       const result: InstallLatestResult = await (this.deps.installLatest ?? installLatest)({
         version: latest,
+        // Fire-and-forget: this process keeps running, so nothing waits on it.
+        releaseMarker: "update.marker",
       });
       if (result.status === "installed") {
         return { status: "installed", version: result.version };

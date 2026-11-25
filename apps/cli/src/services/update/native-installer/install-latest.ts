@@ -17,6 +17,11 @@ import {
   resolveReleaseBinaryTarget,
   type PlatformLibc,
 } from "../platform-assets";
+import {
+  startReleaseMarkerFetch,
+  type ReleaseMarkerEnv,
+  type ReleaseMarkerName,
+} from "../release-marker";
 import { pickChecksum, verifyChecksum } from "../self-replace";
 import { normalizeRequestedVersion, parseCanonicalVersion } from "../version";
 import { withActivationLock } from "./activation-lock";
@@ -55,7 +60,17 @@ import { writeInstalledVersionMetadata } from "./version-metadata";
 
 export type InstallLatestResult =
   | { readonly status: "up-to-date"; readonly version: string }
-  | { readonly status: "installed"; readonly version: string; readonly versionPath: string }
+  | {
+      readonly status: "installed";
+      readonly version: string;
+      readonly versionPath: string;
+      /**
+       * The marker request, already started and never awaited here. Settles
+       * within its timeout and never rejects. Absent when none was asked for
+       * or an opt-out skipped it.
+       */
+      readonly releaseMarker?: Promise<void>;
+    }
   | { readonly status: "skipped"; readonly reason: "lock-contention" }
   | { readonly status: "failed"; readonly error: string };
 
@@ -68,6 +83,13 @@ export type InstallLatestOptions = {
   /** Supply a pin when exercising a source build. Compiled clients prefer their own pin. */
   readonly releasePublicKey?: string;
   readonly libc?: PlatformLibc;
+  /**
+   * Fetch this release's marker after a verified activation, so GitHub counts
+   * the update. Only update paths ask for it; a fresh `kunai install` does not.
+   */
+  readonly releaseMarker?: ReleaseMarkerName;
+  /** Opt-out env for the marker. Defaults to `process.env`. */
+  readonly markerEnv?: ReleaseMarkerEnv;
 };
 
 let inFlightInstall: Promise<InstallLatestResult> | null = null;
@@ -384,7 +406,24 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
         // unhandled rejection would turn a completed install into a crash.
         void cleanupOldVersions(layout).catch(() => {});
 
-        return { status: "installed" as const, version: resolved, versionPath };
+        // Started, not awaited: the update is already complete and verified,
+        // and the marker can neither delay nor fail it.
+        const releaseMarker = options.releaseMarker
+          ? startReleaseMarkerFetch({
+              dlBase,
+              version: resolved,
+              marker: options.releaseMarker,
+              ...(options.markerEnv ? { env: options.markerEnv } : {}),
+              fetchImpl: (url, init) => fetchImpl(url, init),
+            })
+          : null;
+
+        return {
+          status: "installed" as const,
+          version: resolved,
+          versionPath,
+          ...(releaseMarker ? { releaseMarker } : {}),
+        };
       } catch (error) {
         await finishInstallTransaction(layout, transaction.id).catch(() => {});
         await removeStagingAndPruneParents(staging, layout.stagingRoot);

@@ -1,16 +1,16 @@
 import { describe, expect, test } from "bun:test";
 
+import { analyticsMonthKey } from "@/domain/analytics/analytics-day";
 import { canSend, type ConsentEnv, resolveConsentState } from "@/domain/analytics/consent-policy";
-import {
-  installIdDigest,
-  isValidInstallId,
-  rotateInstallId,
-} from "@/services/analytics/install-id";
+import { isValidInstallId, monthlyWireId, rotateInstallId } from "@/services/analytics/install-id";
+import type { PingLog } from "@/services/analytics/ping-log";
 import {
   ANALYTICS_PAYLOAD_KEYS,
+  analyticsOs,
   DEFAULT_ANALYTICS_ENDPOINT,
   isTransportSafeAnalyticsEndpoint,
   resolveAnalyticsEndpoint,
+  UNSET_COHORT_PLACEHOLDER,
   UNSET_INSTALL_ID_PLACEHOLDER,
   UsageAnalyticsService,
   type AnalyticsFetch,
@@ -19,7 +19,11 @@ import type { AnalyticsPingCompletion, KitsuneConfig } from "@/services/persiste
 import { ConfigServiceImpl } from "@/services/persistence/ConfigServiceImpl";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 
+import { memoryPingLog } from "../../../support/analytics-fixtures";
+
 const UUID = "11111111-2222-4333-8444-555555555555";
+/** 14 Aug 2026, before the IST cutover: labels are UTC, so the day is 2026-08-14. */
+const NOW = Date.UTC(2026, 7, 14);
 const TEST_ENDPOINT = "https://analytics.example.test/api/ping";
 
 function makeConfig(overrides: Partial<KitsuneConfig> = {}) {
@@ -43,6 +47,8 @@ function makeConfig(overrides: Partial<KitsuneConfig> = {}) {
       };
       if (completion.lastAnalyticsPingAt !== undefined)
         raw = { ...raw, lastAnalyticsPingAt: completion.lastAnalyticsPingAt };
+      if (completion.analyticsCohort && !raw.analyticsCohort)
+        raw = { ...raw, analyticsCohort: completion.analyticsCohort };
       saves += 1;
       persisted = { ...raw };
       return true;
@@ -79,18 +85,21 @@ function makeService(
     fetchImpl?: AnalyticsFetch;
     env?: { DO_NOT_TRACK?: string; CI?: string };
     endpoint?: string;
+    pingLog?: PingLog;
+    now?: () => number;
   } = {},
 ) {
   return new UsageAnalyticsService({
     config,
     currentVersion: "0.3.0",
     endpoint: options.endpoint ?? TEST_ENDPOINT,
+    pingLog: options.pingLog ?? memoryPingLog(),
     fetchImpl:
       options.fetchImpl ??
       (async () => {
         throw new Error("fetch must not be called");
       }),
-    now: () => Date.UTC(2026, 7, 14),
+    now: options.now ?? (() => NOW),
     platform: { os: "linux", arch: "x64" },
     env: options.env ?? {},
   });
@@ -114,16 +123,25 @@ describe("identifier lifecycle", () => {
   test("describePayload writes nothing and hides the id when not enabled", () => {
     const config = makeConfig({ analytics: "unset", installId: "" });
     const payload = makeService(config).describePayload();
-    expect(payload.installId).toBe(UNSET_INSTALL_ID_PLACEHOLDER);
+    expect(payload.id).toBe(UNSET_INSTALL_ID_PLACEHOLDER);
+    expect(payload.cohort).toBe(UNSET_COHORT_PLACEHOLDER);
     expect(config.rawRef.installId).toBe("");
     expect(config.saveCount).toBe(0);
   });
 
   test("describePayload shows a real identifier once enabled", () => {
-    // Was the stored UUID; it is the digest now, because that is what is sent.
-    // See "the preview shows what is actually sent" below.
-    const config = makeConfig({ analytics: "enabled", installId: UUID });
-    expect(makeService(config).describePayload().installId).toBe(installIdDigest(UUID));
+    // Was the stored UUID; it is this month's HMAC now, because that is what
+    // is sent. See "the preview shows what is actually sent" below.
+    const config = makeConfig({
+      analytics: "enabled",
+      installId: UUID,
+      analyticsCohort: "2026-07",
+    });
+    expect(makeService(config).describePayload()).toMatchObject({
+      id: monthlyWireId(UUID, "2026-08"),
+      cohort: "2026-07",
+      day: "2026-08-14",
+    });
   });
 
   test("rendering the menu twice creates no install id", () => {
@@ -160,9 +178,11 @@ describe("pending ping identity", () => {
         const ping = service.maybePing({ isInteractive: true });
         await started.promise;
         if (change === "rotate") {
-          // Same patch as the Settings rotation action, outside the service.
+          // The Settings rotation action's patch, applied outside the service
+          // so the fixture id is fixed.
           await config.update({
             installId: rotateInstallId(() => rotatedId),
+            analyticsCohort: "2026-08",
             lastAnalyticsPingAt: 0,
             analyticsRetryAfter: 0,
           });
@@ -244,14 +264,14 @@ describe("consentPatch", () => {
   test("is pure and returns the same keys setConsent would write", () => {
     const config = makeConfig({ analytics: "unset", installId: "" });
     const patch = makeService(config).consentPatch("disabled");
-    expect(patch).toEqual({ analytics: "disabled", installId: "" });
+    expect(patch).toEqual({ analytics: "disabled", installId: "", analyticsCohort: "" });
     expect(config.saveCount).toBe(0);
   });
 
   test("refuses to enable under DO_NOT_TRACK", () => {
     const config = makeConfig({ analytics: "unset" });
     const patch = makeService(config, { env: { DO_NOT_TRACK: "1" } }).consentPatch("enabled");
-    expect(patch).toEqual({ analytics: "disabled", installId: "" });
+    expect(patch).toEqual({ analytics: "disabled", installId: "", analyticsCohort: "" });
   });
 });
 
@@ -340,6 +360,7 @@ describe("onSessionStart", () => {
     expect(outcome).toEqual({ kind: "quiet" });
     expect(config.rawRef.analytics).toBe("disabled");
     expect(config.rawRef.installId).toBe("");
+    expect(config.rawRef.analyticsCohort).toBe("");
   });
 
   test("CI=0 does not block — the regression this replaces", async () => {
@@ -480,82 +501,318 @@ describe("endpoint configuration", () => {
  * property worth pinning is a negative one: whatever else the body contains,
  * the stored id must not appear anywhere in it.
  */
-describe("the wire carries a digest, never the stored id", () => {
-  test("the body sends sha256(installId) and the id stays on disk", async () => {
-    const config = makeConfig({ analytics: "enabled", installId: UUID });
+describe("the wire carries a monthly HMAC, never the stored id", () => {
+  async function sentBody(config: ReturnType<typeof makeConfig>, now = NOW): Promise<string> {
     let body = "";
     const service = makeService(config, {
+      now: () => now,
       fetchImpl: async (_input, init) => {
         body = String((init as RequestInit | undefined)?.body ?? "");
         return new Response(null, { status: 204 });
       },
     });
-
     await service.onSessionStart({ isInteractive: true });
     await settleBackgroundPing();
+    return body;
+  }
 
-    const sent = JSON.parse(body) as { installId: string };
-    expect(sent.installId).toBe(installIdDigest(UUID));
-    expect(sent.installId).toMatch(/^[0-9a-f]{64}$/);
+  test("the body sends this month's HMAC and the id stays on disk", async () => {
+    const config = makeConfig({
+      analytics: "enabled",
+      installId: UUID,
+      analyticsCohort: "2026-07",
+    });
+    const body = await sentBody(config);
+
+    const sent = JSON.parse(body) as { id: string };
+    expect(sent.id).toBe(monthlyWireId(UUID, "2026-08"));
+    expect(sent.id).toMatch(/^[0-9a-f]{64}$/);
     // The negative that matters.
     expect(body).not.toContain(UUID);
     // The identity still persists locally, or every ping looks like a new install.
     expect(config.rawRef.installId).toBe(UUID);
   });
 
-  test("the digest is stable, so daily-active counts installs and not pings", () => {
-    expect(installIdDigest(UUID)).toBe(installIdDigest(UUID));
-    expect(installIdDigest(UUID)).not.toBe(installIdDigest(crypto.randomUUID()));
+  test("the id is stable within a month, so daily actives count installs and not pings", () => {
+    expect(monthlyWireId(UUID, "2026-11")).toBe(monthlyWireId(UUID, "2026-11"));
+    expect(monthlyWireId(UUID, "2026-11")).not.toBe(monthlyWireId(crypto.randomUUID(), "2026-11"));
+  });
+
+  test("month rollover changes the id, on the IST day boundary the ingest uses", async () => {
+    // 30 Nov 2026 23:59 IST and 1 Dec 2026 00:01 IST, two minutes apart.
+    const lastMinuteOfNovember = Date.parse("2026-11-30T18:29:00.000Z");
+    const firstMinuteOfDecember = Date.parse("2026-11-30T18:31:00.000Z");
+    const november = JSON.parse(
+      await sentBody(makeConfig({ analytics: "enabled", installId: UUID }), lastMinuteOfNovember),
+    ) as { id: string; day: string };
+    const december = JSON.parse(
+      await sentBody(makeConfig({ analytics: "enabled", installId: UUID }), firstMinuteOfDecember),
+    ) as { id: string; day: string };
+
+    expect(november.day).toBe("2026-11-30");
+    expect(december.day).toBe("2026-12-01");
+    expect(november.id).toBe(monthlyWireId(UUID, "2026-11"));
+    expect(december.id).toBe(monthlyWireId(UUID, "2026-12"));
+    expect(november.id).not.toBe(december.id);
+  });
+
+  test("no month's id is derivable from another month's", () => {
+    // Everything an observer of the wire could try with one month's id in
+    // hand. The key is the stored id, which never leaves the machine, so none
+    // of these reaches another month.
+    const sha256 = (value: string) =>
+      new Bun.CryptoHasher("sha256").update(value).digest("hex") as string;
+    const months = Array.from({ length: 36 }, (_, i) => analyticsMonthKey(Date.UTC(2026, i, 15)));
+    const ids = months.map((month) => monthlyWireId(UUID, month));
+    expect(new Set(ids).size).toBe(months.length);
+
+    for (let i = 1; i < months.length; i++) {
+      const previous = ids[i - 1] ?? "";
+      const month = months[i] ?? "";
+      const guesses = [
+        monthlyWireId(previous, month),
+        sha256(previous),
+        sha256(previous + month),
+        sha256(month + previous),
+        sha256(month),
+        sha256(UUID),
+      ];
+      expect(guesses).not.toContain(ids[i]);
+    }
   });
 
   test("rotating yields an identity unlinkable to the one it replaced", () => {
     const next = rotateInstallId();
     expect(next).not.toBe(UUID);
     expect(isValidInstallId(next)).toBe(true);
-    expect(installIdDigest(next)).not.toBe(installIdDigest(UUID));
+    expect(monthlyWireId(next, "2026-11")).not.toBe(monthlyWireId(UUID, "2026-11"));
   });
 
   test("the preview shows what is actually sent, not the stored id", async () => {
     // `/analytics show` renders this under "Exact JSON that would be sent", and
-    // the setup screen shows the same shape. Once the wire carried a digest,
-    // previewing the raw UUID made that disclosure false on the one surface
-    // whose entire job is telling the user what leaves their machine.
-    const config = makeConfig({ analytics: "enabled", installId: UUID });
+    // the setup screen shows the same shape. Previewing the raw UUID would make
+    // that disclosure false on the one surface whose entire job is telling the
+    // user what leaves their machine.
+    const config = makeConfig({
+      analytics: "enabled",
+      installId: UUID,
+      analyticsCohort: "2026-07",
+    });
     const preview = makeService(config).describePayload();
-
-    expect(preview.installId).toBe(installIdDigest(UUID));
-    expect(preview.installId).not.toBe(UUID);
+    expect(preview.id).not.toBe(UUID);
 
     // And it must match the real body byte for byte.
-    let body = "";
-    const service = makeService(config, {
-      fetchImpl: async (_input, init) => {
-        body = String((init as RequestInit | undefined)?.body ?? "");
-        return new Response(null, { status: 204 });
-      },
-    });
-    await service.onSessionStart({ isInteractive: true });
-    await settleBackgroundPing();
-    expect((JSON.parse(body) as { installId: string }).installId).toBe(preview.installId);
+    expect(await sentBody(config)).toBe(JSON.stringify(preview));
   });
 
   test("previewing still mints nothing for someone who has not opted in", () => {
     const config = makeConfig({ analytics: "unset", installId: "" });
-    expect(makeService(config).describePayload().installId).toBe(UNSET_INSTALL_ID_PLACEHOLDER);
+    expect(makeService(config).describePayload().id).toBe(UNSET_INSTALL_ID_PLACEHOLDER);
     expect(config.rawRef.installId).toBe("");
+    expect(config.rawRef.analyticsCohort).toBe("");
   });
 
-  test("the payload is still exactly the five documented keys", async () => {
+  test("the payload is exactly the six documented v2 keys, with no timestamp", async () => {
+    const body = await sentBody(makeConfig({ analytics: "enabled", installId: UUID }));
+    expect(Object.keys(JSON.parse(body) as object).sort()).toEqual([...ANALYTICS_PAYLOAD_KEYS]);
+    expect(body).not.toContain('"ts"');
+  });
+});
+
+describe("cohort", () => {
+  test("the enable keystroke sets it to the month it was pressed in", async () => {
+    const config = makeConfig({ analytics: "unset", installId: "" });
+    await makeService(config).setConsent("enabled");
+    expect(config.rawRef.analyticsCohort).toBe("2026-08");
+  });
+
+  test("disabling clears it with the id, so a re-enable is a new install", async () => {
+    const config = makeConfig({ analytics: "unset", installId: "" });
+    const service = makeService(config);
+    await service.setConsent("enabled");
+    await service.setConsent("disabled");
+    expect(config.rawRef.analyticsCohort).toBe("");
+    expect(config.rawRef.installId).toBe("");
+
+    const later = makeService(config, { now: () => Date.UTC(2026, 9, 3) });
+    await later.setConsent("enabled");
+    expect(config.rawRef.analyticsCohort).toBe("2026-10");
+  });
+
+  test("affirming an enable that already holds keeps its cohort", async () => {
+    const config = makeConfig({
+      analytics: "enabled",
+      installId: UUID,
+      analyticsCohort: "2026-03",
+    });
+    await makeService(config).setConsent("enabled");
+    expect(config.rawRef.analyticsCohort).toBe("2026-03");
+    expect(config.rawRef.installId).toBe(UUID);
+  });
+
+  test("rotation starts a new cohort and cadence", async () => {
+    const config = makeConfig({
+      analytics: "enabled",
+      installId: UUID,
+      analyticsCohort: "2026-03",
+      lastAnalyticsPingAt: NOW - 1000,
+    });
+    const { installId } = await makeService(config).rotateIdentity();
+    expect(installId).not.toBe(UUID);
+    expect(config.rawRef.installId).toBe(installId);
+    expect(config.rawRef.analyticsCohort).toBe("2026-08");
+    expect(config.rawRef.lastAnalyticsPingAt).toBe(0);
+  });
+
+  test("an install that opted in before cohorts existed keeps the cohort its first v2 ping sent", async () => {
+    // The documented upgrade seam: counted as new once, in its upgrade month.
+    const config = makeConfig({ analytics: "enabled", installId: UUID, analyticsCohort: "" });
+    const service = makeService(config, {
+      fetchImpl: async () => new Response(null, { status: 204 }),
+    });
+    expect(service.describePayload().cohort).toBe("2026-08");
+    await service.maybePing({ isInteractive: true });
+    expect(config.rawRef.analyticsCohort).toBe("2026-08");
+  });
+
+  for (const [name, env, isInteractive] of [
+    ["DO_NOT_TRACK", { DO_NOT_TRACK: "1" }, true],
+    ["CI", { CI: "true" }, true],
+    ["a non-interactive session", {}, false],
+  ] as const) {
+    test(`${name} never creates an id or a cohort and never sends`, async () => {
+      const config = makeConfig({ analytics: "unset", installId: "" });
+      let calls = 0;
+      const service = makeService(config, {
+        env,
+        fetchImpl: async () => {
+          calls += 1;
+          return new Response(null, { status: 204 });
+        },
+      });
+      await service.onSessionStart({ isInteractive });
+      await service.maybePing({ isInteractive });
+      service.describePayload();
+      await settleBackgroundPing();
+      expect(config.rawRef.installId).toBe("");
+      expect(config.rawRef.analyticsCohort).toBe("");
+      expect(calls).toBe(0);
+    });
+  }
+});
+
+describe("os", () => {
+  test("an Android runtime reports android, not linux", () => {
+    expect(analyticsOs("linux", { TERMUX_VERSION: "0.118.1" })).toBe("android");
+    expect(analyticsOs("linux", { PREFIX: "/data/data/com.termux/files/usr" })).toBe("android");
+    expect(analyticsOs("android", {})).toBe("android");
+    expect(analyticsOs("linux", {})).toBe("linux");
+    expect(analyticsOs("darwin", {})).toBe("darwin");
+  });
+
+  test("an Android install sends os: android", async () => {
     const config = makeConfig({ analytics: "enabled", installId: UUID });
     let body = "";
-    const service = makeService(config, {
+    const service = new UsageAnalyticsService({
+      config,
+      currentVersion: "0.4.0",
+      endpoint: TEST_ENDPOINT,
+      pingLog: memoryPingLog(),
+      now: () => NOW,
+      platform: { os: analyticsOs("linux", { TERMUX_VERSION: "0.118.1" }), arch: "arm64" },
+      env: {},
       fetchImpl: async (_input, init) => {
-        body = String((init as RequestInit | undefined)?.body ?? "");
+        body = String(init?.body ?? "");
         return new Response(null, { status: 204 });
       },
     });
-    await service.onSessionStart({ isInteractive: true });
+    await service.maybePing({ isInteractive: true });
+    expect((JSON.parse(body) as { os: string }).os).toBe("android");
+  });
+});
+
+describe("local ping log", () => {
+  const sendingService = (config: ReturnType<typeof makeConfig>, pingLog: PingLog) =>
+    makeService(config, {
+      pingLog,
+      fetchImpl: async () => new Response(null, { status: 204 }),
+    });
+
+  test("records every sent body exactly, while enabled", async () => {
+    const pingLog = memoryPingLog();
+    const config = makeConfig({ analytics: "enabled", installId: UUID });
+    let sent = "";
+    const service = makeService(config, {
+      pingLog,
+      fetchImpl: async (_input, init) => {
+        sent = String(init?.body ?? "");
+        return new Response(null, { status: 204 });
+      },
+    });
+    await service.maybePing({ isInteractive: true });
+    expect(pingLog.entries).toEqual([
+      { sentAt: new Date(NOW).toISOString(), endpoint: TEST_ENDPOINT, body: sent },
+    ]);
+  });
+
+  test("is deleted on disable", async () => {
+    const pingLog = memoryPingLog();
+    const config = makeConfig({ analytics: "enabled", installId: UUID });
+    const service = sendingService(config, pingLog);
+    await service.maybePing({ isInteractive: true });
+    expect(pingLog.exists).toBe(true);
+    await service.setConsent("disabled");
+    expect(pingLog.exists).toBe(false);
+  });
+
+  test("is deleted on rotation", async () => {
+    const pingLog = memoryPingLog();
+    const config = makeConfig({ analytics: "enabled", installId: UUID });
+    const service = sendingService(config, pingLog);
+    await service.maybePing({ isInteractive: true });
+    await service.rotateIdentity();
+    expect(pingLog.exists).toBe(false);
+  });
+
+  test("a log left behind by a disable elsewhere is removed at the next start", async () => {
+    const pingLog = memoryPingLog();
+    await pingLog.append({ sentAt: "x", endpoint: TEST_ENDPOINT, body: "{}" });
+    const config = makeConfig({ analytics: "disabled", installId: "" });
+    await makeService(config, { pingLog }).onSessionStart({ isInteractive: true });
     await settleBackgroundPing();
-    expect(Object.keys(JSON.parse(body) as object).sort()).toEqual([...ANALYTICS_PAYLOAD_KEYS]);
+    expect(pingLog.exists).toBe(false);
+  });
+
+  test("is never written while not enabled, and the preview writes nothing", async () => {
+    const pingLog = memoryPingLog();
+    const config = makeConfig({ analytics: "unset", installId: "" });
+    const service = makeService(config, { pingLog });
+    service.describePayload();
+    await service.onSessionStart({ isInteractive: true });
+    await service.maybePing({ isInteractive: true });
+    await settleBackgroundPing();
+    expect(pingLog.exists).toBe(false);
+  });
+
+  test("a ping the log cannot record is not sent", async () => {
+    const config = makeConfig({ analytics: "enabled", installId: UUID });
+    let calls = 0;
+    const service = makeService(config, {
+      pingLog: {
+        append: async () => {
+          throw new Error("read-only data dir");
+        },
+        read: async () => [],
+        remove: async () => {},
+      },
+      fetchImpl: async () => {
+        calls += 1;
+        return new Response(null, { status: 204 });
+      },
+    });
+    await service.maybePing({ isInteractive: true });
+    expect(calls).toBe(0);
+    // Not consumed: the next launch tries again.
+    expect(config.rawRef.lastAnalyticsPingAt).toBe(0);
   });
 });

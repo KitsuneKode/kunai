@@ -350,6 +350,24 @@ release is recorded as published. Raw checkout scripts are unkeyed templates.
 Keep the key stable across releases. A new pin requires a transition for clients
 that already trust the old key.
 
+## Install and update markers
+
+Every release also carries `install.marker` and `update.marker`: fixed,
+version-free bytes rendered by `scripts/packaging/release-markers.ts` in the
+publish job, uploaded with the draft, and required (and byte-verified) by
+`verify-github-release-assets.ts`. They are not signed channel files, so the
+metadata and package-channel jobs, which re-verify channels for any tag
+including ones published before markers existed, never look for them.
+
+`install.sh` and `install.ps1` fetch `install.marker` once after a successful
+binary install; the native updater fetches `update.marker` once after a
+verified activation. GitHub's per-asset `download_count` is the whole
+measurement: Kunai receives nothing. Each fetch is one attempt with a short
+timeout, failures are silent, and `DO_NOT_TRACK`, `CI` and `KUNAI_NO_MARKER`
+skip it. The user-facing statement is in
+`docs/users/reliability-and-privacy.mdx`; the contract is
+`.docs/analytics-privacy-contract.md`.
+
 ## Package channels (Homebrew, Scoop, AUR)
 
 The release workflow uploads the two key-pinned standalone installers,

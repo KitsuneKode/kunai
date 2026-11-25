@@ -37,6 +37,34 @@ describe("analytics disclosure happens once", () => {
     expect(body).not.toContain("installId:");
   });
 
+  test("the consent screen shows describePayload(), never a payload of its own", () => {
+    // The setup screen is a disclosure too. Its preview is passed in from the
+    // service so the copy cannot drift from the wire, which a hand-written
+    // JSON literal already did once (it named `ts` after v2 dropped it).
+    expect(read("app-shell/workflows/setup-workflows.ts")).toContain(
+      "analyticsPayload: container.usageAnalytics.describePayload()",
+    );
+    const screen = read("app-shell/setup/AnalyticsScreen.tsx");
+    expect(screen).not.toMatch(/"(installId|ts|id|cohort|day)":/);
+  });
+
+  test("the upgrader banner names the wire fields from the code", () => {
+    expect(read("app-shell/AnalyticsDisclosureBanner.tsx")).toContain(
+      "ANALYTICS_PAYLOAD_FIELDS.join",
+    );
+  });
+
+  test("every consent write in the shell clears the ping log through the service", () => {
+    // Disable must take the local ping log with the id. The service derives
+    // that from state, so each writer only has to call it after its save.
+    expect(read("app-shell/workflows/setup-workflows.ts")).toContain(
+      "container.usageAnalytics.settleLocalPingLog()",
+    );
+    expect(read("app/bootstrap/apply-settings-to-runtime.ts")).toContain(
+      "container.usageAnalytics.settleLocalPingLog()",
+    );
+  });
+
   test("only main.ts raises the pending flag", () => {
     expect(read("main.ts")).toContain("container.analyticsDisclosurePending = true");
     // The shell may clear it; nothing else may set it.

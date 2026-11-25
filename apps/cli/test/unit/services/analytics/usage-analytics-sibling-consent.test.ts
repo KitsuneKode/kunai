@@ -13,6 +13,8 @@ import { ConfigServiceImpl } from "@/services/persistence/ConfigServiceImpl";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 import { ConfigStoreImpl } from "@/services/persistence/ConfigStoreImpl";
 
+import { memoryPingLog } from "../../../support/analytics-fixtures";
+
 /**
  * Two kunai instances share one config.json. Instance A loaded consent at
  * startup; instance B then disables analytics or rotates the install id on
@@ -59,6 +61,7 @@ function countingService(config: ConfigServiceImpl) {
     return new Response(null, { status: 204 });
   };
   const service = new UsageAnalyticsService({
+    pingLog: memoryPingLog(),
     config,
     currentVersion: "0.3.0",
     endpoint: TEST_ENDPOINT,

@@ -74,47 +74,64 @@ or a download artifact was validated.
 Anonymous usage analytics are **yours to turn on or off at any time**, in
 **Settings → Privacy & System → Usage analytics**.
 
-On a fresh install, setup asks you directly. It recommends turning analytics on
-and pre-selects that option; it counts unique installs and versions, never
-people. Nothing is enabled until you confirm it on that screen. Skipping
-setup leaves analytics **off**: no default, accept-all, or non-interactive path
-can turn it on for you. Existing installs get one non-blocking recommendation
-explaining the payload; that notice does not enable analytics, create an id, or
-send anything. No analytics requests run before you enable it, in a
-non-interactive terminal, or when `DO_NOT_TRACK=1` or `CI=true`.
+On a fresh install, setup asks you directly, and it does not lean either way:
+neither "Share anonymous usage" nor "Don't share" is pre-selected or marked as
+recommended, and each takes its own keystroke. The screen shows the exact ping
+it would send, built from the same code that sends it. Nothing is enabled until
+you choose to share on that screen. Skipping setup leaves analytics **off**: no
+default, accept-all, or non-interactive path can turn it on for you. Existing
+installs get one non-blocking recommendation explaining the payload; that
+notice does not enable analytics, create an id, or send anything. No analytics
+requests run before you enable it, in a non-interactive terminal, or when
+`DO_NOT_TRACK=1` or `CI=true`.
 
-When on, Kunai sends at most one tiny ping per day:
+When on, Kunai sends at most one tiny ping per day. The whole body is
+`{ id, cohort, day, version, os, arch }`:
 
 ```json
 {
-  "installId": "<sha256-hex>",
+  "id": "<64 hex characters, new every month>",
+  "cohort": "<YYYY-MM you turned it on>",
+  "day": "<YYYY-MM-DD>",
   "version": "<semver>",
-  "os": "<platform>",
-  "arch": "<arch>",
-  "ts": 0
+  "os": "<linux | darwin | win32 | android>",
+  "arch": "<x64 | arm64>"
 }
 ```
 
-- `installId` on the wire is **`sha256` of your local install id**, not the id
-  itself. The id is generated on your machine, stored only in your config, and
-  never transmitted, so the value above is a 64-character hex digest, never a
-  UUID
+- `id` is an **HMAC of your local install id, keyed by that id, over the
+  current month** (`YYYY-MM`). The install id is generated on your machine,
+  stored only in your config, and never transmitted. Because the month changes,
+  the `id` changes **every calendar month**, and nobody without your local id
+  can link one month's `id` to the next. Within a month it stays the same, so
+  daily and monthly counts are exact
+- `cohort` is the month you turned analytics on, so new installs per month can
+  be counted. It is stored beside the install id and deleted with it
+- `day` is your ping's day label (the day rule below). There is no timestamp
+- `os` is `android` on Android (Termux), not `linux`
+- **See every ping yourself:** `kunai analytics log` prints the last 50 pings
+  exactly as they were sent, from a local owner-only file that exists only
+  while analytics is on and is deleted when you turn it off.
+  `kunai analytics preview` prints what the next ping would contain. Neither
+  sends anything, and neither can turn analytics on
 - Never titles, queries, providers, stream URLs, or file paths
 - **Your IP address is never read.** Not collected and discarded; the ingest
   has no code path that reads a client address at all, so there is nothing to
   log, rate-limit on, or hand over
-- Turning it off **deletes the install id from disk**. The id exists only while
-  analytics is enabled
+- Turning it off **deletes the install id from disk**, with the cohort and the
+  local ping log. The id exists only while analytics is enabled, so turning it
+  back on later counts as a new install
 - **Settings → Privacy & System → Rotate install id** replaces the id with a fresh random
-  one while you stay opted in. Earlier pings cannot be linked to the new id. The
-  entry appears only while analytics is enabled, because disabling already
-  clears the id
+  one while you stay opted in, starts a new cohort, and clears the local ping
+  log. Earlier pings cannot be linked to the new id. The entry appears only while
+  analytics is enabled, because disabling already clears the id
 - `DO_NOT_TRACK=1` and `CI=true` block sends regardless of the setting. A value
   of `0`, `false`, or `no` does not block
 - Without an interactive terminal (piped or scripted output), analytics stays
   off, because the notice could not be shown
-- The ingest re-hashes that digest with an HMAC before storing it, alongside your
-  platform, architecture, and version. It does not read your IP address at all
+- The ingest re-hashes that `id` with its own HMAC before storing it, alongside
+  your platform, architecture, and version. It does not read your IP address at
+  all
 - Raw rows are deleted after 35 days. A permanent table keeps one hashed row per
   install with a first-seen date, which is what a lifetime count costs. Installs
   silent past the retention window fold into a retired count, and one that
@@ -140,7 +157,21 @@ When on, Kunai sends at most one tiny ping per day:
   your own clock; the day totals are not re-cut to your local midnight, because
   only daily totals are kept and the individual pings behind them are not.
 
-Preview the exact JSON with `/analytics show`.
+Preview the exact JSON with `/analytics show` inside the app, or
+`kunai analytics preview` from a shell.
+
+### Install and update counts
+
+Every release carries two tiny files, `install.marker` and `update.marker`.
+After a successful binary install, `install.sh` and `install.ps1` download
+`install.marker` once; after a verified update, Kunai's own updater downloads
+`update.marker` once. **GitHub counts the download; we receive nothing.** The
+request goes to the same GitHub release that just served the binary, carries
+nothing that download did not, and its answer is ignored. It is one attempt with
+a short timeout, never retried, and a failure is silent and never fails the
+install or update. It is separate from usage analytics and needs no opt-in,
+because nothing reaches Kunai. To skip it anyway, set `DO_NOT_TRACK=1`, `CI=true`,
+or `KUNAI_NO_MARKER=1`.
 
 If you turn analytics on, pings go to `analytics.kunai.kitsunekode.in`. Point
 them somewhere else by setting a **non-empty** `KUNAI_ANALYTICS_URL` or

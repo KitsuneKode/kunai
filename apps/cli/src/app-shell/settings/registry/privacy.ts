@@ -1,4 +1,3 @@
-import { rotateInstallId } from "@/services/analytics/install-id";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
 import { formatRelativeTime } from "../../media-panel-model";
@@ -7,7 +6,7 @@ import { storageSettingsRows } from "./storage";
 import { updateSettingsRows } from "./updates";
 
 const ANALYTICS_DETAIL =
-  "Optional anonymous install, version, OS, architecture, and timestamp ping";
+  "Optional anonymous ping: a monthly id, the month you enabled it, the day, version, OS and architecture";
 
 /**
  * Say when the last ping actually left, not just that the toggle is on.
@@ -48,7 +47,7 @@ function installIdDetail(config: KitsuneConfig): string {
   // not take the Settings screen down, so this cannot assume the key is present.
   const id = typeof config.installId === "string" ? config.installId.trim() : "";
   if (!id) return "No identifier exists yet";
-  return `${id.slice(0, 8)}… · only its sha256 is ever sent`;
+  return `${id.slice(0, 8)}… · never sent; only a monthly HMAC of it leaves`;
 }
 
 export function privacySettingsRows(ctx: SettingsRegistryContext): SettingRowDef[] {
@@ -74,7 +73,7 @@ export function privacySettingsRows(ctx: SettingsRegistryContext): SettingRowDef
       write: (config, value) =>
         value
           ? { ...config, analytics: "enabled" }
-          : { ...config, analytics: "disabled", installId: "" },
+          : { ...config, analytics: "disabled", installId: "", analyticsCohort: "" },
     },
     {
       kind: "action",
@@ -85,16 +84,9 @@ export function privacySettingsRows(ctx: SettingsRegistryContext): SettingRowDef
       // offering rotation next to an off switch would imply one still exists.
       gate: { predicate: (config) => config.analytics === "enabled" },
       run: async (actionCtx) => {
-        const next = rotateInstallId();
-        await actionCtx.container.config.update({
-          installId: next,
-          // The new identity has to start its own cadence. Carrying the old
-          // timestamps forward would suppress the first ping under the new id
-          // for up to a day, and a rotation nobody can observe is not one.
-          lastAnalyticsPingAt: 0,
-          analyticsRetryAfter: 0,
-        });
-        await actionCtx.container.config.save();
+        // The service owns what a rotation writes: a new id, a new cohort and
+        // cadence, and no log of pings sent under the old one.
+        const { installId: next } = await actionCtx.container.usageAnalytics.rotateIdentity();
         return `New install id ${next.slice(0, 8)}… — earlier pings cannot be linked to it.`;
       },
     },

@@ -1022,6 +1022,82 @@ describePwsh("install.ps1 release asset failures", () => {
   });
 });
 
+/**
+ * `install.marker`: one best-effort request after a successful install, so
+ * GitHub's download count tells installs from updates. Kunai receives nothing.
+ * The sandbox forces DO_NOT_TRACK=1, so every other test here also proves the
+ * opt-out; these turn it off explicitly to see the request at all.
+ */
+describePwsh("install.ps1 install.marker", () => {
+  const MARKER = "/download/v9.8.7/install.marker";
+  const TRACKING_ALLOWED = { DO_NOT_TRACK: "0", CI: "0", KUNAI_NO_MARKER: "" } as const;
+
+  async function installWith(
+    env: Readonly<Record<string, string>>,
+    marker: { readonly status: number } | null,
+    options: { readonly corruptChecksum?: boolean } = {},
+  ) {
+    const asset = hostWindowsAsset();
+    const body = "MZ-fixture-payload";
+    const digest = createHash("sha256")
+      .update(options.corruptChecksum ? "other" : body)
+      .digest("hex");
+    const sandbox = createInstallerSandbox("install-sh-marker");
+    let outcome: { status: number; stdout: string; stderr: string; requests: string[] } | null =
+      null;
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+          ...(marker ? { [MARKER]: { status: marker.status, body: "marker" } } : {}),
+        },
+        async (baseUrl, evidence) => {
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
+            ...sandbox.env,
+            ...env,
+            KUNAI_DL_BASE: baseUrl,
+          });
+          outcome = { ...result, requests: [...evidence.requests] };
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+    if (!outcome) throw new Error("installer did not run");
+    return outcome as { status: number; stdout: string; stderr: string; requests: string[] };
+  }
+
+  test("is fetched once, after the install succeeded", async () => {
+    const result = await installWith(TRACKING_ALLOWED, { status: 200 });
+    expect(result.status).toBe(0);
+    expect(result.requests.filter((path) => path === MARKER)).toHaveLength(1);
+    expect(result.requests.at(-1)).toBe(MARKER);
+  });
+
+  test("a failing marker is silent and never fails the install", async () => {
+    const quiet = await installWith(TRACKING_ALLOWED, null);
+    expect(quiet.status).toBe(0);
+    expect(quiet.requests).toContain(MARKER);
+    expect(`${quiet.stdout}${quiet.stderr}`).not.toMatch(/install\.marker|marker request/i);
+  });
+
+  test.each([[{ DO_NOT_TRACK: "1" }], [{ CI: "true" }], [{ KUNAI_NO_MARKER: "1" }]])(
+    "is skipped under %j",
+    async (optOut) => {
+      const result = await installWith({ ...TRACKING_ALLOWED, ...optOut }, { status: 200 });
+      expect(result.status).toBe(0);
+      expect(result.requests).not.toContain(MARKER);
+    },
+  );
+
+  test("is not fetched when the install fails", async () => {
+    const result = await installWith(TRACKING_ALLOWED, { status: 200 }, { corruptChecksum: true });
+    expect(result.status).not.toBe(0);
+    expect(result.requests).not.toContain(MARKER);
+  });
+});
+
 describePwsh("install.ps1 lifecycle contract", () => {
   test("does not start a download while uninstall owns the lifecycle lock", async () => {
     const sandbox = createInstallerSandbox("install-ps1-lifecycle-lock");
