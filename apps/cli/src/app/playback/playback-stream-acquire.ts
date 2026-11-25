@@ -32,11 +32,11 @@ import {
   isProviderIdFallbackEligible,
   pickCompatibleFallbackProvider,
 } from "@/app/playback/playback-provider-fallback";
+import { resolveStreamProviderId } from "@/app/playback/playback-provider-switch";
 import {
-  resolveStreamProviderId,
-  resolveTitleProviderPreference,
-} from "@/app/playback/playback-provider-switch";
-import { resolvePlaybackResolvePolicy } from "@/app/playback/playback-resolve-policy";
+  acceptResolvedProviderForPlayback,
+  resolvePlaybackResolvePolicy,
+} from "@/app/playback/playback-resolve-policy";
 import { invalidateEpisodePlaybackCaches } from "@/app/playback/playback-source-cache-invalidation";
 import {
   isRecentPlaybackStreamFresh,
@@ -356,7 +356,6 @@ export async function acquireEpisodeStream(
           selectedStreamId: currentPreferredStreamSelection.streamId,
         });
       }
-      const titlePreferredProviderId = resolveTitleProviderPreference(config.getRaw(), title.id);
       const resolveResult = await container.playbackResolveWork.resolve(
         {
           title,
@@ -521,37 +520,36 @@ export async function acquireEpisodeStream(
       stream = resolveResult.stream;
       attempt.resolvedProviderId = resolveResult.providerId;
       observeResolveNetworkOutcome(container, resolveResult);
-      // The per-title preference guards the resolve only when the engine
-      // landed somewhere the user did NOT ask for. A session-scoped
-      // provider (⇧F fallback, per-session /provider) is itself the
-      // current intent — resolving exactly it must not be rejected just
-      // because an older durable preference still names another provider.
+      // A saved per-title provider is where a resolve starts, not a lock. Only
+      // a provider-only request (/recompute, or a switch in manual recovery
+      // mode) may refuse what the engine's fallback found; in guided or
+      // fallback-first mode a working alternative is the point of fallback.
+      // Every explicit switch also saves a per-title preference, so the old
+      // preference-based guard threw away the fallback after any switch.
       if (
         stream &&
-        pendingUserProviderSwitch &&
-        titlePreferredProviderId &&
-        attempt.resolvedProviderId !== titlePreferredProviderId &&
-        attempt.resolvedProviderId !== stateManager.getState().provider
+        !acceptResolvedProviderForPlayback({
+          policy: resolvePolicy,
+          requestedProviderId: sourceProviderId,
+          resolvedProviderId: attempt.resolvedProviderId,
+        })
       ) {
-        const preferredName =
-          providerRegistry.get(titlePreferredProviderId)?.metadata.name ?? titlePreferredProviderId;
-        const actualName =
-          providerRegistry.get(attempt.resolvedProviderId)?.metadata.name ??
-          attempt.resolvedProviderId;
+        const requestedName =
+          providerRegistry.get(sourceProviderId)?.metadata.name ?? sourceProviderId;
         diagnosticsService.record({
           ...playbackCorrelation,
           category: "provider",
           level: "warn",
-          message: "Rejected provider fallback because a per-title preference is set",
+          message: "Rejected alternative provider for a provider-only resolve",
           context: {
             titleId: title.id,
-            preferredProviderId: titlePreferredProviderId,
+            requestedProviderId: sourceProviderId,
             resolvedProviderId: attempt.resolvedProviderId,
           },
         });
         updatePlaybackFeedback(context, {
-          detail: `${preferredName} did not resolve for this episode`,
-          note: `Got ${actualName} instead. Use /recompute or switch provider.`,
+          detail: `${requestedName} did not resolve for this episode`,
+          note: "Pick another provider, or set Settings → Recovery mode to Balanced recovery.",
         });
         stream = null;
       }
@@ -601,7 +599,8 @@ export async function acquireEpisodeStream(
         configuredProviderId: sourceProviderId,
         resolvedProviderId: attempt.resolvedProviderId,
       });
-      if (hop.kind === "session-soft-hop") {
+      // A discarded resolve must not move the session onto its provider.
+      if (stream && hop.kind === "session-soft-hop") {
         logger.info("Resolved stream with fallback provider", {
           from: sourceProviderId,
           fallback: hop.providerId,
