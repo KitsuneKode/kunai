@@ -10,6 +10,7 @@ import {
   commitKittyPlacementCandidate,
   deleteAllTerminalImages,
   deleteUncommittedKittyCandidate,
+  fittedCellBox,
   hashTitleToColor,
   renderPreparedPoster,
   resolvePosterRenderPlan,
@@ -550,5 +551,21 @@ describe("hashTitleToColor", () => {
       ["Dune", "Severance", "Arcane", "Andor", "Shogun"].map(hashTitleToColor),
     );
     expect(colors.size).toBeGreaterThan(1);
+  });
+});
+
+describe("direct Kitty size without a cell report", () => {
+  beforeEach(() => setTerminalCellPixels(null));
+
+  test("a square poster keeps its aspect instead of filling the pane", async () => {
+    // WezTerm scales c and r independently: naming the whole 8x6 pane would
+    // draw this 80x80 poster as 80x120 at the 10x20 px cell estimate.
+    const square = await prepared(80, 80, 6, 8);
+    expect(fittedCellBox(square, 8, 6)).toEqual({ cols: 8, rows: 4 });
+  });
+
+  test("a wide poster is limited by width and keeps its aspect", async () => {
+    const wide = await prepared(160, 80, 6, 8);
+    expect(fittedCellBox(wide, 8, 6)).toEqual({ cols: 8, rows: 2 });
   });
 });

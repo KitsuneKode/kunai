@@ -269,7 +269,8 @@ export async function renderPreparedPoster(
         return renderPreparedHalfBlock(poster, rows, cols);
       }
       const imageId = allocSharedKittyId();
-      const size = plan.exactPixels ? "" : `,c=${cols},r=${rows}`;
+      const fitted = plan.exactPixels ? null : fittedCellBox(poster, cols, rows);
+      const size = fitted ? `,c=${fitted.cols},r=${fitted.rows}` : "";
       return {
         kind: "sixel",
         sixel: `\x1b_Ga=p,i=${imageId},p=1,q=2,C=1${size};\x1b\\`,
@@ -420,3 +421,25 @@ export function hashTitleToColor(title: string): PosterFallbackColor {
 export const __testing = {
   runtime,
 };
+
+/**
+ * The cell box a poster fills at its own aspect ratio inside `cols` x `rows`.
+ * Without a cell-size report, Kitty's `c`/`r` must not name the whole pane:
+ * WezTerm scales the two axes independently, so an 80x80 poster in an
+ * 8x6-cell pane (10x20 px estimate) would draw 80x120. With measured cells
+ * the PNG is already sized exactly and no `c`/`r` is sent.
+ */
+export type CellBox = { readonly cols: number; readonly rows: number };
+
+export function fittedCellBox(poster: PreparedPoster, cols: number, rows: number): CellBox {
+  const { maxWidth, maxHeight } = pixelBudgetForCells(cols, rows);
+  const { width, height } = poster.image;
+  if (width <= 0 || height <= 0) return { cols, rows };
+  const scale = Math.min(maxWidth / width, maxHeight / height);
+  const cellWidth = maxWidth / cols;
+  const cellHeight = maxHeight / rows;
+  return {
+    cols: Math.min(cols, Math.max(1, Math.round((width * scale) / cellWidth))),
+    rows: Math.min(rows, Math.max(1, Math.round((height * scale) / cellHeight))),
+  };
+}
