@@ -120,7 +120,12 @@ describe("CLI → ingest → docs wire contract", () => {
     expect(results).toHaveLength(1);
     // `stored` reports whether the day's global write budget admitted the ping,
     // so an accepted-but-dropped ping is distinguishable from a stored one.
-    expect(results[0]).toEqual({ ok: true, day: analyticsDayKey(NOW), stored: true });
+    expect(results[0]).toEqual({
+      ok: true,
+      day: analyticsDayKey(NOW),
+      stored: true,
+      duplicate: false,
+    });
     expect(store.rawCount()).toBe(1);
   });
 
