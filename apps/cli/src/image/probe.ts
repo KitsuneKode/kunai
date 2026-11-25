@@ -21,6 +21,7 @@ export type TerminalGraphicsSupport = {
   readonly sixel: boolean;
   readonly sixelColorRegisters?: number;
   readonly kittyGraphics: boolean;
+  readonly kittyQueryAccepted?: true;
   readonly kittyPlaceholders?: boolean;
   readonly tmux?: TmuxGraphicsContext;
 };
@@ -66,7 +67,11 @@ export function parseDeviceAttributes(reply: string): TerminalGraphicsSupport {
   // oxlint-disable-next-line eslint/no-control-regex -- the terminal reply contains a literal ESC
   const kittyGraphics = /_G[^]*;(OK|E[A-Z]+)/.test(reply);
 
-  return { sixel, kittyGraphics };
+  // Match the image id of our actual pixel probe. An error is insufficient
+  // evidence to send Kitty uploads to a partial-protocol terminal.
+  // oxlint-disable-next-line eslint/no-control-regex -- reply contains literal ESC
+  const accepted = /\x1b_Gi=31;OK\x1b\\/.test(reply);
+  return accepted ? { sixel, kittyGraphics, kittyQueryAccepted: true } : { sixel, kittyGraphics };
 }
 
 /** True when it is safe to write escape bytes and read a reply. */

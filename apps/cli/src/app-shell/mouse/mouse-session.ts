@@ -13,7 +13,12 @@ import { MouseDispatcher } from "./MouseRegions";
 export function shouldMeasurePosterCells(): boolean {
   if (!canProbeTerminal()) return false;
   const { renderer } = detectImageCapability();
-  return renderer === "kitty-native" || renderer === "sixel" || renderer === "iterm-inline";
+  return (
+    renderer === "kitty-native" ||
+    renderer === "kitty-direct" ||
+    renderer === "sixel" ||
+    renderer === "iterm-inline"
+  );
 }
 
 /** Own the TTY subscription and exit hook together; disposing either releases both. */

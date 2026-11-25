@@ -1507,6 +1507,7 @@ export async function launchSessionApp(container: Container) {
 
   const releaseShell = () => {
     mouseSession?.dispose();
+    sixelOverlayManager.discard();
     rootShellInk = null;
     rootShellExitPromise = null;
     resetMountedInkScreen();
@@ -1533,7 +1534,6 @@ export async function shutdownSessionApp(): Promise<void> {
   ink.cleanup();
   await exitPromise.catch(() => {});
   deleteAllKittyImages();
-  sixelOverlayManager.discard();
 }
 
 type ListShellActionResult = {

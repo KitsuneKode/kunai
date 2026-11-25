@@ -76,7 +76,11 @@ export function detectTerminal(env: NodeJS.ProcessEnv = process.env): TerminalId
 export function isKittyCompatible(env: NodeJS.ProcessEnv = process.env): boolean {
   if (isMultiplexed(env)) return detectImageCapability(env).renderer === "kitty-native";
   const terminal = detectTerminal(env);
-  return terminal === "kitty" || terminal === "ghostty";
+  return (
+    terminal === "kitty" ||
+    terminal === "ghostty" ||
+    detectImageCapability(env).renderer === "kitty-direct"
+  );
 }
 
 /**
@@ -196,6 +200,8 @@ export function selectImageCapability(
 
   const terminal = detectTerminal(env);
   const override = normalizeProtocol(env.KUNAI_IMAGE_PROTOCOL);
+  const directKitty =
+    probe?.kittyQueryAccepted && (terminal === "konsole" || terminal === "wezterm");
 
   // A dumb terminal or an explicit no-colour request cannot render even the
   // half-block path — it is ANSI colour markup like everything else. Explicit
@@ -219,7 +225,7 @@ export function selectImageCapability(
         reason: "kitty-compatible terminal requested",
       });
     }
-    if (!isMultiplexed(env)) {
+    if (!isMultiplexed(env) && !directKitty) {
       return noneCapability(
         terminal,
         "KUNAI_IMAGE_PROTOCOL=kitty requires a kitty-compatible terminal",
@@ -307,13 +313,16 @@ export function selectImageCapability(
   // implies. This is the only way to know a Windows Terminal is >=1.22, or that
   // an unrecognised terminal (foot, contour, mlterm, xterm -ti vt340) does sixel
   // at all — the name heuristics below can never learn either.
-  // Answering a=q is necessary but not sufficient: kunai places images with
-  // Unicode placeholders, which WezTerm's opt-in kitty mode, Konsole, and
-  // iTerm2's partial kitty support do not implement. Claiming kitty-native
-  // there demoted those terminals to half-block — *below* the sixel or iterm
-  // protocol they actually speak — so named non-placeholder terminals fall
-  // through to their real best below. An unknown terminal keeps kitty: the
-  // probe is the only evidence and kitty-over-SSH depends on it.
+  if (directKitty) {
+    return buildCapability({
+      terminal,
+      protocol: "kitty",
+      renderer: "kitty-direct",
+      available: true,
+      reason: "terminal accepted the Kitty image query and supports direct placement",
+    });
+  }
+  // Keep Kitty-over-SSH working when the terminal name was not forwarded.
   if (probe?.kittyGraphics && terminal === "unknown") {
     return buildCapability({
       terminal,
