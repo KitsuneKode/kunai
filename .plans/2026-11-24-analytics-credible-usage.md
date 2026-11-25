@@ -2,14 +2,15 @@
 
 ## Status
 
-- **Status:** PROPOSED. Design only; no code in this PR.
+- **Status:** ACCEPTED in part (2026-11-25): decisions 1 and 3 are made, so Phases 1 and 2 may
+  start. Decisions 2 and 4 are still open.
 - **Date:** 2026-11-24, rewritten 2026-11-25 after the maintainer asked for analytics that are
   less invasive yet still give exact, publishable numbers (downloads, updates, installs, active
   users, Android included).
 - **Extends:** [usage-analytics-redesign.md](./usage-analytics-redesign.md) and
   [2026-08-26-analytics-series-and-social-cards.md](./2026-08-26-analytics-series-and-social-cards.md).
   It does not reopen [2026-09-11-analytics-ist-day-boundary.md](./2026-09-11-analytics-ist-day-boundary.md).
-- **Maintainer decisions needed:** listed in Section 8.
+- **Maintainer decisions:** recorded in Section 8.
 
 ## Problem
 
@@ -187,13 +188,14 @@ dropped: weekly only.
 - Add a test that `cohort` is cleared on disable.
 - Update the contract doc and the user privacy page in the same PRs.
 
-## 8. Decisions for the maintainer
+## 8. Decisions
 
-1. **Consent default:** neutral (no pre-selection), as recommended, or keep "on" pre-selected.
-2. **Usage buckets (Section 4):** yes, no, or a subset.
-3. **Install/update marker assets:** yes or no. Without them, Tier A shows combined downloads
-   only.
-4. **Badge wording:** confirm "active (opted in, 30d)" rather than plain "active users".
+1. **Consent default: DECIDED 2026-11-25, neutral.** There is no pre-selection; both choices
+   need a keystroke.
+2. **Usage buckets (Section 4): OPEN.** Ship nothing from Section 4 until this is decided.
+3. **Install/update marker assets: DECIDED 2026-11-25, yes.** Release N adds `install.marker`
+   and `update.marker`.
+4. **Badge wording: OPEN.** The default until decided is "active (opted in, 30d)".
 
 ## 9. Dropped, as not worth the privacy cost
 
