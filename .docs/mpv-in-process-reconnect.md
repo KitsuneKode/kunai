@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T01:15:07Z"
+lastReviewed: "2026-11-25T05:07:13Z"
 ---
 
 # mpv in-process stream reconnect (persistent session)
@@ -43,6 +43,19 @@ uses injected clocks to cover both cases without wall-clock sleeps.
 3. **Premature EOF** (playback-stats guard): `end-file` with `eof` was **demoted** to `unknown` because trusted progress was inconsistent with a full watch (`eofDemotedByPrematureGuard`).
 
 4. **`end-file` with `error`** while **`demuxer-via-network`** was true: treat as a reconnectable network demuxer error before surfacing a terminal failure.
+
+**Never reloaded:** an end whose `file_error` says the URL cannot be opened or
+holds nothing mpv can play (`isSameUrlRetryWorthwhile` in
+`mpv-in-process-reconnect.ts`: `loading failed`, `unrecognized file format`,
+`no audio or video data played`, output-initialisation failures,
+`not supported`). Those go straight to source failover. Measured on mpv 0.42: a
+403, a 404, a refused connection and an unknown host all end as
+`error` / `loading failed`; non-media bytes as `unrecognized file format`; a
+connection dropped mid-file and HLS segments that start answering 403 mid-play
+both end as `eof`, so trigger 3 still covers them. The check guards triggers 3
+and 4 alike: `applyEndFileEvent` marks every end that carries a `file_error` as
+a demoted premature EOF, so before this a 403 was reloaded through trigger 3
+(`stream-recovery-native.test.ts` fails without it).
 
 If reconnect **succeeds**, the current `play()` promise **does not resolve** yet; playback continues until a normal end, quit, or exhaustion of retries.
 
@@ -121,7 +134,15 @@ persistent router and one-shot `mpv.ts`) use it per playback cycle:
   recovery take over in about ten seconds instead of never.
 - Nothing is concluded from a gap in the event stream: a failed read (timeout,
   closed socket) concludes nothing, and the 45 s startup-stall watchdog stays
-  the backstop. mpv's "property unavailable" reply to `get_property` is an
+  the backstop. Before it, a stream that has sent **no bytes at all** in 15 s
+  (`STARTUP_NO_BYTES_TIMEOUT_MS`; no `network-sample` with input rate, cache
+  speed or buffered seconds above zero) is abandoned as dead, not slow; any
+  byte hands it back to the 45 s budget. The early exit applies only when the
+  player reports bytes (`PlayerCapabilities.networkEvidence`), to remote
+  http(s) URLs, and never to yt-dlp streams, whose extraction runs before any
+  byte flows. Measured: real mpv emits byte-bearing `network-sample` events
+  before `playback-started` on a trickling server, and none against a server
+  that accepts the connection and never answers. mpv's "property unavailable" reply to `get_property` is an
   answer (no value), not an IPC failure: `mpv-ipc.ts` keeps it out of
   `onCommandResult`, so neither emitter reports it as `ipc-command-failed`.
   Both turn the remaining failures into events through

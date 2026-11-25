@@ -8,6 +8,27 @@ export const MAX_STARTUP_FAILOVER_ATTEMPTS = 4;
 /** Abort + mark dead only after this long with no first progress (slow CDNs need headroom). */
 export const STARTUP_STALL_TIMEOUT_MS = 45_000;
 
+/**
+ * A stream that has sent nothing at all by now is not slow, it is dead: give
+ * up on it this early instead of waiting out the full startup budget. Any byte
+ * seen (input rate, cache speed, buffered seconds) hands the stream back to
+ * STARTUP_STALL_TIMEOUT_MS.
+ */
+export const STARTUP_NO_BYTES_TIMEOUT_MS = 15_000;
+
+/** True when a player network sample shows bytes arriving from the server. */
+export function networkSampleShowsBytes(sample: {
+  readonly rawInputRate?: number;
+  readonly cacheSpeed?: number;
+  readonly cacheAheadSeconds?: number;
+}): boolean {
+  return (
+    (sample.rawInputRate ?? 0) > 0 ||
+    (sample.cacheSpeed ?? 0) > 0 ||
+    (sample.cacheAheadSeconds ?? 0) > 0
+  );
+}
+
 export type StartupFailoverPlan =
   | { readonly kind: "advance-source"; readonly sourceId: string }
   | { readonly kind: "fallback-provider" }

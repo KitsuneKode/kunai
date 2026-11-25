@@ -47,13 +47,13 @@ import { discoverMpvInvocation } from "./mpv-discovery";
 import { probeMpvHdrCapability } from "./mpv-hdr";
 import {
   computeInProcessReconnectSeek,
+  isSameUrlRetryWorthwhile,
   isWatchdogReconnectTrigger,
   watchdogReconnectTrigger,
   type InProcessReconnectTrigger,
   type WatchdogReconnectTrigger,
 } from "./mpv-in-process-reconnect";
-import type { MpvIpcSession } from "./mpv-ipc";
-import { openMpvIpcSession, waitForMpvIpcEndpoint } from "./mpv-ipc";
+import { openMpvIpcSession, waitForMpvIpcEndpoint, type MpvIpcSession } from "./mpv-ipc";
 import {
   createMpvIpcEndpoint,
   ipcServerCliArg,
@@ -64,8 +64,7 @@ import {
 } from "./mpv-ipc-endpoint";
 import { mpvIpcFailureEvents } from "./mpv-ipc-failure-events";
 import { shouldEmitPlaybackProgress } from "./mpv-playback-kernel";
-import { needsMpvNetworkPreflight } from "./mpv-playback-url";
-import type { MpvUrlKind } from "./mpv-playback-url";
+import { needsMpvNetworkPreflight, type MpvUrlKind } from "./mpv-playback-url";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
 import {
   applyEndFileEvent,
@@ -1814,6 +1813,7 @@ export class PersistentMpvSession {
       this.reconnectTryCount < this.mpvInProcessStreamReconnectMaxAttempts &&
       this.ipcSession &&
       this.playbackStream.url.length > 0 &&
+      isSameUrlRetryWorthwhile(fileError) &&
       (demoted || (result.endReason === "error" && networkish));
 
     if (shouldTryReconnect) {

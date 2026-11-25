@@ -7,6 +7,12 @@ export interface PlayerCapabilities {
   readonly completion: boolean;
   readonly autoSkip: boolean;
   readonly trackControl: boolean;
+  /**
+   * The player reports bytes arriving while a stream starts (mpv's demuxer
+   * cache, surfaced as `network-sample`). Only then can "nothing arrived in
+   * 15 s" end a startup early; a player that cannot tell gets the full budget.
+   */
+  readonly networkEvidence: boolean;
 }
 
 export const MANAGED_MPV_CAPABILITIES: PlayerCapabilities = Object.freeze({
@@ -18,6 +24,7 @@ export const MANAGED_MPV_CAPABILITIES: PlayerCapabilities = Object.freeze({
   completion: true,
   autoSkip: true,
   trackControl: true,
+  networkEvidence: true,
 });
 
 export const DETACHED_HANDOFF_CAPABILITIES: PlayerCapabilities = Object.freeze({
@@ -29,4 +36,5 @@ export const DETACHED_HANDOFF_CAPABILITIES: PlayerCapabilities = Object.freeze({
   completion: false,
   autoSkip: false,
   trackControl: false,
+  networkEvidence: false,
 });

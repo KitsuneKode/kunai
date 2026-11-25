@@ -29,7 +29,6 @@ import {
   playbackSubtitlePreference,
 } from "@/app/playback/playback-profile-context";
 import { didPlaybackFailToStart } from "@/app/playback/playback-session-controller";
-import { STARTUP_STALL_TIMEOUT_MS } from "@/app/playback/playback-source-failover";
 import { startFromBeginning } from "@/app/playback/playback-start-intent";
 import type { ReadyEpisodeStream } from "@/app/playback/playback-stream-ready";
 import { runPlaybackSession } from "@/app/playback/run-playback-session";
@@ -239,16 +238,20 @@ export async function launchPlayback(input: PlayerLaunchInput): Promise<Playback
           buildPlaybackDiagnosticEvent({
             operation: notDecoding
               ? "playback.startup.video-not-decoding"
-              : "playback.startup-stall.aborted",
+              : reason.kind === "no-bytes"
+                ? "playback.startup-stall.no-bytes"
+                : "playback.startup-stall.aborted",
             status: "failed",
             severity: "degraded",
             failureClass: notDecoding ? "unknown" : "timeout",
             message: notDecoding
               ? "Video track played without a decoded frame; aborting for source recovery"
-              : "Startup stall watchdog aborted mpv",
+              : reason.kind === "no-bytes"
+                ? "No data from the server; aborting startup early for source recovery"
+                : "Startup stall watchdog aborted mpv",
             correlation,
             context: {
-              timeoutMs: notDecoding ? null : STARTUP_STALL_TIMEOUT_MS,
+              timeoutMs: reason.kind === "video-not-decoding" ? null : reason.timeoutMs,
               videoCodec: notDecoding?.codec ?? null,
               secondsWithoutVideo: notDecoding?.secondsWithoutVideo ?? null,
               streamHost: (() => {
