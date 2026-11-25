@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T09:48:46Z"
+lastReviewed: "2026-11-25T09:57:50Z"
 ---
 
 # Poster and terminal image output
@@ -36,6 +36,8 @@ Use `@/image` or `apps/cli/src/image/index.ts` (the old `apps/cli/src/image.ts` 
 - **VSCode is version-gated** on `TERM_PROGRAM_VERSION` ≥ 1.80, the release that implemented the protocol. An unreported or older version stays on half-block, for the same reason Windows Terminal sixel stays off without a probe answer: emitting the escape to a build that does not understand it sprays raw bytes across the UI.
 - **WezTerm stays on sixel** even though it also implements the iTerm2 protocol, because the sixel overlay path is the verified one there. `KUNAI_IMAGE_PROTOCOL=iterm` gives higher fidelity for users who want it; promoting it to the default needs a real-terminal check first.
 - **Half-block is the universal floor.** It decodes in-process and needs no external binary, which is what makes posters work on Windows at all — `chafa` is effectively never installed there.
+- **Graphics geometry** uses XTWINOPS after Ink enters raw input mode and again on SIGWINCH. A `CSI 16 t` cell report takes precedence over the `CSI 14 t` text-area pixel dimensions divided by the current grid. The input facade consumes these replies even when mouse tracking is disabled. Without a usable report the existing 10×20 pixel estimate applies. Measured cell dimensions participate in poster request and render-cache identity; half-block still uses two pixels per cell row.
+- **Graphics fit** prepares Kitty, Sixel and iTerm2 source pixels inside the measured cell rectangle while preserving aspect ratio. With a measured rectangle, iTerm2 draws the prepared PNG at its pixel dimensions. Sixel encodes against the same bounds used for preparation.
 - **Ink app shell**: sixel posters reserve a blank measured Ink rectangle. A shared overlay manager uses absolute cursor movement to redraw navigation surfaces after Ink frames and applies Yazi's three-move ConPTY workaround on Windows. Removal and movement rely on the Ink commit that changed the pane; same-slot image replacement clears and paints atomically so old pixels cannot flash through. Terminals that answer the kitty probe but implement no Unicode placeholders (WezTerm's opt-in mode, Konsole) still use text renderers for Kitty.
 - **Now Playing**: unrelated one-second playback stats do not resend the framebuffer payload. Its high-frequency rail repaints only when the poster pane commits; history, browse, and other navigation surfaces repaint after Ink frames so a later metadata commit cannot erase a newly displayed cached poster.
 

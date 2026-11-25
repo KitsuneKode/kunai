@@ -1,5 +1,6 @@
 import { detectImageCapability } from "@/image";
 import type { TerminalId } from "@/image";
+import { getTerminalCellPixels } from "@/image/cell-size";
 import { debugImage } from "@/image/debug";
 import { uploadKittyPayload } from "@/image/kitty-transport";
 import { type PosterPixelBounds, type PreparedPoster } from "@/image/native-image";
@@ -137,6 +138,7 @@ export type PosterRenderPlan = {
   readonly renderer: PosterRenderer;
   readonly bounds: PosterPixelBounds;
   readonly kittyPassthrough?: "tmux";
+  readonly exactPixels?: boolean;
 };
 
 /**
@@ -186,25 +188,26 @@ export function resolvePosterRenderPlan(options: PreparedRenderOptions): PosterR
   const capability = runtime.detectImageCapability();
   if (!capability.available || capability.renderer === "none") return null;
 
+  const budget = pixelBudgetForCells(cols, rows);
+  const bounds = { maxWidthPx: budget.maxWidth, maxHeightPx: budget.maxHeight };
   if (
     capability.renderer === "kitty-native" &&
     (capability.kittyPassthrough || supportsKittyPlaceholders(capability.terminal))
   ) {
-    const budget = pixelBudgetForCells(cols, rows);
     return {
       renderer: "kitty-native",
       kittyPassthrough: capability.kittyPassthrough,
-      bounds: { maxWidthPx: budget.maxWidth, maxHeightPx: budget.maxHeight },
+      bounds,
     };
   }
   // Gated on allowSixel for the same reason sixel is: both are measured
   // overlays written outside Ink's frame, so a surface that repaints constantly
   // suppresses them together.
   if (capability.renderer === "iterm-inline" && allowSixel) {
-    const budget = pixelBudgetForCells(cols, rows);
     return {
       renderer: "iterm-inline",
-      bounds: { maxWidthPx: budget.maxWidth, maxHeightPx: budget.maxHeight },
+      bounds,
+      exactPixels: getTerminalCellPixels() !== null,
     };
   }
   if (
@@ -212,10 +215,9 @@ export function resolvePosterRenderPlan(options: PreparedRenderOptions): PosterR
     allowSixel &&
     getProbedGraphicsSupport()?.sixelColorRegisters !== 1
   ) {
-    const budget = pixelBudgetForCells(cols, rows);
     return {
       renderer: "sixel",
-      bounds: { maxWidthPx: budget.maxWidth, maxHeightPx: budget.maxHeight },
+      bounds,
     };
   }
   // Everything else — a Kitty build without Unicode placeholders, an inline-image
@@ -245,7 +247,11 @@ export async function renderPreparedPoster(
       return await uploadPreparedKitty(poster, options, plan.kittyPassthrough);
     }
     if (plan.renderer === "iterm-inline") {
-      const escapes = buildItermInlineImage(poster.png, { rows, cols });
+      const escapes = buildItermInlineImage(poster.png, {
+        rows,
+        cols,
+        pixelSize: plan.exactPixels ? poster.image : undefined,
+      });
       if (!escapes) return { kind: "none" };
       // Carried as a sixel result because it is the same kind of thing: escape
       // bytes the overlay manager writes at a measured rect, erased the same way.
@@ -261,7 +267,8 @@ export async function renderPreparedPoster(
       const sixel = renderSixelFromImage(
         poster.image,
         {
-          ...pixelBudgetForCells(cols, rows),
+          maxWidth: plan.bounds.maxWidthPx,
+          maxHeight: plan.bounds.maxHeightPx,
           maxColors: Math.min(
             APP_SHELL_SIXEL_MAX_COLORS,
             getProbedGraphicsSupport()?.sixelColorRegisters ?? APP_SHELL_SIXEL_UNPROBED_COLORS,

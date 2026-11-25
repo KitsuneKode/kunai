@@ -29,9 +29,13 @@ export type MouseEvent = {
 // ESC is built from a char code so no literal control byte sits in the source
 // (oxlint no-control-regex); see app-shell/line-editor.ts for the convention.
 const ESC = String.fromCharCode(27);
-const SGR_MOUSE_PATTERN = new RegExp(`${ESC}\\[<(\\d+);(\\d+);(\\d+)([Mm])`, "g");
+const TERMINAL_REPORTS = new RegExp(
+  `${ESC}\\[<(\\d+);(\\d+);(\\d+)([Mm])|${ESC}\\[[46];\\d+;\\d+t`,
+  "g",
+);
 /** `\x1b[<…` without a terminator yet — a sequence split across chunks. */
 const SGR_MOUSE_PARTIAL = new RegExp(`${ESC}\\[<[0-9;]*$`);
+const PIXEL_REPORT_PARTIAL = new RegExp(`${ESC}\\[[46](?:;\\d*(?:;\\d*)?)?$`);
 const SGR_MOUSE_EXACT = new RegExp(`^${ESC}\\[<(\\d+);(\\d+);(\\d+)([Mm])$`);
 
 // ── Non-SGR reports: stripped, never parsed ─────────────────────────────────
@@ -120,6 +124,7 @@ export type MouseSplitResult = {
  */
 export type OrderedMouseInput =
   | { readonly kind: "input"; readonly input: string }
+  | { readonly kind: "cell-pixels"; readonly report: string }
   | { readonly kind: "mouse"; readonly event: MouseEvent };
 
 export type OrderedMouseSplitResult = {
@@ -135,14 +140,21 @@ export function splitOrderedMouseSequences(chunk: string): OrderedMouseSplitResu
     if (input) parts.push({ kind: "input", input });
   };
   let lastIndex = 0;
-  for (const match of chunk.matchAll(SGR_MOUSE_PATTERN)) {
+  for (const match of chunk.matchAll(TERMINAL_REPORTS)) {
     addInput(chunk.slice(lastIndex, match.index));
-    const event = parseSgrMouseSequence(match[0]);
-    if (event) parts.push({ kind: "mouse", event });
+    if (match[0].endsWith("t")) {
+      parts.push({ kind: "cell-pixels", report: match[0] });
+    } else {
+      const event = parseSgrMouseSequence(match[0]);
+      if (event) parts.push({ kind: "mouse", event });
+    }
     lastIndex = match.index + match[0].length;
   }
   const tail = chunk.slice(lastIndex);
-  const partial = SGR_MOUSE_PARTIAL.exec(tail) ?? LEGACY_MOUSE_PARTIAL.exec(tail);
+  const partial =
+    SGR_MOUSE_PARTIAL.exec(tail) ??
+    LEGACY_MOUSE_PARTIAL.exec(tail) ??
+    PIXEL_REPORT_PARTIAL.exec(tail);
   if (partial) {
     addInput(tail.slice(0, partial.index));
     return { parts, pendingTail: partial[0] };
@@ -158,7 +170,7 @@ export function splitMouseSequences(chunk: string): MouseSplitResult {
   const events: MouseEvent[] = [];
   for (const part of parts) {
     if (part.kind === "input") input += part.input;
-    else events.push(part.event);
+    else if (part.kind === "mouse") events.push(part.event);
   }
   return { input, events, pendingTail };
 }

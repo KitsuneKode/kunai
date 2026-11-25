@@ -18,6 +18,7 @@ import {
 import { __testing as overlayTesting, SixelOverlayManager } from "@/app-shell/sixel-overlay";
 import type { ImageCapability } from "@/image";
 import { selectImageCapability } from "@/image/capability";
+import { setTerminalCellPixels } from "@/image/cell-size";
 import { preparePoster, type PreparedPoster } from "@/image/native-image";
 import { __testing as probeTesting } from "@/image/probe";
 
@@ -127,10 +128,25 @@ afterEach(() => {
     process.env.KUNAI_IMAGE_TRANSPORT = originalTransportEnv;
   }
   probeTesting.reset();
+  setTerminalCellPixels(null);
   clearKittyPlacementRegistry();
 });
 
 describe("resolvePosterRenderPlan", () => {
+  test("fits graphics to measured cell pixels and keeps the half-block grid", () => {
+    setTerminalCellPixels({ width: 9, height: 21 });
+    const size = { rows: 3, cols: 7 };
+    for (const renderer of ["kitty-native", "sixel", "iterm-inline"] as const) {
+      rendererTesting.runtime.detectImageCapability = () => capability(renderer);
+      expect(resolvePosterRenderPlan(size)?.bounds).toEqual({
+        maxWidthPx: 63,
+        maxHeightPx: 63,
+      });
+    }
+    rendererTesting.runtime.detectImageCapability = () => capability("half-block");
+    expect(resolvePosterRenderPlan(size)?.bounds).toEqual({ maxWidthPx: 7, maxHeightPx: 6 });
+  });
+
   test("cleans up tmux placements by id, leaving images from other panes alone", async () => {
     rendererTesting.runtime.detectImageCapability = () => ({
       ...capability("kitty-native"),
