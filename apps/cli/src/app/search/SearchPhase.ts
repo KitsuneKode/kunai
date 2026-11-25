@@ -1379,10 +1379,8 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           originalSelected.calendar?.continuation?.playable
         ) {
           const launch = await launchCalendarContinue(container, originalSelected);
-          if (launch) {
-            stateManager.dispatch({ type: "SELECT_TITLE", title: launch.title });
-            return { status: "success", value: launch.title };
-          }
+          // Already selected, title then episode, by the launcher.
+          if (launch) return { status: "success", value: launch.title };
         }
         const deferAnimeProviderMapping =
           !!input && "deferAnimeProviderMapping" in input && input.deferAnimeProviderMapping;

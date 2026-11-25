@@ -9,9 +9,9 @@ import {
   prepareReplayTitleForProvider,
   titleFromHistorySelection,
 } from "@/app/bootstrap/launch-entry";
+import { prepareOfflinePlaybackLaunch } from "@/app/offline/offline-playback-launch";
 import type { Container } from "@/container";
-import type { SearchResult } from "@/domain/types";
-import type { TitleInfo } from "@/domain/types";
+import type { EpisodeInfo, SearchResult, TitleInfo } from "@/domain/types";
 import type { CatalogScheduleItem } from "@/services/catalog/CatalogScheduleService";
 import {
   recordContinuationProjectDecision,
@@ -28,6 +28,12 @@ import type { HistoryProgress, ReleaseProgressProjection } from "@kunai/storage"
 export type CalendarContinueLaunchResult = {
   readonly selection: RootHistorySelection;
   readonly title: TitleInfo;
+  /**
+   * The episode Calendar chose. Dispatching it before the title let
+   * SELECT_TITLE clear it, so playback reconstructed a target from history
+   * that could disagree (Sol review #6).
+   */
+  readonly episode?: EpisodeInfo;
 };
 
 export function buildCalendarContinuationSignals(input: {
@@ -152,33 +158,54 @@ export function resolveCalendarContinueSelection(
   return selection;
 }
 
+/**
+ * Resolve Calendar's continuation and select it in the session — title first,
+ * then episode, since SELECT_TITLE clears whatever episode came before it.
+ */
 export async function launchCalendarContinue(
+  container: Container,
+  result: SearchResult,
+): Promise<CalendarContinueLaunchResult | null> {
+  const launch = await prepareCalendarContinue(container, result);
+  if (!launch) return null;
+  container.stateManager.dispatch({ type: "SELECT_TITLE", title: launch.title });
+  if (launch.episode) {
+    container.stateManager.dispatch({ type: "SELECT_EPISODE", episode: launch.episode });
+  }
+  return launch;
+}
+
+async function prepareCalendarContinue(
   container: Container,
   result: SearchResult,
 ): Promise<CalendarContinueLaunchResult | null> {
   const selection = resolveCalendarContinueSelection(container, result);
   if (!selection) return null;
 
+  // A ready download Calendar chose plays from disk, the way History's does —
+  // not through a remote resolve that only later finds the local copy.
   if (selection.localJobId) {
-    applyHistorySelectionProvider(container, selection);
-    const episode = episodeFromHistorySelection(selection);
-    if (episode) {
-      container.stateManager.dispatch({ type: "SELECT_EPISODE", episode });
-    }
-  } else {
-    applyHistorySelectionProvider(container, selection);
-    const episode = episodeFromHistorySelection(selection);
-    if (episode) {
-      container.stateManager.dispatch({ type: "SELECT_EPISODE", episode });
-    }
+    const offline = await prepareOfflinePlaybackLaunch(container, selection.localJobId);
+    if (offline) return calendarLaunch(selection, offline.title, offline.episode);
+    // The copy is gone (feedback already shown): stream the same target.
   }
 
+  applyHistorySelectionProvider(container, selection);
+  const episode = episodeFromHistorySelection(selection);
   const title = await prepareReplayTitleForProvider(
     container,
     titleFromHistorySelection(selection),
     selection.entry,
   );
-  return { selection, title };
+  return calendarLaunch(selection, title, episode ?? undefined);
+}
+
+function calendarLaunch(
+  selection: RootHistorySelection,
+  title: TitleInfo,
+  episode: EpisodeInfo | undefined,
+): CalendarContinueLaunchResult {
+  return episode ? { selection, title, episode } : { selection, title };
 }
 
 function calendarScheduleFromResult(

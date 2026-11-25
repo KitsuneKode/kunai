@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T20:38:18Z"
+lastReviewed: "2026-11-25T20:55:43Z"
 ---
 
 # Kunai — Runtime Architecture
@@ -304,6 +304,14 @@ migration; a clear rejects until native deletion is verified, rather than report
 success and restoring the secret next launch. Native credential latency therefore
 extends this critical section; sibling operations can report bounded lock contention
 while a slow keychain operation is running.
+
+**Continuation launches** (History, inline Continue, Calendar) select the title
+before the episode: `SELECT_TITLE` clears any episode dispatched ahead of it.
+Calendar's launcher (`launchCalendarContinue`) selects both itself, so the
+projected next or resume episode is the one that plays even where history and
+the catalog disagree. A continuation that chose a ready download
+(`localJobId`) plays it from disk through `prepareOfflinePlaybackLaunch`, as
+History does, and streams the same target only if the copy is gone.
 
 **Watch ledger (2026-06):** `history_progress` is the single source of truth for resume position, completion, and engaged watch time. Columns `watched_seconds`, `last_watched_at`, and `completed_at` (migration `024`) back Stats and continuation. All mark-watched/unwatched surfaces write through `HistoryRepository.markWatched` / `markUnwatched` (preserve resume on unmark). `playback_events` receives fire-and-forget instrumentation from the mpv position tick via `PlaybackEventRepository`. Stats aggregation lives in `WatchStatsRepository` (`packages/storage`).
 
