@@ -38,6 +38,7 @@ import {
 import { invalidateEpisodePlaybackCaches } from "@/app/playback/playback-source-cache-invalidation";
 import {
   listOrderedPlaybackSourceIds,
+  planQualityStepDown,
   planStartupFailover,
   shouldUseProviderPlaybackRecovery,
 } from "@/app/playback/playback-source-failover";
@@ -279,6 +280,10 @@ export async function recoverAfterPlayback(
       null;
 
     let skipRefreshContinue = false;
+    // Only consulted when the budget still allows a recovery (the branch order below).
+    const stepDown = isAutoSourceRecover
+      ? planQualityStepDown(preparedStream.providerResolveResult, run.recoveryQualityCeiling)
+      : null;
 
     if (isAutoSourceRecover && run.autoSourceRecoverAttempts >= MAX_AUTO_SOURCE_RECOVER_ATTEMPTS) {
       diagnosticsService.record({
@@ -311,6 +316,34 @@ export async function recoverAfterPlayback(
         note: "Press o for sources, ⇧F for fallback, r to retry, or /diagnostics for details",
       });
       skipRefreshContinue = true;
+    } else if (stepDown) {
+      // Same source, 1080p: the source is not abandoned yet, so it is not
+      // marked tried. The attempt still counts against the recovery budget.
+      run.recoveryQualityCeiling = stepDown;
+      await selectionCoordinator.applyAutomaticSourceFailover(
+        attempt.resolvedProviderId,
+        currentEpisode,
+        stepDown.sourceId,
+      );
+      diagnosticsService.record({
+        category: "playback",
+        message: "Failing 4K stream stepping down to 1080p on the same source",
+        context: {
+          operation: "playback.auto-recovery.quality-step-down",
+          sourceId: stepDown.sourceId,
+          fromQuality: selectedResolveStream?.qualityRank ?? null,
+          maxQuality: stepDown.maxRank,
+          provider: attempt.resolvedProviderId,
+          titleId: title.id,
+          season: currentEpisode.season,
+          episode: currentEpisode.episode,
+        },
+      });
+      void playerControl
+        .getActive()
+        ?.setEpisodeTransitionLoading?.(
+          "Kunai · 4K stream failed, trying 1080p on the same server…",
+        );
     } else if (isAutoSourceRecover) {
       if (currentSourceId && !run.triedFailoverSourceIds.includes(currentSourceId)) {
         run.triedFailoverSourceIds.push(currentSourceId);

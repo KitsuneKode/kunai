@@ -104,3 +104,60 @@ export function planStartupFailover(input: {
 
   return { kind: "give-up" };
 }
+
+/** Rungs above this step down on their own source before that source is abandoned. */
+export const QUALITY_STEP_DOWN_CEILING = 1080;
+
+/**
+ * A cap set by recovery for the rest of the episode: nothing above `maxRank`,
+ * on any source. A 4K rung that failed for bandwidth or a missing HEVC decoder
+ * fails the same way on the next source. `sourceId` is where it was set.
+ */
+export type RecoveryQualityCeiling = { readonly sourceId: string; readonly maxRank: number };
+
+/**
+ * A failing 4K (above-1080p) stream steps down to 1080p on the same source
+ * before failover moves to another one: 4K rungs fail for reasons the 1080p
+ * rung beside them does not share (bandwidth, a missing HEVC decoder, a CDN
+ * edge that only caches the top rung).
+ *
+ * Expressed as a quality ceiling, not a stream id: ids hash the URL, and the
+ * re-resolve after a failure can rotate CDN tokens, so a pinned id would miss
+ * and fall back to the 4K rung again. Once per source: if 1080p fails too,
+ * the source is abandoned as before.
+ */
+export function planQualityStepDown(
+  result: Pick<ProviderResolveResult, "streams" | "selectedStreamId"> | null | undefined,
+  current: RecoveryQualityCeiling | null,
+): RecoveryQualityCeiling | null {
+  const selected = result?.streams.find((stream) => stream.id === result.selectedStreamId);
+  const sourceId = selected?.sourceId;
+  const rank = selected?.qualityRank;
+  if (!result || !selected?.url || !sourceId || rank === undefined) return null;
+  if (rank <= QUALITY_STEP_DOWN_CEILING || current?.sourceId === sourceId) return null;
+  const hasLowerRung = result.streams.some(
+    (stream) =>
+      stream.sourceId === sourceId &&
+      Boolean(stream.url) &&
+      stream.url !== selected.url &&
+      (stream.qualityRank ?? 0) > 0 &&
+      (stream.qualityRank ?? 0) <= QUALITY_STEP_DOWN_CEILING,
+  );
+  return hasLowerRung ? { sourceId, maxRank: QUALITY_STEP_DOWN_CEILING } : null;
+}
+
+/**
+ * The quality preference a stream is chosen with while a recovery ceiling
+ * holds: the ceiling, unless the user's own preference is already at or below
+ * it. Automatic preferences ("auto", "best", "max", none) and "4k" are capped.
+ */
+export function capQualityPreference(
+  preference: string | undefined,
+  ceiling: RecoveryQualityCeiling | null,
+): string | undefined {
+  if (!ceiling) return preference;
+  // A resolution ("720", "720p"), not any leading digits: "4k" is not 4.
+  const height = /^(\d{3,4})p?$/.exec(preference?.trim().toLowerCase() ?? "")?.[1];
+  if (height && Number(height) <= ceiling.maxRank) return preference;
+  return String(ceiling.maxRank);
+}

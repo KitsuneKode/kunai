@@ -38,6 +38,7 @@ import {
   resolvePlaybackResolvePolicy,
 } from "@/app/playback/playback-resolve-policy";
 import { invalidateEpisodePlaybackCaches } from "@/app/playback/playback-source-cache-invalidation";
+import { capQualityPreference } from "@/app/playback/playback-source-failover";
 import {
   isRecentPlaybackStreamFresh,
   recentPlaybackStreamKey,
@@ -739,9 +740,7 @@ export async function acquireEpisodeStream(
         problemAction,
       });
 
-      if (iterationDirective.kind === "continue") {
-        return { kind: "exit", step: NEXT_ITERATION };
-      }
+      if (iterationDirective.kind === "continue") return { kind: "exit", step: NEXT_ITERATION };
 
       if (iterationDirective.kind === "restart") {
         if (iterationDirective.reason === "stream-switch-during-resolve" && streamSwitchSelection) {
@@ -872,7 +871,8 @@ export async function acquireEpisodeStream(
     stream = applyPreferredStreamSelection(
       stream,
       getPreferredStreamSelection(sourceProviderId, currentEpisode),
-      playbackQualityPreference(profileContext),
+      // A recovery step-down caps quality for the rest of this episode.
+      capQualityPreference(playbackQualityPreference(profileContext), run.recoveryQualityCeiling),
       playbackSubtitlePreference(profileContext),
       config.hdrMode,
     );

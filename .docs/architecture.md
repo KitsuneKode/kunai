@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T15:24:32Z"
+lastReviewed: "2026-11-25T05:22:20Z"
 ---
 
 # Kunai — Runtime Architecture
@@ -174,6 +174,15 @@ sources, then one compatible provider, within a per-episode attempt budget:
 - Each attempt records both the source that played and the source it asked
   for. A provider that refuses the target and lands on the previous source
   cannot make recovery bounce between the two until the budget runs out.
+- Before leaving a source, a failing rung above 1080p steps down to 1080p on
+  that same source (`planQualityStepDown`), once per source and within the same
+  attempt budget. The step-down is a quality ceiling for the rest of the
+  episode (`run.recoveryQualityCeiling`, applied through `capQualityPreference`
+  at stream selection), not a pinned stream id: ids hash the URL, and the
+  re-resolve after a failure can rotate CDN tokens. A 4K rung that failed for
+  bandwidth or a missing HEVC decoder would fail the same way on the next
+  source, so the cap is not per-source. The pin is in memory only, like every
+  automatic failover.
 
 ### Android detached-player flow
 
