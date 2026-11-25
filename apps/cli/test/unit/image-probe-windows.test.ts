@@ -64,6 +64,33 @@ describe("canProbeTerminal on Windows", () => {
 });
 
 describe("probeTerminalGraphics", () => {
+  test("asks tmux for DA1 directly when passthrough is off", async () => {
+    const stdin = new FakeStdin();
+    const stdout = {
+      isTTY: true,
+      write(chunk: string) {
+        expect(chunk).toBe("\x1b[c");
+        stdin.emit("data", "\x1b[?1;2;4c");
+      },
+    };
+    const tmux = {
+      major: 3,
+      minor: 4,
+      passthrough: "off",
+      clientTerm: "foot",
+      clientFeatures: ["sixel"],
+    };
+    expect(
+      await probeTerminalGraphics({
+        stdin,
+        stdout,
+        env: { TERM: "tmux-256color", TMUX: "/tmp/posters,123,0" },
+        tmux,
+      }),
+    ).toMatchObject({ sixel: true, kittyGraphics: false, tmux });
+    expect(stdin.rawModeCalls).toEqual([true, false]);
+  });
+
   test("waits for the wrapped Kitty reply after tmux answers DA1", async () => {
     const stdin = new FakeStdin();
     const writes: string[] = [];
@@ -77,7 +104,13 @@ describe("probeTerminalGraphics", () => {
         return true;
       },
     };
-    const tmux = { major: 3, minor: 3, passthrough: "on", clientTerm: "custom" };
+    const tmux = {
+      major: 3,
+      minor: 3,
+      passthrough: "on",
+      clientTerm: "custom",
+      clientFeatures: [],
+    };
     expect(
       await probeTerminalGraphics({
         stdin,
