@@ -9,9 +9,10 @@
 #
 # `KUNAI_CONFIG_DIR` is NOT an override — a run that relies on it silently uses
 # the live profile. The full storage-root set from `test/helpers/storage-env.ts`
-# is required, and PATH is restated because overriding HOME hides bun at
-# ~/.bun/bin. TMPDIR moves inside the sandbox too, so a harness that makes its
-# own scratch under `os.tmpdir()` is removed with it.
+# is required. PATH is kept as the caller's: its entries are absolute, so moving
+# HOME hides nothing, and restating it dropped /opt/homebrew/bin (mpv on Apple
+# Silicon). TMPDIR moves inside the sandbox too, so a harness that makes its own
+# scratch under `os.tmpdir()` is removed with it.
 #
 # This also keeps the goldens deterministic: they render an empty profile every
 # run instead of whatever happens to be in the developer's config.
@@ -54,6 +55,9 @@ fi
 # seeding the floor would re-open the wizard the moment the floor is raised.
 # Analytics stays unset with an empty installId: only an explicit keystroke may
 # turn it on, and a tape is not a keystroke. DO_NOT_TRACK backs that up.
+# The seed goes where `getKunaiPaths` will look: `$XDG_CONFIG_HOME/kunai` on
+# Linux, `%APPDATA%\kunai` on Windows (both are the sandbox below), and
+# `$HOME/Library/Application Support/kunai` on macOS, which ignores XDG.
 mkdir -p "$SANDBOX/kunai" "$SANDBOX/tmp"
 cat > "$SANDBOX/kunai/config.json" <<'JSON'
 {
@@ -65,6 +69,10 @@ cat > "$SANDBOX/kunai/config.json" <<'JSON'
   "providerRelay": { "baseUrl": "" }
 }
 JSON
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  mkdir -p "$SANDBOX/Library/Application Support/kunai"
+  cp "$SANDBOX/kunai/config.json" "$SANDBOX/Library/Application Support/kunai/config.json"
+fi
 
 # NOT `exec`: exec replaces this shell, so the EXIT trap never runs and every
 # tape leaves its sandbox behind. Run as a child and let the trap clean up.
@@ -75,5 +83,5 @@ env \
   APPDATA="$SANDBOX" LOCALAPPDATA="$SANDBOX" \
   TMPDIR="$SANDBOX/tmp" \
   DO_NOT_TRACK=1 KUNAI_CREDENTIAL_BACKEND=file \
-  PATH="$BUN_DIR:/usr/local/bin:/usr/bin:/bin" \
+  PATH="$BUN_DIR:$PATH" \
   "$BUN_BIN" "$TARGET" "$@"

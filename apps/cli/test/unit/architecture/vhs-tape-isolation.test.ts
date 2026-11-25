@@ -18,6 +18,7 @@ import { join } from "node:path";
 // launches through `isolated-kunai.sh`, which redirects every storage root.
 const VHS_DIR = join(import.meta.dir, "../../vhs");
 const CLI_ROOT = join(import.meta.dir, "../../..");
+const PATHS_MODULE = join(CLI_ROOT, "../../packages/storage/src/paths.ts");
 const WRAPPER = join(VHS_DIR, "isolated-kunai.sh");
 const tapes = readdirSync(VHS_DIR).filter((f) => f.endsWith(".tape"));
 const readTape = (tape: string) => readFileSync(join(VHS_DIR, tape), "utf8");
@@ -101,7 +102,9 @@ describe.skipIf(process.platform === "win32")("isolated-kunai.sh", () => {
         probe,
         `const keys = ${JSON.stringify([...ROOT_KEYS, "DO_NOT_TRACK", "KUNAI_CREDENTIAL_BACKEND"])};
 for (const key of keys) console.log(key + "=" + (process.env[key] ?? ""));
-const config = await Bun.file(process.env.XDG_CONFIG_HOME + "/kunai/config.json").json();
+// Read the seed where the CLI will, not where Linux keeps it: macOS ignores XDG.
+const { getKunaiPaths } = await import(${JSON.stringify(PATHS_MODULE)});
+const config = await Bun.file(getKunaiPaths().configPath).json();
 console.log("config.analytics=" + config.analytics);
 console.log("config.installId=" + config.installId);
 console.log("args=" + process.argv.slice(2).join(" "));
