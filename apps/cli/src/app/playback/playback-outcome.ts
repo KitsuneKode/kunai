@@ -4,6 +4,8 @@ import type {
 } from "@/domain/queue/queue-playback-intent";
 import type { EpisodeInfo, ShellMode, TitleInfo } from "@/domain/types";
 
+import { shellModeForQueueIntent } from "./launch-lane";
+
 /** Terminal outcomes from PlaybackPhase.execute() — shared by the phase and post-play menu. */
 export type PlaybackOutcome =
   | "back_to_search"
@@ -53,7 +55,7 @@ export function playlistAdvanceFromQueueIntent(input: {
       ...(input.intent.externalIds ? { externalIds: input.intent.externalIds } : {}),
       queuePlaybackIntent: input.intent,
     },
-    mode: input.intent.mediaKind === "anime" ? "anime" : "series",
+    mode: shellModeForQueueIntent(input.intent),
     season,
     episode,
   };

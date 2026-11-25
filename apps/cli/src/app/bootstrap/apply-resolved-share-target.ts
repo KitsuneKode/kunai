@@ -1,9 +1,9 @@
 import { resolveShareTarget, type ResolvedShareTarget } from "@/app/bootstrap/resolve-share-target";
 import { setShareBootstrapStartSeconds } from "@/app/bootstrap/share-bootstrap-start";
+import { alignSessionLane } from "@/app/playback/launch-lane";
 import type { Container } from "@/container";
 import type { KunaiShareAction, PlaybackTargetRef } from "@/domain/share/playback-target-ref";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
-import { resolveProviderIdAlias } from "@kunai/core";
 
 export type ShareBootstrapLaunch = {
   readonly query?: string;
@@ -36,25 +36,28 @@ export function applyResolvedShareSideEffects(
   if (resolved.startSeconds !== undefined) {
     setShareBootstrapStartSeconds(resolved.startSeconds);
   }
-  if (resolved.mode === "anime") {
-    container.stateManager.dispatch({
-      type: "SET_MODE",
-      mode: "anime",
-      provider: container.config.animeProvider,
-    });
-  }
+  alignSessionToShareTarget(container, resolved, ref);
+}
+
+/**
+ * The lane a share link plays in — every lane, not only anime. A YouTube or
+ * TMDB link opened in another lane used to keep the recipient's previous mode
+ * and provider. Shared by `--open`, protocol handoff and `/watch`.
+ */
+export function alignSessionToShareTarget(
+  container: Container,
+  resolved: ResolvedShareTarget,
+  ref: PlaybackTargetRef,
+): void {
   const hintedProviderId = ref.hint?.providerId?.trim();
-  if (hintedProviderId && !resolved.note?.includes("isn't available")) {
-    const normalized = resolveProviderIdAlias(hintedProviderId);
-    const provider = container.providerRegistry.get(normalized);
-    if (provider) {
-      if (resolved.mode === "anime" && provider.metadata.isAnimeProvider) {
-        container.stateManager.dispatch({ type: "SET_MODE", mode: "anime", provider: normalized });
-      } else if (resolved.mode !== "anime" && !provider.metadata.isAnimeProvider) {
-        container.stateManager.dispatch({ type: "SET_PROVIDER", provider: normalized });
-      }
-    }
-  }
+  alignSessionLane(container, {
+    mode: resolved.mode,
+    preferredProviderId:
+      hintedProviderId && !resolved.note?.includes("isn't available")
+        ? hintedProviderId
+        : undefined,
+    title: resolved.title ?? undefined,
+  });
 }
 
 function resolvedShareToBootstrap(resolved: ResolvedShareTarget): ShareBootstrapLaunch {

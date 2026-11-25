@@ -145,7 +145,7 @@ export type SearchPhaseInput = {
 };
 
 import {
-  claimQueuePlaybackLaunch,
+  claimAlignedQueueLaunch,
   episodeInfoFromQueuePlaybackLaunch,
   titleInfoFromQueuePlaybackLaunch,
 } from "@/app-shell/root-queue-bridge";
@@ -1231,7 +1231,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                   // Claim like play-queue-next does: an attached-but-unclaimed
                   // intent can never satisfy the in-flight ack CAS, so the
                   // head row would stay pending forever after it played.
-                  const launch = claimQueuePlaybackLaunch(container.queueService, queueNext.id);
+                  const launch = claimAlignedQueueLaunch(container, queueNext.id);
                   if (launch) {
                     stateManager.dispatch({
                       type: "SELECT_TITLE",
@@ -1309,7 +1309,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               continue;
             }
             // Claim the exact peeked row — do not re-peek after claim.
-            const launch = claimQueuePlaybackLaunch(container.queueService, next.id);
+            const launch = claimAlignedQueueLaunch(container, next.id);
             if (!launch) {
               logger.info("Queue-next claim failed; leaving row pending for retry", {
                 queueEntryId: next.id,

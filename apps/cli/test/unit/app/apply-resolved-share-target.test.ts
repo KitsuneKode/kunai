@@ -31,7 +31,15 @@ function createApplyContainer(
 
   const container = {
     stateManager: {
-      getState: () => ({ provider: providerId, mode: "series" as const }),
+      getState: () => ({
+        provider: providerId,
+        mode: "series" as const,
+        defaultProviders: {
+          series: providerId,
+          anime: overrides.animeProvider ?? "allanime",
+          youtube: "youtube",
+        },
+      }),
       dispatch: (event: { type: string; note?: string; mode?: string; provider?: string }) => {
         if (event.type === "SET_PLAYBACK_FEEDBACK" && event.note) notes.push(event.note);
         if (event.type === "SET_MODE" && event.mode) modes.push(event.mode);
@@ -39,7 +47,10 @@ function createApplyContainer(
         if (event.type === "SET_MODE" && event.provider) providers.push(event.provider);
       },
     },
-    config: { animeProvider: overrides.animeProvider ?? "allanime" },
+    config: {
+      animeProvider: overrides.animeProvider ?? "allanime",
+      getRaw: () => ({ titleProviderPreferences: {} }),
+    },
     providerRegistry: {
       get: (id: string) =>
         available.has(id)
@@ -104,6 +115,18 @@ describe("applyResolvedShareSideEffects", () => {
       },
     );
     expect(modes).toContain("anime");
+  });
+
+  // Sol review #5: only anime used to switch lane, so a YouTube link opened in
+  // a series session kept `series / <series provider>`.
+  it("moves a series session into the YouTube lane for a YouTube link", () => {
+    const { container, modes } = createApplyContainer();
+    applyResolvedShareSideEffects(
+      container,
+      { title: { id: "youtube:abc", type: "movie", name: "Clip" }, mode: "youtube" },
+      { anchor: { by: "catalog", ns: "youtube", id: "abc" }, kind: "video" },
+    );
+    expect(modes).toEqual(["youtube"]);
   });
 
   it("surfaces resolver notes without crashing", () => {

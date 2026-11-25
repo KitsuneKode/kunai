@@ -5,6 +5,7 @@ import { resolveHistorySelectionLaunch } from "./history-selection-launch";
 import { defaultPaletteWorkflowPort, type PaletteWorkflowPort } from "./palette-workflow-port";
 import { waitForRootHistorySelection } from "./root-history-bridge";
 import {
+  alignSessionForQueueLaunch,
   episodeInfoFromQueuePlaybackLaunch,
   titleInfoFromQueuePlaybackLaunch,
 } from "./root-queue-bridge";
@@ -147,6 +148,7 @@ async function openRootQueueSelection(
   await workflows.openOverlay(container, { type: "queue" });
   const selection = await selectionPromise;
   if (!selection) return "handled";
+  alignSessionForQueueLaunch(container, selection);
   // selection.intent is the beginPlayback return value — do not rebuild/reattach.
   return {
     type: "history-entry",

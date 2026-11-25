@@ -6,6 +6,7 @@
 // =============================================================================
 
 import { primeShareBootstrapStartSeconds } from "@/app/bootstrap/share-bootstrap-start";
+import { alignSessionLane } from "@/app/playback/launch-lane";
 import type { SearchPhaseInput } from "@/app/search/SearchPhase";
 import {
   createPendingBootstrap,
@@ -239,14 +240,7 @@ export class SessionController {
           }
           if (typeof outcome === "object" && outcome.type === "playlist-advance") {
             pending.initialTitle = outcome.titleInfo;
-            const targetMode = outcome.mode;
-            if (targetMode !== stateManager.getState().mode) {
-              stateManager.dispatch({
-                type: "SET_MODE",
-                mode: targetMode,
-                provider: stateManager.getState().defaultProviders[targetMode],
-              });
-            }
+            alignSessionLane(this.container, { mode: outcome.mode, title: outcome.titleInfo });
             if (outcome.episode !== undefined) {
               stateManager.dispatch({
                 type: "SELECT_EPISODE",
