@@ -743,6 +743,9 @@ export function RootOverlayShell({
     readonly actionId: NotificationActionId;
   } | null>(null);
   const [historySourceChoiceTitleId, setHistorySourceChoiceTitleId] = useState<string | null>(null);
+  // Keyed to this overlay instance, so a fresh History open starts unfocused.
+  const [historyFilterOwner, setHistoryFilterOwner] = useState<object | null>(null);
+  const historyFilterFocused = historyFilterOwner === overlay;
   const [historyPendingDelete, setHistoryPendingDelete] = useState<HistoryDeletePending | null>(
     null,
   );
@@ -1242,9 +1245,7 @@ export function RootOverlayShell({
   // inbox opened by direct dispatch can strand one; without this it would fire
   // against the next palette-opened session and play the wrong title.
   useEffect(() => {
-    if (overlay.type !== "history") {
-      return;
-    }
+    if (overlay.type !== "history") return;
 
     let cancelled = false;
     setHistoryError(null);
@@ -1580,13 +1581,9 @@ export function RootOverlayShell({
   };
 
   useInput((input, key) => {
-    if (commandMode) {
-      return;
-    }
+    if (commandMode) return;
 
-    if (overlay.type === "settings") {
-      return;
-    }
+    if (overlay.type === "settings") return;
 
     const cancelActive = isOverlayCancelActive({
       overlay,
@@ -1689,9 +1686,7 @@ export function RootOverlayShell({
         return;
       }
       if (key.return) {
-        if (Date.now() < tracksFrozenUntil) {
-          return;
-        }
+        if (Date.now() < tracksFrozenUntil) return;
         if (tracksNav.focusedPane === "sections") {
           setTracksNav((nav) => tracksPanelNavReducer(nav, { type: "enter-section" }, navCtx));
           return;
@@ -1711,6 +1706,7 @@ export function RootOverlayShell({
       }
       return;
     }
+    if (key.escape && historyFilterFocused && !filterQuery) return setHistoryFilterOwner(null);
     if (key.escape) {
       const backAction = resolveOverlayBackStack({
         cancelActive: shouldHandleOverlayEscape({
@@ -1736,6 +1732,7 @@ export function RootOverlayShell({
           });
         } else {
           setFilterQuery("");
+          setHistoryFilterOwner(null);
           setSelectedIndex(0);
         }
         return;
@@ -1790,6 +1787,9 @@ export function RootOverlayShell({
           onRedraw,
           pendingDelete: historyPendingDelete,
           setPendingDelete: setHistoryPendingDelete,
+          filterQuery,
+          filterFocused: historyFilterFocused,
+          setFilterFocused: (focused) => setHistoryFilterOwner(focused ? overlay : null),
           onHistoryMutated,
           onConfirmSelection: (selection, options) => {
             if (selection) {

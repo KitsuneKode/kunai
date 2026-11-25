@@ -2,7 +2,7 @@
 title: Kunai CLI Keybindings
 description: Screen-by-screen keybinding map for the Kunai terminal shell.
 status: current
-lastReviewed: "2026-11-17"
+lastReviewed: "2026-11-25T11:29:08Z"
 ---
 
 # Kunai CLI Keybindings
@@ -204,6 +204,14 @@ history pickers.
 | `Enter`   | Confirm selected row                                                             |
 | `Esc`     | Clear filter first; close picker if filter is already empty                      |
 | `/`       | Command palette only when the picker router gives command ownership to the shell |
+
+Library and History lists filter as you type and also bind single letters to
+the highlighted row (`x`/`p`/`2` in Library; `m`/`w`/`q`/`x`/`l`/`s` in History).
+A filter is a focus (`routeListFilterKey`): a key is an action only while nothing
+is being filtered. Once the filter holds text, or `Ctrl+F` opened it, every
+printable key is text, so "Spy x Family" never arms a delete. `Esc` leaves the
+filter before it closes the surface; `Enter` still opens the highlighted row. A
+title starting with an action letter needs `Ctrl+F` first.
 
 For download episode checklists specifically, `Space` toggles the highlighted
 episode, `Ctrl+A` selects all visible episodes, and `Enter` queues the selected
