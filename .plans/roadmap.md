@@ -33,6 +33,8 @@ Current execution: [watching release candidate](./2026-10-22-watching-release-ca
 
 Quality push: [road to 9.5 — every reviewed dimension, competitors, workstreams W1–W6](./2026-11-24-road-to-9-5.md).
 
+Launch and retention: [v0.4.0 launch sequence and a reason to come back](./2026-11-27-launch-and-retention.md).
+
 Players and mobile order: [VLC and IINA beside mpv, and the mobile sequence](./2026-11-24-players-vlc-iina-and-mobile-order.md).
 
 Watching UX follow-up: [first-run, playback, Tracks and shell coherence](./2026-10-23-watching-ux-coherence.md).

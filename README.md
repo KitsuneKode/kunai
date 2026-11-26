@@ -28,10 +28,12 @@ irm https://kunai.kitsunekode.in/install.ps1 | iex
 Then run:
 
 ```bash
-kunai --setup && kunai -S "Dune"
+kunai                 # first run: a short setup, then titles to pick from
+kunai -S "Frieren"    # or search on launch
 ```
 
-Native binaries include their runtime. Install mpv for desktop playback.
+Native binaries include their runtime. Kunai plays in mpv, or in VLC if that is
+what you have. It does not host or mirror media; see the [disclaimer](#disclaimer).
 
 [Installation guide](https://kunai.kitsunekode.in/docs/users/install-and-update) ·
 [What you can do](https://kunai.kitsunekode.in/docs/users/what-you-can-do) ·
@@ -189,13 +191,14 @@ for supported workflows and limitations. Mobile terminal work is
 ### Controls to Start With
 
 ```text
-/       command palette
-Tab     switch between series, anime and YouTube modes
-o       open Tracks during playback
-k       choose quality during playback
-r       recover the current stream
-Shift+F try the next compatible provider
-Ctrl+C  quit
+/             command palette
+Tab           switch between series, anime and YouTube modes
+o             open Tracks during playback
+k             choose quality during playback
+r             recover the current stream
+Shift+F       try the next compatible provider
+Ctrl+Shift+S  copy a link that starts at this moment (in mpv)
+Ctrl+C        quit
 ```
 
 Movies and TV series share series mode. The footer shows the shortcuts for the

@@ -55,6 +55,10 @@ describe("README quick-start extraction", () => {
     const readme = readFileSync(README_PATH, "utf8");
     const hero = readme.match(/<div align="center">([\s\S]*?)<\/div>/)?.[1];
     expect(hero).toContain(EXPECTED_QUICK_START[0]);
-    expect(hero).toContain('kunai --setup && kunai -S "Dune"');
+    // A bare `kunai` runs setup once and lands on titles to pick from. A chained
+    // `kunai --setup && kunai -S ...` never reaches the search: setup opens the
+    // interactive shell after saving.
+    expect(hero).toMatch(/^kunai\s+#/m);
+    expect(hero).not.toContain("&& kunai");
   });
 });
