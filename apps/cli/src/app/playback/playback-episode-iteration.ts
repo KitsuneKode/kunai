@@ -62,6 +62,7 @@ export async function runEpisodeIteration(loop: PlaybackLoopState): Promise<Play
     run.autoSourceRecoverAttempts = 0;
     run.triedFailoverSourceIds = [];
     run.startupProviderHopUsed = false;
+    run.recoveryQualityCeiling = null;
   }
   const queuedSourceOverride = playerControl.consumePendingEpisodeSourceOverride();
   if (queuedSourceOverride) {

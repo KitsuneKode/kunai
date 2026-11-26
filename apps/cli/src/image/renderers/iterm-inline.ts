@@ -4,9 +4,9 @@
 // is transmitted verbatim, so unlike sixel there is no 256-colour quantisation
 // step and no palette loss. iTerm2 defined it; VSCode 1.80+ implements it.
 //
-// Geometry is declared in *cells* (`width=Nch`), which is what keeps the image
-// inside the rectangle the shell reserved for it. Without an explicit size
-// iTerm2 scales to the image's own pixel dimensions and pushes the layout.
+// Explicit geometry keeps the image inside the shell's measured rectangle.
+
+import type { CellPixels } from "../cell-size";
 
 /**
  * Build the escape sequence that draws `png` in a `cols` x `rows` cell box.
@@ -18,7 +18,7 @@
  */
 export function buildItermInlineImage(
   png: Uint8Array,
-  options: { readonly rows: number; readonly cols: number },
+  options: { readonly rows: number; readonly cols: number; readonly pixelSize?: CellPixels },
 ): string | null {
   if (png.byteLength === 0) return null;
   if (options.rows <= 0 || options.cols <= 0) return null;
@@ -27,8 +27,8 @@ export function buildItermInlineImage(
   const args = [
     "inline=1",
     `size=${png.byteLength}`,
-    `width=${options.cols}`,
-    `height=${options.rows}`,
+    `width=${options.pixelSize ? `${options.pixelSize.width}px` : options.cols}`,
+    `height=${options.pixelSize ? `${options.pixelSize.height}px` : options.rows}`,
     "preserveAspectRatio=1",
     // The overlay manager positions every write itself, so letting the image
     // advance the cursor would desync it from Ink's idea of where it is.

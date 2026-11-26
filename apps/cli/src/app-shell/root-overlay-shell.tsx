@@ -200,6 +200,7 @@ import {
   isRootMediaPickerOverlay,
 } from "./root-overlay-model";
 import {
+  alignSessionForQueueLaunch,
   episodeInfoFromQueuePlaybackLaunch,
   hasPendingRootQueueSelection,
   resolveQueueRowPlaySelection,
@@ -1570,6 +1571,7 @@ export function RootOverlayShell({
       return;
     }
     if (played.status === "claimed" && !awaited) {
+      alignSessionForQueueLaunch(container, played.launch);
       const episode = episodeInfoFromQueuePlaybackLaunch(played.launch);
       const launchTitle = titleInfoFromQueuePlaybackLaunch(played.launch);
       forceCloseRootContent<BrowseShellResult<SearchResult>>(
@@ -1581,9 +1583,7 @@ export function RootOverlayShell({
   };
 
   useInput((input, key) => {
-    if (commandMode) return;
-
-    if (overlay.type === "settings") return;
+    if (commandMode || overlay.type === "settings") return;
 
     const cancelActive = isOverlayCancelActive({
       overlay,

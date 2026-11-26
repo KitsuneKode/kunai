@@ -1031,8 +1031,8 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
   {
     id: "library-tab",
     chord: { named: "tab" },
-    label: "Switch Library / Up Next",
-    hintLabel: "Tab → Up Next",
+    label: "Switch Library / Downloads",
+    hintLabel: "Tab → Downloads",
     scope: "library",
     group: "In the library",
     footerPriority: 25,
