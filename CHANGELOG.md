@@ -19,7 +19,8 @@ subtitle controls, and safer persistence, downloads and native installation.
   consistent Shift+F fallback action, with accurate attempt and loading states.
 - Choose VLC as the desktop player with `--player vlc` or once in Settings.
   Kunai observes it like mpv: progress, resume, auto-skip, and the next episode
-  in the same window.
+  in the same window. With VLC installed and no mpv, the default `auto` plays
+  in VLC instead of asking you to install mpv first.
 - Playback counts as started only once a video frame is decoded (audio for an
   audio-only stream). A stream that
   never decodes, or sends nothing for 15 seconds, fails over to the next

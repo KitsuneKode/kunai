@@ -54,9 +54,13 @@ export function detectPlayerPlatform(
   return normalizePlayerPlatform(platform);
 }
 
+/** Desktop players found on this machine; `--player auto` reads it. */
+export type InstalledPlayers = { readonly mpv: boolean; readonly vlc: boolean };
+
 export function resolvePlayerMode(input: {
   readonly choice: PlayerChoice;
   readonly platform: SupportedPlayerPlatform;
+  readonly installed?: InstalledPlayers;
 }): PlayerMode {
   if (input.platform === "android") {
     return {
@@ -67,5 +71,11 @@ export function resolvePlayerMode(input: {
   // Desktop VLC runs observed (`infra/player/vlc/vlc-player-service.ts`);
   // discovery looks on PATH, so this holds for BSDs and other desktops too.
   if (input.choice === "vlc") return { kind: "managed-vlc" };
+  // `auto` with VLC but no mpv plays in VLC rather than telling a new user
+  // nothing can play. With neither, mpv stays the choice so its install
+  // guidance shows.
+  if (input.choice === "auto" && input.installed?.vlc && !input.installed.mpv) {
+    return { kind: "managed-vlc" };
+  }
   return { kind: "managed-mpv" };
 }

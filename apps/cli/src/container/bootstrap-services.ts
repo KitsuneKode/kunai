@@ -5,7 +5,6 @@ import { ActivePlaybackCheckpoint } from "@/services/continuation/active-playbac
 import { setCompanionPreferenceSource } from "../app-shell/companion-policy";
 import { isInteractiveShellMounted } from "../app-shell/interactive-shell-state";
 import { setPlainModePreferenceSource } from "../app-shell/plain-mode";
-import { detectPlayerPlatform, resolvePlayerMode } from "../domain/playback/player-choice";
 import { shouldRecoverQueueOwner } from "../domain/queue/queue-owner-recovery";
 import { SessionStateManagerImpl } from "../domain/session/SessionStateManager";
 import {
@@ -15,6 +14,7 @@ import {
 } from "../infra/os/process-owner-identity";
 import { whichLive } from "../infra/os/which";
 import { HandoffPlayerService } from "../infra/player/handoff-player-service";
+import { resolveMachinePlayerMode } from "../infra/player/installed-players";
 import type { PlayerPresentationPort } from "../infra/player/player-presentation-port";
 import { PlayerControlServiceImpl } from "../infra/player/PlayerControlServiceImpl";
 import { PlayerServiceImpl } from "../infra/player/PlayerServiceImpl";
@@ -140,10 +140,7 @@ export function bootstrapServices(input: {
   } = persistence;
 
   const stateManager = new SessionStateManagerImpl({ logger });
-  const playerMode = resolvePlayerMode({
-    choice: options?.playerChoice ?? "auto",
-    platform: detectPlayerPlatform(),
-  });
+  const playerMode = resolveMachinePlayerMode(options?.playerChoice ?? "auto");
   const playerControl = new PlayerControlServiceImpl({ logger, diagnostics: diagnosticsService });
   const workControl = new WorkControlServiceImpl({ logger, diagnostics: diagnosticsService });
   const playerPresentation: PlayerPresentationPort = {
