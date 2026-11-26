@@ -520,7 +520,10 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // The Android launcher's cancellation and output bounds (#674 slice) and its
 // runtime env allowlist (#769) on top measured 3,321,113 bytes; 3245 KiB
 // leaves 1,767.
-export const NPM_BUNDLE_BUDGET_KB = 3_245;
+// Mid-stream failover (stream-unrecoverable escalation, recovery start intent)
+// and the provider-defaults revision 8 history module on top measured
+// 3,323,126 bytes; 3247 KiB leaves 1,802.
+export const NPM_BUNDLE_BUDGET_KB = 3_247;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
