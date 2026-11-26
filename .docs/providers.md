@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-26T11:41:21Z"
+lastReviewed: "2026-11-26T16:28:50Z"
 ---
 
 # Kunai — Provider Guide
@@ -1010,6 +1010,36 @@ All active providers implement `CoreProviderModule` with `resolve(input, context
 
 Legacy Playwright providers live under `.archive/legacy/apps/cli/src/providers/` as reference-only code.
 For current beta publish scope, Playwright is not a required runtime dependency.
+
+## Provider DNS (DNS-over-HTTPS)
+
+Some ISP resolvers sinkhole provider frontends and APIs (verified 2026-11-25:
+`scrapper.rivestream.app` resolved to a blackhole on the system resolver and
+answered 200 through DoH on the same network). A poisoned connection hangs into
+the provider's own attempt timeout instead of failing, so "retry on error"
+never helps; the name has to resolve correctly the first time.
+
+- **One resolver per session**, `createDohResolver` in
+  `packages/core/src/doh-resolver.ts`, built by
+  `createProviderDnsResolver` in `apps/cli/src/container/bootstrap-providers.ts`
+  and gated on the live `providerDns` setting (default `doh`) plus
+  `KUNAI_DOH_DISABLE=1`. It queries Cloudflare's IP-literal endpoints
+  (`1.1.1.1`, then `1.0.0.1`), caches answers for their TTL (30 s to 10 min),
+  shares concurrent lookups, and opens a 10-minute breaker after two
+  unreachable lookups so a network that blocks 1.1.1.1 pays one bounded query,
+  not one per request. `null` always means "use system DNS".
+- **Metadata only.** `createRelayFetchPort` routes provider `fetch` through
+  `createDohFetch` (`packages/relay/src/doh-transport.ts`): pinned dial of the
+  DoH answer with TLS verified against the original hostname, redirects
+  followed hop by hop, `Content-Encoding` decoded. IP literals, `localhost`,
+  single-label and private-suffix names, proxied requests, NXDOMAIN, and public
+  names answering with private addresses all go to native fetch unchanged.
+- **Probes never use DoH.** The player resolves media hosts with system DNS, so
+  the port's `probeFetch` does too and `verifyCandidateStream` probes with it.
+  A probe that resolved through DoH could approve a stream mpv cannot reach.
+- **curl-impersonate** callers add `curlResolveArgs(url)`: `--resolve` with the
+  shared answer, or nothing. `--doh-url` was rejected because curl does not fall
+  back to system DNS when the DoH endpoint is blocked.
 
 ## User-installed Stremio addons
 

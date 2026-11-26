@@ -14,7 +14,7 @@ import { ProviderHttpError } from "../runtime/fetch";
 import { scrubbedChildEnv } from "../shared/child-env";
 import {
   curlArgvHead,
-  curlCipherArgs,
+  curlTransportArgs,
   isCloudflareChallengeText,
   resolveCurlCandidate,
 } from "../shared/curl-impersonate";
@@ -348,7 +348,7 @@ export async function hianimeFetchText(
     `Referer: ${referer}`,
     "--max-time",
     String(options.maxTimeSec ?? 12),
-    ...curlCipherArgs(curl.impersonates),
+    ...(await curlTransportArgs(curl, url, options.signal)),
     "-w",
     "\n%{http_code}",
     // Everything after `--` is an operand, never an option — the URL arrives

@@ -387,6 +387,21 @@ Environment overrides: `KUNAI_RELAY_BASE_URL`, `KUNAI_RELAY_TOKEN`. Leave the to
 
 Source-checkout smoke and verification steps: [Debugging workflow](/docs/developer/debugging-workflow) and `apps/relay-server/README.md`.
 
+## When your network blocks provider sites
+
+Some internet providers answer DNS lookups for streaming sites with a dead
+address, so a provider looks broken even though it works everywhere else.
+Kunai looks up provider site names through DNS-over-HTTPS (Cloudflare,
+`1.1.1.1`) to get past that, and falls back to your normal DNS when Cloudflare
+cannot be reached.
+
+- Video is still looked up with your normal DNS, the same way your player does,
+  so Kunai never approves a stream your player cannot open.
+- Local addresses (`localhost`, `*.lan`, `*.local`, IP addresses) and requests
+  that go through an `HTTPS_PROXY` are never sent to Cloudflare.
+- Turn it off in **Settings › Sources › DNS-over-HTTPS**, or launch with
+  `KUNAI_DOH_DISABLE=1`.
+
 ## Stremio addons
 
 Stremio addons are experimental and off by default. Kunai ships none. Enable them in Settings → Sources → Experimental: Stremio addons or run kunai addons enable.

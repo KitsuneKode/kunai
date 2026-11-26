@@ -42,8 +42,10 @@ import {
   normalizeContinueSourcePreference,
   normalizeHdrMode,
   normalizeMaxConcurrentDownloads,
+  normalizeModePatch,
   normalizeMpvReconnectAttempts,
   normalizePrePlayConfirm,
+  normalizeProviderDns,
   normalizeRecoveryMode,
   normalizeRunwayTarget,
   normalizeStartupPriority,
@@ -321,6 +323,7 @@ export class ConfigServiceImpl implements ConfigService {
       continueSourcePreference: normalizeContinueSourcePreference(loaded.continueSourcePreference),
       prePlayConfirm: normalizePrePlayConfirm(loaded.prePlayConfirm),
       startupPriority: normalizeStartupPriority(loaded.startupPriority),
+      providerDns: normalizeProviderDns(loaded.providerDns),
       hdrMode: normalizeHdrMode(loaded.hdrMode),
       mpvInProcessStreamReconnectMaxAttempts: normalizeMpvReconnectAttempts(
         loaded.mpvInProcessStreamReconnectMaxAttempts,
@@ -953,6 +956,11 @@ export class ConfigServiceImpl implements ConfigService {
   get startupPriority(): StartupPriority {
     return this.config.startupPriority;
   }
+
+  get providerDns(): "doh" | "system" {
+    return this.config.providerDns;
+  }
+
   get player(): KitsuneConfig["player"] {
     return this.config.player;
   }
@@ -1246,23 +1254,7 @@ export class ConfigServiceImpl implements ConfigService {
       ...(partial.seenTips !== undefined
         ? { seenTips: normalizeStringList(partial.seenTips) }
         : null),
-      ...(partial.recoveryMode !== undefined
-        ? { recoveryMode: normalizeRecoveryMode(partial.recoveryMode) }
-        : null),
-      ...(partial.continueSourcePreference !== undefined
-        ? {
-            continueSourcePreference: normalizeContinueSourcePreference(
-              partial.continueSourcePreference,
-            ),
-          }
-        : null),
-      ...(partial.prePlayConfirm !== undefined
-        ? { prePlayConfirm: normalizePrePlayConfirm(partial.prePlayConfirm) }
-        : null),
-      ...(partial.startupPriority !== undefined
-        ? { startupPriority: normalizeStartupPriority(partial.startupPriority) }
-        : null),
-      ...(partial.hdrMode !== undefined ? { hdrMode: normalizeHdrMode(partial.hdrMode) } : null),
+      ...normalizeModePatch(partial),
       ...(partial.mpvInProcessStreamReconnectMaxAttempts !== undefined
         ? {
             mpvInProcessStreamReconnectMaxAttempts: normalizeMpvReconnectAttempts(

@@ -207,6 +207,12 @@ export interface KitsuneConfig {
   autoCleanupWatched: boolean;
   recoveryMode: RecoveryMode;
   startupPriority: StartupPriority;
+  /**
+   * How provider metadata hostnames resolve. `doh` asks DNS-over-HTTPS
+   * (Cloudflare, falling back to system DNS when unreachable); `system` uses
+   * the OS resolver only. Media hosts always use system DNS, like the player.
+   */
+  providerDns: "doh" | "system";
   hdrMode: HdrMode;
   /** `--player` wins; this is the choice when the flag is absent. */
   player: PlayerPreference;

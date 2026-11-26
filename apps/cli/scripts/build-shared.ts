@@ -487,7 +487,9 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // bytes; 3231 KiB leaves 3,701 bytes.
 // The analytics client (v2 ping, neutral consent, ping log, release markers,
 // #800) on top measured 3,313,118 bytes; 3239 KiB leaves 3,618 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_239;
+// Provider DNS-over-HTTPS (#829: shared resolver, curl --resolve transport, the
+// providerDns setting) on top measured 3,318,418 bytes; 3243 KiB leaves 2,414.
+export const NPM_BUNDLE_BUDGET_KB = 3_243;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

@@ -147,6 +147,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   autoCleanupWatched: false,
   recoveryMode: "guided",
   startupPriority: DEFAULT_STARTUP_PRIORITY,
+  providerDns: "doh",
   hdrMode: "auto",
   player: "auto",
   offlineArtworkCacheEnabled: true,
