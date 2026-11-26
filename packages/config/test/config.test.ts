@@ -104,7 +104,7 @@ describe("@kunai/config parse boundary", () => {
 
   test("defaults put VidLink first in the series automatic lane", () => {
     expect(DEFAULT_CONFIG.provider).toBe("vidlink");
-    expect(DEFAULT_CONFIG.providerPriority).toEqual(["rivestream", "vidrock", "movy", "videasy"]);
+    expect(DEFAULT_CONFIG.providerPriority).toEqual(["movy", "rivestream", "vidrock", "videasy"]);
   });
 
   test("anime lane leads with a provider that answers and keeps the rest of the order behind it", () => {
@@ -112,8 +112,8 @@ describe("@kunai/config parse boundary", () => {
     // The array holds the rest of the order — `createProviderPrioritySnapshot`
     // prepends the lane default — so it must not repeat it.
     expect(DEFAULT_CONFIG.animeProviderPriority).toEqual([
-      "animegg",
       "kickassanime",
+      "animegg",
       "miruro",
       "allanime",
     ]);
@@ -124,7 +124,7 @@ describe("@kunai/config parse boundary", () => {
     // Load migrates an inherited old default only when the on-disk revision is
     // behind this one. Changing a default without bumping it strands every user
     // who saved a setting on the previous default.
-    expect(DEFAULT_CONFIG.providerDefaultsRevision).toBe(7);
+    expect(DEFAULT_CONFIG.providerDefaultsRevision).toBe(8);
   });
 
   test("no providers are disabled by default", () => {

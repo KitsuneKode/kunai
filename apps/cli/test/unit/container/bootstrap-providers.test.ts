@@ -57,14 +57,15 @@ describe("production provider defaults", () => {
   });
 
   test("the production lane leads and fallback order account for the default attempt budget", async () => {
-    // Successful resolves from the 2026-11-23 hosted sweep, before yt-dlp was
-    // installed. Movie/series share an order and the probe uses a movie fixture.
-    // Freeze the measurements so the daily publication cannot change this test.
+    // Successful resolves from the 2026-11-26 local live runs (revision 8).
+    // Rivestream timed out and VidRock's streams answered 502 on every run, so
+    // neither appears. Movie/series share an order and the probe uses a movie
+    // fixture. Frozen so the daily publication cannot change this test.
     const resolved = [
-      { id: "vidlink", streams: 1, ms: 938 },
-      { id: "rivestream", streams: 1, ms: 5_783 },
-      { id: "hianime", streams: 1, ms: 3_493 },
-      { id: "animegg", streams: 4, ms: 21_917 },
+      { id: "vidlink", streams: 1, ms: 1_902 },
+      { id: "movy", streams: 4, ms: 5_364 },
+      { id: "hianime", streams: 1, ms: 9_365 },
+      { id: "kickassanime", streams: 1, ms: 7_546 },
     ];
     const qualified = new Set(
       resolved
@@ -78,6 +79,9 @@ describe("production provider defaults", () => {
       const lead = modules.find(({ manifest }) => manifest.mediaKinds.includes(kind));
       expect(qualified.has(lead?.providerId ?? "")).toBe(true);
     }
+    // A lead miss falls through to a qualified provider first, in both lanes.
+    const movie = modules.filter(({ manifest }) => manifest.mediaKinds.includes("movie"));
+    expect(qualified.has(movie[1]?.providerId ?? "")).toBe(true);
     const anime = modules.filter(({ manifest }) => manifest.mediaKinds.includes("anime"));
     const fallbacks = anime.slice(1);
     const firstQualified = fallbacks.findIndex(({ providerId }) => qualified.has(providerId));
