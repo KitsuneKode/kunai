@@ -29,7 +29,7 @@
   "apps/cli/src/services/playback/PlaybackSourceInventoryProjection.ts": 1092,
   "apps/cli/src/services/presence/PresenceServiceImpl.ts": 916,
   "apps/cli/src/services/providers/provider-hotfix-manifest.ts": 835,
-  "apps/cli/src/services/sync/SyncService.ts": 886,
+  "apps/cli/src/services/sync/SyncService.ts": 883,
   "packages/core/src/provider-cycle-engine.ts": 938,
   "packages/core/src/provider-engine.ts": 887,
   "packages/providers/src/allmanga/api-client.ts": 1837,

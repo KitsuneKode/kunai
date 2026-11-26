@@ -266,6 +266,12 @@ export class SyncService {
   private readonly now: () => Date;
   private readonly maxOperationsPerPass: number;
   private readonly batchSize: number;
+  /**
+   * A tracker's "come back later" deadline. Its rows defer without asking until
+   * it passes, across batches and drains: per row, 25 rows were 25 refused
+   * requests; per batch, every batch asked again. The limit is the connection's.
+   */
+  private readonly trackerBackoff = new Map<TrackerId, number>();
   private readonly shutdownController = new AbortController();
   private activeDrain: Promise<SyncPushSummary> | null = null;
   private continuationScheduled = false;
@@ -614,20 +620,11 @@ export class SyncService {
     };
     const failures: string[] = [];
 
-    /**
-     * Once a tracker says "come back later", every remaining row for that
-     * tracker in this batch is deferred without asking again.
-     *
-     * Deciding this per row is what turned one drain of 25 rows into 25
-     * requests the server had already refused — the limit is a property of the
-     * connection, not of any single payload.
-     */
-    const backOffUntil = new Map<TrackerId, Date>();
-
     for (const claim of claims) {
-      const blocked = backOffUntil.get(claim.trackerId);
-      if (blocked) {
-        this.outbox.defer({ item: claim, notBefore: blocked, errorCode: "rate-limited" });
+      const blockedUntil = this.trackerBackoff.get(claim.trackerId) ?? 0;
+      if (blockedUntil > this.now().getTime()) {
+        const notBefore = new Date(blockedUntil);
+        this.outbox.defer({ item: claim, notBefore, errorCode: "rate-limited" });
         tally.deferred += 1;
         continue;
       }
@@ -637,7 +634,7 @@ export class SyncService {
       else tally[result.bucket] += 1;
       if (result.failure) failures.push(result.failure);
       if (result.retryAfterMs !== undefined) {
-        backOffUntil.set(claim.trackerId, new Date(this.now().getTime() + result.retryAfterMs));
+        this.trackerBackoff.set(claim.trackerId, this.now().getTime() + result.retryAfterMs);
       }
     }
 
