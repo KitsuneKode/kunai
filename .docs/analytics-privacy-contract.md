@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-26T10:13:00Z"
+lastReviewed: "2026-11-26T16:26:00Z"
 ---
 
 # Analytics Privacy Contract
@@ -255,9 +255,20 @@ and carries nothing that download did not.
 Best effort only: one attempt, a 3 second timeout, no retry, every failure
 ignored, nothing printed. The updater starts the request after activation and
 never awaits it; `kunai upgrade` waits out at most that timeout after printing
-success, because its `process.exit` would otherwise cut the request off. It
-needs no consent because nothing reaches Kunai, but `DO_NOT_TRACK`, `CI` (both
-`1`, `true`, `yes`) and `KUNAI_NO_MARKER` each skip it.
+success, because its `process.exit` would otherwise cut the request off.
+
+Markers are **opt-in, like the ping** (maintainer decision, 2026-11-26):
+nothing reaches Kunai, but a fetch still tells GitHub's counter that this
+machine installed, so it follows the same explicit yes. A marker is fetched
+only when the persisted config reads as usage analytics `enabled` under the
+startup rule (`persistedAnalyticsConsent`: `analytics: "enabled"` with a
+boolean `analyticsNoticeShown`). `install.sh` checks `config.json` in the
+platform config dir, `install.ps1` parses it, `kunai upgrade` reads it with
+`readStandaloneAnalyticsConsented()`, and the background updater reads the
+loaded config. A fresh install has no config yet, so a first install never
+fetches `install.marker`; a reinstall or update by someone who said yes does.
+Even then `DO_NOT_TRACK`, `CI` (both `1`, `true`, `yes`) and `KUNAI_NO_MARKER`
+each skip it.
 
 `ping_day` stores an HMAC of the id plus version, OS, and architecture for 35
 days. `install_lifetime` stores one HMAC row per **v1** install with first-seen

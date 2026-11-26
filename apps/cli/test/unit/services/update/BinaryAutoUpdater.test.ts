@@ -71,10 +71,12 @@ describe("BinaryAutoUpdater.runOnce", () => {
     const patches: unknown[] = [];
     let installedVersion = "";
     let marker: string | undefined;
+    // Usage analytics is on (explicit consent, notice shown): the update is counted.
+    const consented = { ...enabled, analytics: "enabled", analyticsNoticeShown: true };
     const instance = new BinaryAutoUpdater({
       config: {
         // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-        getRaw: () => enabled as never,
+        getRaw: () => consented as never,
         update: async (patch) => {
           patches.push(patch);
         },
@@ -98,7 +100,7 @@ describe("BinaryAutoUpdater.runOnce", () => {
 
     await expect(instance.runOnce()).resolves.toEqual({ status: "installed", version: "0.4.0" });
     expect(installedVersion).toBe("0.4.0");
-    // An auto-update is an update: GitHub counts it through update.marker.
+    // An auto-update with analytics on is counted through update.marker.
     expect(marker).toBe("update.marker");
     expect(patches).toContainEqual(
       expect.objectContaining({ lastUpdateCheckAt: 123_000, lastKnownLatestVersion: "0.4.0" }),
@@ -149,10 +151,11 @@ describe("BinaryAutoUpdater.runOnce", () => {
       getPendingRestartVersion: async () => null,
       resolveLatestVersion: async () => "0.4.0",
       installLatest: async (options) => {
+        // Analytics is not on, so no marker: markers are opt-in like the ping.
         expect(options).toEqual({
           intent: "upgrade",
           version: "0.4.0",
-          releaseMarker: "update.marker",
+          releaseMarker: undefined,
         });
         return { status: "superseded", activeVersion: "0.5.0" };
       },

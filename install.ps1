@@ -262,10 +262,22 @@ function Test-TruthyEnv([string]$Value) {
 # from updates; Kunai receives nothing, and the request goes to the host that
 # just served the binary. Best effort only: no retry, a short timeout, every
 # failure ignored and silent. DO_NOT_TRACK, CI and KUNAI_NO_MARKER each turn it off.
+#
+# Opt-in, like Kunai's usage ping: nothing is fetched unless config.json already
+# says "analytics": "enabled" with the consent notice recorded, the same reading
+# the app makes. A first install has no config, so it is never counted.
+function Test-AnalyticsConsented {
+  $cfg = Join-Path $ConfigDir 'config.json'
+  if (-not (Test-Path -LiteralPath $cfg -PathType Leaf)) { return $false }
+  try { $doc = Get-Content -LiteralPath $cfg -Raw | ConvertFrom-Json } catch { return $false }
+  return ($doc.analytics -eq 'enabled') -and ($doc.analyticsNoticeShown -is [bool])
+}
+
 function Send-ReleaseMarker([string]$Base, [string]$Previous, [string]$Installed) {
   if ((Test-TruthyEnv $env:DO_NOT_TRACK) -or (Test-TruthyEnv $env:CI) -or (Test-TruthyEnv $env:KUNAI_NO_MARKER)) {
     return
   }
+  if (-not (Test-AnalyticsConsented)) { return }
   if (-not $Previous) { $marker = 'install.marker' }
   elseif ($Previous -ne $Installed) { $marker = 'update.marker' }
   # Reinstalling the active version is neither a new install nor an update.
