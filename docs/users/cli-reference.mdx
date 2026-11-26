@@ -151,7 +151,8 @@ More: [Share links](/docs/users/share-links).
 - **Player selection:** `--player` chooses the backend for one run. On
   desktop, `auto` and `mpv` use supervised mpv, and `--player vlc` plays in your
   own VLC (its window, hotkeys and settings), watched by Kunai for resume,
-  history, completion and recovery. Android/Termux accepts `auto`, `mpv` and
+  history, completion and recovery. If VLC is installed and mpv is not, `auto`
+  plays in VLC. Android/Termux accepts `auto`, `mpv` and
   `vlc`: `auto` opens the chooser, while `mpv` and `vlc` target those installed
   Android apps. See [Playback and recovery](/docs/users/playback-and-recovery)
   for what each player supports.

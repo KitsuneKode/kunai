@@ -48,6 +48,27 @@ describe("player choice", () => {
     }
   });
 
+  test("auto plays in VLC when VLC is installed and mpv is not, and only then", () => {
+    const auto = (installed: { mpv: boolean; vlc: boolean }) =>
+      resolvePlayerMode({ choice: "auto", platform: "linux", installed });
+    expect(auto({ mpv: false, vlc: true })).toEqual({ kind: "managed-vlc" });
+    expect(auto({ mpv: true, vlc: true })).toEqual({ kind: "managed-mpv" });
+    // Neither: mpv stays the choice so its install guidance shows.
+    expect(auto({ mpv: false, vlc: false })).toEqual({ kind: "managed-mpv" });
+    // An explicit choice is never second-guessed.
+    expect(
+      resolvePlayerMode({ choice: "mpv", platform: "linux", installed: { mpv: false, vlc: true } }),
+    ).toEqual({ kind: "managed-mpv" });
+    // Android hands off to another app whatever is installed.
+    expect(
+      resolvePlayerMode({
+        choice: "auto",
+        platform: "android",
+        installed: { mpv: false, vlc: true },
+      }),
+    ).toEqual({ kind: "android-handoff", target: "chooser" });
+  });
+
   test("normalizes Bun and Node platform values without treating unknown systems as Android", () => {
     expect(normalizePlayerPlatform("android")).toBe("android");
     expect(normalizePlayerPlatform("linux")).toBe("linux");

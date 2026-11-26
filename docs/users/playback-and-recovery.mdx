@@ -11,7 +11,9 @@ This guide covers the full playback lifecycle, from first resolve through recove
 ## Desktop VLC
 
 `kunai --player vlc` plays in VLC instead of mpv, keeping your VLC interface,
-hotkeys and settings. Kunai talks to VLC through a private control interface on
+hotkeys and settings. With the default `--player auto`, Kunai also uses VLC when
+it is installed and mpv is not, so a first play works without installing
+anything. Kunai talks to VLC through a private control interface on
 `127.0.0.1` (its password is never on the command line), so VLC playback still
 gets:
 

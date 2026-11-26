@@ -65,7 +65,11 @@ describe("contract conformance", () => {
 
     expect(main).toContain("playerChoice: args.player");
     expect(container).toContain('options?.playerChoice ?? "auto"');
-    expect(container).toContain("resolvePlayerMode");
+    // Through the machine-level resolver, which adds the installed players.
+    expect(container).toContain("resolveMachinePlayerMode");
+    expect(readRepoFile("apps/cli/src/infra/player/installed-players.ts")).toContain(
+      "resolvePlayerMode",
+    );
   });
 
   test("every player capability has a production behavior reader", () => {
