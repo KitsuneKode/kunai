@@ -1,5 +1,5 @@
 import { noteForExternalOpenFailure } from "@/app-shell/external-open-fallback";
-import { resolveHistorySelectionLaunch } from "@/app-shell/history-selection-launch";
+import { confirmHistoryOverlaySelection } from "@/app-shell/history-selection-launch";
 import { useLineEditor } from "@/app-shell/line-editor";
 import { buildQueueRestoreDeps, buildQueueRestoreStatus } from "@/app-shell/queue-restore";
 import { forceCloseRootContent, getRootContentSession } from "@/app-shell/root-content-state";
@@ -7,7 +7,6 @@ import {
   applyMediaItemSessionRouting,
   playbackIntentFromMediaItem,
 } from "@/app/playback/notification-media-session";
-import { applyProviderPickerSelection } from "@/app/playback/playback-provider-switch";
 import type { Container } from "@/container";
 import type { HistoryReleaseSignal } from "@/domain/continuation/history-bucket";
 import type { ContinueHistoryRelease } from "@/domain/continuation/history-reconciliation";
@@ -181,8 +180,6 @@ import { QueueShell } from "./queue-shell";
 import type { QueueViewRow } from "./queue-view";
 import { buildQueueView } from "./queue-view";
 import {
-  hasPendingRootHistorySelection,
-  resolveRootHistorySelection,
   releaseProgressToContinueHistoryRelease,
   type RootHistorySelection,
 } from "./root-history-bridge";
@@ -200,6 +197,7 @@ import {
   isRootChoiceOverlay,
   isRootMediaPickerOverlay,
 } from "./root-overlay-model";
+import { createRootPickerActions } from "./root-overlay-taps";
 import {
   alignSessionForQueueLaunch,
   episodeInfoFromQueuePlaybackLaunch,
@@ -237,7 +235,12 @@ import type {
   ShellPanelLine,
 } from "./types";
 import { toShellAction } from "./types";
-import { handleHistoryOverlayInput, type HistoryDeletePending } from "./use-history-overlay-input";
+import {
+  activateSelectedHistoryRow,
+  handleHistoryOverlayInput,
+  type HistoryDeletePending,
+  type HistoryOverlayInputContext,
+} from "./use-history-overlay-input";
 import {
   createNotificationsOverlayState,
   handleNotificationsOverlayInput,
@@ -1580,6 +1583,48 @@ export function RootOverlayShell({
     }
   };
 
+  const historyTapsLive = !commandMode && historyPendingDelete === null;
+  const activateHistoryRowAt = (index: number) =>
+    activateSelectedHistoryRow({ ...buildHistoryInputContext(), selectedIndex: index });
+  const pickerActions = createRootPickerActions({
+    container,
+    overlay,
+    commandMode,
+    pickerSelectedIndex,
+    providerOptions: filteredProviderOptions,
+    mediaPickerOptions: filteredGenericPickerOptions,
+    setSelectedIndex,
+  });
+  // One context for History's keys and taps, so a tap runs exactly the path
+  // Enter runs (source choice, launch routing, diagnostics).
+  const buildHistoryInputContext = (): HistoryOverlayInputContext => ({
+    container,
+    historyView,
+    historySelections,
+    historyPickerContext,
+    selectedIndex,
+    sourceChoiceTitleId: historySourceChoiceTitleId,
+    sourcePreference: continueSourcePreference,
+    setSourceChoiceTitleId: setHistorySourceChoiceTitleId,
+    setHistoryTypeFilter,
+    setHistoryTab,
+    setSelectedIndex,
+    setOverlayStatus: (status) => setOverlayStatus(status),
+    onRedraw,
+    pendingDelete: historyPendingDelete,
+    setPendingDelete: setHistoryPendingDelete,
+    filterQuery,
+    filterFocused: historyFilterFocused,
+    setFilterFocused: (focused) => setHistoryFilterOwner(focused ? overlay : null),
+    onHistoryMutated,
+    onConfirmSelection: (selection, options) =>
+      confirmHistoryOverlaySelection(container, selection, {
+        preference: continueSourcePreference,
+        sourceOverride: options?.sourceOverride,
+        setOverlayStatus,
+      }),
+  });
+
   useInput((input, key) => {
     if (commandMode || overlay.type === "settings") return;
 
@@ -1766,70 +1811,7 @@ export function RootOverlayShell({
       return;
     }
     if (overlay.type === "history") {
-      if (
-        handleHistoryOverlayInput(input, key, {
-          container,
-          historyView,
-          historySelections,
-          historyPickerContext,
-          selectedIndex,
-          sourceChoiceTitleId: historySourceChoiceTitleId,
-          sourcePreference: continueSourcePreference,
-          setSourceChoiceTitleId: setHistorySourceChoiceTitleId,
-          setHistoryTypeFilter,
-          setHistoryTab,
-          setSelectedIndex,
-          setOverlayStatus: (status) => setOverlayStatus(status),
-          onRedraw,
-          pendingDelete: historyPendingDelete,
-          setPendingDelete: setHistoryPendingDelete,
-          filterQuery,
-          filterFocused: historyFilterFocused,
-          setFilterFocused: (focused) => setHistoryFilterOwner(focused ? overlay : null),
-          onHistoryMutated,
-          onConfirmSelection: (selection, options) => {
-            if (selection) {
-              void import("@/services/continuation/continuation-diagnostics").then(
-                ({ recordContinuationSourceResolution }) =>
-                  recordContinuationSourceResolution(container, {
-                    surface: "history",
-                    selection,
-                    preference: continueSourcePreference,
-                    override: options?.sourceOverride,
-                    resolved: selection.localJobId ? "local" : "stream",
-                  }),
-              );
-            }
-            // Only the palette route awaits this. Opened directly from another
-            // overlay there is no resolver, so the selection used to vanish and
-            // the overlay simply closed. Fall back to the same launch channel
-            // the inbox uses, via the shared resolver so both routes align the
-            // provider lane and record the source decision identically.
-            const awaited = hasPendingRootHistorySelection();
-            resolveRootHistorySelection(selection);
-            if (selection) {
-              // launch-playback resolves only on browse — delivered to a
-              // playback or picker session it would be a foreign result the
-              // phase loop cannot read, silently dropping the pick.
-              if (!awaited && getRootContentSession()?.kind !== "browse") {
-                setOverlayStatus("Play it from the search screen");
-                return;
-              }
-              container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
-              if (!awaited) {
-                void resolveHistorySelectionLaunch(container, selection, "history").then((launch) =>
-                  launch
-                    ? forceCloseRootContent<BrowseShellResult<SearchResult>>({
-                        type: "launch-playback",
-                        launch,
-                      })
-                    : false,
-                );
-              }
-            }
-          },
-        }) === "handled"
-      ) {
+      if (handleHistoryOverlayInput(input, key, buildHistoryInputContext()) === "handled") {
         return;
       }
     }
@@ -2026,17 +2008,7 @@ export function RootOverlayShell({
     }
     if (key.return) {
       if (overlay.type === "provider_picker") {
-        const picked = filteredProviderOptions[selectedIndex]?.value;
-        if (picked) {
-          void (async () => {
-            await applyProviderPickerSelection({
-              container,
-              pickedProviderId: picked,
-              reason: "provider-picker-switch",
-            });
-          })();
-        }
-        container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" });
+        pickerActions.activateProviderOption(selectedIndex);
         return;
       } else if (overlay.type === "notifications") {
         if (notificationPlayConfirm) {
@@ -2072,13 +2044,7 @@ export function RootOverlayShell({
         overlay.type === "subtitle_picker" ||
         overlay.type === "recommendation_picker"
       ) {
-        const picked = filteredGenericPickerOptions[pickerSelectedIndex]?.value ?? null;
-        if (!picked || !overlay.id) return;
-        container.stateManager.dispatch({
-          type: "RESOLVE_PICKER",
-          id: overlay.id,
-          value: picked,
-        });
+        pickerActions.activateMediaPickerOption(pickerSelectedIndex);
         return;
       }
       if (overlay.type === "downloads" || overlay.type === "library" || overlay.type === "guide") {
@@ -2547,6 +2513,8 @@ export function RootOverlayShell({
           listWidth={listWidth}
           rowWidth={rowWidth}
           pendingDelete={historyPendingDelete}
+          onRowSelect={historyTapsLive ? setSelectedIndex : undefined}
+          onRowActivate={historyTapsLive ? activateHistoryRowAt : undefined}
         />
         {commandMode ? (
           <CommandPalette
@@ -2785,6 +2753,8 @@ export function RootOverlayShell({
         overlay={overlayPanel}
         width={overlayLayout.contentColumns}
         maxLinesOverride={maxLines}
+        onOptionSelect={pickerActions.taps?.select}
+        onOptionActivate={pickerActions.taps?.activate}
       />
 
       {commandMode ? (

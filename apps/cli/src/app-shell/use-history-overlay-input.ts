@@ -241,16 +241,53 @@ const HISTORY_ACTION_KEYS: ReadonlySet<string> = new Set([
   "z",
 ]);
 
+/** The row the cursor is on, its stored selection and its continuation projection. */
+function selectedHistoryRow(ctx: HistoryOverlayInputContext) {
+  const picked = ctx.historyView.flatRows[ctx.selectedIndex]?.titleId ?? null;
+  const selected = ctx.historySelections.find((entry) => entry.titleId === picked) ?? null;
+  // SAFETY: the picker context stores projections keyed by the same title ids
+  // History rows carry; a missing entry stays undefined.
+  const projection = picked
+    ? (ctx.historyPickerContext.projections?.get(picked) as ContinuationProjection | undefined)
+    : undefined;
+  return { picked, selected, projection };
+}
+
+/**
+ * Play the selected History row: Enter, or a second tap on it. Asks for local
+ * or stream first when both exist and the user asked to be asked.
+ */
+export function activateSelectedHistoryRow(ctx: HistoryOverlayInputContext): void {
+  const { picked, selected, projection } = selectedHistoryRow(ctx);
+  if (!selected) return;
+  const dualSource = hasDualContinueSources(projection);
+  if (ctx.sourcePreference === "ask" && dualSource && ctx.sourceChoiceTitleId !== picked) {
+    ctx.setSourceChoiceTitleId(picked);
+    ctx.setOverlayStatus("Choose source: l local, s stream, Esc cancel");
+    return;
+  }
+  const action = resolveContinueSourceAction(projection, ctx.sourcePreference);
+  if (ctx.sourcePreference === "ask" && dualSource && !action) {
+    ctx.setSourceChoiceTitleId(picked);
+    ctx.setOverlayStatus("Choose source: l local, s stream, Esc cancel");
+    return;
+  }
+  ctx.onConfirmSelection(
+    buildRootHistorySelection(
+      selected,
+      ctx.historyPickerContext.nextReleases,
+      ctx.historyPickerContext.projections,
+      { sourcePreference: ctx.sourcePreference },
+    ),
+  );
+}
+
 export function handleHistoryOverlayInput(
   input: string,
   key: LineEditorKey,
   ctx: HistoryOverlayInputContext,
 ): HistoryOverlayInputResult {
-  const picked = ctx.historyView.flatRows[ctx.selectedIndex]?.titleId ?? null;
-  const selected = ctx.historySelections.find((entry) => entry.titleId === picked) ?? null;
-  const projection = picked
-    ? (ctx.historyPickerContext.projections?.get(picked) as ContinuationProjection | undefined)
-    : undefined;
+  const { picked, selected } = selectedHistoryRow(ctx);
 
   if (ctx.pendingDelete) {
     if (input.toLowerCase() === "y") {
@@ -425,26 +462,7 @@ export function handleHistoryOverlayInput(
     return "handled";
   }
   if (key.return && selected) {
-    const dualSource = hasDualContinueSources(projection);
-    if (ctx.sourcePreference === "ask" && dualSource && ctx.sourceChoiceTitleId !== picked) {
-      ctx.setSourceChoiceTitleId(picked);
-      ctx.setOverlayStatus("Choose source: l local, s stream, Esc cancel");
-      return "handled";
-    }
-    const action = resolveContinueSourceAction(projection, ctx.sourcePreference);
-    if (ctx.sourcePreference === "ask" && dualSource && !action) {
-      ctx.setSourceChoiceTitleId(picked);
-      ctx.setOverlayStatus("Choose source: l local, s stream, Esc cancel");
-      return "handled";
-    }
-    ctx.onConfirmSelection(
-      buildRootHistorySelection(
-        selected,
-        ctx.historyPickerContext.nextReleases,
-        ctx.historyPickerContext.projections,
-        { sourcePreference: ctx.sourcePreference },
-      ),
-    );
+    activateSelectedHistoryRow(ctx);
     return "handled";
   }
   if (

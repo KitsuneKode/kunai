@@ -2,7 +2,7 @@
 title: Kunai CLI Keybindings
 description: Screen-by-screen keybinding map for the Kunai terminal shell.
 status: current
-lastReviewed: "2026-11-26T11:37:02Z"
+lastReviewed: "2026-11-26T15:27:56Z"
 ---
 
 # Kunai CLI Keybindings
@@ -70,7 +70,13 @@ stops at the list boundaries; keyboard arrows still wrap. Covered results do
 not accept clicks while an overlay or command palette owns focus. This does
 not imply click support for every surface.
 
-Library and Up Next use the same select-then-open gesture. Library tabs switch
+Library, Up Next, History and every `OverlayPanel` picker (season, episode,
+subtitle, provider, recommendation) use the same select-then-open gesture,
+through one rule (`app-shell/mouse/row-tap.ts`): the first tap on a row selects
+it, a second tap on that same still-selected row runs the Enter path. Picker and
+History taps call the same functions Enter calls (`root-overlay-taps.ts`,
+`activateSelectedHistoryRow`). Termux delivers phone taps as clicks, so this is
+the touch model too. Library tabs switch
 views directly. Mouse selection and wheel movement never delete files or remove
 queue entries; their existing keyboard confirmation rules remain in effect.
 Up Next uses the same exact-row claim as Enter and refuses items already starting
