@@ -2,7 +2,7 @@
   "apps/cli/src/app-shell/browse-shell.tsx": 2926,
   "apps/cli/src/app-shell/ink-shell.tsx": 2537,
   "apps/cli/src/app-shell/keybindings.ts": 1265,
-  "apps/cli/src/app-shell/loading-shell.tsx": 1062,
+  "apps/cli/src/app-shell/loading-shell.tsx": 1061,
   "apps/cli/src/app-shell/panel-data.ts": 849,
   "apps/cli/src/app-shell/post-play-view.ts": 991,
   "apps/cli/src/app-shell/root-overlay-shell.tsx": 2821,

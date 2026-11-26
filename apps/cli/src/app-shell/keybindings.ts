@@ -1,6 +1,7 @@
 import type { LineEditorKey } from "@/app-shell/line-editor";
 import type { AppCommandId } from "@/domain/session/command-registry";
 
+import { MPV_WINDOW_KEYBINDINGS } from "./mpv-window-keys";
 import type { FooterAction, ShellAction } from "./types";
 
 /**
@@ -11,11 +12,9 @@ import type { FooterAction, ShellAction } from "./types";
  * hint row reads {@link footerHints}, so what is documented can never drift from the
  * keys that are actually bound.
  *
- * Accuracy note: the in-player ("player" scope) chords mirror the mpv Lua bridge
- * (`apps/cli/assets/mpv/kunai-bridge.lua`) exactly — `n`/`p` navigate, `b` skips,
- * `k` opens the quality picker in the terminal, Ctrl+R refreshes the stream, Alt+R
- * resumes to the saved position. Surface-specific hint builders read these bindings
- * by action id, so changing a chord here updates help/footer playback copy together.
+ * The "player" scope is the mpv window's key map too: `assets/mpv/kunai-bridge.lua`
+ * binds each key to the same action (or sends `key:<id>` for the terminal to run),
+ * and `mpv-bridge-keys.test.ts` checks the two agree.
  */
 
 export type KeyScope =
@@ -515,7 +514,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "player-quality",
     chord: { input: "k" },
     display: "k / K",
-    label: "Choose quality (in the terminal; v in mpv)",
+    label: "Choose quality",
     hintLabel: "quality",
     scope: "player",
     group: "In the player",
@@ -538,6 +537,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     group: "In the player",
     docs: { tier: "surface", order: 420 },
   },
+  ...MPV_WINDOW_KEYBINDINGS,
 
   // ── Post-play — terminal footer ──
   {

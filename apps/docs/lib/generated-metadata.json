@@ -1362,7 +1362,7 @@
       "scope": "player",
       "group": "In the player",
       "keys": "k / K",
-      "label": "Choose quality (in the terminal; v in mpv)",
+      "label": "Choose quality",
       "tier": "surface",
       "order": 400
     },

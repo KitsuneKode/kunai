@@ -5,6 +5,7 @@ import {
   isSamePlaybackGeneration,
   type PlaybackGeneration,
 } from "@/domain/playback/playback-generation";
+import { emitPlayerKeyRequest } from "@/domain/playback/player-key-requests";
 import type {
   PlaybackResult,
   PlaybackTimingMetadata,
@@ -226,6 +227,7 @@ export class PersistentMpvSession {
     },
     handleResumeSeekFromMpv: async () => this.handleResumeSeekFromMpv(),
     handleCopyShareFromMpv: async () => this.handleCopyShareFromMpv(),
+    notifyMpvKeyRequest: emitPlayerKeyRequest,
     onSkipRequestFromMpv: async (automatic) => this.onSkipRequestFromMpv(automatic),
     getCurrentPositionSeconds: () => this.currentPositionSeconds,
     setCurrentPositionSeconds: (value) => {
@@ -1453,9 +1455,7 @@ export class PersistentMpvSession {
       this.lastSkipTo = newSkipTo;
       this.ipcSession.sendUnchecked(["set_property", "user-data/kunai-skip-to", newSkipTo]);
     }
-    if (!activeSkip || !this.ipcSession || this.skippedSegments.has(activeSkip.key)) {
-      return false;
-    }
+    if (!activeSkip || !this.ipcSession || this.skippedSegments.has(activeSkip.key)) return false;
     this.skippedSegments.add(activeSkip.key);
     await this.ipcSession.send(["seek", activeSkip.endSeconds, "absolute"], 1_000);
     options.onPlaybackEvent?.({ type: "segment-skipped", kind: activeSkip.kind, automatic: true });

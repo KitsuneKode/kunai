@@ -2,7 +2,7 @@
 title: Kunai CLI Keybindings
 description: Screen-by-screen keybinding map for the Kunai terminal shell.
 status: current
-lastReviewed: "2026-11-26T10:13:11Z"
+lastReviewed: "2026-11-26T11:37:02Z"
 ---
 
 # Kunai CLI Keybindings
@@ -318,3 +318,13 @@ it does not appear in the `?` overlay or any footer.
 | `r` | Recover during active playback; replay after playback   | Context is visible and acceptable                                                    |
 | `f` | Favourite while browsing; fallback elsewhere            | Bare `f` is browse-only; fallback is `Shift+F` in loading, player, and post-playback |
 | `e` | Episode picker in playback surfaces                     | Same intent across surfaces                                                          |
+
+## mpv window
+
+The `player` scope is the mpv window's key map too. `kunai-bridge.lua` binds
+each help key to the same action — directly where it has a verb (`n`, `p`,
+`b`, `k`, `o`, Ctrl+R, Alt+R), otherwise by sending `key:<binding id>`, which
+the playback shell resolves through `resolvePlayerKeyRequest` exactly as a
+terminal keypress. mpv-only keys (`c`, `⇧A`, `Ctrl+⇧S`) are help-only entries
+in `mpv-window-keys.ts`. `mpv-bridge-keys.test.ts` fails if the two disagree
+or if the bridge takes mpv's `v` again.
