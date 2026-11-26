@@ -160,7 +160,11 @@ Use `/source` or `/tracks` during playback for the grouped media panel.
 Kunai monitors mpv through IPC and the Kunai bridge Lua script:
 
 - Progress reporting for history and Discord presence
-- In-process stream reconnect after network-read-dead stalls (configurable)
+- In-process stream reconnect after network-read-dead stalls (configurable).
+  A link the server refuses outright (403, 404, unreachable) or that holds no
+  playable video is not retried; Kunai moves to the next source instead.
+- A source that has sent nothing at all in 15 seconds is treated as dead and
+  skipped. A slow source that is still sending gets the full 45 seconds to start.
 - Auto-skip overlay when timing metadata and autoskip are enabled
 
 When playback recovers on its own (buffering clears, a stall resolves, or a

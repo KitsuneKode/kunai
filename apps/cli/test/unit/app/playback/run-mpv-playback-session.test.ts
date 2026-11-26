@@ -9,9 +9,13 @@ import {
 import {
   runMpvPlaybackSession,
   type StartupAbortReason,
+  type StartupTimers,
 } from "@/app/playback/run-mpv-playback-session";
 import { INITIAL_PLAYBACK_GENERATION } from "@/domain/playback/playback-generation";
-import { MANAGED_MPV_CAPABILITIES } from "@/domain/playback/player-capabilities";
+import {
+  MANAGED_MPV_CAPABILITIES,
+  type PlayerCapabilities,
+} from "@/domain/playback/player-capabilities";
 import type { EpisodeInfo, PlaybackResult, StreamInfo, TitleInfo } from "@/domain/types";
 import type {
   PlayerOptions,
@@ -107,6 +111,10 @@ async function runSession(
   options: {
     readonly result?: PlaybackResult;
     readonly activation?: { process: number; cycle: number };
+    readonly stream?: StreamInfo;
+    readonly capabilities?: PlayerCapabilities;
+    readonly localPlaybackSource?: LocalPlaybackSource;
+    readonly startupTimers?: StartupTimers;
   } = {},
 ): Promise<Harness> {
   const store = createStatusStore();
@@ -125,7 +133,7 @@ async function runSession(
   };
 
   const player: PlayerService = {
-    capabilities: MANAGED_MPV_CAPABILITIES,
+    capabilities: options.capabilities ?? MANAGED_MPV_CAPABILITIES,
     play: async (_stream, playOptions: PlayerOptions) => {
       playOptions.onGenerationActivated?.(activation);
       script(
@@ -155,7 +163,9 @@ async function runSession(
     };
 
   const result = await runMpvPlaybackSession({
-    stream: STREAM,
+    stream: options.stream ?? STREAM,
+    localPlaybackSource: options.localPlaybackSource,
+    startupTimers: options.startupTimers,
     title: TITLE,
     episode: EPISODE,
     player,
@@ -455,5 +465,100 @@ describe("runMpvPlaybackSession completion", () => {
       (seenOptions[0] as PlayerOptions & { localPlaybackSource?: LocalPlaybackSource })
         ?.localPlaybackSource,
     ).toEqual(LOCAL_SOURCE);
+  });
+});
+
+/** Startup timers the test fires by hand, keyed by their budget. */
+function manualTimers() {
+  let nextId = 1;
+  const live = new Map<number, { ms: number; callback: () => void }>();
+  const timers: StartupTimers = {
+    set: (callback, ms) => {
+      const id = nextId++;
+      live.set(id, { ms, callback });
+      return id;
+    },
+    clear: (handle) => {
+      live.delete(Number(handle));
+    },
+  };
+  return {
+    timers,
+    pending: () => [...live.values()].map((timer) => timer.ms).sort((a, b) => a - b),
+    /** Run every live timer with this budget, as if that much time had passed. */
+    fire: (ms: number) => {
+      for (const [id, timer] of live) {
+        if (timer.ms !== ms) continue;
+        live.delete(id);
+        timer.callback();
+      }
+    },
+  };
+}
+
+describe("runMpvPlaybackSession startup that receives nothing", () => {
+  test("no bytes in 15 s ends startup early, before the 45 s budget", async () => {
+    const clock = manualTimers();
+    const harness = await runSession(
+      (emit) => {
+        emit({ type: "mpv-process-started" });
+        expect(clock.pending()).toEqual([15_000, 45_000]);
+        clock.fire(15_000);
+      },
+      { startupTimers: clock.timers },
+    );
+    expect(harness.startupAborts).toEqual([{ kind: "no-bytes", timeoutMs: 15_000 }]);
+    expect(harness.feedback).toContainEqual(
+      expect.objectContaining({ detail: "Server sent nothing — trying next source" }),
+    );
+    // The abort also cleared the 45 s timer: one way out, once.
+    expect(clock.pending()).toEqual([]);
+  });
+
+  test("bytes arriving make it slow, not dead: only the full budget remains", async () => {
+    const clock = manualTimers();
+    const harness = await runSession(
+      (emit) => {
+        emit({ type: "mpv-process-started" });
+        emit({ type: "network-sample", rawInputRate: 0, cacheSpeed: 0, cacheAheadSeconds: 0 });
+        expect(clock.pending()).toEqual([15_000, 45_000]);
+        emit({ type: "network-sample", rawInputRate: 120_000, demuxerViaNetwork: true });
+        expect(clock.pending()).toEqual([45_000]);
+        clock.fire(45_000);
+      },
+      { startupTimers: clock.timers },
+    );
+    expect(harness.startupAborts).toEqual([{ kind: "no-progress", timeoutMs: 45_000 }]);
+  });
+
+  test("first progress clears both budgets", async () => {
+    const clock = manualTimers();
+    const harness = await runSession(
+      (emit) => {
+        emit({ type: "mpv-process-started" });
+        emit({ type: "playback-started" });
+        expect(clock.pending()).toEqual([]);
+      },
+      { startupTimers: clock.timers },
+    );
+    expect(harness.startupAborts).toEqual([]);
+  });
+
+  test("players that cannot report bytes, local files and yt-dlp keep the full budget", async () => {
+    const cases = [
+      { capabilities: { ...MANAGED_MPV_CAPABILITIES, networkEvidence: false } },
+      { localPlaybackSource: LOCAL_SOURCE, stream: { ...STREAM, url: LOCAL_SOURCE.filePath } },
+      { stream: { ...STREAM, requiresYtdl: true } },
+    ];
+    for (const options of cases) {
+      const clock = manualTimers();
+      await runSession(
+        (emit) => {
+          emit({ type: "mpv-process-started" });
+          expect(clock.pending()).toEqual([45_000]);
+        },
+        { ...options, startupTimers: clock.timers },
+      );
+    }
   });
 });
