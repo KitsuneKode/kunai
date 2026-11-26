@@ -1,4 +1,9 @@
 import type { PlayerStatsSample } from "./mpv-stats";
+import {
+  hasDecodedVideo,
+  readSelectedVideoTrack,
+  VIDEO_DECODE_GRACE_SECONDS,
+} from "./playback-output-gate";
 import type { PlayerPlaybackEvent } from "./PlayerService";
 
 export interface PlaybackWatchdog {
@@ -24,6 +29,8 @@ export function createPlaybackWatchdog(
     networkReadDeadAfterMs?: number;
     networkSampleEveryMs?: number;
     slowNetworkAfterMs?: number;
+    /** Media-clock seconds without a frame, after frames had started, before `video-lost`. */
+    videoLostAfterSeconds?: number;
   },
 ): PlaybackWatchdog {
   const intervalMs = options?.intervalMs ?? 2_500;
@@ -34,6 +41,7 @@ export function createPlaybackWatchdog(
   const networkReadDeadAfterMs = options?.networkReadDeadAfterMs ?? 8_000;
   const networkSampleEveryMs = options?.networkSampleEveryMs ?? 2_500;
   const slowNetworkAfterMs = options?.slowNetworkAfterMs ?? 6_000;
+  const videoLostAfterSeconds = options?.videoLostAfterSeconds ?? VIDEO_DECODE_GRACE_SECONDS;
   let latest: PlayerStatsSample | null = null;
   let hasProgress = false;
   let lastPosition = 0;
@@ -49,6 +57,37 @@ export function createPlaybackWatchdog(
   let bufferingSince: number | null = null;
   let emittedSlowNetwork = false;
   let lastNetworkSampleAt = 0;
+  // Frames that stop while the clock keeps running (audio plays on, picture
+  // frozen or gone), measured in media-clock seconds since the last frame.
+  let hadDecodedVideo = false;
+  let videoLostAtPosition: number | null = null;
+  let emittedVideoLost = false;
+
+  const observeVideoOutput = (sample: PlayerStatsSample) => {
+    if (hasDecodedVideo(sample)) {
+      hadDecodedVideo = true;
+      videoLostAtPosition = null;
+      emittedVideoLost = false;
+      return;
+    }
+    // Turning video off (vid=no) is a choice, and a seek or pause stops the clock.
+    const videoSelected = readSelectedVideoTrack(sample.trackList)?.selected === true;
+    if (!hadDecodedVideo || !videoSelected || sample.seeking || isPlaybackInactive(sample)) {
+      videoLostAtPosition = null;
+      return;
+    }
+    videoLostAtPosition ??= sample.positionSeconds;
+    const secondsWithoutVideo = sample.positionSeconds - videoLostAtPosition;
+    if (secondsWithoutVideo >= videoLostAfterSeconds && !emittedVideoLost) {
+      emittedVideoLost = true;
+      emit({
+        type: "stream-stalled",
+        secondsWithoutProgress: Math.round(secondsWithoutVideo),
+        stallKind: "video-lost",
+        duringStartup: false,
+      });
+    }
+  };
 
   const resetProgressClock = (observedAt: number, positionSeconds: number) => {
     lastPosition = positionSeconds;
@@ -177,6 +216,7 @@ export function createPlaybackWatchdog(
       const wasSeeking = Boolean(latest?.seeking);
       if (firstSample) resetProgressClock(sample.observedAt, sample.positionSeconds);
       latest = sample;
+      observeVideoOutput(sample);
       if (!wasSeeking && sample.seeking) {
         emittedStreamStall = false;
       }
@@ -256,6 +296,9 @@ export function createPlaybackWatchdog(
       bufferingSince = null;
       emittedSlowNetwork = false;
       lastNetworkSampleAt = 0;
+      hadDecodedVideo = false;
+      videoLostAtPosition = null;
+      emittedVideoLost = false;
     },
     stop() {
       clearInterval(timer);

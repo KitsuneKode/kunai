@@ -497,6 +497,9 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
     harness.callbacks().onFileLoaded?.({ observedAt: 1 });
     harness.callbacks().onPropertyUpdate({ name: "duration", value: 600, observedAt: 2 });
     harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 120, observedAt: 3 });
+    // With no track list yet, start waits for mpv's answer to a direct read,
+    // which real mpv sends within milliseconds — before the file could end.
+    await flushAsyncWork();
     const playbackResult = session.waitForCurrentPlayback();
     harness.callbacks().onEndFile({ reason: "eof", observedAt: 4 });
     const result = await playbackResult;

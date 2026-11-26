@@ -18,6 +18,7 @@ import {
   newMpvIpcSessionId,
   shouldUnlinkUnixSocket,
 } from "@/infra/player/mpv-ipc-endpoint";
+import { mpvIpcFailureEvents } from "@/infra/player/mpv-ipc-failure-events";
 import {
   createPlaybackProgressThrottleState,
   shouldEmitPlaybackProgress,
@@ -74,6 +75,10 @@ import {
   describeSubtitleTrackForMpv,
 } from "@/infra/player/mpv-subtitle-tracks";
 import { PlaybackAbortedError } from "@/infra/player/playback-aborted";
+import {
+  createPlaybackOutputDriver,
+  readMpvVideoOutput,
+} from "@/infra/player/playback-output-gate";
 import { findActivePlaybackSkip, type PlaybackSkipConfig } from "@/infra/player/playback-skip";
 import { createPlaybackWatchdog } from "@/infra/player/playback-watchdog";
 import type { ActivePlayerControl } from "@/infra/player/PlayerControlService";
@@ -271,7 +276,6 @@ async function launchMpvInner(
   });
   let stopRequested = false;
   let playerReadyNotified = false;
-  let playbackStartedNotified = false;
   let currentPositionSeconds = 0;
   const playbackProgressThrottle = createPlaybackProgressThrottleState();
   let mutableTiming = opts.timing ?? null;
@@ -292,11 +296,13 @@ async function launchMpvInner(
     emitPlaybackEvent({ type: "player-ready" });
     opts.onPlayerReady?.();
   };
-  const notifyPlaybackStarted = () => {
-    if (playbackStartedNotified) return;
-    playbackStartedNotified = true;
-    emitPlaybackEvent({ type: "playback-started" });
-  };
+  let outputEnded = false;
+  const output = createPlaybackOutputDriver({
+    stats,
+    readVideoOutput: async () => readMpvVideoOutput(ipcSession),
+    isCurrent: () => !outputEnded,
+    emit: emitPlaybackEvent,
+  });
   const maybeEmitPlaybackProgress = (observedAt: number) => {
     const sample = stats.latestIpcSample;
     if (
@@ -436,35 +442,22 @@ async function launchMpvInner(
         applyObservedPropertySample(stats, { name, value, observedAt });
         if (stats.latestIpcSample) {
           watchdog.observe(stats.latestIpcSample);
+          output.observe(stats.latestIpcSample);
         }
         if ((name === "time-pos" || name === "playback-time") && typeof value === "number") {
           currentPositionSeconds = value;
-          if (value > 0) {
-            notifyPlaybackStarted();
-          }
-          maybeEmitPlaybackProgress(observedAt);
+          // Progress waits for confirmed output; see playback-output-gate.
+          if (output.started) maybeEmitPlaybackProgress(observedAt);
           trySkipSegment(true);
         }
       },
       onEndFile: ({ reason, fileError, observedAt }) => {
+        outputEnded = true;
         applyEndFileEvent(stats, reason, observedAt, { fileError });
         endFileResolve?.(reason);
       },
       onCommandResult: (result) => {
-        if (!result.ok) {
-          emitPlaybackEvent({
-            type: "ipc-command-failed",
-            command: String(result.command[0] ?? "unknown"),
-            error: result.error,
-          });
-          if (result.error === "timeout") {
-            emitPlaybackEvent({
-              type: "ipc-stalled",
-              command: String(result.command[0] ?? "unknown"),
-              error: result.error,
-            });
-          }
-        }
+        for (const event of mpvIpcFailureEvents(result)) emitPlaybackEvent(event);
       },
     });
 

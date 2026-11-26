@@ -6,7 +6,10 @@ import {
   type PlaybackStatusSignal,
   type PlaybackStatusSnapshot,
 } from "@/app/playback/playback-status-policy";
-import { runMpvPlaybackSession } from "@/app/playback/run-mpv-playback-session";
+import {
+  runMpvPlaybackSession,
+  type StartupAbortReason,
+} from "@/app/playback/run-mpv-playback-session";
 import { INITIAL_PLAYBACK_GENERATION } from "@/domain/playback/playback-generation";
 import { MANAGED_MPV_CAPABILITIES } from "@/domain/playback/player-capabilities";
 import type { EpisodeInfo, PlaybackResult, StreamInfo, TitleInfo } from "@/domain/types";
@@ -95,6 +98,7 @@ type Harness = {
   readonly feedback: unknown[];
   readonly tracks: PlayerPlaybackEvent[];
   readonly confirmedStarts: number;
+  readonly startupAborts: StartupAbortReason[];
   readonly result: PlaybackResult;
 };
 
@@ -111,6 +115,7 @@ async function runSession(
   const feedback: unknown[] = [];
   const tracks: PlayerPlaybackEvent[] = [];
   let confirmedStarts = 0;
+  const startupAborts: StartupAbortReason[] = [];
   const activation = options.activation ?? GEN_1;
 
   let beforeCompletion: Harness["beforeCompletion"] = {
@@ -180,6 +185,9 @@ async function runSession(
       onConfirmedPlaybackStart: () => {
         confirmedStarts += 1;
       },
+      onStartupStallAbort: (reason) => {
+        startupAborts.push(reason);
+      },
     },
   });
 
@@ -191,6 +199,7 @@ async function runSession(
     feedback,
     tracks,
     confirmedStarts,
+    startupAborts,
     result,
   };
 }
@@ -212,6 +221,27 @@ describe("runMpvPlaybackSession queue acknowledgement boundary", () => {
       emit({ type: "playback-started" });
     });
     expect(harness.confirmedStarts).toBe(1);
+  });
+});
+
+describe("runMpvPlaybackSession video that never decodes", () => {
+  test("video-not-decoding aborts through startup recovery once, without acknowledging", async () => {
+    const evidence = {
+      type: "video-not-decoding",
+      secondsWithoutVideo: 10,
+      codec: "hevc",
+    } as const satisfies PlayerPlaybackEvent;
+    const harness = await runSession((emit) => {
+      emit({ type: "mpv-process-started" });
+      emit(evidence);
+      emit(evidence);
+    });
+
+    expect(harness.startupAborts).toEqual([{ kind: "video-not-decoding", evidence }]);
+    expect(harness.confirmedStarts).toBe(0);
+    expect(harness.feedback).toContainEqual(
+      expect.objectContaining({ detail: "Video isn't decoding — trying next source" }),
+    );
   });
 });
 
