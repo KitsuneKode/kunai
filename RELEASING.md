@@ -296,6 +296,23 @@ Then focused release-artifact tests and `release:notes:check` run before a narro
 
 ## Enroll the release signing key
 
+**Quick path:** `bun scripts/setup-signing-keys.ts` does every step below for
+both keys, the release checksum key and the provider hotfix manifest key. It
+keeps the private keys out of the checkout and off stdout (mode 0600 backups in
+`~/.kunai-signing-keys-<date>`, or `--backup-dir`), pipes them into the
+`release-production` environment secrets with `gh`, and writes only the public
+pins (`release-key.json`, `provider-manifest-pin.json`) for you to review and
+commit. It refuses to run when a key is already pinned. `--skip-secrets` writes
+the pins and backups without touching GitHub.
+
+Publish a hotfix manifest by signing it with
+`bun scripts/sign-provider-manifest.ts sign --key <manifest.pem> --key-id <id>`
+and uploading it to the `provider-manifest` prerelease (create it once with the
+command the setup script prints; a prerelease never becomes `releases/latest`):
+`gh release upload provider-manifest provider-manifest.json --clobber`.
+
+The manual steps, for reference:
+
 On a trusted maintainer machine, generate an Ed25519 key outside the checkout.
 Protect the private backup. Store the PEM as an environment secret scoped to
 `release-production` with required reviewers. Commit only the public DER/SPKI

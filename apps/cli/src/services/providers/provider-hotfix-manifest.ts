@@ -25,6 +25,8 @@ import {
 } from "@kunai/providers";
 import { isJsonNumber, isJsonObject, isJsonString, type JsonValue } from "@kunai/types";
 
+import { defaultManifestUrl, pinnedManifestPublicKeys } from "./provider-manifest-pin";
+
 export const PROVIDER_MANIFEST_FILENAME = "providers-manifest.json";
 export const PROVIDER_MANIFEST_BACKUP_FILENAME = "providers-manifest.prev.json";
 export const PROVIDER_MANIFEST_STATE_FILENAME = "providers-manifest-state.json";
@@ -258,7 +260,7 @@ export function resolveTrustedManifestPublicKeys(
 ): Readonly<Record<string, string>> {
   if (explicit && Object.keys(explicit).length > 0) return explicit;
   const raw = process.env.KUNAI_PROVIDER_MANIFEST_PUBKEYS?.trim();
-  if (!raw) return {};
+  if (!raw) return pinnedManifestPublicKeys();
   try {
     const parsed = parseJsonPayload(raw);
     if (!isJsonObject(parsed)) return {};
@@ -312,9 +314,7 @@ export function loadCachedProviderHotfixManifest(
     return { status: "invalid", path, reason: "Cached manifest is not valid JSON" };
   }
   const verified = verifySignedProviderManifest(parsed, trusted, options.nowMs);
-  if (!verified.ok) {
-    return { status: "invalid", path, reason: verified.reason };
-  }
+  if (!verified.ok) return { status: "invalid", path, reason: verified.reason };
   return {
     status: "active",
     path,
@@ -733,7 +733,7 @@ export async function maybeBackgroundRefreshProviderManifest(
     readonly fetchImpl?: ManifestFetch;
   } = {},
 ): Promise<"skipped" | "updated" | "unchanged" | "failed"> {
-  const url = options.url ?? process.env.KUNAI_PROVIDER_MANIFEST_URL?.trim();
+  const url = options.url ?? defaultManifestUrl();
   const trusted = resolveTrustedManifestPublicKeys(options.trustedPublicKeysById);
   if (!url || Object.keys(trusted).length === 0) return "skipped";
 
