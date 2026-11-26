@@ -9,8 +9,11 @@ const ids = [
   "typecheck",
   "test",
   "analytics-postgres",
+  "agent-real-mpv",
   "windows-cli",
+  "windows-binary",
   "macos-cli",
+  "macos-binary",
   "installer-lint",
   "build-cli",
   "checks-docs",
@@ -91,8 +94,11 @@ test("main requires native, docs and analytics even without matching paths", () 
   const needs = fixture();
   for (const id of [
     "analytics-postgres",
+    "agent-real-mpv",
     "windows-cli",
+    "windows-binary",
     "macos-cli",
+    "macos-binary",
     "build-cli",
     "checks-docs",
     "checks-doc-coverage",

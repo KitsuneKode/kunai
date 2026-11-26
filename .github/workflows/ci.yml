@@ -302,13 +302,27 @@ jobs:
         timeout-minutes: 5
         run: bun run test:agent
 
+  agent-real-mpv:
+    name: Agent verification with real mpv
+    # The L3 tier that proves playback end-to-end: real main.ts under tmux,
+    # real mpv decoding generated media over loopback, asserted by two
+    # witnesses (mpv IPC time-pos advancing + the committed history row).
+    # Push-only: the apt install costs a couple of minutes, too heavy for every
+    # PR; the L2 agent loop in `test` covers PRs. Its own job so main's wall
+    # time is the longest lane, not the full suite plus this tier in series.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: agent-real-mpv
+      - name: Install yt-dlp presence stub (never invoked by tests)
+        run: |
+          sudo install -m 0755 .github/scripts/yt-dlp-ci-stub.sh /usr/local/bin/yt-dlp
+          yt-dlp --version
       - name: Agent verification with real mpv
-        # The L3 tier that proves playback end-to-end: real main.ts under tmux,
-        # real mpv decoding generated media over loopback, asserted by two
-        # witnesses (mpv IPC time-pos advancing + the committed history row).
-        # Push-only: the apt install costs a couple of minutes, too heavy for
-        # every PR — the L2 suite above covers PRs.
-        if: github.event_name == 'push'
         timeout-minutes: 10
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq mpv ffmpeg tmux
@@ -359,7 +373,7 @@ jobs:
           echo "Every Postgres-gated case executed against a real database."
 
   windows-cli:
-    name: Windows CLI parity
+    name: Windows CLI parity (${{ matrix.shard }}/2)
     needs: changes
     if: >-
       github.event_name == 'push' ||
@@ -374,7 +388,15 @@ jobs:
     # Native mpv provisioning plus the compiled launcher check add bounded real
     # work. Individual steps retain tight limits so this outer ceiling still
     # identifies a true hang rather than masking one.
-    timeout-minutes: 35
+    #
+    # Sharded two ways: the suite was the PR critical path (about 6 minutes of
+    # a 10-minute run). The compiled-binary checks run beside it in
+    # windows-binary.
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
 
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
@@ -390,27 +412,23 @@ jobs:
         timeout-minutes: 8
         run: ./.github/scripts/provision-windows-mpv.ps1
 
-      - name: Typecheck workspaces
-        run: bun run typecheck
-
-      - name: Test CLI
+      - name: Test CLI (shard ${{ matrix.shard }}/2)
         # Step-level bound so a wedged suite is attributed here rather than
         # surfacing as an unexplained job cancellation with no failing step.
-        # Green runs take 5.5-7.5 min here, so 8 timed out a passing suite.
-        timeout-minutes: 12
-        env:
-          # Bun's 5s per-test default is too tight only here. The SQLite-backed
-          # suites open a database per test, and the shared temp store registry
-          # pays a synchronous full GC per teardown so Windows actually releases
-          # the file handles; under full-suite load that intermittently pushes
-          # one test over the line, and which test loses moves between runs.
-          # 60s per test ends that flake class entirely: a genuinely wedged test
-          # still fails, just after a wait no scheduling delay can exceed. The
-          # 8-minute step bound above stays the real hang detector.
-          KUNAI_TEST_TIMEOUT_MS: "60000"
-        run: bun run --cwd apps/cli test
+        # Each shard runs half the files of both suites (Bun's --shard), with
+        # the scripts' own flags (unit stays --parallel). The 60s per-test
+        # timeout is the same starvation guard the unsharded leg had: under
+        # full-suite load a different scheduling-heavy test loses the scripts'
+        # 20s cap each run, while a genuinely wedged test still fails.
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          bun run --cwd apps/cli test:unit --shard=${{ matrix.shard }}/2 --timeout=60000
+          bun run --cwd apps/cli test:integration --shard=${{ matrix.shard }}/2 --timeout=60000
 
       - name: Test Windows storage lifecycle
+        if: matrix.shard == 1
         # SQLite handles and temp-directory teardown have Windows-specific
         # locking semantics that the Linux package leg cannot exercise.
         #
@@ -422,6 +440,28 @@ jobs:
         # as the suite grew.
         timeout-minutes: 6
         run: bun run --cwd packages/storage test
+
+  windows-binary:
+    name: Windows binary
+    needs: changes
+    if: >-
+      github.event_name == 'push' ||
+      needs.changes.outputs.cli == 'true' ||
+      needs.changes.outputs.installer == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: windows-binary
+
+      - name: Typecheck workspaces
+        run: bun run typecheck
 
       # The Linux legs build and smoke a binary; Windows did not, and that gap
       # shipped a kunai.exe that exited 0 printing nothing — `import.meta.main`
@@ -440,7 +480,7 @@ jobs:
         run: bun run --cwd apps/cli test:file -- test/integration/npm-launcher.test.ts
 
   macos-cli:
-    name: macOS CLI parity
+    name: macOS CLI parity (${{ matrix.shard }}/2)
     needs: changes
     if: >-
       github.event_name == 'push' ||
@@ -457,7 +497,14 @@ jobs:
     #
     # mpv is installed deliberately so the native IPC tests are mandatory. The
     # step limits below keep this wider job ceiling diagnostic rather than lax.
-    timeout-minutes: 35
+    #
+    # Sharded two ways, as on Windows: this job was the PR critical path
+    # (almost 10 minutes). The compiled-binary checks run in macos-binary.
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
 
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
@@ -470,32 +517,64 @@ jobs:
 
       - name: Provision native mpv
         timeout-minutes: 10
+        env:
+          # The runner image's formulae are recent enough for mpv; skipping the
+          # auto-update and post-install cleanup saves most of a minute.
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
+          HOMEBREW_NO_ENV_HINTS: "1"
         run: |
           brew install mpv
           mpv --version
-
-      - name: Typecheck workspaces
-        run: bun run typecheck
 
       # macOS runs the POSIX suites that Windows skips, but against BSD
       # userland rather than GNU: `sed -i`, `date`, `readlink`, and `mktemp`
       # all take different flags there. install.sh is the macOS bootstrap too,
       # so a GNU-only flag in it is a broken install for every Mac user and
       # the Linux leg cannot see it.
-      - name: Test CLI
-        timeout-minutes: 12
-        env:
-          # Same starvation class as the Windows leg: the scripts' own 20s
-          # per-test cap loses a different scheduling-heavy test each run under
-          # load. The step bound stays the real hang detector.
-          KUNAI_TEST_TIMEOUT_MS: "60000"
-        run: bun run --cwd apps/cli test
+      - name: Test CLI (shard ${{ matrix.shard }}/2)
+        # Step-level bound so a wedged suite is attributed here rather than
+        # surfacing as an unexplained job cancellation with no failing step.
+        # Each shard runs half the files of both suites (Bun's --shard), with
+        # the scripts' own flags (unit stays --parallel). The 60s per-test
+        # timeout is the same starvation guard the unsharded leg had: under
+        # full-suite load a different scheduling-heavy test loses the scripts'
+        # 20s cap each run, while a genuinely wedged test still fails.
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -euo pipefail
+          bun run --cwd apps/cli test:unit --shard=${{ matrix.shard }}/2 --timeout=60000
+          bun run --cwd apps/cli test:integration --shard=${{ matrix.shard }}/2 --timeout=60000
 
       - name: Test storage lifecycle
+        if: matrix.shard == 1
         # APFS is case-insensitive by default while ext4 is not, so path and
         # temp-directory handling can diverge from the Linux leg here.
         timeout-minutes: 3
         run: bun run --cwd packages/storage test
+
+  macos-binary:
+    name: macOS binary
+    needs: changes
+    if: >-
+      github.event_name == 'push' ||
+      needs.changes.outputs.cli == 'true' ||
+      needs.changes.outputs.installer == 'true'
+    runs-on: macos-15
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: macos-binary
+
+      - name: Typecheck workspaces
+        run: bun run typecheck
 
       # Same rationale as the Windows binary smoke: source execution cannot
       # catch entrypoint and embedding bugs that only exist once Bun has
@@ -888,8 +967,11 @@ jobs:
         typecheck,
         test,
         analytics-postgres,
+        agent-real-mpv,
         windows-cli,
+        windows-binary,
         macos-cli,
+        macos-binary,
         installer-lint,
         build-cli,
         checks-docs,
