@@ -188,6 +188,21 @@ function scheduleTempFileSweep(path: string): void {
   timer.unref?.();
 }
 
+/** Only the first chunk carries controls. Every non-final chunk is divisible by four. */
+function* kittyChunks(data: Uint8Array, control: string): Generator<string> {
+  const b64 = Buffer.from(data).toString("base64");
+  for (let i = 0; i < b64.length; i += CHUNK_SIZE) {
+    const chunk = b64.slice(i, i + CHUNK_SIZE);
+    const more = i + CHUNK_SIZE < b64.length ? 1 : 0;
+    const prefix = i === 0 ? `${control}m=${more}` : `m=${more}`;
+    yield `\x1b_G${prefix};${chunk}\x1b\\`;
+  }
+}
+
+export function buildKittyDirectTransmission(png: Uint8Array, imageId: number): string {
+  return [...kittyChunks(png, `a=t,f=100,q=2,i=${imageId},t=d,`)].join("");
+}
+
 async function uploadViaDirectChunks(
   encoded: EncodedPayload,
   control: string,
@@ -197,19 +212,8 @@ async function uploadViaDirectChunks(
   // another poster's transmit or cleanup cannot interrupt it.
   const wrapped = options.passthrough === "tmux";
   const yieldEveryChunks = wrapped ? 0 : (options.yieldEveryChunks ?? 8);
-  const b64 = Buffer.from(encoded.body).toString("base64");
-  // Chunk into <=4096-byte pieces (a multiple of 4, per spec, for all but the
-  // last chunk). Yield every few chunks: a poster is tens of KB of base64 and
-  // writing it in one synchronous burst blocks the event loop (TTY writes
-  // don't yield), which starves stdin and stalls keypresses mid-upload. The
-  // image only displays once the final chunk lands (m=0), so interleaving
-  // causes no partial-render flicker.
   let chunksSinceYield = 0;
-  for (let i = 0; i < b64.length; i += CHUNK_SIZE) {
-    const chunk = b64.slice(i, i + CHUNK_SIZE);
-    const more = i + CHUNK_SIZE < b64.length ? 1 : 0;
-    const prefix = i === 0 ? `${control}${wrapped ? "t=d," : ""}m=${more}` : `m=${more}`;
-    const escape = `\x1b_G${prefix};${chunk}\x1b\\`;
+  for (const escape of kittyChunks(encoded.body, wrapped ? `${control}t=d,` : control)) {
     runtime.write(wrapped ? wrapTmuxPassthrough(escape) : escape);
     if (yieldEveryChunks > 0 && ++chunksSinceYield >= yieldEveryChunks) {
       chunksSinceYield = 0;

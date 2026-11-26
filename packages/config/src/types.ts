@@ -242,6 +242,12 @@ export interface KitsuneConfig {
   analyticsNoticeShown: boolean;
   /** Random UUID install id. Present if and only if `analytics === "enabled"`. */
   installId: string;
+  /**
+   * `YYYY-MM` analytics was enabled in, sent so the ingest can count new
+   * installs per month. Like `installId`, present only while enabled: the
+   * enable keystroke writes it, disable and rotation clear it.
+   */
+  analyticsCohort: string;
   /** Last successful cadence mark for the daily analytics ping (epoch ms). */
   lastAnalyticsPingAt: number;
   /**

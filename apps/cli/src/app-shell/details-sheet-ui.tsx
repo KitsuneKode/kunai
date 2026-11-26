@@ -177,12 +177,13 @@ export function DetailsSheet({
         </Box>
       ) : null}
 
-      {/* Actions footer */}
+      {/* Actions footer: exactly the keys browse-shell binds while the sheet is
+          open (it once advertised `+`, `e` and "w follow", none of which existed). */}
       <Box marginTop={1}>
         <Text color={palette.dim}>
           {plain
-            ? `Actions: play, + queue, w follow, d download, e episodes${model.trailerUrl ? ", t trailer" : ""}${model.links.items.length > 0 ? ", l links" : ""}, esc close`
-            : `▶ play · + queue · w follow · d download · e episodes${model.trailerUrl ? " · t trailer" : ""}${model.links.items.length > 0 ? " · l links" : ""} · esc`}
+            ? `Actions: Enter play, q queue, w watchlist, d download${model.seasons.items.length > 0 ? ", s seasons" : ""}${model.trailerUrl ? ", t trailer" : ""}${model.links.items.length > 0 ? ", l links" : ""}, esc close`
+            : `↵ play · q queue · w watchlist · d download${model.seasons.items.length > 0 ? " · s seasons" : ""}${model.trailerUrl ? " · t trailer" : ""}${model.links.items.length > 0 ? " · l links" : ""} · esc`}
         </Text>
       </Box>
     </Box>

@@ -19,6 +19,7 @@ import type { PresenceSnapshot } from "@/services/presence/PresenceService";
 import React, { act } from "react";
 
 import { render } from "../harness/render-capture";
+import { memoryPingLog } from "../support/analytics-fixtures";
 import { renderWithPointer } from "../support/pointer-render";
 import { waitUntil as sharedWaitUntil } from "../support/wait-until";
 
@@ -39,6 +40,7 @@ async function createTemporaryProfile(): Promise<{
 
 function createSettingsContainer(config: ConfigService): Container {
   const usageAnalytics = new UsageAnalyticsService({
+    pingLog: memoryPingLog(),
     config,
     currentVersion: "0.3.0",
     endpoint: "",

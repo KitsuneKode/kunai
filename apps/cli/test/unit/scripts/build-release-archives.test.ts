@@ -13,11 +13,14 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gunzipSync, inflateRawSync } from "node:zlib";
+import { gunzipSync, inflateRawSync, zstdCompressSync, zstdDecompressSync } from "node:zlib";
 
-import { RELEASE_BINARY_TARGETS } from "@/services/update/platform-assets";
+import { RELEASE_BINARY_TARGETS, releaseArchiveNames } from "@/services/update/platform-assets";
 
-import { buildReleaseArchives } from "../../../scripts/build-release-archives";
+import {
+  buildReleaseArchives,
+  verifyBuiltReleaseArchives,
+} from "../../../scripts/build-release-archives";
 
 const SCRIPT = join(import.meta.dirname, "../../../scripts/build-release-archives.ts");
 
@@ -117,14 +120,17 @@ describe("deterministic release archive builder", () => {
     ]);
   });
 
-  test("builds the exact archive/raw bridge set with separate sorted manifests", () => {
+  test("builds the exact archive/raw set with separate sorted manifests", () => {
     const directory = fixtureDirectory("kunai archives");
     try {
       const result = runBuilder(directory);
       expect(result.exitCode, result.stderr?.toString() ?? "").toBe(0);
       expect(readdirSync(directory).sort()).toEqual(
         [
-          ...RELEASE_BINARY_TARGETS.flatMap((target) => [target.out, target.archiveName]),
+          ...RELEASE_BINARY_TARGETS.flatMap((target) => [
+            target.out,
+            ...releaseArchiveNames(target),
+          ]),
           "SHA256SUMS",
           "SHA256SUMS.archives",
         ].sort(),
@@ -135,7 +141,7 @@ describe("deterministic release archive builder", () => {
         .split("\n");
       const rawRows = readFileSync(join(directory, "SHA256SUMS"), "utf8").trim().split("\n");
       expect(archiveRows.map((row) => row.slice(66))).toEqual(
-        RELEASE_BINARY_TARGETS.map((target) => target.archiveName).sort(),
+        RELEASE_BINARY_TARGETS.flatMap(releaseArchiveNames).sort(),
       );
       expect(rawRows.map((row) => row.slice(66))).toEqual(
         RELEASE_BINARY_TARGETS.map((target) => target.out).sort(),
@@ -144,6 +150,36 @@ describe("deterministic release archive builder", () => {
         const [digest, name] = row.split("  ") as [string, string];
         expect(digest).toBe(sha256(readFileSync(join(directory, name))));
       }
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("each .tar.zst holds the same canonical tar as its .tar.gz", () => {
+    const directory = fixtureDirectory("kunai zstd archives");
+    try {
+      expect(runBuilder(directory).exitCode).toBe(0);
+      for (const target of RELEASE_BINARY_TARGETS) {
+        if (!target.zstdArchiveName) continue;
+        expect(zstdDecompressSync(readFileSync(join(directory, target.zstdArchiveName)))).toEqual(
+          gunzipSync(readFileSync(join(directory, target.archiveName))),
+        );
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("verification rejects a .tar.zst that decodes to a different tar", () => {
+    const directory = fixtureDirectory("kunai zstd tamper");
+    try {
+      expect(runBuilder(directory).exitCode).toBe(0);
+      const target = RELEASE_BINARY_TARGETS.find((entry) => entry.id === "linux-x64")!;
+      const tar = new Uint8Array(gunzipSync(readFileSync(join(directory, target.archiveName))));
+      tar[600] = (tar[600] ?? 0) ^ 1;
+      writeFileSync(join(directory, target.zstdArchiveName!), zstdCompressSync(tar));
+
+      expect(() => verifyBuiltReleaseArchives(directory)).toThrow(/not the canonical/);
     } finally {
       rmSync(directory, { recursive: true, force: true });
     }
@@ -178,14 +214,14 @@ describe("deterministic release archive builder", () => {
     }
   });
 
-  test("an incremental target rebuild reconciles every retained raw target", () => {
+  test("an incremental target rebuild reconciles every retained raw target", async () => {
     const directory = fixtureDirectory("kunai retained targets");
     try {
       expect(runBuilder(directory).exitCode).toBe(0);
       const rebuilt = RELEASE_BINARY_TARGETS[0]!;
       writeFileSync(join(directory, rebuilt.out), "updated linux x64\n");
 
-      buildReleaseArchives(directory, [rebuilt]);
+      await buildReleaseArchives(directory, [rebuilt]);
 
       const rawRows = readFileSync(join(directory, "SHA256SUMS"), "utf8").trim().split("\n");
       const archiveRows = readFileSync(join(directory, "SHA256SUMS.archives"), "utf8")
@@ -195,7 +231,7 @@ describe("deterministic release archive builder", () => {
         RELEASE_BINARY_TARGETS.map((target) => target.out).sort(),
       );
       expect(archiveRows.map((row) => row.slice(66))).toEqual(
-        RELEASE_BINARY_TARGETS.map((target) => target.archiveName).sort(),
+        RELEASE_BINARY_TARGETS.flatMap(releaseArchiveNames).sort(),
       );
       expect(readTarGz(join(directory, rebuilt.archiveName)).body).toEqual(
         readFileSync(join(directory, rebuilt.out)),
@@ -205,7 +241,7 @@ describe("deterministic release archive builder", () => {
     }
   });
 
-  test("an incremental rebuild removes a stale canonical archive with no retained raw binary", () => {
+  test("an incremental rebuild removes a stale canonical archive with no retained raw binary", async () => {
     const directory = fixtureDirectory("kunai removed retained target");
     try {
       expect(runBuilder(directory).exitCode).toBe(0);
@@ -213,7 +249,7 @@ describe("deterministic release archive builder", () => {
       const removed = RELEASE_BINARY_TARGETS.at(-1)!;
       rmSync(join(directory, removed.out));
 
-      buildReleaseArchives(directory, [retained]);
+      await buildReleaseArchives(directory, [retained]);
 
       expect(existsSync(join(directory, removed.archiveName))).toBe(false);
       expect(readFileSync(join(directory, "SHA256SUMS"), "utf8")).not.toContain(removed.out);
@@ -225,7 +261,7 @@ describe("deterministic release archive builder", () => {
     }
   });
 
-  test("rejects an unknown stale archive before rewriting preserved manifests", () => {
+  test("rejects an unknown stale archive before rewriting preserved manifests", async () => {
     const directory = fixtureDirectory("kunai unknown stale archive");
     try {
       expect(runBuilder(directory).exitCode).toBe(0);
@@ -233,7 +269,7 @@ describe("deterministic release archive builder", () => {
       const archiveManifestBefore = readFileSync(join(directory, "SHA256SUMS.archives"));
       writeFileSync(join(directory, "kunai-unknown-target.zip"), "stale archive");
 
-      expect(() => buildReleaseArchives(directory, [RELEASE_BINARY_TARGETS[0]!])).toThrow(
+      await expect(buildReleaseArchives(directory, [RELEASE_BINARY_TARGETS[0]!])).rejects.toThrow(
         /unexpected stale release archive.*kunai-unknown-target\.zip/i,
       );
       expect(readFileSync(join(directory, "SHA256SUMS"))).toEqual(rawManifestBefore);

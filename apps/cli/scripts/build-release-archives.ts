@@ -12,12 +12,21 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
-import { deflateRawSync } from "node:zlib";
+import { promisify } from "node:util";
+import {
+  constants as zlibConstants,
+  deflateRawSync,
+  zstdCompress,
+  zstdCompressSync,
+  zstdDecompressSync,
+} from "node:zlib";
 
 import {
   RELEASE_BINARY_TARGETS,
+  releaseArchiveNames,
   type ReleaseBinaryTarget,
 } from "../src/services/update/platform-assets";
+import { mapWithConcurrency } from "./build-shared";
 
 const DEFAULT_DIRECTORY = join(import.meta.dirname, "../dist/bin");
 const encoder = new TextEncoder();
@@ -147,11 +156,70 @@ function deterministicZip(entryName: string, mode: number, body: Uint8Array): Ui
   return output;
 }
 
+/**
+ * zstd level 19 with the library's default window for that level (8 MiB), not
+ * `--long`: long mode saved another 0.5 MB on a 124 MB binary but makes every
+ * decoder — phones included — hold a ~119 MiB window. The content checksum
+ * lets `zstd -t` and the decoders catch corruption on their own. Output is
+ * deterministic for a given libzstd, and verification never depends on that:
+ * it decompresses and compares against the canonical tar.
+ */
+const ZSTD_ARCHIVE_PARAMS = {
+  [zlibConstants.ZSTD_c_compressionLevel]: 19,
+  [zlibConstants.ZSTD_c_checksumFlag]: 1,
+};
+const zstdCompressAsync = promisify(zstdCompress);
+
+function releaseTar(target: ReleaseBinaryTarget, binary: Uint8Array): Uint8Array {
+  return deterministicTar(target.archiveEntryName, target.archiveMode, binary);
+}
+
+/** The `.tar.zst` for a tar target. Sync for tests; the builder uses the async form. */
+export function createZstdReleaseArchive(
+  target: ReleaseBinaryTarget,
+  binary: Uint8Array,
+): Uint8Array {
+  return new Uint8Array(
+    zstdCompressSync(releaseTar(target, binary), { params: ZSTD_ARCHIVE_PARAMS }),
+  );
+}
+
+async function createZstdReleaseArchiveAsync(
+  target: ReleaseBinaryTarget,
+  binary: Uint8Array,
+): Promise<Uint8Array> {
+  return new Uint8Array(
+    await zstdCompressAsync(releaseTar(target, binary), { params: ZSTD_ARCHIVE_PARAMS }),
+  );
+}
+
+function assertCanonicalZstdArchive(
+  target: ReleaseBinaryTarget,
+  archiveName: string,
+  archive: Uint8Array,
+  binary: Uint8Array,
+): void {
+  const expectedTar = releaseTar(target, binary);
+  let tar: Uint8Array;
+  try {
+    tar = new Uint8Array(zstdDecompressSync(archive, { maxOutputLength: expectedTar.length + 1 }));
+  } catch (error) {
+    throw new Error(`[archives] ${archiveName} does not decompress within its tar budget`, {
+      cause: error,
+    });
+  }
+  if (!Buffer.from(tar).equals(Buffer.from(expectedTar))) {
+    throw new Error(
+      `[archives] ${archiveName} is not the canonical one-member archive for ${target.out}`,
+    );
+  }
+}
+
 export function createReleaseArchive(target: ReleaseBinaryTarget, binary: Uint8Array): Uint8Array {
   if (target.archiveFormat === "zip") {
     return deterministicZip(target.archiveEntryName, target.archiveMode, binary);
   }
-  return deterministicGzip(deterministicTar(target.archiveEntryName, target.archiveMode, binary));
+  return deterministicGzip(releaseTar(target, binary));
 }
 
 function checksumManifest(directory: string, names: readonly string[]): string {
@@ -195,21 +263,34 @@ function retainedReleaseTargets(
   );
   validateRawInputs(directory, retained);
 
-  const knownArchiveNames = new Set(RELEASE_BINARY_TARGETS.map((target) => target.archiveName));
+  const knownArchiveNames = new Set(RELEASE_BINARY_TARGETS.flatMap(releaseArchiveNames));
   for (const name of readdirSync(directory)) {
-    if ((name.endsWith(".tar.gz") || name.endsWith(".zip")) && !knownArchiveNames.has(name)) {
+    if (
+      (name.endsWith(".tar.gz") || name.endsWith(".tar.zst") || name.endsWith(".zip")) &&
+      !knownArchiveNames.has(name)
+    ) {
       throw new Error(`[archives] unexpected stale release archive: ${name}`);
     }
   }
 
-  const retainedArchiveNames = new Set(retained.map((target) => target.archiveName));
-  for (const target of RELEASE_BINARY_TARGETS) {
-    if (!retainedArchiveNames.has(target.archiveName)) {
-      rmSync(join(directory, target.archiveName), { force: true });
-    }
+  const retainedArchiveNames = new Set(retained.flatMap(releaseArchiveNames));
+  for (const name of knownArchiveNames) {
+    if (!retainedArchiveNames.has(name)) rmSync(join(directory, name), { force: true });
   }
 
   return retained;
+}
+
+function assertArchiveBudget(
+  target: ReleaseBinaryTarget,
+  archiveName: string,
+  archive: Uint8Array,
+): void {
+  if (archive.length <= 0 || archive.length > target.maxArchiveBytes) {
+    throw new Error(
+      `[archives] size budget failed for ${archiveName}: ${archive.length} (max ${target.maxArchiveBytes})`,
+    );
+  }
 }
 
 export function verifyBuiltReleaseArchives(
@@ -219,30 +300,28 @@ export function verifyBuiltReleaseArchives(
   validateRawInputs(directory, targets);
   for (const target of targets) {
     const binary = readFileSync(join(directory, target.out));
-    const archivePath = join(directory, target.archiveName);
-    let archive: Uint8Array;
-    try {
-      archive = readFileSync(archivePath);
-    } catch {
-      throw new Error(`[archives] missing release archive: ${target.archiveName}`);
-    }
-    if (archive.length <= 0 || archive.length > target.maxArchiveBytes) {
-      throw new Error(
-        `[archives] size budget failed for ${target.archiveName}: ${archive.length} (max ${target.maxArchiveBytes})`,
-      );
-    }
-    const canonical = createReleaseArchive(target, binary);
-    if (!Buffer.from(archive).equals(Buffer.from(canonical))) {
-      throw new Error(
-        `[archives] ${target.archiveName} is not the canonical one-member archive for ${target.out}`,
-      );
+    for (const archiveName of releaseArchiveNames(target)) {
+      let archive: Uint8Array;
+      try {
+        archive = readFileSync(join(directory, archiveName));
+      } catch {
+        throw new Error(`[archives] missing release archive: ${archiveName}`);
+      }
+      assertArchiveBudget(target, archiveName, archive);
+      if (archiveName === target.zstdArchiveName) {
+        assertCanonicalZstdArchive(target, archiveName, archive, binary);
+        continue;
+      }
+      const canonical = createReleaseArchive(target, binary);
+      if (!Buffer.from(archive).equals(Buffer.from(canonical))) {
+        throw new Error(
+          `[archives] ${archiveName} is not the canonical one-member archive for ${target.out}`,
+        );
+      }
     }
   }
 
-  const expectedArchives = checksumManifest(
-    directory,
-    targets.map((target) => target.archiveName),
-  );
+  const expectedArchives = checksumManifest(directory, targets.flatMap(releaseArchiveNames));
   const expectedRaw = checksumManifest(
     directory,
     targets.map((target) => target.out),
@@ -255,42 +334,48 @@ export function verifyBuiltReleaseArchives(
   }
 }
 
-export function buildReleaseArchives(
+export async function buildReleaseArchives(
   directory: string,
   targets: readonly ReleaseBinaryTarget[] = RELEASE_BINARY_TARGETS,
-): readonly ReleaseBinaryTarget[] {
+): Promise<readonly ReleaseBinaryTarget[]> {
   mkdirSync(directory, { recursive: true });
   const retainedTargets = retainedReleaseTargets(directory, targets);
 
-  const tempPaths: string[] = [];
+  // Stage every archive before any rename, so a failure leaves the previous
+  // set intact. zstd level 19 runs ~50 s per binary; the async form spreads
+  // four targets over the libuv pool (its default size) — not all ten, which
+  // would hold every binary and tar in memory at once (~2.5 GB).
+  const staged = new Map<string, string>();
   try {
-    for (const target of retainedTargets) {
-      const archive = createReleaseArchive(target, readFileSync(join(directory, target.out)));
-      if (archive.length <= 0 || archive.length > target.maxArchiveBytes) {
-        throw new Error(
-          `[archives] size budget failed for ${target.archiveName}: ${archive.length} (max ${target.maxArchiveBytes})`,
-        );
+    await mapWithConcurrency(retainedTargets, 4, async (target) => {
+      const binary = readFileSync(join(directory, target.out));
+      const archives: [string, Uint8Array][] = [
+        [target.archiveName, createReleaseArchive(target, binary)],
+      ];
+      if (target.zstdArchiveName) {
+        archives.push([
+          target.zstdArchiveName,
+          await createZstdReleaseArchiveAsync(target, binary),
+        ]);
       }
-      const tempPath = join(directory, `.${target.archiveName}.tmp`);
-      writeFileSync(tempPath, archive);
-      tempPaths.push(tempPath);
-    }
+      for (const [archiveName, archive] of archives) {
+        assertArchiveBudget(target, archiveName, archive);
+        const tempPath = join(directory, `.${archiveName}.tmp`);
+        writeFileSync(tempPath, archive);
+        staged.set(archiveName, tempPath);
+      }
+    });
 
-    for (const [index, target] of retainedTargets.entries()) {
-      const tempPath = tempPaths[index];
-      if (!tempPath) throw new Error(`[archives] missing staged archive for ${target.archiveName}`);
-      const destination = join(directory, target.archiveName);
+    for (const [archiveName, tempPath] of staged) {
+      const destination = join(directory, archiveName);
       rmSync(destination, { force: true });
       renameSync(tempPath, destination);
     }
-    tempPaths.length = 0;
+    staged.clear();
 
     writeFileSync(
       join(directory, "SHA256SUMS.archives"),
-      checksumManifest(
-        directory,
-        retainedTargets.map((target) => target.archiveName),
-      ),
+      checksumManifest(directory, retainedTargets.flatMap(releaseArchiveNames)),
     );
     writeFileSync(
       join(directory, "SHA256SUMS"),
@@ -301,7 +386,7 @@ export function buildReleaseArchives(
     );
     verifyBuiltReleaseArchives(directory, retainedTargets);
   } finally {
-    for (const path of tempPaths) rmSync(path, { force: true });
+    for (const path of staged.values()) rmSync(path, { force: true });
   }
   return retainedTargets;
 }
@@ -325,7 +410,7 @@ function parseDirectory(argv: readonly string[]): string {
 if (import.meta.main) {
   try {
     const directory = parseDirectory(process.argv.slice(2));
-    const retainedTargets = buildReleaseArchives(directory);
+    const retainedTargets = await buildReleaseArchives(directory);
     console.log(
       `[archives] wrote and verified ${retainedTargets.length} archives + SHA256SUMS + SHA256SUMS.archives in ${directory}`,
     );

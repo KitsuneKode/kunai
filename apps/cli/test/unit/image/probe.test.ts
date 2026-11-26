@@ -38,7 +38,11 @@ describe("parseDeviceAttributes", () => {
   // so the parser must read a concatenated buffer correctly.
   test("reads a reply reassembled from several chunks", () => {
     const chunks = [`${ESC}_Gi=31;OK${ESC}\\`, `${ESC}[?62;`, "4;6c"];
-    expect(parseDeviceAttributes(chunks.join(""))).toEqual({ sixel: true, kittyGraphics: true });
+    expect(parseDeviceAttributes(chunks.join(""))).toEqual({
+      sixel: true,
+      kittyGraphics: true,
+      kittyQueryAccepted: true,
+    });
   });
 });
 

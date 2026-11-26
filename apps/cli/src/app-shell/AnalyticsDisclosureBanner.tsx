@@ -8,6 +8,7 @@
 // handler, and a second one here would make Enter both dismiss the notice and
 // fire whatever Enter means in the current view. It auto-hides instead.
 
+import { ANALYTICS_PAYLOAD_FIELDS } from "@/services/analytics/usage-analytics-service";
 import { Box, Text } from "ink";
 import React from "react";
 
@@ -45,7 +46,7 @@ export function AnalyticsDisclosureBanner({ width }: { readonly width: number })
         )}
       </Box>
       <Text color={palette.muted}>
-        Once a day Kunai sends installId, version, os, arch, ts — nothing else.
+        One ping a day: {ANALYTICS_PAYLOAD_FIELDS.join(", ")}. Nothing else.
       </Text>
       <Text color={palette.dim}>Never: titles · queries · providers · URLs · paths</Text>
       <Text color={palette.muted}>This is opt-in. Enable or disable it later in Settings.</Text>

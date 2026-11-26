@@ -22,19 +22,21 @@ export async function applySettingsToRuntime({
   const patch: Partial<KitsuneConfig> = { ...requested };
   // Identity and cadence belong to the consent service, never to a UI snapshot.
   delete patch.installId;
+  delete patch.analyticsCohort;
   delete patch.analyticsRetryAfter;
   delete patch.lastAnalyticsPingAt;
   if (requested.analytics !== undefined) {
     Object.assign(
       patch,
       requested.analytics === "unset"
-        ? { analytics: "unset", installId: "" }
+        ? { analytics: "unset", installId: "", analyticsCohort: "" }
         : container.usageAnalytics.consentPatch(requested.analytics),
     );
   }
 
   await config.update(patch);
   await config.save();
+  if (requested.analytics !== undefined) await container.usageAnalytics.settleLocalPingLog();
   const next = config.getRaw();
 
   if (before.theme !== next.theme) {

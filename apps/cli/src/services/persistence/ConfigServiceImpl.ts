@@ -8,20 +8,15 @@ import {
   type StremioAddonsConsent,
 } from "@/domain/provider/stremio-addons";
 import { dbg } from "@/logger";
-import type { ContinueSourcePreference } from "@/services/continuation/continuation-source";
 import {
   DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
-  DEFAULT_OFFLINE_RUNWAY_TARGET,
   DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
 } from "@/services/download/StorageBudgetPolicy";
 import {
-  isHdrMode,
-  MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS,
   mergeKitsuneConfig,
   normalizeRetiredProductionProviderFields,
   normalizeStremioAddonsRiskAcknowledgedAt,
   retiredProductionProviderFieldsChanged,
-  type PrePlayConfirmMode,
   type StremioAddonConfigEntry,
 } from "@kunai/config";
 import { migrateLegacyProviderId } from "@kunai/providers";
@@ -33,7 +28,26 @@ import {
   type StartupPriority,
 } from "@kunai/types";
 
-import { persistedAnalyticsConsent, predatesExplicitAnalyticsConsent } from "./analytics-consent";
+import {
+  ANALYTICS_IDENTITY_KEYS,
+  ANALYTICS_STATE_KEYS,
+  analyticsCompletionPatch,
+  loadedAnalyticsFields,
+  persistedAnalyticsConsent,
+  predatesExplicitAnalyticsConsent,
+} from "./analytics-consent";
+import { DirtyConfigLeaves } from "./config-leaf-merge";
+import {
+  normalizeBytes,
+  normalizeContinueSourcePreference,
+  normalizeHdrMode,
+  normalizeMaxConcurrentDownloads,
+  normalizeMpvReconnectAttempts,
+  normalizePrePlayConfirm,
+  normalizeRecoveryMode,
+  normalizeRunwayTarget,
+  normalizeStartupPriority,
+} from "./config-scalar-normalizers";
 import {
   collectDirtyVaultFields,
   preserveUnchangedNestedDiskSecrets,
@@ -45,6 +59,7 @@ import {
   type VaultedConfigField,
 } from "./config-vault-fields";
 import type {
+  AnalyticsIdentityRotation,
   AnalyticsPingCompletion,
   PersistedAnalyticsConsent,
   ConfigService,
@@ -197,6 +212,11 @@ export class ConfigServiceImpl implements ConfigService {
    * Persist merges `{onDisk, dirtyKeys}` — per-key last-writer-wins — instead.
    */
   private readonly dirtyKeys = new Set<keyof KitsuneConfig>();
+  /** The nested leaves behind a dirty key, so a save merges them, not the key. */
+  private readonly dirtyLeaves = new DirtyConfigLeaves<KitsuneConfig>(
+    // SAFETY: a vaulted field path always starts with its owning config key.
+    new Set(VAULTED_CONFIG_FIELDS.map((field) => field.split(".")[0] as keyof KitsuneConfig)),
+  );
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private saveTimeoutMs = 300;
   /** Set when load() auto-migrated legacy videasyAppId to bc-frontend. */
@@ -226,10 +246,9 @@ export class ConfigServiceImpl implements ConfigService {
     const service = new ConfigServiceImpl(store, vault);
     const loaded = await store.load();
     const requiresExplicitAnalyticsConsent = predatesExplicitAnalyticsConsent(loaded);
-    const { analytics: normalizedAnalytics, installId: normalizedInstallId } =
-      persistedAnalyticsConsent(loaded);
+    const analyticsFields = loadedAnalyticsFields(loaded);
     const repairedAnalyticsIdentity =
-      loaded.installId !== undefined && loaded.installId !== normalizedInstallId;
+      loaded.installId !== undefined && loaded.installId !== analyticsFields.installId;
     const migratedAnimeDefaults = shouldMigrateInheritedAnimeDefaults(loaded);
     const migratedSeriesDefaults = shouldMigrateInheritedSeriesDefaults(loaded);
     // mergeKitsuneConfig supplies the base: object-valued keys (sync and its
@@ -326,7 +345,7 @@ export class ConfigServiceImpl implements ConfigService {
     );
     service.config = {
       ...service.config,
-      analytics: normalizedAnalytics,
+      ...analyticsFields,
       analyticsNoticeShown: loaded.analyticsNoticeShown === true,
       // The experimental opt-in is strict `true` plus a valid ISO ack — a
       // hand-edited `"yes"` or a non-timestamp ack fails closed like the flag
@@ -339,19 +358,6 @@ export class ConfigServiceImpl implements ConfigService {
       // `"no"` must not silently opt a user out of a feature they never saw.
       tipsEnabled: loaded.tipsEnabled !== false,
       seenTips: normalizeStringList(loaded.seenTips),
-      installId: normalizedInstallId,
-      lastAnalyticsPingAt:
-        typeof loaded.lastAnalyticsPingAt === "number" &&
-        Number.isFinite(loaded.lastAnalyticsPingAt)
-          ? Math.max(0, loaded.lastAnalyticsPingAt)
-          : 0,
-      analyticsRetryAfter:
-        typeof loaded.analyticsRetryAfter === "number" &&
-        Number.isFinite(loaded.analyticsRetryAfter)
-          ? Math.max(0, loaded.analyticsRetryAfter)
-          : 0,
-      analyticsEndpoint:
-        typeof loaded.analyticsEndpoint === "string" ? loaded.analyticsEndpoint.trim() : "",
     };
     // One debug line, not per-field: enough to see what normalization did on a
     // bug report without spamming --debug. Secrets never land here — tokens are
@@ -423,6 +429,7 @@ export class ConfigServiceImpl implements ConfigService {
       if (loaded[key] === undefined) continue;
       if (JSON.stringify(loaded[key]) !== JSON.stringify(comparableConfig[key])) {
         service.dirtyKeys.add(key);
+        service.dirtyLeaves.markWhole(key);
       }
     }
     if (
@@ -470,7 +477,12 @@ export class ConfigServiceImpl implements ConfigService {
     // persistChain only orders this instance — the cross-process lock lives
     // inside persistConfigNow. Startup owns its initial read and migration,
     // and explicit native credential changes share that critical section.
-    const run = this.persistChain.then(() => this.persistConfigNow());
+    return this.enqueue(() => this.persistConfigNow());
+  }
+
+  /** Orders `fn` after every earlier save of this instance; a failure does not wedge it. */
+  private enqueue<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.persistChain.then(fn);
     this.persistChain = run.then(
       () => undefined,
       () => undefined,
@@ -479,47 +491,53 @@ export class ConfigServiceImpl implements ConfigService {
   }
 
   recordAnalyticsPing(completion: AnalyticsPingCompletion): Promise<boolean> {
-    const write = async (): Promise<boolean> => {
-      const complete = async (): Promise<boolean> => {
-        // Consent changes in this process can still be awaiting their save.
-        const matchesLocal = () =>
-          this.config.analytics === "enabled" && this.config.installId === completion.installId;
-        if (!matchesLocal()) return false;
-        const onDisk = await this.store.load();
-        if (!matchesLocal()) return false;
-        const matchesDisk =
-          onDisk.analytics === "enabled" && onDisk.installId === completion.installId;
-        const current = { ...DEFAULT_CONFIG, ...onDisk };
-        if (matchesDisk) {
-          current.analyticsRetryAfter = completion.analyticsRetryAfter;
-          if (completion.lastAnalyticsPingAt !== undefined)
-            current.lastAnalyticsPingAt = completion.lastAnalyticsPingAt;
-          // Never persist the pre-send identity: this write owns cadence only.
-          await this.store.save(current);
-        }
-        // A local consent/identity change may arrive during the async write.
-        // Its queued save wins next; do not refresh it with the old cadence.
-        if (!matchesLocal()) return false;
-        const analyticsKeys: readonly (keyof KitsuneConfig)[] = [
-          "analytics",
-          "installId",
-          "lastAnalyticsPingAt",
-          "analyticsRetryAfter",
-        ];
-        for (const key of analyticsKeys) {
-          if (!this.dirtyKeys.has(key)) Object.assign(this.config, { [key]: current[key] });
-        }
-        return matchesDisk;
-      };
-      return this.store.withLock ? this.store.withLock(complete) : complete();
-    };
-    // Share the save chain so completion cannot interleave its read/merge/write.
-    const run = this.persistChain.then(write);
-    this.persistChain = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    return run;
+    return this.lockedWrite(async () => {
+      // Consent changes in this process can still be awaiting their save.
+      const matchesLocal = () =>
+        this.config.analytics === "enabled" && this.config.installId === completion.installId;
+      if (!matchesLocal()) return false;
+      const onDisk = await this.store.load();
+      if (!matchesLocal()) return false;
+      const matchesDisk =
+        onDisk.analytics === "enabled" && onDisk.installId === completion.installId;
+      const current = { ...DEFAULT_CONFIG, ...onDisk };
+      if (matchesDisk) {
+        Object.assign(current, analyticsCompletionPatch(current, completion));
+        // Never persist the pre-send identity: this write owns cadence only.
+        await this.store.save(current);
+      }
+      // A local consent/identity change may arrive during the async write.
+      // Its queued save wins next; do not refresh it with the old cadence.
+      if (!matchesLocal()) return false;
+      this.refreshAnalyticsFields(current);
+      return matchesDisk;
+    });
+  }
+
+  rotateAnalyticsIdentity(rotation: AnalyticsIdentityRotation): Promise<boolean> {
+    return this.lockedWrite(async () => {
+      const onDisk = await this.store.load();
+      const enabledOnDisk = persistedAnalyticsConsent(onDisk).analytics === "enabled";
+      if (this.config.analytics !== "enabled" || !enabledOnDisk) {
+        this.refreshAnalyticsFields(loadedAnalyticsFields(onDisk));
+        return false;
+      }
+      await this.store.save({ ...DEFAULT_CONFIG, ...onDisk, ...rotation });
+      Object.assign(this.config, rotation);
+      for (const key of ANALYTICS_IDENTITY_KEYS) this.dirtyKeys.delete(key);
+      return true;
+    });
+  }
+
+  private refreshAnalyticsFields(fromDisk: Partial<KitsuneConfig>): void {
+    for (const key of ANALYTICS_STATE_KEYS) {
+      if (!this.dirtyKeys.has(key)) Object.assign(this.config, { [key]: fromDisk[key] });
+    }
+  }
+
+  /** A read→merge→write on the save chain and under the cross-process lock. */
+  private lockedWrite<T>(fn: () => Promise<T>): Promise<T> {
+    return this.enqueue(() => (this.store.withLock ? this.store.withLock(fn) : fn()));
   }
 
   async readPersistedAnalyticsConsent(): Promise<PersistedAnalyticsConsent> {
@@ -528,28 +546,19 @@ export class ConfigServiceImpl implements ConfigService {
   }
 
   recordStremioAddonName(manifestUrl: string, name: string): Promise<void> {
-    const write = async (): Promise<void> => {
-      const complete = async (): Promise<void> => {
-        const onDisk = await this.store.load();
-        // One entry's name, in place: a name refresh must not normalize or
-        // re-add entries another process (or a hand edit) put in the file.
-        const entries = withStremioAddonName(onDisk.stremioAddons, manifestUrl, name);
-        if (!entries) return;
-        await this.store.save({ ...DEFAULT_CONFIG, ...onDisk, stremioAddons: entries });
-        // A local stremioAddons change may be awaiting its save; refreshing
-        // the snapshot with the old list would lose it on the next merge.
-        if (this.dirtyKeys.has("stremioAddons")) return;
-        const local = withStremioAddonName(this.config.stremioAddons, manifestUrl, name);
-        if (local) this.config.stremioAddons = local;
-      };
-      return this.store.withLock ? this.store.withLock(complete) : complete();
-    };
-    const run = this.persistChain.then(write);
-    this.persistChain = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    return run;
+    return this.lockedWrite(async () => {
+      const onDisk = await this.store.load();
+      // One entry's name, in place: a name refresh must not normalize or
+      // re-add entries another process (or a hand edit) put in the file.
+      const entries = withStremioAddonName(onDisk.stremioAddons, manifestUrl, name);
+      if (!entries) return;
+      await this.store.save({ ...DEFAULT_CONFIG, ...onDisk, stremioAddons: entries });
+      // A local stremioAddons change may be awaiting its save; refreshing
+      // the snapshot with the old list would lose it on the next merge.
+      if (this.dirtyKeys.has("stremioAddons")) return;
+      const local = withStremioAddonName(this.config.stremioAddons, manifestUrl, name);
+      if (local) this.config.stremioAddons = local;
+    });
   }
 
   private async persistConfigNow(alreadyLocked = false): Promise<void> {
@@ -609,12 +618,16 @@ export class ConfigServiceImpl implements ConfigService {
         mergedKeys = new Set(this.dirtyKeys);
         try {
           const onDisk = await this.store.load();
+          const live = { ...DEFAULT_CONFIG, ...onDisk };
           const dirtySubset: Partial<KitsuneConfig> = {};
+          const persistedSubset: Partial<KitsuneConfig> = {};
           for (const key of mergedKeys) {
             Object.assign(dirtySubset, { [key]: config[key] });
+            const value = this.dirtyLeaves.persistedValue(key, config[key], onDisk[key]);
+            Object.assign(persistedSubset, { [key]: value });
           }
           toWrite = preserveUnchangedNestedDiskSecrets(
-            { ...DEFAULT_CONFIG, ...onDisk, ...dirtySubset },
+            { ...live, ...persistedSubset },
             onDisk,
             mergedKeys,
             this.dirtyVaultFields,
@@ -652,7 +665,12 @@ export class ConfigServiceImpl implements ConfigService {
       }
       await this.store.save(scrubVaultedFields(toWrite, verified));
       if (forceFullWrite) this.needsFullConfigWrite = false;
-      this.clearPersistedDirtyKeys(mergedKeys, mergedValues ?? toWrite, persistedVaultSecrets);
+      this.clearPersistedDirtyKeys(
+        mergedKeys,
+        mergedValues ?? toWrite,
+        persistedVaultSecrets,
+        toWrite,
+      );
     };
 
     const withLock = this.store.withLock?.bind(this.store);
@@ -667,6 +685,7 @@ export class ConfigServiceImpl implements ConfigService {
     mergedKeys: ReadonlySet<keyof KitsuneConfig> | null,
     written: Partial<KitsuneConfig>,
     persistedVaultSecrets: ReadonlyMap<VaultedConfigField, string>,
+    onDiskNow: KitsuneConfig,
   ): void {
     // A key re-dirtied while the write was in flight keeps its flag — the
     // next persist carries the newer value instead of reverting to what was
@@ -674,7 +693,13 @@ export class ConfigServiceImpl implements ConfigService {
     // current dirty set is the comparison set.
     const keys = mergedKeys ?? [...this.dirtyKeys];
     for (const key of keys) {
-      if (this.config[key] === written[key]) this.dirtyKeys.delete(key);
+      if (this.config[key] !== written[key]) continue;
+      this.dirtyKeys.delete(key);
+      // A leaf-merged key now holds what disk holds, siblings' leaves included.
+      if (this.dirtyLeaves.isLeafMerged(key)) {
+        this.config = { ...this.config, [key]: onDiskNow[key] };
+      }
+      this.dirtyLeaves.clear(key);
     }
     for (const [field, secret] of persistedVaultSecrets) {
       if (readVaultedField(this.config, field) === secret) this.dirtyVaultFields.delete(field);
@@ -999,6 +1024,10 @@ export class ConfigServiceImpl implements ConfigService {
     return this.config.installId;
   }
 
+  get analyticsCohort(): string {
+    return this.config.analyticsCohort;
+  }
+
   get lastAnalyticsPingAt(): number {
     return this.config.lastAnalyticsPingAt;
   }
@@ -1273,6 +1302,10 @@ export class ConfigServiceImpl implements ConfigService {
         : null),
     };
     this.config = applyRetiredProductionProviderNormalization(this.config);
+    // SAFETY: Object.keys of a Partial<KitsuneConfig> only yields its keys.
+    for (const key of Object.keys(partial) as (keyof KitsuneConfig)[]) {
+      this.dirtyLeaves.record(key, previous[key], this.config[key]);
+    }
     for (const field of collectDirtyVaultFields(previous, this.config, partial)) {
       this.dirtyVaultFields.add(field);
     }
@@ -1358,6 +1391,7 @@ export class ConfigServiceImpl implements ConfigService {
     // SAFETY: Object.keys of DEFAULT_CONFIG only yields KitsuneConfig keys.
     for (const key of Object.keys(DEFAULT_CONFIG) as (keyof KitsuneConfig)[]) {
       this.dirtyKeys.add(key);
+      this.dirtyLeaves.markWhole(key);
     }
     for (const field of VAULTED_CONFIG_FIELDS) {
       this.dirtyVaultFields.add(field);
@@ -1611,28 +1645,6 @@ function normalizeVideasyAppId<T>(value: T, sessionToken = ""): KitsuneConfig["v
   return "bc-frontend";
 }
 
-function normalizeRecoveryMode<T>(value: T): RecoveryMode {
-  return value === "manual" ? "manual" : value === "fallback-first" ? "fallback-first" : "guided";
-}
-
-function normalizeContinueSourcePreference<T>(value: T): ContinueSourcePreference {
-  return value === "local"
-    ? "local"
-    : value === "stream"
-      ? "stream"
-      : value === "ask"
-        ? "ask"
-        : "auto";
-}
-
-function normalizePrePlayConfirm<T>(value: T): PrePlayConfirmMode {
-  return value === "when-choices" ? "when-choices" : value === "always" ? "always" : "off";
-}
-
-function normalizeStartupPriority<T>(value: T): StartupPriority {
-  return value === "fast" ? "fast" : value === "quality-first" ? "quality-first" : "balanced";
-}
-
 /** An update split into what to persist and which launch-flag fields stay overridden. */
 interface ProfileOverrideSplit {
   readonly partial: Partial<KitsuneConfig>;
@@ -1645,32 +1657,6 @@ const SESSION_PROFILE_KEYS = [
   "movieLanguageProfile",
 ] as const;
 const PROFILE_FIELDS = ["audio", "subtitle", "quality"] as const;
-
-function normalizeHdrMode<T>(value: T): KitsuneConfig["hdrMode"] {
-  return isHdrMode(value) ? value : "auto";
-}
-
-function normalizeBytes<T>(value: T, fallback: number): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
-  return Math.max(0, Math.trunc(value));
-}
-
-function normalizeRunwayTarget<T>(value: T): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_OFFLINE_RUNWAY_TARGET;
-  return Math.max(1, Math.min(24, Math.trunc(value)));
-}
-
-function normalizeMpvReconnectAttempts<T>(value: T): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS;
-  }
-  return Math.max(0, Math.min(MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS, Math.trunc(value)));
-}
-
-function normalizeMaxConcurrentDownloads<T>(value: T): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) return 3;
-  return Math.max(1, Math.min(5, Math.trunc(value)));
-}
 
 /** Host-only relay URL for debug logs: the full URL can carry path/query. */
 function relayHostForDebug(baseUrl: string | undefined): string {

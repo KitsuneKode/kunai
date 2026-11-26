@@ -19,12 +19,21 @@ import {
  */
 export type TerminalGraphicsSupport = {
   readonly sixel: boolean;
+  readonly sixelColorRegisters?: number;
   readonly kittyGraphics: boolean;
+  readonly kittyQueryAccepted?: true;
   readonly kittyPlaceholders?: boolean;
   readonly tmux?: TmuxGraphicsContext;
 };
 
 const KITTY_PLACEHOLDER_QUERY = "\x1b_Ga=q,i=31,e=T,U=1\x1b\\";
+const SIXEL_COLOR_REGISTER_QUERY = "\x1b[?1;1;0S";
+
+function canQuerySixelColorRegisters(env: NodeJS.ProcessEnv): boolean {
+  return (
+    isTmuxPane(env) || (!isWindowsConsoleEnv(env) && /^(?:xterm|foot)(?:-|$)/i.test(env.TERM ?? ""))
+  );
+}
 
 function hasKittyPlaceholderReply(reply: string): boolean {
   // oxlint-disable-next-line eslint/no-control-regex -- reply contains literal ESC
@@ -58,7 +67,11 @@ export function parseDeviceAttributes(reply: string): TerminalGraphicsSupport {
   // oxlint-disable-next-line eslint/no-control-regex -- the terminal reply contains a literal ESC
   const kittyGraphics = /_G[^]*;(OK|E[A-Z]+)/.test(reply);
 
-  return { sixel, kittyGraphics };
+  // Match the image id of our actual pixel probe. An error is insufficient
+  // evidence to send Kitty uploads to a partial-protocol terminal.
+  // oxlint-disable-next-line eslint/no-control-regex -- reply contains literal ESC
+  const accepted = /\x1b_Gi=31;OK\x1b\\/.test(reply);
+  return accepted ? { sixel, kittyGraphics, kittyQueryAccepted: true } : { sixel, kittyGraphics };
 }
 
 /** True when it is safe to write escape bytes and read a reply. */
@@ -185,24 +198,43 @@ export async function probeTerminalGraphics(
       };
 
       let answer: TerminalGraphicsSupport | null = fallback;
+      let requestedColorRegisters = false;
       onData = (chunk) => {
         buffer += Buffer.isBuffer(chunk) ? chunk.toString("latin1") : chunk;
         // The DA1 reply terminates the exchange; replies can arrive split
         // across reads, so only settle once the terminator is present.
         // oxlint-disable-next-line eslint/no-control-regex -- the terminal reply contains a literal ESC
         const da1 = /\[\?[0-9;]*c/.test(buffer);
-        if (da1) answer = parseDeviceAttributes(buffer);
-        if (da1 && inTmux) {
-          const placeholders = wrapped && hasKittyPlaceholderReply(buffer);
-          answer = {
-            sixel: answer?.sixel ?? false,
-            kittyGraphics: placeholders,
-            ...(placeholders && { kittyPlaceholders: true }),
-            tmux,
-          };
-          if (wrapped && !placeholders) return;
+        if (!da1) return;
+        const parsed = parseDeviceAttributes(buffer);
+        const placeholders = wrapped && hasKittyPlaceholderReply(buffer);
+        answer = inTmux
+          ? {
+              sixel: parsed.sixel,
+              kittyGraphics: placeholders,
+              kittyPlaceholders: placeholders,
+              tmux,
+            }
+          : parsed;
+        if (answer.sixel && !requestedColorRegisters && canQuerySixelColorRegisters(env)) {
+          requestedColorRegisters = true;
+          try {
+            stdout.write(SIXEL_COLOR_REGISTER_QUERY);
+          } catch {
+            finish(answer);
+            return;
+          }
         }
-        if (da1) finish(answer);
+        if (requestedColorRegisters) {
+          // oxlint-disable-next-line eslint/no-control-regex -- reply contains literal ESC
+          const registers = /\x1b\[\?1;([0-3]);(\d+)S/.exec(buffer);
+          if (!registers) return;
+          const count = Number(registers[2]);
+          if (registers[1] === "0" && Number.isSafeInteger(count) && count > 0) {
+            answer = { ...answer, sixelColorRegisters: count };
+          }
+        }
+        if (!wrapped || placeholders) finish(answer);
       };
 
       stdin.setRawMode?.(true);

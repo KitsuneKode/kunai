@@ -220,6 +220,13 @@ Kunai builds a resolve request from your mode, language profiles, and any per-ti
 
 Your `provider` or `animeProvider` config key sets the session default. Startup priority policy may influence first pick.
 
+Two exceptions, both shown on the loading line:
+
+- If your provider failed on this title before and another one worked, Kunai starts with the one that worked, then tries yours.
+- If your provider is currently down (repeated failures), Kunai tries it last instead of first.
+
+Neither applies right after you pick a provider yourself, after `/recompute`, or in the **Ask before switching** recovery mode: then your choice always goes first.
+
 Falling back to another provider can change the available source inventory (quality ladder, sub/dub
 mix). Title and catalog identity never silently cross to another catalog: an advanced search with no
 compatible catalog is reported as unsupported rather than quietly answered by TMDB.
@@ -450,3 +457,8 @@ Before playback starts:
 - `/source` or `/tracks` during playback when inventory supports switching without full re-resolve.
 
 After explicit pick, Kunai stores per-title preference for future resume.
+
+That preference is where the next resolve starts, not a lock. If the picked provider fails for an
+episode, **Settings → Recovery mode** set to **Balanced recovery** or **Fast fallback** still hands
+you a working stream from another provider. Only **Ask before switching** (or `/recompute`) keeps
+the request to exactly the provider you picked.

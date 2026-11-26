@@ -5,15 +5,15 @@ import { AnalyticsScreen } from "@/app-shell/setup/AnalyticsScreen";
 import type { CapabilitySnapshot } from "@/ui";
 import React from "react";
 
-import packageJson from "../../../package.json" with { type: "json" };
 import { captureFrame, render } from "../../harness/render-capture";
+import { UNSET_PAYLOAD_FIXTURE } from "../../support/analytics-fixtures";
 
 /**
  * 80x24 deliberately: the smallest terminal we expect, and the size at which
  * the footer hint is first at risk of being clipped.
  */
-function frame(selectedIndex = 0): string {
-  return captureFrame(<AnalyticsScreen selectedIndex={selectedIndex} />, {
+function frame(selectedIndex: number | null = null, payload = UNSET_PAYLOAD_FIXTURE): string {
+  return captureFrame(<AnalyticsScreen selectedIndex={selectedIndex} payload={payload} />, {
     columns: 80,
     rows: 24,
   });
@@ -37,31 +37,58 @@ const READY: CapabilitySnapshot = {
 
 /** The whole shell, driven to the consent screen, so the frame is included. */
 function consentFrameInShell(): string {
-  const handle = render(<SetupShell snapshot={READY} finish={() => {}} />, {
-    columns: 80,
-    rows: 24,
-  });
+  const handle = render(
+    <SetupShell analyticsPayload={UNSET_PAYLOAD_FIXTURE} snapshot={READY} finish={() => {}} />,
+    { columns: 80, rows: 24 },
+  );
   for (let i = 0; i < 4; i += 1) handle.stdin.enqueue("\r");
   const rendered = handle.lastFrame();
   handle.unmount();
   return rendered;
 }
 
+/** The selection marker `ChoiceRow` draws in front of the chosen row. */
+const SELECTED = "▌";
+
 describe("analytics consent screen", () => {
-  test("offers a key that keeps analytics off without leaving setup", () => {
+  test("offers a key that declines without leaving setup", () => {
     // The one escape hatch that must never be lost to clipping: `s` here means
-    // "keep it off", not "skip the wizard". The footer belongs to the frame
+    // "don't share", not "skip the wizard". The footer belongs to the frame
     // now, so this is asserted against the whole shell rather than the screen.
     const rendered = consentFrameInShell();
     expect(rendered).toContain("usage ping");
-    expect(rendered).toContain("keep it off");
+    expect(rendered).toContain("don't share");
   });
 
-  test("shows the exact payload inline, not behind another command", () => {
-    const rendered = frame();
-    for (const key of ["installId", "version", "os", "arch", "ts"]) {
-      expect(rendered).toContain(key);
+  test("pre-selects neither answer, in the shell as it opens", () => {
+    // Neutral consent (decision 1 of the analytics plan): arriving on the
+    // screen must not put the cursor on either choice.
+    const rendered = consentFrameInShell();
+    expect(rendered).toContain("Share anonymous usage");
+    expect(rendered).toContain("Don't share");
+    expect(rendered).not.toContain(SELECTED);
+    // The negative means something only if a chosen row does draw the marker.
+    expect(frame(0)).toContain(SELECTED);
+  });
+
+  test("marks neither answer as recommended", () => {
+    for (const selectedIndex of [null, 0, 1]) {
+      expect(frame(selectedIndex)).not.toMatch(/recommended/i);
     }
+  });
+
+  test("shows the exact payload inline, generated from describePayload()", () => {
+    const rendered = frame();
+    for (const [key, value] of Object.entries(UNSET_PAYLOAD_FIXTURE)) {
+      expect(rendered).toContain(`"${key}": ${JSON.stringify(value)}`);
+    }
+  });
+
+  test("a real payload is shown as it would be sent", () => {
+    const payload = { ...UNSET_PAYLOAD_FIXTURE, id: "a".repeat(64), cohort: "2026-11" };
+    const rendered = frame(null, payload);
+    expect(rendered).toContain("a".repeat(40));
+    expect(rendered).toContain('"cohort": "2026-11"');
   });
 
   test("names what is never sent", () => {
@@ -70,40 +97,18 @@ describe("analytics consent screen", () => {
     expect(rendered).toContain("titles");
   });
 
-  test("leads with the recommendation and marks it as such", () => {
-    const rendered = frame();
-    expect(rendered).toContain("Turn it on");
-    expect(rendered).toContain("← recommended");
-  });
-
-  test("still offers keeping it off, and says nothing is sent until confirmed", () => {
-    // Recommending is not deciding. The screen has to state plainly that the
-    // keystroke is what enables it, or a pre-selected option reads as opt-out.
-    const rendered = frame();
-    expect(rendered).toContain("Keep it off");
-    expect(rendered).toContain("until you confirm");
+  test("says nothing is sent unless the user chooses to share", () => {
+    expect(frame()).toContain("Nothing is sent unless you choose to share");
   });
 
   test("frames the count as installs rather than people", () => {
-    expect(frame()).toContain("unique installs, not people");
+    expect(frame()).toContain("Counts installs, not people");
   });
 
-  test("describes this machine, not a hardcoded one", () => {
-    // The payload preview used to be the literal string
-    // `"version": "0.3.0", "os": "linux", "arch": "x64"`, which made the one
-    // screen that must be exactly true a false statement on macOS and Windows.
-    //
-    // Asserted as "matches the real values" rather than "is not 0.3.0": the
-    // shipped version happens to be 0.3.0 today, so an absence check would pass
-    // for the wrong reason now and fail for the wrong reason after a bump.
+  test("says the raw id never leaves the machine, and where to check", () => {
     const rendered = frame();
-    expect(rendered).toContain(`"${process.platform}"`);
-    expect(rendered).toContain(`"${process.arch}"`);
-    expect(rendered).toContain(`"${packageJson.version}"`);
-  });
-
-  test("says the raw id never leaves the machine", () => {
-    expect(frame()).toContain("never leaves this machine");
+    expect(rendered).toContain("never leaves this machine");
+    expect(rendered).toContain("kunai analytics log");
   });
 
   test("carries no motion at all", () => {

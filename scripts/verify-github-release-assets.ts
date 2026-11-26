@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import pin from "../apps/cli/src/services/update/release-key.json";
+import { RELEASE_MARKER_NAMES, releaseMarkers } from "./packaging/release-markers";
 import { SUPPLEMENT_NAMES, releaseSupplements } from "./packaging/release-supplements";
 import {
   REQUIRED_RELEASE_ASSET_NAMES,
@@ -235,7 +236,11 @@ async function main(): Promise<void> {
   );
 
   const descriptors = descriptorsFromRelease(release);
-  const requiredNames = [...REQUIRED_RELEASE_ASSET_NAMES, ...SUPPLEMENT_NAMES];
+  const requiredNames = [
+    ...REQUIRED_RELEASE_ASSET_NAMES,
+    ...SUPPLEMENT_NAMES,
+    ...RELEASE_MARKER_NAMES,
+  ];
   assertCompleteReleaseAssetSet(descriptors, requiredNames);
 
   if (expectedVersion) {
@@ -259,6 +264,7 @@ async function main(): Promise<void> {
         directory: tempDir,
         publicKey: pin.ed25519Spki,
       });
+      releaseMarkers("verify", tempDir);
       await verifyDownloadedReleaseAssets({
         directory: native,
         expectedVersion,

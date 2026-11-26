@@ -11,6 +11,10 @@ to disable Kitty passthrough for a run. tmux 3.4 or later built with Sixel suppo
 can show Sixel previews on a compatible terminal without passthrough. Screen
 uses half-block previews.
 
+WezTerm can draw Kitty posters when its Kitty graphics query succeeds; enable
+`enable_kitty_graphics` in your configuration. Konsole shows posters through
+sixel, because it does not free Kitty image data when an image is replaced.
+
 **Who this is for:** anyone choosing an install path or optional tools for their OS.
 
 **You will learn:** recommended installers per platform, optional dependencies, and platform-specific handoff behavior.

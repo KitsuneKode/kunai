@@ -34,10 +34,12 @@ Default: downloads a verified release binary into a versioned store and links `~
 curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
 ```
 
-The installer downloads the platform `.tar.gz`, verifies it with
+The installer downloads the platform archive (the smaller `.tar.zst` when
+`zstd` is installed, the `.tar.gz` otherwise), verifies it with
 `SHA256SUMS.archives`, accepts exactly one expected regular-file member, and
 verifies the extracted binary again with `SHA256SUMS`. It needs the standard
-`gzip` and `tar` tools. Releases from before archive publication use the legacy
+`gzip` and `tar` tools; `zstd` is optional and saves about a fifth of the
+download. Releases from before archive publication use the legacy
 raw binary only when the archive or archive-checksum endpoint returns HTTP 404
 or 410; integrity and network failures do not downgrade verification.
 
