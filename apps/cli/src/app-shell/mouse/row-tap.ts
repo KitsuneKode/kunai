@@ -2,6 +2,12 @@ import { useRef } from "react";
 
 export type RowTapOutcome = "select" | "activate";
 
+/** Where a tap on a list row goes: move the cursor, or act like Enter. */
+export type RowTaps = {
+  readonly select: (index: number) => void;
+  readonly activate: (index: number) => void;
+};
+
 export type RowTapDecision<K> = {
   readonly outcome: RowTapOutcome;
   /** What to remember as the previous tap: cleared once a tap activates. */

@@ -119,6 +119,7 @@ import {
   type DetailsSheetAvailability,
   type DetailsSheetHistory,
 } from "./details-sheet.model";
+import { useCalendarCursor, type CalendarKeyboardCursor } from "./hooks/use-calendar-cursor";
 import { useCalendarRoute, type CalendarRouteRequest } from "./hooks/use-calendar-route";
 import { useCalendarState } from "./hooks/use-calendar-state";
 import { resolveSuggestionDebounceMs, useSearchSuggestions } from "./hooks/use-search-suggestions";
@@ -875,11 +876,7 @@ export function BrowseShell<T>({
   // Ink drains every available raw stdin chunk before React paints. Keep the
   // calendar's intended row in a ref so a burst like → ↓ ← ↓ ↵ never resolves
   // the row that was selected before the burst began.
-  const calendarKeyboardCursorRef = useRef<{
-    dayKey: string | null;
-    optionIndex: number;
-    option: BrowseShellOption<T> | null;
-  }>({
+  const calendarKeyboardCursorRef = useRef<CalendarKeyboardCursor<T>>({
     dayKey: null,
     optionIndex: 0,
     option: null,
@@ -1261,44 +1258,20 @@ export function BrowseShell<T>({
     );
   }, [emptyMessage, isCalendarView, options.length, query, resultSubtitle, searchState]);
 
-  const moveCalendarDayFromInput = useCallback(
-    (direction: 1 | -1) => {
-      const currentDay = calendarKeyboardCursorRef.current.dayKey ?? calendarDayFilter;
-      const currentIndex = calendarDays.findIndex((day) => day.key === currentDay);
-      const targetDay = calendarDays[currentIndex + direction]?.key;
-      if (!targetDay) return;
-      const targetOptions = calendarOptionsForDay(targetDay);
-      const targetOption = targetOptions[0] ?? null;
-      calendarKeyboardCursorRef.current = {
-        dayKey: targetDay,
-        optionIndex: 0,
-        option: targetOption,
-      };
-      setCalendarDayFilter(targetDay);
-      setSelectedIndex(0);
+  const calendarCursor = useCalendarCursor({
+    cursorRef: calendarKeyboardCursorRef,
+    dayFilter: calendarDayFilter,
+    days: calendarDays,
+    optionsForDay: calendarOptionsForDay,
+    setDayFilter: setCalendarDayFilter,
+    setTypeTab: calendar.setTypeTab,
+    setSelectedIndex,
+    focusList: () => setFocusZone("list"),
+    submit: (option) => {
+      if (searchState === "ready") onSubmit(option.value);
     },
-    [calendarDayFilter, calendarDays, calendarOptionsForDay, setCalendarDayFilter],
-  );
-
-  const moveCalendarRowFromInput = useCallback(
-    (direction: 1 | -1) => {
-      const currentDay = calendarKeyboardCursorRef.current.dayKey ?? calendarDayFilter;
-      const dayOptions = calendarOptionsForDay(currentDay);
-      if (dayOptions.length === 0) return;
-      const cursor = calendarKeyboardCursorRef.current;
-      const currentIndex = Math.min(Math.max(0, cursor.optionIndex), dayOptions.length - 1);
-      const targetIndex = (currentIndex + direction + dayOptions.length) % dayOptions.length;
-      const targetOption = dayOptions[targetIndex] ?? null;
-      calendarKeyboardCursorRef.current = {
-        dayKey: currentDay,
-        optionIndex: targetIndex,
-        option: targetOption,
-      };
-      setFocusZone("list");
-      setSelectedIndex(targetIndex);
-    },
-    [calendarDayFilter, calendarOptionsForDay],
-  );
+  });
+  const { moveDay: moveCalendarDayFromInput, moveRow: moveCalendarRowFromInput } = calendarCursor;
 
   useEffect(() => {
     const primaryData = buildDetailsPanelDataFromBrowseOption(settledOption);
@@ -2266,6 +2239,7 @@ export function BrowseShell<T>({
               compact={compact}
               maxWidth={listWidth}
               dense={denseChrome}
+              onSelect={pointerActive ? calendarCursor.selectType : undefined}
             />
             <CalendarDayStrip
               days={calendarDays}
@@ -2273,6 +2247,7 @@ export function BrowseShell<T>({
               narrow={viewport.breakpoint === "narrow"}
               maxWidth={listWidth}
               dense={denseChrome}
+              onSelect={pointerActive ? calendarCursor.selectDay : undefined}
             />
           </Box>
         ) : null}
@@ -2359,6 +2334,8 @@ export function BrowseShell<T>({
                         showForYouHeaderOnce={row.showForYouHeaderOnce}
                         isNew={row.isNew}
                         tracked={row.tracked}
+                        optionIndex={row.optionIndex}
+                        pointer={pointerActive ? calendarCursor : undefined}
                       />
                     );
                   })

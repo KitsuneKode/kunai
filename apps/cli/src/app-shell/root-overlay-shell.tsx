@@ -145,7 +145,6 @@ import {
   buildNotificationActionOptions,
   buildNotificationPickerOptions,
   getNotificationPrimaryAction,
-  getSelectedNotificationActionId,
   selectNotificationPickerOptions,
 } from "./notification-overlay-model";
 import { deliverNotificationPlayback } from "./notification-playback-delivery";
@@ -197,7 +196,11 @@ import {
   isRootChoiceOverlay,
   isRootMediaPickerOverlay,
 } from "./root-overlay-model";
-import { createRootPickerActions } from "./root-overlay-taps";
+import {
+  createNotificationInboxTaps,
+  createNotificationSubPickerActivation,
+  createRootPickerActions,
+} from "./root-overlay-taps";
 import {
   alignSessionForQueueLaunch,
   episodeInfoFromQueuePlaybackLaunch,
@@ -1586,6 +1589,25 @@ export function RootOverlayShell({
   const historyTapsLive = !commandMode && historyPendingDelete === null;
   const activateHistoryRowAt = (index: number) =>
     activateSelectedHistoryRow({ ...buildHistoryInputContext(), selectedIndex: index });
+  const activateNotificationSubPicker = createNotificationSubPickerActivation({
+    playConfirm: notificationPlayConfirm,
+    playConfirmOptions: notificationPlayConfirmOptions,
+    actionDedupKey: notificationActionDedupKey,
+    actionOptions: filteredNotificationActionOptions,
+    run: runNotificationAction,
+    clearPlayConfirm: () => setNotificationPlayConfirm(null),
+    closeActionPicker: () => {
+      setNotificationActionDedupKey(null);
+      setFilterQuery("");
+      setSelectedIndex(0);
+    },
+  });
+  const notificationInboxTaps = createNotificationInboxTaps({
+    commandMode,
+    rows: notificationsView.rows,
+    run: runNotificationAction,
+    setState: setNotificationsState,
+  });
   const pickerActions = createRootPickerActions({
     container,
     overlay,
@@ -1594,6 +1616,7 @@ export function RootOverlayShell({
     providerOptions: filteredProviderOptions,
     mediaPickerOptions: filteredGenericPickerOptions,
     setSelectedIndex,
+    activateNotificationSubPicker,
   });
   // One context for History's keys and taps, so a tap runs exactly the path
   // Enter runs (source choice, launch routing, diagnostics).
@@ -2011,32 +2034,8 @@ export function RootOverlayShell({
         pickerActions.activateProviderOption(selectedIndex);
         return;
       } else if (overlay.type === "notifications") {
-        if (notificationPlayConfirm) {
-          const choice = notificationPlayConfirmOptions[selectedIndex]?.value ?? "cancel";
-          if (choice === "confirm") {
-            runNotificationAction(
-              notificationPlayConfirm.dedupKey,
-              notificationPlayConfirm.actionId,
-              { confirmedContextSwitch: true },
-            );
-          } else {
-            setNotificationPlayConfirm(null);
-          }
-          return;
-        }
-        if (notificationActionDedupKey) {
-          const actionId = getSelectedNotificationActionId(
-            filteredNotificationActionOptions,
-            selectedIndex,
-          );
-          if (!actionId) return;
-          runNotificationAction(notificationActionDedupKey, actionId);
-          setNotificationActionDedupKey(null);
-          setFilterQuery("");
-          setSelectedIndex(0);
-        } else {
-          runNotificationAction(notificationsView.selectedRow?.dedupKey ?? null);
-        }
+        if (activateNotificationSubPicker) activateNotificationSubPicker(selectedIndex);
+        else runNotificationAction(notificationsView.selectedRow?.dedupKey ?? null);
         return;
       } else if (
         overlay.type === "season_picker" ||
@@ -2368,6 +2367,7 @@ export function RootOverlayShell({
           columns={overlayLayout.contentColumns}
           selectedIndex={notificationsView.selectedIndex}
           unreadCount={notificationUnreadCount}
+          taps={notificationInboxTaps}
         />
         {commandMode ? (
           <CommandPalette
