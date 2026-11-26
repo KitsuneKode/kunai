@@ -1,6 +1,4 @@
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile } from "node:fs/promises";
-import { basename, join } from "node:path";
 
 import {
   buildPickerActionContext,
@@ -8,6 +6,9 @@ import {
   type ListShellActionContext,
   type ShellOption,
 } from "@/app-shell/pickers";
+
+import { exportDurablePlaylist, importDurablePlaylist } from "./playlist-exchange-workflow";
+import { editPlaylistItems } from "./playlist-items-workflow";
 
 export { buildPickerActionContext };
 import { companionFallbackGlyph, companionToggleable } from "@/app-shell/companion-policy";
@@ -64,8 +65,7 @@ import {
   markSeasonThroughMediaItemWatched,
   mirrorListMembershipChange,
 } from "@/services/media-actions/create-container-media-action-router";
-import type { KunaiPlaylistDocument } from "@/services/playlists/KunaiPlaylistFormat";
-import { getKunaiPaths, type DownloadJobRecord } from "@/services/storage/storage-read-models";
+import type { DownloadJobRecord } from "@/services/storage/storage-read-models";
 import type { SyncPushSummary } from "@/services/sync/SyncService";
 import { fetchEpisodes } from "@/tmdb";
 import type { MediaKind } from "@kunai/types";
@@ -2123,6 +2123,11 @@ async function handlePlaylists(container: Container): Promise<ShellWorkflowResul
           detail: "Append playlist items without autoplaying",
         },
         {
+          value: "edit" as const,
+          label: "Edit items",
+          detail: "Reorder or remove what this playlist holds",
+        },
+        {
           value: "rename" as const,
           label: "Rename playlist",
         },
@@ -2145,6 +2150,8 @@ async function handlePlaylists(container: Container): Promise<ShellWorkflowResul
             ? `Loaded ${loaded} item(s) from "${picked.name}" into Up Next.`
             : "Selected playlist is empty.",
       });
+    } else if (itemAction === "edit") {
+      await editPlaylistItems(container, picked, actionContext);
     } else if (itemAction === "rename") {
       const nextName = await promptPlaylistName(container, {
         title: "Rename playlist",
@@ -2519,100 +2526,6 @@ async function handleUpNext(container: Container): Promise<ShellWorkflowResult> 
       continue;
     }
   }
-}
-
-async function ensurePlaylistExchangeDir(): Promise<string> {
-  const dir = join(getKunaiPaths().dataDir, "playlists");
-  await mkdir(dir, { recursive: true });
-  return dir;
-}
-
-async function exportDurablePlaylist(
-  container: Container,
-  actionContext: ListShellActionContext,
-): Promise<void> {
-  const playlists = container.durablePlaylistService.listPlaylists();
-  if (playlists.length === 0) {
-    container.stateManager.dispatch({
-      type: "SET_PLAYBACK_FEEDBACK",
-      note: "No durable playlists to export. Save the queue as a playlist first.",
-    });
-    return;
-  }
-
-  const picked = await chooseFromListShell({
-    title: "Export Playlist",
-    subtitle: "Exports identity and progress only; never stream URLs or local paths",
-    actionContext,
-    options: playlists.map((playlist) => ({
-      value: playlist.id,
-      label: playlist.name,
-      detail: playlist.description,
-    })),
-  });
-  if (!picked) return;
-
-  const playlist = playlists.find((item) => item.id === picked);
-  if (!playlist) return;
-  const document = container.durablePlaylistService.exportPlaylist(playlist.id, playlist.name, []);
-  const dir = await ensurePlaylistExchangeDir();
-  const filePath = join(dir, `${safeFileSlug(playlist.name)}.kunai-playlist.json`);
-  await Bun.write(filePath, `${JSON.stringify(document, null, 2)}\n`);
-  container.stateManager.dispatch({
-    type: "SET_PLAYBACK_FEEDBACK",
-    note: `Exported playlist to ${filePath}.`,
-  });
-}
-
-async function importDurablePlaylist(
-  container: Container,
-  actionContext: ListShellActionContext,
-): Promise<void> {
-  const dir = await ensurePlaylistExchangeDir();
-  const files = (await readdir(dir)).filter(
-    (name) => name.endsWith(".kunai-playlist.json") || name.endsWith(".json"),
-  );
-  if (files.length === 0) {
-    container.stateManager.dispatch({
-      type: "SET_PLAYBACK_FEEDBACK",
-      note: `No playlist files found in ${dir}.`,
-    });
-    return;
-  }
-
-  const picked = await chooseFromListShell({
-    title: "Import Playlist",
-    subtitle: `Choose a Kunai playlist file from ${dir}`,
-    actionContext,
-    options: files.map((file) => ({
-      value: join(dir, file),
-      label: basename(file),
-    })),
-  });
-  if (!picked) return;
-
-  const document = parseKunaiPlaylistDocument(await readFile(picked, "utf8"));
-  const playlist = container.durablePlaylistService.importPlaylist(document);
-  container.stateManager.dispatch({
-    type: "SET_PLAYBACK_FEEDBACK",
-    note: `Imported "${playlist.name}" without autoplaying anything.`,
-  });
-}
-
-function parseKunaiPlaylistDocument(json: string): KunaiPlaylistDocument {
-  const parsed = JSON.parse(json) as KunaiPlaylistDocument;
-  if (parsed.format !== "kunai-playlist" || parsed.version !== 1 || !Array.isArray(parsed.items)) {
-    throw new Error("Invalid Kunai playlist document");
-  }
-  return parsed;
-}
-
-function safeFileSlug(name: string): string {
-  const slug = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return slug || "playlist";
 }
 
 function describeStaleness(lastActivityAt: string): string {

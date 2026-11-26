@@ -270,3 +270,65 @@ test("DurablePlaylistService renames and deletes durable playlists", () => {
 
   db.close();
 });
+
+test("DurablePlaylistService moves items within a playlist and stops at the ends", () => {
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  let n = 0;
+  const service = new DurablePlaylistService(new PlaylistsRepository(db), {
+    now: () => "2026-05-17T00:00:00.000Z",
+    id: (prefix) => `${prefix}-${++n}`,
+  });
+  const playlist = service.createPlaylist("Order");
+  for (const title of ["A", "B", "C"]) {
+    service.addItem(playlist.id, { titleId: `tmdb:${title}`, mediaKind: "movie", title });
+  }
+  const titles = () => service.listItems(playlist.id).map((item) => item.title);
+  const idOf = (title: string) =>
+    service.listItems(playlist.id).find((item) => item.title === title)?.id ?? "";
+
+  expect(service.moveItem(playlist.id, idOf("C"), -1)).toBe(true);
+  expect(titles()).toEqual(["A", "C", "B"]);
+  expect(service.moveItem(playlist.id, idOf("A"), -1)).toBe(false);
+  expect(service.moveItem(playlist.id, idOf("B"), 1)).toBe(false);
+  expect(service.moveItem(playlist.id, "missing", 1)).toBe(false);
+  expect(titles()).toEqual(["A", "C", "B"]);
+
+  service.removeItem(idOf("C"));
+  expect(titles()).toEqual(["A", "B"]);
+  db.close();
+});
+
+test("DurablePlaylistService exports the watch progress it is given", () => {
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  const service = new DurablePlaylistService(new PlaylistsRepository(db), {
+    now: () => "2026-05-17T00:00:00.000Z",
+    id: (prefix) => `${prefix}-1`,
+  });
+  const playlist = service.createPlaylist("Progress");
+  service.addItem(playlist.id, {
+    titleId: "tmdb:9",
+    mediaKind: "series",
+    title: "Halfway",
+    season: 1,
+    episode: 1,
+  });
+  const exported = service.exportPlaylist(playlist.id, "Progress", [
+    {
+      titleId: "tmdb:9",
+      mediaKind: "series",
+      season: 1,
+      episode: 1,
+      positionSeconds: 600,
+      durationSeconds: 1200,
+      completed: false,
+    },
+  ]);
+  expect(exported.items[0]).toMatchObject({ progressPercent: 50 });
+  // The workflow used to pass []; that exports identity with no progress.
+  expect(
+    service.exportPlaylist(playlist.id, "Progress", []).items[0]?.progressPercent,
+  ).toBeUndefined();
+  db.close();
+});

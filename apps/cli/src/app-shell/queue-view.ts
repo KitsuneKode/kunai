@@ -12,6 +12,8 @@ export type QueueViewRow = {
   readonly position: number;
   readonly posterUrl?: string;
   readonly titleId: string;
+  /** Why the last start attempt failed, when it did and the row is still waiting. */
+  readonly failureNote?: string;
 };
 
 export type QueueRailModel = {
@@ -19,6 +21,7 @@ export type QueueRailModel = {
   readonly episodeLabel: string;
   readonly sourceLabel: string;
   readonly posterUrl?: string;
+  readonly failureNote?: string;
 };
 
 export type QueueView = {
@@ -68,6 +71,25 @@ function sourceLabel(source: string): string {
   }
 }
 
+/**
+ * A rolled-back start keeps its reason in `lastFailure`; without reading it the
+ * row silently looks like any other pending item and the user retries blind.
+ * Cancellations are the user's own choice, not a failure worth flagging.
+ */
+export function startFailureNote(entry: QueueEntry): string | undefined {
+  if (entry.playedAt !== undefined || entry.status === "in-flight") return undefined;
+  switch (entry.lastFailure?.code) {
+    case "provider-exhausted":
+      return "no working source last try";
+    case "mpv-launch-failed":
+      return "player did not open last try";
+    case "handoff-failed":
+      return "handoff failed last try";
+    default:
+      return undefined;
+  }
+}
+
 export function buildQueueView(input: BuildQueueViewInput): QueueView {
   const played = input.entries.filter((entry) => entry.playedAt !== undefined);
   const unplayed = input.entries.filter((entry) => entry.playedAt === undefined);
@@ -110,6 +132,7 @@ export function buildQueueView(input: BuildQueueViewInput): QueueView {
       position: isPlayed ? 0 : unplayedPos,
       posterUrl: input.resolvePoster(entry.titleId),
       titleId: entry.titleId,
+      failureNote: startFailureNote(entry),
     };
   });
 
@@ -122,6 +145,7 @@ export function buildQueueView(input: BuildQueueViewInput): QueueView {
         episodeLabel: selected.episodeLabel,
         sourceLabel: selected.sourceLabel,
         posterUrl: selected.posterUrl,
+        failureNote: selected.failureNote,
       }
     : null;
 
