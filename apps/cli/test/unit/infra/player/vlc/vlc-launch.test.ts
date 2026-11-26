@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   buildVlcArgs,
@@ -171,9 +172,13 @@ describe("keeping the window for the next episode", () => {
   });
 
   test("a local file goes to in_play as a file URI", () => {
-    const query = new URLSearchParams(
-      buildVlcInPlayQuery({ url: "/media/My Show/ep 2.mkv", title: "Ep 2" }),
-    );
-    expect(query.get("input")).toBe("file:///media/My%20Show/ep%202.mkv");
+    const path = "/media/My Show/ep 2.mkv";
+    const query = new URLSearchParams(buildVlcInPlayQuery({ url: path, title: "Ep 2" }));
+    const input = query.get("input") ?? "";
+    // Windows resolves a rooted path against the current drive
+    // (file:///C:/media/...), so pin the encoding, not the drive.
+    expect(input).toBe(pathToFileURL(path).href);
+    expect(input).toStartWith("file:///");
+    expect(input).toEndWith("/media/My%20Show/ep%202.mkv");
   });
 });
