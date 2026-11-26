@@ -18,6 +18,15 @@ For the short statement of what leaves your machine, see
 - Startup maintenance may prune expired cache rows. It must not delete durable
   history, playlists, download jobs, lists, follows, or notifications.
 
+## Provider Fixes
+
+When a provider changes its address or encryption, Kunai can pick up a signed
+fix without a new release. About every six hours (sooner when a provider just
+failed) it downloads a small signed file from Kunai's GitHub releases. The
+request carries nothing about you or what you watch, and the file is ignored
+unless its Ed25519 signature matches the key built into Kunai.
+`kunai providers status` shows the fix in use; `kunai providers reset` drops it.
+
 ## Recovery Behavior
 
 Playback recovery is conservative:
