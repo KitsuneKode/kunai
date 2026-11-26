@@ -236,8 +236,6 @@ export const COMMAND_CONTEXTS = {
     "recover",
     "recompute",
     "fallback",
-    "play-local",
-    "watch-online",
     "source",
     "quality",
     "audio",

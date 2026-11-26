@@ -214,9 +214,11 @@ scenario_checksum_rejection() {
   local writable
   writable="$(mktemp -d /tmp/kunai-corrupt-fixture.XXXXXX)"
   cp -a "$FIXTURE/." "$writable/"
-  # Corrupt the archive after SHA256SUMS.archives was generated so transport
-  # verification fails before extraction or raw compatibility fallback.
+  # Corrupt both archives after SHA256SUMS.archives was generated so transport
+  # verification fails before extraction or raw compatibility fallback —
+  # whichever one the installer picks (zstd when the image has `zstd`).
   printf '\x00corrupt' >>"$writable/download/v1.0.0/$ASSET.tar.gz"
+  printf '\x00corrupt' >>"$writable/download/v1.0.0/$ASSET.tar.zst"
   start_fixture_server "$writable"
 
   set +e

@@ -6,6 +6,8 @@
 // other, which oxlint's `import(no-cycle)` correctly refused.
 
 import type { Container } from "@/container";
+import type { SyncAdapter } from "@/services/sync/SyncAdapter";
+import type { SyncCapabilities } from "@/services/sync/types";
 
 export type TrackerConnectOutcome =
   | { readonly status: "connected"; readonly alreadyConnected?: boolean }
@@ -94,6 +96,10 @@ export async function connectNamedTracker(
     });
     return { status: "failed", error: result.error };
   }
+  // A fresh link is the user asking for sync: turn on what this tracker can
+  // do. Connecting used to leave every flag at its default (off), so the
+  // account showed "connected · up to date" while nothing was ever sent.
+  await setTrackerSync(container, tracker, adapter.capabilities, true);
   const resumed = container.syncService.resumeAfterReauth(adapter.id);
   if (resumed > 0) container.syncService.deliverSoon();
   container.stateManager.dispatch({
@@ -101,4 +107,60 @@ export async function connectNamedTracker(
     note: `Connected to ${adapter.displayName}.`,
   });
   return { status: "connected" };
+}
+
+/**
+ * Unlink a tracker and turn its sync off, so config never claims a link with
+ * no token behind it (#232). Every disconnect path goes through here.
+ */
+export async function disconnectNamedTracker(
+  container: Container,
+  adapter: Pick<SyncAdapter, "id" | "displayName" | "capabilities" | "disconnect">,
+  options: { readonly signal?: AbortSignal } = {},
+): Promise<void> {
+  await adapter.disconnect({ signal: options.signal ?? new AbortController().signal });
+  await setTrackerSync(container, adapter.id, adapter.capabilities, false);
+  container.stateManager.dispatch({
+    type: "SET_PLAYBACK_FEEDBACK",
+    note: `Disconnected from ${adapter.displayName}.`,
+  });
+}
+
+/**
+ * Turn a linked tracker's sync on. Setup calls this for an account that was
+ * already connected when the user ticked it: the tick is the request.
+ */
+export async function turnOnTrackerSync(
+  container: Container,
+  tracker: "anilist" | "tmdb",
+): Promise<void> {
+  const adapter = container.syncService.adapters.find((candidate) => candidate.id === tracker);
+  if (adapter) await setTrackerSync(container, tracker, adapter.capabilities, true);
+}
+
+/**
+ * The sync switches a link or unlink implies. On: sync itself, episode
+ * progress where the tracker has it, and lists where it can hold them. Off:
+ * the main switch only, so a later reconnect starts from the user's choices.
+ * Read live, because a Settings session may have changed them since startup.
+ */
+async function setTrackerSync(
+  container: Container,
+  tracker: "anilist" | "tmdb",
+  capabilities: SyncCapabilities,
+  on: boolean,
+): Promise<void> {
+  const sync = container.config.getRaw().sync;
+  const current = sync[tracker];
+  const next = on
+    ? {
+        ...current,
+        enabled: true,
+        trackWatched: capabilities.episodeProgress || current.trackWatched,
+        syncList:
+          capabilities.watchlistMembership || capabilities.favoriteMembership || current.syncList,
+      }
+    : { ...current, enabled: false };
+  await container.config.update({ sync: { ...sync, [tracker]: next } });
+  await container.config.save();
 }

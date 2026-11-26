@@ -34,10 +34,12 @@ Default: downloads a verified release binary into a versioned store and links `~
 curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
 ```
 
-The installer downloads the platform `.tar.gz`, verifies it with
+The installer downloads the platform archive (the smaller `.tar.zst` when
+`zstd` is installed, the `.tar.gz` otherwise), verifies it with
 `SHA256SUMS.archives`, accepts exactly one expected regular-file member, and
 verifies the extracted binary again with `SHA256SUMS`. It needs the standard
-`gzip` and `tar` tools. Releases from before archive publication use the legacy
+`gzip` and `tar` tools; `zstd` is optional and saves about a fifth of the
+download. Releases from before archive publication use the legacy
 raw binary only when the archive or archive-checksum endpoint returns HTTP 404
 or 410; integrity and network failures do not downgrade verification.
 
@@ -89,7 +91,8 @@ The installer detects Termux before generic Linux and selects
 `android-arm64-bionic` or `android-x64-bionic`. It installs under Termux-owned
 storage, not shared `/sdcard`. Install VLC or mpv-android separately as an
 Android app. Use `--player auto` for the chooser, `--player vlc`, or
-`--player mpv`.
+`--player mpv`, or save the choice in Settings → Playback → Player so every
+launch uses it.
 
 Streams that need headers, cookies, or external subtitles play through a
 per-playback loopback gateway: Kunai serves the stream on `127.0.0.1` under an
@@ -99,8 +102,9 @@ and DASH BaseURLs, segment lists, and standard segment templates use the same
 guarded connection, including redirects and range requests.
 External subtitles ride the gateway and arrive as `subtitles_location` (VLC) or
 `subs` (mpv-android) extras, and deferred locators materialize into a served
-manifest. Select `--player vlc` or `--player mpv` for external subtitles;
-the Android chooser cannot pass them and Kunai refuses that combination.
+manifest. Choose VLC or mpv-android (Settings → Playback → Player, or
+`--player`) for external subtitles; the Android chooser cannot pass them, and
+Kunai says so instead of playing without them.
 Idle shutdown waits for an active stream to finish. Shell exit stops the gateway.
 Blocked playlist URLs stay on a local refusal route, and every route requires
 the session token.

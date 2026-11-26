@@ -118,9 +118,18 @@ export function CalendarTypeTabs({
   maxWidth?: number;
   dense?: boolean;
 }) {
-  if (compact) return null;
   const labels = CALENDAR_TYPE_TABS.map((tab) => (tab === "TV" ? "Series" : tab));
   const activeIndex = CALENDAR_TYPE_TABS.indexOf(activeTab);
+  // Narrow terminals (portrait phones) used to lose the type tabs entirely, so
+  // nothing said which slice was showing or that Tab changes it.
+  if (compact) {
+    return (
+      <Text color={palette.dim}>
+        <Text color={palette.accent}>{labels[activeIndex] ?? activeTab}</Text>
+        {" · Tab: type"}
+      </Text>
+    );
+  }
   const showHint = maxWidth === undefined || maxWidth >= 100;
   return (
     <ClaudeTabRow

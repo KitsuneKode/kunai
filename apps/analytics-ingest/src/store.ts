@@ -29,6 +29,14 @@ export type DailyRollup = {
   readonly lifetimeInstalls: number;
 };
 
+/** What a v2 ping adds to the shared fields. */
+export type RecordPingV2Fields = {
+  /** `YYYY-MM` the client's day falls in: the month its rotating id belongs to. */
+  readonly activeMonth: string;
+  /** `YYYY-MM` the install enabled analytics. */
+  readonly cohort: string;
+};
+
 export type RecordPingInput = {
   readonly day: string;
   /** HMAC-SHA256 hex digest. Never a raw install UUID. */
@@ -36,6 +44,13 @@ export type RecordPingInput = {
   readonly version: string;
   readonly os: string;
   readonly arch: string;
+  /**
+   * Present for a v2 ping. Absent means v1: the install's month is the
+   * ingest day's, it has no cohort, and it keeps its `install_lifetime` row.
+   * A v2 ping never writes `install_lifetime` — its id rotates monthly, so a
+   * durable row would be one fresh "install" per month.
+   */
+  readonly v2?: RecordPingV2Fields;
 };
 
 /**
@@ -43,8 +58,48 @@ export type RecordPingInput = {
  * nothing was stored. The HTTP layer still answers success — telling a flood
  * where the ceiling is only helps it find the edge, and a dropped ping is not
  * a client error.
+ *
+ * `duplicate: true` means this install already has today's row. Nothing is
+ * written and no budget is spent: admission counts distinct installs, not
+ * requests, so a client retrying cannot crowd out others.
  */
-export type RecordPingResult = { readonly admitted: boolean };
+export type RecordPingResult = { readonly admitted: boolean; readonly duplicate: boolean };
+
+/** Unique active installs in one calendar month, v1 and v2 together. */
+export type MonthRollup = {
+  /** `YYYY-MM`. */
+  readonly month: string;
+  readonly activeInstalls: number;
+  readonly computedAt: string;
+};
+
+/** v2 installs of one cohort that were active in one month. */
+export type CohortRollup = {
+  /** `YYYY-MM` the installs enabled analytics. */
+  readonly cohort: string;
+  /** `YYYY-MM` they were active in. `month === cohort` is the cohort's size. */
+  readonly month: string;
+  readonly installs: number;
+  readonly computedAt: string;
+};
+
+/**
+ * Where a distribution count comes from. `marker` is a GitHub release asset
+ * that only exists to be counted: `install.marker` and `update.marker`.
+ */
+export type DistributionSource = "github" | "npm" | "marker";
+
+/** One cumulative public download count, as read from GitHub or npm. */
+export type DistributionEntry = {
+  readonly source: DistributionSource;
+  /** Release tag for GitHub assets; empty for npm, which counts all versions. */
+  readonly release: string;
+  /** `linux-x64`, `android-arm64`, …; `launcher` for the npm launcher; `install`/`update` for markers. */
+  readonly platform: string;
+  readonly cumulative: number;
+};
+
+export type DistributionRow = DistributionEntry & { readonly day: string };
 
 /** What the retention sweep removed. Reported by the cron for operator visibility. */
 export type PruneLifetimeResult = { readonly retired: number };
@@ -80,6 +135,27 @@ export type AnalyticsStore = {
    * disabled.
    */
   pruneLifetimeBefore(day: string): Promise<PruneLifetimeResult>;
+  /**
+   * Recompute `month_rollup` and `cohort_rollup` for every month that still
+   * holds `month_active` rows, and return those months ascending. A month is
+   * final once its rows are pruned; until then every run recomputes it, so a
+   * missed cron run loses nothing.
+   */
+  rollUpMonths(): Promise<readonly string[]>;
+  /** Deletes `month_active` rows for months strictly before `month` (`YYYY-MM`). */
+  pruneMonthActiveBefore(month: string): Promise<number>;
+  /** Inclusive `YYYY-MM` range, ascending. */
+  readMonthRollups(fromMonth: string, toMonth: string): Promise<readonly MonthRollup[]>;
+  /** Every cohort row with `cohort >= fromCohort`, ascending by cohort then month. */
+  readCohortRollups(fromCohort: string): Promise<readonly CohortRollup[]>;
+  /**
+   * Replace the snapshot for `day` with `entries`, all or nothing. A partial
+   * snapshot would read as every missing series dropping to zero and coming
+   * back the next day as one enormous delta.
+   */
+  writeDistributionSnapshot(day: string, entries: readonly DistributionEntry[]): Promise<number>;
+  /** Inclusive range, ascending by day. */
+  readDistribution(fromDay: string, toDay: string): Promise<readonly DistributionRow[]>;
 };
 
 export function countBy<T>(rows: readonly T[], key: (row: T) => string): Record<string, number> {

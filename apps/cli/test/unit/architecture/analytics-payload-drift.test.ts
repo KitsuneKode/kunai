@@ -3,22 +3,30 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
+  ANALYTICS_PAYLOAD_FIELDS,
   ANALYTICS_PAYLOAD_KEYS,
+  analyticsOs,
+  describeAnalyticsPayload,
   type AnalyticsPayload,
 } from "@/services/analytics/usage-analytics-service";
+import { RELEASE_MARKER_NAMES } from "@/services/update/release-marker";
 
 import { IST_DAY_BOUNDARY_FROM } from "../../../../analytics-ingest/src/analytics-day";
+import {
+  ANALYTICS_PAYLOAD_KEYS as INGEST_V1_KEYS,
+  ANALYTICS_PAYLOAD_V2_KEYS as INGEST_V2_KEYS,
+} from "../../../../analytics-ingest/src/ingest";
+import { ALLOWED_OS } from "../../../../analytics-ingest/src/payload-validation";
 
 const ROOT = join(import.meta.dir, "../../../../..");
 const CONTRACT = join(ROOT, ".docs/analytics-privacy-contract.md");
 const USER_DOC = join(ROOT, "docs/users/reliability-and-privacy.mdx");
 
 /**
- * Imported, never re-declared. A local copy would let a sixth wire field ship
- * while this file stayed green and both documents still said five — which is
- * the precise failure this gate exists to prevent.
+ * The client sends one shape (v2); the ingest accepts two. v1 is what every
+ * earlier release sends and stays accepted, so the contract names both.
  */
-const PAYLOAD_KEYS = ANALYTICS_PAYLOAD_KEYS;
+const INGEST_WIRE_KEYS = [...new Set([...INGEST_V1_KEYS, ...INGEST_V2_KEYS])];
 
 /**
  * Prose in both documents is hard-wrapped, so a phrase can straddle a newline.
@@ -46,29 +54,110 @@ describe("analytics payload documentation drift", () => {
     // sent. Adding a field to AnalyticsPayload without adding it here is a
     // compile error; adding it to both then fails the doc assertions below.
     const sample: AnalyticsPayload = {
-      installId: "id",
+      id: "id",
+      cohort: "2026-11",
+      day: "2026-11-25",
       version: "0.0.0",
       os: "linux",
       arch: "x64",
-      ts: 1,
     };
     expect(Object.keys(sample).sort()).toEqual([...ANALYTICS_PAYLOAD_KEYS]);
-    expect(ANALYTICS_PAYLOAD_KEYS).toHaveLength(5);
+    expect(ANALYTICS_PAYLOAD_KEYS).toHaveLength(6);
+    expect([...ANALYTICS_PAYLOAD_FIELDS].sort()).toEqual([...ANALYTICS_PAYLOAD_KEYS]);
+  });
+
+  test("the body the client builds carries the fields in the documented order", () => {
+    const built = describeAnalyticsPayload({
+      identity: { analytics: "unset", installId: "", analyticsCohort: "" },
+      version: "0.0.0",
+      platform: { os: "linux", arch: "x64" },
+      now: Date.UTC(2026, 10, 25),
+    });
+    expect(Object.keys(built)).toEqual([...ANALYTICS_PAYLOAD_FIELDS]);
+  });
+
+  /**
+   * `{ id, cohort, day, version, os, arch }`, built from the code's field
+   * order: imported, never re-declared. A local copy would let a seventh wire
+   * field ship while this file stayed green and both documents still said six,
+   * which is the precise failure this gate exists to prevent.
+   */
+  const DOCUMENTED_PAYLOAD = `\`{ ${ANALYTICS_PAYLOAD_FIELDS.join(", ")} }\``;
+
+  test("the ingest accepts exactly what the client sends", () => {
+    // The client's shape must be one the ingest accepts, or every ping 400s and
+    // the client backs off for a day.
+    expect([...ANALYTICS_PAYLOAD_KEYS]).toEqual([...INGEST_V2_KEYS]);
+  });
+
+  test("every os the client can report is one the ingest accepts", () => {
+    const reported = [
+      analyticsOs("linux", {}),
+      analyticsOs("darwin", {}),
+      analyticsOs("win32", {}),
+      analyticsOs("linux", { TERMUX_VERSION: "0.118.1" }),
+      analyticsOs("android", {}),
+    ];
+    expect(reported).toContain("android");
+    for (const os of reported) {
+      expect(
+        ALLOWED_OS.some((allowed) => allowed === os),
+        `${os} is accepted`,
+      ).toBe(true);
+    }
+  });
+
+  test("the contract names every key of both shapes the ingest accepts", () => {
+    const body = prose(CONTRACT);
+    for (const key of INGEST_WIRE_KEYS) expect(body).toContain(key);
+    for (const wireKeys of [INGEST_V1_KEYS, INGEST_V2_KEYS]) {
+      const listed = [...body.matchAll(/`\{ ([\w, ]+) \}`/g)].map((match) =>
+        (match[1] ?? "").split(", ").sort().join(","),
+      );
+      expect(listed, `contract states ${wireKeys.join(", ")}`).toContain([...wireKeys].join(","));
+    }
+    for (const os of ALLOWED_OS) expect(body).toContain(`\`${os}\``);
   });
 
   for (const [label, path] of docs) {
-    test(`${label} names exactly the five wire keys`, () => {
+    test(`${label} names exactly the six wire keys, in wire order`, () => {
+      // Matching each key alone proves nothing: `id`, `day` and `os` occur in
+      // any English paragraph. The documented shape has to match the code's.
+      expect(prose(path)).toContain(DOCUMENTED_PAYLOAD);
+    });
+
+    test(`${label} states the id rotates monthly and is never the raw id`, () => {
+      const body = prose(path).toLowerCase();
+      expect(body).toMatch(/every (calendar )?month/);
+      expect(body).toContain("hmac");
+    });
+
+    test(`${label} names android as a sent os`, () => {
+      expect(prose(path)).toContain("android");
+    });
+
+    test(`${label} points at the local ping log and the preview`, () => {
       const body = prose(path);
-      for (const key of PAYLOAD_KEYS) {
-        expect(body).toContain(key);
-      }
+      expect(body).toContain("kunai analytics log");
+      expect(body).toContain("kunai analytics preview");
+      expect(body.toLowerCase()).toMatch(/deleted when you turn it off|disable,? .*remove/);
+    });
+
+    test(`${label} documents the release markers and that Kunai receives nothing`, () => {
+      const body = prose(path);
+      for (const name of RELEASE_MARKER_NAMES) expect(body).toContain(name);
+      expect(body).toMatch(/GitHub counts the download; (we|Kunai) receives? nothing/);
+      for (const optOut of ["DO_NOT_TRACK", "CI", "KUNAI_NO_MARKER"])
+        expect(body).toContain(optOut);
+    });
+
+    test(`${label} describes a neutral consent screen`, () => {
+      expect(prose(path).toLowerCase()).toMatch(/neither .* is pre-selected/);
     });
 
     test(`${label} states that consent is a keystroke and no skip can grant it`, () => {
-      // Setup now *recommends* analytics and pre-selects it, so "off by
-      // default" is no longer the property to assert — the guarantee that
-      // actually protects people is narrower and stronger: only a keystroke on
-      // the consent screen may enable it, and no skip, accept-all, or
+      // The guarantee that actually protects people: only a keystroke on the
+      // consent screen may enable it, and no skip, accept-all, or
       // non-interactive path can. That is what these docs must keep saying.
       const body = prose(path).toLowerCase();
       expect(body).toMatch(/keystroke|confirm|explicit choice|explicitly enable/);

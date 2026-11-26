@@ -116,6 +116,24 @@ describe("vault-backed SyncTokenFileIo", () => {
     expect(vault.store.has(CREDENTIAL_KEYS.anilistTokens)).toBe(false);
     expect(vault.store.get(CREDENTIAL_KEYS.tmdbTokens)).toBe("unchanged-fixture-bytes");
   });
+
+  test("a vault record with the wrong shape reads as absent; the other tracker stays", async () => {
+    const vault = fakeVault();
+    vault.store.set(CREDENTIAL_KEYS.anilistTokens, JSON.stringify({ accessToken: 1 }));
+    vault.store.set(CREDENTIAL_KEYS.tmdbTokens, JSON.stringify({ sessionId: "fixture-tmdb" }));
+    const store = new SyncTokenStore(fakePaths(dir), vaultSyncTokenFileIo(vault));
+
+    expect(await store.load()).toEqual({ tmdb: { sessionId: "fixture-tmdb" } });
+  });
+
+  test("a patch carrying an invalid record is refused and the vault is untouched", async () => {
+    const vault = fakeVault();
+    const store = new SyncTokenStore(fakePaths(dir), vaultSyncTokenFileIo(vault));
+
+    await expect(store.patchTmdb({ sessionId: "" })).rejects.toThrow();
+
+    expect(vault.store.size).toBe(0);
+  });
 });
 
 describe("migrateSyncTokensToVault", () => {
@@ -158,6 +176,18 @@ describe("migrateSyncTokensToVault", () => {
     ]);
     await expect(readFile(file(dir), "utf8")).rejects.toThrow();
     expect(JSON.parse(vault.store.get(CREDENTIAL_KEYS.anilistTokens)!)).toEqual(plaintext.anilist);
+  });
+
+  test("an invalid plaintext record stays in the file; the valid one migrates", async () => {
+    const broken = { accessToken: "", userId: 9 };
+    await writeFile(file(dir), JSON.stringify({ anilist: broken, tmdb: plaintext.tmdb }));
+    const vault = fakeVault();
+
+    await migrateSyncTokensToVault({ paths: fakePaths(dir), vault });
+
+    expect(vault.store.has(CREDENTIAL_KEYS.anilistTokens)).toBe(false);
+    expect(JSON.parse(vault.store.get(CREDENTIAL_KEYS.tmdbTokens)!)).toEqual(plaintext.tmdb);
+    expect(JSON.parse(await readFile(file(dir), "utf8"))).toEqual({ anilist: broken });
   });
 
   test("read-back mismatch keeps the plaintext (never write→delete)", async () => {

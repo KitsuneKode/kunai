@@ -48,17 +48,19 @@ describe("gatePlaybackDependencies", () => {
     expect(result.remediation.platform).toBe("android");
   });
 
-  test("rejects desktop VLC explicitly instead of silently using mpv", async () => {
+  test("missing desktop VLC names VLC, its decoder plugin, and the mpv way out", async () => {
     const result = await gatePlaybackDependencies({
-      player: { isAvailable: async () => true },
-      playerMode: { kind: "unsupported", choice: "vlc" },
+      player: { isAvailable: async () => false },
+      playerMode: { kind: "managed-vlc" },
       platform: "linux",
     });
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected blocked playback");
-    expect(result.dependency).toBe("player-selection");
-    expect(result.problem.cause).toBe("player-selection-unsupported");
-    expect(result.problem.userMessage).toContain("--player auto");
+    expect(result.dependency).toBe("vlc");
+    expect(result.problem.cause).toBe("vlc-missing");
+    expect(result.problem.userMessage).toContain("--player mpv");
+    expect(result.remediation.commands).toContain("sudo pacman -S vlc vlc-plugin-ffmpeg");
+    expect(result.problem.userMessage).not.toContain("apt install mpv");
   });
 
   test("missing mpv blocks playback with Linux guidance", async () => {
