@@ -695,9 +695,7 @@ export function RootOverlayShell({
     setTracksNav((prev) => {
       const group = tracksPanelGroups[prev.sectionIndex];
       const maxIndex = (group?.rows.length ?? 1) - 1;
-      if (prev.optionIndex > maxIndex && maxIndex >= 0) {
-        return { ...prev, optionIndex: maxIndex };
-      }
+      if (prev.optionIndex > maxIndex && maxIndex >= 0) return { ...prev, optionIndex: maxIndex };
       return prev;
     });
   }, [tracksPanelGroups]);
@@ -1762,9 +1760,7 @@ export function RootOverlayShell({
         return;
       }
 
-      if (backAction === "defer-to-surface" || backAction === "no-op") {
-        return;
-      }
+      if (backAction === "defer-to-surface" || backAction === "no-op") return;
 
       cancelRootOverlay(overlay, container.stateManager);
       return;
