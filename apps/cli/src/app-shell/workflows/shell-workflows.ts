@@ -986,9 +986,9 @@ async function handleAnalytics(container: Container): Promise<"handled"> {
   const subtitle = [
     `Status: ${status}`,
     "Off by default · explicit opt-in · at most one ping per day.",
-    "Fields: installId, version, os, arch, ts — never titles, queries, providers, URLs, or paths.",
-    "Turning it off also deletes the install id from disk.",
-    "DO_NOT_TRACK=1 and CI=true block sends regardless of this setting.",
+    `Fields: ${Object.keys(payload).join(", ")} — never titles, queries, providers, URLs, or paths.`,
+    "The id is a monthly HMAC of a local id · `kunai analytics log` lists every ping sent.",
+    "Turning it off deletes the id · DO_NOT_TRACK=1 and CI=true block sends regardless.",
   ].join("  ·  ");
 
   const choice = await chooseFromListShell({
@@ -1003,7 +1003,7 @@ async function handleAnalytics(container: Container): Promise<"handled"> {
       {
         value: "enable" as const,
         label: status === "enabled" ? "Analytics enabled" : "Turn on anonymous usage ping",
-        detail: "One ping / 24h · installId + version + os + arch + ts only",
+        detail: `One ping / 24h · ${Object.keys(payload).join(" + ")} only`,
       },
       {
         value: "disable" as const,

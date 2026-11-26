@@ -57,6 +57,7 @@ const CONSENT_OWNED_CONFIG_KEYS = [
   "analytics",
   "analyticsNoticeShown",
   "installId",
+  "analyticsCohort",
   "lastAnalyticsPingAt",
   "analyticsRetryAfter",
   "analyticsEndpoint",

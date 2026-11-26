@@ -10,6 +10,7 @@ import type { CapabilitySnapshot } from "@/ui";
 import React from "react";
 
 import { render, stripAnsi } from "../../harness/render-capture";
+import { UNSET_PAYLOAD_FIXTURE } from "../../support/analytics-fixtures";
 
 // The capture harness cannot deliver a lone escape byte in a form Ink's
 // useInput resolves (see #227's own verification notes), so these drive `q`,
@@ -53,6 +54,7 @@ function start(initialOverrides: Partial<SetupInitialState> = {}) {
   const results: { result: SetupFlowResult; prefs: SetupPrefs; answeredScreens: number }[] = [];
   const handle = render(
     <SetupShell
+      analyticsPayload={UNSET_PAYLOAD_FIXTURE}
       snapshot={READY}
       finish={(result, prefs, answeredScreens) => results.push({ result, prefs, answeredScreens })}
       initial={{ ...BASE_INITIAL, ...initialOverrides }}
@@ -149,7 +151,8 @@ test("[s] never flips a hydrated-on standing decision off (#231, with #228)", ()
     expect(handle.lastFrame()).toContain("AniList");
 
     handle.stdin.enqueue("s"); // recommended = what the user already has
-    handle.stdin.enqueue("\r"); // analytics confirm (pre-selected ON)
+    handle.stdin.enqueue("\x1b[B"); // analytics: nothing is pre-selected; choose share
+    handle.stdin.enqueue("\r"); // analytics confirm
     handle.stdin.enqueue("\r"); // done
 
     expect(results).toHaveLength(1);

@@ -144,6 +144,7 @@ export async function runSetupWizard({
     // The controls start from what is actually configured, so completing the
     // wizard rewrites only what the screens showed (#228).
     initial: wizardInitialStateFromConfig(current, snapshot.ytDlp),
+    analyticsPayload: container.usageAnalytics.describePayload(),
   });
   const { outcome, prefs, answeredScreens } = await result;
   // One writer: the service owns what a consent choice means in config, and
@@ -246,6 +247,8 @@ export async function runSetupWizard({
 
     await container.config.update(patch);
     await container.config.save();
+    // A "don't share" answer removes the local ping log with the id.
+    await container.usageAnalytics.settleLocalPingLog();
     // A restore point nobody knows about is not a feature.
     if (snapshotted) {
       note(container, "Your previous settings were saved — restore them from /settings.");

@@ -12,6 +12,7 @@ import type { CapabilitySnapshot } from "@/ui";
 import React from "react";
 
 import { render, stripAnsi } from "../../harness/render-capture";
+import { UNSET_PAYLOAD_FIXTURE } from "../../support/analytics-fixtures";
 
 /**
  * The analytics non-negotiable, driven by real keystrokes.
@@ -23,9 +24,10 @@ import { render, stripAnsi } from "../../harness/render-capture";
  * blind spot hid a real hole: consent used to be recorded when the user
  * ARRIVED on the screen, with the live cursor read at finish time, so walking
  * onto the screen, pressing left to go back, and then pressing `S` on an
- * earlier screen finished with the cursor still on the pre-selected "turn it
- * on" and opted the user in. AGENTS.md: no skip, accept-all-defaults, or
- * non-interactive path may enable analytics.
+ * earlier screen finished with the cursor still on the then pre-selected "turn
+ * it on" and opted the user in. AGENTS.md: no skip, accept-all-defaults, or
+ * non-interactive path may enable analytics. The screen now pre-selects
+ * nothing at all.
  *
  * These press the keys instead.
  */
@@ -68,6 +70,7 @@ function start() {
   const results: { result: SetupFlowResult; prefs: SetupPrefs; answeredScreens: number }[] = [];
   const handle = render(
     <SetupShell
+      analyticsPayload={UNSET_PAYLOAD_FIXTURE}
       snapshot={READY}
       finish={(result, prefs, answeredScreens) => results.push({ result, prefs, answeredScreens })}
       initial={BASE_INITIAL}
@@ -87,8 +90,9 @@ test("arriving on the consent screen and stepping back is not consent (#227 cont
   const { handle, results } = start();
   try {
     walkToLibrary(handle);
-    handle.stdin.enqueue("\r"); // -> analytics; cursor sits on "Turn it on"
-    expect(stripAnsi(handle.lastFrame())).toContain("Turn it on");
+    handle.stdin.enqueue("\r"); // -> analytics; nothing is selected
+    handle.stdin.enqueue("\x1b[B"); // cursor onto "Share anonymous usage"
+    expect(stripAnsi(handle.lastFrame())).toContain("Share anonymous usage");
 
     handle.stdin.enqueue("\x1b[D"); // left arrow — back to the library screen
     expect(stripAnsi(handle.lastFrame())).toContain("Playback, downloads & accounts");
@@ -113,7 +117,7 @@ test("the same walk-back followed by [s] never opts in either", () => {
     handle.stdin.enqueue("\r"); // -> analytics
     handle.stdin.enqueue("\x1b[D"); // back to library
     handle.stdin.enqueue("s"); // "use recommended" on library -> analytics again
-    expect(stripAnsi(handle.lastFrame())).toContain("Turn it on");
+    expect(stripAnsi(handle.lastFrame())).toContain("Share anonymous usage");
 
     // Still nothing decided; leaving now must leave the standing value alone.
     handle.stdin.enqueue("\x1b[D"); // back to library
@@ -128,11 +132,30 @@ test("the same walk-back followed by [s] never opts in either", () => {
   }
 });
 
-test("confirming on the consent screen is what enables it", () => {
+test("the consent screen opens with nothing selected, and Enter alone does not answer it", () => {
   const { handle, results } = start();
   try {
     walkToLibrary(handle);
-    handle.stdin.enqueue("\r"); // -> analytics, pre-selected on
+    handle.stdin.enqueue("\r"); // -> analytics
+    const opened = stripAnsi(handle.lastFrame());
+    expect(opened).toContain("Share anonymous usage");
+    expect(opened).not.toContain("▌");
+
+    handle.stdin.enqueue("\r"); // nothing to confirm yet: stays
+    handle.stdin.enqueue("\r");
+    expect(stripAnsi(handle.lastFrame())).toContain("Share anonymous usage");
+    expect(results).toHaveLength(0);
+  } finally {
+    handle.unmount();
+  }
+});
+
+test("choosing share and confirming is what enables it", () => {
+  const { handle, results } = start();
+  try {
+    walkToLibrary(handle);
+    handle.stdin.enqueue("\r"); // -> analytics, nothing selected
+    handle.stdin.enqueue("\x1b[B"); // down: "Share anonymous usage"
     handle.stdin.enqueue("\r"); // confirm -> done
     handle.stdin.enqueue("\r"); // finish
 
@@ -144,7 +167,23 @@ test("confirming on the consent screen is what enables it", () => {
   }
 });
 
-test("[s] on the consent screen answers it — off, and it stays off", () => {
+test("choosing don't share takes its own keystroke too", () => {
+  const { handle, results } = start();
+  try {
+    walkToLibrary(handle);
+    handle.stdin.enqueue("\r"); // -> analytics, nothing selected
+    handle.stdin.enqueue("\x1b[A"); // up from nothing: "Don't share"
+    handle.stdin.enqueue("\r"); // confirm -> done
+    handle.stdin.enqueue("\r"); // finish
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.prefs.analyticsChoice).toBe("disabled");
+  } finally {
+    handle.unmount();
+  }
+});
+
+test("[s] on the consent screen is its don't-share key — off, and it stays off", () => {
   const { handle, results } = start();
   try {
     walkToLibrary(handle);
@@ -159,15 +198,21 @@ test("[s] on the consent screen answers it — off, and it stays off", () => {
   }
 });
 
-test("[S] on the consent screen stops there and records off, never on", () => {
+test("[S] on the consent screen stays there and chooses nothing", () => {
   const { handle, results } = start();
   try {
     walkToLibrary(handle);
     handle.stdin.enqueue("\r"); // -> analytics
-    handle.stdin.enqueue("S"); // accept-all is not consent: off, then advance
-    expect(results).toHaveLength(0); // it advanced rather than finishing
-    handle.stdin.enqueue("\r"); // finish from done
+    handle.stdin.enqueue("S"); // accept-all has no default to accept here
+    handle.stdin.enqueue("S");
+    const frame = stripAnsi(handle.lastFrame());
+    expect(frame).toContain("Share anonymous usage");
+    expect(frame).not.toContain("▌");
+    expect(results).toHaveLength(0);
 
+    // It still needs a real answer to move on.
+    handle.stdin.enqueue("s");
+    handle.stdin.enqueue("\r");
     expect(results).toHaveLength(1);
     expect(results[0]?.prefs.analyticsChoice).toBe("disabled");
   } finally {
@@ -180,7 +225,8 @@ test("an answered screen keeps its answer when the user steps back over it", () 
   try {
     walkToLibrary(handle);
     handle.stdin.enqueue("\r"); // -> analytics
-    handle.stdin.enqueue("\x1b[B"); // move cursor to "Keep it off"
+    handle.stdin.enqueue("\x1b[B"); // "Share anonymous usage"
+    handle.stdin.enqueue("\x1b[B"); // "Don't share"
     handle.stdin.enqueue("\r"); // confirm off -> done
     handle.stdin.enqueue("\x1b[D"); // back to analytics
     handle.stdin.enqueue("\x1b[D"); // back to library
