@@ -1,8 +1,9 @@
+import type { fetchRemoteSubtitle } from "@/services/playback/remote-subtitle-download";
 import type { checkStremioPlaybackPreflight } from "@/services/playback/stream-health-check";
-import type { fetchStremioSubtitle } from "@/services/playback/stremio-subtitle-download";
 
 import type { MpvIpcSession, MpvIpcSessionOptions } from "./mpv-ipc";
 import type { waitForMpvIpcEndpoint } from "./mpv-ipc";
+import type { createPlaybackOutputGate } from "./playback-output-gate";
 import type { createPlaybackWatchdog } from "./playback-watchdog";
 
 export type PersistentMpvSessionRuntime = {
@@ -10,8 +11,10 @@ export type PersistentMpvSessionRuntime = {
   createPlaybackWatchdog?: typeof createPlaybackWatchdog;
   /** Injectable strict addon preflight; production uses checkStremioPlaybackPreflight. */
   checkAddonPreflight?: typeof checkStremioPlaybackPreflight;
-  /** Guarded subtitle download seam; production uses fetchStremioSubtitle. */
-  downloadAddonSubtitle?: typeof fetchStremioSubtitle;
+  /** Guarded subtitle download seam; production uses fetchRemoteSubtitle. */
+  downloadSubtitle?: typeof fetchRemoteSubtitle;
+  /** One output gate per playback cycle; tests inject a short decode grace. */
+  createPlaybackOutputGate?: typeof createPlaybackOutputGate;
   which(command: string): string | null;
   /** Optional filesystem probe for mpv discovery (flatpak app dirs). Defaults to real fs. */
   exists?(path: string): boolean;

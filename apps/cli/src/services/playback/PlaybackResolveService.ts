@@ -183,6 +183,7 @@ export type PlaybackResolveInput = {
   readonly blockedStreamUrls?: readonly string[];
   readonly ignoreTitleHealthSuggestion?: boolean;
   readonly ignoreProviderHealth?: boolean;
+  readonly keepPrimaryFirst?: boolean;
   readonly resolveIntent?: ProviderResolveInput["intent"];
   readonly recoveryMode?: RecoveryMode;
   readonly cancellationReason?: ResolveCancellationReason;
@@ -558,6 +559,8 @@ export class PlaybackResolveService {
           : (providerId) => this.deps.providerHealth?.get(providerId),
       ignoreProviderHealth: input.ignoreProviderHealth,
       suggestion: titleSuggestion,
+      keepPrimaryFirst: input.keepPrimaryFirst,
+      nameOf: (id) => this.deps.engine.getManifest(id)?.displayName ?? id,
     });
     const recoveryDecision = decideRecovery({
       mode: recoveryMode,
@@ -632,7 +635,7 @@ export class PlaybackResolveService {
         : "No enabled providers available",
       note:
         compatibleIds.length > 0
-          ? describeProviderResolveProviderNote(false)
+          ? (candidatePlan.orderNote ?? describeProviderResolveProviderNote(false))
           : "Enable a provider in Settings to retry.",
     });
     input.onEvent?.({
@@ -855,9 +858,7 @@ export class PlaybackResolveService {
     providerId: string,
     stream: StreamInfo,
   ): Promise<void> {
-    if (stream.deferredLocator) {
-      return;
-    }
+    if (stream.deferredLocator) return;
     const persistKey = this.buildCacheKey(input, providerId);
     try {
       await this.deps.cacheStore.set(persistKey, stream);
@@ -1074,9 +1075,7 @@ function cachedStreamMatchesSelection(
 ): boolean {
   const result = stream.providerResolveResult;
   if (!result) return true;
-  if (input.selectedStreamId && result.selectedStreamId !== input.selectedStreamId) {
-    return false;
-  }
+  if (input.selectedStreamId && result.selectedStreamId !== input.selectedStreamId) return false;
   if (input.selectedSourceId) {
     const selected = result.streams.find((candidate) => candidate.id === result.selectedStreamId);
     if (selected?.sourceId !== input.selectedSourceId) {

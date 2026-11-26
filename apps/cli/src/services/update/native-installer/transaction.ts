@@ -101,8 +101,8 @@ function newTransactionId(): string {
 export async function beginInstallTransaction(
   layout: Pick<InstallLayoutPaths, "transactionsDir">,
   input: BeginInstallTransactionInput,
+  writeRecord: typeof writeAtomicJson = writeAtomicJson,
 ): Promise<InstallTransactionRecord> {
-  await mkdir(layout.transactionsDir, { recursive: true });
   const record: MutableTransactionRecord = {
     schemaVersion: 1,
     id: input.id ?? newTransactionId(),
@@ -112,8 +112,22 @@ export async function beginInstallTransaction(
   };
   if (input.version !== undefined) record.version = input.version;
   if (input.stagingDir !== undefined) record.stagingDir = input.stagingDir;
-  await writeAtomicJson(transactionFilePath(layout, record.id), record);
-  return record;
+  // `cleanupAbandonedTransactions` removes the directory once it is empty. A
+  // concurrent activation that has made it but not yet created its temp file
+  // loses the directory under it (ENOENT), so recreate it and write again.
+  for (let attempt = 1; ; attempt += 1) {
+    await mkdir(layout.transactionsDir, { recursive: true });
+    try {
+      await writeRecord(transactionFilePath(layout, record.id), record);
+      return record;
+    } catch (error) {
+      if (attempt >= 3 || !isMissingPathError(error)) throw error;
+    }
+  }
+}
+
+function isMissingPathError<T>(error: T): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
 export async function finishInstallTransaction(

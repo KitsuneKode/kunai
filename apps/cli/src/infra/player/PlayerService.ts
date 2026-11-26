@@ -61,7 +61,18 @@ export type PlayerPlaybackEvent =
       /** No advancing time has been observed for this file yet. */
       duringStartup?: boolean;
       /** When set, the stall matched demuxer/network starvation heuristics (see playback-watchdog). */
-      stallKind?: "progress" | "network-read-dead";
+      stallKind?: "progress" | "network-read-dead" | "video-lost";
+    }
+  | {
+      /**
+       * A selected video track played `secondsWithoutVideo` of clock without
+       * one frame reaching the output (audio plays, the picture never comes).
+       * The cycle never confirmed `playback-started`.
+       */
+      type: "video-not-decoding";
+      secondsWithoutVideo: number;
+      /** mpv's codec name for the selected video track, when known. */
+      codec?: string;
     }
   | { type: "seek-stalled"; secondsSeeking: number }
   | { type: "player-closing" }

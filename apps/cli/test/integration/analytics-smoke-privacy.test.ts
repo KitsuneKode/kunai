@@ -12,7 +12,7 @@ async function smoke(endpoint?: string, status = 204, testEndpoint = endpoint, o
     const requests = [];
     globalThis.fetch = async (url, init) => {
       const body = JSON.parse(init.body);
-      requests.push({ url: String(url), redirect: init.redirect ?? null, digest: /^[a-f0-9]{64}$/.test(body.installId) });
+      requests.push({ url: String(url), redirect: init.redirect ?? null, digest: /^[a-f0-9]{64}$/.test(body.id) });
       return new Response(null, { status: 'title' in body ? 400 : ${status} });
     };
     process.on('exit', () => console.log(JSON.stringify({ requests })));

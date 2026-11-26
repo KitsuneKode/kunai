@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { computeInProcessReconnectSeek } from "@/infra/player/mpv-in-process-reconnect";
+import {
+  computeInProcessReconnectSeek,
+  isSameUrlRetryWorthwhile,
+} from "@/infra/player/mpv-in-process-reconnect";
 
 describe("computeInProcessReconnectSeek", () => {
   test("does not seek when duration is unknown (live-style)", () => {
@@ -23,5 +26,23 @@ describe("computeInProcessReconnectSeek", () => {
       seekSeconds: 1999.5,
       shouldSeek: true,
     });
+  });
+});
+
+describe("isSameUrlRetryWorthwhile", () => {
+  test("a URL that cannot be opened, or holds no playable media, is not reloaded", () => {
+    for (const error of [
+      "loading failed",
+      "unrecognized file format",
+      "no audio or video data played",
+      "Loading Failed ",
+    ]) {
+      expect(isSameUrlRetryWorthwhile(error)).toBe(false);
+    }
+  });
+
+  test("other errors, or none reported, may still recover on a reload", () => {
+    expect(isSameUrlRetryWorthwhile(undefined)).toBe(true);
+    expect(isSameUrlRetryWorthwhile("something happened")).toBe(true);
   });
 });

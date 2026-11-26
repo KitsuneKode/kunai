@@ -98,6 +98,9 @@ describe("browse focus isolation", () => {
         setPendingDelete: () => {},
         onHistoryMutated: () => filterMutations.push("mutated"),
         onConfirmSelection: () => {},
+        filterQuery: "",
+        filterFocused: false,
+        setFilterFocused: () => {},
       },
     );
 

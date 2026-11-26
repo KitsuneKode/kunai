@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-26"
+lastReviewed: "2026-11-25T05:07:13Z"
 ---
 
 # mpv in-process stream reconnect (persistent session)
@@ -34,9 +34,28 @@ which is exactly when starvation detection must remain active. Even a simultaneo
 `paused-for-cache` does not override an explicit user pause. The watchdog suite
 uses injected clocks to cover both cases without wall-clock sleeps.
 
-2. **Premature EOF** (playback-stats guard): `end-file` with `eof` was **demoted** to `unknown` because trusted progress was inconsistent with a full watch (`eofDemotedByPrematureGuard`).
+2. **`video-lost`** (from `playback-watchdog`): frames had reached the output,
+   then stopped while a video track stays selected and the clock keeps
+   running, for 10 s of media clock (`VIDEO_DECODE_GRACE_SECONDS`). Pause,
+   seek and turning video off (`vid=no`) restart the incident. The reload
+   re-initialises the decoder at the same position, within the same budget.
 
-3. **`end-file` with `error`** while **`demuxer-via-network`** was true: treat as a reconnectable network demuxer error before surfacing a terminal failure.
+3. **Premature EOF** (playback-stats guard): `end-file` with `eof` was **demoted** to `unknown` because trusted progress was inconsistent with a full watch (`eofDemotedByPrematureGuard`).
+
+4. **`end-file` with `error`** while **`demuxer-via-network`** was true: treat as a reconnectable network demuxer error before surfacing a terminal failure.
+
+**Never reloaded:** an end whose `file_error` says the URL cannot be opened or
+holds nothing mpv can play (`isSameUrlRetryWorthwhile` in
+`mpv-in-process-reconnect.ts`: `loading failed`, `unrecognized file format`,
+`no audio or video data played`, output-initialisation failures,
+`not supported`). Those go straight to source failover. Measured on mpv 0.42: a
+403, a 404, a refused connection and an unknown host all end as
+`error` / `loading failed`; non-media bytes as `unrecognized file format`; a
+connection dropped mid-file and HLS segments that start answering 403 mid-play
+both end as `eof`, so trigger 3 still covers them. The check guards triggers 3
+and 4 alike: `applyEndFileEvent` marks every end that carries a `file_error` as
+a demoted premature EOF, so before this a 403 was reloaded through trigger 3
+(`stream-recovery-native.test.ts` fails without it).
 
 If reconnect **succeeds**, the current `play()` promise **does not resolve** yet; playback continues until a normal end, quit, or exhaustion of retries.
 
@@ -87,6 +106,53 @@ Reconnect backoff and post-`file-loaded` completion carry the initiating
 generation explicitly. They re-check it after every awaited seek, unpause, and
 subtitle operation; a replacement during any one of those waits prevents every
 remaining command and state mutation from the retired cycle.
+
+## Output readiness: what "playback started" means
+
+mpv's clock (`time-pos`) moves as soon as audio plays, so a stream whose video
+never decodes (an unsupported codec, corrupt or missing video packets, a dead
+hardware decoder) used to count as started: the startup watchdog was cancelled
+by the first progress event, watch progress was recorded, and the user got
+sound over a black window with nothing recovering. `video-params` is no proof:
+mpv fills it from container metadata even when no frame decodes. A frame at the
+output is: `video-out-params` (or `vo-configured`).
+
+`infra/player/playback-output-gate.ts` owns the rule, and both emitters (the
+persistent router and one-shot `mpv.ts`) use it per playback cycle:
+
+- **Decoded video** or **audio-only** (no selected video track) starts on the
+  first clock, as before.
+- **Unknown track list** (on a cold start mpv can send the clock first) is
+  checked with a direct read of `video-out-params`, `vo-configured` and
+  `track-list` before anything is decided; if mpv still reports no tracks, or
+  the read fails, the clock decides as before.
+- **A selected video track with no frame** holds `playback-started` and every
+  `playback-progress` event. A late frame starts playback immediately. After
+  10 s of media clock with no frame, a second direct read confirms it, and the
+  player emits `video-not-decoding` (with mpv's codec name). The session runner
+  aborts through the same path as the startup stall, so source and provider
+  recovery take over in about ten seconds instead of never.
+- Nothing is concluded from a gap in the event stream: a failed read (timeout,
+  closed socket) concludes nothing, and the 45 s startup-stall watchdog stays
+  the backstop. Before it, a stream that has sent **no bytes at all** in 15 s
+  (`STARTUP_NO_BYTES_TIMEOUT_MS`; no `network-sample` with input rate, cache
+  speed or buffered seconds above zero) is abandoned as dead, not slow; any
+  byte hands it back to the 45 s budget. The early exit applies only when the
+  player reports bytes (`PlayerCapabilities.networkEvidence`), to remote
+  http(s) URLs, and never to yt-dlp streams, whose extraction runs before any
+  byte flows. Measured: real mpv emits byte-bearing `network-sample` events
+  before `playback-started` on a trickling server, and none against a server
+  that accepts the connection and never answers. mpv's "property unavailable" reply to `get_property` is an
+  answer (no value), not an IPC failure: `mpv-ipc.ts` keeps it out of
+  `onCommandResult`, so neither emitter reports it as `ipc-command-failed`.
+  Both turn the remaining failures into events through
+  `infra/player/mpv-ipc-failure-events.ts`.
+
+Measured against mpv 0.42 with generated media (healthy, resume with
+`--start`, corrupt video, video packets dropped, audio-only, `--vid=no`), and
+pinned by `apps/cli/test/integration/video-decode-readiness-native.test.ts`,
+which plays a healthy clip and one whose video packets are all dropped through
+real mpv.
 
 ## Status recovery contract
 

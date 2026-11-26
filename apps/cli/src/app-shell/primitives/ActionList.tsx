@@ -1,6 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 
+import { PressRow } from "../mouse/PickRow";
 import { plainModeEnabled, selectionPrefix } from "../plain-mode";
 import { padColumnsEnd, truncateLine } from "../shell-text";
 import { hotkeyLabel, palette } from "../shell-theme";
@@ -75,8 +76,11 @@ export function ActionList({
 }) {
   return (
     <Box flexDirection="column">
+      {/* A click presses the row's shortcut — the surface's own key handler. */}
       {rows.map((row, index) => (
-        <ActionRow key={row.id} row={row} selected={index === selectedIndex} width={width} />
+        <PressRow key={row.id} id={`action:${row.id}:${row.label}`} keyHint={row.shortcut ?? ""}>
+          <ActionRow row={row} selected={index === selectedIndex} width={width} />
+        </PressRow>
       ))}
     </Box>
   );

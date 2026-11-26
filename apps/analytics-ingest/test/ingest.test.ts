@@ -26,7 +26,7 @@ const valid = {
 describe("payload contract", () => {
   test("accepts only the exact five keys", () => {
     expect(Object.keys(valid).sort()).toEqual([...ANALYTICS_PAYLOAD_KEYS]);
-    expect(parseAnalyticsPayload(valid)).toEqual(valid);
+    expect(parseAnalyticsPayload(valid)).toEqual({ wire: 1, ...valid });
     expect(parseAnalyticsPayload({ ...valid, title: "nope" })).toBeNull();
     expect(parseAnalyticsPayload({ ...valid, query: "dune" })).toBeNull();
     // The `extra` seam is a database column only; no wire field ships with it.
@@ -66,7 +66,12 @@ describe("ingestAnalyticsPing", () => {
       store,
       now: NOW,
     });
-    expect(result).toEqual({ ok: true, day: analyticsDayKey(NOW), stored: true });
+    expect(result).toEqual({
+      ok: true,
+      day: analyticsDayKey(NOW),
+      stored: true,
+      duplicate: false,
+    });
     expect(store.rawCount()).toBe(1);
   });
 

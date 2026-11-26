@@ -1,7 +1,7 @@
 import {
   buildAndroidIntentMissingProblem,
   buildMpvMissingProblem,
-  buildUnsupportedPlayerProblem,
+  buildVlcMissingProblem,
   type PlaybackProblem,
 } from "@/domain/playback/playback-problem";
 import type { PlayerMode } from "@/domain/playback/player-choice";
@@ -17,7 +17,7 @@ export type PlaybackDependencyGateResult =
   | { readonly ok: true }
   | {
       readonly ok: false;
-      readonly dependency: "mpv" | "android-intent" | "player-selection";
+      readonly dependency: "mpv" | "vlc" | "android-intent";
       readonly problem: PlaybackProblem;
       readonly remediation: DependencyRemediation;
     };
@@ -73,26 +73,61 @@ export function buildAndroidPlayerRemediation(
   };
 }
 
+export function buildVlcRemediation(platform?: NodeJS.Platform): DependencyRemediation {
+  switch (normalizePlatform(platform)) {
+    case "linux":
+      return {
+        platform: "linux",
+        summary:
+          "Install VLC with its ffmpeg decoder plugin (some distros ship it separately), then retry.",
+        commands: [
+          "sudo apt install vlc",
+          "sudo pacman -S vlc vlc-plugin-ffmpeg",
+          "sudo dnf install vlc",
+        ],
+      };
+    case "darwin":
+      return {
+        platform: "darwin",
+        summary: "Install VLC into /Applications, then retry playback.",
+        commands: ["brew install --cask vlc"],
+      };
+    case "win32":
+      return {
+        platform: "win32",
+        summary: "Install VLC with winget, then retry playback.",
+        commands: ["winget install --id VideoLAN.VLC -e"],
+      };
+    default:
+      return {
+        platform: "other",
+        summary: "Install VLC for your platform, or use --player mpv.",
+        commands: ["Install VLC from https://www.videolan.org/vlc/"],
+        helpUrl: "https://www.videolan.org/vlc/",
+      };
+  }
+}
+
 export async function gatePlaybackDependencies(input: {
   readonly player: { isAvailable(): Promise<boolean> };
   readonly playerMode?: PlayerMode;
   readonly platform?: NodeJS.Platform;
 }): Promise<PlaybackDependencyGateResult> {
-  if (input.playerMode?.kind === "unsupported") {
-    return {
-      ok: false,
-      dependency: "player-selection",
-      problem: buildUnsupportedPlayerProblem(),
-      remediation: {
-        platform: normalizePlatform(input.platform),
-        summary: "Select the managed mpv player for this platform.",
-        commands: ["kunai --player auto", "kunai --player mpv"],
-      },
-    };
-  }
-
   if (await input.player.isAvailable()) {
     return { ok: true };
+  }
+
+  if (input.playerMode?.kind === "managed-vlc") {
+    const remediation = buildVlcRemediation(input.platform);
+    return {
+      ok: false,
+      dependency: "vlc",
+      problem: buildVlcMissingProblem({
+        remediationSummary: remediation.summary,
+        commands: remediation.commands,
+      }),
+      remediation,
+    };
   }
 
   if (input.playerMode?.kind === "android-handoff") {
