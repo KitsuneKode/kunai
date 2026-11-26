@@ -306,7 +306,9 @@ Then focused release-artifact tests and `release:notes:check` run before a narro
 
 **Quick path:** `bun scripts/setup-signing-keys.ts` does every step below for
 both keys, the release checksum key and the provider hotfix manifest key. It
-keeps the private keys out of the checkout and off stdout (mode 0600 backups in
+keeps the private keys out of the checkout and off stdout (mode 0600 backups on
+Linux and macOS; on Windows the user-profile ACL protects them, so run it as
+the maintainer account; in
 `~/.kunai-signing-keys-<date>`, or `--backup-dir`), pipes them into the
 `release-production` environment secrets with `gh`, and writes only the public
 pins (`release-key.json`, `provider-manifest-pin.json`) for you to review and
