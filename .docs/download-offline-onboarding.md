@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-17"
+lastReviewed: "2026-11-25T14:56:33Z"
 ---
 
 # Kunai — Download, Offline Library, And Onboarding
@@ -125,6 +125,10 @@ accounts, usage ping, done. Implementation is
 - One-off series downloads still store the selected title cleanup/profile intent for local management,
   but do not schedule offline runway work unless `Keep watching offline` was selected and do not
   revoke an existing title enrollment.
+- After download, a title's Library detail is where both policies change: "Keep the next N episodes
+  ready offline" enrolls or stops the runway (series only), and "After watching: …" picks the
+  cleanup suggestion. Both labels show the current state and relabel at once. (The old modal
+  completed-downloads picker that also offered these was unreachable and has been removed.)
 - HLS size is reported honestly as unknown when content length cannot be known.
 - The recorded temporary base is a short `.tmp.<job-id>.mp4` sibling name so a long final
   filename does not overflow the filesystem component limit. Each claimed attempt writes
