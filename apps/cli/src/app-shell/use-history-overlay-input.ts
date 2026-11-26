@@ -245,6 +245,8 @@ const HISTORY_ACTION_KEYS: ReadonlySet<string> = new Set([
 function selectedHistoryRow(ctx: HistoryOverlayInputContext) {
   const picked = ctx.historyView.flatRows[ctx.selectedIndex]?.titleId ?? null;
   const selected = ctx.historySelections.find((entry) => entry.titleId === picked) ?? null;
+  // SAFETY: the picker context stores projections keyed by the same title ids
+  // History rows carry; a missing entry stays undefined.
   const projection = picked
     ? (ctx.historyPickerContext.projections?.get(picked) as ContinuationProjection | undefined)
     : undefined;

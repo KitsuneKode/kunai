@@ -160,6 +160,7 @@ describe("createRootPickerActions", () => {
     const { container, dispatched } = fakeContainer();
     const actions = createRootPickerActions({
       container,
+      // SAFETY: the picker actions read only the overlay fields this test sets.
       overlay: {
         type: "episode_picker",
         id: "picker-1",
@@ -184,6 +185,7 @@ describe("createRootPickerActions", () => {
     const { container } = fakeContainer();
     const actions = createRootPickerActions({
       container,
+      // SAFETY: the picker actions read only the overlay fields this test sets.
       overlay: { type: "provider_picker" } as never,
       commandMode: true,
       pickerSelectedIndex: 0,
