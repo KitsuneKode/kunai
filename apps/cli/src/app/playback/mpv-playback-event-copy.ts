@@ -114,7 +114,7 @@ export function describeMpvPlayerEvent(event: PlayerPlaybackEvent): MpvPlaybackF
     case "stream-unrecoverable":
       return {
         detail: "Stream stopped",
-        note: `Reloading the same source did not help after ${event.secondsWithoutProgress}s`,
+        note: `Reload did not help after ${event.secondsWithoutProgress}s`,
       };
     case "video-not-decoding":
       return {

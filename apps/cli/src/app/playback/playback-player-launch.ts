@@ -248,7 +248,7 @@ export async function launchPlayback(input: PlayerLaunchInput): Promise<Playback
             severity: "degraded",
             failureClass: notDecoding ? "unknown" : "timeout",
             message: streamDead
-              ? "Stream died mid-episode and the in-place reload is spent; failing over at the position"
+              ? "Mid-episode stream death after the in-place reload"
               : notDecoding
                 ? "Video track played without a decoded frame; aborting for source recovery"
                 : reason.kind === "no-bytes"
