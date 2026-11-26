@@ -10,7 +10,6 @@ import { createPlaybackOutputGate } from "@/infra/player/playback-output-gate";
 import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigService";
 
-
 // Real mpv against real media: the readiness gate's whole point is that mpv's
 // clock lies about video, so only mpv itself can prove the gate reads it right.
 function mpvBin(): string | null {

@@ -8,12 +8,12 @@ import type { PlayerControlService } from "@/infra/player/PlayerControlService";
 import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 import { defaultVlcRuntime, VlcPlayerService } from "@/infra/player/vlc/vlc-player-service";
 
-import { NATIVE_BINARIES } from "./helpers/native-binaries";
+import { nativeBinary } from "./helpers/native-binaries";
 
 // Real VLC through Kunai's VLC player service: the control interface, the
 // session config password, the status mapping and the decode gate together.
-const VLC_BIN = NATIVE_BINARIES.vlc;
-const FFMPEG_BIN = NATIVE_BINARIES.ffmpeg;
+const VLC_BIN = nativeBinary("vlc");
+const FFMPEG_BIN = nativeBinary("ffmpeg");
 const nativeTest = VLC_BIN && FFMPEG_BIN ? test : test.skip;
 
 let tempDir: string | null = null;

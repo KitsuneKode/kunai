@@ -8,7 +8,7 @@ import {
   shouldUnlinkUnixSocket,
 } from "@/infra/player/mpv-ipc-endpoint";
 
-import { NATIVE_BINARIES } from "./helpers/native-binaries";
+import { nativeBinary } from "./helpers/native-binaries";
 
 /**
  * Proves the IPC endpoint against a real mpv, on whatever platform runs it.
@@ -24,7 +24,7 @@ import { NATIVE_BINARIES } from "./helpers/native-binaries";
  * Not Windows-only on purpose: the same test is the Unix-socket contract, and a
  * change that breaks one spelling usually touches both.
  */
-const MPV_BIN = NATIVE_BINARIES.mpv;
+const MPV_BIN = nativeBinary("mpv");
 
 /**
  * mpv is a runtime dependency, not something this suite can assert into

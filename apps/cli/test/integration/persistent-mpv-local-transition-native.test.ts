@@ -10,9 +10,9 @@ import { PersistentMpvSession } from "@/infra/player/PersistentMpvSession";
 import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigService";
 
-import { NATIVE_BINARIES } from "./helpers/native-binaries";
+import { nativeBinary } from "./helpers/native-binaries";
 
-const MPV_BIN = NATIVE_BINARIES.mpv;
+const MPV_BIN = nativeBinary("mpv");
 const mpvTest = MPV_BIN ? test : test.skip;
 
 function parseTlsObservations(output: string): string[] {
