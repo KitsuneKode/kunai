@@ -1,4 +1,6 @@
 {
   "url": "https://github.com/KitsuneKode/kunai/releases/download/provider-manifest/provider-manifest.json",
-  "publicKeysById": {}
+  "publicKeysById": {
+    "kunai-manifest-202611": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAVcADfQG3VLB3xW8WG+nyUJGpG4uaiTXxqKC+uX3Mjf0=\n-----END PUBLIC KEY-----\n"
+  }
 }
