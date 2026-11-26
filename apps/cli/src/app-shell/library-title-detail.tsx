@@ -1,6 +1,7 @@
 import { useConnectivityOnline } from "@/app-shell/hooks/use-connectivity-online";
 import { useRailPoster } from "@/app-shell/hooks/use-rail-poster";
 import { getPickerChromeRows, getPickerListMaxVisible } from "@/app-shell/layout-policy";
+import { MouseTarget } from "@/app-shell/mouse/MouseRegions";
 import {
   buildMediaListRowColumns,
   computeMediaListRowLayout,
@@ -207,6 +208,74 @@ export function LibraryTitleDetail({
     enabled: showRail,
   });
 
+  // Enter and a second tap on the highlighted row run the same thing.
+  const runRow = (row: DetailRow): void => {
+    if (busy) return;
+    void (async () => {
+      setBusy(true);
+      try {
+        if (row.kind === "episode") {
+          const job = row.entry.job;
+          if (
+            job.status !== "completed" &&
+            job.status !== "completed-with-notes" &&
+            job.status !== "repairable"
+          ) {
+            return;
+          }
+          const playable = await container.offlineLibraryService.getPlayableSource(job.id);
+          if (playable.status !== "ready") {
+            container.stateManager.dispatch({
+              type: "SET_PLAYBACK_FEEDBACK",
+              note: `Offline file unavailable (${playable.status}). Try integrity check.`,
+            });
+            return;
+          }
+          await requestUnifiedOfflinePlayback(container, job.id, {
+            onDirectLaunch: resolveRootLibraryPlaybackLaunch,
+          });
+          return;
+        }
+
+        const actionType = row.id as
+          | "search-online"
+          | "download-more"
+          | "check-integrity"
+          | "repair-missing"
+          | "toggle-continuation"
+          | "edit-cleanup"
+          | "delete-group";
+        const result = await routeOfflineLibraryGroupAction(container, entries, {
+          type: actionType,
+          ...(actionType === "download-more" ? { contentType: group.contentType } : {}),
+        });
+        if (result === "exit") {
+          onBack();
+          return;
+        }
+        if (result === "refresh") {
+          onEntriesChanged();
+        }
+        if (actionType === "toggle-continuation" || actionType === "edit-cleanup") {
+          setPolicyRevision((revision) => revision + 1);
+        }
+      } finally {
+        setBusy(false);
+      }
+    })();
+  };
+  // Touch/mouse: the first tap highlights a row, a tap on the highlighted row
+  // runs it — the Library list's gesture. The detail had no tap targets, so a
+  // touch user who opened a title could not act or get back.
+  const tapRow = (flatIndex: number, row: DetailRow): void => {
+    if (flatIndex !== safeIndex) setSelectedIndex(flatIndex);
+    else runRow(row);
+  };
+  const wheel = (direction: "up" | "down"): void =>
+    setSelectedIndex((prev) =>
+      Math.max(0, Math.min(totalRows - 1, prev + (direction === "up" ? -1 : 1))),
+    );
+
   useInput(
     (input, key) => {
       if (key.escape) {
@@ -226,60 +295,7 @@ export function LibraryTitleDetail({
         setSelectedIndex((prev) => Math.min(totalRows - 1, prev + 1));
         return;
       }
-      if (!key.return || !selectedRow) return;
-
-      void (async () => {
-        setBusy(true);
-        try {
-          if (selectedRow.kind === "episode") {
-            const job = selectedRow.entry.job;
-            if (
-              job.status !== "completed" &&
-              job.status !== "completed-with-notes" &&
-              job.status !== "repairable"
-            ) {
-              return;
-            }
-            const playable = await container.offlineLibraryService.getPlayableSource(job.id);
-            if (playable.status !== "ready") {
-              container.stateManager.dispatch({
-                type: "SET_PLAYBACK_FEEDBACK",
-                note: `Offline file unavailable (${playable.status}). Try integrity check.`,
-              });
-              return;
-            }
-            await requestUnifiedOfflinePlayback(container, job.id, {
-              onDirectLaunch: resolveRootLibraryPlaybackLaunch,
-            });
-            return;
-          }
-
-          const actionType = selectedRow.id as
-            | "search-online"
-            | "download-more"
-            | "check-integrity"
-            | "repair-missing"
-            | "toggle-continuation"
-            | "edit-cleanup"
-            | "delete-group";
-          const result = await routeOfflineLibraryGroupAction(container, entries, {
-            type: actionType,
-            ...(actionType === "download-more" ? { contentType: group.contentType } : {}),
-          });
-          if (result === "exit") {
-            onBack();
-            return;
-          }
-          if (result === "refresh") {
-            onEntriesChanged();
-          }
-          if (actionType === "toggle-continuation" || actionType === "edit-cleanup") {
-            setPolicyRevision((revision) => revision + 1);
-          }
-        } finally {
-          setBusy(false);
-        }
-      })();
+      if (key.return && selectedRow) runRow(selectedRow);
     },
     { isActive: !suspended },
   );
@@ -314,20 +330,26 @@ export function LibraryTitleDetail({
             .filter(Boolean)
             .join("  ·  ");
           return (
-            <ListRow
+            <MouseTarget
               key={entry.job.id}
-              selected={selected}
-              rowWidth={rowWidth}
-              flexColumnIndex={rowLayout.flexColumnIndex}
-              columns={buildMediaListRowColumns({
-                title: label,
-                episodeCode: formatLibraryEntryPosition(entry.job, group.contentType),
-                statusLabel: detail,
-                statusColor: palette.muted,
-                statusDim: true,
-                layout: rowLayout,
-              })}
-            />
+              id={`library-detail:row:${entry.job.id}`}
+              onClick={() => tapRow(flatIndex, row)}
+              onWheel={wheel}
+            >
+              <ListRow
+                selected={selected}
+                rowWidth={rowWidth}
+                flexColumnIndex={rowLayout.flexColumnIndex}
+                columns={buildMediaListRowColumns({
+                  title: label,
+                  episodeCode: formatLibraryEntryPosition(entry.job, group.contentType),
+                  statusLabel: detail,
+                  statusColor: palette.muted,
+                  statusDim: true,
+                  layout: rowLayout,
+                })}
+              />
+            </MouseTarget>
           );
         }
         return (
@@ -336,27 +358,38 @@ export function LibraryTitleDetail({
             {flatIndex === episodeRows.length ? (
               <SectionGroup label="Actions" marginTop={1} />
             ) : null}
-            <ListRow
-              selected={selected}
-              rowWidth={rowWidth}
-              flexColumnIndex={rowLayout.flexColumnIndex}
-              columns={buildMediaListRowColumns({
-                title: row.label,
-                episodeCode: "—",
-                statusLabel: row.detail,
-                statusColor: palette.dim,
-                statusDim: true,
-                layout: rowLayout,
-              })}
-            />
+            <MouseTarget
+              id={`library-detail:action:${row.id}`}
+              onClick={() => tapRow(flatIndex, row)}
+              onWheel={wheel}
+            >
+              <ListRow
+                selected={selected}
+                rowWidth={rowWidth}
+                flexColumnIndex={rowLayout.flexColumnIndex}
+                columns={buildMediaListRowColumns({
+                  title: row.label,
+                  episodeCode: "—",
+                  statusLabel: row.detail,
+                  statusColor: palette.dim,
+                  statusDim: true,
+                  layout: rowLayout,
+                })}
+              />
+            </MouseTarget>
           </React.Fragment>
         );
       })}
       {windowEnd < totalRows ? <Text color={palette.dim}> ▼ ...</Text> : null}
       <Box marginTop={1}>
         <Text color={palette.dim} dimColor>
-          {busy ? "Working…" : "↵ play or run action · esc back to titles"}
+          {busy ? "Working…" : "↵ play or run action · "}
         </Text>
+        {busy ? null : (
+          <MouseTarget id="library-detail:back" onClick={onBack}>
+            <Text color={palette.accent}>esc back to titles</Text>
+          </MouseTarget>
+        )}
       </Box>
     </Box>
   );
