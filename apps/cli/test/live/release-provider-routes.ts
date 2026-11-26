@@ -48,7 +48,11 @@ export function buildReleaseProviderRouteCases(
       lane: "movie",
       configuredProvider: config.provider,
       mode: "series",
-      title: { id: "438631", type: "movie", name: "Dune", year: "2021" },
+      // A title the default movie provider serves: this route proves the
+      // default works, not that one provider carries every film. Dune (438631)
+      // was the fixture until VidLink stopped serving it on 2026-11-26; it
+      // still plays through failover (Movy resolves and streams it).
+      title: { id: "27205", type: "movie", name: "Inception", year: "2010" },
     },
     {
       lane: "series",
