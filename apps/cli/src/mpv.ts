@@ -58,6 +58,7 @@ import {
 export { shouldApplyStartAtSeek };
 export { isLocalHlsManifestPlaybackUrl } from "@/infra/player/mpv-playback-url";
 export { isAllowedMpvUrl, type MpvUrlKind } from "@/infra/player/mpv-playback-url";
+import { unrecoverableStallEvent } from "@/infra/player/mpv-in-process-reconnect";
 import { MpvLaunchError } from "@/infra/player/mpv-launch-error";
 import { launchPreflight, type ResolveGateStream } from "@/infra/player/mpv-launch-preflight";
 import {
@@ -141,9 +142,7 @@ export async function launchMpv(opts: {
   const sessionId = newMpvIpcSessionId();
   const ipcEndpoint = createMpvIpcEndpoint(sessionId);
 
-  if (shouldUnlinkUnixSocket(ipcEndpoint)) {
-    await unlinkIfExists(ipcEndpoint.path);
-  }
+  if (shouldUnlinkUnixSocket(ipcEndpoint)) await unlinkIfExists(ipcEndpoint.path);
 
   let chaptersFile: string | null = null;
   if (opts.timing) {
@@ -190,6 +189,9 @@ export async function launchMpv(opts: {
         noteStreamStall(stats, Date.now());
       }
       baseEmit(event);
+      // One-shot mpv has no in-place reload, so a post-start dead stream escalates at once.
+      const escalation = unrecoverableStallEvent(event);
+      if (escalation) baseEmit(escalation);
     };
 
     // Addon files get one last strict check after every argument and file is
@@ -328,9 +330,7 @@ async function launchMpvInner(
   };
   const trySkipSegment = (automatic: boolean) => {
     const activeSkip = findActivePlaybackSkip(mutableTiming, currentPositionSeconds, skipConfig);
-    if (!activeSkip || !ipcSession || skippedSegments.has(activeSkip.key)) {
-      return false;
-    }
+    if (!activeSkip || !ipcSession || skippedSegments.has(activeSkip.key)) return false;
     void ipcSession
       .send(["seek", activeSkip.endSeconds, "absolute"])
       .then((result) => {
@@ -795,9 +795,7 @@ export function buildMpvArgs(
   // The mp4upload exception never applies to an addon file — its block carries
   // `--tls-verify=yes` and must not be cancelled by a process-level "no".
   const disableTlsVerify = !opts.stremioAddon && shouldDisableMpvTlsVerify(opts.url, opts.headers);
-  if (disableTlsVerify && !config?.persistent) {
-    args.push("--tls-verify=no");
-  }
+  if (disableTlsVerify && !config?.persistent) args.push("--tls-verify=no");
 
   for (const file of allowedLaunchSubtitleFiles(opts)) {
     args.push(`--sub-file=${file}`);
@@ -893,9 +891,7 @@ export function buildMpvArgs(
   if (demuxerLavfOptions) {
     args.push(`--demuxer-lavf-o=${demuxerLavfOptions}`);
   }
-  if (config?.mpv?.clean || config?.mpv?.noUserConfig) {
-    args.push("--no-config");
-  }
+  if (config?.mpv?.clean || config?.mpv?.noUserConfig) args.push("--no-config");
   const hdrArgs = resolveMpvHdrArgs({
     hdrMode: config?.mpv?.hdrMode,
     supportsGpuNext: config?.mpv?.supportsGpuNext,

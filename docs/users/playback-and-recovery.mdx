@@ -150,7 +150,8 @@ Configure in `/settings` or `config.json`:
 
 - **guided** (default): explain failures; suggest recover then fallback
 - **fallback-first:** move to next provider sooner after classified failures
-- **manual:** you drive `/recover` and `/fallback`
+- **manual:** you drive `/recover` and `/fallback`. Kunai may still try the
+  provider's other sources, but never moves to another provider on its own
 
 See [Customization](/docs/users/customization) and [Providers](/docs/users/providers).
 
@@ -193,6 +194,15 @@ Kunai monitors mpv through IPC and the Kunai bridge Lua script:
   playable video is not retried; Kunai moves to the next source instead.
 - A source that has sent nothing at all in 15 seconds is treated as dead and
   skipped. A slow source that is still sending gets the full 45 seconds to start.
+- A stream that dies mid-episode (no data arriving, or the picture stops while
+  the clock runs) first gets one reload of the same link. If that does not
+  bring it back, Kunai moves to the next source and continues from the same
+  moment, in the same window, without asking where to resume. When the
+  provider's sources are used up it moves to another provider the same way,
+  except in `manual` recovery mode. This works with mpv and desktop VLC; local
+  files have no other source and Android hands playback off to another app.
+- A source that fails before reaching your resume point never restarts the
+  episode from 0:00; the next source still starts where you were.
 - Auto-skip overlay when timing metadata and autoskip are enabled
 
 When playback recovers on its own (buffering clears, a stall resolves, or a

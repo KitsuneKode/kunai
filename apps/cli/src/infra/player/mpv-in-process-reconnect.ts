@@ -31,6 +31,21 @@ export function watchdogReconnectTrigger(
 }
 
 /**
+ * A reload trigger that the same-URL reload can no longer answer, handed on for
+ * source failover. The app decides whether playback had started: a watchdog
+ * reset after a reload makes even a mid-episode stall look like startup here.
+ */
+export function unrecoverableStallEvent(event: PlayerPlaybackEvent): PlayerPlaybackEvent | null {
+  const stallKind = watchdogReconnectTrigger(event);
+  if (!stallKind || event.type !== "stream-stalled") return null;
+  return {
+    type: "stream-unrecoverable",
+    stallKind,
+    secondsWithoutProgress: event.secondsWithoutProgress,
+  };
+}
+
+/**
  * mpv `file_error` values a same-URL reload cannot fix. Measured on mpv 0.42:
  * a 403, a 404, a refused connection and an unknown host all end the file
  * with "loading failed", and bytes that are not media with "unrecognized file

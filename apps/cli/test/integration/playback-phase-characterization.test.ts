@@ -158,6 +158,26 @@ describe("PlaybackPhase.execute characterization (online provider path)", () => 
     expect(report.phases).toEqual([...PLAY_ENDED, "recovering", ...PLAY]);
   });
 
+  test("a stream that dies mid-episode continues on the next source at the same position", async () => {
+    const report = await runScenario("movie-dead-mid-stream");
+    expect(report.resolves[1]).toMatchObject({
+      selectedSourceId: "s2",
+      intentKind: "recovery",
+      blockedStreamUrls: [url("alpha-s1-e1")],
+    });
+    // No resume question: the episode carries on from 12:34 on the new source.
+    expect(report.played).toEqual([played("alpha-s1-e1"), played("alpha-s2-e1", 754, 0)]);
+  });
+
+  test("when every source dies mid-episode, the provider hop continues at the position without a prompt", async () => {
+    const report = await runScenario("movie-dead-mid-stream-hop");
+    expect(report.played).toEqual([
+      played("alpha-s1-e1"),
+      played("alpha-s2-e1", 755, 0),
+      played("beta-s1-e1", 760, 0, 1, "beta"),
+    ]);
+  });
+
   test("the fallback control switches provider and resumes where playback stopped", async () => {
     const report = await runScenario("movie-fallback-action");
     expect(report.result).toEqual({ status: "cancelled" });

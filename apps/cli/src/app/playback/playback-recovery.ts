@@ -42,7 +42,11 @@ import {
   planStartupFailover,
   shouldUseProviderPlaybackRecovery,
 } from "@/app/playback/playback-source-failover";
-import { startAtResumePoint, startEpisodeNavigation } from "@/app/playback/playback-start-intent";
+import {
+  recoveryStartIntent,
+  startAtResumePoint,
+  startEpisodeNavigation,
+} from "@/app/playback/playback-start-intent";
 import type { AcquiredStream, ReadyEpisodeStream } from "@/app/playback/playback-stream-ready";
 import type { StreamSelectionIntent } from "@/app/playback/source-quality";
 import { toHistoryTimestamp } from "@/domain/playback/playback-history";
@@ -69,6 +73,14 @@ export type PlaybackControlIntent = {
 export type PlaybackRecoveryOutcome =
   | { readonly kind: "exit"; readonly step: PlaybackIterationStep }
   | ({ readonly kind: "proceed" } & PlaybackControlIntent);
+
+/** A stream that had played tells the user it stopped, not that it never started. */
+function recoveryExhaustedDetail(result: PlaybackResult): string {
+  const played = Math.max(result.lastReliableProgressSeconds ?? 0, result.watchedSeconds);
+  return played > 0
+    ? "Playback stopped and no other source could continue it"
+    : "Could not start playback";
+}
 
 export async function recoverAfterPlayback(
   loop: PlaybackLoopState,
@@ -312,7 +324,7 @@ export async function recoverAfterPlayback(
         });
       }
       updatePlaybackFeedback(context, {
-        detail: "Could not start playback",
+        detail: recoveryExhaustedDetail(result),
         note: "Press o for sources, ⇧F for fallback, r to retry, or /diagnostics for details",
       });
       skipRefreshContinue = true;
@@ -353,14 +365,18 @@ export async function recoverAfterPlayback(
         sourceIds: listOrderedPlaybackSourceIds(preparedStream.providerResolveResult),
         currentSourceId,
         triedSourceIds: new Set(run.triedFailoverSourceIds),
-        hasFallbackProvider: Boolean(
-          pickCompatibleFallbackProvider({
-            providers: providerRegistry.getCompatible(title, stateManager.getState().mode),
-            currentProviderId: attempt.resolvedProviderId,
-            excludedProviderIds: new Set(stateManager.getState().fallbackTriedProviderIds),
-            isFallbackEligible: (providerId) => isProviderIdFallbackEligible(container, providerId),
-          }),
-        ),
+        // `manual` never hops providers on its own; the user drives ⇧F/fallback.
+        hasFallbackProvider:
+          config.recoveryMode !== "manual" &&
+          Boolean(
+            pickCompatibleFallbackProvider({
+              providers: providerRegistry.getCompatible(title, stateManager.getState().mode),
+              currentProviderId: attempt.resolvedProviderId,
+              excludedProviderIds: new Set(stateManager.getState().fallbackTriedProviderIds),
+              isFallbackEligible: (providerId) =>
+                isProviderIdFallbackEligible(container, providerId),
+            }),
+          ),
         failoverAttempts: run.autoSourceRecoverAttempts,
         maxFailoverAttempts: MAX_AUTO_SOURCE_RECOVER_ATTEMPTS,
         providerHopUsed: run.startupProviderHopUsed,
@@ -424,7 +440,7 @@ export async function recoverAfterPlayback(
           });
         }
         updatePlaybackFeedback(context, {
-          detail: "Could not start playback",
+          detail: recoveryExhaustedDetail(result),
           note: "Press o for sources, ⇧F for fallback, r to retry, or /diagnostics for details",
         });
         skipRefreshContinue = true;
@@ -433,9 +449,9 @@ export async function recoverAfterPlayback(
 
     if (!skipRefreshContinue) {
       run.pendingRecomputeSources = playbackControlAction === "recompute";
-      run.pendingStart = startAtResumePoint(
+      run.pendingStart = recoveryStartIntent(
         toHistoryTimestamp(result, effectiveTiming.current, quitThresholdMode),
-        { suppressResumePrompt: true },
+        run.pendingStart,
       );
       run.pendingSourceRefreshAction =
         playbackControlAction === "recompute"
@@ -494,9 +510,13 @@ export async function recoverAfterPlayback(
   }
 
   if (shouldAutoFallbackProvider) {
-    run.pendingStart = startEpisodeNavigation({
-      targetResumeSeconds: toHistoryTimestamp(result, effectiveTiming.current, quitThresholdMode),
-    });
+    const reached = toHistoryTimestamp(result, effectiveTiming.current, quitThresholdMode);
+    // A hop after a failure continues where the stream stopped; a hop the user
+    // asked for offers the position, since another provider's cut can differ.
+    run.pendingStart =
+      result.suspectedDeadStream === true || didPlaybackFailToStart(result)
+        ? recoveryStartIntent(reached, run.pendingStart)
+        : startEpisodeNavigation({ targetResumeSeconds: reached });
     const fallback = pickCompatibleFallbackProvider({
       providers: providerRegistry.getCompatible(title, stateManager.getState().mode),
       currentProviderId: attempt.resolvedProviderId,
@@ -547,7 +567,7 @@ export async function recoverAfterPlayback(
             titleId: title.id,
             season: currentEpisode.season,
             episode: currentEpisode.episode,
-            resumeSeconds: run.pendingStart.resumePromptAt,
+            resumeSeconds: Math.max(run.pendingStart.startAt, run.pendingStart.resumePromptAt),
             autoFailover: playbackControlAction !== "fallback",
           },
         }),

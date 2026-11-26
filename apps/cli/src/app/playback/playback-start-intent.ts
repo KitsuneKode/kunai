@@ -36,6 +36,21 @@ export function startAtResumePoint(
 }
 
 /**
+ * Where a recovered attempt starts. A source that died after playing continues
+ * from where it reached, without a prompt. One that failed before reaching its
+ * intended start (a resume at 15:00 that never decoded) keeps that intent
+ * rather than restarting the episode from 0:00.
+ */
+export function recoveryStartIntent(
+  reachedSeconds: number,
+  attempted: PlaybackStartIntent,
+): PlaybackStartIntent {
+  const intended = Math.max(attempted.startAt, attempted.resumePromptAt);
+  if (reachedSeconds < intended) return attempted;
+  return startAtResumePoint(reachedSeconds, { suppressResumePrompt: true });
+}
+
+/**
  * The start a share link's `t=` imposes on the first play, or null without one.
  *
  * An explicit timestamp is an instruction, so it wins over local history and

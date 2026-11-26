@@ -56,6 +56,16 @@ export type PlayerPlaybackEvent =
   | { type: "playback-paused" }
   | { type: "playback-resumed" }
   | {
+      /**
+       * A stall after playback started that reloading the same URL can no
+       * longer answer (in-process reconnect is off, or its attempts are spent).
+       * Only another source can continue the episode, from the same position.
+       */
+      type: "stream-unrecoverable";
+      stallKind: "network-read-dead" | "video-lost";
+      secondsWithoutProgress: number;
+    }
+  | {
       type: "stream-stalled";
       secondsWithoutProgress: number;
       /** No advancing time has been observed for this file yet. */

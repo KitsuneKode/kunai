@@ -23,6 +23,8 @@ const SCENARIOS = [
   "movie-resolve-fail-dismiss",
   "movie-resolve-fail-retry",
   "movie-dead-stream",
+  "movie-dead-mid-stream",
+  "movie-dead-mid-stream-hop",
   "movie-fallback-action",
   "movie-resolve-cancel-fallback",
   "movie-resolve-cancel",
@@ -344,6 +346,28 @@ async function runScenario(scenario: Scenario) {
               lastNonZeroPositionSeconds: 0,
               suspectedDeadStream: true,
               playerExitCode: 2,
+            };
+          case "movie-dead-mid-stream":
+            // Died at 12:34 after real progress; the in-place reload was spent.
+            if (!first) return finish();
+            return {
+              ...quit,
+              endReason: "error",
+              watchedSeconds: 754,
+              lastNonZeroPositionSeconds: 754,
+              lastReliableProgressSeconds: 754,
+              suspectedDeadStream: true,
+            };
+          case "movie-dead-mid-stream-hop":
+            // Both of alpha's sources die mid-episode; the hop must not restart.
+            if (playIndex > 2) return finish();
+            return {
+              ...quit,
+              endReason: "error",
+              watchedSeconds: 750 + playIndex * 5,
+              lastNonZeroPositionSeconds: 750 + playIndex * 5,
+              lastReliableProgressSeconds: 750 + playIndex * 5,
+              suspectedDeadStream: true,
             };
           case "movie-fallback-action":
             if (!first) return finish();
