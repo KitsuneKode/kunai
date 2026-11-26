@@ -421,11 +421,16 @@ jobs:
         # full-suite load a different scheduling-heavy test loses the scripts'
         # 20s cap each run, while a genuinely wedged test still fails.
         timeout-minutes: 10
-        shell: bash
+        # pwsh, not bash: Git Bash puts msys tar first on PATH, which reads
+        # `D:\...` as host:path and silently breaks archive-writing tests (the
+        # wip-guard backup). pwsh keeps the unsharded leg's PATH. It does not
+        # stop on a native command's failure by itself, hence the checks.
+        shell: pwsh
         run: |
-          set -euo pipefail
           bun run --cwd apps/cli test:unit --shard=${{ matrix.shard }}/2 --timeout=60000
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           bun run --cwd apps/cli test:integration --shard=${{ matrix.shard }}/2 --timeout=60000
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Test Windows storage lifecycle
         if: matrix.shard == 1
