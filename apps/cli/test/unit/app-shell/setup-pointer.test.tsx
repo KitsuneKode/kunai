@@ -5,6 +5,7 @@ import type { CapabilitySnapshot } from "@/ui";
 import { Box } from "ink";
 import React from "react";
 
+import { UNSET_PAYLOAD_FIXTURE } from "../../support/analytics-fixtures";
 import { renderWithPointer } from "../../support/pointer-render";
 
 const ready: CapabilitySnapshot = {
@@ -27,6 +28,7 @@ test("setup pointer chooses a media profile and language, goes back, and never g
   let prefs: SetupPrefs | undefined;
   const h = renderWithPointer(
     <SetupShell
+      analyticsPayload={UNSET_PAYLOAD_FIXTURE}
       snapshot={ready}
       finish={(_outcome, value) => {
         prefs = value;
@@ -46,7 +48,7 @@ test("setup pointer chooses a media profile and language, goes back, and never g
     h.click("setup:action:enter");
     h.click("setup:action:enter");
     h.click("setup:action:enter");
-    expect(h.lastFrame()).toContain("Nothing is sent until you confirm here");
+    expect(h.lastFrame()).toContain("Nothing is sent unless you choose to share");
     h.click("setup:action:enter");
     expect(prefs).toBeUndefined();
     h.click("setup:action:s");
@@ -65,7 +67,7 @@ test.each([
 ])("setup targets stay inside their container at %i×%i", (columns, rows) => {
   const h = renderWithPointer(
     <Box height={rows - 3} width={columns} flexDirection="column">
-      <SetupShell snapshot={ready} finish={() => {}} />
+      <SetupShell analyticsPayload={UNSET_PAYLOAD_FIXTURE} snapshot={ready} finish={() => {}} />
     </Box>,
     { columns, rows },
   );
@@ -91,10 +93,13 @@ test.each([
 });
 
 test("a setup pointer action dismisses the abort guard before navigating", () => {
-  const h = renderWithPointer(<SetupShell snapshot={ready} finish={() => {}} />, {
-    columns: 100,
-    rows: 30,
-  });
+  const h = renderWithPointer(
+    <SetupShell analyticsPayload={UNSET_PAYLOAD_FIXTURE} snapshot={ready} finish={() => {}} />,
+    {
+      columns: 100,
+      rows: 30,
+    },
+  );
   try {
     h.click("setup:action:enter");
     h.stdin.enqueue("q");

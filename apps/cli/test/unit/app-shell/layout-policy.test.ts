@@ -20,33 +20,33 @@ import { getShellTerminalProfile } from "@/app-shell/use-viewport-policy";
 
 describe("getShellViewportPolicy", () => {
   test("marks picker viewports below minimum size as too small", () => {
-    const policy = getShellViewportPolicy("picker", 59, 19);
+    const policy = getShellViewportPolicy("picker", 39, 15);
 
-    expect(policy.columns).toBe(59);
-    expect(policy.rows).toBe(19);
+    expect(policy.columns).toBe(39);
+    expect(policy.rows).toBe(15);
     expect(policy.tooSmall).toBe(true);
-    expect(policy.minColumns).toBe(60);
-    expect(policy.minRows).toBe(20);
+    expect(policy.minColumns).toBe(40);
+    expect(policy.minRows).toBe(16);
   });
 
   test("marks browse viewports below minimum size as too small", () => {
-    const policy = getShellViewportPolicy("browse", 59, 19);
+    const policy = getShellViewportPolicy("browse", 39, 15);
 
-    expect(policy.columns).toBe(59);
-    expect(policy.rows).toBe(19);
+    expect(policy.columns).toBe(39);
+    expect(policy.rows).toBe(15);
     expect(policy.tooSmall).toBe(true);
-    expect(policy.minColumns).toBe(60);
-    expect(policy.minRows).toBe(20);
+    expect(policy.minColumns).toBe(40);
+    expect(policy.minRows).toBe(16);
   });
 
   test("marks playback viewports below minimum size as too small", () => {
-    const policy = getShellViewportPolicy("playback", 59, 19);
+    const policy = getShellViewportPolicy("playback", 39, 15);
 
-    expect(policy.columns).toBe(59);
-    expect(policy.rows).toBe(19);
+    expect(policy.columns).toBe(39);
+    expect(policy.rows).toBe(15);
     expect(policy.tooSmall).toBe(true);
-    expect(policy.minColumns).toBe(60);
-    expect(policy.minRows).toBe(20);
+    expect(policy.minColumns).toBe(40);
+    expect(policy.minRows).toBe(16);
   });
 
   test("enables wide browse layout only on sufficiently large terminals", () => {
@@ -110,8 +110,16 @@ describe("getShellViewportPolicy", () => {
     ).toBe(6);
   });
 
-  test("narrow breakpoint: 60–79 cols, rows >= 20", () => {
+  test("narrow breakpoint: 40–79 cols, rows >= 16", () => {
     const p = getShellViewportPolicy("browse", 60, 24);
+    expect(p.breakpoint).toBe("narrow");
+    expect(p.tooSmall).toBe(false);
+  });
+
+  // Neon features review #7: portrait phones (40–55 cols) hit a full-screen
+  // blocker that dropped all input. They get the single-column track instead.
+  test("a portrait phone terminal is narrow, not blocked", () => {
+    const p = getShellViewportPolicy("browse", 44, 24);
     expect(p.breakpoint).toBe("narrow");
     expect(p.tooSmall).toBe(false);
   });
@@ -145,14 +153,14 @@ describe("getShellViewportPolicy", () => {
     expect(getShellTerminalProfile({ TMUX: "/tmp/tmux-1000/default,1,0" })).toBe("constrained");
   });
 
-  test("blocked: < 60 cols", () => {
-    const p = getShellViewportPolicy("browse", 59, 24);
+  test("blocked: < 40 cols", () => {
+    const p = getShellViewportPolicy("browse", 39, 24);
     expect(p.breakpoint).toBe("blocked");
     expect(p.tooSmall).toBe(true);
   });
 
-  test("blocked: < 20 rows", () => {
-    const p = getShellViewportPolicy("browse", 80, 19);
+  test("blocked: < 16 rows", () => {
+    const p = getShellViewportPolicy("browse", 80, 15);
     expect(p.breakpoint).toBe("blocked");
     expect(p.tooSmall).toBe(true);
   });
@@ -175,7 +183,7 @@ describe("getShellViewportPolicy", () => {
   });
 
   test("zen never overrides the blocked breakpoint on a too-small terminal", () => {
-    const blocked = getShellViewportPolicy("browse", 59, 19, { zen: true });
+    const blocked = getShellViewportPolicy("browse", 39, 15, { zen: true });
     expect(blocked.breakpoint).toBe("blocked");
     expect(blocked.tooSmall).toBe(true);
   });

@@ -1,11 +1,18 @@
 ---
 status: current
-lastReviewed: "2026-10-11"
+lastReviewed: "2026-11-25T05:20:56Z"
 ---
 
 # Provider: KickAssAnime
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
+
+## Production status (2026-11-24)
+
+The November 23 hosted sweep reached the front door, then the catalog search
+returned HTTP 403. Kunai reports access denied and offers another anime
+provider. KickAssAnime follows HiAnime and AnimeGG in the automatic order and
+remains selectable from networks where the provider accepts the request.
 
 ## Request Summary
 
@@ -16,8 +23,8 @@ are hard-subbed; KickAssAnime closes both gaps.
 
 ## Scope
 
-- **Runtime class:** direct-http. A plain JSON catalog API, one HTML player page,
-  one HLS master. No crypto, no challenge, no headless step.
+- **Runtime class:** direct-http. A JSON catalog API, one HTML player page, and
+  one HLS master.
 - **Module:** `packages/providers/src/kickassanime/` (`site.ts` parses,
   `direct.ts` is the contract).
 - **Catalog identity:** provider-native slugs (`sousou-no-frieren-2d15`) —
@@ -101,9 +108,8 @@ picks; `qualityRank` stays 0 rather than inventing a height.
 The referer alone is refused by the segment host, and it **rotates**
 (`st1.advancedairesearchlab.xyz` on 2026-09-11, `st1.narutokun.xyz` on
 2026-09-12), so it is never hardcoded — both headers are derived from the
-player's own origin. mpv applies the stream's headers to `--sub-file` and
-`sub-add` too, so the `.vtt` tracks attach with nothing per-track
-(verified: `● Subs --sid=1 … (webvtt) [external]`).
+player's own origin. The guarded subtitle downloader sends that Origin
+header to the known caption CDN and hands mpv the resulting local WebVTT file.
 
 `ffmpeg` fails on this master where mpv succeeds; it is not a reachability
 signal, and no probe over these URLs should be trusted to judge the stream.
@@ -164,7 +170,5 @@ frame written for both audio modes.
 
 ## Implementation Handoff Notes
 
-Registered in `loadProductionProviderModules()` and **second** in the default
-anime order, ahead of AnimeGG: it can take over a title found in any catalog,
-where AnimeGG only plays what its own search found. Miruro stays first for
-catalogue breadth.
+Registered in `loadProductionProviderModules()`. Its title bridge can take
+over titles found in other catalogs when the name and year match.

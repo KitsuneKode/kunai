@@ -70,10 +70,13 @@ describe("BinaryAutoUpdater.runOnce", () => {
   test("downloads and activates a newer native binary through the transactional installer", async () => {
     const patches: unknown[] = [];
     let installedVersion = "";
+    let marker: string | undefined;
+    // Usage analytics is on (explicit consent, notice shown): the update is counted.
+    const consented = { ...enabled, analytics: "enabled", analyticsNoticeShown: true };
     const instance = new BinaryAutoUpdater({
       config: {
         // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-        getRaw: () => enabled as never,
+        getRaw: () => consented as never,
         update: async (patch) => {
           patches.push(patch);
         },
@@ -86,6 +89,7 @@ describe("BinaryAutoUpdater.runOnce", () => {
       resolveLatestVersion: async () => "0.4.0",
       installLatest: async (options) => {
         installedVersion = options?.version ?? "";
+        marker = options?.releaseMarker;
         return {
           status: "installed",
           version: options?.version ?? "",
@@ -96,6 +100,8 @@ describe("BinaryAutoUpdater.runOnce", () => {
 
     await expect(instance.runOnce()).resolves.toEqual({ status: "installed", version: "0.4.0" });
     expect(installedVersion).toBe("0.4.0");
+    // An auto-update with analytics on is counted through update.marker.
+    expect(marker).toBe("update.marker");
     expect(patches).toContainEqual(
       expect.objectContaining({ lastUpdateCheckAt: 123_000, lastKnownLatestVersion: "0.4.0" }),
     );
@@ -130,6 +136,35 @@ describe("BinaryAutoUpdater.runOnce", () => {
       channel: "npm-global",
     });
     expect(resolvedLatest).toBe(false);
+  });
+
+  test("reports the active version as pending restart when another update supersedes it", async () => {
+    const instance = new BinaryAutoUpdater({
+      config: {
+        // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+        getRaw: () => enabled as never,
+        update: async () => {},
+        save: async () => {},
+      },
+      currentVersion: "0.3.0",
+      readInstallManifest: async () => binaryManifest(),
+      getPendingRestartVersion: async () => null,
+      resolveLatestVersion: async () => "0.4.0",
+      installLatest: async (options) => {
+        // Analytics is not on, so no marker: markers are opt-in like the ping.
+        expect(options).toEqual({
+          intent: "upgrade",
+          version: "0.4.0",
+          releaseMarker: undefined,
+        });
+        return { status: "superseded", activeVersion: "0.5.0" };
+      },
+    });
+
+    await expect(instance.runOnce({ force: true })).resolves.toEqual({
+      status: "pending-restart",
+      version: "0.5.0",
+    });
   });
 });
 

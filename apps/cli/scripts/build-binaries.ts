@@ -146,7 +146,7 @@ async function main(): Promise<void> {
     compileTarget(target, analyze, out),
   );
 
-  const retainedTargets = buildReleaseArchives(out, targets);
+  const retainedTargets = await buildReleaseArchives(out, targets);
 
   const builtAllTargets = targets.length === RELEASE_BINARY_TARGETS.length;
   if (builtAllTargets && existsSync(join(out, "SHA256SUMS"))) {

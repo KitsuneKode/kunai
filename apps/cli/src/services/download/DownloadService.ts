@@ -5,6 +5,7 @@ import { dirname, extname, join } from "node:path";
 import { resolveTitleHistoryLookupId } from "@/domain/catalog/title-history-lookup";
 import { resolveContentKind } from "@/domain/media/content-kind";
 import { presentMedia } from "@/domain/media/media-presentation";
+import { findSubtitleInventoryTrack } from "@/domain/subtitle-track-identity";
 import type {
   EpisodeInfo,
   PlaybackTimingMetadata,
@@ -26,15 +27,14 @@ import { runBackgroundTask } from "@/services/diagnostics/background-task";
 import { buildDownloadDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 import { redactDiagnosticValue } from "@/services/diagnostics/redaction";
-import { readBoundedBody } from "@/services/network/bounded-body";
 import {
   cacheOfflinePosterArtwork,
   resolveOfflinePosterArtifactPath,
 } from "@/services/offline/offline-artwork-cache";
 import type { ConfigService } from "@/services/persistence/ConfigService";
-import { normalizeSubtitleUrl } from "@/subtitle";
+import { fetchRemoteSubtitle } from "@/services/playback/remote-subtitle-download";
 import { looksLikeOpaqueProviderNativeId } from "@kunai/core";
-import { fetchGuardedStreamTarget } from "@kunai/providers";
+import { isStremioAddonProviderId } from "@kunai/providers";
 import {
   buildYoutubeYtdlProfile,
   getYoutubeProviderConfig,
@@ -129,9 +129,6 @@ function isFilesystemUnavailableError(cause: unknown): boolean {
   return false;
 }
 const STDERR_MAX_BYTES = 64_000;
-// A subtitle is a text sidecar — a few hundred KB at most. Anything beyond this
-// is a mis-labelled or hostile body, not a subtitle.
-const MAX_SUBTITLE_BYTES = 8 * 1024 * 1024;
 const DEFAULT_ABORT_GRACE_MS = 2_500;
 const DEFAULT_INACTIVE_WAIT_MS = 5_000;
 /**
@@ -184,13 +181,43 @@ export type DownloadEnqueueEligibility =
       readonly reason: string;
     };
 
+/**
+ * Stremio addon streams are only safe to play through the guarded playback
+ * path (direct media, pinned DNS, no redirects). yt-dlp would fetch them with
+ * none of that, so downloads from addons are refused until they share it.
+ */
+export const ADDON_DOWNLOAD_REFUSAL =
+  "Downloads from Stremio addons aren't supported yet. Play the title instead, or download it from a built-in provider.";
+
+function assertDownloadableProvider(providerId: string): void {
+  if (isStremioAddonProviderId(providerId)) {
+    throw new DownloadEnqueueRejectedError("addon-source", ADDON_DOWNLOAD_REFUSAL);
+  }
+}
+
+/**
+ * Every producer identity a stored job carries must pass the addon refusal,
+ * not just the provider it was enqueued under: `lastResolvedProviderId` can be
+ * a legacy mislabel and `streamProviderId` is the cached URL's real producer.
+ * A job already failed `addon-source` stays refused so retry cannot revive it.
+ */
+function assertDownloadableJob(job: DownloadJobRecord): void {
+  assertDownloadableProvider(job.providerId);
+  if (job.streamProviderId) assertDownloadableProvider(job.streamProviderId);
+  if (job.lastResolvedProviderId) assertDownloadableProvider(job.lastResolvedProviderId);
+  if (job.failureKind === "addon-source") {
+    throw new DownloadEnqueueRejectedError("addon-source", ADDON_DOWNLOAD_REFUSAL);
+  }
+}
+
 export class DownloadEnqueueRejectedError extends Error {
   constructor(
     readonly code:
       | "downloads-disabled"
       | "yt-dlp-missing"
       | "insufficient-disk"
-      | "duplicate-intent",
+      | "duplicate-intent"
+      | "addon-source",
     readonly reason: string,
   ) {
     super(reason);
@@ -349,7 +376,7 @@ class StaleDownloadClaimError extends Error {
 }
 
 export class DownloadService {
-  private readonly copyControllers = new Map<string, AbortController>();
+  private readonly transferControllers = new Map<string, AbortController>();
   private readonly jobClaims = new Map<string, DownloadClaimRef>();
   private queueWorkerRunning = false;
   // A kick that lands while workers are mid-pass must not be dropped: without
@@ -493,6 +520,12 @@ export class DownloadService {
     if (!eligibility.allowed) {
       throw new DownloadEnqueueRejectedError(eligibility.code, eligibility.reason);
     }
+    assertDownloadableProvider(input.providerId);
+    const streamProviderId = input.stream?.providerResolveResult?.providerId;
+    if (streamProviderId) assertDownloadableProvider(streamProviderId);
+    // A stream URL with no recorded producer is not trusted; the job carries
+    // nothing and the worker resolves fresh instead.
+    const stream = streamProviderId ? input.stream : undefined;
     const canonicalTitleId = resolveTitleHistoryLookupId(input.title, input.mode);
     const existing = this.deps.repo.findBlockingEpisodeIntent({
       titleId: canonicalTitleId,
@@ -548,8 +581,9 @@ export class DownloadService {
         selectedSourceId: input.selectedSourceId,
         selectedStreamId: input.selectedStreamId,
         selectedQualityLabel: input.selectedQualityLabel ?? input.qualityPreference,
-        streamUrl: input.stream?.url ?? "",
-        headers: input.stream?.headers ?? {},
+        streamUrl: stream?.url ?? "",
+        streamProviderId,
+        headers: stream?.headers ?? {},
         outputPath,
         tempPath,
         posterUrl: input.posterUrl ?? input.title.posterUrl,
@@ -575,12 +609,12 @@ export class DownloadService {
       downloadTitleAliases(input.title, input.providerId),
     );
 
-    const subtitleLanguage = input.stream ? resolveSubtitleLanguage(input.stream) : null;
-    if (input.stream?.subtitle || input.timing || subtitleLanguage) {
+    const subtitleLanguage = stream ? resolveSubtitleLanguage(stream) : null;
+    if (stream?.subtitle || input.timing || subtitleLanguage) {
       this.deps.repo.updateOfflineMetadata(
         id,
         {
-          subtitleUrl: input.stream?.subtitle ?? null,
+          subtitleUrl: stream?.subtitle ?? null,
           subtitleLanguage,
           introSkipJson: input.timing ? JSON.stringify(input.timing) : null,
         },
@@ -669,6 +703,7 @@ export class DownloadService {
 
   async retry(jobId: string): Promise<void> {
     const job = this.deps.repo.get(jobId);
+    if (job) assertDownloadableJob(job);
     if (job?.publicationPending || job?.status === "running")
       throw new Error(
         "Download is still running or awaiting publication recovery. Cancel or recover it before retrying.",
@@ -975,7 +1010,12 @@ export class DownloadService {
           }
         }
       } else {
-        const analysis = analyzeDownloadFailure(message);
+        // An addon provenance refusal is a policy rejection, not a spent
+        // transfer attempt: terminal and outside the retry budget.
+        const analysis: DownloadFailureAnalysis =
+          error instanceof DownloadEnqueueRejectedError && error.code === "addon-source"
+            ? { failureKind: "addon-source", retryable: false }
+            : analyzeDownloadFailure(message);
         // Re-read before spending budget: `next` is the pre-download snapshot
         // and a concurrent recovery may have moved the counters since.
         const fresh = this.deps.repo.get(next.id);
@@ -1019,7 +1059,16 @@ export class DownloadService {
             this.jobClaims.get(next.id),
           );
         } else {
-          if (!this.deps.repo.fail(next.id, message, true, failedAt, analysis.failureKind, claim))
+          if (
+            !this.deps.repo.fail(
+              next.id,
+              message,
+              analysis.failureKind !== "addon-source",
+              failedAt,
+              analysis.failureKind,
+              claim,
+            )
+          )
             return null;
           this.emit({ type: "failed", jobId: next.id, error: message });
           const failedJob = this.deps.repo.get(next.id);
@@ -1063,7 +1112,7 @@ export class DownloadService {
         this.cancellationRequests.set(job.id, { mode: "pause", reason });
       }
     }
-    for (const controller of this.copyControllers.values()) controller.abort();
+    for (const controller of this.transferControllers.values()) controller.abort();
   }
 
   /**
@@ -1234,10 +1283,10 @@ export class DownloadService {
   }
 
   async abort(jobId: string): Promise<void> {
-    const copy = this.copyControllers.get(jobId);
+    const transfer = this.transferControllers.get(jobId);
     const job = this.deps.repo.get(jobId);
     if (!job) {
-      copy?.abort();
+      transfer?.abort();
       return;
     }
     if (job.publicationPending && !this.ownsRunningJob(jobId))
@@ -1249,10 +1298,10 @@ export class DownloadService {
       mode: "abort",
       reason: "download aborted by user",
     });
-    if (copy) {
+    if (transfer) {
       // The worker clears the reserved destination and publication state before
       // releasing its claim. An early abort write would fence that cleanup out.
-      copy.abort();
+      transfer.abort();
       return;
     }
     if (active) {
@@ -1523,7 +1572,7 @@ export class DownloadService {
     const reserved = reservation;
     const controller = new AbortController();
     let reservationClosed = false;
-    this.copyControllers.set(job.id, controller);
+    this.transferControllers.set(job.id, controller);
     try {
       await copyToReservedFile(job.tempPath, reservation, controller.signal);
       if (
@@ -1570,7 +1619,7 @@ export class DownloadService {
       });
       throw cause;
     } finally {
-      this.copyControllers.delete(job.id);
+      this.transferControllers.delete(job.id);
       if (!reservationClosed) closeSync(reservation.fd);
     }
   }
@@ -1580,6 +1629,10 @@ export class DownloadService {
     claim: DownloadClaimRef,
   ): Promise<DownloadJobRecord> {
     const attemptPath = job.tempPath;
+    // A stored job can carry addon provenance a bundled outer id hides; a
+    // worker that would fetch it without the playback confinement refuses
+    // before resolution rather than after.
+    assertDownloadableJob(job);
     const resolved = await this.resolveStreamForJob(job);
     if (!this.deps.repo.withRunningClaim(claim, () => {}).owned)
       throw new StaleDownloadClaimError();
@@ -1627,7 +1680,8 @@ export class DownloadService {
       subtitleLanguage: subtitleLanguage ?? job.subtitleLanguage,
       // SAFETY: resolved.providerId is the provider that produced the verified
       // stream; the job record stores that identity verbatim.
-      lastResolvedProviderId: resolved.providerId as never,
+      streamProviderId: resolved.providerId,
+      lastResolvedProviderId: resolved.providerId,
     };
 
     // Re-reading durable metadata must not replace this attempt namespace.
@@ -1689,8 +1743,7 @@ export class DownloadService {
           youtubeConfig.sponsorblockRemove ?? this.deps.config.youtubeMetadata.sponsorblockRemove,
         forDownload: true,
         qualityLabel: job.selectedQualityLabel,
-        subtitleLanguage:
-          job.subLang?.trim() || this.deps.config.youtubeLanguageProfile.subtitle || "en",
+        subtitleLanguage: "none",
       });
       args.push(...profile.cliArgs);
       const formatSelector =
@@ -1788,8 +1841,13 @@ export class DownloadService {
   }
 
   private async resolveStreamForJob(job: DownloadJobRecord): Promise<DownloadResolveResult> {
+    // Only a URL carrying its recorded producer may be reused. A legacy row
+    // with no `streamProviderId` has no trustworthy producer evidence — the
+    // older `lastResolvedProviderId` can be a wrongly inferred label — so it
+    // resolves fresh rather than falling back to an unchecked URL.
+    const streamProviderId = job.streamProviderId;
     const fallbackStream =
-      job.streamUrl.trim().length > 0
+      streamProviderId && job.streamUrl.trim().length > 0
         ? {
             stream: {
               url: job.streamUrl,
@@ -1797,7 +1855,7 @@ export class DownloadService {
               timestamp: Date.now(),
               subtitle: job.subtitleUrl,
             },
-            providerId: job.providerId,
+            providerId: streamProviderId,
             selectionChanged: false,
           }
         : null;
@@ -1845,6 +1903,12 @@ export class DownloadService {
     });
 
     if (resolved) {
+      // The outer id names who resolved; the attached result names who
+      // produced the stream. Both must pass the addon refusal, and the
+      // producer is the identity the job records from here on.
+      assertDownloadableProvider(resolved.providerId);
+      const providerId = resolved.stream.providerResolveResult?.providerId ?? resolved.providerId;
+      assertDownloadableProvider(providerId);
       const selectedStream = resolved.stream.providerResolveResult?.streams.find(
         (candidate) => candidate.id === resolved.stream.providerResolveResult?.selectedStreamId,
       );
@@ -1856,10 +1920,10 @@ export class DownloadService {
       if (resolved.selectionChanged) {
         this.deps.logger.warn("Download stream selection changed during re-resolve", {
           jobId: job.id,
-          providerId: resolved.providerId,
+          providerId,
         });
       }
-      return resolved;
+      return { ...resolved, providerId };
     }
     if (fallbackStream) return fallbackStream;
     throw new Error("download stream resolve failed");
@@ -2100,55 +2164,23 @@ export class DownloadService {
         status: "not-applicable",
       };
     }
+    const controller = new AbortController();
+    if (claim) this.transferControllers.set(job.id, controller);
     try {
-      const policy = buildDownloadStreamPolicy(job.headers);
-      const outcome = await fetchGuardedStreamTarget({
-        fetchImpl: fetch,
-        url: job.subtitleUrl,
-        init: { headers: policy.headers },
-        signal: AbortSignal.timeout(15_000),
+      if (this.shutdownRequested || this.cancellationRequests.has(job.id)) controller.abort();
+      const file = await fetchRemoteSubtitle(job.subtitleUrl, {
+        media: { url: job.streamUrl, ...buildDownloadStreamPolicy(job.headers) },
+        signal: controller.signal,
       });
-      if (outcome.kind === "blocked") {
+      if (!file || controller.signal.aborted) {
         return buildRepairableSidecarResult(
           job,
           "subtitle",
-          `subtitle target blocked: ${outcome.reason}`,
+          "subtitle download refused or unavailable",
         );
       }
-      if (outcome.kind === "timeout") {
-        return buildRepairableSidecarResult(job, "subtitle", "subtitle request timed out");
-      }
-      const res = outcome.response;
-      if (!res.ok) {
-        return buildRepairableSidecarResult(
-          job,
-          "subtitle",
-          `subtitle request failed: ${res.status}`,
-        );
-      }
-      const targetPath = resolveSubtitleArtifactPath({
-        videoOutputPath: job.outputPath,
-        subtitleUrl: job.subtitleUrl,
-        contentType: res.headers.get("content-type"),
-      });
-      // Content-Length is sender-declared and only an early reject — the body
-      // itself is bounded below, so a lying or absent header cannot pull a
-      // giant payload into memory.
-      const declared = Number(res.headers.get("content-length"));
-      if (Number.isFinite(declared) && declared > MAX_SUBTITLE_BYTES) {
-        await res.body?.cancel("too-large").catch(() => {});
-        return buildRepairableSidecarResult(job, "subtitle", "subtitle response too large");
-      }
-      const data = res.body ? await readBoundedBody(res.body, MAX_SUBTITLE_BYTES) : null;
-      if (!data || data.byteLength <= 0) {
-        // readBoundedBody returns null on overflow, abort, and mid-body drops —
-        // all are retryable sidecar failures rather than a poisoned artifact.
-        return buildRepairableSidecarResult(
-          job,
-          "subtitle",
-          "subtitle response was empty, too large, or interrupted",
-        );
-      }
+      const targetPath = resolveSubtitleArtifactPath(job.outputPath, file.extension);
+      const data = file.bytes;
       if (claim) {
         const stagedPath = join(claim.stagingDir, "subtitle" + extname(targetPath));
         await writeAtomicBytes(stagedPath, data);
@@ -2179,11 +2211,9 @@ export class DownloadService {
       };
     } catch (error) {
       if (error instanceof StaleDownloadClaimError) throw error;
-      return buildRepairableSidecarResult(
-        job,
-        "subtitle",
-        error instanceof Error ? error.message : "subtitle download failed",
-      );
+      return buildRepairableSidecarResult(job, "subtitle", "could not save subtitle file");
+    } finally {
+      if (claim) this.transferControllers.delete(job.id);
     }
   }
 
@@ -2672,7 +2702,7 @@ export class DownloadService {
         lost?.cancel?.("download ownership changed");
         lost?.releaseIo?.();
         if (lost) void this.terminateProcess(lost.process, undefined).catch(() => undefined);
-        this.copyControllers.get(jobId)?.abort();
+        this.transferControllers.get(jobId)?.abort();
         return;
       }
       timer = setTimeout(tick, HEARTBEAT_INTERVAL_MS);
@@ -3054,10 +3084,9 @@ function resolveThumbnailArtifactPath(outputPath: string): string {
 export { ytDlpFormatSelectorForQuality } from "./download-quality-policy";
 
 function resolveSubtitleLanguage(stream: StreamInfo): string | null {
-  const subtitleKey = stream.subtitle ? normalizeSubtitleUrl(stream.subtitle) : null;
-  const candidate = stream.subtitleList?.find(
-    (track) => subtitleKey && normalizeSubtitleUrl(track.url) === subtitleKey,
-  );
+  const candidate = stream.subtitle
+    ? findSubtitleInventoryTrack(stream.subtitle, stream.subtitleList)
+    : undefined;
   if (candidate?.language) return candidate.language;
   if (stream.hardSubLanguage) return stream.hardSubLanguage;
   return null;
@@ -3076,7 +3105,6 @@ function buildRepairableSidecarResult(
       artifact,
       message,
       outputPath: job.outputPath,
-      subtitleUrl: job.subtitleUrl,
       subtitleLanguage: job.subtitleLanguage,
       posterUrl: job.posterUrl,
     }),

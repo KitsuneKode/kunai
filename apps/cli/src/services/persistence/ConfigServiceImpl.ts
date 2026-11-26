@@ -2,20 +2,22 @@
 // Config Service Implementation
 // =============================================================================
 
+import {
+  normalizeStremioAddonEntries,
+  withStremioAddonName,
+  type StremioAddonsConsent,
+} from "@/domain/provider/stremio-addons";
 import { dbg } from "@/logger";
-import type { ContinueSourcePreference } from "@/services/continuation/continuation-source";
 import {
   DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,
-  DEFAULT_OFFLINE_RUNWAY_TARGET,
   DEFAULT_UNKNOWN_EPISODE_ESTIMATE_BYTES,
 } from "@/services/download/StorageBudgetPolicy";
 import {
-  isHdrMode,
-  MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS,
   mergeKitsuneConfig,
   normalizeRetiredProductionProviderFields,
+  normalizeStremioAddonsRiskAcknowledgedAt,
   retiredProductionProviderFieldsChanged,
-  type PrePlayConfirmMode,
+  type StremioAddonConfigEntry,
 } from "@kunai/config";
 import { migrateLegacyProviderId } from "@kunai/providers";
 import { normalizeRelayBaseUrl as normalizeRelayBaseUrlValue } from "@kunai/relay";
@@ -26,8 +28,40 @@ import {
   type StartupPriority,
 } from "@kunai/types";
 
+import {
+  ANALYTICS_IDENTITY_KEYS,
+  ANALYTICS_STATE_KEYS,
+  analyticsCompletionPatch,
+  loadedAnalyticsFields,
+  persistedAnalyticsConsent,
+  predatesExplicitAnalyticsConsent,
+} from "./analytics-consent";
+import { DirtyConfigLeaves } from "./config-leaf-merge";
+import {
+  normalizeBytes,
+  normalizeContinueSourcePreference,
+  normalizeHdrMode,
+  normalizeMaxConcurrentDownloads,
+  normalizeMpvReconnectAttempts,
+  normalizePrePlayConfirm,
+  normalizeRecoveryMode,
+  normalizeRunwayTarget,
+  normalizeStartupPriority,
+} from "./config-scalar-normalizers";
+import {
+  collectDirtyVaultFields,
+  preserveUnchangedNestedDiskSecrets,
+  readVaultedField,
+  scrubVaultedFields,
+  VAULT_KEY_BY_FIELD,
+  VAULTED_CONFIG_FIELDS,
+  writeVaultedField,
+  type VaultedConfigField,
+} from "./config-vault-fields";
 import type {
+  AnalyticsIdentityRotation,
   AnalyticsPingCompletion,
+  PersistedAnalyticsConsent,
   ConfigService,
   KitsuneConfig,
   QuitNearEndBehavior,
@@ -38,36 +72,7 @@ import type {
 } from "./ConfigService";
 import type { ConfigStore } from "./ConfigStore";
 import { DEFAULT_CONFIG } from "./ConfigStore";
-import { CREDENTIAL_KEYS, type CredentialVaultPort } from "./credential-vault";
-
-/**
- * Config fields whose values live in the OS credential vault (Keychain,
- * Windows Credential Manager, Secret Service) when one is available. The
- * in-memory config keeps serving them, so consumers never learn where they
- * live; config.json carries "" once the vault holds a verified copy.
- */
-const VAULTED_CONFIG_FIELDS = ["videasySessionToken", "tmdbApiKey", "wyzieApiKey"] as const;
-type VaultedConfigField = (typeof VAULTED_CONFIG_FIELDS)[number];
-
-const VAULT_KEY_BY_FIELD = {
-  videasySessionToken: CREDENTIAL_KEYS.videasySessionToken,
-  tmdbApiKey: CREDENTIAL_KEYS.tmdbApiKey,
-  wyzieApiKey: CREDENTIAL_KEYS.wyzieApiKey,
-} satisfies Record<VaultedConfigField, string>;
-
-function isVaultedConfigField(key: string): key is VaultedConfigField {
-  return VAULTED_CONFIG_FIELDS.some((field) => field === key);
-}
-
-function scrubVaultedFields(
-  config: KitsuneConfig,
-  scrub: ReadonlySet<VaultedConfigField>,
-): KitsuneConfig {
-  if (scrub.size === 0) return config;
-  const scrubbed = { ...config };
-  for (const field of scrub) scrubbed[field] = "";
-  return scrubbed;
-}
+import type { CredentialVaultPort } from "./credential-vault";
 import type { TuningConfig } from "./tuning";
 import { resolveTuning } from "./tuning";
 
@@ -107,9 +112,7 @@ function normalizeQualityPreference<T>(value: T): string {
 }
 
 function normalizeLanguageProfile<T>(profile: T): KitsuneConfig["animeLanguageProfile"] {
-  if (!isJsonObject(profile)) {
-    return { audio: "original", subtitle: "none", quality: "best" };
-  }
+  if (!isJsonObject(profile)) return { audio: "original", subtitle: "none", quality: "best" };
   return {
     audio: isJsonString(profile.audio) && profile.audio ? profile.audio : "original",
     subtitle: normalizeSubtitlePreference(profile.subtitle),
@@ -209,6 +212,11 @@ export class ConfigServiceImpl implements ConfigService {
    * Persist merges `{onDisk, dirtyKeys}` — per-key last-writer-wins — instead.
    */
   private readonly dirtyKeys = new Set<keyof KitsuneConfig>();
+  /** The nested leaves behind a dirty key, so a save merges them, not the key. */
+  private readonly dirtyLeaves = new DirtyConfigLeaves<KitsuneConfig>(
+    // SAFETY: a vaulted field path always starts with its owning config key.
+    new Set(VAULTED_CONFIG_FIELDS.map((field) => field.split(".")[0] as keyof KitsuneConfig)),
+  );
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private saveTimeoutMs = 300;
   /** Set when load() auto-migrated legacy videasyAppId to bc-frontend. */
@@ -223,6 +231,8 @@ export class ConfigServiceImpl implements ConfigService {
 
   /** Secret fields the vault holds — hydrated or migrated this session. */
   private readonly vaultedFields = new Set<VaultedConfigField>();
+  /** Vaulted secret fields explicitly modified or cleared via `update()` / `reset()`. */
+  private readonly dirtyVaultFields = new Set<VaultedConfigField>();
 
   static async load(store: ConfigStore, vault?: CredentialVaultPort): Promise<ConfigServiceImpl> {
     const load = () => ConfigServiceImpl.loadWithinLock(store, vault);
@@ -235,20 +245,10 @@ export class ConfigServiceImpl implements ConfigService {
   ): Promise<ConfigServiceImpl> {
     const service = new ConfigServiceImpl(store, vault);
     const loaded = await store.load();
-    // Configs written before explicit consent had no notice marker. Their
-    // enabled value was opt-out state, not evidence of a current opt-in, so
-    // revoke it and erase the old local identifier before startup can send.
-    const requiresExplicitAnalyticsConsent =
-      loaded.analytics === "enabled" && typeof loaded.analyticsNoticeShown !== "boolean";
-    const normalizedAnalytics = requiresExplicitAnalyticsConsent
-      ? "unset"
-      : normalizeAnalyticsPreference(loaded.analytics);
-    const normalizedInstallId =
-      normalizedAnalytics === "enabled" && typeof loaded.installId === "string"
-        ? loaded.installId.trim()
-        : "";
+    const requiresExplicitAnalyticsConsent = predatesExplicitAnalyticsConsent(loaded);
+    const analyticsFields = loadedAnalyticsFields(loaded);
     const repairedAnalyticsIdentity =
-      loaded.installId !== undefined && loaded.installId !== normalizedInstallId;
+      loaded.installId !== undefined && loaded.installId !== analyticsFields.installId;
     const migratedAnimeDefaults = shouldMigrateInheritedAnimeDefaults(loaded);
     const migratedSeriesDefaults = shouldMigrateInheritedSeriesDefaults(loaded);
     // mergeKitsuneConfig supplies the base: object-valued keys (sync and its
@@ -286,6 +286,7 @@ export class ConfigServiceImpl implements ConfigService {
             ),
           }),
       disabledProviders: normalizeProviderIdList(loaded.disabledProviders),
+      stremioAddons: normalizeStremioAddonEntries(loaded.stremioAddons),
       providerDefaultsRevision: Math.max(
         readProviderDefaultsRevision(loaded),
         CURRENT_PROVIDER_DEFAULTS_REVISION,
@@ -344,25 +345,19 @@ export class ConfigServiceImpl implements ConfigService {
     );
     service.config = {
       ...service.config,
-      analytics: normalizedAnalytics,
+      ...analyticsFields,
       analyticsNoticeShown: loaded.analyticsNoticeShown === true,
+      // The experimental opt-in is strict `true` plus a valid ISO ack — a
+      // hand-edited `"yes"` or a non-timestamp ack fails closed like the flag
+      // being absent, without discarding the rest of the file.
+      experimentalStremioAddons: loaded.experimentalStremioAddons === true,
+      stremioAddonsRiskAcknowledgedAt: normalizeStremioAddonsRiskAcknowledgedAt(
+        loaded.stremioAddonsRiskAcknowledgedAt,
+      ),
       // Anything but an explicit `false` keeps tips on — a hand-edited `0` or
       // `"no"` must not silently opt a user out of a feature they never saw.
       tipsEnabled: loaded.tipsEnabled !== false,
       seenTips: normalizeStringList(loaded.seenTips),
-      installId: normalizedInstallId,
-      lastAnalyticsPingAt:
-        typeof loaded.lastAnalyticsPingAt === "number" &&
-        Number.isFinite(loaded.lastAnalyticsPingAt)
-          ? Math.max(0, loaded.lastAnalyticsPingAt)
-          : 0,
-      analyticsRetryAfter:
-        typeof loaded.analyticsRetryAfter === "number" &&
-        Number.isFinite(loaded.analyticsRetryAfter)
-          ? Math.max(0, loaded.analyticsRetryAfter)
-          : 0,
-      analyticsEndpoint:
-        typeof loaded.analyticsEndpoint === "string" ? loaded.analyticsEndpoint.trim() : "",
     };
     // One debug line, not per-field: enough to see what normalization did on a
     // bug report without spamming --debug. Secrets never land here — tokens are
@@ -380,6 +375,7 @@ export class ConfigServiceImpl implements ConfigService {
       relayEnabled: service.config.providerRelay.enabled !== false,
       relayHost: relayHostForDebug(service.config.providerRelay.baseUrl),
       hasRelayToken: (service.config.providerRelay.token ?? "").length > 0,
+      hasYoutubePoToken: (service.config.youtubeMetadata.poToken ?? "").length > 0,
       hasVideasySession: service.config.videasySessionToken.length > 0,
       migratedAnimeDefaults,
       migratedSeriesDefaults,
@@ -398,7 +394,7 @@ export class ConfigServiceImpl implements ConfigService {
         VAULTED_CONFIG_FIELDS.map(async (field) => {
           try {
             const key = VAULT_KEY_BY_FIELD[field];
-            const plaintext = service.config[field];
+            const plaintext = readVaultedField(service.config, field);
             if (plaintext) {
               await vault.set(key, plaintext);
               const verified = (await vault.get(key)) === plaintext;
@@ -416,22 +412,24 @@ export class ConfigServiceImpl implements ConfigService {
         if (!outcome.vaulted) continue;
         service.vaultedFields.add(outcome.field);
         if (outcome.migrated) vaultResave = true;
-        if (outcome.value) service.config = { ...service.config, [outcome.field]: outcome.value };
+        if (outcome.value) {
+          service.config = writeVaultedField(service.config, outcome.field, outcome.value);
+        }
       }
     }
     // Normalization heals on disk: a key whose stored value parsed but
     // normalized differently (legacy enums, clamps, trims) stays dirty so the
     // next merge save rewrites just that key — the heal the old whole-document
     // write used to provide, without reverting keys another instance changed.
+    // Compare against the scrubbed view so hydrating a vaulted secret (flat or
+    // nested) never marks the owning key dirty.
+    const comparableConfig = scrubVaultedFields(service.config, service.vaultedFields);
     // SAFETY: Object.keys of a Partial<KitsuneConfig> only yields its keys.
     for (const key of Object.keys(loaded) as (keyof KitsuneConfig)[]) {
       if (loaded[key] === undefined) continue;
-      // Hydration is not permission to overwrite a rotated native token.
-      if (isVaultedConfigField(key) && loaded[key] === "" && service.vaultedFields.has(key)) {
-        continue;
-      }
-      if (JSON.stringify(loaded[key]) !== JSON.stringify(service.config[key])) {
+      if (JSON.stringify(loaded[key]) !== JSON.stringify(comparableConfig[key])) {
         service.dirtyKeys.add(key);
+        service.dirtyLeaves.markWhole(key);
       }
     }
     if (
@@ -479,7 +477,12 @@ export class ConfigServiceImpl implements ConfigService {
     // persistChain only orders this instance — the cross-process lock lives
     // inside persistConfigNow. Startup owns its initial read and migration,
     // and explicit native credential changes share that critical section.
-    const run = this.persistChain.then(() => this.persistConfigNow());
+    return this.enqueue(() => this.persistConfigNow());
+  }
+
+  /** Orders `fn` after every earlier save of this instance; a failure does not wedge it. */
+  private enqueue<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.persistChain.then(fn);
     this.persistChain = run.then(
       () => undefined,
       () => undefined,
@@ -488,47 +491,74 @@ export class ConfigServiceImpl implements ConfigService {
   }
 
   recordAnalyticsPing(completion: AnalyticsPingCompletion): Promise<boolean> {
-    const write = async (): Promise<boolean> => {
-      const complete = async (): Promise<boolean> => {
-        // Consent changes in this process can still be awaiting their save.
-        const matchesLocal = () =>
-          this.config.analytics === "enabled" && this.config.installId === completion.installId;
-        if (!matchesLocal()) return false;
-        const onDisk = await this.store.load();
-        if (!matchesLocal()) return false;
-        const matchesDisk =
-          onDisk.analytics === "enabled" && onDisk.installId === completion.installId;
-        const current = { ...DEFAULT_CONFIG, ...onDisk };
-        if (matchesDisk) {
-          current.analyticsRetryAfter = completion.analyticsRetryAfter;
-          if (completion.lastAnalyticsPingAt !== undefined)
-            current.lastAnalyticsPingAt = completion.lastAnalyticsPingAt;
-          // Never persist the pre-send identity: this write owns cadence only.
-          await this.store.save(current);
-        }
-        // A local consent/identity change may arrive during the async write.
-        // Its queued save wins next; do not refresh it with the old cadence.
-        if (!matchesLocal()) return false;
-        const analyticsKeys: readonly (keyof KitsuneConfig)[] = [
-          "analytics",
-          "installId",
-          "lastAnalyticsPingAt",
-          "analyticsRetryAfter",
-        ];
-        for (const key of analyticsKeys) {
-          if (!this.dirtyKeys.has(key)) Object.assign(this.config, { [key]: current[key] });
-        }
-        return matchesDisk;
-      };
-      return this.store.withLock ? this.store.withLock(complete) : complete();
-    };
-    // Share the save chain so completion cannot interleave its read/merge/write.
-    const run = this.persistChain.then(write);
-    this.persistChain = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    return run;
+    return this.lockedWrite(async () => {
+      // Consent changes in this process can still be awaiting their save.
+      const matchesLocal = () =>
+        this.config.analytics === "enabled" && this.config.installId === completion.installId;
+      if (!matchesLocal()) return false;
+      const onDisk = await this.store.load();
+      if (!matchesLocal()) return false;
+      const matchesDisk =
+        onDisk.analytics === "enabled" && onDisk.installId === completion.installId;
+      const current = { ...DEFAULT_CONFIG, ...onDisk };
+      if (matchesDisk) {
+        Object.assign(current, analyticsCompletionPatch(current, completion));
+        // Never persist the pre-send identity: this write owns cadence only.
+        await this.store.save(current);
+      }
+      // A local consent/identity change may arrive during the async write.
+      // Its queued save wins next; do not refresh it with the old cadence.
+      if (!matchesLocal()) return false;
+      this.refreshAnalyticsFields(current);
+      return matchesDisk;
+    });
+  }
+
+  rotateAnalyticsIdentity(rotation: AnalyticsIdentityRotation): Promise<boolean> {
+    return this.lockedWrite(async () => {
+      const onDisk = await this.store.load();
+      const enabledOnDisk = persistedAnalyticsConsent(onDisk).analytics === "enabled";
+      if (this.config.analytics !== "enabled" || !enabledOnDisk) {
+        this.refreshAnalyticsFields(loadedAnalyticsFields(onDisk));
+        return false;
+      }
+      await this.store.save({ ...DEFAULT_CONFIG, ...onDisk, ...rotation });
+      Object.assign(this.config, rotation);
+      for (const key of ANALYTICS_IDENTITY_KEYS) this.dirtyKeys.delete(key);
+      return true;
+    });
+  }
+
+  private refreshAnalyticsFields(fromDisk: Partial<KitsuneConfig>): void {
+    for (const key of ANALYTICS_STATE_KEYS) {
+      if (!this.dirtyKeys.has(key)) Object.assign(this.config, { [key]: fromDisk[key] });
+    }
+  }
+
+  /** A read→merge→write on the save chain and under the cross-process lock. */
+  private lockedWrite<T>(fn: () => Promise<T>): Promise<T> {
+    return this.enqueue(() => (this.store.withLock ? this.store.withLock(fn) : fn()));
+  }
+
+  async readPersistedAnalyticsConsent(): Promise<PersistedAnalyticsConsent> {
+    // No lock: saves replace the file atomically, and this only reads.
+    return persistedAnalyticsConsent(await this.store.load());
+  }
+
+  recordStremioAddonName(manifestUrl: string, name: string): Promise<void> {
+    return this.lockedWrite(async () => {
+      const onDisk = await this.store.load();
+      // One entry's name, in place: a name refresh must not normalize or
+      // re-add entries another process (or a hand edit) put in the file.
+      const entries = withStremioAddonName(onDisk.stremioAddons, manifestUrl, name);
+      if (!entries) return;
+      await this.store.save({ ...DEFAULT_CONFIG, ...onDisk, stremioAddons: entries });
+      // A local stremioAddons change may be awaiting its save; refreshing
+      // the snapshot with the old list would lose it on the next merge.
+      if (this.dirtyKeys.has("stremioAddons")) return;
+      const local = withStremioAddonName(this.config.stremioAddons, manifestUrl, name);
+      if (local) this.config.stremioAddons = local;
+    });
   }
 
   private async persistConfigNow(alreadyLocked = false): Promise<void> {
@@ -544,10 +574,13 @@ export class ConfigServiceImpl implements ConfigService {
       // Only explicit token changes write the vault. Keep its transition inside
       // the config lock so sibling rotations and the file scrub share an owner.
       const scrub = new Set(this.vaultedFields);
+      const persistedVaultSecrets = new Map<VaultedConfigField, string>();
       for (const field of VAULTED_CONFIG_FIELDS) {
-        if (!this.vault || this.vault.backend === "file" || !this.dirtyKeys.has(field)) continue;
+        if (!this.vault || this.vault.backend === "file" || !this.dirtyVaultFields.has(field)) {
+          continue;
+        }
         const key = VAULT_KEY_BY_FIELD[field];
-        const secret = config[field];
+        const secret = readVaultedField(config, field);
         scrub.delete(field);
         if (secret) {
           this.vaultedFields.delete(field);
@@ -560,6 +593,7 @@ export class ConfigServiceImpl implements ConfigService {
           } catch {
             // A failed replacement retains its plaintext for a later migration.
           }
+          persistedVaultSecrets.set(field, secret);
         } else {
           // A sibling may have added a secret since hydration. A clear must
           // remove it too, and must not claim success if native deletion failed.
@@ -567,6 +601,7 @@ export class ConfigServiceImpl implements ConfigService {
           if ((await this.vault.get(key)) !== undefined)
             throw new Error("Native credential clear could not be verified");
           this.vaultedFields.delete(field);
+          persistedVaultSecrets.set(field, "");
         }
       }
       // When this process has updated keys, write per-key over the CURRENT
@@ -583,11 +618,20 @@ export class ConfigServiceImpl implements ConfigService {
         mergedKeys = new Set(this.dirtyKeys);
         try {
           const onDisk = await this.store.load();
+          const live = { ...DEFAULT_CONFIG, ...onDisk };
           const dirtySubset: Partial<KitsuneConfig> = {};
+          const persistedSubset: Partial<KitsuneConfig> = {};
           for (const key of mergedKeys) {
             Object.assign(dirtySubset, { [key]: config[key] });
+            const value = this.dirtyLeaves.persistedValue(key, config[key], onDisk[key]);
+            Object.assign(persistedSubset, { [key]: value });
           }
-          toWrite = { ...DEFAULT_CONFIG, ...onDisk, ...dirtySubset };
+          toWrite = preserveUnchangedNestedDiskSecrets(
+            { ...live, ...persistedSubset },
+            onDisk,
+            mergedKeys,
+            this.dirtyVaultFields,
+          );
           mergedValues = dirtySubset;
         } catch {
           toWrite = config;
@@ -611,7 +655,8 @@ export class ConfigServiceImpl implements ConfigService {
       const verified = new Set<VaultedConfigField>();
       for (const field of scrub) {
         try {
-          if ((await this.vault?.get(VAULT_KEY_BY_FIELD[field])) === toWrite[field]) {
+          const secret = readVaultedField(toWrite, field);
+          if (secret && (await this.vault?.get(VAULT_KEY_BY_FIELD[field])) === secret) {
             verified.add(field);
           }
         } catch {
@@ -620,7 +665,12 @@ export class ConfigServiceImpl implements ConfigService {
       }
       await this.store.save(scrubVaultedFields(toWrite, verified));
       if (forceFullWrite) this.needsFullConfigWrite = false;
-      this.clearPersistedDirtyKeys(mergedKeys, mergedValues ?? toWrite);
+      this.clearPersistedDirtyKeys(
+        mergedKeys,
+        mergedValues ?? toWrite,
+        persistedVaultSecrets,
+        toWrite,
+      );
     };
 
     const withLock = this.store.withLock?.bind(this.store);
@@ -634,6 +684,8 @@ export class ConfigServiceImpl implements ConfigService {
   private clearPersistedDirtyKeys(
     mergedKeys: ReadonlySet<keyof KitsuneConfig> | null,
     written: Partial<KitsuneConfig>,
+    persistedVaultSecrets: ReadonlyMap<VaultedConfigField, string>,
+    onDiskNow: KitsuneConfig,
   ): void {
     // A key re-dirtied while the write was in flight keeps its flag — the
     // next persist carries the newer value instead of reverting to what was
@@ -641,7 +693,16 @@ export class ConfigServiceImpl implements ConfigService {
     // current dirty set is the comparison set.
     const keys = mergedKeys ?? [...this.dirtyKeys];
     for (const key of keys) {
-      if (this.config[key] === written[key]) this.dirtyKeys.delete(key);
+      if (this.config[key] !== written[key]) continue;
+      this.dirtyKeys.delete(key);
+      // A leaf-merged key now holds what disk holds, siblings' leaves included.
+      if (this.dirtyLeaves.isLeafMerged(key)) {
+        this.config = { ...this.config, [key]: onDiskNow[key] };
+      }
+      this.dirtyLeaves.clear(key);
+    }
+    for (const [field, secret] of persistedVaultSecrets) {
+      if (readVaultedField(this.config, field) === secret) this.dirtyVaultFields.delete(field);
     }
   }
 
@@ -684,6 +745,41 @@ export class ConfigServiceImpl implements ConfigService {
 
   get disabledProviders(): readonly string[] {
     return [...this.config.disabledProviders];
+  }
+
+  get stremioAddons(): readonly StremioAddonConfigEntry[] {
+    return [...this.config.stremioAddons];
+  }
+
+  get experimentalStremioAddons(): boolean {
+    return this.config.experimentalStremioAddons;
+  }
+
+  get stremioAddonsRiskAcknowledgedAt(): string {
+    return this.config.stremioAddonsRiskAcknowledgedAt;
+  }
+
+  /**
+   * The opt-in as the live file records it — a standalone `kunai addons
+   * enable|disable` rewrites config.json under a running session, and only a
+   * file read sees that before the next restart. Pending local edits still
+   * win: a consent key this session changed but has not yet saved is answered
+   * from memory, not from the file it is about to update. When the store has
+   * no synchronous read (tests, memory backends) memory is the answer. The
+   * store's own read is fail-closed, so an unreadable file reports off.
+   */
+  readStremioAddonsConsent(): StremioAddonsConsent {
+    const persisted = this.store.readStremioAddonsConsent?.();
+    return {
+      experimentalStremioAddons:
+        this.dirtyKeys.has("experimentalStremioAddons") || persisted === undefined
+          ? this.config.experimentalStremioAddons === true
+          : persisted.experimentalStremioAddons,
+      stremioAddonsRiskAcknowledgedAt:
+        this.dirtyKeys.has("stremioAddonsRiskAcknowledgedAt") || persisted === undefined
+          ? this.config.stremioAddonsRiskAcknowledgedAt
+          : persisted.stremioAddonsRiskAcknowledgedAt,
+    };
   }
 
   get wyzieApiKey(): string {
@@ -857,7 +953,9 @@ export class ConfigServiceImpl implements ConfigService {
   get startupPriority(): StartupPriority {
     return this.config.startupPriority;
   }
-
+  get player(): KitsuneConfig["player"] {
+    return this.config.player;
+  }
   get hdrMode(): KitsuneConfig["hdrMode"] {
     return this.sessionOverrides.hdrMode ?? this.config.hdrMode;
   }
@@ -924,6 +1022,10 @@ export class ConfigServiceImpl implements ConfigService {
 
   get installId(): string {
     return this.config.installId;
+  }
+
+  get analyticsCohort(): string {
+    return this.config.analyticsCohort;
   }
 
   get lastAnalyticsPingAt(): number {
@@ -1074,6 +1176,7 @@ export class ConfigServiceImpl implements ConfigService {
   }
 
   async update(input: Partial<KitsuneConfig>): Promise<void> {
+    const previous = this.config;
     const { partial, keptProfileOverrides } = this.separateProfileOverrides(input);
     // SAFETY: Object.keys of a Partial<KitsuneConfig> only yields its keys.
     for (const key of Object.keys(partial) as (keyof KitsuneConfig)[]) {
@@ -1084,6 +1187,9 @@ export class ConfigServiceImpl implements ConfigService {
     this.config = {
       ...this.config,
       ...partial,
+      ...(partial.youtubeMetadata !== undefined
+        ? { youtubeMetadata: normalizeYoutubeMetadata(partial.youtubeMetadata) }
+        : null),
       ...(partial.providerPriority !== undefined
         ? { providerPriority: normalizeProviderIdList(partial.providerPriority) }
         : null),
@@ -1092,6 +1198,19 @@ export class ConfigServiceImpl implements ConfigService {
         : null),
       ...(partial.disabledProviders !== undefined
         ? { disabledProviders: normalizeProviderIdList(partial.disabledProviders) }
+        : null),
+      ...(partial.stremioAddons !== undefined
+        ? { stremioAddons: normalizeStremioAddonEntries(partial.stremioAddons) }
+        : null),
+      ...(partial.experimentalStremioAddons !== undefined
+        ? { experimentalStremioAddons: partial.experimentalStremioAddons === true }
+        : null),
+      ...(partial.stremioAddonsRiskAcknowledgedAt !== undefined
+        ? {
+            stremioAddonsRiskAcknowledgedAt: normalizeStremioAddonsRiskAcknowledgedAt(
+              partial.stremioAddonsRiskAcknowledgedAt,
+            ),
+          }
         : null),
       ...(partial.animeLanguageProfile
         ? { animeLanguageProfile: normalizeLanguageProfile(partial.animeLanguageProfile) }
@@ -1183,6 +1302,13 @@ export class ConfigServiceImpl implements ConfigService {
         : null),
     };
     this.config = applyRetiredProductionProviderNormalization(this.config);
+    // SAFETY: Object.keys of a Partial<KitsuneConfig> only yields its keys.
+    for (const key of Object.keys(partial) as (keyof KitsuneConfig)[]) {
+      this.dirtyLeaves.record(key, previous[key], this.config[key]);
+    }
+    for (const field of collectDirtyVaultFields(previous, this.config, partial)) {
+      this.dirtyVaultFields.add(field);
+    }
   }
 
   private savePending: Promise<void> | null = null;
@@ -1265,6 +1391,10 @@ export class ConfigServiceImpl implements ConfigService {
     // SAFETY: Object.keys of DEFAULT_CONFIG only yields KitsuneConfig keys.
     for (const key of Object.keys(DEFAULT_CONFIG) as (keyof KitsuneConfig)[]) {
       this.dirtyKeys.add(key);
+      this.dirtyLeaves.markWhole(key);
+    }
+    for (const field of VAULTED_CONFIG_FIELDS) {
+      this.dirtyVaultFields.add(field);
     }
     await this.persistConfig();
   }
@@ -1371,6 +1501,11 @@ const INHERITED_ANIME_DEFAULTS: readonly {
     animeProvider: "hianime",
     priorities: [["kickassanime", "animegg", "allanime", "miruro", "anidb"]],
   },
+  {
+    revision: 6,
+    animeProvider: "hianime",
+    priorities: [["kickassanime", "animegg", "allanime", "miruro"]],
+  },
 ];
 
 function retiredProductionProviderFieldSlice(
@@ -1470,6 +1605,9 @@ function shouldMigrateInheritedSeriesDefaults(loaded: Partial<KitsuneConfig>): b
   const provider = isJsonString(loaded.provider) ? loaded.provider.trim() : "";
   const priority = loaded.providerPriority;
   if (migrateLegacyProviderId(provider) === "videasy") {
+    // Revision 7 only changes anime defaults. A revision-6 Videasy pair
+    // already had this migration applied and can be a deliberate re-pick.
+    if (revision >= 6) return false;
     // A missing or unreadable priority cannot carry a deliberate ordering —
     // it normalizes to the shipped list below, so it must not shield the dead
     // provider pick from migration either.
@@ -1507,32 +1645,6 @@ function normalizeVideasyAppId<T>(value: T, sessionToken = ""): KitsuneConfig["v
   return "bc-frontend";
 }
 
-function normalizeRecoveryMode<T>(value: T): RecoveryMode {
-  return value === "manual" ? "manual" : value === "fallback-first" ? "fallback-first" : "guided";
-}
-
-function normalizeContinueSourcePreference<T>(value: T): ContinueSourcePreference {
-  return value === "local"
-    ? "local"
-    : value === "stream"
-      ? "stream"
-      : value === "ask"
-        ? "ask"
-        : "auto";
-}
-
-function normalizePrePlayConfirm<T>(value: T): PrePlayConfirmMode {
-  return value === "when-choices" ? "when-choices" : value === "always" ? "always" : "off";
-}
-
-function normalizeAnalyticsPreference<T>(value: T): KitsuneConfig["analytics"] {
-  return value === "enabled" ? "enabled" : value === "disabled" ? "disabled" : "unset";
-}
-
-function normalizeStartupPriority<T>(value: T): StartupPriority {
-  return value === "fast" ? "fast" : value === "quality-first" ? "quality-first" : "balanced";
-}
-
 /** An update split into what to persist and which launch-flag fields stay overridden. */
 interface ProfileOverrideSplit {
   readonly partial: Partial<KitsuneConfig>;
@@ -1545,32 +1657,6 @@ const SESSION_PROFILE_KEYS = [
   "movieLanguageProfile",
 ] as const;
 const PROFILE_FIELDS = ["audio", "subtitle", "quality"] as const;
-
-function normalizeHdrMode<T>(value: T): KitsuneConfig["hdrMode"] {
-  return isHdrMode(value) ? value : "auto";
-}
-
-function normalizeBytes<T>(value: T, fallback: number): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
-  return Math.max(0, Math.trunc(value));
-}
-
-function normalizeRunwayTarget<T>(value: T): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_OFFLINE_RUNWAY_TARGET;
-  return Math.max(1, Math.min(24, Math.trunc(value)));
-}
-
-function normalizeMpvReconnectAttempts<T>(value: T): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS;
-  }
-  return Math.max(0, Math.min(MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS, Math.trunc(value)));
-}
-
-function normalizeMaxConcurrentDownloads<T>(value: T): number {
-  if (typeof value !== "number" || !Number.isFinite(value)) return 3;
-  return Math.max(1, Math.min(5, Math.trunc(value)));
-}
 
 /** Host-only relay URL for debug logs: the full URL can carry path/query. */
 function relayHostForDebug(baseUrl: string | undefined): string {

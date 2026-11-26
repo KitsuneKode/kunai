@@ -46,7 +46,11 @@ export type PublicAnalyticsMetrics = {
  */
 export const DIMENSION_VALUE_SPACE = {
   version: Number.POSITIVE_INFINITY,
-  os: ALLOWED_OS.length,
+  // `android` is allowlisted ahead of any client that sends it. Counting a
+  // value almost nobody reports as a candidate for `other` would let a reader
+  // who knows that attribute `other` to win32 by elimination, so the guard
+  // keeps assuming the three desktop values. Assuming fewer only folds more.
+  os: ALLOWED_OS.length - 1,
   arch: ALLOWED_ARCH.length,
 } as const;
 

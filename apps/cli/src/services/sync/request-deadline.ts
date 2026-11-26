@@ -1,3 +1,5 @@
+import { createDeadlineSignal, type DeadlineSignal } from "@kunai/core";
+
 import { syncCancelled, syncFailed, type SyncOutcome } from "./types";
 
 /** How long one tracker request may run before it is abandoned. */
@@ -12,41 +14,15 @@ export const SYNC_REQUEST_TIMEOUT_MS = 15_000;
  * retryable network failure. Collapsing them either burns retry attempts during
  * an orderly shutdown or silently drops work on a slow network.
  */
-export interface RequestDeadline {
-  readonly signal: AbortSignal;
-  /** True when this deadline — not the caller — aborted the request. */
-  timedOut(): boolean;
-  release(): void;
-}
+export type RequestDeadline = DeadlineSignal;
 
 export function startRequestDeadline(
   parent: AbortSignal,
   timeoutMs = SYNC_REQUEST_TIMEOUT_MS,
 ): RequestDeadline {
-  const controller = new AbortController();
-  let expired = false;
-
-  const onTimeout = () => {
-    expired = true;
-    controller.abort(new Error("sync-request-timeout"));
-  };
-  const onParentAbort = () => controller.abort(parent.reason);
-
-  const timer = setTimeout(onTimeout, timeoutMs);
-  if (parent.aborted) onParentAbort();
-  else parent.addEventListener("abort", onParentAbort, { once: true });
-
-  return {
-    signal: controller.signal,
-    timedOut: () => expired,
-    // Always paired with the request in a `finally`: an uncleared timer keeps
-    // the process alive past shutdown, and a retained listener leaks one entry
-    // per delivered row on a long-lived parent signal.
-    release() {
-      clearTimeout(timer);
-      parent.removeEventListener("abort", onParentAbort);
-    },
-  };
+  return createDeadlineSignal(parent, timeoutMs, {
+    reason: new Error("sync-request-timeout"),
+  });
 }
 
 /**

@@ -18,6 +18,7 @@ import {
   newMpvIpcSessionId,
   shouldUnlinkUnixSocket,
 } from "@/infra/player/mpv-ipc-endpoint";
+import { mpvIpcFailureEvents } from "@/infra/player/mpv-ipc-failure-events";
 import {
   createPlaybackProgressThrottleState,
   shouldEmitPlaybackProgress,
@@ -25,7 +26,7 @@ import {
 import { isLocalHlsManifestPlaybackUrl } from "@/infra/player/mpv-playback-url";
 import {
   isAllowedMpvUrl,
-  needsMpvNetworkPreflight,
+  isLocalSubtitlePath,
   type MpvUrlKind,
 } from "@/infra/player/mpv-playback-url";
 import {
@@ -39,6 +40,7 @@ import { shouldApplyStartAtSeek } from "@/infra/player/mpv-start-seek";
 import {
   DEFAULT_MPV_YTDL_FORMAT,
   composeDemuxerLavfOptions,
+  guardedYtdlRawOptions,
   LIVE_DEMUXER_LAVF_OPTIONS,
   LIVE_DEMUXER_OPTIONS,
   LOCAL_HLS_DEMUXER_LAVF_OPTIONS,
@@ -57,6 +59,7 @@ export { shouldApplyStartAtSeek };
 export { isLocalHlsManifestPlaybackUrl } from "@/infra/player/mpv-playback-url";
 export { isAllowedMpvUrl, type MpvUrlKind } from "@/infra/player/mpv-playback-url";
 import { MpvLaunchError } from "@/infra/player/mpv-launch-error";
+import { launchPreflight, type ResolveGateStream } from "@/infra/player/mpv-launch-preflight";
 import {
   applyEndFileEvent,
   applyObservedPropertySample,
@@ -66,19 +69,40 @@ import {
   noteTrustedSeek,
   recordPlayerExit,
 } from "@/infra/player/mpv-stats";
+import {
+  allowedLaunchSubtitleFiles,
+  collectAdditionalSubtitleTracks,
+  describeSubtitleTrackForMpv,
+} from "@/infra/player/mpv-subtitle-tracks";
+import { PlaybackAbortedError } from "@/infra/player/playback-aborted";
+import {
+  createPlaybackOutputDriver,
+  readMpvVideoOutput,
+} from "@/infra/player/playback-output-gate";
 import { findActivePlaybackSkip, type PlaybackSkipConfig } from "@/infra/player/playback-skip";
 import { createPlaybackWatchdog } from "@/infra/player/playback-watchdog";
 import type { ActivePlayerControl } from "@/infra/player/PlayerControlService";
 import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 import type { LateSubtitleAttachment } from "@/infra/player/PlayerService";
+import {
+  SubtitleFiles,
+  prepareLaunchSubtitles,
+  type SubtitleMediaRequest,
+  resolvePlayerSubtitle,
+} from "@/infra/player/subtitle-files";
 import { removeMpvChaptersFile, writeMpvChaptersFile } from "@/infra/timing";
 import { dbg } from "@/logger";
 import {
-  checkStreamPreflight,
+  checkStremioPlaybackPreflight,
   shouldAbortPlaybackForPreflight,
 } from "@/services/playback/stream-health-check";
 import type { StreamPreflightResult } from "@/services/playback/stream-health-check";
-import { normalizeSubtitleUrl } from "@/subtitle";
+
+export {
+  collectAdditionalSubtitleTracks,
+  collectLaunchSubtitleFiles,
+  describeSubtitleTrackForMpv,
+} from "@/infra/player/mpv-subtitle-tracks";
 
 export async function launchMpv(opts: {
   url: string;
@@ -86,15 +110,22 @@ export async function launchMpv(opts: {
   headers: Record<string, string>;
   subtitle: string | null;
   subtitleUrlKind?: MpvUrlKind;
+  subtitleMedia?: SubtitleMediaRequest;
   audioPreference?: string;
   subtitlePreference?: string;
   subtitleTracks?: readonly SubtitleTrack[];
   displayTitle: string;
   startAt?: number;
   requiresYtdl?: boolean;
+  /** The resolved stream: what its gate proved, and when. A fresh pass skips the launch probe. */
+  resolveGate?: ResolveGateStream;
   ytdlFormat?: string;
   ytdlRawOptions?: string;
   isLive?: boolean;
+  /** Stremio addon file: strict preflight before spawn + file-local confinement args. */
+  stremioAddon?: boolean;
+  /** Cancelled before spawn refuses the launch; during playback it is ignored. */
+  abortSignal?: AbortSignal;
   attach?: boolean;
   timing?: import("@/domain/types").PlaybackTimingMetadata | null;
   autoSkipEnabled?: boolean;
@@ -123,6 +154,10 @@ export async function launchMpv(opts: {
     }
   }
 
+  const subtitleFiles = new SubtitleFiles(
+    undefined,
+    opts.stremioAddon ? undefined : (opts.subtitleMedia ?? opts),
+  );
   try {
     const mpvInvocation = discoverMpvInvocation();
     if (!mpvInvocation) {
@@ -138,8 +173,12 @@ export async function launchMpv(opts: {
       hdrCapability !== null
         ? { ...opts.mpv, supportsGpuNext: hdrCapability.supportsGpuNext }
         : opts.mpv;
-    const sensitiveConf = await writeMpvSensitiveConf(opts, ipcEndpoint);
-    const args = buildMpvArgs({ ...opts, chaptersFile }, ipcServerCliArg(ipcEndpoint), {
+    const launchSubs = await prepareLaunchSubtitles(opts, subtitleFiles);
+    if (opts.abortSignal?.aborted)
+      throw new PlaybackAbortedError("playback aborted before mpv launch");
+    const launchOpts = { ...opts, ...launchSubs };
+    const sensitiveConf = await writeMpvSensitiveConf(launchOpts, ipcEndpoint);
+    const args = buildMpvArgs({ ...launchOpts, chaptersFile }, ipcServerCliArg(ipcEndpoint), {
       mpv: effectiveMpv,
       sensitiveOptionsPath: sensitiveConf?.path,
     });
@@ -153,23 +192,50 @@ export async function launchMpv(opts: {
       baseEmit(event);
     };
 
+    // Addon files get one last strict check after every argument and file is
+    // prepared, so refusal happens before the process exists at all.
+    if (opts.stremioAddon) {
+      if (opts.abortSignal?.aborted) {
+        await sensitiveConf?.cleanup();
+        throw new PlaybackAbortedError("playback aborted before mpv launch");
+      }
+      const preflight = await checkStremioPlaybackPreflight(
+        { url: opts.url, headers: opts.headers },
+        opts.abortSignal,
+      );
+      if (preflight.status !== "reachable" || opts.abortSignal?.aborted) {
+        await sensitiveConf?.cleanup();
+        if (opts.abortSignal?.aborted) {
+          throw new PlaybackAbortedError("playback aborted before mpv launch");
+        }
+        throw new MpvLaunchError("unsafe-target", "Addon stream failed playback preflight");
+      }
+    }
+
     const stdio = opts.attach ? ("inherit" as const) : ("ignore" as const);
-    const mpv = Bun.spawn([...mpvInvocation.argv, ...args], {
-      stdin: stdio,
-      stdout: stdio,
-      stderr: stdio,
-      env: scrubbedChildEnv(),
-    });
+    let mpv: ReturnType<typeof Bun.spawn>;
+    try {
+      mpv = Bun.spawn([...mpvInvocation.argv, ...args], {
+        stdin: stdio,
+        stdout: stdio,
+        stderr: stdio,
+        env: scrubbedChildEnv(),
+      });
+    } catch (error) {
+      await sensitiveConf?.cleanup();
+      throw error;
+    }
     const unregisterMpv = registerMpvProcess(mpv);
     try {
       const result = await launchMpvInner(
         mpv,
         unregisterMpv,
-        opts,
+        launchOpts,
         sessionId,
         ipcEndpoint,
         stats,
         emitPlaybackEvent,
+        subtitleFiles,
       );
       // The conf file's only reader finished with it during startup — by the
       // time the IPC endpoint is live, `--include` is long parsed.
@@ -184,6 +250,7 @@ export async function launchMpv(opts: {
       unregisterMpv();
     }
   } finally {
+    await subtitleFiles.close().catch(() => {});
     if (chaptersFile) {
       await removeMpvChaptersFile(chaptersFile).catch(() => {});
     }
@@ -198,7 +265,10 @@ async function launchMpvInner(
   ipcEndpoint: ReturnType<typeof createMpvIpcEndpoint>,
   stats: ReturnType<typeof createPlayerStatsState>,
   emitPlaybackEvent: (event: PlayerPlaybackEvent) => void,
+  subtitleFiles: SubtitleFiles,
 ): Promise<PlaybackResult> {
+  const resolveSubtitle = (url: string) =>
+    resolvePlayerSubtitle(url, "remote", subtitleFiles, opts.abortSignal);
   let ipcSession: MpvIpcSession | null = null;
   let endFileResolve: ((reason: string | undefined) => void) | null = null;
   const endFileReceived = new Promise<string | undefined>((resolve) => {
@@ -206,7 +276,6 @@ async function launchMpvInner(
   });
   let stopRequested = false;
   let playerReadyNotified = false;
-  let playbackStartedNotified = false;
   let currentPositionSeconds = 0;
   const playbackProgressThrottle = createPlaybackProgressThrottleState();
   let mutableTiming = opts.timing ?? null;
@@ -227,11 +296,13 @@ async function launchMpvInner(
     emitPlaybackEvent({ type: "player-ready" });
     opts.onPlayerReady?.();
   };
-  const notifyPlaybackStarted = () => {
-    if (playbackStartedNotified) return;
-    playbackStartedNotified = true;
-    emitPlaybackEvent({ type: "playback-started" });
-  };
+  let outputEnded = false;
+  const output = createPlaybackOutputDriver({
+    stats,
+    readVideoOutput: async () => readMpvVideoOutput(ipcSession),
+    isCurrent: () => !outputEnded,
+    emit: emitPlaybackEvent,
+  });
   const maybeEmitPlaybackProgress = (observedAt: number) => {
     const sample = stats.latestIpcSample;
     if (
@@ -305,13 +376,19 @@ async function launchMpvInner(
         (trackCount) => {
           emitPlaybackEvent({ type: "late-subtitles-attached", trackCount });
         },
+        resolveSubtitle,
       );
       return attached > 0;
     },
     async attachSubtitles(attachment: LateSubtitleAttachment) {
-      return await attachLateSubtitles(ipcSession, attachment, (trackCount) => {
-        emitPlaybackEvent({ type: "late-subtitles-attached", trackCount });
-      });
+      return await attachLateSubtitles(
+        ipcSession,
+        attachment,
+        (trackCount) => {
+          emitPlaybackEvent({ type: "late-subtitles-attached", trackCount });
+        },
+        resolveSubtitle,
+      );
     },
     async skipCurrentSegment() {
       return trySkipSegment(false);
@@ -339,11 +416,7 @@ async function launchMpvInner(
     signal: mpv.killed ? ("SIGTERM" as NodeJS.Signals) : null,
   }));
 
-  const preflight = (
-    needsMpvNetworkPreflight(opts.url, opts.urlKind)
-      ? checkStreamPreflight(opts.url, opts.headers, 3_000, { requiresYtdl: opts.requiresYtdl })
-      : Promise.resolve<StreamPreflightResult>({ status: "reachable" })
-  ).then((result) => {
+  const preflight = launchPreflight(opts).then((result) => {
     if (shouldAbortLaunchForDefinitivePreflight(result, ipcSession !== null)) {
       dbg("mpv", "preflight-definitive-failure", {
         reason: result.reason,
@@ -369,35 +442,22 @@ async function launchMpvInner(
         applyObservedPropertySample(stats, { name, value, observedAt });
         if (stats.latestIpcSample) {
           watchdog.observe(stats.latestIpcSample);
+          output.observe(stats.latestIpcSample);
         }
         if ((name === "time-pos" || name === "playback-time") && typeof value === "number") {
           currentPositionSeconds = value;
-          if (value > 0) {
-            notifyPlaybackStarted();
-          }
-          maybeEmitPlaybackProgress(observedAt);
+          // Progress waits for confirmed output; see playback-output-gate.
+          if (output.started) maybeEmitPlaybackProgress(observedAt);
           trySkipSegment(true);
         }
       },
       onEndFile: ({ reason, fileError, observedAt }) => {
+        outputEnded = true;
         applyEndFileEvent(stats, reason, observedAt, { fileError });
         endFileResolve?.(reason);
       },
       onCommandResult: (result) => {
-        if (!result.ok) {
-          emitPlaybackEvent({
-            type: "ipc-command-failed",
-            command: String(result.command[0] ?? "unknown"),
-            error: result.error,
-          });
-          if (result.error === "timeout") {
-            emitPlaybackEvent({
-              type: "ipc-stalled",
-              command: String(result.command[0] ?? "unknown"),
-              error: result.error,
-            });
-          }
-        }
+        for (const event of mpvIpcFailureEvents(result)) emitPlaybackEvent(event);
       },
     });
 
@@ -582,8 +642,8 @@ export function collectSensitiveMpvOptions(opts: {
   if (headerFields.length > 0) {
     lines.push(`http-header-fields=${headerFields.join(",")}`);
   }
-  if (opts.ytdlRawOptions?.trim() && (isYoutubeWatchUrl(opts.url) || opts.requiresYtdl)) {
-    lines.push(`ytdl-raw-options=${opts.ytdlRawOptions.trim()}`);
+  if (isYoutubeWatchUrl(opts.url) || opts.requiresYtdl) {
+    lines.push(`ytdl-raw-options=${guardedYtdlRawOptions(opts.ytdlRawOptions)}`);
   }
   return lines;
 }
@@ -600,8 +660,10 @@ function quoteMpvConfValue(value: string): string {
  * the path for {@link buildMpvArgs}' `sensitiveOptionsPath`, or null when no
  * sensitive options exist for this stream.
  *
- * Lifetime: mpv parses `--include` files once at startup, so the caller may
- * delete the file as soon as the IPC endpoint is provably live.
+ * Lifetime: one-shot mpv parses the include at startup, so the caller may
+ * delete the file as soon as the IPC endpoint is provably live. Persistent mpv
+ * reads it when the first file's scoped local options are applied; retain it
+ * until that file settles or the process exits.
  */
 export async function writeMpvSensitiveConf(
   opts: {
@@ -658,6 +720,10 @@ export function buildMpvArgs(
     ytdlFormat?: string;
     ytdlRawOptions?: string;
     isLive?: boolean;
+    /** Stremio addon file: confine this file's network behavior via `--{ ... --}`. */
+    stremioAddon?: boolean;
+    /** Local subtitle files owned by this playback. */
+    localSubtitlePaths?: ReadonlySet<string>;
     chaptersFile?: string | null;
   },
   ipcPath: string | null,
@@ -686,7 +752,11 @@ export function buildMpvArgs(
 
   const args: string[] = [];
 
-  if (isYoutubeWatchUrl(opts.url) || opts.requiresYtdl) {
+  if (opts.stremioAddon) {
+    // One-shot only: `--ytdl=no` is process-wide, so a persistent session
+    // disables it per file in `buildPersistentLoadfileOptions` instead.
+    if (config?.persistent !== true) args.push("--ytdl=no");
+  } else if (isYoutubeWatchUrl(opts.url) || opts.requiresYtdl) {
     args.push("--ytdl=yes");
     args.push(`--ytdl-format=${opts.ytdlFormat ?? DEFAULT_MPV_YTDL_FORMAT}`);
     // `ytdl-raw-options` (may carry a po_token) is emitted through the
@@ -701,22 +771,30 @@ export function buildMpvArgs(
     args.push("--ytdl=no");
   }
 
+  // Options that shape this file's request: referrer, user-agent and the
+  // credential-bearing set. A one-shot process may carry them on argv, but in a
+  // persistent session they must ride the file's `--{ ... --}` group instead —
+  // process-wide values would leak into later loadfiles that carry no headers.
+  const requestOptions: string[] = [];
   const { referer, userAgent } = normalizeStreamHttpHeaders(opts.headers);
-  if (referer) args.push(`--referrer=${referer}`);
-  if (userAgent) args.push(`--user-agent=${userAgent}`);
+  if (referer) requestOptions.push(`--referrer=${referer}`);
+  if (userAgent) requestOptions.push(`--user-agent=${userAgent}`);
   // argv is world-readable on POSIX (`/proc/<pid>/cmdline`), so
   // credential-bearing options never ride it when a conf path was supplied —
   // they land in the owner-only `--include` file the caller wrote instead.
   const sensitive = collectSensitiveMpvOptions(opts);
   if (sensitive.length > 0) {
     if (config?.sensitiveOptionsPath) {
-      args.push(`--include=${config.sensitiveOptionsPath}`);
+      requestOptions.push(`--include=${config.sensitiveOptionsPath}`);
     } else {
-      for (const line of sensitive) args.push(`--${line}`);
+      for (const line of sensitive) requestOptions.push(`--${line}`);
     }
   }
+  if (!config?.persistent) args.push(...requestOptions);
   // ani-cli plays mp4upload with --tls-verify=no; without it mpv rejects some hosts.
-  const disableTlsVerify = shouldDisableMpvTlsVerify(opts.url, opts.headers);
+  // The mp4upload exception never applies to an addon file — its block carries
+  // `--tls-verify=yes` and must not be cancelled by a process-level "no".
+  const disableTlsVerify = !opts.stremioAddon && shouldDisableMpvTlsVerify(opts.url, opts.headers);
   if (disableTlsVerify && !config?.persistent) {
     args.push("--tls-verify=no");
   }
@@ -849,82 +927,43 @@ export function buildMpvArgs(
     if (scriptOpts) args.push(`--script-opts=${scriptOpts}`);
   }
 
-  if (disableTlsVerify && config?.persistent) {
+  if (opts.stremioAddon) {
+    // File-local confinement for this addon file only: no redirects at the
+    // lavf layer (FFmpeg 8.1+/7.1.4 `max_redirects`; older builds may ignore
+    // it, which is why the strict preflight exists), no unsafe playlists, and
+    // TLS verification regardless of any user-level mpv.conf. Best effort —
+    // mpv fetches the URL separately after preflight. For
+    // a persistent session the same per-file set rides the initial argv here
+    // and every IPC loadfile, including `--ytdl=no` (one-shot already carries
+    // it process-wide above).
+    args.push(
+      "--{",
+      ...(config?.persistent ? requestOptions : []),
+      "--stream-lavf-o=max_redirects=0",
+      "--load-unsafe-playlists=no",
+      "--tls-verify=yes",
+      ...(config?.persistent ? ["--ytdl=no"] : []),
+      opts.url,
+      "--}",
+    );
+  } else if (config?.persistent && (disableTlsVerify || requestOptions.length > 0)) {
     // mpv restores the user's baseline after this file, just as loadfile's
-    // per-file options do for replacements and reconnects. The validated
-    // exception URL is HTTPS and cannot be parsed as a command-line option.
-    args.push("--{", "--tls-verify=no", opts.url, "--}");
+    // per-file options do for replacements and reconnects — so this file's
+    // request options (and the validated TLS exception, when it applies) ride
+    // inside the scope. The validated target cannot be parsed as a
+    // command-line option.
+    args.push(
+      "--{",
+      ...requestOptions,
+      ...(disableTlsVerify ? ["--tls-verify=no"] : []),
+      opts.url,
+      "--}",
+    );
   } else {
     args.push("--", opts.url);
   }
 
   return args;
-}
-
-export function collectAdditionalSubtitleTracks(
-  primarySubtitle: string | null,
-  subtitleTracks?: readonly SubtitleTrack[],
-): SubtitleTrack[] {
-  const collected: SubtitleTrack[] = [];
-  const seen = new Set<string>();
-  if (primarySubtitle) {
-    seen.add(normalizeSubtitleUrl(primarySubtitle));
-  }
-  for (const track of subtitleTracks ?? []) {
-    const key = normalizeSubtitleUrl(track.url);
-    if (!track.url || seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    collected.push(track);
-  }
-  return collected;
-}
-
-export function collectLaunchSubtitleFiles(
-  primarySubtitle: string | null,
-  subtitleTracks?: readonly SubtitleTrack[],
-): string[] {
-  const files: string[] = [];
-  if (primarySubtitle) {
-    files.push(primarySubtitle);
-  }
-  for (const track of collectAdditionalSubtitleTracks(primarySubtitle, subtitleTracks)) {
-    files.push(track.url);
-  }
-  return files;
-}
-
-function allowedLaunchSubtitleFiles(opts: {
-  subtitle: string | null;
-  subtitleUrlKind?: MpvUrlKind;
-  subtitleTracks?: readonly SubtitleTrack[];
-}): string[] {
-  const allowed: string[] = [];
-  for (const file of collectLaunchSubtitleFiles(opts.subtitle, opts.subtitleTracks)) {
-    const kind = file === opts.subtitle ? (opts.subtitleUrlKind ?? "remote") : "remote";
-    if (isAllowedMpvUrl(file, kind)) {
-      allowed.push(file);
-    } else {
-      dbg("mpv", "subtitle-target-rejected", { delivery: "launch" });
-    }
-  }
-  return allowed;
-}
-
-export function describeSubtitleTrackForMpv(
-  url: string,
-  subtitleTracks?: readonly SubtitleTrack[],
-): { title: string; language: string } {
-  const key = normalizeSubtitleUrl(url);
-  const match = subtitleTracks?.find((track) => normalizeSubtitleUrl(track.url) === key);
-  const language = match?.language?.trim() ?? "";
-  const title =
-    match?.display?.trim() ||
-    [language || null, match?.sourceName?.trim() || null, match?.sourceKind || null]
-      .filter((part): part is string => Boolean(part))
-      .join(" ");
-  return { title, language };
 }
 
 async function unlinkIfExists(path: string): Promise<void> {
@@ -951,18 +990,23 @@ export async function attachLateSubtitles(
   ipcSession: MpvIpcSession | null,
   attachment: LateSubtitleAttachment,
   onAttached?: (trackCount: number) => void,
+  resolveSubtitle?: (url: string) => Promise<string | null>,
 ): Promise<number> {
   if (!ipcSession) return 0;
   let attached = 0;
-  const primarySubtitle =
-    attachment.primarySubtitle && isAllowedMpvUrl(attachment.primarySubtitle, "remote")
-      ? attachment.primarySubtitle
-      : null;
+  // Metadata and dedup stay on the original URLs; a resolver decides what mpv
+  // receives and `null` skips the track — there is no raw-URL fallback.
+  const primarySubtitle = attachment.primarySubtitle
+    ? await resolveSubtitle?.(attachment.primarySubtitle)
+    : null;
   if (attachment.primarySubtitle && !primarySubtitle) {
     dbg("mpv", "subtitle-target-rejected", { delivery: "late-primary" });
   }
-  if (primarySubtitle) {
-    const primary = describeSubtitleTrackForMpv(primarySubtitle, attachment.subtitleTracks);
+  if (primarySubtitle && isLocalSubtitlePath(primarySubtitle)) {
+    const primary = describeSubtitleTrackForMpv(
+      attachment.primarySubtitle ?? "",
+      attachment.subtitleTracks,
+    );
     const result = await ipcSession.send([
       "sub-add",
       primarySubtitle,
@@ -973,14 +1017,18 @@ export async function attachLateSubtitles(
     if (result.ok) attached += 1;
   }
 
-  for (const track of collectAdditionalSubtitleTracks(primarySubtitle, attachment.subtitleTracks)) {
-    if (!isAllowedMpvUrl(track.url, "remote")) {
+  for (const track of collectAdditionalSubtitleTracks(
+    attachment.primarySubtitle ?? null,
+    attachment.subtitleTracks,
+  )) {
+    const resolved = await resolveSubtitle?.(track.url);
+    if (!resolved || !isLocalSubtitlePath(resolved)) {
       dbg("mpv", "subtitle-target-rejected", { delivery: "late-additional" });
       continue;
     }
     const result = await ipcSession.send([
       "sub-add",
-      track.url,
+      resolved,
       "auto",
       track.display ?? "",
       track.language ?? "",

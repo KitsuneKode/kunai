@@ -16,6 +16,26 @@
     {
       "source": "/metrics/series.json",
       "destination": "/api/metrics/series"
+    },
+    {
+      "source": "/metrics/monthly.json",
+      "destination": "/api/metrics/monthly"
+    },
+    {
+      "source": "/metrics/distribution.json",
+      "destination": "/api/metrics/distribution"
+    },
+    {
+      "source": "/badges/downloads.json",
+      "destination": "/api/badges?badge=downloads"
+    },
+    {
+      "source": "/badges/active.json",
+      "destination": "/api/badges?badge=active"
+    },
+    {
+      "source": "/badges/installs.json",
+      "destination": "/api/badges?badge=installs"
     }
   ],
   "crons": [
@@ -29,7 +49,7 @@
       "maxDuration": 5
     },
     "api/cron/snapshot.ts": {
-      "maxDuration": 10
+      "maxDuration": 30
     },
     "api/metrics/daily.ts": {
       "maxDuration": 5
@@ -39,6 +59,15 @@
     },
     "api/metrics/series.ts": {
       "maxDuration": 10
+    },
+    "api/metrics/monthly.ts": {
+      "maxDuration": 5
+    },
+    "api/metrics/distribution.ts": {
+      "maxDuration": 5
+    },
+    "api/badges.ts": {
+      "maxDuration": 5
     }
   },
   "headers": [

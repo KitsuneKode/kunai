@@ -7,6 +7,7 @@ import { buildMediaListRowColumns, computeMediaListRowLayout } from "./primitive
 import { ListRow } from "./primitives/ListRow";
 import { MediaListShell } from "./primitives/MediaListShell";
 import { MiniPosterTile } from "./primitives/MiniPosterTile";
+import type { PreviewFact } from "./primitives/PreviewRail.model";
 import { SectionGroup } from "./primitives/SectionGroup";
 import { StateBlock } from "./primitives/StateBlock";
 import type { QueueView, QueueViewRow } from "./queue-view";
@@ -27,12 +28,15 @@ function QueueRow({
   const stateLabel =
     row.state === "starting"
       ? "starting"
-      : row.state === "next"
-        ? "up next"
-        : row.state === "played"
-          ? "played"
-          : row.sourceLabel;
-  const stateColor = row.state === "starting" ? palette.accent : palette.muted;
+      : row.failureNote
+        ? "didn't start"
+        : row.state === "next"
+          ? "up next"
+          : row.state === "played"
+            ? "played"
+            : row.sourceLabel;
+  const stateColor =
+    row.state === "starting" ? palette.accent : row.failureNote ? palette.warn : palette.muted;
   return (
     <Box flexDirection="row">
       <Box width={5}>
@@ -48,13 +52,22 @@ function QueueRow({
             episodeCode: row.episodeLabel,
             statusLabel: stateLabel,
             statusColor: stateColor,
-            statusDim: row.state !== "starting",
+            statusDim: row.state !== "starting" && !row.failureNote,
             layout,
           })}
         />
       </Box>
     </Box>
   );
+}
+
+function queueRailFacts(rail: NonNullable<QueueView["rail"]>): readonly PreviewFact[] {
+  const source: PreviewFact = { label: "Source", value: rail.sourceLabel, tone: "muted" };
+  if (!rail.failureNote) return [source];
+  return [
+    source,
+    { label: "Retry", value: `${rail.failureNote} · enter tries again`, tone: "warning" },
+  ];
 }
 
 export function QueueShell({
@@ -156,7 +169,7 @@ export function QueueShell({
                 subtitle: view.rail.episodeLabel,
                 posterUrl: view.rail.posterUrl,
                 posterState: "none",
-                facts: [{ label: "Source", value: view.rail.sourceLabel, tone: "muted" }],
+                facts: queueRailFacts(view.rail),
               }
             : null
         }

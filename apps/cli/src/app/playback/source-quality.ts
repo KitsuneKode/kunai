@@ -25,6 +25,7 @@ import type {
   PlaybackSourceGroupView,
   PlaybackSourceInventoryView,
 } from "@/services/playback/PlaybackSourceInventoryView";
+import { reselectResolveResultStream } from "@/services/providers/provider-result-adapter";
 import {
   resolveYtdlFormatFromCandidate,
   resolveYoutubeYtdlRawOptions,
@@ -572,7 +573,13 @@ export function applyPreferredStreamSelection(
   }
 
   if (!selected?.url) return stream;
-  if (selected.id === result.selectedStreamId && selected.url === stream.url) return stream;
+  if (
+    selected.id === result.selectedStreamId &&
+    selected.url === stream.url &&
+    sameHeaderSet(selected.headers, stream.headers)
+  ) {
+    return stream;
+  }
 
   const selectedSubtitleUrls = new Set(
     subtitlesForStreamCandidate(selected, result.subtitles).map((subtitle) => subtitle.url),
@@ -597,11 +604,22 @@ export function applyPreferredStreamSelection(
       : undefined,
     subtitle: keepCurrentSubtitle ? stream.subtitle : undefined,
     subtitleSource: keepCurrentSubtitle ? stream.subtitleSource : "none",
-    providerResolveResult: {
-      ...result,
-      selectedStreamId: selected.id,
-    },
+    // The gate attested the previous selection's URL and headers. A changed
+    // pick was never probed, so the attestation must not travel with it.
+    providerResolveResult: reselectResolveResultStream(result, selected.id),
   };
+}
+
+/** Header names are case-insensitive on the wire, so compare them normalized. */
+function sameHeaderSet(
+  left: Record<string, string> | undefined,
+  right: Record<string, string> | undefined,
+): boolean {
+  const entries = (headers: Record<string, string> | undefined) =>
+    Object.entries(headers ?? {})
+      .map(([name, value]) => [name.toLowerCase(), value] as const)
+      .sort(([a, x], [b, y]) => (a < b ? -1 : a > b ? 1 : x < y ? -1 : x > y ? 1 : 0));
+  return JSON.stringify(entries(left)) === JSON.stringify(entries(right));
 }
 
 function describeSourceDetail(

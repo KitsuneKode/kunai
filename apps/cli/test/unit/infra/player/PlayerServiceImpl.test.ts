@@ -178,6 +178,49 @@ describe("PlayerServiceImpl diagnostics", () => {
     });
   });
 
+  test("one-shot playback hands mpv the resolve gate's evidence, so a fresh pass is not re-probed", async () => {
+    const events: DiagnosticEventInput[] = [];
+    let launchedWith: Parameters<typeof launchMpv>[0] | null = null;
+    const { service } = createService(events, {
+      // SAFETY: the capture returns a full PlaybackResult; only the input is inspected.
+      launchMpv: (async (options) => {
+        launchedWith = options;
+        return createPlaybackResult();
+      }) as typeof launchMpv,
+    });
+    const stream = createStream({
+      subtitle: undefined,
+      timestamp: 1_700_000_000_000,
+      providerResolveResult: {
+        status: "resolved",
+        providerId: "vidlink",
+        selectedStreamId: "s1",
+        streams: [],
+        subtitles: [],
+        trace: {
+          id: "t",
+          startedAt: "2026-11-25T00:00:00.000Z",
+          title: { id: "1", kind: "series", title: "Show" },
+          cacheHit: false,
+          steps: [],
+          failures: [],
+        },
+        failures: [],
+        streamReachabilityVerified: true,
+      },
+    });
+
+    // SAFETY: one-shot playback reads only url and displayTitle from these options.
+    await service.play(stream, { url: stream.url, displayTitle: "Episode 2" } as PlayerOptions);
+
+    expect(launchedWith).toMatchObject({
+      resolveGate: {
+        timestamp: 1_700_000_000_000,
+        providerResolveResult: { streamReachabilityVerified: true },
+      },
+    });
+  });
+
   test("rejects a terminal HLS response before spawning MPV", async () => {
     const events: DiagnosticEventInput[] = [];
     let launches = 0;
@@ -271,7 +314,7 @@ describe("PlayerServiceImpl diagnostics", () => {
 
     const output = stderr.join("");
     expect(output).toContain("Starting playback: Episode 1");
-    expect(output).toContain("Subtitle attached");
+    expect(output).toContain("Preparing subtitles.");
     expect(output).not.toContain("subtitle-secret");
     expect(output).not.toContain("X-Amz-Signature=secret");
 

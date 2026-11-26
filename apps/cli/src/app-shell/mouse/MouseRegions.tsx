@@ -49,6 +49,8 @@ type MouseRegion = {
 };
 
 export class MouseDispatcher {
+  /** Presses keys as if typed (the session wires its stdin facade here). */
+  pressKey: ((keys: string) => void) | null = null;
   private regions = new Map<string, MouseRegion>();
   private orderCounter = 0;
   /** Press target held until release decides click vs miss. */
@@ -185,6 +187,15 @@ export function useMouseEnabled(): boolean {
   return useContext(MouseDispatchContext) !== null;
 }
 
+/**
+ * Press keys as if typed, or null when there is no mouse session. Resolved at
+ * click time, so a press wired after the first render still works.
+ */
+export function usePressKey(): ((keys: string) => void) | null {
+  const dispatcher = useContext(MouseDispatchContext);
+  return dispatcher ? (keys) => dispatcher.pressKey?.(keys) : null;
+}
+
 /** Test/debug seam: swap the dispatcher a tree dispatches into. */
 export function MouseDispatchProvider(props: {
   readonly dispatcher: MouseDispatcher;
@@ -254,6 +265,12 @@ export function MouseTarget(props: {
   /** Focus/preview only; hover must never activate a command. */
   readonly onHover?: () => void;
   readonly flexShrink?: number;
+  /**
+   * Layout of the wrapping Box. "column" makes a list row render exactly as
+   * it did unwrapped: a fixed-width row inside a row-direction Box would
+   * shrink to the Box instead.
+   */
+  readonly flexDirection?: "row" | "column";
   readonly children: ReactNode;
 }) {
   const ref = useRef<InkBoxRef | null>(null);
@@ -279,6 +296,7 @@ export function MouseTarget(props: {
     <Box
       ref={ref}
       flexShrink={props.flexShrink}
+      flexDirection={props.flexDirection}
       backgroundColor={
         props.feedback && props.active !== false && interaction !== "idle"
           ? interaction === "pressed"

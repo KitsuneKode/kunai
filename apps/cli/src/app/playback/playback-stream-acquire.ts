@@ -32,12 +32,13 @@ import {
   isProviderIdFallbackEligible,
   pickCompatibleFallbackProvider,
 } from "@/app/playback/playback-provider-fallback";
+import { resolveStreamProviderId } from "@/app/playback/playback-provider-switch";
 import {
-  resolveStreamProviderId,
-  resolveTitleProviderPreference,
-} from "@/app/playback/playback-provider-switch";
-import { resolvePlaybackResolvePolicy } from "@/app/playback/playback-resolve-policy";
+  acceptResolvedProviderForPlayback,
+  resolvePlaybackResolvePolicy,
+} from "@/app/playback/playback-resolve-policy";
 import { invalidateEpisodePlaybackCaches } from "@/app/playback/playback-source-cache-invalidation";
+import { capQualityPreference } from "@/app/playback/playback-source-failover";
 import {
   isRecentPlaybackStreamFresh,
   recentPlaybackStreamKey,
@@ -71,6 +72,7 @@ import {
   resolveEffectiveProviderHealth,
 } from "@/services/playback/provider-health-policy";
 import type { ResolveAttempt } from "@kunai/core";
+import { isStremioAddonProviderId } from "@kunai/providers";
 import type { ProviderFailure, ProviderId } from "@kunai/types";
 
 export type AcquiredEpisodeStream =
@@ -234,6 +236,21 @@ export async function acquireEpisodeStream(
       sourceRefreshDecision || pendingUserProviderSwitch
         ? null
         : episodePrefetch.takeReadyFor(buildPrefetchTarget(currentEpisode, sourceProviderId));
+    // A prefetched bundle — and later a recent-memory stream — can hold an
+    // addon stream after the user disabled the experimental feature (possibly
+    // from another process). Reuse it only while the producing addon is still
+    // available; built-in providers are never touched by this gate.
+    const canReuseProvider = (providerId: string | null | undefined): boolean =>
+      !providerId ||
+      !isStremioAddonProviderId(providerId) ||
+      providerRegistry.get(providerId) !== undefined;
+    if (
+      consumedBundle &&
+      (!canReuseProvider(consumedBundle.resolvedProviderId) ||
+        !canReuseProvider(consumedBundle.stream.providerResolveResult?.providerId))
+    ) {
+      consumedBundle = null;
+    }
     prefetchWasPrepared = consumedBundle?.prepared === true;
 
     stream = consumedBundle?.stream ?? null;
@@ -287,6 +304,8 @@ export async function acquireEpisodeStream(
       const recent = recentEpisodeStreams.get(recentKey);
       if (
         recent?.provenance !== "local" &&
+        canReuseProvider(recent?.resolvedProviderId) &&
+        canReuseProvider(recent?.stream.providerResolveResult?.providerId) &&
         recentPlaybackStreamMatchesProvider(recent, sourceProviderId, currentEpisode) &&
         recentStreamMatchesPreferred(recent, sourceProviderId, currentEpisode) &&
         isRecentPlaybackStreamFresh(recent)
@@ -338,7 +357,6 @@ export async function acquireEpisodeStream(
           selectedStreamId: currentPreferredStreamSelection.streamId,
         });
       }
-      const titlePreferredProviderId = resolveTitleProviderPreference(config.getRaw(), title.id);
       const resolveResult = await container.playbackResolveWork.resolve(
         {
           title,
@@ -358,6 +376,7 @@ export async function acquireEpisodeStream(
           preserveCachedStreamOnFreshFailure: resolvePolicy.preserveCachedStreamOnFreshFailure,
           ignoreTitleHealthSuggestion: resolvePolicy.ignoreTitleHealthSuggestion,
           ignoreProviderHealth: resolvePolicy.ignoreProviderHealth,
+          keepPrimaryFirst: resolvePolicy.keepPrimaryFirst,
           resolveIntent: resolvePolicy.resolveIntent,
           blockedStreamUrls: deadStreamUrls.list(deadStreamScope),
           signal: resolveController.signal,
@@ -406,7 +425,7 @@ export async function acquireEpisodeStream(
               const strugglingName =
                 providerRegistry.get(event.providerId)?.metadata.name ?? event.providerId;
               updatePlaybackFeedback(context, {
-                note: `${strugglingName} struggled on this title before. ${suggestedName} worked — switch providers or retry ${strugglingName}.`,
+                note: `${strugglingName} struggled on this title before; ${suggestedName} worked here.`,
               });
               return;
             }
@@ -503,37 +522,36 @@ export async function acquireEpisodeStream(
       stream = resolveResult.stream;
       attempt.resolvedProviderId = resolveResult.providerId;
       observeResolveNetworkOutcome(container, resolveResult);
-      // The per-title preference guards the resolve only when the engine
-      // landed somewhere the user did NOT ask for. A session-scoped
-      // provider (⇧F fallback, per-session /provider) is itself the
-      // current intent — resolving exactly it must not be rejected just
-      // because an older durable preference still names another provider.
+      // A saved per-title provider is where a resolve starts, not a lock. Only
+      // a provider-only request (/recompute, or a switch in manual recovery
+      // mode) may refuse what the engine's fallback found; in guided or
+      // fallback-first mode a working alternative is the point of fallback.
+      // Every explicit switch also saves a per-title preference, so the old
+      // preference-based guard threw away the fallback after any switch.
       if (
         stream &&
-        pendingUserProviderSwitch &&
-        titlePreferredProviderId &&
-        attempt.resolvedProviderId !== titlePreferredProviderId &&
-        attempt.resolvedProviderId !== stateManager.getState().provider
+        !acceptResolvedProviderForPlayback({
+          policy: resolvePolicy,
+          requestedProviderId: sourceProviderId,
+          resolvedProviderId: attempt.resolvedProviderId,
+        })
       ) {
-        const preferredName =
-          providerRegistry.get(titlePreferredProviderId)?.metadata.name ?? titlePreferredProviderId;
-        const actualName =
-          providerRegistry.get(attempt.resolvedProviderId)?.metadata.name ??
-          attempt.resolvedProviderId;
+        const requestedName =
+          providerRegistry.get(sourceProviderId)?.metadata.name ?? sourceProviderId;
         diagnosticsService.record({
           ...playbackCorrelation,
           category: "provider",
           level: "warn",
-          message: "Rejected provider fallback because a per-title preference is set",
+          message: "Rejected alternative provider for a provider-only resolve",
           context: {
             titleId: title.id,
-            preferredProviderId: titlePreferredProviderId,
+            requestedProviderId: sourceProviderId,
             resolvedProviderId: attempt.resolvedProviderId,
           },
         });
         updatePlaybackFeedback(context, {
-          detail: `${preferredName} did not resolve for this episode`,
-          note: `Got ${actualName} instead. Use /recompute or switch provider.`,
+          detail: `${requestedName} did not resolve for this episode`,
+          note: "Pick another provider, or set Settings → Recovery mode to Balanced recovery.",
         });
         stream = null;
       }
@@ -583,7 +601,8 @@ export async function acquireEpisodeStream(
         configuredProviderId: sourceProviderId,
         resolvedProviderId: attempt.resolvedProviderId,
       });
-      if (hop.kind === "session-soft-hop") {
+      // A discarded resolve must not move the session onto its provider.
+      if (stream && hop.kind === "session-soft-hop") {
         logger.info("Resolved stream with fallback provider", {
           from: sourceProviderId,
           fallback: hop.providerId,
@@ -630,9 +649,7 @@ export async function acquireEpisodeStream(
     if (stream) recordStartupMark("resolve-complete", stream);
 
     // Esc/cancel during resolve must not hand off a late-arriving stream to mpv.
-    if (stream && resolveController.signal.aborted && !context.signal.aborted) {
-      stream = null;
-    }
+    if (stream && resolveController.signal.aborted && !context.signal.aborted) stream = null;
 
     // Every resolve path — prefetch, recent-stream reuse, and fresh or
     // fallback resolve — converges here, so each is recorded exactly
@@ -722,9 +739,7 @@ export async function acquireEpisodeStream(
         problemAction,
       });
 
-      if (iterationDirective.kind === "continue") {
-        return { kind: "exit", step: NEXT_ITERATION };
-      }
+      if (iterationDirective.kind === "continue") return { kind: "exit", step: NEXT_ITERATION };
 
       if (iterationDirective.kind === "restart") {
         if (iterationDirective.reason === "stream-switch-during-resolve" && streamSwitchSelection) {
@@ -855,7 +870,8 @@ export async function acquireEpisodeStream(
     stream = applyPreferredStreamSelection(
       stream,
       getPreferredStreamSelection(sourceProviderId, currentEpisode),
-      playbackQualityPreference(profileContext),
+      // A recovery step-down caps quality for the rest of this episode.
+      capQualityPreference(playbackQualityPreference(profileContext), run.recoveryQualityCeiling),
       playbackSubtitlePreference(profileContext),
       config.hdrMode,
     );

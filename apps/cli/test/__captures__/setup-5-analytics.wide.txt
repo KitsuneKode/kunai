@@ -2,18 +2,20 @@
    usage ping                                                                                                                   setup 5⁄6
  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-                              Help Kunai know it's being used
-                              Recommended. Nothing is sent until you confirm here.
+                              Share anonymous usage with Kunai?
+                              Pick one with ↑↓ and Enter. Nothing is sent unless you choose to share.
 
-                              ▌ Turn it on   ← recommended
-                                  One ping a day. Counts unique installs, not people.
-                                Keep it off
+                                Share anonymous usage
+                                  One ping a day. Counts installs, not people. The id changes every month.
+                                Don't share
                                   No network calls. No install id stored on disk.
 
-                              Privacy first, by construction
-                                { "installId": "<sha256 of a local id>", "version": "0.4.0",
-                                  "os": "linux", "arch": "x64", "ts": 0 }
+                              The whole ping, as it would be sent
+                                { "id": "<generated when you enable>",
+                                  "cohort": "<the month you enable>", "day": "2026-11-25",
+                                  "version": "0.4.0", "os": "linux", "arch": "x64" }
                                 Never: titles · queries · providers · URLs · paths · your IP
                                 The raw id never leaves this machine. Off in /settings deletes it.
+                                See every ping that was sent: kunai analytics log
  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-   [enter] confirm  [↑↓] choose  [s] keep it off  [b] back                                                                          Setup
+   [↑↓] choose  [enter] confirm  [s] don't share  [b] back                                                                          Setup

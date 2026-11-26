@@ -19,6 +19,7 @@ import {
   RECOMMENDED_SUBTITLE_PREFERENCE,
   SUBTITLE_PREFERENCE_OPTIONS,
 } from "@/domain/media/media-preferences";
+import type { AnalyticsPayload } from "@/services/analytics/usage-analytics-service";
 import type { CapabilitySnapshot } from "@/ui";
 import { Box, Text, useInput } from "ink";
 import React, { useMemo, useRef, useState } from "react";
@@ -26,7 +27,7 @@ import React, { useMemo, useRef, useState } from "react";
 import { ROOT_HORIZONTAL_PADDING } from "./layout-policy";
 import { useFrameTick } from "./primitives/SakuraPetal";
 import { mountRootContent } from "./root-content-state";
-import { AnalyticsScreen, ANALYTICS_ON_INDEX, ANALYTICS_OFF_INDEX } from "./setup/AnalyticsScreen";
+import { AnalyticsScreen, CONSENT_CHOICES, moveConsentCursor } from "./setup/AnalyticsScreen";
 import { buildDependencyRows, type ScopedDependencyRow } from "./setup/dependency-rows";
 import { SetupFrame, setupContentWidth, type FooterKey } from "./setup/SetupFrame";
 import { SetupPointerContext, type SetupPointerActions } from "./setup/SetupPointer";
@@ -217,8 +218,10 @@ export function SetupShell({
   onRecheck,
   downloadPath = "your data directory",
   initial = FACTORY_INITIAL_STATE,
+  analyticsPayload,
 }: {
   snapshot: CapabilitySnapshot;
+  analyticsPayload: AnalyticsPayload;
   /** Called with the outcome, the chosen prefs, and how deep the user got. */
   finish: (result: SetupFlowResult, prefs: SetupPrefs, answeredScreens: number) => void;
   /** Re-probe the machine. Absent in tests that do not exercise `[r]`. */
@@ -276,9 +279,9 @@ export function SetupShell({
   const [connectAniList, setConnectAniList] = useState(initial.anilistSync);
   const [connectTmdb, setConnectTmdb] = useState(initial.tmdbSync);
   const [presenceDiscord, setPresenceDiscord] = useState(initial.presenceDiscord);
-  // The cursor on the consent screen. Index 0 is "turn it on" — the
-  // recommendation, per the analytics contract. A cursor is not an answer.
-  const [analyticsIdx, setAnalyticsIdx] = useState(ANALYTICS_ON_INDEX);
+  // The consent screen's cursor starts on neither row (it is neutral), and a
+  // cursor is not an answer either; only `commitAnalytics` records one.
+  const [analyticsIdx, setAnalyticsIdx] = useState<number | null>(null);
   /**
    * The consent screen's *committed* answer, written only by a key pressed
    * while that screen is showing.
@@ -286,11 +289,11 @@ export function SetupShell({
    * This used to be an `analyticsSeen` boolean flipped on arrival, with the
    * live cursor read at finish time. Arriving is not consenting: walking onto
    * the screen, pressing left to go back, and then pressing `S` elsewhere
-   * finished the wizard with the cursor still parked on the pre-selected
-   * "turn it on" — a skip path that opted the user in, which the contract in
-   * AGENTS.md forbids outright. Recording the decision instead of the visit
-   * closes that whole class: nothing but a keystroke on the consent screen can
-   * move this, in either direction.
+   * finished the wizard with the cursor still parked on what was then a
+   * pre-selected "turn it on" — a skip path that opted the user in, which the
+   * contract in AGENTS.md forbids outright. Recording the decision instead of
+   * the visit closes that whole class: nothing but a keystroke on the consent
+   * screen can move this, in either direction.
    */
   const [analyticsDecision, setAnalyticsDecision] =
     useState<SetupPrefs["analyticsChoice"]>("unchanged");
@@ -410,7 +413,7 @@ export function SetupShell({
    * user steps back onto it.
    */
   function commitAnalytics(choice: "enabled" | "disabled") {
-    setAnalyticsIdx(choice === "enabled" ? ANALYTICS_ON_INDEX : ANALYTICS_OFF_INDEX);
+    setAnalyticsIdx(CONSENT_CHOICES.indexOf(choice));
     setAnalyticsDecision(choice);
   }
 
@@ -502,7 +505,7 @@ export function SetupShell({
         }));
       }
     } else if (screen === "library") setLibraryIdx((i) => clamp(i + delta, 7));
-    else if (screen === "analytics") setAnalyticsIdx((i) => clamp(i + delta, 1));
+    else if (screen === "analytics") setAnalyticsIdx((i) => moveConsentCursor(i, delta));
   }
 
   function applyLanguageProfileToAll() {
@@ -555,22 +558,17 @@ export function SetupShell({
     }
 
     // `S` — accept every remaining recommendation and open the final review.
-    // On the consent screen it advances instead of passing through, so
-    // analytics is never enabled by a keystroke aimed at everything else.
+    // The consent screen has no default to accept, so it stays put and
+    // chooses nothing: a keystroke aimed at everything else answers neither.
     if (input === "S") {
-      if (screen === "analytics") {
-        commitAnalytics("disabled");
-        advance();
-        return;
-      }
-      acceptRemainingDefaults();
+      if (screen !== "analytics") acceptRemainingDefaults();
       return;
     }
 
     // `s` — take this step's recommendation and move on. It no longer ends the
     // wizard: waving past one question should not cost you the rest of setup.
-    // On the consent screen "recommended" is deliberately inverted: the
-    // contract says a skip may never opt anyone in.
+    // The consent screen recommends nothing, so there `s` is its labelled
+    // "don't share" key: an explicit answer, and never an opt-in.
     if (input === "s") {
       if (screen === "analytics") commitAnalytics("disabled");
       else applyScreenRecommendation();
@@ -591,9 +589,10 @@ export function SetupShell({
 
     if (key.return) {
       // Confirming on the consent screen is the one keystroke allowed to say
-      // "enabled", and it says whatever the cursor is on when it is pressed.
+      // "enabled", and it says whatever the cursor is on; with none, it waits.
       if (screen === "analytics") {
-        commitAnalytics(analyticsIdx === ANALYTICS_ON_INDEX ? "enabled" : "disabled");
+        if (analyticsIdx === null) return;
+        commitAnalytics(CONSENT_CHOICES[analyticsIdx] ?? "disabled");
       }
       advance();
       return;
@@ -690,10 +689,7 @@ export function SetupShell({
         else applyScreenRecommendation();
         advance();
       } else if (key === "S") {
-        if (screen === "analytics") {
-          commitAnalytics("disabled");
-          advance();
-        } else acceptRemainingDefaults();
+        if (screen !== "analytics") acceptRemainingDefaults();
       } else if (key === "a") applyLanguageProfileToAll();
       else if (key === "tab") setLanguageLane((current) => cycleSetupLanguageLane(current, 1));
       else if (key === "←→")
@@ -767,7 +763,9 @@ export function SetupShell({
               downloadPath={downloadPath}
             />
           ) : null}
-          {screen === "analytics" ? <AnalyticsScreen selectedIndex={analyticsIdx} /> : null}
+          {screen === "analytics" ? (
+            <AnalyticsScreen selectedIndex={analyticsIdx} payload={analyticsPayload} />
+          ) : null}
           {screen === "done" ? (
             <DoneScreen
               compact={rows < 30}
@@ -830,9 +828,9 @@ function buildFooter(
       ];
     case "analytics":
       return [
-        { key: "enter", label: "confirm" },
         { key: "↑↓", label: "choose" },
-        { key: "s", label: "keep it off" },
+        { key: "enter", label: "confirm" },
+        { key: "s", label: "don't share" },
         ...back,
       ];
     case "done":
@@ -948,7 +946,8 @@ export function runSetupFlow(
     readonly downloadPath?: string;
     /** Current configuration to hydrate the controls from. See #228. */
     readonly initial?: SetupInitialState;
-  } = {},
+    readonly analyticsPayload: AnalyticsPayload;
+  },
 ): {
   result: Promise<SetupFlowPayload>;
 } {
@@ -962,6 +961,7 @@ export function runSetupFlow(
         {...(options.onRecheck ? { onRecheck: options.onRecheck } : {})}
         {...(options.downloadPath ? { downloadPath: options.downloadPath } : {})}
         {...(options.initial ? { initial: options.initial } : {})}
+        analyticsPayload={options.analyticsPayload}
       />
     ),
     // Ink teardown settles here. That is not a user decision, so it must not

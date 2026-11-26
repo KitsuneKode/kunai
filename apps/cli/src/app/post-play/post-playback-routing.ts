@@ -1,3 +1,4 @@
+import type { PostPlaybackBrowseRoute } from "@/app/playback/playback-outcome";
 import type { EpisodeAvailability } from "@/domain/playback/playback-policy";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 
@@ -15,7 +16,7 @@ export type PostPlaybackExitOutcome =
       readonly value:
         | "back_to_search"
         | "back_to_results"
-        | { readonly type: "browse_route"; readonly route: "calendar" | "random" }
+        | { readonly type: "browse_route"; readonly route: PostPlaybackBrowseRoute }
         | {
             readonly type: "history_entry";
             readonly title: TitleInfo;
@@ -49,7 +50,14 @@ export function resolvePostPlaybackExitOutcome(
   if (routedAction === "back-to-results") {
     return { status: "success", value: "back_to_results" };
   }
-  if (routedAction === "calendar" || routedAction === "random") {
+  // The seeded calendars were listed in the post-play palette and fell
+  // through here as "Unhandled post-play shell action".
+  if (
+    routedAction === "calendar" ||
+    routedAction === "anime-calendar" ||
+    routedAction === "series-calendar" ||
+    routedAction === "random"
+  ) {
     return { status: "success", value: { type: "browse_route", route: routedAction } };
   }
   return null;

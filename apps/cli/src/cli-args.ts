@@ -7,7 +7,6 @@ import {
 import { parsePlayerChoice, type PlayerChoice } from "@/domain/playback/player-choice";
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
 import { HDR_MODES, isHdrMode, type HdrMode } from "@kunai/config";
-import { Command } from "commander";
 
 /**
  * A malformed invocation — unknown flag, missing value, mistyped subcommand,
@@ -35,7 +34,7 @@ export type CliArgs = {
   supportBundle: boolean;
   zen: boolean;
   mpv: MpvRuntimeOptions;
-  player: PlayerChoice;
+  player: PlayerChoice | undefined;
   minimal: boolean;
   plain: boolean;
   quick: boolean;
@@ -109,7 +108,7 @@ PLAYBACK PICKS (this run only — config.json untouched)
       --hdr <mode>         HDR mode: auto | passthrough | tone-map | sdr-only
 
 PLAYER
-      --player <mode>        Player backend: desktop <auto|mpv>; Android/Termux <auto|mpv|vlc>
+      --player <mode>        Player backend: desktop <auto|mpv|vlc>; Android/Termux <auto|mpv|vlc>
 
 mpv
       --mpv-debug            Verbose mpv logging
@@ -149,9 +148,19 @@ MAINTENANCE
   kunai providers verify       Check the cached manifest and AllManga crypto freshness (--json)
   kunai providers rollback     Restore the previous verified hotfix manifest backup
   kunai providers reset        Remove cached hotfix manifest and return to bundled defaults
+  kunai addons list            List the Stremio addons you added (--json)
+  kunai addons enable          Turn the experimental addon feature on
+                               (--accept-risk acknowledges the warning non-interactively)
+  kunai addons disable         Turn it off; installed addons stay listed
+  kunai addons add <url>       Add a Stremio addon by its https manifest.json URL
+                               (--stdin reads the URL from stdin, keeping it out of argv)
+  kunai addons remove <n>      Remove an addon by its number in the list
+  kunai addons check [n]       Ask each addon for its manifest and report problems (--json)
   kunai uninstall              Remove kunai (add --purge to also delete user data)
   kunai diagnostics recent     Print recent redacted diagnostics from the local cache DB
                                (--format pretty|jsonl|markdown, --limit N, --no-color)
+  kunai analytics log          The last 50 usage pings, exactly as sent (--json)
+  kunai analytics preview      The payload the next ping would send; sends nothing (--json)
   kunai completion <shell>     Print a shell completion script (bash|zsh|fish|powershell)
 
 Inside the app, press / for the command palette and ? for keyboard help.
@@ -171,10 +180,15 @@ export const CLI_SUBCOMMANDS: readonly string[] = [
   "doctor",
   "capabilities",
   "providers",
+  "addons",
   "uninstall",
   "diagnostics",
+  "analytics",
   "completion",
 ];
+
+/** `kunai addons <action>`. The command and the shell completions share this list. */
+export const ADDONS_SUBCOMMANDS = ["list", "add", "remove", "check", "enable", "disable"] as const;
 
 // Every recognized flag token. Used so a value-consuming flag (e.g. `-S`) never
 // swallows a following *flag* as its value, and so unknown options are rejected
@@ -246,6 +260,7 @@ export const KNOWN_FLAGS: ReadonlySet<string> = new Set([
   "--force",
   "--list",
   "--to",
+  "--stdin",
 ]);
 
 export const VALUE_FLAGS: ReadonlySet<string> = new Set([
@@ -274,7 +289,7 @@ export const VALUE_FLAGS: ReadonlySet<string> = new Set([
   "--to",
 ]);
 
-type CommanderCliOptions = {
+type CliFlagOptions = {
   readonly search?: string;
   readonly id?: string;
   readonly type?: string;
@@ -315,10 +330,9 @@ type CommanderCliOptions = {
   readonly mpvDebug?: boolean;
   readonly mpvClean?: boolean;
   /**
-   * From `--no-user-mpv-config`. Commander stores a `--no-x` option under the
-   * positive key `x`, defaulting to true and set to false when the flag is
-   * passed — so this is `userMpvConfig`, never `noUserMpvConfig`. Declaring the
-   * negative name is what let the flag silently no-op.
+   * From `--no-user-mpv-config`: `readFlagTokens` stores it under the positive
+   * key as `false`, never as `noUserMpvConfig`. Reading the negative name is
+   * what once let the flag silently no-op.
    */
   readonly userMpvConfig?: boolean;
   readonly mpvLogFile?: string;
@@ -327,58 +341,104 @@ type CommanderCliOptions = {
   readonly version?: boolean;
 };
 
-function createCliCommand(): Command {
-  return new Command()
-    .name("kunai")
-    .exitOverride()
-    .allowUnknownOption(true)
-    .allowExcessArguments(true)
-    .helpOption(false)
-    .option("-S, --search <query>")
-    .option("-i, --id <id>")
-    .option("-t, --type <type>")
-    .option("-a, --anime")
-    .option("-y, --youtube")
-    .option("-m, --minimal")
-    .option("-z, --zen")
-    .option("--plain")
-    .option("-q, --quick")
-    .option("--jump <n>")
-    .option("-e, --episode <n>")
-    .option("--season <n>")
-    .option("--quality <q>")
-    .option("--audio <lang>")
-    .option("--sub <lang>")
-    .option("--dub")
-    .option("--debug")
-    .option("--debug-json")
-    .option("--debug-session")
-    .option("--support-bundle")
-    .option("--onboarding")
-    .option("--setup")
-    .option("--offline")
-    .option("--discover")
-    .option("--calendar")
-    .option("--random")
-    .option("--history")
-    .option("--continue")
-    .option("--resume")
-    .option("--download")
-    .option("--download-path <dir>")
-    .option("--open <url>")
-    .option("--handoff-url <url>")
-    .option("--install-protocol-handler")
-    .option("--dry-run")
-    .option("--json")
-    .option("--mpv-debug")
-    .option("--mpv-clean")
-    .option("--no-user-mpv-config")
-    .option("--mpv-log-file <path>")
-    .option("--player <player>")
-    .option("--hdr <mode>")
-    .option("-h, --help")
-    .option("-v, --version")
-    .argument("[query...]");
+type FlagTokenRead = {
+  readonly options: CliFlagOptions;
+  readonly positionals: readonly string[];
+};
+
+/** Short flags, as their long form. */
+const SHORT_FLAG_ALIASES: ReadonlyMap<string, string> = new Map([
+  ["-S", "--search"],
+  ["-i", "--id"],
+  ["-t", "--type"],
+  ["-a", "--anime"],
+  ["-y", "--youtube"],
+  ["-m", "--minimal"],
+  ["-z", "--zen"],
+  ["-q", "--quick"],
+  ["-e", "--episode"],
+  ["-h", "--help"],
+  ["-v", "--version"],
+]);
+
+/** The launch flags this parser reads into `CliFlagOptions`; the rest belong to subcommands. */
+const LAUNCH_FLAGS: ReadonlySet<string> = new Set([
+  "--search",
+  "--id",
+  "--type",
+  "--anime",
+  "--youtube",
+  "--minimal",
+  "--zen",
+  "--plain",
+  "--quick",
+  "--jump",
+  "--episode",
+  "--season",
+  "--quality",
+  "--audio",
+  "--sub",
+  "--dub",
+  "--debug",
+  "--debug-json",
+  "--debug-session",
+  "--support-bundle",
+  "--onboarding",
+  "--setup",
+  "--offline",
+  "--discover",
+  "--calendar",
+  "--random",
+  "--history",
+  "--continue",
+  "--resume",
+  "--download",
+  "--download-path",
+  "--open",
+  "--handoff-url",
+  "--install-protocol-handler",
+  "--dry-run",
+  "--json",
+  "--mpv-debug",
+  "--mpv-clean",
+  "--no-user-mpv-config",
+  "--mpv-log-file",
+  "--player",
+  "--hdr",
+  "--help",
+  "--version",
+]);
+
+/**
+ * Read normalized argv into options and positionals. `normalizeCliArgv` has
+ * already rejected unknown flags and paired every value flag with exactly one
+ * value, so this only maps names: `--debug-json` → `debugJson`, a short flag to
+ * its long form, `--no-user-mpv-config` → `userMpvConfig: false`. Subcommand
+ * flags (`--check`, `--to`, …) are skipped with their value, never read as a
+ * search word.
+ */
+function readFlagTokens(argv: readonly string[]): FlagTokenRead {
+  const options: Record<string, string | boolean> = {};
+  const positionals: string[] = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index] ?? "";
+    if (!token.startsWith("-")) {
+      positionals.push(token);
+      continue;
+    }
+    const takesValue = VALUE_FLAGS.has(token);
+    const value = takesValue ? argv[(index += 1)] : undefined;
+    const flag = SHORT_FLAG_ALIASES.get(token) ?? token;
+    if (!LAUNCH_FLAGS.has(flag)) continue;
+    if (flag === "--no-user-mpv-config") {
+      options.userMpvConfig = false;
+      continue;
+    }
+    const key = flag.slice(2).replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase());
+    options[key] = takesValue ? (value ?? "") : true;
+  }
+  // SAFETY: keys are camelCased LAUNCH_FLAGS, exactly CliFlagOptions' fields.
+  return { options: options as CliFlagOptions, positionals };
 }
 
 const SUBCOMMAND_ONLY_FLAGS: ReadonlySet<string> = new Set([
@@ -473,22 +533,16 @@ function nearestSubcommand(word: string): string | undefined {
   return bestDistance <= 2 ? best : undefined;
 }
 
-// Process argv parsing is intentionally delegated to Commander so Kunai does
-// not grow a bespoke CLI parser as subcommands and flags mature.
+// The flag tables above are the parser: `normalizeCliArgv` validates and pairs
+// tokens, `readFlagTokens` names them. (Commander used to do the naming; it was
+// ~39 KiB of bundle for a job the tables already did.)
 export function parseCliArgs(argv: readonly string[]): CliArgs {
   const normalized = normalizeCliArgv(argv);
   if (normalized.errors.length > 0) {
     throw new CliUsageError(normalized.errors.join("; "));
   }
-  const command = createCliCommand();
-  command.configureOutput({
-    writeErr: () => {},
-    writeOut: () => {},
-  });
-  command.parse([...normalized.argv], { from: "user" });
-  const options = command.opts<CommanderCliOptions>();
+  const { options, positionals } = readFlagTokens(normalized.argv);
   const warnings: string[] = [];
-  const positionals = command.args.filter((arg) => arg !== undefined && !arg.startsWith("-"));
 
   const args: Omit<CliArgs, "shellChrome"> = {
     anime: false,
@@ -668,13 +722,14 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
   args.mpv = {
     ...(options.mpvDebug ? { debug: true } : {}),
     ...(options.mpvClean ? { clean: true } : {}),
-    // Commander parses `--no-user-mpv-config` as the negation of `user-mpv-config`,
-    // so it arrives as `userMpvConfig: false` — there is never a `noUserMpvConfig`
-    // key to read. Only an explicit `false` counts; unset must stay unset.
+    // `--no-user-mpv-config` arrives as `userMpvConfig: false` — there is never
+    // a `noUserMpvConfig` key to read. Only an explicit `false` counts; unset
+    // must stay unset.
     ...(options.userMpvConfig === false ? { noUserConfig: true } : {}),
     ...(options.mpvLogFile ? { logFile: options.mpvLogFile } : {}),
   };
-  args.player = parsePlayerChoice(options.player);
+  // Unset unless given, so a saved Settings choice can apply (`effectivePlayerChoice`).
+  args.player = options.player === undefined ? undefined : parsePlayerChoice(options.player);
   args.help = Boolean(options.help);
   args.version = Boolean(options.version);
 

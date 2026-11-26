@@ -10,7 +10,9 @@ import { PersistentMpvSession } from "@/infra/player/PersistentMpvSession";
 import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigService";
 
-const MPV_BIN = Bun.which("mpv");
+import { nativeBinary } from "./helpers/native-binaries";
+
+const MPV_BIN = nativeBinary("mpv");
 const mpvTest = MPV_BIN ? test : test.skip;
 
 function parseTlsObservations(output: string): string[] {
@@ -200,6 +202,7 @@ for (const [startsExceptional, baseline] of [
       const mediaPath = join(tempDir, "fixture.wav");
       const scriptPath = join(tempDir, "tls-probe.lua");
       const observationsPath = join(tempDir, "observations.txt");
+      const requestObservationsPath = join(tempDir, "request-observations.txt");
       await Bun.write(mediaPath, pcmWav(1_000, 440));
       // Real Kunai options are constructed for remote hosts. Only transport is
       // redirected, before opening: no DNS, provider or certificate fixture.
@@ -216,6 +219,16 @@ for (const [startsExceptional, baseline] of [
         local file = assert(io.open(${luaString(observationsPath)}, "a"))
         file:write(mp.get_property("options/tls-verify") .. "\\n")
         file:close()
+        local request = assert(io.open(${luaString(requestObservationsPath)}, "a"))
+        request:write(
+          mp.get_property("options/referrer", "") ..
+          "|" ..
+          mp.get_property("options/user-agent", "") ..
+          "|" ..
+          mp.get_property("options/http-header-fields", "") ..
+          "\\n"
+        )
+        request:close()
       end)
     `,
       );
@@ -231,6 +244,7 @@ for (const [startsExceptional, baseline] of [
               command[0]!,
               "--pause=yes",
               `--tls-verify=${baseline}`,
+              "--user-agent=FixtureBaseline",
               "--force-window=no",
               "--vo=null",
               "--ao=null",
@@ -255,10 +269,26 @@ for (const [startsExceptional, baseline] of [
       const urls = startsExceptional
         ? [exceptional, exceptional, normal]
         : [normal, exceptional, normal];
+      // Per-file request options: the first file's headers, a replacement with
+      // different populated headers, then a replacement with none — which must
+      // restore the spawn baseline rather than leak the previous file's.
+      const loadHeaders: Record<string, string>[] = [
+        {
+          Referer: "https://referrer-one.example/",
+          "User-Agent": "FixtureUA-One",
+          "X-Fixture": "one",
+        },
+        {
+          Referer: "https://referrer-two.example/",
+          "User-Agent": "FixtureUA-Two",
+          "X-Fixture": "two",
+        },
+        {},
+      ];
       let session: PersistentMpvSession | undefined;
       try {
         session = await PersistentMpvSession.create({
-          stream: { url: urls[0]!, headers: {}, timestamp: Date.now() },
+          stream: { url: urls[0]!, headers: loadHeaders[0]!, timestamp: Date.now() },
           options: { displayTitle: "TLS scope", primarySubtitle: null },
           mpv: { clean: true },
           kitsuneConfig: {
@@ -274,12 +304,12 @@ for (const [startsExceptional, baseline] of [
         const unpause = await ipc!.send(["set_property", "pause", false]);
         expect(unpause).toMatchObject({ ok: true });
         expect((await withTimeout(initialPlayback, "TLS initial playback")).endReason).toBe("eof");
-        for (const url of urls.slice(1))
+        for (const [index, url] of urls.slice(1).entries())
           expect(
             (
               await withTimeout(
                 session.play(
-                  { url, headers: {}, timestamp: Date.now() },
+                  { url, headers: loadHeaders[index + 1]!, timestamp: Date.now() },
                   { displayTitle: "TLS replacement", primarySubtitle: null },
                 ),
                 "TLS replacement playback",
@@ -290,6 +320,11 @@ for (const [startsExceptional, baseline] of [
         expect(parseTlsObservations(await Bun.file(observationsPath).text())).toEqual(
           startsExceptional ? ["no", "no", baseline] : [baseline, "no", baseline],
         );
+        expect(parseTlsObservations(await Bun.file(requestObservationsPath).text())).toEqual([
+          "https://referrer-one.example/|FixtureUA-One|X-Fixture: one",
+          "https://referrer-two.example/|FixtureUA-Two|X-Fixture: two",
+          "|FixtureBaseline|",
+        ]);
       } finally {
         await session?.close();
         await Promise.all(children.map((child) => child.exited));

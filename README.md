@@ -94,6 +94,32 @@ npm install -g @kitsunekode/kunai
 Native binaries need no separate Bun or Node installation. The npm and Bun
 global-package channels use a Node launcher and need Node on your PATH.
 
+For Homebrew on macOS or Linux, add the in-repo tap and install Kunai:
+
+```sh
+brew tap kitsunekode/kunai https://github.com/KitsuneKode/kunai
+brew install kitsunekode/kunai/kunai
+```
+
+For Scoop on Windows:
+
+```powershell
+scoop bucket add kunai https://github.com/KitsuneKode/kunai
+scoop install kunai/kunai
+```
+
+Use `brew upgrade kunai` or `scoop update kunai` to update these installs,
+including v0.3.0.
+
+Starting with v0.4.0, signed releases also carry the Arch Linux recipe:
+
+```sh
+mkdir kunai-bin && cd kunai-bin
+gh release download v0.4.0 -R KitsuneKode/kunai -p PKGBUILD
+less PKGBUILD
+makepkg -si
+```
+
 <a id="dependencies-by-platform"></a>
 
 ### Install Playback Tools

@@ -14,18 +14,36 @@ import {
 } from "../src/postgres-store";
 import { resetAnalyticsTables, TEST_DATABASE_URL, testInstallId } from "./support/pg";
 
-test("recordPing charges the budget and writes both tables in one SQL statement", () => {
-  expect(RECORD_PING_SQL).toContain("with budget as");
+test("recordPing charges the budget and writes every table in one SQL statement", () => {
+  expect(RECORD_PING_SQL).toContain("budget as (");
   expect(RECORD_PING_SQL).toContain("insert into ingest_budget");
   expect(RECORD_PING_SQL).toContain("ping_day_insert as");
   expect(RECORD_PING_SQL).toContain("insert into install_lifetime");
+  expect(RECORD_PING_SQL).toContain("insert into month_active");
   expect(RECORD_PING_SQL).toContain("on conflict (day, install_hash) do nothing");
-  // Both inserts select from `admitted`, which is what forces them to run after
+  // Every insert selects from `admitted`, which is what forces it to run after
   // the budget upsert rather than in an unspecified order. Asserted per-insert
   // rather than by counting occurrences, since the closing result count reads
-  // `admitted` too and made a bare count say 3.
+  // `admitted` too.
   expect(RECORD_PING_SQL).toMatch(/insert into ping_day[\s\S]*?from admitted/);
-  expect(RECORD_PING_SQL).toMatch(/insert into install_lifetime[\s\S]*?from admitted/);
+  expect(RECORD_PING_SQL).toMatch(/insert into install_lifetime[\s\S]*?from admitted where \$9/);
+  expect(RECORD_PING_SQL).toMatch(/insert into month_active[\s\S]*?from admitted/);
+});
+
+test("an over-budget or repeat ping reaches no write (M3)", () => {
+  // The budget insert selects from `gate`, which is empty unless both reads
+  // pass. With no row to insert there is no conflict, so the budget row is
+  // neither updated nor locked, and every later insert selects from nothing.
+  expect(RECORD_PING_SQL).toMatch(
+    /gate as \([\s\S]*?where not seen\.duplicate[\s\S]*?< \$6::bigint/,
+  );
+  expect(RECORD_PING_SQL).toMatch(
+    /insert into ingest_budget \(day, attempts\) select \$1::date, 1 from gate/,
+  );
+  // The upsert re-checks, so two requests racing for the last slot cannot overshoot.
+  expect(RECORD_PING_SQL).toMatch(
+    /do update set attempts = ingest_budget\.attempts \+ 1\s+where ingest_budget\.attempts < \$6::bigint/,
+  );
 });
 
 test("the rollup reads lifetime as of the day, not as of now", () => {

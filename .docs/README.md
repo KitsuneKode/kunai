@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-12T15:08:14Z"
+lastReviewed: "2026-11-24T20:12:20Z"
 ---
 
 # Kunai internal docs
@@ -77,6 +77,7 @@ Download removal receipts and caller behavior: [features/download-removal.md](./
 | ----------------------------------------------------- | ------------------------------------------------ |
 | [features/](./features/)                              | Per-feature product rules                        |
 | [provider-dossiers/](./provider-dossiers/)            | Per-provider research and runtime detail         |
+| [player-dossiers/vlc.md](./player-dossiers/vlc.md)    | Desktop VLC: model and measurements              |
 | [agents/](./agents/)                                  | Issue tracker, triage labels, domain conventions |
 | [adr/](./adr/)                                        | Decisions of record, sequentially numbered       |
 | [research/](./research/) · [templates/](./templates/) | Raw research; doc templates                      |

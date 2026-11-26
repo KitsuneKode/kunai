@@ -1,3 +1,7 @@
+---
+lastReviewed: "2026-11-24"
+---
+
 # Kunai Search, Catalog, And Mapping Service Plan
 
 Status: Active design, current implementation stays pragmatic

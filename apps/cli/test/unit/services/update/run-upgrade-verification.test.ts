@@ -43,6 +43,8 @@ function createPorts(overrides: Partial<RunUpgradePorts> = {}): {
       written.push(manifest);
       return Promise.resolve();
     },
+    // Never the developer's real config: a test that reached it could migrate it.
+    readAnalyticsConsented: () => Promise.reject(new Error("unexpected consent read")),
     withManifestPublication: async (_version, fn) => fn(),
     ...overrides,
   };

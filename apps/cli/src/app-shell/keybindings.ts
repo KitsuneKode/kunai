@@ -1,6 +1,7 @@
 import type { LineEditorKey } from "@/app-shell/line-editor";
 import type { AppCommandId } from "@/domain/session/command-registry";
 
+import { MPV_WINDOW_KEYBINDINGS } from "./mpv-window-keys";
 import type { FooterAction, ShellAction } from "./types";
 
 /**
@@ -11,11 +12,9 @@ import type { FooterAction, ShellAction } from "./types";
  * hint row reads {@link footerHints}, so what is documented can never drift from the
  * keys that are actually bound.
  *
- * Accuracy note: the in-player ("player" scope) chords mirror the mpv Lua bridge
- * (`apps/cli/assets/mpv/kunai-bridge.lua`) exactly — `n`/`p` navigate, `b` skips,
- * `k` opens the quality picker in the terminal, Ctrl+R refreshes the stream, Alt+R
- * resumes to the saved position. Surface-specific hint builders read these bindings
- * by action id, so changing a chord here updates help/footer playback copy together.
+ * The "player" scope is the mpv window's key map too: `assets/mpv/kunai-bridge.lua`
+ * binds each key to the same action (or sends `key:<id>` for the terminal to run),
+ * and `mpv-bridge-keys.test.ts` checks the two agree.
  */
 
 export type KeyScope =
@@ -515,7 +514,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     id: "player-quality",
     chord: { input: "k" },
     display: "k / K",
-    label: "Choose quality (in the terminal; v in mpv)",
+    label: "Choose quality",
     hintLabel: "quality",
     scope: "player",
     group: "In the player",
@@ -538,6 +537,7 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
     group: "In the player",
     docs: { tier: "surface", order: 420 },
   },
+  ...MPV_WINDOW_KEYBINDINGS,
 
   // ── Post-play — terminal footer ──
   {
@@ -1031,24 +1031,24 @@ export const KEYBINDINGS: readonly KeyBinding[] = [
   {
     id: "library-tab",
     chord: { named: "tab" },
-    label: "Switch Library / Up Next",
-    hintLabel: "Tab → Up Next",
+    label: "Switch Library / Downloads",
+    hintLabel: "Tab → Downloads",
     scope: "library",
     group: "In the library",
     footerPriority: 25,
   },
-  // `library-title-control-menu` (`m`) used to be declared here with a
-  // `hintLabel`, so the library footer advertised it as an available action.
-  // Nothing read it: `library-shell.tsx` handles tab/`2`, backspace, escape,
-  // `x`/delete and `p`/`P`, and every other single character falls through to
-  // the filter text input, so `m` was typed into the filter box.
-  //
-  // Removed rather than wired: `openTitleControlMenu` drives its own
-  // interactive picker and is called from phases, not from inside a mounted Ink
-  // tree, so reaching it from the library overlay needs a phase/shell bridge
-  // and a decision about what the menu offers for an offline entry. That is a
-  // feature, not a binding fix. Tracked separately; re-add this entry in the
-  // same change that adds its reader.
+  // Type-to-filter lists: once a filter holds text every letter is text, so a
+  // title starting with an action letter needs the filter opened first.
+  ...(["library", "history"] as const).map((scope) => ({
+    id: `${scope}-filter-focus`,
+    chord: { input: "f", ctrl: true },
+    label: "Filter by title (letters are text until Esc)",
+    scope,
+    group: scope === "library" ? "In the library" : "History",
+    helpOnly: true,
+  })),
+  // A library `m` (title menu) binding was removed: nothing read it. Re-add it
+  // with its reader, which needs a phase/shell bridge for `openTitleControlMenu`.
 ];
 
 /** First binding linked to a slash-command id (if any). */

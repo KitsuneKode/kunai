@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { AnalyticsDisclosureBanner } from "@/app-shell/AnalyticsDisclosureBanner";
+import { ANALYTICS_PAYLOAD_FIELDS } from "@/services/analytics/usage-analytics-service";
 import React from "react";
 
 import { captureFrame } from "../../harness/render-capture";
@@ -18,11 +19,8 @@ describe("analytics disclosure banner", () => {
     expect(rendered).toContain("disable");
   });
 
-  test("lists every payload field", () => {
-    const rendered = frame();
-    for (const key of ["installId", "version", "os", "arch", "ts"]) {
-      expect(rendered).toContain(key);
-    }
+  test("lists every payload field, in wire order", () => {
+    expect(frame()).toContain(`One ping a day: ${ANALYTICS_PAYLOAD_FIELDS.join(", ")}.`);
   });
 
   test("names what is never sent", () => {

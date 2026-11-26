@@ -546,6 +546,20 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     }
   });
 
+  test("explains unavailable playback when refreshed crypto is still stale", async () => {
+    const stale = '{"errors":[{"message":"AA_CRYPTO_STALE"}]}';
+    using site = mockCryptoSiteFetch({ apiResponses: [stale, stale, stale] });
+    setAllMangaRetrySleepForTest(() => Promise.resolve());
+    try {
+      await expect(resolveWithSiteSources()).rejects.toThrow(
+        "AllManga's stream authorization is out of date. Choose another anime provider.",
+      );
+      expect(site.apiCallCount).toBe(3);
+    } finally {
+      clearAllMangaProviderCachesForTest();
+    }
+  });
+
   /**
    * `NEED_CAPTCHA` is what a geo/bot-gated region actually gets back from the
    * episode-sources query while the episode *catalog* still resolves — the exact

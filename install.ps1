@@ -3,7 +3,7 @@
 .SYNOPSIS
   Kunai installer for Windows — binary-first, channel-aware.
 .EXAMPLE
-  irm https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.ps1 | iex
+  irm https://kunai.kitsunekode.in/install.ps1 | iex
 .EXAMPLE
   .\install.ps1 -Method binary -Version 1.2.3
 .DESCRIPTION
@@ -77,6 +77,7 @@ $DownloadStallMs = if ($env:KUNAI_DOWNLOAD_STALL_MS) { [int]$env:KUNAI_DOWNLOAD_
 $DownloadMaxBytes = if ($env:KUNAI_DOWNLOAD_MAX_BYTES) { [long]$env:KUNAI_DOWNLOAD_MAX_BYTES } else { 268435456 }
 $DownloadArchiveMaxBytes = if ($env:KUNAI_DOWNLOAD_ARCHIVE_MAX_BYTES) { [long]$env:KUNAI_DOWNLOAD_ARCHIVE_MAX_BYTES } else { 67108864 }
 $ExtractedBinaryMaxBytes = if ($env:KUNAI_EXTRACTED_BINARY_MAX_BYTES) { [long]$env:KUNAI_EXTRACTED_BINARY_MAX_BYTES } else { 134217728 }
+$ReleasePublicKey = ''
 $DownloadChecksumMaxBytes = if ($env:KUNAI_DOWNLOAD_CHECKSUM_MAX_BYTES) { [long]$env:KUNAI_DOWNLOAD_CHECKSUM_MAX_BYTES } else { 1048576 }
 $DownloadMaxAttempts = if ($env:KUNAI_DOWNLOAD_MAX_ATTEMPTS) { [int]$env:KUNAI_DOWNLOAD_MAX_ATTEMPTS } else { 3 }
 # Only the platform binary and its archive are worth a progress line; the two
@@ -248,6 +249,51 @@ function Resolve-PublishedVersion {
   $release = Invoke-RestMethod -Uri $ReleasesApi -Headers @{ 'user-agent' = 'kunai-installer' } -TimeoutSec 30
   $tag = [string]$release.tag_name
   return (Get-NormalizedVersion $tag)
+}
+
+function Test-TruthyEnv([string]$Value) {
+  if (-not $Value) { return $false }
+  return @('1', 'true', 'yes') -contains $Value.Trim().ToLowerInvariant()
+}
+
+# One request for a release marker after a successful install: install.marker
+# when nothing was installed before, update.marker when this replaced another
+# version. GitHub's download counts for them are how installs are told apart
+# from updates; Kunai receives nothing, and the request goes to the host that
+# just served the binary. Best effort only: no retry, a short timeout, every
+# failure ignored and silent. DO_NOT_TRACK, CI and KUNAI_NO_MARKER each turn it off.
+#
+# Opt-in, like Kunai's usage ping: nothing is fetched unless config.json already
+# says "analytics": "enabled" with the consent notice recorded, the same reading
+# the app makes. A first install has no config, so it is never counted.
+function Test-AnalyticsConsented {
+  $cfg = Join-Path $ConfigDir 'config.json'
+  if (-not (Test-Path -LiteralPath $cfg -PathType Leaf)) { return $false }
+  try { $doc = Get-Content -LiteralPath $cfg -Raw | ConvertFrom-Json } catch { return $false }
+  return ($doc.analytics -eq 'enabled') -and ($doc.analyticsNoticeShown -is [bool])
+}
+
+function Send-ReleaseMarker([string]$Base, [string]$Previous, [string]$Installed) {
+  if ((Test-TruthyEnv $env:DO_NOT_TRACK) -or (Test-TruthyEnv $env:CI) -or (Test-TruthyEnv $env:KUNAI_NO_MARKER)) {
+    return
+  }
+  if (-not (Test-AnalyticsConsented)) { return }
+  if (-not $Previous) { $marker = 'install.marker' }
+  elseif ($Previous -ne $Installed) { $marker = 'update.marker' }
+  # Reinstalling the active version is neither a new install nor an update.
+  else { return }
+  $client = $null
+  try {
+    $client = [System.Net.Http.HttpClient]::new()
+    $client.Timeout = [TimeSpan]::FromSeconds(3)
+    $client.DefaultRequestHeaders.TryAddWithoutValidation('User-Agent', 'kunai-installer') | Out-Null
+    $response = $client.GetAsync("$Base/$marker", [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+    $response.Dispose()
+  }
+  catch { }
+  finally {
+    if ($null -ne $client) { $client.Dispose() }
+  }
 }
 
 function Test-RetryableHttpStatus([int]$Status) {
@@ -448,6 +494,78 @@ function Invoke-BoundedDownload {
     }
   }
   throw "Download failed for $Label after $DownloadMaxAttempts attempts."
+}
+
+# Run a native tool and read its exit code from the process object. Neither
+# $LASTEXITCODE after a pipeline nor native stderr under
+# ErrorActionPreference=Stop behaves the same on Windows PowerShell 5.1 and
+# pwsh 7, so signature checks never go through either.
+function Invoke-CapturedProcess([string]$Path, [string[]]$Arguments) {
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = $Path
+  $psi.Arguments = ($Arguments | ForEach-Object { '"' + $_ + '"' }) -join ' '
+  $psi.UseShellExecute = $false
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError = $true
+  $psi.CreateNoWindow = $true
+  $process = [System.Diagnostics.Process]::Start($psi)
+  $stdout = $process.StandardOutput.ReadToEndAsync()
+  $stderr = $process.StandardError.ReadToEnd()
+  $process.WaitForExit()
+  return [pscustomobject]@{ ExitCode = $process.ExitCode; Stdout = $stdout.Result; Stderr = $stderr }
+}
+
+# True when $Candidate can verify raw Ed25519 (`pkeyutl -rawin`, OpenSSL 3+).
+# Match an option line, not any mention: LibreSSL rejects "-rawin" by name.
+function Test-OpenSslRawIn([string]$Candidate) {
+  if (-not $Candidate -or -not (Test-Path -LiteralPath $Candidate -PathType Leaf)) { return $false }
+  try { $help = Invoke-CapturedProcess $Candidate @('pkeyutl', '-help') }
+  catch { return $false }
+  return (($help.Stdout + "`n" + $help.Stderr) -match '(?m)^\s*-rawin(\s|$)')
+}
+
+# The first OpenSSL 3. The PATH winner is not enough: macOS ships LibreSSL as
+# /usr/bin/openssl and Homebrew installs OpenSSL 3 keg-only. Same probe on
+# Windows, macOS and Linux. Bare `brew --prefix` is local; naming a formula can
+# make brew fetch its API index over the network.
+function Find-OpenSsl3 {
+  foreach ($command in @(Get-Command openssl -CommandType Application -All -ErrorAction SilentlyContinue)) {
+    if (Test-OpenSslRawIn $command.Source) { return $command.Source }
+  }
+  $candidates = @()
+  $brew = Get-Command brew -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($brew) {
+    $env:HOMEBREW_NO_AUTO_UPDATE = '1'
+    try {
+      $prefix = Invoke-CapturedProcess $brew.Source @('--prefix')
+      if ($prefix.ExitCode -eq 0 -and $prefix.Stdout.Trim()) { $candidates += (Join-Path $prefix.Stdout.Trim() 'opt/openssl@3/bin/openssl') }
+    }
+    catch { }
+  }
+  $candidates += @('/opt/homebrew/opt/openssl@3/bin/openssl', '/usr/local/opt/openssl@3/bin/openssl')
+  if ($env:ProgramFiles) { $candidates += (Join-Path $env:ProgramFiles 'Git/usr/bin/openssl.exe') }
+  foreach ($candidate in $candidates) {
+    if (Test-OpenSslRawIn $candidate) { return $candidate }
+  }
+  return $null
+}
+
+# Verify $Manifest against "$Url.sig" for release $ReleaseVersion. The signature
+# covers a statement rebuilt here, never parsed from the download, so a signed
+# manifest from another release or for the other manifest does not verify.
+# Keep in step with releaseManifestStatement in
+# apps/cli/src/services/update/checksum-signature.ts (format: RELEASING.md).
+function Assert-ManifestSignature([string]$Url, [string]$Manifest, [string]$Name, [string]$ReleaseVersion) {
+  if (-not $ReleasePublicKey) { return }
+  $opensslPath = Find-OpenSsl3
+  if (-not $opensslPath) { throw 'Signed installs require OpenSSL 3 (openssl pkeyutl -rawin): install Git for Windows, or on macOS run brew install openssl@3.' }
+  Invoke-BoundedDownload -Url "$Url.sig" -DestinationPath "$Manifest.sig" -MaxBytes 64 -Label 'checksum signature'
+  $digest = (Get-FileHash -LiteralPath $Manifest -Algorithm SHA256).Hash.ToLowerInvariant()
+  $statement = "kunai-release-manifest v1`nversion: $ReleaseVersion`nfile: $Name`nsha256: $digest`n"
+  [IO.File]::WriteAllBytes("$Manifest.statement", [Text.Encoding]::ASCII.GetBytes($statement))
+  [IO.File]::WriteAllBytes("$Manifest.der", [Convert]::FromBase64String($ReleasePublicKey))
+  $result = Invoke-CapturedProcess $opensslPath @('pkeyutl', '-verify', '-pubin', '-keyform', 'DER', '-inkey', "$Manifest.der", '-rawin', '-in', "$Manifest.statement", '-sigfile', "$Manifest.sig")
+  if ($result.ExitCode -ne 0) { throw "Checksum signature verification failed: $Name is not signed for v$ReleaseVersion." }
 }
 
 function Get-ChecksumEntry([string]$ManifestPath, [string]$AssetName) {
@@ -2123,6 +2241,7 @@ function Install-Binary {
     }
 
     if ($archiveAvailable) {
+      Assert-ManifestSignature $archiveSumsUrl $stagedArchiveSums 'SHA256SUMS.archives' $resolved
       try { $archiveWant = Get-ChecksumEntry $stagedArchiveSums $archive }
       catch { throw "SHA256SUMS.archives must contain exactly one valid entry for $archive. $($_.Exception.Message)" }
       try {
@@ -2162,6 +2281,8 @@ function Install-Binary {
       Write-Warn 'Or pin a version: -Version X.Y.Z'
       throw
     }
+    if (-not $ReleasePublicKey) { Write-Warn 'No embedded release signing key. Verifying SHA-256 checksums only.' }
+    Assert-ManifestSignature $sumsUrl $stagedSums 'SHA256SUMS' $resolved
     try { $want = Get-ChecksumEntry $stagedSums $asset }
     catch { throw "SHA256SUMS has no entry for $asset, or has duplicate/malformed entries. $($_.Exception.Message)" }
 
@@ -2290,6 +2411,7 @@ function Install-Binary {
     Write-Info "PATH activation: new terminals inherit $BinDir. Reopen the terminal if this shell cannot find kunai."
   }
   Write-Info "Installed kunai -> $BinPath (v$resolved at $versionPath)"
+  Send-ReleaseMarker $base $activationPrevious $resolved
 }
 
 function Require-Cmd([string]$Name, [string]$InstallHint) {

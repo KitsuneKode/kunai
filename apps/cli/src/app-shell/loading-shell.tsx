@@ -47,6 +47,7 @@ import { DetailLine } from "./shell-primitives";
 import { padColumnsEnd, sanitizeTerminalText, truncateLine } from "./shell-text";
 import { palette, statusColor } from "./shell-theme";
 import type { FooterAction, LoadingShellState, ShellPanelLine } from "./types";
+import { usePlayerKeyRequests } from "./use-player-key-requests";
 import { useDebouncedViewportPolicy } from "./use-viewport-policy";
 
 const MEMORY_PANEL_AUTO_HIDE_MS = 8_000;
@@ -173,6 +174,7 @@ function PlaybackShellInput({
 }) {
   const commandModeOpen = useShellCommandModeOpen();
   const suspended = useRootContentSuspended();
+  usePlayerKeyRequests(input, onToggleMemory);
 
   useInput((key, modifiers) => {
     if (commandModeOpen || suspended) return;
@@ -180,10 +182,7 @@ function PlaybackShellInput({
       requestAppShutdown({ reason: "SIGINT", exitCode: 130 });
       return;
     }
-    if (modifiers.escape && input.cancellable && onCancel) {
-      onCancel();
-      return;
-    }
+    if (modifiers.escape && input.cancellable && onCancel) return onCancel();
     // `z` is unbound on loading/playing surfaces otherwise, so it can claim
     // the live undo entry unconditionally — the service no-ops when empty.
     if (key === "z" && !modifiers.ctrl && !modifiers.meta && onUndo) {

@@ -43,6 +43,27 @@ describe("provider result adapter", () => {
     expect(stream?.providerResolveResult?.selectedStreamId).toBe("stream-b-720");
   });
 
+  test("drops the provider's probe evidence when a different stream is selected", () => {
+    const result = makeResolveResult({ streamReachabilityVerified: true });
+
+    const switched = providerResolveResultToStreamInfo({
+      result,
+      title: "Selected Source",
+      subtitlePreference: "none",
+      selectedStreamId: "stream-b-720",
+    });
+    expect(switched?.providerResolveResult?.selectedStreamId).toBe("stream-b-720");
+    expect(switched?.providerResolveResult?.streamReachabilityVerified).toBe(false);
+
+    const kept = providerResolveResultToStreamInfo({
+      result,
+      title: "Selected Source",
+      subtitlePreference: "none",
+    });
+    expect(kept?.providerResolveResult?.selectedStreamId).toBe("stream-a-1080");
+    expect(kept?.providerResolveResult?.streamReachabilityVerified).toBe(true);
+  });
+
   test("honors selected source by choosing the best quality in that source", () => {
     const stream = providerResolveResultToStreamInfo({
       result: makeResolveResult(),

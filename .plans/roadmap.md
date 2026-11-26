@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-11-24
+Last updated: 2026-11-25
 
 This is the **only index of active work** in `.plans/`. Everything indexed here
 is unfinished. Landed, superseded, and one-shot plans live in
@@ -88,10 +88,11 @@ archive and put only the residue here.
 
 ### Analytics
 
-| Track                    | Remaining                                                                                                                                            | Plan                                                                                                          |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Usage analytics redesign | Explicit opt-in and the live aggregate endpoint are deployed; stable-secret, firewall, retention, cron, cost, and live opt-in/disable signoff remain | [usage-analytics-redesign.md](./usage-analytics-redesign.md) · [design](./usage-analytics-redesign-design.md) |
-| Analytics day boundary   | Task 8 only: schedule is now `0 19 * * *`; prove the IST clock is live in prod before merge, then verify the first run                               | [2026-09-11-analytics-ist-day-boundary.md](./2026-09-11-analytics-ist-day-boundary.md)                        |
+| Track                    | Remaining                                                                                                                                                                                                                          | Plan                                                                                                          |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Usage analytics redesign | Explicit opt-in and the live aggregate endpoint are deployed; stable-secret, firewall, retention, cron, cost, and live opt-in/disable signoff remain                                                                               | [usage-analytics-redesign.md](./usage-analytics-redesign.md) · [design](./usage-analytics-redesign-design.md) |
+| Analytics day boundary   | Task 8 only: schedule is now `0 19 * * *`; prove the IST clock is live in prod before merge, then verify the first run                                                                                                             | [2026-09-11-analytics-ist-day-boundary.md](./2026-09-11-analytics-ist-day-boundary.md)                        |
+| Credible usage analytics | Zero-collection download/install/update counts (GitHub assets, npm, Android), less invasive opt-in ping (monthly-rotating id, cohort month, no durable per-install record, Android `os`), neutral consent, `analytics log`, badges | [2026-11-24-analytics-credible-usage.md](./2026-11-24-analytics-credible-usage.md)                            |
 
 ### Docs
 
@@ -106,6 +107,12 @@ archive and put only the residue here.
 | -------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | Install channels           | Homebrew tap, AUR `kunai-bin`, Scoop bucket on top of the release pipeline  | [competitive-parity-and-growth.md](./competitive-parity-and-growth.md) |
 | Localization and community | Localized READMEs, community surface, topics + comparison-table positioning | [competitive-parity-and-growth.md](./competitive-parity-and-growth.md) |
+
+### Security review
+
+| Track                           | Remaining                                                                                                                  | Plan                                                                                          |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Security and improvement review | Close the remote subtitle and media handoff gaps, qualify release signing, and address analytics admission and CI findings | [2026-11-25 security and improvement review](./2026-11-25-security-and-improvement-review.md) |
 
 ### Verification and CI
 

@@ -26,6 +26,13 @@ export type ProviderCandidatePlannerInput = {
     readonly providerId?: string;
     readonly suggestedProviderId: string;
   } | null;
+  /**
+   * The user just chose this provider (a switch, `/recompute`, manual mode):
+   * it leads whatever its health, and title suggestions do not reorder it.
+   */
+  readonly keepPrimaryFirst?: boolean;
+  /** Display names for `orderNote`; ids are used when omitted. */
+  readonly nameOf?: (providerId: ProviderId) => string;
 };
 
 /**
@@ -50,6 +57,8 @@ export type ProviderCandidatePlan = {
   readonly candidateIds: readonly ProviderId[];
   readonly hasCompatibleFallback: boolean;
   readonly skippedFallbackProviders: readonly SkippedFallbackProvider[];
+  /** Why the order differs from "your provider first", for the loading line. */
+  readonly orderNote?: string;
 };
 
 export function planProviderCandidates(
@@ -99,18 +108,48 @@ export function planProviderCandidates(
     };
   }
 
-  // Title health suggestions are advisory for UX copy only. Runtime ordering
-  // stays deterministic until a provider is explicitly selected.
-  void input.suggestion;
+  const fallbacks = orderProviderCandidates(compatibleFallbackIds, effectiveHealthById);
+  const primary = input.primaryProviderId;
+  const name = (id: ProviderId) => input.nameOf?.(id) ?? id;
+  if (input.keepPrimaryFirst === true || fallbacks.length === 0) {
+    return {
+      candidateIds: [primary, ...fallbacks],
+      hasCompatibleFallback,
+      skippedFallbackProviders,
+    };
+  }
 
-  // The selected provider leads regardless of how it ranks; only the order we
-  // fall back through is health- and latency-aware.
+  // A provider that failed for this title before, with a named alternative
+  // that worked, starts from the alternative; the selected provider follows it.
+  const suggested =
+    input.suggestion &&
+    (input.suggestion.providerId ?? primary) === primary &&
+    fallbacks.includes(input.suggestion.suggestedProviderId)
+      ? input.suggestion.suggestedProviderId
+      : undefined;
+  // The selected provider normally leads. While its health is `down` (recent
+  // definitive failures, healing by TTL) it goes last instead of spending the
+  // first attempt; it is still tried, so a recovered provider is noticed.
+  const primaryHealth =
+    input.ignoreProviderHealth === true
+      ? undefined
+      : resolveEffectiveProviderHealth(input.getProviderHealth?.(primary), now());
+  const primaryDown = !isProviderFallbackEligible(primaryHealth) && primaryHealth !== undefined;
+  const rest = fallbacks.filter((id) => id !== suggested);
+  const candidateIds: ProviderId[] = suggested ? [suggested] : [];
+  if (!primaryDown) candidateIds.push(primary);
+  candidateIds.push(...rest);
+  if (primaryDown) candidateIds.push(primary);
+  const notes = [
+    suggested ? `Trying ${name(suggested)} first: it worked for this title before.` : undefined,
+    primaryDown
+      ? `${name(primary)} is down (${primaryHealth?.consecutiveFailures ?? "repeated"} failures), so it is tried last.`
+      : undefined,
+  ].filter((note): note is string => note !== undefined);
   return {
-    candidateIds: [
-      input.primaryProviderId,
-      ...orderProviderCandidates(compatibleFallbackIds, effectiveHealthById),
-    ],
+    candidateIds,
     hasCompatibleFallback,
     skippedFallbackProviders,
+    orderNote: notes.length > 0 ? notes.join(" ") : undefined,
   };
 }
