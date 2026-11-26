@@ -2,6 +2,10 @@ import { afterEach, describe, expect, test } from "bun:test";
 
 import { providerDnsSettingsRows } from "@/app-shell/settings/registry/relay";
 import { createProviderDnsResolver } from "@/container/bootstrap-providers";
+import {
+  normalizeModePatch,
+  normalizeProviderDns,
+} from "@/services/persistence/config-scalar-normalizers";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigService";
 import { getProviderDohResolver, setProviderDohResolver } from "@kunai/core";
 
@@ -27,6 +31,14 @@ describe("provider DNS setting", () => {
       { KUNAI_DOH_DISABLE: "1" },
     );
     expect(await forcedOff.resolve("api.example.com")).toBeNull();
+  });
+
+  test("only an explicit system turns it off: a typo keeps DNS-over-HTTPS on", () => {
+    expect(normalizeProviderDns("sytem")).toBe("doh");
+    expect(normalizeProviderDns(undefined)).toBe("doh");
+    expect(normalizeModePatch({ providerDns: "system" }).providerDns).toBe("system");
+    // A patch that does not mention the mode leaves it alone.
+    expect("providerDns" in normalizeModePatch({ startupPriority: "fast" })).toBe(false);
   });
 
   test("defaults on, and the Settings switch writes the two stored values", () => {

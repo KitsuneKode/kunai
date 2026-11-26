@@ -63,3 +63,29 @@ export function normalizeMaxConcurrentDownloads<T>(value: T): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return 3;
   return Math.max(1, Math.min(5, Math.trunc(value)));
 }
+
+/** The closed-set modes in a config patch, normalized; a mode the patch omits stays omitted. */
+export function normalizeModePatch(partial: Partial<KitsuneConfig>): Partial<KitsuneConfig> {
+  return {
+    ...(partial.recoveryMode !== undefined
+      ? { recoveryMode: normalizeRecoveryMode(partial.recoveryMode) }
+      : null),
+    ...(partial.continueSourcePreference !== undefined
+      ? {
+          continueSourcePreference: normalizeContinueSourcePreference(
+            partial.continueSourcePreference,
+          ),
+        }
+      : null),
+    ...(partial.prePlayConfirm !== undefined
+      ? { prePlayConfirm: normalizePrePlayConfirm(partial.prePlayConfirm) }
+      : null),
+    ...(partial.startupPriority !== undefined
+      ? { startupPriority: normalizeStartupPriority(partial.startupPriority) }
+      : null),
+    ...(partial.providerDns !== undefined
+      ? { providerDns: normalizeProviderDns(partial.providerDns) }
+      : null),
+    ...(partial.hdrMode !== undefined ? { hdrMode: normalizeHdrMode(partial.hdrMode) } : null),
+  };
+}

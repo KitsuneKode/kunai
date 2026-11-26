@@ -42,6 +42,7 @@ import {
   normalizeContinueSourcePreference,
   normalizeHdrMode,
   normalizeMaxConcurrentDownloads,
+  normalizeModePatch,
   normalizeMpvReconnectAttempts,
   normalizePrePlayConfirm,
   normalizeProviderDns,
@@ -1253,26 +1254,7 @@ export class ConfigServiceImpl implements ConfigService {
       ...(partial.seenTips !== undefined
         ? { seenTips: normalizeStringList(partial.seenTips) }
         : null),
-      ...(partial.recoveryMode !== undefined
-        ? { recoveryMode: normalizeRecoveryMode(partial.recoveryMode) }
-        : null),
-      ...(partial.continueSourcePreference !== undefined
-        ? {
-            continueSourcePreference: normalizeContinueSourcePreference(
-              partial.continueSourcePreference,
-            ),
-          }
-        : null),
-      ...(partial.prePlayConfirm !== undefined
-        ? { prePlayConfirm: normalizePrePlayConfirm(partial.prePlayConfirm) }
-        : null),
-      ...(partial.startupPriority !== undefined
-        ? { startupPriority: normalizeStartupPriority(partial.startupPriority) }
-        : null),
-      ...(partial.providerDns !== undefined
-        ? { providerDns: normalizeProviderDns(partial.providerDns) }
-        : null),
-      ...(partial.hdrMode !== undefined ? { hdrMode: normalizeHdrMode(partial.hdrMode) } : null),
+      ...normalizeModePatch(partial),
       ...(partial.mpvInProcessStreamReconnectMaxAttempts !== undefined
         ? {
             mpvInProcessStreamReconnectMaxAttempts: normalizeMpvReconnectAttempts(

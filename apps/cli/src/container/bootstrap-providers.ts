@@ -371,7 +371,7 @@ export function createProviderDnsResolver(
   const lookups = createKeyedJoiner<readonly DohAddress[] | null>({ whenAbandoned: "finish" });
   return {
     resolve: (hostname, signal) =>
-      env.KUNAI_DOH_DISABLE === "1" || readMode() !== "doh"
+      env.KUNAI_DOH_DISABLE === "1" || readMode() === "system"
         ? Promise.resolve(null)
         : lookups.join(hostname.toLowerCase(), (upstream) => doh.resolve(hostname, upstream), {
             signal,
