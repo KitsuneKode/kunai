@@ -42,7 +42,27 @@ export interface NotificationActionRouterDeps {
   readonly notifications: {
     readonly dismiss: (dedupKey: string) => Promise<void> | void;
   };
+  /**
+   * Retry the failed download a notice names: requeue that job, with its own
+   * source and output settings, the way Downloads does — never a fresh generic
+   * download of whatever the item's numbers default to.
+   */
+  readonly downloads?: {
+    readonly retryFailed: (
+      target: NotificationDownloadRetryTarget,
+    ) => Promise<NotificationDownloadRetryOutcome>;
+  };
 }
+
+/** The job a notice names, or (older notices) the identity to look it up by. */
+export interface NotificationDownloadRetryTarget {
+  readonly jobId: string | null;
+  readonly item: MediaItemIdentity;
+}
+
+export type NotificationDownloadRetryOutcome =
+  | { readonly status: "requeued" }
+  | { readonly status: "unavailable"; readonly reason: string };
 
 export interface RunNotificationActionInput {
   readonly actionId: NotificationActionId;
@@ -135,9 +155,18 @@ export class NotificationActionRouter {
       throw new Error("notification action requires a media item payload");
     }
 
-    // Retry maps to the standard download media action for the same item.
-    const mediaActionId: MediaActionId =
-      input.actionId === "retry-download" ? "download" : input.actionId;
+    if (input.actionId === "retry-download") {
+      const downloads = this.deps.downloads;
+      if (!downloads) return unsupported(input.actionId);
+      const outcome = await downloads.retryFailed({
+        jobId: parseDownloadJobId(input.notification),
+        item,
+      });
+      return outcome.status === "requeued"
+        ? handled(input.actionId)
+        : { status: "unsupported", actionId: input.actionId, reason: outcome.reason };
+    }
+    const mediaActionId: MediaActionId = input.actionId;
 
     // Call through the object, never through a detached `.run`. Production hands
     // us a `MediaActionRouter` instance, and pulling its method into a local
@@ -178,6 +207,14 @@ export function parseAppUpdateVersion(notification: NotificationRecord): string 
   if (!notification.dedupKey.startsWith(prefix)) return null;
   const version = notification.dedupKey.slice(prefix.length).trim();
   return version.length > 0 ? version : null;
+}
+
+function parseDownloadJobId(notification: NotificationRecord): string | null {
+  const parsed = parseJson(notification.itemJson);
+  if (!isRecord(parsed)) return null;
+  return typeof parsed.downloadJobId === "string" && parsed.downloadJobId.length > 0
+    ? parsed.downloadJobId
+    : null;
 }
 
 function parseQueueSessionId(notification: NotificationRecord): string | null {

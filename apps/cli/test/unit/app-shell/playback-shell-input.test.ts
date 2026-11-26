@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   applyPlaybackShellInputEffect,
+  resolvePlayerKeyRequest,
   resolvePlaybackShellInput,
   type PlaybackShellInputHandlers,
 } from "@/app-shell/playback-shell-input";
@@ -75,7 +76,9 @@ describe("resolvePlaybackShellInput", () => {
     expect(resolvePlaybackShellInput("q", emptyKey(), ctx)?.kind).toBe("stop");
     expect(resolvePlaybackShellInput("r", emptyKey(), ctx)?.kind).toBe("recover");
     expect(resolvePlaybackShellInput("k", emptyKey(), ctx)?.kind).toBe("pick-quality");
-    expect(resolvePlaybackShellInput("v", emptyKey(), ctx)?.kind).toBe("pick-quality");
+    // v was an undocumented terminal alias for quality, mirroring an mpv key
+    // that is now mpv's own subtitle toggle again.
+    expect(resolvePlaybackShellInput("v", emptyKey(), ctx)).toBeNull();
   });
 
   test("bootstrap footer keys resolve before playback starts", () => {
@@ -152,5 +155,32 @@ describe("resolvePlaybackShellInput", () => {
       }),
     );
     expect(seen).toEqual(["diagnostics"]);
+  });
+});
+
+/** Keys pressed in the mpv window reach the terminal as keybinding ids. */
+describe("resolvePlayerKeyRequest", () => {
+  const ctx = {
+    operation: "playing" as const,
+    cancellable: false,
+    fallbackAvailable: true,
+    canOpenSourcePicker: true,
+    recoveryViewActive: false,
+    playbackTroubleActive: false,
+    handlers: handlers(),
+  };
+
+  test("an mpv-window key runs the terminal's effect for that binding", () => {
+    expect(resolvePlayerKeyRequest("player-autoplay", ctx)?.kind).toBe("toggle-autoplay");
+    expect(resolvePlayerKeyRequest("player-diagnostics", ctx)).toEqual({
+      kind: "shell-action",
+      action: "diagnostics",
+    });
+    expect(resolvePlayerKeyRequest("player-fallback", ctx)?.kind).toBe("fallback");
+  });
+
+  test("unknown ids and other scopes' bindings do nothing", () => {
+    expect(resolvePlayerKeyRequest("player-nonexistent", ctx)).toBeNull();
+    expect(resolvePlayerKeyRequest("browse-queue", ctx)).toBeNull();
   });
 });

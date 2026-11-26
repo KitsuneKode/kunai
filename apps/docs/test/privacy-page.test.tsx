@@ -28,7 +28,10 @@ describe("PrivacyPage disclosures", () => {
   });
 
   test("carries the analytics opt-in facts, not vibes", () => {
-    expect(html).toContain("sha256");
+    expect(html).toContain("HMAC");
+    expect(html).toContain("every calendar month");
+    expect(html).toContain("kunai analytics log");
+    expect(html).toContain("GitHub counts the download; we receive nothing.");
     expect(html).toContain("DO_NOT_TRACK");
     expect(html).toContain("/analytics");
   });

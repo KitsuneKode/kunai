@@ -14,6 +14,13 @@ import { shouldApplyStartAtSeek } from "./mpv-start-seek";
  */
 export const DEFAULT_MPV_YTDL_FORMAT = "bv*+ba/b/ba";
 
+/** mpv's hook otherwise requests subtitles itself and opens their URLs directly. */
+export function guardedYtdlRawOptions(rawOptions?: string): string {
+  const raw = rawOptions?.trim();
+  const suppression = "sub-langs=%4%(?!),ignore-config=";
+  return raw ? `${raw},${suppression}` : suppression;
+}
+
 export const LOCAL_HLS_DEMUXER_LAVF_OPTIONS =
   "protocol_whitelist=[file,tcp,tls,https,http,crypto,data]";
 
@@ -306,9 +313,7 @@ export function buildPersistentLoadfileOptions(
     // also survives a user config that turned ytdl off.
     loadOptions.ytdl = "yes";
     loadOptions["ytdl-format"] = ytdlOptions?.ytdlFormat ?? DEFAULT_MPV_YTDL_FORMAT;
-    if (ytdlOptions?.ytdlRawOptions?.trim()) {
-      loadOptions["ytdl-raw-options"] = ytdlOptions.ytdlRawOptions.trim();
-    }
+    loadOptions["ytdl-raw-options"] = guardedYtdlRawOptions(ytdlOptions?.ytdlRawOptions);
   } else if (isRemoteHlsManifestPlaybackUrl(url)) {
     loadOptions.ytdl = "no";
   }

@@ -1,54 +1,24 @@
-import { applyTitleProviderPreferenceToSession } from "@/app/playback/playback-provider-switch";
+import { alignSessionLane } from "@/app/playback/launch-lane";
 import type { Container } from "@/container";
 import {
   episodeInfoFromMediaItemIdentity,
   titleInfoFromMediaItemIdentity,
 } from "@/domain/media/media-item-adapters";
 import type { MediaItemIdentity } from "@/domain/media/media-item-identity";
-import { providerLaneToShellMode, resolveProviderLaneFromMetadata } from "@/domain/provider-lane";
 import type { ShellMode } from "@/domain/types";
 
 export function applyMediaItemSessionRouting(
   container: Pick<Container, "config" | "providerRegistry" | "stateManager">,
   item: MediaItemIdentity,
 ): void {
-  const mode = mediaItemShellMode(item);
-  const appliedPreference = applyTitleProviderPreferenceToSession(
-    container,
-    item.titleId,
-    titleInfoFromMediaItemIdentity(item),
-    mode,
-  );
-  if (appliedPreference) return;
-
-  const hintedProviderId = item.providerHints?.[0]?.providerId;
-  if (hintedProviderId) {
-    const provider = container.providerRegistry.get(hintedProviderId);
-    if (provider) {
-      container.stateManager.dispatch({
-        type: "SET_MODE",
-        mode: providerLaneToShellMode(resolveProviderLaneFromMetadata(provider.metadata)),
-        provider: provider.metadata.id,
-      });
-      return;
-    }
-    container.stateManager.dispatch({
-      type: "SET_PROVIDER",
-      provider: hintedProviderId,
-    });
-    return;
-  }
-
-  if (mode === "anime" || mode === "youtube") {
-    container.stateManager.dispatch({
-      type: "SET_MODE",
-      mode,
-      provider:
-        mode === "youtube"
-          ? container.stateManager.getState().defaultProviders.youtube
-          : container.config.animeProvider,
-    });
-  }
+  // The item's own lane, in every direction: a series notice opened from anime
+  // mode used to stay on the anime provider chain. A hinted provider is kept
+  // only when it serves that lane; a saved title preference wins over both.
+  alignSessionLane(container, {
+    mode: mediaItemShellMode(item),
+    preferredProviderId: item.providerHints?.[0]?.providerId,
+    title: titleInfoFromMediaItemIdentity(item),
+  });
 }
 
 function mediaItemShellMode(item: MediaItemIdentity): ShellMode {

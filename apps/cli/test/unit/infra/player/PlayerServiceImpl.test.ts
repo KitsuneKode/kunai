@@ -314,7 +314,7 @@ describe("PlayerServiceImpl diagnostics", () => {
 
     const output = stderr.join("");
     expect(output).toContain("Starting playback: Episode 1");
-    expect(output).toContain("Subtitle attached");
+    expect(output).toContain("Preparing subtitles.");
     expect(output).not.toContain("subtitle-secret");
     expect(output).not.toContain("X-Amz-Signature=secret");
 

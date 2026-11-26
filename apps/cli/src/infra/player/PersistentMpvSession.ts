@@ -5,6 +5,7 @@ import {
   isSamePlaybackGeneration,
   type PlaybackGeneration,
 } from "@/domain/playback/playback-generation";
+import { emitPlayerKeyRequest } from "@/domain/playback/player-key-requests";
 import type {
   PlaybackResult,
   PlaybackTimingMetadata,
@@ -14,12 +15,14 @@ import type {
   TitleInfo,
 } from "@/domain/types";
 import { scrubbedChildEnv } from "@/infra/os/child-env";
-import {
-  AddonSubtitleFiles,
-  prepareLaunchSubtitles,
-  resolvePlayerSubtitle,
-} from "@/infra/player/addon-subtitle-files";
 import { registerMpvProcess, terminateMpvProcess } from "@/infra/player/mpv-process-registry";
+import { isSubtitleIpcCommand } from "@/infra/player/mpv-subtitle-tracks";
+import {
+  SubtitleFiles,
+  prepareLaunchSubtitles,
+  type SubtitleMediaRequest,
+  resolvePlayerSubtitle,
+} from "@/infra/player/subtitle-files";
 import { copyShareLinkForContext } from "@/infra/share/copy-share-link";
 import { removeMpvChaptersFile, writeMpvChaptersFile } from "@/infra/timing";
 import { dbg } from "@/logger";
@@ -120,10 +123,11 @@ const defaultPersistentMpvSessionRuntime: PersistentMpvSessionRuntime = {
   openIpcSession: openMpvIpcSession,
 };
 
-type PlayerCycleOptions = {
+export type PlayerCycleOptions = {
   displayTitle: string;
   urlKind?: MpvUrlKind;
   subtitleUrlKind?: MpvUrlKind;
+  subtitleMedia?: SubtitleMediaRequest;
   audioPreference?: string;
   subtitlePreference?: string;
   primarySubtitle: string | null;
@@ -191,19 +195,22 @@ export class PersistentMpvSession {
    * publish an event, or activate player control on a retired session.
    */
   private retired = false;
-  private addonSubtitleFiles: AddonSubtitleFiles | undefined;
-  private subtitleFiles(): AddonSubtitleFiles {
-    return (this.addonSubtitleFiles ??= new AddonSubtitleFiles(this.runtime.downloadAddonSubtitle));
+  private ownedSubtitleFiles: SubtitleFiles | undefined;
+  private subtitleFiles(): SubtitleFiles {
+    return (this.ownedSubtitleFiles ??= new SubtitleFiles(
+      this.runtime.downloadSubtitle,
+      isStremioPlayback(this.playbackStream)
+        ? undefined
+        : (this.currentOptions.subtitleMedia ?? this.playbackStream),
+    ));
   }
   private readonly subtitleManager = new PersistentSubtitleManager(
     () => this.currentOptions.subtitlePreference?.trim().toLowerCase() !== "none",
-    (url, kind, track) =>
+    (url, kind) =>
       resolvePlayerSubtitle(
         url,
         kind,
-        isStremioPlayback(this.playbackStream),
-        track,
-        this.subtitleFiles(),
+        this.retired ? undefined : this.subtitleFiles(),
         this.currentCycleOptions().abortSignal,
       ),
   );
@@ -220,6 +227,7 @@ export class PersistentMpvSession {
     },
     handleResumeSeekFromMpv: async () => this.handleResumeSeekFromMpv(),
     handleCopyShareFromMpv: async () => this.handleCopyShareFromMpv(),
+    notifyMpvKeyRequest: emitPlayerKeyRequest,
     onSkipRequestFromMpv: async (automatic) => this.onSkipRequestFromMpv(automatic),
     getCurrentPositionSeconds: () => this.currentPositionSeconds,
     setCurrentPositionSeconds: (value) => {
@@ -444,8 +452,8 @@ export class PersistentMpvSession {
       // A failed startup must not strand localized subtitle files or the
       // sensitive conf (args/prep/spawn errors happen before mpv could read it).
       await session.releaseInitialConf();
-      await session.addonSubtitleFiles?.close().catch(() => {});
-      session.addonSubtitleFiles = undefined;
+      await session.ownedSubtitleFiles?.close().catch(() => {});
+      session.ownedSubtitleFiles = undefined;
       throw error;
     }
     return session;
@@ -475,14 +483,11 @@ export class PersistentMpvSession {
     const generation = this.advanceCycleGeneration();
     const fileLoadId = this.installPendingFileLoad(generation);
 
-    await this.subtitleManager.removeExternalSubtitles(this.ipcSession);
-    // A replacement retires the old subtitle scope; a late resolution from a
-    // previous cycle must not be able to create files in the new one.
-    if (this.addonSubtitleFiles) {
-      const oldScope = this.addonSubtitleFiles;
-      this.addonSubtitleFiles = undefined;
-      void oldScope.close();
-    }
+    const oldScope = this.ownedSubtitleFiles;
+    this.ownedSubtitleFiles = undefined;
+    await this.subtitleManager.removeExternalSubtitles(this.ipcSession).finally(() => {
+      void oldScope?.close();
+    });
     options.onPlaybackEvent?.({ type: "resolving-playback" });
     this.queueReadyWork(options, { armFallback: false });
 
@@ -756,22 +761,13 @@ export class PersistentMpvSession {
       hdrCapability !== null
         ? { ...mpvOptions, supportsGpuNext: hdrCapability.supportsGpuNext }
         : mpvOptions;
-    // Addon subtitles are resolved to owned local files before argv is
-    // built — the URL never reaches mpv.
-    const addonPlayback = isStremioPlayback(this.initialStream);
-    const launchSubs =
-      addonPlayback || this.initialOptions.subtitleTracks?.some((track) => track.guardedAddon)
-        ? await prepareLaunchSubtitles(
-            {
-              subtitle: this.initialOptions.primarySubtitle,
-              subtitleTracks: this.initialOptions.subtitleTracks,
-              subtitleUrlKind: this.initialOptions.subtitleUrlKind,
-              stremioAddon: addonPlayback,
-              abortSignal: this.initialOptions.abortSignal,
-            },
-            this.subtitleFiles(),
-          )
-        : null;
+    const launchSubs = await prepareLaunchSubtitles(
+      { ...this.initialOptions, subtitle: this.initialOptions.primarySubtitle },
+      this.subtitleFiles(),
+    );
+    if (this.initialOptions.abortSignal?.aborted || this.retired) {
+      return this.handleProcessTermination({ code: 1, signal: null });
+    }
     const args = buildMpvArgs(
       {
         url: this.initialStream.url,
@@ -779,19 +775,14 @@ export class PersistentMpvSession {
         headers: this.initialStream.headers ?? {},
         audioPreference: this.initialOptions.audioPreference,
         subtitlePreference: this.initialOptions.subtitlePreference,
-        subtitle: launchSubs ? launchSubs.subtitle : this.initialOptions.primarySubtitle,
-        subtitleUrlKind: launchSubs
-          ? launchSubs.subtitleUrlKind
-          : this.initialOptions.subtitleUrlKind,
-        subtitleTracks: launchSubs ? launchSubs.subtitleTracks : this.initialOptions.subtitleTracks,
-        localSubtitlePaths: launchSubs?.localSubtitlePaths,
+        ...launchSubs,
         displayTitle: this.initialOptions.displayTitle,
         startAt: this.initialStream.isLive ? undefined : this.initialOptions.startAt,
         isLive: this.initialStream.isLive,
         requiresYtdl: this.initialStream.requiresYtdl,
         ytdlFormat: this.initialStream.ytdlFormat,
         ytdlRawOptions: this.initialStream.ytdlRawOptions,
-        stremioAddon: addonPlayback,
+        stremioAddon: isStremioPlayback(this.initialStream),
         chaptersFile: this.currentChaptersFilePath,
       },
       ipcServerCliArg(this.ipcEndpoint),
@@ -806,9 +797,7 @@ export class PersistentMpvSession {
     );
     this.loadStartAt =
       includeStartArg && this.initialOptions.startAt ? this.initialOptions.startAt : 0;
-    this.subtitlesAttachedAtSpawn = Boolean(
-      launchSubs ? launchSubs.subtitle : this.initialOptions.primarySubtitle,
-    );
+    this.subtitlesAttachedAtSpawn = Boolean(launchSubs.subtitle);
     this.titleAppliedViaArgs = true;
 
     await this.spawnProcessAndConnect(mpvOptions, args);
@@ -1290,11 +1279,10 @@ export class PersistentMpvSession {
     if (!this.isGenerationCurrent(generation)) return false;
     if (tracks.ok && Array.isArray(tracks.response.data))
       this.subtitleManager.updateTrackList(tracks.response.data);
-    const localized = this.addonSubtitleFiles?.existingPath(selection.subtitleUrl);
-    const existingId = this.subtitleManager.findExternalSubtitleId(
-      localized ?? selection.subtitleUrl,
-      localized ? "local" : "remote",
-    );
+    const localized = this.ownedSubtitleFiles?.existingPath(selection.subtitleUrl);
+    const existingId = localized
+      ? this.subtitleManager.findExternalSubtitleId(localized)
+      : undefined;
     let selected = false;
     if (existingId !== undefined) {
       const result = await this.ipcSession.send(["set_property", "sid", existingId], 1_000);
@@ -1331,7 +1319,7 @@ export class PersistentMpvSession {
     const result = await this.subtitleManager.attachSubtitles(
       this.ipcSession,
       attachment,
-      () => this.isGenerationCurrent(generation),
+      () => !this.retired && this.isGenerationCurrent(generation),
       this.subtitleManager.shouldSelectLatePrimary(),
     );
     if (!this.isGenerationCurrent(generation)) return result;
@@ -1467,9 +1455,7 @@ export class PersistentMpvSession {
       this.lastSkipTo = newSkipTo;
       this.ipcSession.sendUnchecked(["set_property", "user-data/kunai-skip-to", newSkipTo]);
     }
-    if (!activeSkip || !this.ipcSession || this.skippedSegments.has(activeSkip.key)) {
-      return false;
-    }
+    if (!activeSkip || !this.ipcSession || this.skippedSegments.has(activeSkip.key)) return false;
     this.skippedSegments.add(activeSkip.key);
     await this.ipcSession.send(["seek", activeSkip.endSeconds, "absolute"], 1_000);
     options.onPlaybackEvent?.({ type: "segment-skipped", kind: activeSkip.kind, automatic: true });
@@ -1708,9 +1694,9 @@ export class PersistentMpvSession {
 
       await this.releaseInitialConf();
       await this.closeIpcSession();
-      if (this.addonSubtitleFiles) {
-        const scope = this.addonSubtitleFiles;
-        this.addonSubtitleFiles = undefined;
+      if (this.ownedSubtitleFiles) {
+        const scope = this.ownedSubtitleFiles;
+        this.ownedSubtitleFiles = undefined;
         await scope.close();
       }
       await this.cleanupSocket();
@@ -2068,10 +2054,6 @@ export class PersistentMpvSession {
       }
     }
   }
-}
-
-function isSubtitleIpcCommand(command: string): boolean {
-  return command === "sub-add" || command === "sub-remove" || command === "sub-reload";
 }
 
 async function unlinkIfExists(path: string): Promise<void> {

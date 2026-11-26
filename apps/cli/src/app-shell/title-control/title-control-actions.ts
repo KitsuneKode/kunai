@@ -548,7 +548,7 @@ const SURFACE_ACTION_IDS: Record<TitleControlSurface, readonly TitleControlActio
   // rather than the session's current title, so only actions that can be
   // targeted at a row belong here. `play` is excluded because it shares the
   // `resume` shell action and the two would be indistinguishable on arrival.
-  history: ["resume", "download", "mark-watched", "mark-unwatched", "diagnostics"],
+  history: ["resume", "download", "mark-watched", "mark-unwatched", "share", "diagnostics"],
   // Episode navigation belongs here, not just on `playing`. This is an
   // allow-list, so omitting these filtered them out before `when()` ever ran:
   // opening the menu mid-resolve for a series showed only recovery actions and

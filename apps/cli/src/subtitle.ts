@@ -2,6 +2,7 @@
 // embedded API key. We capture the request URL, then fetch it ourselves so we
 // control language selection instead of relying on what the player auto-picks.
 
+import { subtitleTrackKey } from "@/domain/subtitle-track-identity";
 import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
 import { dbg, dbgErr } from "@/logger";
 import { observeOnlineIfBound } from "@/services/network/network-observation";
@@ -167,7 +168,7 @@ function entryMatchesAutomaticLanguage(
   return false;
 }
 
-export function mergeSubtitleTracks<T extends { url: string }>(
+export function mergeSubtitleTracks<T extends { url: string; language?: string }>(
   primary: readonly T[] | undefined,
   secondary: readonly T[] | undefined,
 ): T[] {
@@ -175,7 +176,7 @@ export function mergeSubtitleTracks<T extends { url: string }>(
   const order: string[] = [];
 
   const absorb = (track: T, preferExisting: boolean) => {
-    const key = normalizeSubtitleUrl(track.url);
+    const key = subtitleTrackKey(track);
     if (!key) return;
 
     const existing = merged.get(key);
@@ -386,7 +387,7 @@ function dedupeSubtitleEntries(list: readonly SubtitleEntry[]): SubtitleEntry[] 
   const merged = new Map<string, SubtitleEntry>();
   const order: string[] = [];
   for (const entry of list) {
-    const key = normalizeSubtitleUrl(entry.url);
+    const key = subtitleTrackKey(entry);
     if (!key) continue;
     const existing = merged.get(key);
     if (!existing) {
@@ -400,18 +401,6 @@ function dedupeSubtitleEntries(list: readonly SubtitleEntry[]): SubtitleEntry[] 
     );
   }
   return order.map((key) => merged.get(key)).filter((entry): entry is SubtitleEntry => !!entry);
-}
-
-export function normalizeSubtitleUrl(url: string): string {
-  const trimmed = url.trim();
-  try {
-    const parsed = new URL(trimmed);
-    parsed.search = "";
-    parsed.hash = "";
-    return parsed.toString();
-  } catch {
-    return trimmed.split("?")[0]?.split("#")[0] ?? trimmed;
-  }
 }
 
 function scoreSubtitleEntry(

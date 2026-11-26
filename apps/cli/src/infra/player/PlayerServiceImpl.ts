@@ -41,7 +41,7 @@ import { classifyMpvLaunchError } from "./mpv-launch-error";
 import { killActiveMpvProcessesSync as killRegisteredMpvProcesses } from "./mpv-process-registry";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
 import { normalizeStreamHttpHeaders } from "./mpv-stream-http-headers";
-import { PersistentMpvSession } from "./PersistentMpvSession";
+import { PersistentMpvSession, type PlayerCycleOptions } from "./PersistentMpvSession";
 import { PlaybackAbortedError } from "./playback-aborted";
 import {
   classifyPlaybackFailureFromEvent,
@@ -61,6 +61,8 @@ import type {
   PlayerPlaybackEventEnvelope,
   PlayerService,
 } from "./PlayerService";
+
+type PlaybackTargets = Pick<PlayerCycleOptions, "urlKind" | "subtitleUrlKind" | "subtitleMedia">;
 
 export class PlayerServiceImpl implements PlayerService {
   readonly capabilities = MANAGED_MPV_CAPABILITIES;
@@ -286,11 +288,10 @@ export class PlayerServiceImpl implements PlayerService {
     const presentation = this.deps.presentation ?? nonInteractivePlayerPresentation;
     if (!presentation.isInteractiveShellMounted()) {
       process.stderr.write(`Starting playback: ${options.displayTitle}\n`);
-      process.stderr.write(
-        playbackStream.subtitle
-          ? "Subtitle attached before playback.\n"
-          : `${options.subtitleStatus ?? "Subtitles not attached"}; playback will start without a subtitle file.\n`,
-      );
+      const subtitleStatus = playbackStream.subtitle
+        ? "Preparing subtitles."
+        : options.subtitleStatus;
+      if (subtitleStatus) process.stderr.write(`${subtitleStatus}\n`);
     }
 
     this.deps.logger.info("Launching MPV", {
@@ -338,21 +339,20 @@ export class PlayerServiceImpl implements PlayerService {
         playbackStream.subtitle && verifiedLocalSource?.subtitlePath === playbackStream.subtitle
           ? "local"
           : "remote";
+      const targets: PlaybackTargets = { urlKind, subtitleUrlKind, subtitleMedia: stream };
       const result =
         options.playbackMode === "autoplay-chain"
           ? await this.playAutoplayChainStream(
               playbackStream,
               options,
-              urlKind,
-              subtitleUrlKind,
+              targets,
               publish,
               retiredGeneration,
             )
           : await this.playOneShotStream(
               playbackStream,
               options,
-              urlKind,
-              subtitleUrlKind,
+              targets,
               publish,
               retiredGeneration,
             );
@@ -693,8 +693,7 @@ export class PlayerServiceImpl implements PlayerService {
   private async playOneShotStream(
     stream: StreamInfo,
     options: PlayerOptions,
-    urlKind: "remote" | "local",
-    subtitleUrlKind: "remote" | "local",
+    targets: PlaybackTargets,
     publish: (event: PlayerPlaybackEvent) => void,
     retiredGeneration: PlaybackGeneration | null,
   ): Promise<PlaybackResult> {
@@ -714,10 +713,9 @@ export class PlayerServiceImpl implements PlayerService {
       }
       return await (this.deps.launchMpv ?? launchMpv)({
         url: stream.url,
-        urlKind,
+        ...targets,
         headers: stream.headers ?? {},
         subtitle: stream.subtitle ?? null,
-        subtitleUrlKind,
         audioPreference: options.audioPreference,
         subtitlePreference: options.subtitlePreference,
         subtitleTracks: stream.subtitleList,
@@ -763,8 +761,7 @@ export class PlayerServiceImpl implements PlayerService {
   private async playAutoplayChainStream(
     stream: StreamInfo,
     options: PlayerOptions,
-    urlKind: "remote" | "local",
-    subtitleUrlKind: "remote" | "local",
+    targets: PlaybackTargets,
     publish: (event: PlayerPlaybackEvent) => void,
     retiredGeneration: PlaybackGeneration | null,
   ): Promise<PlaybackResult> {
@@ -783,8 +780,7 @@ export class PlayerServiceImpl implements PlayerService {
 
     const sharedOptions = {
       displayTitle: options.displayTitle,
-      urlKind,
-      subtitleUrlKind,
+      ...targets,
       audioPreference: options.audioPreference,
       subtitlePreference: options.subtitlePreference,
       primarySubtitle: stream.subtitle ?? null,
