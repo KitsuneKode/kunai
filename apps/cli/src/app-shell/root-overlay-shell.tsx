@@ -42,6 +42,7 @@ import {
 import { buildUiDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 import { readCatalogBoundsForHistoryEntries } from "@/services/history-metadata/history-catalog-seed";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
+import { createNotificationDownloadRetry } from "@/services/notifications/notification-download-retry";
 import {
   NotificationActionRouter,
   type NotificationActionId,
@@ -200,6 +201,7 @@ import {
   isRootMediaPickerOverlay,
 } from "./root-overlay-model";
 import {
+  alignSessionForQueueLaunch,
   episodeInfoFromQueuePlaybackLaunch,
   hasPendingRootQueueSelection,
   resolveQueueRowPlaySelection,
@@ -694,9 +696,7 @@ export function RootOverlayShell({
     setTracksNav((prev) => {
       const group = tracksPanelGroups[prev.sectionIndex];
       const maxIndex = (group?.rows.length ?? 1) - 1;
-      if (prev.optionIndex > maxIndex && maxIndex >= 0) {
-        return { ...prev, optionIndex: maxIndex };
-      }
+      if (prev.optionIndex > maxIndex && maxIndex >= 0) return { ...prev, optionIndex: maxIndex };
       return prev;
     });
   }, [tracksPanelGroups]);
@@ -743,6 +743,9 @@ export function RootOverlayShell({
     readonly actionId: NotificationActionId;
   } | null>(null);
   const [historySourceChoiceTitleId, setHistorySourceChoiceTitleId] = useState<string | null>(null);
+  // Keyed to this overlay instance, so a fresh History open starts unfocused.
+  const [historyFilterOwner, setHistoryFilterOwner] = useState<object | null>(null);
+  const historyFilterFocused = historyFilterOwner === overlay;
   const [historyPendingDelete, setHistoryPendingDelete] = useState<HistoryDeletePending | null>(
     null,
   );
@@ -1242,9 +1245,7 @@ export function RootOverlayShell({
   // inbox opened by direct dispatch can strand one; without this it would fire
   // against the next palette-opened session and play the wrong title.
   useEffect(() => {
-    if (overlay.type !== "history") {
-      return;
-    }
+    if (overlay.type !== "history") return;
 
     let cancelled = false;
     setHistoryError(null);
@@ -1267,9 +1268,7 @@ export function RootOverlayShell({
         return undefined;
       })
       .catch((error: unknown) => {
-        if (!cancelled) {
-          setHistoryError(error instanceof Error ? error.message : String(error));
-        }
+        if (!cancelled) setHistoryError(error instanceof Error ? error.message : String(error));
       })
       .finally(() => {
         if (!cancelled) {
@@ -1305,6 +1304,7 @@ export function RootOverlayShell({
     setNotificationsState((current) => ({ ...current, selectedDedupKey: dedupKey }));
 
     const router = new NotificationActionRouter({
+      downloads: createNotificationDownloadRetry(container.downloadService),
       playlist: {
         // Restore through the shared path so a notification-driven restore gets
         // the same resume head as the overlay's `r` key.
@@ -1569,6 +1569,7 @@ export function RootOverlayShell({
       return;
     }
     if (played.status === "claimed" && !awaited) {
+      alignSessionForQueueLaunch(container, played.launch);
       const episode = episodeInfoFromQueuePlaybackLaunch(played.launch);
       const launchTitle = titleInfoFromQueuePlaybackLaunch(played.launch);
       forceCloseRootContent<BrowseShellResult<SearchResult>>(
@@ -1580,13 +1581,7 @@ export function RootOverlayShell({
   };
 
   useInput((input, key) => {
-    if (commandMode) {
-      return;
-    }
-
-    if (overlay.type === "settings") {
-      return;
-    }
+    if (commandMode || overlay.type === "settings") return;
 
     const cancelActive = isOverlayCancelActive({
       overlay,
@@ -1689,9 +1684,7 @@ export function RootOverlayShell({
         return;
       }
       if (key.return) {
-        if (Date.now() < tracksFrozenUntil) {
-          return;
-        }
+        if (Date.now() < tracksFrozenUntil) return;
         if (tracksNav.focusedPane === "sections") {
           setTracksNav((nav) => tracksPanelNavReducer(nav, { type: "enter-section" }, navCtx));
           return;
@@ -1711,6 +1704,7 @@ export function RootOverlayShell({
       }
       return;
     }
+    if (key.escape && historyFilterFocused && !filterQuery) return setHistoryFilterOwner(null);
     if (key.escape) {
       const backAction = resolveOverlayBackStack({
         cancelActive: shouldHandleOverlayEscape({
@@ -1736,6 +1730,7 @@ export function RootOverlayShell({
           });
         } else {
           setFilterQuery("");
+          setHistoryFilterOwner(null);
           setSelectedIndex(0);
         }
         return;
@@ -1765,9 +1760,7 @@ export function RootOverlayShell({
         return;
       }
 
-      if (backAction === "defer-to-surface" || backAction === "no-op") {
-        return;
-      }
+      if (backAction === "defer-to-surface" || backAction === "no-op") return;
 
       cancelRootOverlay(overlay, container.stateManager);
       return;
@@ -1790,6 +1783,9 @@ export function RootOverlayShell({
           onRedraw,
           pendingDelete: historyPendingDelete,
           setPendingDelete: setHistoryPendingDelete,
+          filterQuery,
+          filterFocused: historyFilterFocused,
+          setFilterFocused: (focused) => setHistoryFilterOwner(focused ? overlay : null),
           onHistoryMutated,
           onConfirmSelection: (selection, options) => {
             if (selection) {

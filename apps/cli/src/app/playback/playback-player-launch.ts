@@ -439,7 +439,7 @@ export async function playEpisode(
               episode: currentEpisode.episode,
               provider: attempt.resolvedProviderId,
             }),
-          acknowledgeQueue: () => queueAttempt?.acknowledgeStarted(),
+          acknowledgeQueue: () => queueAttempt?.acknowledgeStarted(undefined, currentEpisode),
         });
       },
       localPlaybackSource: run.localPlaybackSource ?? undefined,

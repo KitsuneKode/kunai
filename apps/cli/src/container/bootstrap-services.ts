@@ -19,6 +19,7 @@ import type { PlayerPresentationPort } from "../infra/player/player-presentation
 import { PlayerControlServiceImpl } from "../infra/player/PlayerControlServiceImpl";
 import { PlayerServiceImpl } from "../infra/player/PlayerServiceImpl";
 import { WorkControlServiceImpl } from "../infra/work/WorkControlServiceImpl";
+import { filePingLog, pingLogPath } from "../services/analytics/ping-log";
 import {
   resolveAnalyticsEndpoint,
   UsageAnalyticsService,
@@ -231,6 +232,7 @@ export function bootstrapServices(input: {
       notificationService.recordSignals([
         {
           type: "download-failed",
+          downloadJobId: job.id,
           titleId: job.titleId,
           mediaKind: job.mediaKind,
           contentType: job.contentType,
@@ -515,6 +517,7 @@ export function bootstrapServices(input: {
     config,
     currentVersion: options?.appVersion ?? "0.0.0",
     endpoint: resolveAnalyticsEndpoint(process.env, config.getRaw().analyticsEndpoint),
+    pingLog: filePingLog(pingLogPath(persistence.paths.dataDir)),
   });
 
   return {

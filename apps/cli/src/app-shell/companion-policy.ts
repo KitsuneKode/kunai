@@ -94,6 +94,7 @@ export function companionMode(
   if (!capability.available) return "glyph";
 
   return capability.renderer === "kitty-native" ||
+    capability.renderer === "kitty-direct" ||
     capability.renderer === "iterm-inline" ||
     capability.renderer === "sixel"
     ? "graphics"

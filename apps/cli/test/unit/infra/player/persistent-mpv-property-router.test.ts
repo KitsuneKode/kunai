@@ -69,6 +69,7 @@ describe("PersistentMpvPropertyRouter", () => {
       notifyMpvActionRequest: () => {},
       finishResumeChoiceWait: () => {},
       handleResumeSeekFromMpv: async () => {},
+      notifyMpvKeyRequest: () => {},
       handleCopyShareFromMpv: async () => {},
       onSkipRequestFromMpv: async () => {},
       setCurrentPositionSeconds: () => {},
@@ -100,6 +101,7 @@ describe("PersistentMpvPropertyRouter", () => {
       notifyMpvActionRequest: (action) => actions.push(action),
       finishResumeChoiceWait: () => {},
       handleResumeSeekFromMpv: async () => {},
+      notifyMpvKeyRequest: () => {},
       handleCopyShareFromMpv: async () => {},
       onSkipRequestFromMpv: async () => {},
       setCurrentPositionSeconds: () => {},
@@ -142,6 +144,44 @@ describe("PersistentMpvPropertyRouter", () => {
     expect(actions).toEqual(["pick-quality", "pick-source", "cycle-source", "cycle-audio"]);
   });
 
+  test("forwards key:<binding id> help-key requests and ignores malformed ones", () => {
+    const { ipc, commands } = createFakeIpc();
+    const keys: string[] = [];
+    const router = new PersistentMpvPropertyRouter({
+      getActiveCycle: () => null,
+      getIpcSession: () => ipc,
+      getCurrentOptions: () => ({ displayTitle: "Episode", primarySubtitle: null }),
+      subtitleManager: new PersistentSubtitleManager(),
+      notifyMpvActionRequest: () => {},
+      finishResumeChoiceWait: () => {},
+      handleResumeSeekFromMpv: async () => {},
+      notifyMpvKeyRequest: (id) => keys.push(id),
+      handleCopyShareFromMpv: async () => {},
+      onSkipRequestFromMpv: async () => {},
+      setCurrentPositionSeconds: () => {},
+      maybeRearmSkippedSegmentsOnBackwardSeek: () => {},
+      getCurrentPositionSeconds: () => 0,
+      maybeEmitPlaybackProgress: () => {},
+      handleSegmentSkipProgress: async () => {},
+      fireNearEofIfNeeded: () => {},
+      observeWatchdog: () => {},
+    });
+
+    router.handlePropertyUpdate({
+      name: "user-data/kunai-request",
+      value: "key:player-autoplay",
+      observedAt: 1,
+    });
+    router.handlePropertyUpdate({
+      name: "user-data/kunai-request",
+      value: "key:../../etc",
+      observedAt: 2,
+    });
+
+    expect(keys).toEqual(["player-autoplay"]);
+    expect(commands).toContainEqual(["set_property", "user-data/kunai-request", ""]);
+  });
+
   test("accepts playback samples, updates position, and emits ready/start progress hooks", async () => {
     const events: unknown[] = [];
     let currentPosition = 0;
@@ -162,6 +202,7 @@ describe("PersistentMpvPropertyRouter", () => {
       notifyMpvActionRequest: () => {},
       finishResumeChoiceWait: () => {},
       handleResumeSeekFromMpv: async () => {},
+      notifyMpvKeyRequest: () => {},
       handleCopyShareFromMpv: async () => {},
       onSkipRequestFromMpv: async () => {},
       setCurrentPositionSeconds: (value) => {
@@ -227,6 +268,7 @@ describe("PersistentMpvPropertyRouter", () => {
         notifyMpvActionRequest: () => {},
         finishResumeChoiceWait: () => {},
         handleResumeSeekFromMpv: async () => {},
+        notifyMpvKeyRequest: () => {},
         handleCopyShareFromMpv: async () => {},
         onSkipRequestFromMpv: async () => {},
         setCurrentPositionSeconds: (value) => {
@@ -361,6 +403,7 @@ describe("PersistentMpvPropertyRouter", () => {
       notifyMpvActionRequest: () => {},
       finishResumeChoiceWait: () => {},
       handleResumeSeekFromMpv: async () => {},
+      notifyMpvKeyRequest: () => {},
       handleCopyShareFromMpv: async () => {
         copied = true;
       },
@@ -400,6 +443,7 @@ describe("PersistentMpvPropertyRouter", () => {
       notifyMpvActionRequest: () => {},
       finishResumeChoiceWait: () => {},
       handleResumeSeekFromMpv: async () => {},
+      notifyMpvKeyRequest: () => {},
       handleCopyShareFromMpv: async () => {},
       onSkipRequestFromMpv: async () => {},
       setCurrentPositionSeconds: () => {},

@@ -22,7 +22,7 @@
   },
   "scripts": {
     "typecheck": "bun tsc --noEmit",
-    "lint": "oxlint .",
+    "lint": "oxlint --deny-warnings .",
     "fmt": "oxfmt --write .",
     "fmt:check": "oxfmt --check .",
     "test": "bun test test",

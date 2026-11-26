@@ -2,10 +2,16 @@ import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { KunaiPaths } from "@kunai/storage";
+import type { JsonValue } from "@kunai/types";
 
 import { dbg } from "../../logger";
 import { CREDENTIAL_KEYS, type CredentialVaultPort } from "./credential-vault";
-import type { SyncTokenFileIo, SyncTokens } from "./SyncTokenStore";
+import {
+  assertStorableSyncTokens,
+  parseSyncTokenDocument,
+  type SyncTokenFileIo,
+  validSyncTokens,
+} from "./SyncTokenStore";
 
 /**
  * `SyncTokenFileIo` over the credential vault: each tracker is one vault entry
@@ -23,22 +29,25 @@ export function vaultSyncTokenFileIo(vault: CredentialVaultPort): SyncTokenFileI
         vault.get(CREDENTIAL_KEYS.anilistTokens),
         vault.get(CREDENTIAL_KEYS.tmdbTokens),
       ]);
-      const tokens: { anilist?: unknown; tmdb?: unknown } = {};
+      const document: Record<string, JsonValue> = {};
       for (const [slot, raw] of [
         ["anilist", anilist],
         ["tmdb", tmdb],
       ] as const) {
         if (typeof raw !== "string" || !raw) continue;
         try {
-          tokens[slot] = JSON.parse(raw);
+          document[slot] = JSON.parse(raw);
         } catch {
           // A corrupted vault entry reads as absent — the tracker's reconnect
           // flow handles a missing token; a parse throw must not wedge boot.
         }
       }
-      return tokens as SyncTokens;
+      // A parsed entry with the wrong shape also reads as absent, on its own:
+      // the other tracker's valid entry is still returned.
+      return validSyncTokens(document);
     },
     async writeTokens(_path, tokens) {
+      assertStorableSyncTokens(tokens);
       const jobs: Promise<void>[] = [];
       for (const [slot, key] of [
         ["anilist", CREDENTIAL_KEYS.anilistTokens],
@@ -50,6 +59,7 @@ export function vaultSyncTokenFileIo(vault: CredentialVaultPort): SyncTokenFileI
       await Promise.all(jobs);
     },
     async patchTokens(_path, patch) {
+      assertStorableSyncTokens(patch);
       for (const [slot, key] of [
         ["anilist", CREDENTIAL_KEYS.anilistTokens],
         ["tmdb", CREDENTIAL_KEYS.tmdbTokens],
@@ -78,19 +88,25 @@ export async function migrateSyncTokensToVault(options: {
 }): Promise<void> {
   if (options.vault.backend === "file") return; // file backend gains nothing
   const file = join(options.paths.configDir, "sync-tokens.json");
-  let plaintext: SyncTokens;
+  let raw: string;
   try {
-    plaintext = JSON.parse(await readFile(file, "utf8")) as SyncTokens;
+    raw = await readFile(file, "utf8");
   } catch {
     return; // absent or unreadable — nothing to migrate
   }
+  const plaintext = parseSyncTokenDocument(raw);
+  if (!plaintext) return; // not a JSON object: leave it for the store's quarantine
+  // Only a record that passes its shape check moves. An invalid one stays in
+  // the plaintext file, so nothing unusable is ever written to the vault.
+  const valid = validSyncTokens(plaintext);
+  const remaining: Record<string, JsonValue> = { ...plaintext };
 
   let migrated = false;
   for (const [slot, key] of [
     ["anilist", CREDENTIAL_KEYS.anilistTokens],
     ["tmdb", CREDENTIAL_KEYS.tmdbTokens],
   ] as const) {
-    const value = plaintext[slot];
+    const value = valid[slot];
     if (!value) continue;
     const blob = JSON.stringify(value);
     try {
@@ -100,7 +116,7 @@ export async function migrateSyncTokensToVault(options: {
         continue;
       }
       // Only now may the plaintext go.
-      delete (plaintext as Record<string, unknown>)[slot];
+      delete remaining[slot];
       migrated = true;
     } catch {
       dbg("credential-vault", `vault write failed for ${key}; plaintext kept`);
@@ -108,11 +124,11 @@ export async function migrateSyncTokensToVault(options: {
   }
 
   if (!migrated) return;
-  if (!plaintext.anilist && !plaintext.tmdb) {
+  if (Object.keys(remaining).length === 0) {
     await rm(file, { force: true }).catch(() => {});
   } else {
     // Partial migration — rewrite the file with only what didn't move.
     const { writeAtomicSecretJson } = await import("../../infra/fs/atomic-write");
-    await writeAtomicSecretJson(file, plaintext).catch(() => {});
+    await writeAtomicSecretJson(file, remaining).catch(() => {});
   }
 }

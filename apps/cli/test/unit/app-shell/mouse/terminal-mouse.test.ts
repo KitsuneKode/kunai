@@ -5,6 +5,7 @@ import {
   MOUSE_TRACKING_ENABLE,
   parseSgrMouseSequence,
   splitMouseSequences,
+  splitOrderedMouseSequences,
 } from "../../../../src/app-shell/mouse/terminal-mouse";
 
 describe("parseSgrMouseSequence", () => {
@@ -115,5 +116,24 @@ describe("splitMouseSequences", () => {
   test("tracking sequences are reversible ANSI toggles", () => {
     expect(MOUSE_TRACKING_ENABLE).toBe("\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h");
     expect(MOUSE_TRACKING_DISABLE).toBe("\x1b[?1006l\x1b[?1003l\x1b[?1002l\x1b[?1000l");
+  });
+});
+
+describe("late Kitty graphics replies", () => {
+  const ESC = String.fromCharCode(27);
+  const reply = `${ESC}_Gi=31,e=T,U=1;OK${ESC}\\`;
+
+  test("a complete reply never reaches Ink as typed text", () => {
+    const { parts, pendingTail } = splitOrderedMouseSequences(`j${reply}k`);
+    expect(parts).toEqual([{ kind: "input", input: "jk" }]);
+    expect(pendingTail).toBe("");
+  });
+
+  test("a reply split across chunks is held, then dropped whole", () => {
+    const first = splitOrderedMouseSequences(`j${reply.slice(0, 9)}`);
+    expect(first.parts).toEqual([{ kind: "input", input: "j" }]);
+    expect(first.pendingTail).toBe(reply.slice(0, 9));
+    const second = splitOrderedMouseSequences(`${first.pendingTail}${reply.slice(9)}k`);
+    expect(second.parts).toEqual([{ kind: "input", input: "k" }]);
   });
 });

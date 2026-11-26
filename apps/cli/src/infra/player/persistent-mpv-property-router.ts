@@ -44,6 +44,8 @@ export type PersistentMpvPropertyRouterDeps = {
   finishResumeChoiceWait(choice: "resume" | "start"): void;
   handleResumeSeekFromMpv(): Promise<void>;
   handleCopyShareFromMpv(): Promise<void>;
+  /** A help-key press in the mpv window, by keybinding id (`key:<id>`). */
+  notifyMpvKeyRequest(bindingId: string): void;
   onSkipRequestFromMpv(automatic: boolean): Promise<void>;
   getCurrentPositionSeconds(): number;
   setCurrentPositionSeconds(value: number): void;
@@ -203,6 +205,8 @@ export class PersistentMpvPropertyRouter {
       this.deps.notifyMpvActionRequest(action);
     } else if (req === "resume-seek") {
       void this.deps.handleResumeSeekFromMpv();
+    } else if (req.startsWith("key:") && /^[a-z-]{1,64}$/.test(req.slice(4))) {
+      this.deps.notifyMpvKeyRequest(req.slice(4));
     } else if (req === "copy-share") {
       void this.deps.handleCopyShareFromMpv();
     } else if (req === "skip" || req === "auto-skip") {

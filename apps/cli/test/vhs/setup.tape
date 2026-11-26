@@ -19,9 +19,9 @@ Enter
 Show
 
 Sleep 600ms
-Type "bun run dev -- --setup"
+Type "./test/vhs/isolated-kunai.sh --setup"
 Enter
-Wait+Screen /Terminal-first streaming/
+Wait+Screen /get you watching/
 Sleep 1400ms
 
 # welcome -> system -> prefs-audio -> prefs-subtitle -> downloads -> tips

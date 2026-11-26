@@ -26,7 +26,7 @@ import {
 import { isLocalHlsManifestPlaybackUrl } from "@/infra/player/mpv-playback-url";
 import {
   isAllowedMpvUrl,
-  needsMpvNetworkPreflight,
+  isLocalSubtitlePath,
   type MpvUrlKind,
 } from "@/infra/player/mpv-playback-url";
 import {
@@ -40,6 +40,7 @@ import { shouldApplyStartAtSeek } from "@/infra/player/mpv-start-seek";
 import {
   DEFAULT_MPV_YTDL_FORMAT,
   composeDemuxerLavfOptions,
+  guardedYtdlRawOptions,
   LIVE_DEMUXER_LAVF_OPTIONS,
   LIVE_DEMUXER_OPTIONS,
   LOCAL_HLS_DEMUXER_LAVF_OPTIONS,
@@ -57,12 +58,8 @@ import {
 export { shouldApplyStartAtSeek };
 export { isLocalHlsManifestPlaybackUrl } from "@/infra/player/mpv-playback-url";
 export { isAllowedMpvUrl, type MpvUrlKind } from "@/infra/player/mpv-playback-url";
-import {
-  AddonSubtitleFiles,
-  prepareLaunchSubtitles,
-  resolvePlayerSubtitle,
-} from "@/infra/player/addon-subtitle-files";
 import { MpvLaunchError } from "@/infra/player/mpv-launch-error";
+import { launchPreflight, type ResolveGateStream } from "@/infra/player/mpv-launch-preflight";
 import {
   applyEndFileEvent,
   applyObservedPropertySample,
@@ -72,6 +69,11 @@ import {
   noteTrustedSeek,
   recordPlayerExit,
 } from "@/infra/player/mpv-stats";
+import {
+  allowedLaunchSubtitleFiles,
+  collectAdditionalSubtitleTracks,
+  describeSubtitleTrackForMpv,
+} from "@/infra/player/mpv-subtitle-tracks";
 import { PlaybackAbortedError } from "@/infra/player/playback-aborted";
 import {
   createPlaybackOutputDriver,
@@ -82,15 +84,25 @@ import { createPlaybackWatchdog } from "@/infra/player/playback-watchdog";
 import type { ActivePlayerControl } from "@/infra/player/PlayerControlService";
 import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 import type { LateSubtitleAttachment } from "@/infra/player/PlayerService";
+import {
+  SubtitleFiles,
+  prepareLaunchSubtitles,
+  type SubtitleMediaRequest,
+  resolvePlayerSubtitle,
+} from "@/infra/player/subtitle-files";
 import { removeMpvChaptersFile, writeMpvChaptersFile } from "@/infra/timing";
 import { dbg } from "@/logger";
 import {
   checkStremioPlaybackPreflight,
-  checkStreamPreflight,
   shouldAbortPlaybackForPreflight,
 } from "@/services/playback/stream-health-check";
 import type { StreamPreflightResult } from "@/services/playback/stream-health-check";
-import { normalizeSubtitleUrl } from "@/subtitle";
+
+export {
+  collectAdditionalSubtitleTracks,
+  collectLaunchSubtitleFiles,
+  describeSubtitleTrackForMpv,
+} from "@/infra/player/mpv-subtitle-tracks";
 
 export async function launchMpv(opts: {
   url: string;
@@ -98,14 +110,15 @@ export async function launchMpv(opts: {
   headers: Record<string, string>;
   subtitle: string | null;
   subtitleUrlKind?: MpvUrlKind;
+  subtitleMedia?: SubtitleMediaRequest;
   audioPreference?: string;
   subtitlePreference?: string;
   subtitleTracks?: readonly SubtitleTrack[];
-  /** Local files owned by the addon subtitle guard; argv treats them as local. */
-  localSubtitlePaths?: ReadonlySet<string>;
   displayTitle: string;
   startAt?: number;
   requiresYtdl?: boolean;
+  /** The resolved stream: what its gate proved, and when. A fresh pass skips the launch probe. */
+  resolveGate?: ResolveGateStream;
   ytdlFormat?: string;
   ytdlRawOptions?: string;
   isLive?: boolean;
@@ -141,10 +154,10 @@ export async function launchMpv(opts: {
     }
   }
 
-  // One guard scope per launch: addon subtitle URLs become owned local files
-  // before argv is built and before the media preflight — mpv never sees a
-  // remote addon subtitle.
-  const subtitleFiles = new AddonSubtitleFiles();
+  const subtitleFiles = new SubtitleFiles(
+    undefined,
+    opts.stremioAddon ? undefined : (opts.subtitleMedia ?? opts),
+  );
   try {
     const mpvInvocation = discoverMpvInvocation();
     if (!mpvInvocation) {
@@ -160,16 +173,9 @@ export async function launchMpv(opts: {
       hdrCapability !== null
         ? { ...opts.mpv, supportsGpuNext: hdrCapability.supportsGpuNext }
         : opts.mpv;
-    const launchSubs = await prepareLaunchSubtitles(
-      {
-        subtitle: opts.subtitle,
-        subtitleTracks: opts.subtitleTracks,
-        subtitleUrlKind: opts.subtitleUrlKind,
-        stremioAddon: opts.stremioAddon,
-        abortSignal: opts.abortSignal,
-      },
-      subtitleFiles,
-    );
+    const launchSubs = await prepareLaunchSubtitles(opts, subtitleFiles);
+    if (opts.abortSignal?.aborted)
+      throw new PlaybackAbortedError("playback aborted before mpv launch");
     const launchOpts = { ...opts, ...launchSubs };
     const sensitiveConf = await writeMpvSensitiveConf(launchOpts, ipcEndpoint);
     const args = buildMpvArgs({ ...launchOpts, chaptersFile }, ipcServerCliArg(ipcEndpoint), {
@@ -259,17 +265,10 @@ async function launchMpvInner(
   ipcEndpoint: ReturnType<typeof createMpvIpcEndpoint>,
   stats: ReturnType<typeof createPlayerStatsState>,
   emitPlaybackEvent: (event: PlayerPlaybackEvent) => void,
-  subtitleFiles: AddonSubtitleFiles,
+  subtitleFiles: SubtitleFiles,
 ): Promise<PlaybackResult> {
-  const resolveSubtitle = (url: string, track?: SubtitleTrack) =>
-    resolvePlayerSubtitle(
-      url,
-      "remote",
-      Boolean(opts.stremioAddon),
-      track,
-      subtitleFiles,
-      opts.abortSignal,
-    );
+  const resolveSubtitle = (url: string) =>
+    resolvePlayerSubtitle(url, "remote", subtitleFiles, opts.abortSignal);
   let ipcSession: MpvIpcSession | null = null;
   let endFileResolve: ((reason: string | undefined) => void) | null = null;
   const endFileReceived = new Promise<string | undefined>((resolve) => {
@@ -417,25 +416,17 @@ async function launchMpvInner(
     signal: mpv.killed ? ("SIGTERM" as NodeJS.Signals) : null,
   }));
 
-  const preflight = // Addon streams already passed the strict pre-spawn check; the lenient
-    // concurrent probe would only duplicate it.
-    (
-      opts.stremioAddon || !needsMpvNetworkPreflight(opts.url, opts.urlKind)
-        ? Promise.resolve<StreamPreflightResult>({ status: "reachable" })
-        : checkStreamPreflight(opts.url, opts.headers, 3_000, {
-            requiresYtdl: opts.requiresYtdl,
-          })
-    ).then((result) => {
-      if (shouldAbortLaunchForDefinitivePreflight(result, ipcSession !== null)) {
-        dbg("mpv", "preflight-definitive-failure", {
-          reason: result.reason,
-          phase: "launch",
-          ipcConnected: ipcSession !== null,
-        });
-        mpv.kill("SIGTERM");
-      }
-      return result;
-    });
+  const preflight = launchPreflight(opts).then((result) => {
+    if (shouldAbortLaunchForDefinitivePreflight(result, ipcSession !== null)) {
+      dbg("mpv", "preflight-definitive-failure", {
+        reason: result.reason,
+        phase: "launch",
+        ipcConnected: ipcSession !== null,
+      });
+      mpv.kill("SIGTERM");
+    }
+    return result;
+  });
 
   const ipcBootstrap = (async () => {
     const ipcBootstrapStarted = Date.now();
@@ -651,8 +642,8 @@ export function collectSensitiveMpvOptions(opts: {
   if (headerFields.length > 0) {
     lines.push(`http-header-fields=${headerFields.join(",")}`);
   }
-  if (opts.ytdlRawOptions?.trim() && (isYoutubeWatchUrl(opts.url) || opts.requiresYtdl)) {
-    lines.push(`ytdl-raw-options=${opts.ytdlRawOptions.trim()}`);
+  if (isYoutubeWatchUrl(opts.url) || opts.requiresYtdl) {
+    lines.push(`ytdl-raw-options=${guardedYtdlRawOptions(opts.ytdlRawOptions)}`);
   }
   return lines;
 }
@@ -731,7 +722,7 @@ export function buildMpvArgs(
     isLive?: boolean;
     /** Stremio addon file: confine this file's network behavior via `--{ ... --}`. */
     stremioAddon?: boolean;
-    /** Local subtitle files owned by the addon subtitle guard. */
+    /** Local subtitle files owned by this playback. */
     localSubtitlePaths?: ReadonlySet<string>;
     chaptersFile?: string | null;
   },
@@ -975,88 +966,6 @@ export function buildMpvArgs(
   return args;
 }
 
-export function collectAdditionalSubtitleTracks(
-  primarySubtitle: string | null,
-  subtitleTracks?: readonly SubtitleTrack[],
-): SubtitleTrack[] {
-  const collected: SubtitleTrack[] = [];
-  const seen = new Set<string>();
-  if (primarySubtitle) {
-    seen.add(normalizeSubtitleUrl(primarySubtitle));
-  }
-  for (const track of subtitleTracks ?? []) {
-    const key = normalizeSubtitleUrl(track.url);
-    if (!track.url || seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    collected.push(track);
-  }
-  return collected;
-}
-
-export function collectLaunchSubtitleFiles(
-  primarySubtitle: string | null,
-  subtitleTracks?: readonly SubtitleTrack[],
-): string[] {
-  const files: string[] = [];
-  if (primarySubtitle) {
-    files.push(primarySubtitle);
-  }
-  for (const track of collectAdditionalSubtitleTracks(primarySubtitle, subtitleTracks)) {
-    files.push(track.url);
-  }
-  return files;
-}
-
-function allowedLaunchSubtitleFiles(opts: {
-  subtitle: string | null;
-  subtitleUrlKind?: MpvUrlKind;
-  subtitleTracks?: readonly SubtitleTrack[];
-  /** Paths owned by the addon subtitle guard; argv treats them as local. */
-  localSubtitlePaths?: ReadonlySet<string>;
-  /** Addon playback accepts only localized subtitle files — never a raw URL. */
-  stremioAddon?: boolean;
-}): string[] {
-  const allowed: string[] = [];
-  for (const file of collectLaunchSubtitleFiles(opts.subtitle, opts.subtitleTracks)) {
-    const kind = opts.localSubtitlePaths?.has(file)
-      ? "local"
-      : file === opts.subtitle
-        ? (opts.subtitleUrlKind ?? "remote")
-        : "remote";
-    // Standalone callers that skip the preparer must not reach argv either.
-    const guarded =
-      opts.stremioAddon ||
-      opts.subtitleTracks?.some((track) => track.url === file && track.guardedAddon);
-    if ((opts.stremioAddon && kind !== "local") || (guarded && isAllowedMpvUrl(file, "remote"))) {
-      dbg("mpv", "subtitle-target-rejected", { delivery: "launch" });
-      continue;
-    }
-    if (isAllowedMpvUrl(file, kind)) {
-      allowed.push(file);
-    } else {
-      dbg("mpv", "subtitle-target-rejected", { delivery: "launch" });
-    }
-  }
-  return allowed;
-}
-
-export function describeSubtitleTrackForMpv(
-  url: string,
-  subtitleTracks?: readonly SubtitleTrack[],
-): { title: string; language: string } {
-  const key = normalizeSubtitleUrl(url);
-  const match = subtitleTracks?.find((track) => normalizeSubtitleUrl(track.url) === key);
-  const language = match?.language?.trim() ?? "";
-  const title =
-    match?.display?.trim() ||
-    [language || null, match?.sourceName?.trim() || null, match?.sourceKind || null]
-      .filter((part): part is string => Boolean(part))
-      .join(" ");
-  return { title, language };
-}
-
 async function unlinkIfExists(path: string): Promise<void> {
   if (!existsSync(path)) return;
   await unlink(path).catch(() => {});
@@ -1081,26 +990,19 @@ export async function attachLateSubtitles(
   ipcSession: MpvIpcSession | null,
   attachment: LateSubtitleAttachment,
   onAttached?: (trackCount: number) => void,
-  resolveSubtitle?: (url: string, track?: SubtitleTrack) => Promise<string | null>,
+  resolveSubtitle?: (url: string) => Promise<string | null>,
 ): Promise<number> {
   if (!ipcSession) return 0;
   let attached = 0;
   // Metadata and dedup stay on the original URLs; a resolver decides what mpv
   // receives and `null` skips the track — there is no raw-URL fallback.
   const primarySubtitle = attachment.primarySubtitle
-    ? resolveSubtitle
-      ? await resolveSubtitle(
-          attachment.primarySubtitle,
-          attachment.subtitleTracks?.find((track) => track.url === attachment.primarySubtitle),
-        )
-      : isAllowedMpvUrl(attachment.primarySubtitle, "remote")
-        ? attachment.primarySubtitle
-        : null
+    ? await resolveSubtitle?.(attachment.primarySubtitle)
     : null;
   if (attachment.primarySubtitle && !primarySubtitle) {
     dbg("mpv", "subtitle-target-rejected", { delivery: "late-primary" });
   }
-  if (primarySubtitle) {
+  if (primarySubtitle && isLocalSubtitlePath(primarySubtitle)) {
     const primary = describeSubtitleTrackForMpv(
       attachment.primarySubtitle ?? "",
       attachment.subtitleTracks,
@@ -1119,12 +1021,8 @@ export async function attachLateSubtitles(
     attachment.primarySubtitle ?? null,
     attachment.subtitleTracks,
   )) {
-    const resolved = resolveSubtitle
-      ? await resolveSubtitle(track.url, track)
-      : isAllowedMpvUrl(track.url, "remote")
-        ? track.url
-        : null;
-    if (!resolved) {
+    const resolved = await resolveSubtitle?.(track.url);
+    if (!resolved || !isLocalSubtitlePath(resolved)) {
       dbg("mpv", "subtitle-target-rejected", { delivery: "late-additional" });
       continue;
     }

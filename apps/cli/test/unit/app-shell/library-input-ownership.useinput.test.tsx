@@ -649,6 +649,35 @@ describe("library pointer ownership", () => {
     },
   );
 
+  // Neon features review #8: a title's detail had no tap targets, so a touch
+  // user who opened one could neither act nor get back.
+  test("a title's detail has tappable rows and a tappable way back", async () => {
+    const handle = renderWithPointer(<LibraryShell container={fixture()} onClose={() => {}} />, {
+      columns: 100,
+      rows: 40,
+    });
+    try {
+      await act(async () => {
+        await Promise.resolve();
+      });
+      const title = handle.dispatcher.debugRegions().find((r) => r.id.startsWith("library:row:"));
+      if (!title) throw new Error("Expected a library title");
+      handle.click(title.id);
+      handle.click(title.id);
+      expect(stripAnsi(handle.lastFrame())).toContain("Continue this title online");
+
+      const regions = handle.dispatcher.debugRegions().map((r) => r.id);
+      expect(regions.some((id) => id.startsWith("library-detail:row:"))).toBe(true);
+      expect(regions).toContain("library-detail:action:search-online");
+
+      handle.click("library-detail:back");
+      expect(stripAnsi(handle.lastFrame())).not.toContain("Continue this title online");
+      expect(handle.dispatcher.debugRegions().some((r) => r.id === title.id)).toBe(true);
+    } finally {
+      handle.unmount();
+    }
+  });
+
   test.each(["keyboard", "wheel"])(
     "%s clears prior pointer intent on the same Library row",
     async (owner) => {

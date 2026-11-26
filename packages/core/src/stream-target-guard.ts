@@ -195,6 +195,8 @@ export async function fetchProbeTarget(options: {
   readonly resolveAddresses?: (host: string) => Promise<readonly string[]>;
   /** `false` returns the redirect response instead of following Location. */
   readonly followRedirects?: boolean;
+  /** Drop even transport hints on a cross-origin redirect. */
+  readonly omitCrossOriginHeaders?: boolean;
 }): Promise<ProbeFetchOutcome> {
   // One signal for the whole walk: the request's own and the caller's parent
   // both cancel every hop, including the DNS wait in between.
@@ -269,7 +271,9 @@ export async function fetchProbeTarget(options: {
           // Match undici's own redirect hygiene: credentials do not cross
           // origins, even when every hop individually validates as public.
           if (next.origin !== new URL(target).origin && headersInit) {
-            headersInit = filterCrossOriginStreamHeaders(headersInit);
+            headersInit = options.omitCrossOriginHeaders
+              ? undefined
+              : filterCrossOriginStreamHeaders(headersInit);
           }
           target = next.toString();
         } catch {
@@ -324,6 +328,8 @@ export function fetchGuardedStreamTarget(options: {
   readonly init: RequestInit;
   readonly signal?: AbortSignal;
   readonly resolvesLocally?: (url: string) => boolean;
+  readonly resolveAddresses?: (host: string) => Promise<readonly string[]>;
+  readonly omitCrossOriginHeaders?: boolean;
 }): Promise<ProbeFetchOutcome> {
   return fetchProbeTarget({
     fetchImpl: options.fetchImpl,
@@ -331,6 +337,10 @@ export function fetchGuardedStreamTarget(options: {
     init: { ...options.init, signal: options.signal },
     remaining: () => 1, // the caller's signal owns the deadline
     parentSignal: options.signal,
-    resolveNamesFor: options.resolvesLocally ?? (() => isGuardedPlatformFetch(options.fetchImpl)),
+    resolveNamesFor:
+      options.resolvesLocally ??
+      (() => Boolean(options.resolveAddresses) || isGuardedPlatformFetch(options.fetchImpl)),
+    resolveAddresses: options.resolveAddresses,
+    omitCrossOriginHeaders: options.omitCrossOriginHeaders,
   });
 }

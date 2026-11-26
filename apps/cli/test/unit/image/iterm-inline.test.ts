@@ -5,6 +5,15 @@ import { buildItermInlineImage } from "@/image/renderers/iterm-inline";
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01, 0x02, 0x03]);
 
 describe("buildItermInlineImage", () => {
+  test("declares measured image dimensions in pixels", () => {
+    const escape = buildItermInlineImage(PNG, {
+      rows: 6,
+      cols: 12,
+      pixelSize: { width: 92, height: 120 },
+    });
+    expect(escape).toContain(";width=92px;height=120px;preserveAspectRatio=1;");
+  });
+
   test("wraps the payload in OSC 1337 File and terminates with BEL", () => {
     const escape = buildItermInlineImage(PNG, { rows: 6, cols: 12 });
 

@@ -68,9 +68,7 @@ describe("youtube ytdl options", () => {
       }),
     );
 
-    expect(joined).toBe(
-      "sponsorblock-remove=%13%sponsor,intro,no-live-from-start=,sub-langs=%3%all",
-    );
+    expect(joined).toBe("sponsorblock-remove=%13%sponsor,intro,no-live-from-start=");
   });
 
   test("appends PO token to extractor-args", () => {
@@ -109,13 +107,13 @@ describe("youtube ytdl options", () => {
     expect(joined).toContain("extractor-args=%29%youtube:player_client=android");
   });
 
-  test("forwards subtitle language preference to yt-dlp all-tracks embed", () => {
+  test("requests all tracks for metadata while leaving mpv attachment to the player", () => {
     const args = buildYoutubeYtdlCliArgs({ subtitleLanguage: "en" });
     expect(args).toContain("--sub-langs");
     expect(args).toContain("all");
 
     const joined = joinMpvYtdlRawOptions(buildYoutubeMpvYtdlRawOptions({ subtitleLanguage: "en" }));
-    expect(joined).toContain("sub-langs=%3%all");
+    expect(joined).toBeUndefined();
   });
 
   test("skips sub-langs when subtitles are disabled", () => {

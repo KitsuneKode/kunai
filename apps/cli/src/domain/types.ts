@@ -181,12 +181,6 @@ export interface SubtitleTrack {
   readonly sourceKind?: "embedded" | "external";
   readonly sourceName?: string;
   readonly isHearingImpaired?: boolean;
-  /**
-   * Provenance: track was produced by a Stremio addon provider. Any remote URL
-   * on such a track must be localized through the addon subtitle guard before
-   * it is handed to mpv — addon media confinement extends to its subtitles.
-   */
-  readonly guardedAddon?: boolean;
 }
 
 export interface SearchResult {

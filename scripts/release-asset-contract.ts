@@ -3,11 +3,14 @@
  *
  * Shared by:
  *   - scripts/verify-github-release-assets.ts (live gh release view / download)
- *   - scripts/verify-release-artifact-directory.ts (local 22-file verification)
+ *   - scripts/verify-release-artifact-directory.ts (local 30-file verification)
  *   - apps/cli/test/unit/scripts/distribution-contract.test.ts (workflow lock)
  */
 
-import { RELEASE_BINARY_TARGETS } from "../apps/cli/src/services/update/platform-assets";
+import {
+  RELEASE_BINARY_TARGETS,
+  releaseArchiveNames,
+} from "../apps/cli/src/services/update/platform-assets";
 
 export interface ReleaseAssetDescriptor {
   readonly name: string;
@@ -18,8 +21,9 @@ export const REQUIRED_BINARY_ASSET_NAMES = Object.freeze(
   RELEASE_BINARY_TARGETS.map((target) => target.out).sort(),
 );
 
+/** Compatibility archives (`.tar.gz`/`.zip`) plus the zstd archive of every tar target. */
 export const REQUIRED_ARCHIVE_ASSET_NAMES = Object.freeze(
-  RELEASE_BINARY_TARGETS.map((target) => target.archiveName).sort(),
+  RELEASE_BINARY_TARGETS.flatMap(releaseArchiveNames).sort(),
 );
 
 export const REQUIRED_RELEASE_ASSET_NAMES = Object.freeze(
@@ -45,7 +49,8 @@ export function assertRequiredReleaseAssets(actualNames: readonly string[]): voi
 }
 
 /**
- * Exact 22-file bridge set: ten archives + ten raw binaries + two manifests.
+ * Exact 30-file set: ten compatibility archives, eight `.tar.zst` archives,
+ * ten raw binaries, and two manifests.
  * Rejects missing, duplicate, unexpected, and zero-byte assets.
  */
 export function assertCompleteReleaseAssetSet(
@@ -81,12 +86,12 @@ export function assertCompleteReleaseAssetSet(
       throw new Error(`[release-assets] invalid Ed25519 signature size for ${asset.name}`);
     }
     const target = RELEASE_BINARY_TARGETS.find(
-      (entry) => entry.out === asset.name || entry.archiveName === asset.name,
+      (entry) => entry.out === asset.name || releaseArchiveNames(entry).includes(asset.name),
     );
     const maxBytes =
       target?.out === asset.name
         ? target.maxBinaryBytes
-        : target?.archiveName === asset.name
+        : target
           ? target.maxArchiveBytes
           : asset.name === "install.sh" || asset.name === "install.ps1"
             ? 256 * 1024

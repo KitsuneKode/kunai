@@ -24,7 +24,10 @@ function testFiles(): string[] {
   return [
     ...collectSourceFiles("apps", { extensions: [".ts", ".tsx"] }),
     ...collectSourceFiles("packages", { extensions: [".ts", ".tsx"] }),
-  ].filter((file) => /\.(?:test|spec)\.tsx?$/.test(file));
+  ].filter(
+    (file) =>
+      /\.(?:test|spec)\.tsx?$/.test(file) || /\/test\/integration\/fixtures\/.*\.tsx?$/.test(file),
+  );
 }
 
 /** The call's top-level arguments, read up to its own closing paren on this line. */
@@ -152,6 +155,11 @@ test("test files do not gain a real sleep without a recorded reason", () => {
     }
   }
   expect(offenders).toEqual([]);
+});
+
+test("playback characterization awaits fixture replies without a subprocess timeout", () => {
+  const suite = readRepoFile("apps/cli/test/integration/playback-phase-characterization.test.ts");
+  expect(suite).not.toMatch(/^\s*timeout\s*:/m);
 });
 
 test("the ratchet catches every common way to sleep", () => {

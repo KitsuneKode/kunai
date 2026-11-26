@@ -50,6 +50,60 @@ describe("ConfigServiceImpl", () => {
     }
   });
 
+  test("keeps a cohort only beside an enabled identity", async () => {
+    const UUID = "11111111-2222-4333-8444-555555555555";
+    const enabled = await ConfigServiceImpl.load(
+      new MemoryConfigStore({
+        analytics: "enabled",
+        analyticsNoticeShown: true,
+        installId: UUID,
+        analyticsCohort: "2026-10",
+      }),
+    );
+    expect(enabled.analyticsCohort).toBe("2026-10");
+
+    for (const loaded of [
+      {
+        analytics: "disabled",
+        analyticsNoticeShown: true,
+        installId: "",
+        analyticsCohort: "2026-10",
+      },
+      {
+        analytics: "enabled",
+        analyticsNoticeShown: true,
+        installId: "",
+        analyticsCohort: "2026-10",
+      },
+      { analytics: "enabled", analyticsNoticeShown: true, installId: UUID, analyticsCohort: "Nov" },
+      // Pre-opt-in configs read as unset, so their cohort goes with the id.
+      { analytics: "enabled", installId: UUID, analyticsCohort: "2026-10" },
+    ] as const) {
+      const service = await ConfigServiceImpl.load(new MemoryConfigStore({ ...loaded }));
+      expect(service.analyticsCohort).toBe("");
+    }
+  });
+
+  test("a ping completion backfills a missing cohort but never replaces one", async () => {
+    const UUID = "11111111-2222-4333-8444-555555555555";
+    const base = { analytics: "enabled", analyticsNoticeShown: true, installId: UUID } as const;
+    for (const [stored, expected] of [
+      ["", "2026-11"],
+      ["2026-03", "2026-03"],
+    ] as const) {
+      const store = new MemoryConfigStore({ ...base, analyticsCohort: stored });
+      const service = await ConfigServiceImpl.load(store);
+      await service.recordAnalyticsPing({
+        installId: UUID,
+        analyticsRetryAfter: 0,
+        lastAnalyticsPingAt: 1,
+        analyticsCohort: "2026-11",
+      });
+      expect((await store.load()).analyticsCohort).toBe(expected);
+      expect(service.analyticsCohort).toBe(expected);
+    }
+  });
+
   test("loads the default startup mode when persisted config overrides it", async () => {
     const service = await ConfigServiceImpl.load(
       new MemoryConfigStore({

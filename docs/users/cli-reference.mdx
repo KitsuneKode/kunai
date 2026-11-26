@@ -43,6 +43,8 @@ From a repo clone (contributor-oriented), use `bun run dev -- <flags>` so Bun fo
 | `kunai uninstall`           | Ownership-aware removal                             |
 | `kunai uninstall --purge`   | Also delete config/history/cache                    |
 | `kunai diagnostics recent`  | Print recent redacted diagnostics from the cache DB |
+| `kunai analytics log`       | The last 50 usage pings, exactly as sent            |
+| `kunai analytics preview`   | The payload the next ping would send; sends nothing |
 
 ### `kunai diagnostics recent`
 
@@ -70,6 +72,22 @@ To stay readable, `pretty` shortens very long context values and says how much i
 left out. `--format jsonl` and `--format markdown` always print them in full.
 Events come from the local cache database; nothing is uploaded.
 
+### `kunai analytics log` and `kunai analytics preview`
+
+Check what usage analytics sends instead of taking it on trust.
+
+```bash
+kunai analytics log              # the last 50 pings, exactly as sent
+kunai analytics log --json       # the same entries as JSON
+kunai analytics preview          # the payload the next ping would send
+kunai analytics preview --json   # just the payload
+```
+
+The log is kept only while analytics is on, and is deleted when you turn it off.
+Neither command sends anything, and neither can turn analytics on: do that in
+`/settings` or `/analytics`. See
+[Reliability and Privacy](/docs/users/reliability-and-privacy#usage-analytics).
+
 ## Shell completions
 
 `kunai completion <shell>` prints a completion script for `bash`, `zsh`, `fish`,
@@ -93,7 +111,7 @@ For a quick trial without installing, evaluate it in the current session;
 2. **Bootstrap search:** `-S` / `--search`: runs the first search and lands on results. Does not auto-play unless you add `--jump` or `--quick`.
 3. **Bootstrap a known id:** `-i` / `--id` skips the initial title search for that id. A bare or `tmdb:<id>` id needs `-t movie` or `-t tv` (tv = series) and is not supported together with anime mode (`-a`). Namespaced ids reuse the share-link grammar: `anilist:<id>` and `mal:<id>` imply anime mode, `youtube:<id>` implies YouTube mode; `imdb:` is rejected.
 4. **Anime mode:** `-a` / `--anime`: anime discovery and providers.
-5. **Continue watching:** `--continue` / `--resume`: newest unfinished local history entry.
+5. **Continue watching:** `--continue` / `--resume`: the newest title in your local history with something to play (an unfinished episode, or the next one when it is ready). A finished movie or a caught-up show is skipped, not a dead end.
 6. **History first:** `--history`: watch history picker at startup.
 7. **Offline library first:** `--offline`: completed downloads only (same intent as `/library`).
 8. **Discover / calendar / random:** `--discover`, `--calendar`, `--random`: open those trays first without auto-play.
@@ -144,14 +162,14 @@ infer history progress, autoplay, or queue acknowledgement from the intent.
 
 ## Stremio addons
 
-| Command                   | What it does                                                                                |
-| ------------------------- | ------------------------------------------------------------------------------------------- |
-| `kunai addons enable`     | Turn experimental addons on after accepting the risk (`--accept-risk` for non-interactive)   |
-| `kunai addons disable`    | Stop addon use at the next resolve; keeps the installed list and your acknowledgement        |
-| `kunai addons list`       | List the addons you added: number, name, host, provider id, status                          |
-| `kunai addons add <url>`  | Add an addon by its `https://…/manifest.json` URL (`--stdin` reads it from stdin)            |
-| `kunai addons remove <n>` | Remove an addon by its number, id, host or name                                             |
-| `kunai addons check [n]`  | Ask each addon for its manifest; exits non-zero if one cannot be used                       |
+| Command                   | What it does                                                                               |
+| ------------------------- | ------------------------------------------------------------------------------------------ |
+| `kunai addons enable`     | Turn experimental addons on after accepting the risk (`--accept-risk` for non-interactive) |
+| `kunai addons disable`    | Stop addon use at the next resolve; keeps the installed list and your acknowledgement      |
+| `kunai addons list`       | List the addons you added: number, name, host, provider id, status                         |
+| `kunai addons add <url>`  | Add an addon by its `https://…/manifest.json` URL (`--stdin` reads it from stdin)          |
+| `kunai addons remove <n>` | Remove an addon by its number, id, host or name                                            |
+| `kunai addons check [n]`  | Ask each addon for its manifest; exits non-zero if one cannot be used                      |
 
 All addon actions accept `--json` and print one JSON object on stdout. While addons are off, `list` and `check` report `disabled (experimental addons are off)` per entry without contacting the addon, `add` refuses, and `enable`/`disable` emit `experimentalStremioAddons` plus whether anything changed. Unsupported flags, including `--dry-run`, are rejected before the command can change your config. No command prints an addon's full URL. See [Stremio addons](/docs/users/providers#stremio-addons).
 
