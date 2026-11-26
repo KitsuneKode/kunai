@@ -1,14 +1,18 @@
 ---
 status: active
 created: "2026-11-24"
+lastReviewed: "2026-11-26"
 ---
 
 # Plan: VLC and IINA beside mpv, and the mobile order
 
 ## Status
 
-- **Status:** PROPOSED. P0 (the VLC spike) can start today; nothing after it
-  starts until P0's findings are recorded.
+- **Status:** IN PROGRESS. Desktop VLC landed in the 0.4.0 train as an
+  observed player (`--player vlc`, #764), with auto-skip and next episode in
+  the same window (#776) and the player saved in Settings (#821). IINA and the
+  mobile order below remain. The table under "Where we are" is the 2026-11-24
+  starting point, kept for the record.
 - **Owns:** desktop player choice (VLC, IINA) and the order of the mobile work.
   The mobile design itself stays in
   [mobile parity and phone web](./2026-10-11-mobile-parity-and-phone-web.md);
