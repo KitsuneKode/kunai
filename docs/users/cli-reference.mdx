@@ -111,7 +111,7 @@ For a quick trial without installing, evaluate it in the current session;
 2. **Bootstrap search:** `-S` / `--search`: runs the first search and lands on results. Does not auto-play unless you add `--jump` or `--quick`.
 3. **Bootstrap a known id:** `-i` / `--id` skips the initial title search for that id. A bare or `tmdb:<id>` id needs `-t movie` or `-t tv` (tv = series) and is not supported together with anime mode (`-a`). Namespaced ids reuse the share-link grammar: `anilist:<id>` and `mal:<id>` imply anime mode, `youtube:<id>` implies YouTube mode; `imdb:` is rejected.
 4. **Anime mode:** `-a` / `--anime`: anime discovery and providers.
-5. **Continue watching:** `--continue` / `--resume`: newest unfinished local history entry.
+5. **Continue watching:** `--continue` / `--resume`: the newest title in your local history with something to play (an unfinished episode, or the next one when it is ready). A finished movie or a caught-up show is skipped, not a dead end.
 6. **History first:** `--history`: watch history picker at startup.
 7. **Offline library first:** `--offline`: completed downloads only (same intent as `/library`).
 8. **Discover / calendar / random:** `--discover`, `--calendar`, `--random`: open those trays first without auto-play.

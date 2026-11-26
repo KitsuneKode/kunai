@@ -9,25 +9,25 @@ import { captureFrame, captureResizeSequence } from "../../harness/render-captur
 
 /**
  * Resize-blocker coverage. The testing-strategy doc requires that the
- * resize blocker renders for each shell kind at < 60 cols. We assert both
+ * resize blocker renders for each shell kind at < 40 cols. We assert both
  * the underlying policy math and the rendered surface.
  */
 describe("resize blocker — P3-9 strategy doc coverage", () => {
   describe("getShellViewportPolicy", () => {
-    test("browse kind is blocked below 60 columns", () => {
-      const policy = getShellViewportPolicy("browse", 50, 24);
+    test("browse kind is blocked below 40 columns", () => {
+      const policy = getShellViewportPolicy("browse", 39, 24);
       expect(policy.breakpoint).toBe("blocked");
       expect(policy.tooSmall).toBe(true);
     });
 
-    test("picker kind is blocked below 60 columns", () => {
-      const policy = getShellViewportPolicy("picker", 50, 24);
+    test("picker kind is blocked below 40 columns", () => {
+      const policy = getShellViewportPolicy("picker", 39, 24);
       expect(policy.breakpoint).toBe("blocked");
       expect(policy.tooSmall).toBe(true);
     });
 
-    test("playback kind is blocked below 60 columns", () => {
-      const policy = getShellViewportPolicy("playback", 50, 24);
+    test("playback kind is blocked below 40 columns", () => {
+      const policy = getShellViewportPolicy("playback", 39, 24);
       expect(policy.breakpoint).toBe("blocked");
       expect(policy.tooSmall).toBe(true);
     });

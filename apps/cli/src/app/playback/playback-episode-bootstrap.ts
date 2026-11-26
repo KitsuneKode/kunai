@@ -22,12 +22,9 @@ import {
   type PlaybackEpisodeBootstrap,
 } from "@/app/playback/playback-phase-session";
 import { playbackEpisodeCatalogLanguages } from "@/app/playback/playback-profile-context";
+import { resumeSecondsFromHistoryForEpisode } from "@/app/playback/playback-resume-from-history";
 import {
-  createBootstrapResumeResolver,
-  resumeSecondsFromHistoryForEpisode,
-} from "@/app/playback/playback-resume-from-history";
-import {
-  startAtResumePoint,
+  sharedStartOverride,
   startEpisodeNavigation,
   startFromEpisodeSelection,
 } from "@/app/playback/playback-start-intent";
@@ -103,8 +100,8 @@ export async function bootstrapPlaybackEpisode(
   queueAttempt?.setStage("episode-selection");
   let episode: EpisodeInfo | undefined;
   // One-shot shared start position from a share link (kunai://...&t=). Consumed once
-  // here; the series path applies it via the resolver, the movie path inline below.
-  // A title is either movie or series, so the two paths never double-apply it.
+  // here and applied to the first episode by `sharedStartOverride` on both the series
+  // and movie paths below; later episodes resume from history.
   const bootstrapStartSeconds = consumeShareBootstrapStartSeconds();
   const historyTitleLookup = {
     id: title.id,
@@ -115,14 +112,17 @@ export async function bootstrapPlaybackEpisode(
       stateManager.getState().videoMeta,
     ),
   };
-  const resolveTargetResumeSeconds = createBootstrapResumeResolver({
-    sharedStartSeconds: bootstrapStartSeconds,
-    resumeFromHistory: (target: EpisodeInfo) =>
-      resumeSecondsFromHistoryForEpisode(historyRepository, historyTitleLookup, target),
-  });
+  // Navigation always resumes from history. The shared timestamp is not folded
+  // in here: this function outlives the first episode, and a first episode that
+  // started from an explicit selection never consumed it, so episode 2 used to
+  // inherit the link's `t=`.
   const startNavigationToEpisode = async (target: EpisodeInfo) =>
     startEpisodeNavigation({
-      targetResumeSeconds: resolveTargetResumeSeconds(target),
+      targetResumeSeconds: resumeSecondsFromHistoryForEpisode(
+        historyRepository,
+        historyTitleLookup,
+        target,
+      ),
     });
   const bootstrapEpisode =
     stateManager.getState().currentTitle?.id === title.id
@@ -368,11 +368,7 @@ export async function bootstrapPlaybackEpisode(
           ? startFromEpisodeSelection(selection)
           : await startNavigationToEpisode(episode);
     }
-    if (bootstrapStartSeconds !== undefined && bootstrapStartSeconds > 0) {
-      run.pendingStart = startAtResumePoint(bootstrapStartSeconds, {
-        suppressResumePrompt: true,
-      });
-    }
+    run.pendingStart = sharedStartOverride(bootstrapStartSeconds) ?? run.pendingStart;
   } else {
     // Movies have no season/episode axis but still carry saved progress.
     // Offer Resume/Restart when there is a resumable position; otherwise play
@@ -406,11 +402,7 @@ export async function bootstrapPlaybackEpisode(
     }
     episode = { season: 1, episode: 1 };
     run.pendingStart = startFromEpisodeSelection(selection);
-    if (bootstrapStartSeconds !== undefined && bootstrapStartSeconds > 0) {
-      run.pendingStart = startAtResumePoint(bootstrapStartSeconds, {
-        suppressResumePrompt: true,
-      });
-    }
+    run.pendingStart = sharedStartOverride(bootstrapStartSeconds) ?? run.pendingStart;
   }
 
   stateManager.dispatch({ type: "SELECT_EPISODE", episode });

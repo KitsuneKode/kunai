@@ -2,7 +2,7 @@
 title: Kunai CLI Keybindings
 description: Screen-by-screen keybinding map for the Kunai terminal shell.
 status: current
-lastReviewed: "2026-11-17"
+lastReviewed: "2026-11-25T11:35:21Z"
 ---
 
 # Kunai CLI Keybindings
@@ -281,12 +281,12 @@ manual skip key can still offer finite known segments while autoskip is paused.
 
 ## Library
 
-| Key     | Action                    |
-| ------- | ------------------------- |
-| `Enter` | Open selected title       |
-| `x`     | Delete offline title      |
-| `p`     | Toggle cleanup protection |
-| `Tab`   | Switch Library / Up Next  |
+| Key     | Action                     |
+| ------- | -------------------------- |
+| `Enter` | Open selected title        |
+| `x`     | Delete offline title       |
+| `p`     | Toggle cleanup protection  |
+| `Tab`   | Switch Library / Downloads |
 
 The library has no title-control menu key. `m` was registered for one and shown
 in the footer, but no handler read it — the keystroke fell through to the filter

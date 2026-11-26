@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T10:55:19Z"
+lastReviewed: "2026-11-25T11:41:06Z"
 ---
 
 # Kunai — UX Architecture
@@ -346,7 +346,7 @@ Suppression — the band simply does not exist:
 
 - command mode, calendar view, any open overlay, loading/searching states, and playback or
   post-play surfaces (the band lives inside browse only).
-- blocked/ultra-compact terminals — same `<60 cols / <20 rows` threshold as `viewport.ultraCompact`.
+- blocked/ultra-compact terminals — same `<40 cols / <16 rows` threshold as `viewport.ultraCompact`. Portrait phones (40–55 cols) get the narrow single-column track rather than the blocker; Calendar shows its active type as one line there.
 - a draft below 2 chars, a draft equal to the submitted query (bootstrap `-S` results and
   preserved-search remounts land here — the band stays quiet until the user edits).
 

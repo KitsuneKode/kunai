@@ -1,5 +1,7 @@
 import { debugImage } from "@/image/debug";
 
+import type { KittyOverlayImage } from "./poster-types";
+
 export type SixelRect = {
   readonly x: number;
   readonly y: number;
@@ -10,6 +12,7 @@ export type SixelRect = {
 type SixelOverlay = {
   readonly rect: SixelRect;
   readonly sixel: string;
+  readonly kitty?: KittyOverlayImage;
   /** Repaint after any Ink frame that may have rewritten this blank slot. */
   readonly repaintAfterInkRender?: boolean;
   /**
@@ -143,12 +146,24 @@ export class SixelOverlayManager {
     this.scheduleFlush();
   }
 
-  /** Drop state when Ink leaves the alternate screen; do not write to primary. */
+  /** Discard overlay state on shell exit and free any owned Kitty data. */
   discard(): void {
-    this.desired.clear();
-    this.shown.clear();
-    this.dirty.clear();
-    this.redrawRequested = false;
+    try {
+      for (const overlay of this.shown.values()) {
+        if (overlay.kitty) this.deleteKittyOverlay(overlay.kitty, true);
+      }
+    } catch (error) {
+      debugImage(`Kitty overlay cleanup failed: ${String(error)}`);
+    } finally {
+      this.desired.clear();
+      this.shown.clear();
+      this.dirty.clear();
+      this.redrawRequested = false;
+    }
+  }
+
+  private deleteKittyOverlay(image: KittyOverlayImage, free: boolean): void {
+    runtime.write(`\x1b_Ga=d,d=${free ? "I" : "i"},i=${image.imageId},q=2;\x1b\\`);
   }
 
   private scheduleFlush(): void {
@@ -203,22 +218,31 @@ export class SixelOverlayManager {
       // explicit erase here would punch holes through the newly rendered UI.
       for (const [id, shown] of this.shown) {
         const next = this.desired.get(id);
-        if (!next || !sameRect(shown.rect, next.rect)) {
+        if (shown.kitty) {
+          if (shown.kitty.imageId !== next?.kitty?.imageId) {
+            this.deleteKittyOverlay(shown.kitty, true);
+            this.shown.delete(id);
+          } else if (next && !sameRect(shown.rect, next.rect)) {
+            this.deleteKittyOverlay(shown.kitty, false);
+          }
+        } else if (!next || !sameRect(shown.rect, next.rect)) {
           this.shown.delete(id);
         }
       }
       for (const [id, overlay] of this.desired) {
         const shown = this.shown.get(id);
-        if (shown && shown.sixel !== overlay.sixel) {
+        const changed =
+          !shown || shown.sixel !== overlay.sixel || !sameRect(shown.rect, overlay.rect);
+        if (changed || this.dirty.has(id)) {
+          const transmission = shown?.kitty ? "" : (overlay.kitty?.transmission ?? "");
+          let content = transmission + overlay.sixel;
           // Sixel's transparent background mode does not clear pixels that the
           // replacement leaves untouched. Clear and paint in one cursor lock so
           // a previous title cannot flash through or ghost around the new one.
-          this.writeAt(
-            overlay.rect,
-            `${this.eraseContent(overlay.rect)}${moveTo(overlay.rect)}${overlay.sixel}`,
-          );
-        } else if (!shown || this.dirty.has(id)) {
-          this.writeAt(overlay.rect, overlay.sixel);
+          if (shown && !shown.kitty && shown.sixel !== overlay.sixel) {
+            content = `${this.eraseContent(overlay.rect)}${moveTo(overlay.rect)}${content}`;
+          }
+          this.writeAt(overlay.rect, content);
         }
         this.shown.set(id, overlay);
         this.dirty.delete(id);

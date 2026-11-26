@@ -13,11 +13,12 @@ export const BADGE_NAMES = ["downloads", "active", "installs"] as const;
 export type BadgeName = (typeof BADGE_NAMES)[number];
 
 /**
- * Wording is still an open maintainer decision (Decision 4 of the analytics
- * plan); this is its stated default. The figure is the last complete calendar
- * month, the closest exact window to 30 days that does not step daily.
+ * Decision 4 of the analytics plan (2026-11-25). The figure is the last
+ * complete calendar month, so the label says so: "30d" would promise a rolling
+ * window, which steps daily and would count a v2 install twice across a month
+ * boundary.
  */
-export const ACTIVE_BADGE_LABEL = "active (opted in, 30d)";
+export const ACTIVE_BADGE_LABEL = "active last month (opted in)";
 
 export const BADGE_CACHE_SECONDS = 3600;
 

@@ -44,7 +44,7 @@ export async function loadDiscoverResults(
 
   for (const section of sections) {
     for (const item of section.items) {
-      if (!shouldIncludeItem(discoverMode, mode, item)) {
+      if (!shouldIncludeDiscoverItem(discoverMode, mode, item)) {
         continue;
       }
       const key = `${item.type}:${item.id}`;
@@ -148,7 +148,13 @@ function applyResultEnrichment(
   };
 }
 
-function shouldIncludeItem(
+/**
+ * Anime mode's sections are AniList anime, films included: filtering them to
+ * `type === "series"` dropped every anime film from /discover, /random and
+ * /surprise. Outside anime mode, "anime only" keeps series plus anything
+ * classified as anime.
+ */
+export function shouldIncludeDiscoverItem(
   discoverMode: "auto" | "unified" | "anime-only" | "series-only",
   shellMode: import("@/domain/types").ShellMode,
   item: SearchResult,
@@ -156,10 +162,11 @@ function shouldIncludeItem(
   // YouTube discover uses a dedicated loader; this filter is for TMDB/AniList sections.
   if (shellMode === "youtube") return false;
   if (discoverMode === "unified") return true;
-  if (discoverMode === "anime-only") return item.type === "series";
+  if (discoverMode === "anime-only") {
+    return shellMode === "anime" || item.type === "series" || item.isAnime === true;
+  }
   if (discoverMode === "series-only") return item.type === "movie" || item.type === "series";
-  // auto mode
-  return shellMode === "anime" ? item.type === "series" : true;
+  return true;
 }
 
 function labelDiscoverMode(
