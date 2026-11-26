@@ -243,6 +243,26 @@ describe("VlcPlayerService", () => {
       );
     }
 
+    // A verified library source vouches only for its own file.
+    const mismatched = harness(() => null);
+    await expect(
+      mismatched.service.play(
+        { ...STREAM, url: "file:///etc/passwd" },
+        {
+          ...mismatched.options,
+          localPlaybackSource: {
+            kind: "local",
+            jobId: "j",
+            titleId: "t",
+            titleName: "T",
+            mediaKind: "series",
+            providerId: "p",
+            filePath: "/library/episode.mp4",
+          },
+        },
+      ),
+    ).rejects.toThrow("unsafe stream URL");
+
     const missing = harness(() => null, null);
     expect(await missing.service.isAvailable()).toBe(false);
     await expect(missing.service.play(STREAM, missing.options)).rejects.toBeInstanceOf(

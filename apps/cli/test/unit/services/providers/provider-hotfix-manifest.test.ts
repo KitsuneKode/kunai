@@ -370,23 +370,37 @@ describe("provider hotfix manifest runtime", () => {
     expect(JSON.parse(statusOut).hotfixManifest.status).toBe("absent");
 
     // Without --url, update asks the same channel the background refresh uses.
-    const requested: string[] = [];
-    let defaultUrlOut = "";
-    const defaultUrlCode = await runProvidersCommand({
-      subcommand: "update",
-      json: true,
-      cachePath,
-      fetchImpl: async (input) => {
-        requested.push(input);
-        return new Response("missing", { status: 404 });
-      },
-      write: (chunk) => {
-        defaultUrlOut += chunk;
-      },
-    });
-    expect(requested).toEqual([defaultManifestUrl() ?? ""]);
-    expect(defaultUrlCode).not.toBe(0);
-    expect(JSON.parse(defaultUrlOut).ok).toBe(false);
+    // The developer's shell must not redirect or unpin it for this test.
+    const savedEnv = {
+      url: process.env.KUNAI_PROVIDER_MANIFEST_URL,
+      keys: process.env.KUNAI_PROVIDER_MANIFEST_PUBKEYS,
+    };
+    delete process.env.KUNAI_PROVIDER_MANIFEST_URL;
+    delete process.env.KUNAI_PROVIDER_MANIFEST_PUBKEYS;
+    try {
+      const requested: string[] = [];
+      let defaultUrlOut = "";
+      const defaultUrlCode = await runProvidersCommand({
+        subcommand: "update",
+        json: true,
+        cachePath,
+        fetchImpl: async (input) => {
+          requested.push(input);
+          return new Response("missing", { status: 404 });
+        },
+        write: (chunk) => {
+          defaultUrlOut += chunk;
+        },
+      });
+      expect(requested).toEqual([defaultManifestUrl() ?? ""]);
+      expect(defaultUrlCode).not.toBe(0);
+      expect(JSON.parse(defaultUrlOut).ok).toBe(false);
+    } finally {
+      if (savedEnv.url === undefined) delete process.env.KUNAI_PROVIDER_MANIFEST_URL;
+      else process.env.KUNAI_PROVIDER_MANIFEST_URL = savedEnv.url;
+      if (savedEnv.keys === undefined) delete process.env.KUNAI_PROVIDER_MANIFEST_PUBKEYS;
+      else process.env.KUNAI_PROVIDER_MANIFEST_PUBKEYS = savedEnv.keys;
+    }
 
     const rev4 = signProviderManifest(makeManifest({ revision: 4 }), privatePem, "key-2026");
     let updateOut = "";

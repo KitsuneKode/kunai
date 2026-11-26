@@ -233,12 +233,12 @@ export class VlcPlayerService implements PlayerService {
         "This stream needs yt-dlp, which VLC cannot run. Play it with --player mpv.",
       );
     }
-    // The same target rule as mpv: provider URLs are HTTP(S) only; files only
-    // from the verified local library.
+    // The same target rule as mpv: provider URLs are HTTP(S) only; a file only
+    // when it is exactly the verified library file this playback names.
     const local = options.localPlaybackSource;
     const subtitle = stream.subtitle?.trim();
     if (
-      !isAllowedMpvUrl(stream.url, local ? "local" : "remote") ||
+      !isAllowedMpvUrl(stream.url, local?.filePath === stream.url ? "local" : "remote") ||
       (subtitle &&
         !isAllowedMpvUrl(subtitle, local?.subtitlePath === subtitle ? "local" : "remote"))
     ) {
