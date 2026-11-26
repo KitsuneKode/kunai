@@ -183,6 +183,14 @@ should_run_variant glibc && NEED_GLIBC=1
 should_run_variant musl && NEED_MUSL=1
 
 if [[ "$SKIP_BUILD" -eq 0 ]]; then
+  # Build with a throwaway release key so the mock release can be signed and
+  # the upgrade path runs with signature verification on (see smoke-key.sh).
+  if [[ -z "${KUNAI_SMOKE_SIGNING_KEY:-}" ]]; then
+    KUNAI_SMOKE_SIGNING_KEY="$(mktemp "${TMPDIR:-/tmp}/kunai-smoke-key.XXXXXX")"
+    rm -f "$KUNAI_SMOKE_SIGNING_KEY"
+  fi
+  KUNAI_SMOKE_RELEASE_KEY_SPKI="$("$DOCKER_DIR/smoke-key.sh" "$KUNAI_SMOKE_SIGNING_KEY")"
+  export KUNAI_SMOKE_SIGNING_KEY KUNAI_SMOKE_RELEASE_KEY_SPKI
   echo "→ Building requested binaries..."
   local_only=()
   [[ "$NEED_GLIBC" -eq 1 ]] && local_only+=(--only linux-x64)

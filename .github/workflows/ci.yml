@@ -830,6 +830,15 @@ jobs:
         with:
           turbo-cache-prefix: binaries
 
+      - name: Mint a throwaway smoke release key
+        # Smoke binaries embed this key instead of the release pin, so the docker
+        # mock release can sign its manifests and the upgrade path runs with
+        # signature verification on (smoke-key.sh). It is never the release key;
+        # the Release workflow refuses the variable.
+        run: |
+          spki="$(bash apps/cli/test/docker/native-installer/smoke-key.sh "$RUNNER_TEMP/release-smoke-key.pem")"
+          echo "KUNAI_SMOKE_RELEASE_KEY_SPKI=$spki" >> "$GITHUB_ENV"
+
       - name: Build linux binaries (glibc + musl)
         run: >-
           bunx turbo run build:binaries --filter=@kitsunekode/kunai --
@@ -843,6 +852,10 @@ jobs:
           ./apps/cli/dist/bin/kunai-linux-x64 --version | tee /tmp/kunai-version.txt
           grep -q '^kunai ' /tmp/kunai-version.txt
           ./apps/cli/dist/bin/kunai-linux-x64 --help >/dev/null
+
+      - name: Ship the smoke signing key with the binaries
+        if: needs.changes.outputs.installer == 'true'
+        run: cp "$RUNNER_TEMP/release-smoke-key.pem" apps/cli/dist/bin/release-smoke-key.pem
 
       - name: Upload linux binaries for installer job
         if: needs.changes.outputs.installer == 'true'
@@ -859,6 +872,7 @@ jobs:
             apps/cli/dist/bin/kunai-linux-x64-musl.tar.zst
             apps/cli/dist/bin/SHA256SUMS
             apps/cli/dist/bin/SHA256SUMS.archives
+            apps/cli/dist/bin/release-smoke-key.pem
 
   installer-docker:
     name: Native installer ${{ matrix.scenario }} / ${{ matrix.variant }}
@@ -926,6 +940,7 @@ jobs:
       - name: Run scenario ${{ matrix.scenario }} / ${{ matrix.variant }}
         env:
           KUNAI_INSTALLER_DOCKER: "1"
+          KUNAI_SMOKE_SIGNING_KEY: ${{ github.workspace }}/apps/cli/dist/bin/release-smoke-key.pem
         run: >-
           bash apps/cli/test/docker/native-installer/run-local.sh
           --skip-build

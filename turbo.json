@@ -113,7 +113,8 @@
     "build:binaries": {
       "dependsOn": ["^typecheck", "typecheck"],
       "outputs": ["dist/bin/**"],
-      "env": ["KUNAI_BUILD_ANALYZE", "KUNAI_TMDB_BUILD_KEY"]
+      "env": ["KUNAI_BUILD_ANALYZE", "KUNAI_TMDB_BUILD_KEY", "KUNAI_SMOKE_RELEASE_KEY_SPKI"],
+      "passThroughEnv": ["GITHUB_WORKFLOW"]
     },
     "check": {
       "dependsOn": ["typecheck", "lint", "fmt"],

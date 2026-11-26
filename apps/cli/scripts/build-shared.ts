@@ -106,7 +106,35 @@ export const RELEASE_DEFINE: ReleaseDefineMap = {
 export function releaseDefine(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): ReleaseDefineMap {
-  return { ...RELEASE_DEFINE, ...bundledTmdbKeyDefine(env.KUNAI_TMDB_BUILD_KEY) };
+  return {
+    ...RELEASE_DEFINE,
+    ...bundledTmdbKeyDefine(env.KUNAI_TMDB_BUILD_KEY),
+    ...smokeReleaseKeyDefine(env.KUNAI_SMOKE_RELEASE_KEY_SPKI, env.GITHUB_WORKFLOW),
+  };
+}
+
+/**
+ * CI installer smoke builds embed a throwaway Ed25519 key instead of the release
+ * pin, so the mock release can sign its manifests and the binary's upgrade path
+ * is exercised with signatures on. The Release workflow refuses it outright, the
+ * variable is part of turbo's build:binaries hash, and verify-release-binaries
+ * checks a full release build still carries the pin.
+ */
+export function smokeReleaseKeyDefine(
+  spki: string | undefined,
+  workflow: string | undefined,
+): ReleaseDefineMap {
+  const trimmed = spki?.trim();
+  if (!trimmed) return {};
+  if (workflow === "Release") {
+    throw new Error(
+      "KUNAI_SMOKE_RELEASE_KEY_SPKI is for smoke builds; the Release workflow must not set it",
+    );
+  }
+  if (!/^[A-Za-z0-9+/]{59}=$/.test(trimmed)) {
+    throw new Error("KUNAI_SMOKE_RELEASE_KEY_SPKI must be a base64 Ed25519 SPKI (60 characters)");
+  }
+  return { "import.meta.kunaiReleasePublicKey": JSON.stringify(trimmed) };
 }
 
 /**
@@ -489,7 +517,10 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // #800) on top measured 3,313,118 bytes; 3239 KiB leaves 3,618 bytes.
 // Provider DNS-over-HTTPS (#829: shared resolver, curl --resolve transport, the
 // providerDns setting) on top measured 3,318,418 bytes; 3243 KiB leaves 2,414.
-export const NPM_BUNDLE_BUDGET_KB = 3_243;
+// The Android launcher's cancellation and output bounds (#674 slice) and its
+// runtime env allowlist (#769) on top measured 3,321,113 bytes; 3245 KiB
+// leaves 1,767.
+export const NPM_BUNDLE_BUDGET_KB = 3_245;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

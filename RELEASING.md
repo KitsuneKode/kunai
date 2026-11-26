@@ -342,6 +342,16 @@ signs a version-bound statement for each manifest and verifies each signature
 against the committed pin before npm publication. It rejects a missing or
 mismatched key.
 
+Installer smoke builds in CI cannot sign with that key, so they embed a
+throwaway one instead: `KUNAI_SMOKE_RELEASE_KEY_SPKI` replaces the pin at build
+time and `prepare-fixture.sh` signs the mock release with the matching private
+half (`apps/cli/test/docker/native-installer/smoke-key.sh`). The smoke upgrade
+therefore runs with signature verification on. Three guards keep that key out
+of a release: `smokeReleaseKeyDefine` throws under the `Release` workflow, the
+variable is part of turbo's `build:binaries` hash so a cached smoke build is
+never replayed, and `verify-release-binaries.sh` fails a full build whose raw
+binaries do not embed the pin.
+
 ### Signed statement format (`kunai-release-manifest v1`)
 
 `SHA256SUMS.sig` and `SHA256SUMS.archives.sig` are raw 64-byte Ed25519

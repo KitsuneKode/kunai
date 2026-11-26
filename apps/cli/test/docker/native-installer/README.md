@@ -24,6 +24,16 @@ bash apps/cli/test/docker/native-installer/run-local.sh --list-scenarios --gate 
 
 Flags: `--skip-build`, `--skip-image-build`, `--only glibc|musl`, `--scenario <id>`.
 
+### Signed manifests
+
+A binary that embeds a release key refuses an unsigned upgrade, so the mock
+release is signed. A build run mints a throwaway Ed25519 key with
+[`smoke-key.sh`](./smoke-key.sh), embeds its public half through
+`KUNAI_SMOKE_RELEASE_KEY_SPKI`, and `prepare-fixture.sh` writes
+`SHA256SUMS{,.archives}.sig` with the private half (`KUNAI_SMOKE_SIGNING_KEY`).
+With `--skip-build`, set `KUNAI_SMOKE_SIGNING_KEY` to the key the binaries were
+built with; CI ships it beside them as `release-smoke-key.pem`.
+
 ## Registry
 
 [`scenarios.tsv`](./scenarios.tsv) columns (tab-separated):
