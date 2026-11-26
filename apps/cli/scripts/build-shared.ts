@@ -489,7 +489,10 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // #800) on top measured 3,313,118 bytes; 3239 KiB leaves 3,618 bytes.
 // Provider DNS-over-HTTPS (#829: shared resolver, curl --resolve transport, the
 // providerDns setting) on top measured 3,318,418 bytes; 3243 KiB leaves 2,414.
-export const NPM_BUNDLE_BUDGET_KB = 3_243;
+// The Android launcher's cancellation and output bounds (#674 slice) and its
+// runtime env allowlist (#769) on top measured 3,321,113 bytes; 3245 KiB
+// leaves 1,767.
+export const NPM_BUNDLE_BUDGET_KB = 3_245;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
