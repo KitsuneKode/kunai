@@ -4,23 +4,23 @@
  * first of `x / X`. Pairs like `↑↓`, words like `year`, and typed commands
  * like `/provider` stay display-only.
  */
-const NAMED: Readonly<Record<string, string>> = {
-  enter: "\r",
-  "↵": "\r",
-  return: "\r",
-  esc: "\x1b",
-  escape: "\x1b",
-  tab: "\t",
-  space: " ",
-  "↑": "\x1b[A",
-  "↓": "\x1b[B",
-  "→": "\x1b[C",
-  "←": "\x1b[D",
-};
+const NAMED = new Map<string, string>([
+  ["enter", "\r"],
+  ["↵", "\r"],
+  ["return", "\r"],
+  ["esc", "\x1b"],
+  ["escape", "\x1b"],
+  ["tab", "\t"],
+  ["space", " "],
+  ["↑", "\x1b[A"],
+  ["↓", "\x1b[B"],
+  ["→", "\x1b[C"],
+  ["←", "\x1b[D"],
+]);
 
 export function footerKeySequence(key: string): string | null {
   const first = key.split(" / ")[0]?.trim() ?? "";
-  const named = NAMED[first.toLowerCase()] ?? NAMED[first];
+  const named = NAMED.get(first.toLowerCase()) ?? NAMED.get(first);
   if (named) return named;
   const shifted = /^(?:⇧|shift\+)(.)$/i.exec(first);
   if (shifted?.[1]) return shifted[1].toUpperCase();
