@@ -35,7 +35,7 @@ describe("player choice", () => {
     });
   });
 
-  test("preserves managed mpv for existing desktop platforms", () => {
+  test("desktop keeps managed mpv by default and runs VLC observed when asked", () => {
     for (const platform of [
       "linux",
       "darwin",
@@ -44,10 +44,7 @@ describe("player choice", () => {
     ] as const satisfies readonly SupportedPlayerPlatform[]) {
       expect(resolvePlayerMode({ choice: "auto", platform })).toEqual({ kind: "managed-mpv" });
       expect(resolvePlayerMode({ choice: "mpv", platform })).toEqual({ kind: "managed-mpv" });
-      expect(resolvePlayerMode({ choice: "vlc", platform })).toEqual({
-        kind: "unsupported",
-        choice: "vlc",
-      });
+      expect(resolvePlayerMode({ choice: "vlc", platform })).toEqual({ kind: "managed-vlc" });
     }
   });
 

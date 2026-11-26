@@ -148,10 +148,13 @@ More: [Share links](/docs/users/share-links).
 
 ## mpv and diagnostics
 
-- **Player selection:** `--player` chooses the backend for one run. Desktop
-  accepts `--player auto` and `--player mpv`, both supervised mpv; desktop VLC
-  is not supported. Android/Termux additionally accepts `--player vlc`: `auto`
-  opens the chooser, while `mpv` and `vlc` target those installed Android apps.
+- **Player selection:** `--player` chooses the backend for one run. On
+  desktop, `auto` and `mpv` use supervised mpv, and `--player vlc` plays in your
+  own VLC (its window, hotkeys and settings), watched by Kunai for resume,
+  history, completion and recovery. Android/Termux accepts `auto`, `mpv` and
+  `vlc`: `auto` opens the chooser, while `mpv` and `vlc` target those installed
+  Android apps. See [Playback and recovery](/docs/users/playback-and-recovery)
+  for what each player supports.
 - **mpv:** `--mpv-debug`, `--mpv-clean`, `--no-user-mpv-config`, `--mpv-log-file <path>` forward into the player for this run.
 - **Diagnostics:** `--debug` writes verbose logs to `./logs.txt`. `--debug-json` and `--debug-session` add structured traces for support bundles.
 - **Dry run:** `--dry-run` prints the planned bootstrap without changing state.

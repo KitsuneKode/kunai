@@ -53,6 +53,21 @@ export function buildMpvMissingProblem(input: {
   };
 }
 
+export function buildVlcMissingProblem(input: {
+  readonly remediationSummary: string;
+  readonly commands: readonly string[];
+}): PlaybackProblem {
+  const commandHint = input.commands[0] ?? "Install VLC";
+  return {
+    stage: "mpv",
+    severity: "blocking",
+    cause: "vlc-missing",
+    userMessage: `--player vlc needs VLC. ${input.remediationSummary} Try: ${commandHint} (or use --player mpv).`,
+    recommendedAction: "settings",
+    secondaryActions: ["diagnostics"],
+  };
+}
+
 export function buildAndroidIntentMissingProblem(input: {
   readonly player: "chooser" | "vlc" | "mpv";
   readonly remediationSummary: string;
@@ -64,18 +79,6 @@ export function buildAndroidIntentMissingProblem(input: {
     severity: "blocking",
     cause: "android-intent-launcher-missing",
     userMessage: `Android playback needs the termux-am package and ${playerName}. ${input.remediationSummary}`,
-    recommendedAction: "settings",
-    secondaryActions: ["diagnostics"],
-  };
-}
-
-export function buildUnsupportedPlayerProblem(): PlaybackProblem {
-  return {
-    stage: "mpv",
-    severity: "blocking",
-    cause: "player-selection-unsupported",
-    userMessage:
-      "VLC handoff is currently supported on Android only. Use --player auto or --player mpv on this platform.",
     recommendedAction: "settings",
     secondaryActions: ["diagnostics"],
   };

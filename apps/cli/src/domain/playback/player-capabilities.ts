@@ -38,3 +38,22 @@ export const DETACHED_HANDOFF_CAPABILITIES: PlayerCapabilities = Object.freeze({
   trackControl: false,
   networkEvidence: false,
 });
+
+/**
+ * Desktop VLC, observed through its loopback HTTP interface (see
+ * `infra/player/vlc/`). Headers reach it through the stream gateway; skips,
+ * in-player track picks and the mpv bridge are mpv-only for now.
+ */
+export const VLC_CAPABILITIES: PlayerCapabilities = Object.freeze({
+  observation: "managed",
+  customHeaders: true,
+  externalSubtitles: true,
+  localFiles: true,
+  progressEvents: true,
+  completion: true,
+  autoSkip: false,
+  trackControl: false,
+  // VLC's HTTP interface reports no byte counters, so a stalled startup gets
+  // the full budget rather than the 15 s no-data cut (see #780).
+  networkEvidence: false,
+});

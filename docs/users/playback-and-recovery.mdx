@@ -8,6 +8,27 @@ Kunai keeps playback centered on one shell session. After `mpv` exits, you retur
 
 This guide covers the full playback lifecycle, from first resolve through recovery when providers or networks misbehave.
 
+## Desktop VLC
+
+`kunai --player vlc` plays in VLC instead of mpv, keeping your VLC interface,
+hotkeys and settings. Kunai talks to VLC through a private control interface on
+`127.0.0.1` (its password is never on the command line), so VLC playback still
+gets:
+
+- resume from your last position, watch history, Continue Watching and
+  tracker sync;
+- completion and the next episode, startup-stall and "video isn't decoding"
+  recovery to another source;
+- provider streams that need special headers, through Kunai's local stream
+  gateway, and external subtitles;
+- downloaded episodes offline.
+
+Not yet in VLC: auto-skip of intros and credits, Kunai's in-player menu and
+share key, and streams that need yt-dlp (YouTube). Use `--player mpv` for
+those. On Linux, install VLC's ffmpeg decoder too (`vlc-plugin-ffmpeg` on Arch);
+without it VLC plays the sound but no picture, which Kunai now reports instead
+of calling it playback.
+
 ## Android external-player preview
 
 Inside Termux, `--player auto|vlc|mpv` hands a qualified direct stream to the
@@ -23,8 +44,8 @@ Detached playback therefore has deliberately smaller behavior:
 - offline/local files, external subtitles, yt-dlp-dependent playback, and
   streams requiring headers or cookies are rejected before launch.
 
-Use desktop managed mpv when you need full history/resume, subtitle attachment,
-track controls, recovery, or autoplay parity. iOS is not implemented.
+Use desktop mpv or VLC when you need full history/resume, subtitle attachment,
+recovery, or autoplay parity. iOS is not implemented.
 
 ## Playback flow
 
@@ -50,8 +71,8 @@ When inventory has choices, Kunai shows source, quality, audio, and subtitle pic
 <Step>
 ### Watch in the selected player
 
-Desktop Kunai launches mpv with required headers and subtitle attachments, then
-supervises through IPC. Android uses the limited detached handoff described
+Desktop Kunai launches mpv (or VLC, with `--player vlc`) with required headers
+and subtitle attachments, then supervises it. Android uses the limited detached handoff described
 above.
 
 </Step>

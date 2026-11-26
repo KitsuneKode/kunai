@@ -6,8 +6,8 @@ export type SupportedPlayerPlatform = "android" | "linux" | "darwin" | "win32" |
 
 export type PlayerMode =
   | { readonly kind: "managed-mpv" }
-  | { readonly kind: "android-handoff"; readonly target: DetachedPlayerTarget }
-  | { readonly kind: "unsupported"; readonly choice: PlayerChoice };
+  | { readonly kind: "managed-vlc" }
+  | { readonly kind: "android-handoff"; readonly target: DetachedPlayerTarget };
 
 export function parsePlayerChoice(value: string | undefined): PlayerChoice {
   if (value === undefined || value === "auto") return "auto";
@@ -64,8 +64,8 @@ export function resolvePlayerMode(input: {
       target: input.choice === "auto" ? "chooser" : input.choice,
     };
   }
-  if (input.choice === "vlc") {
-    return { kind: "unsupported", choice: "vlc" };
-  }
+  // Desktop VLC runs observed (`infra/player/vlc/vlc-player-service.ts`);
+  // discovery looks on PATH, so this holds for BSDs and other desktops too.
+  if (input.choice === "vlc") return { kind: "managed-vlc" };
   return { kind: "managed-mpv" };
 }

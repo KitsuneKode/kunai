@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T01:01:15Z"
+lastReviewed: "2026-11-25T01:13:27Z"
 ---
 
 # Feature Map
@@ -103,6 +103,7 @@ callbacks. See [features/pointer-controls.md](./features/pointer-controls.md).
 | DASH manifest + template routes                           | `apps/cli/src/infra/player/dash-gateway-manifest.ts`, `manifest-prefix.ts`                                                                                                                                   | [architecture.md](./architecture.md)                                             |
 | Persistent session + autoplay                             | `apps/cli/src/infra/player/PersistentMpvSession.ts`                                                                                                                                                          | [mpv-in-process-reconnect.md](./mpv-in-process-reconnect.md)                     |
 | Decoded-video readiness (start, not-decoding, video-lost) | `apps/cli/src/infra/player/playback-output-gate.ts`, `apps/cli/src/infra/player/playback-watchdog.ts`                                                                                                        | [mpv-in-process-reconnect.md](./mpv-in-process-reconnect.md)                     |
+| Desktop VLC player (`--player vlc`)                       | `apps/cli/src/infra/player/vlc/vlc-player-service.ts`                                                                                                                                                        | [player-dossiers/vlc.md](./player-dossiers/vlc.md)                               |
 | Intro/credits auto-skip (IntroDB, AniSkip)                | `apps/cli/src/aniskip.ts`, `apps/cli/src/introdb.ts`                                                                                                                                                         | [playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md)               |
 | Timing sources and merge                                  | `apps/cli/src/infra/timing/*` — `PlaybackTimingAggregator` merges IntroDB, AniSkip, and provider-native timings                                                                                              | [playback-timing-and-aniskip.md](./playback-timing-and-aniskip.md)               |
 | Subtitles                                                 | `apps/cli/src/subtitle.ts`                                                                                                                                                                                   | [playback-source-inventory-contract.md](./playback-source-inventory-contract.md) |
