@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T21:02:00Z"
+lastReviewed: "2026-11-26T10:07:00Z"
 ---
 
 # Poster and terminal image output
@@ -133,7 +133,16 @@ not require or spawn `ffmpeg` for normal playback or offline artwork.
 
 ## Manual Ghostty / Kitty smoke (not CI)
 
-Headless CI cannot assert framebuffer graphics. After image changes, smoke locally in Ghostty or Kitty:
+Use the opt-in `bun run smoke:posters -- --terminal kitty` for the offline
+fixture path. Use `--terminal tmux` to wrap the run in a private tmux server,
+`--terminal foot`, `--terminal xterm` or `--terminal konsole` for Sixel,
+`--terminal wezterm` for direct Kitty placement, or `--terminal current` to
+use the open terminal. This command requires a source checkout. The harness drives the real CLI, captures the PTY
+transcript, checks printable text for graphics escapes, and captures screenshots
+when supported. The [release smoke plan](../.plans/poster-protocol-release-smokes.md)
+records the live evidence and remaining terminal coverage.
+
+For the post-play flow, smoke locally in Ghostty or Kitty:
 
 1. `KUNAI_IMAGE_DEBUG=1 bun run dev` — confirm capability line shows `kitty-native`.
 2. Play any title with a poster, finish playback → post-play wide (≥120 cols).
