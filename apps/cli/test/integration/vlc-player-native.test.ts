@@ -77,6 +77,11 @@ async function playThroughVlc(path: string, extraArgs: readonly string[]) {
   return { result, events };
 }
 
+// Real VLC plus ffmpeg-made clips: alone each test takes a few seconds, but in
+// the full parallel suite VLC's startup alone can pass 30 s. This is runner
+// headroom for a real process, not a wait the assertions depend on.
+const NATIVE_VLC_TIMEOUT_MS = 90_000;
+
 nativeTest(
   "real VLC: a decoding clip starts, progresses and finishes",
   async () => {
@@ -90,7 +95,7 @@ nativeTest(
     expect(types).not.toContain("video-not-decoding");
     expect(result.endReason).toBe("eof");
   },
-  30_000,
+  NATIVE_VLC_TIMEOUT_MS,
 );
 
 nativeTest(
@@ -106,7 +111,7 @@ nativeTest(
     expect(types).not.toContain("playback-started");
     expect(events).toContainEqual(expect.objectContaining({ type: "video-not-decoding" }));
   },
-  30_000,
+  NATIVE_VLC_TIMEOUT_MS,
 );
 
 function headlessService(spawned: string[][]) {
@@ -202,5 +207,5 @@ nativeTest(
     expect(after.length).toBeGreaterThan(0);
     expect(Math.min(...after)).toBeGreaterThanOrEqual(8.5);
   },
-  30_000,
+  NATIVE_VLC_TIMEOUT_MS,
 );
