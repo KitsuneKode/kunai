@@ -61,4 +61,11 @@ describe("compareCanonicalVersions", () => {
     expect(compareCanonicalVersions(b, a)).toBeGreaterThan(0);
     expect(compareCanonicalVersions(c, a)).toBeGreaterThan(0);
   });
+
+  test("preserves major-version ordering beyond the safe integer range", () => {
+    const older = parseCanonicalVersion("9007199254740992.1.0");
+    const newer = parseCanonicalVersion("9007199254740993.0.0");
+    if (!older || !newer) throw new Error("fixture versions must be canonical");
+    expect(compareCanonicalVersions(older, newer)).toBeLessThan(0);
+  });
 });

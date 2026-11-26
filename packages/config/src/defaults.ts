@@ -163,6 +163,7 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   analytics: "unset",
   analyticsNoticeShown: false,
   installId: "",
+  analyticsCohort: "",
   lastAnalyticsPingAt: 0,
   analyticsRetryAfter: 0,
   analyticsEndpoint: "",

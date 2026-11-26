@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-16"
+lastReviewed: "2026-11-26T11:11:58Z"
 ---
 
 # Title provider health, cache layers, and reset
@@ -13,11 +13,11 @@ Why a provider can feel “dead” even when another recovers, and what to reset
 
 ## 1. Three different memory layers (easy to confuse)
 
-| Layer                         | Storage                             | What it remembers                                             | Effect on next play                                                                                                         |
-| ----------------------------- | ----------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| **A. Stream URL cache**       | `cacheStore` (resolve cache keys)   | Last working m3u8 URL per title/episode/provider              | May replay **stale/dead** URL until invalidated                                                                             |
-| **B. Global provider health** | `provider_health` in cache DB       | `healthy` / `degraded` / **`down`** (5+ consecutive failures) | Effective **`down`** providers are **skipped** in auto-fallback until TTL heal or manual reset                              |
-| **C. Title-scoped health**    | `title_provider_health` in cache DB | “On _this show_, provider X failed; provider Y worked”        | **Advisory only** — playback notes / Sources UI may suggest another provider; resolve order stays on your selected provider |
+| Layer                         | Storage                             | What it remembers                                             | Effect on next play                                                                                                                                                                       |
+| ----------------------------- | ----------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A. Stream URL cache**       | `cacheStore` (resolve cache keys)   | Last working m3u8 URL per title/episode/provider              | May replay **stale/dead** URL until invalidated                                                                                                                                           |
+| **B. Global provider health** | `provider_health` in cache DB       | `healthy` / `degraded` / **`down`** (5+ consecutive failures) | Effective **`down`** providers are **skipped** in auto-fallback until TTL heal or manual reset                                                                                            |
+| **C. Title-scoped health**    | `title_provider_health` in cache DB | “On _this show_, provider X failed; provider Y worked”        | Orders the resolve in guided and fallback-first modes: the provider that worked starts, your selected provider follows; never for a provider you just chose, `/recompute`, or manual mode |
 
 Recovery invalidation uses the same provider manifest as resolve-cache writes,
 including each provider's key parts and the active source/stream selection. It
@@ -73,11 +73,20 @@ Background prune default: **7 days** (`providerHealthRetentionDays`). Title-scop
 
 ## 3. Title health behavior (layer C)
 
-### 3.1 Advisory only — no silent reorder
+### 3.1 The provider that worked starts, visibly
 
-`titleScopedProviderOrder` keeps the user’s **selected provider first**. When title health has a `suggestedProviderId`, resolve does **not** prepend it; playback notes / Sources UI may show an advisory (“last time Rivestream worked on this title”).
+`planProviderCandidates` (`apps/cli/src/services/playback/ProviderCandidatePlanner.ts`)
+puts a title's `suggestedProviderId` first when the suggestion is about the
+selected provider and the suggested one is an eligible fallback here; the
+selected provider follows it, then the rest by health and priority. The loading
+line says so (`orderNote`: "Trying Rivestream first: it worked for this title
+before."), so the reorder is never silent.
 
-`ignoreTitleHealthSuggestion` on resolve input suppresses that advisory for one attempt.
+It does not apply when the user just chose the provider (a switch), on
+`/recompute`, or in manual mode: `keepPrimaryFirst` (from
+`resolvePlaybackResolvePolicy`) keeps the selected provider first, and
+`ignoreTitleHealthSuggestion` drops the suggestion entirely for provider-only
+requests.
 
 ### 3.2 When the record is written
 
@@ -101,23 +110,26 @@ If config `recoveryMode` is **`manual`**, order is **only** `[primaryProviderId]
 
 If a provider is **`down`** globally (layer B):
 
-- It is still attempted as **primary** when selected.
-- It is **omitted** from extra fallbacks in the resolve loop.
-- Title health (layer C) remains advisory and does not override that skip.
+- As the selected provider it is tried **last**, not first, with a loading note
+  ("VidKing is down (3 failures), so it is tried last."). It is still tried, so
+  a recovered provider is noticed; health heals by TTL.
+- A provider the user just chose (`keepPrimaryFirst`) leads even when `down`.
+- As a fallback it is **omitted** from the resolve loop.
+- A title suggestion never re-admits a `down` fallback.
 
 ---
 
 ## 4. Weird behaviors checklist
 
-| Symptom                                         | Likely cause                                                                 |
-| ----------------------------------------------- | ---------------------------------------------------------------------------- |
-| Note says try Rivestream but VidKing still runs | **C** is advisory only; check global **B** `down` or provider priority order |
-| Clear cache didn’t help                         | Only layer **A** cleared; use `/reset-provider-health` for **B/C**           |
-| Provider never in fallback list                 | Global health **B** effective `down` (or recently failed)                    |
-| Same bad stream again                           | Stale **A** until dead-stream invalidation or `preferFreshStream`            |
-| “Struggled with this title” note every episode  | **C** still has `suggestedProviderId` until expiry or clean successes        |
-| Parse failures stick a week                     | **C** `severeUntil` / 7d retention for `parse`                               |
-| Down provider works again after hours           | TTL auto-heal on layer **B** (8h to full eligibility)                        |
+| Symptom                                               | Likely cause                                                                                |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| VidKing still runs before Rivestream despite the note | You just switched to VidKing, used `/recompute`, or are in manual mode (`keepPrimaryFirst`) |
+| Clear cache didn’t help                               | Only layer **A** cleared; use `/reset-provider-health` for **B/C**                          |
+| Provider never in fallback list                       | Global health **B** effective `down` (or recently failed)                                   |
+| Same bad stream again                                 | Stale **A** until dead-stream invalidation or `preferFreshStream`                           |
+| “Struggled with this title” note every episode        | **C** still has `suggestedProviderId` until expiry or clean successes                       |
+| Parse failures stick a week                           | **C** `severeUntil` / 7d retention for `parse`                                              |
+| Down provider works again after hours                 | TTL auto-heal on layer **B** (8h to full eligibility)                                       |
 
 ---
 

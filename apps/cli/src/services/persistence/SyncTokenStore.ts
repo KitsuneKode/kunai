@@ -2,6 +2,7 @@ import { readFile, rename } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { KunaiPaths } from "@kunai/storage";
+import { isJsonNumber, isJsonObject, isJsonString, type JsonObject } from "@kunai/types";
 
 import { writeAtomicSecretJson } from "../../infra/fs/atomic-write";
 
@@ -24,6 +25,80 @@ export interface SyncTokens {
   readonly tmdb?: TmdbTokens;
 }
 
+const TRACKER_SLOTS = ["anilist", "tmdb"] as const;
+
+const isOptionalString = <T>(value: T) => value === undefined || isJsonString(value);
+
+function isAniListTokens<T>(value: T): value is T & AniListTokens {
+  return (
+    isJsonObject(value) &&
+    isJsonString(value.accessToken) &&
+    value.accessToken.trim().length > 0 &&
+    isJsonNumber(value.userId) &&
+    Number.isSafeInteger(value.userId) &&
+    value.userId > 0 &&
+    isOptionalString(value.expiresAt)
+  );
+}
+
+function isTmdbTokens<T>(value: T): value is T & TmdbTokens {
+  return (
+    isJsonObject(value) &&
+    isJsonString(value.sessionId) &&
+    value.sessionId.trim().length > 0 &&
+    isOptionalString(value.accountId) &&
+    isOptionalString(value.username)
+  );
+}
+
+/**
+ * The tracker records in a stored document that pass their shape check. Each
+ * record is judged on its own: an invalid one reads as absent (that tracker
+ * shows disconnected) without taking the other tracker down with it.
+ */
+export function validSyncTokens(document: JsonObject): SyncTokens {
+  return {
+    ...(isAniListTokens(document.anilist) && { anilist: document.anilist }),
+    ...(isTmdbTokens(document.tmdb) && { tmdb: document.tmdb }),
+  };
+}
+
+/** Refuse to store a malformed record. The message never carries credential bytes. */
+export function assertStorableSyncTokens(tokens: SyncTokens): void {
+  if (tokens.anilist !== undefined && !isAniListTokens(tokens.anilist)) {
+    throw new Error("Refusing to store an invalid AniList credential record");
+  }
+  if (tokens.tmdb !== undefined && !isTmdbTokens(tokens.tmdb)) {
+    throw new Error("Refusing to store an invalid TMDB credential record");
+  }
+}
+
+/** The stored JSON object, or `undefined` if the text is not one. Never rethrows parse text. */
+export function parseSyncTokenDocument(raw: string): JsonObject | undefined {
+  try {
+    const value: unknown = JSON.parse(raw);
+    return isJsonObject(value) ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * `document` with each tracker slot named in `patch` replaced or removed, and
+ * everything else — the other tracker, an invalid record, fields a newer build
+ * wrote — carried over untouched.
+ */
+function patchSyncTokenDocument(document: JsonObject, patch: SyncTokens) {
+  const touched = (key: string) =>
+    TRACKER_SLOTS.some((slot) => slot === key && Object.hasOwn(patch, slot));
+  const kept = Object.entries(document).filter(([key]) => !touched(key));
+  const written = TRACKER_SLOTS.flatMap((slot) => {
+    const value = patch[slot];
+    return Object.hasOwn(patch, slot) && value !== undefined ? [[slot, value] as const] : [];
+  });
+  return Object.fromEntries([...kept, ...written]);
+}
+
 /**
  * File seam for the token store: reading the whole token file and replacing it.
  *
@@ -33,10 +108,9 @@ export interface SyncTokens {
  */
 export interface SyncTokenFileIo {
   /**
-   * Persisted tokens; `{}` when the file is absent. A present-but-corrupt file
-   * is quarantined aside (`<path>.corrupt-<ts>.json`) before returning `{}`,
-   * so a later patch can never merge over — and erase — the other tracker's
-   * credential.
+   * Persisted valid tracker records; `{}` only when the file is absent. Any
+   * other read fault rejects, so no mutation proceeds from an invented empty
+   * snapshot.
    */
   readonly readTokens: (path: string) => Promise<SyncTokens>;
   /** Replace the whole file with `tokens`. */
@@ -45,31 +119,40 @@ export interface SyncTokenFileIo {
   readonly patchTokens?: (path: string, patch: SyncTokens) => Promise<void>;
 }
 
+/**
+ * The stored document. Absent (ENOENT) is the only "no tokens"; a read fault
+ * (EACCES, EISDIR, EIO) rejects and nothing is moved. Text that is not a JSON
+ * object holds no recoverable record, so it is quarantined beside the file
+ * (`<path>.corrupt-<ts>.json`, same owner-only directory) before an empty
+ * document is returned — and if the move fails, this rejects rather than let a
+ * write replace those bytes.
+ */
+async function readSyncTokenDocument(path: string): Promise<JsonObject> {
+  let raw: string;
+  try {
+    raw = await readFile(path, "utf8");
+  } catch (error) {
+    if (isJsonObject(error) && error.code === "ENOENT") return {};
+    throw error;
+  }
+  const document = parseSyncTokenDocument(raw);
+  if (document) return document;
+  await rename(path, `${path}.corrupt-${Date.now()}.json`);
+  return {};
+}
+
 export const realSyncTokenFileIo: SyncTokenFileIo = {
   async readTokens(path: string): Promise<SyncTokens> {
-    let raw: string;
-    try {
-      raw = await readFile(path, "utf8");
-    } catch {
-      // Absent (or unreadable) file: no tokens yet. This is the only case
-      // that may merge over an empty object.
-      return {};
-    }
-    try {
-      return JSON.parse(raw) as SyncTokens;
-    } catch {
-      // Corrupt file: never merge a single-tracker patch over `{}` and
-      // silently erase the other tracker's credential. Quarantine the bytes
-      // aside (same directory, owner-only perms via rename) and start fresh —
-      // the user re-authenticates once instead of losing a tracker they never
-      // touched.
-      const quarantine = `${path}.corrupt-${Date.now()}.json`;
-      await rename(path, quarantine).catch(() => undefined);
-      return {};
-    }
+    return validSyncTokens(await readSyncTokenDocument(path));
   },
   writeTokens(path: string, tokens: SyncTokens): Promise<void> {
+    assertStorableSyncTokens(tokens);
     return writeAtomicSecretJson(path, tokens);
+  },
+  async patchTokens(path: string, patch: SyncTokens): Promise<void> {
+    assertStorableSyncTokens(patch);
+    const document = await readSyncTokenDocument(path);
+    await writeAtomicSecretJson(path, patchSyncTokenDocument(document, patch));
   },
 };
 
@@ -86,16 +169,32 @@ export class SyncTokenStore {
   private readonly io: SyncTokenFileIo;
   /** Tail of the serialized mutation queue. Settled form only -- never rejects. */
   private mutationChain: Promise<void> = Promise.resolve();
+  /** The read in flight, and the queue tail it waited on (see `load`). */
+  private sharedLoad: { readonly after: Promise<void>; readonly read: Promise<SyncTokens> } | null =
+    null;
 
   constructor(paths: KunaiPaths, io: SyncTokenFileIo = realSyncTokenFileIo) {
     this.path = join(paths.configDir, "sync-tokens.json");
     this.io = io;
   }
 
-  /** Persisted tokens, read once every mutation queued before this call has settled. */
-  async load(): Promise<SyncTokens> {
-    await this.mutationChain;
-    return this.io.readTokens(this.path);
+  /**
+   * Persisted tokens, read once every mutation queued before this call has
+   * settled. Concurrent loads with no mutation queued between them share one
+   * read: both trackers load at startup, and on a credential vault each read
+   * is a subprocess per tracker entry (4 spawns where 2 do).
+   */
+  load(): Promise<SyncTokens> {
+    const after = this.mutationChain;
+    if (this.sharedLoad?.after === after) return this.sharedLoad.read;
+    const read = after.then(() => this.io.readTokens(this.path));
+    const shared = { after, read };
+    this.sharedLoad = shared;
+    const release = () => {
+      if (this.sharedLoad === shared) this.sharedLoad = null;
+    };
+    read.then(release, release);
+    return read;
   }
 
   /** Replace the whole token file, ordered against concurrent patches. */

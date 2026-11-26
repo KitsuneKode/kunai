@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +9,7 @@ import { __testing as rendererTesting } from "@/app-shell/poster-renderer";
 import { usePosterPreview } from "@/app-shell/use-poster-preview";
 import { useShellDimensions } from "@/app-shell/use-viewport-policy";
 import type { ImageCapability } from "@/image";
+import { setTerminalCellPixels } from "@/image/cell-size";
 import { Text } from "ink";
 import React, { act } from "react";
 
@@ -16,7 +17,7 @@ import { render } from "../../harness/render-capture";
 
 const originalPaneDetect = paneTesting.runtime.detectImageCapability;
 const originalRendererDetect = rendererTesting.runtime.detectImageCapability;
-const originalStdoutWrite = process.stdout.write.bind(process.stdout);
+let outputSpy: ReturnType<typeof spyOn<typeof process.stdout, "write">> | undefined;
 
 function kittyCapability(): ImageCapability {
   return {
@@ -53,19 +54,39 @@ afterEach(() => {
   setPosterDiskCacheDir(null);
   paneTesting.runtime.detectImageCapability = originalPaneDetect;
   rendererTesting.runtime.detectImageCapability = originalRendererDetect;
-  process.stdout.write = originalStdoutWrite;
+  setTerminalCellPixels(null);
+  outputSpy?.mockRestore();
+  outputSpy = undefined;
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
 describe("usePosterPreview resize cleanup", () => {
+  test("removes stale placements when the cell pixel size changes at a fixed grid", () => {
+    paneTesting.runtime.detectImageCapability = kittyCapability;
+    rendererTesting.runtime.detectImageCapability = kittyCapability;
+    const writes: string[] = [];
+    outputSpy = spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    const handle = render(<PosterResizeProbe />, { columns: 80, rows: 30 });
+    try {
+      act(() => setTerminalCellPixels({ width: 9, height: 22 }));
+      expect(handle.lastFrame()).toContain("poster-cols=12");
+      expect(writes).toContain("\x1b_Ga=d,d=A;\x1b\\");
+    } finally {
+      handle.unmount();
+    }
+  });
+
   test("clears terminal image placements immediately when poster dimensions change", () => {
     paneTesting.runtime.detectImageCapability = kittyCapability;
     rendererTesting.runtime.detectImageCapability = kittyCapability;
     const writes: string[] = [];
-    process.stdout.write = ((chunk: string | Uint8Array) => {
-      writes.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+    outputSpy = spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      writes.push(String(chunk));
       return true;
-    }) as typeof process.stdout.write;
+    });
 
     const handle = render(<PosterResizeProbe />, { columns: 80, rows: 30 });
     try {

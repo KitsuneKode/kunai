@@ -106,28 +106,83 @@ describe("ProviderCandidatePlanner", () => {
     });
   });
 
-  test("keeps title health suggestions advisory and walks full provider priority in guided mode", () => {
+  test("a title suggestion leads in guided mode, then the selected provider, then the rest", () => {
+    const plan = planProviderCandidates({
+      primaryProviderId: "primary",
+      mediaKind: "series",
+      recoveryMode: "guided",
+      now,
+      modules: [
+        module("primary", ["series"]),
+        module("fallback-a", ["series"]),
+        module("fallback-b", ["series"]),
+      ],
+      suggestion: { providerId: "primary", suggestedProviderId: "fallback-b" },
+      nameOf: (id) => id.toUpperCase(),
+    });
+    expect(plan.candidateIds).toEqual(["fallback-b", "primary", "fallback-a"]);
+    expect(plan.orderNote).toBe("Trying FALLBACK-B first: it worked for this title before.");
+  });
+
+  test("a suggestion for another provider, or one not offered here, changes nothing", () => {
+    const base = {
+      primaryProviderId: "primary",
+      mediaKind: "series" as const,
+      recoveryMode: "guided" as const,
+      now,
+      modules: [module("primary", ["series"]), module("fallback-a", ["series"])],
+    };
     expect(
       planProviderCandidates({
-        primaryProviderId: "primary",
-        mediaKind: "series",
-        recoveryMode: "guided",
-        now,
-        modules: [
-          module("primary", ["series"]),
-          module("fallback-a", ["series"]),
-          module("fallback-b", ["series"]),
-        ],
-        suggestion: {
-          providerId: "primary",
-          suggestedProviderId: "fallback-b",
-        },
-      }),
-    ).toEqual({
-      candidateIds: ["primary", "fallback-a", "fallback-b"],
-      hasCompatibleFallback: true,
-      skippedFallbackProviders: [],
+        ...base,
+        suggestion: { providerId: "other", suggestedProviderId: "fallback-a" },
+      }).candidateIds,
+    ).toEqual(["primary", "fallback-a"]);
+    expect(
+      planProviderCandidates({
+        ...base,
+        suggestion: { providerId: "primary", suggestedProviderId: "not-installed" },
+      }).candidateIds,
+    ).toEqual(["primary", "fallback-a"]);
+  });
+
+  test("a selected provider that is down goes last, still tried, with a note", () => {
+    const plan = planProviderCandidates({
+      primaryProviderId: "primary",
+      mediaKind: "series",
+      recoveryMode: "fallback-first",
+      now,
+      modules: [module("primary", ["series"]), module("fallback-a", ["series"])],
+      getProviderHealth: (id) =>
+        id === "primary"
+          ? {
+              providerId: "primary",
+              status: "down",
+              checkedAt: now().toISOString(),
+              consecutiveFailures: 3,
+            }
+          : undefined,
     });
+    expect(plan.candidateIds).toEqual(["fallback-a", "primary"]);
+    expect(plan.orderNote).toBe("primary is down (3 failures), so it is tried last.");
+  });
+
+  test("a provider the user just chose leads even when down, and suggestions wait", () => {
+    const plan = planProviderCandidates({
+      primaryProviderId: "primary",
+      mediaKind: "series",
+      recoveryMode: "guided",
+      now,
+      keepPrimaryFirst: true,
+      modules: [module("primary", ["series"]), module("fallback-a", ["series"])],
+      getProviderHealth: (id) =>
+        id === "primary"
+          ? { providerId: "primary", status: "down", checkedAt: now().toISOString() }
+          : undefined,
+      suggestion: { providerId: "primary", suggestedProviderId: "fallback-a" },
+    });
+    expect(plan.candidateIds).toEqual(["primary", "fallback-a"]);
+    expect(plan.orderNote).toBeUndefined();
   });
 
   test("manual recovery stays on the selected provider while reporting fallback availability", () => {

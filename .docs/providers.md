@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T20:46:21Z"
+lastReviewed: "2026-11-26T11:41:21Z"
 ---
 
 # Kunai — Provider Guide
@@ -229,10 +229,16 @@ provider, a `baseUrl`, `mirrors`, `deadServers`, `disabled`, and
 (`getEffectiveProviderMirrors`, `getProviderCryptoOverride`); bundled values are
 always the fallback.
 
-- **Trust.** Envelopes are Ed25519-signed and verified against keys from
-  `KUNAI_PROVIDER_MANIFEST_PUBKEYS`. No key and no URL are baked into the
-  binary — like the relay, the manifest source is operator-owned and the feature
-  is off until both are configured.
+- **Trust.** Envelopes are Ed25519-signed. The project's own channel is pinned
+  in `apps/cli/src/services/providers/provider-manifest-pin.json`: a fixed URL
+  on the repository's `provider-manifest` prerelease plus the public keys allowed
+  to sign it (read by `provider-manifest-pin.ts`). The channel is inert while no
+  key is pinned; `scripts/setup-signing-keys.ts` pins one. An operator's own
+  channel replaces the pin entirely: `KUNAI_PROVIDER_MANIFEST_PUBKEYS` takes
+  precedence, and with operator keys the pinned URL is never used, so a fork's
+  keys never verify the project URL. This differs from the relay on purpose:
+  the relay carries user traffic through someone's server, the manifest is
+  signed metadata the project publishes about its own providers.
 - **Lifecycle.** `kunai providers update --url <https>` fetches, verifies, and
   caches it (`--dry-run` to inspect); `providers status`, `verify`, `rollback`,
   and `reset` are the ways back out. The previous manifest is kept as a backup
@@ -265,8 +271,8 @@ always the fallback.
   in the interactive shell and in headless `-S --json` search;
   without it a manifest would apply only in the process that fetched it.
 - **Background refresh.** `maybeBackgroundRefreshProviderManifest` refreshes at
-  most every six hours, only when `KUNAI_PROVIDER_MANIFEST_URL` and trusted keys
-  are both set, and fails silently offline.
+  most every six hours, only when a URL (operator or pinned) and trusted keys
+  are both in force, and fails silently offline.
 - **Urgent refresh.** When a provider's health transitions into `down`
   (`PlaybackResolveService` → `onProviderDown`, wired in
   `apps/cli/src/container/bootstrap-providers.ts`), Kunai checks the manifest

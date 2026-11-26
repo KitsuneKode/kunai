@@ -261,11 +261,13 @@ jobs:
       # YouTube-provider resolve tests gate on `Bun.which("yt-dlp")` — the
       # resolve path requires the binary even though every test injects its
       # metadata service, so the binary is present but never invoked. Without
-      # it those tests used to report a vacuous pass (#468).
-      - name: Install yt-dlp (present-only; never invoked by tests)
+      # it those tests used to report a vacuous pass (#468). A checked-in stub,
+      # not the moving upstream `latest` asset: this job can see the remote-cache
+      # token, so it must not execute third-party code (security review M5, #777).
+      # The stub fails loudly if a test ever does invoke it.
+      - name: Install yt-dlp presence stub (never invoked by tests)
         run: |
-          sudo curl -sSfL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
-          sudo chmod +x /usr/local/bin/yt-dlp
+          sudo install -m 0755 .github/scripts/yt-dlp-ci-stub.sh /usr/local/bin/yt-dlp
           yt-dlp --version
 
       - name: Test (affected on PR, full when nothing is affected)
@@ -767,8 +769,10 @@ jobs:
           path: |
             apps/cli/dist/bin/kunai-linux-x64
             apps/cli/dist/bin/kunai-linux-x64.tar.gz
+            apps/cli/dist/bin/kunai-linux-x64.tar.zst
             apps/cli/dist/bin/kunai-linux-x64-musl
             apps/cli/dist/bin/kunai-linux-x64-musl.tar.gz
+            apps/cli/dist/bin/kunai-linux-x64-musl.tar.zst
             apps/cli/dist/bin/SHA256SUMS
             apps/cli/dist/bin/SHA256SUMS.archives
 

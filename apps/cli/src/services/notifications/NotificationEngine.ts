@@ -41,6 +41,8 @@ export type NotificationSignal =
     }
   | {
       readonly type: "download-failed";
+      /** The failed job: Retry requeues exactly this one, with its own settings. */
+      readonly downloadJobId?: string;
       readonly titleId: string;
       readonly mediaKind: string;
       readonly title: string;
@@ -89,6 +91,8 @@ export interface DerivedNotification {
   readonly body: string;
   readonly item?: MediaItemIdentity;
   readonly queueSessionId?: string;
+  /** Stored beside the item so a download-failed Retry can requeue its exact job. */
+  readonly downloadJobId?: string;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -189,18 +193,23 @@ export function deriveNotifications(
     }
 
     if (signal.type === "download-failed") {
+      // Anime jobs carry only an absolute episode. Keying on season/episode
+      // alone collapsed every failed episode of a show into one notice.
       const episodePart =
         signal.season !== undefined && signal.episode !== undefined
           ? `S${signal.season}E${signal.episode}`
-          : "episode";
+          : signal.absoluteEpisode !== undefined
+            ? `E${signal.absoluteEpisode}`
+            : "episode";
       derived.push({
         dedupKey: [
           "download-failed",
           signal.titleId,
           signal.season ?? "-",
-          signal.episode ?? "-",
+          signal.episode ?? signal.absoluteEpisode ?? "-",
         ].join(":"),
         kind: "download-failed",
+        downloadJobId: signal.downloadJobId,
         title: `Download failed · ${signal.title} ${episodePart}`,
         body: signal.error,
         item: {

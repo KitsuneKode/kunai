@@ -1,6 +1,12 @@
 export type ImageProtocol = "kitty" | "iterm-inline" | "sixel" | "half-block" | "none";
 
-export type ImageRendererId = "kitty-native" | "iterm-inline" | "sixel" | "half-block" | "none";
+export type ImageRendererId =
+  | "kitty-native"
+  | "kitty-direct"
+  | "iterm-inline"
+  | "sixel"
+  | "half-block"
+  | "none";
 
 export type TerminalId =
   | "kitty"
@@ -16,6 +22,7 @@ export interface ImageCapability {
   readonly terminal: TerminalId;
   readonly protocol: ImageProtocol;
   readonly renderer: ImageRendererId;
+  readonly kittyPassthrough?: "tmux";
   readonly available: boolean;
   readonly reason: string;
 }

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T13:00:00Z"
+lastReviewed: "2026-11-26T10:13:00Z"
 ---
 
 # Kunai — Testing Strategy
@@ -92,9 +92,14 @@ root itself and child names beginning with dots remain valid.
    injected clock, or fake timer. A sleep is not an acknowledgement. A generous
    test timeout bounds a hang; it does not prove synchronization.
    `apps/cli/test/unit/architecture/no-real-test-sleep.test.ts` fails when a
-   test file gains a `Bun.sleep`, `setTimeout`, or `setInterval` that is not
-   already allowlisted. An allowlist entry is for a real process or an OS wait
-   that has no clock seam, and it has to say why.
+   test or integration fixture gains a `Bun.sleep`, `setTimeout`, or
+   `setInterval` that is not already allowlisted. An allowlist entry is for a
+   real process or an OS wait that has no clock seam, and it has to say why.
+   The PlaybackPhase characterization suite shares an isolated fixture process
+   and awaits an IPC reply after each scenario disposes its container. Each
+   scenario opens its own storage root. The fake player emits control events
+   directly, the autoplay clock advances on each tick, and prefetch waits for
+   the fixture provider's promise with an injected deadline.
 3. For a regression test, temporarily remove the behavior it protects and confirm
    the assertion fails. Restore it before broader validation. Do not mutate source
    while another verification command is reading the same tree.
@@ -147,7 +152,7 @@ IPv6 loopback (`http://[::1]:3000/api/ping`) is also supported. Start the fixtur
 separately; this command does not provision a server or database. Never use a
 proxy to production or production database credentials. The smoke requires an
 explicit port, refuses remote/default URLs and redirects before sending its
-synthetic identity, and awaits a `204` plus a `400` for the sixth-key probe.
+synthetic identity, and awaits a `204` plus a `400` for the extra-key probe.
 It does not validate production DNS, deployed ingest, startup latency or counts.
 Its regression tests replace fetch before importing the actual smoke, so even
 testing rejection of a production URL cannot hit production.
@@ -554,6 +559,17 @@ Best target for:
 - before and after UX comparison for major shell redesign passes
 
 Use VHS for terminal UX capture and review, not as the only proof that behavior works.
+
+Every tape launches through `apps/cli/test/vhs/isolated-kunai.sh` (the CLI, or
+`--harness <script>` for a fixture harness). The recorder shell is not a
+`bun test` worker, so the preload's real-profile guard does not cover it; the
+wrapper redirects HOME, XDG, APPDATA and TMPDIR into a sandbox seeded past
+onboarding with analytics unset, and removes it on exit. VHS can kill the
+wrapper before its trap runs when a tape ends mid-program, so each sandbox
+records its owner PID and the next launch sweeps sandboxes whose owner is gone.
+`apps/cli/test/unit/architecture/vhs-tape-isolation.test.ts` fails a tape that
+launches anything else, checks each CLI tape's `Wait+Screen` text still exists
+in `src/`, and runs the wrapper to prove the redirect, the cleanup and the sweep.
 
 For this repo, treat VHS as the primary CLI e2e medium for visual flows.
 Plain non-TTY process tests are often misleading for Ink UIs, so prefer:

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T17:30:00Z"
+lastReviewed: "2026-11-26T10:44:37Z"
 ---
 
 # Tracker Sync
@@ -251,10 +251,25 @@ observe it.
 To remove Kunai's access entirely: disconnect in Kunai, then revoke the
 application from your AniList account settings and delete the session from your
 TMDB account settings. Deleting `configDir/sync-tokens.json` removes the local
-credentials but does not revoke anything remotely. If that file is ever
-unparseable, Kunai quarantines it aside as `sync-tokens.json.corrupt-<ts>.json`
-instead of merging over it, so one corrupt write cannot erase the other
-tracker's credential — re-authenticate the affected tracker afterwards.
+credentials but does not revoke anything remotely.
+
+The token store never invents an empty snapshot. Only an absent file reads as
+"no tokens"; any other read fault (permissions, a directory in its place, I/O)
+rejects, so no patch proceeds and nothing is overwritten. If the file holds
+something that is not a JSON object, Kunai quarantines it aside as
+`sync-tokens.json.corrupt-<ts>.json` before starting fresh, and refuses to write
+if that move fails. Each tracker record is shape-checked on its own: an invalid
+AniList or TMDB record reads as disconnected without taking the other tracker
+down, a patch keeps every slot it does not name (including an invalid record
+and fields a newer build wrote), and an invalid record is never stored. The
+vault backend applies the same checks, and migration to the vault moves only
+valid records, leaving an invalid one in the plaintext file.
+
+A rejected read never stops startup. `initSyncAdapters` loads each tracker on
+its own; a tracker whose credentials cannot be read starts disconnected, with a
+`sync.credentials.unavailable` warning that names only the tracker, while local
+playback and the other tracker carry on. Fix the file or vault entry, then
+reconnect.
 
 ## Not implemented
 
@@ -318,6 +333,17 @@ The disposable-account CLI → SQLite → restart → remote smoke remains the
 release gate because deterministic recovery tests do not prove a real remote
 account mutation end to end.
 
+**Linking is the opt-in.** A fresh connect (`connectNamedTracker`, shared by
+Settings, `/sync` and setup) turns on `enabled`, `trackWatched` where the
+tracker has episode progress, and `syncList` where it holds lists. Before this,
+connecting left every flag at its default (off), so the account read
+"connected · up to date" while nothing was ever sent. An account that was
+already connected keeps the user's switches; setup turns sync on for one the
+user ticked anyway, because the tick is the request. Every disconnect goes
+through `disconnectNamedTracker`, which turns `enabled` off and keeps the other
+switches for a later reconnect, so config never claims a link with no token
+(#232).
+
 **Pause** (`sync.pausedUntil`) is global and separate from `sync.<tracker>.enabled`.
 Enabled off means never; paused means not right now. Work keeps queueing while
 paused and goes out on resume, so pausing never costs an episode. The drain
@@ -341,12 +367,16 @@ response and answers `429` with `Retry-After` and `X-RateLimit-Reset`;
 `TrackerRateLimiter` reads all of it. Below ten remaining it spreads what is
 left across the rest of the window; at zero it blocks until reset.
 
-Short waits are absorbed in-flight. Anything longer is handed back to the outbox
-via `defer()`, which writes the server's own instant to `next_attempt_at` and
+Short waits (up to three seconds) are absorbed in-flight. Anything longer is a
+`rate-limited` outcome before any request: both adapters check
+`shouldDefer()` first rather than sitting out the inline cap and sending early.
+The outbox `defer()` writes the server's own instant to `next_attempt_at` and
 **rolls back the attempt this claim started** — a row must not inherit a longer
-backoff for a queue-wide condition it did not cause. Within one drain, the first
-`rate-limited` outcome defers every remaining row for that tracker without
-asking again: the limit belongs to the connection, not to any one payload.
+backoff for a queue-wide condition it did not cause. The first `rate-limited`
+outcome also sets a per-tracker deadline on the `SyncService` instance: every
+row for that tracker is deferred without asking until it passes, across batches
+of 25, the passes of one drain, and later drains. Other trackers keep draining.
+The limit belongs to the connection, not to any one payload.
 
 ## GraphQL error fates
 

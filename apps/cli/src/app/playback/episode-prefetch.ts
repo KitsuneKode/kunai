@@ -1,4 +1,5 @@
 import type { EpisodeInfo, StreamInfo, TitleInfo } from "@/domain/types";
+import { isAbortError } from "@kunai/core";
 import {
   encodeProviderEpisodeIdentity,
   providerEpisodeIdentitiesEqual,
@@ -119,15 +120,28 @@ export function isEpisodePrefetchEligible(input: {
   return true;
 }
 
-/**
- * Owns next-episode prefetch lifecycle: schedule, abort, keyed wait, and consume-ready.
- */
+export type EpisodePrefetchTiming = {
+  readonly now: () => number;
+  readonly scheduleTimeout: (expire: () => void, delayMs: number) => () => void;
+};
+
+const realPrefetchTiming: EpisodePrefetchTiming = {
+  now: () => Date.now(),
+  scheduleTimeout: (expire, delayMs) => {
+    const timer = setTimeout(expire, delayMs);
+    return () => clearTimeout(timer);
+  },
+};
+
+/** Owns next-episode prefetch lifecycle: schedule, abort, keyed wait, and consume-ready. */
 export class EpisodePrefetchHandle {
   private generation = 0;
   private abortController: AbortController | null = null;
   private inFlight: Promise<EpisodePrefetchBundle | null> | null = null;
   private ready: EpisodePrefetchBundle | null = null;
   private activeTarget: EpisodePrefetchTarget | null = null;
+
+  constructor(private readonly timing: EpisodePrefetchTiming = realPrefetchTiming) {}
 
   cancel(_reason: string): void {
     this.generation += 1;
@@ -214,7 +228,7 @@ export class EpisodePrefetchHandle {
         }
         return null;
       } catch (error) {
-        if (isAbortLike(error) || abortController.signal.aborted) return null;
+        if (isAbortError(error) || abortController.signal.aborted) return null;
         throw error;
       } finally {
         if (generation === this.generation) {
@@ -237,7 +251,7 @@ export class EpisodePrefetchHandle {
     run: (signal: AbortSignal) => Promise<EpisodePrefetchBundle | null>,
     budgetMs: number,
   ): Promise<EpisodePrefetchWaitResult> {
-    const startedAt = Date.now();
+    const startedAt = this.timing.now();
     const immediate = this.peekReadyFor(target);
     if (immediate) {
       return { bundle: immediate, outcome: "ready", waitedMs: 0 };
@@ -249,11 +263,11 @@ export class EpisodePrefetchHandle {
 
     const promise = this.inFlight;
     if (!promise) {
-      return { bundle: null, outcome: "none", waitedMs: Date.now() - startedAt };
+      return { bundle: null, outcome: "none", waitedMs: this.timing.now() - startedAt };
     }
 
-    const outcome = await racePromiseWithTimeout(promise, budgetMs);
-    const waitedMs = Date.now() - startedAt;
+    const outcome = await racePromiseWithTimeout(promise, budgetMs, this.timing.scheduleTimeout);
+    const waitedMs = this.timing.now() - startedAt;
     const bundle = this.peekReadyFor(target);
     return {
       bundle,
@@ -266,29 +280,21 @@ export class EpisodePrefetchHandle {
 async function racePromiseWithTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number,
+  scheduleTimeout: EpisodePrefetchTiming["scheduleTimeout"],
 ): Promise<"completed" | "timed-out"> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let cancelTimeout: (() => void) | undefined;
   try {
     return await Promise.race([
       promise.then(() => "completed" as const),
       new Promise<"timed-out">((resolve) => {
-        timer = setTimeout(() => resolve("timed-out"), timeoutMs);
+        cancelTimeout = scheduleTimeout(() => resolve("timed-out"), timeoutMs);
       }),
     ]);
   } catch {
     return "completed";
   } finally {
-    if (timer !== undefined) clearTimeout(timer);
+    cancelTimeout?.();
   }
-}
-
-function isAbortLike(error: unknown): boolean {
-  return (
-    (error instanceof Error && error.name === "AbortError") ||
-    (typeof DOMException !== "undefined" &&
-      error instanceof DOMException &&
-      error.name === "AbortError")
-  );
 }
 
 export async function adoptEpisodePrefetchBundle(input: {
