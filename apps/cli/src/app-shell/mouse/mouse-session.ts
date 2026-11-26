@@ -100,6 +100,7 @@ export function startMouseSession(options: {
       dispatcher.clear();
     }
   };
+  dispatcher.pressKey = (keys) => stdin.inject(keys);
   stdin.attach();
   options.host.once("exit", dispose);
   if (options.measureCells) options.host.on("SIGWINCH", onResize);
