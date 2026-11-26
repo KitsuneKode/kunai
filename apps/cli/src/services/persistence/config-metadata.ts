@@ -109,6 +109,15 @@ export const CONFIG_METADATA = [
     options: ["guided", "fallback-first", "manual"],
   },
   {
+    key: "providerDns",
+    label: "Provider DNS",
+    section: "providers",
+    effect: "immediate",
+    privacy: "local",
+    editable: true,
+    options: ["doh", "system"],
+  },
+  {
     key: "startupPriority",
     label: "Startup priority",
     section: "playback",

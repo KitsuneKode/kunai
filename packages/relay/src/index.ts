@@ -1,5 +1,6 @@
 export * from "./normalize-relay-base-url";
 export * from "./create-relay-fetch-port";
+export * from "./doh-transport";
 export * from "./detect-geo-block";
 export * from "./forward-headers";
 export * from "./handler";

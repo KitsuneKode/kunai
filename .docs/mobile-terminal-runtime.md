@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-08"
+lastReviewed: "2026-11-24T20:41:28Z"
 ---
 
 # Mobile terminal runtime
@@ -150,6 +150,15 @@ activation and restoration failures preserve the backup for later recovery.
   shell string.
 - Android uses `spawn` with `shell: false`; explicit VLC handoff can use only
   `termux-am` or `/system/bin/am`.
+- The launcher child gets only PATH, HOME, PREFIX, TMPDIR and the Android
+  runtime `app_process` needs to boot ART (`ANDROID_ROOT`, `ANDROID_DATA`, the
+  Android 10+ APEX roots `ANDROID_ART_ROOT`/`ANDROID_I18N_ROOT`/
+  `ANDROID_TZDATA_ROOT`/`ANDROID_RUNTIME_ROOT`, and the `*CLASSPATH` lists):
+  `scrubbedIntentEnv` in `apps/cli/src/infra/player/android-intent-launcher.ts`.
+  `LD_LIBRARY_PATH` and `LD_PRELOAD` stay out, since Termux's libraries break
+  Android's own binaries, and so does every shell secret.
+- `kunai doctor` on Termux does not require desktop mpv and reports whether an
+  intent launcher exists (`android-player-handoff` / `-missing`).
 - iOS uses a literal helper allowlist and fixed private files.
 - The iOS HTTP helper disables implicit curl configuration with `-q` before
   loading its private request configuration. That configuration disables URL

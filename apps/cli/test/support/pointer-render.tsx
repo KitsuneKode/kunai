@@ -11,6 +11,8 @@ export function renderWithPointer(node: ReactElement, options: CaptureOptions = 
     <MouseDispatchProvider dispatcher={dispatcher}>{node}</MouseDispatchProvider>,
     options,
   );
+  // As in production: a click on a key hint presses that key.
+  dispatcher.pressKey = (keys) => handle.stdin.enqueue(keys);
   const send = (id: string, event: Pick<MouseEvent, "kind" | "button">) => {
     const region = dispatcher.debugRegions().find((row) => row.id === id);
     if (!region) throw new Error(`Visible mouse region missing: ${id}`);

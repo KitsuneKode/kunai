@@ -45,6 +45,14 @@ function fakeContainer(
         calls.push("sync:tokens-idle");
       },
     },
+    activePlaybackCheckpoint: {
+      flush: () => calls.push("checkpoint:flush"),
+    },
+    config: {
+      flushPending: async () => {
+        calls.push("config:flush");
+      },
+    },
   } as unknown as Container;
 
   registerContainerDisposeHandles(container, {
@@ -80,6 +88,8 @@ test("disposes in order: quiesce scheduler, drain, settle sync, flush, close DBs
     "presence:shutdown",
     "downloads:pause",
     "scheduler:drain",
+    "checkpoint:flush",
+    "config:flush",
     "sync:shutdown",
     "sync:tokens-idle",
     "diagnostics:flush",

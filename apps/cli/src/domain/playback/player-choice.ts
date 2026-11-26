@@ -6,13 +6,26 @@ export type SupportedPlayerPlatform = "android" | "linux" | "darwin" | "win32" |
 
 export type PlayerMode =
   | { readonly kind: "managed-mpv" }
-  | { readonly kind: "android-handoff"; readonly target: DetachedPlayerTarget }
-  | { readonly kind: "unsupported"; readonly choice: PlayerChoice };
+  | { readonly kind: "managed-vlc" }
+  | { readonly kind: "android-handoff"; readonly target: DetachedPlayerTarget };
 
 export function parsePlayerChoice(value: string | undefined): PlayerChoice {
   if (value === undefined || value === "auto") return "auto";
   if (value === "mpv" || value === "vlc") return value;
   throw new Error(`Invalid --player value "${value}"; expected auto, mpv, or vlc.`);
+}
+
+/**
+ * The player for this launch: an explicit `--player` wins, then the choice
+ * saved in Settings, then auto. A hand-edited, unknown saved value is auto
+ * rather than a startup error.
+ */
+export function effectivePlayerChoice(
+  flag: PlayerChoice | undefined,
+  saved: string | undefined,
+): PlayerChoice {
+  if (flag) return flag;
+  return saved === "mpv" || saved === "vlc" ? saved : "auto";
 }
 
 export function normalizePlayerPlatform(platform: string): SupportedPlayerPlatform {
@@ -51,8 +64,8 @@ export function resolvePlayerMode(input: {
       target: input.choice === "auto" ? "chooser" : input.choice,
     };
   }
-  if (input.choice === "vlc") {
-    return { kind: "unsupported", choice: "vlc" };
-  }
+  // Desktop VLC runs observed (`infra/player/vlc/vlc-player-service.ts`);
+  // discovery looks on PATH, so this holds for BSDs and other desktops too.
+  if (input.choice === "vlc") return { kind: "managed-vlc" };
   return { kind: "managed-mpv" };
 }

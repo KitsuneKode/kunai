@@ -9,6 +9,8 @@ export type PlaybackResolvePolicy = {
   readonly preserveCachedStreamOnFreshFailure: boolean;
   readonly ignoreTitleHealthSuggestion: boolean;
   readonly ignoreProviderHealth: boolean;
+  /** A provider the user just chose leads, even when its health says down. */
+  readonly keepPrimaryFirst: boolean;
   readonly shouldInvalidateSuspectResolveState: boolean;
   readonly resolveIntent: ProviderResolveInput["intent"];
   readonly recoveryMode: RecoveryMode;
@@ -44,8 +46,27 @@ export function resolvePlaybackResolvePolicy(input: {
     preserveCachedStreamOnFreshFailure: sourceRefreshIsRefresh && !honorExplicitProviderOnly,
     ignoreTitleHealthSuggestion: honorExplicitProviderOnly,
     ignoreProviderHealth: honorExplicitProviderOnly,
+    keepPrimaryFirst: honorExplicitProviderOnly || input.pendingUserProviderSwitch,
     shouldInvalidateSuspectResolveState,
     resolveIntent: input.recomputeSources ? "refresh" : "play",
     recoveryMode: honorExplicitProviderOnly ? "manual" : input.configuredRecoveryMode,
   };
+}
+
+/**
+ * Whether playback may use a stream the engine resolved from a provider other
+ * than the one requested. Fallback exists to find a working alternative, so it
+ * is accepted unless the request was provider-only (`/recompute`, or a switch
+ * made in manual recovery mode). A saved per-title provider is where a resolve
+ * starts, not a lock.
+ */
+export function acceptResolvedProviderForPlayback(input: {
+  readonly policy: Pick<PlaybackResolvePolicy, "honorExplicitProviderOnly">;
+  readonly requestedProviderId: string;
+  readonly resolvedProviderId: string;
+}): boolean {
+  return (
+    !input.policy.honorExplicitProviderOnly ||
+    input.requestedProviderId === input.resolvedProviderId
+  );
 }

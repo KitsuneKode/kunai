@@ -18,6 +18,7 @@ import {
   newMpvIpcSessionId,
   shouldUnlinkUnixSocket,
 } from "@/infra/player/mpv-ipc-endpoint";
+import { mpvIpcFailureEvents } from "@/infra/player/mpv-ipc-failure-events";
 import {
   createPlaybackProgressThrottleState,
   shouldEmitPlaybackProgress,
@@ -26,7 +27,6 @@ import { isLocalHlsManifestPlaybackUrl } from "@/infra/player/mpv-playback-url";
 import {
   isAllowedMpvUrl,
   isLocalSubtitlePath,
-  needsMpvNetworkPreflight,
   type MpvUrlKind,
 } from "@/infra/player/mpv-playback-url";
 import {
@@ -59,6 +59,7 @@ export { shouldApplyStartAtSeek };
 export { isLocalHlsManifestPlaybackUrl } from "@/infra/player/mpv-playback-url";
 export { isAllowedMpvUrl, type MpvUrlKind } from "@/infra/player/mpv-playback-url";
 import { MpvLaunchError } from "@/infra/player/mpv-launch-error";
+import { launchPreflight, type ResolveGateStream } from "@/infra/player/mpv-launch-preflight";
 import {
   applyEndFileEvent,
   applyObservedPropertySample,
@@ -74,6 +75,10 @@ import {
   describeSubtitleTrackForMpv,
 } from "@/infra/player/mpv-subtitle-tracks";
 import { PlaybackAbortedError } from "@/infra/player/playback-aborted";
+import {
+  createPlaybackOutputDriver,
+  readMpvVideoOutput,
+} from "@/infra/player/playback-output-gate";
 import { findActivePlaybackSkip, type PlaybackSkipConfig } from "@/infra/player/playback-skip";
 import { createPlaybackWatchdog } from "@/infra/player/playback-watchdog";
 import type { ActivePlayerControl } from "@/infra/player/PlayerControlService";
@@ -89,7 +94,6 @@ import { removeMpvChaptersFile, writeMpvChaptersFile } from "@/infra/timing";
 import { dbg } from "@/logger";
 import {
   checkStremioPlaybackPreflight,
-  checkStreamPreflight,
   shouldAbortPlaybackForPreflight,
 } from "@/services/playback/stream-health-check";
 import type { StreamPreflightResult } from "@/services/playback/stream-health-check";
@@ -113,6 +117,8 @@ export async function launchMpv(opts: {
   displayTitle: string;
   startAt?: number;
   requiresYtdl?: boolean;
+  /** The resolved stream: what its gate proved, and when. A fresh pass skips the launch probe. */
+  resolveGate?: ResolveGateStream;
   ytdlFormat?: string;
   ytdlRawOptions?: string;
   isLive?: boolean;
@@ -270,7 +276,6 @@ async function launchMpvInner(
   });
   let stopRequested = false;
   let playerReadyNotified = false;
-  let playbackStartedNotified = false;
   let currentPositionSeconds = 0;
   const playbackProgressThrottle = createPlaybackProgressThrottleState();
   let mutableTiming = opts.timing ?? null;
@@ -291,11 +296,13 @@ async function launchMpvInner(
     emitPlaybackEvent({ type: "player-ready" });
     opts.onPlayerReady?.();
   };
-  const notifyPlaybackStarted = () => {
-    if (playbackStartedNotified) return;
-    playbackStartedNotified = true;
-    emitPlaybackEvent({ type: "playback-started" });
-  };
+  let outputEnded = false;
+  const output = createPlaybackOutputDriver({
+    stats,
+    readVideoOutput: async () => readMpvVideoOutput(ipcSession),
+    isCurrent: () => !outputEnded,
+    emit: emitPlaybackEvent,
+  });
   const maybeEmitPlaybackProgress = (observedAt: number) => {
     const sample = stats.latestIpcSample;
     if (
@@ -409,25 +416,17 @@ async function launchMpvInner(
     signal: mpv.killed ? ("SIGTERM" as NodeJS.Signals) : null,
   }));
 
-  const preflight = // Addon streams already passed the strict pre-spawn check; the lenient
-    // concurrent probe would only duplicate it.
-    (
-      opts.stremioAddon || !needsMpvNetworkPreflight(opts.url, opts.urlKind)
-        ? Promise.resolve<StreamPreflightResult>({ status: "reachable" })
-        : checkStreamPreflight(opts.url, opts.headers, 3_000, {
-            requiresYtdl: opts.requiresYtdl,
-          })
-    ).then((result) => {
-      if (shouldAbortLaunchForDefinitivePreflight(result, ipcSession !== null)) {
-        dbg("mpv", "preflight-definitive-failure", {
-          reason: result.reason,
-          phase: "launch",
-          ipcConnected: ipcSession !== null,
-        });
-        mpv.kill("SIGTERM");
-      }
-      return result;
-    });
+  const preflight = launchPreflight(opts).then((result) => {
+    if (shouldAbortLaunchForDefinitivePreflight(result, ipcSession !== null)) {
+      dbg("mpv", "preflight-definitive-failure", {
+        reason: result.reason,
+        phase: "launch",
+        ipcConnected: ipcSession !== null,
+      });
+      mpv.kill("SIGTERM");
+    }
+    return result;
+  });
 
   const ipcBootstrap = (async () => {
     const ipcBootstrapStarted = Date.now();
@@ -443,35 +442,22 @@ async function launchMpvInner(
         applyObservedPropertySample(stats, { name, value, observedAt });
         if (stats.latestIpcSample) {
           watchdog.observe(stats.latestIpcSample);
+          output.observe(stats.latestIpcSample);
         }
         if ((name === "time-pos" || name === "playback-time") && typeof value === "number") {
           currentPositionSeconds = value;
-          if (value > 0) {
-            notifyPlaybackStarted();
-          }
-          maybeEmitPlaybackProgress(observedAt);
+          // Progress waits for confirmed output; see playback-output-gate.
+          if (output.started) maybeEmitPlaybackProgress(observedAt);
           trySkipSegment(true);
         }
       },
       onEndFile: ({ reason, fileError, observedAt }) => {
+        outputEnded = true;
         applyEndFileEvent(stats, reason, observedAt, { fileError });
         endFileResolve?.(reason);
       },
       onCommandResult: (result) => {
-        if (!result.ok) {
-          emitPlaybackEvent({
-            type: "ipc-command-failed",
-            command: String(result.command[0] ?? "unknown"),
-            error: result.error,
-          });
-          if (result.error === "timeout") {
-            emitPlaybackEvent({
-              type: "ipc-stalled",
-              command: String(result.command[0] ?? "unknown"),
-              error: result.error,
-            });
-          }
-        }
+        for (const event of mpvIpcFailureEvents(result)) emitPlaybackEvent(event);
       },
     });
 

@@ -6,6 +6,11 @@ export type AnalyticsRuntimeConfig = {
   readonly hashSecret: string;
   readonly cronSecret: string;
   readonly adminToken: string;
+  /**
+   * Optional token for the GitHub Releases API read by the distribution stage.
+   * Public data only; unset means an anonymous request.
+   */
+  readonly githubToken: string;
   readonly limits: AnalyticsLimits;
   readonly store: AnalyticsStore;
 };
@@ -28,6 +33,7 @@ export type AnalyticsEnv = {
   readonly ANALYTICS_MAX_PINGS_PER_DAY?: string;
   readonly ANALYTICS_MAX_BUCKETS_PER_DIMENSION?: string;
   readonly ANALYTICS_LIFETIME_RETENTION_DAYS?: string;
+  readonly GITHUB_TOKEN?: string;
   readonly [key: string]: string | undefined;
 };
 
@@ -55,6 +61,7 @@ export function loadAnalyticsRuntimeConfig(
     hashSecret,
     cronSecret: env.CRON_SECRET?.trim() ?? "",
     adminToken: env.ANALYTICS_ADMIN_TOKEN?.trim() ?? "",
+    githubToken: env.GITHUB_TOKEN?.trim() ?? "",
     limits,
     store: createStore(connectionString, limits),
   };

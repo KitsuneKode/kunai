@@ -17,6 +17,8 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { delimiter as PATH_DELIMITER, posix as posixPath, win32 as win32Path } from "node:path";
 
+import { getProviderDohResolver, proxyAppliesTo } from "@kunai/core";
+
 export type CurlCandidate = {
   readonly path: string;
   /** Prefix args required before request-specific flags/URL. */
@@ -203,6 +205,38 @@ export function curlArgvHead(curl: CurlCandidate): readonly string[] {
 }
 
 /**
+ * Pin curl to the shared DoH answer for `url`'s host with `--resolve`.
+ *
+ * `--doh-url` would be simpler, but curl does not fall back to system DNS when
+ * the DoH endpoint is blocked, so every curl fetch would fail on such a
+ * network. Going through the process-wide resolver instead shares its cache
+ * and breaker with the fetch port: no answer, no flag, and curl resolves the
+ * way it always has. TLS still verifies against the hostname in the URL.
+ * Redirect targets (`-L`) resolve through the system, as before.
+ */
+export async function curlResolveArgs(
+  url: string,
+  signal?: AbortSignal,
+): Promise<readonly string[]> {
+  const resolver = getProviderDohResolver();
+  if (!resolver) return [];
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return [];
+  }
+  if (proxyAppliesTo(parsed, process.env)) return [];
+  const answers = await resolver.resolve(parsed.hostname, signal).catch(() => null);
+  if (!answers || answers.length === 0) return [];
+  const port = parsed.port || (parsed.protocol === "http:" ? "80" : "443");
+  const addresses = answers
+    .map((answer) => (answer.family === 6 ? `[${answer.address}]` : answer.address))
+    .join(",");
+  return ["--resolve", `${parsed.hostname}:${port}:${addresses}`];
+}
+
+/**
  * ani-cli sets cipher flags only on Darwin, and that restriction is
  * load-bearing: Windows `curl.exe` links Schannel, which rejects
  * `--tls13-ciphers` and does not understand OpenSSL cipher names, so passing
@@ -224,6 +258,15 @@ export function curlCipherArgs(
 ): readonly string[] {
   if (impersonates || platform !== "darwin") return [];
   return ["--ciphers", CURL_CIPHERS, "--tls13-ciphers", CURL_TLS13_CIPHERS];
+}
+
+/** Every per-request transport flag a curl fetch needs: TLS ciphers, then the DoH pin. */
+export async function curlTransportArgs(
+  curl: CurlCandidate,
+  url: string,
+  signal?: AbortSignal,
+): Promise<readonly string[]> {
+  return [...curlCipherArgs(curl.impersonates), ...(await curlResolveArgs(url, signal))];
 }
 
 /**

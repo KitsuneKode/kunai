@@ -264,6 +264,55 @@ describe("queueDownloadFromMediaItem authoritative kind", () => {
  * tracker is told the resulting value. Sending "toggle" instead would let a
  * redelivery undo what the user just did.
  */
+describe("an inbox download that cannot be queued", () => {
+  test("is reported with its reason and never counted as queued", async () => {
+    const queuedCallbacks: string[] = [];
+    const container = {
+      config: {
+        offlineDefaultRunwayTarget: 2,
+        downloadPath: "",
+        offlineArtworkCacheEnabled: false,
+      },
+      downloadService: {
+        getEnqueueEligibility: () => ({
+          allowed: false,
+          code: "ytdlp-missing",
+          reason: "yt-dlp is not installed",
+        }),
+      },
+      diagnosticsService: { record: () => {} },
+      stateManager: {
+        getState: () => ({
+          provider: "vidking",
+          mode: "series",
+          seriesLanguageProfile: { audio: "en", subtitle: "en", quality: "best" },
+          animeLanguageProfile: { audio: "en", subtitle: "en", quality: "best" },
+          movieLanguageProfile: { audio: "en", subtitle: "en", quality: "best" },
+        }),
+        dispatch: () => {},
+      },
+      notificationService: { listActive: () => [] },
+    };
+    // SAFETY: deliberately partial test stub; a blocked enqueue reads only these members.
+    const router = createContainerMediaActionRouter(container as never, {
+      onDownloadQueued: (queued) => queuedCallbacks.push(queued.titleId),
+    });
+
+    const result = await router.run({
+      actionId: "download",
+      item: { mediaKind: "series", titleId: "tmdb:1", title: "Example", season: 1, episode: 2 },
+      source: "notification",
+    });
+
+    expect(result).toEqual({
+      status: "unsupported",
+      actionId: "download",
+      reason: "yt-dlp is not installed",
+    });
+    expect(queuedCallbacks).toEqual([]);
+  });
+});
+
 describe("createContainerMediaActionRouter favourites", () => {
   function harness(toggleResult: "added" | "removed") {
     const calls: string[] = [];

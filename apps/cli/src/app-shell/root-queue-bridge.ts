@@ -9,6 +9,7 @@
  * of a later-attached `queuePlaybackIntent` is not itself a claim.
  */
 
+import { alignSessionLane, shellModeForQueueIntent } from "@/app/playback/launch-lane";
 import type { QueuePlaybackIntent } from "@/domain/queue/queue-playback-intent";
 import type { QueueService } from "@/domain/queue/QueueService";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
@@ -102,4 +103,25 @@ export function episodeInfoFromQueuePlaybackLaunch(
     episode: intent.episode ?? intent.absoluteEpisode ?? 1,
     absoluteEpisode: intent.absoluteEpisode,
   };
+}
+
+/** Align the session to a claimed row's own lane before its title is handed on. */
+export function alignSessionForQueueLaunch(
+  container: Parameters<typeof alignSessionLane>[0],
+  launch: QueuePlaybackLaunch,
+): void {
+  alignSessionLane(container, {
+    mode: shellModeForQueueIntent(launch.intent),
+    title: titleInfoFromQueuePlaybackLaunch(launch),
+  });
+}
+
+/** Claim a row and align the session to its lane — the browse Up Next paths. */
+export function claimAlignedQueueLaunch(
+  container: Parameters<typeof alignSessionLane>[0] & { readonly queueService: QueueClaimPort },
+  queueEntryId: string,
+): QueuePlaybackLaunch | undefined {
+  const launch = claimQueuePlaybackLaunch(container.queueService, queueEntryId);
+  if (launch) alignSessionForQueueLaunch(container, launch);
+  return launch;
 }

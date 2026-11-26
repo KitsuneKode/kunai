@@ -10,6 +10,8 @@ import {
   type CalendarDay,
   type CalendarTypeTab,
 } from "./calendar-ui.model";
+import type { CalendarCursor } from "./hooks/use-calendar-cursor";
+import { MouseTarget } from "./mouse/MouseRegions";
 import { plainModeEnabled } from "./plain-mode";
 import { ClaudeTabRow } from "./primitives/ClaudeTabRow";
 import { buildCalendarRowColumns, computeCalendarRowLayout } from "./primitives/list-row-layout";
@@ -42,6 +44,7 @@ export function CalendarDayStrip({
   narrow = false,
   maxWidth,
   dense = false,
+  onSelect,
 }: {
   days: readonly CalendarDay[];
   selectedDayKey: string | null;
@@ -50,6 +53,8 @@ export function CalendarDayStrip({
   maxWidth?: number;
   /** Short terminals: collapse vertical margins so the list keeps its rows. */
   dense?: boolean;
+  /** Tap on a date chip (Termux sends taps as clicks); absent = not tappable. */
+  onSelect?: (dayKey: string) => void;
 }) {
   const { windowDays, hasPrev, hasNext } = windowCalendarDayStrip(days, selectedDayKey, narrow);
   const showHint = maxWidth === undefined || maxWidth >= 92;
@@ -75,11 +80,18 @@ export function CalendarDayStrip({
             .filter((part): part is string => part !== null)
             .join(" ");
           return (
-            <Box key={day.key} marginRight={1}>
-              <Text color={palette.text} bold={isSelected || isToday}>
-                {` ${markers} `}
-              </Text>
-            </Box>
+            <MouseTarget
+              key={day.key}
+              id={`calendar:day:${day.key}`}
+              active={Boolean(onSelect)}
+              onClick={() => onSelect?.(day.key)}
+            >
+              <Box marginRight={1}>
+                <Text color={palette.text} bold={isSelected || isToday}>
+                  {` ${markers} `}
+                </Text>
+              </Box>
+            </MouseTarget>
           );
         }
         // Boxed chips with a clear hierarchy: the SELECTED day is the rose accent
@@ -88,11 +100,18 @@ export function CalendarDayStrip({
         const background = isSelected ? palette.accentFill : isToday ? palette.warnFill : undefined;
         const foreground = isSelected || isToday ? palette.text : palette.textDim;
         return (
-          <Box key={day.key} marginRight={1}>
-            <Text backgroundColor={background} color={foreground} bold={isSelected || isToday}>
-              {` ${day.label} `}
-            </Text>
-          </Box>
+          <MouseTarget
+            key={day.key}
+            id={`calendar:day:${day.key}`}
+            active={Boolean(onSelect)}
+            onClick={() => onSelect?.(day.key)}
+          >
+            <Box marginRight={1}>
+              <Text backgroundColor={background} color={foreground} bold={isSelected || isToday}>
+                {` ${day.label} `}
+              </Text>
+            </Box>
+          </MouseTarget>
         );
       })}
       <Text color={palette.dim}>{plain ? (hasNext ? " next" : "") : hasNext ? " ›" : "  "}</Text>
@@ -112,15 +131,27 @@ export function CalendarTypeTabs({
   compact,
   maxWidth,
   dense = false,
+  onSelect,
 }: {
   activeTab: CalendarTypeTab;
   compact: boolean;
   maxWidth?: number;
   dense?: boolean;
+  /** Tap on a type tab; absent = not tappable. */
+  onSelect?: (tab: CalendarTypeTab) => void;
 }) {
-  if (compact) return null;
   const labels = CALENDAR_TYPE_TABS.map((tab) => (tab === "TV" ? "Series" : tab));
   const activeIndex = CALENDAR_TYPE_TABS.indexOf(activeTab);
+  // Narrow terminals (portrait phones) used to lose the type tabs entirely, so
+  // nothing said which slice was showing or that Tab changes it.
+  if (compact) {
+    return (
+      <Text color={palette.dim}>
+        <Text color={palette.accent}>{labels[activeIndex] ?? activeTab}</Text>
+        {" · Tab: type"}
+      </Text>
+    );
+  }
   const showHint = maxWidth === undefined || maxWidth >= 100;
   return (
     <ClaudeTabRow
@@ -129,6 +160,17 @@ export function CalendarTypeTabs({
       hint={showHint ? (plainModeEnabled() ? "Tab cycles type" : "⇥ Tab cycles type") : undefined}
       maxWidth={maxWidth}
       dense={dense}
+      pointer={
+        onSelect
+          ? {
+              id: "calendar:type",
+              select: (index) => {
+                const tab = CALENDAR_TYPE_TABS[index];
+                if (tab) onSelect(tab);
+              },
+            }
+          : undefined
+      }
     />
   );
 }
@@ -150,6 +192,8 @@ function CalendarScheduleRowInner<T>({
   weekTag,
   isNew,
   tracked,
+  optionIndex,
+  pointer,
 }: {
   option: BrowseShellOption<T>;
   selected: boolean;
@@ -171,6 +215,10 @@ function CalendarScheduleRowInner<T>({
   showTbdHeader?: boolean;
   showSectionHeader?: string | null;
   nowMs?: number;
+  /** The row's index on its date; taps report it back to `pointer`. */
+  optionIndex?: number;
+  /** Stable tap handlers (memo-safe); absent = not tappable. */
+  pointer?: Pick<CalendarCursor, "tapRow" | "wheel">;
 }) {
   const presentation = calendarReleaseRowPresentation(option);
   const ep = episodeCode ?? option.previewBadge ?? "";
@@ -216,7 +264,15 @@ function CalendarScheduleRowInner<T>({
       {showDayHeader && dayHeaderLabel ? (
         <SectionGroup label={dayHeaderLabel} tag={weekTag ?? undefined} marginTop={1} />
       ) : null}
-      <Box flexDirection="row">
+      {/* Only the row is a target — a tap on a date header selects nothing. */}
+      <MouseTarget
+        id={`calendar:row:${optionIndex ?? -1}`}
+        active={Boolean(pointer) && optionIndex !== undefined}
+        onClick={() => {
+          if (optionIndex !== undefined) pointer?.tapRow(optionIndex, selected);
+        }}
+        onWheel={pointer?.wheel}
+      >
         <Box flexGrow={1}>
           <ListRow
             selected={selected}
@@ -225,7 +281,7 @@ function CalendarScheduleRowInner<T>({
             columns={columns}
           />
         </Box>
-      </Box>
+      </MouseTarget>
     </Box>
   );
 }

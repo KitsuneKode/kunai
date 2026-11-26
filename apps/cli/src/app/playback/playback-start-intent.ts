@@ -35,6 +35,20 @@ export function startAtResumePoint(
   };
 }
 
+/**
+ * The start a share link's `t=` imposes on the first play, or null without one.
+ *
+ * An explicit timestamp is an instruction, so it wins over local history and
+ * skips the resume prompt; `t=0` means "from the beginning", not "no
+ * timestamp". Only the first episode of a launch gets it.
+ */
+export function sharedStartOverride(startSeconds: number | undefined): PlaybackStartIntent | null {
+  if (startSeconds === undefined || !Number.isFinite(startSeconds) || startSeconds < 0) {
+    return null;
+  }
+  return startAtResumePoint(startSeconds, { suppressResumePrompt: true });
+}
+
 export function startFromEpisodeSelection(selection: EpisodeSelection): PlaybackStartIntent {
   if (selection.suppressResumePrompt) {
     return startAtResumePoint(selection.startAt ?? 0, {

@@ -86,7 +86,9 @@ export async function verifyCandidateStream({
     url,
     // The candidate's own headers, verbatim — never a re-derived set.
     headers: stream.headers,
-    fetchImpl: context.fetch?.fetch.bind(context.fetch),
+    // Probe the way the player will resolve: `probeFetch` uses system DNS even
+    // when metadata goes through DoH, so the probed and played requests agree.
+    fetchImpl: (context.fetch?.probeFetch ?? context.fetch?.fetch)?.bind(context.fetch),
     resolvesLocally: context.fetch?.resolvesLocally,
     requireDirectMedia,
     timeoutMs,

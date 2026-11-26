@@ -33,7 +33,10 @@ No analytics, no install ID, no account, no relay, no media proxy. The probe URL
 - A physical ARM64 phone (emulators are diagnostic only, not qualification)
 - [Termux](https://github.com/termux/termux-app#installation) from one official source; do not mix signing sources
 - `pkg install nodejs` from the same Termux package source; record `node --version` with your device evidence
-- VLC for Android, and `termux-am` or `am` resolvable
+- VLC for Android, and `termux-am` or `am` resolvable. `kunai doctor` checks
+  this for you: on Termux it does not ask for desktop mpv, and it says which
+  launcher will hand videos to your player, or how to install one
+  (`pkg install termux-am`).
 
 **iPhone**
 

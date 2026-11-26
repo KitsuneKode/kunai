@@ -2,7 +2,11 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { analyticsDayKey, shiftDayKey } from "../../src/analytics-day.js";
 import { authorizeBearer } from "../../src/bearer-auth.js";
-import { RAW_RETENTION_DAYS } from "../../src/ingest.js";
+import {
+  fetchDistributionEntries,
+  type DistributionFetch,
+} from "../../src/distribution-sources.js";
+import { monthOfDay, RAW_RETENTION_DAYS } from "../../src/ingest.js";
 import { buildPublicMetrics, snapshotDayKey } from "../../src/public-metrics.js";
 import {
   loadAnalyticsRuntimeConfig,
@@ -17,6 +21,21 @@ import type { AnalyticsStore } from "../../src/store.js";
  * the raw retention window.
  */
 const MAX_BACKFILL_DAYS = 10;
+
+/**
+ * `month_active` rows for a month are kept until the month after it is this
+ * many days old. Every run recomputes each month that still has rows, so the
+ * month's final rollup is the last one before its rows go — a week of missed
+ * cron runs at a month boundary still loses nothing.
+ */
+export const MONTH_ACTIVE_GRACE_DAYS = 7;
+
+/**
+ * The distribution stage's whole budget. It runs last and is aborted rather
+ * than allowed to push the function past `maxDuration`, which would lose the
+ * reply for a rollup that already committed.
+ */
+export const DISTRIBUTION_TIMEOUT_MS = 15_000;
 
 function sendJson(res: ServerResponse, status: number, payload: Record<string, unknown>): void {
   res.setHeader("Cache-Control", "no-store");
@@ -80,6 +99,9 @@ async function daysToRollUp(
 
 export type SnapshotHandlerDependencies = {
   readonly loadConfig?: () => AnalyticsRuntimeConfig | null;
+  readonly now?: () => number;
+  /** The distribution stage's only network access. Tests always inject it. */
+  readonly fetch?: DistributionFetch;
 };
 
 /**
@@ -89,6 +111,8 @@ export type SnapshotHandlerDependencies = {
  */
 export function createSnapshotHandler(dependencies: SnapshotHandlerDependencies = {}) {
   const loadConfig = dependencies.loadConfig ?? loadAnalyticsRuntimeConfig;
+  const clock = dependencies.now ?? Date.now;
+  const distributionFetch = dependencies.fetch ?? fetch;
 
   return async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const runtime = loadConfig();
@@ -108,7 +132,7 @@ export function createSnapshotHandler(dependencies: SnapshotHandlerDependencies 
       return;
     }
 
-    const now = Date.now();
+    const now = clock();
     const today = analyticsDayKey(now);
     const day = snapshotDayKey(now);
 
@@ -160,8 +184,54 @@ export function createSnapshotHandler(dependencies: SnapshotHandlerDependencies 
       }
     }
 
+    // Monthly actives and v2 cohorts. Every month still holding rows is
+    // recomputed; only a month whose rollup just succeeded may lose its rows.
+    let months: readonly string[] = [];
+    let monthPruned = 0;
+    try {
+      months = await runtime.store.rollUpMonths();
+      try {
+        monthPruned = await runtime.store.pruneMonthActiveBefore(
+          monthOfDay(shiftDayKey(today, -MONTH_ACTIVE_GRACE_DAYS)),
+        );
+      } catch (error) {
+        logFailure("pruneMonth", error);
+        deferred.push("pruneMonth");
+      }
+    } catch (error) {
+      logFailure("monthRollup", error);
+      deferred.push("monthRollup", "pruneMonth");
+    }
+
+    // Public download counters from GitHub and npm. No client data is
+    // involved, and a third-party outage must never read as a failed rollup:
+    // it is deferred like retention, and tomorrow's snapshot covers the gap.
+    let distribution = 0;
+    try {
+      const entries = await fetchDistributionEntries({
+        fetch: distributionFetch,
+        today,
+        githubToken: runtime.githubToken,
+        signal: AbortSignal.timeout(DISTRIBUTION_TIMEOUT_MS),
+      });
+      distribution = await runtime.store.writeDistributionSnapshot(today, entries);
+    } catch (error) {
+      logFailure("distribution", error);
+      deferred.push("distribution");
+    }
+
     // Operators only — not public; cron secret required.
-    sendJson(res, 200, { ok: true, metrics, rolledUp, pruned, retired, deferred });
+    sendJson(res, 200, {
+      ok: true,
+      metrics,
+      rolledUp,
+      pruned,
+      retired,
+      months,
+      monthPruned,
+      distribution,
+      deferred,
+    });
   };
 }
 

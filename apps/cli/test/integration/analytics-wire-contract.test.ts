@@ -11,6 +11,7 @@ import {
   buildPublicMetrics,
   parsePublicMetrics,
 } from "../../../analytics-ingest/src/public-metrics";
+import { memoryPingLog } from "../support/analytics-fixtures";
 
 /**
  * The three sides of this feature are built and tested separately: the CLI
@@ -52,6 +53,11 @@ function makeConfig(overrides: Partial<KitsuneConfig> = {}) {
       return true;
     },
     // This fake's memory is its disk, as with a single kunai process.
+    async rotateAnalyticsIdentity(rotation: Partial<KitsuneConfig>) {
+      if (raw.analytics !== "enabled") return false;
+      raw = { ...raw, ...rotation };
+      return true;
+    },
     async readPersistedAnalyticsConsent() {
       return { analytics: raw.analytics, installId: raw.installId };
     },
@@ -71,6 +77,7 @@ function wireCliToIngest(options: {
 }) {
   const results: IngestResult[] = [];
   const service = new UsageAnalyticsService({
+    pingLog: memoryPingLog(),
     config: options.config,
     currentVersion: options.version ?? "0.3.0",
     endpoint: TEST_ENDPOINT,
@@ -94,20 +101,35 @@ function wireCliToIngest(options: {
 }
 
 describe("CLI → ingest → docs wire contract", () => {
-  test("a fixed smoke UUID still counts as one new and lifetime install", async () => {
+  test("a fixed smoke UUID counts as one active install and one new install in its cohort", async () => {
+    // v2 counts new installs by cohort, never through `install_lifetime`: its id
+    // rotates monthly, so a durable per-install row would be a fresh "install"
+    // every month. Two processes sharing one identity are still one install.
     const store = createMemoryAnalyticsStore();
     for (let attempt = 0; attempt < 2; attempt++) {
       const config = makeConfig({
         analytics: "enabled",
         installId: "6b1a9f2c-58d4-4e77-9c31-0a5b7e2d84f0",
+        analyticsCohort: "2026-08",
       });
       const { service } = wireCliToIngest({ store, config });
       await service.maybePing({ isInteractive: true });
     }
+
     const rollup = await store.rollUpDay(analyticsDayKey(NOW));
     expect(rollup.activeInstalls).toBe(1);
-    expect(rollup.newInstalls).toBe(1);
-    expect(rollup.lifetimeInstalls).toBe(1);
+    // The v1 lifetime figures are not where a v2 install shows up.
+    expect(rollup.newInstalls).toBe(0);
+    expect(rollup.lifetimeInstalls).toBe(0);
+
+    expect(await store.rollUpMonths()).toEqual(["2026-08"]);
+    const [august] = await store.readMonthRollups("2026-08", "2026-08");
+    expect(august?.activeInstalls).toBe(1);
+    // Row (cohort, cohort) is the cohort's size: the month's new installs.
+    const cohorts = await store.readCohortRollups("2026-08");
+    expect(cohorts.map(({ cohort, month, installs }) => ({ cohort, month, installs }))).toEqual([
+      { cohort: "2026-08", month: "2026-08", installs: 1 },
+    ]);
   });
 
   test("a payload the CLI actually emits is accepted by the ingest", async () => {
@@ -120,7 +142,12 @@ describe("CLI → ingest → docs wire contract", () => {
     expect(results).toHaveLength(1);
     // `stored` reports whether the day's global write budget admitted the ping,
     // so an accepted-but-dropped ping is distinguishable from a stored one.
-    expect(results[0]).toEqual({ ok: true, day: analyticsDayKey(NOW), stored: true });
+    expect(results[0]).toEqual({
+      ok: true,
+      day: analyticsDayKey(NOW),
+      stored: true,
+      duplicate: false,
+    });
     expect(store.rawCount()).toBe(1);
   });
 
@@ -144,6 +171,16 @@ describe("CLI → ingest → docs wire contract", () => {
     expect(rollup.byVersion).toEqual({ "0.3.0": 2, "0.2.5": 1 });
     expect(rollup.byOs).toEqual({ linux: 2, darwin: 1 });
     expect(rollup.byArch).toEqual({ x64: 2, arm64: 1 });
+  });
+
+  test("an Android install is accepted and counted as android", async () => {
+    const store = createMemoryAnalyticsStore();
+    const config = makeConfig({ analytics: "enabled", installId: crypto.randomUUID() });
+    const { service, results } = wireCliToIngest({ store, config, os: "android", arch: "arm64" });
+    await service.maybePing({ isInteractive: true });
+
+    expect(results[0]?.ok).toBe(true);
+    expect((await store.rollUpDay(analyticsDayKey(NOW))).byOs).toEqual({ android: 1 });
   });
 
   test("what a CLI ping produces survives a JSON round trip as valid v2", async () => {
@@ -178,7 +215,9 @@ describe("CLI → ingest → docs wire contract", () => {
     expect(published.byOs.win32).toBeUndefined();
     expect(published.byArch).toEqual({ other: 1 });
   });
+});
 
+describe("CLI → ingest wire contract", () => {
   test("the ingest rejects anything the CLI would never send", async () => {
     const store = createMemoryAnalyticsStore();
     const rejected = await ingestAnalyticsPing({

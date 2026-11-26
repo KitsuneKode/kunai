@@ -228,7 +228,8 @@ describe("trust section", () => {
   test("keeps the payload contract and the CLI controls reachable", () => {
     const html = renderToStaticMarkup(<TrustSection />);
     expect(html).toContain("Exact wire payload");
-    expect(html).toContain("installId");
+    expect(html).toContain("cohort");
+    expect(html).not.toContain("installId");
     expect(html).toContain("DO_NOT_TRACK=1");
     expect(html).toContain("/analytics show");
     expect(html).toContain("What Kunai promises");

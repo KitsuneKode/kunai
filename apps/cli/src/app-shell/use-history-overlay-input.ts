@@ -1,11 +1,13 @@
 import { cycleHistoryTab, cycleHistoryTypeFilter, type HistoryTab } from "@/app-shell/history-view";
 import type { HistoryTypeFilter } from "@/app-shell/history-view";
 import type { LineEditorKey } from "@/app-shell/line-editor";
+import { routeListFilterKey } from "@/app-shell/list-filter-keys";
 import type { HistoryPickerOptionsContext } from "@/app-shell/panel-data";
 import {
   buildRootHistorySelection,
   type RootHistorySelection,
 } from "@/app-shell/root-history-bridge";
+import { titleFromHistorySelection } from "@/app/bootstrap/launch-entry";
 import type { Container } from "@/container";
 import type { MediaActionId } from "@/domain/media/media-action-policy";
 import { mediaItemFromHistoryEntry } from "@/domain/media/media-item-adapters";
@@ -44,6 +46,10 @@ export type HistoryOverlayInputContext = {
   readonly pendingDelete: HistoryDeletePending | null;
   readonly setPendingDelete: (next: HistoryDeletePending | null) => void;
   readonly onHistoryMutated: () => void;
+  /** The overlay's type-to-filter text, and whether the filter holds focus. */
+  readonly filterQuery: string;
+  readonly filterFocused: boolean;
+  readonly setFilterFocused: (focused: boolean) => void;
   readonly onConfirmSelection: (
     selection: RootHistorySelection | null,
     options?: { readonly sourceOverride?: "local" | "stream" },
@@ -88,6 +94,7 @@ export function resolveHistoryOverlayKey(
 export type HistoryRowIntent =
   | { readonly kind: "media-action"; readonly actionId: MediaActionId; readonly status: string }
   | { readonly kind: "resume" }
+  | { readonly kind: "share" }
   | { readonly kind: "delegate" };
 
 export function historyRowIntentForShellAction(action: string): HistoryRowIntent {
@@ -112,6 +119,10 @@ export function historyRowIntentForShellAction(action: string): HistoryRowIntent
       };
     case "resume":
       return { kind: "resume" };
+    // `/share` shares the session's title; over a History row that is the
+    // wrong one, so the row's own title and episode are shared instead.
+    case "share":
+      return { kind: "share" };
     default:
       // Session-scoped actions (diagnostics) are correct as the shell runs them.
       return { kind: "delegate" };
@@ -181,6 +192,22 @@ async function openHistoryTitleControlMenu(
     );
     return;
   }
+  if (intent.kind === "share") {
+    const { shareTarget } = await import("@/app-shell/workflows/share-workflow");
+    const kind = entry.mediaKind;
+    await shareTarget(ctx.container, {
+      title: titleFromHistorySelection(selected),
+      mode: kind === "anime" ? "anime" : kind === "video" ? "youtube" : "series",
+      mediaKind: kind,
+      episode:
+        entry.season !== undefined && entry.episode !== undefined
+          ? { season: entry.season, episode: entry.episode }
+          : undefined,
+      providerId: entry.providerId,
+    });
+    ctx.onRedraw();
+    return;
+  }
   if (intent.kind === "media-action") {
     runHistoryRowAction(ctx, {
       actionId: intent.actionId,
@@ -197,16 +224,70 @@ async function openHistoryTitleControlMenu(
 }
 
 /** History overlay key map extracted from root-overlay-shell (Phase 9). */
+/** Row actions with no filter in progress; anything else typed starts the filter. */
+const HISTORY_ACTION_KEYS: ReadonlySet<string> = new Set([
+  "m",
+  "M",
+  "w",
+  "W",
+  "q",
+  "Q",
+  "x",
+  "X",
+  "l",
+  "L",
+  "s",
+  "S",
+  "z",
+]);
+
+/** The row the cursor is on, its stored selection and its continuation projection. */
+function selectedHistoryRow(ctx: HistoryOverlayInputContext) {
+  const picked = ctx.historyView.flatRows[ctx.selectedIndex]?.titleId ?? null;
+  const selected = ctx.historySelections.find((entry) => entry.titleId === picked) ?? null;
+  // SAFETY: the picker context stores projections keyed by the same title ids
+  // History rows carry; a missing entry stays undefined.
+  const projection = picked
+    ? (ctx.historyPickerContext.projections?.get(picked) as ContinuationProjection | undefined)
+    : undefined;
+  return { picked, selected, projection };
+}
+
+/**
+ * Play the selected History row: Enter, or a second tap on it. Asks for local
+ * or stream first when both exist and the user asked to be asked.
+ */
+export function activateSelectedHistoryRow(ctx: HistoryOverlayInputContext): void {
+  const { picked, selected, projection } = selectedHistoryRow(ctx);
+  if (!selected) return;
+  const dualSource = hasDualContinueSources(projection);
+  if (ctx.sourcePreference === "ask" && dualSource && ctx.sourceChoiceTitleId !== picked) {
+    ctx.setSourceChoiceTitleId(picked);
+    ctx.setOverlayStatus("Choose source: l local, s stream, Esc cancel");
+    return;
+  }
+  const action = resolveContinueSourceAction(projection, ctx.sourcePreference);
+  if (ctx.sourcePreference === "ask" && dualSource && !action) {
+    ctx.setSourceChoiceTitleId(picked);
+    ctx.setOverlayStatus("Choose source: l local, s stream, Esc cancel");
+    return;
+  }
+  ctx.onConfirmSelection(
+    buildRootHistorySelection(
+      selected,
+      ctx.historyPickerContext.nextReleases,
+      ctx.historyPickerContext.projections,
+      { sourcePreference: ctx.sourcePreference },
+    ),
+  );
+}
+
 export function handleHistoryOverlayInput(
   input: string,
   key: LineEditorKey,
   ctx: HistoryOverlayInputContext,
 ): HistoryOverlayInputResult {
-  const picked = ctx.historyView.flatRows[ctx.selectedIndex]?.titleId ?? null;
-  const selected = ctx.historySelections.find((entry) => entry.titleId === picked) ?? null;
-  const projection = picked
-    ? (ctx.historyPickerContext.projections?.get(picked) as ContinuationProjection | undefined)
-    : undefined;
+  const { picked, selected } = selectedHistoryRow(ctx);
 
   if (ctx.pendingDelete) {
     if (input.toLowerCase() === "y") {
@@ -279,6 +360,22 @@ export function handleHistoryOverlayInput(
       );
       return "handled";
     }
+  }
+
+  // While a filter is in progress every printable key is text: "demon" used to
+  // open the title menu at `m`, "spy x" armed a delete at `x`.
+  const filterRoute = routeListFilterKey(input, key, {
+    focused: ctx.filterFocused,
+    query: ctx.filterQuery,
+    actionKeys: HISTORY_ACTION_KEYS,
+  });
+  if (filterRoute === "focus") {
+    ctx.setFilterFocused(true);
+    return "handled";
+  }
+  if (filterRoute === "append") {
+    ctx.setFilterFocused(true);
+    return "not-handled";
   }
 
   // `z` pops the live undo entry; with nothing to undo it stays unhandled and
@@ -365,26 +462,7 @@ export function handleHistoryOverlayInput(
     return "handled";
   }
   if (key.return && selected) {
-    const dualSource = hasDualContinueSources(projection);
-    if (ctx.sourcePreference === "ask" && dualSource && ctx.sourceChoiceTitleId !== picked) {
-      ctx.setSourceChoiceTitleId(picked);
-      ctx.setOverlayStatus("Choose source: l local, s stream, Esc cancel");
-      return "handled";
-    }
-    const action = resolveContinueSourceAction(projection, ctx.sourcePreference);
-    if (ctx.sourcePreference === "ask" && dualSource && !action) {
-      ctx.setSourceChoiceTitleId(picked);
-      ctx.setOverlayStatus("Choose source: l local, s stream, Esc cancel");
-      return "handled";
-    }
-    ctx.onConfirmSelection(
-      buildRootHistorySelection(
-        selected,
-        ctx.historyPickerContext.nextReleases,
-        ctx.historyPickerContext.projections,
-        { sourcePreference: ctx.sourcePreference },
-      ),
-    );
+    activateSelectedHistoryRow(ctx);
     return "handled";
   }
   if (

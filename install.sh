@@ -349,6 +349,50 @@ resolve_published_version() {
 	printf '%s\n' "$canonical"
 }
 
+is_truthy_env() {
+	case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+	1 | true | yes) return 0 ;;
+	esac
+	return 1
+}
+
+# One request for a release marker after a successful install: install.marker
+# when nothing was installed before, update.marker when this replaced another
+# version. GitHub's download counts for them are how installs are told apart
+# from updates; Kunai receives nothing, and the request goes to the host that
+# just served the binary. Best effort only: no retry, a short timeout, every
+# failure ignored and silent. DO_NOT_TRACK, CI and KUNAI_NO_MARKER each turn it
+# off. Arguments: download base, then the version that was active before (or
+# empty), then the version just installed.
+#
+# Opt-in, like Kunai's usage ping: nothing is fetched unless config.json already
+# says "analytics": "enabled" with the consent notice recorded, the same reading
+# the app makes. A first install has no config, so it is never counted.
+analytics_consented() {
+	local cfg="$CONFIG_DIR/config.json"
+	[[ -f "$cfg" ]] || return 1
+	grep -Eq '"analytics"[[:space:]]*:[[:space:]]*"enabled"' "$cfg" || return 1
+	grep -Eq '"analyticsNoticeShown"[[:space:]]*:[[:space:]]*(true|false)' "$cfg"
+}
+
+fetch_release_marker() {
+	local base="$1" previous="$2" installed="$3" marker
+	is_truthy_env "${DO_NOT_TRACK:-}" && return 0
+	is_truthy_env "${CI:-}" && return 0
+	is_truthy_env "${KUNAI_NO_MARKER:-}" && return 0
+	analytics_consented || return 0
+	if [[ -z "$previous" ]]; then
+		marker="install.marker"
+	elif [[ "$previous" != "$installed" ]]; then
+		marker="update.marker"
+	else
+		# Reinstalling the active version is neither a new install nor an update.
+		return 0
+	fi
+	have curl || return 0
+	curl -fsSL --max-time 3 -o /dev/null "$base/$marker" >/dev/null 2>&1 || true
+}
+
 download_failed_hint() {
 	local asset="$1"
 	err "Download failed for $asset."
@@ -706,13 +750,14 @@ checksum_for_asset() {
 	' "$manifest"
 }
 
-extract_release_tar_gz() {
-	local archive="$1" tar_path="$2" expected="$3" output="$4"
-	local tar_budget read_blocks gzip_status dd_status tar_size name prefix type size_field size
+# extract_release_tar <archive> <tar-scratch> <member> <output> <gzip|zstd>
+extract_release_tar() {
+	local archive="$1" tar_path="$2" expected="$3" output="$4" decompressor="$5"
+	local tar_budget read_blocks decompress_status dd_status tar_size name prefix type size_field size
 	local checksum_field stored_checksum header_sum checksum_sum actual_checksum expected_tar_size
 	local -a pipeline_status
 
-	require gzip
+	require "$decompressor"
 	require "$ARCHIVE_TAR_COMMAND"
 	require od
 
@@ -723,9 +768,9 @@ extract_release_tar_gz() {
 	# Tar streams are block-aligned, so an oversized container crosses the bound.
 	read_blocks=$(((tar_budget + 512) / 512))
 	set +o pipefail
-	gzip -dc "$archive" 2>/dev/null | dd of="$tar_path" bs=512 count="$read_blocks" iflag=fullblock 2>/dev/null
+	"$decompressor" -dc "$archive" 2>/dev/null | dd of="$tar_path" bs=512 count="$read_blocks" iflag=fullblock 2>/dev/null
 	pipeline_status=("${PIPESTATUS[@]}")
-	gzip_status="${pipeline_status[0]}"
+	decompress_status="${pipeline_status[0]}"
 	dd_status="${pipeline_status[1]}"
 	set -o pipefail
 	tar_size="$(wc -c <"$tar_path" | tr -d ' ')"
@@ -733,8 +778,8 @@ extract_release_tar_gz() {
 		err "Archive decompressed size exceeds the $tar_budget byte budget."
 		return 1
 	fi
-	if [[ "$gzip_status" -ne 0 || "$dd_status" -ne 0 ]]; then
-		err "Archive decompression failed (gzip status $gzip_status, bounded reader status $dd_status)."
+	if [[ "$decompress_status" -ne 0 || "$dd_status" -ne 0 ]]; then
+		err "Archive decompression failed ($decompressor status $decompress_status, bounded reader status $dd_status)."
 		return 1
 	fi
 	if [[ "$tar_size" -lt 1536 || $((tar_size % 512)) -ne 0 ]]; then
@@ -1700,6 +1745,7 @@ install_binary() {
 	url="$base/$asset"
 	sums="$base/SHA256SUMS"
 	archive="${asset}.tar.gz"
+	archive_decompressor=gzip
 	archive_url="$base/$archive"
 	archive_sums="$base/SHA256SUMS.archives"
 
@@ -1799,6 +1845,16 @@ install_binary() {
 
 	if [[ "$archive_available" == 1 ]]; then
 		verify_manifest_signature "$archive_sums" "$staged_archive_sums" SHA256SUMS.archives "$resolved_version" || exit 1
+		# Releases from 0.3.x also sign a ~20% smaller .tar.zst. Take it when this
+		# host can decompress it; an older release, or a host without zstd,
+		# keeps the .tar.gz every installer understands.
+		if command -v zstd >/dev/null 2>&1 &&
+			checksum_for_asset "$staged_archive_sums" "$asset.tar.zst" >/dev/null; then
+			archive="$asset.tar.zst"
+			archive_decompressor=zstd
+			archive_url="$base/$archive"
+			staged_archive="$staging/$archive"
+		fi
 		if ! archive_want="$(checksum_for_asset "$staged_archive_sums" "$archive")"; then
 			err "SHA256SUMS.archives must contain exactly one valid entry for $archive."
 			exit 1
@@ -1837,7 +1893,7 @@ install_binary() {
 	fi
 
 	if [[ "$archive_available" == 1 ]]; then
-		if ! extract_release_tar_gz "$staged_archive" "$staged_tar" "$asset" "$staged_bin"; then
+		if ! extract_release_tar "$staged_archive" "$staged_tar" "$asset" "$staged_bin" "$archive_decompressor"; then
 			exit 1
 		fi
 		archive_size="$(wc -c <"$staged_archive" | tr -d ' ')"
@@ -1938,6 +1994,7 @@ install_binary() {
 	trap - EXIT
 
 	info "Installed kunai → $BIN_DIR/kunai (v$resolved_version at $version_path)"
+	fetch_release_marker "$base" "$activation_previous" "$resolved_version"
 	report_path_winner
 	path_hint "$BIN_DIR"
 }

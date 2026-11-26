@@ -1,37 +1,8 @@
+import { findSubtitleInventoryTrack, subtitleTrackKey } from "@/domain/subtitle-track-identity";
 import type { SubtitleTrack } from "@/domain/types";
 import { dbg } from "@/logger";
-import { normalizeSubtitleUrl } from "@/subtitle";
 
 import { isLocalSubtitlePath, type MpvUrlKind } from "./mpv-playback-url";
-
-/**
- * Two subtitle URLs are the same track when they match after dropping the
- * query and hash (providers re-sign one file with rotating tokens) **and**
- * their language agrees. The language check keeps query-distinct tracks such
- * as `timedtext?lang=en` and `?lang=fr` apart. When a URL's language cannot
- * be told, tracks stay separate: an extra attach is harmless, a lost
- * language is not.
- */
-const languageOf = (track: SubtitleTrack | undefined) =>
-  track?.language?.trim().toLowerCase() || undefined;
-
-function inventoryMatch(
-  url: string,
-  subtitleTracks: readonly SubtitleTrack[] | undefined,
-): SubtitleTrack | undefined {
-  const trimmed = url.trim();
-  const exact = subtitleTracks?.find((track) => track.url.trim() === trimmed);
-  if (exact) return exact;
-  const base = normalizeSubtitleUrl(url);
-  const candidates = (subtitleTracks ?? []).filter(
-    (track) => normalizeSubtitleUrl(track.url) === base,
-  );
-  const languages = new Set(candidates.map(languageOf));
-  return languages.size === 1 ? candidates[0] : undefined;
-}
-
-const trackKey = (url: string, language: string | undefined) =>
-  `${normalizeSubtitleUrl(url)}\u0000${language ?? `?${url.trim()}`}`;
 
 export function collectAdditionalSubtitleTracks(
   primarySubtitle: string | null,
@@ -40,13 +11,13 @@ export function collectAdditionalSubtitleTracks(
   const collected: SubtitleTrack[] = [];
   const seen = new Set<string>();
   if (primarySubtitle) {
-    seen.add(
-      trackKey(primarySubtitle, languageOf(inventoryMatch(primarySubtitle, subtitleTracks))),
-    );
+    const match = findSubtitleInventoryTrack(primarySubtitle, subtitleTracks);
+    const key = subtitleTrackKey({ url: primarySubtitle, language: match?.language });
+    if (key) seen.add(key);
   }
   for (const track of subtitleTracks ?? []) {
-    const key = trackKey(track.url, languageOf(track));
-    if (!track.url || seen.has(key)) {
+    const key = subtitleTrackKey(track);
+    if (!key || seen.has(key)) {
       continue;
     }
     seen.add(key);
@@ -89,7 +60,7 @@ export function describeSubtitleTrackForMpv(
   url: string,
   subtitleTracks?: readonly SubtitleTrack[],
 ) {
-  const match = inventoryMatch(url, subtitleTracks);
+  const match = findSubtitleInventoryTrack(url, subtitleTracks);
   const language = match?.language?.trim() ?? "";
   const title =
     match?.display?.trim() ||

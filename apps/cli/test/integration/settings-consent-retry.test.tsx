@@ -17,6 +17,7 @@ import React, { act } from "react";
 
 import { render } from "../harness/render-capture";
 import { applyStorageRootEnv } from "../helpers/storage-env";
+import { memoryPingLog } from "../support/analytics-fixtures";
 import { createIsolatedContainer } from "./helpers/isolated-container";
 
 const disposals: (() => void)[] = [];
@@ -74,6 +75,7 @@ async function profile() {
     ...isolated.container,
     config,
     usageAnalytics: new UsageAnalyticsService({
+      pingLog: memoryPingLog(),
       config,
       currentVersion: "0.3.0",
       endpoint: "",

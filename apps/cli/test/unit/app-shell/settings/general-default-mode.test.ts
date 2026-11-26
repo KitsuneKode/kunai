@@ -103,37 +103,32 @@ test("rotate is offered only while analytics is enabled", () => {
   expect(predicate({ ...baseConfig(), analytics: "enabled" })).toBe(true);
 });
 
-test("rotate writes a new id and restarts the ping cadence", async () => {
+test("rotate hands the rotation to the analytics service and names the new id", async () => {
+  // The service owns what a rotation writes (new id, new cohort, cadence reset,
+  // ping log removed); `usage-analytics-service.test.ts` pins that patch.
   const row = privacyRowsFor({
     analytics: "enabled",
     installId: "11111111-2222-4333-8444-555555555555",
   }).find((entry) => entry.id === "rotateInstallId");
   if (row?.kind !== "action") throw new Error("expected rotateInstallId action row");
 
-  let patch: Partial<KitsuneConfig> | undefined;
-  let saved = 0;
+  let rotations = 0;
   const message = await row.run(
-    // SAFETY: deliberately partial test stub — rotateInstallId only calls config.update and save.
+    // SAFETY: deliberately partial test stub — the row only calls rotateIdentity.
     {
       container: {
-        config: {
-          update: async (next: Partial<KitsuneConfig>) => {
-            patch = next;
-          },
-          save: async () => {
-            saved += 1;
+        usageAnalytics: {
+          rotateIdentity: async () => {
+            rotations += 1;
+            return { installId: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee" };
           },
         },
       },
     } as never,
   );
 
-  expect(patch?.installId).not.toBe("11111111-2222-4333-8444-555555555555");
-  expect(patch?.installId).toMatch(/^[0-9a-f-]{36}$/i);
-  // Carrying the old timestamps would suppress the first ping under the new id
-  // for up to a day, making the rotation unobservable.
-  expect(patch).toMatchObject({ lastAnalyticsPingAt: 0, analyticsRetryAfter: 0 });
-  expect(saved).toBe(1);
+  expect(rotations).toBe(1);
+  expect(String(message)).toContain("aaaaaaaa");
   expect(String(message)).toContain("cannot be linked");
 });
 

@@ -497,6 +497,9 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
     harness.callbacks().onFileLoaded?.({ observedAt: 1 });
     harness.callbacks().onPropertyUpdate({ name: "duration", value: 600, observedAt: 2 });
     harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 120, observedAt: 3 });
+    // With no track list yet, start waits for mpv's answer to a direct read,
+    // which real mpv sends within milliseconds — before the file could end.
+    await flushAsyncWork();
     const playbackResult = session.waitForCurrentPlayback();
     harness.callbacks().onEndFile({ reason: "eof", observedAt: 4 });
     const result = await playbackResult;
@@ -961,6 +964,50 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
     harness.callbacks().onEndFile({ reason: "quit", observedAt: 18_200 });
     await playbackResult;
   });
+
+  for (const fileError of ["loading failed", "unrecognized file format"]) {
+    test(`an error end with "${fileError}" goes to failover without reloading the same URL`, async () => {
+      // Measured on mpv 0.42: 403, 404, refused and unknown-host all end as
+      // "loading failed"; reloading that URL only spends the reconnect budget.
+      const harness = createHarness();
+      const events: unknown[] = [];
+      const session = await PersistentMpvSession.create({
+        stream: createStream({ url: "https://video.example/dead.m3u8" }),
+        options: {
+          displayTitle: "Episode 1",
+          primarySubtitle: null,
+          onPlaybackEvent: (event) => events.push(event),
+        },
+        // SAFETY: partial config pins just the reconnect policy this fixture exercises.
+        kitsuneConfig: {
+          mpvInProcessStreamReconnect: true,
+          mpvInProcessStreamReconnectMaxAttempts: 2,
+          mpvKunaiScriptOpts: "",
+        } as never,
+        onControlReady: () => {},
+        runtime: harness.runtime,
+      });
+      harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+      harness.callbacks().onPropertyUpdate({ name: "duration", value: 600, observedAt: 2 });
+      harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 100, observedAt: 3 });
+      harness
+        .callbacks()
+        .onPropertyUpdate({ name: "demuxer-via-network", value: true, observedAt: 4 });
+      await flushAsyncWork();
+      const playbackResult = session.waitForCurrentPlayback();
+      harness.callbacks().onEndFile({ reason: "error", fileError, observedAt: 6 });
+      const result = await playbackResult;
+
+      expect(result.endReason).toBe("error");
+      expect(events).not.toContainEqual(
+        expect.objectContaining({ type: "mpv-in-process-reconnect" }),
+      );
+      const reloads = harness.commands.filter(
+        (command) => command[0] === "loadfile" && command[1] === "https://video.example/dead.m3u8",
+      );
+      expect(reloads.length).toBeLessThanOrEqual(1);
+    });
+  }
 
   test("an in-process reconnect on a live stream never seeks back to the drop position", async () => {
     // Nulling the loadfile `start` was not enough: the completion step issued its own

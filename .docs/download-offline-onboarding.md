@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-17"
+lastReviewed: "2026-11-26T11:55:00Z"
 ---
 
 # Kunai — Download, Offline Library, And Onboarding
@@ -109,6 +109,15 @@ accounts, usage ping, done. Implementation is
   bookkeeping and analytics consent are deliberately not among them. The write is
   best effort and never blocks setup; `/settings` → Privacy & System → _Undo the last
   setup run_ restores it.
+- **What setup writes applies now.** A completing run and _Undo the last setup
+  run_ both write through `applySettingsToRuntime`, the path Settings uses, so
+  the chosen mode, language profiles, providers, theme and presence take effect
+  in the same session. A bare config write used to leave a first-run user who
+  picked Anime in Movies & Series until restart. Analytics passes through the
+  consent service there, unchanged: only an explicit choice reaches it.
+- **Presence follows the toggle both ways.** It hydrates from config, so an
+  unticked Discord toggle writes `off`; writing the current value back made
+  turning presence off from setup impossible.
 
 ## Desired Download Behavior
 
@@ -125,6 +134,10 @@ accounts, usage ping, done. Implementation is
 - One-off series downloads still store the selected title cleanup/profile intent for local management,
   but do not schedule offline runway work unless `Keep watching offline` was selected and do not
   revoke an existing title enrollment.
+- After download, a title's Library detail is where both policies change: "Keep the next N episodes
+  ready offline" enrolls or stops the runway (series only), and "After watching: …" picks the
+  cleanup suggestion. Both labels show the current state and relabel at once. (The old modal
+  completed-downloads picker that also offered these was unreachable and has been removed.)
 - HLS size is reported honestly as unknown when content length cannot be known.
 - The recorded temporary base is a short `.tmp.<job-id>.mp4` sibling name so a long final
   filename does not overflow the filesystem component limit. Each claimed attempt writes
@@ -368,6 +381,9 @@ was looked up as `tmdb:1339713` and a healthy file reported "Downloaded file una
   admitted by explicit local authority. HTTP(S) targets still receive network preflight,
   including an HTTP(S) URL accidentally tagged local. The URL and exact-path trust gates
   remain intact; provider URLs never gain local-file permission from a display marker.
+  Both paths pass the resolve gate's evidence (`cachedAt`, `streamReachabilityVerified`)
+  to that preflight, so a URL verified moments earlier is not probed again as mpv opens
+  it; past the trust window it is probed as before.
 - mpv's shutdown can clear duration while retaining position. Playback results keep
   the duration observed in that playback cycle for both history and premature-EOF
   checks, even when a later position event arrives after duration is cleared. This retained value

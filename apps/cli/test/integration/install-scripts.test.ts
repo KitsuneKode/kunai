@@ -23,7 +23,10 @@ import { verifyStoredVersion } from "@/services/update/native-installer/version-
 import { RELEASE_BINARY_TARGETS } from "@/services/update/platform-assets";
 import { getKunaiPaths } from "@kunai/storage";
 
-import { createReleaseArchive } from "../../scripts/build-release-archives";
+import {
+  createReleaseArchive,
+  createZstdReleaseArchive,
+} from "../../scripts/build-release-archives";
 import { describePosixOnly as describe } from "../helpers/platform-gates";
 import {
   createInstallerSandbox,
@@ -34,6 +37,7 @@ import {
   withCommandPath,
   withoutKunaiPathOverrides,
   withReleaseFixture,
+  type ReleaseFixtureRoute,
 } from "./helpers/installer-script-harness";
 
 const REPO_ROOT = join(import.meta.dirname, "../../../..");
@@ -519,6 +523,58 @@ describe("install.sh root and stdin-execution guards", () => {
 });
 
 describe("install.sh release asset failures", () => {
+  // The fallback half — no `zstd` on the host — runs in the glibc docker
+  // image; the manifest-without-.tar.zst half is every other test here.
+  test.skipIf(!Bun.which("zstd"))(
+    "takes the signed .tar.zst when the host has zstd and records it as the archive",
+    async () => {
+      const target = hostInstallShTarget();
+      const zstdName = target.zstdArchiveName;
+      if (!zstdName) throw new Error("install.sh targets are tar targets");
+      const body = "#!/bin/sh\necho zstd-kunai\n";
+      const bytes = new TextEncoder().encode(body);
+      const gzip = createReleaseArchive(target, bytes);
+      const zstd = createZstdReleaseArchive(target, bytes);
+      const sha = (data: Uint8Array | string) => createHash("sha256").update(data).digest("hex");
+      const sandbox = createInstallerSandbox("install-sh-archive-zstd");
+      try {
+        await withReleaseFixture(
+          {
+            [`/download/v9.8.6/${target.archiveName}`]: { body: gzip },
+            [`/download/v9.8.6/${zstdName}`]: { body: zstd },
+            "/download/v9.8.6/SHA256SUMS.archives": {
+              body: `${sha(gzip)}  ${target.archiveName}\n${sha(zstd)}  ${zstdName}\n`,
+            },
+            "/download/v9.8.6/SHA256SUMS": { body: `${sha(body)}  ${target.out}\n` },
+          },
+          async (baseUrl, evidence) => {
+            const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.6"], {
+              ...sandbox.env,
+              KUNAI_DL_BASE: baseUrl,
+            });
+
+            expect(result.status, result.stderr).toBe(0);
+            expect(evidence.requests).toEqual([
+              "/download/v9.8.6/SHA256SUMS.archives",
+              `/download/v9.8.6/${zstdName}`,
+              "/download/v9.8.6/SHA256SUMS",
+            ]);
+            expect(readFileSync(join(sandbox.dataDir, "versions", "9.8.6", "kunai"), "utf8")).toBe(
+              body,
+            );
+            expect(readInstallerManifest(sandbox.configDir)).toMatchObject({
+              archiveName: zstdName,
+              archiveSha256: sha(zstd),
+              archiveSourceUrl: `${baseUrl}/download/v9.8.6/${zstdName}`,
+            });
+          },
+        );
+      } finally {
+        sandbox.cleanup();
+      }
+    },
+  );
+
   test("installs the verified tar.gz member and records archive provenance", async () => {
     const target = hostInstallShTarget();
     const body = "#!/bin/sh\necho archived-kunai\n";
@@ -1069,6 +1125,139 @@ exec ${quoteShellArgument(realDd)} "$@"
     } finally {
       sandbox.cleanup();
     }
+  });
+});
+
+/**
+ * Release markers: one best-effort request after a successful install,
+ * `install.marker` for a fresh install and `update.marker` over an existing
+ * one, so GitHub's download count tells installs from updates. Kunai receives
+ * nothing.
+ * The sandbox forces DO_NOT_TRACK=1, so every other test here also proves the
+ * opt-out; these turn it off explicitly to see the request at all.
+ */
+describe("install.sh release markers", () => {
+  const MARKER = "/download/v9.8.7/install.marker";
+  const TRACKING_ALLOWED = { DO_NOT_TRACK: "0", CI: "0", KUNAI_NO_MARKER: "" } as const;
+
+  /** Usage analytics on, as Kunai writes it after an explicit yes. */
+  const seedConsent = (configDir: string) => {
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, "config.json"),
+      JSON.stringify({ analytics: "enabled", analyticsNoticeShown: true }),
+    );
+  };
+
+  async function installWith(
+    env: Readonly<Record<string, string>>,
+    marker: { readonly status: number } | null,
+    options: { readonly corruptChecksum?: boolean; readonly consent?: boolean } = {},
+  ) {
+    const asset = hostInstallShAsset();
+    const body = "#! /bin/sh\necho kunai-fixture\n";
+    const digest = createHash("sha256")
+      .update(options.corruptChecksum ? "other" : body)
+      .digest("hex");
+    const routes: [string, ReleaseFixtureRoute][] = [
+      [`/download/v9.8.7/${asset}`, { body }],
+      ["/download/v9.8.7/SHA256SUMS", { body: `${digest}  ${asset}\n` }],
+    ];
+    if (marker) routes.push([MARKER, { status: marker.status, body: "marker" }]);
+    const sandbox = createInstallerSandbox("install-sh-marker");
+    if (options.consent !== false) seedConsent(sandbox.configDir);
+    const outcomes: { status: number; stdout: string; stderr: string; requests: string[] }[] = [];
+    try {
+      await withReleaseFixture(Object.fromEntries(routes), async (baseUrl, evidence) => {
+        const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
+          ...sandbox.env,
+          ...env,
+          KUNAI_DL_BASE: baseUrl,
+          PATH: `${sandbox.binDir}${delimiter}${sandbox.env.PATH ?? ""}`,
+        });
+        outcomes.push({ ...result, requests: [...evidence.requests] });
+      });
+    } finally {
+      sandbox.cleanup();
+    }
+    const outcome = outcomes[0];
+    if (!outcome) throw new Error("installer did not run");
+    return outcome;
+  }
+
+  test("without usage analytics consent nothing is fetched, even with every opt-out off", async () => {
+    const result = await installWith(TRACKING_ALLOWED, { status: 200 }, { consent: false });
+    expect(result.status).toBe(0);
+    expect(result.requests).not.toContain(MARKER);
+  });
+
+  test("with usage analytics on, an install fetches install.marker once, after it succeeded", async () => {
+    const result = await installWith(TRACKING_ALLOWED, { status: 200 });
+    expect(result.status).toBe(0);
+    expect(result.requests.filter((path) => path === MARKER)).toHaveLength(1);
+    expect(result.requests.at(-1)).toBe(MARKER);
+  });
+
+  test("a failing marker is silent and never fails the install", async () => {
+    const quiet = await installWith(TRACKING_ALLOWED, null);
+    expect(quiet.status).toBe(0);
+    expect(quiet.requests).toContain(MARKER);
+    expect(`${quiet.stdout}${quiet.stderr}`).not.toMatch(/install\.marker|marker request/i);
+  });
+
+  test.each([[{ DO_NOT_TRACK: "1" }], [{ CI: "true" }], [{ KUNAI_NO_MARKER: "1" }]])(
+    "is skipped under %j",
+    async (optOut) => {
+      const result = await installWith({ ...TRACKING_ALLOWED, ...optOut }, { status: 200 });
+      expect(result.status).toBe(0);
+      expect(result.requests).not.toContain(MARKER);
+    },
+  );
+
+  test("an upgrade over an existing install counts as an update; a same-version reinstall as neither", async () => {
+    const asset = hostInstallShAsset();
+    const body = "#! /bin/sh\necho kunai-fixture\n";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const routes: [string, ReleaseFixtureRoute][] = [];
+    for (const version of ["9.8.7", "9.8.8"]) {
+      routes.push([`/download/v${version}/${asset}`, { body }]);
+      routes.push([`/download/v${version}/SHA256SUMS`, { body: `${digest}  ${asset}\n` }]);
+      routes.push([`/download/v${version}/install.marker`, { body: "marker" }]);
+      routes.push([`/download/v${version}/update.marker`, { body: "marker" }]);
+    }
+    const sandbox = createInstallerSandbox("install-sh-marker-upgrade");
+    seedConsent(sandbox.configDir);
+    const markersPerRun: string[][] = [];
+    try {
+      await withReleaseFixture(Object.fromEntries(routes), async (baseUrl, evidence) => {
+        for (const version of ["9.8.7", "9.8.8", "9.8.8"]) {
+          const before = evidence.requests.length;
+          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", version], {
+            ...sandbox.env,
+            ...TRACKING_ALLOWED,
+            KUNAI_DL_BASE: baseUrl,
+            PATH: `${sandbox.binDir}${delimiter}${sandbox.env.PATH ?? ""}`,
+          });
+          expect(result.status, `${result.stderr}${result.stdout}`).toBe(0);
+          markersPerRun.push(
+            evidence.requests.slice(before).filter((path) => path.endsWith(".marker")),
+          );
+        }
+      });
+    } finally {
+      sandbox.cleanup();
+    }
+    expect(markersPerRun).toEqual([
+      ["/download/v9.8.7/install.marker"],
+      ["/download/v9.8.8/update.marker"],
+      [],
+    ]);
+  });
+
+  test("is not fetched when the install fails", async () => {
+    const result = await installWith(TRACKING_ALLOWED, { status: 200 }, { corruptChecksum: true });
+    expect(result.status).not.toBe(0);
+    expect(result.requests).not.toContain(MARKER);
   });
 });
 

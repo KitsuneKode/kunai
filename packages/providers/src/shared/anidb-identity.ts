@@ -1,7 +1,7 @@
 import { scrubbedChildEnv } from "./child-env";
 import {
   curlArgvHead,
-  curlCipherArgs,
+  curlTransportArgs,
   isCloudflareChallengeText,
   resolveCurlCandidate,
 } from "./curl-impersonate";
@@ -112,7 +112,7 @@ async function fetchAnimePage(showId: string, signal?: AbortSignal): Promise<str
       `Referer: ${ANIDB_REFERER}`,
       "--max-time",
       "12",
-      ...curlCipherArgs(curl.impersonates),
+      ...(await curlTransportArgs(curl, url, signal)),
       ...ANIDB_STATUS_WRITE_OUT,
       "--",
       url,

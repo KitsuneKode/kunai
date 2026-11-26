@@ -52,6 +52,25 @@ export function tracksPanelNavReducer(
 ): TracksNavState {
   const columns = Math.max(1, Math.floor(ctx.gridColumns ?? 1));
 
+  // A section with one choice (the common single-source provider) or none has
+  // nowhere for ↑/↓ to go, and clamping made the arrows look dead while the
+  // alternatives sat one section away. Step to the neighbouring section and
+  // keep the options pane focused, so ↑ then ↓ reaches another provider.
+  if (
+    state.focusedPane === "options" &&
+    ctx.optionCount <= 1 &&
+    (event.type === "up" || event.type === "down")
+  ) {
+    return {
+      ...state,
+      sectionIndex: clamp(
+        state.sectionIndex + (event.type === "down" ? 1 : -1),
+        ctx.sectionCount - 1,
+      ),
+      optionIndex: 0,
+    };
+  }
+
   switch (event.type) {
     case "down":
       return state.focusedPane === "sections"

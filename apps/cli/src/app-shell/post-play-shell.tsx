@@ -10,6 +10,7 @@
 // is render-only. No inline component definitions; memo the shell.
 // =============================================================================
 
+import { PressRow } from "@/app-shell/mouse/PickRow";
 import type { TitleDetail } from "@/domain/catalog/title-detail";
 import { contentKindHasEpisodes, type ContentKind } from "@/domain/media/content-kind";
 import type { PostPlayState } from "@/domain/playback/post-play-state";
@@ -155,19 +156,22 @@ function ActionRows({
         }
         const shortcut = padColumnsEnd(` [${action.shortcut}]`, shortcutWidth);
         const label = padColumnsEnd(truncateLine(action.label, labelWidth), labelWidth);
+        // A click presses the row's own shortcut: the same handler as the key.
         return (
-          <Box key={action.id} flexDirection="row" flexWrap="nowrap">
-            <Text color={isSelected ? palette.accent : palette.dim}>
-              {isSelected ? "▌ " : "  "}
-            </Text>
-            <Text color={isSelected ? palette.text : palette.textDim} bold={isSelected}>
-              {label}
-            </Text>
-            {detailWidth > 0 ? (
-              <Text color={palette.muted}>{truncateLine(action.detail, detailWidth)}</Text>
-            ) : null}
-            <Text color={isSelected ? palette.accent : palette.dim}>{shortcut}</Text>
-          </Box>
+          <PressRow key={action.id} id={`post-play:action:${action.id}`} keyHint={action.shortcut}>
+            <Box flexDirection="row" flexWrap="nowrap">
+              <Text color={isSelected ? palette.accent : palette.dim}>
+                {isSelected ? "▌ " : "  "}
+              </Text>
+              <Text color={isSelected ? palette.text : palette.textDim} bold={isSelected}>
+                {label}
+              </Text>
+              {detailWidth > 0 ? (
+                <Text color={palette.muted}>{truncateLine(action.detail, detailWidth)}</Text>
+              ) : null}
+              <Text color={isSelected ? palette.accent : palette.dim}>{shortcut}</Text>
+            </Box>
+          </PressRow>
         );
       })}
     </Box>

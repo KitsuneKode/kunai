@@ -171,7 +171,7 @@ test("retry-download and update-app are executable primary actions with copy", (
   expect(getNotificationActionPresentation("update-app").label).toBe("Update Kunai");
   expect(getNotificationActionPresentation("retry-download").tone).toBe("warning");
   expect(getNotificationActionPresentation("retry-download").detail).toBe(
-    "Retry this item through the standard download action",
+    "Requeue the failed download with its original settings",
   );
   expect(getNotificationActionPresentation("update-app").detail).toBe(
     "Install the new version, or show how to update if a package manager owns this install",

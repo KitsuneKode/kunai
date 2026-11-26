@@ -251,6 +251,51 @@ function Resolve-PublishedVersion {
   return (Get-NormalizedVersion $tag)
 }
 
+function Test-TruthyEnv([string]$Value) {
+  if (-not $Value) { return $false }
+  return @('1', 'true', 'yes') -contains $Value.Trim().ToLowerInvariant()
+}
+
+# One request for a release marker after a successful install: install.marker
+# when nothing was installed before, update.marker when this replaced another
+# version. GitHub's download counts for them are how installs are told apart
+# from updates; Kunai receives nothing, and the request goes to the host that
+# just served the binary. Best effort only: no retry, a short timeout, every
+# failure ignored and silent. DO_NOT_TRACK, CI and KUNAI_NO_MARKER each turn it off.
+#
+# Opt-in, like Kunai's usage ping: nothing is fetched unless config.json already
+# says "analytics": "enabled" with the consent notice recorded, the same reading
+# the app makes. A first install has no config, so it is never counted.
+function Test-AnalyticsConsented {
+  $cfg = Join-Path $ConfigDir 'config.json'
+  if (-not (Test-Path -LiteralPath $cfg -PathType Leaf)) { return $false }
+  try { $doc = Get-Content -LiteralPath $cfg -Raw | ConvertFrom-Json } catch { return $false }
+  return ($doc.analytics -eq 'enabled') -and ($doc.analyticsNoticeShown -is [bool])
+}
+
+function Send-ReleaseMarker([string]$Base, [string]$Previous, [string]$Installed) {
+  if ((Test-TruthyEnv $env:DO_NOT_TRACK) -or (Test-TruthyEnv $env:CI) -or (Test-TruthyEnv $env:KUNAI_NO_MARKER)) {
+    return
+  }
+  if (-not (Test-AnalyticsConsented)) { return }
+  if (-not $Previous) { $marker = 'install.marker' }
+  elseif ($Previous -ne $Installed) { $marker = 'update.marker' }
+  # Reinstalling the active version is neither a new install nor an update.
+  else { return }
+  $client = $null
+  try {
+    $client = [System.Net.Http.HttpClient]::new()
+    $client.Timeout = [TimeSpan]::FromSeconds(3)
+    $client.DefaultRequestHeaders.TryAddWithoutValidation('User-Agent', 'kunai-installer') | Out-Null
+    $response = $client.GetAsync("$Base/$marker", [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+    $response.Dispose()
+  }
+  catch { }
+  finally {
+    if ($null -ne $client) { $client.Dispose() }
+  }
+}
+
 function Test-RetryableHttpStatus([int]$Status) {
   return ($Status -eq 408 -or $Status -eq 429 -or $Status -ge 500)
 }
@@ -2366,6 +2411,7 @@ function Install-Binary {
     Write-Info "PATH activation: new terminals inherit $BinDir. Reopen the terminal if this shell cannot find kunai."
   }
   Write-Info "Installed kunai -> $BinPath (v$resolved at $versionPath)"
+  Send-ReleaseMarker $base $activationPrevious $resolved
 }
 
 function Require-Cmd([string]$Name, [string]$InstallHint) {
