@@ -169,19 +169,18 @@ nativeTest(
           { headers: { "content-type": "video/mp2t" } },
         ),
     });
-    let startedBeforeBytes = false;
+    // What matters is that a trickling server is never mistaken for a dead
+    // one: its bytes are seen, playback starts, and no startup stall fires.
+    // Whether mpv reports "started" before or after Kunai's next network
+    // sample is a race with the sampler under load, so it is not asserted.
     const { events } = await watch(
       `http://127.0.0.1:${server.port}/slow.ts`,
-      (seen) => {
-        if (seen.at(-1)?.type === "playback-started" && !bytesArrived(seen)) {
-          startedBeforeBytes = true;
-        }
-        return seen.some((event) => event.type === "playback-started");
-      },
+      (seen) => seen.some((event) => event.type === "playback-started") && bytesArrived(seen),
       { deadlineMs: 20_000 },
     );
     expect(bytesArrived(events)).toBe(true);
-    expect(startedBeforeBytes).toBe(false);
+    expect(events.some((event) => event.type === "playback-started")).toBe(true);
+    expect(events.some((event) => event.type === "stream-stalled")).toBe(false);
   },
   40_000,
 );

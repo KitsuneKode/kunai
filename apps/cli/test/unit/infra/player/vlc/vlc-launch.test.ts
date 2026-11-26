@@ -2,9 +2,11 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   buildVlcArgs,
+  buildVlcInPlayQuery,
   discoverVlcBinary,
   userVlcConfigPath,
   writeVlcSessionConfig,
@@ -134,5 +136,49 @@ describe("buildVlcArgs", () => {
     const args = buildVlcArgs({ ...base, url: "/media/ep1.mkv", subtitle: "/media/ep1.en.srt" });
     expect(args).toContain(":sub-file=/media/ep1.en.srt");
     expect(args.some((arg) => arg.startsWith(":start-time"))).toBe(false);
+  });
+});
+
+describe("keeping the window for the next episode", () => {
+  const base = {
+    port: 41234,
+    configPath: "/tmp/kunai-vlc-x/vlcrc",
+    url: "https://cdn.example/ep1.m3u8",
+    title: "Show · S1E1",
+  };
+
+  test("a kept window stops at the end of the file instead of exiting", () => {
+    const args = buildVlcArgs({ ...base, keepOpen: true });
+    expect(args).toContain("--play-and-stop");
+    expect(args).not.toContain("--play-and-exit");
+  });
+
+  test("in_play carries the same per-input options a launch does", () => {
+    const query = new URLSearchParams(
+      buildVlcInPlayQuery({
+        url: "http://127.0.0.1:9/g/token/media",
+        title: "Show · S1E2",
+        startAtSeconds: 90.4,
+        subtitle: "http://127.0.0.1:9/g/token/sub/0",
+      }),
+    );
+    expect(query.get("command")).toBe("in_play");
+    expect(query.get("input")).toBe("http://127.0.0.1:9/g/token/media");
+    expect(query.getAll("option")).toEqual([
+      ":meta-title=Show · S1E2",
+      ":start-time=90",
+      ":input-slave=http://127.0.0.1:9/g/token/sub/0",
+    ]);
+  });
+
+  test("a local file goes to in_play as a file URI", () => {
+    const path = "/media/My Show/ep 2.mkv";
+    const query = new URLSearchParams(buildVlcInPlayQuery({ url: path, title: "Ep 2" }));
+    const input = query.get("input") ?? "";
+    // Windows resolves a rooted path against the current drive
+    // (file:///C:/media/...), so pin the encoding, not the drive.
+    expect(input).toBe(pathToFileURL(path).href);
+    expect(input).toStartWith("file:///");
+    expect(input).toEndWith("/media/My%20Show/ep%202.mkv");
   });
 });

@@ -97,6 +97,7 @@ import {
   isPlaybackAutoSkipEnabled,
   playbackSkipKindLabel,
   type PlaybackSkipConfig,
+  playbackSkipConfig,
   pruneSkippedPlaybackSegmentKeys,
 } from "./playback-skip";
 import { createPlaybackWatchdog, type PlaybackWatchdog } from "./playback-watchdog";
@@ -1373,13 +1374,7 @@ export class PersistentMpvSession {
   }
 
   private skipConfig(options: PlayerCycleOptions): PlaybackSkipConfig {
-    return {
-      skipRecap: options.autoSkipEnabled !== false && (options.skipRecap ?? true),
-      skipIntro: options.autoSkipEnabled !== false && (options.skipIntro ?? true),
-      skipPreview: false,
-      skipCredits: options.autoSkipEnabled !== false && (options.skipCredits ?? true),
-      autoNextEnabled: options.autoSkipEnabled !== false && (options.autoNextEnabled ?? false),
-    };
+    return playbackSkipConfig(options);
   }
 
   private clearSkipAutoTimer(): void {

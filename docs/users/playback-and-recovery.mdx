@@ -19,13 +19,18 @@ gets:
   tracker sync;
 - completion and the next episode, startup-stall and "video isn't decoding"
   recovery to another source;
+- auto-skip of intros, recaps and credits (the same toggles as mpv, and the
+  skip key for a segment you are in), by seeking past them;
+- autoplay in one window: the next episode opens in the VLC window you are
+  already watching instead of a new one;
 - provider streams that need special headers, through Kunai's local stream
   gateway, and external subtitles;
 - downloaded episodes offline.
 
-Not yet in VLC: auto-skip of intros and credits, Kunai's in-player menu and
-share key, and streams that need yt-dlp (YouTube). Use `--player mpv` for
-those. On Linux, install VLC's ffmpeg decoder too (`vlc-plugin-ffmpeg` on Arch);
+Not yet in VLC: an on-screen "Skip intro" prompt (VLC skips without one),
+Kunai's in-player menu and share key, switching audio or subtitle tracks from
+Kunai's Tracks panel, and streams that need yt-dlp (YouTube). Use
+`--player mpv` for those. On Linux, install VLC's ffmpeg decoder too (`vlc-plugin-ffmpeg` on Arch);
 without it VLC plays the sound but no picture, which Kunai now reports instead
 of calling it playback.
 
