@@ -22,6 +22,7 @@ import { createContinuationEngine } from "@/domain/continuation/ContinuationEngi
 import { formatMediaItemCount, presentMedia } from "@/domain/media/media-presentation";
 import type { OfflineLibraryShelfGroup } from "@/domain/offline/OfflineLibraryEngine";
 import { isFinished as isProgressFinished } from "@/services/continuation/history-progress";
+import { parseOfflineTitleCleanupPreference } from "@/services/download/download-cleanup-policy";
 import { formatOfflineHistoryProgress } from "@/services/offline/offline-history-progress";
 import {
   formatOfflineJobListingTitle,
@@ -67,6 +68,8 @@ export function LibraryTitleDetail({
   const networkAvailable = useConnectivityOnline(container.connectivity);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [busy, setBusy] = useState(false);
+  // Bumped after a policy action so the runway and cleanup rows re-render.
+  const [, setPolicyRevision] = useState(0);
 
   const first = entries[0]?.job;
   const historyEntries = useMemo(
@@ -95,42 +98,71 @@ export function LibraryTitleDetail({
     }).note;
   }, [entries, first, historyEntries, networkAvailable]);
 
-  const actionRows: DetailRow[] = useMemo(
-    () => [
+  // Read every render (one keyed row): toggling must relabel the row at once.
+  const policyRows = ((): DetailRow[] => {
+    if (!first) return [];
+    const policy = container.offlineTitlePolicies.get(first.titleId);
+    const cleanup = parseOfflineTitleCleanupPreference(policy?.cleanupJson);
+    const runway = policy?.runwayTarget ?? container.config.offlineDefaultRunwayTarget;
+    // A movie has no next episode to keep ready, so only its cleanup applies.
+    const continuation: DetailRow[] =
+      group.contentType === "movie"
+        ? []
+        : [
+            {
+              kind: "action",
+              id: "toggle-continuation",
+              // The detail column is narrow; the label carries the meaning.
+              label: policy?.enrolled
+                ? `Keeping the next ${runway} episodes ready offline`
+                : `Keep the next ${runway} episodes ready offline`,
+              detail: policy?.enrolled ? "On · ↵ to stop" : "Off · ↵ to start",
+            },
+          ];
+    return [
+      ...continuation,
       {
         kind: "action",
-        id: "search-online",
-        label: "Continue this title online",
-        detail: "Prepare search; no provider work until you submit",
-        flatIndex: -1,
+        id: "edit-cleanup",
+        label:
+          cleanup?.mode === "cleanup-watched"
+            ? `After watching: suggest cleanup after ${cleanup.graceDays} days`
+            : "After watching: keep the latest episode",
+        detail: "↵ to change",
       },
-      {
-        kind: "action",
-        id: "download-more",
-        label: group.contentType === "movie" ? "Download this movie" : "Download more episodes",
-        detail:
-          group.contentType === "movie"
-            ? "Open title-level download confirmation for this movie"
-            : "Open the download episode picker for this title",
-        flatIndex: -1,
-      },
-      {
-        kind: "action",
-        id: "check-integrity",
-        label: "Check title integrity",
-        detail: "Verify all local artifacts for this title",
-        flatIndex: -1,
-      },
-      {
-        kind: "action",
-        id: "repair-missing",
-        label: "Repair missing items",
-        detail: "Queue re-download for broken or missing files",
-        flatIndex: -1,
-      },
-    ],
-    [group.contentType],
-  );
+    ];
+  })();
+
+  const actionRows: DetailRow[] = [
+    {
+      kind: "action",
+      id: "search-online",
+      label: "Continue this title online",
+      detail: "Prepare search; no provider work until you submit",
+    },
+    {
+      kind: "action",
+      id: "download-more",
+      label: group.contentType === "movie" ? "Download this movie" : "Download more episodes",
+      detail:
+        group.contentType === "movie"
+          ? "Open title-level download confirmation for this movie"
+          : "Open the download episode picker for this title",
+    },
+    {
+      kind: "action",
+      id: "check-integrity",
+      label: "Check title integrity",
+      detail: "Verify all local artifacts for this title",
+    },
+    {
+      kind: "action",
+      id: "repair-missing",
+      label: "Repair missing items",
+      detail: "Queue re-download for broken or missing files",
+    },
+    ...policyRows,
+  ];
 
   const episodeRows: DetailRow[] = useMemo(
     () =>
@@ -142,16 +174,10 @@ export function LibraryTitleDetail({
     [entries],
   );
 
-  const flatRows: DetailRow[] = useMemo(
-    () => [
-      ...episodeRows.map((row, index) => ({ ...row, flatIndex: index })),
-      ...actionRows.map((row, index) => ({
-        ...row,
-        flatIndex: episodeRows.length + index,
-      })),
-    ],
-    [actionRows, episodeRows],
-  );
+  const flatRows: DetailRow[] = [
+    ...episodeRows.map((row, index) => ({ ...row, flatIndex: index })),
+    ...actionRows,
+  ];
 
   const totalRows = flatRows.length;
   const safeIndex = totalRows > 0 ? Math.min(selectedIndex, totalRows - 1) : 0;
@@ -234,6 +260,7 @@ export function LibraryTitleDetail({
             | "check-integrity"
             | "repair-missing"
             | "toggle-continuation"
+            | "edit-cleanup"
             | "delete-group";
           const result = await routeOfflineLibraryGroupAction(container, entries, {
             type: actionType,
@@ -245,6 +272,9 @@ export function LibraryTitleDetail({
           }
           if (result === "refresh") {
             onEntriesChanged();
+          }
+          if (actionType === "toggle-continuation" || actionType === "edit-cleanup") {
+            setPolicyRevision((revision) => revision + 1);
           }
         } finally {
           setBusy(false);
@@ -301,26 +331,28 @@ export function LibraryTitleDetail({
           );
         }
         return (
-          <ListRow
-            key={row.id}
-            selected={selected}
-            rowWidth={rowWidth}
-            flexColumnIndex={rowLayout.flexColumnIndex}
-            columns={buildMediaListRowColumns({
-              title: row.label,
-              episodeCode: "—",
-              statusLabel: row.detail,
-              statusColor: palette.dim,
-              statusDim: true,
-              layout: rowLayout,
-            })}
-          />
+          <React.Fragment key={row.id}>
+            {/* The heading sits above the first action, wherever the window starts. */}
+            {flatIndex === episodeRows.length ? (
+              <SectionGroup label="Actions" marginTop={1} />
+            ) : null}
+            <ListRow
+              selected={selected}
+              rowWidth={rowWidth}
+              flexColumnIndex={rowLayout.flexColumnIndex}
+              columns={buildMediaListRowColumns({
+                title: row.label,
+                episodeCode: "—",
+                statusLabel: row.detail,
+                statusColor: palette.dim,
+                statusDim: true,
+                layout: rowLayout,
+              })}
+            />
+          </React.Fragment>
         );
       })}
       {windowEnd < totalRows ? <Text color={palette.dim}> ▼ ...</Text> : null}
-      {windowStart <= episodeRows.length && windowEnd > episodeRows.length ? (
-        <SectionGroup label="Actions" marginTop={1} />
-      ) : null}
       <Box marginTop={1}>
         <Text color={palette.dim} dimColor>
           {busy ? "Working…" : "↵ play or run action · esc back to titles"}
