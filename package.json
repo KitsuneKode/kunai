@@ -80,7 +80,7 @@
     "test:coverage": "bun run --cwd apps/cli test:coverage",
     "sandbox": "scripts/dev-sandbox.sh",
     "test:cli:file": "bun run --cwd apps/cli test:file",
-    "smoke:posters": "bun run apps/cli/test/live/poster-smoke.ts",
+    "smoke:posters": "bun --no-env-file apps/cli/test/live/poster-smoke.ts",
     "test:npm-global-install": "bun run --cwd apps/cli test:npm-global-install",
     "test:installer:pwsh": "bun run --cwd apps/cli test:installer:pwsh",
     "test:installer:pwsh:shell": "bun run --cwd apps/cli test:installer:pwsh:shell",

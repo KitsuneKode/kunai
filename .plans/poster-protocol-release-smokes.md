@@ -41,8 +41,12 @@ and that both are absent after exit when screenshots are available. CI does not
 launch these smokes.
 
 The launcher gives the emulator access to Wayland when the display and runtime
-directory are both available. The CLI uses an isolated profile. SIGINT, SIGTERM
-and SIGHUP close the private terminal, stop its tmux server and remove the profile.
+directory are both available. The CLI uses an isolated profile with dotenv
+loading disabled. Each redraw must use the renderer observed at startup.
+SIGINT, SIGTERM and SIGHUP stop the child and remove its profile. They also
+restore stdin in `current` mode or close the private emulator and its tmux server
+when launched. If tmux shutdown fails, the launcher reports the socket path and
+retains it so shutdown can be retried.
 
 ## Local evidence
 

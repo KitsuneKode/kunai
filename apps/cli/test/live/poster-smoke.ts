@@ -11,17 +11,25 @@ import {
 } from "@kunai/storage";
 
 import { onboardedConfig } from "../agent/seed";
-import { storageRootEnv } from "../helpers/storage-env";
 import { makeRgbPng } from "../support/image-fixtures";
 import {
   hasPrintableGraphicsLeak,
+  matchesPosterRedraw,
   posterProtocol,
   visibleTerminalText,
 } from "../support/poster-smoke-evidence";
-import { posterSmokeWaylandEnv, runPosterSmokeTerminal } from "../support/poster-smoke-launcher";
+import {
+  finishPosterSmoke,
+  posterSmokeBunCommand,
+  posterSmokeEnv,
+  posterSmokeOption,
+  posterSmokeWaylandEnv,
+  runPosterSmokeTerminal,
+  stopPosterSmokeTmux,
+  withPosterSmokeSignals,
+} from "../support/poster-smoke-launcher";
 
 const ROOT = resolve(import.meta.dirname, "../..");
-const BUN = process.execPath;
 const TARGETS = new Map([
   ["kitty", "kitty-native"],
   ["tmux", "kitty-tmux"],
@@ -51,17 +59,6 @@ type SmokeOptions = {
   readonly expected?: string;
   readonly terminalHome?: string;
 };
-
-function cleanEnv(home: string): NodeJS.ProcessEnv {
-  const env = { ...process.env, ...storageRootEnv(home) };
-  for (const key of Object.keys(env)) {
-    if (key.startsWith("XDG_") || key === "APPDATA") delete env[key];
-  }
-  delete env.CI;
-  delete env.CONTINUOUS_INTEGRATION;
-  delete env.NO_COLOR;
-  return env;
-}
 
 function commandFor(options: SmokeOptions, child: string[]): string[] {
   const { emulator, socket, terminalHome } = options;
@@ -198,13 +195,19 @@ function showsColor(rgba: Uint8Array, color: readonly [number, number, number]):
   return false;
 }
 
-async function captureFrame(options: SmokeOptions, name: FrameName): Promise<void> {
+async function captureFrame(
+  options: SmokeOptions,
+  name: FrameName,
+  abort: AbortSignal,
+): Promise<void> {
+  abort.throwIfAborted();
   const window = await screenshotWindow(options);
   if (window) {
     const path = join(options.out, `${name}.png`);
     const deadline = Date.now() + 3_000;
     for (;;) {
       await runCommand(["import", "-window", window, `PNG24:${path}`]);
+      abort.throwIfAborted();
       // The terminal can acknowledge bytes before its compositor paints them.
       // Use the deterministic fixture colours to select a settled screenshot.
       if (!options.expected?.startsWith("kitty-")) break;
@@ -268,11 +271,11 @@ async function screenshotWindow(options: SmokeOptions): Promise<string | undefin
   }
 }
 
-async function drivePosterSmoke(options: SmokeOptions): Promise<void> {
+async function drivePosterSmoke(options: SmokeOptions, abort: AbortSignal): Promise<void> {
   if (!process.stdin.isTTY || !process.stdout.isTTY)
     throw new Error("poster smoke requires a real TTY");
   const home = mkdtempSync(join(options.terminalHome ?? tmpdir(), "kunai-poster-profile-"));
-  const env = cleanEnv(home);
+  const env = posterSmokeEnv(home);
   for (const key of Object.keys(env)) {
     if (
       key.startsWith("KUNAI_") &&
@@ -291,7 +294,7 @@ async function drivePosterSmoke(options: SmokeOptions): Promise<void> {
 
   const wasRaw = process.stdin.isRaw;
   let transcript = "";
-  let signal: (() => void) | undefined;
+  let wake: (() => void) | undefined;
   let protocol: string | null = null;
   let failure: string | undefined;
   let code: number | undefined;
@@ -301,7 +304,8 @@ async function drivePosterSmoke(options: SmokeOptions): Promise<void> {
   const rows = () => process.stdout.rows ?? 24;
   try {
     const paths = await seedProfile(home, env);
-    const child = Bun.spawn([BUN, join(ROOT, "src/main.ts"), "--offline"], {
+    abort.throwIfAborted();
+    const child = Bun.spawn(posterSmokeBunCommand(join(ROOT, "src/main.ts"), "--offline"), {
       cwd: ROOT,
       env,
       timeout: 55_000,
@@ -311,7 +315,7 @@ async function drivePosterSmoke(options: SmokeOptions): Promise<void> {
         data(_terminal, bytes) {
           transcript += decoder.decode(bytes, { stream: true });
           process.stdout.write(bytes);
-          signal?.();
+          wake?.();
         },
       },
     });
@@ -322,30 +326,41 @@ async function drivePosterSmoke(options: SmokeOptions): Promise<void> {
       while ((bytes = process.stdin.read()) !== null) terminal?.write(bytes);
     }
     const resize = () => terminal.resize(cols(), rows());
+    const interrupt = () => {
+      if (child.exitCode === null) child.kill();
+      wake?.();
+    };
+    abort.addEventListener("abort", interrupt, { once: true });
     stop = async () => {
+      abort.removeEventListener("abort", interrupt);
       process.stdin.off("readable", forwardInput);
       process.stdout.off("resize", resize);
-      if (child.exitCode === null) child.kill();
+      if (!abort.aborted && child.exitCode === null) child.kill();
       await child.exited;
       terminal.close();
     };
-    void child.exited.then(() => signal?.());
+    void child.exited.then(() => wake?.());
     const waitFor = async (label: string, condition: () => boolean) => {
-      if (condition()) return;
-      if (child.exitCode !== null) throw new Error(`Kunai exited before ${label}`);
       await new Promise<void>((done, fail) => {
         const timer = setTimeout(() => {
-          signal = undefined;
+          wake = undefined;
           fail(new Error(`timed out waiting for ${label}`));
         }, WAIT_MS);
-        signal = () => {
-          const ready = condition();
-          if (!ready && child.exitCode === null) return;
+        wake = () => {
+          try {
+            abort.throwIfAborted();
+            if (!condition()) {
+              if (child.exitCode === null) return;
+              throw new Error(`Kunai exited before ${label}`);
+            }
+            done();
+          } catch (error) {
+            fail(error);
+          }
           clearTimeout(timer);
-          signal = undefined;
-          if (ready) done();
-          else fail(new Error(`Kunai exited before ${label}`));
+          wake = undefined;
         };
+        wake();
       });
     };
     process.stdin.setRawMode(true);
@@ -355,34 +370,35 @@ async function drivePosterSmoke(options: SmokeOptions): Promise<void> {
       "offline library with a fixture poster",
       () => transcript.includes("Smoke Poster") && posterProtocol(transcript) !== null,
     );
-    protocol = posterProtocol(transcript);
-    if (options.expected && protocol !== options.expected) {
-      throw new Error(`expected ${options.expected}, observed ${protocol}`);
+    const startup = posterProtocol(transcript);
+    if (startup === null) throw new Error("startup poster protocol was not observed");
+    protocol = startup;
+    if (options.expected && startup !== options.expected) {
+      throw new Error(`expected ${options.expected}, observed ${startup}`);
     }
-    await captureFrame(options, "first");
+    await captureFrame(options, "first", abort);
 
     const selected = transcript.length;
     terminal.write("\x1b[B");
-    await waitFor(
-      "poster after moving selection",
-      () => posterProtocol(transcript.slice(selected)) !== null,
+    await waitFor("poster after moving selection", () =>
+      matchesPosterRedraw("selection", startup, transcript.slice(selected)),
     );
-    await captureFrame(options, "next");
+    await captureFrame(options, "next", abort);
 
     if (options.socket) {
       const beforeResize = transcript.length;
       // Decrease the font to keep the Library rail visible on narrower displays.
       await runCommand(["kitty", "@", "--to", options.socket, "set-font-size", "--", "-1"]);
-      await waitFor(
-        "poster after terminal resize",
-        () => posterProtocol(transcript.slice(beforeResize)) !== null,
+      await waitFor("poster after terminal resize", () =>
+        matchesPosterRedraw("resize", startup, transcript.slice(beforeResize)),
       );
-      await captureFrame(options, "resized");
+      await captureFrame(options, "resized", abort);
     }
     terminal.write("\x03");
     code = await child.exited;
+    abort.throwIfAborted();
     if (code !== 0 && code !== 130) throw new Error(`Kunai exited with code ${code}`);
-    await captureFrame(options, "after-exit");
+    await captureFrame(options, "after-exit", abort);
     if (hasPrintableGraphicsLeak(transcript))
       throw new Error("graphics escape leaked into printable transcript text");
     const config = await Bun.file(paths.configPath).json();
@@ -401,27 +417,36 @@ async function drivePosterSmoke(options: SmokeOptions): Promise<void> {
     failure = error instanceof Error ? error.message : String(error);
     throw error;
   } finally {
-    await stop?.();
-    process.stdin.setRawMode(wasRaw ?? false);
-    process.stdin.pause();
-    process.stdin.unref();
-    await Bun.write(join(options.out, "terminal.ansi"), transcript);
-    await Bun.write(
-      join(options.out, "report.json"),
-      JSON.stringify(
-        {
-          os: process.platform,
-          terminal: options.emulator,
-          protocol,
-          exitCode: code,
-          failure,
-          visibleTail: visibleTerminalText(transcript).slice(-1200),
-        },
-        null,
-        2,
-      ),
+    await finishPosterSmoke(
+      async () => {
+        try {
+          await stop?.();
+        } finally {
+          process.stdin.setRawMode(wasRaw ?? false);
+          process.stdin.pause();
+          process.stdin.unref();
+        }
+      },
+      async () => {
+        await Bun.write(join(options.out, "terminal.ansi"), transcript);
+        await Bun.write(
+          join(options.out, "report.json"),
+          JSON.stringify(
+            {
+              os: process.platform,
+              terminal: options.emulator,
+              protocol,
+              exitCode: code,
+              failure,
+              visibleTail: visibleTerminalText(transcript).slice(-1200),
+            },
+            null,
+            2,
+          ),
+        );
+      },
+      () => rmSync(home, { recursive: true, force: true }),
     );
-    rmSync(home, { recursive: true, force: true });
   }
 }
 
@@ -429,9 +454,18 @@ async function main(args: string[]): Promise<void> {
   if (args[0] === "--inside") {
     const [, out, emulator, socket, expected, terminalHome] = args;
     if (!out || !emulator || !terminalHome) throw new Error("missing internal smoke arguments");
-    await drivePosterSmoke({ out, emulator, socket: socket || undefined, expected, terminalHome });
+    const code = await withPosterSmokeSignals(process, (abort) =>
+      drivePosterSmoke(
+        { out, emulator, socket: socket || undefined, expected, terminalHome },
+        abort,
+      ),
+    );
+    if (code) process.exitCode = code;
     return;
   }
+  const emulator = posterSmokeOption(args, "--terminal") ?? "current";
+  const output = posterSmokeOption(args, "--out");
+  const expected = posterSmokeOption(args, "--expect") ?? TARGETS.get(emulator);
   if (args.includes("--help")) {
     console.log(
       `Usage: bun run smoke:posters -- --terminal ${[...TARGETS.keys()].join("|")} [--out NEW_DIR] [--expect PROTOCOL]`,
@@ -440,8 +474,6 @@ async function main(args: string[]): Promise<void> {
   }
   if (process.platform === "win32")
     throw new Error("the poster smoke launcher requires a POSIX PTY");
-  const pick = (flag: string) => (args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined);
-  const emulator = pick("--terminal") ?? "current";
   if (!TARGETS.has(emulator)) throw new Error(`unsupported terminal: ${emulator}`);
   const binaries = emulator === "tmux" ? ["tmux", "kitty"] : [emulator];
   const missing =
@@ -450,18 +482,16 @@ async function main(args: string[]): Promise<void> {
     console.log(`Skipping ${emulator} poster smoke: ${missing} is not installed.`);
     return;
   }
-  const output = pick("--out");
   const out = output ? resolve(output) : mkdtempSync(join(tmpdir(), "kunai-poster-smoke-"));
   if (output) mkdirSync(out, { mode: 0o700 });
-  const expected = pick("--expect") ?? TARGETS.get(emulator);
-  if (emulator === "current") {
-    await drivePosterSmoke({ out, emulator, expected });
-  } else {
-    const code = await launchSmoke({ emulator, out, expected });
-    if (code) {
-      process.exitCode = code;
-      return;
-    }
+  const options = { out, emulator, expected };
+  const code =
+    emulator === "current"
+      ? await withPosterSmokeSignals(process, (abort) => drivePosterSmoke(options, abort))
+      : await launchSmoke(options);
+  if (code) {
+    process.exitCode = code;
+    return;
   }
   console.log(`Poster smoke evidence: ${out}`);
 }
@@ -471,7 +501,7 @@ async function launchSmoke({ emulator, out, expected }: SmokeOptions): Promise<n
   const tmuxSocket = join(terminalHome, "tmux");
   return runPosterSmokeTerminal(process, {
     launch: () => {
-      const env = cleanEnv(terminalHome);
+      const env = posterSmokeEnv(terminalHome);
       for (const key of [
         "TMUX",
         "TMUX_PANE",
@@ -494,8 +524,7 @@ async function launchSmoke({ emulator, out, expected }: SmokeOptions): Promise<n
       Object.assign(env, posterSmokeWaylandEnv(process.env));
       const socket =
         emulator === "kitty" || emulator === "tmux" ? `unix:${join(terminalHome, "kitty")}` : "";
-      const inside = [
-        BUN,
+      const inside = posterSmokeBunCommand(
         import.meta.path,
         "--inside",
         out,
@@ -503,7 +532,7 @@ async function launchSmoke({ emulator, out, expected }: SmokeOptions): Promise<n
         socket,
         expected ?? "",
         terminalHome,
-      ];
+      );
       if (emulator === "tmux") {
         const tmuxConfig = join(terminalHome, "tmux.conf");
         writeFileSync(tmuxConfig, "set -g allow-passthrough on\n");
@@ -519,7 +548,7 @@ async function launchSmoke({ emulator, out, expected }: SmokeOptions): Promise<n
     },
     stopTmux: async () => {
       if (emulator === "tmux") {
-        await runCommand(["tmux", "-S", tmuxSocket, "kill-server"]).catch(() => {});
+        await stopPosterSmokeTmux(tmuxSocket);
       }
     },
     removeHome: () => rmSync(terminalHome, { recursive: true, force: true }),
