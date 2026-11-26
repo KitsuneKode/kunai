@@ -125,10 +125,11 @@ subtitle controls, and safer persistence, downloads and native installation.
   screen pre-selects neither answer. `kunai analytics log` shows every ping
   exactly as sent, and `kunai analytics preview` the next one; neither sends
   anything.
-- Releases carry `install.marker` and `update.marker`. The installers and the
-  native updater fetch one once after a successful install or update, so GitHub
-  can count them; Kunai receives nothing. `DO_NOT_TRACK`, `CI` and
-  `KUNAI_NO_MARKER` skip it.
+- Releases carry `install.marker` and `update.marker`. With usage analytics on,
+  the installers and the native updater fetch one once after a successful
+  install or update, so GitHub can count them; Kunai receives nothing. With
+  analytics off nothing is fetched, and `DO_NOT_TRACK`, `CI` and
+  `KUNAI_NO_MARKER` skip it either way.
 
 ### Performance and distribution
 

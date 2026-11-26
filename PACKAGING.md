@@ -49,7 +49,7 @@ ROOT="$PWD" && (cd apps/cli && bun pm pack --ignore-scripts --quiet --filename "
 - [ ] **Download path docs are platform-accurate** — default download directory matches storage path resolution on Linux/macOS/Windows
 - [ ] The protected environment holds the Ed25519 private key matching the reviewed public pin. Signing completes and verifies before npm publication.
 - [ ] Draft and public downloads contain all 30 native files plus seven distribution files: two signatures, both pinned installers, the formula, the Scoop manifest, and the Arch PKGBUILD. The verifier checks downloaded signatures and reproduces each generated file.
-- [ ] Both marker assets are on the release, `install.marker` and `update.marker`, with the fixed bytes `scripts/packaging/release-markers.ts` renders. Installers and the native updater fetch them so GitHub's download count separates installs from updates; Kunai receives nothing. A missing marker fails `verify-github-release-assets.ts`.
+- [ ] Both marker assets are on the release, `install.marker` and `update.marker`, with the fixed bytes `scripts/packaging/release-markers.ts` renders. Installers and the native updater fetch them, only with usage analytics on, so GitHub's download count separates installs from updates; Kunai receives nothing. A missing marker fails `verify-github-release-assets.ts`.
 - [ ] The release metadata PR updates `Formula/kunai.rb` and `bucket/kunai.json` from the verified public assets.
 - [ ] **musl archive evidence** — x64 and arm64 Alpine cells install the exact
       preserved `.tar.gz` through production `install.sh`, record archive
