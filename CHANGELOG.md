@@ -17,6 +17,16 @@ subtitle controls, and safer persistence, downloads and native installation.
   and cancel clicks when overlays or moved targets invalidate them.
 - Recover from failed playback through visible provider controls and a
   consistent Shift+F fallback action, with accurate attempt and loading states.
+- Choose VLC as the desktop player with `--player vlc` or once in Settings.
+  Kunai observes it like mpv: progress, resume, auto-skip, and the next episode
+  in the same window.
+- Playback counts as started only once a video frame is decoded. A stream that
+  never decodes, or sends nothing for 15 seconds, fails over to the next
+  source, and a failing 4K stream first steps down to 1080p on the same source.
+- Tap and click through the shell: History, every picker, Notifications,
+  Downloads, the guide, the checklist, the Schedule and a title's details. A
+  click on any key hint presses that key. Portrait phone terminals get a
+  single-column layout instead of a resize prompt.
 
 ### Catalog and settings
 
@@ -29,6 +39,10 @@ subtitle controls, and safer persistence, downloads and native installation.
   Wyzie keys there. Kunai uses the OS vault when available.
 - A signed provider hotfix manifest delivers supported configuration updates.
   HDR and Dolby Vision selections preserve the chosen playback route.
+- The details sheet shows your progress and where a title is available. Anime
+  Discover gets personal rails from AniList.
+- Connecting a tracker turns its sync on and disconnecting turns it off.
+  Trackers' `Retry-After` is honoured across batches.
 
 ### Playback and providers
 
@@ -59,6 +73,16 @@ subtitle controls, and safer persistence, downloads and native installation.
 - Retire AniDB from the production roster. Migrate retired selections and remove
   its priority/pin entries without deleting history, offline files or unrelated
   provider preferences. Keep Videasy and AllAnime registered.
+- Startup failover skips dead sources, wraps around and stops A→B→A loops. In
+  guided and fallback-first modes a provider that is down is tried last and the
+  provider that last worked for a title starts first. HLS variants are ranked by
+  measured resolution, not advertised bandwidth.
+- Provider site lookups use DNS-over-HTTPS (Cloudflare, `1.1.1.1`) so networks
+  that block providers by DNS still reach them, falling back to system DNS.
+  Video hosts and local addresses keep system DNS. Turn it off in
+  **Settings › Sources › DNS-over-HTTPS** or with `KUNAI_DOH_DISABLE=1`.
+- A backward seek is no longer mistaken for a stall. Share links, queue rows,
+  `/watch` and Calendar continuations each play the episode they name.
 - Preserve trusted resume positions on quit. Automatic completion requires
   natural EOF and observed progress; duration-only or near-end events do not
   silently mark an unfinished episode watched.
@@ -94,6 +118,8 @@ subtitle controls, and safer persistence, downloads and native installation.
   reduced-motion behavior and settled-work status reporting.
 - Sanitize untrusted terminal text, including OSC sequences terminated by the
   string terminator, without damaging normal Unicode titles.
+- Plain and screen-reader mode, light and high-contrast themes, and `NO_COLOR`
+  support.
 
 ### State safety and privacy
 
@@ -151,7 +177,10 @@ subtitle controls, and safer persistence, downloads and native installation.
   guidance, Flatpak mpv discovery and installer wording.
 - Add experimental Android Termux targets and guarded external-player handoff.
   This is not a supported full mobile application; accepted OS handoff does not
-  prove decoded playback, progress, completion or autoplay.
+  prove decoded playback, progress, completion or autoplay. The launcher gets
+  the Android runtime environment `app_process` needs, a launch is bounded to
+  ten seconds and cancellable, and `kunai doctor` on Termux checks for an
+  intent launcher instead of desktop mpv.
 - Harden CI against zero-task and cache-replay false passes, retain gate
   evidence, and exercise installer and lifecycle contracts across platforms.
 
