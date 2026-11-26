@@ -6,7 +6,7 @@ import type { PosterResult } from "./poster-types";
 import { sixelOverlayManager } from "./sixel-overlay";
 
 /**
- * Reserves a measured Ink rectangle for a sixel overlay. The rectangle contains
+ * Reserves a measured Ink rectangle for a graphics overlay. The rectangle contains
  * no text by design: Ink clears/repaints it on every frame, then the overlay
  * manager paints the pixels after the frame has reached the terminal.
  */
@@ -54,6 +54,7 @@ export function SixelPosterPane({
       sixelOverlayManager.commit(poster.overlayId, {
         rect,
         sixel: poster.sixel,
+        kitty: poster.kitty,
         repaintAfterInkRender,
         owner: ownerId,
       });
@@ -65,7 +66,7 @@ export function SixelPosterPane({
   return <Box ref={ref} width={poster.cols} height={poster.rows} />;
 }
 
-/** Standard poster output; only sixel needs an out-of-band measured pane. */
+/** Standard poster output for measured overlays and in-frame text. */
 export function PosterOutput({
   poster,
   repaintAfterInkRender = true,

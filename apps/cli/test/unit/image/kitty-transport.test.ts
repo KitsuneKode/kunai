@@ -14,7 +14,7 @@ const originalWriteFile = transportTesting.runtime.writeFile;
 const originalWrite = transportTesting.runtime.write;
 const originalTmpdir = transportTesting.runtime.tmpdir;
 
-function captureWrites(): { writes: string[]; restore: () => void } {
+function captureWrites() {
   const writes: string[] = [];
   transportTesting.runtime.write = (text: string) => {
     writes.push(text);
@@ -35,23 +35,21 @@ afterEach(() => {
 
 describe("canUseFileTransmission", () => {
   test("blocks file transmission over SSH", () => {
-    expect(canUseFileTransmission({ SSH_CONNECTION: "10.0.0.1 22" } as NodeJS.ProcessEnv)).toBe(
-      false,
-    );
-    expect(canUseFileTransmission({ SSH_TTY: "/dev/pts/1" } as NodeJS.ProcessEnv)).toBe(false);
+    expect(canUseFileTransmission({ SSH_CONNECTION: "10.0.0.1 22" })).toBe(false);
+    expect(canUseFileTransmission({ SSH_TTY: "/dev/pts/1" })).toBe(false);
   });
 
   test("allows file transmission on local kitty and Ghostty", () => {
-    expect(canUseFileTransmission({ KITTY_WINDOW_ID: "1" } as NodeJS.ProcessEnv)).toBe(true);
-    expect(canUseFileTransmission({ TERM_PROGRAM: "ghostty" } as NodeJS.ProcessEnv)).toBe(true);
+    expect(canUseFileTransmission({ KITTY_WINDOW_ID: "1" })).toBe(true);
+    expect(canUseFileTransmission({ TERM_PROGRAM: "ghostty" })).toBe(true);
   });
 
   test("blocks file transmission on terminals that never documented t=t", () => {
     // q=2 suppresses error replies, so an unsupported t=t fails silently and the
     // poster is simply never drawn. Chunks work anywhere the protocol works.
-    expect(canUseFileTransmission({} as NodeJS.ProcessEnv)).toBe(false);
-    expect(canUseFileTransmission({ KONSOLE_VERSION: "220400" } as NodeJS.ProcessEnv)).toBe(false);
-    expect(canUseFileTransmission({ TERM_PROGRAM: "WezTerm" } as NodeJS.ProcessEnv)).toBe(false);
+    expect(canUseFileTransmission({})).toBe(false);
+    expect(canUseFileTransmission({ KONSOLE_VERSION: "220400" })).toBe(false);
+    expect(canUseFileTransmission({ TERM_PROGRAM: "WezTerm" })).toBe(false);
   });
 
   test("blocks file transmission inside tmux and screen", () => {
@@ -61,16 +59,14 @@ describe("canUseFileTransmission", () => {
       canUseFileTransmission({
         KITTY_WINDOW_ID: "1",
         TMUX: "/tmp/tmux-1000/default",
-      } as NodeJS.ProcessEnv),
+      }),
     ).toBe(false);
-    expect(
-      canUseFileTransmission({ KITTY_WINDOW_ID: "1", STY: "1234.pts-0" } as NodeJS.ProcessEnv),
-    ).toBe(false);
+    expect(canUseFileTransmission({ KITTY_WINDOW_ID: "1", STY: "1234.pts-0" })).toBe(false);
     expect(
       canUseFileTransmission({
         KITTY_WINDOW_ID: "1",
         TERM: "screen-256color",
-      } as NodeJS.ProcessEnv),
+      }),
     ).toBe(false);
   });
 
@@ -79,25 +75,48 @@ describe("canUseFileTransmission", () => {
       canUseFileTransmission({
         SSH_CONNECTION: "1",
         KUNAI_IMAGE_TRANSPORT: "file",
-      } as NodeJS.ProcessEnv),
+      }),
     ).toBe(true);
     expect(
       canUseFileTransmission({
         KITTY_WINDOW_ID: "1",
         KUNAI_IMAGE_TRANSPORT: "direct",
-      } as NodeJS.ProcessEnv),
+      }),
     ).toBe(false);
     // Invalid values fall back to auto detection rather than disabling posters.
     expect(
       canUseFileTransmission({
         KITTY_WINDOW_ID: "1",
         KUNAI_IMAGE_TRANSPORT: "bogus",
-      } as NodeJS.ProcessEnv),
+      }),
     ).toBe(true);
   });
 });
 
 describe("uploadKittyPayload (direct)", () => {
+  test("wraps every tmux chunk and ignores forced file transport", async () => {
+    const { writes } = captureWrites();
+    const bytes = new Uint8Array(3075);
+    const result = await uploadKittyPayload(
+      { kind: "png", data: bytes },
+      {
+        imageId: 7,
+        cols: 4,
+        rows: 2,
+        unicodePlaceholder: true,
+        preferFileTransmission: true,
+        passthrough: "tmux",
+        env: { KUNAI_IMAGE_TRANSPORT: "file" },
+      },
+    );
+
+    expect(result).toEqual({ sent: true, transmission: "direct" });
+    expect(writes).toEqual([
+      `\x1bPtmux;\x1b\x1b_Ga=T,f=100,U=1,q=2,i=7,c=4,r=2,t=d,m=1;${"A".repeat(4096)}\x1b\x1b\\\x1b\\`,
+      "\x1bPtmux;\x1b\x1b_Gm=0;AAAA\x1b\x1b\\\x1b\\",
+    ]);
+  });
+
   const rgbaPayload: KittyPayload = {
     kind: "rgba",
     data: new Uint8Array(8 * 4).fill(128),
@@ -113,7 +132,7 @@ describe("uploadKittyPayload (direct)", () => {
         rows: 2,
         cols: 4,
         unicodePlaceholder: true,
-        env: { KUNAI_IMAGE_TRANSPORT: "direct" } as NodeJS.ProcessEnv,
+        env: { KUNAI_IMAGE_TRANSPORT: "direct" },
       });
       expect(result).toEqual({ sent: true, transmission: "direct" });
       const out = capture.writes.join("");
@@ -127,7 +146,7 @@ describe("uploadKittyPayload (direct)", () => {
     const capture = captureWrites();
     try {
       await uploadKittyPayload(rgbaPayload, {
-        env: { KUNAI_IMAGE_TRANSPORT: "direct" } as NodeJS.ProcessEnv,
+        env: { KUNAI_IMAGE_TRANSPORT: "direct" },
       });
       const out = capture.writes.join("");
       const payloadB64 = out
@@ -147,7 +166,7 @@ describe("uploadKittyPayload (direct)", () => {
     const big: KittyPayload = { kind: "png", data: new Uint8Array(9000).fill(7) };
     try {
       await uploadKittyPayload(big, {
-        env: { KUNAI_IMAGE_TRANSPORT: "direct" } as NodeJS.ProcessEnv,
+        env: { KUNAI_IMAGE_TRANSPORT: "direct" },
         yieldEveryChunks: 0,
       });
       const chunks = capture.writes
@@ -175,7 +194,7 @@ describe("uploadKittyPayload (direct)", () => {
     try {
       await uploadKittyPayload(
         { kind: "png", data: png },
-        { env: { KUNAI_IMAGE_TRANSPORT: "direct" } as NodeJS.ProcessEnv },
+        { env: { KUNAI_IMAGE_TRANSPORT: "direct" } },
       );
       const out = capture.writes.join("");
       expect(out).toContain("f=100");
@@ -200,10 +219,7 @@ describe("uploadKittyPayload (direct)", () => {
 describe("uploadKittyPayload (t=t file transmission)", () => {
   test("writes a temp file and sends its base64 path", async () => {
     const capture = captureWrites();
-    // Held in an object rather than two `let` bindings: TypeScript's control-flow
-    // analysis cannot see that the callback ran, so plain locals narrow to `null`
-    // at the assertions below and every matcher call fails to typecheck.
-    const written: { path: string; body: readonly number[] } = { path: "", body: [] };
+    const written = { path: "", body: new Array<number>() };
     transportTesting.runtime.writeFile = async (path, data) => {
       written.path = path;
       written.body = Array.from(data);
@@ -212,7 +228,7 @@ describe("uploadKittyPayload (t=t file transmission)", () => {
     try {
       const result = await uploadKittyPayload(payload, {
         preferFileTransmission: true,
-        env: { KITTY_WINDOW_ID: "1" } as NodeJS.ProcessEnv,
+        env: { KITTY_WINDOW_ID: "1" },
       });
       expect(result).toEqual({ sent: true, transmission: "file" });
       expect(written.path).toContain("tty-graphics-protocol");
@@ -236,7 +252,7 @@ describe("uploadKittyPayload (t=t file transmission)", () => {
     try {
       const result = await uploadKittyPayload(
         { kind: "png", data: new Uint8Array([9, 9]) },
-        { preferFileTransmission: true, env: { KITTY_WINDOW_ID: "1" } as NodeJS.ProcessEnv },
+        { preferFileTransmission: true, env: { KITTY_WINDOW_ID: "1" } },
       );
       expect(result).toEqual({ sent: true, transmission: "direct" });
       expect(capture.writes.join("")).toContain("m=0;");
@@ -256,7 +272,7 @@ describe("uploadKittyPayload (t=t file transmission)", () => {
         { kind: "png", data: new Uint8Array([9, 9]) },
         {
           preferFileTransmission: true,
-          env: { SSH_CONNECTION: "10.0.0.1 22" } as NodeJS.ProcessEnv,
+          env: { SSH_CONNECTION: "10.0.0.1 22" },
         },
       );
       expect(result.transmission).toBe("direct");
@@ -272,7 +288,7 @@ describe("uploadKittyPayload (t=t file transmission)", () => {
     // path whose entire purpose is to be the fast one.
     const capture = captureWrites();
     const rgba = new Uint8Array(4 * 4).fill(200);
-    const written: { body: readonly number[] } = { body: [] };
+    const written = { body: new Array<number>() };
     transportTesting.runtime.writeFile = async (_path, data) => {
       written.body = Array.from(data);
     };
@@ -281,7 +297,7 @@ describe("uploadKittyPayload (t=t file transmission)", () => {
         { kind: "rgba", data: rgba, width: 4, height: 1 },
         {
           preferFileTransmission: true,
-          env: { KITTY_WINDOW_ID: "1" } as NodeJS.ProcessEnv,
+          env: { KITTY_WINDOW_ID: "1" },
         },
       );
       expect(result).toEqual({ sent: true, transmission: "file" });
@@ -304,7 +320,7 @@ describe("uploadKittyPayload (t=t file transmission)", () => {
         { kind: "rgba", data: new Uint8Array(4 * 4).fill(200), width: 4, height: 1 },
         {
           preferFileTransmission: true,
-          env: { KITTY_WINDOW_ID: "1" } as NodeJS.ProcessEnv,
+          env: { KITTY_WINDOW_ID: "1" },
         },
       );
       expect(result).toEqual({ sent: true, transmission: "direct" });

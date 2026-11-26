@@ -183,6 +183,20 @@ export class DurablePlaylistService {
   removeItem(itemId: string): void {
     this.repo.removeItem(itemId);
   }
+
+  /** Swap an item with its neighbour; false at either end or for an unknown id. */
+  moveItem(playlistId: string, itemId: string, direction: -1 | 1): boolean {
+    const ids = this.repo.listItems(playlistId).map((item) => item.id);
+    const from = ids.indexOf(itemId);
+    const to = from + direction;
+    if (from < 0 || to < 0 || to >= ids.length) return false;
+    const neighbour = ids[to];
+    if (neighbour === undefined) return false;
+    ids[to] = itemId;
+    ids[from] = neighbour;
+    this.repo.reorderItems(playlistId, ids);
+    return true;
+  }
 }
 
 function parseProviderHints(value: string | undefined): readonly MediaProviderHint[] {

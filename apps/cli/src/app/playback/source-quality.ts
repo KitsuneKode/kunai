@@ -25,6 +25,7 @@ import type {
   PlaybackSourceGroupView,
   PlaybackSourceInventoryView,
 } from "@/services/playback/PlaybackSourceInventoryView";
+import { reselectResolveResultStream } from "@/services/providers/provider-result-adapter";
 import {
   resolveYtdlFormatFromCandidate,
   resolveYoutubeYtdlRawOptions,
@@ -603,13 +604,9 @@ export function applyPreferredStreamSelection(
       : undefined,
     subtitle: keepCurrentSubtitle ? stream.subtitle : undefined,
     subtitleSource: keepCurrentSubtitle ? stream.subtitleSource : "none",
-    providerResolveResult: {
-      ...result,
-      selectedStreamId: selected.id,
-      // The gate attested the previous selection's URL and headers. A changed
-      // pick was never probed, so the attestation must not travel with it.
-      streamReachabilityVerified: false,
-    },
+    // The gate attested the previous selection's URL and headers. A changed
+    // pick was never probed, so the attestation must not travel with it.
+    providerResolveResult: reselectResolveResultStream(result, selected.id),
   };
 }
 

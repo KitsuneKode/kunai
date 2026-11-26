@@ -53,7 +53,13 @@ describeCandidate("preserved native installer smoke", () => {
     }
 
     const candidateDir = resolve(CANDIDATE_DIR);
-    const archivePath = join(candidateDir, target.archiveName);
+    // install.sh takes the .tar.zst when the host has `zstd` and the signed
+    // manifest lists it (every release from 0.3.x); install.ps1 stays on zip.
+    const archiveName =
+      process.platform !== "win32" && target.zstdArchiveName && Bun.which("zstd")
+        ? target.zstdArchiveName
+        : target.archiveName;
+    const archivePath = join(candidateDir, archiveName);
     const rawSumsPath = join(candidateDir, "SHA256SUMS");
     const archiveSumsPath = join(candidateDir, "SHA256SUMS.archives");
     const archive = new Uint8Array(await Bun.file(archivePath).arrayBuffer());
@@ -67,7 +73,7 @@ describeCandidate("preserved native installer smoke", () => {
       await withReleaseFixture(
         {
           [`/download/v${version}/SHA256SUMS.archives`]: { body: archiveSums },
-          [`/download/v${version}/${target.archiveName}`]: { body: archive },
+          [`/download/v${version}/${archiveName}`]: { body: archive },
           [`/download/v${version}/SHA256SUMS`]: { body: rawSums },
         },
         async (baseUrl, evidence) => {
@@ -106,7 +112,7 @@ describeCandidate("preserved native installer smoke", () => {
           expect(install.status, `${install.stderr}\n${install.stdout}`).toBe(0);
           expect(evidence.requests).toEqual([
             `/download/v${version}/SHA256SUMS.archives`,
-            `/download/v${version}/${target.archiveName}`,
+            `/download/v${version}/${archiveName}`,
             `/download/v${version}/SHA256SUMS`,
           ]);
           expect(evidence.requests).not.toContain(`/download/v${version}/${target.out}`);
@@ -117,10 +123,10 @@ describeCandidate("preserved native installer smoke", () => {
           expect(manifest).toMatchObject({
             activeVersion: version,
             artifactName: target.out,
-            archiveName: target.archiveName,
+            archiveName,
             archiveSha256,
             archiveSizeBytes,
-            archiveSourceUrl: `${baseUrl}/download/v${version}/${target.archiveName}`,
+            archiveSourceUrl: `${baseUrl}/download/v${version}/${archiveName}`,
           });
 
           const launcher = join(

@@ -29,9 +29,13 @@ export type MouseEvent = {
 // ESC is built from a char code so no literal control byte sits in the source
 // (oxlint no-control-regex); see app-shell/line-editor.ts for the convention.
 const ESC = String.fromCharCode(27);
-const SGR_MOUSE_PATTERN = new RegExp(`${ESC}\\[<(\\d+);(\\d+);(\\d+)([Mm])`, "g");
+const TERMINAL_REPORTS = new RegExp(
+  `${ESC}\\[<(\\d+);(\\d+);(\\d+)([Mm])|${ESC}\\[[46];\\d+;\\d+t`,
+  "g",
+);
 /** `\x1b[<…` without a terminator yet — a sequence split across chunks. */
 const SGR_MOUSE_PARTIAL = new RegExp(`${ESC}\\[<[0-9;]*$`);
+const PIXEL_REPORT_PARTIAL = new RegExp(`${ESC}\\[[46](?:;\\d*(?:;\\d*)?)?$`);
 const SGR_MOUSE_EXACT = new RegExp(`^${ESC}\\[<(\\d+);(\\d+);(\\d+)([Mm])$`);
 
 // ── Non-SGR reports: stripped, never parsed ─────────────────────────────────
@@ -50,6 +54,16 @@ const LEGACY_MOUSE_PATTERN = new RegExp(
 );
 /** `\x1b[M` (plus up to 2 payload bytes) or `\x1b[…;…` cut at a chunk end. */
 const LEGACY_MOUSE_PARTIAL = new RegExp(`${ESC}\\[M[\\x20-\\u00ff\\ufffd]{0,2}$`);
+
+// ── Kitty graphics replies: stripped ────────────────────────────────────────
+//
+// The startup probe stops listening after its timeout. Through tmux over a
+// slow link the outer terminal's answer (`ESC _G i=31,e=T,U=1;OK ESC \`) can
+// arrive later and would otherwise reach Ink as typed text. No key sends an
+// APC that starts with `G`, so dropping complete replies is safe.
+const KITTY_GRAPHICS_REPLY = new RegExp(`${ESC}_G[^${ESC}]*${ESC}\\\\`, "g");
+/** A reply cut at a chunk end: held until the rest arrives. */
+const KITTY_GRAPHICS_REPLY_PARTIAL = new RegExp(`${ESC}_G[^${ESC}]*${ESC}?$`);
 
 type DecodedButton = {
   readonly button: MouseButton;
@@ -120,6 +134,7 @@ export type MouseSplitResult = {
  */
 export type OrderedMouseInput =
   | { readonly kind: "input"; readonly input: string }
+  | { readonly kind: "cell-pixels"; readonly report: string }
   | { readonly kind: "mouse"; readonly event: MouseEvent };
 
 export type OrderedMouseSplitResult = {
@@ -135,14 +150,22 @@ export function splitOrderedMouseSequences(chunk: string): OrderedMouseSplitResu
     if (input) parts.push({ kind: "input", input });
   };
   let lastIndex = 0;
-  for (const match of chunk.matchAll(SGR_MOUSE_PATTERN)) {
+  for (const match of chunk.matchAll(TERMINAL_REPORTS)) {
     addInput(chunk.slice(lastIndex, match.index));
-    const event = parseSgrMouseSequence(match[0]);
-    if (event) parts.push({ kind: "mouse", event });
+    if (match[0].endsWith("t")) {
+      parts.push({ kind: "cell-pixels", report: match[0] });
+    } else {
+      const event = parseSgrMouseSequence(match[0]);
+      if (event) parts.push({ kind: "mouse", event });
+    }
     lastIndex = match.index + match[0].length;
   }
   const tail = chunk.slice(lastIndex);
-  const partial = SGR_MOUSE_PARTIAL.exec(tail) ?? LEGACY_MOUSE_PARTIAL.exec(tail);
+  const partial =
+    SGR_MOUSE_PARTIAL.exec(tail) ??
+    LEGACY_MOUSE_PARTIAL.exec(tail) ??
+    PIXEL_REPORT_PARTIAL.exec(tail) ??
+    KITTY_GRAPHICS_REPLY_PARTIAL.exec(tail);
   if (partial) {
     addInput(tail.slice(0, partial.index));
     return { parts, pendingTail: partial[0] };
@@ -158,7 +181,7 @@ export function splitMouseSequences(chunk: string): MouseSplitResult {
   const events: MouseEvent[] = [];
   for (const part of parts) {
     if (part.kind === "input") input += part.input;
-    else events.push(part.event);
+    else if (part.kind === "mouse") events.push(part.event);
   }
   return { input, events, pendingTail };
 }
@@ -167,5 +190,6 @@ export function splitMouseSequences(chunk: string): MouseSplitResult {
  * pattern comment for why these are never dispatched as events. */
 function stripLegacyMouse(input: string): string {
   LEGACY_MOUSE_PATTERN.lastIndex = 0;
-  return input.replace(LEGACY_MOUSE_PATTERN, "");
+  KITTY_GRAPHICS_REPLY.lastIndex = 0;
+  return input.replace(LEGACY_MOUSE_PATTERN, "").replace(KITTY_GRAPHICS_REPLY, "");
 }

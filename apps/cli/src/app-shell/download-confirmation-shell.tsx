@@ -7,6 +7,7 @@
 // keeping the draft in local state removes that entirely: the poster request
 // key depends on the title and fixed geometry, never on profile state.
 
+import { PickRow } from "@/app-shell/mouse/PickRow";
 import type { Container } from "@/container";
 import { isTitleLevelContent } from "@/domain/media/content-kind";
 import { formatMediaItemCount, presentMedia } from "@/domain/media/media-presentation";
@@ -317,16 +318,26 @@ export function DownloadConfirmationContent({
           {actions.map((action, index) => {
             const selected = index === cursor;
             return (
-              <Box key={`${action.kind}-${action.label}`} flexDirection="column">
-                <Text color={selected ? palette.accent : palette.text} bold={selected}>
-                  {truncateLine(`${selected ? "\u258c " : "  "}${action.label}`, layout.listWidth)}
-                </Text>
-                {selected ? (
-                  <Text color={palette.muted} wrap="truncate">
-                    {truncateLine(`    ${action.detail}`, layout.listWidth)}
+              <PickRow
+                key={`${action.kind}-${action.label}`}
+                id={`download-confirm:${action.kind}:${index}`}
+                index={index}
+                selectedIndex={cursor}
+              >
+                <Box flexDirection="column">
+                  <Text color={selected ? palette.accent : palette.text} bold={selected}>
+                    {truncateLine(
+                      `${selected ? "\u258c " : "  "}${action.label}`,
+                      layout.listWidth,
+                    )}
                   </Text>
-                ) : null}
-              </Box>
+                  {selected ? (
+                    <Text color={palette.muted} wrap="truncate">
+                      {truncateLine(`    ${action.detail}`, layout.listWidth)}
+                    </Text>
+                  ) : null}
+                </Box>
+              </PickRow>
             );
           })}
         </Box>

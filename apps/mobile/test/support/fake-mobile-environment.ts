@@ -30,6 +30,8 @@ export class FakeMobileEnvironment {
   loadError?: Error;
   httpError?: Error;
   handoffError?: Error;
+  /** Runs after each render is recorded; throw from it to fail that render. */
+  renderHook?: (lines: readonly string[]) => void;
 
   readonly environment: MobileEnvironment = {
     http: {
@@ -51,6 +53,7 @@ export class FakeMobileEnvironment {
     terminal: {
       render: async (lines) => {
         this.rendered.push(...lines);
+        this.renderHook?.(lines);
       },
       choose: async (request) => {
         this.chooseRequests.push(request);

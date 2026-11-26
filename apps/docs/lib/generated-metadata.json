@@ -877,7 +877,7 @@
     {
       "short": "",
       "long": "--player",
-      "description": "Player backend: desktop <auto|mpv>; Android/Termux <auto|mpv|vlc>"
+      "description": "Player backend: desktop <auto|mpv|vlc>; Android/Termux <auto|mpv|vlc>"
     },
     {
       "short": "",
@@ -1362,7 +1362,7 @@
       "scope": "player",
       "group": "In the player",
       "keys": "k / K",
-      "label": "Choose quality (in the terminal; v in mpv)",
+      "label": "Choose quality",
       "tier": "surface",
       "order": 400
     },

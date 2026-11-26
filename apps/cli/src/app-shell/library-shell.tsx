@@ -52,6 +52,7 @@ import type { HistoryProgress } from "@/services/storage/storage-read-models";
 import { Box, Text, useInput } from "ink";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
+import { routeListFilterKey } from "./list-filter-keys";
 import { useRootContentSuspended } from "./RootContentSuspension";
 
 export function libraryResumeCardCopy(input: {
@@ -186,6 +187,9 @@ export function LibraryShell({
 
 type LibraryView = "titles" | "title-detail";
 
+/** Row actions on a title list with no filter in progress: delete, protect, Downloads tab, undo. */
+const LIBRARY_ACTION_KEYS: ReadonlySet<string> = new Set(["x", "X", "p", "P", "2", "z"]);
+
 function LibraryTab({
   container,
   onClose,
@@ -207,6 +211,7 @@ function LibraryTab({
   const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null);
   const [historyMap, setHistoryMap] = useState<Record<string, HistoryProgress>>({});
   const [filterQuery, setFilterQuery] = useState("");
+  const [filterFocused, setFilterFocused] = useState(false);
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
   const titlesActive = libraryView === "titles";
   const priorPointerKey = useRef<string | null>(null);
@@ -315,10 +320,21 @@ function LibraryTab({
           setConfirmDeleteKey(null);
           return;
         }
+        // Then leave the filter, then the surface.
+        if (filterFocused || filterQuery) {
+          setFilterFocused(false);
+          setFilterQuery("");
+          return;
+        }
         onClose();
         return;
       }
-      if (key.tab || input === "2") {
+      const filterRoute = routeListFilterKey(input, key, {
+        focused: filterFocused,
+        query: filterQuery,
+        actionKeys: LIBRARY_ACTION_KEYS,
+      });
+      if (key.tab || (input === "2" && filterRoute === "action")) {
         onNavigateToQueue();
         return;
       }
@@ -327,27 +343,14 @@ function LibraryTab({
         setFilterQuery((query) => query.slice(0, -1));
         return;
       }
-      if (input === "\u001b" || input === "/") return;
-      // `z` pops the live undo entry; with nothing undoable it stays a filter
-      // character like any other letter.
-      if (input === "z" && container.sessionUndo?.hasLiveUndo()) {
+      if (filterRoute === "focus") return setFilterFocused(true);
+      // `z` pops the live undo entry; with nothing undoable it starts a filter.
+      if (input === "z" && filterRoute === "action" && container.sessionUndo?.hasLiveUndo()) {
         container.sessionUndo.undoLatest();
         return;
       }
-      if (
-        input.length === 1 &&
-        !key.ctrl &&
-        !key.meta &&
-        !key.return &&
-        !key.escape &&
-        !key.upArrow &&
-        !key.downArrow &&
-        !key.tab &&
-        input !== "x" &&
-        input !== "X" &&
-        input !== "p" &&
-        input !== "P"
-      ) {
+      if (filterRoute === "append" || (input === "z" && filterRoute === "action")) {
+        setFilterFocused(true);
         setFilterQuery((query) => query + input);
         return;
       }
@@ -512,11 +515,11 @@ function LibraryTab({
       <Box marginBottom={1}>
         <Text color={palette.dim}>{shelf.summary}</Text>
       </Box>
-      {filterQuery.length > 0 ? (
+      {filterFocused || filterQuery.length > 0 ? (
         <Box marginBottom={1}>
           <Text color={palette.accent}>Filter: </Text>
           <Text color={palette.text} bold>
-            {filterQuery}
+            {`${filterQuery}▏`}
           </Text>
         </Box>
       ) : null}

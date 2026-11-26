@@ -1,6 +1,4 @@
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
 
 import {
   buildPickerActionContext,
@@ -8,10 +6,9 @@ import {
   type ListShellActionContext,
   type ShellOption,
 } from "@/app-shell/pickers";
-import {
-  deleteDownloads,
-  formatDownloadRemovalFeedback,
-} from "@/services/download/download-removal";
+
+import { exportDurablePlaylist, importDurablePlaylist } from "./playlist-exchange-workflow";
+import { editPlaylistItems } from "./playlist-items-workflow";
 
 export { buildPickerActionContext };
 import { companionFallbackGlyph, companionToggleable } from "@/app-shell/companion-policy";
@@ -25,49 +22,40 @@ import {
 import { openSessionProviderPicker } from "@/app-shell/provider-picker-overlay";
 import {
   cancelRootLibraryPlaybackLaunch,
-  resolveRootLibraryPlaybackLaunch,
   waitForRootLibraryPlaybackLaunch,
 } from "@/app-shell/root-library-playback-bridge";
 import { openDiagnosticsOverlay, openRootOwnedOverlay } from "@/app-shell/root-overlay-bridge";
+import {
+  alignSessionToShareTarget,
+  noteShareTarget,
+} from "@/app/bootstrap/apply-resolved-share-target";
 import { resolveShareTarget } from "@/app/bootstrap/resolve-share-target";
 import { titleInfoFromSearchResult } from "@/app/bootstrap/title-info";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/discover/anime-provider-mapping";
-import { requestUnifiedOfflinePlayback } from "@/app/offline/offline-playback-launch";
 import { chooseSearchResultTitle } from "@/app/search/browse-option-mappers";
 import type { Container } from "@/container";
-import { createContinuationEngine } from "@/domain/continuation/ContinuationEngine";
 import { projectWatchProgress } from "@/domain/continuation/watch-progress";
 import { isTitleLevelContent } from "@/domain/media/content-kind";
 import { normalizeMediaKind, presentMedia } from "@/domain/media/media-presentation";
-import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngine";
 import { toggleProviderSwitch } from "@/domain/provider/provider-switches";
 import { planEpisodeQueue } from "@/domain/queue/QueuePlanner";
 import type { SessionState } from "@/domain/session/SessionState";
 import { isPlaybackSessionActive } from "@/domain/session/SessionState";
 import { parsePlaybackTargetRef } from "@/domain/share/playback-target-ref";
 import type { EpisodeInfo as PlaybackEpisodeInfo, StreamInfo, TitleInfo } from "@/domain/types";
-import { copyToClipboard, readClipboard } from "@/infra/clipboard";
-import { revealPathInOsFileManager } from "@/infra/os/reveal-in-file-manager";
-import { copyShareLinkForContext } from "@/infra/share/copy-share-link";
+import { readClipboard } from "@/infra/clipboard";
 import { openExternalUrlAndWait, defaultKunaiDocsUrl } from "@/infra/shell/open-external-url";
 import {
   readLatestHistoryByTitle,
-  formatTimestamp,
   historyContentType,
   isFinished,
-  isFinished as isProgressFinished,
 } from "@/services/continuation/history-progress";
 import {
   buildDiagnosticEvent,
   buildDownloadDiagnosticEvent,
-  buildSearchDiagnosticEvent,
   buildUiDiagnosticEvent,
 } from "@/services/diagnostics/diagnostic-event-helpers";
 import { buildIssueReportDraft } from "@/services/diagnostics/IssueReportBuilder";
-import {
-  parseOfflineTitleCleanupPreference,
-  type OfflineTitleCleanupPreference,
-} from "@/services/download/download-cleanup-policy";
 import { downloadJobShellMode } from "@/services/download/download-job-mode";
 import { resolveDownloadQualityCeiling } from "@/services/download/download-quality-policy";
 import { DownloadEnqueueRejectedError } from "@/services/download/DownloadService";
@@ -77,18 +65,7 @@ import {
   markSeasonThroughMediaItemWatched,
   mirrorListMembershipChange,
 } from "@/services/media-actions/create-container-media-action-router";
-import { formatOfflineHistoryProgress } from "@/services/offline/offline-history-progress";
-import {
-  formatOfflineJobListingTitle,
-  formatOfflineShelfBadge,
-  formatOfflineShelfDetail,
-  formatOfflineSecondaryLine,
-  offlineStatusIcon,
-  resolveOfflineArtifactStatus,
-  resolveOfflineJobPreviewImage,
-} from "@/services/offline/offline-library";
-import type { KunaiPlaylistDocument } from "@/services/playlists/KunaiPlaylistFormat";
-import { getKunaiPaths, type DownloadJobRecord } from "@/services/storage/storage-read-models";
+import type { DownloadJobRecord } from "@/services/storage/storage-read-models";
 import type { SyncPushSummary } from "@/services/sync/SyncService";
 import { fetchEpisodes } from "@/tmdb";
 import type { MediaKind } from "@kunai/types";
@@ -100,6 +77,8 @@ import type { ShellAction } from "../types";
 import { relativeHistoryDate } from "./history-workflows";
 import { promptPlaylistName } from "./playlist-name-prompt";
 import { openSetupWizardFromShell } from "./setup-workflows";
+import { shareTarget } from "./share-workflow";
+import { disconnectNamedTracker } from "./tracker-connect";
 
 export function waitForOverlayClose(
   stateManager: import("@/domain/session/SessionStateManager").SessionStateManager,
@@ -114,593 +93,6 @@ export function waitForOverlayClose(
       }
     });
   });
-}
-
-type DownloadJobAction =
-  | { type: "job"; id: string }
-  | { type: "check-integrity" }
-  | { type: "repair-missing" }
-  | { type: "download-more" }
-  | { type: "search-online" }
-  | { type: "protect-group" }
-  | { type: "unprotect-group" }
-  | { type: "toggle-continuation" }
-  | { type: "edit-cleanup" }
-  | { type: "delete-group" }
-  | { type: "back" };
-type OfflineLibraryGroupAction =
-  | { type: "group"; key: string }
-  | { type: "downloads" }
-  | { type: "online" }
-  | { type: "back" };
-type CompletedDownloadAction =
-  | "play"
-  | "reveal"
-  | "check-integrity"
-  | "retry"
-  | "delete-job"
-  | "delete-artifact"
-  | "back";
-
-function describeDownloadJob(job: DownloadJobRecord): string {
-  return formatOfflineJobListingTitle(job);
-}
-
-export async function openCompletedDownloadsPicker(
-  container: Container,
-  actionContext?: ListShellActionContext,
-): Promise<void> {
-  while (true) {
-    const completed = await container.offlineLibraryService.listCompletedEntries(60);
-    const shelf = createOfflineLibraryEngine().buildShelf(completed, {
-      networkAvailable: container.connectivity.isOnline(),
-    });
-    const options: ShellOption<OfflineLibraryGroupAction>[] = [
-      ...shelf.groups.map((group) => ({
-        value: { type: "group" as const, key: group.key },
-        label: group.label,
-        detail: [group.actionSummary, group.artifactSummary, group.detail]
-          .filter(Boolean)
-          .join(" · "),
-        previewImageUrl: group.previewImageUrl,
-      })),
-      {
-        value: { type: "downloads" as const },
-        label: "Open download queue",
-        detail: "Retry, delete, or inspect queued and failed offline jobs",
-      },
-      {
-        value: { type: "online" as const },
-        label: "Search online instead",
-        detail: "Leave offline intentionally and go back to search",
-      },
-      { value: { type: "back" as const }, label: "Back" },
-    ];
-    const picked = await chooseFromListShell({
-      title: "Offline library",
-      subtitle:
-        completed.length > 0
-          ? `${shelf.summary} · choose a title`
-          : `${shelf.summary}. Use /downloads to manage the queue.`,
-      actionContext,
-      options,
-    });
-    if (!picked || picked.type === "back") return;
-    if (picked.type === "downloads") {
-      container.stateManager.dispatch({ type: "OPEN_OVERLAY", overlay: { type: "downloads" } });
-      return;
-    }
-    if (picked.type === "online") {
-      container.stateManager.dispatch({
-        type: "SET_PLAYBACK_FEEDBACK",
-        note: "Offline library closed. Search online when you are ready.",
-      });
-      return;
-    }
-    const group = shelf.groups.find((candidate) => candidate.key === picked.key);
-    if (!group) continue;
-    const entryById = new Map(completed.map((entry) => [entry.job.id, entry]));
-    const entries = group.entries
-      .map((entry) => entryById.get(entry.jobId))
-      .filter((entry): entry is (typeof completed)[number] => Boolean(entry));
-    await openOfflineLibraryGroupPicker(container, entries, actionContext, {
-      actionSummary: group.actionSummary,
-      artifactSummary: group.artifactSummary,
-      contentType: group.contentType,
-    });
-  }
-}
-
-export async function openOfflineLibraryGroupPicker(
-  container: Container,
-  entries: readonly import("@/services/offline/offline-library").OfflineLibraryEntry[],
-  actionContext?: ListShellActionContext,
-  groupSummary?: {
-    readonly actionSummary: string;
-    readonly artifactSummary: string;
-    readonly contentType?: DownloadJobRecord["contentType"];
-  },
-): Promise<void> {
-  while (true) {
-    const first = entries[0]?.job;
-    if (!first) return;
-    const historyEntries = container.historyRepository.listByTitle(first.titleId);
-    const offlinePolicy = container.offlineTitlePolicies.get(first.titleId);
-    const continuation = createContinuationEngine().decide({
-      titleName: first.titleName,
-      networkAvailable: container.connectivity.isOnline(),
-      localEpisodes: entries
-        .filter((entry) => entry.job.season !== undefined && entry.job.episode !== undefined)
-        .map((entry) => ({
-          season: entry.job.season ?? 1,
-          episode: entry.job.episode ?? 1,
-          playable: entry.status === "ready",
-          completed: historyEntries.some(
-            (history) =>
-              (history.season ?? 1) === entry.job.season &&
-              (history.episode ?? history.absoluteEpisode) === entry.job.episode &&
-              isProgressFinished(history),
-          ),
-        })),
-    });
-    const options: ShellOption<DownloadJobAction>[] = [
-      ...entries.map((entry) => ({
-        value: { type: "job" as const, id: entry.job.id },
-        label: `${offlineStatusIcon(entry.status)} ${formatOfflineJobListingTitle(entry.job)}`,
-        detail: [
-          formatOfflineShelfBadge(entry.job, entry.status),
-          formatOfflineHistoryProgress(entry.job, historyEntries),
-          formatOfflineShelfDetail(entry.job, entry.status),
-        ]
-          .filter(Boolean)
-          .join("  ·  "),
-        previewImageUrl: resolveOfflineJobPreviewImage(entry.job, {
-          networkAvailable: container.connectivity.isOnline(),
-        }),
-      })),
-      ...buildOfflineGroupActions(
-        entries,
-        container.config.protectedDownloadJobIds,
-        offlinePolicy?.enrolled === true,
-        parseOfflineTitleCleanupPreference(offlinePolicy?.cleanupJson),
-        groupSummary?.contentType,
-      ),
-      { value: { type: "back" as const }, label: "Back to titles" },
-    ];
-    const picked = await chooseFromListShell({
-      title: first.titleName,
-      subtitle: [
-        groupSummary?.actionSummary ?? `${entries.length} local item(s)`,
-        groupSummary?.artifactSummary,
-        continuation.note,
-        "play, reveal folder, re-download, delete",
-      ]
-        .filter(Boolean)
-        .join(" · "),
-      actionContext,
-      options,
-    });
-    if (!picked || picked.type === "back") return;
-    if (picked.type === "check-integrity") {
-      const statuses = await Promise.all(
-        entries.map(async (entry) => ({
-          job: entry.job,
-          status: await resolveOfflineArtifactStatus(entry.job),
-        })),
-      );
-      const issueCount = statuses.filter((entry) => entry.status !== "ready").length;
-      container.stateManager.dispatch({
-        type: "SET_PLAYBACK_FEEDBACK",
-        note:
-          issueCount === 0
-            ? `Integrity check passed for ${entries.length} local item(s).`
-            : `Integrity check found ${issueCount} item(s) needing repair.`,
-      });
-      container.diagnosticsService.record(
-        buildDownloadDiagnosticEvent({
-          operation: "download.artifact.integrity.checked",
-          status: "succeeded",
-          severity: issueCount === 0 ? "healthy" : "recoverable",
-          recommendedAction: issueCount === 0 ? "none" : "retry-download",
-          message: "Offline group integrity checked",
-          titleId: first.titleId,
-          providerId: first.providerId,
-          context: {
-            titleId: first.titleId,
-            total: entries.length,
-            issueCount,
-            statuses: statuses.map((entry) => ({
-              jobId: entry.job.id,
-              status: entry.status,
-              outputConfigured: Boolean(entry.job.outputPath),
-            })),
-          },
-        }),
-      );
-      continue;
-    }
-    if (picked.type === "repair-missing") {
-      const repairEntries = entries.filter((entry) => entry.status !== "ready");
-      for (const entry of repairEntries) {
-        container.downloadService.retry(entry.job.id);
-      }
-      container.stateManager.dispatch({
-        type: "SET_PLAYBACK_FEEDBACK",
-        note: `Re-download queued for ${repairEntries.length} missing ${
-          repairEntries.length === 1 ? "item" : "items"
-        }`,
-      });
-      container.downloadService.kickQueue("offline-repair");
-      continue;
-    }
-    if (picked.type === "download-more") {
-      await queueMoreOfflineTitleEpisodes(
-        container,
-        first,
-        groupSummary?.contentType,
-        actionContext,
-      );
-      continue;
-    }
-    if (picked.type === "toggle-continuation") {
-      const enrolling = offlinePolicy?.enrolled !== true;
-      container.offlineTitlePolicies.upsert({
-        titleId: first.titleId,
-        mediaKind: first.mediaKind,
-        titleName: first.titleName,
-        enrolled: enrolling,
-        runwayTarget: container.config.offlineDefaultRunwayTarget,
-        profileJson: JSON.stringify({
-          audio: first.animeLang ?? "original",
-          subtitle: first.subLang ?? "none",
-          quality: first.selectedQualityLabel ?? "best",
-        }),
-        cleanupJson:
-          offlinePolicy?.cleanupJson ?? JSON.stringify({ mode: "keep-last-watched", count: 1 }),
-        updatedAt: new Date().toISOString(),
-      });
-      if (enrolling) {
-        container.offlineRunwayService.enqueueEvaluation(first.titleId, "policy-change");
-      }
-      container.stateManager.dispatch({
-        type: "SET_PLAYBACK_FEEDBACK",
-        note: enrolling
-          ? `Keeping ${first.titleName} ready offline within your runway limit.`
-          : `Stopped offline continuation for ${first.titleName}. Existing files stay local.`,
-      });
-      continue;
-    }
-    if (picked.type === "edit-cleanup") {
-      const policy = await chooseFromListShell<OfflineTitleCleanupPreference>({
-        title: `After watching ${first.titleName}`,
-        subtitle:
-          "Controls cleanup suggestions only; local files stay until you explicitly delete them",
-        actionContext,
-        options: [
-          {
-            value: { mode: "keep-last-watched", count: 1 },
-            label: "Keep latest watched episode",
-            detail: "Keep one watched local fallback and suggest older watched files",
-          },
-          {
-            value: { mode: "cleanup-watched", graceDays: container.config.autoCleanupGraceDays },
-            label: `Suggest cleanup after ${container.config.autoCleanupGraceDays} days`,
-            detail: "Uses your cleanup grace window when cleanup suggestions are enabled",
-          },
-        ],
-      });
-      if (!policy) continue;
-      container.offlineTitlePolicies.upsert({
-        titleId: first.titleId,
-        mediaKind: first.mediaKind,
-        titleName: first.titleName,
-        enrolled: offlinePolicy?.enrolled === true,
-        runwayTarget: offlinePolicy?.runwayTarget ?? container.config.offlineDefaultRunwayTarget,
-        profileJson:
-          offlinePolicy?.profileJson ??
-          JSON.stringify({
-            audio: first.animeLang ?? "original",
-            subtitle: first.subLang ?? "none",
-            quality: first.selectedQualityLabel ?? "best",
-          }),
-        cleanupJson: JSON.stringify(policy),
-        updatedAt: new Date().toISOString(),
-      });
-      container.stateManager.dispatch({
-        type: "SET_PLAYBACK_FEEDBACK",
-        note:
-          policy.mode === "keep-last-watched"
-            ? `Keeping one watched local episode for ${first.titleName}.`
-            : `Cleanup suggestions for ${first.titleName} use a ${policy.graceDays}-day grace.`,
-      });
-      continue;
-    }
-    if (picked.type === "search-online") {
-      container.stateManager.dispatch({ type: "SET_SEARCH_QUERY", query: first.titleName });
-      container.stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "idle" });
-      container.stateManager.dispatch({
-        type: "SET_PLAYBACK_FEEDBACK",
-        note: `Search prepared for ${first.titleName}. Submit it to continue online.`,
-      });
-      container.diagnosticsService.record(
-        buildSearchDiagnosticEvent({
-          operation: "search.offline-continuation.requested",
-          status: "started",
-          severity: "healthy",
-          recommendedAction: "none",
-          message: "Offline title requested online continuation",
-          titleId: first.titleId,
-          providerId: first.providerId,
-          context: {
-            titleId: first.titleId,
-            titleName: first.titleName,
-            provider: first.providerId,
-          },
-        }),
-      );
-      return;
-    }
-    if (picked.type === "protect-group" || picked.type === "unprotect-group") {
-      await setOfflineGroupProtection(
-        container,
-        entries.map((entry) => entry.job.id),
-        picked.type === "protect-group",
-      );
-      container.stateManager.dispatch({
-        type: "SET_PLAYBACK_FEEDBACK",
-        note:
-          picked.type === "protect-group"
-            ? `Protected ${first.titleName} from watched-download cleanup.`
-            : `Removed cleanup protection for ${first.titleName}.`,
-      });
-      continue;
-    }
-    if (picked.type === "delete-group") {
-      const confirmed = await chooseFromListShell<boolean>({
-        title: `Delete ${first.titleName}?`,
-        subtitle: `Remove ${entries.length} local ${
-          entries.length === 1 ? "item" : "items"
-        }, subtitles, and queue records for this title.`,
-        actionContext,
-        options: [
-          { value: false, label: "Keep title", detail: "Go back without deleting anything" },
-          {
-            value: true,
-            label: "Delete local title",
-            detail: "Remove all local files and download records in this group",
-          },
-        ],
-      });
-      if (!confirmed) continue;
-      const summary = await deleteDownloads(
-        container.downloadService,
-        entries.map((entry) => entry.job.id),
-        true,
-      );
-      container.stateManager.dispatch({
-        type: "SET_PLAYBACK_FEEDBACK",
-        note: formatDownloadRemovalFeedback(summary),
-      });
-      if (summary.retained.length > 0) continue;
-      return;
-    }
-    const job = container.downloadService.getJob(picked.id);
-    if (!job || (job.status !== "completed" && job.status !== "completed-with-notes")) continue;
-
-    const playable = await container.offlineLibraryService.getPlayableSource(job.id);
-    const artifactStatus = playable.status === "ready" ? "ready" : playable.status;
-    const artifactLineStatus =
-      artifactStatus === "invalid-file" ||
-      artifactStatus === "missing" ||
-      artifactStatus === "ready"
-        ? artifactStatus
-        : "missing";
-    const action = await chooseFromListShell<CompletedDownloadAction>({
-      title: describeDownloadJob(job),
-      subtitle: `${formatOfflineSecondaryLine(job, artifactLineStatus)}  ·  ${job.outputPath}`,
-      actionContext,
-      options: [
-        {
-          value: "play",
-          label: artifactStatus === "ready" ? "Play downloaded file" : "Play unavailable",
-          detail: artifactStatus === "ready" ? "Open local artifact in mpv" : artifactStatus,
-          previewImageUrl: resolveOfflineJobPreviewImage(job, {
-            networkAvailable: container.connectivity.isOnline(),
-          }),
-        },
-        {
-          value: "check-integrity",
-          label: "Check integrity",
-          detail: "Verify the local media artifact is readable before playback",
-          previewImageUrl: resolveOfflineJobPreviewImage(job, {
-            networkAvailable: container.connectivity.isOnline(),
-          }),
-        },
-        { value: "reveal", label: "Reveal folder", detail: dirname(job.outputPath) },
-        {
-          value: "retry",
-          label: job.status === "completed-with-notes" ? "Repair sidecars" : "Re-download",
-          detail:
-            job.status === "completed-with-notes"
-              ? "Retry optional subtitle or artwork sidecars without replacing the video"
-              : "Queue a fresh attempt from stored download intent",
-        },
-        {
-          value: "delete-artifact",
-          label: "Delete local file and job",
-          detail: "Remove local media, subtitle file, and queue record",
-        },
-        {
-          value: "delete-job",
-          label: "Delete job only",
-          detail: "Keep local files on disk but remove this queue record",
-        },
-        { value: "back", label: "Back" },
-      ],
-    });
-    if (!action || action === "back") continue;
-    if (action === "play") {
-      if (playable.status !== "ready") {
-        container.stateManager.dispatch({
-          type: "SET_PLAYBACK_FEEDBACK",
-          note: `Offline file unavailable: ${artifactStatus}. Check integrity first.`,
-        });
-        container.diagnosticsService.record(
-          buildDownloadDiagnosticEvent({
-            operation: "download.playback.blocked",
-            status: "skipped",
-            severity: "recoverable",
-            recommendedAction: "retry-download",
-            message: "Completed download playback blocked",
-            correlation: { downloadJobId: job.id },
-            titleId: job.titleId,
-            season: job.season,
-            episode: job.episode,
-            providerId: job.providerId,
-            context: {
-              jobId: job.id,
-              artifactStatus,
-              outputConfigured: Boolean(job.outputPath),
-            },
-          }),
-        );
-        continue;
-      }
-      await requestUnifiedOfflinePlayback(container, job.id, {
-        onDirectLaunch: resolveRootLibraryPlaybackLaunch,
-      });
-      return;
-    }
-    if (action === "reveal") {
-      const reveal = await revealPathInOsFileManager(job.outputPath);
-      if (!reveal.ok) {
-        container.stateManager.dispatch({
-          type: "SET_PLAYBACK_FEEDBACK",
-          note: noteForExternalOpenFailure(reveal),
-        });
-      }
-      continue;
-    }
-    if (action === "check-integrity") {
-      const checkedStatus = await resolveOfflineArtifactStatus(job);
-      container.stateManager.dispatch({
-        type: "SET_PLAYBACK_FEEDBACK",
-        note:
-          checkedStatus === "ready"
-            ? `Integrity check passed: ${formatOfflineJobListingTitle(job)}`
-            : `Integrity check failed: ${formatOfflineJobListingTitle(job)} is ${checkedStatus}`,
-      });
-      container.diagnosticsService.record(
-        buildDownloadDiagnosticEvent({
-          operation: "download.artifact.integrity.checked",
-          status: "succeeded",
-          severity: checkedStatus === "ready" ? "healthy" : "recoverable",
-          recommendedAction: checkedStatus === "ready" ? "none" : "retry-download",
-          message: "Offline artifact integrity checked",
-          correlation: { downloadJobId: job.id },
-          titleId: job.titleId,
-          season: job.season,
-          episode: job.episode,
-          providerId: job.providerId,
-          context: {
-            jobId: job.id,
-            artifactStatus: checkedStatus,
-            outputConfigured: Boolean(job.outputPath),
-          },
-        }),
-      );
-      continue;
-    }
-    if (action === "retry") {
-      await container.downloadService.retry(job.id);
-      container.stateManager.dispatch({
-        type: "SET_PLAYBACK_FEEDBACK",
-        note:
-          job.status === "completed-with-notes"
-            ? `Sidecar repair checked: ${formatOfflineJobListingTitle(job)}`
-            : `Re-download queued: ${formatOfflineJobListingTitle(job)}`,
-      });
-      container.downloadService.kickQueue("download-manager");
-      continue;
-    }
-    const summary = await deleteDownloads(
-      container.downloadService,
-      [job.id],
-      action === "delete-artifact",
-    );
-    container.stateManager.dispatch({
-      type: "SET_PLAYBACK_FEEDBACK",
-      note: formatDownloadRemovalFeedback(summary),
-    });
-  }
-}
-
-function buildOfflineGroupActions(
-  entries: readonly import("@/services/offline/offline-library").OfflineLibraryEntry[],
-  protectedJobIds: readonly string[] = [],
-  continuationEnrolled = false,
-  cleanupPreference?: OfflineTitleCleanupPreference,
-  contentType?: DownloadJobRecord["contentType"],
-): ShellOption<DownloadJobAction>[] {
-  const missingCount = entries.filter((entry) => entry.status !== "ready").length;
-  const protectedSet = new Set(protectedJobIds);
-  const allProtected =
-    entries.length > 0 && entries.every((entry) => protectedSet.has(entry.job.id));
-  const actions: ShellOption<DownloadJobAction>[] = [
-    {
-      value: { type: "search-online" },
-      label: "Continue this title online",
-      detail: "Prepare a search for this title; no provider work happens until you submit it",
-    },
-    {
-      value: { type: "download-more" },
-      label: contentType === "movie" ? "Download this movie" : "Download more episodes",
-      detail:
-        contentType === "movie"
-          ? "Open title-level download confirmation for this movie"
-          : "Open the download episode picker for this title",
-    },
-    {
-      value: { type: "toggle-continuation" },
-      label: continuationEnrolled ? "Stop keeping offline" : "Keep watching offline",
-      detail: continuationEnrolled
-        ? "Stop filling future local episodes; keep files already downloaded"
-        : "Keep a bounded local runway after you finish downloaded episodes",
-    },
-    {
-      value: { type: "edit-cleanup" },
-      label: "After watching",
-      detail:
-        cleanupPreference?.mode === "cleanup-watched"
-          ? `Suggest cleanup after ${cleanupPreference.graceDays} days`
-          : "Keep the latest watched local episode",
-    },
-    {
-      value: { type: "check-integrity" },
-      label: "Check title integrity",
-      detail: "Verify local files and surface anything that needs repair",
-    },
-  ];
-  if (missingCount > 0) {
-    actions.push({
-      value: { type: "repair-missing" },
-      label: `Retry ${missingCount} missing ${missingCount === 1 ? "item" : "items"}`,
-      detail: "Repair this title without opening every episode one by one",
-    });
-  }
-  actions.push({
-    value: { type: allProtected ? "unprotect-group" : "protect-group" },
-    label: allProtected ? "Remove cleanup protection" : "Protect from cleanup",
-    detail: allProtected
-      ? "Allow watched-download cleanup suggestions for this title again"
-      : "Keep this title out of watched-download cleanup suggestions",
-  });
-  actions.push({
-    value: { type: "delete-group" },
-    label: "Delete this offline title",
-    detail: "Confirm before removing all local files and queue records",
-  });
-  return actions;
 }
 
 export async function queueMoreOfflineTitleEpisodes(
@@ -745,23 +137,6 @@ export async function queueMoreOfflineTitleEpisodes(
       },
     }),
   );
-}
-
-async function setOfflineGroupProtection(
-  container: Container,
-  jobIds: readonly string[],
-  protectedFromCleanup: boolean,
-): Promise<void> {
-  const current = new Set(container.config.protectedDownloadJobIds);
-  for (const jobId of jobIds) {
-    if (protectedFromCleanup) {
-      current.add(jobId);
-    } else {
-      current.delete(jobId);
-    }
-  }
-  await container.config.update({ protectedDownloadJobIds: [...current] });
-  await container.config.save();
 }
 
 async function openStaticInfoShell({
@@ -1164,9 +539,7 @@ async function handleProvidersHub(container: Container): Promise<"handled"> {
     ],
   });
 
-  if (choice === "session") {
-    return handleProviderPicker(container);
-  }
+  if (choice === "session") return handleProviderPicker(container);
   if (choice === "defaults") {
     return handleSettings(container, { initialSectionId: "section:providers" });
   }
@@ -1613,9 +986,9 @@ async function handleAnalytics(container: Container): Promise<"handled"> {
   const subtitle = [
     `Status: ${status}`,
     "Off by default · explicit opt-in · at most one ping per day.",
-    "Fields: installId, version, os, arch, ts — never titles, queries, providers, URLs, or paths.",
-    "Turning it off also deletes the install id from disk.",
-    "DO_NOT_TRACK=1 and CI=true block sends regardless of this setting.",
+    `Fields: ${Object.keys(payload).join(", ")} — never titles, queries, providers, URLs, or paths.`,
+    "The id is a monthly HMAC of a local id · `kunai analytics log` lists every ping sent.",
+    "Turning it off deletes the id · DO_NOT_TRACK=1 and CI=true block sends regardless.",
   ].join("  ·  ");
 
   const choice = await chooseFromListShell({
@@ -1630,7 +1003,7 @@ async function handleAnalytics(container: Container): Promise<"handled"> {
       {
         value: "enable" as const,
         label: status === "enabled" ? "Analytics enabled" : "Turn on anonymous usage ping",
-        detail: "One ping / 24h · installId + version + os + arch + ts only",
+        detail: `One ping / 24h · ${Object.keys(payload).join(" + ")} only`,
       },
       {
         value: "disable" as const,
@@ -2062,71 +1435,17 @@ async function handleShare(
     return "handled";
   }
   const episode = state.currentEpisode;
-  const mode = state.mode;
-  const mediaKind = resolveCurrentMediaKind(state);
-  const progress =
-    episode &&
-    container.historyRepository.getProgress(
-      {
-        id: title.id,
-        kind: mediaKind,
-        title: title.name,
-        externalIds: title.externalIds,
-      },
-      { season: episode.season, episode: episode.episode },
-    );
-  const resumeSeconds =
-    progress && progress.positionSeconds > 0 ? Math.floor(progress.positionSeconds) : undefined;
-
-  let startSeconds: number | undefined;
-  if (resumeSeconds && resumeSeconds > 10) {
-    const choice = await chooseFromListShell({
-      title: "Copy share link",
-      subtitle: title.name,
-      options: [
-        { value: "start" as const, label: "Copy link from start" },
-        {
-          value: "resume" as const,
-          label: `Copy link at ${formatTimestamp(resumeSeconds)}`,
-        },
-      ],
-    });
-    if (!choice) return "handled";
-    startSeconds = choice === "resume" ? resumeSeconds : undefined;
-  }
-
-  const shared = await copyShareLinkForContext(
+  return shareTarget(
+    container,
     {
       title,
-      mode,
+      mode: state.mode,
+      mediaKind: resolveCurrentMediaKind(state),
       episode: episode ? { season: episode.season, episode: episode.episode } : undefined,
-      startSeconds,
       providerId: state.provider,
     },
-    copyToClipboard,
+    options,
   );
-  if (!shared) {
-    container.stateManager.dispatch({
-      type: "SET_PLAYBACK_FEEDBACK",
-      note: "Could not build a share link for this title.",
-    });
-    return "handled";
-  }
-  if (options.qr) {
-    const { openShareQrShell } = await import("@/app-shell/share-qr-shell");
-    await openShareQrShell({
-      title: title.name,
-      url: shared.qrUrl,
-      shortCode: shared.shortCode,
-    });
-  }
-  container.stateManager.dispatch({
-    type: "SET_PLAYBACK_FEEDBACK",
-    note: shared.copied
-      ? `Web share link for "${title.name}" copied${shared.shortCode ? ` · code ${shared.shortCode}` : ""}.`
-      : `Share link (copy manually): ${shared.webUrl}`,
-  });
-  return "handled";
 }
 
 async function handleBookmark(container: Container): Promise<"handled"> {
@@ -2402,18 +1721,11 @@ async function handleWatch(container: Container): Promise<ShellWorkflowResult> {
     return "handled";
   }
   const resolved = await resolveShareTarget(ref, container);
-  if (resolved.note) {
-    container.stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note: resolved.note });
-  }
+  noteShareTarget(container, resolved);
+  // The same lane step as `--open` and protocol links, for both branches.
+  alignSessionToShareTarget(container, resolved, ref);
   if (resolved.searchQuery) {
     container.stateManager.dispatch({ type: "SET_SEARCH_QUERY", query: resolved.searchQuery });
-    if (resolved.mode === "anime") {
-      container.stateManager.dispatch({
-        type: "SET_MODE",
-        mode: "anime",
-        provider: container.config.animeProvider,
-      });
-    }
     return "handled";
   }
   return {
@@ -2811,6 +2123,11 @@ async function handlePlaylists(container: Container): Promise<ShellWorkflowResul
           detail: "Append playlist items without autoplaying",
         },
         {
+          value: "edit" as const,
+          label: "Edit items",
+          detail: "Reorder or remove what this playlist holds",
+        },
+        {
           value: "rename" as const,
           label: "Rename playlist",
         },
@@ -2833,6 +2150,8 @@ async function handlePlaylists(container: Container): Promise<ShellWorkflowResul
             ? `Loaded ${loaded} item(s) from "${picked.name}" into Up Next.`
             : "Selected playlist is empty.",
       });
+    } else if (itemAction === "edit") {
+      await editPlaylistItems(container, picked, actionContext);
     } else if (itemAction === "rename") {
       const nextName = await promptPlaylistName(container, {
         title: "Rename playlist",
@@ -3209,100 +2528,6 @@ async function handleUpNext(container: Container): Promise<ShellWorkflowResult> 
   }
 }
 
-async function ensurePlaylistExchangeDir(): Promise<string> {
-  const dir = join(getKunaiPaths().dataDir, "playlists");
-  await mkdir(dir, { recursive: true });
-  return dir;
-}
-
-async function exportDurablePlaylist(
-  container: Container,
-  actionContext: ListShellActionContext,
-): Promise<void> {
-  const playlists = container.durablePlaylistService.listPlaylists();
-  if (playlists.length === 0) {
-    container.stateManager.dispatch({
-      type: "SET_PLAYBACK_FEEDBACK",
-      note: "No durable playlists to export. Save the queue as a playlist first.",
-    });
-    return;
-  }
-
-  const picked = await chooseFromListShell({
-    title: "Export Playlist",
-    subtitle: "Exports identity and progress only; never stream URLs or local paths",
-    actionContext,
-    options: playlists.map((playlist) => ({
-      value: playlist.id,
-      label: playlist.name,
-      detail: playlist.description,
-    })),
-  });
-  if (!picked) return;
-
-  const playlist = playlists.find((item) => item.id === picked);
-  if (!playlist) return;
-  const document = container.durablePlaylistService.exportPlaylist(playlist.id, playlist.name, []);
-  const dir = await ensurePlaylistExchangeDir();
-  const filePath = join(dir, `${safeFileSlug(playlist.name)}.kunai-playlist.json`);
-  await Bun.write(filePath, `${JSON.stringify(document, null, 2)}\n`);
-  container.stateManager.dispatch({
-    type: "SET_PLAYBACK_FEEDBACK",
-    note: `Exported playlist to ${filePath}.`,
-  });
-}
-
-async function importDurablePlaylist(
-  container: Container,
-  actionContext: ListShellActionContext,
-): Promise<void> {
-  const dir = await ensurePlaylistExchangeDir();
-  const files = (await readdir(dir)).filter(
-    (name) => name.endsWith(".kunai-playlist.json") || name.endsWith(".json"),
-  );
-  if (files.length === 0) {
-    container.stateManager.dispatch({
-      type: "SET_PLAYBACK_FEEDBACK",
-      note: `No playlist files found in ${dir}.`,
-    });
-    return;
-  }
-
-  const picked = await chooseFromListShell({
-    title: "Import Playlist",
-    subtitle: `Choose a Kunai playlist file from ${dir}`,
-    actionContext,
-    options: files.map((file) => ({
-      value: join(dir, file),
-      label: basename(file),
-    })),
-  });
-  if (!picked) return;
-
-  const document = parseKunaiPlaylistDocument(await readFile(picked, "utf8"));
-  const playlist = container.durablePlaylistService.importPlaylist(document);
-  container.stateManager.dispatch({
-    type: "SET_PLAYBACK_FEEDBACK",
-    note: `Imported "${playlist.name}" without autoplaying anything.`,
-  });
-}
-
-function parseKunaiPlaylistDocument(json: string): KunaiPlaylistDocument {
-  const parsed = JSON.parse(json) as KunaiPlaylistDocument;
-  if (parsed.format !== "kunai-playlist" || parsed.version !== 1 || !Array.isArray(parsed.items)) {
-    throw new Error("Invalid Kunai playlist document");
-  }
-  return parsed;
-}
-
-function safeFileSlug(name: string): string {
-  const slug = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return slug || "playlist";
-}
-
 function describeStaleness(lastActivityAt: string): string {
   const ms = Date.now() - new Date(lastActivityAt).getTime();
   const days = Math.floor(ms / 86400000);
@@ -3564,11 +2789,7 @@ async function handleSync(container: Container): Promise<"handled"> {
       });
 
       if (confirm) {
-        await adapter.disconnect({ signal: new AbortController().signal });
-        container.stateManager.dispatch({
-          type: "SET_PLAYBACK_FEEDBACK",
-          note: `Disconnected from ${adapter.displayName}.`,
-        });
+        await disconnectNamedTracker(container, adapter);
       }
       continue;
     }
@@ -3611,10 +2832,6 @@ async function handleSyncDisconnect(container: Container): Promise<"handled"> {
   });
   const adapter = connected.find((candidate) => candidate.id === picked);
   if (!adapter) return "handled";
-  await adapter.disconnect({ signal: new AbortController().signal });
-  container.stateManager.dispatch({
-    type: "SET_PLAYBACK_FEEDBACK",
-    note: `Disconnected from ${adapter.displayName}.`,
-  });
+  await disconnectNamedTracker(container, adapter);
   return "handled";
 }

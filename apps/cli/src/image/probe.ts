@@ -1,4 +1,12 @@
 import { debugImage } from "./debug";
+import {
+  canUseTmuxPassthrough,
+  isTmuxPane,
+  readTmuxGraphicsContext,
+  tmuxClientHasKitty,
+  wrapTmuxPassthrough,
+  type TmuxGraphicsContext,
+} from "./tmux";
 
 /**
  * What the terminal said it can do, rather than what its name suggests.
@@ -11,8 +19,27 @@ import { debugImage } from "./debug";
  */
 export type TerminalGraphicsSupport = {
   readonly sixel: boolean;
+  readonly sixelColorRegisters?: number;
   readonly kittyGraphics: boolean;
+  readonly kittyQueryAccepted?: true;
+  readonly kittyPlaceholders?: boolean;
+  readonly tmux?: TmuxGraphicsContext;
 };
+
+const KITTY_PLACEHOLDER_QUERY = "\x1b_Ga=q,i=31,e=T,U=1\x1b\\";
+const SIXEL_COLOR_REGISTER_QUERY = "\x1b[?1;1;0S";
+
+function canQuerySixelColorRegisters(env: NodeJS.ProcessEnv): boolean {
+  return (
+    isTmuxPane(env) || (!isWindowsConsoleEnv(env) && /^(?:xterm|foot)(?:-|$)/i.test(env.TERM ?? ""))
+  );
+}
+
+function hasKittyPlaceholderReply(reply: string): boolean {
+  // oxlint-disable-next-line eslint/no-control-regex -- reply contains literal ESC
+  const keys = /\x1b_G([^;\x1b]+);OK\x1b\\/.exec(reply)?.[1]?.split(",");
+  return !!keys?.includes("i=31") && keys.includes("e=T") && keys.includes("U=1");
+}
 
 /** Primary Device Attributes. A conforming terminal replies `ESC [ ? … c`. */
 const DA1_QUERY = "[c";
@@ -40,7 +67,11 @@ export function parseDeviceAttributes(reply: string): TerminalGraphicsSupport {
   // oxlint-disable-next-line eslint/no-control-regex -- the terminal reply contains a literal ESC
   const kittyGraphics = /_G[^]*;(OK|E[A-Z]+)/.test(reply);
 
-  return { sixel, kittyGraphics };
+  // Match the image id of our actual pixel probe. An error is insufficient
+  // evidence to send Kitty uploads to a partial-protocol terminal.
+  // oxlint-disable-next-line eslint/no-control-regex -- reply contains literal ESC
+  const accepted = /\x1b_Gi=31;OK\x1b\\/.test(reply);
+  return accepted ? { sixel, kittyGraphics, kittyQueryAccepted: true } : { sixel, kittyGraphics };
 }
 
 /** True when it is safe to write escape bytes and read a reply. */
@@ -91,6 +122,21 @@ function isWindowsConsoleEnv(env: NodeJS.ProcessEnv): boolean {
 
 let probed: TerminalGraphicsSupport | null = null;
 
+interface ProbeInput {
+  readonly isTTY?: boolean;
+  readonly isRaw?: boolean;
+  setRawMode?(mode: boolean): void;
+  resume(): void;
+  pause(): void;
+  on(event: "data", listener: (chunk: Buffer | string) => void): void;
+  off(event: "data", listener: (chunk: Buffer | string) => void): void;
+}
+
+interface ProbeOutput {
+  readonly isTTY?: boolean;
+  write(text: string): void;
+}
+
 export function getProbedGraphicsSupport(): TerminalGraphicsSupport | null {
   return probed;
 }
@@ -106,9 +152,10 @@ export function getProbedGraphicsSupport(): TerminalGraphicsSupport | null {
 export async function probeTerminalGraphics(
   options: {
     readonly timeoutMs?: number;
-    readonly stdin?: NodeJS.ReadStream;
-    readonly stdout?: NodeJS.WriteStream;
+    readonly stdin?: ProbeInput;
+    readonly stdout?: ProbeOutput;
     readonly env?: NodeJS.ProcessEnv;
+    readonly tmux?: TmuxGraphicsContext;
   } = {},
 ): Promise<TerminalGraphicsSupport | null> {
   const env = options.env ?? process.env;
@@ -116,7 +163,16 @@ export async function probeTerminalGraphics(
   const stdout = options.stdout ?? process.stdout;
 
   if (probed) return probed;
-  if (!canProbeTerminal(env, stdin, stdout)) return null;
+  const tmux = options.tmux;
+  const fallback = tmux ? { tmux, sixel: false, kittyGraphics: false } : null;
+  if (!canProbeTerminal(env, stdin, stdout)) return fallback;
+  const inTmux = isTmuxPane(env);
+  const wrapped = inTmux && canUseTmuxPassthrough(env, tmux) && !tmuxClientHasKitty(tmux);
+  const query = inTmux
+    ? wrapped
+      ? wrapTmuxPassthrough(KITTY_PLACEHOLDER_QUERY)
+      : ""
+    : KITTY_QUERY;
 
   const wasRaw = stdin.isRaw === true;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -141,14 +197,44 @@ export async function probeTerminalGraphics(
         resolve(value);
       };
 
+      let answer: TerminalGraphicsSupport | null = fallback;
+      let requestedColorRegisters = false;
       onData = (chunk) => {
-        buffer += typeof chunk === "string" ? chunk : chunk.toString("latin1");
+        buffer += Buffer.isBuffer(chunk) ? chunk.toString("latin1") : chunk;
         // The DA1 reply terminates the exchange; replies can arrive split
         // across reads, so only settle once the terminator is present.
         // oxlint-disable-next-line eslint/no-control-regex -- the terminal reply contains a literal ESC
-        if (/\[\?[0-9;]*c/.test(buffer)) {
-          finish(parseDeviceAttributes(buffer));
+        const da1 = /\[\?[0-9;]*c/.test(buffer);
+        if (!da1) return;
+        const parsed = parseDeviceAttributes(buffer);
+        const placeholders = wrapped && hasKittyPlaceholderReply(buffer);
+        answer = inTmux
+          ? {
+              sixel: parsed.sixel,
+              kittyGraphics: placeholders,
+              kittyPlaceholders: placeholders,
+              tmux,
+            }
+          : parsed;
+        if (answer.sixel && !requestedColorRegisters && canQuerySixelColorRegisters(env)) {
+          requestedColorRegisters = true;
+          try {
+            stdout.write(SIXEL_COLOR_REGISTER_QUERY);
+          } catch {
+            finish(answer);
+            return;
+          }
         }
+        if (requestedColorRegisters) {
+          // oxlint-disable-next-line eslint/no-control-regex -- reply contains literal ESC
+          const registers = /\x1b\[\?1;([0-3]);(\d+)S/.exec(buffer);
+          if (!registers) return;
+          const count = Number(registers[2]);
+          if (registers[1] === "0" && Number.isSafeInteger(count) && count > 0) {
+            answer = { ...answer, sixelColorRegisters: count };
+          }
+        }
+        if (!wrapped || placeholders) finish(answer);
       };
 
       stdin.setRawMode?.(true);
@@ -156,12 +242,12 @@ export async function probeTerminalGraphics(
       stdin.on("data", onData);
 
       // A terminal that answers nothing must cost this once, not block startup.
-      timer = setTimeout(() => finish(null), options.timeoutMs ?? defaultProbeTimeoutMs());
-      stdout.write(KITTY_QUERY + DA1_QUERY);
+      timer = setTimeout(() => finish(answer), options.timeoutMs ?? defaultProbeTimeoutMs());
+      stdout.write(query + DA1_QUERY);
     });
   } catch (error) {
     debugImage(`Terminal graphics probe failed: ${String(error)}`);
-    return null;
+    return fallback;
   } finally {
     // Unconditional: a thrown probe must never strand the terminal in raw mode.
     if (!wasRaw) stdin.setRawMode?.(false);
@@ -173,7 +259,11 @@ export async function probeTerminalGraphics(
 export async function initTerminalGraphicsProbe(options?: {
   readonly timeoutMs?: number;
 }): Promise<TerminalGraphicsSupport | null> {
-  const result = await probeTerminalGraphics(options ?? {});
+  const tmux =
+    process.stdin.isTTY && process.stdout.isTTY
+      ? await readTmuxGraphicsContext(process.env)
+      : undefined;
+  const result = await probeTerminalGraphics({ ...options, tmux });
   if (result) {
     probed = result;
     debugImage(`Terminal graphics probe: sixel=${result.sixel} kitty=${result.kittyGraphics}`);

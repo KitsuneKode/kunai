@@ -10,6 +10,8 @@ export type PlaybackFailureClass =
   | "seek-stuck"
   | "ipc-stuck"
   | "player-exited"
+  | "video-not-decoding"
+  | "video-lost"
   | "unknown";
 
 export interface PlaybackRecoveryGuidance {
@@ -32,7 +34,10 @@ export function classifyPlaybackFailureFromEvent(event: PlayerPlaybackEvent): Pl
       return "ipc-stuck";
     case "stream-stalled":
       if (event.stallKind === "network-read-dead") return "expired-stream";
+      if (event.stallKind === "video-lost") return "video-lost";
       return "unknown";
+    case "video-not-decoding":
+      return "video-not-decoding";
     default:
       return "none";
   }
@@ -89,6 +94,17 @@ export function recoveryForPlaybackFailure(
         action: "relaunch",
         label:
           "Relaunch mpv from the last trusted position; try another provider only if relaunch fails.",
+      };
+    case "video-not-decoding":
+      return {
+        action: "pick-stream",
+        label:
+          "This stream's video doesn't decode here (often an unsupported codec). Pick another source or a lower quality.",
+      };
+    case "video-lost":
+      return {
+        action: "refresh",
+        label: "Reloading the stream at this position to restart the video decoder.",
       };
     case "unknown":
       return {

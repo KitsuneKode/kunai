@@ -7,7 +7,7 @@
 // `execute`'s locals, so the slices can live in their own modules.
 // =============================================================================
 
-import { EpisodePrefetchHandle } from "@/app/playback/episode-prefetch";
+import { EpisodePrefetchHandle, type EpisodePrefetchTiming } from "@/app/playback/episode-prefetch";
 import { createDeadStreamUrlLedger } from "@/app/playback/playback-dead-stream-ledger";
 import { applyPlaybackEpisodeNavigation } from "@/app/playback/playback-episode-navigation";
 import type { PlaybackLedgerSlot } from "@/app/playback/playback-ledger-slot";
@@ -45,7 +45,8 @@ import type { ProviderId } from "@kunai/types";
 export type PlaybackPhaseHost = {
   /** The phase's history-ledger slot (one per PlaybackPhase instance). */
   readonly ledger: PlaybackLedgerSlot;
-  /** The episode auto-next countdown; owned by the phase so tests can skip its wait. */
+  readonly prefetchTiming?: EpisodePrefetchTiming;
+  /** The episode auto-next countdown, owned by the phase. */
   readonly runAutoNextCountdown: (
     episode: EpisodeInfo,
   ) => Promise<"continue" | "cancelled" | "skipped">;
@@ -198,7 +199,7 @@ export function createPlaybackLoopState(
     providerSwitchSeqBeforeEpisodePicker,
   } = bootstrap;
   const { stateManager, playerControl } = context.container;
-  const episodePrefetch = new EpisodePrefetchHandle();
+  const episodePrefetch = new EpisodePrefetchHandle(session.host.prefetchTiming);
 
   // In-memory cache of recently played episode streams so backward navigation
   // (P key) reuses the exact same StreamInfo without provider resolve or cache lookup.

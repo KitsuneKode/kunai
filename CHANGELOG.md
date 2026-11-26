@@ -40,6 +40,11 @@ subtitle controls, and safer persistence, downloads and native installation.
   native mpv selection and visibility, explicit Off, preferred-language late
   discovery and replacement files without multiplying tracks or overwriting
   an acknowledged preference with a stale observation.
+- Keep every YouTube caption language in the subtitle inventory. Tracks that
+  differ only by URL query merge only when their language agrees, so `?lang=en`
+  and `?lang=fr` stay separate, while re-signed copies of one file still merge.
+  The preferred language is selected and download sidecars are labeled
+  correctly.
 - Expand supported HLS variants and manifest audio/subtitle renditions while
   preserving source identity and request headers. Present adaptive DASH as an
   honest Auto choice when independent representations are not selectable.
@@ -69,6 +74,15 @@ subtitle controls, and safer persistence, downloads and native installation.
   Android handoff do not use addons. Full addon URLs are never shown or logged.
 
 ### Search and terminal interaction
+
+- Show Kitty poster previews inside tmux 3.3+ when passthrough is enabled and
+  the outer terminal supports Unicode placeholders.
+- Show native Sixel previews when tmux 3.4+ reports Sixel support.
+- Reduce banding in Sixel posters and use more colours on terminals that report
+  a larger palette.
+- Fit graphics posters to measured terminal cell sizes and refresh them on
+  resize.
+- Display Kitty posters in WezTerm with Kitty graphics enabled.
 
 - Add direct title launches from the command palette, notification episode
   launches and bounded detail prefetching. Keep command matching and title
@@ -102,6 +116,17 @@ subtitle controls, and safer persistence, downloads and native installation.
   concurrent saves. Setup requires an explicit consent action. Tests, installer
   fixtures and debug sandboxes isolate storage and suppress analytics; the
   dedicated analytics smoke only accepts an explicit numeric-loopback endpoint.
+- Opt-in usage pings now carry an id that changes every calendar month (an
+  HMAC of the local id, which never leaves the machine), the month you opted in
+  and the day, and no timestamp. Android reports `android`. Setup's consent
+  screen pre-selects neither answer. `kunai analytics log` shows every ping
+  exactly as sent, and `kunai analytics preview` the next one; neither sends
+  anything.
+- Releases carry `install.marker` and `update.marker`. With usage analytics on,
+  the installers and the native updater fetch one once after a successful
+  install or update, so GitHub can count them; Kunai receives nothing. With
+  analytics off nothing is fetched, and `DO_NOT_TRACK`, `CI` and
+  `KUNAI_NO_MARKER` skip it either way.
 
 ### Performance and distribution
 
@@ -116,7 +141,9 @@ subtitle controls, and safer persistence, downloads and native installation.
 - Strengthen native update, rollback and activation locking on Linux, macOS and
   Windows. Verify archive contents, size bounds and both transport/payload
   checksums before activation; malformed or failed downloads leave the active
-  installation intact.
+  installation intact. An upgrade that finishes after a newer version was
+  installed no longer rolls it back; pinned installs and rollback can still
+  select an older version.
 - Keep the npm launcher separate from native platform payloads. Synchronize all
   ten optional platform-package versions and preserve exact candidate bytes,
   checksum manifests and attestations through the protected release workflow.

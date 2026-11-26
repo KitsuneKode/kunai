@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T08:04:41Z"
+lastReviewed: "2026-11-25T10:16:34Z"
 ---
 
 # Kunai — Repo Infrastructure
@@ -32,7 +32,7 @@ The monorepo uses [Bun catalogs](https://bun.sh/docs/pm/catalogs) in the root
 `package.json` to pin shared versions once:
 
 - `catalog:` — TypeScript 7, React, React DOM, `@types/*`, Zod
-- `catalog:cli` — `commander`, `ink` (CLI runtime)
+- `catalog:cli` — `ink` (CLI runtime; argv parsing is hand-rolled in `apps/cli/src/cli-args.ts`)
 - `catalog:lint` — `oxlint`, `oxfmt` (root only; turbo package scripts +
   lint-staged resolve them via workspace hoist)
 - `catalog:providers` — `@assemblyscript/loader`; provider crypto uses built-in APIs
@@ -298,7 +298,8 @@ silently fetch another formatter version.
   and public npm launcher package (`dist/npm/**`)
 - `build:binary:host` — host compiled binary (`dist/bin/kunai-*`)
 - `build:binaries` — release cross-compiles plus deterministic archives
-  (`dist/bin/**`): `.tar.gz` for Linux/macOS, `.zip` for Windows
+  (`dist/bin/**`): `.tar.gz` and `.tar.zst` for Linux/macOS/Android, `.zip`
+  for Windows
 
 **Compiled binaries** carry JSC bytecode on Linux and macOS
 (`bytecodeByDefault` in `apps/cli/scripts/build-shared.ts`): measured on
@@ -337,9 +338,16 @@ The real-npm regression in
 `apps/cli/test/integration/npm-global-install.test.ts` packs tiny isolated
 candidates and verifies that inspection returns their exact preserved integrity.
 
-The 0.3.0 GitHub Release compatibility bridge is an exact 22-file set: ten
-canonical archives, the same ten raw standalone binaries, legacy
-`SHA256SUMS` for raw binaries, and `SHA256SUMS.archives` for archives. Keeping
+A GitHub Release is an exact 30-file set: ten canonical compatibility archives
+(`.tar.gz`, `.zip` on Windows), eight `.tar.zst` archives for the tar targets,
+the same ten raw standalone binaries, legacy `SHA256SUMS` for raw binaries, and
+`SHA256SUMS.archives` for every archive. The `.tar.zst` is zstd level 19 with the
+level's default 8 MiB window — about 20% under gzip (a 58.0 MB linux-x64
+`.tar.gz` is 46.6 MB) and decodable on phones; `--long` saved only 0.5 MB more
+and needs a ~119 MiB decoder window. Clients take it only when the signed
+`SHA256SUMS.archives` lists it, so older releases keep the gzip path. The zstd
+frame is verified by decompressing it and comparing against the canonical tar,
+not by byte-comparing a recompression. Keeping
 raw hashes under the legacy name preserves already-published installer/updater
 compatibility. Each archive contains exactly
 one member named after its raw asset. Tar members have normalized uid/gid/mtime

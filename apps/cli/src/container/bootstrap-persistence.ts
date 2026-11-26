@@ -102,6 +102,7 @@ import {
   resolveTmdbAuth,
   type SyncAuthAvailability,
 } from "../services/sync/auth-contract";
+import { initSyncAdapters } from "../services/sync/init-sync-adapters";
 import { SyncService } from "../services/sync/SyncService";
 import { TmdbAdapter } from "../services/sync/TmdbAdapter";
 import type { ContainerOptions } from "./types";
@@ -468,7 +469,18 @@ export async function bootstrapPersistence(
   );
   const anilistAdapter = new AniListAdapter(syncTokenStore, undefined, anilistAuth);
   const tmdbAdapter = new TmdbAdapter(syncTokenStore, tmdbAuth.apiKey ?? "");
-  await Promise.all([anilistAdapter.init(), tmdbAdapter.init()]);
+  await initSyncAdapters([anilistAdapter, tmdbAdapter], (trackerId) => {
+    const message =
+      "Tracker credentials could not be read; stored data kept. Repair them, then reconnect.";
+    logger.warn(message, { trackerId });
+    diagnosticsService.record({
+      level: "warn",
+      category: "runtime",
+      operation: "sync.credentials.unavailable",
+      message,
+      context: { trackerId },
+    });
+  });
   const syncService = new SyncService({
     adapters: [anilistAdapter, tmdbAdapter],
     outbox: new SyncOutboxRepository(dataDb),

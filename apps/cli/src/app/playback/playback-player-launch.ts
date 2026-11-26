@@ -29,7 +29,6 @@ import {
   playbackSubtitlePreference,
 } from "@/app/playback/playback-profile-context";
 import { didPlaybackFailToStart } from "@/app/playback/playback-session-controller";
-import { STARTUP_STALL_TIMEOUT_MS } from "@/app/playback/playback-source-failover";
 import { startFromBeginning } from "@/app/playback/playback-start-intent";
 import type { ReadyEpisodeStream } from "@/app/playback/playback-stream-ready";
 import { runPlaybackSession } from "@/app/playback/run-playback-session";
@@ -233,17 +232,28 @@ export async function launchPlayback(input: PlayerLaunchInput): Promise<Playback
       onFeedback: (update) => updatePlaybackFeedback(context, update),
       onStartupMark,
       onConfirmedPlaybackStart,
-      onStartupStallAbort: () => {
+      onStartupStallAbort: (reason) => {
+        const notDecoding = reason.kind === "video-not-decoding" ? reason.evidence : null;
         diagnosticsService.record(
           buildPlaybackDiagnosticEvent({
-            operation: "playback.startup-stall.aborted",
+            operation: notDecoding
+              ? "playback.startup.video-not-decoding"
+              : reason.kind === "no-bytes"
+                ? "playback.startup-stall.no-bytes"
+                : "playback.startup-stall.aborted",
             status: "failed",
             severity: "degraded",
-            failureClass: "timeout",
-            message: "Startup stall watchdog aborted mpv",
+            failureClass: notDecoding ? "unknown" : "timeout",
+            message: notDecoding
+              ? "Video track played without a decoded frame; aborting for source recovery"
+              : reason.kind === "no-bytes"
+                ? "No data from the server; aborting startup early for source recovery"
+                : "Startup stall watchdog aborted mpv",
             correlation,
             context: {
-              timeoutMs: STARTUP_STALL_TIMEOUT_MS,
+              timeoutMs: reason.kind === "video-not-decoding" ? null : reason.timeoutMs,
+              videoCodec: notDecoding?.codec ?? null,
+              secondsWithoutVideo: notDecoding?.secondsWithoutVideo ?? null,
               streamHost: (() => {
                 try {
                   return new URL(stream.url).hostname;
@@ -432,7 +442,7 @@ export async function playEpisode(
               episode: currentEpisode.episode,
               provider: attempt.resolvedProviderId,
             }),
-          acknowledgeQueue: () => queueAttempt?.acknowledgeStarted(),
+          acknowledgeQueue: () => queueAttempt?.acknowledgeStarted(undefined, currentEpisode),
         });
       },
       localPlaybackSource: run.localPlaybackSource ?? undefined,
