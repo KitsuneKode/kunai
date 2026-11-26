@@ -51,6 +51,32 @@ describe("tracksPanelNavReducer", () => {
     ).toEqual({ focusedPane: "sections", sectionIndex: 2, optionIndex: 0 });
   });
 
+  test("up/down leave a one-choice section for its neighbours instead of going dead", () => {
+    // Sections: 0 Provider (3 rows), 1 Source (1 row), 2 Quality (1 row).
+    const inSource: TracksNavState = { focusedPane: "options", sectionIndex: 1, optionIndex: 0 };
+
+    const up = tracksPanelNavReducer(inSource, { type: "up" }, ctx(3, 1));
+    expect(up).toEqual({ focusedPane: "options", sectionIndex: 0, optionIndex: 0 });
+    // Back in the three-row Provider section, down walks its rows again.
+    expect(tracksPanelNavReducer(up, { type: "down" }, ctx(3, 3)).optionIndex).toBe(1);
+
+    expect(tracksPanelNavReducer(inSource, { type: "down" }, ctx(3, 1))).toEqual({
+      focusedPane: "options",
+      sectionIndex: 2,
+      optionIndex: 0,
+    });
+  });
+
+  test("a one-choice section clamps at the outer sections and steps over empty ones", () => {
+    const first: TracksNavState = { focusedPane: "options", sectionIndex: 0, optionIndex: 0 };
+    expect(tracksPanelNavReducer(first, { type: "up" }, ctx(3, 1)).sectionIndex).toBe(0);
+    const last: TracksNavState = { focusedPane: "options", sectionIndex: 2, optionIndex: 0 };
+    expect(tracksPanelNavReducer(last, { type: "down" }, ctx(3, 1)).sectionIndex).toBe(2);
+    // An empty section reached this way is not a trap: the next press moves on.
+    const empty: TracksNavState = { focusedPane: "options", sectionIndex: 1, optionIndex: 0 };
+    expect(tracksPanelNavReducer(empty, { type: "down" }, ctx(3, 0)).sectionIndex).toBe(2);
+  });
+
   test("entering a section with no options stays in sections pane", () => {
     expect(
       tracksPanelNavReducer(createInitialTracksNav({}), { type: "enter-section" }, ctx(4, 0))

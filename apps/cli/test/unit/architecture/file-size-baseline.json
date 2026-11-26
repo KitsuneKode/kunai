@@ -10,7 +10,7 @@
   "apps/cli/src/app-shell/workflows/shell-workflows.ts": 2924,
   "apps/cli/src/app/playback/playback-stream-acquire.ts": 884,
   "apps/cli/src/app/playback/run-post-playback-menu.ts": 1035,
-  "apps/cli/src/app/playback/source-quality.ts": 807,
+  "apps/cli/src/app/playback/source-quality.ts": 804,
   "apps/cli/src/app/search/SearchPhase.ts": 1631,
   "apps/cli/src/domain/session/command-registry.ts": 1524,
   "apps/cli/src/domain/session/SessionState.ts": 982,
