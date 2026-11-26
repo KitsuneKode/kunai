@@ -10,6 +10,7 @@ import {
   commitKittyPlacementCandidate,
   deleteAllTerminalImages,
   deleteUncommittedKittyCandidate,
+  fittedCellBox,
   hashTitleToColor,
   renderPreparedPoster,
   resolvePosterRenderPlan,
@@ -18,6 +19,7 @@ import {
 import { __testing as overlayTesting, SixelOverlayManager } from "@/app-shell/sixel-overlay";
 import type { ImageCapability } from "@/image";
 import { selectImageCapability } from "@/image/capability";
+import { setTerminalCellPixels } from "@/image/cell-size";
 import { preparePoster, type PreparedPoster } from "@/image/native-image";
 import { __testing as probeTesting } from "@/image/probe";
 
@@ -127,10 +129,25 @@ afterEach(() => {
     process.env.KUNAI_IMAGE_TRANSPORT = originalTransportEnv;
   }
   probeTesting.reset();
+  setTerminalCellPixels(null);
   clearKittyPlacementRegistry();
 });
 
 describe("resolvePosterRenderPlan", () => {
+  test("fits graphics to measured cell pixels and keeps the half-block grid", () => {
+    setTerminalCellPixels({ width: 9, height: 21 });
+    const size = { rows: 3, cols: 7 };
+    for (const renderer of ["kitty-native", "sixel", "iterm-inline"] as const) {
+      rendererTesting.runtime.detectImageCapability = () => capability(renderer);
+      expect(resolvePosterRenderPlan(size)?.bounds).toEqual({
+        maxWidthPx: 63,
+        maxHeightPx: 63,
+      });
+    }
+    rendererTesting.runtime.detectImageCapability = () => capability("half-block");
+    expect(resolvePosterRenderPlan(size)?.bounds).toEqual({ maxWidthPx: 7, maxHeightPx: 6 });
+  });
+
   test("cleans up tmux placements by id, leaving images from other panes alone", async () => {
     rendererTesting.runtime.detectImageCapability = () => ({
       ...capability("kitty-native"),
@@ -404,6 +421,63 @@ describe("renderPreparedPoster", () => {
     expect(writes).toHaveLength(1);
   });
 
+  test("places Kitty at measured cells and frees only its own image", async () => {
+    rendererTesting.runtime.detectImageCapability = () =>
+      selectImageCapability({ TERM_PROGRAM: "WezTerm" }, true, {
+        sixel: false,
+        kittyGraphics: true,
+        kittyQueryAccepted: true,
+      });
+    const size = { rows: 2, cols: 3 };
+    const plan = resolvePosterRenderPlan(size);
+    if (!plan) throw new Error("expected a render plan");
+    const image = await prepared(1, 1);
+    const stdout = captureStdout();
+    const candidate = await renderPreparedPoster(image, plan, size);
+    if (candidate.kind !== "sixel" || !candidate.kitty) throw new Error("expected a Kitty overlay");
+    expect(stdout.writes).toEqual([]);
+
+    const writes: string[] = [];
+    const queued: (() => void)[] = [];
+    overlayTesting.runtime.isWindows = () => false;
+    overlayTesting.runtime.write = (bytes) => {
+      writes.push(bytes);
+    };
+    overlayTesting.runtime.schedule = (flush) => {
+      queued.push(flush);
+    };
+    const manager = new SixelOverlayManager();
+    const { overlayId, sixel, kitty } = candidate;
+    const overlay = { rect: { x: 1, y: 2, width: 3, height: 2 }, sixel, kitty };
+
+    manager.register(overlayId, overlay);
+    queued.shift()?.();
+    const upload = `\x1b_Ga=t,f=100,q=2,i=${kitty.imageId},t=d,m=0;${Buffer.from(image.png).toString("base64")}\x1b\\`;
+    const place = `\x1b_Ga=p,i=${kitty.imageId},p=1,q=2,C=1,c=3,r=2;\x1b\\`;
+    expect(writes).toEqual([`\x1b7\x1b[3;2H${upload}${place}\x1b8`]);
+
+    writes.length = 0;
+    manager.register(overlayId, { ...overlay, rect: { ...overlay.rect, y: 4 } });
+    queued.shift()?.();
+    expect(writes).toEqual([
+      `\x1b_Ga=d,d=i,i=${kitty.imageId},q=2;\x1b\\`,
+      `\x1b7\x1b[5;2H${place}\x1b8`,
+    ]);
+
+    writes.length = 0;
+    manager.unregister(overlayId);
+    queued.shift()?.();
+    expect(writes).toEqual([`\x1b_Ga=d,d=I,i=${kitty.imageId},q=2;\x1b\\`]);
+    manager.afterInkRender();
+    expect(queued).toHaveLength(0);
+
+    manager.register(overlayId, overlay);
+    queued.shift()?.();
+    writes.length = 0;
+    manager.discard();
+    expect(writes).toEqual([`\x1b_Ga=d,d=I,i=${kitty.imageId},q=2;\x1b\\`]);
+  });
+
   test("bounds the interactive sixel palette to keep ConPTY payloads responsive", async () => {
     rendererTesting.runtime.detectImageCapability = () => capability("sixel");
 
@@ -477,5 +551,21 @@ describe("hashTitleToColor", () => {
       ["Dune", "Severance", "Arcane", "Andor", "Shogun"].map(hashTitleToColor),
     );
     expect(colors.size).toBeGreaterThan(1);
+  });
+});
+
+describe("direct Kitty size without a cell report", () => {
+  beforeEach(() => setTerminalCellPixels(null));
+
+  test("a square poster keeps its aspect instead of filling the pane", async () => {
+    // WezTerm scales c and r independently: naming the whole 8x6 pane would
+    // draw this 80x80 poster as 80x120 at the 10x20 px cell estimate.
+    const square = await prepared(80, 80, 6, 8);
+    expect(fittedCellBox(square, 8, 6)).toEqual({ cols: 8, rows: 4 });
+  });
+
+  test("a wide poster is limited by width and keeps its aspect", async () => {
+    const wide = await prepared(160, 80, 6, 8);
+    expect(fittedCellBox(wide, 8, 6)).toEqual({ cols: 8, rows: 2 });
   });
 });

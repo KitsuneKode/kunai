@@ -2,7 +2,7 @@
 title: Kunai CLI Keybindings
 description: Screen-by-screen keybinding map for the Kunai terminal shell.
 status: current
-lastReviewed: "2026-11-25"
+lastReviewed: "2026-11-26T15:42:10Z"
 ---
 
 # Kunai CLI Keybindings
@@ -70,8 +70,19 @@ stops at the list boundaries; keyboard arrows still wrap. Covered results do
 not accept clicks while an overlay or command palette owns focus. This does
 not imply click support for every surface.
 
-Library and Up Next use the same select-then-open gesture. Library tabs switch
-views directly. Mouse selection and wheel movement never delete files or remove
+Library, Up Next, History, Notifications (the inbox and its action and
+play-now pickers), the download manager, `/guide`, the Schedule and every
+`OverlayPanel` picker (season, episode, subtitle, provider, recommendation) use
+the same select-then-open gesture, through one rule
+(`app-shell/mouse/row-tap.ts`): the first tap on a row selects it, a second tap
+on that same still-selected row runs the Enter path. Taps call the functions
+Enter calls (`root-overlay-taps.ts`, `activateSelectedHistoryRow`, the download
+manager's `runJobAction`, `hooks/use-calendar-cursor.ts`). Termux delivers phone
+taps as clicks, so this is the touch model too. Library tabs, Schedule type tabs
+and Schedule date chips switch directly. The checklist (multi-select) is the one
+exception: a tap toggles its row at once, because a check is undone by another
+tap and nothing runs until confirm; its footer's confirm, all-in-view, toggle
+and back are tappable too. Section and date headers are never targets. Mouse selection and wheel movement never delete files or remove
 queue entries; their existing keyboard confirmation rules remain in effect.
 Up Next uses the same exact-row claim as Enter and refuses items already starting
 or played. Large queues keep only the selected window on screen.
@@ -217,6 +228,14 @@ history pickers.
 | `Esc`     | Clear filter first; close picker if filter is already empty                      |
 | `/`       | Command palette only when the picker router gives command ownership to the shell |
 
+Library and History lists filter as you type and also bind single letters to
+the highlighted row (`x`/`p`/`2` in Library; `m`/`w`/`q`/`x`/`l`/`s` in History).
+A filter is a focus (`routeListFilterKey`): a key is an action only while nothing
+is being filtered. Once the filter holds text, or `Ctrl+F` opened it, every
+printable key is text, so "Spy x Family" never arms a delete. `Esc` leaves the
+filter before it closes the surface; `Enter` still opens the highlighted row. A
+title starting with an action letter needs `Ctrl+F` first.
+
 For download episode checklists specifically, `Space` toggles the highlighted
 episode, `Ctrl+A` selects all visible episodes, and `Enter` queues the selected
 set.
@@ -293,12 +312,12 @@ manual skip key can still offer finite known segments while autoskip is paused.
 
 ## Library
 
-| Key     | Action                    |
-| ------- | ------------------------- |
-| `Enter` | Open selected title       |
-| `x`     | Delete offline title      |
-| `p`     | Toggle cleanup protection |
-| `Tab`   | Switch Library / Up Next  |
+| Key     | Action                     |
+| ------- | -------------------------- |
+| `Enter` | Open selected title        |
+| `x`     | Delete offline title       |
+| `p`     | Toggle cleanup protection  |
+| `Tab`   | Switch Library / Downloads |
 
 The library has no title-control menu key. `m` was registered for one and shown
 in the footer, but no handler read it — the keystroke fell through to the filter
@@ -322,3 +341,13 @@ it does not appear in the `?` overlay or any footer.
 | `r` | Recover during active playback; replay after playback   | Context is visible and acceptable                                                    |
 | `f` | Favourite while browsing; fallback elsewhere            | Bare `f` is browse-only; fallback is `Shift+F` in loading, player, and post-playback |
 | `e` | Episode picker in playback surfaces                     | Same intent across surfaces                                                          |
+
+## mpv window
+
+The `player` scope is the mpv window's key map too. `kunai-bridge.lua` binds
+each help key to the same action — directly where it has a verb (`n`, `p`,
+`b`, `k`, `o`, Ctrl+R, Alt+R), otherwise by sending `key:<binding id>`, which
+the playback shell resolves through `resolvePlayerKeyRequest` exactly as a
+terminal keypress. mpv-only keys (`c`, `⇧A`, `Ctrl+⇧S`) are help-only entries
+in `mpv-window-keys.ts`. `mpv-bridge-keys.test.ts` fails if the two disagree
+or if the bridge takes mpv's `v` again.

@@ -138,8 +138,8 @@ describe("command registry contexts", () => {
       "recover",
       "recompute",
       "fallback",
-      "play-local",
-      "watch-online",
+      // play-local / watch-online switch the source of the episode that is
+      // playing; post-play had no handler, so they were listed and did nothing.
       "source",
       "quality",
       "audio",

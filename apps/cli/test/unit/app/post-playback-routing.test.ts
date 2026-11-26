@@ -29,6 +29,15 @@ describe("post playback routing", () => {
     });
   });
 
+  test("the seeded calendars open the schedule on their tab instead of falling through", () => {
+    for (const route of ["anime-calendar", "series-calendar"] as const) {
+      expect(resolvePostPlaybackExitOutcome(route)).toEqual({
+        status: "success",
+        value: { type: "browse_route", route },
+      });
+    }
+  });
+
   test("maps history-entry routes without losing the episode", () => {
     expect(
       resolvePostPlaybackExitOutcome({

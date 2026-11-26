@@ -98,12 +98,24 @@ export function describeMpvPlayerEvent(event: PlayerPlaybackEvent): MpvPlaybackF
           note: "Still buffering · trying to restore the connection",
         };
       }
+      const guidance = recoveryForPlaybackFailure(classifyPlaybackFailureFromEvent(event)).label;
+      if (event.stallKind === "video-lost") {
+        return {
+          detail: "Video stopped",
+          note: `No new frames for ${event.secondsWithoutProgress}s while audio played · ${guidance}`,
+        };
+      }
       const dead = event.stallKind === "network-read-dead";
       return {
         detail: dead ? "Stream stalled (network read idle)" : "Stream stalled",
-        note: `${dead ? "Demuxer underrun with no incoming bytes" : `No playback progress for ${event.secondsWithoutProgress}s`} · ${recoveryForPlaybackFailure(classifyPlaybackFailureFromEvent(event)).label}`,
+        note: `${dead ? "Demuxer underrun with no incoming bytes" : `No playback progress for ${event.secondsWithoutProgress}s`} · ${guidance}`,
       };
     }
+    case "video-not-decoding":
+      return {
+        detail: "Video isn't decoding",
+        note: `${event.codec ? `${event.codec} ` : ""}video produced no frames in ${event.secondsWithoutVideo}s · ${recoveryForPlaybackFailure(classifyPlaybackFailureFromEvent(event)).label}`,
+      };
     case "seek-stalled":
       return {
         detail: "Seek stalled",

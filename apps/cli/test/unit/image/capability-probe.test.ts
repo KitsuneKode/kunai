@@ -5,7 +5,7 @@ import {
   detectImageCapability,
   selectImageCapability,
 } from "@/image/capability";
-import { __testing as probeTesting } from "@/image/probe";
+import { __testing as probeTesting, parseDeviceAttributes } from "@/image/probe";
 
 const originalWhich = capabilityTesting.runtime.which;
 const originalIsTty = capabilityTesting.runtime.isStdoutTty;
@@ -148,6 +148,38 @@ afterEach(() => {
 });
 
 describe("image capability with a terminal probe", () => {
+  test("Konsole stays on sixel: it never frees Kitty image data", () => {
+    // Konsole 24.08 treats d=I like d=i, removing placements but keeping the
+    // stored image, so direct placement would leak every browsed poster.
+    const env = { KONSOLE_VERSION: "240800" };
+    const good = parseDeviceAttributes("\x1b_Gi=31;OK\x1b\\\x1b[?61;4c");
+    const kittyOnly = parseDeviceAttributes("\x1b_Gi=31;OK\x1b\\\x1b[?61c");
+    expect(selectImageCapability(env, true, good).renderer).toBe("sixel");
+    expect(selectImageCapability(env, true, kittyOnly).renderer).not.toBe("kitty-direct");
+    expect(
+      selectImageCapability({ ...env, KUNAI_IMAGE_PROTOCOL: "kitty" }, true, good).renderer,
+    ).not.toBe("kitty-direct");
+  });
+
+  test.each([{ TERM_PROGRAM: "WezTerm" }, { WEZTERM_EXECUTABLE: "/usr/bin/wezterm" }])(
+    "selects direct Kitty placement only with a successful probe for %j",
+    (env) => {
+      const good = parseDeviceAttributes("\x1b_Gi=31;OK\x1b\\\x1b[?61;4c");
+      const error = parseDeviceAttributes("\x1b_Gi=31;EBADF\x1b\\\x1b[?61;4c");
+      expect(selectImageCapability(env, true, good).renderer).toBe("kitty-direct");
+      expect(selectImageCapability(env, true, error).renderer).toBe("sixel");
+      expect(selectImageCapability({ ...env, TMUX: "pane" }, true, good).renderer).toBe(
+        "half-block",
+      );
+      expect(
+        selectImageCapability({ ...env, KUNAI_IMAGE_PROTOCOL: "sixel" }, true, good).renderer,
+      ).toBe("sixel");
+      expect(
+        selectImageCapability({ ...env, KUNAI_IMAGE_PROTOCOL: "kitty" }, true, good).renderer,
+      ).toBe("kitty-direct");
+    },
+  );
+
   test("a Windows Terminal that reports sixel selects the overlay renderer", () => {
     withChafa(true);
     const env = { WT_SESSION: "1", TERM: "xterm-256color" };

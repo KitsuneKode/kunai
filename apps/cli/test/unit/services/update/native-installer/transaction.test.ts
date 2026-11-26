@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, rmdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { writeAtomicJson } from "@/infra/fs/atomic-write";
 import { getInstallLayoutPaths } from "@/services/update/native-installer/install-layout";
 import {
   beginInstallTransaction,
@@ -27,6 +28,43 @@ async function makeLayout() {
 }
 
 describe("install transaction records", () => {
+  test("a concurrent cleanup removing the empty directory cannot fail a new transaction", async () => {
+    const { root, layout } = await makeLayout();
+    let writes = 0;
+    // The interleaving behind the flaky installLatest tests: another
+    // activation's cleanupAbandonedTransactions rmdirs the empty directory
+    // between the atomic write's mkdir and its temp-file open.
+    const record = await beginInstallTransaction(
+      layout,
+      { kind: "install", version: "1.0.0" },
+      async (path, value) => {
+        writes += 1;
+        if (writes === 1) {
+          // writeAtomicJson makes the parent itself; the window is between that
+          // mkdir and opening the temp file, which then fails with ENOENT.
+          await rmdir(layout.transactionsDir);
+          throw Object.assign(new Error("ENOENT: no such file or directory, open '…tmp'"), {
+            code: "ENOENT",
+          });
+        }
+        return writeAtomicJson(path, value);
+      },
+    );
+    expect(writes).toBe(2);
+    expect(await readdir(layout.transactionsDir)).toEqual([`${record.id}.json`]);
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("a transaction write that keeps failing still surfaces its error", async () => {
+    const { root, layout } = await makeLayout();
+    await expect(
+      beginInstallTransaction(layout, { kind: "install" }, async () => {
+        throw Object.assign(new Error("disk full"), { code: "ENOSPC" });
+      }),
+    ).rejects.toThrow("disk full");
+    await rm(root, { recursive: true, force: true });
+  });
+
   test("begins, lists, inspects, and finishes a transaction", async () => {
     const { root, layout } = await makeLayout();
     const startedAt = "2026-07-20T12:00:00.000Z";

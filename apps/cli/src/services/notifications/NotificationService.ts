@@ -67,7 +67,7 @@ export class NotificationService {
         title: notification.title,
         body: notification.body,
         itemJson: notification.item
-          ? JSON.stringify(notification.item)
+          ? JSON.stringify(notificationItemPayload(notification.item, notification.downloadJobId))
           : notification.queueSessionId
             ? JSON.stringify({ queueSessionId: notification.queueSessionId })
             : undefined,
@@ -223,4 +223,13 @@ export function defaultNotificationActionIds(input: {
   // primary action falls back to details instead.
   const leading = playable ? (["play-now"] as const) : ([] as const);
   return [...leading, "open-details", "add-to-up-next", "queue-end", "mute", "dismiss"];
+}
+
+/** The persisted item, plus the failed job a download-failed notice retries. */
+function notificationItemPayload(
+  item: MediaItemIdentity,
+  downloadJobId: string | undefined,
+): MediaItemIdentity & { readonly downloadJobId?: string } {
+  if (!downloadJobId) return item;
+  return { ...item, downloadJobId };
 }

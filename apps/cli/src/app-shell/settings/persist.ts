@@ -1,4 +1,9 @@
 import type { Container } from "@/container";
+import {
+  applyLeafPaths,
+  changedLeafPaths,
+  isNestedConfigValue,
+} from "@/services/persistence/config-leaf-merge";
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 
 export type PersistTiming = "immediate" | "debounced";
@@ -16,7 +21,35 @@ export async function persistSettingsDraft(
   const patch = settingsDraftPatch(next, previous);
   if (Object.keys(patch).length === 0) return;
   const { applySettingsToRuntime } = await import("@/app/bootstrap/apply-settings-to-runtime");
-  await applySettingsToRuntime({ container, next: patch });
+  await applySettingsToRuntime({
+    container,
+    next: rebaseNestedPatch(patch, previous, container.config.getRaw()),
+  });
+}
+
+/**
+ * Replay the leaves a draft changed inside nested keys (`sync` and the like)
+ * onto the live config. A draft's `sync` is a whole object from when Settings
+ * opened; sending it back whole reverted any leaf something else moved since —
+ * a tracker connect, another Settings row (Sol review #2).
+ */
+export function rebaseNestedPatch(
+  patch: Partial<KitsuneConfig>,
+  base: Partial<KitsuneConfig>,
+  live: KitsuneConfig,
+): Partial<KitsuneConfig> {
+  const rebased: Partial<KitsuneConfig> = { ...patch };
+  // SAFETY: patch only holds KitsuneConfig keys (settingsDraftPatch output).
+  for (const key of Object.keys(patch) as (keyof KitsuneConfig)[]) {
+    const from = base[key];
+    const to = patch[key];
+    const current = live[key];
+    if (isNestedConfigValue(from) && isNestedConfigValue(to) && isNestedConfigValue(current)) {
+      const leaves = changedLeafPaths(from, to);
+      Object.assign(rebased, { [key]: applyLeafPaths(current, to, leaves) });
+    }
+  }
+  return rebased;
 }
 
 /** A draft is a UI snapshot, never permission to overwrite every config key. */
@@ -46,6 +79,8 @@ export function settingsDraftPatch(
 export function createSettingsDraftWriter(container: Container, initial: KitsuneConfig) {
   let submitted = initial;
   let pending: Partial<KitsuneConfig> = {};
+  /** Each pending key's value before the user's edit: what its leaves diff against. */
+  const pendingBase: Partial<KitsuneConfig> = {};
   let revision = 0;
   const revisions = new Map<keyof KitsuneConfig, number>();
   let tail = Promise.resolve();
@@ -62,12 +97,16 @@ export function createSettingsDraftWriter(container: Container, initial: Kitsune
     if (Object.keys(batch).length === 0) return;
     const batchRevisions = new Map(revisions);
     const { applySettingsToRuntime } = await import("@/app/bootstrap/apply-settings-to-runtime");
-    await applySettingsToRuntime({ container, next: batch });
+    await applySettingsToRuntime({
+      container,
+      next: rebaseNestedPatch(batch, pendingBase, container.config.getRaw()),
+    });
     // A key edited again while the write ran keeps its newer value.
     // SAFETY: batch contains only fields returned by settingsDraftPatch.
     for (const key of Object.keys(batch) as (keyof KitsuneConfig)[]) {
       if (revisions.get(key) === batchRevisions.get(key)) {
         delete pending[key];
+        delete pendingBase[key];
         revisions.delete(key);
       }
     }
@@ -80,6 +119,7 @@ export function createSettingsDraftWriter(container: Container, initial: Kitsune
       // SAFETY: settingsDraftPatch only copies keys from KitsuneConfig snapshots.
       for (const key of Object.keys(patch) as (keyof KitsuneConfig)[]) {
         revisions.set(key, ++revision);
+        if (!(key in pendingBase)) Object.assign(pendingBase, { [key]: submitted[key] });
       }
       pending = { ...pending, ...patch };
       submitted = next;

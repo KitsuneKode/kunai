@@ -7,6 +7,7 @@ import {
 } from "@/app-shell/palette-workflow-port";
 import type { NotificationOverlayOutcome } from "@/app-shell/root-overlay-bridge";
 import type { QueuePlaybackLaunch } from "@/app-shell/root-queue-bridge";
+import type { StateTransition } from "@/domain/session/SessionState";
 
 // Injected rather than mock.module'd. `mock.module` is process-global and
 // applied at load time, so stubbing these bridges here also replaced them for
@@ -144,7 +145,23 @@ describe("dispatchPaletteCommand", () => {
   });
 
   test("up-next routes claimed QueuePlaybackLaunch through exact intent identity", async () => {
-    const container = { stateManager: { dispatch: () => {} } };
+    // A series session: the anime row must move it to the anime lane first
+    // (Sol review #4), or playback runs it on the series provider chain.
+    const dispatched: StateTransition[] = [];
+    const container = {
+      stateManager: {
+        dispatch: (action: StateTransition) => {
+          dispatched.push(action);
+        },
+        getState: () => ({
+          mode: "series",
+          provider: "vidking",
+          defaultProviders: { series: "vidking", anime: "allmanga", youtube: "youtube" },
+        }),
+      },
+      config: { getRaw: () => ({ titleProviderPreferences: {} }) },
+      providerRegistry: { get: () => undefined },
+    };
     const claimed: QueuePlaybackLaunch = {
       title: "Claimed Anime",
       intent: {
@@ -181,6 +198,7 @@ describe("dispatchPaletteCommand", () => {
       },
     });
     expect(openRootOwnedOverlay).toHaveBeenCalledWith(container, { type: "queue" });
+    expect(dispatched).toContainEqual({ type: "SET_MODE", mode: "anime", provider: "allmanga" });
   });
 
   test("notifications route turns a playback outcome into a history-entry", async () => {

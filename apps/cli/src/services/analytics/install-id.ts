@@ -1,6 +1,6 @@
 /** Random install id helpers. Never derive from host/hardware identity. */
 
-import { createHash } from "node:crypto";
+import { createHmac } from "node:crypto";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -25,19 +25,19 @@ export function isValidInstallId(value: string): boolean {
 }
 
 /**
- * What actually goes on the wire: `sha256(installId)`.
+ * What actually goes on the wire: `HMAC-SHA256(key = installId, message = month)`.
  *
- * The stored id stays on disk and is what Settings shows the user; only its
- * digest is ever sent, so the endpoint -- ours, or a self-hoster's, or one that
- * has been compromised -- never holds the raw value. The ingest HMACs whatever
- * arrives, so this is a second, client-owned layer rather than a replacement.
+ * The stored id never leaves the machine. Keying the HMAC with it and rotating
+ * the message every calendar month means the endpoint sees one stable id per
+ * install per month, which keeps daily and monthly active counts exact. It can
+ * neither recover the stored id nor link one month's id to the next: without
+ * the key, `2026-11` and `2026-12` are unrelated digests. The ingest still
+ * HMACs whatever arrives, so this is a client-owned layer, not a replacement.
  *
- * Deterministic on purpose: the same install has to produce the same digest
- * every day or the daily-active count becomes a count of pings. Rotation is the
- * supported way to become a new install; see `rotateInstallId`.
+ * `month` is the `YYYY-MM` of the ping's own `day` label (`analyticsMonthKey`).
  */
-export function installIdDigest(installId: string): string {
-  return createHash("sha256").update(installId.trim(), "utf8").digest("hex");
+export function monthlyWireId(installId: string, month: string): string {
+  return createHmac("sha256", installId.trim()).update(month, "utf8").digest("hex");
 }
 
 /**

@@ -38,7 +38,7 @@ function ignoredActivePlaybackReason(
   capabilities: ActivePlaybackCommandDispatchInput["capabilities"],
 ): string | undefined {
   if (action === "toggle-autoskip" && !capabilities.autoSkip) {
-    return "Autoskip controls are available in managed mpv playback only";
+    return "Autoskip needs a player Kunai watches: mpv or VLC";
   }
   if (
     !capabilities.trackControl &&

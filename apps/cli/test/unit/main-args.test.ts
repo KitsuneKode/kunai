@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { buildCliHelpText, CliUsageError, parseCliArgs as parseArgs } from "@/cli-args";
-import { resolvePlayerMode, type SupportedPlayerPlatform } from "@/domain/playback/player-choice";
+import {
+  effectivePlayerChoice,
+  resolvePlayerMode,
+  type SupportedPlayerPlatform,
+} from "@/domain/playback/player-choice";
 import { getKunaiPaths } from "@kunai/storage";
 
 import { storageRootEnv } from "../helpers/storage-env";
@@ -45,21 +49,34 @@ test("every advertised player choice is supported on the named platform", () => 
     const platforms: readonly SupportedPlayerPlatform[] =
       label === "desktop" ? ["linux", "darwin", "win32", "other"] : ["android"];
     for (const choice of choices.split("|")) {
-      const parsed = parseArgs(["--player", choice]).player;
+      const parsed = parseArgs(["--player", choice]).player ?? "auto";
       for (const platform of platforms) {
-        expect(resolvePlayerMode({ choice: parsed, platform }).kind).toBe(
-          label === "desktop" ? "managed-mpv" : "android-handoff",
-        );
+        const expected =
+          label !== "desktop"
+            ? "android-handoff"
+            : choice === "vlc"
+              ? "managed-vlc"
+              : "managed-mpv";
+        expect(resolvePlayerMode({ choice: parsed, platform }).kind).toBe(expected);
       }
     }
   }
 });
 
-test("parseArgs exposes an explicit player choice with an auto default", () => {
-  expect(parseArgs([]).player).toBe("auto");
+test("parseArgs exposes an explicit player choice and leaves an absent flag unset", () => {
+  // Unset, not "auto": the player saved in Settings applies when no flag is given.
+  expect(parseArgs([]).player).toBeUndefined();
   expect(parseArgs(["--player", "auto"]).player).toBe("auto");
   expect(parseArgs(["--player", "mpv"]).player).toBe("mpv");
   expect(parseArgs(["--player", "vlc"]).player).toBe("vlc");
+});
+
+test("the flag wins, then the saved player, then auto", () => {
+  expect(effectivePlayerChoice("mpv", "vlc")).toBe("mpv");
+  expect(effectivePlayerChoice(undefined, "vlc")).toBe("vlc");
+  expect(effectivePlayerChoice(undefined, undefined)).toBe("auto");
+  // A hand-edited unknown value never fails startup.
+  expect(effectivePlayerChoice(undefined, "potato")).toBe("auto");
 });
 
 test("parseArgs rejects unknown player choices", () => {

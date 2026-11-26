@@ -5,6 +5,7 @@ import { dirname, extname, join } from "node:path";
 import { resolveTitleHistoryLookupId } from "@/domain/catalog/title-history-lookup";
 import { resolveContentKind } from "@/domain/media/content-kind";
 import { presentMedia } from "@/domain/media/media-presentation";
+import { findSubtitleInventoryTrack } from "@/domain/subtitle-track-identity";
 import type {
   EpisodeInfo,
   PlaybackTimingMetadata,
@@ -32,7 +33,6 @@ import {
 } from "@/services/offline/offline-artwork-cache";
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { fetchRemoteSubtitle } from "@/services/playback/remote-subtitle-download";
-import { normalizeSubtitleUrl } from "@/subtitle";
 import { looksLikeOpaqueProviderNativeId } from "@kunai/core";
 import { isStremioAddonProviderId } from "@kunai/providers";
 import {
@@ -3084,10 +3084,9 @@ function resolveThumbnailArtifactPath(outputPath: string): string {
 export { ytDlpFormatSelectorForQuality } from "./download-quality-policy";
 
 function resolveSubtitleLanguage(stream: StreamInfo): string | null {
-  const subtitleKey = stream.subtitle ? normalizeSubtitleUrl(stream.subtitle) : null;
-  const candidate = stream.subtitleList?.find(
-    (track) => subtitleKey && normalizeSubtitleUrl(track.url) === subtitleKey,
-  );
+  const candidate = stream.subtitle
+    ? findSubtitleInventoryTrack(stream.subtitle, stream.subtitleList)
+    : undefined;
   if (candidate?.language) return candidate.language;
   if (stream.hardSubLanguage) return stream.hardSubLanguage;
   return null;

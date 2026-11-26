@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T15:00:08Z"
+lastReviewed: "2026-11-26T10:13:00Z"
 ---
 
 # Kunai — Testing Strategy
@@ -152,7 +152,7 @@ IPv6 loopback (`http://[::1]:3000/api/ping`) is also supported. Start the fixtur
 separately; this command does not provision a server or database. Never use a
 proxy to production or production database credentials. The smoke requires an
 explicit port, refuses remote/default URLs and redirects before sending its
-synthetic identity, and awaits a `204` plus a `400` for the sixth-key probe.
+synthetic identity, and awaits a `204` plus a `400` for the extra-key probe.
 It does not validate production DNS, deployed ingest, startup latency or counts.
 Its regression tests replace fetch before importing the actual smoke, so even
 testing rejection of a production URL cannot hit production.

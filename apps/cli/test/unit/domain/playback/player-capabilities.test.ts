@@ -16,6 +16,7 @@ describe("player capabilities", () => {
       completion: true,
       autoSkip: true,
       trackControl: true,
+      networkEvidence: true,
     });
     expect(Object.isFrozen(MANAGED_MPV_CAPABILITIES)).toBe(true);
   });
@@ -30,6 +31,7 @@ describe("player capabilities", () => {
       completion: false,
       autoSkip: false,
       trackControl: false,
+      networkEvidence: false,
     });
     expect(Object.isFrozen(DETACHED_HANDOFF_CAPABILITIES)).toBe(true);
   });

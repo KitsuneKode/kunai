@@ -265,6 +265,12 @@ export function MouseTarget(props: {
   /** Focus/preview only; hover must never activate a command. */
   readonly onHover?: () => void;
   readonly flexShrink?: number;
+  /**
+   * Layout of the wrapping Box. "column" makes a list row render exactly as
+   * it did unwrapped: a fixed-width row inside a row-direction Box would
+   * shrink to the Box instead.
+   */
+  readonly flexDirection?: "row" | "column";
   readonly children: ReactNode;
 }) {
   const ref = useRef<InkBoxRef | null>(null);
@@ -290,6 +296,7 @@ export function MouseTarget(props: {
     <Box
       ref={ref}
       flexShrink={props.flexShrink}
+      flexDirection={props.flexDirection}
       backgroundColor={
         props.feedback && props.active !== false && interaction !== "idle"
           ? interaction === "pressed"

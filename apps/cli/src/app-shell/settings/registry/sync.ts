@@ -2,7 +2,7 @@ import { describePauseState, pauseUntil, resolvePauseState } from "@/services/sy
 import type { SyncAdapter } from "@/services/sync/SyncAdapter";
 import type { ConnectionState, TrackerId } from "@/services/sync/types";
 
-import { connectNamedTracker } from "../../workflows/tracker-connect";
+import { connectNamedTracker, disconnectNamedTracker } from "../../workflows/tracker-connect";
 import type { SettingRowDef, SettingsRegistryContext } from "../types";
 
 /**
@@ -91,7 +91,7 @@ function trackerRows(ctx: SettingsRegistryContext, adapter: SyncAdapter): Settin
         const signal = options?.signal ?? fallbackController.signal;
 
         if (target.getConnection().state === "connected") {
-          await target.disconnect({ signal });
+          await disconnectNamedTracker(context.container, target, { signal });
           return `Disconnected ${adapter.displayName}.`;
         }
 
