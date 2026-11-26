@@ -84,6 +84,7 @@ test("/library returns the selected offline episode to the session workflow", as
       listCompletedEntries: async () => [ENTRY],
       getPlayableSource: async () => ({ status: "ready" as const, job: JOB }),
     },
+    offlineTitlePolicies: { get: () => undefined },
     historyRepository: {
       listLatestByTitle: () => [],
       listByTitle: () => [],
