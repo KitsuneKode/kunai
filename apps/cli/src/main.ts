@@ -957,7 +957,8 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   const [
     { getKunaiPaths },
     { isBelowOnboardedFloor, maybeRunStartupSetup, shouldRunSetupWizard },
-    { detectPlayerPlatform, effectivePlayerChoice, resolvePlayerMode },
+    { effectivePlayerChoice },
+    { resolveMachinePlayerMode },
     { checkDeps },
     { createContainer, disposeContainer },
     { resolveSessionConfigOverrides },
@@ -966,6 +967,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     import("@kunai/storage"),
     import("@/app/bootstrap/startup-setup"),
     import("@/domain/playback/player-choice"),
+    import("@/infra/player/installed-players"),
     import("@/ui"),
     import("@/container"),
     import("@/app/session/session-overrides"),
@@ -1007,10 +1009,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   await graphicsProbeReady;
 
   args.player = effectivePlayerChoice(args.player, configJson.player);
-  const startupPlayerMode = resolvePlayerMode({
-    choice: args.player,
-    platform: detectPlayerPlatform(),
-  });
+  const startupPlayerMode = resolveMachinePlayerMode(args.player);
   const capabilitySnapshot = await checkDeps(KUNAI_VERSION, {
     silent: onboardingWillRun,
     requireMpv: startupPlayerMode.kind === "managed-mpv",

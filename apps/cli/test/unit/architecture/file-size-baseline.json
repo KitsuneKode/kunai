@@ -17,7 +17,7 @@
   "apps/cli/src/infra/player/PersistentMpvSession.ts": 2050,
   "apps/cli/src/infra/player/PlayerControlServiceImpl.ts": 808,
   "apps/cli/src/infra/player/PlayerServiceImpl.ts": 1032,
-  "apps/cli/src/main.ts": 1646,
+  "apps/cli/src/main.ts": 1645,
   "apps/cli/src/mpv.ts": 1037,
   "apps/cli/src/services/catalog/CatalogDiscoveryService.ts": 881,
   "apps/cli/src/services/catalog/CatalogScheduleService.ts": 1102,
