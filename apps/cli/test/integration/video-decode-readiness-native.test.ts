@@ -12,9 +12,13 @@ import { DEFAULT_CONFIG } from "@/services/persistence/ConfigService";
 
 // Real mpv against real media: the readiness gate's whole point is that mpv's
 // clock lies about video, so only mpv itself can prove the gate reads it right.
-const MPV_BIN = Bun.which("mpv");
-const FFMPEG_BIN = Bun.which("ffmpeg");
-const nativeTest = MPV_BIN && FFMPEG_BIN ? test : test.skip;
+function mpvBin(): string | null {
+  return Bun.which("mpv");
+}
+function ffmpegBin(): string | null {
+  return Bun.which("ffmpeg");
+}
+const nativeTest = mpvBin() && ffmpegBin() ? test : test.skip;
 
 let tempDir: string | null = null;
 
@@ -28,7 +32,7 @@ afterEach(async () => {
 async function makeClip(path: string, dropVideo: boolean): Promise<void> {
   const proc = Bun.spawn(
     [
-      FFMPEG_BIN!,
+      ffmpegBin()!,
       "-loglevel",
       "error",
       "-y",
@@ -65,7 +69,7 @@ async function makeClip(path: string, dropVideo: boolean): Promise<void> {
 
 function headlessRuntime(): PersistentMpvSessionRuntime {
   return {
-    which: () => MPV_BIN,
+    which: () => mpvBin(),
     spawn(command, options) {
       const separator = command.indexOf("--");
       const headless = ["--force-window=no", "--vo=null", "--ao=null", "--really-quiet"];
