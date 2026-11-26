@@ -220,11 +220,11 @@ export function createPlaybackWatchdog(
       if (!wasSeeking && sample.seeking) {
         emittedStreamStall = false;
       }
-      if (wasSeeking && !sample.seeking) {
-        lastProgressAt = sample.observedAt;
-        lastCacheProgressAt = sample.observedAt;
-        emittedStreamStall = false;
-      }
+      // A seek lands somewhere new: progress is measured from there. Keeping the
+      // pre-seek position made a backward seek look stalled until playback
+      // passed the old position again.
+      if (wasSeeking && !sample.seeking)
+        resetProgressClock(sample.observedAt, sample.positionSeconds);
       if (
         sample.demuxerViaNetwork === true &&
         sample.observedAt - lastNetworkSampleAt >= networkSampleEveryMs
