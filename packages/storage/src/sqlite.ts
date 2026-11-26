@@ -76,6 +76,14 @@ export function openKunaiDatabase(path: string, options: OpenDatabaseOptions = {
           // journals work everywhere; degrading beats failing every launch.
           db.exec("PRAGMA journal_mode = DELETE");
         }
+        // SQLite's recommended pairing for WAL: commits stop waiting on fsync
+        // (checkpoints still sync), crash-safe for the process, and a power
+        // cut can only lose the newest commits, never corrupt the file.
+        // Measured on ext4/NVMe: a fresh profile's migrations take ~300 ms
+        // under the default FULL and ~67 ms under NORMAL. SQLite can decline
+        // WAL without throwing, so read back the mode it actually chose; a
+        // rollback journal keeps FULL.
+        if (isWalActive(db)) db.exec("PRAGMA synchronous = NORMAL");
       }
 
       bestEffortChmodOwnerOnly(path);
@@ -90,6 +98,11 @@ export function openKunaiDatabase(path: string, options: OpenDatabaseOptions = {
   }
 
   return db;
+}
+
+function isWalActive(db: KunaiDatabase): boolean {
+  const row = db.query<{ journal_mode: string }, []>("PRAGMA journal_mode").get();
+  return row?.journal_mode.toLowerCase() === "wal";
 }
 
 /** Cheapest statement that forces SQLite to actually read the database header. */

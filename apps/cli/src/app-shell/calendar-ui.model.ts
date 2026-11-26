@@ -109,7 +109,7 @@ function calendarLocalDayKey(nowMs: number): string {
  * for a calendar key: it reads the UTC date, so east of UTC local midnight is the
  * previous UTC day and every derived key shifts back a day.
  */
-function formatLocalDayKey(date: Date): string {
+export function formatLocalDayKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
     date.getDate(),
   ).padStart(2, "0")}`;

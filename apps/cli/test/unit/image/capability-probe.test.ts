@@ -5,14 +5,20 @@ import {
   detectImageCapability,
   selectImageCapability,
 } from "@/image/capability";
-import { __testing as probeTesting } from "@/image/probe";
+import { __testing as probeTesting, parseDeviceAttributes } from "@/image/probe";
 
 const originalWhich = capabilityTesting.runtime.which;
 const originalIsTty = capabilityTesting.runtime.isStdoutTty;
 
 describe("Kitty through tmux", () => {
   const env = { TMUX: "/tmp/posters,123,0", TERM: "tmux-256color", KITTY_WINDOW_ID: "1" };
-  const tmux = { major: 3, minor: 3, passthrough: "on", clientTerm: "xterm-kitty" } as const;
+  const tmux = {
+    major: 3,
+    minor: 3,
+    passthrough: "on",
+    clientTerm: "xterm-kitty",
+    clientFeatures: [],
+  } as const;
   const probe = { sixel: false, kittyGraphics: false, tmux };
 
   test("selects wrapped Kitty for an eligible pane with a Kitty client", () => {
@@ -37,7 +43,7 @@ describe("Kitty through tmux", () => {
     for (const context of [
       { ...tmux, minor: 2 },
       { ...tmux, passthrough: "off" },
-      { ...tmux, clientTerm: "foot" },
+      { ...tmux, clientTerm: "foot", clientFeatures: ["sixel"] },
     ] as const) {
       expect(selectImageCapability(env, true, { ...probe, tmux: context }).renderer).toBe(
         "half-block",
@@ -66,6 +72,63 @@ describe("Kitty through tmux", () => {
   });
 });
 
+describe("native Sixel in tmux", () => {
+  const env = { TMUX: "/tmp/posters,123,0", TERM: "tmux-256color", KUNAI_IMAGE_TMUX: "0" };
+  const tmux = {
+    major: 3,
+    minor: 4,
+    passthrough: "off",
+    clientTerm: "foot",
+    clientFeatures: ["sixel"],
+  };
+  const probe = { sixel: true, kittyGraphics: false, tmux };
+
+  test("routes tmux's DA1 sixel answer to the existing overlay", () => {
+    expect(selectImageCapability(env, true, probe).renderer).toBe("sixel");
+  });
+
+  test("stays on half-block without tmux 3.4 and its own sixel attribute", () => {
+    expect(selectImageCapability(env, true, { ...probe, sixel: false }).renderer).toBe(
+      "half-block",
+    );
+    expect(
+      selectImageCapability(env, true, { ...probe, tmux: { ...tmux, minor: 3 } }).renderer,
+    ).toBe("half-block");
+    expect(selectImageCapability({ ...env, STY: "screen" }, true, probe).renderer).toBe(
+      "half-block",
+    );
+    expect(selectImageCapability({ TERM: "tmux-256color" }, true, probe).renderer).toBe(
+      "half-block",
+    );
+  });
+
+  test("a client whose terminal cannot draw sixel stays on half-block", () => {
+    // tmux 3.8 inside kitty 0.51 (passthrough off) still answers DA1 with
+    // sixel; only client_termfeatures shows the terminal lacks it.
+    const kittyClient = {
+      ...tmux,
+      clientTerm: "xterm-kitty",
+      clientFeatures: ["bpaste", "ccolour", "clipboard", "cstyle", "focus", "RGB", "sync", "title"],
+    };
+    expect(selectImageCapability(env, true, { ...probe, tmux: kittyClient }).renderer).toBe(
+      "half-block",
+    );
+    const alacritty = { ...tmux, clientTerm: "alacritty", clientFeatures: ["RGB", "title"] };
+    expect(selectImageCapability(env, true, { ...probe, tmux: alacritty }).renderer).toBe(
+      "half-block",
+    );
+  });
+
+  test("honors a text or Kitty override ahead of automatic sixel", () => {
+    expect(
+      selectImageCapability({ ...env, KUNAI_IMAGE_PROTOCOL: "half-block" }, true, probe).renderer,
+    ).toBe("half-block");
+    expect(
+      selectImageCapability({ ...env, KUNAI_IMAGE_PROTOCOL: "kitty" }, true, probe).renderer,
+    ).toBe("half-block");
+  });
+});
+
 function withChafa(available: boolean): void {
   capabilityTesting.runtime.which = (command: string) =>
     command === "chafa" && available ? "/usr/bin/chafa" : null;
@@ -85,6 +148,38 @@ afterEach(() => {
 });
 
 describe("image capability with a terminal probe", () => {
+  test("Konsole stays on sixel: it never frees Kitty image data", () => {
+    // Konsole 24.08 treats d=I like d=i, removing placements but keeping the
+    // stored image, so direct placement would leak every browsed poster.
+    const env = { KONSOLE_VERSION: "240800" };
+    const good = parseDeviceAttributes("\x1b_Gi=31;OK\x1b\\\x1b[?61;4c");
+    const kittyOnly = parseDeviceAttributes("\x1b_Gi=31;OK\x1b\\\x1b[?61c");
+    expect(selectImageCapability(env, true, good).renderer).toBe("sixel");
+    expect(selectImageCapability(env, true, kittyOnly).renderer).not.toBe("kitty-direct");
+    expect(
+      selectImageCapability({ ...env, KUNAI_IMAGE_PROTOCOL: "kitty" }, true, good).renderer,
+    ).not.toBe("kitty-direct");
+  });
+
+  test.each([{ TERM_PROGRAM: "WezTerm" }, { WEZTERM_EXECUTABLE: "/usr/bin/wezterm" }])(
+    "selects direct Kitty placement only with a successful probe for %j",
+    (env) => {
+      const good = parseDeviceAttributes("\x1b_Gi=31;OK\x1b\\\x1b[?61;4c");
+      const error = parseDeviceAttributes("\x1b_Gi=31;EBADF\x1b\\\x1b[?61;4c");
+      expect(selectImageCapability(env, true, good).renderer).toBe("kitty-direct");
+      expect(selectImageCapability(env, true, error).renderer).toBe("sixel");
+      expect(selectImageCapability({ ...env, TMUX: "pane" }, true, good).renderer).toBe(
+        "half-block",
+      );
+      expect(
+        selectImageCapability({ ...env, KUNAI_IMAGE_PROTOCOL: "sixel" }, true, good).renderer,
+      ).toBe("sixel");
+      expect(
+        selectImageCapability({ ...env, KUNAI_IMAGE_PROTOCOL: "kitty" }, true, good).renderer,
+      ).toBe("kitty-direct");
+    },
+  );
+
   test("a Windows Terminal that reports sixel selects the overlay renderer", () => {
     withChafa(true);
     const env = { WT_SESSION: "1", TERM: "xterm-256color" };

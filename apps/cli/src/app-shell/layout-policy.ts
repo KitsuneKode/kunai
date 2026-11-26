@@ -24,22 +24,24 @@ export type ShellViewportPolicy = {
   maxVisibleRows: number;
 };
 
-const GLOBAL_BLOCKED_MIN_COLS = 60;
-const GLOBAL_BLOCKED_MIN_ROWS = 20;
+const GLOBAL_BLOCKED_MIN_COLS = 40;
+const GLOBAL_BLOCKED_MIN_ROWS = 16;
 
 /** Minimum dimensions per shell kind. */
 const KIND_MINIMUMS: Record<ShellViewportKind, { minColumns: number; minRows: number }> = {
-  browse: { minColumns: 60, minRows: 20 },
-  picker: { minColumns: 60, minRows: 20 },
-  playback: { minColumns: 60, minRows: 20 },
+  browse: { minColumns: 40, minRows: 16 },
+  picker: { minColumns: 40, minRows: 16 },
+  playback: { minColumns: 40, minRows: 16 },
 };
 
 /**
  * Compute viewport policy for a given shell kind and terminal dimensions.
  *
  * Breakpoints:
- * - blocked: <60 cols or <20 rows → show resize blocker, no content
- * - narrow:  60–79 cols → companion hidden, compact footer
+ * - blocked: <40 cols or <16 rows → show resize blocker, no content
+ * - narrow:  40–79 cols → single column, companion hidden, compact footer.
+ *   Portrait phones (Termux, ~40–55 cols) land here; the old 60-column floor
+ *   locked them out behind the blocker entirely.
  * - medium:  80–119 cols → compact companion below list
  * - wide:    120+ cols → full companion right pane with poster
  */

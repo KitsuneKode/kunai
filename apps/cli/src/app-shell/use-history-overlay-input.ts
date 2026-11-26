@@ -1,6 +1,7 @@
 import { cycleHistoryTab, cycleHistoryTypeFilter, type HistoryTab } from "@/app-shell/history-view";
 import type { HistoryTypeFilter } from "@/app-shell/history-view";
 import type { LineEditorKey } from "@/app-shell/line-editor";
+import { routeListFilterKey } from "@/app-shell/list-filter-keys";
 import type { HistoryPickerOptionsContext } from "@/app-shell/panel-data";
 import {
   buildRootHistorySelection,
@@ -45,6 +46,10 @@ export type HistoryOverlayInputContext = {
   readonly pendingDelete: HistoryDeletePending | null;
   readonly setPendingDelete: (next: HistoryDeletePending | null) => void;
   readonly onHistoryMutated: () => void;
+  /** The overlay's type-to-filter text, and whether the filter holds focus. */
+  readonly filterQuery: string;
+  readonly filterFocused: boolean;
+  readonly setFilterFocused: (focused: boolean) => void;
   readonly onConfirmSelection: (
     selection: RootHistorySelection | null,
     options?: { readonly sourceOverride?: "local" | "stream" },
@@ -219,6 +224,23 @@ async function openHistoryTitleControlMenu(
 }
 
 /** History overlay key map extracted from root-overlay-shell (Phase 9). */
+/** Row actions with no filter in progress; anything else typed starts the filter. */
+const HISTORY_ACTION_KEYS: ReadonlySet<string> = new Set([
+  "m",
+  "M",
+  "w",
+  "W",
+  "q",
+  "Q",
+  "x",
+  "X",
+  "l",
+  "L",
+  "s",
+  "S",
+  "z",
+]);
+
 export function handleHistoryOverlayInput(
   input: string,
   key: LineEditorKey,
@@ -301,6 +323,22 @@ export function handleHistoryOverlayInput(
       );
       return "handled";
     }
+  }
+
+  // While a filter is in progress every printable key is text: "demon" used to
+  // open the title menu at `m`, "spy x" armed a delete at `x`.
+  const filterRoute = routeListFilterKey(input, key, {
+    focused: ctx.filterFocused,
+    query: ctx.filterQuery,
+    actionKeys: HISTORY_ACTION_KEYS,
+  });
+  if (filterRoute === "focus") {
+    ctx.setFilterFocused(true);
+    return "handled";
+  }
+  if (filterRoute === "append") {
+    ctx.setFilterFocused(true);
+    return "not-handled";
   }
 
   // `z` pops the live undo entry; with nothing to undo it stays unhandled and

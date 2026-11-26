@@ -1,6 +1,12 @@
 export type ImageProtocol = "kitty" | "iterm-inline" | "sixel" | "half-block" | "none";
 
-export type ImageRendererId = "kitty-native" | "iterm-inline" | "sixel" | "half-block" | "none";
+export type ImageRendererId =
+  | "kitty-native"
+  | "kitty-direct"
+  | "iterm-inline"
+  | "sixel"
+  | "half-block"
+  | "none";
 
 export type TerminalId =
   | "kitty"

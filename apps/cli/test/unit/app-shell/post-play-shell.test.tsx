@@ -181,8 +181,10 @@ describe("PostPlayShell responsive", () => {
     expect(frame).toContain("My Show");
   });
   it("blocks below the usable minimum with a resize hint", () => {
-    const frame = captureFrame(<PostPlayShell {...base} />, { columns: 50 });
-    expect(frame).toContain("Resize terminal to see post-play options");
+    const frame = captureFrame(<PostPlayShell {...base} />, { columns: 36 });
+    // Below 40 columns the message wraps; the minimum line says what to do.
+    expect(frame).toContain("Resize terminal to see post-play");
+    expect(frame).toContain("needs 40×16");
     expect(frame).not.toContain("My Show");
   });
 });

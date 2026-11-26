@@ -169,7 +169,11 @@ describe("commitDownloadIntent", () => {
       profile: SERIES_PROFILE,
     });
 
-    expect(result).toEqual({ status: "blocked", queuedCount: 0 });
+    expect(result).toEqual({
+      status: "blocked",
+      queuedCount: 0,
+      reason: "Downloads are disabled.",
+    });
     expect(enqueues).toBe(0);
     expect(notes).toEqual(["Download unavailable: Downloads are disabled."]);
   });
@@ -258,7 +262,7 @@ describe("commitDownloadIntent", () => {
       profile: SERIES_PROFILE,
     });
 
-    expect(result).toEqual({ status: "queued", queuedCount: 1 });
+    expect(result).toEqual({ status: "queued", queuedCount: 1, reason: "rejected" });
     expect(persisted).toBe(1);
   });
 });
@@ -347,7 +351,7 @@ describe("commitDownloadIntent authoritative kind", () => {
         items: [],
         profile: SERIES_PROFILE,
       }),
-    ).resolves.toEqual({ status: "none", queuedCount: 0 });
+    ).resolves.toEqual({ status: "none", queuedCount: 0, reason: "nothing to download" });
     expect(enqueued).toHaveLength(0);
   });
 });
