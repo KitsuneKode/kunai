@@ -8,7 +8,7 @@ import {
 } from "@/app/playback/playback-status-policy";
 import {
   runMpvPlaybackSession,
-  type StartupAbortReason,
+  type StallAbortReason,
   type StartupTimers,
 } from "@/app/playback/run-mpv-playback-session";
 import { INITIAL_PLAYBACK_GENERATION } from "@/domain/playback/playback-generation";
@@ -102,7 +102,7 @@ type Harness = {
   readonly feedback: unknown[];
   readonly tracks: PlayerPlaybackEvent[];
   readonly confirmedStarts: number;
-  readonly startupAborts: StartupAbortReason[];
+  readonly startupAborts: StallAbortReason[];
   readonly result: PlaybackResult;
 };
 
@@ -123,7 +123,7 @@ async function runSession(
   const feedback: unknown[] = [];
   const tracks: PlayerPlaybackEvent[] = [];
   let confirmedStarts = 0;
-  const startupAborts: StartupAbortReason[] = [];
+  const startupAborts: StallAbortReason[] = [];
   const activation = options.activation ?? GEN_1;
 
   let beforeCompletion: Harness["beforeCompletion"] = {
@@ -195,7 +195,7 @@ async function runSession(
       onConfirmedPlaybackStart: () => {
         confirmedStarts += 1;
       },
-      onStartupStallAbort: (reason) => {
+      onStallAbort: (reason) => {
         startupAborts.push(reason);
       },
     },
@@ -252,6 +252,65 @@ describe("runMpvPlaybackSession video that never decodes", () => {
     expect(harness.feedback).toContainEqual(
       expect.objectContaining({ detail: "Video isn't decoding — trying next source" }),
     );
+  });
+});
+
+describe("runMpvPlaybackSession mid-stream failover", () => {
+  const dead = {
+    type: "stream-unrecoverable",
+    stallKind: "network-read-dead",
+    secondsWithoutProgress: 8,
+  } as const satisfies PlayerPlaybackEvent;
+
+  test("a stream that dies after it started moves to the next source at the position", async () => {
+    // The abort stops mpv, which then reports a quit.
+    const harness = await runSession(
+      (emit) => {
+        emit({ type: "playback-started" });
+        emit({ type: "playback-progress", positionSeconds: 754, durationSeconds: 1_420 });
+        emit(dead);
+        emit(dead);
+      },
+      { result: { ...FINISHED, endReason: "quit", watchedSeconds: 754, duration: 1_420 } },
+    );
+
+    expect(harness.startupAborts).toEqual([
+      { kind: "stream-dead", evidence: dead, positionSeconds: 754 },
+    ]);
+    expect(harness.feedback).toContainEqual(
+      expect.objectContaining({ detail: "Stream stopped at 12:34 — switching source" }),
+    );
+    // Recovery reads this: the failover path, resuming from the last position.
+    expect(harness.result).toMatchObject({ suspectedDeadStream: true, endReason: "error" });
+  });
+
+  test("before the first frame the startup watchdog owns failure, not this path", async () => {
+    const harness = await runSession((emit) => {
+      emit({ type: "mpv-process-started" });
+      emit(dead);
+    });
+    expect(harness.startupAborts).toEqual([]);
+    expect(harness.result.suspectedDeadStream).not.toBe(true);
+  });
+
+  test("a local file has no other source, so it is never failed over", async () => {
+    const harness = await runSession(
+      (emit) => {
+        emit({ type: "playback-started" });
+        emit(dead);
+      },
+      { localPlaybackSource: LOCAL_SOURCE, stream: { ...STREAM, url: LOCAL_SOURCE.filePath } },
+    );
+    expect(harness.startupAborts).toEqual([]);
+  });
+
+  test("a stale generation's dead stream cannot abort its replacement", async () => {
+    const harness = await runSession((emit, store) => {
+      emit({ type: "playback-started" });
+      store.apply({ kind: "activate", generation: GEN_2, status: "loading" });
+      emit(dead);
+    });
+    expect(harness.startupAborts).toEqual([]);
   });
 });
 

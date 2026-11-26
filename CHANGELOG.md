@@ -23,6 +23,10 @@ subtitle controls, and safer persistence, downloads and native installation.
 - Playback counts as started only once a video frame is decoded. A stream that
   never decodes, or sends nothing for 15 seconds, fails over to the next
   source, and a failing 4K stream first steps down to 1080p on the same source.
+- A stream that dies mid-episode continues on the next source from the same
+  moment, in the same window, after one reload of the same link. A source that
+  fails before your resume point no longer restarts the episode from 0:00, and
+  `manual` recovery mode no longer moves to another provider on its own.
 - Tap and click through the shell: History, every picker, Notifications,
   Downloads, the guide, the checklist, the Schedule and a title's details. A
   click on any key hint presses that key. Portrait phone terminals get a

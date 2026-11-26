@@ -13,6 +13,7 @@ import {
 } from "@/services/playback/stream-health-check";
 import { isJsonString, type JsonValue } from "@kunai/types";
 
+import { unrecoverableStallEvent } from "../mpv-in-process-reconnect";
 import {
   createPlaybackProgressThrottleState,
   shouldEmitPlaybackProgress,
@@ -266,7 +267,12 @@ export class VlcPlayerService implements PlayerService {
       generation = { process: this.process, cycle: 1 };
     }
     options.onGenerationActivated?.(generation);
-    const emit = (event: PlayerPlaybackEvent) => options.onPlaybackEvent?.({ generation, event });
+    const emit = (event: PlayerPlaybackEvent) => {
+      options.onPlaybackEvent?.({ generation, event });
+      // VLC has no in-place reload, so a post-start dead stream escalates at once.
+      const escalation = unrecoverableStallEvent(event);
+      if (escalation) options.onPlaybackEvent?.({ generation, event: escalation });
+    };
 
     this.fileInFlight = true;
     const cleanups: Array<() => Promise<void> | void> = [];

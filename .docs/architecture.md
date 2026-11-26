@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-26T10:40:05Z"
+lastReviewed: "2026-11-27T10:00:00Z"
 ---
 
 # Kunai — Runtime Architecture
@@ -189,6 +189,24 @@ sources, then one compatible provider, within a per-episode attempt budget:
   source, so the cap is not per-source. The pin is in memory only, like every
   automatic failover.
 
+### Mid-playback failover
+
+After the first frame, the watchdog's reload triggers (`network-read-dead`,
+`video-lost`) first get the same-URL reload in place
+(`mpvInProcessStreamReconnect*`). When that is off or spent, the player emits
+`stream-unrecoverable` (`unrecoverableStallEvent` in
+`infra/player/mpv-in-process-reconnect.ts`); one-shot mpv and desktop VLC have
+no in-place reload and emit it at once. `run-mpv-playback-session.ts` acts on it
+only after its own confirmed `playback-started` for that generation, and never
+for a local file: it ends the file with `stopCurrentFile` (the window stays) and
+marks the result `suspectedDeadStream`. From there it is the startup path above:
+the URL is blocked, sources are walked, a 4K rung steps down, then one provider
+hop, and every attempt starts at `recoveryStartIntent`. That is the reached
+position without a prompt, or the attempt's own intended start when the failed
+source never reached it. A provider hop the user asks for (⇧F) still offers the
+position as a prompt, since another provider's cut can differ. `recoveryMode:
+"manual"` never hops providers automatically.
+
 ### Android detached-player flow
 
 On Android/Termux, `--player auto|mpv|vlc` composes
@@ -244,8 +262,8 @@ An accepted `ACTION_VIEW` request is represented as detached handoff evidence,
 not playback evidence. The session emits no start/progress/completion event,
 writes no inferred history, pauses autoplay/near-EOF behavior, restores queue
 claims, and labels post-play as "opened externally". Desktop auto/mpv behavior
-continues through the observed mpv runner; desktop `--player vlc` fails with an
-explicit unsupported-player remediation.
+continues through the observed mpv runner; desktop `--player vlc` runs the
+observed `VlcPlayerService` (see [the VLC dossier](./player-dossiers/vlc.md)).
 
 Android is an experimental preview until the physical-device matrix in
 [release-reliability-gate.md](./release-reliability-gate.md) passes. iOS remains

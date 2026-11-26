@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   computeInProcessReconnectSeek,
   isSameUrlRetryWorthwhile,
+  unrecoverableStallEvent,
 } from "@/infra/player/mpv-in-process-reconnect";
 
 describe("computeInProcessReconnectSeek", () => {
@@ -44,5 +45,35 @@ describe("isSameUrlRetryWorthwhile", () => {
   test("other errors, or none reported, may still recover on a reload", () => {
     expect(isSameUrlRetryWorthwhile(undefined)).toBe(true);
     expect(isSameUrlRetryWorthwhile("something happened")).toBe(true);
+  });
+});
+
+describe("unrecoverableStallEvent", () => {
+  test("a reload trigger escalates whatever the startup flag; other stall kinds do not", () => {
+    for (const stallKind of ["network-read-dead", "video-lost"] as const) {
+      expect(
+        unrecoverableStallEvent({ type: "stream-stalled", stallKind, secondsWithoutProgress: 9 }),
+      ).toEqual({ type: "stream-unrecoverable", stallKind, secondsWithoutProgress: 9 });
+    }
+    expect(
+      unrecoverableStallEvent({
+        type: "stream-stalled",
+        stallKind: "network-read-dead",
+        secondsWithoutProgress: 9,
+        duringStartup: true,
+      }),
+    ).toEqual({
+      type: "stream-unrecoverable",
+      stallKind: "network-read-dead",
+      secondsWithoutProgress: 9,
+    });
+    expect(
+      unrecoverableStallEvent({
+        type: "stream-stalled",
+        stallKind: "progress",
+        secondsWithoutProgress: 20,
+      }),
+    ).toBeNull();
+    expect(unrecoverableStallEvent({ type: "playback-started" })).toBeNull();
   });
 });
