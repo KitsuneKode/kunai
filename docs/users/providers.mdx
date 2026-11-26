@@ -47,7 +47,7 @@ Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only
 
 <ProviderDocSection id="rivestream" title="Rivestream">
 
-**Adapter role:** mirror-aggregator for movies/series. Second in the automatic series lane after VidLink.
+**Adapter role:** mirror-aggregator for movies/series. Third in the automatic series lane, after VidLink and Movy.
 
 **Config id:** `rivestream`.
 
@@ -57,7 +57,7 @@ Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only
 
 <ProviderDocSection id="vidrock" title="VidRock">
 
-**Adapter role:** third in the movies/series order. Offers multiple audio and quality options where the source provides them.
+**Adapter role:** fourth in the movies/series order. Offers multiple audio and quality options where the source provides them.
 
 **Config id:** `vidrock`.
 
@@ -67,7 +67,7 @@ Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only
 
 <ProviderDocSection id="kickassanime" title="KickAssAnime">
 
-**Adapter role:** third in the anime order. It matches titles against its own catalogue by name and year.
+**Adapter role:** first anime fallback after HiAnime. It matches titles against its own catalogue by name and year.
 
 **Config id:** `kickassanime`.
 
@@ -79,7 +79,7 @@ has no English audio, Kunai reports the fallback to subbed playback in the trace
 
 <ProviderDocSection id="animegg" title="AnimeGG">
 
-**Adapter role:** first anime fallback after HiAnime. AnimeGG matches titles against its own
+**Adapter role:** third in the anime order, after HiAnime and KickAssAnime. AnimeGG matches titles against its own
 catalogue and serves sub and dub from separate episode tabs.
 
 **Config id:** `animegg`.
@@ -97,7 +97,7 @@ when more than one of its shows could be the one you picked, it steps aside rath
 
 <ProviderDocSection id="movy" title="Movy">
 
-**Adapter role:** fourth in the movies/series order. Each upstream lane is a separate source that
+**Adapter role:** first movies/series fallback after VidLink. Each upstream lane is a separate source that
 you can select with `/source`.
 
 **Config id:** `movy`.

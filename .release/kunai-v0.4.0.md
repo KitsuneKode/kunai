@@ -19,7 +19,8 @@ subtitle controls, and safer persistence, downloads and native installation.
   Kunai observes it like mpv: progress, resume, auto-skip, and the next episode
   in the same window. With VLC installed and no mpv, the default `auto` plays
   in VLC instead of asking you to install mpv first.
-- Playback counts as started only once a video frame is decoded. A stream that
+- Playback counts as started only once a video frame is decoded (audio for an
+  audio-only stream). A stream that
   never decodes, or sends nothing for 15 seconds, fails over to the next
   source, and a failing 4K stream first steps down to 1080p on the same source.
 - A stream that dies mid-episode continues on the next source from the same
