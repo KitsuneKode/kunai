@@ -164,6 +164,7 @@ describe("poster smoke launcher", () => {
       APPDATA: "live",
       LOCALAPPDATA: "live",
       USERPROFILE: "live",
+      BUN_RUNTIME_TRANSPILER_CACHE_PATH: "live",
     });
     expect(env).toMatchObject({
       HOME: "private",
@@ -174,6 +175,7 @@ describe("poster smoke launcher", () => {
       LOCALAPPDATA: "private",
       USERPROFILE: "private",
       DO_NOT_TRACK: "1",
+      BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",
     });
     expect(env.XDG_RUNTIME_DIR).toBeUndefined();
   });

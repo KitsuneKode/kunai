@@ -26,6 +26,8 @@ export function posterSmokeEnv(home: string, host = process.env): NodeJS.Process
     if (key.startsWith("XDG_") || key === "APPDATA") delete env[key];
   }
   Object.assign(env, storageRootEnv(home));
+  // A descendant interrupted during startup can otherwise recreate the private cache.
+  env.BUN_RUNTIME_TRANSPILER_CACHE_PATH = "0";
   delete env.CI;
   delete env.CONTINUOUS_INTEGRATION;
   delete env.NO_COLOR;
