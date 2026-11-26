@@ -42,12 +42,10 @@ import type { SessionState } from "@/domain/session/SessionState";
 import { isPlaybackSessionActive } from "@/domain/session/SessionState";
 import { parsePlaybackTargetRef } from "@/domain/share/playback-target-ref";
 import type { EpisodeInfo as PlaybackEpisodeInfo, StreamInfo, TitleInfo } from "@/domain/types";
-import { copyToClipboard, readClipboard } from "@/infra/clipboard";
-import { copyShareLinkForContext } from "@/infra/share/copy-share-link";
+import { readClipboard } from "@/infra/clipboard";
 import { openExternalUrlAndWait, defaultKunaiDocsUrl } from "@/infra/shell/open-external-url";
 import {
   readLatestHistoryByTitle,
-  formatTimestamp,
   historyContentType,
   isFinished,
 } from "@/services/continuation/history-progress";
@@ -79,6 +77,7 @@ import type { ShellAction } from "../types";
 import { relativeHistoryDate } from "./history-workflows";
 import { promptPlaylistName } from "./playlist-name-prompt";
 import { openSetupWizardFromShell } from "./setup-workflows";
+import { shareTarget } from "./share-workflow";
 
 export function waitForOverlayClose(
   stateManager: import("@/domain/session/SessionStateManager").SessionStateManager,
@@ -1435,71 +1434,17 @@ async function handleShare(
     return "handled";
   }
   const episode = state.currentEpisode;
-  const mode = state.mode;
-  const mediaKind = resolveCurrentMediaKind(state);
-  const progress =
-    episode &&
-    container.historyRepository.getProgress(
-      {
-        id: title.id,
-        kind: mediaKind,
-        title: title.name,
-        externalIds: title.externalIds,
-      },
-      { season: episode.season, episode: episode.episode },
-    );
-  const resumeSeconds =
-    progress && progress.positionSeconds > 0 ? Math.floor(progress.positionSeconds) : undefined;
-
-  let startSeconds: number | undefined;
-  if (resumeSeconds && resumeSeconds > 10) {
-    const choice = await chooseFromListShell({
-      title: "Copy share link",
-      subtitle: title.name,
-      options: [
-        { value: "start" as const, label: "Copy link from start" },
-        {
-          value: "resume" as const,
-          label: `Copy link at ${formatTimestamp(resumeSeconds)}`,
-        },
-      ],
-    });
-    if (!choice) return "handled";
-    startSeconds = choice === "resume" ? resumeSeconds : undefined;
-  }
-
-  const shared = await copyShareLinkForContext(
+  return shareTarget(
+    container,
     {
       title,
-      mode,
+      mode: state.mode,
+      mediaKind: resolveCurrentMediaKind(state),
       episode: episode ? { season: episode.season, episode: episode.episode } : undefined,
-      startSeconds,
       providerId: state.provider,
     },
-    copyToClipboard,
+    options,
   );
-  if (!shared) {
-    container.stateManager.dispatch({
-      type: "SET_PLAYBACK_FEEDBACK",
-      note: "Could not build a share link for this title.",
-    });
-    return "handled";
-  }
-  if (options.qr) {
-    const { openShareQrShell } = await import("@/app-shell/share-qr-shell");
-    await openShareQrShell({
-      title: title.name,
-      url: shared.qrUrl,
-      shortCode: shared.shortCode,
-    });
-  }
-  container.stateManager.dispatch({
-    type: "SET_PLAYBACK_FEEDBACK",
-    note: shared.copied
-      ? `Web share link for "${title.name}" copied${shared.shortCode ? ` · code ${shared.shortCode}` : ""}.`
-      : `Share link (copy manually): ${shared.webUrl}`,
-  });
-  return "handled";
 }
 
 async function handleBookmark(container: Container): Promise<"handled"> {
