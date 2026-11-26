@@ -82,7 +82,7 @@ describeBinary("compiled linux binary smoke", () => {
   });
 
   test.skipIf(!fullReleaseSet())(
-    "dist/bin satisfies the exact 22-file release asset contract",
+    "dist/bin satisfies the exact 30-file release asset contract",
     () => {
       assertCompleteReleaseAssetSet(listRegularReleaseFiles(BIN_DIR));
     },

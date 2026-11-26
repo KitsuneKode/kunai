@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { RELEASE_BINARY_TARGETS } from "@/services/update/platform-assets";
+import { RELEASE_BINARY_TARGETS, releaseArchiveNames } from "@/services/update/platform-assets";
 
 const CLI_ROOT = join(import.meta.dirname, "../..");
 const BUILD_SCRIPT = join(CLI_ROOT, "scripts/build-binaries.ts");
@@ -78,7 +78,10 @@ describe("build-binaries incremental subprocess", () => {
 
       expect(readdirSync(outputDirectory).sort()).toEqual(
         [
-          ...RELEASE_BINARY_TARGETS.flatMap((target) => [target.out, target.archiveName]),
+          ...RELEASE_BINARY_TARGETS.flatMap((target) => [
+            target.out,
+            ...releaseArchiveNames(target),
+          ]),
           "SHA256SUMS",
           "SHA256SUMS.archives",
         ].sort(),
@@ -87,7 +90,7 @@ describe("build-binaries incremental subprocess", () => {
         RELEASE_BINARY_TARGETS.map((target) => target.out).sort(),
       );
       expect(manifestNames(outputDirectory, "SHA256SUMS.archives")).toEqual(
-        RELEASE_BINARY_TARGETS.map((target) => target.archiveName).sort(),
+        RELEASE_BINARY_TARGETS.flatMap(releaseArchiveNames).sort(),
       );
       expect(readFileSync(join(outputDirectory, "kunai-linux-x64"), "utf8")).toBe(
         "only:kunai-linux-x64\n",

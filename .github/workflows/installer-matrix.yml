@@ -65,8 +65,10 @@ jobs:
           for f in \
             apps/cli/dist/bin/kunai-linux-x64 \
             apps/cli/dist/bin/kunai-linux-x64.tar.gz \
+            apps/cli/dist/bin/kunai-linux-x64.tar.zst \
             apps/cli/dist/bin/kunai-linux-x64-musl \
             apps/cli/dist/bin/kunai-linux-x64-musl.tar.gz \
+            apps/cli/dist/bin/kunai-linux-x64-musl.tar.zst \
             apps/cli/dist/bin/SHA256SUMS \
             apps/cli/dist/bin/SHA256SUMS.archives; do
             if [ ! -s "$f" ]; then
@@ -96,8 +98,10 @@ jobs:
           path: |
             apps/cli/dist/bin/kunai-linux-x64
             apps/cli/dist/bin/kunai-linux-x64.tar.gz
+            apps/cli/dist/bin/kunai-linux-x64.tar.zst
             apps/cli/dist/bin/kunai-linux-x64-musl
             apps/cli/dist/bin/kunai-linux-x64-musl.tar.gz
+            apps/cli/dist/bin/kunai-linux-x64-musl.tar.zst
             apps/cli/dist/bin/SHA256SUMS
             apps/cli/dist/bin/SHA256SUMS.archives
 

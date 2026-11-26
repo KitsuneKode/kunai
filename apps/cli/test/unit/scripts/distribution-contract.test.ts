@@ -13,7 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { RELEASE_BINARY_TARGETS } from "@/services/update/platform-assets";
+import { RELEASE_BINARY_TARGETS, releaseArchiveNames } from "@/services/update/platform-assets";
 
 import rootPackage from "../../../../../package.json";
 import {
@@ -39,13 +39,13 @@ import { buildNpmPublishManifest } from "../../../scripts/write-npm-publish-mani
 const REPO_ROOT = join(import.meta.dirname, "../../../../..");
 const requiredAssetNames = REQUIRED_RELEASE_ASSET_NAMES;
 const requiredBinaryNames = RELEASE_BINARY_TARGETS.map((t) => t.out).sort();
-const requiredArchiveNames = RELEASE_BINARY_TARGETS.map((t) => t.archiveName).sort();
+const requiredArchiveNames = RELEASE_BINARY_TARGETS.flatMap(releaseArchiveNames).sort();
 
-function writeCompleteReleaseFixture(directory: string): void {
+async function writeCompleteReleaseFixture(directory: string): Promise<void> {
   for (const name of requiredBinaryNames) {
     writeFileSync(join(directory, name), `payload:${name}\n`);
   }
-  buildReleaseArchives(directory);
+  await buildReleaseArchives(directory);
 }
 
 function completeSizedAssets(size = 1) {
@@ -53,15 +53,19 @@ function completeSizedAssets(size = 1) {
 }
 
 describe("distribution release-asset contract", () => {
-  test("requires the exact 0.3.0 bridge set of archives, raw binaries, and manifests", () => {
+  test("requires the exact set of archives, raw binaries, and manifests", () => {
     expect([...REQUIRED_RELEASE_ASSET_NAMES]).toEqual(
       [...requiredBinaryNames, ...requiredArchiveNames, "SHA256SUMS", "SHA256SUMS.archives"].sort(),
     );
-    expect(REQUIRED_RELEASE_ASSET_NAMES).toHaveLength(22);
+    // Ten compatibility archives, eight .tar.zst (Windows ships zip only),
+    // ten raw binaries, two manifests.
+    expect(REQUIRED_RELEASE_ASSET_NAMES).toHaveLength(30);
     expect(requiredBinaryNames).toContain("kunai-android-arm64");
     expect(requiredBinaryNames).toContain("kunai-android-x64");
     expect(requiredArchiveNames).toContain("kunai-android-arm64.tar.gz");
     expect(requiredArchiveNames).toContain("kunai-android-x64.tar.gz");
+    expect(requiredArchiveNames).toContain("kunai-android-arm64.tar.zst");
+    expect(requiredArchiveNames).not.toContain("kunai-windows-x64.tar.zst");
   });
 
   test("assertRequiredReleaseAssets accepts a complete set and rejects gaps", () => {
@@ -851,7 +855,7 @@ describe("verifyReleaseArtifactDirectory", () => {
   test("accepts ten canonical archives, ten raw binaries, and two manifests", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kunai-release-assets-"));
     try {
-      writeCompleteReleaseFixture(dir);
+      await writeCompleteReleaseFixture(dir);
 
       await expect(
         verifyReleaseArtifactDirectory({
@@ -879,7 +883,7 @@ describe("verifyReleaseArtifactDirectory", () => {
         );
       }
       chmodSync(join(dir, "kunai-linux-x64"), 0o644);
-      buildReleaseArchives(dir);
+      await buildReleaseArchives(dir);
       const bytesBefore = readFileSync(join(dir, "kunai-linux-x64"));
 
       await expect(
@@ -898,7 +902,7 @@ describe("verifyReleaseArtifactDirectory", () => {
   test("rejects checksum mismatch", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kunai-release-assets-"));
     try {
-      writeCompleteReleaseFixture(dir);
+      await writeCompleteReleaseFixture(dir);
       const archiveName = requiredArchiveNames[0]!;
       writeFileSync(join(dir, archiveName), "tampered archive");
 
@@ -918,7 +922,7 @@ describe("verifyReleaseArtifactDirectory", () => {
     for (const failure of ["missing", "unexpected", "mutated"] as const) {
       const dir = mkdtempSync(join(tmpdir(), `kunai-release-assets-${failure}-`));
       try {
-        writeCompleteReleaseFixture(dir);
+        await writeCompleteReleaseFixture(dir);
         if (failure === "missing") {
           rmSync(join(dir, requiredArchiveNames[0]!));
         } else if (failure === "unexpected") {
@@ -943,7 +947,7 @@ describe("verifyReleaseArtifactDirectory", () => {
   test("rejects unexpected directories instead of filtering them out", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kunai-release-assets-directory-"));
     try {
-      writeCompleteReleaseFixture(dir);
+      await writeCompleteReleaseFixture(dir);
       mkdirSync(join(dir, "unexpected-directory"));
 
       await expect(
@@ -963,7 +967,7 @@ describe("verifyReleaseArtifactDirectory", () => {
     async () => {
       const dir = mkdtempSync(join(tmpdir(), "kunai-release-assets-symlink-"));
       try {
-        writeCompleteReleaseFixture(dir);
+        await writeCompleteReleaseFixture(dir);
         symlinkSync("kunai-linux-x64", join(dir, "unexpected-symlink"));
 
         await expect(
@@ -982,7 +986,7 @@ describe("verifyReleaseArtifactDirectory", () => {
   test("rejects SHA256SUMS with the wrong row count", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kunai-release-assets-"));
     try {
-      writeCompleteReleaseFixture(dir);
+      await writeCompleteReleaseFixture(dir);
       writeFileSync(join(dir, "SHA256SUMS"), `${"a".repeat(64)}  kunai-linux-x64\n`);
 
       await expect(
@@ -1000,7 +1004,7 @@ describe("verifyReleaseArtifactDirectory", () => {
   test("rejects a legacy raw SHA256SUMS checksum mismatch", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kunai-release-assets-"));
     try {
-      writeCompleteReleaseFixture(dir);
+      await writeCompleteReleaseFixture(dir);
       const rows = readFileSync(join(dir, "SHA256SUMS"), "utf8").split("\n");
       rows[0] = `${"a".repeat(64)}  ${requiredBinaryNames[0]}`;
       writeFileSync(join(dir, "SHA256SUMS"), rows.join("\n"));
@@ -1020,7 +1024,7 @@ describe("verifyReleaseArtifactDirectory", () => {
   test("rejects a non-canonical archive even when its manifest hash matches", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kunai-release-assets-"));
     try {
-      writeCompleteReleaseFixture(dir);
+      await writeCompleteReleaseFixture(dir);
       const archiveName = requiredArchiveNames[0]!;
       const archivePath = join(dir, archiveName);
       const tampered = Buffer.concat([readFileSync(archivePath), Buffer.from("extra-entry")]);

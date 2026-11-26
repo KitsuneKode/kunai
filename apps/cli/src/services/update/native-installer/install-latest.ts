@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -53,7 +52,7 @@ import {
   updateLauncher,
 } from "./launcher";
 import { isMuslEnvironmentSync } from "./musl";
-import { extractReleaseArchive } from "./release-archive";
+import { extractReleaseArchiveFile } from "./release-archive";
 import {
   beginInstallTransaction,
   cleanupAbandonedTransactions,
@@ -138,8 +137,10 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
   const tag = `v${resolved}`;
   const downloadUrl = `${dlBase}/download/${tag}/${assetName}`;
   const checksumUrl = `${dlBase}/download/${tag}/SHA256SUMS`;
-  const archiveName = releaseTarget?.archiveName;
-  const archiveUrl = archiveName ? `${dlBase}/download/${tag}/${archiveName}` : undefined;
+  // The gzip/zip name until the signed archive manifest says a smaller zstd
+  // archive exists for this release (0.3.x and later); then that one.
+  let archiveName = releaseTarget?.archiveName;
+  let archiveUrl = archiveName ? `${dlBase}/download/${tag}/${archiveName}` : undefined;
   const archiveChecksumUrl = `${dlBase}/download/${tag}/SHA256SUMS.archives`;
   const versionPath = versionBinaryPath(layout, resolved);
 
@@ -183,7 +184,7 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
       const stagedBinary = join(staging, assetName);
       const stagedChecksums = join(staging, "SHA256SUMS");
       const stagedArchiveChecksums = join(staging, "SHA256SUMS.archives");
-      const stagedArchive = archiveName ? join(staging, archiveName) : undefined;
+      let stagedArchive = archiveName ? join(staging, archiveName) : undefined;
 
       try {
         await downloadToFile({
@@ -274,6 +275,12 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
             stagedArchiveChecksums,
             archiveChecksumUrl,
           );
+          const zstdArchiveName = releaseTarget.zstdArchiveName;
+          if (zstdArchiveName && pickChecksum(archiveSums, zstdArchiveName)) {
+            archiveName = zstdArchiveName;
+            archiveUrl = `${dlBase}/download/${tag}/${zstdArchiveName}`;
+            stagedArchive = join(staging, zstdArchiveName);
+          }
           expectedArchive = pickChecksum(archiveSums, archiveName);
           if (!expectedArchive) throw new Error(`No checksum entry for ${archiveName}`);
           try {
@@ -308,14 +315,17 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
             throw new Error(`Checksum mismatch for ${archiveName}`);
           }
 
-          const archiveBytes = new Uint8Array(await Bun.file(stagedArchive).arrayBuffer());
-          const binaryBytes = extractReleaseArchive(archiveBytes, releaseTarget);
-          artifactSha256 = createHash("sha256").update(binaryBytes).digest("hex");
-          artifactSizeBytes = binaryBytes.length;
+          const extracted = await extractReleaseArchiveFile({
+            archivePath: stagedArchive,
+            archiveName,
+            target: releaseTarget,
+            outputPath: stagedBinary,
+          });
+          artifactSha256 = extracted.sha256;
+          artifactSizeBytes = extracted.sizeBytes;
           if (!verifyChecksum(artifactSha256, expected)) {
             throw new Error(`Checksum mismatch for extracted ${assetName}`);
           }
-          await Bun.write(stagedBinary, binaryBytes);
           archiveProvenance = {
             archiveName,
             archiveSha256: archiveDownload.sha256,

@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 /**
- * Verify a local directory holds the exact 0.3.0 bridge set:
- * ten archives, ten raw binaries, and two matching checksum manifests.
+ * Verify a local directory holds the exact release set: ten compatibility
+ * archives, eight `.tar.zst` archives, ten raw binaries, and two matching
+ * checksum manifests.
  *
  * Usage:
  *   bun run scripts/verify-release-artifact-directory.ts <dir> --expected-version 0.3.0

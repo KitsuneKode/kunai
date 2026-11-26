@@ -162,7 +162,7 @@ Job **`candidate`** (no publish):
    tarballs, then runs `bun run release:pack` to preserve the launcher as
    `.release-candidate/kunai-npm.tgz`
 5. Stages the native files under an isolated `native/` directory, reverifies
-   that exact 22-file directory, creates GitHub OIDC attestations for all 22
+   that exact 30-file directory, creates GitHub OIDC attestations for all 30
    subjects, then uploads artifact
    `kunai-release-candidate-<version>-<commit-sha>` with the preserved launcher
    and platform-package tarballs alongside it (14-day retention). Downstream
@@ -176,20 +176,28 @@ The exact native directory is:
 ```text
 kunai-linux-x64
 kunai-linux-x64.tar.gz
+kunai-linux-x64.tar.zst
 kunai-linux-arm64
 kunai-linux-arm64.tar.gz
+kunai-linux-arm64.tar.zst
 kunai-linux-x64-musl
 kunai-linux-x64-musl.tar.gz
+kunai-linux-x64-musl.tar.zst
 kunai-linux-arm64-musl
 kunai-linux-arm64-musl.tar.gz
+kunai-linux-arm64-musl.tar.zst
 kunai-android-arm64
 kunai-android-arm64.tar.gz
+kunai-android-arm64.tar.zst
 kunai-android-x64
 kunai-android-x64.tar.gz
+kunai-android-x64.tar.zst
 kunai-darwin-x64
 kunai-darwin-x64.tar.gz
+kunai-darwin-x64.tar.zst
 kunai-darwin-arm64
 kunai-darwin-arm64.tar.gz
+kunai-darwin-arm64.tar.zst
 kunai-windows-x64.exe
 kunai-windows-x64.zip
 kunai-windows-arm64.exe
@@ -249,7 +257,7 @@ Job **`publish`** needs `confirmation` and declares `environment: release-produc
 
 1. Downloads the preserved candidate artifact (does **not** rebuild, re-pack,
    or recompress native assets)
-2. Reverifies the exact native directory and all 22 attestations, before npm
+2. Reverifies the exact native directory and all 30 attestations, before npm
    publication, against the
    expected version, release workflow, main-branch ref, and candidate commit
 3. Runs `bun run release`, whose npm publisher works in three phases: it
@@ -271,7 +279,7 @@ Job **`publish`** needs `confirmation` and declares `environment: release-produc
    the same version, and refusing to move a tag that points elsewhere
 6. Reverifies the same downloaded native directory and provenance again,
    immediately before creating a **draft** GitHub release (`make_latest: false`)
-   with its 22 files
+   with its 30 files
 7. `bun run scripts/verify-github-release-assets.ts <tag> --expect-draft …`
    downloads the draft assets and verifies their bytes and attestations
 8. Promotes immediately after that draft-byte verification:
@@ -493,14 +501,15 @@ change on a new branch and open a PR manually.
 - `version:packages` runs `changeset version`, synchronizes native platform pins, refreshes `bun.lock` without installing packages or running lifecycle scripts, mirrors the changelog, and regenerates `.release/kunai-v*.md` / `.json` via `bun run release:notes`.
 
 **npm vs GitHub Release artifacts:** npm publishes the preserved
-`kunai-npm.tgz` (allowlisted launcher files only). The ten archives and ten
+`kunai-npm.tgz` (allowlisted launcher files only). The eighteen archives and ten
 raw standalone binaries ship only via the GitHub release — `bun run pkg:check`
 fails if `dist/bin/` appears in the npm tarball.
 
 ## GitHub release tags
 
-Prefer tag `vX.Y.Z` created by the **publish** job with the 22 required native
-assets (10 archives + 10 raw binaries + 2 checksum manifests). Release notes body
+Prefer tag `vX.Y.Z` created by the **publish** job with the 30 required native
+assets (10 compatibility archives + 8 `.tar.zst` archives + 10 raw binaries + 2
+checksum manifests). Release notes body
 comes from `.release/kunai-vX.Y.Z.md`. Avoid duplicate
 `@kitsunekode/kunai@X.Y.Z` releases with empty bodies.
 

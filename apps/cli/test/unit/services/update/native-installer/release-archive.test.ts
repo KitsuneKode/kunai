@@ -1,13 +1,23 @@
-import { describe, expect, test } from "bun:test";
-import { gunzipSync, gzipSync } from "node:zlib";
+import { afterAll, describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { gunzipSync, gzipSync, zstdCompressSync } from "node:zlib";
 
-import { extractReleaseArchive } from "@/services/update/native-installer/release-archive";
+import {
+  extractReleaseArchive,
+  extractReleaseArchiveFile,
+} from "@/services/update/native-installer/release-archive";
 import {
   RELEASE_BINARY_TARGETS,
   type ReleaseBinaryTarget,
 } from "@/services/update/platform-assets";
 
-import { createReleaseArchive } from "../../../../../scripts/build-release-archives";
+import {
+  createReleaseArchive,
+  createZstdReleaseArchive,
+} from "../../../../../scripts/build-release-archives";
 
 const encoder = new TextEncoder();
 
@@ -196,5 +206,155 @@ describe("extractReleaseArchive", () => {
     expect(() => extractReleaseArchive(archive, tinyBinaryBudget)).toThrow(
       /decompression|binary.*size|output/i,
     );
+  });
+});
+
+const scratch = mkdtempSync(join(tmpdir(), "kunai-release-archive-"));
+afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+
+function sha256(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+async function extractFile(
+  name: string,
+  archive: Uint8Array,
+  releaseTarget: ReleaseBinaryTarget,
+): Promise<{ readonly sha256: string; readonly sizeBytes: number; readonly output: string }> {
+  const archivePath = join(scratch, `${crypto.randomUUID()}-${name}`);
+  const output = `${archivePath}.bin`;
+  writeFileSync(archivePath, archive);
+  const result = await extractReleaseArchiveFile({
+    archivePath,
+    archiveName: name,
+    target: releaseTarget,
+    outputPath: output,
+  });
+  return { ...result, output };
+}
+
+describe("tar.zst release archives", () => {
+  test("extracts the canonical one-member tar.zst, buffered", () => {
+    const releaseTarget = target("linux-arm64-musl");
+    const binary = encoder.encode("zstd-binary");
+    const archive = createZstdReleaseArchive(releaseTarget, binary);
+
+    expect(extractReleaseArchive(archive, releaseTarget, "tar.zst")).toEqual(binary);
+  });
+
+  test("windows targets publish no zstd archive", () => {
+    expect(target("windows-x64").zstdArchiveName).toBeUndefined();
+    expect(target("android-arm64").zstdArchiveName).toBe("kunai-android-arm64.tar.zst");
+  });
+});
+
+describe("extractReleaseArchiveFile", () => {
+  // Multi-block bodies with a ragged tail exercise every reader state across
+  // the decoder's chunk boundaries — the streaming path's whole risk.
+  const body = Uint8Array.from({ length: 300_001 }, (_, index) => (index * 31 + 7) % 251);
+
+  for (const [label, build] of [
+    ["tar.gz", createReleaseArchive],
+    ["tar.zst", createZstdReleaseArchive],
+  ] as const) {
+    test(`streams a ${label} member to disk with its digest and size`, async () => {
+      const releaseTarget = target("linux-x64");
+      const result = await extractFile(
+        `kunai-linux-x64.${label}`,
+        build(releaseTarget, body),
+        releaseTarget,
+      );
+
+      expect(result.sizeBytes).toBe(body.length);
+      expect(result.sha256).toBe(sha256(body));
+      expect(new Uint8Array(await Bun.file(result.output).arrayBuffer())).toEqual(body);
+    });
+  }
+
+  test("streams the Windows zip through the buffered reader", async () => {
+    const releaseTarget = target("windows-x64");
+    const binary = encoder.encode("MZ-streamed");
+    const result = await extractFile(
+      releaseTarget.archiveName,
+      createReleaseArchive(releaseTarget, binary),
+      releaseTarget,
+    );
+
+    expect(result.sha256).toBe(sha256(binary));
+  });
+
+  test("rejects a second member and leaves no partial output", async () => {
+    const releaseTarget = target("linux-x64");
+    const archive = createReleaseArchive(releaseTarget, body);
+    const tar = new Uint8Array(gunzipSync(archive));
+    const memberLength = 512 + Math.ceil(body.length / 512) * 512;
+    const doubled = new Uint8Array(memberLength * 2 + 1_024);
+    doubled.set(tar.subarray(0, memberLength), 0);
+    doubled.set(tar.subarray(0, memberLength), memberLength);
+    const archivePath = join(scratch, "doubled.tar.zst");
+    writeFileSync(archivePath, zstdCompressSync(doubled));
+    const output = join(scratch, "doubled.bin");
+
+    await expect(
+      extractReleaseArchiveFile({
+        archivePath,
+        archiveName: "kunai-linux-x64.tar.zst",
+        target: releaseTarget,
+        outputPath: output,
+      }),
+    ).rejects.toThrow(/exactly one/i);
+    expect(existsSync(output)).toBe(false);
+  });
+
+  test("rejects data after the trailer and a truncated stream", async () => {
+    const releaseTarget = target("linux-x64");
+    const tar = new Uint8Array(gunzipSync(createReleaseArchive(releaseTarget, body)));
+    const trailing = new Uint8Array(tar.length + 512);
+    trailing.set(tar);
+    trailing[tar.length + 3] = 1;
+
+    await expect(
+      extractFile("kunai-linux-x64.tar.zst", zstdCompressSync(trailing), releaseTarget),
+    ).rejects.toThrow(/after its trailer/i);
+    await expect(
+      extractFile(
+        "kunai-linux-x64.tar.zst",
+        zstdCompressSync(tar.subarray(0, 4_096)),
+        releaseTarget,
+      ),
+    ).rejects.toThrow(/truncated/i);
+  });
+
+  test("maps corrupt compressed bytes to the decompression error", async () => {
+    const releaseTarget = target("linux-x64");
+    const archive = createZstdReleaseArchive(releaseTarget, body);
+    const corrupt = new Uint8Array(archive);
+    const middle = Math.floor(corrupt.length / 2);
+    corrupt[middle] = (corrupt[middle] ?? 0) ^ 0xff;
+
+    await expect(extractFile("kunai-linux-x64.tar.zst", corrupt, releaseTarget)).rejects.toThrow(
+      /decompression/i,
+    );
+  });
+
+  test("stops at the decompressed output budget", async () => {
+    const releaseTarget = { ...target("linux-x64"), maxBinaryBytes: 1_024 };
+    const archive = createZstdReleaseArchive(target("linux-x64"), body);
+
+    await expect(extractFile("kunai-linux-x64.tar.zst", archive, releaseTarget)).rejects.toThrow(
+      /budget/i,
+    );
+  });
+
+  test("checks the archive size before reading it", async () => {
+    const releaseTarget = { ...target("linux-x64"), maxArchiveBytes: 8 };
+
+    await expect(
+      extractFile(
+        "kunai-linux-x64.tar.gz",
+        createReleaseArchive(releaseTarget, body),
+        releaseTarget,
+      ),
+    ).rejects.toThrow(/archive size/i);
   });
 });
