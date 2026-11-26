@@ -72,6 +72,25 @@ describe("deferred media materializer", () => {
     expect(existsSync(materialized.stream.url)).toBe(false);
   });
 
+  test("keeps the probed request headers when the MPD becomes a local file", async () => {
+    const locator = registerAllMangaAkDeferredDescriptor({
+      duration: 60,
+      video: { url: "https://ak-video.example/v.mp4", mimeType: "video/mp4" },
+      audio: { url: "https://ak-audio.example/a.mp4", mimeType: "audio/mp4" },
+    });
+    const headers = { Referer: "https://allmanga.example/", "User-Agent": "Kunai-Test" };
+    const materialized = await materializeDeferredMediaForPlayback({
+      url: locator,
+      deferredLocator: locator,
+      headers,
+      timestamp: Date.now(),
+    });
+    cleanup.push(materialized.cleanup);
+
+    // The segments the local MPD names are remote and were probed with these.
+    expect(materialized.stream.headers).toEqual(headers);
+  });
+
   test("materializes an AllManga Ak locator as an in-memory document for the gateway", async () => {
     const locator = registerAllMangaAkDeferredDescriptor({
       duration: 120,

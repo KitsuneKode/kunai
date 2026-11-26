@@ -349,6 +349,38 @@ resolve_published_version() {
 	printf '%s\n' "$canonical"
 }
 
+is_truthy_env() {
+	case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+	1 | true | yes) return 0 ;;
+	esac
+	return 1
+}
+
+# One request for a release marker after a successful install: install.marker
+# when nothing was installed before, update.marker when this replaced another
+# version. GitHub's download counts for them are how installs are told apart
+# from updates; Kunai receives nothing, and the request goes to the host that
+# just served the binary. Best effort only: no retry, a short timeout, every
+# failure ignored and silent. DO_NOT_TRACK, CI and KUNAI_NO_MARKER each turn it
+# off. Arguments: download base, then the version that was active before (or
+# empty), then the version just installed.
+fetch_release_marker() {
+	local base="$1" previous="$2" installed="$3" marker
+	is_truthy_env "${DO_NOT_TRACK:-}" && return 0
+	is_truthy_env "${CI:-}" && return 0
+	is_truthy_env "${KUNAI_NO_MARKER:-}" && return 0
+	if [[ -z "$previous" ]]; then
+		marker="install.marker"
+	elif [[ "$previous" != "$installed" ]]; then
+		marker="update.marker"
+	else
+		# Reinstalling the active version is neither a new install nor an update.
+		return 0
+	fi
+	have curl || return 0
+	curl -fsSL --max-time 3 -o /dev/null "$base/$marker" >/dev/null 2>&1 || true
+}
+
 download_failed_hint() {
 	local asset="$1"
 	err "Download failed for $asset."
@@ -1938,6 +1970,7 @@ install_binary() {
 	trap - EXIT
 
 	info "Installed kunai → $BIN_DIR/kunai (v$resolved_version at $version_path)"
+	fetch_release_marker "$base" "$activation_previous" "$resolved_version"
 	report_path_winner
 	path_hint "$BIN_DIR"
 }

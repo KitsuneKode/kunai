@@ -11,6 +11,7 @@ import { getKunaiPaths } from "@/services/storage/storage-read-models";
 import { DEFAULT_CONFIG } from "@kunai/config";
 
 import { applyStorageRootEnv } from "../../helpers/storage-env";
+import { UNSET_PAYLOAD_FIXTURE } from "../../support/analytics-fixtures";
 
 // A completing run now writes a restore point beside the real config, so this
 // file owns a throwaway storage root rather than touching the developer's
@@ -67,8 +68,14 @@ function fakeContainer(overrides: Partial<Parameters<typeof runSetupWizard>[0]["
     usageAnalytics: {
       consentPatch: (choice: "enabled" | "disabled") =>
         choice === "enabled"
-          ? { analytics: "enabled" as const, installId: config.installId }
-          : { analytics: "disabled" as const, installId: "" },
+          ? {
+              analytics: "enabled" as const,
+              installId: config.installId,
+              analyticsCohort: "2026-11",
+            }
+          : { analytics: "disabled" as const, installId: "", analyticsCohort: "" },
+      describePayload: () => UNSET_PAYLOAD_FIXTURE,
+      settleLocalPingLog: async () => undefined,
     },
     diagnosticsService: { record: () => undefined },
     stateManager: {
@@ -141,9 +148,8 @@ test("accepting recommended defaults without reaching consent leaves an opt-in a
 });
 
 test("a fresh install that never reaches consent stays unset, with no install id", async () => {
-  // The primary direction of the opt-in contract, and the one the
-  // recommended-first consent slide makes worth pinning: analytics leads and is
-  // marked recommended, so nothing but a keystroke on that screen may enable it.
+  // The primary direction of the opt-in contract: nothing but a keystroke on
+  // the consent screen may enable analytics, and that screen pre-selects nothing.
   // A fresh install that accepts defaults before reaching the slide must come
   // out `unset` with no `installId` -- `unset` is not `disabled`, and a config
   // Kunai never wrote is the only honest record of a decision never made.
@@ -177,5 +183,9 @@ test("a fresh install that never reaches consent stays unset, with no install id
   expect(written.installId).toBe(DEFAULT_CONFIG.installId);
   // Stronger than comparing values: no write may even mention analytics, so a
   // later change cannot satisfy this by writing `unset` back over itself.
-  expect(patches.some((patch) => "analytics" in patch || "installId" in patch)).toBe(false);
+  expect(
+    patches.some(
+      (patch) => "analytics" in patch || "installId" in patch || "analyticsCohort" in patch,
+    ),
+  ).toBe(false);
 });

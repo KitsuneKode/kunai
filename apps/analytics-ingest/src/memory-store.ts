@@ -3,9 +3,14 @@ import {
   capBuckets,
   countBy,
   type AnalyticsStore,
+  type CohortRollup,
   type DailyRollup,
+  type DistributionRow,
+  type MonthRollup,
   type RecordPingInput,
 } from "./store.js";
+
+type MonthActive = { readonly month: string; readonly cohort: string | null };
 
 /** In-process test double. Mirrors the Postgres semantics, including idempotency. */
 export function createMemoryAnalyticsStore(
@@ -13,29 +18,53 @@ export function createMemoryAnalyticsStore(
 ): AnalyticsStore & {
   readonly rawCount: () => number;
   readonly lifetimeCount: () => number;
+  readonly monthActiveCount: () => number;
+  /** Every mutation `recordPing` has made, so a test can prove a request wrote nothing. */
+  readonly pingWrites: () => number;
+  readonly budgetSpent: (day: string) => number;
 } {
   const raw = new Map<string, RecordPingInput>();
   /** installHash → { firstSeen, lastSeen }, mirroring install_lifetime. */
   const lifetime = new Map<string, { firstSeen: string; lastSeen: string }>();
   const rollups = new Map<string, DailyRollup>();
   const budget = new Map<string, number>();
+  /** `${month}::${hash}`, mirroring month_active. */
+  const monthActive = new Map<string, MonthActive>();
+  const monthRollups = new Map<string, MonthRollup>();
+  const cohortRollups = new Map<string, CohortRollup>();
+  const distribution = new Map<string, DistributionRow>();
   let retired = 0;
+  let pingWrites = 0;
 
   const keyOf = (day: string, hash: string) => `${day}::${hash}`;
 
   return {
     async recordPing(input) {
-      const attempts = (budget.get(input.day) ?? 0) + 1;
-      budget.set(input.day, attempts);
-      if (attempts > limits.maxPingsPerDay) return { admitted: false };
-
-      const seen = lifetime.get(input.installHash);
-      if (!seen) lifetime.set(input.installHash, { firstSeen: input.day, lastSeen: input.day });
-      else if (seen.lastSeen < input.day) seen.lastSeen = input.day;
-
       const key = keyOf(input.day, input.installHash);
-      if (!raw.has(key)) raw.set(key, input);
-      return { admitted: true };
+      // A repeat ping is answered without touching anything, budget included.
+      if (raw.has(key)) return { admitted: true, duplicate: true };
+      const spent = budget.get(input.day) ?? 0;
+      // Over budget is a read, never a write: the counter stops at the ceiling.
+      if (spent >= limits.maxPingsPerDay) return { admitted: false, duplicate: false };
+
+      budget.set(input.day, spent + 1);
+      raw.set(key, input);
+      pingWrites += 2;
+
+      if (!input.v2) {
+        const seen = lifetime.get(input.installHash);
+        if (!seen) lifetime.set(input.installHash, { firstSeen: input.day, lastSeen: input.day });
+        else if (seen.lastSeen < input.day) seen.lastSeen = input.day;
+        pingWrites += 1;
+      }
+
+      const month = input.v2?.activeMonth ?? input.day.slice(0, 7);
+      const monthKey = keyOf(month, input.installHash);
+      if (!monthActive.has(monthKey)) {
+        monthActive.set(monthKey, { month, cohort: input.v2?.cohort ?? null });
+        pingWrites += 1;
+      }
+      return { admitted: true, duplicate: false };
     },
     async rollUpDay(day) {
       const rows = [...raw.values()].filter((row) => row.day === day);
@@ -120,7 +149,64 @@ export function createMemoryAnalyticsStore(
       retired += removed;
       return { retired: removed };
     },
+    async rollUpMonths() {
+      const computedAt = new Date().toISOString();
+      const rows = [...monthActive.values()];
+      const months = [...new Set(rows.map((row) => row.month))].sort();
+      for (const month of months) {
+        const inMonth = rows.filter((row) => row.month === month);
+        monthRollups.set(month, { month, activeInstalls: inMonth.length, computedAt });
+        const byCohort = countBy(
+          inMonth.filter((row) => row.cohort !== null),
+          (row) => row.cohort ?? "",
+        );
+        for (const [cohort, installs] of Object.entries(byCohort)) {
+          cohortRollups.set(keyOf(cohort, month), { cohort, month, installs, computedAt });
+        }
+      }
+      return months;
+    },
+    async pruneMonthActiveBefore(month) {
+      let removed = 0;
+      for (const [key, row] of monthActive) {
+        if (row.month < month) {
+          monthActive.delete(key);
+          removed += 1;
+        }
+      }
+      return removed;
+    },
+    async readMonthRollups(fromMonth, toMonth) {
+      return [...monthRollups.values()]
+        .filter((rollup) => rollup.month >= fromMonth && rollup.month <= toMonth)
+        .sort((a, b) => a.month.localeCompare(b.month));
+    },
+    async readCohortRollups(fromCohort) {
+      return [...cohortRollups.values()]
+        .filter((rollup) => rollup.cohort >= fromCohort)
+        .sort((a, b) => a.cohort.localeCompare(b.cohort) || a.month.localeCompare(b.month));
+    },
+    async writeDistributionSnapshot(day, entries) {
+      for (const key of distribution.keys()) {
+        if (key.startsWith(`${day}::`)) distribution.delete(key);
+      }
+      for (const entry of entries) {
+        distribution.set(`${day}::${entry.source}::${entry.release}::${entry.platform}`, {
+          day,
+          ...entry,
+        });
+      }
+      return entries.length;
+    },
+    async readDistribution(fromDay, toDay) {
+      return [...distribution.values()]
+        .filter((row) => row.day >= fromDay && row.day <= toDay)
+        .sort((a, b) => a.day.localeCompare(b.day));
+    },
     rawCount: () => raw.size,
     lifetimeCount: () => lifetime.size,
+    monthActiveCount: () => monthActive.size,
+    pingWrites: () => pingWrites,
+    budgetSpent: (day) => budget.get(day) ?? 0,
   };
 }

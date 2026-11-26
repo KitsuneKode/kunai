@@ -191,7 +191,7 @@ function getNotificationActionLabel(action: NotificationActionId): string {
 function getNotificationActionDetail(action: NotificationActionId): string {
   if (action === "restore-queue")
     return "Restore pending items into the current queue without autoplay";
-  if (action === "retry-download") return "Retry this item through the standard download action";
+  if (action === "retry-download") return "Requeue the failed download with its original settings";
   if (action === "update-app")
     return "Install the new version, or show how to update if a package manager owns this install";
   if (action === "queue-next") return "Place this item next without replacing playback";

@@ -20,6 +20,7 @@ import { IST_DAY_BOUNDARY_FROM, previousAnalyticsDayKey, shiftDayKey } from "../
 import { loadAnalyticsLimits } from "../src/limits";
 import type { AnalyticsRuntimeConfig } from "../src/runtime-config";
 import type { AnalyticsStore, DailyRollup } from "../src/store";
+import { inertStoreMethods } from "./support/inert-store";
 
 const MINUTE_MS = 60_000;
 const DAY_MS = 24 * 60 * MINUTE_MS;
@@ -55,7 +56,7 @@ function rollup(day: string): DailyRollup {
 
 function createConfig(asked: Asked): AnalyticsRuntimeConfig {
   const store = {
-    recordPing: async () => ({ admitted: true }),
+    ...inertStoreMethods(),
     rollUpDay: async (day: string) => rollup(day),
     readRollup: async (day: string) => rollup(day),
     readLatestRollupAtOrBefore: async (day: string) => {
@@ -67,15 +68,13 @@ function createConfig(asked: Asked): AnalyticsRuntimeConfig {
       asked.to = to;
       return [rollup(to)];
     },
-    findDaysNeedingRollup: async () => [],
-    pruneRawBefore: async () => 0,
-    pruneLifetimeBefore: async () => ({ retired: 0 }),
   } satisfies AnalyticsStore;
 
   return {
     hashSecret: "hash-secret",
     cronSecret: "cron-secret",
     adminToken: ADMIN_TOKEN,
+    githubToken: "",
     limits: loadAnalyticsLimits({}),
     store,
   };

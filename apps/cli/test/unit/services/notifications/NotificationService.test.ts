@@ -312,3 +312,36 @@ test("NotificationService lifecycle: records, counts unread, archives", () => {
 
   db.close();
 });
+
+test("a download-failed notice stores its job id for an exact Retry", () => {
+  const db = openKunaiDatabase(":memory:");
+  runMigrations(db, "data");
+  const service = new NotificationService({
+    repo: new NotificationRepository(db),
+    getMutedTitleIds: () => new Set(),
+  });
+
+  service.recordSignals(
+    [
+      {
+        type: "download-failed",
+        downloadJobId: "job-12",
+        titleId: "anilist:1",
+        mediaKind: "anime",
+        title: "Frieren",
+        absoluteEpisode: 12,
+        error: "network",
+      },
+    ],
+    "2026-05-17T00:01:00.000Z",
+  );
+
+  expect(JSON.parse(service.listActive()[0]?.itemJson ?? "{}")).toMatchObject({
+    titleId: "anilist:1",
+    absoluteEpisode: 12,
+    downloadJobId: "job-12",
+  });
+  expect(JSON.parse(service.listActive()[0]?.actionJson ?? "[]")).toContain("retry-download");
+
+  db.close();
+});

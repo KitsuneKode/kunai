@@ -160,6 +160,8 @@ MAINTENANCE
   kunai uninstall              Remove kunai (add --purge to also delete user data)
   kunai diagnostics recent     Print recent redacted diagnostics from the local cache DB
                                (--format pretty|jsonl|markdown, --limit N, --no-color)
+  kunai analytics log          The last 50 usage pings, exactly as sent (--json)
+  kunai analytics preview      The payload the next ping would send; sends nothing (--json)
   kunai completion <shell>     Print a shell completion script (bash|zsh|fish|powershell)
 
 Inside the app, press / for the command palette and ? for keyboard help.
@@ -182,6 +184,7 @@ export const CLI_SUBCOMMANDS: readonly string[] = [
   "addons",
   "uninstall",
   "diagnostics",
+  "analytics",
   "completion",
 ];
 

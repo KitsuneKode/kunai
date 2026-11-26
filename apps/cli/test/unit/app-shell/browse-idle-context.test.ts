@@ -174,4 +174,37 @@ describe("buildBrowseIdleContext", () => {
     });
     expect(idleContext?.continueWatching?.title).toBe("Engaged Title");
   });
+
+  test("airing today counts by local date, and never a muted title", async () => {
+    // 00:30 local today is the previous UTC day east of UTC and can be the
+    // next one west of it; the calendar this nudge opens files it under today.
+    const earlyToday = new Date();
+    earlyToday.setHours(0, 30, 0, 0);
+    const projections = new Map([
+      ["tmdb:1", { titleId: "tmdb:1", nextAiringAt: earlyToday.toISOString() }],
+      ["tmdb:2", { titleId: "tmdb:2", nextAiringAt: earlyToday.toISOString() }],
+    ]);
+    const container = {
+      queueService: { peekNext: () => null },
+      releaseProgressCache: {
+        summarizeActive: () => ({ titleCount: 0, episodeCount: 0 }),
+        getByTitleIds: () => projections,
+      },
+      offlineAssetService: { listNextReadyByTitleCursors: () => [] },
+      historyRepository: { listLatestByTitle: () => [] },
+      config: { lastCalendarVisitAt: 0 },
+      followedTitleRepository: {
+        listByPreference: (preference: string) =>
+          preference === "muted" ? [{ titleId: "tmdb:2" }] : [],
+      },
+      listService: { getWatchlist: () => [] },
+    };
+
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    const { idleContext } = await buildBrowseIdleContext(container as never, {
+      preloadedHistory: {},
+    });
+
+    expect(idleContext?.calendarNudge).toEqual({ airingTodayCount: 1 });
+  });
 });

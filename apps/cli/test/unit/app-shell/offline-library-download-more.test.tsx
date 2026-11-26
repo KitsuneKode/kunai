@@ -337,3 +337,52 @@ test("library detail reserves four rows for the command input and leaves its key
     palette.unmount();
   }
 });
+
+/**
+ * Neon features review #12: the router implemented runway opt-in and per-title
+ * cleanup, but the title detail never offered either, and its "Actions"
+ * heading was drawn below the list instead of above the actions.
+ */
+test("title detail offers runway and cleanup rows under an Actions heading", () => {
+  const unresolvedGroup = createOfflineLibraryEngine().buildShelf([ENTRY]).groups[0];
+  if (!unresolvedGroup) throw new Error("expected an offline library group");
+  const series = { ...unresolvedGroup, contentType: "series" as const };
+  const handle = render(
+    <LibraryTitleDetail
+      container={createContainer()}
+      group={series}
+      entries={[ENTRY]}
+      onBack={() => undefined}
+      onEntriesChanged={() => undefined}
+    />,
+    { columns: 120, rows: 40 },
+  );
+  try {
+    const frame = stripAnsi(handle.lastFrame() ?? "");
+    expect(frame).toContain("Keep the next 2 episodes ready offline");
+    expect(frame).toContain("After watching: keep the latest episode");
+    expect(frame.indexOf("ACTIONS")).toBeGreaterThan(-1);
+    expect(frame.indexOf("ACTIONS")).toBeLessThan(frame.indexOf("Continue this title online"));
+  } finally {
+    handle.unmount();
+  }
+
+  // A film has no next episode to keep ready; only its cleanup applies.
+  const film = render(
+    <LibraryTitleDetail
+      container={createContainer()}
+      group={{ ...unresolvedGroup, contentType: "movie" as const }}
+      entries={[ENTRY]}
+      onBack={() => undefined}
+      onEntriesChanged={() => undefined}
+    />,
+    { columns: 120, rows: 40 },
+  );
+  try {
+    const frame = stripAnsi(film.lastFrame() ?? "");
+    expect(frame).not.toContain("ready offline");
+    expect(frame).toContain("After watching");
+  } finally {
+    film.unmount();
+  }
+});

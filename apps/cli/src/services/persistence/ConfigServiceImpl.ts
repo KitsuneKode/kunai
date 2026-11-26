@@ -28,7 +28,14 @@ import {
   type StartupPriority,
 } from "@kunai/types";
 
-import { persistedAnalyticsConsent, predatesExplicitAnalyticsConsent } from "./analytics-consent";
+import {
+  ANALYTICS_IDENTITY_KEYS,
+  ANALYTICS_STATE_KEYS,
+  analyticsCompletionPatch,
+  loadedAnalyticsFields,
+  persistedAnalyticsConsent,
+  predatesExplicitAnalyticsConsent,
+} from "./analytics-consent";
 import { DirtyConfigLeaves } from "./config-leaf-merge";
 import {
   normalizeBytes,
@@ -52,6 +59,7 @@ import {
   type VaultedConfigField,
 } from "./config-vault-fields";
 import type {
+  AnalyticsIdentityRotation,
   AnalyticsPingCompletion,
   PersistedAnalyticsConsent,
   ConfigService,
@@ -240,10 +248,9 @@ export class ConfigServiceImpl implements ConfigService {
     const service = new ConfigServiceImpl(store, vault);
     const loaded = await store.load();
     const requiresExplicitAnalyticsConsent = predatesExplicitAnalyticsConsent(loaded);
-    const { analytics: normalizedAnalytics, installId: normalizedInstallId } =
-      persistedAnalyticsConsent(loaded);
+    const analyticsFields = loadedAnalyticsFields(loaded);
     const repairedAnalyticsIdentity =
-      loaded.installId !== undefined && loaded.installId !== normalizedInstallId;
+      loaded.installId !== undefined && loaded.installId !== analyticsFields.installId;
     const migratedAnimeDefaults = shouldMigrateInheritedAnimeDefaults(loaded);
     const migratedSeriesDefaults = shouldMigrateInheritedSeriesDefaults(loaded);
     // mergeKitsuneConfig supplies the base: object-valued keys (sync and its
@@ -340,7 +347,7 @@ export class ConfigServiceImpl implements ConfigService {
     );
     service.config = {
       ...service.config,
-      analytics: normalizedAnalytics,
+      ...analyticsFields,
       analyticsNoticeShown: loaded.analyticsNoticeShown === true,
       // The experimental opt-in is strict `true` plus a valid ISO ack — a
       // hand-edited `"yes"` or a non-timestamp ack fails closed like the flag
@@ -353,19 +360,6 @@ export class ConfigServiceImpl implements ConfigService {
       // `"no"` must not silently opt a user out of a feature they never saw.
       tipsEnabled: loaded.tipsEnabled !== false,
       seenTips: normalizeStringList(loaded.seenTips),
-      installId: normalizedInstallId,
-      lastAnalyticsPingAt:
-        typeof loaded.lastAnalyticsPingAt === "number" &&
-        Number.isFinite(loaded.lastAnalyticsPingAt)
-          ? Math.max(0, loaded.lastAnalyticsPingAt)
-          : 0,
-      analyticsRetryAfter:
-        typeof loaded.analyticsRetryAfter === "number" &&
-        Number.isFinite(loaded.analyticsRetryAfter)
-          ? Math.max(0, loaded.analyticsRetryAfter)
-          : 0,
-      analyticsEndpoint:
-        typeof loaded.analyticsEndpoint === "string" ? loaded.analyticsEndpoint.trim() : "",
     };
     // One debug line, not per-field: enough to see what normalization did on a
     // bug report without spamming --debug. Secrets never land here — tokens are
@@ -485,7 +479,12 @@ export class ConfigServiceImpl implements ConfigService {
     // persistChain only orders this instance — the cross-process lock lives
     // inside persistConfigNow. Startup owns its initial read and migration,
     // and explicit native credential changes share that critical section.
-    const run = this.persistChain.then(() => this.persistConfigNow());
+    return this.enqueue(() => this.persistConfigNow());
+  }
+
+  /** Orders `fn` after every earlier save of this instance; a failure does not wedge it. */
+  private enqueue<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.persistChain.then(fn);
     this.persistChain = run.then(
       () => undefined,
       () => undefined,
@@ -494,47 +493,53 @@ export class ConfigServiceImpl implements ConfigService {
   }
 
   recordAnalyticsPing(completion: AnalyticsPingCompletion): Promise<boolean> {
-    const write = async (): Promise<boolean> => {
-      const complete = async (): Promise<boolean> => {
-        // Consent changes in this process can still be awaiting their save.
-        const matchesLocal = () =>
-          this.config.analytics === "enabled" && this.config.installId === completion.installId;
-        if (!matchesLocal()) return false;
-        const onDisk = await this.store.load();
-        if (!matchesLocal()) return false;
-        const matchesDisk =
-          onDisk.analytics === "enabled" && onDisk.installId === completion.installId;
-        const current = { ...DEFAULT_CONFIG, ...onDisk };
-        if (matchesDisk) {
-          current.analyticsRetryAfter = completion.analyticsRetryAfter;
-          if (completion.lastAnalyticsPingAt !== undefined)
-            current.lastAnalyticsPingAt = completion.lastAnalyticsPingAt;
-          // Never persist the pre-send identity: this write owns cadence only.
-          await this.store.save(current);
-        }
-        // A local consent/identity change may arrive during the async write.
-        // Its queued save wins next; do not refresh it with the old cadence.
-        if (!matchesLocal()) return false;
-        const analyticsKeys: readonly (keyof KitsuneConfig)[] = [
-          "analytics",
-          "installId",
-          "lastAnalyticsPingAt",
-          "analyticsRetryAfter",
-        ];
-        for (const key of analyticsKeys) {
-          if (!this.dirtyKeys.has(key)) Object.assign(this.config, { [key]: current[key] });
-        }
-        return matchesDisk;
-      };
-      return this.store.withLock ? this.store.withLock(complete) : complete();
-    };
-    // Share the save chain so completion cannot interleave its read/merge/write.
-    const run = this.persistChain.then(write);
-    this.persistChain = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    return run;
+    return this.lockedWrite(async () => {
+      // Consent changes in this process can still be awaiting their save.
+      const matchesLocal = () =>
+        this.config.analytics === "enabled" && this.config.installId === completion.installId;
+      if (!matchesLocal()) return false;
+      const onDisk = await this.store.load();
+      if (!matchesLocal()) return false;
+      const matchesDisk =
+        onDisk.analytics === "enabled" && onDisk.installId === completion.installId;
+      const current = { ...DEFAULT_CONFIG, ...onDisk };
+      if (matchesDisk) {
+        Object.assign(current, analyticsCompletionPatch(current, completion));
+        // Never persist the pre-send identity: this write owns cadence only.
+        await this.store.save(current);
+      }
+      // A local consent/identity change may arrive during the async write.
+      // Its queued save wins next; do not refresh it with the old cadence.
+      if (!matchesLocal()) return false;
+      this.refreshAnalyticsFields(current);
+      return matchesDisk;
+    });
+  }
+
+  rotateAnalyticsIdentity(rotation: AnalyticsIdentityRotation): Promise<boolean> {
+    return this.lockedWrite(async () => {
+      const onDisk = await this.store.load();
+      const enabledOnDisk = persistedAnalyticsConsent(onDisk).analytics === "enabled";
+      if (this.config.analytics !== "enabled" || !enabledOnDisk) {
+        this.refreshAnalyticsFields(loadedAnalyticsFields(onDisk));
+        return false;
+      }
+      await this.store.save({ ...DEFAULT_CONFIG, ...onDisk, ...rotation });
+      Object.assign(this.config, rotation);
+      for (const key of ANALYTICS_IDENTITY_KEYS) this.dirtyKeys.delete(key);
+      return true;
+    });
+  }
+
+  private refreshAnalyticsFields(fromDisk: Partial<KitsuneConfig>): void {
+    for (const key of ANALYTICS_STATE_KEYS) {
+      if (!this.dirtyKeys.has(key)) Object.assign(this.config, { [key]: fromDisk[key] });
+    }
+  }
+
+  /** A read→merge→write on the save chain and under the cross-process lock. */
+  private lockedWrite<T>(fn: () => Promise<T>): Promise<T> {
+    return this.enqueue(() => (this.store.withLock ? this.store.withLock(fn) : fn()));
   }
 
   async readPersistedAnalyticsConsent(): Promise<PersistedAnalyticsConsent> {
@@ -543,28 +548,19 @@ export class ConfigServiceImpl implements ConfigService {
   }
 
   recordStremioAddonName(manifestUrl: string, name: string): Promise<void> {
-    const write = async (): Promise<void> => {
-      const complete = async (): Promise<void> => {
-        const onDisk = await this.store.load();
-        // One entry's name, in place: a name refresh must not normalize or
-        // re-add entries another process (or a hand edit) put in the file.
-        const entries = withStremioAddonName(onDisk.stremioAddons, manifestUrl, name);
-        if (!entries) return;
-        await this.store.save({ ...DEFAULT_CONFIG, ...onDisk, stremioAddons: entries });
-        // A local stremioAddons change may be awaiting its save; refreshing
-        // the snapshot with the old list would lose it on the next merge.
-        if (this.dirtyKeys.has("stremioAddons")) return;
-        const local = withStremioAddonName(this.config.stremioAddons, manifestUrl, name);
-        if (local) this.config.stremioAddons = local;
-      };
-      return this.store.withLock ? this.store.withLock(complete) : complete();
-    };
-    const run = this.persistChain.then(write);
-    this.persistChain = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    return run;
+    return this.lockedWrite(async () => {
+      const onDisk = await this.store.load();
+      // One entry's name, in place: a name refresh must not normalize or
+      // re-add entries another process (or a hand edit) put in the file.
+      const entries = withStremioAddonName(onDisk.stremioAddons, manifestUrl, name);
+      if (!entries) return;
+      await this.store.save({ ...DEFAULT_CONFIG, ...onDisk, stremioAddons: entries });
+      // A local stremioAddons change may be awaiting its save; refreshing
+      // the snapshot with the old list would lose it on the next merge.
+      if (this.dirtyKeys.has("stremioAddons")) return;
+      const local = withStremioAddonName(this.config.stremioAddons, manifestUrl, name);
+      if (local) this.config.stremioAddons = local;
+    });
   }
 
   private async persistConfigNow(alreadyLocked = false): Promise<void> {
@@ -1026,6 +1022,10 @@ export class ConfigServiceImpl implements ConfigService {
 
   get installId(): string {
     return this.config.installId;
+  }
+
+  get analyticsCohort(): string {
+    return this.config.analyticsCohort;
   }
 
   get lastAnalyticsPingAt(): number {

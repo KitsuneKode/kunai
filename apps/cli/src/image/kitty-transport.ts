@@ -19,6 +19,7 @@ import { deflateSync } from "node:zlib";
 
 import { detectTerminal } from "./capability";
 import { debugImage } from "./debug";
+import { wrapTmuxPassthrough } from "./tmux";
 
 export type KittyPayload =
   | { readonly kind: "png"; readonly data: Uint8Array }
@@ -80,6 +81,7 @@ export type KittyUploadOptions = {
   readonly unicodePlaceholder?: boolean;
   /** Prefer t=t file transmission when the session is local. Default false. */
   readonly preferFileTransmission?: boolean;
+  readonly passthrough?: "tmux";
   readonly env?: NodeJS.ProcessEnv;
   /** Yield to the event loop every N chunks (0 disables). Default 8. */
   readonly yieldEveryChunks?: number;
@@ -110,8 +112,7 @@ const runtime = {
  * rather than the default everywhere:
  *
  * - SSH: the terminal cannot see our filesystem. Never.
- * - tmux/screen: escapes need passthrough wrapping we do not emit, and the
- *   file lives on whichever host the *server* runs on. Never.
+ * - tmux/screen: the file lives on whichever host the server runs on. Never.
  * - kitty and Ghostty: the two implementations we can name and that document
  *   `t=t`. Yes. (Ghostty has an open report about `t=t`; if it bites, users can
  *   force `KUNAI_IMAGE_TRANSPORT=direct` without a rebuild.)
@@ -123,6 +124,7 @@ const runtime = {
  * fall back to auto with a debug note.
  */
 export function canUseFileTransmission(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (env.TMUX || env.STY || /^(?:screen|tmux)(?:-|$)/i.test(env.TERM ?? "")) return false;
   const override = env.KUNAI_IMAGE_TRANSPORT?.trim().toLowerCase();
   if (override === "file") return true;
   if (override === "direct") return false;
@@ -130,7 +132,6 @@ export function canUseFileTransmission(env: NodeJS.ProcessEnv = process.env): bo
     debugImage(`Invalid KUNAI_IMAGE_TRANSPORT value: ${override}`);
   }
   if (env.SSH_CONNECTION || env.SSH_TTY) return false;
-  if (env.TMUX || env.STY || /^(?:screen|tmux)(?:-|$)/i.test(env.TERM ?? "")) return false;
   const terminal = detectTerminal(env);
   return terminal === "kitty" || terminal === "ghostty";
 }
@@ -187,24 +188,33 @@ function scheduleTempFileSweep(path: string): void {
   timer.unref?.();
 }
 
-async function uploadViaDirectChunks(
-  encoded: EncodedPayload,
-  control: string,
-  yieldEveryChunks: number,
-): Promise<void> {
-  const b64 = Buffer.from(encoded.body).toString("base64");
-  // Chunk into <=4096-byte pieces (a multiple of 4, per spec, for all but the
-  // last chunk). Yield every few chunks: a poster is tens of KB of base64 and
-  // writing it in one synchronous burst blocks the event loop (TTY writes
-  // don't yield), which starves stdin and stalls keypresses mid-upload. The
-  // image only displays once the final chunk lands (m=0), so interleaving
-  // causes no partial-render flicker.
-  let chunksSinceYield = 0;
+/** Only the first chunk carries controls. Every non-final chunk is divisible by four. */
+function* kittyChunks(data: Uint8Array, control: string): Generator<string> {
+  const b64 = Buffer.from(data).toString("base64");
   for (let i = 0; i < b64.length; i += CHUNK_SIZE) {
     const chunk = b64.slice(i, i + CHUNK_SIZE);
     const more = i + CHUNK_SIZE < b64.length ? 1 : 0;
     const prefix = i === 0 ? `${control}m=${more}` : `m=${more}`;
-    runtime.write(`\x1b_G${prefix};${chunk}\x1b\\`);
+    yield `\x1b_G${prefix};${chunk}\x1b\\`;
+  }
+}
+
+export function buildKittyDirectTransmission(png: Uint8Array, imageId: number): string {
+  return [...kittyChunks(png, `a=t,f=100,q=2,i=${imageId},t=d,`)].join("");
+}
+
+async function uploadViaDirectChunks(
+  encoded: EncodedPayload,
+  control: string,
+  options: KittyUploadOptions,
+): Promise<void> {
+  // Continuation chunks carry no image id. Keep a wrapped upload together so
+  // another poster's transmit or cleanup cannot interrupt it.
+  const wrapped = options.passthrough === "tmux";
+  const yieldEveryChunks = wrapped ? 0 : (options.yieldEveryChunks ?? 8);
+  let chunksSinceYield = 0;
+  for (const escape of kittyChunks(encoded.body, wrapped ? `${control}t=d,` : control)) {
+    runtime.write(wrapped ? wrapTmuxPassthrough(escape) : escape);
     if (yieldEveryChunks > 0 && ++chunksSinceYield >= yieldEveryChunks) {
       chunksSinceYield = 0;
       await runtime.yieldToEventLoop();
@@ -226,7 +236,7 @@ export async function uploadKittyPayload(
   // Transport is chosen before encoding, not after: file transmission wants the
   // bytes uncompressed (local disk), direct wants them deflated (PTY). Encoding
   // once up front would force one of the two to pay for the other's tradeoff.
-  if (options.preferFileTransmission && canUseFileTransmission(env)) {
+  if (!options.passthrough && options.preferFileTransmission && canUseFileTransmission(env)) {
     const encoded = encodePayload(payload, false);
     const sent = await uploadViaTempFile(encoded, buildControlKeys(encoded, options));
     if (sent) return { sent: true, transmission: "file" };
@@ -235,11 +245,7 @@ export async function uploadKittyPayload(
 
   const encoded = encodePayload(payload, true);
   if (encoded.body.byteLength === 0) return { sent: false, transmission: "direct" };
-  await uploadViaDirectChunks(
-    encoded,
-    buildControlKeys(encoded, options),
-    options.yieldEveryChunks ?? 8,
-  );
+  await uploadViaDirectChunks(encoded, buildControlKeys(encoded, options), options);
   return { sent: true, transmission: "direct" };
 }
 
