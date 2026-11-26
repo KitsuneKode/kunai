@@ -52,6 +52,10 @@ type PageMetadataInput = {
    * catch-all segment, which is what the docs tree is. Wins over `socialImage`.
    */
   readonly socialImageUrl?: string;
+  /** Optional site-relative Markdown URL exposed via `<link rel="alternate" type="text/markdown">`. */
+  readonly markdownPath?: string;
+  readonly publishedTime?: string;
+  readonly modifiedTime?: string;
 };
 
 /** The docs card route for a docs page URL, e.g. `/docs/users/glossary`. */
@@ -81,32 +85,70 @@ export function buildPageMetadata(input: PageMetadataInput): Metadata {
     ? { ...SOCIAL_IMAGE, url: input.socialImageUrl, alt: `Kunai docs: ${input.title}` }
     : null;
 
+  const alternateTypes: NonNullable<NonNullable<Metadata["alternates"]>["types"]> = {
+    "application/rss+xml": [
+      { url: docsCanonicalUrl("/rss.xml"), title: "Kunai — Releases & Documentation (RSS)" },
+    ],
+    "application/atom+xml": [
+      { url: docsCanonicalUrl("/atom.xml"), title: "Kunai — Releases & Documentation (Atom)" },
+    ],
+  };
+  if (input.markdownPath) {
+    alternateTypes["text/markdown"] = docsCanonicalUrl(input.markdownPath);
+  }
+  const alternates: NonNullable<Metadata["alternates"]> = {
+    canonical: url,
+    types: alternateTypes,
+  };
+
+  const ogImages = ownImage
+    ? [ownImage]
+    : input.socialImage === "segment"
+      ? undefined
+      : [SOCIAL_IMAGE];
+  const openGraph: NonNullable<Metadata["openGraph"]> =
+    input.type === "article"
+      ? {
+          title: input.title,
+          description: socialDescription,
+          url,
+          type: "article",
+          locale: "en_US",
+          siteName: "Kunai Docs",
+          ...(input.publishedTime ? { publishedTime: input.publishedTime } : undefined),
+          ...(input.modifiedTime ? { modifiedTime: input.modifiedTime } : undefined),
+          ...(ogImages ? { images: ogImages } : undefined),
+        }
+      : {
+          title: input.title,
+          description: socialDescription,
+          url,
+          type: "website",
+          locale: "en_US",
+          siteName: "Kunai Docs",
+          ...(ogImages ? { images: ogImages } : undefined),
+        };
+
+  const twitterImages = ownImage
+    ? [ownImage]
+    : input.socialImage === "segment"
+      ? undefined
+      : [TWITTER_IMAGE];
+  const twitter: NonNullable<Metadata["twitter"]> = {
+    card: "summary_large_image",
+    site: "@KitsuneKode",
+    creator: "@KitsuneKode",
+    title: input.title,
+    description: socialDescription,
+    ...(twitterImages ? { images: twitterImages } : undefined),
+  };
+
   const metadata: Metadata = {
     title: input.absoluteTitle ? { absolute: input.title } : input.title,
     description: input.description,
-    alternates: { canonical: url },
-    openGraph: {
-      title: input.title,
-      description: socialDescription,
-      url,
-      type: input.type ?? "website",
-      siteName: "Kunai Docs",
-      ...(ownImage
-        ? { images: [ownImage] }
-        : input.socialImage === "segment"
-          ? null
-          : { images: [SOCIAL_IMAGE] }),
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: input.title,
-      description: socialDescription,
-      ...(ownImage
-        ? { images: [ownImage] }
-        : input.socialImage === "segment"
-          ? null
-          : { images: [TWITTER_IMAGE] }),
-    },
+    alternates,
+    openGraph,
+    twitter,
   };
 
   // Follow, but do not index: a withdrawn release keeps its page so an old link

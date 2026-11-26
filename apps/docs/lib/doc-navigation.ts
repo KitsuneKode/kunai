@@ -150,6 +150,27 @@ export const docNavEntries: readonly DocNavEntry[] = [
     surfaces: ["hub"],
   },
   {
+    title: "Provider Status",
+    href: "/docs/users/provider-status",
+    description: "Live provider reachability snapshot and lane health overview.",
+    group: "daily",
+    surfaces: ["hub"],
+  },
+  {
+    title: "Mobile Preview",
+    href: "/docs/users/mobile-preview",
+    description: "Android Termux handoff and mobile preview setup, limits, and player flags.",
+    group: "setup",
+    surfaces: ["hub"],
+  },
+  {
+    title: "Kanna",
+    href: "/docs/users/kanna",
+    description: "Terminal companion fox animations, poses, and appearance toggles.",
+    group: "daily",
+    surfaces: ["hub"],
+  },
+  {
     title: "Troubleshooting",
     href: "/docs/users/troubleshooting",
     description: "Symptom-indexed fixes with evidence to collect before filing an issue.",

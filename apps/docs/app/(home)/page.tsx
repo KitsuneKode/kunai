@@ -2,7 +2,12 @@ import HomePageShell from "@/app/(home)/home-page-shell";
 import { UsageLine } from "@/components/home/usage-line";
 import { codeMetadata } from "@/lib/code-metadata";
 import { featuredCommands, summarizeProviders } from "@/lib/home-presenters";
-import { serializeJsonLd, softwareApplicationJsonLd, websiteJsonLd } from "@/lib/json-ld";
+import {
+  serializeJsonLd,
+  softwareApplicationJsonLd,
+  softwareSourceCodeJsonLd,
+  websiteJsonLd,
+} from "@/lib/json-ld";
 import { buildPageMetadata } from "@/lib/page-metadata";
 import { latestReleaseNotesArtifact } from "@/lib/release-notes";
 import type { Metadata } from "next";
@@ -39,6 +44,7 @@ export default function HomePage() {
       version: publishedRelease?.version,
       description: HOME_DESCRIPTION,
     }),
+    softwareSourceCodeJsonLd({ version: publishedRelease?.version }),
   ];
   const paletteCommands = featuredCommands(codeMetadata.commands);
   const providerSummary = summarizeProviders(codeMetadata.providers);
