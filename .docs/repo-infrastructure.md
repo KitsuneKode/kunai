@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T10:16:34Z"
+lastReviewed: "2026-11-26T18:20:00Z"
 ---
 
 # Kunai — Repo Infrastructure
@@ -179,7 +179,9 @@ Pull requests and pushes to `main` use the composite setup action
 Bun store cache, per-job `.turbo` cache prefixes, `TURBO_SCM_BASE` on PRs, and
 `TURBO_TOKEN` / `TURBO_TEAM` for remote Turbo cache. The README CI badge points
 at `.github/workflows/ci.yml`, which runs the Linux test job plus blocking
-Windows (`windows-cli`) and macOS (`macos-cli`) legs.
+Windows and macOS legs: each OS has a two-way sharded test job (`windows-cli`,
+`macos-cli`) and a separate compiled-binary job (`windows-binary`,
+`macos-binary`), so the slowest suite and the binary checks run side by side.
 
 ### Checkout is caller-owned
 
@@ -236,7 +238,11 @@ The invariant is enforced two ways:
 | `lint`                | `scripts/ci-affected-run.ts lint` + changed-file anti-slop advisory + count baseline        | full         |
 | `typecheck`           | `scripts/ci-affected-run.ts typecheck` (task is `cache: false` — always a real run)         | full         |
 | `test`                | `scripts/ci-affected-run.ts test` (CLI splits into cached `test:unit` + `test:integration`) | full         |
-| `windows-cli`         | root typecheck + CLI tests when CLI paths change                                            | same on main |
+| `windows-cli`         | CLI tests in two `--shard` halves + storage suite when CLI paths change                     | same on main |
+| `windows-binary`      | root typecheck + compiled binary through the Node npm launcher when CLI paths change        | same on main |
+| `macos-cli`           | CLI tests in two `--shard` halves + storage suite (native mpv) when CLI paths change        | same on main |
+| `macos-binary`        | root typecheck + compiled, unsigned-binary install smoke when CLI paths change              | same on main |
+| `agent-real-mpv`      | not run                                                                                     | L3 real-mpv  |
 | `build-cli`           | `bun run build` + `bun run pkg:check` when CLI paths change                                 | same on main |
 | `build-binaries`      | 2 Linux targets via Turbo when CLI/installer paths change                                   | same         |
 | `checks-docs`         | docs gate when docs paths change                                                            | same         |
@@ -385,11 +391,14 @@ protocol; release promotion and attestation remain downstream protected gates.
 
 ### Windows parity
 
-`windows-cli` is a blocking `windows-latest` job. It runs the workspace
-typecheck, the CLI unit/integration suite, the storage package suite (including
-Windows SQLite teardown), provisions native mpv so the real named-pipe IPC
-contract is mandatory, and runs the compiled Windows binary through the plain
-Node npm launcher with Bun absent from the child PATH.
+`windows-cli` is a blocking `windows-latest` job, sharded two ways. Each shard
+provisions native mpv, so the real named-pipe IPC contract is mandatory, and
+runs its half of the CLI unit and integration files (`--shard=N/2` through the
+`test:unit` / `test:integration` scripts, so unit stays `--parallel`). Shard 1
+also runs the storage package suite, including Windows SQLite teardown.
+`windows-binary` runs the workspace typecheck and the compiled Windows binary
+through the plain Node npm launcher with Bun absent from the child PATH. The
+macOS pair (`macos-cli`, `macos-binary`) has the same shape.
 
 Native mpv provisioning is owned by
 `.github/scripts/provision-windows-mpv.ps1`. CI downloads a pinned official mpv
