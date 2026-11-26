@@ -647,7 +647,7 @@ export class PlayerServiceImpl implements PlayerService {
     });
 
     const policy = resolveLocalPlaybackPolicy(options.policy ?? {});
-    const result = await (this.deps.launchMpv ?? launchMpv)({
+    return await (this.deps.launchMpv ?? launchMpv)({
       url: options.source.filePath,
       urlKind: "local",
       headers: {},
@@ -671,8 +671,6 @@ export class PlayerServiceImpl implements PlayerService {
         hdrMode: this.deps.config.hdrMode,
       },
     });
-
-    return result;
   }
 
   private async resolveReadableSubtitlePath(subtitlePath: string | null): Promise<string | null> {
@@ -724,6 +722,7 @@ export class PlayerServiceImpl implements PlayerService {
         displayTitle: options.displayTitle,
         startAt: stream.isLive ? undefined : options.startAt,
         requiresYtdl: stream.requiresYtdl,
+        resolveGate: stream,
         ytdlFormat: stream.ytdlFormat,
         ytdlRawOptions: stream.ytdlRawOptions,
         isLive: stream.isLive,
