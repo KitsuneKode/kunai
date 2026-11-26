@@ -63,10 +63,10 @@ describe("poster smoke evidence", () => {
   });
 
   test.each([
-    ["\x1bP0;1;0q#1~\x1b\\", "sixel"],
-    ["\x1b_Ga=p,i=8;\x1b\\", "kitty-direct"],
-    ["\x1b]1337;File=inline=1:AAAA\x07", "iterm-inline"],
-  ])("waits for the complete %s packet", (packet, protocol) => {
+    ["sixel", "\x1bP0;1;0q#1~\x1b\\"],
+    ["kitty-direct", "\x1b_Ga=p,i=8;\x1b\\"],
+    ["iterm-inline", "\x1b]1337;File=inline=1:AAAA\x07"],
+  ])("waits for the complete %s packet", (protocol, packet) => {
     for (let offset = 1; offset < packet.length; offset++) {
       expect(posterProtocol(packet.slice(0, offset))).toBeNull();
     }
