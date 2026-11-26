@@ -435,11 +435,11 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
   }
 
   describe("mid-stream failover escalation", () => {
-    const stall = (duringStartup?: boolean): PlayerPlaybackEvent => ({
+    const stall = (duringStartup: boolean): PlayerPlaybackEvent => ({
       type: "stream-stalled",
       stallKind: "network-read-dead",
       secondsWithoutProgress: 8,
-      ...(duringStartup === undefined ? {} : { duringStartup }),
+      duringStartup,
     });
 
     async function startSession(maxAttempts: number) {
