@@ -1,6 +1,7 @@
 import {
   detectPlayerPlatform,
   resolvePlayerMode,
+  type InstalledPlayers,
   type PlayerChoice,
   type PlayerMode,
 } from "@/domain/playback/player-choice";
@@ -9,7 +10,7 @@ import { discoverMpvInvocation } from "./mpv-discovery";
 import { discoverVlcBinary } from "./vlc/vlc-launch";
 
 /** Which desktop players this machine has, for `--player auto`. */
-export function detectInstalledPlayers(): { readonly mpv: boolean; readonly vlc: boolean } {
+export function detectInstalledPlayers(): InstalledPlayers {
   return { mpv: discoverMpvInvocation() !== null, vlc: discoverVlcBinary() !== null };
 }
 

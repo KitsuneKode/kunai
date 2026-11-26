@@ -54,11 +54,13 @@ export function detectPlayerPlatform(
   return normalizePlayerPlatform(platform);
 }
 
+/** Desktop players found on this machine; `--player auto` reads it. */
+export type InstalledPlayers = { readonly mpv: boolean; readonly vlc: boolean };
+
 export function resolvePlayerMode(input: {
   readonly choice: PlayerChoice;
   readonly platform: SupportedPlayerPlatform;
-  /** Desktop players found on this machine; only `auto` reads it. */
-  readonly installed?: { readonly mpv: boolean; readonly vlc: boolean };
+  readonly installed?: InstalledPlayers;
 }): PlayerMode {
   if (input.platform === "android") {
     return {
