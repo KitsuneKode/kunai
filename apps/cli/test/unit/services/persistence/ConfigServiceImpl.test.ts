@@ -582,12 +582,12 @@ describe("ConfigServiceImpl", () => {
       });
       const service = await ConfigServiceImpl.load(inherited);
       expect(service.animeProviderPriority).toEqual([
-        "animegg",
         "kickassanime",
+        "animegg",
         "miruro",
         "allanime",
       ]);
-      expect((await inherited.load()).providerDefaultsRevision).toBe(7);
+      expect((await inherited.load()).providerDefaultsRevision).toBe(8);
 
       const customOrder = ["miruro", "kickassanime", "animegg", "allanime"];
       const custom = new MemoryConfigStore({
@@ -604,6 +604,38 @@ describe("ConfigServiceImpl", () => {
       expect((await ConfigServiceImpl.load(inherited)).animeProviderPriority).toEqual(
         previousDefault,
       );
+    });
+
+    test("revision 8 moves an untouched revision-7 order in both lanes, and only that", async () => {
+      const untouched = new MemoryConfigStore({
+        provider: "vidlink",
+        providerPriority: ["rivestream", "vidrock", "movy", "videasy"],
+        animeProvider: "hianime",
+        animeProviderPriority: ["animegg", "kickassanime", "miruro", "allanime"],
+        providerDefaultsRevision: 7,
+      });
+      const migrated = await ConfigServiceImpl.load(untouched);
+      expect(migrated.providerPriority).toEqual(["movy", "rivestream", "vidrock", "videasy"]);
+      expect(migrated.animeProviderPriority).toEqual([
+        "kickassanime",
+        "animegg",
+        "miruro",
+        "allanime",
+      ]);
+      expect((await untouched.load()).providerDefaultsRevision).toBe(8);
+
+      // A reordered list is a choice, even when it holds the same providers.
+      const chosen = ["vidrock", "rivestream", "movy", "videasy"];
+      const custom = new MemoryConfigStore({
+        provider: "vidlink",
+        providerPriority: chosen,
+        animeProvider: "hianime",
+        animeProviderPriority: ["miruro", "animegg", "kickassanime", "allanime"],
+        providerDefaultsRevision: 7,
+      });
+      const kept = await ConfigServiceImpl.load(custom);
+      expect(kept.providerPriority).toEqual(chosen);
+      expect(kept.animeProviderPriority).toEqual(["miruro", "animegg", "kickassanime", "allanime"]);
     });
 
     test("upgrading the anime defaults preserves a revision-6 Videasy selection", async () => {

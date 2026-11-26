@@ -71,9 +71,13 @@ subtitle controls, and safer persistence, downloads and native installation.
   rejected streams are not offered as playable quality choices. Empty provider
   replies become no-source results rather than internal errors.
 - New profiles use VidLink for movies/series and HiAnime for anime. The remaining
-  movie/series order is Rivestream, VidRock, Movy, Videasy; the anime order is
-  KickAssAnime, AnimeGG, AllAnime, Miruro. Availability remains dependent on each
-  upstream service and the user's network.
+  movie/series order is Movy, Rivestream, VidRock, Videasy; the anime order is
+  KickAssAnime, AnimeGG, Miruro, AllManga. Profiles that kept the previous
+  defaults move to this order; a reordered list is left alone. On the
+  2026-11-26 live runs Rivestream timed out, VidRock's streams answered 502,
+  Videasy and Miruro resolved nothing and AllManga's stream authorization is
+  out of date, so they sit behind the providers that played. Availability
+  remains dependent on each upstream service and the user's network.
 - Retire AniDB from the production roster. Migrate retired selections and remove
   its priority/pin entries without deleting history, offline files or unrelated
   provider preferences. Keep Videasy and AllAnime registered.
