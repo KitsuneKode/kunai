@@ -83,8 +83,12 @@ describe("setup-signing-keys", () => {
     dirs.push(dir);
     const material = generateSigningMaterial();
     const paths = writeBackups(dir, material);
-    for (const path of paths) expect(statSync(path).mode & 0o777).toBe(0o600);
-    expect(statSync(dir).mode & 0o777).toBe(0o700);
+    // Windows has no POSIX mode bits (chmod only toggles read-only); there the
+    // profile directory's ACL is the protection, so only check modes on POSIX.
+    if (process.platform !== "win32") {
+      for (const path of paths) expect(statSync(path).mode & 0o777).toBe(0o600);
+      expect(statSync(dir).mode & 0o777).toBe(0o700);
+    }
     expect(() => writeBackups(dir, material)).toThrow();
   });
 });
