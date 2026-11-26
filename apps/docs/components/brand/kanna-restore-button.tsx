@@ -36,7 +36,7 @@ export function KannaRestoreButton() {
   return (
     <button
       type="button"
-      className="text-fd-muted-foreground hover:text-fd-accent-foreground hover:bg-fd-accent mt-1 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors"
+      className="text-fd-muted-foreground hover-fine:text-fd-accent-foreground hover-fine:bg-fd-accent mt-1 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-[color,background-color,transform] duration-[var(--dur-press)] ease-[var(--ease-out)] active:scale-[0.97] motion-reduce:active:scale-100"
       onClick={() => {
         // The roamer does not confirm a restore, so hide on dispatch. If she
         // declined (ineligible page), the flag stayed set and the chip returns

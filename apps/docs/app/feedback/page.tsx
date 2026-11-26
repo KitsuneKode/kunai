@@ -78,31 +78,35 @@ export default function FeedbackPage() {
             <a
               key={action.href}
               href={action.href}
-              className="kunai-surface-shell group p-1 transition-transform duration-150 hover:-translate-y-0.5"
+              className="kunai-workshop-card group flex h-full flex-col gap-3 p-5 no-underline"
               rel="noreferrer"
               target="_blank"
             >
-              <div className="kunai-surface-shell__inner border-fd-border flex h-full flex-col gap-3 rounded-[calc(var(--kunai-radius-outer)-0.15rem)] border p-5">
-                <Icon className="text-fd-primary size-5" stroke={1.5} />
-                <h2 className="kunai-type-title text-lg group-hover:underline">{action.title}</h2>
-                <p className="text-fd-muted-foreground m-0 text-sm leading-6">
-                  {action.description}
-                </p>
-              </div>
+              <Icon className="size-5 text-[var(--home-lane-kunai)]" stroke={1.5} />
+              <h2 className="m-0 font-sans text-base font-medium text-[var(--home-text-1)] group-hover:underline">
+                {action.title}
+              </h2>
+              <p className="m-0 text-sm leading-6 text-[var(--home-text-3)]">
+                {action.description}
+              </p>
             </a>
           );
         })}
       </section>
 
-      <section className="border-fd-border rounded-lg border p-6">
-        <h2 className="kunai-type-title text-xl">Before you file</h2>
+      <section className="kunai-bento-tile">
+        <h2 className="m-0 font-sans text-lg font-medium text-[var(--home-text-1)]">
+          Before you file
+        </h2>
         <ul className="text-fd-muted-foreground mt-4 grid gap-3 text-sm leading-6">
           <li>
             Read{" "}
             <Link href="/docs/users/troubleshooting" className="text-fd-primary hover:underline">
               troubleshooting
             </Link>{" "}
-            for common recovery (`/recover`, `/fallback`, `/diagnostics`).
+            for common recovery (<code className="font-mono text-xs">/recover</code>,{" "}
+            <code className="font-mono text-xs">/fallback</code>,{" "}
+            <code className="font-mono text-xs">/diagnostics</code>).
           </li>
           <li>
             Export a redacted bundle with{" "}

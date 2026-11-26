@@ -1,10 +1,9 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { copyAndAnnounce } from "@/lib/clipboard-copy";
 import { IconCheck, IconCopy } from "@tabler/icons-react";
-import { AnimatePresence, domAnimation, LazyMotion, m } from "motion/react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 type CopyButtonProps = {
@@ -42,55 +41,50 @@ export function CopyButton({ text, label = "copy", className, children }: CopyBu
   );
 
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                void handleCopy();
-              }}
-              className={className}
-              aria-label={copied ? "Copied to clipboard" : "Copy to clipboard"}
-            />
-          }
-        >
-          <LazyMotion features={domAnimation}>
-            <AnimatePresence mode="wait" initial={false}>
-              {children ??
-                (copied ? (
-                  <m.span
-                    key="copied"
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.9 }}
-                    transition={{ duration: 0.15, ease: "easeOut" }}
-                    className="relative inline-flex h-4 min-w-10 items-center justify-center gap-1 text-[var(--kunai-ok)] tabular-nums"
-                  >
-                    <IconCheck className="size-3" stroke={1.5} data-icon="inline-start" />
-                    <span className="text-xs">Copied</span>
-                  </m.span>
-                ) : (
-                  <m.span
-                    key="copy"
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.9 }}
-                    transition={{ duration: 0.15, ease: "easeOut" }}
-                    className="relative inline-flex h-4 min-w-10 items-center justify-center gap-1 tabular-nums"
-                  >
-                    <IconCopy className="size-3" stroke={1.5} data-icon="inline-start" />
-                    <span className="text-xs">Copy</span>
-                  </m.span>
-                ))}
-            </AnimatePresence>
-          </LazyMotion>
-        </TooltipTrigger>
-        <TooltipContent side="top">Copy command</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              void handleCopy();
+            }}
+            className={className}
+            aria-label={copied ? "Copied to clipboard" : "Copy to clipboard"}
+          />
+        }
+      >
+        {children ?? (
+          <span
+            className={`relative inline-flex h-4 min-w-[3.75rem] items-center justify-center gap-1 tabular-nums transition-colors duration-150 ${
+              copied ? "text-[var(--kunai-ok)]" : ""
+            }`}
+          >
+            <span className="relative inline-flex size-3 items-center justify-center">
+              <IconCopy
+                className={`absolute size-3 transition-[opacity,transform,filter] duration-180 ease-[var(--ease-out)] ${
+                  copied ? "scale-50 opacity-0 blur-[2px]" : "blur-0 scale-100 opacity-100"
+                }`}
+                stroke={1.5}
+                data-icon="inline-start"
+                aria-hidden="true"
+              />
+              <IconCheck
+                className={`absolute size-3 transition-[opacity,transform,filter] duration-180 ease-[var(--ease-out)] ${
+                  copied ? "blur-0 scale-100 opacity-100" : "scale-50 opacity-0 blur-[2px]"
+                }`}
+                stroke={1.75}
+                data-icon="inline-start"
+                aria-hidden="true"
+              />
+            </span>
+            <span className="text-xs">{copied ? "Copied" : "Copy"}</span>
+          </span>
+        )}
+      </TooltipTrigger>
+      <TooltipContent side="top">Copy command</TooltipContent>
+    </Tooltip>
   );
 }

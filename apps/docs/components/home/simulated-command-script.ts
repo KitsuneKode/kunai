@@ -25,7 +25,63 @@ export function simulatedCommandScript(
     at += ms;
   };
 
-  if (cmdText.startsWith("/search ") || cmdText.startsWith("search ") || cmdText === "search") {
+  const pickProvider = (kinds: readonly string[]): HomeProviderMetadata | undefined => {
+    const wanted = new Set(kinds);
+    const eligible = providers.filter((p) => p.mediaKinds.some((k) => wanted.has(k.toLowerCase())));
+    return eligible.find((p) => p.recommended) || eligible[0] || providers[0];
+  };
+
+  if (cmdText.startsWith("/anime") || cmdText === "anime") {
+    const query = cmdText.replace(/^\/?anime\s*/i, "").trim() || "Frieren";
+    const provider = pickProvider(["anime"]);
+    log("[MODE] Switched search lane → anime (Tab cycles modes)");
+    wait(300);
+    log(`[QUERY] Searching anime catalog for "${query}"...`);
+    wait(450);
+    log(`[ OK ] Match: "${query}" · Ep 01–28 available (sub & dub)`);
+    wait(350);
+    if (provider) {
+      log(`[INFO] Direct adapter: ${provider.displayName} (${provider.domain})`);
+      wait(420);
+      log("[ OK ] Stream probed: 1080p HLS verified + AniSkip chapters loaded");
+      wait(350);
+    }
+    log(`[PLAY] Launching mpv — "${query}" Ep 01`);
+  } else if (cmdText.startsWith("/series") || cmdText === "series") {
+    const query = cmdText.replace(/^\/?series\s*/i, "").trim() || "Dune";
+    const provider = pickProvider(["series", "movie"]);
+    log("[MODE] Switched search lane → series & movies (Tab cycles modes)");
+    wait(300);
+    log(`[QUERY] Querying TMDB catalog for "${query}"...`);
+    wait(450);
+    log(`[ OK ] Match verified: "${query}" (multi-source metadata cached)`);
+    wait(350);
+    if (provider) {
+      log(`[INFO] Direct adapter: ${provider.displayName} (${provider.domain})`);
+      wait(420);
+      log("[ OK ] Stream probed: 1080p verified · subtitles attached");
+      wait(350);
+    }
+    log(`[PLAY] Launching mpv — "${query}" with resume supervisor`);
+  } else if (cmdText.startsWith("/youtube") || cmdText === "youtube") {
+    const query = cmdText.replace(/^\/?youtube\s*/i, "").trim() || "lofi radio";
+    const provider = pickProvider(["video", "youtube"]);
+    log("[MODE] Switched search lane → youtube (Tab cycles modes)");
+    wait(300);
+    log(`[QUERY] Resolving YouTube stream for "${query}"...`);
+    wait(450);
+    if (provider) {
+      log(`[INFO] Adapter: ${provider.displayName} (${provider.domain})`);
+      wait(350);
+    }
+    log("[ OK ] Audio/video formats verified (1080p / Opus) — zero browser tabs");
+    wait(350);
+    log(`[PLAY] Launching mpv — "${query}"`);
+  } else if (
+    cmdText.startsWith("/search ") ||
+    cmdText.startsWith("search ") ||
+    cmdText === "search"
+  ) {
     const parts = cmdText.split(" ");
     const query = parts.slice(1).join(" ") || "Dune";
 
@@ -126,9 +182,28 @@ export function simulatedCommandScript(
     }
     log("Type '/' for more commands or open the CLI Reference.");
   } else {
-    log(`Evaluating unknown command: "${cmdText}"`);
-    wait(300);
-    log("Command not recognized. Type '/' for suggestions, or '/help'.");
+    const bare = cmdText.trim().replace(/^\//, "").split(/\s+/)[0]?.toLowerCase() ?? "";
+    const matched = paletteCommands.find(
+      (cmd) =>
+        cmd.id.toLowerCase() === bare || cmd.aliases?.some((alias) => alias.toLowerCase() === bare),
+    );
+    if (matched) {
+      log(`[CMD] Running /${matched.id} (${matched.label})`);
+      wait(320);
+      log(`[INFO] ${matched.description}`);
+      wait(360);
+      log("[ OK ] Ready in interactive shell — install Kunai to run locally.");
+    } else if (bare.length > 0 && cmdText.trim().startsWith("/")) {
+      log(`[CMD] Running /${bare}`);
+      wait(320);
+      log("[INFO] Simulated shell preview — full command runs locally in the Kunai CLI.");
+      wait(320);
+      log("[ OK ] Run `kunai --help` or open /docs/users/cli-reference for flags.");
+    } else {
+      log(`Evaluating unknown command: "${cmdText}"`);
+      wait(300);
+      log("Command not recognized. Type '/' for suggestions, or '/help'.");
+    }
   }
 
   return { steps, doneAt: at };

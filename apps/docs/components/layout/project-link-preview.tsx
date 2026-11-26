@@ -13,8 +13,8 @@ export function ProjectLinkPreview({ project }: { readonly project: WorkshopProj
         href={href}
         target="_blank"
         rel="noreferrer noopener"
-        delay={500}
-        closeDelay={200}
+        delay={220}
+        closeDelay={160}
         className="kunai-project-link text-fd-muted-foreground text-sm"
       >
         {project.name}
@@ -24,16 +24,19 @@ export function ProjectLinkPreview({ project }: { readonly project: WorkshopProj
         <PreviewCard.Positioner
           side="top"
           align="start"
-          sideOffset={12}
+          sideOffset={10}
           collisionPadding={16}
           className="kunai-project-preview-positioner"
         >
           <PreviewCard.Popup className="kunai-project-preview">
             <WorkshopPreview project={project} compact />
             <div className="kunai-project-preview__copy">
-              <p className="kunai-project-preview__name">{project.name}</p>
-              <p>{project.tagline}</p>
-              <span>{new URL(href).hostname}</span>
+              <div className="kunai-project-preview__head">
+                <p className="kunai-project-preview__name">{project.name}</p>
+                <span className="kunai-project-preview__kind">{project.kind}</span>
+              </div>
+              <p className="kunai-project-preview__tagline">{project.tagline}</p>
+              <span className="kunai-project-preview__host">{new URL(href).hostname}</span>
             </div>
           </PreviewCard.Popup>
         </PreviewCard.Positioner>

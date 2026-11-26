@@ -1,4 +1,12 @@
+import { withCssVars } from "@/lib/css-vars";
 import { homeHero } from "@/lib/home-content";
+
+const KIND_LANE_VAR = {
+  Anime: "var(--home-lane-anime)",
+  Series: "var(--home-lane-series)",
+  Movies: "var(--home-lane-movie)",
+  YouTube: "var(--home-lane-yt)",
+} satisfies Record<(typeof homeHero.kinds)[number], string>;
 
 /**
  * What Kunai plays, stated as text in the server-rendered HTML.
@@ -11,7 +19,12 @@ export function HeroKindsRow() {
   return (
     <p className="kunai-hero-kinds">
       {homeHero.kinds.map((kind) => (
-        <span className="kunai-hero-kinds__item" key={kind}>
+        <span
+          className="kunai-hero-kinds__item"
+          key={kind}
+          style={withCssVars({ "--lane": KIND_LANE_VAR[kind] })}
+        >
+          <span className="kunai-lane-dot" aria-hidden="true" />
           {kind}
         </span>
       ))}
