@@ -183,14 +183,20 @@ function posterCacheKey(
   const detectedRenderer = runtime.detectImageCapability().renderer;
   const rendererKey = inkEmbedded
     ? "ink-embedded"
-    : detectedRenderer === "sixel" && !allowSixel
-      ? "sixel-text-fallback"
+    : !allowSixel &&
+        (detectedRenderer === "sixel" ||
+          detectedRenderer === "iterm-inline" ||
+          detectedRenderer === "kitty-direct")
+      ? `${detectedRenderer}-text-fallback`
       : detectedRenderer;
   // Slot in the key so concurrent Kitty placements of the same URL get distinct imageIds.
   const slotKey = placementSlot && !inkEmbedded ? `:${placementSlot}` : "";
   const pixels =
     !inkEmbedded &&
-    (rendererKey === "kitty-native" || rendererKey === "sixel" || rendererKey === "iterm-inline")
+    (rendererKey === "kitty-native" ||
+      rendererKey === "kitty-direct" ||
+      rendererKey === "sixel" ||
+      rendererKey === "iterm-inline")
       ? getTerminalCellPixels()
       : null;
   const pixelKey = pixels ? `:${pixels.width}x${pixels.height}px` : "";
