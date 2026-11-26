@@ -106,7 +106,35 @@ export const RELEASE_DEFINE: ReleaseDefineMap = {
 export function releaseDefine(
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): ReleaseDefineMap {
-  return { ...RELEASE_DEFINE, ...bundledTmdbKeyDefine(env.KUNAI_TMDB_BUILD_KEY) };
+  return {
+    ...RELEASE_DEFINE,
+    ...bundledTmdbKeyDefine(env.KUNAI_TMDB_BUILD_KEY),
+    ...smokeReleaseKeyDefine(env.KUNAI_SMOKE_RELEASE_KEY_SPKI, env.GITHUB_WORKFLOW),
+  };
+}
+
+/**
+ * CI installer smoke builds embed a throwaway Ed25519 key instead of the release
+ * pin, so the mock release can sign its manifests and the binary's upgrade path
+ * is exercised with signatures on. The Release workflow refuses it outright, the
+ * variable is part of turbo's build:binaries hash, and verify-release-binaries
+ * checks a full release build still carries the pin.
+ */
+export function smokeReleaseKeyDefine(
+  spki: string | undefined,
+  workflow: string | undefined,
+): ReleaseDefineMap {
+  const trimmed = spki?.trim();
+  if (!trimmed) return {};
+  if (workflow === "Release") {
+    throw new Error(
+      "KUNAI_SMOKE_RELEASE_KEY_SPKI is for smoke builds; the Release workflow must not set it",
+    );
+  }
+  if (!/^[A-Za-z0-9+/]{59}=$/.test(trimmed)) {
+    throw new Error("KUNAI_SMOKE_RELEASE_KEY_SPKI must be a base64 Ed25519 SPKI (60 characters)");
+  }
+  return { "import.meta.kunaiReleasePublicKey": JSON.stringify(trimmed) };
 }
 
 /**

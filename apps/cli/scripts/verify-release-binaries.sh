@@ -88,4 +88,17 @@ if [[ "$SKIP_VERSION" -eq 1 ]]; then
 fi
 
 bun "$REPO_ROOT/scripts/verify-release-artifact-directory.ts" "${VERIFY_ARGS[@]}"
+
+# A full release build must embed the reviewed release key, never a smoke key
+# (KUNAI_SMOKE_RELEASE_KEY_SPKI). The define inlines the SPKI as a literal.
+PIN="$(cd "$ROOT" && bun -e 'console.log(require("./src/services/update/release-key.json").ed25519Spki)')"
+if [[ -n "$PIN" ]]; then
+  for asset in "${ASSETS[@]}"; do
+    if ! LC_ALL=C grep -aqF -- "$PIN" "$BIN_DIR/$asset"; then
+      echo "✗ $asset does not embed the pinned release key (smoke-key build?)" >&2
+      exit 1
+    fi
+  done
+  echo "✓ every raw binary embeds the pinned release key"
+fi
 echo "✓ release assets verified (8 archives + 8 raw binaries + 2 manifests)"

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { RELEASE_BINARY_TARGETS } from "@/services/update/platform-assets";
+import releaseKey from "@/services/update/release-key.json";
 
 import {
   bytecodeByDefault,
@@ -21,8 +22,10 @@ import {
   compileBinaryBuildOptions,
   npmBundleBuildOptions,
   releaseBuildBaseOptions,
+  releaseDefine,
   requireBuildMetafile,
   resolveBuildConcurrency,
+  smokeReleaseKeyDefine,
   topReleaseInputs,
   type BunBuildMetafile,
 } from "../../../scripts/build-shared";
@@ -80,6 +83,28 @@ describe("release build shared guards", () => {
     graph.inputs["src/large.ts"] = { bytes: 100, imports: [] };
 
     expect(topReleaseInputs(graph, 1)).toEqual([{ path: "src/large.ts", bytes: 100 }]);
+  });
+});
+
+describe("smoke release key", () => {
+  const SMOKE = "MCowBQYDK2VwAyEAUU26Z7GccwDq+0IxOiY7wv/BiIiYAQW5E48/1C4hZF0=";
+  const embedded = (env: Readonly<Record<string, string | undefined>>) =>
+    releaseDefine(env)["import.meta.kunaiReleasePublicKey"];
+
+  test("a normal build embeds the reviewed pin", () => {
+    expect(embedded({})).toBe(JSON.stringify(releaseKey.ed25519Spki));
+    expect(embedded({ KUNAI_SMOKE_RELEASE_KEY_SPKI: "  " })).toBe(
+      JSON.stringify(releaseKey.ed25519Spki),
+    );
+  });
+
+  test("a smoke build embeds the throwaway key instead", () => {
+    expect(embedded({ KUNAI_SMOKE_RELEASE_KEY_SPKI: SMOKE })).toBe(JSON.stringify(SMOKE));
+  });
+
+  test("the Release workflow and malformed keys are refused, never silently ignored", () => {
+    expect(() => smokeReleaseKeyDefine(SMOKE, "Release")).toThrow(/Release workflow/);
+    expect(() => smokeReleaseKeyDefine("not-a-key", "CI")).toThrow(/base64 Ed25519 SPKI/);
   });
 });
 
