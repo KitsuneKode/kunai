@@ -2,7 +2,7 @@ import { detectImageCapability } from "@/image";
 import type { TerminalId } from "@/image";
 import { getTerminalCellPixels } from "@/image/cell-size";
 import { debugImage } from "@/image/debug";
-import { uploadKittyPayload } from "@/image/kitty-transport";
+import { buildKittyDirectTransmission, uploadKittyPayload } from "@/image/kitty-transport";
 import { type PosterPixelBounds, type PreparedPoster } from "@/image/native-image";
 import { getProbedGraphicsSupport } from "@/image/probe";
 import { buildHalfBlockOutput } from "@/image/renderers/half-block";
@@ -44,8 +44,13 @@ function allocId(): number {
 }
 
 const tmuxImages = new Set<number>();
-// Kitty ids belong to the outer terminal, shared by all its tmux panes.
-let nextTmuxId = 1 + Math.floor(Math.random() * 0xffffff);
+// Kitty ids are shared with other applications using the terminal.
+let nextSharedKittyId = 1 + Math.floor(Math.random() * 0xffffff);
+function allocSharedKittyId(): number {
+  const id = nextSharedKittyId;
+  nextSharedKittyId = (id % 0xffffff) + 1;
+  return id;
+}
 
 export function deleteKittyImage(imageId: number): void {
   if (tmuxImages.delete(imageId)) {
@@ -135,7 +140,12 @@ function supportsKittyPlaceholders(terminal: TerminalId): boolean {
 // drawn. The renderers then consume the prepared poster: Kitty takes the PNG,
 // Sixel and half-block take the decoded RGBA. Nothing here re-decodes.
 
-export type PosterRenderer = "kitty-native" | "iterm-inline" | "sixel" | "half-block";
+export type PosterRenderer =
+  | "kitty-native"
+  | "kitty-direct"
+  | "iterm-inline"
+  | "sixel"
+  | "half-block";
 
 export type PosterRenderPlan = {
   readonly renderer: PosterRenderer;
@@ -206,9 +216,12 @@ export function resolvePosterRenderPlan(options: PreparedRenderOptions): PosterR
   // Gated on allowSixel for the same reason sixel is: both are measured
   // overlays written outside Ink's frame, so a surface that repaints constantly
   // suppresses them together.
-  if (capability.renderer === "iterm-inline" && allowSixel) {
+  if (
+    (capability.renderer === "iterm-inline" || capability.renderer === "kitty-direct") &&
+    allowSixel
+  ) {
     return {
-      renderer: "iterm-inline",
+      renderer: capability.renderer,
       bounds,
       exactPixels: getTerminalCellPixels() !== null,
     };
@@ -248,6 +261,24 @@ export async function renderPreparedPoster(
     if (signal?.aborted) return { kind: "none" };
     if (plan.renderer === "kitty-native") {
       return await uploadPreparedKitty(poster, options, plan.kittyPassthrough);
+    }
+    if (plan.renderer === "kitty-direct") {
+      // Leave the transfer with the measured overlay. A discarded candidate or
+      // a cached result that never mounts should allocate no terminal resource.
+      if (!poster.png.length || poster.png.length > 256 * 1024) {
+        return renderPreparedHalfBlock(poster, rows, cols);
+      }
+      const imageId = allocSharedKittyId();
+      const fitted = plan.exactPixels ? null : fittedCellBox(poster, cols, rows);
+      const size = fitted ? `,c=${fitted.cols},r=${fitted.rows}` : "";
+      return {
+        kind: "sixel",
+        sixel: `\x1b_Ga=p,i=${imageId},p=1,q=2,C=1${size};\x1b\\`,
+        rows,
+        cols,
+        overlayId: placementSlot ?? `kitty-${imageId}`,
+        kitty: { imageId, transmission: buildKittyDirectTransmission(poster.png, imageId) },
+      };
     }
     if (plan.renderer === "iterm-inline") {
       const escapes = buildItermInlineImage(poster.png, {
@@ -316,8 +347,7 @@ async function uploadPreparedKitty(
   passthrough: PosterRenderPlan["kittyPassthrough"],
 ): Promise<RenderedPosterCandidate> {
   if (poster.png.byteLength === 0) return { kind: "none" };
-  const imageId = passthrough ? nextTmuxId : allocId();
-  if (passthrough) nextTmuxId = (nextTmuxId % 0xffffff) + 1;
+  const imageId = passthrough ? allocSharedKittyId() : allocId();
   // The prepared PNG *is* the payload: no deflate, no RGBA transport, no
   // external conversion.
   await uploadKittyPayload(
@@ -391,3 +421,25 @@ export function hashTitleToColor(title: string): PosterFallbackColor {
 export const __testing = {
   runtime,
 };
+
+/**
+ * The cell box a poster fills at its own aspect ratio inside `cols` x `rows`.
+ * Without a cell-size report, Kitty's `c`/`r` must not name the whole pane:
+ * WezTerm scales the two axes independently, so an 80x80 poster in an
+ * 8x6-cell pane (10x20 px estimate) would draw 80x120. With measured cells
+ * the PNG is already sized exactly and no `c`/`r` is sent.
+ */
+export type CellBox = { readonly cols: number; readonly rows: number };
+
+export function fittedCellBox(poster: PreparedPoster, cols: number, rows: number): CellBox {
+  const { maxWidth, maxHeight } = pixelBudgetForCells(cols, rows);
+  const { width, height } = poster.image;
+  if (width <= 0 || height <= 0) return { cols, rows };
+  const scale = Math.min(maxWidth / width, maxHeight / height);
+  const cellWidth = maxWidth / cols;
+  const cellHeight = maxHeight / rows;
+  return {
+    cols: Math.min(cols, Math.max(1, Math.round((width * scale) / cellWidth))),
+    rows: Math.min(rows, Math.max(1, Math.round((height * scale) / cellHeight))),
+  };
+}

@@ -4,6 +4,7 @@ import {
   getPickerListMaxVisible,
 } from "@/app-shell/layout-policy";
 import { useLineEditor } from "@/app-shell/line-editor";
+import { MouseTarget } from "@/app-shell/mouse/MouseRegions";
 import { plainCheckboxText, plainModeEnabled, selectionPrefix } from "@/app-shell/plain-mode";
 import { mountRootContent } from "@/app-shell/root-content-state";
 import { LineEditorText } from "@/app-shell/shell-command-ui";
@@ -44,7 +45,8 @@ export function formatChecklistSelectionCount(count: number): string {
   return `${count} ${count === 1 ? "item" : "items"}`;
 }
 
-function ChecklistShell<T>({
+/** Exported for tests; callers mount it through `openChecklistShell`. */
+export function ChecklistShell<T>({
   title,
   subtitle,
   options,
@@ -114,6 +116,31 @@ function ChecklistShell<T>({
     onChange: setFilterQuery,
   });
 
+  const toggleOption = (option: ListOption<T>) =>
+    setSelectedSet((current) => {
+      const next = new Set(current);
+      if (next.has(option.value)) next.delete(option.value);
+      else next.add(option.value);
+      return next;
+    });
+  // Enter and the footer's confirm tap: the checked set, or the cursor row.
+  const confirmSelection = () => {
+    if (confirmed) return;
+    const valuesToSubmit =
+      selectedSet.size > 0
+        ? Array.from(selectedSet)
+        : filteredOptions[index]
+          ? [filteredOptions[index].value]
+          : [];
+    if (valuesToSubmit.length === 0) return;
+    setConfirmed(true);
+    confirmTimer.current = setTimeout(() => {
+      onSubmit(valuesToSubmit);
+    }, 150);
+  };
+  const toggleAllVisible = () =>
+    setSelectedSet((current) => toggleVisibleChecklistSelection(current, filteredOptions));
+
   useInput((input, key) => {
     if ((input === "c" && key.ctrl) || input === "\x03") {
       requestAppShutdown({ reason: "SIGINT", exitCode: 130 });
@@ -136,38 +163,16 @@ function ChecklistShell<T>({
       return;
     }
     if (input === "a" && key.ctrl) {
-      setSelectedSet((current) => toggleVisibleChecklistSelection(current, filteredOptions));
+      toggleAllVisible();
       return;
     }
     if (input === " " && !filterQuery) {
       const selected = filteredOptions[index];
-      if (selected) {
-        setSelectedSet((current) => {
-          const next = new Set(current);
-          if (next.has(selected.value)) {
-            next.delete(selected.value);
-          } else {
-            next.add(selected.value);
-          }
-          return next;
-        });
-      }
+      if (selected) toggleOption(selected);
       return;
     }
     if (key.return) {
-      if (!confirmed) {
-        const valuesToSubmit =
-          selectedSet.size > 0
-            ? Array.from(selectedSet)
-            : filteredOptions[index]
-              ? [filteredOptions[index].value]
-              : [];
-        if (valuesToSubmit.length === 0) return;
-        setConfirmed(true);
-        confirmTimer.current = setTimeout(() => {
-          onSubmit(valuesToSubmit);
-        }, 150);
-      }
+      confirmSelection();
       return;
     }
     filterEditor.handleInput(input, key);
@@ -222,7 +227,7 @@ function ChecklistShell<T>({
                     {plainModeEnabled() ? "More items above" : " ▲ ..."}
                   </Text>
                 )}
-                {visibleOptions.map((option) => {
+                {visibleOptions.map((option, visibleIndex) => {
                   const plain = plainModeEnabled();
                   const highlighted = option === selectedOption;
                   const isChecked = selectedSet.has(option.value);
@@ -239,8 +244,30 @@ function ChecklistShell<T>({
                     ? `  ${truncateLine(option.detail, Math.max(12, rowWidth - option.label.length - 6))}`
                     : "";
                   const rowText = truncateLine(`${option.label}${secondary}`, rowWidth - 4);
+                  // One tap toggles and moves the cursor there: a check is
+                  // undone by another tap, and nothing runs until confirm.
+                  // Taps work while filtering, where Space types instead.
                   return (
-                    <Box key={`${option.label}-${option.detail ?? ""}`}>
+                    <MouseTarget
+                      key={`${option.label}-${option.detail ?? ""}`}
+                      id={`checklist:row:${windowStart + visibleIndex}`}
+                      active={!confirmed}
+                      onClick={() => {
+                        setIndex(windowStart + visibleIndex);
+                        toggleOption(option);
+                      }}
+                      onWheel={(direction) =>
+                        setIndex((current) =>
+                          Math.max(
+                            0,
+                            Math.min(
+                              filteredOptions.length - 1,
+                              current + (direction === "up" ? -1 : 1),
+                            ),
+                          ),
+                        )
+                      }
+                    >
                       <Text
                         backgroundColor={highlighted && !plain ? palette.accentFill : undefined}
                         color={highlighted ? palette.text : palette.textDim}
@@ -253,7 +280,7 @@ function ChecklistShell<T>({
                         >{`${itemPrefix} `}</Text>
                         {rowText}
                       </Text>
-                    </Box>
+                    </MouseTarget>
                   );
                 })}
                 {windowEnd < filteredOptions.length && (
@@ -274,6 +301,18 @@ function ChecklistShell<T>({
           { key: "esc", label: "back", action: "quit" },
         ]}
         mode="minimal"
+        onActivate={(action) => {
+          if (confirmed) return;
+          const current = filteredOptions[index];
+          if (action.key === "enter") confirmSelection();
+          else if (action.key === "ctrl+a") toggleAllVisible();
+          else if (action.key === "space" && current) toggleOption(current);
+          // Esc's order: a typed filter clears first, then the list closes.
+          else if (action.key === "esc") {
+            if (filterQuery.length > 0) setFilterQuery("");
+            else onCancel();
+          }
+        }}
         taskLabel={
           filterQuery.length > 0
             ? "Clear filter to toggle checks with Space"

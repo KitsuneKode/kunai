@@ -82,6 +82,7 @@ subtitle controls, and safer persistence, downloads and native installation.
   a larger palette.
 - Fit graphics posters to measured terminal cell sizes and refresh them on
   resize.
+- Display Kitty posters in WezTerm with Kitty graphics enabled.
 
 - Add direct title launches from the command palette, notification episode
   launches and bounded detail prefetching. Keep command matching and title
@@ -115,6 +116,16 @@ subtitle controls, and safer persistence, downloads and native installation.
   concurrent saves. Setup requires an explicit consent action. Tests, installer
   fixtures and debug sandboxes isolate storage and suppress analytics; the
   dedicated analytics smoke only accepts an explicit numeric-loopback endpoint.
+- Opt-in usage pings now carry an id that changes every calendar month (an
+  HMAC of the local id, which never leaves the machine), the month you opted in
+  and the day, and no timestamp. Android reports `android`. Setup's consent
+  screen pre-selects neither answer. `kunai analytics log` shows every ping
+  exactly as sent, and `kunai analytics preview` the next one; neither sends
+  anything.
+- Releases carry `install.marker` and `update.marker`. The installers and the
+  native updater fetch one once after a successful install or update, so GitHub
+  can count them; Kunai receives nothing. `DO_NOT_TRACK`, `CI` and
+  `KUNAI_NO_MARKER` skip it.
 
 ### Performance and distribution
 

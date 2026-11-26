@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 
 import type { ResolvedAppCommand } from "./commands";
 import { GUIDE_SURFACE_TAGS, type GuideRow, type GuideSectionRows } from "./guide-model";
+import { MouseTarget } from "./mouse/MouseRegions";
+import { useRowTap } from "./mouse/row-tap";
 import { useOverlayLayout } from "./overlay-layout-context";
 import { plainModeEnabled, selectionPrefix } from "./plain-mode";
 import { CommandPalette } from "./shell-command-ui";
@@ -64,14 +66,20 @@ export function GuideShell({
   );
   const [selectedIndex, setSelectedIndex] = useState(0);
   const safeIndex = Math.min(selectedIndex, Math.max(0, entryCount - 1));
+  const tapRow = useRowTap<number>();
+  // Arrows wrap; the wheel stops at either end.
+  const stepSelection = (direction: 1 | -1, wrap = true) =>
+    setSelectedIndex((current) =>
+      wrap
+        ? (current + direction + entryCount) % entryCount
+        : Math.max(0, Math.min(entryCount - 1, current + direction)),
+    );
 
   useInput(
     (input, key) => {
       if (commandMode || entryCount === 0) return;
       if (key.upArrow || key.downArrow) {
-        setSelectedIndex((current) =>
-          key.upArrow ? (current - 1 + entryCount) % entryCount : (current + 1) % entryCount,
-        );
+        stepSelection(key.upArrow ? -1 : 1);
         return;
       }
       if (key.return) {
@@ -143,11 +151,22 @@ export function GuideShell({
                 <Text color={palette.dim}>{line.blurb}</Text>
               </Box>
             ) : (
-              <GuideRowLine
+              // A tap selects the row; a second tap on it is Enter. Headers
+              // are not targets.
+              <MouseTarget
                 key={line.row.command}
-                row={line.row}
-                selected={line.entryIndex === safeIndex}
-              />
+                id={`guide:row:${line.row.command}`}
+                flexDirection="column"
+                active={!commandMode}
+                onClick={() => {
+                  const selected = line.entryIndex === safeIndex;
+                  if (tapRow(line.entryIndex, selected) === "activate") onActivate(line.row);
+                  else setSelectedIndex(line.entryIndex);
+                }}
+                onWheel={(direction) => stepSelection(direction === "up" ? -1 : 1, false)}
+              >
+                <GuideRowLine row={line.row} selected={line.entryIndex === safeIndex} />
+              </MouseTarget>
             ),
           )}
         </Box>

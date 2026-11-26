@@ -480,11 +480,14 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // launcher budgets are unchanged. The tmux graphics path measured 3,297,643
 // bytes. With measured terminal cell sizing the bundle measured 3,300,575
 // bytes; 3226 KiB leaves 2,849 bytes.
-// Provider DNS-over-HTTPS measured 3,316,821 bytes against main's 3,300,932
-// (+15,889): the relay's pinned transport now ships in the CLI (7.2 KB), plus
-// the resolver (3.3 KB) and DoH fetch (2.4 KB). No dependency or asset.
-// 3242 KiB leaves 2,987 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_242;
+// Merge-train batch 1 (#750 #751 #752 #782 #753 #786 #805 #783: playback
+// failover and correctness fixes) measured 3,303,435 bytes together, 11 over.
+// No dependency or asset. 3227 KiB leaves 1,013 bytes. With direct Kitty
+// placement for Konsole and WezTerm (#813) on top, it measured 3,304,843
+// bytes; 3231 KiB leaves 3,701 bytes.
+// The analytics client (v2 ping, neutral consent, ping log, release markers,
+// #800) on top measured 3,313,118 bytes; 3239 KiB leaves 3,618 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_239;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T14:59:53Z"
+lastReviewed: "2026-11-25T20:14:06Z"
 ---
 
 # Playback Source Inventory Contract
@@ -249,6 +249,14 @@ the same user-facing hierarchy.
   (muxed audio) still contribute their declared `LANGUAGE` to the stream's
   `audioLanguages`. `CLOSED-CAPTIONS` rows are skipped — embedded captions are
   read in-container by the player.
+- HLS variant quality is measured, not labelled: a `#EXT-X-STREAM-INF` row's
+  rung comes from `RESOLUTION` through `hlsResolutionQualityClass` (the long
+  side scaled to 16:9, so a letterboxed 1920x804 encode is 1080p), and `NAME`
+  only labels rows that declare no size. A row with neither ranks 0, never its
+  raw `BANDWIDTH`; bandwidth only orders equal rungs. A master kept whole
+  because its audio lives in a separate rendition still ranks by the highest
+  rung it declares (`parseHlsMasterMaxHeight`), so it competes with other
+  sources as the quality it is.
 
 UI surfaces can simplify this into tabs like "Sub", "Dub", "Servers", and
 "Quality", but diagnostics must always show the underlying `providerId`,
@@ -387,3 +395,19 @@ the available inventory and session language preference. Live Off takes
 precedence over the visibility flag when no track is selected; visibility Off
 with a selected track is reported as hidden. Native On and visibility changes
 remain file-local observations rather than saved language preferences.
+
+## Local manifest materialization
+
+Some streams reach mpv as a local file instead of their URL: an HLS playlist
+whose CDN uses host-root segment paths mpv's partial read mishandles
+(`services/playback/hls-manifest-materializer.ts`), and AllManga Ak's deferred
+DASH pair written as an MPD (`services/playback/deferred-media-materializer.ts`).
+The file is local; what it names is not, so two rules hold:
+
+- Every reference is made absolute against the URL the playlist was finally
+  served from, after redirects: segment lines and the `URI="…"` of
+  `#EXT-X-KEY`, `#EXT-X-MAP` and `#EXT-X-MEDIA`, relative or host-root
+  (`absolutizeHlsManifest`). Anything left relative resolves against the temp
+  directory.
+- The stream keeps its request headers. The resolve gate probed the remote
+  media with them, and mpv must fetch it the same way.

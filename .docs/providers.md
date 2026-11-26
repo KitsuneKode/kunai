@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-26T00:00:00Z"
+lastReviewed: "2026-11-26T16:28:50Z"
 ---
 
 # Kunai — Provider Guide
@@ -229,10 +229,16 @@ provider, a `baseUrl`, `mirrors`, `deadServers`, `disabled`, and
 (`getEffectiveProviderMirrors`, `getProviderCryptoOverride`); bundled values are
 always the fallback.
 
-- **Trust.** Envelopes are Ed25519-signed and verified against keys from
-  `KUNAI_PROVIDER_MANIFEST_PUBKEYS`. No key and no URL are baked into the
-  binary — like the relay, the manifest source is operator-owned and the feature
-  is off until both are configured.
+- **Trust.** Envelopes are Ed25519-signed. The project's own channel is pinned
+  in `apps/cli/src/services/providers/provider-manifest-pin.json`: a fixed URL
+  on the repository's `provider-manifest` prerelease plus the public keys allowed
+  to sign it (read by `provider-manifest-pin.ts`). The channel is inert while no
+  key is pinned; `scripts/setup-signing-keys.ts` pins one. An operator's own
+  channel replaces the pin entirely: `KUNAI_PROVIDER_MANIFEST_PUBKEYS` takes
+  precedence, and with operator keys the pinned URL is never used, so a fork's
+  keys never verify the project URL. This differs from the relay on purpose:
+  the relay carries user traffic through someone's server, the manifest is
+  signed metadata the project publishes about its own providers.
 - **Lifecycle.** `kunai providers update --url <https>` fetches, verifies, and
   caches it (`--dry-run` to inspect); `providers status`, `verify`, `rollback`,
   and `reset` are the ways back out. The previous manifest is kept as a backup
@@ -265,8 +271,8 @@ always the fallback.
   in the interactive shell and in headless `-S --json` search;
   without it a manifest would apply only in the process that fetched it.
 - **Background refresh.** `maybeBackgroundRefreshProviderManifest` refreshes at
-  most every six hours, only when `KUNAI_PROVIDER_MANIFEST_URL` and trusted keys
-  are both set, and fails silently offline.
+  most every six hours, only when a URL (operator or pinned) and trusted keys
+  are both in force, and fails silently offline.
 - **Urgent refresh.** When a provider's health transitions into `down`
   (`PlaybackResolveService` → `onProviderDown`, wired in
   `apps/cli/src/container/bootstrap-providers.ts`), Kunai checks the manifest
@@ -339,7 +345,11 @@ the probe races mpv's `loadfile`, so it adds no wait — a definitive dead URL
 fails fast only when mpv itself also fails. Stream age alone used to waive that
 probe for the first five minutes (`recent-resolve`), which let autoplay
 replacements hand mpv URLs no code had ever fetched; the waiver now requires
-attestation (issue #459).
+attestation (issue #459). Attestation belongs to the stream the provider
+selected and probed: picking a sibling from the same inventory (Tracks source
+or quality, an exact stream pin, a blocked-URL skip) sets
+`streamReachabilityVerified` to false, so the new pick is probed at handoff
+(`reselectResolveResultStream` in `services/providers/provider-result-adapter.ts`).
 
 **VidLink needs the browser playback environment (2026-08-24).** Without an
 `x-playback-environment` header, `vidlink.pro/api/b` answers with

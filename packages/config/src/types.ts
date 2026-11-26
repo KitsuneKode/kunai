@@ -31,6 +31,14 @@ export function isHdrMode(value: unknown): value is HdrMode {
   return typeof value === "string" && (HDR_MODES as readonly string[]).includes(value);
 }
 
+/** Saved player when `--player` is not given; VLC is an Android handoff target. */
+export const PLAYER_PREFERENCES = ["auto", "mpv", "vlc"] as const;
+export type PlayerPreference = (typeof PLAYER_PREFERENCES)[number];
+
+export function isPlayerPreference<T>(value: T): value is T & PlayerPreference {
+  return PLAYER_PREFERENCES.some((preference) => preference === value);
+}
+
 /** Runtime tuning override bag; CLI tuning module resolves typed values. */
 export type ConfigTuningOverrides = Partial<Record<string, number>>;
 
@@ -206,6 +214,8 @@ export interface KitsuneConfig {
    */
   providerDns: "doh" | "system";
   hdrMode: HdrMode;
+  /** `--player` wins; this is the choice when the flag is absent. */
+  player: PlayerPreference;
   offlineArtworkCacheEnabled: boolean;
   offlineFreeSpaceReserveBytes: number;
   offlineUnknownEpisodeEstimateBytes: number;
@@ -238,6 +248,12 @@ export interface KitsuneConfig {
   analyticsNoticeShown: boolean;
   /** Random UUID install id. Present if and only if `analytics === "enabled"`. */
   installId: string;
+  /**
+   * `YYYY-MM` analytics was enabled in, sent so the ingest can count new
+   * installs per month. Like `installId`, present only while enabled: the
+   * enable keystroke writes it, disable and rotation clear it.
+   */
+  analyticsCohort: string;
   /** Last successful cadence mark for the daily analytics ping (epoch ms). */
   lastAnalyticsPingAt: number;
   /**

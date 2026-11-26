@@ -8,6 +8,7 @@ import { isJsonObject, isJsonNumber, isJsonString } from "@kunai/types";
 import type { MpvIpcSession } from "./mpv-ipc";
 import { applyObservedPropertySample, type PlayerStatsState } from "./mpv-stats";
 import type { PersistentSubtitleManager } from "./persistent-subtitle-manager";
+import type { PlaybackOutputDriver } from "./playback-output-gate";
 import type { MpvRequestedAction } from "./PlayerControlService";
 import type { PlayerPlaybackEvent } from "./PlayerService";
 
@@ -17,7 +18,8 @@ export type PersistentMpvPropertyCycle = {
   stats: PlayerStatsState;
   acceptPlaybackProperties: boolean;
   playerReadyNotified: boolean;
-  playerStartedNotified: boolean;
+  /** Holds `playback-started` and progress until mpv shows output (see playback-output-gate). */
+  output: PlaybackOutputDriver;
   lastPlaybackProgressEventAtMs: number;
   lastPlaybackProgressPositionSeconds: number;
   lastPlaybackProgressDurationSeconds: number;
@@ -42,6 +44,8 @@ export type PersistentMpvPropertyRouterDeps = {
   finishResumeChoiceWait(choice: "resume" | "start"): void;
   handleResumeSeekFromMpv(): Promise<void>;
   handleCopyShareFromMpv(): Promise<void>;
+  /** A help-key press in the mpv window, by keybinding id (`key:<id>`). */
+  notifyMpvKeyRequest(bindingId: string): void;
   onSkipRequestFromMpv(automatic: boolean): Promise<void>;
   getCurrentPositionSeconds(): number;
   setCurrentPositionSeconds(value: number): void;
@@ -147,6 +151,7 @@ export class PersistentMpvPropertyRouter {
 
     if (active.stats.latestIpcSample) {
       this.deps.observeWatchdog(active.stats.latestIpcSample);
+      active.output.observe(active.stats.latestIpcSample);
     }
 
     if ((name === "time-pos" || name === "playback-time") && typeof value === "number") {
@@ -157,11 +162,9 @@ export class PersistentMpvPropertyRouter {
         previousPositionSeconds,
         value,
       );
-      if (value > 0 && !active.playerStartedNotified) {
-        active.playerStartedNotified = true;
-        active.onPlaybackEvent?.({ type: "playback-started" });
-      }
-      this.deps.maybeEmitPlaybackProgress(active, observedAt);
+      // Progress waits for confirmed output: a clock that moves on audio alone
+      // must not cancel the startup watchdog or record watch progress.
+      if (active.output.started) this.deps.maybeEmitPlaybackProgress(active, observedAt);
       void this.deps.handleSegmentSkipProgress(this.deps.getCurrentOptions());
       this.deps.fireNearEofIfNeeded(value);
     }
@@ -202,6 +205,8 @@ export class PersistentMpvPropertyRouter {
       this.deps.notifyMpvActionRequest(action);
     } else if (req === "resume-seek") {
       void this.deps.handleResumeSeekFromMpv();
+    } else if (req.startsWith("key:") && /^[a-z-]{1,64}$/.test(req.slice(4))) {
+      this.deps.notifyMpvKeyRequest(req.slice(4));
     } else if (req === "copy-share") {
       void this.deps.handleCopyShareFromMpv();
     } else if (req === "skip" || req === "auto-skip") {
