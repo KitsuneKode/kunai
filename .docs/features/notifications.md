@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T10:52:58Z"
+lastReviewed: "2026-11-26T10:34:49Z"
 ---
 
 # Notifications
@@ -47,6 +47,11 @@ The inbox is safe to open during playback. It shows local notices and routes saf
   exactly one failed job matches its episode, and otherwise says to open
   Downloads. A refused or no-longer-failed retry is reported and leaves the
   notice unread. Anime failures are one notice per absolute episode.
+- a download or retry-download action counts as done only when at least one
+  job was admitted: a refused enqueue (missing yt-dlp, downloads disabled, a
+  failed write) returns `unsupported` with its reason, so the inbox shows
+  "Action unavailable: …" and leaves the notice unread instead of saying
+  "Download queued" (`DownloadAdmission` in `MediaActionRouter.ts`)
 
 ### Play now
 

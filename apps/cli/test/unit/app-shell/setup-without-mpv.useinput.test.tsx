@@ -10,6 +10,7 @@ import type { CapabilitySnapshot } from "@/ui";
 import React from "react";
 
 import { render } from "../../harness/render-capture";
+import { UNSET_PAYLOAD_FIXTURE } from "../../support/analytics-fixtures";
 
 const MISSING_MPV: CapabilitySnapshot = {
   mpv: false,
@@ -39,10 +40,17 @@ test("setup advances when mpv is missing", () => {
   // Missing mpv degrades rather than blocks: browsing, the watchlist, and the
   // calendar all work without it, so refusing to continue would be a lie about
   // what is actually broken.
-  const handle = render(<SetupShell snapshot={MISSING_MPV} finish={() => {}} />, {
-    columns: 100,
-    rows: 40,
-  });
+  const handle = render(
+    <SetupShell
+      analyticsPayload={UNSET_PAYLOAD_FIXTURE}
+      snapshot={MISSING_MPV}
+      finish={() => {}}
+    />,
+    {
+      columns: 100,
+      rows: 40,
+    },
+  );
   try {
     const deps = handle.lastFrame();
     expect(deps).toContain("mpv");
@@ -60,10 +68,17 @@ test("setup advances when mpv is missing", () => {
 });
 
 test("the dependency screen shows one install command for this machine", () => {
-  const handle = render(<SetupShell snapshot={MISSING_MPV} finish={() => {}} />, {
-    columns: 100,
-    rows: 40,
-  });
+  const handle = render(
+    <SetupShell
+      analyticsPayload={UNSET_PAYLOAD_FIXTURE}
+      snapshot={MISSING_MPV}
+      finish={() => {}}
+    />,
+    {
+      columns: 100,
+      rows: 40,
+    },
+  );
   try {
     // Not shown until asked: the screen's job is the state of the machine, and
     // five platforms' worth of commands at once buried the one that applied.
