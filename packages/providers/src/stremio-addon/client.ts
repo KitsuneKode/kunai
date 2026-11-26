@@ -7,7 +7,8 @@ import {
 } from "@kunai/types";
 import type { z } from "zod";
 
-import { readBoundedTextBody, type StreamReachabilityFetch } from "../shared/stream-reachability";
+import { readBoundedTextBody } from "../shared/bounded-text-body";
+import type { StreamReachabilityFetch } from "../shared/stream-reachability";
 import { combineAbortSignals, createTimeoutSignal } from "../shared/timeout-signal";
 import {
   scrubStremioAddonText,
@@ -342,86 +343,4 @@ export async function fetchStremioStreams(
     STREMIO_ADDON_TIMEOUTS.streamsMs,
   );
   return streams;
-}
-
-/** A subtitle file that passed the guarded download and format check. */
-export interface StremioSubtitleFile {
-  readonly text: string;
-  /** Extension derived from the verified body, never from the URL. */
-  readonly extension: "srt" | "vtt" | "ass";
-}
-
-const SUBTITLE_BODY_BYTES = 512 * 1024;
-const SUBTITLE_TIMEOUT_MS = 3_000;
-const WEBVTT_BODY = /^WEBVTT(?:[ \t]|\r?\n|$)/;
-// An SRT opens (after blank lines) with a cue counter then a timestamp line.
-const SRT_BODY =
-  /^(?:[ \t]*\r?\n)*[ \t]*\d+[ \t]*\r?\n\d{2}:\d{2}:\d{2}[,.]\d{3}[ \t]+-->[ \t]+\d{2}:\d{2}:\d{2}[,.]\d{3}/;
-const ASS_BODY = /^\uFEFF?\[Script Info\]/;
-
-function subtitleExtensionFor(text: string): StremioSubtitleFile["extension"] | null {
-  const unbombed = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
-  if (WEBVTT_BODY.test(unbombed)) return "vtt";
-  if (SRT_BODY.test(unbombed)) return "srt";
-  // ASS needs the script-info header plus an events section with dialogue;
-  // a stray [Script Info] line alone is not a playable track.
-  if (
-    ASS_BODY.test(unbombed) &&
-    /^\s*\[Events\]\s*$/m.test(unbombed) &&
-    /^Dialogue:/m.test(unbombed)
-  )
-    return "ass";
-  return null;
-}
-
-/**
- * Guarded download of one addon-supplied subtitle: same DNS pinning and
- * per-hop redirect re-validation as every other addon request, a hard 512 KiB
- * cap, and a body that must prove a plain subtitle format. No addon headers
- * are sent — the subtitle host is not owed the addon's credentials.
- *
- * Returns `null` for every failure (blocked target, non-2xx, redirect cap,
- * oversized or unrecognized body, abort, transport error). Nothing is logged
- * and no URL or transport text escapes: callers treat `null` as "skip".
- */
-export async function fetchStremioSubtitle(
-  url: string,
-  options: {
-    readonly signal?: AbortSignal;
-    readonly fetchImpl?: StreamReachabilityFetch;
-    readonly resolveAddresses?: (host: string) => Promise<readonly string[]>;
-  } = {},
-): Promise<StremioSubtitleFile | null> {
-  const signal = createTimeoutSignal(options.signal, SUBTITLE_TIMEOUT_MS);
-  const fetchImpl = options.fetchImpl ?? fetch;
-  try {
-    const outcome = await fetchProbeTarget({
-      fetchImpl,
-      url,
-      init: { method: "GET", signal },
-      // The deadline lives on the signal; the guard's own budget never fires.
-      remaining: () => 1,
-      parentSignal: signal,
-      resolveNamesFor: () => Boolean(options.resolveAddresses) || isGuardedPlatformFetch(fetchImpl),
-      resolveAddresses: options.resolveAddresses,
-    });
-    if (outcome.kind !== "response" || signal.aborted) return null;
-    const response = outcome.response;
-    if (response.status < 200 || response.status >= 300) {
-      await response.body?.cancel().catch(() => undefined);
-      return null;
-    }
-    const declaredLength = Number(response.headers.get("content-length"));
-    if (declaredLength > SUBTITLE_BODY_BYTES) {
-      await response.body?.cancel().catch(() => undefined);
-      return null;
-    }
-    const text = await readBoundedTextBody(response.body, SUBTITLE_BODY_BYTES);
-    if (!text || signal.aborted || text.includes("\0")) return null;
-    const extension = subtitleExtensionFor(text);
-    if (!extension) return null;
-    return { text, extension };
-  } catch {
-    return null;
-  }
 }

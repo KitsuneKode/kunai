@@ -9,6 +9,7 @@ import {
   resolveSubtitlesByTmdbId,
   selectAutomaticSubtitle,
   selectSubtitle,
+  type SubtitleEntry,
 } from "@/subtitle";
 
 const ARABIC = {
@@ -211,18 +212,93 @@ describe("selectSubtitle", () => {
 
 describe("mergeSubtitleTracks", () => {
   test("dedupes equivalent subtitle URLs before playback inventory is built", () => {
+    // Token churn only merges within one language: identity is the
+    // query-stripped URL *and* the language (see subtitle-track-identity.ts).
     expect(
       mergeSubtitleTracks(
-        [{ url: "https://sub.example/en.vtt?q=provider#one", display: "English" }],
+        [{ url: "https://sub.example/en.vtt?q=provider#one", language: "en", display: "English" }],
         [
-          { url: "https://sub.example/en.vtt?q=wyzie#two", display: "English duplicate" },
-          { url: "https://sub.example/fr.vtt?q=wyzie", display: "French" },
+          {
+            url: "https://sub.example/en.vtt?q=wyzie#two",
+            language: "en",
+            display: "English duplicate",
+          },
+          { url: "https://sub.example/fr.vtt?q=wyzie", language: "fr", display: "French" },
         ],
       ),
     ).toEqual([
-      { url: "https://sub.example/en.vtt?q=wyzie#two", display: "English duplicate" },
-      { url: "https://sub.example/fr.vtt?q=wyzie", display: "French" },
+      {
+        url: "https://sub.example/en.vtt?q=wyzie#two",
+        language: "en",
+        display: "English duplicate",
+      },
+      { url: "https://sub.example/fr.vtt?q=wyzie", language: "fr", display: "French" },
     ]);
+  });
+
+  const YOUTUBE_EN = {
+    url: "https://www.youtube.com/api/timedtext?v=abc&lang=en",
+    language: "en",
+    display: "English",
+  };
+  const YOUTUBE_FR = {
+    url: "https://www.youtube.com/api/timedtext?v=abc&lang=fr",
+    language: "fr",
+    display: "French",
+  };
+
+  test("keeps tracks that differ only by query when their languages differ", () => {
+    expect(mergeSubtitleTracks([YOUTUBE_EN, YOUTUBE_FR], []).map((t) => t.language)).toEqual([
+      "en",
+      "fr",
+    ]);
+    expect(mergeSubtitleTracks([YOUTUBE_EN], [YOUTUBE_FR]).map((t) => t.language)).toEqual([
+      "en",
+      "fr",
+    ]);
+  });
+
+  test("still merges a re-signed copy of the same file in the same language", () => {
+    expect(
+      mergeSubtitleTracks<SubtitleEntry>(
+        [{ url: "https://cdn.example/en.vtt?token=old", language: "en", display: "English" }],
+        [{ url: "https://cdn.example/en.vtt?token=new", language: "EN", release: "Web" }],
+      ),
+    ).toEqual([
+      {
+        url: "https://cdn.example/en.vtt?token=new",
+        language: "EN",
+        release: "Web",
+        display: "English",
+      },
+    ]);
+  });
+
+  test("keeps query-distinct tracks apart when a language cannot be told", () => {
+    // An extra row is harmless; collapsing two unlabeled languages is not.
+    expect(
+      mergeSubtitleTracks(
+        [{ url: "https://www.youtube.com/api/timedtext?v=abc&lang=yue" }],
+        [
+          { url: "https://www.youtube.com/api/timedtext?v=abc&lang=fil" },
+          { url: "https://www.youtube.com/api/timedtext?v=abc&lang=fil" },
+        ],
+      ).map((track) => track.url),
+    ).toEqual([
+      "https://www.youtube.com/api/timedtext?v=abc&lang=yue",
+      "https://www.youtube.com/api/timedtext?v=abc&lang=fil",
+    ]);
+  });
+
+  test("selection picks the preferred language from a merged query-distinct inventory", () => {
+    // French preferred, English fallback: both pass the language filter, so the
+    // ranking dedupe used to fold French into English and pick the fallback.
+    const merged = mergeSubtitleTracks([YOUTUBE_EN], [YOUTUBE_FR]);
+    expect(selectAutomaticSubtitle(merged, "fr")?.url).toBe(YOUTUBE_FR.url);
+    expect(selectSubtitle([YOUTUBE_EN, YOUTUBE_FR], "fr")?.url).toBe(YOUTUBE_FR.url);
+    expect(rankSubtitleCandidates([YOUTUBE_EN, YOUTUBE_FR], { preferredLang: "fr" })).toHaveLength(
+      2,
+    );
   });
 });
 

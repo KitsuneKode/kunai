@@ -5,6 +5,16 @@ description: "Platform-specific notes for Kunai on Linux, macOS, and Windows: in
 
 Kunai is terminal-first. Playback uses `mpv`; optional downloads use `yt-dlp`; `ffprobe` can validate completed artifacts when available. Poster previews need nothing installed: Kitty graphics on Kitty/Ghostty, iTerm2 inline images on iTerm2 and VSCode 1.80+, sixel where the terminal reports it, and a built-in half-block fallback everywhere else.
 
+To display Kitty posters inside tmux 3.3 or later, use Kitty or Ghostty and add
+`set -g allow-passthrough on` to your tmux configuration. Set `KUNAI_IMAGE_TMUX=0`
+to disable Kitty passthrough for a run. tmux 3.4 or later built with Sixel support
+can show Sixel previews on a compatible terminal without passthrough. Screen
+uses half-block previews.
+
+WezTerm can draw Kitty posters when its Kitty graphics query succeeds; enable
+`enable_kitty_graphics` in your configuration. Konsole shows posters through
+sixel, because it does not free Kitty image data when an image is replaced.
+
 **Who this is for:** anyone choosing an install path or optional tools for their OS.
 
 **You will learn:** recommended installers per platform, optional dependencies, and platform-specific handoff behavior.

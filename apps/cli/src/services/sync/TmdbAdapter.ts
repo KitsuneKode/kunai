@@ -101,6 +101,11 @@ export class TmdbAdapter implements SyncAdapter {
       return syncFailed("tracker-target-mismatch", "mapping");
     }
     if (!this.sessionId || !this.accountId) return syncNeedsReauth("not-connected");
+    // A wait longer than one request may absorb is the server's "not yet":
+    // defer the row now rather than sit out the inline cap and send early.
+    if (this.limiter.shouldDefer()) {
+      return syncRateLimited(this.limiter.delayBeforeNextRequestMs());
+    }
 
     const { mediaKind, tmdbId } = operation.target;
     const [path, field] =

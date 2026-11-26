@@ -31,8 +31,9 @@ describe("buildYoutubeYtdlProfile", () => {
         "sponsor",
         "--merge-output-format",
         "mp4",
-        "--write-subs",
-        "--write-auto-subs",
+        "--no-write-subs",
+        "--no-write-auto-subs",
+        "--no-embed-subs",
       ]),
     );
     expect(profile.formatSelector).toContain("bv*[height<=?720]");

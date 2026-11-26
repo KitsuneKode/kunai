@@ -4,10 +4,10 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
 import {
-  AddonSubtitleFiles,
+  SubtitleFiles,
   prepareLaunchSubtitles,
   resolvePlayerSubtitle,
-} from "@/infra/player/addon-subtitle-files";
+} from "@/infra/player/subtitle-files";
 import { buildMpvArgs } from "@/mpv";
 
 import { applyStorageRootEnv } from "../../../helpers/storage-env";
@@ -20,7 +20,7 @@ let restoreStorage: () => void;
 type TempDirEnv = Pick<NodeJS.ProcessEnv, "TMPDIR" | "TMP" | "TEMP">;
 let previousTempDirs: TempDirEnv;
 beforeEach(() => {
-  testRoot = mkdtempSync(join(tmpdir(), "kunai-addon-subs-test-"));
+  testRoot = mkdtempSync(join(tmpdir(), "kunai-subs-test-"));
   restoreStorage = applyStorageRootEnv(testRoot);
   // tempDir follows TMPDIR/TMP/TEMP, not the storage root — this suite opens
   // no IPC socket, so a long per-test temp root is safe here.
@@ -38,14 +38,14 @@ afterEach(() => {
   removeTempDir(testRoot);
 });
 
-const okDownload = async (): Promise<{ text: string; extension: "srt" }> => ({
-  text: SRT,
+const okDownload = async (): Promise<{ bytes: Uint8Array; extension: "srt" }> => ({
+  bytes: new TextEncoder().encode(SRT),
   extension: "srt",
 });
 
-describe("AddonSubtitleFiles", () => {
+describe("SubtitleFiles", () => {
   test("valid download yields an owned local file; re-selection reuses the path", async () => {
-    const files = new AddonSubtitleFiles(okDownload);
+    const files = new SubtitleFiles(okDownload);
     const first = await files.localize("https://subs.example.com/en.srt");
     expect(first).not.toBeNull();
     if (!first) throw new Error("expected a localized path");
@@ -63,26 +63,20 @@ describe("AddonSubtitleFiles", () => {
   });
 
   test("refused download resolves to null and never a raw URL", async () => {
-    const files = new AddonSubtitleFiles(async () => null);
+    const files = new SubtitleFiles(async () => null);
     expect(await files.localize("https://subs.example.com/en.srt")).toBeNull();
     expect(
-      await resolvePlayerSubtitle(
-        "https://subs.example.com/en.srt",
-        "remote",
-        true,
-        undefined,
-        files,
-      ),
+      await resolvePlayerSubtitle("https://subs.example.com/en.srt", "remote", files),
     ).toBeNull();
     await files.close();
   });
 
   test("close is idempotent and aborts late work", async () => {
-    let release: (v: { text: string; extension: "srt" } | null) => void = () => {};
-    const files = new AddonSubtitleFiles(() => new Promise((resolve) => (release = resolve)));
+    let release: (v: { bytes: Uint8Array; extension: "srt" } | null) => void = () => {};
+    const files = new SubtitleFiles(() => new Promise((resolve) => (release = resolve)));
     const pending = files.localize("https://subs.example.com/en.srt");
     const closing = files.close();
-    release({ text: SRT, extension: "srt" });
+    release({ bytes: new TextEncoder().encode(SRT), extension: "srt" });
     await closing;
     expect(await pending).toBeNull();
     await files.close();
@@ -90,8 +84,8 @@ describe("AddonSubtitleFiles", () => {
 });
 
 describe("prepareLaunchSubtitles", () => {
-  test("addon primary + tracks rewrite to local files, metadata preserved", async () => {
-    const files = new AddonSubtitleFiles(okDownload);
+  test("remote primary and alternative tracks rewrite to local files with metadata", async () => {
+    const files = new SubtitleFiles(okDownload);
     const prepared = await prepareLaunchSubtitles(
       {
         subtitle: "https://subs.example.com/en.srt",
@@ -107,7 +101,6 @@ describe("prepareLaunchSubtitles", () => {
             language: "fr",
           },
         ],
-        stremioAddon: true,
       },
       files,
     );
@@ -127,7 +120,6 @@ describe("prepareLaunchSubtitles", () => {
         subtitleTracks: prepared.subtitleTracks,
         localSubtitlePaths: prepared.localSubtitlePaths,
         displayTitle: "t",
-        stremioAddon: true,
       },
       null,
     );
@@ -137,9 +129,9 @@ describe("prepareLaunchSubtitles", () => {
   });
 
   test("a refused track drops out of the launch inventory entirely", async () => {
-    const files = new AddonSubtitleFiles(
-      async (url): Promise<{ text: string; extension: "srt" } | null> =>
-        url.includes("en.srt") ? { text: SRT, extension: "srt" } : null,
+    const files = new SubtitleFiles(
+      async (url): Promise<{ bytes: Uint8Array; extension: "srt" } | null> =>
+        url.includes("en.srt") ? { bytes: new TextEncoder().encode(SRT), extension: "srt" } : null,
     );
     const prepared = await prepareLaunchSubtitles(
       {
@@ -148,7 +140,6 @@ describe("prepareLaunchSubtitles", () => {
           { url: "https://subs.example.com/en.srt", display: "English" },
           { url: "https://subs.example.com/evil.m3u8", display: "Bad" },
         ],
-        stremioAddon: true,
       },
       files,
     );
@@ -157,74 +148,16 @@ describe("prepareLaunchSubtitles", () => {
     await files.close();
   });
 
-  test("non-addon launch passes remote subtitles through untouched", async () => {
-    const files = new AddonSubtitleFiles();
-    const prepared = await prepareLaunchSubtitles(
-      { subtitle: "https://subs.example.com/en.srt", stremioAddon: false },
-      files,
-    );
-    expect(prepared.subtitle).toBe("https://subs.example.com/en.srt");
-    await files.close();
-  });
-});
-
-describe("review followups", () => {
-  test("a marked guardedAddon track localizes even on a non-addon playback", async () => {
-    const files = new AddonSubtitleFiles(okDownload);
-    const prepared = await prepareLaunchSubtitles(
-      {
-        subtitle: null,
-        subtitleTracks: [
-          {
-            url: "https://subs.example.com/en.srt",
-            display: "English",
-            guardedAddon: true,
-          },
-          { url: "https://other.example.com/fr.srt", display: "French" },
-        ],
-        stremioAddon: false,
-      },
-      files,
-    );
-    // Marked track rewritten to an owned path; unmarked remote passes through.
-    expect(prepared.subtitleTracks).toHaveLength(2);
-    const marked = prepared.subtitleTracks?.[0];
-    expect(marked?.display).toBe("English");
-    expect(marked?.url).toMatch(/\.srt$/);
-    expect(marked?.url).not.toContain("subs.example.com");
-    expect(prepared.subtitleTracks?.[1]?.url).toBe("https://other.example.com/fr.srt");
-    await files.close();
-  });
-
-  test("a marked guarded primary is localized and cannot stay remote", async () => {
-    const files = new AddonSubtitleFiles(okDownload);
-    const prepared = await prepareLaunchSubtitles(
-      {
-        subtitle: "https://subs.example.com/en.srt",
-        subtitleTracks: [{ url: "https://subs.example.com/en.srt", guardedAddon: true }],
-        stremioAddon: false,
-      },
-      files,
-    );
-    expect(prepared.subtitle).toMatch(/\.srt$/);
-    expect(prepared.subtitle).not.toContain("subs.example.com");
-    expect(prepared.subtitleUrlKind).toBe("local");
-    await files.close();
-  });
-
   test("a remote URL dressed as local never escapes: argv refuses it", async () => {
-    const files = new AddonSubtitleFiles(async () => null);
+    const files = new SubtitleFiles(async () => null);
     const prepared = await prepareLaunchSubtitles(
       {
         subtitle: "https://subs.example.com/en.srt",
         subtitleUrlKind: "local", // kind flag is not proof of local
-        subtitleTracks: [{ url: "https://subs.example.com/en.srt", guardedAddon: true }],
-        stremioAddon: false,
+        subtitleTracks: [{ url: "https://subs.example.com/en.srt" }],
       },
       files,
     );
-    // shouldLocalize catches it (marked + remote) and the refused download
-    // drops the primary entirely.
     expect(prepared.subtitle).toBeNull();
     const args = buildMpvArgs(
       {
@@ -232,7 +165,7 @@ describe("review followups", () => {
         headers: {},
         subtitle: "https://subs.example.com/en.srt",
         subtitleUrlKind: "local",
-        subtitleTracks: [{ url: "https://subs.example.com/en.srt", guardedAddon: true }],
+        subtitleTracks: [{ url: "https://subs.example.com/en.srt" }],
         displayTitle: "t",
       },
       null,
@@ -243,7 +176,7 @@ describe("review followups", () => {
 
   test("close removes both the files and their containing directory", async () => {
     const { dirname } = await import("node:path");
-    const files = new AddonSubtitleFiles(okDownload);
+    const files = new SubtitleFiles(okDownload);
     const path = await files.localize("https://subs.example.com/en.srt");
     if (!path) throw new Error("expected a localized path");
     const dir = dirname(path);

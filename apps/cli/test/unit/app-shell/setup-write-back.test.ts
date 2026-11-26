@@ -26,6 +26,7 @@ import { act } from "react";
 
 import { render } from "../../harness/render-capture";
 import { applyStorageRootEnv } from "../../helpers/storage-env";
+import { UNSET_PAYLOAD_FIXTURE } from "../../support/analytics-fixtures";
 
 // `runSetupWizard` now writes a real restore point beside the real config, so
 // every test in this file has to own its storage root or it would leave a
@@ -124,8 +125,14 @@ function fakeContainer(
     usageAnalytics: {
       consentPatch: (choice: "enabled" | "disabled") =>
         choice === "enabled"
-          ? { analytics: "enabled" as const, installId: config.installId }
-          : { analytics: "disabled" as const, installId: "" },
+          ? {
+              analytics: "enabled" as const,
+              installId: config.installId,
+              analyticsCohort: "2026-11",
+            }
+          : { analytics: "disabled" as const, installId: "", analyticsCohort: "" },
+      describePayload: () => UNSET_PAYLOAD_FIXTURE,
+      settleLocalPingLog: async () => undefined,
     },
     diagnosticsService: {
       record: (entry: { message: string }) => diagnostics.push(entry.message),
@@ -555,6 +562,7 @@ describe("pre-setup restore point", () => {
       analytics: _analytics,
       analyticsNoticeShown: _notice,
       installId: _installId,
+      analyticsCohort: _cohort,
       lastAnalyticsPingAt: _pingAt,
       analyticsRetryAfter: _retryAfter,
       analyticsEndpoint: _endpoint,

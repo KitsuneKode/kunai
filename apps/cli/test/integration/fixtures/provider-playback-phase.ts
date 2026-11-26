@@ -1,4 +1,4 @@
-// Child-process fixture for the PlaybackPhase characterization net.
+// Isolated worker for the PlaybackPhase characterization suite.
 //
 // Drives the real `PlaybackPhase.execute` through the online provider path with
 // a real container. Only the edges are faked: the provider registry (two
@@ -7,13 +7,16 @@
 // fallback, control actions, autoplay and post-play routing — is production
 // code, so a refactor of the phase has to reproduce these traces exactly.
 //
-// Runs in its own process because it replaces modules and `globalThis.fetch`,
-// and because the container must read an isolated storage root.
+// The worker owns the module mocks and each scenario gets a new storage root.
 import { mock } from "bun:test";
+import { mkdtempSync } from "node:fs";
+import { join } from "node:path";
 
 import { createContainer, disposeContainer } from "@/container";
 import type { EpisodeInfo, PlaybackResult, StreamInfo, TitleInfo } from "@/domain/types";
 import type { PlayerOptions } from "@/infra/player/PlayerService";
+
+import { applyStorageRootEnv } from "../../helpers/storage-env";
 
 const SCENARIOS = [
   "movie-postplay",
@@ -35,9 +38,11 @@ const SCENARIOS = [
   "anime-postplay-next",
 ] as const;
 
-const scenario = SCENARIOS.find((name) => name === process.argv[2]);
-if (!scenario) throw new Error(`unknown scenario: ${process.argv[2] ?? "(none)"}`);
-const anime = scenario.startsWith("anime");
+type Scenario = (typeof SCENARIOS)[number];
+
+export type ScenarioReply =
+  | { readonly scenario: Scenario; readonly report: Awaited<ReturnType<typeof runScenario>> }
+  | { readonly scenario: Scenario; readonly error: string };
 
 type ResolveRecord = {
   readonly providerId: string;
@@ -59,9 +64,12 @@ type PlayedRecord = {
   readonly provider: string;
 };
 
-async function main() {
+const inkShell = { ...(await import("@/app-shell/ink-shell")) };
+const { PlaybackPhase } = await import("@/app/playback/PlaybackPhase");
+
+async function runScenario(scenario: Scenario) {
+  const anime = scenario.startsWith("anime");
   const shellCalls: string[] = [];
-  const inkShell = await import("@/app-shell/ink-shell");
   mock.module("@/app-shell/ink-shell", () => ({
     ...inkShell,
     openListShell: async () => null,
@@ -74,7 +82,6 @@ async function main() {
     },
   }));
 
-  const { PlaybackPhase } = await import("@/app/playback/PlaybackPhase");
   const container = await createContainer({
     searchServiceDefinitions: [],
     providerModulesOverride: [],
@@ -165,13 +172,6 @@ async function main() {
       type: "SELECT_EPISODE",
       episode: { season: 1, episode: anime && scenario === "anime-previous" ? 2 : 1 },
     });
-
-    globalThis.fetch = Object.assign(
-      async () => {
-        throw new Error("network forbidden in the playback characterization fixture");
-      },
-      { preconnect: () => {} },
-    );
 
     Object.assign(container.providerRegistry, {
       get: (id: string) => providerById(id),
@@ -397,25 +397,64 @@ async function main() {
       },
     });
 
-    const phase = new PlaybackPhase();
-    // The countdown UI has injected-clock tests of its own; skip only its wait.
-    Object.assign(phase, { runAutoNextCountdown: async () => "continue" });
+    let elapsedMs = 0;
+    const prefetchDeadlines = new Set<() => void>();
+    const phase = new PlaybackPhase({
+      countdownSleep: async (ms) => {
+        elapsedMs += ms;
+      },
+      prefetchTiming: {
+        now: () => elapsedMs,
+        // These scenarios expect prefetch to settle before its deadline.
+        scheduleTimeout: (expire) => {
+          prefetchDeadlines.add(expire);
+          return () => {
+            prefetchDeadlines.delete(expire);
+          };
+        },
+      },
+    });
     const result = await phase.execute(title, { container, signal: stop.signal });
+    if (prefetchDeadlines.size > 0) throw new Error("Prefetch deadline was not cancelled");
     const state = container.stateManager.getState();
-    console.log(
-      "RESULT " +
-        JSON.stringify({
-          result,
-          ...fixture,
-          shellCalls,
-          provider: state.provider,
-          currentEpisode: state.currentEpisode?.episode ?? null,
-          playbackStatus: state.playbackStatus,
-        }),
-    );
+    return {
+      result,
+      ...fixture,
+      shellCalls,
+      provider: state.provider,
+      currentEpisode: state.currentEpisode?.episode ?? null,
+      playbackStatus: state.playbackStatus,
+    };
   } finally {
     await disposeContainer(container);
   }
 }
 
-await main();
+const root = process.argv[2];
+if (!root || !process.send) throw new Error("Expected a storage root and an IPC parent");
+
+globalThis.fetch = Object.assign(
+  async () => {
+    throw new Error("network forbidden in the playback characterization fixture");
+  },
+  { preconnect: () => {} },
+);
+
+process.on("message", async (message) => {
+  const scenario = SCENARIOS.find((name) => name === message);
+  if (!scenario) throw new Error(`unknown scenario: ${message}`);
+  const restoreEnv = applyStorageRootEnv(mkdtempSync(join(root, "scenario-")));
+  let reply: ScenarioReply;
+  try {
+    reply = { scenario, report: await runScenario(scenario) };
+  } catch (error) {
+    reply = {
+      scenario,
+      error: error instanceof Error ? (error.stack ?? error.message) : String(error),
+    };
+  } finally {
+    restoreEnv();
+  }
+  process.send?.(reply);
+});
+process.send("ready");

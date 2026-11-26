@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T09:16:04Z"
+lastReviewed: "2026-11-26T10:44:37Z"
 ---
 
 # Tracker Sync
@@ -367,12 +367,16 @@ response and answers `429` with `Retry-After` and `X-RateLimit-Reset`;
 `TrackerRateLimiter` reads all of it. Below ten remaining it spreads what is
 left across the rest of the window; at zero it blocks until reset.
 
-Short waits are absorbed in-flight. Anything longer is handed back to the outbox
-via `defer()`, which writes the server's own instant to `next_attempt_at` and
+Short waits (up to three seconds) are absorbed in-flight. Anything longer is a
+`rate-limited` outcome before any request: both adapters check
+`shouldDefer()` first rather than sitting out the inline cap and sending early.
+The outbox `defer()` writes the server's own instant to `next_attempt_at` and
 **rolls back the attempt this claim started** — a row must not inherit a longer
-backoff for a queue-wide condition it did not cause. Within one drain, the first
-`rate-limited` outcome defers every remaining row for that tracker without
-asking again: the limit belongs to the connection, not to any one payload.
+backoff for a queue-wide condition it did not cause. The first `rate-limited`
+outcome also sets a per-tracker deadline on the `SyncService` instance: every
+row for that tracker is deferred without asking until it passes, across batches
+of 25, the passes of one drain, and later drains. Other trackers keep draining.
+The limit belongs to the connection, not to any one payload.
 
 ## GraphQL error fates
 

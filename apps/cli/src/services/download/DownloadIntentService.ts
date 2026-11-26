@@ -42,6 +42,8 @@ export type DownloadIntentCommitInput = {
 export type DownloadIntentCommitResult = {
   readonly status: "queued" | "none" | "blocked";
   readonly queuedCount: number;
+  /** Why nothing (or not everything) was queued, in the words shown to the user. */
+  readonly reason?: string;
 };
 
 /**
@@ -128,11 +130,11 @@ export async function commitDownloadIntent(
       type: "SET_PLAYBACK_FEEDBACK",
       note: `Download unavailable: ${eligibility.reason}`,
     });
-    return { status: "blocked", queuedCount: 0 };
+    return { status: "blocked", queuedCount: 0, reason: eligibility.reason };
   }
 
   const { title, mediaKind, items, profile } = input;
-  if (items.length === 0) return { status: "none", queuedCount: 0 };
+  if (items.length === 0) return { status: "none", queuedCount: 0, reason: "nothing to download" };
   const mode = enqueueModeForMediaKind(mediaKind);
   const isTitleLevel = isTitleLevelContent(mediaKind, title.type);
 
@@ -212,7 +214,7 @@ export async function commitDownloadIntent(
     });
     if (queuedCount > 0) persistSeriesPolicy();
     container.downloadService.kickQueue("download-intent");
-    return { status: queuedCount > 0 ? "queued" : "none", queuedCount };
+    return { status: queuedCount > 0 ? "queued" : "none", queuedCount, reason: message };
   }
 
   container.diagnosticsService.record(

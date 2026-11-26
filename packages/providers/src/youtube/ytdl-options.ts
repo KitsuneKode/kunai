@@ -162,10 +162,6 @@ export function buildYoutubeMpvYtdlRawOptions(options: YoutubeYtdlOptionsInput):
   if (options.isLive) {
     raw.push("no-live-from-start=");
   }
-  const subLangs = toYoutubeSubtitlePreferenceTokens(options.subtitleLanguage).ytdlpSubLangs;
-  if (subLangs) {
-    raw.push(formatMpvKeyValueOption("sub-langs", subLangs));
-  }
   return raw;
 }
 
