@@ -310,7 +310,7 @@ describe("transitionPlaybackStatus — degraded states", () => {
 describe("transitionPlaybackStatus — startup stall", () => {
   test("a current startup-stall enters stalled", () => {
     const decision = transitionPlaybackStatus(snapshot("loading"), {
-      kind: "startup-stall",
+      kind: "stall-abort",
       generation: GEN,
     });
     expect(decision.accepted).toBe(true);
@@ -319,7 +319,7 @@ describe("transitionPlaybackStatus — startup stall", () => {
 
   test("an old startup-stall cannot abort a replacement generation", () => {
     const decision = transitionPlaybackStatus(snapshot("playing", { process: 2, cycle: 8 }), {
-      kind: "startup-stall",
+      kind: "stall-abort",
       generation: { process: 2, cycle: 7 },
     });
     expect(decision.accepted).toBe(false);
