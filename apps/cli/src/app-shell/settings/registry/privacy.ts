@@ -102,7 +102,7 @@ export function privacySettingsRows(ctx: SettingsRegistryContext): SettingRowDef
       id: "showMemory",
       label: "Memory panel",
       detail:
-        "Hidden by default. Press m during playback for app, mpv, total, heap, and swap usage",
+        "Hidden by default. Use /memory during playback for app, mpv, total, heap, and swap usage",
       read: (config) => config.showMemory,
       write: (config, value) => ({ ...config, showMemory: value }),
     },
