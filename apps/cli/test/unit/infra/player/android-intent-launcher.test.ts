@@ -146,6 +146,7 @@ describe("Android intent launch", () => {
   test("the native runtime kills an aborted launcher process", async () => {
     const controller = new AbortController();
     const process = defaultAndroidIntentRuntime.spawn(
+      // sleep-allow: a real child that idles until killed; the test never waits on it.
       [globalThis.process.execPath, "-e", 'console.log("ready"); setInterval(() => {}, 1000000)'],
       { signal: controller.signal },
     );
