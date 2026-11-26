@@ -1268,9 +1268,7 @@ export function RootOverlayShell({
         return undefined;
       })
       .catch((error: unknown) => {
-        if (!cancelled) {
-          setHistoryError(error instanceof Error ? error.message : String(error));
-        }
+        if (!cancelled) setHistoryError(error instanceof Error ? error.message : String(error));
       })
       .finally(() => {
         if (!cancelled) {

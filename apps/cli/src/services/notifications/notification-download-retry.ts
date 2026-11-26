@@ -22,11 +22,14 @@ const RETRYABLE: ReadonlySet<DownloadJobRecord["status"]> = new Set([
  * which for an anime notice (absolute episode only) defaulted to S01E01 and
  * left the failed job behind (Sol review #3).
  */
-export function createNotificationDownloadRetry(downloads: RetryPort): {
+/** What the inbox calls to retry a failed download notice. */
+export type NotificationDownloadRetry = {
   readonly retryFailed: (
     target: NotificationDownloadRetryTarget,
   ) => Promise<NotificationDownloadRetryOutcome>;
-} {
+};
+
+export function createNotificationDownloadRetry(downloads: RetryPort): NotificationDownloadRetry {
   return {
     async retryFailed({ jobId, item }) {
       const job = jobId ? downloads.getJob(jobId) : onlyFailedJobFor(downloads, item);
