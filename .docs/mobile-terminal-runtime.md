@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T20:41:28Z"
+lastReviewed: "2026-11-26T17:40:00Z"
 ---
 
 # Mobile terminal runtime
@@ -157,6 +157,12 @@ activation and restoration failures preserve the backup for later recovery.
   `scrubbedIntentEnv` in `apps/cli/src/infra/player/android-intent-launcher.ts`.
   `LD_LIBRARY_PATH` and `LD_PRELOAD` stay out, since Termux's libraries break
   Android's own binaries, and so does every shell secret.
+- A launch has a ten-second deadline across process exit and both output
+  streams, and each stream is capped at 64 KiB. Playback cancellation and
+  shutdown abort a pending launcher: the native child is killed, its pipe
+  readers are cancelled, the gateway made for that handoff is stopped, and every
+  timer and listener is released. Cancellation never counts as an accepted
+  handoff. It cannot revoke an intent Android has already delivered.
 - `kunai doctor` on Termux does not require desktop mpv and reports whether an
   intent launcher exists (`android-player-handoff` / `-missing`).
 - iOS uses a literal helper allowlist and fixed private files.
