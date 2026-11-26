@@ -52,7 +52,6 @@ import {
   unrecoverableStallEvent,
   watchdogReconnectTrigger,
   type InProcessReconnectTrigger,
-  type WatchdogReconnectTrigger,
 } from "./mpv-in-process-reconnect";
 import { openMpvIpcSession, waitForMpvIpcEndpoint, type MpvIpcSession } from "./mpv-ipc";
 import {
