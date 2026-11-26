@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T12:00:00Z"
+lastReviewed: "2026-11-26T10:13:00Z"
 ---
 
 # Analytics Privacy Contract
@@ -13,14 +13,18 @@ Read this before touching `apps/cli/src/services/analytics/`,
 ## Consent and identifier
 
 - Usage analytics is **user-controlled and keystroke-gated**. A fresh install is
-  `unset`. Setup **recommends** analytics and pre-selects it, with copy that says
-  what is and is not sent — but only an explicit choice made on the consent
-  screen may persist `enabled` or create an identifier.
-- **No skip path may enable it.** `s` on the consent screen selects off, and `S`
-  (accept all remaining defaults) stops on that screen rather than passing
-  through it. `unchanged` — the state when the screen was never reached — must
-  never collapse into `disabled` either, or rerunning setup and pressing
-  accept-all would silently opt OUT someone who had opted in.
+  `unset`. The setup consent screen is **neutral**: neither "Share anonymous
+  usage" nor "Don't share" is pre-selected or marked recommended, and each needs
+  its own keystroke. The cursor starts on no row and Enter does nothing until an
+  arrow has chosen one. Only an explicit choice made on that screen may persist
+  `enabled` or create an identifier.
+- The screen's payload preview is `describePayload()` itself, passed in by the
+  setup workflow, so the copy cannot drift from the wire.
+- **No skip path may enable it.** `s` on the consent screen is its labelled
+  "don't share" key, and `S` (accept all remaining defaults) stays on that
+  screen and chooses nothing. `unchanged` — the state when the screen was never
+  reached — must never collapse into `disabled` either, or rerunning setup and
+  pressing accept-all would silently opt OUT someone who had opted in.
 - This generalizes: **no skip, accept-all, or non-interactive path may perform an
   outward-facing action** — analytics, tracker OAuth, or presence IPC. A
   recommendation the user pressed a key on is consent; a default they never saw
@@ -30,8 +34,9 @@ Read this before touching `apps/cli/src/services/analytics/`,
   analytics, create an id, or send a request.
 - An `enabled` value written before this opt-in contract is migrated to `unset`
   and its legacy id is cleared before startup; it is not treated as consent.
-- `/settings` exposes the enable/disable option. Disabling clears `installId`.
-  The id exists on disk only while analytics is enabled. A ping already in flight
+- `/settings` exposes the enable/disable option. Disabling clears `installId`,
+  `analyticsCohort` and the local ping log. The id exists on disk only while
+  analytics is enabled. A ping already in flight
   may finish, but its result must not restore an id cleared by disable, undo a
   rotation, or apply the old identity's cadence/retry bookkeeping. The completion
   compares both local and persisted consent and the pre-send stored identity
@@ -70,9 +75,10 @@ Read this before touching `apps/cli/src/services/analytics/`,
   against locally. Anything else — an `http://` host, a non-URL — is refused and
   **stops sending entirely**; it is never redirected to the built-in default,
   because someone who pointed their installs at their own ingest did not consent
-  to sending here instead. The wire carries `sha256(installId)` with version,
-  OS, and architecture: over http that is readable on the path and one install
-  is followable day to day, which is exactly what the digest exists to prevent.
+  to sending here instead. The wire carries a monthly HMAC of the install id
+  with cohort, day, version, OS, and architecture: over http that is readable on
+  the path and one install is followable through a month, which is exactly what
+  the HMAC exists to prevent.
   Same rule and same loopback exception as `normalizeRelayBaseUrl` in
   `packages/relay`.
 - The default is a domain Kunai controls, never a hosting provider's own URL.
@@ -132,9 +138,9 @@ Settings exercises. Normal user installs retain their explicit opt-in behavior.
 
 The ingest accepts exactly two wire shapes, and nothing between them:
 
-- **v1**, sent by every release so far: `{ installId, version, os, arch, ts }`.
+- **v1**, sent by every release before v2: `{ installId, version, os, arch, ts }`.
   A sixth key is rejected.
-- **v2**, sent by no client yet: `{ id, cohort, day, version, os, arch }`. A
+- **v2**, sent by the CLI from this release on: `{ id, cohort, day, version, os, arch }`. A
   seventh key is rejected, and so is any mixture of the two key sets.
 
 Titles, queries, providers, provider results, URLs, file paths, raw UUIDs, and
@@ -146,7 +152,7 @@ every published client treats any 4xx as permanent for 24 hours, so a v2 ping
 that reaches an ingest without v2 support loses a day of that install. v1 is
 accepted forever, for the same reason the UUID branch below is.
 
-v2 fields:
+v2 fields, as the ingest checks them:
 
 - `id`: 64 hex, the client's `HMAC-SHA256(localSecret, "YYYY-MM")`, where
   `localSecret` is the local install id that never leaves the machine. It
@@ -167,27 +173,91 @@ was added so an Android build can be counted as itself; Bun on Android reports
 values: counting a value almost nobody reports as a candidate would let `other`
 be read as `win32` by elimination.
 
-`installId` on the wire is `sha256` of the locally stored id, not the id
-itself. The stored UUID never leaves the machine that generated it, so no
-endpoint — ours, a self-hoster's, or one that has been compromised — ever holds
-the raw value; the ingest still HMACs what arrives, making this a second,
-client-owned layer rather than a replacement for it. The digest is
-deterministic, or a daily-active count would degrade into a count of pings.
+### What the client sends (v2)
 
-The ingest accepts a UUID **or** a 64-hex digest, and the order is a deployment
-constraint, not a preference: it has to accept digests before any client sends
-one, or every ping from an upgraded install answers 400 until the ingest
-deploys. The UUID branch is not transitional scaffolding on a deletion
-schedule — published binaries are immutable, so pre-0.3.0 installs keep sending
-UUIDs for as long as they run.
+- `id` is hex `HMAC-SHA256(key = installId, message = "YYYY-MM")`, where the
+  month is the month of the ping's own `day` label. The stored UUID never
+  leaves the machine that generated it, so no endpoint — ours, a
+  self-hoster's, or one that has been compromised — ever holds the raw value.
+  The id is stable within a calendar month, so daily and month-aligned counts
+  stay exact, and it rotates every month: without the key, one month's id says
+  nothing about another's. A test fails if any month's id is derivable from the
+  previous month's by the obvious constructions.
+- `cohort` is the `YYYY-MM` analytics was enabled in, stored locally as
+  `analyticsCohort`. It is written only where `installId` is minted: the
+  explicit enable keystroke (`consentPatch("enabled")`) and the explicit
+  rotate action, which starts a new cohort. Disable and the env block clear it,
+  and load drops one that has no enabled identity beside it. Affirming an
+  enable that already holds keeps it. **The one exception** is an install that
+  opted in before cohorts existed: it has a valid id and no cohort, so its
+  first v2 ping carries the month of that ping and the completion stores it
+  (only if the file still has none, under the same lock as cadence). That is
+  the upgrade seam below, not a new consent.
+- Rotation is a locked compare-and-set: it writes the new id and cohort only
+  if `config.json` still says `enabled`, so a rotate pressed in a process whose
+  memory missed a sibling's disable cannot leave an identity beside `disabled`.
+- `day` is the client's analytics day label, computed by
+  `apps/cli/src/domain/analytics/analytics-day.ts`, a deliberate copy of the
+  ingest's `analytics-day.ts` (the CLI cannot import the ingest app). A parity
+  test compares the two across the cutover and month boundaries. There is no
+  `ts`.
+- `os` is `android` when `isAndroidRuntime()` is true (Termux reports `linux`),
+  otherwise `process.platform`.
 
-Because the digest changes the hash input, installs that existed before 0.3.0
-are counted again once on upgrade. That was accepted deliberately at a
-`lifetimeInstalls` of 2; it is the cheapest this change will ever be.
-`lifetimeMethod` was removed from the public schema; the count published is the
-real stored figure, not a sketch — what it means is stated in the series
-section, where retirement makes it cumulative observations rather than unique
-installs.
+### v1, kept for clients already in the wild
+
+A v1 `installId` on the wire is `sha256` of the locally stored id, not the id
+itself, and is deterministic, or a daily-active count would degrade into a
+count of pings. The ingest accepts a UUID **or** a 64-hex digest there: it had
+to accept digests before any client sent one, and published binaries are
+immutable, so pre-0.3.0 installs keep sending UUIDs for as long as they run.
+
+Each change of hash input counts existing installs again once: the digest did
+in 0.3.0, at a `lifetimeInstalls` of 2, and v2 does in each install's upgrade
+month (the seam `month_active` below records). `lifetimeMethod` was removed
+from the public schema; the count published is the real stored figure, not a
+sketch — what it means is stated in the series section, where retirement makes
+it cumulative observations rather than unique installs.
+
+### The local ping log
+
+`kunai analytics log` prints the last 50 pings exactly as sent, from
+`analytics-pings.json` in the OS data dir. Each entry is the request body
+byte for byte, with the local send time and endpoint. The file is owner-only
+(`0o600`) and exists only while analytics is enabled:
+
+- The send path appends the body after every in-memory gate, then re-reads
+  `config.json` (the pre-send consent check), and only then sends. If the
+  file no longer agrees, nothing is sent and the log is removed. A ping the
+  log cannot record is not sent, so the log is never a sample.
+- Disable, the env block, and rotation remove it, and so does any ping
+  completion the file rejects. Startup removes one left behind while analytics
+  is not enabled (a sibling's disable, a hand edit), in the background so it
+  costs first paint nothing.
+- `kunai analytics preview` prints `describePayload()` for the persisted
+  consent. Both commands are read-only with respect to consent: they send
+  nothing, mint no id or cohort, and cannot enable analytics.
+
+### Release markers
+
+Every release carries `install.marker` and `update.marker`, fixed version-free
+bytes written by `scripts/packaging/release-markers.ts`, uploaded by the
+release workflow and required by `verify-github-release-assets.ts`.
+`install.sh` and `install.ps1` fetch `install.marker` once after a successful
+**fresh** binary install, and `update.marker` instead when they replaced
+another version (judged from `install.json` under the activation lock); a
+same-version reinstall fetches neither. The native updater fetches `update.marker` once after a
+verified activation (`kunai upgrade` and the background auto-updater, not a
+fresh `kunai install`). **GitHub counts the download; Kunai receives
+nothing.** The request goes to the release host that just served the binary
+and carries nothing that download did not.
+
+Best effort only: one attempt, a 3 second timeout, no retry, every failure
+ignored, nothing printed. The updater starts the request after activation and
+never awaits it; `kunai upgrade` waits out at most that timeout after printing
+success, because its `process.exit` would otherwise cut the request off. It
+needs no consent because nothing reaches Kunai, but `DO_NOT_TRACK`, `CI` (both
+`1`, `true`, `yes`) and `KUNAI_NO_MARKER` each skip it.
 
 `ping_day` stores an HMAC of the id plus version, OS, and architecture for 35
 days. `install_lifetime` stores one HMAC row per **v1** install with first-seen
@@ -272,10 +342,11 @@ previous snapshot counts from zero; a counter that went down contributes zero.
 also fetches a platform package. These are downloads, not users.
 
 shields.io endpoint badges: `/badges/downloads.json`, `/badges/active.json`
-labelled "active (opted in, 30d)", which reads the last complete calendar month
-of `month_rollup`, and `/badges/installs.json`, which reads "unavailable" until
-marker assets exist. The badge wording is an open maintainer decision; that
-label is its default. Every badge applies the floor of 5, and a missing figure
+labelled "active last month (opted in)", which reads the last complete calendar
+month of `month_rollup`, and `/badges/installs.json`, which reads "unavailable"
+until marker assets exist. The wording is a maintainer decision (2026-11-25): it
+names the calendar month the figure covers rather than a rolling window it does
+not compute. Every badge applies the floor of 5, and a missing figure
 reads "unavailable", never zero.
 
 The distribution stage, the month rollup, and its prune each run on their own,

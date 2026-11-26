@@ -164,6 +164,43 @@ describe("SyncTokenStore mutation serialization", () => {
     await pending;
   });
 
+  test("concurrent loads share one read: both trackers at startup cost one vault round", async () => {
+    const file = new FakeTokenFile();
+    let reads = 0;
+    const io: SyncTokenFileIo = {
+      ...file.io,
+      readTokens: async (path) => {
+        reads += 1;
+        return await file.io.readTokens(path);
+      },
+    };
+    const store = new SyncTokenStore(fakePaths(), io);
+    await store.patchAniList(ANILIST);
+    reads = 0;
+
+    const [first, second] = await Promise.all([store.load(), store.load()]);
+    expect(first).toEqual({ anilist: ANILIST });
+    expect(second).toEqual({ anilist: ANILIST });
+    expect(reads).toBe(1);
+
+    // Settled reads are not cached: a later load reads again.
+    await store.load();
+    expect(reads).toBe(2);
+  });
+
+  test("a load queued after a mutation never shares the read from before it", async () => {
+    const file = new FakeTokenFile();
+    const store = new SyncTokenStore(fakePaths(), file.io);
+
+    const before = store.load();
+    const patch = store.patchTmdb(TMDB);
+    const after = store.load();
+
+    expect(await before).toEqual({});
+    expect(await after).toEqual({ tmdb: TMDB });
+    await patch;
+  });
+
   test("a failed write rejects its caller without wedging later mutations", async () => {
     const file = new FakeTokenFile();
     const store = new SyncTokenStore(fakePaths(), file.io);

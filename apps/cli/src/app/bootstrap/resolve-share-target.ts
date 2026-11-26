@@ -27,7 +27,11 @@ export async function resolveShareTarget(
   const download = options.action === "download";
 
   if (ref.anchor.by === "search") {
+    // The link's episode rides with the search, so the auto-picked title opens
+    // on it — the timestamp was kept and landed on whatever opened instead.
+    const episode = buildEpisode(ref);
     return {
+      ...(episode ? { episode } : null),
       title: {
         id: `search:${ref.anchor.query}`,
         type: ref.kind === "movie" || ref.kind === "video" ? "movie" : "series",

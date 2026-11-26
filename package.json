@@ -23,7 +23,6 @@
     },
     "catalogs": {
       "cli": {
-        "commander": "^15.1.0",
         "ink": "^8.0.0"
       },
       "lint": {

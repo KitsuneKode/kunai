@@ -1,4 +1,5 @@
 import { detectImageCapability } from "@/image";
+import { getTerminalCellPixels } from "@/image/cell-size";
 import { useEffect, useRef } from "react";
 
 import { recordPosterFetch } from "./diagnostics/render-trace";
@@ -177,17 +178,33 @@ function posterCacheKey(
     inkEmbedded = false,
     placementSlot,
   }: PosterFetchOptions,
-): { readonly key: string; readonly resolved: string | null; readonly rendererKey: string } {
+) {
   const resolved = resolvePosterUrl(url, { cols, variant });
   const detectedRenderer = runtime.detectImageCapability().renderer;
   const rendererKey = inkEmbedded
     ? "ink-embedded"
-    : detectedRenderer === "sixel" && !allowSixel
-      ? "sixel-text-fallback"
+    : !allowSixel &&
+        (detectedRenderer === "sixel" ||
+          detectedRenderer === "iterm-inline" ||
+          detectedRenderer === "kitty-direct")
+      ? `${detectedRenderer}-text-fallback`
       : detectedRenderer;
   // Slot in the key so concurrent Kitty placements of the same URL get distinct imageIds.
   const slotKey = placementSlot && !inkEmbedded ? `:${placementSlot}` : "";
-  return { key: `${resolved}:${rows}x${cols}:${rendererKey}${slotKey}`, resolved, rendererKey };
+  const pixels =
+    !inkEmbedded &&
+    (rendererKey === "kitty-native" ||
+      rendererKey === "kitty-direct" ||
+      rendererKey === "sixel" ||
+      rendererKey === "iterm-inline")
+      ? getTerminalCellPixels()
+      : null;
+  const pixelKey = pixels ? `:${pixels.width}x${pixels.height}px` : "";
+  return {
+    key: `${resolved}:${rows}x${cols}:${rendererKey}${slotKey}${pixelKey}`,
+    resolved,
+    rendererKey,
+  };
 }
 
 /**

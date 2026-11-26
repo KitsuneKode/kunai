@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T05:06:00Z"
+lastReviewed: "2026-11-25T10:16:34Z"
 ---
 
 # Kunai Release Reliability Gate
@@ -74,7 +74,7 @@ the recorded archive provenance and executes the sandboxed installed launcher
 with `--version` and `--help`; the separate raw and musl executions remain
 compatibility checks.
 
-After the final candidate-directory verification, `actions/attest` signs all 22
+After the final candidate-directory verification, `actions/attest` signs all 30
 subjects with GitHub OIDC. The upload's immutable artifact ID is passed through
 the provenance, execution, confirmation, and publication jobs so every boundary
 downloads the same candidate rather than resolving it again by name. A dedicated
@@ -104,8 +104,11 @@ The TypeScript native updater and both native installer scripts consume these
 archives. All three verify the archive against `SHA256SUMS.archives`, permit
 exactly one expected regular-file member, bound compressed and decompressed
 bytes, and then verify that member against the legacy raw `SHA256SUMS` before
-version-store or launcher activation. TypeScript parses tar/gzip and zip
-in-process; PowerShell uses bounded .NET zip streams; Bash validates the tar
+version-store or launcher activation. TypeScript parses tar (gzip or zstd) and zip
+in-process, streaming a tar member to disk rather than holding the archive and
+its decompressed tar in memory; PowerShell uses bounded .NET zip streams; Bash
+takes the `.tar.zst` only when the host has `zstd` and the signed manifest lists
+it, then validates the tar
 header, type, name, size, checksum, padding, and two-block trailer before asking
 the host `tar` to stream only the verified member. Absolute/traversal paths,
 links, reparse entries, duplicates, extra/missing/wrong payloads, malformed

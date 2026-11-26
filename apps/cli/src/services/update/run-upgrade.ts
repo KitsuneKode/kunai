@@ -145,9 +145,19 @@ export async function runUpgrade(opts: RunUpgradeOptions): Promise<number> {
   // Binary channel: migrate flat installs, then use versioned native installer.
   if (channel === "binary" || plan.kind === "self-replace") {
     await migrateFlatInstall({ manifest, currentVersion: opts.currentVersion });
-    const result = await installLatest({ intent: "upgrade", version: latest, dlBase, force: true });
+    const result = await installLatest({
+      intent: "upgrade",
+      version: latest,
+      dlBase,
+      force: true,
+      releaseMarker: "update.marker",
+    });
     if (result.status === "installed") {
       console.log(`Updated to ${latest}.`);
+      // The update is done and reported. The caller exits right after this
+      // returns, which would cut off the marker request, so give it the rest
+      // of its short timeout. It never rejects.
+      await result.releaseMarker;
       return 0;
     }
     if (result.status === "up-to-date") {

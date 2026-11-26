@@ -32,4 +32,5 @@
 *.sqlite binary
 *.exe binary
 *.tgz binary
+*.zst binary
 *.gz binary

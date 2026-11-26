@@ -70,20 +70,28 @@ jobs:
           path: |
             apps/cli/dist/bin/kunai-linux-x64
             apps/cli/dist/bin/kunai-linux-x64.tar.gz
+            apps/cli/dist/bin/kunai-linux-x64.tar.zst
             apps/cli/dist/bin/kunai-linux-arm64
             apps/cli/dist/bin/kunai-linux-arm64.tar.gz
+            apps/cli/dist/bin/kunai-linux-arm64.tar.zst
             apps/cli/dist/bin/kunai-linux-x64-musl
             apps/cli/dist/bin/kunai-linux-x64-musl.tar.gz
+            apps/cli/dist/bin/kunai-linux-x64-musl.tar.zst
             apps/cli/dist/bin/kunai-linux-arm64-musl
             apps/cli/dist/bin/kunai-linux-arm64-musl.tar.gz
+            apps/cli/dist/bin/kunai-linux-arm64-musl.tar.zst
             apps/cli/dist/bin/kunai-android-arm64
             apps/cli/dist/bin/kunai-android-arm64.tar.gz
+            apps/cli/dist/bin/kunai-android-arm64.tar.zst
             apps/cli/dist/bin/kunai-android-x64
             apps/cli/dist/bin/kunai-android-x64.tar.gz
+            apps/cli/dist/bin/kunai-android-x64.tar.zst
             apps/cli/dist/bin/kunai-darwin-x64
             apps/cli/dist/bin/kunai-darwin-x64.tar.gz
+            apps/cli/dist/bin/kunai-darwin-x64.tar.zst
             apps/cli/dist/bin/kunai-darwin-arm64
             apps/cli/dist/bin/kunai-darwin-arm64.tar.gz
+            apps/cli/dist/bin/kunai-darwin-arm64.tar.zst
             apps/cli/dist/bin/kunai-windows-x64.exe
             apps/cli/dist/bin/kunai-windows-x64.zip
             apps/cli/dist/bin/kunai-windows-arm64.exe

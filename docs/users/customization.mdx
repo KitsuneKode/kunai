@@ -141,7 +141,7 @@ See [Media selection](/docs/users/media-selection) for how profiles flow into re
 | `minimalMode` / `--minimal` | Collapse companion pane and dim header status |
 | `footerHints` | `detailed` or `minimal` footer guidance |
 | `discoverShowOnStartup` | Faint discover hint in browse footer when history exists |
-| `discoverMode` | What `/discover` mixes: `auto` (default), `unified`, `anime-only`, or `series-only` |
+| `discoverMode` | What `/discover` mixes: `auto` (default), `unified`, `anime-only` (anime series and films), or `series-only` |
 | `discoverItemLimit` | Rows the Discover tray shows (default `24`) |
 | `powerSaverMode` | Suppress background network and speculative work |
 | `recommendationRailEnabled` | Show the recommendation rail after playback (default `true`) |
@@ -187,7 +187,7 @@ See [Downloads and offline](/docs/users/downloads-and-offline).
 }
 ```
 
-Tokens are stored separately. Sync is **experimental** and fail-closed: nothing leaves the machine until you enable it in Settings › Accounts & Sync. Pending mutations sit in a local **outbox** and retry; auth failure holds the row until you re-authenticate. Failed-closed rows do not invent progress on AniList/TMDB.
+Tokens are stored separately. Sync is **experimental** and fail-closed: nothing leaves the machine until you connect an account in Settings › Accounts & Sync (or `/sync`, or during setup). Connecting turns that tracker's sync on, including episode progress (AniList) and lists; the switches above stay in your hands afterwards, and disconnecting turns it off. Pending mutations sit in a local **outbox** and retry; auth failure holds the row until you re-authenticate. Failed-closed rows do not invent progress on AniList/TMDB.
 
 ## Catalog sources and your own TMDB key
 

@@ -157,9 +157,13 @@ export async function expandHlsMasterInventory(
     // this.
     if (masterVariantsNeedSeparateAudio(text)) {
       const renditions = parseHlsMasterRenditions(text, baseUrl);
+      // The master stays whole, but its ladder still declares how high it
+      // goes. Ranking it 0 let a real 1080p multi-audio master lose to a 360p
+      // MP4 from another source; the declared top rung is evidence, not a guess.
+      const declaredTop = parseHlsMasterMaxHeight(text);
       return {
         isHls: true,
-        variants: [fallback],
+        variants: [declaredTop ? { ...fallback, qualityRank: declaredTop } : fallback],
         ...renditions,
         probe: { kind: "ok", httpStatus: response.status },
       };
@@ -170,7 +174,10 @@ export async function expandHlsMasterInventory(
       return empty({ kind: "not-master", httpStatus: response.status });
     }
 
-    const sorted = [...variants].sort((left, right) => right.qualityRank - left.qualityRank);
+    const sorted = [...variants].sort(
+      (left, right) =>
+        right.qualityRank - left.qualityRank || (right.bandwidth ?? 0) - (left.bandwidth ?? 0),
+    );
     const capped = maxVariants > 0 ? sorted.slice(0, maxVariants) : sorted;
     const renditions = parseHlsMasterRenditions(text, baseUrl);
     return {
@@ -288,13 +295,29 @@ export function parseHlsMasterMaxHeight(manifestText: string): number | undefine
   for (const rawLine of manifestText.split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line.startsWith("#EXT-X-STREAM-INF:")) continue;
-    const resMatch = /RESOLUTION=\d+x(\d+)/i.exec(line);
-    const height = resMatch?.[1] ? Number.parseInt(resMatch[1], 10) : 0;
-    if (Number.isFinite(height) && height > maxHeight) {
-      maxHeight = height;
-    }
+    const height = hlsResolutionQualityClass(line) ?? 0;
+    if (height > maxHeight) maxHeight = height;
   }
   return maxHeight > 0 ? maxHeight : undefined;
+}
+
+/**
+ * The quality class (the "1080" in 1080p) a `RESOLUTION=WxH` attribute means.
+ *
+ * Height alone misreads letterboxed films: a 2.39:1 1080p encode is 1920x804
+ * and would rank below a 900p stream. The long side scaled to 16:9 recovers the
+ * class (1920 → 1080), the short side covers 4:3 and portrait, and the larger
+ * of the two is the class. Undefined when the row declares no usable size.
+ */
+export function hlsResolutionQualityClass(streamInfLine: string): number | undefined {
+  const match = /RESOLUTION=(\d+)x(\d+)/i.exec(streamInfLine);
+  if (!match?.[1] || !match[2]) return undefined;
+  const width = Number.parseInt(match[1], 10);
+  const height = Number.parseInt(match[2], 10);
+  if (!(width > 0) || !(height > 0)) return undefined;
+  const short = Math.min(width, height);
+  const long = Math.max(width, height);
+  return Math.max(short, Math.round((long * 9) / 16));
 }
 
 /** Strongest HDR dynamic range declared across `#EXT-X-STREAM-INF` rows in a master playlist. */
@@ -324,13 +347,20 @@ export function parseHlsMasterVariants(
   let currentBandwidth = 0;
   let currentName = "";
   let currentDynamicRange: VideoDynamicRange | undefined;
+  const reset = () => {
+    currentResolution = "";
+    currentBandwidth = 0;
+    currentName = "";
+    currentDynamicRange = undefined;
+  };
 
   for (const rawLine of lines) {
     const line = rawLine.trim();
     if (line.startsWith("#EXT-X-STREAM-INF:")) {
-      const resMatch = /RESOLUTION=\d+x(\d+)/i.exec(line);
-      currentResolution = resMatch?.[1] ? `${resMatch[1]}p` : "";
-      const bwMatch = /BANDWIDTH=(\d+)/i.exec(line);
+      const resolutionClass = hlsResolutionQualityClass(line);
+      currentResolution = resolutionClass ? `${resolutionClass}p` : "";
+      // Anchored so AVERAGE-BANDWIDTH, when it comes first, is not read as the peak.
+      const bwMatch = /(?:^|[:,])BANDWIDTH=(\d+)/i.exec(line);
       currentBandwidth = bwMatch?.[1] ? Number.parseInt(bwMatch[1], 10) : 0;
       const nameMatch = /NAME="([^"]+)"/i.exec(line);
       currentName = nameMatch?.[1]?.trim() ?? "";
@@ -341,23 +371,19 @@ export function parseHlsMasterVariants(
     if (!currentResolution && !currentName && currentBandwidth <= 0) continue;
 
     const absoluteUrl = resolveHlsVariantUrl(masterUrl, line);
-    const labelSource = currentName || currentResolution || (currentBandwidth > 0 ? "auto" : "");
+    // The declared size is measured; NAME is whatever the packager typed, so a
+    // row named "4K" that is really 1280x720 must read as 720p.
+    const labelSource = currentResolution || currentName || (currentBandwidth > 0 ? "auto" : "");
     if (!labelSource || !absoluteUrl) {
-      currentResolution = "";
-      currentBandwidth = 0;
-      currentName = "";
-      currentDynamicRange = undefined;
+      reset();
       continue;
     }
 
     const qualityLabel = normalizeQualityLabel(labelSource) ?? labelSource;
-    // `currentBandwidth` is always a number — the `?? 0` that used to trail it
-    // was dead. A 0 simply ranks the variant lowest, which is what an
-    // unlabeled, unres'd row means.
-    const qualityRank =
-      qualityRankFromLabel(qualityLabel) ??
-      qualityRankFromLabel(currentResolution) ??
-      currentBandwidth;
+    // A row with no size and a non-numeric NAME has no quality evidence: rank
+    // it 0, never its raw BANDWIDTH, which is millions of bits per second and
+    // would outrank every real 2160p rung. Bandwidth only breaks ties when sorted.
+    const qualityRank = qualityRankFromLabel(qualityLabel) ?? 0;
 
     const variant: HlsLadderVariant =
       currentDynamicRange !== undefined
@@ -375,11 +401,7 @@ export function parseHlsMasterVariants(
             bandwidth: currentBandwidth > 0 ? currentBandwidth : undefined,
           };
     variants.push(variant);
-
-    currentResolution = "";
-    currentBandwidth = 0;
-    currentName = "";
-    currentDynamicRange = undefined;
+    reset();
   }
 
   return dedupeHlsVariantsByUrl(variants);

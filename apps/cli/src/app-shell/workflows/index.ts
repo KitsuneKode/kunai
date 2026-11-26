@@ -22,8 +22,6 @@ export {
   enqueueCurrentPlaybackDownload,
   handleShellAction,
   runShellWorkflowFromOverlay,
-  openCompletedDownloadsPicker,
-  openOfflineLibraryGroupPicker,
   queueMoreOfflineTitleEpisodes,
   resolveQuitWithDownloadQueue,
   waitForOverlayClose,
