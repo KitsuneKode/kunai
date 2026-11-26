@@ -1,3 +1,4 @@
+import type { PlaybackSessionState } from "@/app/playback/playback-session-controller";
 // playback-run-state.ts — the session-spanning mutable state for a single
 // PlaybackPhase.execute() run.
 //
@@ -13,7 +14,7 @@
 // Grouping them into one named, documented object makes the run state explicit,
 // gives the closures and the menu a single source of truth to mutate, and is the
 // prerequisite seam for lifting the loop bodies out of the god method.
-import type { PlaybackSessionState } from "@/app/playback/playback-session-controller";
+import type { RecoveryQualityCeiling } from "@/app/playback/playback-source-failover";
 import type { PlaybackStartIntent } from "@/app/playback/playback-start-intent";
 import type { SourceRefreshAction } from "@/app/playback/source-refresh-policy";
 import type { PlaybackTimingMetadata } from "@/domain/types";
@@ -38,6 +39,8 @@ export interface PlaybackRunState {
   triedFailoverSourceIds: string[];
   /** True after an automatic provider hop was spent for this episode failover cascade. */
   startupProviderHopUsed: boolean;
+  /** A failing 4K rung stepped down on its source this episode (`planQualityStepDown`). */
+  recoveryQualityCeiling: RecoveryQualityCeiling | null;
   /** Forced local/online source selection for the next episode, when requested. */
   episodePlaybackSourceOverride: "local" | "online" | null;
   /** Timing metadata for a locally-resolved (offline) episode, when applicable. */
@@ -67,6 +70,7 @@ export function createPlaybackRunState(init: {
     autoRecoverEpisodeKey: null,
     triedFailoverSourceIds: [],
     startupProviderHopUsed: false,
+    recoveryQualityCeiling: null,
     episodePlaybackSourceOverride: null,
     localEpisodeTiming: null,
     localPlaybackJobId: null,
