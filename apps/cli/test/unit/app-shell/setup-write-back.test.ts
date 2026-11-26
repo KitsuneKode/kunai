@@ -26,6 +26,7 @@ import { act } from "react";
 
 import { render } from "../../harness/render-capture";
 import { applyStorageRootEnv } from "../../helpers/storage-env";
+import { UNSET_PAYLOAD_FIXTURE } from "../../support/analytics-fixtures";
 
 // `runSetupWizard` now writes a real restore point beside the real config, so
 // every test in this file has to own its storage root or it would leave a
@@ -98,10 +99,13 @@ function fakeContainer(
   };
   const notes: string[] = [];
   const diagnostics: string[] = [];
+  // The live session the wizard runs inside: it starts in the saved default.
+  const session = { mode: String(config.defaultMode) };
   const adapters = adapterDefs.map((def) => ({ ...def, connectCalls: 0 }));
   const container = {
     config: {
-      getRaw: () => config,
+      // A copy, as ConfigServiceImpl returns: callers diff before against after.
+      getRaw: () => ({ ...config }),
       update: async (patch: Partial<typeof config>) => {
         Object.assign(config, patch);
       },
@@ -124,22 +128,40 @@ function fakeContainer(
     usageAnalytics: {
       consentPatch: (choice: "enabled" | "disabled") =>
         choice === "enabled"
-          ? { analytics: "enabled" as const, installId: config.installId }
-          : { analytics: "disabled" as const, installId: "" },
+          ? {
+              analytics: "enabled" as const,
+              installId: config.installId,
+              analyticsCohort: "2026-11",
+            }
+          : { analytics: "disabled" as const, installId: "", analyticsCohort: "" },
+      describePayload: () => UNSET_PAYLOAD_FIXTURE,
+      settleLocalPingLog: async () => undefined,
     },
     diagnosticsService: {
       record: (entry: { message: string }) => diagnostics.push(entry.message),
     },
     stateManager: {
-      dispatch: (action: { type: string; note?: string }) => {
+      dispatch: (action: { type: string; note?: string; mode?: string }) => {
         if (action.type === "SET_PLAYBACK_FEEDBACK" && action.note) notes.push(action.note);
+        if (action.type === "SET_MODE" && action.mode) session.mode = action.mode;
       },
-      getState: () => ({ activeModals: [] as unknown[] }),
+      getState: () => ({ activeModals: [] as unknown[], mode: session.mode }),
     },
+    // What the runtime apply path touches; inert here.
+    providerRegistry: { setPriority: () => undefined },
+    presence: { disconnect: async () => undefined },
+    connectivity: { notifyIntentChanged: () => undefined },
+    downloadService: { kickQueue: () => undefined },
     syncService: {
       adapters: adapters.map((a) => ({
         id: a.id,
         displayName: a.displayName,
+        // The real adapters' declarations: AniList keeps progress and lists,
+        // TMDB keeps lists only.
+        capabilities:
+          a.id === "anilist"
+            ? { episodeProgress: true, watchlistMembership: true, favoriteMembership: true }
+            : { episodeProgress: false, watchlistMembership: true, favoriteMembership: true },
         getConnection: () => ({ state: a.state }),
         connect: async () => {
           a.connectCalls += 1;
@@ -151,7 +173,7 @@ function fakeContainer(
     },
     analyticsDisclosurePending: false,
   } as unknown as Container;
-  return { container, config, notes, diagnostics, adapters };
+  return { container, config, notes, diagnostics, adapters, session };
 }
 
 const BASE_PREFS: SetupFlowPayload["prefs"] = {
@@ -232,7 +254,7 @@ test("a rerun over linked trackers keeps them enabled without re-auth (#228, #23
   expect(forceCloseRootContent(payload({ prefs: { connectAniList: true } }))).toBe(true);
   await pending;
 
-  expect(config.sync.anilist.enabled).toBe(true);
+  expect(config.sync.anilist).toMatchObject({ enabled: true, trackWatched: true, syncList: true });
   // Already connected: no second OAuth round-trip.
   expect(anilist?.connectCalls).toBe(0);
 });
@@ -317,7 +339,9 @@ test("a successful handoff flips enabled on after the fact (#232)", async () => 
   await pending;
 
   expect(tmdb?.connectCalls).toBe(1);
-  expect(config.sync.tmdb.enabled).toBe(true);
+  // Linking turns on what TMDB can sync (lists), not only the main switch:
+  // with only `enabled`, the account read "connected" and nothing was sent.
+  expect(config.sync.tmdb).toMatchObject({ enabled: true, syncList: true, trackWatched: false });
   expect(config.sync.anilist.enabled).toBe(false);
 });
 
@@ -547,6 +571,7 @@ describe("pre-setup restore point", () => {
       analytics: _analytics,
       analyticsNoticeShown: _notice,
       installId: _installId,
+      analyticsCohort: _cohort,
       lastAnalyticsPingAt: _pingAt,
       analyticsRetryAfter: _retryAfter,
       analyticsEndpoint: _endpoint,
@@ -619,4 +644,26 @@ describe("setupPatchIsRestorable", () => {
       }),
     ).toBe(true);
   });
+});
+
+test("a first run that picks Anime is in anime mode now, not after a restart", async () => {
+  const { container, config, session } = fakeContainer();
+  expect(session.mode).toBe("series");
+
+  const pending = runSetupWizard({ container, force: true });
+  expect(forceCloseRootContent(payload({ prefs: { mode: "anime" } }))).toBe(true);
+  await pending;
+
+  expect(config.defaultMode).toBe("anime");
+  expect(session.mode).toBe("anime");
+});
+
+test("unticking Discord in setup turns presence off", async () => {
+  const { container, config } = fakeContainer({ presenceProvider: "discord" });
+
+  const pending = runSetupWizard({ container, force: true });
+  expect(forceCloseRootContent(payload({ prefs: { presenceDiscord: false } }))).toBe(true);
+  await pending;
+
+  expect(config.presenceProvider).toBe("off");
 });

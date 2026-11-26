@@ -1097,6 +1097,14 @@ jobs:
         run: |
           bun scripts/packaging/release-supplements.ts verify "${{ needs.confirmation.outputs.version }}" .release-download/native .release-download/channels
 
+      # install.marker / update.marker: GitHub's download count splits installs
+      # from updates; Kunai receives nothing. Not signed channel files, so the
+      # jobs that re-verify channels for older tags never look for them.
+      - name: Prepare release marker assets
+        run: |
+          bun scripts/packaging/release-markers.ts prepare .release-download/markers
+          bun scripts/packaging/release-markers.ts verify .release-download/markers
+
       # Platform packages first, launcher last, refusing on any version skew.
       # Publishing the launcher first leaves anyone installing in that window
       # resolving optionalDependencies that do not exist yet, i.e. a CLI with no
@@ -1262,6 +1270,8 @@ jobs:
             .release-download/channels/kunai.json
             .release-download/channels/install.sh
             .release-download/channels/install.ps1
+            .release-download/markers/install.marker
+            .release-download/markers/update.marker
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

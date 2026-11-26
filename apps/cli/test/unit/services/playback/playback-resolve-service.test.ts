@@ -1790,7 +1790,7 @@ test("PlaybackResolveService hands a freshly resolved stream to mpv without a pr
   expect(cache.setKeys).toHaveLength(1);
 });
 
-test("PlaybackResolveService keeps primary first despite title health suggestion", async () => {
+test("PlaybackResolveService starts from the provider that worked for this title, then the selected one", async () => {
   const cache = createMemoryCache(null);
   const observedCandidates: ProviderId[][] = [];
   const engine = createMockEngine(
@@ -1859,7 +1859,7 @@ test("PlaybackResolveService keeps primary first despite title health suggestion
     signal: new AbortController().signal,
   });
 
-  expect(observedCandidates).toEqual([["primary", "fallback"]]);
+  expect(observedCandidates).toEqual([["fallback", "primary"]]);
 });
 
 test("PlaybackResolveService guided mode walks full configured provider priority", async () => {

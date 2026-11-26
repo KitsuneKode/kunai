@@ -114,7 +114,11 @@ import {
   resolveBrowseDetailsSecondary,
   type DetailsPanelData,
 } from "./details-panel";
-import { buildDetailsSheet } from "./details-sheet.model";
+import {
+  buildDetailsSheet,
+  type DetailsSheetAvailability,
+  type DetailsSheetHistory,
+} from "./details-sheet.model";
 import { useCalendarRoute, type CalendarRouteRequest } from "./hooks/use-calendar-route";
 import { useCalendarState } from "./hooks/use-calendar-state";
 import { resolveSuggestionDebounceMs, useSearchSuggestions } from "./hooks/use-search-suggestions";
@@ -185,12 +189,8 @@ function clearShellScreen() {
 }
 
 function browseIdleHint(mode: ShellMode): string {
-  if (mode === "youtube") {
-    return "Search for a channel or video — or try /trending";
-  }
-  if (mode === "anime") {
-    return "Search for an anime — or try /trending";
-  }
+  if (mode === "youtube") return "Search for a channel or video — or try /trending";
+  if (mode === "anime") return "Search for an anime — or try /trending";
   return "Search for a title — or try /trending to see what's popular";
 }
 
@@ -203,18 +203,20 @@ function browseEmptyDetail(mode: ShellMode, message: string): string | undefined
 }
 
 function browseFilterPlaceholder(mode: ShellMode): string {
-  if (mode === "youtube") {
-    return "type channel, playlist, video, downloaded…";
-  }
-  if (mode === "anime") {
-    return "type title, year, anime, downloaded…";
-  }
+  if (mode === "youtube") return "type channel, playlist, video, downloaded…";
+  if (mode === "anime") return "type title, year, anime, downloaded…";
   return "type title, year, movie, series, downloaded…";
 }
 
 type BrowseQueryDraft = { value: string; mode: ShellMode };
 
 const EMPTY_TITLE_ENTRIES: readonly LocalTitleEntry[] = [];
+
+export type DetailsSheetLocalContext = {
+  readonly history: DetailsSheetHistory | null;
+  readonly availability: DetailsSheetAvailability | null;
+};
+const NO_LOCAL_DETAILS: DetailsSheetLocalContext = { history: null, availability: null };
 
 export function BrowseShell<T>({
   mode,
@@ -255,6 +257,7 @@ export function BrowseShell<T>({
   loadIdleContext,
   onSuggest,
   loadLocalSuggestions,
+  detailsContextFor,
   suggestionDebounceMs,
   localTitles,
 }: {
@@ -323,6 +326,8 @@ export function BrowseShell<T>({
   onSuggest?: (query: string, signal: AbortSignal) => Promise<readonly SearchSuggestion<T>[]>;
   /** Sync local corpus read (watched / followed / lists / playlists). */
   loadLocalSuggestions?: () => readonly SearchSuggestion<T>[];
+  /** Your progress and offline state for a title, for the details sheet. */
+  detailsContextFor?: (titleId: string) => DetailsSheetLocalContext;
   /** Test seam: keystroke → catalog-fetch debounce. Defaults to the standard delay. */
   suggestionDebounceMs?: number;
   /** Local title source — consulted once per palette open for the JUMP TO section. */
@@ -927,13 +932,14 @@ export function BrowseShell<T>({
       const value = resolved.value as unknown as Partial<SearchResult>;
       const titleId = typeof value?.id === "string" ? value.id : undefined;
       const cached = titleId ? (peekTitleDetail(titleId, seed.type) ?? null) : null;
+      const local = (titleId && detailsContextFor?.(titleId)) || NO_LOCAL_DETAILS;
 
       setActiveOverlay({
         type: "details",
         title: panel.title,
         subtitle: panel.subtitle,
         lines: [],
-        sheet: buildDetailsSheet({ seed, detail: cached, history: null, availability: null }),
+        sheet: buildDetailsSheet({ seed, detail: cached, ...local }),
         seasonsExpanded: false,
         imageUrl: panel.imageUrl,
         loading: false,
@@ -957,8 +963,7 @@ export function BrowseShell<T>({
                     sheet: buildDetailsSheet({
                       seed,
                       detail,
-                      history: null,
-                      availability: null,
+                      ...local,
                       seasonsExpanded: current.seasonsExpanded,
                     }),
                   }
@@ -970,7 +975,7 @@ export function BrowseShell<T>({
         })();
       }
     },
-    [selectedOption, mode, focusZone],
+    [selectedOption, mode, focusZone, detailsContextFor],
   );
 
   const runMutationWithFeedback = useCallback(
@@ -1509,9 +1514,7 @@ export function BrowseShell<T>({
     }
 
     if (activeOverlay) {
-      if (input === "/") {
-        return;
-      }
+      if (input === "/") return;
 
       // `z` undoes the action named on the strip — sheet keys (w/q/d above)
       // are journaled, so undo works with the details sheet open too.
@@ -1578,14 +1581,10 @@ export function BrowseShell<T>({
         }
       }
 
-      if (activeOverlay.type === "episode-picker") {
-        return;
-      }
+      if (activeOverlay.type === "episode-picker") return;
 
       if ("lines" in activeOverlay && (key.upArrow || key.downArrow) && !activeOverlay.loading) {
-        if (activeOverlay.lines.length === 0) {
-          return;
-        }
+        if (activeOverlay.lines.length === 0) return;
         const maxScroll = Math.max(0, activeOverlay.lines.length - 1);
         const nextScroll = key.upArrow
           ? Math.max(0, (activeOverlay.scrollIndex ?? 0) - 1)
@@ -1633,9 +1632,7 @@ export function BrowseShell<T>({
         setHighlightedCommandIndex((current) => movePaletteSelection(selectable, current, 1));
         return;
       }
-      if (commandEditor.handleInput(input, key)) {
-        return;
-      }
+      if (commandEditor.handleInput(input, key)) return;
       return;
     }
 
@@ -2803,6 +2800,7 @@ export function openBrowseShell<T>({
   loadIdleContext,
   onSuggest,
   loadLocalSuggestions,
+  detailsContextFor,
   suggestionDebounceMs,
   localTitles,
   onTitlePick,
@@ -2848,6 +2846,7 @@ export function openBrowseShell<T>({
   loadIdleContext?: BrowseIdleContextLoader;
   onSuggest?: (query: string, signal: AbortSignal) => Promise<readonly SearchSuggestion<T>[]>;
   loadLocalSuggestions?: () => readonly SearchSuggestion<T>[];
+  detailsContextFor?: (titleId: string) => DetailsSheetLocalContext;
   suggestionDebounceMs?: number;
   /** Local title source — consulted once per palette open for the JUMP TO section. */
   localTitles?: () => readonly LocalTitleEntry[];
@@ -2903,6 +2902,7 @@ export function openBrowseShell<T>({
         loadIdleContext={loadIdleContext}
         onSuggest={onSuggest}
         loadLocalSuggestions={loadLocalSuggestions}
+        detailsContextFor={detailsContextFor}
         suggestionDebounceMs={suggestionDebounceMs}
         localTitles={localTitles}
         onTitlePick={onTitlePick}

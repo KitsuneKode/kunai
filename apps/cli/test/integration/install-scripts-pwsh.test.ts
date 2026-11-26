@@ -28,6 +28,7 @@ import {
   windowsShellEnvDefaults,
   withCommandPath,
   withReleaseFixture,
+  type ReleaseFixtureRoute,
 } from "./helpers/installer-script-harness";
 
 const REPO_ROOT = join(import.meta.dirname, "../../../..");
@@ -1019,6 +1020,120 @@ describePwsh("install.ps1 release asset failures", () => {
     } finally {
       sandbox.cleanup();
     }
+  });
+});
+
+/**
+ * Release markers: one best-effort request after a successful install,
+ * `install.marker` for a fresh install and `update.marker` over an existing
+ * one, so GitHub's download count tells installs from updates. Kunai receives
+ * nothing.
+ * The sandbox forces DO_NOT_TRACK=1, so every other test here also proves the
+ * opt-out; these turn it off explicitly to see the request at all.
+ */
+describePwsh("install.ps1 release markers", () => {
+  const MARKER = "/download/v9.8.7/install.marker";
+  const TRACKING_ALLOWED = { DO_NOT_TRACK: "0", CI: "0", KUNAI_NO_MARKER: "" } as const;
+
+  async function installWith(
+    env: Readonly<Record<string, string>>,
+    marker: { readonly status: number } | null,
+    options: { readonly corruptChecksum?: boolean } = {},
+  ) {
+    const asset = hostWindowsAsset();
+    const body = "MZ-fixture-payload";
+    const digest = createHash("sha256")
+      .update(options.corruptChecksum ? "other" : body)
+      .digest("hex");
+    const routes: [string, ReleaseFixtureRoute][] = [
+      [`/download/v9.8.7/${asset}`, { body }],
+      ["/download/v9.8.7/SHA256SUMS", { body: `${digest}  ${asset}\n` }],
+    ];
+    if (marker) routes.push([MARKER, { status: marker.status, body: "marker" }]);
+    const sandbox = createInstallerSandbox("install-ps1-marker");
+    const outcomes: { status: number; stdout: string; stderr: string; requests: string[] }[] = [];
+    try {
+      await withReleaseFixture(Object.fromEntries(routes), async (baseUrl, evidence) => {
+        const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
+          ...sandbox.env,
+          ...env,
+          KUNAI_DL_BASE: baseUrl,
+        });
+        outcomes.push({ ...result, requests: [...evidence.requests] });
+      });
+    } finally {
+      sandbox.cleanup();
+    }
+    const outcome = outcomes[0];
+    if (!outcome) throw new Error("installer did not run");
+    return outcome;
+  }
+
+  test("a fresh install fetches install.marker once, after it succeeded", async () => {
+    const result = await installWith(TRACKING_ALLOWED, { status: 200 });
+    expect(result.status).toBe(0);
+    expect(result.requests.filter((path) => path === MARKER)).toHaveLength(1);
+    expect(result.requests.at(-1)).toBe(MARKER);
+  });
+
+  test("a failing marker is silent and never fails the install", async () => {
+    const quiet = await installWith(TRACKING_ALLOWED, null);
+    expect(quiet.status).toBe(0);
+    expect(quiet.requests).toContain(MARKER);
+    expect(`${quiet.stdout}${quiet.stderr}`).not.toMatch(/install\.marker|marker request/i);
+  });
+
+  test.each([[{ DO_NOT_TRACK: "1" }], [{ CI: "true" }], [{ KUNAI_NO_MARKER: "1" }]])(
+    "is skipped under %j",
+    async (optOut) => {
+      const result = await installWith({ ...TRACKING_ALLOWED, ...optOut }, { status: 200 });
+      expect(result.status).toBe(0);
+      expect(result.requests).not.toContain(MARKER);
+    },
+  );
+
+  test("an upgrade over an existing install counts as an update; a same-version reinstall as neither", async () => {
+    const asset = hostWindowsAsset();
+    const body = "MZ-fixture-payload";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const routes: [string, ReleaseFixtureRoute][] = [];
+    for (const version of ["9.8.7", "9.8.8"]) {
+      routes.push([`/download/v${version}/${asset}`, { body }]);
+      routes.push([`/download/v${version}/SHA256SUMS`, { body: `${digest}  ${asset}\n` }]);
+      routes.push([`/download/v${version}/install.marker`, { body: "marker" }]);
+      routes.push([`/download/v${version}/update.marker`, { body: "marker" }]);
+    }
+    const sandbox = createInstallerSandbox("install-ps1-marker-upgrade");
+    const markersPerRun: string[][] = [];
+    try {
+      await withReleaseFixture(Object.fromEntries(routes), async (baseUrl, evidence) => {
+        for (const version of ["9.8.7", "9.8.8", "9.8.8"]) {
+          const before = evidence.requests.length;
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", version], {
+            ...sandbox.env,
+            ...TRACKING_ALLOWED,
+            KUNAI_DL_BASE: baseUrl,
+          });
+          expect(result.status, `${result.stderr}${result.stdout}`).toBe(0);
+          markersPerRun.push(
+            evidence.requests.slice(before).filter((path) => path.endsWith(".marker")),
+          );
+        }
+      });
+    } finally {
+      sandbox.cleanup();
+    }
+    expect(markersPerRun).toEqual([
+      ["/download/v9.8.7/install.marker"],
+      ["/download/v9.8.8/update.marker"],
+      [],
+    ]);
+  });
+
+  test("is not fetched when the install fails", async () => {
+    const result = await installWith(TRACKING_ALLOWED, { status: 200 }, { corruptChecksum: true });
+    expect(result.status).not.toBe(0);
+    expect(result.requests).not.toContain(MARKER);
   });
 });
 

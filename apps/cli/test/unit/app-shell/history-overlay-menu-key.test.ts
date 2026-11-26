@@ -63,6 +63,12 @@ describe("history row intents", () => {
     });
   });
 
+  // Neon features review: History had no share. `/share` shares the session's
+  // title, which over a History row is the wrong one, so it maps to the row.
+  test("share targets the row's own title", () => {
+    expect(historyRowIntentForShellAction("share")).toEqual({ kind: "share" });
+  });
+
   test("an action the row cannot service is reported, not silently dropped", () => {
     expect(historyRowIntentForShellAction("diagnostics")).toEqual({
       kind: "delegate",

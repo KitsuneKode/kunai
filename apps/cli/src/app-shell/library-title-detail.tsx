@@ -1,6 +1,7 @@
 import { useConnectivityOnline } from "@/app-shell/hooks/use-connectivity-online";
 import { useRailPoster } from "@/app-shell/hooks/use-rail-poster";
 import { getPickerChromeRows, getPickerListMaxVisible } from "@/app-shell/layout-policy";
+import { MouseTarget } from "@/app-shell/mouse/MouseRegions";
 import {
   buildMediaListRowColumns,
   computeMediaListRowLayout,
@@ -22,6 +23,7 @@ import { createContinuationEngine } from "@/domain/continuation/ContinuationEngi
 import { formatMediaItemCount, presentMedia } from "@/domain/media/media-presentation";
 import type { OfflineLibraryShelfGroup } from "@/domain/offline/OfflineLibraryEngine";
 import { isFinished as isProgressFinished } from "@/services/continuation/history-progress";
+import { parseOfflineTitleCleanupPreference } from "@/services/download/download-cleanup-policy";
 import { formatOfflineHistoryProgress } from "@/services/offline/offline-history-progress";
 import {
   formatOfflineJobListingTitle,
@@ -67,6 +69,8 @@ export function LibraryTitleDetail({
   const networkAvailable = useConnectivityOnline(container.connectivity);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [busy, setBusy] = useState(false);
+  // Bumped after a policy action so the runway and cleanup rows re-render.
+  const [, setPolicyRevision] = useState(0);
 
   const first = entries[0]?.job;
   const historyEntries = useMemo(
@@ -95,42 +99,71 @@ export function LibraryTitleDetail({
     }).note;
   }, [entries, first, historyEntries, networkAvailable]);
 
-  const actionRows: DetailRow[] = useMemo(
-    () => [
+  // Read every render (one keyed row): toggling must relabel the row at once.
+  const policyRows = ((): DetailRow[] => {
+    if (!first) return [];
+    const policy = container.offlineTitlePolicies.get(first.titleId);
+    const cleanup = parseOfflineTitleCleanupPreference(policy?.cleanupJson);
+    const runway = policy?.runwayTarget ?? container.config.offlineDefaultRunwayTarget;
+    // A movie has no next episode to keep ready, so only its cleanup applies.
+    const continuation: DetailRow[] =
+      group.contentType === "movie"
+        ? []
+        : [
+            {
+              kind: "action",
+              id: "toggle-continuation",
+              // The detail column is narrow; the label carries the meaning.
+              label: policy?.enrolled
+                ? `Keeping the next ${runway} episodes ready offline`
+                : `Keep the next ${runway} episodes ready offline`,
+              detail: policy?.enrolled ? "On · ↵ to stop" : "Off · ↵ to start",
+            },
+          ];
+    return [
+      ...continuation,
       {
         kind: "action",
-        id: "search-online",
-        label: "Continue this title online",
-        detail: "Prepare search; no provider work until you submit",
-        flatIndex: -1,
+        id: "edit-cleanup",
+        label:
+          cleanup?.mode === "cleanup-watched"
+            ? `After watching: suggest cleanup after ${cleanup.graceDays} days`
+            : "After watching: keep the latest episode",
+        detail: "↵ to change",
       },
-      {
-        kind: "action",
-        id: "download-more",
-        label: group.contentType === "movie" ? "Download this movie" : "Download more episodes",
-        detail:
-          group.contentType === "movie"
-            ? "Open title-level download confirmation for this movie"
-            : "Open the download episode picker for this title",
-        flatIndex: -1,
-      },
-      {
-        kind: "action",
-        id: "check-integrity",
-        label: "Check title integrity",
-        detail: "Verify all local artifacts for this title",
-        flatIndex: -1,
-      },
-      {
-        kind: "action",
-        id: "repair-missing",
-        label: "Repair missing items",
-        detail: "Queue re-download for broken or missing files",
-        flatIndex: -1,
-      },
-    ],
-    [group.contentType],
-  );
+    ];
+  })();
+
+  const actionRows: DetailRow[] = [
+    {
+      kind: "action",
+      id: "search-online",
+      label: "Continue this title online",
+      detail: "Prepare search; no provider work until you submit",
+    },
+    {
+      kind: "action",
+      id: "download-more",
+      label: group.contentType === "movie" ? "Download this movie" : "Download more episodes",
+      detail:
+        group.contentType === "movie"
+          ? "Open title-level download confirmation for this movie"
+          : "Open the download episode picker for this title",
+    },
+    {
+      kind: "action",
+      id: "check-integrity",
+      label: "Check title integrity",
+      detail: "Verify all local artifacts for this title",
+    },
+    {
+      kind: "action",
+      id: "repair-missing",
+      label: "Repair missing items",
+      detail: "Queue re-download for broken or missing files",
+    },
+    ...policyRows,
+  ];
 
   const episodeRows: DetailRow[] = useMemo(
     () =>
@@ -142,16 +175,10 @@ export function LibraryTitleDetail({
     [entries],
   );
 
-  const flatRows: DetailRow[] = useMemo(
-    () => [
-      ...episodeRows.map((row, index) => ({ ...row, flatIndex: index })),
-      ...actionRows.map((row, index) => ({
-        ...row,
-        flatIndex: episodeRows.length + index,
-      })),
-    ],
-    [actionRows, episodeRows],
-  );
+  const flatRows: DetailRow[] = [
+    ...episodeRows.map((row, index) => ({ ...row, flatIndex: index })),
+    ...actionRows,
+  ];
 
   const totalRows = flatRows.length;
   const safeIndex = totalRows > 0 ? Math.min(selectedIndex, totalRows - 1) : 0;
@@ -181,6 +208,74 @@ export function LibraryTitleDetail({
     enabled: showRail,
   });
 
+  // Enter and a second tap on the highlighted row run the same thing.
+  const runRow = (row: DetailRow): void => {
+    if (busy) return;
+    void (async () => {
+      setBusy(true);
+      try {
+        if (row.kind === "episode") {
+          const job = row.entry.job;
+          if (
+            job.status !== "completed" &&
+            job.status !== "completed-with-notes" &&
+            job.status !== "repairable"
+          ) {
+            return;
+          }
+          const playable = await container.offlineLibraryService.getPlayableSource(job.id);
+          if (playable.status !== "ready") {
+            container.stateManager.dispatch({
+              type: "SET_PLAYBACK_FEEDBACK",
+              note: `Offline file unavailable (${playable.status}). Try integrity check.`,
+            });
+            return;
+          }
+          await requestUnifiedOfflinePlayback(container, job.id, {
+            onDirectLaunch: resolveRootLibraryPlaybackLaunch,
+          });
+          return;
+        }
+
+        const actionType = row.id as
+          | "search-online"
+          | "download-more"
+          | "check-integrity"
+          | "repair-missing"
+          | "toggle-continuation"
+          | "edit-cleanup"
+          | "delete-group";
+        const result = await routeOfflineLibraryGroupAction(container, entries, {
+          type: actionType,
+          ...(actionType === "download-more" ? { contentType: group.contentType } : {}),
+        });
+        if (result === "exit") {
+          onBack();
+          return;
+        }
+        if (result === "refresh") {
+          onEntriesChanged();
+        }
+        if (actionType === "toggle-continuation" || actionType === "edit-cleanup") {
+          setPolicyRevision((revision) => revision + 1);
+        }
+      } finally {
+        setBusy(false);
+      }
+    })();
+  };
+  // Touch/mouse: the first tap highlights a row, a tap on the highlighted row
+  // runs it — the Library list's gesture. The detail had no tap targets, so a
+  // touch user who opened a title could not act or get back.
+  const tapRow = (flatIndex: number, row: DetailRow): void => {
+    if (flatIndex !== safeIndex) setSelectedIndex(flatIndex);
+    else runRow(row);
+  };
+  const wheel = (direction: "up" | "down"): void =>
+    setSelectedIndex((prev) =>
+      Math.max(0, Math.min(totalRows - 1, prev + (direction === "up" ? -1 : 1))),
+    );
+
   useInput(
     (input, key) => {
       if (key.escape) {
@@ -200,56 +295,7 @@ export function LibraryTitleDetail({
         setSelectedIndex((prev) => Math.min(totalRows - 1, prev + 1));
         return;
       }
-      if (!key.return || !selectedRow) return;
-
-      void (async () => {
-        setBusy(true);
-        try {
-          if (selectedRow.kind === "episode") {
-            const job = selectedRow.entry.job;
-            if (
-              job.status !== "completed" &&
-              job.status !== "completed-with-notes" &&
-              job.status !== "repairable"
-            ) {
-              return;
-            }
-            const playable = await container.offlineLibraryService.getPlayableSource(job.id);
-            if (playable.status !== "ready") {
-              container.stateManager.dispatch({
-                type: "SET_PLAYBACK_FEEDBACK",
-                note: `Offline file unavailable (${playable.status}). Try integrity check.`,
-              });
-              return;
-            }
-            await requestUnifiedOfflinePlayback(container, job.id, {
-              onDirectLaunch: resolveRootLibraryPlaybackLaunch,
-            });
-            return;
-          }
-
-          const actionType = selectedRow.id as
-            | "search-online"
-            | "download-more"
-            | "check-integrity"
-            | "repair-missing"
-            | "toggle-continuation"
-            | "delete-group";
-          const result = await routeOfflineLibraryGroupAction(container, entries, {
-            type: actionType,
-            ...(actionType === "download-more" ? { contentType: group.contentType } : {}),
-          });
-          if (result === "exit") {
-            onBack();
-            return;
-          }
-          if (result === "refresh") {
-            onEntriesChanged();
-          }
-        } finally {
-          setBusy(false);
-        }
-      })();
+      if (key.return && selectedRow) runRow(selectedRow);
     },
     { isActive: !suspended },
   );
@@ -284,47 +330,66 @@ export function LibraryTitleDetail({
             .filter(Boolean)
             .join("  ·  ");
           return (
-            <ListRow
+            <MouseTarget
               key={entry.job.id}
-              selected={selected}
-              rowWidth={rowWidth}
-              flexColumnIndex={rowLayout.flexColumnIndex}
-              columns={buildMediaListRowColumns({
-                title: label,
-                episodeCode: formatLibraryEntryPosition(entry.job, group.contentType),
-                statusLabel: detail,
-                statusColor: palette.muted,
-                statusDim: true,
-                layout: rowLayout,
-              })}
-            />
+              id={`library-detail:row:${entry.job.id}`}
+              onClick={() => tapRow(flatIndex, row)}
+              onWheel={wheel}
+            >
+              <ListRow
+                selected={selected}
+                rowWidth={rowWidth}
+                flexColumnIndex={rowLayout.flexColumnIndex}
+                columns={buildMediaListRowColumns({
+                  title: label,
+                  episodeCode: formatLibraryEntryPosition(entry.job, group.contentType),
+                  statusLabel: detail,
+                  statusColor: palette.muted,
+                  statusDim: true,
+                  layout: rowLayout,
+                })}
+              />
+            </MouseTarget>
           );
         }
         return (
-          <ListRow
-            key={row.id}
-            selected={selected}
-            rowWidth={rowWidth}
-            flexColumnIndex={rowLayout.flexColumnIndex}
-            columns={buildMediaListRowColumns({
-              title: row.label,
-              episodeCode: "—",
-              statusLabel: row.detail,
-              statusColor: palette.dim,
-              statusDim: true,
-              layout: rowLayout,
-            })}
-          />
+          <React.Fragment key={row.id}>
+            {/* The heading sits above the first action, wherever the window starts. */}
+            {flatIndex === episodeRows.length ? (
+              <SectionGroup label="Actions" marginTop={1} />
+            ) : null}
+            <MouseTarget
+              id={`library-detail:action:${row.id}`}
+              onClick={() => tapRow(flatIndex, row)}
+              onWheel={wheel}
+            >
+              <ListRow
+                selected={selected}
+                rowWidth={rowWidth}
+                flexColumnIndex={rowLayout.flexColumnIndex}
+                columns={buildMediaListRowColumns({
+                  title: row.label,
+                  episodeCode: "—",
+                  statusLabel: row.detail,
+                  statusColor: palette.dim,
+                  statusDim: true,
+                  layout: rowLayout,
+                })}
+              />
+            </MouseTarget>
+          </React.Fragment>
         );
       })}
       {windowEnd < totalRows ? <Text color={palette.dim}> ▼ ...</Text> : null}
-      {windowStart <= episodeRows.length && windowEnd > episodeRows.length ? (
-        <SectionGroup label="Actions" marginTop={1} />
-      ) : null}
       <Box marginTop={1}>
         <Text color={palette.dim} dimColor>
-          {busy ? "Working…" : "↵ play or run action · esc back to titles"}
+          {busy ? "Working…" : "↵ play or run action · "}
         </Text>
+        {busy ? null : (
+          <MouseTarget id="library-detail:back" onClick={onBack}>
+            <Text color={palette.accent}>esc back to titles</Text>
+          </MouseTarget>
+        )}
       </Box>
     </Box>
   );

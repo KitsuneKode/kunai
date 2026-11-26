@@ -187,6 +187,61 @@ describe("ConfigService.save debounce", () => {
     expect(onDisk.downloadsEnabled).toBe(true);
   });
 
+  /**
+   * Sol review #2: two sessions loaded from one config each change a different
+   * leaf of `sync`. Writing `sync` whole from each snapshot reverted the first
+   * leaf; only the changed leaves may be replayed over the live file.
+   */
+  test("sibling instances cannot revert each other's leaves of one nested key", async () => {
+    // JSON round-trips stand in for config.json: no object is shared by reference.
+    let onDisk: KitsuneConfig = structuredClone(DEFAULT_CONFIG);
+    let chain: Promise<unknown> = Promise.resolve();
+    const store = {
+      load: async () => structuredClone(onDisk),
+      save: (doc: KitsuneConfig) => {
+        onDisk = structuredClone(doc);
+        return Promise.resolve();
+      },
+      reset: async () => {},
+      withLock: <T>(fn: () => Promise<T>): Promise<T> => {
+        const run = chain.then(fn);
+        chain = run.then(
+          () => undefined,
+          () => undefined,
+        );
+        return run;
+      },
+    };
+    const first = await ConfigServiceImpl.load(store);
+    const second = await ConfigServiceImpl.load(store);
+    const persist = async (service: ConfigServiceImpl) => {
+      const saved = service.save();
+      await service.flushPending();
+      await saved;
+    };
+
+    const a = first.getRaw().sync;
+    await first.update({ sync: { ...a, anilist: { ...a.anilist, trackWatched: true } } });
+    await persist(first);
+    // `second` still holds the boot snapshot: trackWatched is false there.
+    const b = second.getRaw().sync;
+    expect(b.anilist.trackWatched).toBe(false);
+    await second.update({ sync: { ...b, pausedUntil: "2099-01-01T00:00:00.000Z" } });
+    await persist(second);
+
+    expect(onDisk.sync.anilist.trackWatched).toBe(true);
+    expect(onDisk.sync.pausedUntil).toBe("2099-01-01T00:00:00.000Z");
+    // The saving instance now holds what disk holds, the sibling's leaf included.
+    expect(second.getRaw().sync.anilist.trackWatched).toBe(true);
+
+    // A later disable is a leaf change too, and is not undone by the sibling.
+    const c = first.getRaw().sync;
+    await first.update({ sync: { ...c, anilist: { ...c.anilist, trackWatched: false } } });
+    await persist(first);
+    expect(onDisk.sync.anilist.trackWatched).toBe(false);
+    expect(onDisk.sync.pausedUntil).toBe("2099-01-01T00:00:00.000Z");
+  });
+
   test("a synchronous store throw does not strand the in-flight handle", async () => {
     // `store.save()` throwing synchronously runs the catch and the finally before
     // `saveInFlight` was assigned, so assigning afterwards parked an

@@ -296,6 +296,23 @@ Then focused release-artifact tests and `release:notes:check` run before a narro
 
 ## Enroll the release signing key
 
+**Quick path:** `bun scripts/setup-signing-keys.ts` does every step below for
+both keys, the release checksum key and the provider hotfix manifest key. It
+keeps the private keys out of the checkout and off stdout (mode 0600 backups in
+`~/.kunai-signing-keys-<date>`, or `--backup-dir`), pipes them into the
+`release-production` environment secrets with `gh`, and writes only the public
+pins (`release-key.json`, `provider-manifest-pin.json`) for you to review and
+commit. It refuses to run when a key is already pinned. `--skip-secrets` writes
+the pins and backups without touching GitHub.
+
+Publish a hotfix manifest by signing it with
+`bun scripts/sign-provider-manifest.ts sign --key <manifest.pem> --key-id <id>`
+and uploading it to the `provider-manifest` prerelease (create it once with the
+command the setup script prints; a prerelease never becomes `releases/latest`):
+`gh release upload provider-manifest provider-manifest.json --clobber`.
+
+The manual steps, for reference:
+
 On a trusted maintainer machine, generate an Ed25519 key outside the checkout.
 Protect the private backup. Store the PEM as an environment secret scoped to
 `release-production` with required reviewers. Commit only the public DER/SPKI
@@ -349,6 +366,25 @@ in shell, so change all three together. A change to the format needs a new
 release is recorded as published. Raw checkout scripts are unkeyed templates.
 Keep the key stable across releases. A new pin requires a transition for clients
 that already trust the old key.
+
+## Install and update markers
+
+Every release also carries `install.marker` and `update.marker`: fixed,
+version-free bytes rendered by `scripts/packaging/release-markers.ts` in the
+publish job, uploaded with the draft, and required (and byte-verified) by
+`verify-github-release-assets.ts`. They are not signed channel files, so the
+metadata and package-channel jobs, which re-verify channels for any tag
+including ones published before markers existed, never look for them.
+
+`install.sh` and `install.ps1` fetch `install.marker` once after a successful
+fresh binary install, and `update.marker` when they replaced another version
+(a same-version reinstall fetches neither); the native updater fetches
+`update.marker` once after a verified activation. GitHub's per-asset `download_count` is the whole
+measurement: Kunai receives nothing. Each fetch is one attempt with a short
+timeout, failures are silent, and `DO_NOT_TRACK`, `CI` and `KUNAI_NO_MARKER`
+skip it. The user-facing statement is in
+`docs/users/reliability-and-privacy.mdx`; the contract is
+`.docs/analytics-privacy-contract.md`.
 
 ## Package channels (Homebrew, Scoop, AUR)
 

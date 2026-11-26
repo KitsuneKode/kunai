@@ -1,3 +1,4 @@
+import { formatLocalDayKey } from "@/app-shell/calendar-ui.model";
 import type { BrowseIdleContext } from "@/app-shell/types";
 import type { Container } from "@/container";
 import { ENGAGE_SECONDS } from "@/domain/playback/progress-engage-policy";
@@ -96,12 +97,20 @@ export async function buildBrowseIdleContext(
       break;
     }
 
-    const todayKey = new Date().toISOString().slice(0, 10);
+    // Local dates on both sides, as the calendar this nudge opens uses: the
+    // UTC date of "now" and of each airing time put a user east or west of
+    // UTC on the wrong day, so the nudge and the calendar's Today disagreed.
+    // Muted titles stay silent here too.
+    const todayKey = formatLocalDayKey(new Date());
+    const mutedTitles = new Set(
+      container.followedTitleRepository.listByPreference("muted").map((record) => record.titleId),
+    );
     const progressMap = container.releaseProgressCache.getByTitleIds(entries.map(([id]) => id));
     let airingTodayCount = 0;
     for (const projection of progressMap.values()) {
-      if (!projection.nextAiringAt) continue;
-      if (projection.nextAiringAt.slice(0, 10) === todayKey) {
+      if (!projection.nextAiringAt || mutedTitles.has(projection.titleId)) continue;
+      const airingAt = new Date(projection.nextAiringAt);
+      if (!Number.isNaN(airingAt.getTime()) && formatLocalDayKey(airingAt) === todayKey) {
         airingTodayCount += 1;
       }
     }
@@ -116,12 +125,9 @@ export async function buildBrowseIdleContext(
     // history-backed rows may still carry projections for them.
     const lastCalendarVisitAt = container.config.lastCalendarVisitAt;
     if (lastCalendarVisitAt > 0) {
-      const muted = new Set(
-        container.followedTitleRepository.listByPreference("muted").map((record) => record.titleId),
-      );
       const fresh = container.releaseProgressCache
         .listNewSince(new Date(lastCalendarVisitAt).toISOString())
-        .filter((projection) => !muted.has(projection.titleId));
+        .filter((projection) => !mutedTitles.has(projection.titleId));
       if (fresh.length > 0) {
         newSinceVisit = {
           episodeCount: fresh.reduce((count, row) => count + row.newEpisodeCount, 0),
