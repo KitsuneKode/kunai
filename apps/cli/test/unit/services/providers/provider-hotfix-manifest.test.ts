@@ -383,8 +383,27 @@ describe("provider hotfix manifest runtime", () => {
     const { publicPem, privatePem } = makeKeypair();
     const keys = { "key-2026": publicPem };
 
-    // Unconfigured URL skips without touching network.
-    expect(await maybeBackgroundRefreshProviderManifest({ path: cachePath })).toBe("skipped");
+    // No channel (an empty URL) skips without touching network.
+    expect(await maybeBackgroundRefreshProviderManifest({ path: cachePath, url: "" })).toBe(
+      "skipped",
+    );
+
+    // The project channel is pinned, so by default it is asked; a missing
+    // manifest (404) leaves the bundled defaults in place.
+    const asked: string[] = [];
+    const absent = await maybeBackgroundRefreshProviderManifest({
+      path: cachePath,
+      nowMs: NOW_MS,
+      fetchImpl: async (input) => {
+        asked.push(String(input));
+        return new Response("", { status: 404 });
+      },
+    });
+    expect(asked).toEqual([
+      "https://github.com/KitsuneKode/kunai/releases/download/provider-manifest/provider-manifest.json",
+    ]);
+    expect(absent).not.toBe("updated");
+    expect(getActiveProviderHotfixManifest()).toBeNull();
 
     const rev4 = signProviderManifest(makeManifest({ revision: 4 }), privatePem, "key-2026");
     const first = await maybeBackgroundRefreshProviderManifest({
