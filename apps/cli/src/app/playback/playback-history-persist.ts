@@ -162,7 +162,7 @@ export async function persistEpisodeHistory(
         : null;
     if (providerSuggestion) {
       updatePlaybackFeedback(context, {
-        note: `${providerSuggestion.providerId} struggled with this title. ${providerSuggestion.suggestedProviderId} worked; choose it from providers for this title.`,
+        note: `${providerSuggestion.providerId} struggled with this title; ${providerSuggestion.suggestedProviderId} worked, so the next episode tries it first.`,
       });
       diagnosticsService.record({
         category: "provider",

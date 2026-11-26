@@ -9,6 +9,8 @@ export type PlaybackResolvePolicy = {
   readonly preserveCachedStreamOnFreshFailure: boolean;
   readonly ignoreTitleHealthSuggestion: boolean;
   readonly ignoreProviderHealth: boolean;
+  /** A provider the user just chose leads, even when its health says down. */
+  readonly keepPrimaryFirst: boolean;
   readonly shouldInvalidateSuspectResolveState: boolean;
   readonly resolveIntent: ProviderResolveInput["intent"];
   readonly recoveryMode: RecoveryMode;
@@ -44,6 +46,7 @@ export function resolvePlaybackResolvePolicy(input: {
     preserveCachedStreamOnFreshFailure: sourceRefreshIsRefresh && !honorExplicitProviderOnly,
     ignoreTitleHealthSuggestion: honorExplicitProviderOnly,
     ignoreProviderHealth: honorExplicitProviderOnly,
+    keepPrimaryFirst: honorExplicitProviderOnly || input.pendingUserProviderSwitch,
     shouldInvalidateSuspectResolveState,
     resolveIntent: input.recomputeSources ? "refresh" : "play",
     recoveryMode: honorExplicitProviderOnly ? "manual" : input.configuredRecoveryMode,
