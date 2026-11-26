@@ -376,6 +376,7 @@ export async function acquireEpisodeStream(
           preserveCachedStreamOnFreshFailure: resolvePolicy.preserveCachedStreamOnFreshFailure,
           ignoreTitleHealthSuggestion: resolvePolicy.ignoreTitleHealthSuggestion,
           ignoreProviderHealth: resolvePolicy.ignoreProviderHealth,
+          keepPrimaryFirst: resolvePolicy.keepPrimaryFirst,
           resolveIntent: resolvePolicy.resolveIntent,
           blockedStreamUrls: deadStreamUrls.list(deadStreamScope),
           signal: resolveController.signal,
@@ -424,7 +425,7 @@ export async function acquireEpisodeStream(
               const strugglingName =
                 providerRegistry.get(event.providerId)?.metadata.name ?? event.providerId;
               updatePlaybackFeedback(context, {
-                note: `${strugglingName} struggled on this title before. ${suggestedName} worked — switch providers or retry ${strugglingName}.`,
+                note: `${strugglingName} struggled on this title before; ${suggestedName} worked here.`,
               });
               return;
             }
@@ -648,9 +649,7 @@ export async function acquireEpisodeStream(
     if (stream) recordStartupMark("resolve-complete", stream);
 
     // Esc/cancel during resolve must not hand off a late-arriving stream to mpv.
-    if (stream && resolveController.signal.aborted && !context.signal.aborted) {
-      stream = null;
-    }
+    if (stream && resolveController.signal.aborted && !context.signal.aborted) stream = null;
 
     // Every resolve path — prefetch, recent-stream reuse, and fresh or
     // fallback resolve — converges here, so each is recorded exactly

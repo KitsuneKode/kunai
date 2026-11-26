@@ -21,9 +21,22 @@ describe("resolvePlaybackResolvePolicy", () => {
       shouldInvalidateSuspectResolveState: true,
       ignoreProviderHealth: false,
       ignoreTitleHealthSuggestion: false,
+      // The provider just chosen leads even if its health says down.
+      keepPrimaryFirst: true,
       recoveryMode: "guided",
       resolveIntent: "play",
     });
+  });
+
+  test("an ordinary play lets health and title suggestions order providers", () => {
+    expect(
+      resolvePlaybackResolvePolicy({
+        recomputeSources: false,
+        pendingUserProviderSwitch: false,
+        sourceRefreshDecision: null,
+        configuredRecoveryMode: "guided",
+      }).keepPrimaryFirst,
+    ).toBe(false);
   });
 
   test("manual recovery mode keeps explicit provider switch provider-only", () => {
