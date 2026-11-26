@@ -91,6 +91,29 @@ async function freeLoopbackPort(): Promise<number> {
   return port;
 }
 
+/**
+ * The same target rule as mpv: provider URLs are HTTP(S) only, and a file only
+ * when it is exactly the verified library file this playback names. A deferred
+ * stream (AllManga Ak) carries its locator in `url`; VLC never sees it, since
+ * the gateway serves the materialized document, whose own URLs it validates.
+ */
+export function isSafeVlcTarget(
+  stream: Pick<StreamInfo, "url" | "subtitle" | "deferredLocator">,
+  local: LocalPlaybackSource | undefined,
+): boolean {
+  const deferred = !local && Boolean(stream.deferredLocator?.trim());
+  if (
+    !deferred &&
+    !isAllowedMpvUrl(stream.url, local?.filePath === stream.url ? "local" : "remote")
+  ) {
+    return false;
+  }
+  const subtitle = stream.subtitle?.trim();
+  return (
+    !subtitle || isAllowedMpvUrl(subtitle, local?.subtitlePath === subtitle ? "local" : "remote")
+  );
+}
+
 export const defaultVlcRuntime: VlcRuntime = {
   discover: () => discoverVlcBinary(),
   // Shell secrets never reach VLC or its Lua extensions, as with mpv.
@@ -233,15 +256,7 @@ export class VlcPlayerService implements PlayerService {
         "This stream needs yt-dlp, which VLC cannot run. Play it with --player mpv.",
       );
     }
-    // The same target rule as mpv: provider URLs are HTTP(S) only; a file only
-    // when it is exactly the verified library file this playback names.
-    const local = options.localPlaybackSource;
-    const subtitle = stream.subtitle?.trim();
-    if (
-      !isAllowedMpvUrl(stream.url, local?.filePath === stream.url ? "local" : "remote") ||
-      (subtitle &&
-        !isAllowedMpvUrl(subtitle, local?.subtitlePath === subtitle ? "local" : "remote"))
-    ) {
+    if (!isSafeVlcTarget(stream, options.localPlaybackSource)) {
       throw new VlcLaunchError(
         "unsupported-stream",
         "Refusing to open an unsafe stream URL in VLC.",
