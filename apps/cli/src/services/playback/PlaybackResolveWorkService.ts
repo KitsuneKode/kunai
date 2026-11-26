@@ -62,6 +62,13 @@ export class PlaybackResolveWorkService {
     private readonly coordinator: ResolveCoordinator,
     private readonly options: {
       readonly onCompletedLedger?: (ledger: ResolveWorkLedgerSnapshot) => void;
+      /**
+       * Live addon availability — read per join so a resolve started while
+       * addons were on is never joined by a caller arriving after a disable.
+       * In-flight work itself is not cancelled by this; the key only gates
+       * new joiners.
+       */
+      readonly stremioAddonsAvailable?: () => boolean;
     } = {},
   ) {}
 
@@ -85,14 +92,23 @@ export class PlaybackResolveWorkService {
       freshnessPolicy,
     } as const;
     const resolveWorkKey = buildResolveWorkKey(identity);
+    // Downloads never touch addons either way; for the rest, availability at
+    // join time is part of the key so post-disable callers start fresh work.
+    const joinKey =
+      (this.options.stremioAddonsAvailable?.() ?? false) && request.intentKind !== "download"
+        ? `${resolveWorkKey}:addons`
+        : resolveWorkKey;
     const consumer: Consumer = { onEvent: input.onEvent, onFeedback: input.onFeedback };
 
     return this.inFlight
       .join(
-        resolveWorkKey,
+        joinKey,
         (signal, { consumers, ledger }) => {
           const physicalInput: PlaybackResolveInput = {
             ...input,
+            // Downloads never use addons — the warning the user accepted says
+            // so, and DownloadService refuses the resulting artifacts anyway.
+            ...(request.intentKind === "download" ? { excludeStremioAddons: true } : null),
             signal,
             onEvent: (event) => {
               recordResolveEvent(ledger, event);

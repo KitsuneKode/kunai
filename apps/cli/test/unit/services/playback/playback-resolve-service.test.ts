@@ -1790,7 +1790,7 @@ test("PlaybackResolveService hands a freshly resolved stream to mpv without a pr
   expect(cache.setKeys).toHaveLength(1);
 });
 
-test("PlaybackResolveService keeps primary first despite title health suggestion", async () => {
+test("PlaybackResolveService starts from the provider that worked for this title, then the selected one", async () => {
   const cache = createMemoryCache(null);
   const observedCandidates: ProviderId[][] = [];
   const engine = createMockEngine(
@@ -1859,7 +1859,7 @@ test("PlaybackResolveService keeps primary first despite title health suggestion
     signal: new AbortController().signal,
   });
 
-  expect(observedCandidates).toEqual([["primary", "fallback"]]);
+  expect(observedCandidates).toEqual([["fallback", "primary"]]);
 });
 
 test("PlaybackResolveService guided mode walks full configured provider priority", async () => {
@@ -2692,4 +2692,97 @@ test("a disabled preferred provider falls through only to admitted alternatives"
   });
   expect(result.providerId).toBe("fallback");
   expect(result.stream?.url).toBe("https://fallback.example/stream.m3u8");
+});
+
+// SAFETY: the cache fixture's stream shape is narrower than the stored record —
+// replay keys off `providerResolveResult`, so only that field is replaced.
+const addonProduced = {
+  ...stream,
+  providerResolveResult: {
+    providerId: "stremio-addon-example-abc12345",
+    status: "resolved",
+    streams: [],
+    subtitles: [],
+    trace: {},
+    failures: [],
+  },
+} as typeof stream;
+
+test("PlaybackResolveService drops a cached stream produced by an addon that is off", async () => {
+  // Stored under a built-in provider's cache slot — only the result's producer
+  // id reveals the addon — the replay must still be refused before any probe.
+  let providerCalled = false;
+  const engine = createMockEngine(
+    { result: null, providerId: null, attempts: [] },
+    { onResolveInput: () => (providerCalled = true) },
+  );
+  const service = new PlaybackResolveService({
+    engine,
+    cacheStore: createMemoryCache(addonProduced),
+    getOrderedModules: () => [],
+  });
+
+  const result = await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "vidking",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+  });
+
+  expect(result.cacheStatus).toBe("miss");
+  expect(result.stream).toBeNull();
+  expect(providerCalled).toBe(true);
+});
+
+test("PlaybackResolveService drops a prefetched stream produced by an addon that is off", async () => {
+  const engine = createMockEngine({ result: null, providerId: null, attempts: [] });
+  const service = new PlaybackResolveService({
+    engine,
+    cacheStore: createMemoryCache(null),
+    getOrderedModules: () => [],
+  });
+
+  const result = await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "vidking",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+    prefetchedStream: { ...addonProduced, timestamp: Date.now() },
+  });
+
+  // Not replayed as "prefetched": provenance is filtered before any adoption.
+  expect(result.cacheStatus).toBe("miss");
+});
+
+test("PlaybackResolveService excludes addon candidates on the download path even when enabled", async () => {
+  const addonId = "stremio-addon-example-abc12345";
+  const engine = createMockEngine(createResolvedEngineOutput("vidking"), {
+    modules: [
+      { providerId: "vidking", manifest: createManifest("vidking", ["movie"]) },
+      { providerId: addonId, manifest: createManifest(addonId, ["movie"]) },
+    ],
+    onCandidateIds: (ids) => expect(ids).toEqual(["vidking"]),
+  });
+  const service = new PlaybackResolveService({
+    engine,
+    cacheStore: createMemoryCache(null),
+    getOrderedModules: () => engine.modules,
+  });
+
+  await service.resolve({
+    title,
+    episode: { season: 1, episode: 2 },
+    mode: "series",
+    providerId: "vidking",
+    audioPreference: "original",
+    subtitlePreference: "none",
+    signal: new AbortController().signal,
+    excludeStremioAddons: true,
+  });
 });

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-08"
+lastReviewed: "2026-11-25T09:40:28Z"
 ---
 
 # Download removal
@@ -38,7 +38,9 @@ state and display retained reasons. Downloads confirmation uses the job id,
 so a list refresh cannot transfer confirmation to another row. `X` explicitly
 removes only the record and keeps local files; `x` removes completed artifacts
 and their record, or only the record for failed/queued jobs. Confirmation tracks
-both the job id and removal mode. The footer states which action will occur.
+both the job id and removal mode. The footer states which action will occur,
+once (the row no longer repeats it). Esc cancels an armed confirmation and
+keeps Downloads open; a second Esc closes it.
 
 This contract applies to anime, movies, series, and YouTube jobs on all desktop
 platforms. It does not implement abandoned staging-directory collection or

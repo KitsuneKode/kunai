@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24"
+lastReviewed: "2026-11-26T11:41:21Z"
 ---
 
 # Kunai — Provider Guide
@@ -18,10 +18,13 @@ For **auto-skip timing** (IntroDB + AniSkip), **MAL / catalog identity** for ani
 ## Published status observations
 
 The scheduled `.github/workflows/provider-status-sweep.yml` writes the configured
-live probe results to `apps/docs/lib/generated-provider-status.json`. Its current
-eight-probe roster is narrower than the desktop production registry; an omitted
-provider has no measured row. Runner-region results do not prove every user's
-network, title or playback request.
+live probe results to `apps/docs/lib/generated-provider-status.json`. A roster
+parity test keeps the probes aligned with the desktop production registry.
+The sweep allows 30 seconds for a resolve and records whether it returned
+streams before the configured default attempt budget (12 seconds on Balanced).
+Qualification describes that fixture and runner, before player handoff. An
+explicit resolver refusal takes precedence over the front-door HEAD hint, and
+URLs and query strings are stripped before publishing notes or logging them.
 
 `.github/scripts/publish-provider-status.sh` snapshots that output and publishes
 only the status artifact from a fresh detached worktree at the dispatch branch's
@@ -226,10 +229,16 @@ provider, a `baseUrl`, `mirrors`, `deadServers`, `disabled`, and
 (`getEffectiveProviderMirrors`, `getProviderCryptoOverride`); bundled values are
 always the fallback.
 
-- **Trust.** Envelopes are Ed25519-signed and verified against keys from
-  `KUNAI_PROVIDER_MANIFEST_PUBKEYS`. No key and no URL are baked into the
-  binary — like the relay, the manifest source is operator-owned and the feature
-  is off until both are configured.
+- **Trust.** Envelopes are Ed25519-signed. The project's own channel is pinned
+  in `apps/cli/src/services/providers/provider-manifest-pin.json`: a fixed URL
+  on the repository's `provider-manifest` prerelease plus the public keys allowed
+  to sign it (read by `provider-manifest-pin.ts`). The channel is inert while no
+  key is pinned; `scripts/setup-signing-keys.ts` pins one. An operator's own
+  channel replaces the pin entirely: `KUNAI_PROVIDER_MANIFEST_PUBKEYS` takes
+  precedence, and with operator keys the pinned URL is never used, so a fork's
+  keys never verify the project URL. This differs from the relay on purpose:
+  the relay carries user traffic through someone's server, the manifest is
+  signed metadata the project publishes about its own providers.
 - **Lifecycle.** `kunai providers update --url <https>` fetches, verifies, and
   caches it (`--dry-run` to inspect); `providers status`, `verify`, `rollback`,
   and `reset` are the ways back out. The previous manifest is kept as a backup
@@ -262,8 +271,8 @@ always the fallback.
   in the interactive shell and in headless `-S --json` search;
   without it a manifest would apply only in the process that fetched it.
 - **Background refresh.** `maybeBackgroundRefreshProviderManifest` refreshes at
-  most every six hours, only when `KUNAI_PROVIDER_MANIFEST_URL` and trusted keys
-  are both set, and fails silently offline.
+  most every six hours, only when a URL (operator or pinned) and trusted keys
+  are both in force, and fails silently offline.
 - **Urgent refresh.** When a provider's health transitions into `down`
   (`PlaybackResolveService` → `onProviderDown`, wired in
   `apps/cli/src/container/bootstrap-providers.ts`), Kunai checks the manifest
@@ -336,7 +345,11 @@ the probe races mpv's `loadfile`, so it adds no wait — a definitive dead URL
 fails fast only when mpv itself also fails. Stream age alone used to waive that
 probe for the first five minutes (`recent-resolve`), which let autoplay
 replacements hand mpv URLs no code had ever fetched; the waiver now requires
-attestation (issue #459).
+attestation (issue #459). Attestation belongs to the stream the provider
+selected and probed: picking a sibling from the same inventory (Tracks source
+or quality, an exact stream pin, a blocked-URL skip) sets
+`streamReachabilityVerified` to false, so the new pick is probed at handoff
+(`reselectResolveResultStream` in `services/providers/provider-result-adapter.ts`).
 
 **VidLink needs the browser playback environment (2026-08-24).** Without an
 `x-playback-environment` header, `vidlink.pro/api/b` answers with
@@ -497,7 +510,9 @@ failure used to collapse into one retryable `parse-failed` while resolve still
 returned `status: "resolved"` with the bare watch URL, so nothing fell back and
 playback died inside mpv with no diagnosis near the cause. Transient failures
 (network, 429, timeout) still resolve, because a flaky probe must not destroy a
-working playback path; those streams carry `metadataUnavailable: true`.
+working playback path. Those streams carry `metadataUnavailable: true`.
+Unrecognized errors use the fixed `parse-failed` reason and omit extractor stderr,
+which can contain signed URLs.
 
 **A quality preference is a ceiling, not a wish.** `selectYoutubeQuality`
 (`youtube/quality-selection.ts`) rounds _down_ to the highest rendition at or
@@ -794,17 +809,17 @@ Active providers are registered in `apps/cli/src/container/bootstrap-providers.t
 it live, and release signoff derives its cases from that list plus the configured lane defaults.
 
 `hianime` is the **default** anime provider (`animeProvider: "hianime"`,
-`animeProviderPriority: ["kickassanime", "animegg", "allanime", "miruro"]`,
-provider-defaults revision 6). The lead moved off AniDB when anidb.app stopped
+`animeProviderPriority: ["animegg", "kickassanime", "miruro", "allanime"]`,
+provider-defaults revision 7). The lead moved off AniDB when anidb.app stopped
 serving the old origin (HTTP 302 to an unrelated site, 2026-10-24), matching
 ani-cli's earlier move to HiAnime (c99221d). The AniDB provider module was
 removed; the MAL lookup for AniSkip still handles historic catalog IDs.
 `normalizeRetiredProductionProviderFields` in `@kunai/config` maps any persisted
 `anidb` lane selection to HiAnime, strips the id from priority and disable
 lists, and drops title pins that still name it (without aliasing history ids).
-`miruro` is the tail fallback in shipped defaults — it fronts roughly a dozen
-backends behind one AniList-keyed pipe, so an upstream outage costs a server
-rather than the lane.
+Revision 7 migrates inherited revision-6 priorities and keeps deliberate
+provider selections. AllAnime is last because the upstream retired the build
+used for stream authorization.
 
 Miruro's search goes through its own pipe (`search`, `q` + `type: "ANIME"`),
 which relays AniList's catalog: results carry AniList and MAL ids exactly as the
@@ -845,13 +860,13 @@ from that alone, and ~1.1 s once `pewe` was quarantined.
 
 Miruro's own single point of failure is `miruro.bz`/`.ru` — every one of its
 backends is reached through it, so the providers behind it are the ones that
-share none of that. The shipped fallback order after HiAnime is KickAssAnime,
-AnimeGG, AllAnime, then Miruro. KickAssAnime and AnimeGG have their own catalog,
-site and CDN, but KickAssAnime can also
-take over a title found in _another_ catalog — it matches the show by name and
-year and remembers the result on the title bridge — whereas AnimeGG only plays
-what its own search found. AllAnime supplies the ani-cli parity path ahead of
-Miruro. See
+share none of that. AnimeGG stays the first fallback because its independent
+catalog and stream path returned four streams in the November 23 hosted sweep.
+That resolve took 21.9 seconds and missed the 12-second default attempt budget.
+KickAssAnime and Miruro returned access refusals on that runner, and AllAnime
+had stale stream authorization. KickAssAnime and AnimeGG each have their own
+catalog, site and CDN. Both can match a title from another catalog and remember
+the provider's ID on the title bridge. See
 [the KickAssAnime dossier](./provider-dossiers/kickassanime.md) and
 [the AnimeGG dossier](./provider-dossiers/animegg.md), both of which record why a
 reachability probe cannot judge their streams.
@@ -995,6 +1010,15 @@ All active providers implement `CoreProviderModule` with `resolve(input, context
 
 Legacy Playwright providers live under `.archive/legacy/apps/cli/src/providers/` as reference-only code.
 For current beta publish scope, Playwright is not a required runtime dependency.
+
+## User-installed Stremio addons
+
+A user can add Stremio addons as extra movie and series providers. They are the
+one kind of provider module that does not come from this repository:
+`loadProductionProviderModules()` appends one module per stored manifest URL
+after the bundled roster, and returns exactly the bundled roster when none is
+installed. Rules, limits and lifecycle are in
+[features/stremio-addons.md](./features/stremio-addons.md).
 
 ## User Overrides
 

@@ -87,6 +87,46 @@ test("startupCandidate anchors on the most recent row and resumes unfinished pro
   });
 });
 
+test("startupCandidate skips a finished newest title and continues the unfinished one behind it", () => {
+  const repo = makeRepo();
+  repo.upsertProgress({
+    title: { id: "tmdb:show", kind: "series", title: "Show" },
+    episode: { season: 2, episode: 5 },
+    positionSeconds: 600,
+    durationSeconds: 1400,
+    completed: false,
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+  // Watched to the end afterwards: the newest title, with nothing left to play.
+  repo.upsertProgress({
+    title: { id: "tmdb:movie", kind: "movie", title: "Movie" },
+    positionSeconds: 7000,
+    durationSeconds: 7000,
+    completed: true,
+    updatedAt: "2026-01-03T00:00:00.000Z",
+  });
+  const service = new ContinueWatchingService(repo);
+
+  const decision = service.startupCandidate({ scanLimit: 100 });
+
+  expect(decision?.primaryAction).toMatchObject({
+    kind: "resume-online",
+    target: { titleId: "tmdb:show", season: 2, episode: 5 },
+  });
+});
+
+test("startupCandidate returns nothing when no recent title has anything to play", () => {
+  const repo = makeRepo();
+  repo.upsertProgress({
+    title: { id: "tmdb:movie", kind: "movie", title: "Movie" },
+    positionSeconds: 7000,
+    durationSeconds: 7000,
+    completed: true,
+    updatedAt: "2026-01-03T00:00:00.000Z",
+  });
+  expect(new ContinueWatchingService(repo).startupCandidate()).toBeNull();
+});
+
 test("startupCandidate exposes offline-ready as local primary with online secondary", () => {
   const repo = makeRepo();
   repo.upsertProgress({

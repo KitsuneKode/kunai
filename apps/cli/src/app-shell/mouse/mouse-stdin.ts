@@ -68,6 +68,8 @@ export class MouseSplitStdin extends EventEmitter {
   private readonly stdoutWrite: (data: string) => void;
   private readonly scheduleTailFlush: (flush: () => void) => () => void;
   private cancelTailFlush: (() => void) | null = null;
+  private readonly onCellPixels?: (report: string) => void;
+  private readonly onRawMode?: (raw: boolean) => void;
 
   constructor(
     private readonly source: StdinLike,
@@ -77,11 +79,15 @@ export class MouseSplitStdin extends EventEmitter {
       readonly write?: (data: string) => void;
       /** Returns cancellation; tests drive idle expiry without wall-clock sleeps. */
       readonly scheduleTailFlush?: (flush: () => void) => () => void;
+      readonly onCellPixels?: (report: string) => void;
+      readonly onRawMode?: (raw: boolean) => void;
     } = {},
   ) {
     super();
     this.stdoutWrite = options.write ?? ((data) => process.stdout.write(data));
     this.scheduleTailFlush = options.scheduleTailFlush ?? scheduleTailFlush;
+    this.onCellPixels = options.onCellPixels;
+    this.onRawMode = options.onRawMode;
     this.onSourceReadable = () => this.emit("readable");
   }
 
@@ -171,11 +177,26 @@ export class MouseSplitStdin extends EventEmitter {
         }
         continue;
       }
+      if (part?.kind === "cell-pixels") {
+        this.onCellPixels?.(part.report);
+        continue;
+      }
       if (this.detached) return null;
       const chunk = this.source.read();
       if (chunk === null || chunk === undefined) return null;
       this.ingest(chunk);
     }
+  }
+
+  /**
+   * Deliver keystrokes as if typed: a click on a key hint presses that key,
+   * through Ink's own parser and every active `useInput`, so the click and the
+   * key can never mean different things.
+   */
+  inject(keys: string): void {
+    if (this.detached || !keys) return;
+    this.buffer.push(keys);
+    this.emit("readable");
   }
 
   /** Ink pushes bytes back (e.g. kitty-protocol leftovers). Re-queue them. */
@@ -191,6 +212,7 @@ export class MouseSplitStdin extends EventEmitter {
 
   setRawMode(mode: boolean): void {
     this.source.setRawMode?.(mode);
+    this.onRawMode?.(mode);
   }
 
   get isTTY(): boolean {

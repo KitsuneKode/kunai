@@ -22,8 +22,9 @@ export function blockedLiteralTargetReason(url: string): string | null {
     return "unparseable URL";
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    return `unsupported scheme ${parsed.protocol.replace(":", "") || "(none)"}`;
+    return "unsupported scheme";
   }
+  if (parsed.username || parsed.password) return "URL credentials";
   const host = stripTrailingDots(parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase());
   if (!host) return "empty host";
   if (
@@ -33,13 +34,13 @@ export function blockedLiteralTargetReason(url: string): string | null {
     host.endsWith(".internal") ||
     host.endsWith(".home.arpa")
   ) {
-    return `local name ${host}`;
+    return "local name";
   }
   const literal = isPrivateLiteralAddress(host);
   if (literal) return literal;
   // A single-label name is an intranet name; public DNS names always carry a dot.
   if (!host.includes(".") && !host.includes(":")) {
-    return `single-label host ${host}`;
+    return "single-label host";
   }
   return null;
 }
@@ -90,17 +91,17 @@ function embeddedIpv4(host: string): [number, number, number, number] | null {
 function isPrivateLiteralAddress(host: string): string | null {
   const v4 = parseIpv4(host);
   if (v4) {
-    return isPrivateIpv4(v4) ? `private address ${host}` : null;
+    return isPrivateIpv4(v4) ? "private address" : null;
   }
   if (!host.includes(":")) return null;
-  if (host === "::" || host === "::1") return `loopback address ${host}`;
+  if (host === "::" || host === "::1") return "loopback address";
   const embedded = embeddedIpv4(host);
   if (
     (host.startsWith("::ffff:") || host.startsWith("64:ff9b::")) &&
     embedded &&
     isPrivateIpv4(embedded)
   ) {
-    return `private address ${host}`;
+    return "private address";
   }
   const first = parseInt(host.split(":", 1)[0] || "0", 16);
   if (
@@ -112,9 +113,29 @@ function isPrivateLiteralAddress(host: string): string | null {
     host.startsWith("2001:db8") ||
     host.startsWith("2001:0db8")
   ) {
-    return `private address ${host}`;
+    return "private address";
   }
   return null;
+}
+
+/**
+ * A DNS lookup the caller can still cancel out of. Resolves `undefined` on
+ * abort rather than rejecting, so a guarded walk reports its own `timeout`
+ * instead of surfacing an abort error; the late answer is discarded.
+ */
+function awaitLookup(
+  addresses: Promise<readonly string[]>,
+  signal?: AbortSignal | null,
+): Promise<readonly string[] | undefined> {
+  if (!signal) return addresses;
+  return new Promise((resolve, reject) => {
+    const onAbort = () => resolve(undefined);
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) onAbort();
+    void addresses
+      .then(resolve, reject)
+      .finally(() => signal.removeEventListener("abort", onAbort));
+  });
 }
 
 async function resolveHostAddresses(host: string): Promise<string[]> {
@@ -172,13 +193,26 @@ export async function fetchProbeTarget(options: {
   readonly resolveNamesFor: (url: string) => boolean;
   /** Resolver seam; production uses the system resolver and pins its answer. */
   readonly resolveAddresses?: (host: string) => Promise<readonly string[]>;
+  /** `false` returns the redirect response instead of following Location. */
+  readonly followRedirects?: boolean;
+  /** Drop even transport hints on a cross-origin redirect. */
+  readonly omitCrossOriginHeaders?: boolean;
 }): Promise<ProbeFetchOutcome> {
+  // One signal for the whole walk: the request's own and the caller's parent
+  // both cancel every hop, including the DNS wait in between.
+  const signal =
+    options.init.signal && options.parentSignal
+      ? AbortSignal.any([options.init.signal, options.parentSignal])
+      : (options.init.signal ?? options.parentSignal);
   let target = options.url;
   let headersInit = options.init.headers;
   for (let hop = 0; ; hop++) {
+    if (signal?.aborted || options.remaining() <= 0) {
+      return { kind: "timeout" };
+    }
     const literalBlocked = blockedLiteralTargetReason(target);
     if (literalBlocked) {
-      return { kind: "blocked", reason: `${target} -> ${literalBlocked}` };
+      return { kind: "blocked", reason: literalBlocked };
     }
     let requestTarget = target;
     let requestInit: RequestInit & { proxy?: false; tls?: { serverName: string } } =
@@ -187,10 +221,16 @@ export async function fetchProbeTarget(options: {
         : { ...options.init, headers: headersInit };
     // The transport must use the address we checked, not resolve the hostname
     // again. Keep the logical URL for redirect bases and credential boundaries.
-    if (options.resolveNamesFor(target) && !options.parentSignal?.aborted) {
+    if (options.resolveNamesFor(target)) {
       const parsed = new URL(target);
       const host = parsed.hostname.replace(/^\[|\]$/g, "");
-      const addresses = await (options.resolveAddresses ?? resolveHostAddresses)(host);
+      const addresses = await awaitLookup(
+        (options.resolveAddresses ?? resolveHostAddresses)(host),
+        signal,
+      );
+      if (!addresses || signal?.aborted) {
+        return { kind: "timeout" };
+      }
       if (addresses.length === 0) {
         return { kind: "blocked", reason: `No vetted DNS address for ${host}` };
       }
@@ -213,16 +253,17 @@ export async function fetchProbeTarget(options: {
         ...(parsed.protocol === "https:" ? { tls: { serverName: host } } : {}),
       };
     }
-    if (options.remaining() <= 0) {
+    // Nothing is dispatched once the caller is done waiting: not the first
+    // hop, and not a redirect the previous hop just answered.
+    if (signal?.aborted || options.remaining() <= 0) {
       return { kind: "timeout" };
     }
-    // The fetch impl is invoked even on an aborted signal: abort is delivered
-    // through the signal itself, which is also what injected test fetches see.
     const response = await options.fetchImpl(requestTarget, {
       ...requestInit,
       redirect: "manual",
+      signal: signal ?? null,
     });
-    if (REDIRECT_STATUSES.has(response.status)) {
+    if (options.followRedirects !== false && REDIRECT_STATUSES.has(response.status)) {
       const location = response.headers.get("location");
       if (location && hop < MAX_PROBE_REDIRECT_HOPS) {
         try {
@@ -230,7 +271,9 @@ export async function fetchProbeTarget(options: {
           // Match undici's own redirect hygiene: credentials do not cross
           // origins, even when every hop individually validates as public.
           if (next.origin !== new URL(target).origin && headersInit) {
-            headersInit = filterCrossOriginStreamHeaders(headersInit);
+            headersInit = options.omitCrossOriginHeaders
+              ? undefined
+              : filterCrossOriginStreamHeaders(headersInit);
           }
           target = next.toString();
         } catch {
@@ -285,6 +328,8 @@ export function fetchGuardedStreamTarget(options: {
   readonly init: RequestInit;
   readonly signal?: AbortSignal;
   readonly resolvesLocally?: (url: string) => boolean;
+  readonly resolveAddresses?: (host: string) => Promise<readonly string[]>;
+  readonly omitCrossOriginHeaders?: boolean;
 }): Promise<ProbeFetchOutcome> {
   return fetchProbeTarget({
     fetchImpl: options.fetchImpl,
@@ -292,6 +337,10 @@ export function fetchGuardedStreamTarget(options: {
     init: { ...options.init, signal: options.signal },
     remaining: () => 1, // the caller's signal owns the deadline
     parentSignal: options.signal,
-    resolveNamesFor: options.resolvesLocally ?? (() => isGuardedPlatformFetch(options.fetchImpl)),
+    resolveNamesFor:
+      options.resolvesLocally ??
+      (() => Boolean(options.resolveAddresses) || isGuardedPlatformFetch(options.fetchImpl)),
+    resolveAddresses: options.resolveAddresses,
+    omitCrossOriginHeaders: options.omitCrossOriginHeaders,
   });
 }

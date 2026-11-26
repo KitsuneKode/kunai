@@ -185,28 +185,77 @@ test("media unsupported outcomes propagate with the original notification action
   });
 
   const result = await router.run({
-    actionId: "retry-download",
+    actionId: "download",
     notification: notification({
-      kind: "download-failed",
+      kind: "new-episode",
       itemJson: JSON.stringify({ mediaKind: "anime", titleId: "tmdb:1", title: "Frieren" }),
     }),
   });
 
   expect(result).toEqual({
     status: "unsupported",
-    actionId: "retry-download",
+    actionId: "download",
     reason: "Downloads are not available yet",
   });
 });
 
-test("retry-download maps to the standard download media action", async () => {
-  const calls: string[] = [];
+/**
+ * Sol review #3: Retry used to become a fresh generic download, so an anime
+ * notice (absolute episode only) queued S01E01 and the failed job stayed.
+ */
+test("retry-download requeues the notice's exact job, never a generic download", async () => {
+  const media: string[] = [];
+  const retried: { jobId: string | null; absoluteEpisode?: number }[] = [];
   const router = new NotificationActionRouter({
     mediaActions: {
       run: async (input) => {
-        calls.push(input.actionId);
+        media.push(input.actionId);
         return { status: "handled", actionId: input.actionId };
       },
+    },
+    downloads: {
+      retryFailed: async ({ jobId, item }) => {
+        retried.push({ jobId, absoluteEpisode: item.absoluteEpisode });
+        return { status: "requeued" };
+      },
+    },
+    notifications: { dismiss: () => {} },
+  });
+  const failed = (extra: { readonly downloadJobId?: string }) =>
+    notification({
+      kind: "download-failed",
+      itemJson: JSON.stringify({
+        mediaKind: "anime",
+        titleId: "anilist:1",
+        title: "Frieren",
+        absoluteEpisode: 12,
+        ...extra,
+      }),
+    });
+
+  expect(
+    await router.run({
+      actionId: "retry-download",
+      notification: failed({ downloadJobId: "j12" }),
+    }),
+  ).toEqual({ status: "handled", actionId: "retry-download" });
+  // An older notice has no job id; the port decides whether one job matches.
+  await router.run({ actionId: "retry-download", notification: failed({}) });
+
+  expect(retried).toEqual([
+    { jobId: "j12", absoluteEpisode: 12 },
+    { jobId: null, absoluteEpisode: 12 },
+  ]);
+  expect(media).toEqual([]);
+});
+
+test("retry-download reports an unavailable job instead of claiming it queued", async () => {
+  const router = new NotificationActionRouter({
+    downloads: {
+      retryFailed: async () => ({
+        status: "unavailable",
+        reason: "Open Downloads to retry this one.",
+      }),
     },
     notifications: { dismiss: () => {} },
   });
@@ -215,12 +264,15 @@ test("retry-download maps to the standard download media action", async () => {
     actionId: "retry-download",
     notification: notification({
       kind: "download-failed",
-      itemJson: JSON.stringify({ mediaKind: "anime", titleId: "tmdb:1", title: "Frieren" }),
+      itemJson: JSON.stringify({ mediaKind: "series", titleId: "tmdb:1", title: "Dune" }),
     }),
   });
 
-  expect(result).toEqual({ status: "handled", actionId: "retry-download" });
-  expect(calls).toEqual(["download"]);
+  expect(result).toEqual({
+    status: "unsupported",
+    actionId: "retry-download",
+    reason: "Open Downloads to retry this one.",
+  });
 });
 
 test("thrown media executor errors propagate to the caller", async () => {

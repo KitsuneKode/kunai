@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  absolutizeHostRootHlsManifest,
+  absolutizeHlsManifest,
   isHlsMasterPlaylist,
   manifestUsesHostRootSegmentPaths,
   parseFirstHlsMediaSegmentPath,
@@ -25,11 +25,37 @@ describe("hls-manifest helpers", () => {
   });
 
   test("absolutizes host-root paths against manifest origin", () => {
-    const output = absolutizeHostRootHlsManifest(
+    const output = absolutizeHlsManifest(
       ["#EXTM3U", "#EXTINF:3,", "/foo/bar/seg.jpg"].join("\n"),
       "https://light.goldweather.net/token/index.m3u8",
     );
     expect(output).toContain("https://light.goldweather.net/foo/bar/seg.jpg");
+  });
+
+  test("absolutizes relative segments and every URI attribute against the served URL", () => {
+    const output = absolutizeHlsManifest(
+      [
+        "#EXTM3U",
+        '#EXT-X-KEY:METHOD=AES-128,URI="key.bin",IV=0x1',
+        '#EXT-X-MAP:URI="/init/init.mp4"',
+        '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="ja",URI="audio/ja.m3u8"',
+        "#EXTINF:4,",
+        "seg-1.m4s",
+        "#EXTINF:4,",
+        "/abs/seg-2.m4s",
+        "#EXTINF:4,",
+        "https://other.example/seg-3.m4s",
+      ].join("\n"),
+      "https://cdn.example/hls/ep1/index.m3u8",
+    );
+    expect(output).toContain('URI="https://cdn.example/hls/ep1/key.bin",IV=0x1');
+    expect(output).toContain('#EXT-X-MAP:URI="https://cdn.example/init/init.mp4"');
+    expect(output).toContain('URI="https://cdn.example/hls/ep1/audio/ja.m3u8"');
+    expect(output).toContain("\nhttps://cdn.example/hls/ep1/seg-1.m4s\n");
+    expect(output).toContain("\nhttps://cdn.example/abs/seg-2.m4s\n");
+    expect(output).toContain("\nhttps://other.example/seg-3.m4s");
+    // Tags without a URI pass through untouched.
+    expect(output).toContain("#EXTINF:4,");
   });
 
   test("resolves first media segment and host-root URLs", () => {

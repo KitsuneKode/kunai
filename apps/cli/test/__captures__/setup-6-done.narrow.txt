@@ -13,7 +13,7 @@
    △ Downloads off         stream-only · change in /settings
    △ Auto-skip off         nothing skipped
    △ Autoplay off          stops after each episode
-   ✓ Usage ping on         change any time in /settings
+   △ Usage ping off        change any time in /settings
 
    Try these first
      type a title, or /discover · /calendar · /random

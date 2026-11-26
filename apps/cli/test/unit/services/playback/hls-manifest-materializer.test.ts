@@ -144,6 +144,52 @@ describe("hls manifest materializer", () => {
     }
   });
 
+  test("resolves relative references against the URL the playlist was redirected to", async () => {
+    const manifest = [
+      "#EXTM3U",
+      '#EXT-X-MAP:URI="init.mp4"',
+      "#EXTINF:3,",
+      "/mirror/seg-1.jpg",
+      "#EXTINF:3,",
+      "seg-2.jpg",
+    ].join("\n");
+    const originalFetch = globalThis.fetch;
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    // oxlint-disable-next-line anti-slop/no-chained-type-assertions -- fetch's branded preconnect member forces the unknown hop
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/token/index.m3u8") {
+        return new Response(null, {
+          status: 302,
+          headers: { location: "https://light.goldweather.net/moved/ep1/index.m3u8" },
+        });
+      }
+      if (url.pathname === "/moved/ep1/index.m3u8") {
+        return new Response(manifest, {
+          status: 200,
+          headers: { "content-type": "application/vnd.apple.mpegurl" },
+        });
+      }
+      return originalFetch(input);
+    }) as unknown as typeof fetch;
+
+    try {
+      const materialized = await materializeHlsManifestForPlayback(createHlsStream());
+      expect(materialized).not.toBeNull();
+      cleanup.push(materialized!.cleanup);
+      const playlist = await readFile(materialized!.stream.url, "utf8");
+      // Relative to the redirected location, not the requested one — and not
+      // to the temp file mpv reads it from.
+      expect(playlist).toContain(
+        '#EXT-X-MAP:URI="https://light.goldweather.net/moved/ep1/init.mp4"',
+      );
+      expect(playlist).toContain("https://light.goldweather.net/moved/ep1/seg-2.jpg");
+      expect(playlist).toContain("https://light.goldweather.net/mirror/seg-1.jpg");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test("refuses a manifest body past the size cap", async () => {
     const oversized = new ReadableStream<Uint8Array>({
       start(controller) {
@@ -190,7 +236,9 @@ describe("hls manifest materializer", () => {
         caller.signal,
       );
       expect(result).toBeNull();
-      expect(observedSignal?.aborted).toBe(true);
+      // Pre-dispatch abort returns timeout before fetch; a dispatched fetch
+      // must still see the aborted signal. Either proves cancellation.
+      expect(observedSignal === undefined || observedSignal.aborted).toBe(true);
     } finally {
       globalThis.fetch = originalFetch;
     }

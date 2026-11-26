@@ -23,6 +23,7 @@ import { existsSync } from "node:fs";
 // =============================================================================
 
 import type { KunaiHandoffLaunch } from "@/app/bootstrap/handoff-url";
+import { launchNeedsYtDlp } from "@/app/bootstrap/launch-dependencies";
 import type { SessionController } from "@/app/session/SessionController";
 import {
   createShutdownCoordinator,
@@ -30,7 +31,13 @@ import {
   type ShutdownRuntime,
 } from "@/app/session/shutdown-coordinator";
 import { bindShutdownRequestHandler } from "@/app/session/shutdown-request";
-import { buildCliHelpText, CliUsageError, parseCliArgs, type CliArgs } from "@/cli-args";
+import {
+  buildCliHelpText,
+  CLI_SUBCOMMANDS,
+  CliUsageError,
+  parseCliArgs,
+  type CliArgs,
+} from "@/cli-args";
 import type { createContainer } from "@/container";
 import type { KunaiShareAction, PlaybackTargetRef } from "@/domain/share/playback-target-ref";
 import type { EpisodeInfo, SearchResult, TitleInfo } from "@/domain/types";
@@ -245,10 +252,9 @@ async function maybeResolveContinueTitle(
   container: Awaited<ReturnType<typeof createContainer>>,
 ): Promise<StartupHistoryTarget | null> {
   if (!args.continuePlayback) return null;
-  // Only the head of the recency scan feeds startup: the continuation anchor
-  // is the newest row's title (always row 0), and the batch reads below are
-  // keyed by title. 100 rows keeps every plausible anchor plus prefetch
-  // margin at a fifth of the old scan.
+  // Only the head of the recency scan feeds startup: the batch reads below are
+  // keyed by its titles, and the candidate is the newest of them with
+  // something to play.
   const recentEntries = container.historyRepository.listRecent(100);
   const titleIds = [...new Set(recentEntries.map((entry) => entry.titleId))];
   const releaseProgress = container.releaseProgressCache.getByTitleIds(titleIds);
@@ -259,9 +265,9 @@ async function maybeResolveContinueTitle(
   );
   const nextReadyByTitle = readNextReadyOfflineEpisodes(recentEntries, container);
   const decision = container.continueWatchingService.startupCandidate({
-    // Limit-1 decision: the anchor is the newest row's title bucket, which a
-    // recency-ordered scan always yields first — 50 rows is margin, not need.
-    scanLimit: 50,
+    // The same 100 rows the signals above were read for: the newest title with
+    // something to play, which is not always the newest title.
+    scanLimit: 100,
     signalsByTitle: (titleId) =>
       buildStartupContinuationSignals({
         releaseProgress: releaseProgress.get(titleId),
@@ -430,9 +436,7 @@ async function maybeRunDownloadMode(
   container: Awaited<ReturnType<typeof createContainer>>,
   bootstrapTitle: TitleInfo | null,
 ): Promise<boolean> {
-  if (!args.download) {
-    return false;
-  }
+  if (!args.download) return false;
 
   const { resolveAutoPickIndex } = await import("@/app/bootstrap/bootstrap-intent");
   const searchResult = bootstrapTitle
@@ -637,6 +641,40 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       }),
     );
   }
+  if (argv[0] === "addons") {
+    const json = argv.includes("--json");
+    if (
+      argv
+        .slice(1)
+        .some(
+          (arg) =>
+            arg.startsWith("-") && arg !== "--json" && arg !== "--stdin" && arg !== "--accept-risk",
+        )
+    ) {
+      const error =
+        "unsupported flag. Use --json, --stdin (add only), or --accept-risk (enable only).";
+      process.stdout.write(
+        json
+          ? `${JSON.stringify({ schemaVersion: 1, ok: false, error }, null, 2)}\n`
+          : `kunai addons: ${error}\n`,
+      );
+      process.exit(2);
+    }
+    // An unresolved operation must not exit successfully before reporting an outcome.
+    process.exitCode = 1;
+    const { runAddonsCommand } = await import("./services/providers/run-addons-command");
+    // Positionals only: `kunai addons add <url> --json` and `--json add <url>` both work.
+    const words = argv.slice(1).filter((word) => !word.startsWith("-"));
+    process.exit(
+      await runAddonsCommand({
+        subcommand: words[0],
+        target: words[1],
+        stdin: argv.includes("--stdin"),
+        acceptRisk: argv.includes("--accept-risk"),
+        json,
+      }),
+    );
+  }
   if (argv[0] === "rollback") {
     const { runRollback } = await import("./services/update/run-rollback");
     const toIdx = argv.indexOf("--to");
@@ -675,6 +713,10 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     }
     process.stdout.write(renderCompletionScript(requested));
     process.exit(0);
+  }
+  if (argv[0] === "analytics") {
+    const { runAnalyticsCommand } = await import("./services/analytics/run-analytics-command");
+    process.exit(await runAnalyticsCommand(argv.slice(1), { version: KUNAI_VERSION }));
   }
   if (argv[0] === "diagnostics") {
     const { runDiagnosticsRecentCommand } =
@@ -819,6 +861,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
         "  kunai capabilities --json\n" +
         "  kunai providers status --json\n" +
         "  kunai providers verify --json\n" +
+        "  kunai addons list --json\n" +
         "  kunai doctor --json\n" +
         "  kunai -S <query> --json\n" +
         "  kunai -a -S <query> --json\n" +
@@ -914,7 +957,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   const [
     { getKunaiPaths },
     { isBelowOnboardedFloor, maybeRunStartupSetup, shouldRunSetupWizard },
-    { detectPlayerPlatform, resolvePlayerMode },
+    { detectPlayerPlatform, effectivePlayerChoice, resolvePlayerMode },
     { checkDeps },
     { createContainer, disposeContainer },
     { resolveSessionConfigOverrides },
@@ -928,19 +971,17 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     import("@/app/session/session-overrides"),
     import("@/app/bootstrap/bootstrap-intent"),
   ]);
-  const configJson = await (async () => {
+  type ConfigPeek = {
+    onboardingVersion?: number;
+    downloadOnboardingDismissed?: boolean;
+    defaultMode?: string;
+    player?: string;
+  };
+  const configJson = await (async (): Promise<ConfigPeek> => {
     try {
-      return (await Bun.file(getKunaiPaths().configPath).json()) as {
-        onboardingVersion?: number;
-        downloadOnboardingDismissed?: boolean;
-        defaultMode?: string;
-      };
+      return (await Bun.file(getKunaiPaths().configPath).json()) as ConfigPeek;
     } catch {
-      return {} as {
-        onboardingVersion?: number;
-        downloadOnboardingDismissed?: boolean;
-        defaultMode?: string;
-      };
+      return {};
     }
   })();
   // Interactivity is part of the question: this decides whether `checkDeps`
@@ -965,6 +1006,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   // afterwards would have every report claim the pre-probe fallback.
   await graphicsProbeReady;
 
+  args.player = effectivePlayerChoice(args.player, configJson.player);
   const startupPlayerMode = resolvePlayerMode({
     choice: args.player,
     platform: detectPlayerPlatform(),
@@ -972,7 +1014,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   const capabilitySnapshot = await checkDeps(KUNAI_VERSION, {
     silent: onboardingWillRun,
     requireMpv: startupPlayerMode.kind === "managed-mpv",
-    requireYtDlp: !args.offline && (args.youtube || configJson.defaultMode === "youtube"),
+    requireYtDlp: launchNeedsYtDlp(args, configJson.defaultMode, pendingShareLaunch?.ref.kind),
   });
 
   const { loadCompiledSmokeProviderOverride, loadCompiledSmokeSearchDefinitions } =
@@ -1075,6 +1117,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     bootstrapTitle = mapped.title;
   }
   let bootstrapEpisode: EpisodeInfo | null = null;
+  let shareRequestedEpisode: { season: number; episode: number } | undefined;
   let autoPickSearchResultIndex = bootstrapIntent.autoPickSearchResultIndex;
 
   // Untrusted handoffs confirm before any share resolution: mapping an anime
@@ -1105,15 +1148,14 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       bootstrapQuery = shareBootstrap.query;
       bootstrapTitle = null;
       bootstrapEpisode = null;
+      shareRequestedEpisode = shareBootstrap.requestedEpisode;
       autoPickSearchResultIndex = shareBootstrap.autoPickSearchResultIndex ?? 1;
     } else if (shareBootstrap.title) {
       bootstrapTitle = shareBootstrap.title;
       bootstrapEpisode = shareBootstrap.episode ?? null;
       bootstrapQuery = undefined;
     }
-    if (shareBootstrap.download) {
-      args.download = true;
-    }
+    if (shareBootstrap.download) args.download = true;
   }
 
   for (const entry of bootstrapIntent.logs) {
@@ -1490,7 +1532,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       requestedEpisode:
         args.episode !== undefined
           ? { season: args.season ?? 1, episode: args.episode }
-          : undefined,
+          : shareRequestedEpisode,
       initialRoute:
         args.initialRoute ??
         (freshInstall && !bootstrapTitle && !bootstrapQuery && !args.offline
@@ -1562,17 +1604,8 @@ function setupSignalHandlers(): void {
   });
 }
 
-const FAST_PATH_SUBCOMMANDS = new Set([
-  "doctor",
-  "capabilities",
-  "providers",
-  "rollback",
-  "upgrade",
-  "uninstall",
-  "install",
-  "completion",
-  "diagnostics",
-]);
+// Every maintenance subcommand runs before the shell boots; one list feeds both.
+const FAST_PATH_SUBCOMMANDS = new Set(CLI_SUBCOMMANDS);
 
 function isFastPathInvocation(argv: readonly string[]): boolean {
   const first = argv[0];

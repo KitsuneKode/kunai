@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-22"
+lastReviewed: "2026-11-24T09:34:20Z"
 ---
 
 # Provider: AllManga / AllAnime
@@ -12,7 +12,13 @@ lastReviewed: "2026-10-22"
 - **Runtime class:** Direct HTTP GraphQL + decoded source APIs. No browser should be needed on the hot path.
 - **Reference implementation:** Local ani-cli checkout at `~/Projects/osc/ani-cli` — historical only: ani-cli v5 (2026-08-01) moved to anidb.app and deleted its AllAnime code, so the live mkissa JS chunk is the sole source of truth now.
 - **Production module:** `packages/providers/src/allmanga/*`.
-- **Current status (2026-10-22):** The pinned build181 bootstrap/crypto probe returns HTTP200. Full stream resolution in the local production-provider sweep stopped at CAPTCHA, so bootstrap success is not playback qualification. Episode resolve requires `aaReq` AES-GCM attestation and the current rotating key.
+- **Current status (2026-11-24):** The November 23 provider sweep exhausted
+  resolution with stale crypto after refresh. The hosted canary reported
+  `build-id-rotated` for pinned build 189. The site is reachable, and its
+  bootstrap refused unauthenticated requests during investigation. Kunai
+  keeps AllManga registered at the end of the anime fallback order and tells
+  users to choose another provider if the stream authorization is out of date.
+  See [canary issue #724](https://github.com/KitsuneKode/kunai/issues/724).
 
 ## Current Evidence
 
@@ -29,7 +35,7 @@ Current Kunai flow, derived from the live mkissa chunk (ani-cli v5 no longer imp
 
 ```text
 episode GraphQL persisted GET + aaReq + x-build-id
-  -> "tobeparsed" AES-256-GCM payload (rotated hex key, build id 181, 7-day epochs)
+  -> "tobeparsed" AES-256-GCM payload (rotating key, pinned build 189, 7-day epochs)
   -> decoded source names + encoded API paths (or direct https embeds)
   -> per-source API fetch on allanime.day
   -> mp4 / HLS candidates, or deferred Ak DASH descriptor with separate video/audio
@@ -95,12 +101,18 @@ The experiment generated a temporary MPD from one selected video representation 
 ## Known
 
 - Search/catalog uses GraphQL with the provider referer; historical successful probes above are dated evidence.
-- The AES-256-GCM `tobeparsed` decode path and build181 bootstrap are pinned. The October 22 bootstrap succeeds; full resolve remains separately blocked in that sweep. AES-CTR must not be restored (see `.docs/providers.md`).
+- The October 22 bootstrap success was for build 181. The current build is
+  pinned in `packages/providers/src/allmanga/crypto.ts`. Bootstrap success
+  and playable-stream verification are separate checkpoints.
 - Source APIs can return valid data that is not a single HLS/mp4 URL.
 - Returning only the `Ak` video URL would be wrong because audio is separate.
 - `rawUrls` is adapted into an opaque deferred DASH descriptor containing both selected video and audio representations; subtitles remain attached. Deterministic coverage is in `packages/providers/test/allmanga.test.ts`. This implementation does not establish current live playback.
 
 ## Recovering a build rotation
+
+This section records past rotations when the provider exposed a public
+bootstrap. Treat authentication, CAPTCHA, and WAF refusals as stopping points.
+Recovery for build 189 is waiting for a supported public interface.
 
 Upstream rotates the client crypto roughly monthly
 (`81` → `119` → `140` → `166` → `171` → `177` → `181`). The _derivation_
@@ -121,10 +133,7 @@ was read), and 2026-10-19 for `177` → `181`.
 | `404 unknown_build_id`            | `ALLMANGA_BUILD_ID` rotated out                       |
 | `403 invalid_boot_token`          | build id is current, the derivation constants rotated |
 | `400 missing_build_id` / `..lane` | a dropped query param, not upstream drift             |
-| Cloudflare HTML instead of JSON   | missing `Referer`/`Origin: https://mkissa.to`         |
-
-Scanning build ids until the answer flips from `unknown_build_id` to
-`invalid_boot_token` brackets the live build without reading any JS.
+| Cloudflare HTML instead of JSON   | access denied or challenged                           |
 
 **Then re-extract from the crypto chunk.** It is the chunk under
 `cdn.mkissa.net/all/mk/_app/immutable/chunks/` containing both `buildId` and

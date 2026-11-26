@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-06-25"
+lastReviewed: "2026-11-25"
 ---
 
 # Playlists
@@ -32,6 +32,10 @@ They do not store playback progress internally. Progress is projected from watch
 Use `/playlists` to:
 
 - load a durable playlist into Up Next
+- edit its items: pick one, then move it up or down or remove it (removal asks
+  first and touches only that playlist). `DurablePlaylistService.moveItem`
+  swaps neighbours and `PlaylistsRepository.reorderItems` rewrites `sort_order`
+  in one transaction
 - export a durable playlist to Kunai's playlist exchange folder
 - import a Kunai playlist JSON file from the same folder
 
@@ -46,7 +50,9 @@ Kunai playlist exports include:
 - item identity
 - order
 - provider hints
-- optional progress percentage snapshot
+- optional progress percentage snapshot, projected from the playlist titles'
+  history rows at export time (`exportDurablePlaylist` reads
+  `historyRepository.listByTitleIds`; it used to pass no progress at all)
 
 Exports must never include:
 

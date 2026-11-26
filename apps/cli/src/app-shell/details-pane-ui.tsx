@@ -10,6 +10,7 @@ import {
   resolvePosterUrl,
   wrapSynopsis,
 } from "./details-view";
+import { plainBorderStyle, plainModeEnabled } from "./plain-mode";
 import { PosterInitialBlock } from "./poster-initial-block";
 import { SakuraPetal } from "./primitives/SakuraPetal";
 import { padColumnsEnd, truncateAtWord, truncateLine } from "./shell-text";
@@ -52,6 +53,7 @@ export function DetailsSheetUI({
   const clampedScroll = Math.min(scrollIndex, maxScroll);
   const visible = scrollable.slice(clampedScroll, clampedScroll + maxVisibleLines);
 
+  const plain = plainModeEnabled();
   return (
     // The bordered card may shrink to the rows its slot leaves; the content
     // column never does. Shrinking each row instead let Ink paint text over
@@ -59,9 +61,9 @@ export function DetailsSheetUI({
     <Box
       flexDirection="column"
       width={width}
-      borderStyle="single"
-      borderColor={palette.line}
-      paddingX={1}
+      borderStyle={plainBorderStyle("single", plain)}
+      borderColor={plain ? undefined : palette.line}
+      paddingX={plain ? 0 : 1}
       overflow="hidden"
     >
       <Box flexDirection="column" flexShrink={0}>
@@ -71,7 +73,7 @@ export function DetailsSheetUI({
         <Text color={palette.muted}>
           {[primary.type, primary.year, ...(primary.genres?.slice(0, 3) ?? [])]
             .filter(Boolean)
-            .join(" · ")}
+            .join(plain ? ", " : " · ")}
         </Text>
         {primary.synopsis ? (
           <Box marginTop={1}>
@@ -81,8 +83,18 @@ export function DetailsSheetUI({
         <Box marginTop={1} flexDirection="column">
           {visible.map((line) =>
             line.detail === "" && line.label.startsWith("───") ? (
-              <Text key={line.label} color={palette.muted}>
-                {line.label}
+              plain ? (
+                <Text key={line.label} color={palette.text} bold>
+                  {line.label.replace(/^─+\s*|\s*─+$/gu, "")}
+                </Text>
+              ) : (
+                <Text key={line.label} color={palette.muted}>
+                  {line.label}
+                </Text>
+              )
+            ) : plain ? (
+              <Text key={`${line.label}:${line.detail ?? ""}`} color={sheetLineColor(line.tone)}>
+                {line.detail ? `${line.label}: ${line.detail}` : line.label}
               </Text>
             ) : (
               <Box key={`${line.label}:${line.detail ?? ""}`}>
@@ -102,9 +114,15 @@ export function DetailsSheetUI({
           )}
         </Box>
         {scrollable.length > maxVisibleLines ? (
-          <Text color={palette.dim} dimColor>
-            {clampedScroll > 0 ? "▲ " : ""}
-            {clampedScroll < maxScroll ? "▼ scroll" : ""}
+          <Text color={palette.dim} dimColor={!plain}>
+            {plain
+              ? [
+                  clampedScroll > 0 ? "More above" : "",
+                  clampedScroll < maxScroll ? "More below" : "",
+                ]
+                  .filter(Boolean)
+                  .join(", ")
+              : `${clampedScroll > 0 ? "▲ " : ""}${clampedScroll < maxScroll ? "▼ scroll" : ""}`}
           </Text>
         ) : null}
       </Box>
@@ -118,6 +136,7 @@ export function DetailsSheetUI({
 
 /** Separator drawn between sections of the detail sheet. */
 function SectionDivider({ width }: { readonly width: number }) {
+  if (plainModeEnabled()) return null;
   return (
     <Box marginTop={1}>
       <Text color={palette.line}>{"─".repeat(Math.max(2, width))}</Text>
@@ -319,8 +338,9 @@ export function TitleDetailSheetUI({
   readonly providers?: readonly string[];
   readonly subtitleLanguages?: readonly string[];
 }) {
+  const plain = plainModeEnabled();
   // Inner content width: border (2) + paddingX (2) = 4 chars overhead
-  const innerWidth = Math.max(16, width - 4);
+  const innerWidth = Math.max(16, width - (plain ? 0 : 4));
   const factLabelWidth = 8;
   const factValueWidth = Math.max(8, innerWidth - factLabelWidth - 2);
 
@@ -332,14 +352,16 @@ export function TitleDetailSheetUI({
     <Box
       flexDirection="column"
       width={width}
-      borderStyle="single"
-      borderColor={palette.line}
-      paddingX={1}
+      borderStyle={plainBorderStyle("single", plain)}
+      borderColor={plain ? undefined : palette.line}
+      paddingX={plain ? 0 : 1}
     >
       {/* ---- Poster slot ---- */}
-      <Box marginBottom={1}>
-        <DetailPosterSlot detail={detail} posterRows={posterRows} posterCols={posterCols} />
-      </Box>
+      {plain ? null : (
+        <Box marginBottom={1}>
+          <DetailPosterSlot detail={detail} posterRows={posterRows} posterCols={posterCols} />
+        </Box>
+      )}
 
       {/* ---- Title (bright + bold — weight carries hierarchy) ---- */}
       <Text color={palette.text} bold>

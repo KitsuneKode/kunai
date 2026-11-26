@@ -1,6 +1,8 @@
 import { detectImageCapability } from "@/image";
 import { isMultiplexed } from "@/image/capability";
 
+import { plainModeEnabled } from "./plain-mode";
+
 export type CompanionPose = "idle" | "watch" | "go" | "wait" | "oops" | "nap";
 
 /**
@@ -50,6 +52,7 @@ export function companionToggleable(
   env: NodeJS.ProcessEnv = process.env,
   stdout: { readonly isTTY?: boolean } = process.stdout,
 ): boolean {
+  if (plainModeEnabled(env)) return false;
   return !(env.KUNAI_PET ?? "").trim() && stdout.isTTY === true;
 }
 
@@ -64,6 +67,8 @@ export function companionMode(
   env: NodeJS.ProcessEnv = process.env,
   stdout: { readonly isTTY?: boolean } = process.stdout,
 ): CompanionMode {
+  if (plainModeEnabled(env)) return "off";
+
   const requested = env.KUNAI_PET?.toLowerCase() ?? "";
   if (OFF_VALUES.has(requested)) return "off";
 
@@ -89,6 +94,7 @@ export function companionMode(
   if (!capability.available) return "glyph";
 
   return capability.renderer === "kitty-native" ||
+    capability.renderer === "kitty-direct" ||
     capability.renderer === "iterm-inline" ||
     capability.renderer === "sixel"
     ? "graphics"

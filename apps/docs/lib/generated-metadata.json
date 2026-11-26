@@ -825,6 +825,11 @@
       "description": "Zen mode (bare, ani-cli-style)"
     },
     {
+      "short": "",
+      "long": "--plain",
+      "description": "Plain / screen-reader mode (no animation, no box art, text state)"
+    },
+    {
       "short": "-q",
       "long": "--quick",
       "description": "Quick layout"
@@ -872,7 +877,7 @@
     {
       "short": "",
       "long": "--player",
-      "description": "Player backend: desktop <auto|mpv>; Android/Termux <auto|mpv|vlc>"
+      "description": "Player backend: desktop <auto|mpv|vlc>; Android/Termux <auto|mpv|vlc>"
     },
     {
       "short": "",
@@ -1039,6 +1044,12 @@
       "label": "Download quality floor",
       "status": "beta",
       "description": "Shared quality policy for download jobs via defaultDownloadQuality setting."
+    },
+    {
+      "id": "stremio-addons",
+      "label": "Stremio addons",
+      "status": "beta",
+      "description": "Add your own Stremio addons as movie and series sources; direct links only, none bundled."
     },
     {
       "id": "provider-geo-relay",
@@ -1351,7 +1362,7 @@
       "scope": "player",
       "group": "In the player",
       "keys": "k / K",
-      "label": "Choose quality (in the terminal; v in mpv)",
+      "label": "Choose quality",
       "tier": "surface",
       "order": 400
     },

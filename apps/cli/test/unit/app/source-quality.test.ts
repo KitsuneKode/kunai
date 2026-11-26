@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 
+import { capQualityPreference } from "@/app/playback/playback-source-failover";
 import {
   applyPreferredStreamSelection,
   buildPlaybackControlSummary,
@@ -434,6 +435,23 @@ test("applyPreferredStreamSelection prefers explicit stream id override", () => 
   expect(next.providerResolveResult?.selectedStreamId).toBe("stream-720");
 });
 
+test("applyPreferredStreamSelection drops reachability attestation when the selection changes", () => {
+  const verified = {
+    ...streamWithCandidates,
+    providerResolveResult: {
+      ...streamWithCandidates.providerResolveResult!,
+      streamReachabilityVerified: true,
+    },
+  } satisfies StreamInfo;
+
+  const switched = applyPreferredStreamSelection(verified, streamSelectionFromStream("stream-720"));
+  expect(switched.providerResolveResult?.selectedStreamId).toBe("stream-720");
+  expect(switched.providerResolveResult?.streamReachabilityVerified).toBe(false);
+
+  const noop = applyPreferredStreamSelection(verified, streamSelectionFromStream("stream-1080"));
+  expect(noop.providerResolveResult?.streamReachabilityVerified).toBe(true);
+});
+
 test("isCurrentStreamSelection detects no-op stream and source selections", () => {
   expect(
     isCurrentStreamSelection(streamWithCandidates, streamSelectionFromStream("stream-1080")),
@@ -684,6 +702,39 @@ test("a source switch retains the requested quality and Auto can reverse it", ()
   });
 });
 
+test("a recovery step-down lands on 1080p even after the re-resolve rotates stream ids", () => {
+  // The re-resolve after a failure hands back fresh URLs, so stream ids (URL
+  // hashes) change; the step-down holds because it is a ceiling, not an id.
+  const base = streamWithCandidates.providerResolveResult!;
+  const rotated = base.streams.map((candidate) => ({
+    ...candidate,
+    id: `${candidate.id}-rotated`,
+    url: `${candidate.url}?token=fresh`,
+  }));
+  const fourK = {
+    ...rotated[0]!,
+    id: "stream-2160-rotated",
+    qualityLabel: "4K",
+    qualityRank: 2160,
+  };
+  const reResolved: StreamInfo = {
+    ...streamWithCandidates,
+    providerResolveResult: {
+      ...base,
+      selectedStreamId: fourK.id,
+      streams: [fourK, ...rotated],
+    },
+  };
+  const ceiling = { sourceId: "source-a", maxRank: 1080 };
+  expect(
+    applyPreferredStreamSelection(
+      reResolved,
+      streamSelectionFromSource("source-a"),
+      capQualityPreference("best", ceiling),
+    ).providerResolveResult?.selectedStreamId,
+  ).toBe("stream-1080-rotated");
+});
+
 test("source switches respect a quality ceiling when the exact resolution is absent", () => {
   expect(
     applyPreferredStreamSelection(
@@ -762,7 +813,7 @@ test("YouTube format and connection picks update the options shipped to mpv", ()
   );
   expect(formatPick.ytdlFormat).toBe("248+ba");
   expect(formatPick.ytdlRawOptions).toContain("player_client=web");
-  expect(formatPick.ytdlRawOptions).toContain("sub-langs=%3%all");
+  expect(formatPick.ytdlRawOptions).not.toContain("sub-langs=");
   const withoutSubtitles = applyPreferredStreamSelection(
     youtube,
     streamSelectionFromStream("web-248"),

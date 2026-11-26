@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readdir, unlink } from "node:fs/promises";
+import { readdir, readFile, unlink } from "node:fs/promises";
 import { hostname } from "node:os";
 import { basename, dirname, join } from "node:path";
 
@@ -61,7 +61,9 @@ async function readTicket(
   options: ConfigLockOptions,
 ): Promise<Ticket | typeof UNREADABLE | null> {
   const platform = options.platform ?? process.platform;
-  const readText = options.readText ?? ((file: string) => Bun.file(file).text());
+  // Choosing/ticket files can disappear between listing and reading. Bun's
+  // Blob reads can drop the ENOENT continuation on Windows.
+  const readText = options.readText ?? ((file: string) => readFile(file, "utf8"));
   try {
     const value: unknown = JSON.parse(await readText(path));
     if (

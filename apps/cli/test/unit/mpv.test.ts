@@ -42,11 +42,12 @@ test("buildMpvArgs attaches full subtitle inventory during initial launch", () =
     {
       url: "https://cdn.example/master.m3u8",
       headers: { referer: "https://www.vidking.net/", "user-agent": "Mozilla/5.0" },
-      subtitle: "https://sub.example/en.srt",
+      subtitle: "/owned/en.srt",
+      localSubtitlePaths: new Set(["/owned/en.srt", "/owned/ar.srt", "/owned/fr.srt"]),
       subtitleTracks: [
-        { url: "https://sub.example/ar.srt", language: "ar" },
-        { url: "https://sub.example/fr.srt", language: "fr" },
-        { url: "https://sub.example/en.srt", language: "en" },
+        { url: "/owned/ar.srt", language: "ar" },
+        { url: "/owned/fr.srt", language: "fr" },
+        { url: "/owned/en.srt", language: "en" },
       ],
       displayTitle: "Friends - S01E03",
     },
@@ -66,13 +67,13 @@ test("buildMpvArgs attaches full subtitle inventory during initial launch", () =
   expect(args).toContain("--demuxer-max-bytes=200MiB");
   expect(args).toContain("--input-ipc-server=/tmp/kunai-test.sock");
   expect(args.filter((arg) => arg.startsWith("--sub-file="))).toEqual([
-    "--sub-file=https://sub.example/en.srt",
-    "--sub-file=https://sub.example/ar.srt",
-    "--sub-file=https://sub.example/fr.srt",
+    "--sub-file=/owned/en.srt",
+    "--sub-file=/owned/ar.srt",
+    "--sub-file=/owned/fr.srt",
   ]);
 });
 
-test("buildMpvArgs rejects option-injection subtitle URLs from launch inventory", () => {
+test("buildMpvArgs rejects raw remote and option-injection subtitle URLs from launch inventory", () => {
   const args = buildMpvArgs(
     {
       url: "https://cdn.example/master.m3u8",
@@ -87,10 +88,7 @@ test("buildMpvArgs rejects option-injection subtitle URLs from launch inventory"
     null,
   );
 
-  expect(args.filter((arg) => arg.startsWith("--sub-file="))).toEqual([
-    "--sub-file=https://sub.example/en.srt",
-    "--sub-file=https://sub.example/ar.srt",
-  ]);
+  expect(args.filter((arg) => arg.startsWith("--sub-file="))).toEqual([]);
 });
 
 test("buildMpvArgs uses fast-start demuxer profile when startupPriority is fast", () => {
@@ -309,6 +307,23 @@ test("buildMpvArgs keeps legacy fzf subtitle mode compatibility without slang", 
   expect(args.some((arg) => arg.startsWith("--slang="))).toBe(false);
 });
 
+test("collectAdditionalSubtitleTracks keeps tracks that differ only by query", () => {
+  const en = "https://www.youtube.com/api/timedtext?v=abc&lang=en";
+  const fr = "https://www.youtube.com/api/timedtext?v=abc&lang=fr";
+  expect(
+    collectAdditionalSubtitleTracks(en, [
+      { url: en, language: "en" },
+      { url: fr, language: "fr" },
+    ]).map((track) => track.language),
+  ).toEqual(["fr"]);
+  expect(
+    describeSubtitleTrackForMpv(fr, [
+      { url: en, language: "en" },
+      { url: fr, language: "fr" },
+    ]).language,
+  ).toBe("fr");
+});
+
 test("collectAdditionalSubtitleTracks excludes the primary subtitle and dedupes extras", () => {
   expect(
     collectAdditionalSubtitleTracks("https://sub.example/en.srt", [
@@ -392,6 +407,128 @@ test("a persistent session carries the ytdl guard even when it launches on a dir
     { persistent: true },
   );
   expect(args).toContain("--script-opts=ytdlautoformat-domains=");
+});
+
+test("a persistent launch scopes request options to the initial file", () => {
+  // Process-wide --referrer/--user-agent/--http-header-fields would leak into
+  // every later IPC loadfile that carries no headers of its own; mpv restores
+  // the baseline only when they ride the file's `--{ ... --}` group.
+  const args = buildMpvArgs(
+    {
+      url: "https://cdn.example/episode.mp4",
+      headers: {
+        Referer: "https://provider.example/",
+        "User-Agent": "FixtureUA/1.0",
+        Origin: "https://provider.example",
+      },
+      subtitle: null,
+      displayTitle: "Ep 1",
+    },
+    "/tmp/kunai-test.sock",
+    { persistent: true, sensitiveOptionsPath: "/tmp/kunai-secret.conf" },
+  );
+
+  expect(args.slice(-6)).toEqual([
+    "--{",
+    "--referrer=https://provider.example/",
+    "--user-agent=FixtureUA/1.0",
+    "--include=/tmp/kunai-secret.conf",
+    "https://cdn.example/episode.mp4",
+    "--}",
+  ]);
+  // Nothing request-scoped also rides argv as a process option.
+  const processWide = args.slice(0, -6);
+  expect(
+    processWide.some(
+      (arg) =>
+        arg.startsWith("--referrer=") ||
+        arg.startsWith("--user-agent=") ||
+        arg.startsWith("--include=") ||
+        arg.startsWith("--http-header-fields="),
+    ),
+  ).toBe(false);
+});
+
+test("a persistent addon launch keeps request options inside its file group", () => {
+  const args = buildMpvArgs(
+    {
+      url: "https://cdn.example/episode.mp4",
+      headers: { Referer: "https://provider.example/" },
+      subtitle: null,
+      displayTitle: "Ep 1",
+      stremioAddon: true,
+    },
+    "/tmp/kunai-test.sock",
+    { persistent: true },
+  );
+
+  const open = args.indexOf("--{");
+  const close = args.indexOf("--}");
+  expect(open).toBeGreaterThanOrEqual(0);
+  expect(close).toBeGreaterThan(open);
+  const scoped = args.slice(open + 1, close);
+  expect(scoped).toEqual([
+    "--referrer=https://provider.example/",
+    "--stream-lavf-o=max_redirects=0",
+    "--load-unsafe-playlists=no",
+    "--tls-verify=yes",
+    "--ytdl=no",
+    "https://cdn.example/episode.mp4",
+  ]);
+  expect(args.filter((arg) => arg.startsWith("--referrer="))).toHaveLength(1);
+});
+
+test("a persistent addon launch confines --ytdl=no to the addon file group", () => {
+  const args = buildMpvArgs(
+    {
+      url: "https://cdn.example/episode.mp4",
+      headers: {},
+      subtitle: null,
+      displayTitle: "Ep 1",
+      stremioAddon: true,
+    },
+    "/tmp/kunai-test.sock",
+    { persistent: true },
+  );
+
+  const open = args.indexOf("--{");
+  const close = args.indexOf("--}");
+  expect(open).toBeGreaterThanOrEqual(0);
+  expect(close).toBeGreaterThan(open);
+  const ytdlOff = args.indexOf("--ytdl=no");
+  // One occurrence, inside the file-local group — a persistent session must
+  // keep process-wide ytdl available for later YouTube loadfiles.
+  expect(args.filter((arg) => arg === "--ytdl=no")).toHaveLength(1);
+  expect(ytdlOff).toBeGreaterThan(open);
+  expect(ytdlOff).toBeLessThan(close);
+  expect(args.indexOf("https://cdn.example/episode.mp4")).toBeGreaterThan(open);
+  expect(args.indexOf("https://cdn.example/episode.mp4")).toBeLessThan(close);
+});
+
+test("an ordinary persistent direct stream is not ytdl-disabled", () => {
+  const args = buildMpvArgs(
+    { url: "https://cdn.example/episode.mp4", headers: {}, subtitle: null, displayTitle: "Ep 1" },
+    "/tmp/kunai-test.sock",
+    { persistent: true },
+  );
+  expect(args).not.toContain("--ytdl=no");
+});
+
+test("a one-shot addon launch keeps its process-wide --ytdl=no only", () => {
+  const args = buildMpvArgs(
+    {
+      url: "https://cdn.example/episode.mp4",
+      headers: {},
+      subtitle: null,
+      displayTitle: "Ep 1",
+      stremioAddon: true,
+    },
+    null,
+    {},
+  );
+  const occurrences = args.flatMap((arg, index) => (arg === "--ytdl=no" ? [index] : []));
+  expect(occurrences).toHaveLength(1);
+  expect(occurrences[0]).toBeLessThan(args.indexOf("--{"));
 });
 
 test("a one-shot direct stream does not get the ytdl guard", () => {

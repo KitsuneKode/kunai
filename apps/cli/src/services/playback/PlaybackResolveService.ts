@@ -36,7 +36,7 @@ import {
   isOfflineNetworkFailure,
   orderProviderModulesByPriority,
 } from "@kunai/core";
-import { isOrgOnlyProviderResolveResult } from "@kunai/providers";
+import { isOrgOnlyProviderResolveResult, isStremioAddonProviderId } from "@kunai/providers";
 import type { StreamHealthPhase } from "@kunai/providers";
 import type { CatalogCrosswalkRepository, ProviderHealthRepository } from "@kunai/storage";
 import type {
@@ -93,7 +93,7 @@ export type PlaybackResolveEvent =
   | {
       readonly type: "cache-health-check";
       readonly providerId: string;
-      readonly strategy: "hls-manifest-get" | "head-then-range";
+      readonly strategy: "hls-manifest-get" | "head-then-range" | "range-direct-media";
       readonly healthy: boolean;
       readonly ageMs?: number;
     }
@@ -183,9 +183,16 @@ export type PlaybackResolveInput = {
   readonly blockedStreamUrls?: readonly string[];
   readonly ignoreTitleHealthSuggestion?: boolean;
   readonly ignoreProviderHealth?: boolean;
+  readonly keepPrimaryFirst?: boolean;
   readonly resolveIntent?: ProviderResolveInput["intent"];
   readonly recoveryMode?: RecoveryMode;
   readonly cancellationReason?: ResolveCancellationReason;
+  /**
+   * Downloads never use Stremio addons — set on the download work path so an
+   * addon module, cached addon stream or addon-produced result is excluded
+   * even while the experimental feature is on.
+   */
+  readonly excludeStremioAddons?: boolean;
   readonly correlation?: DiagnosticCorrelation;
   readonly onFeedback?: (feedback: PlaybackResolveFeedback) => void;
   readonly onEvent?: (event: PlaybackResolveEvent) => void;
@@ -297,14 +304,25 @@ export class PlaybackResolveService {
 
     // A cached URL is still a provider result. Manual exclusions must apply
     // before replay or any health probe, not only to fresh engine attempts.
-    const admittedIds = this.deps.getOrderedModules
-      ? new Set(this.deps.getOrderedModules().map((module) => resolveProviderId(module.providerId)))
-      : null;
+    const orderedModules = this.getPriorityOrderedModules(input.excludeStremioAddons === true);
+    const admittedIds =
+      this.deps.getOrderedModules || input.excludeStremioAddons
+        ? new Set(orderedModules.map((module) => resolveProviderId(module.providerId)))
+        : null;
     const isAdmitted = (providerId: ProviderId) =>
       !admittedIds || admittedIds.has(resolveProviderId(providerId));
+    // Results replay under the input provider's slot even when another
+    // provider produced them, so an addon-produced artifact must be checked by
+    // provenance — `providerResolveResult.providerId` — not only by outer id.
+    const isAdmittedProducer = (providerId: ProviderId | undefined) =>
+      providerId === undefined || !isStremioAddonProviderId(providerId) || isAdmitted(providerId);
     const providerAdmitted = isAdmitted(input.providerId);
 
-    if (providerAdmitted && input.prefetchedStream) {
+    if (
+      providerAdmitted &&
+      input.prefetchedStream &&
+      isAdmittedProducer(input.prefetchedStream.providerResolveResult?.providerId)
+    ) {
       const prefetched = input.prefetchedStream;
       const blocked = isBlockedStreamUrl(prefetched.url, input.blockedStreamUrls);
       const stale = !isStreamTimestampFresh(prefetched);
@@ -335,7 +353,11 @@ export class PlaybackResolveService {
     // degrade to a live resolve rather than take the whole playback down.
     let cachedStream = providerAdmitted ? await this.readCachedStream(input, cacheKey) : null;
     let cacheBecameStale = false;
-    if (cachedStream?.deferredLocator) {
+    if (cachedStream && !isAdmittedProducer(cachedStream.providerResolveResult?.providerId)) {
+      // An addon-produced cache entry is dropped before any health probe when
+      // addons are off; the row is left in place so re-enabling finds it.
+      cachedStream = null;
+    } else if (cachedStream?.deferredLocator) {
       await this.deleteCachedStream(cacheKey);
       cachedStream = null;
       cacheBecameStale = true;
@@ -359,7 +381,10 @@ export class PlaybackResolveService {
         input.onEvent?.({
           type: "cache-health-check",
           providerId: input.providerId,
-          strategy: health.strategy === "hls-manifest-get" ? "hls-manifest-get" : "head-then-range",
+          strategy:
+            health.strategy === "hls-manifest-get" || health.strategy === "range-direct-media"
+              ? health.strategy
+              : "head-then-range",
           healthy: health.healthy,
           ageMs: health.ageMs,
         });
@@ -418,7 +443,11 @@ export class PlaybackResolveService {
     };
     const inventoryEntry = providerAdmitted ? await this.readSourceInventory(inventoryInput) : null;
     const inventoryResult = inventoryEntry?.inventory ?? null;
-    if (inventoryResult && inventoryMatchesSelection(inventoryResult, input)) {
+    if (
+      inventoryResult &&
+      inventoryMatchesSelection(inventoryResult, input) &&
+      isAdmittedProducer(inventoryResult.providerId)
+    ) {
       if (
         isVideasyFamilyProvider(input.providerId) &&
         isOrgOnlyProviderResolveResult(inventoryResult)
@@ -462,7 +491,9 @@ export class PlaybackResolveService {
               type: "cache-health-check",
               providerId: input.providerId,
               strategy:
-                health.strategy === "hls-manifest-get" ? "hls-manifest-get" : "head-then-range",
+                health.strategy === "hls-manifest-get" || health.strategy === "range-direct-media"
+                  ? health.strategy
+                  : "head-then-range",
               healthy: health.healthy,
               ageMs: health.ageMs,
             });
@@ -521,13 +552,15 @@ export class PlaybackResolveService {
       primaryProviderId: input.providerId,
       mediaKind: resolveInput.mediaKind,
       recoveryMode,
-      modules: this.getPriorityOrderedModules(),
+      modules: this.getPriorityOrderedModules(input.excludeStremioAddons === true),
       getProviderHealth:
         input.ignoreProviderHealth === true
           ? undefined
           : (providerId) => this.deps.providerHealth?.get(providerId),
       ignoreProviderHealth: input.ignoreProviderHealth,
       suggestion: titleSuggestion,
+      keepPrimaryFirst: input.keepPrimaryFirst,
+      nameOf: (id) => this.deps.engine.getManifest(id)?.displayName ?? id,
     });
     const recoveryDecision = decideRecovery({
       mode: recoveryMode,
@@ -602,7 +635,7 @@ export class PlaybackResolveService {
         : "No enabled providers available",
       note:
         compatibleIds.length > 0
-          ? describeProviderResolveProviderNote(false)
+          ? (candidatePlan.orderNote ?? describeProviderResolveProviderNote(false))
           : "Enable a provider in Settings to retry.",
     });
     input.onEvent?.({
@@ -804,15 +837,20 @@ export class PlaybackResolveService {
     };
   }
 
-  private getPriorityOrderedModules() {
+  private getPriorityOrderedModules(excludeStremioAddons = false) {
     // Bootstrap supplies a memoized ordering keyed on the priority lists —
     // this service is constructed per resolve, so the cache must live in a
     // dep, not a field. Fall back to computing when the dep is absent.
-    if (this.deps.getOrderedModules) return this.deps.getOrderedModules();
     const priority = this.deps.getProviderPriority?.();
-    return priority
-      ? orderProviderModulesByPriority(this.deps.engine.modules, priority)
-      : this.deps.engine.modules;
+    const modules =
+      this.deps.getOrderedModules?.() ??
+      (priority
+        ? orderProviderModulesByPriority(this.deps.engine.modules, priority)
+        : this.deps.engine.modules);
+    // Downloads never ask addons, even while the feature is on.
+    return excludeStremioAddons
+      ? modules.filter((module) => !isStremioAddonProviderId(module.providerId))
+      : modules;
   }
 
   private async persistResolvedStream(
@@ -820,9 +858,7 @@ export class PlaybackResolveService {
     providerId: string,
     stream: StreamInfo,
   ): Promise<void> {
-    if (stream.deferredLocator) {
-      return;
-    }
+    if (stream.deferredLocator) return;
     const persistKey = this.buildCacheKey(input, providerId);
     try {
       await this.deps.cacheStore.set(persistKey, stream);
@@ -894,7 +930,7 @@ export class PlaybackResolveService {
      * turns the next play into a cache miss.
      */
     readonly cancelled?: boolean;
-    readonly strategy: "none" | "hls-manifest-get" | "head-then-range";
+    readonly strategy: "none" | "hls-manifest-get" | "head-then-range" | "range-direct-media";
     readonly ageMs?: number;
   }> {
     const healthService = this.deps.streamHealthService ?? new StreamHealthService();
@@ -1039,9 +1075,7 @@ function cachedStreamMatchesSelection(
 ): boolean {
   const result = stream.providerResolveResult;
   if (!result) return true;
-  if (input.selectedStreamId && result.selectedStreamId !== input.selectedStreamId) {
-    return false;
-  }
+  if (input.selectedStreamId && result.selectedStreamId !== input.selectedStreamId) return false;
   if (input.selectedSourceId) {
     const selected = result.streams.find((candidate) => candidate.id === result.selectedStreamId);
     if (selected?.sourceId !== input.selectedSourceId) {

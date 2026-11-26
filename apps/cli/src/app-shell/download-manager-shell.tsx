@@ -10,6 +10,8 @@ import {
   getPickerListMaxVisible,
   ROOT_CHROME_ROWS,
 } from "@/app-shell/layout-policy";
+import { MouseTarget } from "@/app-shell/mouse/MouseRegions";
+import { useRowTap } from "@/app-shell/mouse/row-tap";
 import { useOverlayOrTerminalSize } from "@/app-shell/overlay-layout-context";
 import { prefetchPosterSources } from "@/app-shell/poster-source-cache";
 import { computeQueueRowLayout } from "@/app-shell/primitives/list-row-layout";
@@ -32,6 +34,7 @@ import type { DownloadJobRecord } from "@/services/storage/storage-read-models";
 import { Box, Text, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { plainModeEnabled, selectionPrefix } from "./plain-mode";
 import { useRootContentSuspended } from "./RootContentSuspension";
 
 /** Fixed queue columns — tuned via computeQueueRowLayout for the active shell width. */
@@ -48,22 +51,27 @@ function refreshJobLists(container: Container) {
   };
 }
 
+export function downloadQueueStatusLabel(status: DownloadJobRecord["status"]): string {
+  const plain = plainModeEnabled();
+  if (status === "running") return plain ? "[downloading]" : "↓ downloading";
+  if (status === "queued") return plain ? "[queued]" : "○ queued";
+  if (status === "completed") return plain ? "[complete]" : "✓ complete";
+  if (status === "completed-with-notes") return plain ? "[playable]" : "✓ playable";
+  if (status === "repairable") return plain ? "[repairable]" : "◇ repairable";
+  if (status === "failed") return plain ? "[failed]" : "✗ failed";
+  return plain ? "[aborted]" : "— aborted";
+}
+
 function queueStatePresentation(job: DownloadJobRecord): { label: string; color: string } {
-  if (job.status === "running") return { label: "↓ downloading", color: palette.accent };
-  if (job.status === "queued") return { label: "○ queued", color: palette.muted };
+  const label = downloadQueueStatusLabel(job.status);
+  if (job.status === "running") return { label, color: palette.accent };
+  if (job.status === "queued") return { label, color: palette.muted };
   if (job.status === "completed" || job.status === "completed-with-notes") {
-    return {
-      label: job.status === "completed-with-notes" ? "✓ playable" : "✓ complete",
-      color: palette.ok,
-    };
+    return { label, color: palette.ok };
   }
-  if (job.status === "repairable") {
-    return { label: "◇ repairable", color: palette.accent };
-  }
-  if (job.status === "failed") {
-    return { label: "✗ failed", color: palette.dangerText };
-  }
-  return { label: "— aborted", color: palette.dim };
+  if (job.status === "repairable") return { label, color: palette.accent };
+  if (job.status === "failed") return { label, color: palette.dangerText };
+  return { label, color: palette.dim };
 }
 
 export type DownloadLiveStats = {
@@ -329,10 +337,51 @@ export function DownloadManagerContent({
     }
   }, [allJobs, selectedIndex]);
 
+  // Enter, `r`, and a confirming tap: play a finished download (Enter and tap
+  // only) or retry a failed, aborted, or repairable one.
+  const runJobAction = (job: DownloadJobRecord, play: boolean) => {
+    if (
+      play &&
+      (job.status === "completed" ||
+        job.status === "completed-with-notes" ||
+        job.status === "repairable")
+    ) {
+      void import("@/app/offline/offline-playback-launch").then(
+        ({ requestUnifiedOfflinePlayback }) =>
+          requestUnifiedOfflinePlayback(container, job.id, {
+            onDirectLaunch: resolveRootLibraryPlaybackLaunch,
+          }),
+      );
+      return;
+    }
+    if (job.status === "failed" || job.status === "repairable" || job.status === "aborted") {
+      void container.downloadService
+        .retry(job.id)
+        .then(() => {
+          refresh();
+          if (job.status !== "repairable") {
+            container.downloadService.kickQueue("download-manager");
+          }
+          return undefined;
+        })
+        .catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          setRepairSweepStatus(`Retry failed: ${message}`);
+        });
+    }
+  };
+  const tapJob = useRowTap<string>();
+
   const suspended = useRootContentSuspended();
   useInput(
     (input, key) => {
       if (key.escape) {
+        // Esc backs out of an armed delete first, like every other key that
+        // is not the confirming one; it closed the whole manager before.
+        if (confirmingDeletion !== null) {
+          setConfirmingDeletion(null);
+          return;
+        }
         onClose();
         return;
       }
@@ -416,38 +465,7 @@ export function DownloadManagerContent({
       }
       if (input === "r" || key.return) {
         const job = allJobs[selectedIndex];
-        if (!job) return;
-
-        if (
-          key.return &&
-          (job.status === "completed" ||
-            job.status === "completed-with-notes" ||
-            job.status === "repairable")
-        ) {
-          void import("@/app/offline/offline-playback-launch").then(
-            ({ requestUnifiedOfflinePlayback }) =>
-              requestUnifiedOfflinePlayback(container, job.id, {
-                onDirectLaunch: resolveRootLibraryPlaybackLaunch,
-              }),
-          );
-          return;
-        }
-
-        if (job.status === "failed" || job.status === "repairable" || job.status === "aborted") {
-          void container.downloadService
-            .retry(job.id)
-            .then(() => {
-              refresh();
-              if (job.status !== "repairable") {
-                container.downloadService.kickQueue("download-manager");
-              }
-              return undefined;
-            })
-            .catch((error: unknown) => {
-              const message = error instanceof Error ? error.message : String(error);
-              setRepairSweepStatus(`Retry failed: ${message}`);
-            });
-        }
+        if (job) runJobAction(job, key.return);
         return;
       }
     },
@@ -474,8 +492,6 @@ export function DownloadManagerContent({
     20,
     shellWidth - 2 - queueLayout.stateWidth - queueLayout.progressWidth - queueLayout.metaWidth - 4,
   );
-  const isConfirming = (index: number) =>
-    confirmingDeletion?.jobId === allJobs[index]?.id && selectedIndex === index;
 
   const renderJob = (job: DownloadJobRecord, index: number) => {
     const isSelected = index === selectedIndex;
@@ -496,68 +512,83 @@ export function DownloadManagerContent({
       Math.max(1, titleCol - 1),
     );
 
+    const plain = plainModeEnabled();
+    // A tap selects the job; a second tap on it is Enter. Removal stays on the
+    // keyboard's x / X, so no tap deletes anything.
     return (
-      <Box
+      <MouseTarget
         key={job.id}
+        id={`downloads:row:${job.id}`}
         flexDirection="column"
-        width={shellWidth}
-        backgroundColor={isSelected ? palette.accentFill : undefined}
+        active={!suspended}
+        onClick={() => {
+          setConfirmingDeletion(null);
+          if (tapJob(job.id, isSelected) === "activate") runJobAction(job, true);
+          else setSelectedIndex(index);
+        }}
+        onWheel={(direction) => {
+          setConfirmingDeletion(null);
+          setSelectedIndex((current) =>
+            Math.max(0, Math.min(allJobs.length - 1, current + (direction === "up" ? -1 : 1))),
+          );
+        }}
       >
-        <Box flexDirection="row" width={shellWidth} overflow="hidden">
-          <Text color={isSelected ? palette.accent : palette.dim}>{isSelected ? "▌ " : "  "}</Text>
-          <Box width={titleCol} overflow="hidden">
-            <Text
-              wrap="truncate"
-              color={isSelected ? palette.text : palette.textDim}
-              bold={isSelected}
+        <Box
+          flexDirection="column"
+          width={shellWidth}
+          backgroundColor={isSelected && !plain ? palette.accentFill : undefined}
+        >
+          <Box flexDirection="row" width={shellWidth} overflow="hidden">
+            <Text color={isSelected ? palette.accent : palette.dim}>
+              {selectionPrefix(isSelected, plain)}
+            </Text>
+            <Box width={titleCol} overflow="hidden">
+              <Text
+                wrap="truncate"
+                color={isSelected ? palette.text : palette.textDim}
+                bold={isSelected}
+              >
+                {titleLine}
+              </Text>
+            </Box>
+            <Box width={queueLayout.stateWidth} overflow="hidden">
+              <Text wrap="truncate" color={state.color}>
+                {truncateLine(state.label, queueLayout.stateWidth - 1)}
+              </Text>
+            </Box>
+            <Box width={queueLayout.progressWidth}>
+              {job.status === "running" ? (
+                <ProgressBar
+                  value={progressBarValue(job)}
+                  max={100}
+                  width={queueLayout.progressWidth - 2}
+                  color={progressBarColor(job)}
+                />
+              ) : (
+                <Text color={palette.dim} dimColor>
+                  {" "}
+                </Text>
+              )}
+            </Box>
+            <Box
+              width={queueLayout.metaWidth}
+              flexDirection="row"
+              justifyContent="flex-end"
+              overflow="hidden"
             >
-              {titleLine}
-            </Text>
-          </Box>
-          <Box width={queueLayout.stateWidth} overflow="hidden">
-            <Text wrap="truncate" color={state.color}>
-              {truncateLine(state.label, queueLayout.stateWidth - 1)}
-            </Text>
-          </Box>
-          <Box width={queueLayout.progressWidth}>
-            {job.status === "running" ? (
-              <ProgressBar
-                value={progressBarValue(job)}
-                max={100}
-                width={queueLayout.progressWidth - 2}
-                color={progressBarColor(job)}
-              />
-            ) : (
-              <Text color={palette.dim} dimColor>
-                {" "}
+              <Text wrap="truncate" color={meta.tone} bold={job.status === "running"}>
+                {truncateLine(meta.primary, queueLayout.metaWidth - 1)}
               </Text>
-            )}
-          </Box>
-          <Box
-            width={queueLayout.metaWidth}
-            flexDirection="row"
-            justifyContent="flex-end"
-            overflow="hidden"
-          >
-            <Text wrap="truncate" color={meta.tone} bold={job.status === "running"}>
-              {truncateLine(meta.primary, queueLayout.metaWidth - 1)}
-            </Text>
-            {meta.secondary ? (
-              <Text color={palette.dim} dimColor wrap="truncate">
-                {" "}
-                {truncateLine(meta.secondary, Math.max(4, queueLayout.metaWidth - 4))}
-              </Text>
-            ) : null}
+              {meta.secondary ? (
+                <Text color={palette.dim} dimColor wrap="truncate">
+                  {" "}
+                  {truncateLine(meta.secondary, Math.max(4, queueLayout.metaWidth - 4))}
+                </Text>
+              ) : null}
+            </Box>
           </Box>
         </Box>
-        {isConfirming(index) ? (
-          <Box marginLeft={2}>
-            <Text color={palette.accentDeep} bold>
-              {confirmationPrompt}
-            </Text>
-          </Box>
-        ) : null}
-      </Box>
+      </MouseTarget>
     );
   };
 
@@ -626,7 +657,7 @@ export function DownloadManagerContent({
       {confirmingSelectedJob ? (
         <Box marginTop={1}>
           <Text color={palette.accentDeep}>
-            {"⚠ "}
+            {plainModeEnabled() ? "Warning: " : "⚠ "}
             {confirmationPrompt}
           </Text>
         </Box>

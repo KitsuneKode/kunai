@@ -114,7 +114,12 @@ import {
   resolveBrowseDetailsSecondary,
   type DetailsPanelData,
 } from "./details-panel";
-import { buildDetailsSheet } from "./details-sheet.model";
+import {
+  buildDetailsSheet,
+  type DetailsSheetAvailability,
+  type DetailsSheetHistory,
+} from "./details-sheet.model";
+import { useCalendarCursor, type CalendarKeyboardCursor } from "./hooks/use-calendar-cursor";
 import { useCalendarRoute, type CalendarRouteRequest } from "./hooks/use-calendar-route";
 import { useCalendarState } from "./hooks/use-calendar-state";
 import { resolveSuggestionDebounceMs, useSearchSuggestions } from "./hooks/use-search-suggestions";
@@ -130,6 +135,7 @@ import { MouseTarget, useMouseEnabled, useMouseRegion } from "./mouse/MouseRegio
 import type { BrowseOverlay } from "./overlay-panel";
 import { OverlayPanel } from "./overlay-panel";
 import { takePaletteTitleLaunch } from "./palette-title-launch";
+import { plainModeEnabled, selectionPrefix } from "./plain-mode";
 import { prefetchPosterSources } from "./poster-source-cache";
 import { suppressPosterWhileNavigating } from "./poster-types";
 import { computeMediaListRowLayout } from "./primitives/list-row-layout";
@@ -184,12 +190,8 @@ function clearShellScreen() {
 }
 
 function browseIdleHint(mode: ShellMode): string {
-  if (mode === "youtube") {
-    return "Search for a channel or video — or try /trending";
-  }
-  if (mode === "anime") {
-    return "Search for an anime — or try /trending";
-  }
+  if (mode === "youtube") return "Search for a channel or video — or try /trending";
+  if (mode === "anime") return "Search for an anime — or try /trending";
   return "Search for a title — or try /trending to see what's popular";
 }
 
@@ -202,18 +204,20 @@ function browseEmptyDetail(mode: ShellMode, message: string): string | undefined
 }
 
 function browseFilterPlaceholder(mode: ShellMode): string {
-  if (mode === "youtube") {
-    return "type channel, playlist, video, downloaded…";
-  }
-  if (mode === "anime") {
-    return "type title, year, anime, downloaded…";
-  }
+  if (mode === "youtube") return "type channel, playlist, video, downloaded…";
+  if (mode === "anime") return "type title, year, anime, downloaded…";
   return "type title, year, movie, series, downloaded…";
 }
 
 type BrowseQueryDraft = { value: string; mode: ShellMode };
 
 const EMPTY_TITLE_ENTRIES: readonly LocalTitleEntry[] = [];
+
+export type DetailsSheetLocalContext = {
+  readonly history: DetailsSheetHistory | null;
+  readonly availability: DetailsSheetAvailability | null;
+};
+const NO_LOCAL_DETAILS: DetailsSheetLocalContext = { history: null, availability: null };
 
 export function BrowseShell<T>({
   mode,
@@ -254,6 +258,7 @@ export function BrowseShell<T>({
   loadIdleContext,
   onSuggest,
   loadLocalSuggestions,
+  detailsContextFor,
   suggestionDebounceMs,
   localTitles,
 }: {
@@ -322,6 +327,8 @@ export function BrowseShell<T>({
   onSuggest?: (query: string, signal: AbortSignal) => Promise<readonly SearchSuggestion<T>[]>;
   /** Sync local corpus read (watched / followed / lists / playlists). */
   loadLocalSuggestions?: () => readonly SearchSuggestion<T>[];
+  /** Your progress and offline state for a title, for the details sheet. */
+  detailsContextFor?: (titleId: string) => DetailsSheetLocalContext;
   /** Test seam: keystroke → catalog-fetch debounce. Defaults to the standard delay. */
   suggestionDebounceMs?: number;
   /** Local title source — consulted once per palette open for the JUMP TO section. */
@@ -869,11 +876,7 @@ export function BrowseShell<T>({
   // Ink drains every available raw stdin chunk before React paints. Keep the
   // calendar's intended row in a ref so a burst like → ↓ ← ↓ ↵ never resolves
   // the row that was selected before the burst began.
-  const calendarKeyboardCursorRef = useRef<{
-    dayKey: string | null;
-    optionIndex: number;
-    option: BrowseShellOption<T> | null;
-  }>({
+  const calendarKeyboardCursorRef = useRef<CalendarKeyboardCursor<T>>({
     dayKey: null,
     optionIndex: 0,
     option: null,
@@ -926,13 +929,14 @@ export function BrowseShell<T>({
       const value = resolved.value as unknown as Partial<SearchResult>;
       const titleId = typeof value?.id === "string" ? value.id : undefined;
       const cached = titleId ? (peekTitleDetail(titleId, seed.type) ?? null) : null;
+      const local = (titleId && detailsContextFor?.(titleId)) || NO_LOCAL_DETAILS;
 
       setActiveOverlay({
         type: "details",
         title: panel.title,
         subtitle: panel.subtitle,
         lines: [],
-        sheet: buildDetailsSheet({ seed, detail: cached, history: null, availability: null }),
+        sheet: buildDetailsSheet({ seed, detail: cached, ...local }),
         seasonsExpanded: false,
         imageUrl: panel.imageUrl,
         loading: false,
@@ -956,8 +960,7 @@ export function BrowseShell<T>({
                     sheet: buildDetailsSheet({
                       seed,
                       detail,
-                      history: null,
-                      availability: null,
+                      ...local,
                       seasonsExpanded: current.seasonsExpanded,
                     }),
                   }
@@ -969,7 +972,7 @@ export function BrowseShell<T>({
         })();
       }
     },
-    [selectedOption, mode, focusZone],
+    [selectedOption, mode, focusZone, detailsContextFor],
   );
 
   const runMutationWithFeedback = useCallback(
@@ -1255,44 +1258,20 @@ export function BrowseShell<T>({
     );
   }, [emptyMessage, isCalendarView, options.length, query, resultSubtitle, searchState]);
 
-  const moveCalendarDayFromInput = useCallback(
-    (direction: 1 | -1) => {
-      const currentDay = calendarKeyboardCursorRef.current.dayKey ?? calendarDayFilter;
-      const currentIndex = calendarDays.findIndex((day) => day.key === currentDay);
-      const targetDay = calendarDays[currentIndex + direction]?.key;
-      if (!targetDay) return;
-      const targetOptions = calendarOptionsForDay(targetDay);
-      const targetOption = targetOptions[0] ?? null;
-      calendarKeyboardCursorRef.current = {
-        dayKey: targetDay,
-        optionIndex: 0,
-        option: targetOption,
-      };
-      setCalendarDayFilter(targetDay);
-      setSelectedIndex(0);
+  const calendarCursor = useCalendarCursor({
+    cursorRef: calendarKeyboardCursorRef,
+    dayFilter: calendarDayFilter,
+    days: calendarDays,
+    optionsForDay: calendarOptionsForDay,
+    setDayFilter: setCalendarDayFilter,
+    setTypeTab: calendar.setTypeTab,
+    setSelectedIndex,
+    focusList: () => setFocusZone("list"),
+    submit: (option) => {
+      if (searchState === "ready") onSubmit(option.value);
     },
-    [calendarDayFilter, calendarDays, calendarOptionsForDay, setCalendarDayFilter],
-  );
-
-  const moveCalendarRowFromInput = useCallback(
-    (direction: 1 | -1) => {
-      const currentDay = calendarKeyboardCursorRef.current.dayKey ?? calendarDayFilter;
-      const dayOptions = calendarOptionsForDay(currentDay);
-      if (dayOptions.length === 0) return;
-      const cursor = calendarKeyboardCursorRef.current;
-      const currentIndex = Math.min(Math.max(0, cursor.optionIndex), dayOptions.length - 1);
-      const targetIndex = (currentIndex + direction + dayOptions.length) % dayOptions.length;
-      const targetOption = dayOptions[targetIndex] ?? null;
-      calendarKeyboardCursorRef.current = {
-        dayKey: currentDay,
-        optionIndex: targetIndex,
-        option: targetOption,
-      };
-      setFocusZone("list");
-      setSelectedIndex(targetIndex);
-    },
-    [calendarDayFilter, calendarOptionsForDay],
-  );
+  });
+  const { moveDay: moveCalendarDayFromInput, moveRow: moveCalendarRowFromInput } = calendarCursor;
 
   useEffect(() => {
     const primaryData = buildDetailsPanelDataFromBrowseOption(settledOption);
@@ -1349,7 +1328,8 @@ export function BrowseShell<T>({
     !commandMode &&
     Boolean(selectedOption) &&
     (listFocused || idleFocused);
-  const companionBesideList = showCompanion && wideBrowse && !mediumBrowse;
+  const plain = plainModeEnabled();
+  const companionBesideList = !plain && showCompanion && wideBrowse && !mediumBrowse;
   const {
     poster,
     posterState: posterPreviewState,
@@ -1507,9 +1487,7 @@ export function BrowseShell<T>({
     }
 
     if (activeOverlay) {
-      if (input === "/") {
-        return;
-      }
+      if (input === "/") return;
 
       // `z` undoes the action named on the strip — sheet keys (w/q/d above)
       // are journaled, so undo works with the details sheet open too.
@@ -1576,14 +1554,10 @@ export function BrowseShell<T>({
         }
       }
 
-      if (activeOverlay.type === "episode-picker") {
-        return;
-      }
+      if (activeOverlay.type === "episode-picker") return;
 
       if ("lines" in activeOverlay && (key.upArrow || key.downArrow) && !activeOverlay.loading) {
-        if (activeOverlay.lines.length === 0) {
-          return;
-        }
+        if (activeOverlay.lines.length === 0) return;
         const maxScroll = Math.max(0, activeOverlay.lines.length - 1);
         const nextScroll = key.upArrow
           ? Math.max(0, (activeOverlay.scrollIndex ?? 0) - 1)
@@ -1631,9 +1605,7 @@ export function BrowseShell<T>({
         setHighlightedCommandIndex((current) => movePaletteSelection(selectable, current, 1));
         return;
       }
-      if (commandEditor.handleInput(input, key)) {
-        return;
-      }
+      if (commandEditor.handleInput(input, key)) return;
       return;
     }
 
@@ -2267,6 +2239,7 @@ export function BrowseShell<T>({
               compact={compact}
               maxWidth={listWidth}
               dense={denseChrome}
+              onSelect={pointerActive ? calendarCursor.selectType : undefined}
             />
             <CalendarDayStrip
               days={calendarDays}
@@ -2274,6 +2247,7 @@ export function BrowseShell<T>({
               narrow={viewport.breakpoint === "narrow"}
               maxWidth={listWidth}
               dense={denseChrome}
+              onSelect={pointerActive ? calendarCursor.selectDay : undefined}
             />
           </Box>
         ) : null}
@@ -2330,8 +2304,13 @@ export function BrowseShell<T>({
               flexDirection="column"
               width={companionBesideList ? listWidth : undefined}
             >
+              {plain ? (
+                <Text color={palette.muted}>
+                  {`Focus: ${listFocused ? `Results list (${boundedSelectedIndex + 1} of ${displayOptions.length})` : resultFilterFocused ? "Filter results" : idleFocused ? "Quick picks" : "Search input"}`}
+                </Text>
+              ) : null}
               {(isCalendarView ? calendarWindow.start : windowStart) > 0 ? (
-                <Text color={palette.dim}> ▲ ...</Text>
+                <Text color={palette.dim}>{plain ? "More items above" : " ▲ ..."}</Text>
               ) : null}
               {isCalendarView
                 ? visibleCalendarRows.map((row) => {
@@ -2355,6 +2334,8 @@ export function BrowseShell<T>({
                         showForYouHeaderOnce={row.showForYouHeaderOnce}
                         isNew={row.isNew}
                         tracked={row.tracked}
+                        optionIndex={row.optionIndex}
+                        pointer={pointerActive ? calendarCursor : undefined}
                       />
                     );
                   })
@@ -2381,7 +2362,13 @@ export function BrowseShell<T>({
                     // it shifted every title one glyph out of alignment with its
                     // unfavourited neighbours.
                     if (isFavorite?.(option.value)) {
-                      columns.push(listRowStatusColumn("♥", 2, palette.accent));
+                      columns.push(
+                        listRowStatusColumn(
+                          plain ? "[favorite]" : "♥",
+                          plain ? 10 : 2,
+                          palette.accent,
+                        ),
+                      );
                     }
                     return (
                       // Mouse: click a row to select it (same as arrowing to
@@ -2428,7 +2415,7 @@ export function BrowseShell<T>({
                   ? calendarWindow.end < calendarRenderRows.length
                   : windowEnd < displayOptions.length
               ) ? (
-                <Text color={palette.dim}> ▼ ...</Text>
+                <Text color={palette.dim}>{plain ? "More items below" : " ▼ ..."}</Text>
               ) : null}
             </Box>
 
@@ -2582,18 +2569,28 @@ export function BrowseShell<T>({
                 {idleReturnLoopModel.rows.map((row) => (
                   <Text
                     key={row.id}
-                    backgroundColor={row.focused ? palette.accentFill : undefined}
+                    backgroundColor={row.focused && !plain ? palette.accentFill : undefined}
                     color={row.focused ? palette.text : palette.muted}
                   >
-                    {row.focused ? <Text color={palette.accent}>{"▌ "}</Text> : "  "}
-                    <Text color={row.glyphColor}>{row.glyph}</Text>{" "}
+                    {plain ? (
+                      selectionPrefix(row.focused, true)
+                    ) : row.focused ? (
+                      <Text color={palette.accent}>{"▌ "}</Text>
+                    ) : (
+                      "  "
+                    )}
+                    {plain ? null : (
+                      <>
+                        <Text color={row.glyphColor}>{row.glyph}</Text>{" "}
+                      </>
+                    )}
                     <Text color={row.focused ? palette.text : palette.textDim} bold={row.focused}>
                       {row.title}
                     </Text>
                     {row.meta ? <Text color={palette.dim}>{`  ${row.meta}`}</Text> : null}
                     {row.hint ? (
                       <Text color={row.focused ? palette.accent : palette.dim}>
-                        {` · ${row.hint}`}
+                        {plain ? ` (${row.hint})` : ` · ${row.hint}`}
                       </Text>
                     ) : null}
                   </Text>
@@ -2780,6 +2777,7 @@ export function openBrowseShell<T>({
   loadIdleContext,
   onSuggest,
   loadLocalSuggestions,
+  detailsContextFor,
   suggestionDebounceMs,
   localTitles,
   onTitlePick,
@@ -2825,6 +2823,7 @@ export function openBrowseShell<T>({
   loadIdleContext?: BrowseIdleContextLoader;
   onSuggest?: (query: string, signal: AbortSignal) => Promise<readonly SearchSuggestion<T>[]>;
   loadLocalSuggestions?: () => readonly SearchSuggestion<T>[];
+  detailsContextFor?: (titleId: string) => DetailsSheetLocalContext;
   suggestionDebounceMs?: number;
   /** Local title source — consulted once per palette open for the JUMP TO section. */
   localTitles?: () => readonly LocalTitleEntry[];
@@ -2880,6 +2879,7 @@ export function openBrowseShell<T>({
         loadIdleContext={loadIdleContext}
         onSuggest={onSuggest}
         loadLocalSuggestions={loadLocalSuggestions}
+        detailsContextFor={detailsContextFor}
         suggestionDebounceMs={suggestionDebounceMs}
         localTitles={localTitles}
         onTitlePick={onTitlePick}

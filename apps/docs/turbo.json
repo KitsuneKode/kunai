@@ -3,11 +3,21 @@
   "extends": ["//"],
   "tasks": {
     "generate": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/install.sh",
+        "$TURBO_ROOT$/install.ps1",
+        "$TURBO_ROOT$/scripts/packaging/render-installers.ts",
+        "$TURBO_ROOT$/apps/cli/src/services/update/release-key.json",
+        "$TURBO_ROOT$/.release/*.json"
+      ],
       "outputs": [
         "lib/generated-metadata.json",
         "lib/generated-release-notes.json",
         "lib/generated-troubleshooting-faq.json",
         "lib/generated-mascot.json",
+        "public/install.sh",
+        "public/install.ps1",
         ".source/**"
       ]
     },

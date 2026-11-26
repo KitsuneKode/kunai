@@ -1,8 +1,12 @@
-import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
+import {
+  embeddedReleaseKey,
+  type ReleaseManifestName,
+  verifyReleaseManifestSignature,
+} from "../checksum-signature";
 import { readInstallManifest, writeInstallManifestUnderActivation } from "../install-manifest";
 import { fetchLatestVersion } from "../latest-version";
 import {
@@ -12,8 +16,17 @@ import {
   resolveReleaseBinaryTarget,
   type PlatformLibc,
 } from "../platform-assets";
+import {
+  startReleaseMarkerFetch,
+  type ReleaseMarkerEnv,
+  type ReleaseMarkerName,
+} from "../release-marker";
 import { pickChecksum, verifyChecksum } from "../self-replace";
-import { normalizeRequestedVersion, parseCanonicalVersion } from "../version";
+import {
+  compareCanonicalVersions,
+  normalizeRequestedVersion,
+  parseCanonicalVersion,
+} from "../version";
 import { withActivationLock } from "./activation-lock";
 import { cleanupOldVersions } from "./cleanup-versions";
 import {
@@ -39,7 +52,7 @@ import {
   updateLauncher,
 } from "./launcher";
 import { isMuslEnvironmentSync } from "./musl";
-import { extractReleaseArchive } from "./release-archive";
+import { extractReleaseArchiveFile } from "./release-archive";
 import {
   beginInstallTransaction,
   cleanupAbandonedTransactions,
@@ -50,17 +63,38 @@ import { writeInstalledVersionMetadata } from "./version-metadata";
 
 export type InstallLatestResult =
   | { readonly status: "up-to-date"; readonly version: string }
-  | { readonly status: "installed"; readonly version: string; readonly versionPath: string }
+  | {
+      readonly status: "installed";
+      readonly version: string;
+      readonly versionPath: string;
+      /**
+       * The marker request, already started and never awaited here. Settles
+       * within its timeout and never rejects. Absent when none was asked for
+       * or an opt-out skipped it.
+       */
+      readonly releaseMarker?: Promise<void>;
+    }
+  | { readonly status: "superseded"; readonly activeVersion: string }
   | { readonly status: "skipped"; readonly reason: "lock-contention" }
   | { readonly status: "failed"; readonly error: string };
 
 export type InstallLatestOptions = {
+  readonly intent: "upgrade" | "install-latest" | "explicit";
   readonly version?: string;
   readonly force?: boolean;
   readonly dlBase?: string;
   readonly layout?: InstallLayoutPaths;
   readonly fetchImpl?: FetchLike;
+  /** Supply a pin when exercising a source build. Compiled clients prefer their own pin. */
+  readonly releasePublicKey?: string;
   readonly libc?: PlatformLibc;
+  /**
+   * Fetch this release's marker after a verified activation, so GitHub counts
+   * the update. Only update paths ask for it; a fresh `kunai install` does not.
+   */
+  readonly releaseMarker?: ReleaseMarkerName;
+  /** Opt-out env for the marker. Defaults to `process.env`. */
+  readonly markerEnv?: ReleaseMarkerEnv;
 };
 
 let inFlightInstall: Promise<InstallLatestResult> | null = null;
@@ -69,7 +103,7 @@ let inFlightInstall: Promise<InstallLatestResult> | null = null;
  * Download, verify, and install the latest (or pinned) binary into the versioned
  * store, then update the launcher symlink. Module-level singleflight.
  */
-export function installLatest(options: InstallLatestOptions = {}): Promise<InstallLatestResult> {
+export function installLatest(options: InstallLatestOptions): Promise<InstallLatestResult> {
   if (inFlightInstall) return inFlightInstall;
   const promise = installLatestImpl(options).finally(() => {
     if (inFlightInstall === promise) inFlightInstall = null;
@@ -103,17 +137,32 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
   const tag = `v${resolved}`;
   const downloadUrl = `${dlBase}/download/${tag}/${assetName}`;
   const checksumUrl = `${dlBase}/download/${tag}/SHA256SUMS`;
-  const archiveName = releaseTarget?.archiveName;
-  const archiveUrl = archiveName ? `${dlBase}/download/${tag}/${archiveName}` : undefined;
+  // The gzip/zip name until the signed archive manifest says a smaller zstd
+  // archive exists for this release (0.3.x and later); then that one.
+  let archiveName = releaseTarget?.archiveName;
+  let archiveUrl = archiveName ? `${dlBase}/download/${tag}/${archiveName}` : undefined;
   const archiveChecksumUrl = `${dlBase}/download/${tag}/SHA256SUMS.archives`;
   const versionPath = versionBinaryPath(layout, resolved);
 
-  if (!options.force && existsSync(versionPath) && manifest?.activeVersion === resolved) {
+  if (
+    options.intent !== "upgrade" &&
+    !options.force &&
+    existsSync(versionPath) &&
+    manifest?.activeVersion === resolved
+  ) {
     return { status: "up-to-date", version: resolved };
   }
 
   try {
     const result = await withVersionLock(layout, resolved, async () => {
+      if (options.intent === "upgrade") {
+        // The launcher may be a symlink to this exact file. Check under the
+        // version lock before writing the store, even if force was requested.
+        const current = await readInstallManifest(layout.configDir);
+        if (current?.method === "binary" && current.activeVersion === resolved) {
+          return { status: "superseded" as const, activeVersion: resolved };
+        }
+      }
       await cleanupAbandonedTransactions(layout).catch(() => {});
       await rm(stagingDirForVersion(layout, resolved), { recursive: true, force: true }).catch(
         () => {},
@@ -135,7 +184,7 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
       const stagedBinary = join(staging, assetName);
       const stagedChecksums = join(staging, "SHA256SUMS");
       const stagedArchiveChecksums = join(staging, "SHA256SUMS.archives");
-      const stagedArchive = archiveName ? join(staging, archiveName) : undefined;
+      let stagedArchive = archiveName ? join(staging, archiveName) : undefined;
 
       try {
         await downloadToFile({
@@ -144,7 +193,38 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
           fetchImpl,
           policy: DEFAULT_CHECKSUM_DOWNLOAD_POLICY,
         });
-        const sumsText = await readFile(stagedChecksums, "utf8");
+        const publicKey = embeddedReleaseKey || options.releasePublicKey;
+        // The signature binds `resolved`: a correctly signed manifest from another
+        // release, served at this tag, is rejected here before any archive download.
+        const signedVersion: string = resolved;
+        async function authenticatedManifest(
+          name: ReleaseManifestName,
+          path: string,
+          url: string,
+        ): Promise<string> {
+          const bytes = await readFile(path);
+          if (publicKey) {
+            await downloadToFile({
+              url: url + ".sig",
+              destinationPath: path + ".sig",
+              fetchImpl,
+              policy: { ...DEFAULT_CHECKSUM_DOWNLOAD_POLICY, maxBytes: 64 },
+            });
+            verifyReleaseManifestSignature({
+              version: signedVersion,
+              name,
+              manifest: bytes,
+              signature: await readFile(path + ".sig"),
+              spki: publicKey,
+            });
+          }
+          return bytes.toString("utf8");
+        }
+        if (!publicKey)
+          process.stderr.write(
+            "Kunai has no embedded release signing key. Verifying SHA-256 checksums only.\n",
+          );
+        const sumsText = await authenticatedManifest("SHA256SUMS", stagedChecksums, checksumUrl);
         const expected = pickChecksum(sumsText, assetName);
         if (!expected) {
           throw new Error(`No checksum entry for ${assetName}`);
@@ -190,7 +270,17 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
           archiveUrl &&
           stagedArchive
         ) {
-          const archiveSums = await readFile(stagedArchiveChecksums, "utf8");
+          const archiveSums = await authenticatedManifest(
+            "SHA256SUMS.archives",
+            stagedArchiveChecksums,
+            archiveChecksumUrl,
+          );
+          const zstdArchiveName = releaseTarget.zstdArchiveName;
+          if (zstdArchiveName && pickChecksum(archiveSums, zstdArchiveName)) {
+            archiveName = zstdArchiveName;
+            archiveUrl = `${dlBase}/download/${tag}/${zstdArchiveName}`;
+            stagedArchive = join(staging, zstdArchiveName);
+          }
           expectedArchive = pickChecksum(archiveSums, archiveName);
           if (!expectedArchive) throw new Error(`No checksum entry for ${archiveName}`);
           try {
@@ -225,14 +315,17 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
             throw new Error(`Checksum mismatch for ${archiveName}`);
           }
 
-          const archiveBytes = new Uint8Array(await Bun.file(stagedArchive).arrayBuffer());
-          const binaryBytes = extractReleaseArchive(archiveBytes, releaseTarget);
-          artifactSha256 = createHash("sha256").update(binaryBytes).digest("hex");
-          artifactSizeBytes = binaryBytes.length;
+          const extracted = await extractReleaseArchiveFile({
+            archivePath: stagedArchive,
+            archiveName,
+            target: releaseTarget,
+            outputPath: stagedBinary,
+          });
+          artifactSha256 = extracted.sha256;
+          artifactSizeBytes = extracted.sizeBytes;
           if (!verifyChecksum(artifactSha256, expected)) {
             throw new Error(`Checksum mismatch for extracted ${assetName}`);
           }
-          await Bun.write(stagedBinary, binaryBytes);
           archiveProvenance = {
             archiveName,
             archiveSha256: archiveDownload.sha256,
@@ -282,6 +375,14 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
             throw new Error(
               "Install ownership changed while downloading; refusing to replace a non-native publication",
             );
+          }
+          const activeVersion =
+            activeManifest && parseCanonicalVersion(activeManifest.activeVersion);
+          if (options.intent !== "explicit" && activeVersion) {
+            const order = compareCanonicalVersions(resolved, activeVersion);
+            if (order < 0 || (order === 0 && options.intent === "upgrade")) {
+              return { status: "superseded" as const, activeVersion };
+            }
           }
           const launcherPath = activeManifest?.launcherPath ?? layout.launcherPath;
           const launcherSnapshot = await captureLauncherSnapshot(launcherPath);
@@ -337,12 +438,30 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
         if (activated === null) {
           return { status: "skipped" as const, reason: "lock-contention" as const };
         }
+        if (activated) return activated;
 
         // Fire-and-forget must never reject: a cleanup failure surfacing as an
         // unhandled rejection would turn a completed install into a crash.
         void cleanupOldVersions(layout).catch(() => {});
 
-        return { status: "installed" as const, version: resolved, versionPath };
+        // Started, not awaited: the update is already complete and verified,
+        // and the marker can neither delay nor fail it.
+        const releaseMarker = options.releaseMarker
+          ? startReleaseMarkerFetch({
+              dlBase,
+              version: resolved,
+              marker: options.releaseMarker,
+              env: options.markerEnv,
+              fetchImpl: (url, init) => fetchImpl(url, init),
+            })
+          : null;
+
+        return {
+          status: "installed" as const,
+          version: resolved,
+          versionPath,
+          releaseMarker: releaseMarker ?? undefined,
+        };
       } catch (error) {
         await finishInstallTransaction(layout, transaction.id).catch(() => {});
         await removeStagingAndPruneParents(staging, layout.stagingRoot);

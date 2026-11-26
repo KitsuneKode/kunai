@@ -861,6 +861,57 @@ describe("SyncService rate limiting", () => {
     expect(summary.pending).toBe(5);
   });
 
+  /**
+   * Batches of 25 used to each start with an empty backoff map, so a 26-row
+   * backlog asked a refusing tracker twice in one drain (Sol review #9).
+   */
+  test("keeps a tracker's backoff across batches and drains, then lifts it", async () => {
+    const repo = outbox();
+    // Ahead of the rows' enqueue time, so every seeded row is already due.
+    let clock = Date.now() + 5_000;
+    const anilist = adapter("anilist", () => syncRateLimited(30_000));
+    const tmdb = adapter("tmdb", () => syncOk());
+    const service = createSyncService({
+      adapters: [anilist.adapter, tmdb.adapter],
+      outbox: repo,
+      config: configPort(),
+      now: () => new Date(clock),
+    });
+    const seedAniList = (anilistId: number) =>
+      seedOperation(repo, {
+        version: 1,
+        kind: "progress:set",
+        target: { tracker: "anilist", anilistId, mediaKind: "anime" },
+        progress: 1,
+        status: "watching",
+      });
+
+    for (let id = 1; id <= 26; id += 1) seedAniList(id);
+    seedOperation(repo, {
+      version: 1,
+      kind: "list-membership:set",
+      target: { tracker: "tmdb", tmdbId: 7, mediaKind: "movie" },
+      list: "watchlist",
+      present: true,
+    });
+
+    const first = await service.drain();
+    expect(anilist.calls.length).toBe(1);
+    expect(first.deferred).toBe(26);
+    // A healthy tracker keeps draining beside the blocked one.
+    expect(tmdb.calls.length).toBe(1);
+
+    // A row enqueued later in the window is deferred without asking either.
+    seedAniList(99);
+    await service.drain();
+    expect(anilist.calls.length).toBe(1);
+
+    // Past the deadline the tracker is asked again.
+    clock += 31_000;
+    await service.drain();
+    expect(anilist.calls.length).toBeGreaterThan(1);
+  });
+
   /** A deferred row must not inherit a longer backoff it did not earn. */
   test("does not spend an attempt on a deferral", async () => {
     const repo = outbox();

@@ -95,3 +95,16 @@ test("purges cached metadata on startup when YouTube config has drifted", () => 
     count: 0,
   });
 });
+
+test("hashes the PO token in the cache fingerprint instead of storing plaintext in SQLite", () => {
+  const secret = "visionos.gvs+NEVER_WRITE_TO_SQLITE";
+  applyYoutubeProviderConfig({ youtubeMetadata: { poToken: secret } }, db);
+
+  const row = db
+    .query<{ payload_json: string }, [string, string]>(
+      "SELECT payload_json FROM provider_cache WHERE namespace = ? AND cache_key = ?",
+    )
+    .get("youtube_config", "fingerprint");
+  expect(row?.payload_json).toBeDefined();
+  expect(row?.payload_json).not.toContain(secret);
+});

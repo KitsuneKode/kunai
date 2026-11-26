@@ -1,7 +1,18 @@
 import { expect, test } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 import { buildCliHelpText, CliUsageError, parseCliArgs as parseArgs } from "@/cli-args";
-import { resolvePlayerMode, type SupportedPlayerPlatform } from "@/domain/playback/player-choice";
+import {
+  effectivePlayerChoice,
+  resolvePlayerMode,
+  type SupportedPlayerPlatform,
+} from "@/domain/playback/player-choice";
+import { getKunaiPaths } from "@kunai/storage";
+
+import { storageRootEnv } from "../helpers/storage-env";
+import { removeTempDir } from "../support/remove-temp-dir";
 
 test("buildCliHelpText describes canonical launch flags", () => {
   const help = buildCliHelpText("0.0.0-test");
@@ -38,21 +49,34 @@ test("every advertised player choice is supported on the named platform", () => 
     const platforms: readonly SupportedPlayerPlatform[] =
       label === "desktop" ? ["linux", "darwin", "win32", "other"] : ["android"];
     for (const choice of choices.split("|")) {
-      const parsed = parseArgs(["--player", choice]).player;
+      const parsed = parseArgs(["--player", choice]).player ?? "auto";
       for (const platform of platforms) {
-        expect(resolvePlayerMode({ choice: parsed, platform }).kind).toBe(
-          label === "desktop" ? "managed-mpv" : "android-handoff",
-        );
+        const expected =
+          label !== "desktop"
+            ? "android-handoff"
+            : choice === "vlc"
+              ? "managed-vlc"
+              : "managed-mpv";
+        expect(resolvePlayerMode({ choice: parsed, platform }).kind).toBe(expected);
       }
     }
   }
 });
 
-test("parseArgs exposes an explicit player choice with an auto default", () => {
-  expect(parseArgs([]).player).toBe("auto");
+test("parseArgs exposes an explicit player choice and leaves an absent flag unset", () => {
+  // Unset, not "auto": the player saved in Settings applies when no flag is given.
+  expect(parseArgs([]).player).toBeUndefined();
   expect(parseArgs(["--player", "auto"]).player).toBe("auto");
   expect(parseArgs(["--player", "mpv"]).player).toBe("mpv");
   expect(parseArgs(["--player", "vlc"]).player).toBe("vlc");
+});
+
+test("the flag wins, then the saved player, then auto", () => {
+  expect(effectivePlayerChoice("mpv", "vlc")).toBe("mpv");
+  expect(effectivePlayerChoice(undefined, "vlc")).toBe("vlc");
+  expect(effectivePlayerChoice(undefined, undefined)).toBe("auto");
+  // A hand-edited unknown value never fails startup.
+  expect(effectivePlayerChoice(undefined, "potato")).toBe("auto");
 });
 
 test("parseArgs rejects unknown player choices", () => {
@@ -438,4 +462,124 @@ test("parseArgs folds --dub into audio and rejects it combined with --audio", ()
   expect(() => parseArgs(["-a", "-S", "Naruto", "--dub", "--audio", "en"])).toThrow(
     /--dub and --audio are mutually exclusive/,
   );
+});
+
+test("`kunai addons` rejects an unsupported flag with exit 2 and never touches config", async () => {
+  // The flag guard lives in main.ts, before runAddonsCommand loads — so this
+  // drives the real entrypoint, not the parser. A flag like --dry-run used to
+  // be silently dropped while `remove` went ahead.
+  const root = mkdtempSync(join(tmpdir(), "kunai-addons-flag-"));
+  try {
+    const env = { ...process.env, ...storageRootEnv(root) };
+    const { configDir, configPath } = getKunaiPaths({ env });
+    mkdirSync(configDir, { recursive: true });
+    const seeded = JSON.stringify({
+      stremioAddons: [{ url: "https://a.example.com/SECRETTOKEN/manifest.json", name: "Alpha" }],
+    });
+    writeFileSync(configPath, seeded);
+
+    const mainTs = resolve(import.meta.dir, "../../src/main.ts");
+    const proc = Bun.spawn(
+      [process.execPath, mainTs, "addons", "remove", "1", "--dry-run", "--json"],
+      {
+        env,
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    const [stdout, , status] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+
+    expect(status).toBe(2);
+    const payload = JSON.parse(stdout);
+    expect(payload).toMatchObject({ schemaVersion: 1, ok: false });
+    expect(payload.error).toContain("unsupported flag");
+    expect(readFileSync(configPath, "utf8")).toBe(seeded);
+  } finally {
+    removeTempDir(root);
+  }
+});
+
+test("`kunai addons enable --accept-risk` writes consent and `disable` keeps it", async () => {
+  // End-to-end through the real entrypoint in a throwaway profile.
+  const root = mkdtempSync(join(tmpdir(), "kunai-addons-enable-"));
+  try {
+    const env = { ...process.env, ...storageRootEnv(root) };
+    const { configDir, configPath } = getKunaiPaths({ env });
+    const seeded = JSON.stringify({
+      stremioAddons: [{ url: "https://a.example.com/SECRETTOKEN/manifest.json", name: "Alpha" }],
+    });
+    const mainTs = resolve(import.meta.dir, "../../src/main.ts");
+    const run = (...args: string[]) =>
+      Bun.spawn([process.execPath, mainTs, ...args], {
+        env,
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+
+    const expectRefusal = async () => {
+      const refused = run("addons", "enable", "--json");
+      const [refusedOut, refusedStatus] = await Promise.all([
+        new Response(refused.stdout).text(),
+        refused.exited,
+      ]);
+      expect(refusedStatus).toBe(1);
+      expect(JSON.parse(refusedOut)).toMatchObject({ ok: false });
+    };
+    // Refusal must finish even when the profile does not yet have config.json.
+    await expectRefusal();
+    expect(existsSync(configPath)).toBe(false);
+
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(configPath, seeded);
+    await expectRefusal();
+    expect(readFileSync(configPath, "utf8")).toBe(seeded);
+
+    const enabled = run("addons", "enable", "--accept-risk", "--json");
+    const [enabledOut, enabledStatus] = await Promise.all([
+      new Response(enabled.stdout).text(),
+      enabled.exited,
+    ]);
+    expect(enabledStatus).toBe(0);
+    // stdout stays a single parseable object; the warning went to stderr.
+    expect(JSON.parse(enabledOut)).toMatchObject({
+      ok: true,
+      experimentalStremioAddons: true,
+    });
+    const onDisk = JSON.parse(readFileSync(configPath, "utf8"));
+    expect(onDisk.experimentalStremioAddons).toBe(true);
+    expect(onDisk.stremioAddonsRiskAcknowledgedAt).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+    );
+    expect(onDisk.stremioAddons).toHaveLength(1);
+    expect(enabledOut).not.toContain("SECRETTOKEN");
+
+    const disabled = run("addons", "disable", "--json");
+    const [disabledOut, disabledStatus] = await Promise.all([
+      new Response(disabled.stdout).text(),
+      disabled.exited,
+    ]);
+    expect(disabledStatus).toBe(0);
+    expect(JSON.parse(disabledOut)).toMatchObject({
+      ok: true,
+      experimentalStremioAddons: false,
+    });
+    const afterDisable = JSON.parse(readFileSync(configPath, "utf8"));
+    expect(afterDisable.experimentalStremioAddons).toBe(false);
+    // The acknowledgement and the installed list survive a disable.
+    expect(afterDisable.stremioAddonsRiskAcknowledgedAt).toBe(
+      onDisk.stremioAddonsRiskAcknowledgedAt,
+    );
+    expect(afterDisable.stremioAddons).toHaveLength(1);
+  } finally {
+    removeTempDir(root);
+  }
+});
+
+test("--accept-risk is an unknown option outside `kunai addons`", () => {
+  expect(() => parseArgs(["-S", "Dune", "--accept-risk"])).toThrow(/unknown option/);
 });

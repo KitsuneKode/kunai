@@ -14,7 +14,14 @@ export interface MediaActionRouterDeps {
     readonly playNow: (item: MediaItemIdentity) => Promise<void> | void;
   };
   readonly downloads?: {
-    readonly queueDownload: (item: MediaItemIdentity) => Promise<void> | void;
+    /**
+     * Returns what was admitted when the executor knows; a run that admitted
+     * no job is not reported as handled. Interactive executors that report
+     * for themselves return nothing.
+     */
+    readonly queueDownload: (
+      item: MediaItemIdentity,
+    ) => Promise<DownloadAdmission | void> | DownloadAdmission | void;
   };
   readonly playlists?: {
     readonly addToPlaylist: (item: MediaItemIdentity) => Promise<void> | void;
@@ -45,6 +52,9 @@ export interface MediaActionRouterDeps {
     readonly dismissByItem: (item: MediaItemIdentity) => Promise<void> | void;
   };
 }
+
+/** How many download jobs a request admitted, and why none were, if so. */
+export type DownloadAdmission = { readonly queuedCount: number; readonly reason?: string };
 
 export interface RunMediaActionInput {
   readonly actionId: MediaActionId;
@@ -123,7 +133,16 @@ export class MediaActionRouter {
         }
         const executor = this.deps.downloads?.queueDownload;
         if (!executor) return unsupported(input.actionId);
-        await executor(input.item);
+        const admission = await executor(input.item);
+        // A refused or empty enqueue must not read as queued: the inbox would
+        // mark the notice read and say "Download queued" for nothing.
+        if (admission && admission.queuedCount === 0) {
+          return {
+            status: "unsupported",
+            actionId: input.actionId,
+            reason: admission.reason ?? "nothing was queued",
+          };
+        }
         return handled(input.actionId);
       }
       case "add-to-playlist": {

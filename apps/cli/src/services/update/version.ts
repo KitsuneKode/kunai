@@ -58,9 +58,9 @@ export function parsePublishedVersionTag(value: string | undefined): CanonicalVe
 
 /** Compare two canonical versions: negative if left < right, 0 if equal, positive if left > right. */
 export function compareCanonicalVersions(left: CanonicalVersion, right: CanonicalVersion): number {
-  const [lMajor, lMinor, lPatch] = left.split(".").map((part) => Number.parseInt(part, 10));
-  const [rMajor, rMinor, rPatch] = right.split(".").map((part) => Number.parseInt(part, 10));
-  if (lMajor !== rMajor) return (lMajor ?? 0) - (rMajor ?? 0);
-  if (lMinor !== rMinor) return (lMinor ?? 0) - (rMinor ?? 0);
-  return (lPatch ?? 0) - (rPatch ?? 0);
+  const [lMajor, lMinor, lPatch] = left.split(".").map(BigInt);
+  const [rMajor, rMinor, rPatch] = right.split(".").map(BigInt);
+  if (lMajor !== rMajor) return Number((lMajor ?? 0n) - (rMajor ?? 0n));
+  if (lMinor !== rMinor) return Number((lMinor ?? 0n) - (rMinor ?? 0n));
+  return Number((lPatch ?? 0n) - (rPatch ?? 0n));
 }

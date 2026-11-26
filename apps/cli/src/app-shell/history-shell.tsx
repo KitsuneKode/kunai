@@ -4,6 +4,8 @@ import React from "react";
 import { compactProgressBar } from "./format/bar";
 import type { HistoryView } from "./history-view";
 import { useRailPoster } from "./hooks/use-rail-poster";
+import { MouseTarget } from "./mouse/MouseRegions";
+import { useRowTap } from "./mouse/row-tap";
 import { ClaudeTabRow } from "./primitives/ClaudeTabRow";
 import { buildMediaListRowColumns, computeMediaListRowLayout } from "./primitives/list-row-layout";
 import { ListRow } from "./primitives/ListRow";
@@ -23,13 +25,22 @@ export function HistoryShell({
   listWidth,
   rowWidth,
   pendingDelete = null,
+  onRowSelect,
+  onRowActivate,
+  onWheel,
 }: {
   readonly view: HistoryView;
   readonly columns: number;
   readonly listWidth: number;
   readonly rowWidth: number;
   readonly pendingDelete?: HistoryDeletePending | null;
+  /** Tap on a row (by its flat index): move the cursor there. */
+  readonly onRowSelect?: (flatIndex: number) => void;
+  /** Second tap on the selected row: the same as Enter (continue watching). */
+  readonly onRowActivate?: (flatIndex: number) => void;
+  readonly onWheel?: (direction: "up" | "down") => void;
 }) {
+  const tapRow = useRowTap<string>();
   const railWidth = 32;
   const railGap = 2;
   const showRail = shouldRenderPreviewRail({ columns, hasModel: view.rail !== null });
@@ -144,21 +155,32 @@ export function HistoryShell({
               ? `${compactProgressBar(progress.percentage)} ${Math.round(progress.percentage)}%`
               : row.statusLabel;
             return (
-              <ListRow
+              <MouseTarget
                 key={`${row.titleId}-${item.flatIndex}`}
-                selected={selected}
-                rowWidth={effectiveRowWidth}
-                flexColumnIndex={rowLayout.flexColumnIndex}
-                columns={buildMediaListRowColumns({
-                  title: row.title,
-                  episodeCode: row.episodeCode,
-                  statusLabel,
-                  statusColor: row.statusColor,
-                  statusDim: row.statusDim,
-                  recencyLabel: row.recencyLabel,
-                  layout: rowLayout,
-                })}
-              />
+                id={`history:row:${row.titleId}`}
+                flexDirection="column"
+                active={Boolean(onRowSelect && onRowActivate)}
+                onClick={() => {
+                  if (tapRow(row.titleId, selected) === "activate") onRowActivate?.(item.flatIndex);
+                  else onRowSelect?.(item.flatIndex);
+                }}
+                onWheel={onWheel}
+              >
+                <ListRow
+                  selected={selected}
+                  rowWidth={effectiveRowWidth}
+                  flexColumnIndex={rowLayout.flexColumnIndex}
+                  columns={buildMediaListRowColumns({
+                    title: row.title,
+                    episodeCode: row.episodeCode,
+                    statusLabel,
+                    statusColor: row.statusColor,
+                    statusDim: row.statusDim,
+                    recencyLabel: row.recencyLabel,
+                    layout: rowLayout,
+                  })}
+                />
+              </MouseTarget>
             );
           })}
           {view.showScrollDown ? <Text color={palette.dim}> ▼ ...</Text> : null}

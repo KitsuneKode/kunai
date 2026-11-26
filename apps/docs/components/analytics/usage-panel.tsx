@@ -90,11 +90,12 @@ function BreakdownCards({ metrics }: { readonly metrics: DocsAnalyticsMetrics })
 
 function PayloadContractCard() {
   const payload = `{
-  "installId": "<sha256 of a local id>",
+  "id": "<HMAC of a local id, new every month>",
+  "cohort": "<YYYY-MM you turned it on>",
+  "day": "<YYYY-MM-DD>",
   "version": "<semver>",
-  "os": "<platform>",
-  "arch": "<arch>",
-  "ts": 0
+  "os": "<linux | darwin | win32 | android>",
+  "arch": "<x64 | arm64>"
 }`;
   return (
     <Card className="@container/card">

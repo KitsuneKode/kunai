@@ -3,6 +3,8 @@ import React from "react";
 
 import type { DetailsSheetModel } from "./details-sheet.model";
 import { wrapSynopsis } from "./details-view";
+import { PressRow } from "./mouse/PickRow";
+import { plainModeEnabled } from "./plain-mode";
 import { PosterInitialBlock } from "./poster-initial-block";
 import { palette } from "./shell-theme";
 import { PosterOutput } from "./SixelPosterPane";
@@ -35,6 +37,9 @@ function SheetPoster({ url, title }: { readonly url?: string; readonly title: st
 }
 
 function Skeleton({ width }: { readonly width: number }) {
+  if (plainModeEnabled()) {
+    return <Text color={palette.muted}>Loading...</Text>;
+  }
   return (
     <Text color={palette.muted} dimColor>
       {"░".repeat(Math.max(4, width))}
@@ -59,16 +64,19 @@ export function DetailsSheet({
   readonly seasonsExpanded: boolean;
   readonly width: number;
 }) {
-  const textWidth = Math.max(20, width - POSTER_COLS - 4);
+  const plain = plainModeEnabled();
+  const textWidth = Math.max(20, width - (plain ? 0 : POSTER_COLS + 4));
   const synopsisLines = wrapSynopsis(model.synopsis.text, Math.max(20, width - 2), 6);
 
   return (
     <Box flexDirection="column" width={width}>
       {/* Header: poster + title/meta/genres */}
-      <Box flexDirection="row">
-        <Box width={POSTER_COLS} marginRight={2}>
-          <SheetPoster url={model.header.posterUrl} title={model.header.title} />
-        </Box>
+      <Box flexDirection={plain ? "column" : "row"}>
+        {plain ? null : (
+          <Box width={POSTER_COLS} marginRight={2}>
+            <SheetPoster url={model.header.posterUrl} title={model.header.title} />
+          </Box>
+        )}
         <Box flexDirection="column" flexGrow={1}>
           <Text bold>{model.header.title}</Text>
           <Text color={palette.muted}>{model.header.metaLine}</Text>
@@ -140,7 +148,9 @@ export function DetailsSheet({
       {model.seasons.items.length > 0 ? (
         <Box flexDirection="column" marginTop={1}>
           <Text color={palette.accent}>
-            {seasonsExpanded ? "▾" : "▸"} {model.seasons.items.length} seasons (s)
+            {plain
+              ? `${model.seasons.items.length} seasons (${seasonsExpanded ? "expanded" : "collapsed"}, press s to toggle)`
+              : `${seasonsExpanded ? "▾" : "▸"} ${model.seasons.items.length} seasons (s)`}
           </Text>
           {seasonsExpanded
             ? model.seasons.items.map((season) => (
@@ -157,23 +167,45 @@ export function DetailsSheet({
       {model.links.items.length > 0 || model.trailerUrl ? (
         <Box flexDirection="column" marginTop={1}>
           <SectionLabel>Links</SectionLabel>
-          {model.trailerUrl ? <Text color={palette.accent}>▶ trailer (t)</Text> : null}
+          {model.trailerUrl ? (
+            <Text color={palette.accent}>{plain ? "Trailer (t)" : "▶ trailer (t)"}</Text>
+          ) : null}
           {model.links.items.length > 0 ? (
             <Text color={palette.muted}>
-              {model.links.items.map((link) => link.label).join(" · ")}
+              {model.links.items.map((link) => link.label).join(plain ? ", " : " · ")}
             </Text>
           ) : null}
         </Box>
       ) : null}
 
-      {/* Actions footer */}
-      <Box marginTop={1}>
-        <Text color={palette.dim}>
-          ▶ play · + queue · w follow · d download · e episodes
-          {model.trailerUrl ? " · t trailer" : ""}
-          {model.links.items.length > 0 ? " · l links" : ""} · esc
-        </Text>
+      {/* Actions footer: exactly the keys the browse sheet handler binds, each
+          a chip a click presses (it once advertised `+`, `e` and "w follow",
+          none of which existed). */}
+      <Box marginTop={1} flexWrap="wrap">
+        {sheetActions(model).map(([key, label], index) => (
+          <PressRow key={key} id={`details-sheet:action:${key}`} keyHint={key}>
+            <Text color={palette.dim}>
+              {plain
+                ? `${index === 0 ? "Actions: " : ", "}${key} ${label}`
+                : `${index === 0 ? "" : " · "}${key === "enter" ? "↵" : key} ${label}`}
+            </Text>
+          </PressRow>
+        ))}
       </Box>
     </Box>
   );
+}
+
+/** The sheet's actions as [key, label], only those that apply to this title. */
+function sheetActions(model: DetailsSheetModel): readonly (readonly [string, string])[] {
+  return [
+    ["enter", "play"],
+    ["q", "queue"],
+    ["w", "watchlist"],
+    ["d", "download"],
+    ...(model.seasons.items.length > 0 ? [["s", "seasons"] as const] : []),
+    ...(model.trailerUrl ? [["t", "trailer"] as const] : []),
+    ...(model.links.items.length > 0 ? [["l", "links"] as const] : []),
+    ["esc", "close"],
+  ];
 }

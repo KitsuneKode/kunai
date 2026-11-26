@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-27T11:48:19Z"
+lastReviewed: "2026-11-25T10:16:34Z"
 ---
 
 # Kunai Release Reliability Gate
@@ -74,7 +74,7 @@ the recorded archive provenance and executes the sandboxed installed launcher
 with `--version` and `--help`; the separate raw and musl executions remain
 compatibility checks.
 
-After the final candidate-directory verification, `actions/attest` signs all 22
+After the final candidate-directory verification, `actions/attest` signs all 30
 subjects with GitHub OIDC. The upload's immutable artifact ID is passed through
 the provenance, execution, confirmation, and publication jobs so every boundary
 downloads the same candidate rather than resolving it again by name. A dedicated
@@ -88,12 +88,27 @@ directory before its first smoke. Protected publication verifies provenance
 before npm receives any package, and draft/public downloads repeat the byte and
 provenance checks.
 
+Starting with v0.4.0, protected publication signs both checksum manifests with
+Ed25519. Each signature covers a statement that binds the release version, the
+manifest name and the SHA-256 of the manifest bytes. The format is
+`kunai-release-manifest v1`, specified in [RELEASING.md](../RELEASING.md).
+Verifiers rebuild that statement from the version they resolved, so an old
+release's signed set served at a newer tag fails before extraction or
+activation. Draft and public verification keep the 22
+native files in their own directory and independently check the two detached
+signatures, the pinned installers and all three rendered package recipes.
+Native clients with an embedded key require a signature for every manifest they
+consume. Unkeyed builds retain checksum verification and print a diagnostic.
+
 The TypeScript native updater and both native installer scripts consume these
 archives. All three verify the archive against `SHA256SUMS.archives`, permit
 exactly one expected regular-file member, bound compressed and decompressed
 bytes, and then verify that member against the legacy raw `SHA256SUMS` before
-version-store or launcher activation. TypeScript parses tar/gzip and zip
-in-process; PowerShell uses bounded .NET zip streams; Bash validates the tar
+version-store or launcher activation. TypeScript parses tar (gzip or zstd) and zip
+in-process, streaming a tar member to disk rather than holding the archive and
+its decompressed tar in memory; PowerShell uses bounded .NET zip streams; Bash
+takes the `.tar.zst` only when the host has `zstd` and the signed manifest lists
+it, then validates the tar
 header, type, name, size, checksum, padding, and two-block trailer before asking
 the host `tar` to stream only the verified member. Absolute/traversal paths,
 links, reparse entries, duplicates, extra/missing/wrong payloads, malformed
@@ -190,7 +205,20 @@ The activation critical section contains only the shared launcher replacement
 and `install.json` publication. Artifact download, checksum verification,
 versioned binary installation, and `version.json` publication remain under the
 independent per-version lock and must complete without holding the activation
-lock. If manifest publication fails after launcher replacement, the previous
+lock.
+
+Native auto-update and `kunai upgrade` re-read `install.json` under the activation
+lock and publish only a version newer than the one active on disk. An upgrade
+for the active version also checks under the per-version lock before writing to
+the store, because the Unix launcher can point directly at that binary. A
+superseded upgrade leaves the launcher and manifest intact, finishes its
+transaction, and removes its staging files. Any verified copy in the version
+store follows normal retention. An unpinned `kunai install` also refuses to
+activate an older release and can repair the active version with `--force`.
+A pinned `kunai install X.Y.Z` or a verified local rollback can activate an
+older version.
+
+If manifest publication fails after launcher replacement, the previous
 launcher is restored before the activation lock is released. The lifecycle lock
 also excludes new installs while uninstall is active. Its purge-safe guard at
 `{dataDir}.lifecycle.lock` remains outside the removable data root; uninstall

@@ -25,6 +25,10 @@ export const CREDENTIAL_KEYS = {
   tmdbApiKey: "tmdb.apiKey",
   /** The user's own Wyzie subtitle search key. */
   wyzieApiKey: "wyzie.apiKey",
+  /** YouTube Proof of Origin (PO) token passed to yt-dlp. */
+  youtubePoToken: "youtube.poToken",
+  /** Bearer token for a user-operated provider metadata relay. */
+  providerRelayToken: "providerRelay.token",
 } as const;
 
 export type CredentialVaultDeps = {

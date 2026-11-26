@@ -1,11 +1,20 @@
 ---
 status: current
-lastReviewed: "2026-10-26"
+lastReviewed: "2026-11-24T12:44:00Z"
 ---
 
 # Provider: YouTube (`youtube`)
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
+
+## Sweep dependency (2026-11-24)
+
+The November 23 hosted provider sweep had no yt-dlp executable. It reported an
+exhausted resolve before making a playback request. The sweep workflow now
+installs yt-dlp and Deno before probing. The sweep enables YouTube metadata
+extraction and requires at least one video format for a healthy row. A local
+probe using the pinned executable discovered 38 video formats for the same
+fixture. The first hosted observation with the tools installed is pending.
 
 ## Summary
 

@@ -61,7 +61,7 @@ import {
   getPickerListMaxVisible,
   ROOT_HORIZONTAL_PADDING,
 } from "./layout-policy";
-import { startMouseSession } from "./mouse/mouse-session";
+import { shouldMeasurePosterCells, startMouseSession } from "./mouse/mouse-session";
 import { MouseDispatchProvider } from "./mouse/MouseRegions";
 import {
   createNotificationQueueState,
@@ -70,6 +70,7 @@ import {
   tickNotificationQueue,
   type NotificationPriority,
 } from "./notification-queue";
+import { plainModeEnabled, selectionPrefix } from "./plain-mode";
 import {
   buildPlaybackSubtitleLine,
   buildPlaybackSubtitleStatusLine,
@@ -103,7 +104,11 @@ import {
 import { CommandPalette } from "./shell-command-ui";
 import { InputField } from "./shell-frame";
 import { LocalSection, ResizeBlocker, ShellFooter, TransientRowSlot } from "./shell-primitives";
-import { clearShellScreenArtifacts } from "./shell-screen-clear";
+import {
+  clearShellScreenArtifacts,
+  recordMountedInkScreen,
+  resetMountedInkScreen,
+} from "./shell-screen-clear";
 import { getWindowStart, padColumnsEnd, truncateLine, wrapText } from "./shell-text";
 import { palette, statusColor } from "./shell-theme";
 import { sixelOverlayManager } from "./sixel-overlay";
@@ -1357,13 +1362,14 @@ export function AppRoot({ container }: { container: Container }) {
     return <ExitShell onDone={onExitDone} />;
   }
 
+  const plain = plainModeEnabled();
   return (
     <Box
       flexDirection="column"
       width={shellWidth}
-      height={shellHeight}
-      backgroundColor={palette.bg}
-      paddingX={ROOT_HORIZONTAL_PADDING}
+      height={plain ? undefined : shellHeight}
+      backgroundColor={plain ? undefined : palette.bg}
+      paddingX={plain ? 0 : ROOT_HORIZONTAL_PADDING}
       paddingY={0}
     >
       {/* Single canonical header: brand · destination pill · crumb · status · size */}
@@ -1451,19 +1457,27 @@ export async function launchSessionApp(container: Container) {
   // real stdin itself (so Ink's readable/read loop is untouched by a second
   // consumer), splits SGR mouse reports out before Ink's keypress parser can
   // see them, and dispatches them as semantic pointer events. Keyboard bytes
-  // pass through untouched. Opt-out: KUNAI_NO_MOUSE=1, or any non-TTY/dumb
-  // terminal.
+  // pass through untouched.
+  // The facade stays active when tracking is disabled and a graphics renderer
+  // requests pixel dimensions, so resize replies cannot become keyboard input.
+  // Plain mode disables both.
+  const plain = plainModeEnabled();
+  const alternateScreen = !plain;
+  // Sampled once. Settings can flip plain mode without remounting Ink, and
+  // root-content clears have to follow this buffer rather than the live flag.
+  recordMountedInkScreen(alternateScreen);
   let mouseSession: ReturnType<typeof startMouseSession> = null;
   try {
     mouseSession = startMouseSession({
       stdin: process.stdin,
       stdout: process.stdout,
       host: process,
-      disabled: process.env.KUNAI_NO_MOUSE === "1",
+      disabled: process.env.KUNAI_NO_MOUSE === "1" || plain,
       term: process.env.TERM,
+      measureCells: !plain && shouldMeasurePosterCells(),
     });
     rootShellInk = render(
-      mouseSession ? (
+      mouseSession?.tracking ? (
         <MouseDispatchProvider dispatcher={mouseSession.dispatcher}>
           <AppRoot container={container} />
         </MouseDispatchProvider>
@@ -1472,7 +1486,7 @@ export async function launchSessionApp(container: Container) {
       ),
       {
         exitOnCtrlC: false,
-        alternateScreen: true,
+        alternateScreen,
         // SAFETY: MouseSplitStdin implements the readable/read/setRawMode/isTTY
         // subset Ink's stdin contract calls — verified against ink 7.x source.
         stdin: (mouseSession?.stdin ?? process.stdin) as NodeJS.ReadStream,
@@ -1483,6 +1497,7 @@ export async function launchSessionApp(container: Container) {
     );
   } catch (error) {
     mouseSession?.dispose();
+    resetMountedInkScreen();
     clearInteractiveShellMounted();
     stdinManager.exitShell();
     throw error;
@@ -1492,8 +1507,10 @@ export async function launchSessionApp(container: Container) {
 
   const releaseShell = () => {
     mouseSession?.dispose();
+    sixelOverlayManager.discard();
     rootShellInk = null;
     rootShellExitPromise = null;
+    resetMountedInkScreen();
     clearRootContentSession();
     clearInteractiveShellMounted();
     stdinManager.exitShell();
@@ -1517,7 +1534,6 @@ export async function shutdownSessionApp(): Promise<void> {
   ink.cleanup();
   await exitPromise.catch(() => {});
   deleteAllKittyImages();
-  sixelOverlayManager.discard();
 }
 
 type ListShellActionResult = {
@@ -1534,10 +1550,7 @@ type ListShellSubmitResult<T> =
 
 const EMPTY_TITLE_ENTRIES: readonly LocalTitleEntry[] = [];
 
-function normalizeReservedCommandInput(nextValue: string): {
-  value: string;
-  openCommandPalette: boolean;
-} {
+function normalizeReservedCommandInput(nextValue: string) {
   if (!nextValue.includes("/")) {
     return { value: nextValue, openCommandPalette: false };
   }
@@ -1817,16 +1830,32 @@ function ListShell<T>({
               {`${filteredOptions.length > 0 ? index + 1 : 0} of ${filteredOptions.length}`}
             </Text>
             <Box
-              flexDirection={showCompanion ? "row" : "column"}
+              flexDirection={showCompanion && !plainModeEnabled() ? "row" : "column"}
               marginTop={1}
               justifyContent="space-between"
             >
-              <Box flexDirection="column" width={showCompanion ? listWidth : undefined}>
-                {windowStart > 0 && <Text color={palette.dim}> ▲ ...</Text>}
+              <Box
+                flexDirection="column"
+                width={showCompanion && !plainModeEnabled() ? listWidth : undefined}
+              >
+                {windowStart > 0 && (
+                  <Text color={palette.dim}>
+                    {plainModeEnabled() ? "More items above" : " ▲ ..."}
+                  </Text>
+                )}
                 {visibleOptions.map((option) => {
+                  const plain = plainModeEnabled();
                   const selected = option === selectedOption;
                   const isConfirmed = confirmed && selected;
-                  const itemPrefix = isConfirmed ? "✓" : selected ? "▌" : " ";
+                  const itemPrefix = plain
+                    ? isConfirmed
+                      ? "[confirmed] "
+                      : selectionPrefix(selected, true)
+                    : isConfirmed
+                      ? "✓"
+                      : selected
+                        ? "▌"
+                        : " ";
                   // Availability and consequence have to be legible before the
                   // pick. An unavailable row used to look identical to a live
                   // one, and a row that discards data looked like a row that

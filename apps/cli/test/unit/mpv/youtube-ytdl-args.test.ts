@@ -29,6 +29,7 @@ describe("buildMpvArgs youtube playback", () => {
 
     expect(args.some((arg) => arg.startsWith("--ytdl-format="))).toBe(true);
     expect(args.includes("--ytdl=no")).toBe(false);
+    expect(args).toContain("--ytdl-raw-options=sub-langs=%4%(?!),ignore-config=");
   });
 
   test("maps youtube subtitle preference to mpv slang aliases", () => {
@@ -62,7 +63,7 @@ describe("buildMpvArgs youtube playback", () => {
     );
 
     expect(args).toContain(
-      "--ytdl-raw-options=sponsorblock-remove=%13%sponsor,intro,no-live-from-start=",
+      "--ytdl-raw-options=sponsorblock-remove=%13%sponsor,intro,no-live-from-start=,sub-langs=%4%(?!),ignore-config=",
     );
     expect(args).toContain("--script-opts=ytdlautoformat-domains=");
   });
@@ -142,6 +143,7 @@ describe("live streams on the persistent session", () => {
     expect(options["demuxer-readahead-secs"]).toBe("10");
     expect(options["demuxer-max-bytes"]).toBe("32MiB");
     expect(options["cache-pause-wait"]).toBe("1");
+    expect(options["ytdl-raw-options"]).toBe("sub-langs=%4%(?!),ignore-config=");
     expect(options["demuxer-lavf-o"]).toContain("reconnect_max_retries=5");
   });
 

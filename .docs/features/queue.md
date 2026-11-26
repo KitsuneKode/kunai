@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-10-07"
+lastReviewed: "2026-11-25"
 ---
 
 # Up Next
@@ -57,6 +57,12 @@ lower-priority pending rows; after-current-series precedes end placement. Equal
 priorities retain insertion order, and existing rows retain their relative order.
 An insertion and its position normalization share one SQLite transaction, so a
 failed reorder leaves neither a new row nor partially changed positions.
+
+A start that fails before playback (no working source, the player did not
+open, a failed handoff) rolls the row back to pending and records
+`lastFailure`. The overlay reads it: the row says **didn't start** and the rail
+names the reason and that Enter tries again. A cancellation is the user's own
+choice and is not flagged. Starting the row again hides the old reason.
 
 Only pending rows can be selected by `peekNext()`. An in-flight row still counts
 as outstanding watch intent for badges, shutdown, and crash recovery; it becomes

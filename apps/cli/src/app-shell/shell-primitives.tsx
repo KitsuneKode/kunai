@@ -3,9 +3,11 @@ import React from "react";
 
 import { companionMode, companionToggleable } from "./companion-policy";
 import { type ShellViewportKind, TRANSIENT_ROW_SLOTS } from "./layout-policy";
-import { MouseTarget } from "./mouse/MouseRegions";
+import { footerKeySequence } from "./mouse/footer-key-sequence";
+import { MouseTarget, usePressKey } from "./mouse/MouseRegions";
+import { plainBrandLabel, plainModeEnabled, selectionPrefix } from "./plain-mode";
 import { measureColumns, padColumnsEnd, sanitizeTerminalText, truncateLine } from "./shell-text";
-import { APP_LABEL, hotkeyLabel, palette, semanticToneColor } from "./shell-theme";
+import { hotkeyLabel, palette, semanticToneColor } from "./shell-theme";
 import type { FooterAction, ShellFooterMode } from "./types";
 import { useDebouncedViewportPolicy, useShellDimensions } from "./use-viewport-policy";
 
@@ -150,6 +152,20 @@ export function Footer({
   onActivate?: (action: FooterAction) => void;
 }) {
   const footerId = React.useId();
+  const pressKey = usePressKey();
+  // A chip with a wired action runs it. Any other chip naming a real key
+  // presses that key — the surface's own handler decides, so a click means
+  // exactly what the key means. Destructive chips (delete, stop, clear…) stay
+  // keyboard-only: mouse navigation never deletes or removes.
+  const activateFooter = (
+    action: FooterAction,
+    role: FooterActionRole,
+  ): (() => void) | undefined => {
+    if (action.disabled) return undefined;
+    if (onActivate && action.action) return () => onActivate(action);
+    const keys = pressKey && role !== "destructive" ? footerKeySequence(action.key) : null;
+    return keys && pressKey ? () => pressKey(keys) : undefined;
+  };
   const { cols } = useShellDimensions();
   const terminalWidth = terminalWidthProp ?? cols;
   const taskWidth = Math.max(20, terminalWidth - 4);
@@ -172,6 +188,18 @@ export function Footer({
 
   // The palette owns its editor and navigation hints.
   if (commandMode) return null;
+
+  if (plainModeEnabled()) {
+    const actionLine = visibleActions
+      .map((action) => `${hotkeyLabel(action.key)} ${action.label}`)
+      .join(", ");
+    return (
+      <Box flexDirection="column" marginTop={1}>
+        <Text color={palette.text}>{truncateLine(taskLabel, taskWidth)}</Text>
+        {actionLine ? <Text color={palette.muted}>{`Actions: ${actionLine}`}</Text> : null}
+      </Box>
+    );
+  }
 
   return (
     <Box flexDirection="column" marginTop={1}>
@@ -200,13 +228,9 @@ export function Footer({
             return (
               <MouseTarget
                 id={`${footerId}:footer:${action.key}:${action.action ?? "hint"}:${action.label}`}
-                active={Boolean(onActivate && action.action && !action.disabled)}
-                onClick={
-                  onActivate && action.action && !action.disabled
-                    ? () => onActivate(action)
-                    : undefined
-                }
-                feedback={Boolean(onActivate && action.action && !action.disabled)}
+                active={Boolean(activateFooter(action, role))}
+                onClick={activateFooter(action, role)}
+                feedback={Boolean(activateFooter(action, role))}
                 key={`${action.key}-${action.label}`}
               >
                 <Box marginRight={index === visibleActions.length - 1 ? 0 : 2} marginBottom={1}>
@@ -285,7 +309,7 @@ export const ResizeBlocker = React.memo(function ResizeBlocker({
       <Text color={palette.dim}>Zoom out or resize the terminal window.</Text>
       <Box marginTop={1}>
         <Text color={palette.dim} dimColor>
-          {APP_LABEL}
+          {plainBrandLabel()}
         </Text>
       </Box>
     </Box>
@@ -402,8 +426,11 @@ export type SelectableRowStyle = {
   readonly backgroundColor?: string;
 };
 
-/** The single selection treatment: accent rule + accent-tinted fill. */
+/** The single selection treatment: accent rule + accent-tinted fill (or `[selected] ` in plain mode). */
 export function selectableRowStyle(selected: boolean): SelectableRowStyle {
+  if (plainModeEnabled()) {
+    return { prefix: selectionPrefix(selected, true), color: palette.text };
+  }
   if (selected) {
     return { prefix: "▌", color: palette.accentSoft, backgroundColor: palette.accentFill };
   }
@@ -460,6 +487,7 @@ export const ContextStrip = React.memo(function ContextStrip({
 }: {
   items: readonly ContextStripItem[];
 }) {
+  const plain = plainModeEnabled();
   const visibleItems = items.filter((item) => item.label.trim().length > 0);
   if (visibleItems.length === 0) return null;
 
@@ -467,7 +495,7 @@ export const ContextStrip = React.memo(function ContextStrip({
     <Box flexWrap="wrap">
       {visibleItems.map((item, index) => (
         <React.Fragment key={item.label}>
-          {index > 0 ? <Text color={palette.dim}> · </Text> : null}
+          {index > 0 ? <Text color={palette.dim}>{plain ? ", " : " · "}</Text> : null}
           <Text color={semanticToneColor(item.tone)}>{truncateLine(item.label, 34)}</Text>
         </React.Fragment>
       ))}
@@ -484,13 +512,18 @@ export const DetailLine = React.memo(function DetailLine({
   value: string;
   tone?: BadgeTone;
 }) {
+  const plain = plainModeEnabled();
   const valueColor =
-    tone === "accent" ? palette.accentSoft : tone === "neutral" ? "white" : semanticToneColor(tone);
+    tone === "accent"
+      ? palette.accentSoft
+      : tone === "neutral"
+        ? palette.text
+        : semanticToneColor(tone);
 
   return (
     <Box>
       <Text color={palette.dim}>{sanitizeTerminalText(label)}</Text>
-      <Text color={palette.dim}> · </Text>
+      <Text color={palette.dim}>{plain ? ": " : " · "}</Text>
       <Text color={valueColor}>{truncateLine(value, 80)}</Text>
     </Box>
   );

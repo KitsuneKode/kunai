@@ -2,7 +2,7 @@
 # Kunai installer — binary-first, channel-aware, cross-platform.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+#   curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
 #   ./install.sh [--method binary|npm|bun|source] [--version X.Y.Z] [--yes] [--dry-run]
 #                [--skip-deps] [--skip-path-update]
 #
@@ -29,6 +29,8 @@
 #   {binDir}/kunai                       launcher symlink -> versioned binary
 #   {configDir}/install.json             schema-2 ownership/provenance manifest
 set -euo pipefail
+
+readonly RELEASE_PUBLIC_KEY=''
 
 KUNAI_REPO="${KUNAI_REPO:-https://github.com/KitsuneKode/kunai.git}"
 KUNAI_PACKAGE="${KUNAI_PACKAGE:-@kitsunekode/kunai}"
@@ -347,6 +349,50 @@ resolve_published_version() {
 	printf '%s\n' "$canonical"
 }
 
+is_truthy_env() {
+	case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+	1 | true | yes) return 0 ;;
+	esac
+	return 1
+}
+
+# One request for a release marker after a successful install: install.marker
+# when nothing was installed before, update.marker when this replaced another
+# version. GitHub's download counts for them are how installs are told apart
+# from updates; Kunai receives nothing, and the request goes to the host that
+# just served the binary. Best effort only: no retry, a short timeout, every
+# failure ignored and silent. DO_NOT_TRACK, CI and KUNAI_NO_MARKER each turn it
+# off. Arguments: download base, then the version that was active before (or
+# empty), then the version just installed.
+#
+# Opt-in, like Kunai's usage ping: nothing is fetched unless config.json already
+# says "analytics": "enabled" with the consent notice recorded, the same reading
+# the app makes. A first install has no config, so it is never counted.
+analytics_consented() {
+	local cfg="$CONFIG_DIR/config.json"
+	[[ -f "$cfg" ]] || return 1
+	grep -Eq '"analytics"[[:space:]]*:[[:space:]]*"enabled"' "$cfg" || return 1
+	grep -Eq '"analyticsNoticeShown"[[:space:]]*:[[:space:]]*(true|false)' "$cfg"
+}
+
+fetch_release_marker() {
+	local base="$1" previous="$2" installed="$3" marker
+	is_truthy_env "${DO_NOT_TRACK:-}" && return 0
+	is_truthy_env "${CI:-}" && return 0
+	is_truthy_env "${KUNAI_NO_MARKER:-}" && return 0
+	analytics_consented || return 0
+	if [[ -z "$previous" ]]; then
+		marker="install.marker"
+	elif [[ "$previous" != "$installed" ]]; then
+		marker="update.marker"
+	else
+		# Reinstalling the active version is neither a new install nor an update.
+		return 0
+	fi
+	have curl || return 0
+	curl -fsSL --max-time 3 -o /dev/null "$base/$marker" >/dev/null 2>&1 || true
+}
+
 download_failed_hint() {
 	local asset="$1"
 	err "Download failed for $asset."
@@ -631,6 +677,64 @@ bounded_download() {
 	return 1
 }
 
+# True when <candidate> can verify raw Ed25519 (`pkeyutl -rawin`, OpenSSL 3+).
+# Match an option line, not any mention: LibreSSL rejects "-rawin" by name.
+openssl_has_rawin() {
+	local help
+	[[ -x "$1" ]] || return 1
+	help="$("$1" pkeyutl -help 2>&1 || true)"
+	printf '%s\n' "$help" | grep -E '^[[:space:]]*-rawin([[:space:]]|$)' >/dev/null
+}
+
+# Print the first OpenSSL 3. The PATH winner is not enough: macOS ships
+# LibreSSL as /usr/bin/openssl, and Homebrew installs OpenSSL 3 keg-only. The
+# same probe runs on every platform. Bare `brew --prefix` is local; naming a
+# formula can make brew fetch its API index over the network.
+find_openssl3() {
+	local candidate prefix
+	while IFS= read -r candidate; do
+		if openssl_has_rawin "$candidate"; then
+			printf '%s\n' "$candidate"
+			return 0
+		fi
+	done < <(type -aP openssl 2>/dev/null || true)
+	prefix=""
+	if command -v brew >/dev/null 2>&1; then
+		prefix="$(HOMEBREW_NO_AUTO_UPDATE=1 brew --prefix 2>/dev/null || true)"
+	fi
+	for candidate in ${prefix:+"$prefix/opt/openssl@3/bin/openssl"} \
+		/opt/homebrew/opt/openssl@3/bin/openssl /usr/local/opt/openssl@3/bin/openssl; do
+		if openssl_has_rawin "$candidate"; then
+			printf '%s\n' "$candidate"
+			return 0
+		fi
+	done
+	return 1
+}
+
+# Verify <manifest> against <url>.sig for release <version>. The signature
+# covers a statement rebuilt here, never parsed from the download, so a signed
+# manifest from another release or for the other manifest does not verify.
+# Keep in step with releaseManifestStatement in
+# apps/cli/src/services/update/checksum-signature.ts (format: RELEASING.md).
+verify_manifest_signature() {
+	local url="$1" manifest="$2" name="$3" version="$4" verifier digest
+	[[ -n "$RELEASE_PUBLIC_KEY" ]] || return 0
+	if ! verifier="$(find_openssl3)"; then
+		err "Signed installs require OpenSSL 3 (openssl pkeyutl -rawin). macOS: brew install openssl@3."
+		return 1
+	fi
+	bounded_download "$url.sig" "$manifest.sig" 64 "checksum signature" || return 1
+	digest="$(sha256_of "$manifest")"
+	printf 'kunai-release-manifest v1\nversion: %s\nfile: %s\nsha256: %s\n' \
+		"$version" "$name" "$digest" >"$manifest.statement"
+	printf '%s\n' '-----BEGIN PUBLIC KEY-----' "$RELEASE_PUBLIC_KEY" '-----END PUBLIC KEY-----' >"$manifest.pem"
+	if ! "$verifier" pkeyutl -verify -pubin -inkey "$manifest.pem" -rawin -in "$manifest.statement" -sigfile "$manifest.sig" >/dev/null 2>&1; then
+		err "Checksum signature verification failed: $name is not signed for v$version."
+		return 1
+	fi
+}
+
 checksum_for_asset() {
 	local manifest="$1" asset="$2"
 	awk -v asset="$asset" '
@@ -646,13 +750,14 @@ checksum_for_asset() {
 	' "$manifest"
 }
 
-extract_release_tar_gz() {
-	local archive="$1" tar_path="$2" expected="$3" output="$4"
-	local tar_budget read_blocks gzip_status dd_status tar_size name prefix type size_field size
+# extract_release_tar <archive> <tar-scratch> <member> <output> <gzip|zstd>
+extract_release_tar() {
+	local archive="$1" tar_path="$2" expected="$3" output="$4" decompressor="$5"
+	local tar_budget read_blocks decompress_status dd_status tar_size name prefix type size_field size
 	local checksum_field stored_checksum header_sum checksum_sum actual_checksum expected_tar_size
 	local -a pipeline_status
 
-	require gzip
+	require "$decompressor"
 	require "$ARCHIVE_TAR_COMMAND"
 	require od
 
@@ -663,9 +768,9 @@ extract_release_tar_gz() {
 	# Tar streams are block-aligned, so an oversized container crosses the bound.
 	read_blocks=$(((tar_budget + 512) / 512))
 	set +o pipefail
-	gzip -dc "$archive" 2>/dev/null | dd of="$tar_path" bs=512 count="$read_blocks" iflag=fullblock 2>/dev/null
+	"$decompressor" -dc "$archive" 2>/dev/null | dd of="$tar_path" bs=512 count="$read_blocks" iflag=fullblock 2>/dev/null
 	pipeline_status=("${PIPESTATUS[@]}")
-	gzip_status="${pipeline_status[0]}"
+	decompress_status="${pipeline_status[0]}"
 	dd_status="${pipeline_status[1]}"
 	set -o pipefail
 	tar_size="$(wc -c <"$tar_path" | tr -d ' ')"
@@ -673,8 +778,8 @@ extract_release_tar_gz() {
 		err "Archive decompressed size exceeds the $tar_budget byte budget."
 		return 1
 	fi
-	if [[ "$gzip_status" -ne 0 || "$dd_status" -ne 0 ]]; then
-		err "Archive decompression failed (gzip status $gzip_status, bounded reader status $dd_status)."
+	if [[ "$decompress_status" -ne 0 || "$dd_status" -ne 0 ]]; then
+		err "Archive decompression failed ($decompressor status $decompress_status, bounded reader status $dd_status)."
 		return 1
 	fi
 	if [[ "$tar_size" -lt 1536 || $((tar_size % 512)) -ne 0 ]]; then
@@ -1640,6 +1745,7 @@ install_binary() {
 	url="$base/$asset"
 	sums="$base/SHA256SUMS"
 	archive="${asset}.tar.gz"
+	archive_decompressor=gzip
 	archive_url="$base/$archive"
 	archive_sums="$base/SHA256SUMS.archives"
 
@@ -1738,6 +1844,17 @@ install_binary() {
 	fi
 
 	if [[ "$archive_available" == 1 ]]; then
+		verify_manifest_signature "$archive_sums" "$staged_archive_sums" SHA256SUMS.archives "$resolved_version" || exit 1
+		# Releases from 0.3.x also sign a ~20% smaller .tar.zst. Take it when this
+		# host can decompress it; an older release, or a host without zstd,
+		# keeps the .tar.gz every installer understands.
+		if command -v zstd >/dev/null 2>&1 &&
+			checksum_for_asset "$staged_archive_sums" "$asset.tar.zst" >/dev/null; then
+			archive="$asset.tar.zst"
+			archive_decompressor=zstd
+			archive_url="$base/$archive"
+			staged_archive="$staging/$archive"
+		fi
 		if ! archive_want="$(checksum_for_asset "$staged_archive_sums" "$archive")"; then
 			err "SHA256SUMS.archives must contain exactly one valid entry for $archive."
 			exit 1
@@ -1766,13 +1883,17 @@ install_binary() {
 		download_failed_hint "SHA256SUMS"
 		exit 1
 	fi
+	if [[ -z "$RELEASE_PUBLIC_KEY" ]]; then
+		warn "No embedded release signing key. Verifying SHA-256 checksums only."
+	fi
+	verify_manifest_signature "$sums" "$staged_sums" SHA256SUMS "$resolved_version" || exit 1
 	if ! want="$(checksum_for_asset "$staged_sums" "$asset")"; then
 		err "SHA256SUMS has no entry for $asset, or has duplicate/malformed entries; the release is incomplete."
 		exit 1
 	fi
 
 	if [[ "$archive_available" == 1 ]]; then
-		if ! extract_release_tar_gz "$staged_archive" "$staged_tar" "$asset" "$staged_bin"; then
+		if ! extract_release_tar "$staged_archive" "$staged_tar" "$asset" "$staged_bin" "$archive_decompressor"; then
 			exit 1
 		fi
 		archive_size="$(wc -c <"$staged_archive" | tr -d ' ')"
@@ -1873,6 +1994,7 @@ install_binary() {
 	trap - EXIT
 
 	info "Installed kunai → $BIN_DIR/kunai (v$resolved_version at $version_path)"
+	fetch_release_marker "$base" "$activation_previous" "$resolved_version"
 	report_path_winner
 	path_hint "$BIN_DIR"
 }
@@ -2261,7 +2383,7 @@ usage() {
 			Kunai installer — binary-first, channel-aware, cross-platform.
 
 			Usage:
-			  curl -fsSL https://raw.githubusercontent.com/KitsuneKode/kunai/main/install.sh | bash
+			  curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
 			  ./install.sh [--method binary|npm|bun|source] [--version X.Y.Z] [--yes] [--dry-run]
 			               [--skip-deps] [--skip-path-update]
 

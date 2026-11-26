@@ -4,6 +4,7 @@ import type { MediaItemIdentity } from "@/domain/media/media-item-identity";
 import {
   buildDefaultDownloadProfile,
   commitDownloadIntent,
+  type DownloadIntentCommitResult,
   resolveDownloadIntentItems,
 } from "@/services/download/DownloadIntentService";
 import { resolveMirrorTargets } from "@/services/sync/mirror-targets";
@@ -137,8 +138,9 @@ export function createContainerMediaActionRouter(
     },
     downloads: options.downloads ?? {
       queueDownload: async (item) => {
-        await queueDownloadFromMediaItem(container, item);
-        options.onDownloadQueued?.(item);
+        const admission = await queueDownloadFromMediaItem(container, item);
+        if (admission.queuedCount > 0) options.onDownloadQueued?.(item);
+        return admission;
       },
     },
     watchlist: {
@@ -263,9 +265,9 @@ export function createContainerMediaActionRouter(
 export async function queueDownloadFromMediaItem(
   container: Container,
   item: MediaItemIdentity,
-): Promise<void> {
+): Promise<DownloadIntentCommitResult> {
   const title = titleInfoFromMediaItemIdentity(item);
-  await commitDownloadIntent(container, {
+  return await commitDownloadIntent(container, {
     title,
     mediaKind: item.mediaKind,
     items: resolveDownloadIntentItems({

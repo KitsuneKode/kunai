@@ -502,6 +502,38 @@ describe("AniListAdapter GraphQL error classification", () => {
     );
   };
 
+  /**
+   * A Retry-After longer than the inline cap defers the next row up front. It
+   * used to sit out three seconds and send anyway, early (Sol review #9).
+   */
+  test("defers without a request while a Retry-After outlasts the inline wait", async () => {
+    // SAFETY: the adapter reads only load() and patchAniList() from its store.
+    const tokenStore: SyncTokenStore = {
+      load: async () => ({ anilist: { accessToken: "tok", userId: 1 } }),
+      patchAniList: async () => {},
+    } as never;
+    let requests = 0;
+    const adapter = new AniListAdapter(tokenStore, async () => {
+      requests += 1;
+      return new Response("{}", { status: 429, headers: { "retry-after": "120" } });
+    });
+    await adapter.init();
+    const operation: TrackerOperation = {
+      version: 1,
+      kind: "favorite-membership:set",
+      target: { tracker: "anilist", anilistId: 1, mediaKind: "anime" },
+      present: true,
+    };
+
+    const refused = await adapter.apply(operation, { signal: new AbortController().signal });
+    const deferred = await adapter.apply(operation, { signal: new AbortController().signal });
+
+    expect(refused.status).toBe("rate-limited");
+    expect(deferred.status).toBe("rate-limited");
+    expect(deferred.status === "rate-limited" && deferred.retryAfterMs).toBeGreaterThan(100_000);
+    expect(requests).toBe(1);
+  });
+
   /** A validation failure can never succeed on redelivery. */
   test("dead-letters a validation rejection instead of retrying it", async () => {
     const outcome = await applyWith({

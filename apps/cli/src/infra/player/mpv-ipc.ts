@@ -19,6 +19,7 @@ export const MPV_OBSERVED_PROPERTIES = [
   "demuxer-via-network",
   "cache-speed",
   "vo-configured",
+  "video-out-params",
   "eof-reached",
   "idle-active",
   "core-idle",
@@ -60,6 +61,10 @@ export type MpvIpcSessionOptions = {
   onPropertyUpdate: PropertyUpdateHandler;
   onEndFile: EndFileHandler;
   onFileLoaded?: FileLoadedHandler;
+  /**
+   * Every settled command except mpv's "property unavailable" answer, which is
+   * a reply (no value yet), not a failure to report.
+   */
   onCommandResult?: (result: MpvIpcCommandResult) => void;
   closeTimers?: MpvIpcCloseTimers;
   commandTimers?: MpvIpcCloseTimers;
@@ -92,6 +97,17 @@ export type MpvIpcSessionState =
 export type MpvIpcCommandResult =
   | { ok: true; command: readonly unknown[]; requestId: number; response: MpvIpcMessage }
   | { ok: false; command: readonly unknown[]; requestId: number; error: string };
+
+/**
+ * mpv's answer to `get_property` for a property with no current value (for
+ * example `video-out-params` before any frame). It arrives as a failed command,
+ * but it is an answer, not an IPC failure.
+ */
+export function isMpvPropertyUnavailable(result: MpvIpcCommandResult): boolean {
+  return (
+    !result.ok && result.command[0] === "get_property" && result.error === "property unavailable"
+  );
+}
 
 type PendingCommand = {
   command: readonly unknown[];
@@ -341,7 +357,7 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
           // The `settled` guard above makes timeout/write-error/response races single-shot.
           // eslint-disable-next-line promise/no-multiple-resolved
           resolve(result);
-          options.onCommandResult?.(result);
+          if (!isMpvPropertyUnavailable(result)) options.onCommandResult?.(result);
         };
         const timeout = commandTimers.setTimeout(() => {
           const index = writes.findIndex((entry) => entry.requestId === requestId);

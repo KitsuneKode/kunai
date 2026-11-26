@@ -1,3 +1,7 @@
+---
+lastReviewed: "2026-11-24"
+---
+
 # Kunai — Beta v1 scope and architecture contracts
 
 Status: Active (locked decisions for v1 public beta)  

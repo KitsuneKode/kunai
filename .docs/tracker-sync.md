@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T07:28:48Z"
+lastReviewed: "2026-11-26T10:44:37Z"
 ---
 
 # Tracker Sync
@@ -206,13 +206,14 @@ Two things about the v3 write path are easy to get wrong, and both were:
 ## Privacy
 
 Tokens live in the OS credential vault when one is reachable — macOS Keychain
-(`security`), Windows Credential Manager (`pwsh` PasswordVault), or Linux
-Secret Service (`secret-tool`), probed once per launch in that order with
+(writes use `security -i` over stdin), Windows Credential Manager (WinRT
+PasswordVault), or Linux Secret Service (`secret-tool`). Windows prefers inbox
+PowerShell and checks store, read-back and delete before selecting a vault. A
+failed probe reports the file fallback. Kunai selects the platform backend with
 `KUNAI_CREDENTIAL_BACKEND` as an override. One vault entry per tracker
-(`anilist.tokens`, `tmdb.tokens`) holds the credential JSON blob. On machines
-with no keyring — headless Linux without a Secret Service daemon — a `file`
-backend keeps the old guarantee: `configDir/secrets.json` written atomically
-with owner-only permissions. Linux waits for the bounded Secret Service probe
+(`anilist.tokens`, `tmdb.tokens`) holds the credential JSON blob. When the native keyring is unavailable, tracker tokens remain in the
+owner-only `sync-tokens.json` store. The file vault uses `secrets.json` for
+entries written through the vault port. Linux waits for the bounded Secret Service probe
 (up to three seconds) before selecting a backend. A separate short fallback
 timer must not redirect a slow but healthy keyring to a different credential
 store. The first launch on a vault-capable machine
@@ -223,9 +224,12 @@ rewriting the other tracker. Malformed or unavailable unrelated credentials
 therefore remain untouched during connect and disconnect. An explicit clear
 still removes both trackers. Full-set reads propagate vault access failures;
 the file backend retains its read/merge/write path. The
-same vault lane holds `videasy.sessionToken`,
-which is scrubbed from `config.json` at the persistence boundary while the
-in-memory config keeps serving it.
+same vault lane holds `videasy.sessionToken`, `tmdb.apiKey`, `wyzie.apiKey`,
+`youtube.poToken`, and `providerRelay.token` (read in parallel at boot), each
+verified via write → read-back → compare before being scrubbed from
+`config.json` at the persistence boundary while the in-memory config keeps
+serving it. When no native vault backend is available (`file` fallback), those
+fields remain in `config.json`.
 
 Dead-letter diagnostics are bounded (64-char code, 256-char detail) and never
 contain payload JSON, since an unparseable row is the likeliest to hold
@@ -247,10 +251,25 @@ observe it.
 To remove Kunai's access entirely: disconnect in Kunai, then revoke the
 application from your AniList account settings and delete the session from your
 TMDB account settings. Deleting `configDir/sync-tokens.json` removes the local
-credentials but does not revoke anything remotely. If that file is ever
-unparseable, Kunai quarantines it aside as `sync-tokens.json.corrupt-<ts>.json`
-instead of merging over it, so one corrupt write cannot erase the other
-tracker's credential — re-authenticate the affected tracker afterwards.
+credentials but does not revoke anything remotely.
+
+The token store never invents an empty snapshot. Only an absent file reads as
+"no tokens"; any other read fault (permissions, a directory in its place, I/O)
+rejects, so no patch proceeds and nothing is overwritten. If the file holds
+something that is not a JSON object, Kunai quarantines it aside as
+`sync-tokens.json.corrupt-<ts>.json` before starting fresh, and refuses to write
+if that move fails. Each tracker record is shape-checked on its own: an invalid
+AniList or TMDB record reads as disconnected without taking the other tracker
+down, a patch keeps every slot it does not name (including an invalid record
+and fields a newer build wrote), and an invalid record is never stored. The
+vault backend applies the same checks, and migration to the vault moves only
+valid records, leaving an invalid one in the plaintext file.
+
+A rejected read never stops startup. `initSyncAdapters` loads each tracker on
+its own; a tracker whose credentials cannot be read starts disconnected, with a
+`sync.credentials.unavailable` warning that names only the tracker, while local
+playback and the other tracker carry on. Fix the file or vault entry, then
+reconnect.
 
 ## Not implemented
 
@@ -314,6 +333,17 @@ The disposable-account CLI → SQLite → restart → remote smoke remains the
 release gate because deterministic recovery tests do not prove a real remote
 account mutation end to end.
 
+**Linking is the opt-in.** A fresh connect (`connectNamedTracker`, shared by
+Settings, `/sync` and setup) turns on `enabled`, `trackWatched` where the
+tracker has episode progress, and `syncList` where it holds lists. Before this,
+connecting left every flag at its default (off), so the account read
+"connected · up to date" while nothing was ever sent. An account that was
+already connected keeps the user's switches; setup turns sync on for one the
+user ticked anyway, because the tick is the request. Every disconnect goes
+through `disconnectNamedTracker`, which turns `enabled` off and keeps the other
+switches for a later reconnect, so config never claims a link with no token
+(#232).
+
 **Pause** (`sync.pausedUntil`) is global and separate from `sync.<tracker>.enabled`.
 Enabled off means never; paused means not right now. Work keeps queueing while
 paused and goes out on resume, so pausing never costs an episode. The drain
@@ -337,12 +367,16 @@ response and answers `429` with `Retry-After` and `X-RateLimit-Reset`;
 `TrackerRateLimiter` reads all of it. Below ten remaining it spreads what is
 left across the rest of the window; at zero it blocks until reset.
 
-Short waits are absorbed in-flight. Anything longer is handed back to the outbox
-via `defer()`, which writes the server's own instant to `next_attempt_at` and
+Short waits (up to three seconds) are absorbed in-flight. Anything longer is a
+`rate-limited` outcome before any request: both adapters check
+`shouldDefer()` first rather than sitting out the inline cap and sending early.
+The outbox `defer()` writes the server's own instant to `next_attempt_at` and
 **rolls back the attempt this claim started** — a row must not inherit a longer
-backoff for a queue-wide condition it did not cause. Within one drain, the first
-`rate-limited` outcome defers every remaining row for that tracker without
-asking again: the limit belongs to the connection, not to any one payload.
+backoff for a queue-wide condition it did not cause. The first `rate-limited`
+outcome also sets a per-tracker deadline on the `SyncService` instance: every
+row for that tracker is deferred without asking until it passes, across batches
+of 25, the passes of one drain, and later drains. Other trackers keep draining.
+The limit belongs to the connection, not to any one payload.
 
 ## GraphQL error fates
 

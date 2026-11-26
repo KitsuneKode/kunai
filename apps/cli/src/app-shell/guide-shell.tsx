@@ -4,7 +4,10 @@ import { useMemo, useState } from "react";
 
 import type { ResolvedAppCommand } from "./commands";
 import { GUIDE_SURFACE_TAGS, type GuideRow, type GuideSectionRows } from "./guide-model";
+import { MouseTarget } from "./mouse/MouseRegions";
+import { useRowTap } from "./mouse/row-tap";
 import { useOverlayLayout } from "./overlay-layout-context";
+import { plainModeEnabled, selectionPrefix } from "./plain-mode";
 import { CommandPalette } from "./shell-command-ui";
 import { ShellFooter } from "./shell-primitives";
 import { palette } from "./shell-theme";
@@ -63,14 +66,20 @@ export function GuideShell({
   );
   const [selectedIndex, setSelectedIndex] = useState(0);
   const safeIndex = Math.min(selectedIndex, Math.max(0, entryCount - 1));
+  const tapRow = useRowTap<number>();
+  // Arrows wrap; the wheel stops at either end.
+  const stepSelection = (direction: 1 | -1, wrap = true) =>
+    setSelectedIndex((current) =>
+      wrap
+        ? (current + direction + entryCount) % entryCount
+        : Math.max(0, Math.min(entryCount - 1, current + direction)),
+    );
 
   useInput(
     (input, key) => {
       if (commandMode || entryCount === 0) return;
       if (key.upArrow || key.downArrow) {
-        setSelectedIndex((current) =>
-          key.upArrow ? (current - 1 + entryCount) % entryCount : (current + 1) % entryCount,
-        );
+        stepSelection(key.upArrow ? -1 : 1);
         return;
       }
       if (key.return) {
@@ -114,17 +123,22 @@ export function GuideShell({
   }
   const visibleLines = lines.slice(windowStart, windowEnd);
 
+  const plain = plainModeEnabled();
   return (
     <Box flexDirection="column" flexGrow={1}>
-      <Box flexDirection="column" paddingX={1} marginTop={1}>
+      <Box flexDirection="column" paddingX={plain ? 0 : 1} marginTop={1}>
         <Box flexDirection="row" flexWrap="nowrap">
           <Text color={palette.accent} bold>
-            {"❀ Guide"}
+            {plain ? "Guide" : "❀ Guide"}
           </Text>
-          <Text color={palette.muted}>{"  ·  everything Kunai can do"}</Text>
+          <Text color={palette.muted}>
+            {plain ? " — everything Kunai can do" : "  ·  everything Kunai can do"}
+          </Text>
         </Box>
         <Text color={palette.dim}>
-          {"Enter runs it — rows marked → live on another screen · ? shows keybindings"}
+          {plain
+            ? "Enter runs the selected command; ? shows keybindings"
+            : "Enter runs it — rows marked → live on another screen · ? shows keybindings"}
         </Text>
         {statusNote ? <Text color={palette.accent}>{statusNote}</Text> : null}
         <Box flexDirection="column" marginTop={1}>
@@ -137,11 +151,22 @@ export function GuideShell({
                 <Text color={palette.dim}>{line.blurb}</Text>
               </Box>
             ) : (
-              <GuideRowLine
+              // A tap selects the row; a second tap on it is Enter. Headers
+              // are not targets.
+              <MouseTarget
                 key={line.row.command}
-                row={line.row}
-                selected={line.entryIndex === safeIndex}
-              />
+                id={`guide:row:${line.row.command}`}
+                flexDirection="column"
+                active={!commandMode}
+                onClick={() => {
+                  const selected = line.entryIndex === safeIndex;
+                  if (tapRow(line.entryIndex, selected) === "activate") onActivate(line.row);
+                  else setSelectedIndex(line.entryIndex);
+                }}
+                onWheel={(direction) => stepSelection(direction === "up" ? -1 : 1, false)}
+              >
+                <GuideRowLine row={line.row} selected={line.entryIndex === safeIndex} />
+              </MouseTarget>
             ),
           )}
         </Box>
@@ -166,6 +191,7 @@ export function GuideShell({
 }
 
 function GuideRowLine({ row, selected }: { readonly row: GuideRow; readonly selected: boolean }) {
+  const plain = plainModeEnabled();
   const { contentColumns } = useOverlayLayout();
   const tag = GUIDE_SURFACE_TAGS[row.surface];
   const inactive = !row.enabled;
@@ -177,6 +203,16 @@ function GuideRowLine({ row, selected }: { readonly row: GuideRow; readonly sele
   const detail = `${row.description}${row.note ? ` · ${row.note}` : ""}${
     inactive && row.reason ? ` — ${row.reason}` : ""
   }`;
+  if (plain) {
+    return (
+      <Text
+        color={selected ? palette.text : inactive ? palette.dim : palette.textDim}
+        bold={selected}
+      >
+        {`${selectionPrefix(selected, true)}${row.invocation} — ${detail}${tagText}`}
+      </Text>
+    );
+  }
   const detailWidth = Math.max(8, contentColumns - 2 - 2 - 24 - tagText.length);
   return (
     <Box flexDirection="row" flexWrap="nowrap">

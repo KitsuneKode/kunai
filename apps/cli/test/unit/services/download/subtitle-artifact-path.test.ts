@@ -3,31 +3,15 @@ import { describe, expect, test } from "bun:test";
 import { resolveSubtitleArtifactPath } from "@/services/download/subtitle-artifact-path";
 
 describe("resolveSubtitleArtifactPath", () => {
-  test("uses URL extension when present", () => {
-    expect(
-      resolveSubtitleArtifactPath({
-        videoOutputPath: "/videos/show-s01e01.mp4",
-        subtitleUrl: "https://cdn.example/track.vtt?token=abc",
-      }),
-    ).toBe("/videos/show-s01e01.vtt");
+  test("uses the format verified by the downloader", () => {
+    expect(resolveSubtitleArtifactPath("/videos/show-s01e01.mp4", "vtt")).toBe(
+      "/videos/show-s01e01.vtt",
+    );
   });
 
-  test("respects Content-Type when URL has no suffix", () => {
-    expect(
-      resolveSubtitleArtifactPath({
-        videoOutputPath: "/videos/movie.mp4",
-        subtitleUrl: "https://cdn.example/track",
-        contentType: "text/vtt; charset=utf-8",
-      }),
-    ).toBe("/videos/movie.vtt");
-  });
-
-  test("defaults to .srt", () => {
-    expect(
-      resolveSubtitleArtifactPath({
-        videoOutputPath: "/videos/movie.mp4",
-        subtitleUrl: "https://cdn.example/track",
-      }),
-    ).toBe("/videos/movie.srt");
+  test("preserves dots in directory names", () => {
+    expect(resolveSubtitleArtifactPath("D:\\Media\\Anime.Shows\\ep", "ass")).toBe(
+      "D:\\Media\\Anime.Shows\\ep.ass",
+    );
   });
 });

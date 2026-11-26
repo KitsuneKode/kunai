@@ -119,3 +119,44 @@ describe("buildQueueView", () => {
     expect(labels.video).toBe("Video");
   });
 });
+
+describe("failed starts", () => {
+  const failure = (code: "provider-exhausted" | "search-cancelled") => ({
+    code,
+    stage: "provider-resolution" as const,
+    at: "2026-06-14T02:00:00Z",
+  });
+
+  test("a rolled-back start says why and that Enter retries", () => {
+    const v = buildQueueView({
+      entries: [entry({ id: "1", title: "Stuck", lastFailure: failure("provider-exhausted") })],
+      ...base,
+    });
+    expect(v.rows[0]?.failureNote).toBe("no working source last try");
+    expect(v.rail?.failureNote).toBe("no working source last try");
+  });
+
+  test("a cancellation is the user's choice, not a failure", () => {
+    const v = buildQueueView({
+      entries: [entry({ id: "1", title: "Cancelled", lastFailure: failure("search-cancelled") })],
+      ...base,
+    });
+    expect(v.rows[0]?.failureNote).toBeUndefined();
+    expect(v.rows[0]?.state).toBe("next");
+  });
+
+  test("a row already starting again hides the old failure", () => {
+    const v = buildQueueView({
+      entries: [
+        entry({
+          id: "1",
+          title: "Retrying",
+          status: "in-flight",
+          lastFailure: failure("provider-exhausted"),
+        }),
+      ],
+      ...base,
+    });
+    expect(v.rows[0]?.failureNote).toBeUndefined();
+  });
+});
