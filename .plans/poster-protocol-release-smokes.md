@@ -18,8 +18,9 @@ bun run smoke:posters -- --terminal current --expect half-block
 ```
 
 `tmux` starts a private server inside a new Kitty window with passthrough enabled.
-`xterm` launches with `-ti vt340`. `konsole` and `wezterm` expect direct Kitty
-placement. The launcher enables WezTerm's Kitty graphics setting in its private
+`xterm` launches with `-ti vt340`. `konsole` expects sixel (Kunai keeps Konsole
+off Kitty because it never frees stored image data), and `wezterm` expects
+direct Kitty placement. The launcher enables WezTerm's Kitty graphics setting in its private
 window and reports a skip when the requested emulator is missing.
 `current` needs an open terminal at least
 124 columns wide so the Library preview rail fits. `--out NEW_DIR` chooses a
@@ -65,8 +66,8 @@ terminal graphics stack through `989548f4f`.
       navigation, and cleanup.
 - [x] Kitty 0.51.1 and Kitty passthrough in tmux 3.8 with offline fixture artwork:
       selection change, resize, exit, and printable escape scan.
-- [ ] Direct Kitty placement in Konsole and WezTerm. Native Sixel pixels through
-      tmux on a Sixel-capable emulator.
+- [ ] Direct Kitty placement in WezTerm, and Sixel in Konsole. Native Sixel pixels
+      through tmux on a Sixel-capable emulator.
 - [ ] Kitty or Ghostty post-play: stale-upload suppression and multiple placements.
 - [ ] Screen, SSH, redirected stdout, and unsupported terminals: no printable
       graphics escapes and a correct text-only UI.

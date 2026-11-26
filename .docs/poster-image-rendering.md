@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T15:19:36Z"
+lastReviewed: "2026-11-26T10:07:00Z"
 ---
 
 # Poster and terminal image output
@@ -29,7 +29,7 @@ Use `@/image` or `apps/cli/src/image/index.ts` (the old `apps/cli/src/image.ts` 
 - **Startup probe**: one Kitty-graphics query + DA1 is sent before Ink mounts (`image/probe.ts`). What the terminal _answers_ beats what its name implies — it is the only way to learn that a Windows Terminal is ≥1.22 or that an unrecognised terminal does sixel.
 - **Multiplexers**: tmux 3.3+ can forward Kitty graphics when the pane's effective `allow-passthrough` option is `on` or `all`, and the outer terminal is Kitty or Ghostty or confirms Unicode placeholders. Add `set -g allow-passthrough on` to your tmux configuration. Kunai checks the attached client's terminal name because pane environment variables can outlive a reattach. It uses half-block for screen, Zellij, and tmux sessions without sufficient capability evidence.
 - **Native Sixel in tmux**: when Kitty passthrough is unavailable, tmux 3.4+ selects the measured Sixel overlay only if the running server advertises sixel in its own DA1 reply **and** the single attached client lists `sixel` in `#{client_termfeatures}`. tmux answers DA1 for itself in any sixel-enabled build, whatever the outer terminal can do, and replaces the image with the text `SIXEL IMAGE (WxH)` for a client that cannot draw it, so the DA1 answer alone is not enough. The query and the pixels go directly to tmux. `KUNAI_IMAGE_TMUX=0` controls Kitty passthrough only.
-- **Auto path**: Kitty/Ghostty → `kitty-native`; Konsole or WezTerm with an accepted Kitty query → `kitty-direct`; probe-confirmed Kitty on an unknown terminal → `kitty-native`; iTerm2 or VSCode ≥1.80 → `iterm-inline`; probe-confirmed sixel or WezTerm → `sixel`; otherwise **half-block**. Direct Kitty, iTerm2 and Sixel use measured post-frame overlays.
+- **Auto path**: Kitty/Ghostty → `kitty-native`; WezTerm with an accepted Kitty query → `kitty-direct` (not Konsole: it treats `d=I` like `d=i` and never frees stored image data, so it stays on its probe-confirmed sixel path); probe-confirmed Kitty on an unknown terminal → `kitty-native`; iTerm2 or VSCode ≥1.80 → `iterm-inline`; probe-confirmed sixel or WezTerm → `sixel`; otherwise **half-block**. Direct Kitty, iTerm2 and Sixel use measured post-frame overlays.
 - **`iterm-inline` outranks sixel.** It transmits the prepared PNG verbatim. Sixel uses a limited palette even on a terminal that supports both.
 - **Sixel colour** uses median cut followed by Floyd–Steinberg error diffusion. After a positive DA1 answer, xterm, foot, and native tmux can report their colour register limit through XTSMGRAPHICS. The interactive encoder uses up to 128 register slots, including its transparency index: at HiDPI cell sizes 256 colours roughly doubled encode time (synchronous on the input thread) and replay bytes without a visible gain. It keeps the 64-slot cap without a reply, including on Windows Terminal, and caps each replay at 256 KiB. Over the cap it cuts the palette in proportion to the overshoot (at least halving), so a large poster can still fit at 16 or 8 colours, then shrinks the image, and falls back to half-block only if it still exceeds the cap.
 - **iTerm2 detection accepts `LC_TERMINAL`,** which iTerm2 forwards through ssh where `TERM_PROGRAM` is lost. It is checked after the kitty-compatible names so an inherited value cannot outrank the terminal actually in front of the user.
@@ -135,7 +135,7 @@ not require or spawn `ffmpeg` for normal playback or offline artwork.
 
 Use the opt-in `bun run smoke:posters -- --terminal kitty` for the offline
 fixture path. Use `--terminal tmux` to wrap the run in a private tmux server,
-`--terminal foot` or `--terminal xterm` for Sixel, `--terminal konsole` or
+`--terminal foot`, `--terminal xterm` or `--terminal konsole` for Sixel,
 `--terminal wezterm` for direct Kitty placement, or `--terminal current` to
 use the open terminal. This command requires a source checkout. The harness drives the real CLI, captures the PTY
 transcript, checks printable text for graphics escapes, and captures screenshots

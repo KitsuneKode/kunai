@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
 
-import { resolveCalendarContinueSelection } from "@/app/search/calendar-continue-launch";
+import {
+  launchCalendarContinue,
+  resolveCalendarContinueSelection,
+} from "@/app/search/calendar-continue-launch";
+import { createInitialState, reduceState } from "@/domain/session/SessionState";
+import type { SessionState, StateTransition } from "@/domain/session/SessionState";
 import type { SearchResult } from "@/domain/types";
 import { ContinueWatchingService } from "@/services/continuation/ContinueWatchingService";
 import type { HistoryProgress } from "@kunai/storage";
@@ -43,7 +48,7 @@ function makeRepo() {
   };
 }
 
-test("calendar continue-ready selection uses continueSourcePreference like History", () => {
+function calendarFixture() {
   const repo = makeRepo();
   repo.upsertProgress({
     title: { id: "tmdb:1", kind: "series", title: "Demo" },
@@ -92,44 +97,83 @@ test("calendar continue-ready selection uses continueSourcePreference like Histo
     },
   };
 
-  const selection = resolveCalendarContinueSelection(
+  const deps = {
+    continueWatchingService: service,
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+    historyRepository: repo as never,
+    releaseProgressCache: {
+      getByTitleIds: () =>
+        new Map([
+          [
+            "tmdb:1",
+            {
+              titleId: "tmdb:1",
+              mediaKind: "series",
+              source: "tmdb",
+              title: "Demo",
+              anchorSeason: 1,
+              anchorEpisode: 3,
+              latestAiredSeason: 1,
+              latestAiredEpisode: 4,
+              newEpisodeCount: 1,
+              status: "new-episodes",
+              checkedAt: "2026-01-03T00:00:00.000Z",
+              nextCheckAt: "2026-01-03T02:00:00.000Z",
+              staleAfterAt: "2026-01-04T00:00:00.000Z",
+              sourceFingerprint: "fp",
+              errorCount: 0,
+            },
+          ],
+        ]),
+    },
+    offlineTitlePolicies: { listByTitleIds: () => [] },
+    offlineAssetService: { listNextReadyByTitleCursors: () => [] },
+    config: { continueSourcePreference: "stream" },
+    diagnosticsService: { record: () => {} },
+  };
+  return { result, deps };
+}
+
+test("calendar continue-ready selection uses continueSourcePreference like History", () => {
+  const { result, deps } = calendarFixture();
+
+  // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+  const selection = resolveCalendarContinueSelection(deps as never, result);
+
+  expect(selection?.targetEpisode).toMatchObject({ season: 1, episode: 4, reason: "new-episode" });
+  expect(selection?.localJobId).toBeUndefined();
+});
+
+/**
+ * Sol review #6: the launcher dispatched the episode before the caller's
+ * SELECT_TITLE, which cleared it. Calendar's S01E04 must survive selection.
+ */
+test("launching a Calendar continuation leaves its episode selected", async () => {
+  const { result, deps } = calendarFixture();
+  let state: SessionState = createInitialState("vidking", "allanime", {
+    anime: { audio: "original", subtitle: "en" },
+    series: { audio: "original", subtitle: "none" },
+    movie: { audio: "original", subtitle: "en" },
+  });
+  const stateManager = {
+    getState: () => state,
+    dispatch: (transition: StateTransition) => {
+      state = reduceState(state, transition);
+    },
+  };
+
+  const launch = await launchCalendarContinue(
+    // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
     {
-      continueWatchingService: service,
-      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-      historyRepository: repo as never,
-      releaseProgressCache: {
-        getByTitleIds: () =>
-          new Map([
-            [
-              "tmdb:1",
-              {
-                titleId: "tmdb:1",
-                mediaKind: "series",
-                source: "tmdb",
-                title: "Demo",
-                anchorSeason: 1,
-                anchorEpisode: 3,
-                latestAiredSeason: 1,
-                latestAiredEpisode: 4,
-                newEpisodeCount: 1,
-                status: "new-episodes",
-                checkedAt: "2026-01-03T00:00:00.000Z",
-                nextCheckAt: "2026-01-03T02:00:00.000Z",
-                staleAfterAt: "2026-01-04T00:00:00.000Z",
-                sourceFingerprint: "fp",
-                errorCount: 0,
-              },
-            ],
-          ]),
-      },
-      offlineTitlePolicies: { listByTitleIds: () => [] },
-      offlineAssetService: { listNextReadyByTitleCursors: () => [] },
-      config: { continueSourcePreference: "stream" },
-      diagnosticsService: { record: () => {} },
+      ...deps,
+      config: { ...deps.config, getRaw: () => ({ titleProviderPreferences: {} }) },
+      stateManager,
+      providerRegistry: { get: () => undefined },
     } as never,
     result,
   );
 
-  expect(selection?.targetEpisode).toMatchObject({ season: 1, episode: 4, reason: "new-episode" });
-  expect(selection?.localJobId).toBeUndefined();
+  expect(launch?.episode).toMatchObject({ season: 1, episode: 4 });
+  expect(state.currentTitle?.id).toBe("tmdb:1");
+  expect(state.currentEpisode).toMatchObject({ season: 1, episode: 4 });
 });

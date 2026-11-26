@@ -49,3 +49,21 @@ export function resolvePlaybackResolvePolicy(input: {
     recoveryMode: honorExplicitProviderOnly ? "manual" : input.configuredRecoveryMode,
   };
 }
+
+/**
+ * Whether playback may use a stream the engine resolved from a provider other
+ * than the one requested. Fallback exists to find a working alternative, so it
+ * is accepted unless the request was provider-only (`/recompute`, or a switch
+ * made in manual recovery mode). A saved per-title provider is where a resolve
+ * starts, not a lock.
+ */
+export function acceptResolvedProviderForPlayback(input: {
+  readonly policy: Pick<PlaybackResolvePolicy, "honorExplicitProviderOnly">;
+  readonly requestedProviderId: string;
+  readonly resolvedProviderId: string;
+}): boolean {
+  return (
+    !input.policy.honorExplicitProviderOnly ||
+    input.requestedProviderId === input.resolvedProviderId
+  );
+}

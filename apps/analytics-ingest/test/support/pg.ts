@@ -34,12 +34,13 @@ export const SCRATCH_DAYS = {
  * dropped the three May rows and failed on main as Expected 8, Received 5.
  * Prefixing the last UUID group keeps each suite's n=1 a different install.
  */
-export type AnalyticsTestSuite = "lifecycle" | "hardening" | "store";
+export type AnalyticsTestSuite = "lifecycle" | "hardening" | "store" | "v2";
 
 const SUITE_PREFIX: Record<AnalyticsTestSuite, string> = {
   lifecycle: "00",
   hardening: "10",
   store: "20",
+  v2: "30",
 };
 
 export function testInstallId(n: number, suite: AnalyticsTestSuite): string {
@@ -49,12 +50,16 @@ export function testInstallId(n: number, suite: AnalyticsTestSuite): string {
 export async function resetAnalyticsTables(): Promise<void> {
   if (!TEST_DATABASE_URL) return;
   const sql = neon(TEST_DATABASE_URL);
-  await sql.query("truncate ping_day, install_lifetime, daily_rollup, ingest_budget");
+  await sql.query(
+    "truncate ping_day, install_lifetime, daily_rollup, ingest_budget, month_active, month_rollup, cohort_rollup, distribution_daily",
+  );
   await sql.query("update lifetime_retired set retired_installs = 0 where id = 1");
 }
 
 /** Row counts the store port deliberately does not expose. */
-export async function tableCount(table: "ping_day" | "install_lifetime"): Promise<number> {
+export async function tableCount(
+  table: "ping_day" | "install_lifetime" | "month_active",
+): Promise<number> {
   if (!TEST_DATABASE_URL) return 0;
   const sql = neon(TEST_DATABASE_URL);
   const rows = (await sql.query(`select count(*)::int as n from ${table}`)) as { n: number }[];

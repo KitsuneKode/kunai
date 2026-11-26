@@ -1095,8 +1095,11 @@ video-only.m3u8
     {
       url: SUB_PAYLOAD.src,
       quality: "auto",
-      qualityRank: 0,
+      // The master is kept whole for its audio, yet it declares a 1080p rung,
+      // so it ranks as 1080 and is not mistaken for a failed ladder expansion.
+      qualityRank: 1080,
       referer: hianimeEmbedReferer("ZokoAnime"),
     },
   ]);
+  expect(resolution.requested.ladderFallback).toBeUndefined();
 });

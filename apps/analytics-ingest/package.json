@@ -14,7 +14,8 @@
     "migrate": "bun run scripts/migrate.ts"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^1.2.1"
+    "@neondatabase/serverless": "^1.2.1",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

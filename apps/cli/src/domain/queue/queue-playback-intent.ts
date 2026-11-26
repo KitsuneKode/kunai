@@ -7,7 +7,8 @@ export type QueuePlaybackFailureContext = QueuePlaybackFailureRecord;
 export interface QueuePlaybackIntent {
   readonly queueEntryId: string;
   readonly titleId: string;
-  readonly mediaKind: "movie" | "series" | "anime";
+  /** `video` is a YouTube row: it plays in the youtube lane, not as a series. */
+  readonly mediaKind: "movie" | "series" | "anime" | "video";
   readonly contentType?: "movie" | "series";
   readonly externalIds?: ProviderExternalIds;
   readonly season?: number;
@@ -16,7 +17,7 @@ export interface QueuePlaybackIntent {
 }
 
 function normalizeMediaKind(mediaKind: string): QueuePlaybackIntent["mediaKind"] {
-  if (mediaKind === "movie" || mediaKind === "anime") return mediaKind;
+  if (mediaKind === "movie" || mediaKind === "anime" || mediaKind === "video") return mediaKind;
   return "series";
 }
 

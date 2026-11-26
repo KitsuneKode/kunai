@@ -27,7 +27,8 @@ const TARGETS = new Map([
   ["tmux", "kitty-tmux"],
   ["xterm", "sixel"],
   ["foot", "sixel"],
-  ["konsole", "kitty-direct"],
+  // Konsole never frees Kitty image data, so Kunai keeps it on sixel.
+  ["konsole", "sixel"],
   ["wezterm", "kitty-direct"],
   ["current", undefined],
 ]);

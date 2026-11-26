@@ -40,6 +40,11 @@ subtitle controls, and safer persistence, downloads and native installation.
   native mpv selection and visibility, explicit Off, preferred-language late
   discovery and replacement files without multiplying tracks or overwriting
   an acknowledged preference with a stale observation.
+- Keep every YouTube caption language in the subtitle inventory. Tracks that
+  differ only by URL query merge only when their language agrees, so `?lang=en`
+  and `?lang=fr` stay separate, while re-signed copies of one file still merge.
+  The preferred language is selected and download sidecars are labeled
+  correctly.
 - Expand supported HLS variants and manifest audio/subtitle renditions while
   preserving source identity and request headers. Present adaptive DASH as an
   honest Auto choice when independent representations are not selectable.
@@ -77,7 +82,7 @@ subtitle controls, and safer persistence, downloads and native installation.
   a larger palette.
 - Fit graphics posters to measured terminal cell sizes and refresh them on
   resize.
-- Display Kitty posters in Konsole and in WezTerm with Kitty graphics enabled.
+- Display Kitty posters in WezTerm with Kitty graphics enabled.
 
 - Add direct title launches from the command palette, notification episode
   launches and bounded detail prefetching. Keep command matching and title
