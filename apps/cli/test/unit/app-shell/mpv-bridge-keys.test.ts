@@ -14,36 +14,35 @@ import { KEYBINDINGS } from "@/app-shell/keybindings";
 const lua = readFileSync(join(import.meta.dir, "../../../assets/mpv/kunai-bridge.lua"), "utf8");
 
 /** Bridge binding names whose verb maps onto a help binding id. */
-const VERB_BINDINGS: Readonly<Record<string, string>> = {
-  "kunai-next": "player-next",
-  "kunai-next-shift": "player-next",
-  "kunai-prev": "player-previous",
-  "kunai-prev-shift": "player-previous",
-  "kunai-skip": "player-skip",
-  "kunai-quality": "player-quality",
-  "kunai-quality-shift": "player-quality",
-  "kunai-source": "player-source",
-  "kunai-cycle-source": "player-cycle-source",
-  "kunai-cycle-source-shift": "player-cycle-source",
-  "kunai-cycle-audio": "player-cycle-audio",
-  "kunai-refresh": "player-refresh",
-  "kunai-resume-seek": "player-resume-seek",
-  "kunai-copy-share": "player-share-moment",
-  // Names the bridge once used for aliases; listed so re-adding one is caught.
-  "kunai-quality-alt": "player-quality",
-  "kunai-quality-alt-shift": "player-quality",
-  "kunai-source-shift": "player-source",
-  "kunai-cycle-audio-shift": "player-cycle-audio",
-  "kunai-cycle-audio-alt": "player-cycle-audio",
-  "kunai-cycle-audio-alt-shift": "player-cycle-audio",
-};
+const VERB_BINDINGS = new Map<string, string>([
+  ["kunai-next", "player-next"],
+  ["kunai-next-shift", "player-next"],
+  ["kunai-prev", "player-previous"],
+  ["kunai-prev-shift", "player-previous"],
+  ["kunai-skip", "player-skip"],
+  ["kunai-quality", "player-quality"],
+  ["kunai-quality-shift", "player-quality"],
+  ["kunai-source", "player-source"],
+  ["kunai-cycle-source", "player-cycle-source"],
+  ["kunai-cycle-source-shift", "player-cycle-source"],
+  ["kunai-cycle-audio", "player-cycle-audio"],
+  ["kunai-refresh", "player-refresh"],
+  ["kunai-resume-seek", "player-resume-seek"],
+  ["kunai-copy-share", "player-share-moment"],
+  ["kunai-quality-alt", "player-quality"],
+  ["kunai-quality-alt-shift", "player-quality"],
+  ["kunai-source-shift", "player-source"],
+  ["kunai-cycle-audio-shift", "player-cycle-audio"],
+  ["kunai-cycle-audio-alt", "player-cycle-audio"],
+  ["kunai-cycle-audio-alt-shift", "player-cycle-audio"],
+]);
 
 function bridgeKeys(): Map<string, string> {
   const keys = new Map<string, string>();
   // Top-level bindings only: the resume prompt and skip chip rebind briefly.
   for (const match of lua.matchAll(/^mp\.add_(?:forced_)?key_binding\("([^"]+)", "([^"]+)"/gm)) {
     const [, key, name] = match;
-    const id = name ? VERB_BINDINGS[name] : undefined;
+    const id = name ? VERB_BINDINGS.get(name) : undefined;
     if (key && id) keys.set(key, id);
   }
   for (const match of lua.matchAll(/\{ "([^"]+)", "([a-z-]+)" \}/g)) {
