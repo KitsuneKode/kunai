@@ -49,6 +49,7 @@ import {
   computeInProcessReconnectSeek,
   isSameUrlRetryWorthwhile,
   isWatchdogReconnectTrigger,
+  unrecoverableStallEvent,
   watchdogReconnectTrigger,
   type InProcessReconnectTrigger,
   type WatchdogReconnectTrigger,
@@ -824,9 +825,7 @@ export class PersistentMpvSession {
         noteStreamStall(active.stats, Date.now());
       }
       this.currentCycleOptions().onPlaybackEvent?.(event);
-      // handleWatchdogReconnect checks that in-process reconnect is enabled.
-      const reconnectTrigger = watchdogReconnectTrigger(event);
-      if (reconnectTrigger) void this.handleWatchdogReconnect(reconnectTrigger);
+      void this.handleWatchdogStall(event);
     };
     this.watchdog = (this.runtime.createPlaybackWatchdog ?? createPlaybackWatchdog)(
       emitPlaybackEvent,
@@ -1461,9 +1460,7 @@ export class PersistentMpvSession {
     segment: ActivePlaybackSkip,
     automatic: boolean,
   ): Promise<boolean> {
-    if (!this.ipcSession || this.skippedSegments.has(segment.key)) {
-      return false;
-    }
+    if (!this.ipcSession || this.skippedSegments.has(segment.key)) return false;
     this.clearSkipPromptState();
     const seekResult = await this.ipcSession.send(["seek", segment.endSeconds, "absolute"], 1_000);
     if (!seekResult.ok) return false;
@@ -1823,25 +1820,21 @@ export class PersistentMpvSession {
     active.resolve(result);
   }
 
-  private async handleWatchdogReconnect(trigger: WatchdogReconnectTrigger): Promise<void> {
+  /** Reload the same URL in place; once that is spent or off, a post-start stall goes to source failover. */
+  private async handleWatchdogStall(stall: PlayerPlaybackEvent): Promise<void> {
+    const trigger = watchdogReconnectTrigger(stall);
+    const active = this.activeCycle;
+    if (!trigger || !active || !this.ipcSession) return;
     if (
       !this.mpvInProcessStreamReconnectEnabled ||
-      this.mpvInProcessStreamReconnectMaxAttempts <= 0
+      this.reconnectTryCount >= this.mpvInProcessStreamReconnectMaxAttempts
     ) {
+      const escalation = unrecoverableStallEvent(stall);
+      if (escalation) this.currentCycleOptions().onPlaybackEvent?.(escalation);
       return;
     }
-    const active = this.activeCycle;
-    if (!active || !this.ipcSession) return;
-
-    const latest = active.stats.latestIpcSample;
-    const duration = latest?.durationSeconds ?? 0;
-    const reloaded = await this.runSameUrlReconnect(
-      active,
-      this.currentPositionSeconds,
-      duration,
-      trigger,
-    );
-    if (!reloaded) {
+    const duration = active.stats.latestIpcSample?.durationSeconds ?? 0;
+    if (!(await this.runSameUrlReconnect(active, this.currentPositionSeconds, duration, trigger))) {
       dbg("mpv-ipc", "in-process-reconnect-skipped", {
         reason: "backoff-or-limit-or-in-flight",
         attempt: this.reconnectTryCount,
@@ -1928,6 +1921,7 @@ export class PersistentMpvSession {
       const savedMaxTrusted = active.stats.maxTrustedProgressSeconds;
       const savedLastReliable = active.stats.lastReliableProgressSeconds;
       active.stats = createPlayerStatsState(this.ipcEndpoint.path);
+      this.watchdog?.reset(); // the reloaded file is measured fresh, never through stale latches
       active.stats.endReason = savedEndReason;
       active.stats.maxTrustedProgressSeconds = savedMaxTrusted;
       active.stats.lastReliableProgressSeconds = savedLastReliable;

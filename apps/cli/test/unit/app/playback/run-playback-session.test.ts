@@ -42,7 +42,7 @@ function hooks(calls: string[]): MpvPlaybackSessionHooks {
   return {
     onFeedback: (feedback) => calls.push(`feedback:${feedback.detail ?? ""}`),
     onStartupMark: () => calls.push("startup"),
-    onStartupStallAbort: () => {
+    onStallAbort: () => {
       calls.push("stall");
     },
     onConfirmedPlaybackStart: () => calls.push("confirmed"),

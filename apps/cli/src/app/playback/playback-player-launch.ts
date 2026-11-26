@@ -232,26 +232,36 @@ export async function launchPlayback(input: PlayerLaunchInput): Promise<Playback
       onFeedback: (update) => updatePlaybackFeedback(context, update),
       onStartupMark,
       onConfirmedPlaybackStart,
-      onStartupStallAbort: (reason) => {
+      onStallAbort: (reason) => {
         const notDecoding = reason.kind === "video-not-decoding" ? reason.evidence : null;
+        const streamDead = reason.kind === "stream-dead" ? reason : null;
         diagnosticsService.record(
           buildPlaybackDiagnosticEvent({
-            operation: notDecoding
-              ? "playback.startup.video-not-decoding"
-              : reason.kind === "no-bytes"
-                ? "playback.startup-stall.no-bytes"
-                : "playback.startup-stall.aborted",
+            operation: streamDead
+              ? "playback.mid-stream.failover"
+              : notDecoding
+                ? "playback.startup.video-not-decoding"
+                : reason.kind === "no-bytes"
+                  ? "playback.startup-stall.no-bytes"
+                  : "playback.startup-stall.aborted",
             status: "failed",
             severity: "degraded",
             failureClass: notDecoding ? "unknown" : "timeout",
-            message: notDecoding
-              ? "Video track played without a decoded frame; aborting for source recovery"
-              : reason.kind === "no-bytes"
-                ? "No data from the server; aborting startup early for source recovery"
-                : "Startup stall watchdog aborted mpv",
+            message: streamDead
+              ? "Stream died mid-episode and the in-place reload is spent; failing over at the position"
+              : notDecoding
+                ? "Video track played without a decoded frame; aborting for source recovery"
+                : reason.kind === "no-bytes"
+                  ? "No data from the server; aborting startup early for source recovery"
+                  : "Startup stall watchdog aborted mpv",
             correlation,
             context: {
-              timeoutMs: reason.kind === "video-not-decoding" ? null : reason.timeoutMs,
+              timeoutMs:
+                reason.kind === "no-progress" || reason.kind === "no-bytes"
+                  ? reason.timeoutMs
+                  : null,
+              positionSeconds: streamDead?.positionSeconds ?? null,
+              stallKind: streamDead?.evidence.stallKind ?? null,
               videoCodec: notDecoding?.codec ?? null,
               secondsWithoutVideo: notDecoding?.secondsWithoutVideo ?? null,
               streamHost: (() => {
@@ -266,7 +276,9 @@ export async function launchPlayback(input: PlayerLaunchInput): Promise<Playback
         );
         const active = playerControl.getActive();
         if (!active) return;
-        void active.stop("startup-stall").catch(() => {
+        const stopReason = streamDead ? "stream-dead" : "startup-stall";
+        // End the file, not mpv: recovery loads the next source into this window.
+        void (active.stopCurrentFile?.(stopReason) ?? active.stop(stopReason)).catch(() => {
           /* best-effort abort; suspectedDeadStream is set on return */
         });
       },

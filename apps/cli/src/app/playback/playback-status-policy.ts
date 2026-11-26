@@ -31,7 +31,7 @@ export type PlaybackStatusSignal =
       readonly event: PlayerPlaybackEvent;
     }
   | {
-      readonly kind: "startup-stall";
+      readonly kind: "stall-abort";
       readonly generation: PlaybackGeneration;
     }
   | {
@@ -158,7 +158,7 @@ export function transitionPlaybackStatus(
     });
   }
 
-  if (signal.kind === "startup-stall") {
+  if (signal.kind === "stall-abort") {
     return accept(current, { status: "stalled", generation: current.generation });
   }
 

@@ -111,6 +111,11 @@ export function describeMpvPlayerEvent(event: PlayerPlaybackEvent): MpvPlaybackF
         note: `${dead ? "Demuxer underrun with no incoming bytes" : `No playback progress for ${event.secondsWithoutProgress}s`} · ${guidance}`,
       };
     }
+    case "stream-unrecoverable":
+      return {
+        detail: "Stream stopped",
+        note: `Reloading the same source did not help after ${event.secondsWithoutProgress}s`,
+      };
     case "video-not-decoding":
       return {
         detail: "Video isn't decoding",

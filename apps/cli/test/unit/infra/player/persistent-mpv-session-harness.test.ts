@@ -434,6 +434,109 @@ describe("PersistentMpvSession fake IPC lifecycle harness", () => {
     });
   }
 
+  describe("mid-stream failover escalation", () => {
+    const stall = (duringStartup?: boolean): PlayerPlaybackEvent => ({
+      type: "stream-stalled",
+      stallKind: "network-read-dead",
+      secondsWithoutProgress: 8,
+      ...(duringStartup === undefined ? {} : { duringStartup }),
+    });
+
+    async function startSession(maxAttempts: number) {
+      const events: PlayerPlaybackEvent[] = [];
+      const harness = createHarness();
+      let emitWatchdog!: (event: PlayerPlaybackEvent) => void;
+      harness.runtime.createPlaybackWatchdog = (emit) => {
+        emitWatchdog = emit;
+        return { observe() {}, stop() {}, reset() {} };
+      };
+      const session = await PersistentMpvSession.create({
+        stream: createStream(),
+        options: {
+          displayTitle: "Episode 1",
+          primarySubtitle: null,
+          onPlaybackEvent: (event) => {
+            events.push(event);
+          },
+        },
+        // SAFETY: this fixture only supplies the reconnect and script options it exercises.
+        kitsuneConfig: {
+          mpvInProcessStreamReconnect: maxAttempts > 0,
+          mpvInProcessStreamReconnectMaxAttempts: maxAttempts,
+          mpvKunaiScriptOpts: "",
+        } as never,
+        onControlReady() {},
+        runtime: harness.runtime,
+      });
+      harness.callbacks().onFileLoaded?.({ observedAt: 1 });
+      harness.callbacks().onPropertyUpdate({ name: "duration", value: 600, observedAt: 2 });
+      harness.callbacks().onPropertyUpdate({ name: "time-pos", value: 100, observedAt: 3 });
+      const loads = () => harness.commands.filter((command) => command[0] === "loadfile").length;
+      const escalations = () => events.filter((event) => event.type === "stream-unrecoverable");
+      return {
+        harness,
+        session,
+        emit: (event: PlayerPlaybackEvent) => emitWatchdog(event),
+        loads,
+        escalations,
+      };
+    }
+
+    test("with the in-place reload off, a post-start stall goes straight to source failover", async () => {
+      const run = await startSession(0);
+      try {
+        const before = run.loads();
+        run.emit(stall(false));
+        await Promise.resolve();
+        expect(run.escalations()).toEqual([
+          {
+            type: "stream-unrecoverable",
+            stallKind: "network-read-dead",
+            secondsWithoutProgress: 8,
+          },
+        ]);
+        expect(run.loads()).toBe(before);
+      } finally {
+        run.harness.endProcess();
+        await run.session.close();
+      }
+    });
+
+    test("the session forwards a startup-flagged stall too; the app decides whether playback had started", async () => {
+      const run = await startSession(0);
+      try {
+        run.emit(stall(true));
+        await Promise.resolve();
+        // After a reload the watchdog restarts, so a mid-episode stall can carry
+        // duringStartup; the app layer gates on its own confirmed start instead.
+        expect(run.escalations()).toHaveLength(1);
+      } finally {
+        run.harness.endProcess();
+        await run.session.close();
+      }
+    });
+
+    test("the first post-start stall reloads in place; a stall after the spent reload escalates", async () => {
+      const run = await startSession(1);
+      try {
+        const before = run.loads();
+        run.emit(stall(false));
+        await flushAsyncWork();
+        expect(run.loads()).toBe(before + 1);
+        expect(run.escalations()).toEqual([]);
+        run.harness.callbacks().onEndFile({ reason: "stop", observedAt: 4 });
+        run.harness.callbacks().onFileLoaded?.({ observedAt: 5 });
+        await flushAsyncWork();
+        run.emit(stall(false));
+        await Promise.resolve();
+        expect(run.escalations()).toHaveLength(1);
+      } finally {
+        run.harness.endProcess();
+        await run.session.close();
+      }
+    });
+  });
+
   test("updates autoskip policy during an active intro without leaving a stale automatic skip", async () => {
     const harness = createHarness();
     const partialTiming = {
