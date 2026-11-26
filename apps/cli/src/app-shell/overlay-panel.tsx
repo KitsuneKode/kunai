@@ -20,6 +20,7 @@ import { PosterInitialBlock } from "./poster-initial-block";
 import { suppressPosterWhileNavigating, type PosterResult } from "./poster-types";
 import { LoadingState } from "./primitives/LoadingState";
 import { SakuraPetal } from "./primitives/SakuraPetal";
+import { ScrollBox } from "./primitives/ScrollBox";
 import {
   getWindowStart,
   padColumnsEnd,
@@ -403,11 +404,13 @@ export function OverlayPanel({
         <LoadingState message="Loading panel…" framed />
       ) : overlay.type === "details" && overlay.sheet ? (
         <Box marginTop={1} flexDirection="column">
-          <DetailsSheet
-            model={overlay.sheet}
-            seasonsExpanded={overlay.seasonsExpanded ?? false}
-            width={contentWidth}
-          />
+          <ScrollBox id="details-sheet:scroll" height={Math.max(10, maxLinesOverride ?? 18)}>
+            <DetailsSheet
+              model={overlay.sheet}
+              seasonsExpanded={overlay.seasonsExpanded ?? false}
+              width={contentWidth}
+            />
+          </ScrollBox>
         </Box>
       ) : overlay.type === "details" && overlay.detailData ? (
         <Box marginTop={1} flexDirection="column">

@@ -360,6 +360,40 @@ describe("playback-watchdog", () => {
     watchdog.stop();
   });
 
+  test("a backward seek followed by normal playback is progress, not a stall", () => {
+    const events: PlayerPlaybackEvent[] = [];
+    const watchdog = createPlaybackWatchdog((event) => events.push(event), {
+      intervalMs: 100,
+      stallAfterMs: 500,
+      seekStallAfterMs: 300,
+      cacheStallAfterMs: 2_000,
+    });
+    const sample = (observedAt: number, positionSeconds: number, seeking?: boolean) =>
+      watchdog.observe({
+        source: "ipc",
+        observedAt,
+        positionSeconds,
+        durationSeconds: 1_200,
+        seeking,
+      });
+
+    // Playing normally up to 100 s.
+    sample(0, 99);
+    sample(100, 100);
+    // Seek back to 20 s.
+    sample(200, 100, true);
+    sample(300, 20, false);
+    // Then play on from 20 s, well past stallAfterMs, never reaching 100 s.
+    for (let step = 1; step <= 10; step += 1) {
+      nowMs = 300 + step * 100;
+      sample(nowMs, 20 + step * 0.5);
+      runTimers();
+    }
+
+    expect(events.filter((event) => event.type === "stream-stalled")).toEqual([]);
+    watchdog.stop();
+  });
+
   test("emits throttled network samples for passive speed diagnostics", () => {
     const events: PlayerPlaybackEvent[] = [];
     const watchdog = createPlaybackWatchdog((event) => events.push(event), {
