@@ -133,26 +133,32 @@ describe("poster smoke launcher", () => {
     expect(posterSmokeWaylandEnv({ XDG_RUNTIME_DIR: env.XDG_RUNTIME_DIR })).toEqual({});
   });
 
-  test("child Bun ignores dotenv files in its working directory", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "kunai-smoke-dotenv-"));
-    try {
-      writeFileSync(join(dir, ".env"), "POSTER_DOTENV_LEAK=unsafe\n");
-      const script = join(dir, "print-env.ts");
-      writeFileSync(
-        script,
-        "console.log(process.env.POSTER_DOTENV_LEAK ?? process.env.POSTER_EXPLICIT)",
-      );
-      const child = Bun.spawn(posterSmokeBunCommand(script), {
-        cwd: dir,
-        env: { ...posterSmokeEnv(dir, {}), POSTER_EXPLICIT: "isolated" },
-        stdout: "pipe",
-      });
-      expect(await child.stdout.text()).toBe("isolated\n");
-      expect(await child.exited).toBe(0);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+  test.each([false, true])(
+    "child Bun ignores dotenv files (explicit host flag: %s)",
+    async (explicit) => {
+      const dir = mkdtempSync(join(tmpdir(), "kunai-smoke-dotenv-"));
+      try {
+        writeFileSync(join(dir, ".env"), "POSTER_DOTENV_LEAK=unsafe\n");
+        const script = join(dir, "print-env.ts");
+        writeFileSync(
+          script,
+          "console.log(process.env.POSTER_DOTENV_LEAK ?? process.env.POSTER_EXPLICIT)",
+        );
+        const child = Bun.spawn(posterSmokeBunCommand(script), {
+          cwd: dir,
+          env: {
+            ...posterSmokeEnv(dir, explicit ? { BUN_OPTIONS: "--env-file=.env" } : {}),
+            POSTER_EXPLICIT: "isolated",
+          },
+          stdout: "pipe",
+        });
+        expect(await child.stdout.text()).toBe("isolated\n");
+        expect(await child.exited).toBe(0);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
 
   test("uses private storage roots after dropping the host variables", () => {
     const env = posterSmokeEnv("private", {
