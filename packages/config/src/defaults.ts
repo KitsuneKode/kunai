@@ -65,14 +65,19 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // stays named and last rather than floating: its session/turnstile path and
   // rotted `videasy.to` domain make it the fallback, not the lead — registered,
   // not removed.
-  providerPriority: ["rivestream", "vidrock", "movy", "videasy"],
+  // Revision 8 (2026-11-26 live runs, two each): Movy resolved and streamed;
+  // Rivestream timed out and VidRock's streams answered 502 every time, so Movy
+  // now follows VidLink and the failing pair sits behind it.
+  providerPriority: ["movy", "rivestream", "vidrock", "videasy"],
   // Ordering, not an allowlist: every registered anime module stays reachable.
   // `createProviderPrioritySnapshot` prepends `animeProvider`, so this array
   // holds the *rest* of the order and must not repeat the lane default.
   // On 2026-11-23 HiAnime fit the default attempt budget. AnimeGG was the
   // only fallback to resolve, in 21.9s. KickAssAnime and Miruro refused the
   // runner's requests, and AllManga's stream bootstrap was stale.
-  animeProviderPriority: ["animegg", "kickassanime", "miruro", "allanime"],
+  // Revision 8: KickAssAnime resolved and streamed on every 2026-11-26 run and
+  // AnimeGG on one of two; Miruro (404) and AllManga (#724) stay behind them.
+  animeProviderPriority: ["kickassanime", "animegg", "miruro", "allanime"],
   // Bump alongside any lane-default change above; see `providerDefaultsRevision`.
   // Revision 3 leads with VidLink + HiAnime and covers both lanes.
   // Revision 4 reorders dead/degraded tails: Movy is named before Videasy in
@@ -80,7 +85,8 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // Revision 5 demoted Miruro and AniDB behind AllAnime while both stayed live.
   // Revision 6 retires AniDB from production and drops it from shipped defaults.
   // Revision 7 moves AnimeGG ahead of blocked fallbacks and puts AllManga last.
-  providerDefaultsRevision: 7,
+  // Revision 8 puts the fallbacks that work first: Movy, then KickAssAnime.
+  providerDefaultsRevision: 8,
   disabledProviders: [],
   stremioAddons: [],
   experimentalStremioAddons: false,
