@@ -955,10 +955,11 @@ jobs:
 
       - name: README quick-start commands (fixture-assets)
         if: matrix.scenario == 'full-lifecycle' && matrix.variant == 'glibc'
+        # The version the README documents is the package's own; never a literal.
         run: >-
           bun run verify:readme:commands --
           --mode fixture-assets
-          --version 0.3.0
+          --version "$(bun -e 'console.log(require("./apps/cli/package.json").version)')"
           --binary apps/cli/dist/bin/kunai-linux-x64
 
   installer-scenarios:

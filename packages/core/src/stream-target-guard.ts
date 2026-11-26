@@ -61,6 +61,7 @@ function parseIpv4(host: string): [number, number, number, number] | null {
 function isPrivateIpv4(parts: readonly [number, number, number, number]): boolean {
   const a = parts[0];
   const b = parts[1];
+  const c = parts[2];
   return (
     a === 0 ||
     a === 10 ||
@@ -68,13 +69,28 @@ function isPrivateIpv4(parts: readonly [number, number, number, number]): boolea
     (a === 100 && b >= 64 && b <= 127) || // CGNAT
     (a === 169 && b === 254) || // link-local
     (a === 172 && b >= 16 && b <= 31) ||
-    (a === 192 && b === 0) ||
+    // Only these /24s are reserved: the rest of 192.0/16, 198.51/16 and
+    // 203.0/16 is public (192.0.78.0/24 hosts WordPress.com, for one).
+    (a === 192 && b === 0 && (c === 0 || c === 2)) || // IETF protocol, TEST-NET-1
     (a === 192 && b === 168) ||
     (a === 198 && (b === 18 || b === 19)) || // benchmarking
-    (a === 198 && b === 51) ||
-    (a === 203 && b === 0) ||
+    (a === 198 && b === 51 && c === 100) || // TEST-NET-2
+    (a === 203 && b === 0 && c === 113) || // TEST-NET-3
     a >= 224 // multicast + reserved + broadcast
   );
+}
+
+/** 100::/64 (discard-only, RFC 6666), in compressed or expanded form. */
+function isIpv6DiscardOnly(host: string): boolean {
+  const [head = "", tail] = host.split("::");
+  const left = head ? head.split(":") : [];
+  const right = tail ? tail.split(":") : [];
+  const hextets =
+    tail === undefined
+      ? left
+      : [...left, ...Array(8 - left.length - right.length).fill("0"), ...right];
+  const [h0, h1, h2, h3] = hextets.map((part) => parseInt(part || "0", 16));
+  return h0 === 0x100 && h1 === 0 && h2 === 0 && h3 === 0;
 }
 
 /** IPv6-mapped IPv4 (`::ffff:7f00:1`) and NAT64 (`64:ff9b::a9fe:1`) unwrap to v4 checks. */
@@ -111,7 +127,8 @@ function isPrivateLiteralAddress(host: string): string | null {
     (first & 0xff00) === 0xff00 ||
     // ff00::/8 multicast
     host.startsWith("2001:db8") ||
-    host.startsWith("2001:0db8")
+    host.startsWith("2001:0db8") ||
+    isIpv6DiscardOnly(host)
   ) {
     return "private address";
   }

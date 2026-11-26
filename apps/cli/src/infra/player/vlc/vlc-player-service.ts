@@ -4,8 +4,13 @@ import type { PlaybackGeneration } from "@/domain/playback/playback-generation";
 import { VLC_CAPABILITIES } from "@/domain/playback/player-capabilities";
 import type { PlaybackResult, StreamInfo } from "@/domain/types";
 import { createPrivateTempDir } from "@/infra/fs/temp-dir";
+import { scrubbedChildEnv } from "@/infra/os/child-env";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 import { materializeDeferredMediaDocument } from "@/services/playback/deferred-media-materializer";
+import {
+  checkStremioPlaybackPreflight,
+  isStremioPlayback,
+} from "@/services/playback/stream-health-check";
 import { isJsonString, type JsonValue } from "@kunai/types";
 
 import { unrecoverableStallEvent } from "../mpv-in-process-reconnect";
@@ -13,6 +18,7 @@ import {
   createPlaybackProgressThrottleState,
   shouldEmitPlaybackProgress,
 } from "../mpv-playback-kernel";
+import { isAllowedMpvUrl } from "../mpv-playback-url";
 import {
   applyEndFileEvent,
   createPlayerStatsState,
@@ -85,9 +91,39 @@ async function freeLoopbackPort(): Promise<number> {
   return port;
 }
 
+/**
+ * The same target rule as mpv: provider URLs are HTTP(S) only, and a file only
+ * when it is exactly the verified library file this playback names. A deferred
+ * stream (AllManga Ak) carries its locator in `url`; VLC never sees it, since
+ * the gateway serves the materialized document, whose own URLs it validates.
+ */
+export function isSafeVlcTarget(
+  stream: Pick<StreamInfo, "url" | "subtitle" | "deferredLocator">,
+  local: LocalPlaybackSource | undefined,
+): boolean {
+  const deferred = !local && Boolean(stream.deferredLocator?.trim());
+  if (
+    !deferred &&
+    !isAllowedMpvUrl(stream.url, local?.filePath === stream.url ? "local" : "remote")
+  ) {
+    return false;
+  }
+  const subtitle = stream.subtitle?.trim();
+  return (
+    !subtitle || isAllowedMpvUrl(subtitle, local?.subtitlePath === subtitle ? "local" : "remote")
+  );
+}
+
 export const defaultVlcRuntime: VlcRuntime = {
   discover: () => discoverVlcBinary(),
-  spawn: (argv) => Bun.spawn([...argv], { stdin: "ignore", stdout: "ignore", stderr: "ignore" }),
+  // Shell secrets never reach VLC or its Lua extensions, as with mpv.
+  spawn: (argv) =>
+    Bun.spawn([...argv], {
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "ignore",
+      env: scrubbedChildEnv(),
+    }),
   getJson: async (url, headers) => {
     try {
       const response = await fetch(url, { headers, signal: AbortSignal.timeout(1_500) });
@@ -218,6 +254,12 @@ export class VlcPlayerService implements PlayerService {
       throw new VlcLaunchError(
         "unsupported-stream",
         "This stream needs yt-dlp, which VLC cannot run. Play it with --player mpv.",
+      );
+    }
+    if (!isSafeVlcTarget(stream, options.localPlaybackSource)) {
+      throw new VlcLaunchError(
+        "unsupported-stream",
+        "Refusing to open an unsafe stream URL in VLC.",
       );
     }
 
@@ -372,6 +414,13 @@ export class VlcPlayerService implements PlayerService {
     const subtitle = stream.subtitle?.trim() || undefined;
     if (options.localPlaybackSource) {
       return subtitle ? { url: stream.url, subtitle } : { url: stream.url };
+    }
+    // Addon streams get mpv's strict direct-media check before VLC sees them.
+    if (isStremioPlayback(stream)) {
+      const preflight = await checkStremioPlaybackPreflight(stream, options.abortSignal);
+      if (preflight.status !== "reachable") {
+        throw new VlcLaunchError("unsupported-stream", "Addon stream failed playback preflight.");
+      }
     }
     let document: Parameters<GatewaySessionFactory>[0]["document"];
     if (stream.deferredLocator?.trim()) {

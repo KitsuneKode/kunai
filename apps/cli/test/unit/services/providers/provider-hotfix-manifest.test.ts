@@ -27,6 +27,7 @@ import {
   rollbackCachedProviderHotfixManifest,
   type ManifestFetch,
 } from "@/services/providers/provider-hotfix-manifest";
+import { defaultManifestUrl } from "@/services/providers/provider-manifest-pin";
 import { runProvidersCommand } from "@/services/providers/run-providers-command";
 import {
   getActiveProviderHotfixManifest,
@@ -123,6 +124,50 @@ describe("provider hotfix manifest runtime", () => {
       expect(result.status).toBe("rejected");
     }
     expect(fetchCalls).toBe(0);
+  });
+
+  test("follows a release download's redirect to its CDN, but only to safe HTTPS targets", async () => {
+    const { publicPem, privatePem } = makeKeypair();
+    const keys = { "key-2026": publicPem };
+    const signed = signProviderManifest(makeManifest({ revision: 4 }), privatePem, "key-2026");
+    const releaseUrl = "https://github.com/owner/repo/releases/download/provider-manifest/m.json";
+    const redirectTo =
+      (location: string): ManifestFetch =>
+      async (input, init) => {
+        expect(init?.redirect).toBe("manual");
+        return input === releaseUrl
+          ? new Response(null, { status: 302, headers: { location } })
+          : new Response(JSON.stringify(signed), { status: 200 });
+      };
+
+    const followed = await fetchAndCacheProviderHotfixManifest({
+      url: releaseUrl,
+      trustedPublicKeysById: keys,
+      path: makeTempCachePath(),
+      nowMs: NOW_MS,
+      fetchImpl: redirectTo("https://release-assets.githubusercontent.com/asset?sig=x"),
+    });
+    expect(followed.status).toBe("updated");
+
+    for (const unsafe of ["http://release-assets.githubusercontent.com/a", "https://127.0.0.1/a"]) {
+      const refused = await fetchAndCacheProviderHotfixManifest({
+        url: releaseUrl,
+        trustedPublicKeysById: keys,
+        path: makeTempCachePath(),
+        nowMs: NOW_MS,
+        fetchImpl: redirectTo(unsafe),
+      });
+      expect(refused).toMatchObject({ status: "rejected" });
+    }
+
+    const loop = await fetchAndCacheProviderHotfixManifest({
+      url: releaseUrl,
+      trustedPublicKeysById: keys,
+      path: makeTempCachePath(),
+      nowMs: NOW_MS,
+      fetchImpl: async () => new Response(null, { status: 302, headers: { location: releaseUrl } }),
+    });
+    expect(loop).toMatchObject({ status: "rejected" });
   });
 
   test("rejects oversized responses before JSON parsing", async () => {
@@ -324,17 +369,38 @@ describe("provider hotfix manifest runtime", () => {
     expect(statusCode).toBe(0);
     expect(JSON.parse(statusOut).hotfixManifest.status).toBe("absent");
 
-    let missingUrlOut = "";
-    const missingUrlCode = await runProvidersCommand({
-      subcommand: "update",
-      json: true,
-      cachePath,
-      write: (chunk) => {
-        missingUrlOut += chunk;
-      },
-    });
-    expect(missingUrlCode).toBe(2);
-    expect(JSON.parse(missingUrlOut).ok).toBe(false);
+    // Without --url, update asks the same channel the background refresh uses.
+    // The developer's shell must not redirect or unpin it for this test.
+    const savedEnv = {
+      url: process.env.KUNAI_PROVIDER_MANIFEST_URL,
+      keys: process.env.KUNAI_PROVIDER_MANIFEST_PUBKEYS,
+    };
+    delete process.env.KUNAI_PROVIDER_MANIFEST_URL;
+    delete process.env.KUNAI_PROVIDER_MANIFEST_PUBKEYS;
+    try {
+      const requested: string[] = [];
+      let defaultUrlOut = "";
+      const defaultUrlCode = await runProvidersCommand({
+        subcommand: "update",
+        json: true,
+        cachePath,
+        fetchImpl: async (input) => {
+          requested.push(input);
+          return new Response("missing", { status: 404 });
+        },
+        write: (chunk) => {
+          defaultUrlOut += chunk;
+        },
+      });
+      expect(requested).toEqual([defaultManifestUrl() ?? ""]);
+      expect(defaultUrlCode).not.toBe(0);
+      expect(JSON.parse(defaultUrlOut).ok).toBe(false);
+    } finally {
+      if (savedEnv.url === undefined) delete process.env.KUNAI_PROVIDER_MANIFEST_URL;
+      else process.env.KUNAI_PROVIDER_MANIFEST_URL = savedEnv.url;
+      if (savedEnv.keys === undefined) delete process.env.KUNAI_PROVIDER_MANIFEST_PUBKEYS;
+      else process.env.KUNAI_PROVIDER_MANIFEST_PUBKEYS = savedEnv.keys;
+    }
 
     const rev4 = signProviderManifest(makeManifest({ revision: 4 }), privatePem, "key-2026");
     let updateOut = "";

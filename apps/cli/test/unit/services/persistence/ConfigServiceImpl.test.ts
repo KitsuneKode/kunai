@@ -468,6 +468,20 @@ describe("ConfigServiceImpl", () => {
     expect(service.videasyAppId).toBe("vidking");
   });
 
+  test("an update keeps the session expiry while a session token is paired", async () => {
+    const expiresAt = Date.now() + 3_600_000;
+    const paired = await ConfigServiceImpl.load(
+      new MemoryConfigStore({ videasySessionToken: "paired-session" }),
+    );
+    await paired.update({ videasySessionExpiresAt: expiresAt });
+    expect(paired.videasySessionExpiresAt).toBe(expiresAt);
+
+    // Without a token there is no session to expire.
+    const unpaired = await ConfigServiceImpl.load(new MemoryConfigStore({}));
+    await unpaired.update({ videasySessionExpiresAt: expiresAt });
+    expect(unpaired.videasySessionExpiresAt).toBe(0);
+  });
+
   test("round-trips legacy profile subtitle preference as interactive on save", async () => {
     const store = new MemoryConfigStore({
       animeLanguageProfile: { audio: "original", subtitle: "fzf" },

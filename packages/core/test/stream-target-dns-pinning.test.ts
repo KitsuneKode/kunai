@@ -114,3 +114,27 @@ describe("stream fetch DNS binding", () => {
     expect(cancelled).toBe(true);
   });
 });
+
+describe("reserved literal ranges", () => {
+  test("only the reserved /24s are blocked; their public neighbours are not", () => {
+    for (const reserved of [
+      "https://192.0.2.10/",
+      "https://192.0.0.8/",
+      "https://198.51.100.7/",
+      "https://203.0.113.9/",
+      "https://[100::1]/",
+      "https://[0100:0000:0000:0000:1::]/",
+    ]) {
+      expect(blockedLiteralTargetReason(reserved)).not.toBeNull();
+    }
+    for (const publicAddress of [
+      "https://192.0.78.12/",
+      "https://198.51.1.1/",
+      "https://203.0.114.1/",
+      "https://[100:1::1]/",
+      "https://[2606:4700::1111]/",
+    ]) {
+      expect(blockedLiteralTargetReason(publicAddress)).toBeNull();
+    }
+  });
+});

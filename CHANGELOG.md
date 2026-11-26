@@ -148,6 +148,11 @@ subtitle controls, and safer persistence, downloads and native installation.
 - Validate provider fetch targets and pin guarded connections to the checked
   address across redirects. Bound materialization and archive handling, use
   private temporary directories, and keep credentials scoped to their origin.
+- Desktop VLC applies the same checks as mpv: HTTP(S) provider targets only,
+  the addon direct-media preflight, and no shell secrets in its environment.
+  Provider DNS-over-HTTPS refuses redirects off the web and never pins curl to
+  a private address. Signed provider hotfixes follow GitHub's download
+  redirect, and `kunai providers update` uses the pinned channel by default.
 - Preserve analytics opt-out and identity rotation across pending responses and
   concurrent saves. Setup requires an explicit consent action. Tests, installer
   fixtures and debug sandboxes isolate storage and suppress analytics; the

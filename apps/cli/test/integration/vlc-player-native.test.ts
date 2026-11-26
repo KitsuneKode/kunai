@@ -7,6 +7,7 @@ import { createPlaybackOutputGate } from "@/infra/player/playback-output-gate";
 import type { PlayerControlService } from "@/infra/player/PlayerControlService";
 import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 import { defaultVlcRuntime, VlcPlayerService } from "@/infra/player/vlc/vlc-player-service";
+import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 
 import { nativeBinary } from "./helpers/native-binaries";
 
@@ -70,11 +71,25 @@ async function playThroughVlc(path: string, extraArgs: readonly string[]) {
     { url: path, headers: {}, timestamp: Date.now() },
     {
       url: path,
+      localPlaybackSource: localClip(path),
       displayTitle: "Kunai VLC fixture",
       onPlaybackEvent: ({ event }) => events.push(event),
     },
   );
   return { result, events };
+}
+
+/** The verified-library source production attaches to every local file it plays. */
+function localClip(path: string): LocalPlaybackSource {
+  return {
+    kind: "local",
+    jobId: "fixture",
+    titleId: "fixture",
+    titleName: "Kunai VLC fixture",
+    mediaKind: "series",
+    providerId: "fixture",
+    filePath: path,
+  };
 }
 
 // Real VLC plus ffmpeg-made clips: alone each test takes a few seconds, but in
@@ -147,6 +162,7 @@ nativeTest(
         { url: path, headers: {}, timestamp: Date.now() },
         {
           url: path,
+          localPlaybackSource: localClip(path),
           displayTitle: "Kunai VLC chain",
           playbackMode: "autoplay-chain",
           onPlaybackEvent: ({ event }) => events.push(event),
@@ -182,6 +198,7 @@ nativeTest(
       { url: clip, headers: {}, timestamp: Date.now() },
       {
         url: clip,
+        localPlaybackSource: localClip(clip),
         displayTitle: "Kunai VLC skip",
         timing: {
           tmdbId: "1",

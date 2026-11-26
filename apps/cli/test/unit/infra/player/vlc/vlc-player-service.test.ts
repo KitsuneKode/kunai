@@ -11,6 +11,7 @@ import {
   VlcLaunchError,
   VlcPlayerService,
   type VlcRuntime,
+  isSafeVlcTarget,
 } from "@/infra/player/vlc/vlc-player-service";
 import type { JsonValue } from "@kunai/types";
 
@@ -231,10 +232,81 @@ describe("VlcPlayerService", () => {
       ytdl.service.play({ ...STREAM, requiresYtdl: true }, ytdl.options),
     ).rejects.toThrow("--player mpv");
 
+    // Provider targets are HTTP(S) only, as with mpv: no files, no other schemes.
+    for (const unsafe of [
+      { ...STREAM, url: "file:///etc/passwd" },
+      { ...STREAM, url: "--help" },
+      { ...STREAM, subtitle: "file:///home/me/.ssh/id_ed25519" },
+    ]) {
+      const refused = harness(() => null);
+      await expect(refused.service.play(unsafe, refused.options)).rejects.toThrow(
+        "unsafe stream URL",
+      );
+    }
+
+    // A verified library source vouches only for its own file.
+    const mismatched = harness(() => null);
+    await expect(
+      mismatched.service.play(
+        { ...STREAM, url: "file:///etc/passwd" },
+        {
+          ...mismatched.options,
+          localPlaybackSource: {
+            kind: "local",
+            jobId: "j",
+            titleId: "t",
+            titleName: "T",
+            mediaKind: "series",
+            providerId: "p",
+            filePath: "/library/episode.mp4",
+          },
+        },
+      ),
+    ).rejects.toThrow("unsafe stream URL");
+
     const missing = harness(() => null, null);
     expect(await missing.service.isAvailable()).toBe(false);
     await expect(missing.service.play(STREAM, missing.options)).rejects.toBeInstanceOf(
       VlcLaunchError,
     );
+  });
+});
+
+describe("isSafeVlcTarget", () => {
+  const library = {
+    kind: "local",
+    jobId: "j",
+    titleId: "t",
+    titleName: "T",
+    mediaKind: "series",
+    providerId: "p",
+    filePath: "/library/episode.mp4",
+    subtitlePath: "/library/episode.en.srt",
+  } as const;
+
+  test("a deferred stream passes on its locator; its subtitle is still checked", () => {
+    const deferred = { url: "allmanga-ak:abc", deferredLocator: "allmanga-ak:abc" };
+    expect(isSafeVlcTarget(deferred, undefined)).toBe(true);
+    expect(isSafeVlcTarget({ ...deferred, subtitle: "file:///etc/passwd" }, undefined)).toBe(false);
+  });
+
+  test("a library source vouches only for its own file and subtitle", () => {
+    expect(
+      isSafeVlcTarget(
+        { url: "/library/episode.mp4", subtitle: "/library/episode.en.srt" },
+        library,
+      ),
+    ).toBe(true);
+    expect(isSafeVlcTarget({ url: "file:///etc/passwd" }, library)).toBe(false);
+    // A locator never excuses a local URL: that branch hands `url` to VLC.
+    expect(isSafeVlcTarget({ url: "file:///etc/passwd", deferredLocator: "x" }, library)).toBe(
+      false,
+    );
+  });
+
+  test("provider streams are HTTP(S) only", () => {
+    expect(isSafeVlcTarget({ url: "https://cdn.example/ep.mp4" }, undefined)).toBe(true);
+    expect(isSafeVlcTarget({ url: "file:///etc/passwd" }, undefined)).toBe(false);
+    expect(isSafeVlcTarget({ url: "--help" }, undefined)).toBe(false);
   });
 });

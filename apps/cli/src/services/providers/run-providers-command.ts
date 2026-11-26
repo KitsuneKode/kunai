@@ -21,6 +21,7 @@ import {
   type CachedProviderManifestState,
   type ManifestFetch,
 } from "./provider-hotfix-manifest";
+import { defaultManifestUrl } from "./provider-manifest-pin";
 
 export interface RunProvidersCommandOptions {
   readonly subcommand?: string;
@@ -134,7 +135,8 @@ export async function runProvidersCommand(options: RunProvidersCommandOptions): 
   });
 
   if (action === "update") {
-    const manifestUrl = options.url ?? process.env.KUNAI_PROVIDER_MANIFEST_URL?.trim();
+    // Same default as the background refresh: the env override, else the pinned channel.
+    const manifestUrl = options.url ?? defaultManifestUrl();
     if (!manifestUrl) {
       const payload = jsonFailure(
         "No manifest URL provided. Pass --url <https-url> or set KUNAI_PROVIDER_MANIFEST_URL.",

@@ -148,6 +148,24 @@ describe("createDohFetch", () => {
     );
   });
 
+  test("a redirect that names an encoding over no body is still followed", async () => {
+    const net = transport((url) =>
+      url.pathname === "/x"
+        ? { status: 302, headers: { location: "/y", "content-encoding": "gzip" } }
+        : { body: "landed" },
+    );
+    const response = await dohWith(net)("https://api.example.com/x");
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("landed");
+  });
+
+  test("a redirect off the web (file:, data:) is refused, never handed to fetch", async () => {
+    for (const location of ["file:///etc/passwd", "data:text/plain,hi"]) {
+      const net = transport(() => ({ status: 302, headers: { location } }));
+      await expect(dohWith(net)("https://api.example.com/x")).rejects.toThrow("Redirect to a");
+    }
+  });
+
   test("decodes gzip the way fetch would", async () => {
     const net = transport(() => ({
       headers: { "content-encoding": "gzip" },
