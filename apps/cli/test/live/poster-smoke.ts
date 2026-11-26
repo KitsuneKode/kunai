@@ -513,6 +513,12 @@ async function launchSmoke({ emulator, out, expected }: SmokeOptions): Promise<n
         "KONSOLE_VERSION",
         "TERM_PROGRAM",
         "TERM_PROGRAM_VERSION",
+        // iTerm2 forwards LC_TERMINAL through ssh, and capability detection
+        // reads it and WEZTERM_EXECUTABLE, so the host's values must not leak
+        // into a launched emulator and pick its renderer.
+        "LC_TERMINAL",
+        "LC_TERMINAL_VERSION",
+        "WEZTERM_EXECUTABLE",
         "WEZTERM_UNIX_SOCKET",
         "WEZTERM_PANE",
         "WINDOWID",
