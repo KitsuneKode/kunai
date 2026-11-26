@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-11-25
+Last updated: 2026-11-26
 
 This is the **only index of active work** in `.plans/`. Everything indexed here
 is unfinished. Landed, superseded, and one-shot plans live in
@@ -39,10 +39,14 @@ Watching UX follow-up: [first-run, playback, Tracks and shell coherence](./2026-
 Watching capability recovery: [provider inventories, playback truth and discoverable controls](./2026-10-24-watching-capability-recovery.md).
 Integration and test safety: [analytics isolation, review reconciliation and checkout recovery](./2026-10-25-integration-and-test-safety.md).
 
-The watching candidate has a local combined implementation of safety, provider,
-timing, mouse and playback work.
-Independent review found a cancellation race, now fixed locally. Release
-integration and external qualification remain open; see its
+The watching candidate ships as **v0.4.0**. Its implementation is on main: the
+2026-11-26 merge train landed the open fixes, desktop VLC, decoded-frame
+readiness and failover, provider order, provider DNS-over-HTTPS, touch and
+key-hint clicks, opt-in release markers, the Android launcher environment and
+bounds, and the pinned release and provider-manifest signing keys. What remains
+before the tag is qualification, not code: the uncached release gate, a real
+desktop install → search → play → resume journey, the AUR deploy key on the
+maintainer's AUR account, and the physical-phone pass. Earlier evidence:
 [candidate evidence and remaining gates](../.release/watching-candidate-2026-10-22.md).
 
 Every row has real remaining work. When a plan's core lands, move it to the
