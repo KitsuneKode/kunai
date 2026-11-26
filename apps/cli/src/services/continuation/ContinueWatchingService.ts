@@ -65,14 +65,18 @@ export type StartupContinuationOptions = {
 export class ContinueWatchingService {
   constructor(private readonly historyRepository: HistoryRepository) {}
 
+  /**
+   * The newest title with something to play. Looking only at the newest
+   * title made `--continue` give up after a finished movie (or a caught-up
+   * show) even with unfinished titles right behind it.
+   */
   startupCandidate(options: StartupContinuationOptions = {}): ContinuationViewDecision | null {
-    return (
-      this.recentDecisions({
-        limit: options.limit ?? 1,
-        scanLimit: options.scanLimit ?? 500,
-        signalsByTitle: options.signalsByTitle,
-      })[0] ?? null
-    );
+    const decisions = this.recentDecisions({
+      limit: options.limit ?? 25,
+      scanLimit: options.scanLimit ?? 500,
+      signalsByTitle: options.signalsByTitle,
+    });
+    return decisions.find((decision) => decision.target && decision.primaryAction) ?? null;
   }
 
   recentDecisions(options: StartupContinuationOptions = {}): ContinuationViewDecision[] {

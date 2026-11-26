@@ -7,6 +7,8 @@ import {
 import { ConfigServiceImpl } from "@/services/persistence/ConfigServiceImpl";
 import { DEFAULT_CONFIG, type KitsuneConfig } from "@/services/persistence/ConfigStore";
 
+import { memoryPingLog } from "../../../support/analytics-fixtures";
+
 const ID = "11111111-2222-4333-8444-555555555555";
 const ROTATED = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
 
@@ -72,6 +74,7 @@ function profile(installId = ID) {
 
 function service(config: ConfigServiceImpl, fetchImpl: () => Promise<Response>) {
   return new UsageAnalyticsService({
+    pingLog: memoryPingLog(),
     config,
     currentVersion: "0.3.0",
     endpoint: "https://analytics.example.test/api/ping",
@@ -124,7 +127,7 @@ for (const invalid of ["", "workstation", "aa:bb:cc:dd:ee:ff"]) {
     await analytics.maybePing({ isInteractive: true });
     expect(sends).toBe(0);
     expect(shared.read()).toEqual(expected);
-    expect(analytics.describePayload().installId).toBe(UNSET_INSTALL_ID_PLACEHOLDER);
+    expect(analytics.describePayload().id).toBe(UNSET_INSTALL_ID_PLACEHOLDER);
   });
 }
 

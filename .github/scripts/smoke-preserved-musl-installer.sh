@@ -24,7 +24,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
 CANDIDATE_DIR="$(cd "$CANDIDATE_DIR" && pwd -P)"
 ARCHIVE="${ASSET}.tar.gz"
-for file in "$ARCHIVE" SHA256SUMS SHA256SUMS.archives; do
+ZSTD_ARCHIVE="${ASSET}.tar.zst"
+for file in "$ARCHIVE" "$ZSTD_ARCHIVE" SHA256SUMS SHA256SUMS.archives; do
 	[[ -f "$CANDIDATE_DIR/$file" ]] || {
 		echo "missing preserved release file: $CANDIDATE_DIR/$file" >&2
 		exit 1
@@ -40,11 +41,13 @@ trap cleanup EXIT
 FIXTURE_VERSION_DIR="$FIXTURE_ROOT/download/v$VERSION"
 mkdir -p "$FIXTURE_VERSION_DIR"
 cp "$CANDIDATE_DIR/$ARCHIVE" "$FIXTURE_VERSION_DIR/$ARCHIVE"
+cp "$CANDIDATE_DIR/$ZSTD_ARCHIVE" "$FIXTURE_VERSION_DIR/$ZSTD_ARCHIVE"
 cp "$CANDIDATE_DIR/SHA256SUMS" "$FIXTURE_VERSION_DIR/SHA256SUMS"
 cp "$CANDIDATE_DIR/SHA256SUMS.archives" "$FIXTURE_VERSION_DIR/SHA256SUMS.archives"
 test ! -e "$FIXTURE_VERSION_DIR/$ASSET"
 
-EXPECTED_ARCHIVE_SHA="$(sha256sum "$CANDIDATE_DIR/$ARCHIVE" | awk '{print $1}')"
+# The musl image has `zstd`, so install.sh must take the smaller archive.
+EXPECTED_ARCHIVE_SHA="$(sha256sum "$CANDIDATE_DIR/$ZSTD_ARCHIVE" | awk '{print $1}')"
 IMAGE="kunai-release-musl-installer:${VERSION}"
 docker build \
 	--target musl \
@@ -81,9 +84,9 @@ docker run --rm --network none \
 		test -f "$manifest"
 		grep -F "\"activeVersion\": \"$KUNAI_RELEASE_VERSION\"" "$manifest"
 		grep -F "\"artifactName\": \"$KUNAI_RELEASE_ASSET\"" "$manifest"
-		grep -F "\"archiveName\": \"$KUNAI_RELEASE_ASSET.tar.gz\"" "$manifest"
+		grep -F "\"archiveName\": \"$KUNAI_RELEASE_ASSET.tar.zst\"" "$manifest"
 		grep -F "\"archiveSha256\": \"$KUNAI_EXPECTED_ARCHIVE_SHA\"" "$manifest"
-		grep -F "\"archiveSourceUrl\": \"file:///release/download/v$KUNAI_RELEASE_VERSION/$KUNAI_RELEASE_ASSET.tar.gz\"" "$manifest"
+		grep -F "\"archiveSourceUrl\": \"file:///release/download/v$KUNAI_RELEASE_VERSION/$KUNAI_RELEASE_ASSET.tar.zst\"" "$manifest"
 
 		version_output="$("$KUNAI_BIN_DIR/kunai" --version)"
 		printf "%s\n" "$version_output"

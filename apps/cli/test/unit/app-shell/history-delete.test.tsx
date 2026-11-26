@@ -27,7 +27,9 @@ function history(overrides: Partial<HistoryProgress> = {}): HistoryProgress {
   };
 }
 
-function baseCtx(overrides: Partial<Parameters<typeof handleHistoryOverlayInput>[2]> = {}) {
+function baseCtx(
+  overrides: Partial<Parameters<typeof handleHistoryOverlayInput>[2]> = {},
+): Parameters<typeof handleHistoryOverlayInput>[2] {
   return {
     container: {
       historyRepository: {
@@ -51,6 +53,9 @@ function baseCtx(overrides: Partial<Parameters<typeof handleHistoryOverlayInput>
     setPendingDelete: () => {},
     onHistoryMutated: () => {},
     onConfirmSelection: () => {},
+    filterQuery: "",
+    filterFocused: false,
+    setFilterFocused: () => {},
     ...overrides,
   };
 }
@@ -194,5 +199,49 @@ describe("history delete UX", () => {
     expect(frame).toContain("Delete episode progress for Demo · S01E02?");
     expect(frame).toContain("y confirm");
     expect(frame).toContain("Esc cancel");
+  });
+});
+
+/**
+ * Neon features review #6: typing a title to filter used to run row actions
+ * letter by letter — "spy x" armed a delete, "demon" opened the title menu.
+ */
+describe("history filter focus", () => {
+  test("letters are text while a filter is in progress, actions otherwise", () => {
+    const pending: unknown[] = [];
+    const typing = handleHistoryOverlayInput(
+      "x",
+      {},
+      { ...baseCtx({ filterQuery: "spy " }), setPendingDelete: (next) => pending.push(next) },
+    );
+    expect(typing).toBe("not-handled");
+    expect(pending).toEqual([]);
+
+    handleHistoryOverlayInput(
+      "x",
+      {},
+      { ...baseCtx(), setPendingDelete: (next) => pending.push(next) },
+    );
+    expect(pending).toHaveLength(1);
+  });
+
+  test("Ctrl+F focuses an empty filter, after which action letters are text", () => {
+    let focused = false;
+    const ctx = baseCtx({
+      setFilterFocused: (next) => {
+        focused = next;
+      },
+    });
+    expect(handleHistoryOverlayInput("f", { ctrl: true }, ctx)).toBe("handled");
+    expect(focused).toBe(true);
+
+    const pending: unknown[] = [];
+    const result = handleHistoryOverlayInput(
+      "w",
+      {},
+      { ...ctx, filterFocused: true, setPendingDelete: (next) => pending.push(next) },
+    );
+    expect(result).toBe("not-handled");
+    expect(pending).toEqual([]);
   });
 });

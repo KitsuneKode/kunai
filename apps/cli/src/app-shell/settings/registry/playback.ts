@@ -1,4 +1,7 @@
-import type { SettingRowDef, SettingsRegistryContext } from "../types";
+import { detectPlayerPlatform } from "@/domain/playback/player-choice";
+import { isPlayerPreference } from "@kunai/config";
+
+import type { EnumOption, SettingRowDef, SettingsRegistryContext } from "../types";
 import {
   AUTO_CLEANUP_GRACE_DAY_OPTIONS,
   CONTINUE_SOURCE_PREFERENCE_OPTIONS,
@@ -46,6 +49,19 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
       write: (config, value) => ({
         ...config,
         startupPriority: value as typeof config.startupPriority,
+      }),
+    },
+    {
+      kind: "enum",
+      id: "player",
+      label: "Player",
+      detail: "Used when --player is not given · takes effect the next time Kunai starts",
+      options: playerOptions(),
+      presentation: "submenu",
+      read: (config) => (isPlayerPreference(config.player) ? config.player : "auto"),
+      write: (config, value) => ({
+        ...config,
+        player: isPlayerPreference(value) ? value : "auto",
       }),
     },
     {
@@ -235,5 +251,25 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
         continueSourcePreference: value as typeof config.continueSourcePreference,
       }),
     },
+  ];
+}
+
+/**
+ * VLC is an Android handoff target; desktop playback is mpv, so it is not
+ * offered there. On Android a saved VLC or mpv-android is also what external
+ * subtitles need — the system chooser cannot pass them.
+ */
+export function playerOptions(platform = detectPlayerPlatform()): readonly EnumOption[] {
+  const android = platform === "android";
+  return [
+    {
+      value: "auto",
+      label: "Auto",
+      detail: android ? "Ask Android which app plays each stream" : "mpv",
+    },
+    { value: "mpv", label: android ? "mpv-android" : "mpv", detail: "Always this player" },
+    ...(android
+      ? [{ value: "vlc", label: "VLC", detail: "Always VLC; keeps external subtitles" }]
+      : []),
   ];
 }

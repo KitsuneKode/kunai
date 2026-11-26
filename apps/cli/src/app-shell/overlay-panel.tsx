@@ -6,6 +6,8 @@ import type { DetailsPanelData } from "./details-panel";
 import { DetailsSheet } from "./details-sheet-ui";
 import type { DetailsSheetModel } from "./details-sheet.model";
 import { useSettledValue } from "./hooks/use-settled-value";
+import { MouseTarget } from "./mouse/MouseRegions";
+import { useRowTap } from "./mouse/row-tap";
 import { useIsInsideOverlay } from "./overlay-layout-context";
 import { PickerOptionRow } from "./overlay-picker-row";
 import {
@@ -150,11 +152,20 @@ export function OverlayPanel({
   overlay,
   width,
   maxLinesOverride,
+  onOptionSelect,
+  onOptionActivate,
+  onWheel,
 }: {
   overlay: BrowseOverlay;
   width: number;
   maxLinesOverride?: number;
+  /** Tap on an option row (by its index in `overlay.options`): move the cursor there. */
+  onOptionSelect?: (optionIndex: number) => void;
+  /** Second tap on the selected row: the same as Enter. */
+  onOptionActivate?: (optionIndex: number) => void;
+  onWheel?: (direction: "up" | "down") => void;
 }) {
+  const tapRow = useRowTap<number>();
   const plain = plainModeEnabled();
   const insideOverlay = useIsInsideOverlay();
   const contentWidth = Math.max(24, width - 4);
@@ -310,43 +321,57 @@ export function OverlayPanel({
                   !plain && isHistoryPicker && option.posterTitle ? historyPosterWidth + 1 : 0;
                 const historyRowWidth = Math.max(0, listContentWidth - prefixWidth);
                 return (
-                  <Box
+                  <MouseTarget
                     key={`${option.value}-${optionIndex}`}
-                    backgroundColor={selected && !plain ? palette.accentFill : undefined}
-                    flexDirection="row"
+                    id={`overlay-panel:option:${optionIndex}`}
+                    flexDirection="column"
+                    active={Boolean(onOptionSelect && onOptionActivate)}
+                    onClick={() => {
+                      if (tapRow(optionIndex, selected) === "activate") {
+                        onOptionActivate?.(optionIndex);
+                      } else {
+                        onOptionSelect?.(optionIndex);
+                      }
+                    }}
+                    onWheel={onWheel}
                   >
-                    {!plain && isHistoryPicker && option.posterTitle ? (
-                      <Box marginRight={1}>
-                        <PosterInitialBlock
-                          title={option.posterTitle}
-                          width={historyPosterWidth}
-                          height={3}
-                        />
-                      </Box>
-                    ) : null}
-                    <Box flexDirection="column" flexGrow={1}>
-                      <Text bold={selected} wrap="truncate-end">
-                        <PickerOptionRow
-                          label={effectiveLabel}
-                          detail={option.detail}
-                          badge={option.badge}
-                          width={historyRowWidth}
-                          selected={selected}
-                          accentColor={rowAccentColor}
-                          pickerAccent={pickerAccent}
-                          labelColor={option.tone === "error" ? palette.dangerText : undefined}
-                        />
-                      </Text>
-                      {isHistoryPicker && option.historyProgress ? (
-                        <Text
-                          color={option.historyProgress.completed ? palette.ok : palette.accent}
-                        >
-                          <HistoryProgressBar percentage={option.historyProgress.percentage} />
-                          {plain ? "" : `  ${option.historyProgress.percentage}%`}
-                        </Text>
+                    <Box
+                      backgroundColor={selected && !plain ? palette.accentFill : undefined}
+                      flexDirection="row"
+                    >
+                      {!plain && isHistoryPicker && option.posterTitle ? (
+                        <Box marginRight={1}>
+                          <PosterInitialBlock
+                            title={option.posterTitle}
+                            width={historyPosterWidth}
+                            height={3}
+                          />
+                        </Box>
                       ) : null}
+                      <Box flexDirection="column" flexGrow={1}>
+                        <Text bold={selected} wrap="truncate-end">
+                          <PickerOptionRow
+                            label={effectiveLabel}
+                            detail={option.detail}
+                            badge={option.badge}
+                            width={historyRowWidth}
+                            selected={selected}
+                            accentColor={rowAccentColor}
+                            pickerAccent={pickerAccent}
+                            labelColor={option.tone === "error" ? palette.dangerText : undefined}
+                          />
+                        </Text>
+                        {isHistoryPicker && option.historyProgress ? (
+                          <Text
+                            color={option.historyProgress.completed ? palette.ok : palette.accent}
+                          >
+                            <HistoryProgressBar percentage={option.historyProgress.percentage} />
+                            {plain ? "" : `  ${option.historyProgress.percentage}%`}
+                          </Text>
+                        ) : null}
+                      </Box>
                     </Box>
-                  </Box>
+                  </MouseTarget>
                 );
               })}
               {optionWindowEnd < overlay.options.length ? (

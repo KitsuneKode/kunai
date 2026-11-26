@@ -1,4 +1,5 @@
 import type { EndReason, PlaybackResult } from "@/domain/types";
+import { isJsonNumber, isJsonObject } from "@kunai/types";
 
 export interface PlayerStatsSample {
   source: "ipc";
@@ -20,6 +21,12 @@ export interface PlayerStatsSample {
   demuxerViaNetwork?: boolean;
   cacheSpeedBytesPerSecond?: number;
   voConfigured?: boolean;
+  /**
+   * Size of the last frame the decoder handed to the video output. Present
+   * only once a frame was actually decoded — unlike `video-params`, which
+   * container metadata fills in. See `playback-output-gate.ts`.
+   */
+  videoOutParams?: { readonly w: number; readonly h: number };
   eofReached?: boolean;
   idleActive?: boolean;
   coreIdle?: boolean;
@@ -366,6 +373,9 @@ export function applyObservedPropertySample(
     case "vo-configured":
       next.voConfigured = Boolean(update.value);
       break;
+    case "video-out-params":
+      next.videoOutParams = readVideoOutParams(update.value);
+      break;
     case "eof-reached":
       next.eofReached = Boolean(update.value);
       break;
@@ -407,6 +417,15 @@ export function applyObservedPropertySample(
   state.latestIpcSample = next;
 }
 
+/** `video-out-params` as a frame size, or undefined when no frame has been decoded. */
+export function readVideoOutParams<T>(
+  value: T,
+): { readonly w: number; readonly h: number } | undefined {
+  if (!isJsonObject(value)) return undefined;
+  const { w, h } = value;
+  return isJsonNumber(w) && isJsonNumber(h) && w > 0 && h > 0 ? { w, h } : undefined;
+}
+
 function isPlaybackProgressProperty(name: string): boolean {
   switch (name) {
     case "time-pos":
@@ -421,6 +440,7 @@ function isPlaybackProgressProperty(name: string): boolean {
     case "demuxer-via-network":
     case "cache-speed":
     case "vo-configured":
+    case "video-out-params":
     case "eof-reached":
     case "idle-active":
     case "core-idle":

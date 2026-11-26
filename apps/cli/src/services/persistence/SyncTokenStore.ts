@@ -169,16 +169,32 @@ export class SyncTokenStore {
   private readonly io: SyncTokenFileIo;
   /** Tail of the serialized mutation queue. Settled form only -- never rejects. */
   private mutationChain: Promise<void> = Promise.resolve();
+  /** The read in flight, and the queue tail it waited on (see `load`). */
+  private sharedLoad: { readonly after: Promise<void>; readonly read: Promise<SyncTokens> } | null =
+    null;
 
   constructor(paths: KunaiPaths, io: SyncTokenFileIo = realSyncTokenFileIo) {
     this.path = join(paths.configDir, "sync-tokens.json");
     this.io = io;
   }
 
-  /** Persisted tokens, read once every mutation queued before this call has settled. */
-  async load(): Promise<SyncTokens> {
-    await this.mutationChain;
-    return this.io.readTokens(this.path);
+  /**
+   * Persisted tokens, read once every mutation queued before this call has
+   * settled. Concurrent loads with no mutation queued between them share one
+   * read: both trackers load at startup, and on a credential vault each read
+   * is a subprocess per tracker entry (4 spawns where 2 do).
+   */
+  load(): Promise<SyncTokens> {
+    const after = this.mutationChain;
+    if (this.sharedLoad?.after === after) return this.sharedLoad.read;
+    const read = after.then(() => this.io.readTokens(this.path));
+    const shared = { after, read };
+    this.sharedLoad = shared;
+    const release = () => {
+      if (this.sharedLoad === shared) this.sharedLoad = null;
+    };
+    read.then(release, release);
+    return read;
   }
 
   /** Replace the whole token file, ordered against concurrent patches. */

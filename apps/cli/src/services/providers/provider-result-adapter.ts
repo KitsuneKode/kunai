@@ -21,6 +21,22 @@ export interface ProviderResultAdapterInput {
   readonly blockedStreamUrls?: readonly string[];
 }
 
+/**
+ * Point a resolve result at another stream from its own inventory.
+ *
+ * `streamReachabilityVerified` vouches for the stream the provider selected and
+ * probed, not for its siblings. Carrying it onto a re-selected stream lets the
+ * playback preflight skip a URL no code has fetched, so it is cleared whenever
+ * the selection moves.
+ */
+export function reselectResolveResultStream(
+  result: ProviderResolveResult,
+  streamId: string,
+): ProviderResolveResult {
+  if (streamId === result.selectedStreamId) return result;
+  return { ...result, selectedStreamId: streamId, streamReachabilityVerified: false };
+}
+
 export function providerResolveResultToStreamInfo(
   input: ProviderResultAdapterInput,
 ): StreamInfo | null {
@@ -42,8 +58,7 @@ export function providerResolveResultToStreamInfo(
   if (!playableUrl) {
     return null;
   }
-  const effectiveResult =
-    selected.id === result.selectedStreamId ? result : { ...result, selectedStreamId: selected.id };
+  const effectiveResult = reselectResolveResultStream(result, selected.id);
 
   const subtitleList = result.subtitles.map(subtitleCandidateToTrack);
   const pickedSubtitle =

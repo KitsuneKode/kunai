@@ -1,18 +1,26 @@
 import {
+  analyticsDayKey,
+  analyticsMonthKey,
+  isAnalyticsMonth,
+} from "@/domain/analytics/analytics-day";
+import {
   canPersistEnabled,
   canSend,
   envBlockFlag,
   resolveConsentState,
   type ConsentEnv,
 } from "@/domain/analytics/consent-policy";
+import { isAndroidRuntime } from "@/domain/platform-runtime";
 import { dbgErr } from "@/logger";
 import type {
+  AnalyticsIdentityRotation,
   AnalyticsPingCompletion,
   KitsuneConfig,
   PersistedAnalyticsConsent,
 } from "@/services/persistence/ConfigService";
 
-import { ensureInstallId, installIdDigest, isValidInstallId } from "./install-id";
+import { ensureInstallId, isValidInstallId, monthlyWireId, rotateInstallId } from "./install-id";
+import type { PingLog } from "./ping-log";
 
 /**
  * Where an opted-in install sends its daily ping.
@@ -44,26 +52,94 @@ export const ANALYTICS_PING_INTERVAL_MS = 24 * 60 * 60 * 1000;
 export const ANALYTICS_RETRY_BACKOFF_MS = 15 * 60 * 1000;
 
 /**
- * Shown instead of a real UUID to anyone who has not enabled analytics.
+ * Shown instead of a real id to anyone who has not enabled analytics.
  * Rendering a preview must never be what creates an identifier.
  */
 export const UNSET_INSTALL_ID_PLACEHOLDER = "<generated when you enable>";
 
+/** Shown instead of a cohort to anyone who has not enabled analytics. */
+export const UNSET_COHORT_PLACEHOLDER = "<the month you enable>";
+
 /**
- * Wire contract with users — exactly these five keys, sorted. Never add one
- * silently: `.docs/analytics-privacy-contract.md` and the user-facing MDX both
- * document this list, and `analytics-payload-drift.test.ts` reads this
- * constant so a sixth field cannot pass while the docs still say five.
+ * Wire contract with users (payload v2): exactly these six keys, sorted. Never
+ * add one silently: `.docs/analytics-privacy-contract.md` and the user-facing
+ * MDX both document this list, and `analytics-payload-drift.test.ts` reads this
+ * constant so a seventh field cannot pass while the docs still say six.
  */
-export const ANALYTICS_PAYLOAD_KEYS = ["arch", "installId", "os", "ts", "version"] as const;
+export const ANALYTICS_PAYLOAD_KEYS = ["arch", "cohort", "day", "id", "os", "version"] as const;
+
+/** The same keys in the order the body carries them, for copy that names them. */
+export const ANALYTICS_PAYLOAD_FIELDS = ["id", "cohort", "day", "version", "os", "arch"] as const;
 
 export type AnalyticsPayload = {
-  readonly installId: string;
+  /** `monthlyWireId(installId, month of day)`: rotates every calendar month. */
+  readonly id: string;
+  /** `YYYY-MM` analytics was enabled in. */
+  readonly cohort: string;
+  /** The client's analytics day label, `YYYY-MM-DD` (`analytics-day.ts`). */
+  readonly day: string;
   readonly version: string;
   readonly os: string;
   readonly arch: string;
-  readonly ts: number;
 };
+
+/** The analytics consent fields of a config, as the payload builder reads them. */
+export type AnalyticsIdentity = {
+  readonly analytics: KitsuneConfig["analytics"];
+  readonly installId: string;
+  readonly analyticsCohort: string;
+};
+
+export type AnalyticsPlatform = { readonly os: string; readonly arch: string };
+
+/**
+ * `android` on an Android runtime, otherwise `process.platform`. Termux reports
+ * `linux`, so an Android install used to be counted as Linux.
+ */
+export function analyticsOs(
+  platform: string = process.platform,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string {
+  return isAndroidRuntime(platform, env) ? "android" : platform;
+}
+
+/**
+ * The cohort a ping from this identity carries. An install that opted in
+ * before cohorts existed has none stored; it is counted from the month of its
+ * first v2 ping, which is the documented upgrade seam.
+ */
+function cohortFor(identity: AnalyticsIdentity, now: number): string {
+  return isAnalyticsMonth(identity.analyticsCohort)
+    ? identity.analyticsCohort
+    : analyticsMonthKey(now);
+}
+
+/**
+ * Exact payload the next ping would carry. Pure, shared by the send path,
+ * `/analytics`, the consent screen and `kunai analytics preview`, so none of
+ * them can describe a body the others would not send.
+ *
+ * Without consent and a valid id it shows placeholders: a preview must never
+ * be what creates an identifier.
+ */
+export function describeAnalyticsPayload(input: {
+  readonly identity: AnalyticsIdentity;
+  readonly version: string;
+  readonly platform: AnalyticsPlatform;
+  readonly now: number;
+}): AnalyticsPayload {
+  const { identity, now } = input;
+  const day = analyticsDayKey(now);
+  const enabled = identity.analytics === "enabled" && isValidInstallId(identity.installId);
+  return {
+    id: enabled ? monthlyWireId(identity.installId, day.slice(0, 7)) : UNSET_INSTALL_ID_PLACEHOLDER,
+    cohort: enabled ? cohortFor(identity, now) : UNSET_COHORT_PLACEHOLDER,
+    day,
+    version: input.version,
+    os: input.platform.os,
+    arch: input.platform.arch,
+  };
+}
 
 export type AnalyticsConsentChoice = "enabled" | "disabled";
 
@@ -87,6 +163,7 @@ type AnalyticsConfig = {
   update(partial: Partial<KitsuneConfig>): Promise<void>;
   save(): Promise<void>;
   recordAnalyticsPing(completion: AnalyticsPingCompletion): Promise<boolean>;
+  rotateAnalyticsIdentity(rotation: AnalyticsIdentityRotation): Promise<boolean>;
   readPersistedAnalyticsConsent(): Promise<PersistedAnalyticsConsent>;
 };
 
@@ -94,9 +171,11 @@ export type UsageAnalyticsServiceDeps = {
   readonly config: AnalyticsConfig;
   readonly currentVersion: string;
   readonly endpoint: string;
+  /** Where sent pings are recorded for `kunai analytics log`. */
+  readonly pingLog: PingLog;
   readonly fetchImpl?: AnalyticsFetch;
   readonly now?: () => number;
-  readonly platform?: { readonly os: string; readonly arch: string };
+  readonly platform?: AnalyticsPlatform;
   readonly pingTimeoutMs?: number;
   /** Injectable for tests; defaults to `process.env`. */
   readonly env?: ConsentEnv;
@@ -105,14 +184,14 @@ export type UsageAnalyticsServiceDeps = {
 export class UsageAnalyticsService {
   private readonly fetchImpl: AnalyticsFetch;
   private readonly now: () => number;
-  private readonly platform: { readonly os: string; readonly arch: string };
+  private readonly platform: AnalyticsPlatform;
   private readonly pingTimeoutMs: number;
   private readonly env: ConsentEnv;
 
   constructor(private readonly deps: UsageAnalyticsServiceDeps) {
     this.fetchImpl = deps.fetchImpl ?? ((input, init) => fetch(input, init));
     this.now = deps.now ?? (() => Date.now());
-    this.platform = deps.platform ?? { os: process.platform, arch: process.arch };
+    this.platform = deps.platform ?? { os: analyticsOs(), arch: process.arch };
     this.pingTimeoutMs = deps.pingTimeoutMs ?? 2_500;
     this.env = deps.env ?? { DO_NOT_TRACK: process.env.DO_NOT_TRACK, CI: process.env.CI };
   }
@@ -129,9 +208,22 @@ export class UsageAnalyticsService {
     const blocked = envBlockFlag(this.env) !== null;
     if (choice === "disabled" || blocked) {
       // Clearing the id is the guarantee: it exists iff analytics is enabled.
-      return { analytics: "disabled", installId: "" };
+      // The cohort goes with it, so a later enable counts as a new install.
+      return { analytics: "disabled", installId: "", analyticsCohort: "" };
     }
-    return { analytics: "enabled", installId: ensureInstallId(this.deps.config.getRaw()) };
+    const config = this.deps.config.getRaw();
+    const installId = ensureInstallId(config);
+    // Affirming an enable that already holds keeps its cohort; anything that
+    // mints an identity starts a new one in the month the key was pressed.
+    const keepsCohort =
+      config.analytics === "enabled" &&
+      config.installId.trim() === installId &&
+      isAnalyticsMonth(config.analyticsCohort);
+    return {
+      analytics: "enabled",
+      installId,
+      analyticsCohort: keepsCohort ? config.analyticsCohort : analyticsMonthKey(this.now()),
+    };
   }
 
   async setConsent(
@@ -140,7 +232,43 @@ export class UsageAnalyticsService {
     const patch = this.consentPatch(choice);
     await this.deps.config.update(patch);
     await this.deps.config.save();
+    await this.settleLocalPingLog();
     return { applied: patch.analytics as AnalyticsConsentChoice };
+  }
+
+  /**
+   * A fresh identity, from the explicit rotate action. The new id starts its
+   * own cohort and cadence, and the log of pings sent under the old one goes:
+   * a rotation that kept the old ids beside the new one would not be one.
+   *
+   * `null` when config.json no longer says `enabled` (a sibling disabled it):
+   * the write is a locked compare-and-set, so a stale process cannot put an
+   * identity back beside `disabled`.
+   */
+  async rotateIdentity(): Promise<{ readonly installId: string } | null> {
+    const installId = rotateInstallId();
+    const rotated = await this.deps.config.rotateAnalyticsIdentity({
+      installId,
+      analyticsCohort: analyticsMonthKey(this.now()),
+      // Carrying the old timestamps forward would suppress the first ping
+      // under the new id for up to a day.
+      lastAnalyticsPingAt: 0,
+      analyticsRetryAfter: 0,
+    });
+    // Either way the old pings go: rotated, or analytics is off on disk.
+    await this.deps.pingLog.remove().catch(() => undefined);
+    return rotated ? { installId } : null;
+  }
+
+  /**
+   * Removes the local ping log unless analytics is enabled. Derived from
+   * state rather than told which way a choice went, so every caller that
+   * writes consent can run it after its save, and startup can run it to catch
+   * a disable written by a sibling process or by hand.
+   */
+  async settleLocalPingLog(): Promise<void> {
+    if (this.deps.config.getRaw().analytics === "enabled") return;
+    await this.deps.pingLog.remove().catch(() => undefined);
   }
 
   /** Records the non-interactive upgrader recommendation without granting consent. */
@@ -153,21 +281,18 @@ export class UsageAnalyticsService {
    * Exact JSON that would be sent. A query: performs no writes, and does not
    * mint an install id for someone who has not enabled analytics.
    *
-   * `installId` is the digest, matching the body byte for byte. Showing the
+   * `id` is this month's HMAC, matching the body byte for byte. Showing the
    * stored UUID here would make this screen -- the one surface whose whole job
    * is telling the user what leaves their machine -- the only place claiming
    * the raw id is transmitted.
    */
   describePayload(): AnalyticsPayload {
-    const config = this.deps.config.getRaw();
-    const enabled = config.analytics === "enabled" && isValidInstallId(config.installId);
-    return {
-      installId: enabled ? installIdDigest(config.installId) : UNSET_INSTALL_ID_PLACEHOLDER,
+    return describeAnalyticsPayload({
+      identity: this.deps.config.getRaw(),
       version: this.deps.currentVersion,
-      os: this.platform.os,
-      arch: this.platform.arch,
-      ts: this.now(),
-    };
+      platform: this.platform,
+      now: this.now(),
+    });
   }
 
   /**
@@ -193,11 +318,18 @@ export class UsageAnalyticsService {
     if (!canPersistEnabled(state)) {
       // A stale `enabled` config must not survive an env block.
       if (this.deps.config.getRaw().analytics === "enabled") {
-        await this.deps.config.update({ analytics: "disabled", installId: "" });
+        await this.deps.config.update({
+          analytics: "disabled",
+          installId: "",
+          analyticsCohort: "",
+        });
         await this.deps.config.save();
       }
-      return { kind: "quiet" };
     }
+    // Catches a disable this process did not write (a sibling, a hand edit).
+    // Backgrounded: startup awaits this method before the first paint.
+    void this.settleLocalPingLog();
+    if (!canPersistEnabled(state)) return { kind: "quiet" };
 
     if (state.kind === "awaiting-disclosure") {
       return this.deps.config.getRaw().analyticsNoticeShown
@@ -254,29 +386,57 @@ export class UsageAnalyticsService {
     if (!isValidInstallId(config.installId)) return;
     const installId = config.installId;
 
+    // This month's HMAC of the stored id, never the id itself. `installId`
+    // below is persisted locally so the identity survives restarts.
+    const identity = this.deps.config.getRaw();
+    const payload = describeAnalyticsPayload({
+      identity,
+      version: this.deps.currentVersion,
+      platform: this.platform,
+      now,
+    });
+    const body = JSON.stringify(payload);
+    // A ping the log cannot record is not sent: `kunai analytics log` promises
+    // every ping, and a gap would make it a sample.
+    if (!(await this.recordInPingLog(endpoint, body, now))) return;
+
     // Everything above read this process's snapshot. A sibling kunai may have
     // disabled analytics or rotated the id since, so nothing is sent until the
-    // file agrees; the completion's own re-check only guards the bookkeeping,
-    // after the request has already left.
-    if (!(await this.persistedConsentAllows(installId))) return;
-    const payload: AnalyticsPayload = {
-      // The digest, never the stored id. `installId` below is persisted locally
-      // so the identity survives restarts; only this hash is transmitted.
-      installId: installIdDigest(installId),
-      version: this.deps.currentVersion,
-      os: this.platform.os,
-      arch: this.platform.arch,
-      ts: now,
-    };
+    // file agrees. This re-read is the last await before the request, after
+    // the log append, so a disable that lands while the log is being written
+    // is still seen here; the entry just written goes with it, because the log
+    // exists only while analytics is enabled. The completion's own re-check
+    // only guards the bookkeeping, after the request has already left.
+    if (!(await this.persistedConsentAllows(installId))) {
+      await this.deps.pingLog.remove().catch(() => undefined);
+      return;
+    }
 
-    const outcome = await this.send(endpoint, payload);
+    const outcome = await this.send(endpoint, body);
 
-    await this.deps.config.recordAnalyticsPing({
+    const recorded = await this.deps.config.recordAnalyticsPing({
       installId,
+      // An install that opted in before cohorts existed keeps the cohort its
+      // first v2 ping carried, or every month would report it as new again.
+      analyticsCohort: isAnalyticsMonth(identity.analyticsCohort) ? undefined : payload.cohort,
       ...(outcome === "retry"
         ? { analyticsRetryAfter: now + ANALYTICS_RETRY_BACKOFF_MS }
         : { lastAnalyticsPingAt: now, analyticsRetryAfter: 0 }),
     });
+    // A rejected completion means consent or identity moved while the request
+    // was in flight. The rejection refreshed memory from disk, so settling
+    // removes the log if that move was a disable.
+    if (!recorded) await this.settleLocalPingLog();
+  }
+
+  /** Appends the exact body to the local log; false when it cannot. */
+  private async recordInPingLog(endpoint: string, body: string, now: number): Promise<boolean> {
+    try {
+      await this.deps.pingLog.append({ sentAt: new Date(now).toISOString(), endpoint, body });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -300,14 +460,14 @@ export class UsageAnalyticsService {
    * `permanent` covers success and 4xx: both mean "do not try this again today".
    * `retry` covers network errors, timeouts, and 5xx.
    */
-  private async send(endpoint: string, payload: AnalyticsPayload): Promise<"permanent" | "retry"> {
+  private async send(endpoint: string, body: string): Promise<"permanent" | "retry"> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.pingTimeoutMs);
     try {
       const response = await this.fetchImpl(endpoint, {
         method: "POST",
         headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify(payload),
+        body,
         signal: controller.signal,
         // An https endpoint that 302s to http:// would carry the payload right
         // back out in cleartext, so the scheme check above has to survive the
@@ -338,10 +498,10 @@ const LOOPBACK_ANALYTICS_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::
 /**
  * https only, plus the loopback exception above.
  *
- * The payload carries `sha256(installId)` with version, OS, and architecture.
- * Over cleartext http anything on the path reads it and can follow one install
- * from day to day — the digest exists so no *endpoint* holds the raw id, and
- * that is worth little if the wire is readable.
+ * The payload carries a monthly HMAC of the install id with its cohort, day,
+ * version, OS, and architecture. Over cleartext http anything on the path reads
+ * it and can follow one install through a month — the HMAC exists so no
+ * *endpoint* holds the raw id, and that is worth little if the wire is readable.
  */
 export function isTransportSafeAnalyticsEndpoint(endpoint: string): boolean {
   const trimmed = endpoint.trim();

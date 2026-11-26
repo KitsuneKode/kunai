@@ -41,8 +41,11 @@ export function storageSettingsRows(_ctx: SettingsRegistryContext): SettingRowDe
         // Restored whole and exactly — onboarding gate included — except the
         // consent-owned keys readPreSetupSnapshot strips: "undo the setup run"
         // means the run, not a way to resurrect a revoked analytics opt-in.
-        await actionCtx.container.config.update(snapshot);
-        await actionCtx.container.config.save();
+        // Through the runtime path, so the restored mode, providers, theme and
+        // languages apply now instead of after a restart.
+        const { applySettingsToRuntime } =
+          await import("@/app/bootstrap/apply-settings-to-runtime");
+        await applySettingsToRuntime({ container: actionCtx.container, next: snapshot });
         return "Restored the settings saved before your last setup run.";
       },
     },

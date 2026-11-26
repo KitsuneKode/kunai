@@ -355,7 +355,8 @@ test.each([
         handle.stdin.enqueue("X");
       });
       const frame = stripAnsi(handle.lastFrame() ?? "");
-      expect(frame.match(/Press X again to remove record/g)).toHaveLength(2);
+      // Once: the row used to repeat the footer prompt.
+      expect(frame.match(/Press X again to remove record/g)).toHaveLength(1);
       expect(frame).not.toContain("Press x or X again");
       expect(frame).not.toContain("Press x again to remove this download");
       await act(async () => {
@@ -376,3 +377,46 @@ test.each([
     }
   },
 );
+
+test("Esc backs out of an armed delete without closing Downloads, and the prompt shows once", async () => {
+  const fixture = createContainerFixture();
+  fixture.setActiveJobs([queuedJob()]);
+  let closed = 0;
+  const handle = render(
+    <DownloadManagerContent
+      container={fixture.container}
+      onClose={() => {
+        closed += 1;
+      }}
+    />,
+    { columns: 120, rows: 35 },
+  );
+  try {
+    fixture.emit({ type: "enqueued" });
+    await act(async () => {
+      handle.stdin.enqueue("x");
+    });
+    const armed = stripAnsi(handle.lastFrame() ?? "");
+    expect(armed.split("Press x or X again").length - 1).toBe(1);
+
+    await pressEscape(handle);
+    expect(closed).toBe(0);
+    expect(stripAnsi(handle.lastFrame() ?? "")).not.toContain("Press x or X again");
+    expect(fixture.removed).toEqual([]);
+
+    await pressEscape(handle);
+    expect(closed).toBe(1);
+  } finally {
+    handle.unmount();
+  }
+});
+
+async function pressEscape(handle: { stdin: { enqueue: (data: string) => void } }): Promise<void> {
+  await act(async () => {
+    handle.stdin.enqueue("\x1b");
+    // Ink defers a lone ESC briefly to tell it from an escape sequence — the
+    // same convention as browse-suggestions' and library-input-ownership's.
+    // sleep-allow: Ink's lone-ESC disambiguation window; not a component clock
+    await new Promise((resolve) => setTimeout(resolve, 60));
+  });
+}

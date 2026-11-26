@@ -3,6 +3,8 @@ import React from "react";
 
 import { mapPosterPreviewState } from "./browse-preview-rail";
 import { useRailPoster } from "./hooks/use-rail-poster";
+import { MouseTarget } from "./mouse/MouseRegions";
+import { useRowTap, type RowTaps } from "./mouse/row-tap";
 import type { NotificationRow, NotificationsView } from "./notifications-view";
 import { ListRow } from "./primitives/ListRow";
 import {
@@ -57,12 +59,16 @@ export function NotificationsShell({
   columns,
   selectedIndex,
   unreadCount,
+  taps = null,
 }: {
   readonly view: NotificationsView;
   readonly columns: number;
   readonly selectedIndex: number;
   readonly unreadCount: number;
+  /** Row taps (Termux sends a phone tap as a click); null turns them off. */
+  readonly taps?: RowTaps | null;
 }) {
+  const tapRow = useRowTap<string>();
   const showRail = shouldRenderPreviewRail({ columns, hasModel: view.rail !== null });
   const { poster, posterState, spinner } = useRailPoster(view.rail?.preview.posterUrl, {
     rows: 10,
@@ -120,15 +126,36 @@ export function NotificationsShell({
     <StateBlock model={{ kind: "empty", title: view.emptyTitle }} width={listWidth} />
   ) : (
     <Box flexDirection="column">
-      {view.rows.map((row, index) => (
-        <ListRow
-          key={row.dedupKey}
-          selected={index === selectedIndex}
-          columns={rowColumns(row)}
-          rowWidth={listWidth}
-          flexColumnIndex={1}
-        />
-      ))}
+      {view.rows.map((row, index) => {
+        const selected = index === selectedIndex;
+        return (
+          <MouseTarget
+            key={row.dedupKey}
+            id={`notifications:row:${row.dedupKey}`}
+            flexDirection="column"
+            active={taps !== null}
+            onClick={() => {
+              if (tapRow(row.dedupKey, selected) === "activate") taps?.activate(index);
+              else taps?.select(index);
+            }}
+            onWheel={(direction) =>
+              taps?.select(
+                Math.max(
+                  0,
+                  Math.min(view.rows.length - 1, selectedIndex + (direction === "up" ? -1 : 1)),
+                ),
+              )
+            }
+          >
+            <ListRow
+              selected={selected}
+              columns={rowColumns(row)}
+              rowWidth={listWidth}
+              flexColumnIndex={1}
+            />
+          </MouseTarget>
+        );
+      })}
     </Box>
   );
 

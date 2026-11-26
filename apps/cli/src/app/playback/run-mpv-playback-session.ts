@@ -6,7 +6,11 @@ import {
   formatMpvEpisodeDisplayTitle,
   shouldAbortPlaybackBeforeLaunch,
 } from "@/app/playback/mpv-session-lifecycle";
-import { STARTUP_STALL_TIMEOUT_MS } from "@/app/playback/playback-source-failover";
+import {
+  networkSampleShowsBytes,
+  STARTUP_NO_BYTES_TIMEOUT_MS,
+  STARTUP_STALL_TIMEOUT_MS,
+} from "@/app/playback/playback-source-failover";
 import type {
   PlaybackStatusDecision,
   PlaybackStatusSignal,
@@ -34,11 +38,36 @@ import type { DiagnosticCorrelation } from "@/services/diagnostics/correlation";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 import type { PlaybackStartupStage } from "@/services/playback/playback-startup-timeline";
 
+export type StartupAbortReason =
+  | { readonly kind: "no-progress"; readonly timeoutMs: number }
+  /** Nothing arrived from the server at all: dead, not slow. */
+  | { readonly kind: "no-bytes"; readonly timeoutMs: number }
+  | {
+      readonly kind: "video-not-decoding";
+      readonly evidence: Extract<PlayerPlaybackEvent, { type: "video-not-decoding" }>;
+    };
+
+/** A real timer, or a test's own id: the session only hands it back to `clear`. */
+type TimerHandle = ReturnType<typeof setTimeout> | number;
+export type StartupTimers = {
+  readonly set: (callback: () => void, ms: number) => TimerHandle;
+  readonly clear: (handle: TimerHandle) => void;
+};
+const realTimers: StartupTimers = {
+  set: (callback, ms) => setTimeout(callback, ms),
+  clear: (handle) => clearTimeout(handle),
+};
+
 export type MpvPlaybackSessionHooks = {
   readonly onFeedback: (update: MpvPlaybackFeedback) => void;
   readonly onStartupMark?: (stage: PlaybackStartupStage) => void;
-  /** Abort in-flight mpv when the startup stall fires (no first progress within STARTUP_STALL_TIMEOUT_MS). */
-  readonly onStartupStallAbort?: () => void | Promise<void>;
+  /**
+   * Abort in-flight mpv when startup fails: no byte from the server within
+   * STARTUP_NO_BYTES_TIMEOUT_MS (when the player can tell), no first progress
+   * within STARTUP_STALL_TIMEOUT_MS, or a selected video track that plays
+   * without a decoded frame. Either way the existing source recovery takes over.
+   */
+  readonly onStartupStallAbort?: (reason: StartupAbortReason) => void | Promise<void>;
   /**
    * Fired once on confirmed `playback-started` (not process spawn / IPC).
    * Queue acknowledgement belongs here.
@@ -106,6 +135,10 @@ export type RunMpvPlaybackSessionInput = {
   readonly sessionAborted: boolean;
   readonly iterationAborted: boolean;
   readonly correlation?: DiagnosticCorrelation;
+  /** Startup budgets; tests shorten them, production uses the defaults. */
+  readonly startupBudget?: { readonly noBytesMs: number; readonly noProgressMs: number };
+  /** Timer seam for the startup budgets; tests fire them without waiting. */
+  readonly startupTimers?: StartupTimers;
   readonly shareLinkContext: Omit<NonNullable<PlayerOptions["shareLinkContext"]>, "onCopied">;
   readonly timing: PlaybackTimingMetadata | null;
   readonly localPlaybackSource?: LocalPlaybackSource;
@@ -132,49 +165,98 @@ export async function runMpvPlaybackSession(
 
   let latestPresencePositionSeconds = input.startAt > 0 ? input.startAt : 0;
   let latestPresenceDurationSeconds = 0;
-  let bootstrapStallTimer: ReturnType<typeof setTimeout> | null = null;
+  const timers = input.startupTimers ?? realTimers;
+  let bootstrapStallTimer: TimerHandle | null = null;
+  let noBytesTimer: TimerHandle | null = null;
+  const budget = input.startupBudget ?? {
+    noBytesMs: STARTUP_NO_BYTES_TIMEOUT_MS,
+    noProgressMs: STARTUP_STALL_TIMEOUT_MS,
+  };
+  // The early no-bytes exit needs a player that reports bytes, a remote URL,
+  // and no yt-dlp step (extraction runs before any byte flows).
+  const watchForBytes =
+    input.player.capabilities.networkEvidence &&
+    !input.localPlaybackSource &&
+    !stream.requiresYtdl &&
+    /^https?:\/\//i.test(stream.url);
   let startupStallFired = false;
   let startupStallArmed = false;
   let confirmedPlaybackStartNotified = false;
   /** Installed synchronously by `onGenerationActivated`, before any player event. */
   let activeGeneration: PlaybackGeneration | null = null;
 
+  const clearNoBytesTimer = () => {
+    if (noBytesTimer !== null) {
+      timers.clear(noBytesTimer);
+      noBytesTimer = null;
+    }
+  };
   const clearBootstrapStallTimer = () => {
+    clearNoBytesTimer();
     if (bootstrapStallTimer !== null) {
-      clearTimeout(bootstrapStallTimer);
+      timers.clear(bootstrapStallTimer);
       bootstrapStallTimer = null;
     }
+  };
+
+  /** One way out of a failed startup; the reason only changes the copy and diagnostics. */
+  const abortStartup = (reason: StartupAbortReason) => {
+    if (startupStallFired) return;
+    if (!activeGeneration) return;
+    // An old watchdog must not abort a replacement generation.
+    const decision = hooks.applyPlaybackStatusSignal({
+      kind: "startup-stall",
+      generation: activeGeneration,
+    });
+    if (!decision.accepted) return;
+    startupStallFired = true;
+    clearBootstrapStallTimer();
+    const route = formatPlaybackStreamRoute(stream);
+    hooks.onFeedback(
+      reason.kind === "video-not-decoding"
+        ? {
+            detail: "Video isn't decoding — trying next source",
+            note: [
+              `${reason.evidence.codec ? `${reason.evidence.codec} ` : ""}video produced no frames in ${reason.evidence.secondsWithoutVideo}s of playback`,
+              route,
+              "auto failover · o source · ⇧F fallback",
+            ]
+              .filter(Boolean)
+              .join(" · "),
+          }
+        : {
+            detail:
+              reason.kind === "no-bytes"
+                ? "Server sent nothing — trying next source"
+                : "Startup stalled — trying next source",
+            note: [
+              reason.kind === "no-bytes"
+                ? `startup-stall: no data from the server within ${reason.timeoutMs / 1000}s`
+                : `startup-stall: no playback progress within ${reason.timeoutMs / 1000}s`,
+              route,
+              "auto failover · o source · ⇧F fallback",
+            ]
+              .filter(Boolean)
+              .join(" · "),
+          },
+    );
+    void Promise.resolve(hooks.onStartupStallAbort?.(reason)).catch(() => {
+      /* stop best-effort; play() return path marks suspectedDeadStream */
+    });
   };
 
   const armStartupStallWatchdog = () => {
     if (startupStallArmed || startupStallFired) return;
     startupStallArmed = true;
     clearBootstrapStallTimer();
-    bootstrapStallTimer = setTimeout(() => {
-      if (startupStallFired) return;
-      if (!activeGeneration) return;
-      // An old watchdog must not abort a replacement generation.
-      const decision = hooks.applyPlaybackStatusSignal({
-        kind: "startup-stall",
-        generation: activeGeneration,
-      });
-      if (!decision.accepted) return;
-      startupStallFired = true;
-      const route = formatPlaybackStreamRoute(stream);
-      hooks.onFeedback({
-        detail: "Startup stalled — trying next source",
-        note: [
-          `startup-stall: no playback progress within ${STARTUP_STALL_TIMEOUT_MS / 1000}s`,
-          route,
-          "auto failover · o source · ⇧F fallback",
-        ]
-          .filter(Boolean)
-          .join(" · "),
-      });
-      void Promise.resolve(hooks.onStartupStallAbort?.()).catch(() => {
-        /* stop best-effort; play() return path marks suspectedDeadStream */
-      });
-    }, STARTUP_STALL_TIMEOUT_MS);
+    bootstrapStallTimer = timers.set(() => {
+      abortStartup({ kind: "no-progress", timeoutMs: budget.noProgressMs });
+    }, budget.noProgressMs);
+    if (watchForBytes) {
+      noBytesTimer = timers.set(() => {
+        abortStartup({ kind: "no-bytes", timeoutMs: budget.noBytesMs });
+      }, budget.noBytesMs);
+    }
   };
 
   hooks.onFeedback({ detail: "Launching player", note: input.subtitleStatus });
@@ -237,6 +319,10 @@ export async function runMpvPlaybackSession(
         if (startupStage === "first-progress" || event.type === "playback-started") {
           clearBootstrapStallTimer();
         }
+        // Bytes are arriving: slow, not dead. The full startup budget applies.
+        if (event.type === "network-sample" && networkSampleShowsBytes(event)) {
+          clearNoBytesTimer();
+        }
 
         if (event.type !== "network-sample") {
           const feedback = describeMpvPlayerEvent(event);
@@ -250,6 +336,10 @@ export async function runMpvPlaybackSession(
                 }
               : feedback,
           );
+        }
+
+        if (event.type === "video-not-decoding") {
+          abortStartup({ kind: "video-not-decoding", evidence: event });
         }
 
         if (event.type === "playback-started") {

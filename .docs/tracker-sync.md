@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T00:00:00Z"
+lastReviewed: "2026-11-26T10:44:37Z"
 ---
 
 # Tracker Sync
@@ -333,6 +333,17 @@ The disposable-account CLI → SQLite → restart → remote smoke remains the
 release gate because deterministic recovery tests do not prove a real remote
 account mutation end to end.
 
+**Linking is the opt-in.** A fresh connect (`connectNamedTracker`, shared by
+Settings, `/sync` and setup) turns on `enabled`, `trackWatched` where the
+tracker has episode progress, and `syncList` where it holds lists. Before this,
+connecting left every flag at its default (off), so the account read
+"connected · up to date" while nothing was ever sent. An account that was
+already connected keeps the user's switches; setup turns sync on for one the
+user ticked anyway, because the tick is the request. Every disconnect goes
+through `disconnectNamedTracker`, which turns `enabled` off and keeps the other
+switches for a later reconnect, so config never claims a link with no token
+(#232).
+
 **Pause** (`sync.pausedUntil`) is global and separate from `sync.<tracker>.enabled`.
 Enabled off means never; paused means not right now. Work keeps queueing while
 paused and goes out on resume, so pausing never costs an episode. The drain
@@ -356,12 +367,16 @@ response and answers `429` with `Retry-After` and `X-RateLimit-Reset`;
 `TrackerRateLimiter` reads all of it. Below ten remaining it spreads what is
 left across the rest of the window; at zero it blocks until reset.
 
-Short waits are absorbed in-flight. Anything longer is handed back to the outbox
-via `defer()`, which writes the server's own instant to `next_attempt_at` and
+Short waits (up to three seconds) are absorbed in-flight. Anything longer is a
+`rate-limited` outcome before any request: both adapters check
+`shouldDefer()` first rather than sitting out the inline cap and sending early.
+The outbox `defer()` writes the server's own instant to `next_attempt_at` and
 **rolls back the attempt this claim started** — a row must not inherit a longer
-backoff for a queue-wide condition it did not cause. Within one drain, the first
-`rate-limited` outcome defers every remaining row for that tracker without
-asking again: the limit belongs to the connection, not to any one payload.
+backoff for a queue-wide condition it did not cause. The first `rate-limited`
+outcome also sets a per-tracker deadline on the `SyncService` instance: every
+row for that tracker is deferred without asking until it passes, across batches
+of 25, the passes of one drain, and later drains. Other trackers keep draining.
+The limit belongs to the connection, not to any one payload.
 
 ## GraphQL error fates
 

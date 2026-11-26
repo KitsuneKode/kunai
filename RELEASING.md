@@ -162,7 +162,7 @@ Job **`candidate`** (no publish):
    tarballs, then runs `bun run release:pack` to preserve the launcher as
    `.release-candidate/kunai-npm.tgz`
 5. Stages the native files under an isolated `native/` directory, reverifies
-   that exact 22-file directory, creates GitHub OIDC attestations for all 22
+   that exact 30-file directory, creates GitHub OIDC attestations for all 30
    subjects, then uploads artifact
    `kunai-release-candidate-<version>-<commit-sha>` with the preserved launcher
    and platform-package tarballs alongside it (14-day retention). Downstream
@@ -176,20 +176,28 @@ The exact native directory is:
 ```text
 kunai-linux-x64
 kunai-linux-x64.tar.gz
+kunai-linux-x64.tar.zst
 kunai-linux-arm64
 kunai-linux-arm64.tar.gz
+kunai-linux-arm64.tar.zst
 kunai-linux-x64-musl
 kunai-linux-x64-musl.tar.gz
+kunai-linux-x64-musl.tar.zst
 kunai-linux-arm64-musl
 kunai-linux-arm64-musl.tar.gz
+kunai-linux-arm64-musl.tar.zst
 kunai-android-arm64
 kunai-android-arm64.tar.gz
+kunai-android-arm64.tar.zst
 kunai-android-x64
 kunai-android-x64.tar.gz
+kunai-android-x64.tar.zst
 kunai-darwin-x64
 kunai-darwin-x64.tar.gz
+kunai-darwin-x64.tar.zst
 kunai-darwin-arm64
 kunai-darwin-arm64.tar.gz
+kunai-darwin-arm64.tar.zst
 kunai-windows-x64.exe
 kunai-windows-x64.zip
 kunai-windows-arm64.exe
@@ -249,7 +257,7 @@ Job **`publish`** needs `confirmation` and declares `environment: release-produc
 
 1. Downloads the preserved candidate artifact (does **not** rebuild, re-pack,
    or recompress native assets)
-2. Reverifies the exact native directory and all 22 attestations, before npm
+2. Reverifies the exact native directory and all 30 attestations, before npm
    publication, against the
    expected version, release workflow, main-branch ref, and candidate commit
 3. Runs `bun run release`, whose npm publisher works in three phases: it
@@ -271,7 +279,7 @@ Job **`publish`** needs `confirmation` and declares `environment: release-produc
    the same version, and refusing to move a tag that points elsewhere
 6. Reverifies the same downloaded native directory and provenance again,
    immediately before creating a **draft** GitHub release (`make_latest: false`)
-   with its 22 files
+   with its 30 files
 7. `bun run scripts/verify-github-release-assets.ts <tag> --expect-draft …`
    downloads the draft assets and verifies their bytes and attestations
 8. Promotes immediately after that draft-byte verification:
@@ -295,6 +303,25 @@ bun run scripts/set-release-status.ts <version> published <UTC-ISO>
 Then focused release-artifact tests and `release:notes:check` run before a narrow PR containing `.release/kunai-v<version>.json` is opened against main. The branch is keyed by version and workflow run ID, so retrying the metadata job reuses its review branch. Main is updated only through review and required checks. GitHub may require a maintainer to approve workflow runs for this bot-created PR.
 
 ## Enroll the release signing key
+
+**Quick path:** `bun scripts/setup-signing-keys.ts` does every step below for
+both keys, the release checksum key and the provider hotfix manifest key. It
+keeps the private keys out of the checkout and off stdout (mode 0600 backups on
+Linux and macOS; on Windows the user-profile ACL protects them, so run it as
+the maintainer account; in
+`~/.kunai-signing-keys-<date>`, or `--backup-dir`), pipes them into the
+`release-production` environment secrets with `gh`, and writes only the public
+pins (`release-key.json`, `provider-manifest-pin.json`) for you to review and
+commit. It refuses to run when a key is already pinned. `--skip-secrets` writes
+the pins and backups without touching GitHub.
+
+Publish a hotfix manifest by signing it with
+`bun scripts/sign-provider-manifest.ts sign --key <manifest.pem> --key-id <id>`
+and uploading it to the `provider-manifest` prerelease (create it once with the
+command the setup script prints; a prerelease never becomes `releases/latest`):
+`gh release upload provider-manifest provider-manifest.json --clobber`.
+
+The manual steps, for reference:
 
 On a trusted maintainer machine, generate an Ed25519 key outside the checkout.
 Protect the private backup. Store the PEM as an environment secret scoped to
@@ -349,6 +376,25 @@ in shell, so change all three together. A change to the format needs a new
 release is recorded as published. Raw checkout scripts are unkeyed templates.
 Keep the key stable across releases. A new pin requires a transition for clients
 that already trust the old key.
+
+## Install and update markers
+
+Every release also carries `install.marker` and `update.marker`: fixed,
+version-free bytes rendered by `scripts/packaging/release-markers.ts` in the
+publish job, uploaded with the draft, and required (and byte-verified) by
+`verify-github-release-assets.ts`. They are not signed channel files, so the
+metadata and package-channel jobs, which re-verify channels for any tag
+including ones published before markers existed, never look for them.
+
+`install.sh` and `install.ps1` fetch `install.marker` once after a successful
+fresh binary install, and `update.marker` when they replaced another version
+(a same-version reinstall fetches neither); the native updater fetches
+`update.marker` once after a verified activation. GitHub's per-asset `download_count` is the whole
+measurement: Kunai receives nothing. Each fetch is one attempt with a short
+timeout, failures are silent, and `DO_NOT_TRACK`, `CI` and `KUNAI_NO_MARKER`
+skip it. The user-facing statement is in
+`docs/users/reliability-and-privacy.mdx`; the contract is
+`.docs/analytics-privacy-contract.md`.
 
 ## Package channels (Homebrew, Scoop, AUR)
 
@@ -457,14 +503,15 @@ change on a new branch and open a PR manually.
 - `version:packages` runs `changeset version`, synchronizes native platform pins, refreshes `bun.lock` without installing packages or running lifecycle scripts, mirrors the changelog, and regenerates `.release/kunai-v*.md` / `.json` via `bun run release:notes`.
 
 **npm vs GitHub Release artifacts:** npm publishes the preserved
-`kunai-npm.tgz` (allowlisted launcher files only). The ten archives and ten
+`kunai-npm.tgz` (allowlisted launcher files only). The eighteen archives and ten
 raw standalone binaries ship only via the GitHub release — `bun run pkg:check`
 fails if `dist/bin/` appears in the npm tarball.
 
 ## GitHub release tags
 
-Prefer tag `vX.Y.Z` created by the **publish** job with the 22 required native
-assets (10 archives + 10 raw binaries + 2 checksum manifests). Release notes body
+Prefer tag `vX.Y.Z` created by the **publish** job with the 30 required native
+assets (10 compatibility archives + 8 `.tar.zst` archives + 10 raw binaries + 2
+checksum manifests). Release notes body
 comes from `.release/kunai-vX.Y.Z.md`. Avoid duplicate
 `@kitsunekode/kunai@X.Y.Z` releases with empty bodies.
 

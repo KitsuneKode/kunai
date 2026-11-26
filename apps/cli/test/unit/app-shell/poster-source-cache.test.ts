@@ -23,7 +23,9 @@ beforeEach(() => {
   setPosterDiskCacheDir(tempDir());
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // A queued disk write can recreate its directory after teardown removes it.
+  await flushPosterDiskWrites();
   globalThis.fetch = realFetch;
   setPosterDiskCacheDir(null);
   clearPosterSourceCache();

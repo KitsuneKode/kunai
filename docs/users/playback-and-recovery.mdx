@@ -8,6 +8,32 @@ Kunai keeps playback centered on one shell session. After `mpv` exits, you retur
 
 This guide covers the full playback lifecycle, from first resolve through recovery when providers or networks misbehave.
 
+## Desktop VLC
+
+`kunai --player vlc` plays in VLC instead of mpv, keeping your VLC interface,
+hotkeys and settings. Kunai talks to VLC through a private control interface on
+`127.0.0.1` (its password is never on the command line), so VLC playback still
+gets:
+
+- resume from your last position, watch history, Continue Watching and
+  tracker sync;
+- completion and the next episode, startup-stall and "video isn't decoding"
+  recovery to another source;
+- auto-skip of intros, recaps and credits (the same toggles as mpv, and the
+  skip key for a segment you are in), by seeking past them;
+- autoplay in one window: the next episode opens in the VLC window you are
+  already watching instead of a new one;
+- provider streams that need special headers, through Kunai's local stream
+  gateway, and external subtitles;
+- downloaded episodes offline.
+
+Not yet in VLC: an on-screen "Skip intro" prompt (VLC skips without one),
+Kunai's in-player menu and share key, switching audio or subtitle tracks from
+Kunai's Tracks panel, and streams that need yt-dlp (YouTube). Use
+`--player mpv` for those. On Linux, install VLC's ffmpeg decoder too (`vlc-plugin-ffmpeg` on Arch);
+without it VLC plays the sound but no picture, which Kunai now reports instead
+of calling it playback.
+
 ## Android external-player preview
 
 Inside Termux, `--player auto|vlc|mpv` hands a qualified direct stream to the
@@ -23,8 +49,8 @@ Detached playback therefore has deliberately smaller behavior:
 - offline/local files, external subtitles, yt-dlp-dependent playback, and
   streams requiring headers or cookies are rejected before launch.
 
-Use desktop managed mpv when you need full history/resume, subtitle attachment,
-track controls, recovery, or autoplay parity. iOS is not implemented.
+Use desktop mpv or VLC when you need full history/resume, subtitle attachment,
+recovery, or autoplay parity. iOS is not implemented.
 
 ## Playback flow
 
@@ -50,8 +76,8 @@ When inventory has choices, Kunai shows source, quality, audio, and subtitle pic
 <Step>
 ### Watch in the selected player
 
-Desktop Kunai launches mpv with required headers and subtitle attachments, then
-supervises through IPC. Android uses the limited detached handoff described
+Desktop Kunai launches mpv (or VLC, with `--player vlc`) with required headers
+and subtitle attachments, then supervises it. Android uses the limited detached handoff described
 above.
 
 </Step>
@@ -78,6 +104,19 @@ Local watch history drives resume. Nothing leaves your machine unless you opt in
 Episode numbers in the UI are **1-based**. Providers adapt internally.
 
 More: [Continue watching and new episodes](/docs/users/continue-watching-and-new-episodes), [Share links](/docs/users/share-links).
+
+## Keys in the mpv window
+
+The mpv window uses the same keys as `?` help in the terminal: `o` source,
+`k` quality, `e` episode, `s` reload subtitles, `⇧S` back to search, `a`
+autoplay, `u` autoskip, `x` stop after this episode, `m` title menu, `d`
+diagnostics, `⇧F` fallback, `n`/`p` next and previous, `b` skip. Three keys
+exist only in the mpv window: `c` cycles to the next source, `⇧A` cycles audio
+or sub/dub, and `Ctrl+⇧S` copies a share link at the current moment. mpv's own
+`v` (subtitle visibility) is left alone.
+
+When the resume card appears, click it (or press Enter) to resume; right-click
+or Esc keeps playing from where it loaded.
 
 ## Recovery commands
 
@@ -147,7 +186,11 @@ Use `/source` or `/tracks` during playback for the grouped media panel.
 Kunai monitors mpv through IPC and the Kunai bridge Lua script:
 
 - Progress reporting for history and Discord presence
-- In-process stream reconnect after network-read-dead stalls (configurable)
+- In-process stream reconnect after network-read-dead stalls (configurable).
+  A link the server refuses outright (403, 404, unreachable) or that holds no
+  playable video is not retried; Kunai moves to the next source instead.
+- A source that has sent nothing at all in 15 seconds is treated as dead and
+  skipped. A slow source that is still sending gets the full 45 seconds to start.
 - Auto-skip overlay when timing metadata and autoskip are enabled
 
 When playback recovers on its own (buffering clears, a stall resolves, or a

@@ -58,6 +58,9 @@ function baseCtx(overrides: Partial<Parameters<typeof handleHistoryOverlayInput>
       onConfirmSelection: (selection: RootHistorySelection | null) => {
         confirmations.push({ localJobId: selection?.localJobId });
       },
+      filterQuery: "",
+      filterFocused: false,
+      setFilterFocused: () => {},
       ...overrides,
     },
     confirmations,
@@ -111,6 +114,9 @@ describe("handleHistoryOverlayInput", () => {
         setPendingDelete: () => {},
         onHistoryMutated: () => {},
         onConfirmSelection: () => {},
+        filterQuery: "",
+        filterFocused: false,
+        setFilterFocused: () => {},
       },
     );
 
