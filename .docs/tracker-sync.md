@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T10:34:00Z"
+lastReviewed: "2026-11-26T10:44:37Z"
 ---
 
 # Tracker Sync
@@ -332,6 +332,17 @@ episode tie, and an older enqueue cannot replace a newer claimed generation.
 The disposable-account CLI → SQLite → restart → remote smoke remains the
 release gate because deterministic recovery tests do not prove a real remote
 account mutation end to end.
+
+**Linking is the opt-in.** A fresh connect (`connectNamedTracker`, shared by
+Settings, `/sync` and setup) turns on `enabled`, `trackWatched` where the
+tracker has episode progress, and `syncList` where it holds lists. Before this,
+connecting left every flag at its default (off), so the account read
+"connected · up to date" while nothing was ever sent. An account that was
+already connected keeps the user's switches; setup turns sync on for one the
+user ticked anyway, because the tick is the request. Every disconnect goes
+through `disconnectNamedTracker`, which turns `enabled` off and keeps the other
+switches for a later reconnect, so config never claims a link with no token
+(#232).
 
 **Pause** (`sync.pausedUntil`) is global and separate from `sync.<tracker>.enabled`.
 Enabled off means never; paused means not right now. Work keeps queueing while

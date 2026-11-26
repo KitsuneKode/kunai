@@ -147,6 +147,12 @@ function fakeContainer(
       adapters: adapters.map((a) => ({
         id: a.id,
         displayName: a.displayName,
+        // The real adapters' declarations: AniList keeps progress and lists,
+        // TMDB keeps lists only.
+        capabilities:
+          a.id === "anilist"
+            ? { episodeProgress: true, watchlistMembership: true, favoriteMembership: true }
+            : { episodeProgress: false, watchlistMembership: true, favoriteMembership: true },
         getConnection: () => ({ state: a.state }),
         connect: async () => {
           a.connectCalls += 1;
@@ -239,7 +245,7 @@ test("a rerun over linked trackers keeps them enabled without re-auth (#228, #23
   expect(forceCloseRootContent(payload({ prefs: { connectAniList: true } }))).toBe(true);
   await pending;
 
-  expect(config.sync.anilist.enabled).toBe(true);
+  expect(config.sync.anilist).toMatchObject({ enabled: true, trackWatched: true, syncList: true });
   // Already connected: no second OAuth round-trip.
   expect(anilist?.connectCalls).toBe(0);
 });
@@ -324,7 +330,9 @@ test("a successful handoff flips enabled on after the fact (#232)", async () => 
   await pending;
 
   expect(tmdb?.connectCalls).toBe(1);
-  expect(config.sync.tmdb.enabled).toBe(true);
+  // Linking turns on what TMDB can sync (lists), not only the main switch:
+  // with only `enabled`, the account read "connected" and nothing was sent.
+  expect(config.sync.tmdb).toMatchObject({ enabled: true, syncList: true, trackWatched: false });
   expect(config.sync.anilist.enabled).toBe(false);
 });
 

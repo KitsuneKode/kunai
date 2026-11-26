@@ -78,6 +78,7 @@ import { relativeHistoryDate } from "./history-workflows";
 import { promptPlaylistName } from "./playlist-name-prompt";
 import { openSetupWizardFromShell } from "./setup-workflows";
 import { shareTarget } from "./share-workflow";
+import { disconnectNamedTracker } from "./tracker-connect";
 
 export function waitForOverlayClose(
   stateManager: import("@/domain/session/SessionStateManager").SessionStateManager,
@@ -2875,11 +2876,7 @@ async function handleSync(container: Container): Promise<"handled"> {
       });
 
       if (confirm) {
-        await adapter.disconnect({ signal: new AbortController().signal });
-        container.stateManager.dispatch({
-          type: "SET_PLAYBACK_FEEDBACK",
-          note: `Disconnected from ${adapter.displayName}.`,
-        });
+        await disconnectNamedTracker(container, adapter);
       }
       continue;
     }
@@ -2922,10 +2919,6 @@ async function handleSyncDisconnect(container: Container): Promise<"handled"> {
   });
   const adapter = connected.find((candidate) => candidate.id === picked);
   if (!adapter) return "handled";
-  await adapter.disconnect({ signal: new AbortController().signal });
-  container.stateManager.dispatch({
-    type: "SET_PLAYBACK_FEEDBACK",
-    note: `Disconnected from ${adapter.displayName}.`,
-  });
+  await disconnectNamedTracker(container, adapter);
   return "handled";
 }
