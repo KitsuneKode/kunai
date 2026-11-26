@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T05:46:52Z"
+lastReviewed: "2026-11-26T10:34:49Z"
 ---
 
 # Notifications
@@ -40,6 +40,13 @@ The inbox is safe to open during playback. It shows local notices and routes saf
 - `x` dismisses the selected notice
 - recoverable queues restore into the current queue session, but do not autoplay
 - new episode notices queue by default instead of replacing active playback
+- a download-failed notice's Retry requeues the failed job itself (its
+  `downloadJobId`), with that job's source, profile and output — the same
+  `DownloadService.retry` Downloads uses, never a fresh download of the
+  notice's numbers. A notice from before job ids were stored retries only when
+  exactly one failed job matches its episode, and otherwise says to open
+  Downloads. A refused or no-longer-failed retry is reported and leaves the
+  notice unread. Anime failures are one notice per absolute episode.
 - a download or retry-download action counts as done only when at least one
   job was admitted: a refused enqueue (missing yt-dlp, downloads disabled, a
   failed write) returns `unsupported` with its reason, so the inbox shows

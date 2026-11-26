@@ -232,6 +232,7 @@ export function bootstrapServices(input: {
       notificationService.recordSignals([
         {
           type: "download-failed",
+          downloadJobId: job.id,
           titleId: job.titleId,
           mediaKind: job.mediaKind,
           contentType: job.contentType,
