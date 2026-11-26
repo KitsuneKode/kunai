@@ -63,6 +63,12 @@ async function runDisposal(container: Container, handles: ContainerDisposeHandle
     await bestEffort(async () => {
       await container.backgroundWorkScheduler.drain();
     });
+    // The same writes the interactive exit preserves (main.ts
+    // preserveCriticalState): headless paths dispose directly, so without these
+    // a debounced config change or the playback checkpoint could be lost. The
+    // checkpoint writes `dataDb`, so both run before the databases close.
+    await bestEffort(() => container.activePlaybackCheckpoint.flush());
+    await bestEffort(() => container.config.flushPending());
     // Sync settles before the databases close, in this order deliberately: the
     // drain holds outbox rows open against `dataDb`, so closing first would
     // fault an in-flight claim on a dead handle. Tokens are a separate store —
