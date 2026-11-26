@@ -9,9 +9,15 @@
  * that just served the binary, carries nothing the binary download did not,
  * and its response is ignored.
  *
+ * Opt-in, like the ping: a marker is fetched only when usage analytics is
+ * `enabled` in config.json. The callers decide that (the updater from its
+ * config, `kunai upgrade` from `readStandaloneAnalyticsConsented`, the
+ * installers from the config file); a first install has no consent, so it is
+ * never counted.
+ *
  * Best effort only: one attempt, a short timeout, every failure swallowed,
  * nothing printed, and never awaited by the update itself. `DO_NOT_TRACK`,
- * `CI` and `KUNAI_NO_MARKER` each turn it off.
+ * `CI` and `KUNAI_NO_MARKER` still turn it off even with consent.
  */
 
 import { isTruthyEnv } from "@/domain/analytics/consent-policy";

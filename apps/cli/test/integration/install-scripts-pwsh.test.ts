@@ -1035,10 +1035,19 @@ describePwsh("install.ps1 release markers", () => {
   const MARKER = "/download/v9.8.7/install.marker";
   const TRACKING_ALLOWED = { DO_NOT_TRACK: "0", CI: "0", KUNAI_NO_MARKER: "" } as const;
 
+  /** Usage analytics on, as Kunai writes it after an explicit yes. */
+  const seedConsent = (configDir: string) => {
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, "config.json"),
+      JSON.stringify({ analytics: "enabled", analyticsNoticeShown: true }),
+    );
+  };
+
   async function installWith(
     env: Readonly<Record<string, string>>,
     marker: { readonly status: number } | null,
-    options: { readonly corruptChecksum?: boolean } = {},
+    options: { readonly corruptChecksum?: boolean; readonly consent?: boolean } = {},
   ) {
     const asset = hostWindowsAsset();
     const body = "MZ-fixture-payload";
@@ -1051,6 +1060,7 @@ describePwsh("install.ps1 release markers", () => {
     ];
     if (marker) routes.push([MARKER, { status: marker.status, body: "marker" }]);
     const sandbox = createInstallerSandbox("install-ps1-marker");
+    if (options.consent !== false) seedConsent(sandbox.configDir);
     const outcomes: { status: number; stdout: string; stderr: string; requests: string[] }[] = [];
     try {
       await withReleaseFixture(Object.fromEntries(routes), async (baseUrl, evidence) => {
@@ -1069,7 +1079,13 @@ describePwsh("install.ps1 release markers", () => {
     return outcome;
   }
 
-  test("a fresh install fetches install.marker once, after it succeeded", async () => {
+  test("without usage analytics consent nothing is fetched, even with every opt-out off", async () => {
+    const result = await installWith(TRACKING_ALLOWED, { status: 200 }, { consent: false });
+    expect(result.status).toBe(0);
+    expect(result.requests).not.toContain(MARKER);
+  });
+
+  test("with usage analytics on, an install fetches install.marker once, after it succeeded", async () => {
     const result = await installWith(TRACKING_ALLOWED, { status: 200 });
     expect(result.status).toBe(0);
     expect(result.requests.filter((path) => path === MARKER)).toHaveLength(1);
@@ -1104,6 +1120,7 @@ describePwsh("install.ps1 release markers", () => {
       routes.push([`/download/v${version}/update.marker`, { body: "marker" }]);
     }
     const sandbox = createInstallerSandbox("install-ps1-marker-upgrade");
+    seedConsent(sandbox.configDir);
     const markersPerRun: string[][] = [];
     try {
       await withReleaseFixture(Object.fromEntries(routes), async (baseUrl, evidence) => {
@@ -1128,7 +1145,8 @@ describePwsh("install.ps1 release markers", () => {
       ["/download/v9.8.8/update.marker"],
       [],
     ]);
-  });
+    // Three real pwsh installs back to back; the default 5 s is one install's worth.
+  }, 60_000);
 
   test("is not fetched when the install fails", async () => {
     const result = await installWith(TRACKING_ALLOWED, { status: 200 }, { corruptChecksum: true });

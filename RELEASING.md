@@ -391,8 +391,9 @@ fresh binary install, and `update.marker` when they replaced another version
 (a same-version reinstall fetches neither); the native updater fetches
 `update.marker` once after a verified activation. GitHub's per-asset `download_count` is the whole
 measurement: Kunai receives nothing. Each fetch is one attempt with a short
-timeout, failures are silent, and `DO_NOT_TRACK`, `CI` and `KUNAI_NO_MARKER`
-skip it. The user-facing statement is in
+timeout, failures are silent. Markers are opt-in: only an install whose
+config has usage analytics `enabled` fetches one, so a first install never
+does, and even then `DO_NOT_TRACK`, `CI` and `KUNAI_NO_MARKER` skip it. The user-facing statement is in
 `docs/users/reliability-and-privacy.mdx`; the contract is
 `.docs/analytics-privacy-contract.md`.
 

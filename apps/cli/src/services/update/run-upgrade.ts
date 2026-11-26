@@ -1,5 +1,7 @@
 import { existsSync } from "node:fs";
 
+import { readStandaloneAnalyticsConsented } from "@/services/persistence/standalone-config";
+
 import {
   readInstallManifest,
   withInstallManifestPublication,
@@ -38,6 +40,8 @@ export interface RunUpgradePorts {
   readonly inspectPackageInstall: (method: "npm" | "bun") => Promise<PackageInstallEvidence | null>;
   readonly writeInstallManifest: (manifest: WriteInstallManifestInput) => Promise<void>;
   readonly withManifestPublication: <T>(version: string, fn: () => Promise<T>) => Promise<T | null>;
+  /** Usage analytics is on; only then is `update.marker` fetched. */
+  readonly readAnalyticsConsented: () => Promise<boolean>;
 }
 
 const defaultPorts: RunUpgradePorts = {
@@ -47,6 +51,7 @@ const defaultPorts: RunUpgradePorts = {
   inspectPackageInstall,
   writeInstallManifest: (manifest) => writeInstallManifestUnderActivation(manifest),
   withManifestPublication: (version, fn) => withInstallManifestPublication(version, fn),
+  readAnalyticsConsented: readStandaloneAnalyticsConsented,
 };
 
 /**
@@ -150,7 +155,7 @@ export async function runUpgrade(opts: RunUpgradeOptions): Promise<number> {
       version: latest,
       dlBase,
       force: true,
-      releaseMarker: "update.marker",
+      releaseMarker: (await ports.readAnalyticsConsented()) ? "update.marker" : undefined,
     });
     if (result.status === "installed") {
       console.log(`Updated to ${latest}.`);

@@ -182,9 +182,11 @@ neither. **GitHub counts the download; we receive nothing.** The
 request goes to the same GitHub release that just served the binary, carries
 nothing that download did not, and its answer is ignored. It is one attempt with
 a short timeout, never retried, and a failure is silent and never fails the
-install or update. It is separate from usage analytics and needs no opt-in,
-because nothing reaches Kunai. To skip it anyway, set `DO_NOT_TRACK=1`, `CI=true`,
-or `KUNAI_NO_MARKER=1`.
+install or update. Even though nothing reaches Kunai, it only happens when you
+have turned usage analytics on: with analytics off (the default, and always on
+a first install, before Kunai has asked) no marker is fetched. With analytics
+on you can still skip it by setting `DO_NOT_TRACK=1`, `CI=true`, or
+`KUNAI_NO_MARKER=1`.
 
 ### Pings from older releases
 

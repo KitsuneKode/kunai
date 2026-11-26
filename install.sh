@@ -364,11 +364,23 @@ is_truthy_env() {
 # failure ignored and silent. DO_NOT_TRACK, CI and KUNAI_NO_MARKER each turn it
 # off. Arguments: download base, then the version that was active before (or
 # empty), then the version just installed.
+#
+# Opt-in, like Kunai's usage ping: nothing is fetched unless config.json already
+# says "analytics": "enabled" with the consent notice recorded, the same reading
+# the app makes. A first install has no config, so it is never counted.
+analytics_consented() {
+	local cfg="$CONFIG_DIR/config.json"
+	[[ -f "$cfg" ]] || return 1
+	grep -Eq '"analytics"[[:space:]]*:[[:space:]]*"enabled"' "$cfg" || return 1
+	grep -Eq '"analyticsNoticeShown"[[:space:]]*:[[:space:]]*(true|false)' "$cfg"
+}
+
 fetch_release_marker() {
 	local base="$1" previous="$2" installed="$3" marker
 	is_truthy_env "${DO_NOT_TRACK:-}" && return 0
 	is_truthy_env "${CI:-}" && return 0
 	is_truthy_env "${KUNAI_NO_MARKER:-}" && return 0
+	analytics_consented || return 0
 	if [[ -z "$previous" ]]; then
 		marker="install.marker"
 	elif [[ "$previous" != "$installed" ]]; then

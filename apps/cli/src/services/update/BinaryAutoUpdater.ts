@@ -1,3 +1,4 @@
+import { persistedAnalyticsConsent } from "@/services/persistence/analytics-consent";
 import type { ConfigService, KitsuneConfig } from "@/services/persistence/ConfigService";
 
 import { isVersionedBinaryManifest, readInstallManifest } from "./install-manifest";
@@ -115,8 +116,12 @@ export class BinaryAutoUpdater {
       const result: InstallLatestResult = await (this.deps.installLatest ?? installLatest)({
         intent: "upgrade",
         version: latest,
-        // Fire-and-forget: this process keeps running, so nothing waits on it.
-        releaseMarker: "update.marker",
+        // Counted only with usage analytics on, like the ping. Fire-and-forget:
+        // this process keeps running, so nothing waits on it.
+        releaseMarker:
+          persistedAnalyticsConsent(this.deps.config.getRaw()).analytics === "enabled"
+            ? "update.marker"
+            : undefined,
       });
       if (result.status === "installed") {
         return { status: "installed", version: result.version };
