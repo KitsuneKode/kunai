@@ -1278,6 +1278,7 @@ export class ConfigServiceImpl implements ConfigService {
         ? {
             videasySessionExpiresAt: normalizeVideasySessionExpiresAt(
               partial.videasySessionExpiresAt,
+              partial.videasySessionToken ?? this.config.videasySessionToken,
             ),
           }
         : null),
@@ -1285,9 +1286,7 @@ export class ConfigServiceImpl implements ConfigService {
         ? {
             videasyAppId: normalizeVideasyAppId(
               partial.videasyAppId,
-              partial.videasySessionToken !== undefined
-                ? normalizeOptionalSecret(partial.videasySessionToken)
-                : this.config.videasySessionToken,
+              partial.videasySessionToken ?? this.config.videasySessionToken,
             ),
           }
         : null),

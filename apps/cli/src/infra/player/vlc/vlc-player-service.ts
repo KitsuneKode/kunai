@@ -4,14 +4,20 @@ import type { PlaybackGeneration } from "@/domain/playback/playback-generation";
 import { VLC_CAPABILITIES } from "@/domain/playback/player-capabilities";
 import type { PlaybackResult, StreamInfo } from "@/domain/types";
 import { createPrivateTempDir } from "@/infra/fs/temp-dir";
+import { scrubbedChildEnv } from "@/infra/os/child-env";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 import { materializeDeferredMediaDocument } from "@/services/playback/deferred-media-materializer";
+import {
+  checkStremioPlaybackPreflight,
+  isStremioPlayback,
+} from "@/services/playback/stream-health-check";
 import { isJsonString, type JsonValue } from "@kunai/types";
 
 import {
   createPlaybackProgressThrottleState,
   shouldEmitPlaybackProgress,
 } from "../mpv-playback-kernel";
+import { isAllowedMpvUrl } from "../mpv-playback-url";
 import {
   applyEndFileEvent,
   createPlayerStatsState,
@@ -86,7 +92,14 @@ async function freeLoopbackPort(): Promise<number> {
 
 export const defaultVlcRuntime: VlcRuntime = {
   discover: () => discoverVlcBinary(),
-  spawn: (argv) => Bun.spawn([...argv], { stdin: "ignore", stdout: "ignore", stderr: "ignore" }),
+  // Shell secrets never reach VLC or its Lua extensions, as with mpv.
+  spawn: (argv) =>
+    Bun.spawn([...argv], {
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "ignore",
+      env: scrubbedChildEnv(),
+    }),
   getJson: async (url, headers) => {
     try {
       const response = await fetch(url, { headers, signal: AbortSignal.timeout(1_500) });
@@ -217,6 +230,20 @@ export class VlcPlayerService implements PlayerService {
       throw new VlcLaunchError(
         "unsupported-stream",
         "This stream needs yt-dlp, which VLC cannot run. Play it with --player mpv.",
+      );
+    }
+    // The same target rule as mpv: provider URLs are HTTP(S) only; files only
+    // from the verified local library.
+    const local = options.localPlaybackSource;
+    const subtitle = stream.subtitle?.trim();
+    if (
+      !isAllowedMpvUrl(stream.url, local ? "local" : "remote") ||
+      (subtitle &&
+        !isAllowedMpvUrl(subtitle, local?.subtitlePath === subtitle ? "local" : "remote"))
+    ) {
+      throw new VlcLaunchError(
+        "unsupported-stream",
+        "Refusing to open an unsafe stream URL in VLC.",
       );
     }
 
@@ -366,6 +393,13 @@ export class VlcPlayerService implements PlayerService {
     const subtitle = stream.subtitle?.trim() || undefined;
     if (options.localPlaybackSource) {
       return subtitle ? { url: stream.url, subtitle } : { url: stream.url };
+    }
+    // Addon streams get mpv's strict direct-media check before VLC sees them.
+    if (isStremioPlayback(stream)) {
+      const preflight = await checkStremioPlaybackPreflight(stream, options.abortSignal);
+      if (preflight.status !== "reachable") {
+        throw new VlcLaunchError("unsupported-stream", "Addon stream failed playback preflight.");
+      }
     }
     let document: Parameters<GatewaySessionFactory>[0]["document"];
     if (stream.deferredLocator?.trim()) {

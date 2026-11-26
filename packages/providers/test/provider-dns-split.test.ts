@@ -19,18 +19,34 @@ describe("curlResolveArgs", () => {
   test("pins curl to the shared DoH answer, v6 bracketed", async () => {
     setProviderDohResolver(
       resolverOf([
-        { address: "203.0.113.4", family: 4 },
-        { address: "2001:db8::4", family: 6 },
+        { address: "8.8.4.4", family: 4 },
+        { address: "2001:4860:4860::8844", family: 6 },
       ]),
     );
     expect(await curlResolveArgs("https://hianime.example/ajax/v2")).toEqual([
       "--resolve",
-      "hianime.example:443:203.0.113.4,[2001:db8::4]",
+      "hianime.example:443:8.8.4.4,[2001:4860:4860::8844]",
     ]);
     expect(await curlResolveArgs("http://mirror.example:8080/x")).toEqual([
       "--resolve",
-      "mirror.example:8080:203.0.113.4,[2001:db8::4]",
+      "mirror.example:8080:8.8.4.4,[2001:4860:4860::8844]",
     ]);
+  });
+
+  test("a loopback or private answer never steers curl; only public addresses are pinned", async () => {
+    setProviderDohResolver(
+      resolverOf([
+        { address: "127.0.0.1", family: 4 },
+        { address: "169.254.169.254", family: 4 },
+        { address: "8.8.8.8", family: 4 },
+      ]),
+    );
+    expect(await curlResolveArgs("https://hianime.example/")).toEqual([
+      "--resolve",
+      "hianime.example:443:8.8.8.8",
+    ]);
+    setProviderDohResolver(resolverOf([{ address: "10.0.0.5", family: 4 }]));
+    expect(await curlResolveArgs("https://hianime.example/")).toEqual([]);
   });
 
   test("no resolver, no answer or a bad URL adds nothing, so curl uses system DNS", async () => {

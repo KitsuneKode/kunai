@@ -231,6 +231,18 @@ describe("VlcPlayerService", () => {
       ytdl.service.play({ ...STREAM, requiresYtdl: true }, ytdl.options),
     ).rejects.toThrow("--player mpv");
 
+    // Provider targets are HTTP(S) only, as with mpv: no files, no other schemes.
+    for (const unsafe of [
+      { ...STREAM, url: "file:///etc/passwd" },
+      { ...STREAM, url: "--help" },
+      { ...STREAM, subtitle: "file:///home/me/.ssh/id_ed25519" },
+    ]) {
+      const refused = harness(() => null);
+      await expect(refused.service.play(unsafe, refused.options)).rejects.toThrow(
+        "unsafe stream URL",
+      );
+    }
+
     const missing = harness(() => null, null);
     expect(await missing.service.isAvailable()).toBe(false);
     await expect(missing.service.play(STREAM, missing.options)).rejects.toBeInstanceOf(

@@ -17,7 +17,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { delimiter as PATH_DELIMITER, posix as posixPath, win32 as win32Path } from "node:path";
 
-import { getProviderDohResolver, proxyAppliesTo } from "@kunai/core";
+import { blockedLiteralTargetReason, getProviderDohResolver, proxyAppliesTo } from "@kunai/core";
 
 export type CurlCandidate = {
   readonly path: string;
@@ -230,10 +230,13 @@ export async function curlResolveArgs(
   const answers = await resolver.resolve(parsed.hostname, signal).catch(() => null);
   if (!answers || answers.length === 0) return [];
   const port = parsed.port || (parsed.protocol === "http:" ? "80" : "443");
+  // Pin only public addresses, the rule the fetch port's pinned transport
+  // applies: a loopback or private answer never steers curl.
   const addresses = answers
     .map((answer) => (answer.family === 6 ? `[${answer.address}]` : answer.address))
-    .join(",");
-  return ["--resolve", `${parsed.hostname}:${port}:${addresses}`];
+    .filter((address) => blockedLiteralTargetReason(`https://${address}/`) === null);
+  if (addresses.length === 0) return [];
+  return ["--resolve", `${parsed.hostname}:${port}:${addresses.join(",")}`];
 }
 
 /**

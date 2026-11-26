@@ -96,6 +96,10 @@ export function createDohFetch(options: DohFetchOptions): RelayFetch {
       await response.body?.cancel().catch(() => undefined);
       if (redirectMode === "error") throw new TypeError(`Redirect to ${location} was refused`);
       const next = new URL(location, url);
+      // Bun's fetch reads file: URLs; a redirect must stay on the web.
+      if (next.protocol !== "http:" && next.protocol !== "https:") {
+        throw new TypeError(`Redirect to a ${next.protocol} URL was refused`);
+      }
       if (next.origin !== url.origin) {
         // Credentials stay with the origin they were sent to, as fetch does.
         headers.delete("authorization");
@@ -137,15 +141,25 @@ async function decodeContent(response: Response): Promise<Response> {
   const encoding = response.headers.get("content-encoding")?.trim().toLowerCase();
   const decode = decoderFor(encoding);
   if (!decode) return response;
-  let plain: Uint8Array;
-  try {
-    plain = decode(new Uint8Array(await response.arrayBuffer()));
-  } catch {
-    return new Response(null, { status: 502, statusText: "upstream-body-decode-error" });
-  }
+  const bytes = new Uint8Array(await response.arrayBuffer());
   const headers = new Headers(response.headers);
   headers.delete("content-encoding");
   headers.delete("content-length");
+  // Redirects, 204/304 and HEAD answers can name an encoding over no body at
+  // all; there is nothing to decode, and a redirect must still be followed.
+  if (bytes.byteLength === 0) {
+    return new Response(null, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  }
+  let plain: Uint8Array;
+  try {
+    plain = decode(bytes);
+  } catch {
+    return new Response(null, { status: 502, statusText: "upstream-body-decode-error" });
+  }
   // Copy into a plain ArrayBuffer: zlib may hand back a view over shared memory.
   return new Response(Uint8Array.from(plain).buffer, {
     status: response.status,

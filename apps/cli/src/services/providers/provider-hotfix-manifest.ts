@@ -25,6 +25,7 @@ import {
 } from "@kunai/providers";
 import { isJsonNumber, isJsonObject, isJsonString, type JsonValue } from "@kunai/types";
 
+import { fetchManifestResponse, releaseUnreadBody, type ManifestFetch } from "./manifest-fetch";
 import { defaultManifestUrl, pinnedManifestPublicKeys } from "./provider-manifest-pin";
 
 export const PROVIDER_MANIFEST_FILENAME = "providers-manifest.json";
@@ -34,7 +35,7 @@ export const MAX_MANIFEST_BYTES = 256 * 1024;
 export const MANIFEST_FETCH_TIMEOUT_MS = 10_000;
 export const BACKGROUND_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
-export type ManifestFetch = (input: string, init?: RequestInit) => Promise<Response>;
+export type { ManifestFetch } from "./manifest-fetch";
 
 export interface ProviderLaneGroups {
   readonly anime: readonly string[];
@@ -324,10 +325,6 @@ export function loadCachedProviderHotfixManifest(
   };
 }
 
-async function releaseUnreadBody(response: Response): Promise<void> {
-  await response.body?.cancel().catch(() => undefined);
-}
-
 async function readResponseTextBounded(response: Response, maxBytes: number): Promise<string> {
   const contentLengthHeader = response.headers.get("content-length");
   if (contentLengthHeader) {
@@ -430,11 +427,7 @@ export async function fetchAndCacheProviderHotfixManifest(options: {
 
   let parsed: JsonValue;
   try {
-    const response = await fetchFn(options.url, {
-      headers: { Accept: "application/json" },
-      redirect: "error",
-      signal: deadline.signal,
-    });
+    const response = await fetchManifestResponse(fetchFn, options.url, deadline.signal);
     if (!response.ok) {
       await releaseUnreadBody(response);
       return {
