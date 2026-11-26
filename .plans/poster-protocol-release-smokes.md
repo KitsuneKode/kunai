@@ -1,5 +1,5 @@
 ---
-lastReviewed: "2026-11-25"
+lastReviewed: "2026-11-26"
 ---
 
 # Poster protocol release smokes
@@ -59,6 +59,9 @@ terminal graphics stack through `989548f4f`.
 | tmux 3.8 inside Kitty 0.51.1 | `bun run smoke:posters -- --terminal tmux`                                        | `kitty-tmux`. First and next posters, resize, and exit passed screenshot colour checks. Screen text and transcript passed the graphics escape scan.   |
 | tmux 3.8 passthrough opt-out | `KUNAI_IMAGE_TMUX=0 bun run smoke:posters -- --terminal tmux --expect half-block` | `half-block`. Selection change, resize, exit, and the graphics escape scan passed.                                                                    |
 | foot or xterm with VT340     | `bun run smoke:posters -- --terminal foot` or `--terminal xterm`                  | Pending a machine with either emulator installed.                                                                                                     |
+
+On 2026-11-26, SIGTERM during a `current` run in a private PTY returned 143,
+restored the TTY mode and removed the private profile.
 
 ## Required before stable release
 

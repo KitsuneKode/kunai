@@ -93,7 +93,7 @@ export async function withPosterSmokeSignals(
   const handlers = exitBySignal.map(([signal, code]) => {
     const interrupt = () => {
       if (controller.signal.aborted) return;
-      exitCode ||= code;
+      exitCode = code;
       controller.abort(new Error(`poster smoke interrupted by ${signal}`));
     };
     signals.on(signal, interrupt);
@@ -102,7 +102,7 @@ export async function withPosterSmokeSignals(
   try {
     await run(controller.signal);
   } catch (error) {
-    if (error !== controller.signal.reason) throw error;
+    if (!controller.signal.aborted || error !== controller.signal.reason) throw error;
   } finally {
     for (const { signal, interrupt } of handlers) signals.off(signal, interrupt);
   }

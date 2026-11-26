@@ -522,8 +522,11 @@ async function launchSmoke({ emulator, out, expected }: SmokeOptions): Promise<n
         delete env[key];
       // Only the emulator needs access to the host's Wayland socket.
       Object.assign(env, posterSmokeWaylandEnv(process.env));
+      // Kitty stores its cache in $XDG_CACHE_HOME/kitty inside the private home.
       const socket =
-        emulator === "kitty" || emulator === "tmux" ? `unix:${join(terminalHome, "kitty")}` : "";
+        emulator === "kitty" || emulator === "tmux"
+          ? `unix:${join(terminalHome, "kitty.sock")}`
+          : "";
       const inside = posterSmokeBunCommand(
         import.meta.path,
         "--inside",
