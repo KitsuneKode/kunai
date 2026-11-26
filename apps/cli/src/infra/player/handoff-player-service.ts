@@ -34,7 +34,8 @@ const BLOCKER_COPY = {
   "yt-dlp-required": "the stream requires yt-dlp",
   "deferred-source": "the provider has not produced a final media URL",
   "unsupported-scheme": "the media URL is not absolute HTTP or HTTPS",
-  "external-subtitle-unsupported": "the selected stream requires external subtitles",
+  "external-subtitle-unsupported":
+    "the Android chooser cannot pass its external subtitles; pick VLC or mpv in Settings → Playback → Player (or run with --player vlc)",
   "local-source-unsupported": "local files are not supported by Android handoff",
 } satisfies Readonly<Record<HandoffBlocker, string>>;
 
