@@ -304,6 +304,8 @@ describe("signed hot-update provider manifest bundle", () => {
               bootJoin: "|",
               bootParts: "group,host,lane,buildId,epoch",
               maskFragments: "AAAAAAAAAAA=,BBBBBBBBBBB=,CCCCCCCCCCC=,DDDDDDDDDDD=",
+              epochMs: "604800000",
+              epochGraceMs: "86400000",
               queryHash: "deadbeef",
             },
           },
