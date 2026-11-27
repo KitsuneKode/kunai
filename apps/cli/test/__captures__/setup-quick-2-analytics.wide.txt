@@ -1,0 +1,21 @@
+# setup-quick-2-analytics · wide (140×34)
+   usage ping                                                                                                                   setup 2⁄2
+ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+                              Share anonymous usage with Kunai?
+                              Pick one with ↑↓ and Enter. Nothing is sent unless you choose to share.
+
+                                Share anonymous usage
+                                  One ping a day. Counts installs, not people. The id changes every month.
+                                Don't share
+                                  No network calls. No install id stored on disk.
+
+                              The whole ping, as it would be sent
+                                { "id": "<generated when you enable>",
+                                  "cohort": "<the month you enable>", "day": "2026-11-25",
+                                  "version": "0.4.0", "os": "linux", "arch": "x64" }
+                                Never: titles · queries · providers · URLs · paths · your IP
+                                The raw id never leaves this machine. Off in /settings deletes it.
+                                See every ping that was sent: kunai analytics log
+ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   [↑↓] choose  [enter] confirm  [s] don't share  [b] back                                                                          Setup

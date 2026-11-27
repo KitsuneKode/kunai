@@ -45,6 +45,7 @@ import { detailsSheetContextFor } from "@/app/search/details-sheet-context";
 import { playTrailer } from "@/app/search/details-trailer";
 import { enrichSelectedTitleIdentity } from "@/app/search/enrich-selected-title";
 import { prefetchBrowseEntrySelection } from "@/app/search/prefetch-browse-entry";
+import { buildSearchEmptyMessage } from "@/app/search/search-empty-message";
 import {
   buildSearchFailureNote,
   shouldRunBootstrapSearch,
@@ -329,6 +330,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
       // the next BrowseShell open (which seeds the useCalendarState hook). Reset
       // after each open so a plain /calendar afterwards is not stuck on a filter.
       let pendingCalendarType: CalendarTypeTab | undefined;
+      let startupPicks = false;
 
       // The subtitle for the most recently loaded route (calendar/trending/surprise/
       // discover). Without this, an empty-query results view always showed the generic
@@ -420,7 +422,10 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             pendingInitialRoute = undefined;
             continue;
           }
-          routeSubtitle = await loadSearchRoute(pendingInitialRoute, context);
+          // Startup picks are MOUNTED, not awaited, like the calendar: Browse
+          // opens with a live field and loads them underneath.
+          if (pendingInitialRoute === "recommendation") startupPicks = true;
+          else routeSubtitle = await loadSearchRoute(pendingInitialRoute, context);
           syncBrowseQueryDraft();
           pendingInitialRoute = undefined;
           continue;
@@ -473,7 +478,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           pendingSearchSourceName = search.sourceName;
           pendingSearchWarnings = searchIntent.warnings;
           pendingSearchEmptyMessage =
-            search.results.length === 0 ? buildSearchEmptyMessage(search) : undefined;
+            search.results.length === 0 ? buildSearchEmptyMessage(search, searchMode) : undefined;
 
           logger.info("Bootstrap search complete", {
             query: searchIntent.intent.query,
@@ -606,6 +611,8 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         pendingCalendarType = undefined;
         const openedCalendarRoute = pendingCalendarRoute;
         pendingCalendarRoute = undefined;
+        const openedStartupPicks = startupPicks;
+        startupPicks = false;
         // Fresh, not the loop-top snapshot: a bootstrap search dispatched its
         // results after that snapshot was taken, so reading it here handed the
         // shell an empty list while the state already held the hits.
@@ -656,6 +663,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           onPaletteCommand: (commandId) => notePaletteCommand(container, "browse", commandId),
           initialCalendarTypeTab,
           initialCalendarRoute: openedCalendarRoute,
+          startupPicks: openedStartupPicks,
           initialErrorMessage: initialSearchError,
           onLoadCalendar: async (signal) => {
             const bundle = await loadCalendarResults(container, signal);
@@ -966,7 +974,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               localFilterBadges: search.evidence.local,
               unsupportedFilterBadges: search.evidence.unsupported,
               warnings: searchIntent.warnings,
-              emptyMessage: buildSearchEmptyMessage(search),
+              emptyMessage: buildSearchEmptyMessage(search, stateManager.getState().mode),
             };
           },
           onLoadDiscovery: async () => {
@@ -1540,27 +1548,6 @@ function appendSearchFilterChip(query: string, chip: string): string {
   if (!trimmed) return chip;
   if (trimmed.split(/\s+/).includes(chip)) return trimmed;
   return `${trimmed} ${chip}`;
-}
-
-/**
- * An empty answer must say *why* when we know: providers that threw get named
- * (the lane failed over and still found nothing), an unsupported advanced
- * search says the catalog can't answer, and only a real "nothing matches"
- * keeps the generic copy (#464).
- */
-function buildSearchEmptyMessage(search: Awaited<ReturnType<typeof searchTitles>>): string {
-  const failures = search.providerSearchFailures;
-  if (failures && failures.length > 0) {
-    const names = [...new Set(failures.map((failure) => failure.providerId))].join(", ");
-    return `Provider search failed (${names}). Check /diagnostics or switch provider with /provider.`;
-  }
-  if (search.diagnosis?.code === "catalog-fallback") {
-    return "TMDB is unreachable and the backup catalog (Wikidata) found no match. Try the original title, or search again once TMDB is back.";
-  }
-  if (search.diagnosis?.code === "compatible-catalog-unavailable") {
-    return "The active provider can't answer a filtered search like this. Simplify the query or switch provider with /provider.";
-  }
-  return "No results found. Adjust the query and try again.";
 }
 
 type BrowseDisplayContext = {

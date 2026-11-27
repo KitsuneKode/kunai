@@ -61,6 +61,8 @@ export function DependencyScreen({
   tick,
   showFix,
   contentWidth = 84,
+  heading = "Let's get you watching",
+  intro,
 }: {
   readonly rows: readonly ScopedDependencyRow[];
   readonly selected: number;
@@ -69,6 +71,10 @@ export function DependencyScreen({
   readonly showFix: boolean;
   /** Columns available inside the frame, from `setupContentWidth`. */
   readonly contentWidth?: number;
+  /** "This machine" when opened with `d` from the quick first screen. */
+  readonly heading?: string;
+  /** Replaces the two welcome lines when this is a view, not the first screen. */
+  readonly intro?: string;
 }) {
   // Budget the columns against the box, not the terminal. Overflowing rows do
   // not truncate in Ink — they wrap, which breaks alignment and inserts blank
@@ -99,7 +105,7 @@ export function DependencyScreen({
       <Box marginBottom={1}>
         {plain ? (
           <Text color={palette.text} bold>
-            Let's get you watching
+            {heading}
           </Text>
         ) : (
           <>
@@ -107,17 +113,21 @@ export function DependencyScreen({
               {petal}
             </Text>
             <Text color={palette.text} bold>
-              {"  Let's get you watching"}
+              {`  ${heading}`}
             </Text>
           </>
         )}
       </Box>
       <Box marginBottom={1} flexDirection="column">
+        {intro ? null : (
+          <Text color={palette.muted}>
+            Kunai finds playable streams and hands them to mpv or VLC.
+          </Text>
+        )}
         <Text color={palette.muted}>
-          Kunai finds playable streams and hands them to mpv or VLC.
-        </Text>
-        <Text color={palette.muted}>
-          {rechecking ? "Checking this machine again…" : "Here's what's on this machine."}
+          {rechecking
+            ? "Checking this machine again…"
+            : (intro ?? "Here's what's on this machine.")}
         </Text>
       </Box>
 

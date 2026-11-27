@@ -1,10 +1,10 @@
-// First run, in six framed screens
+// Setup, in two framed screens on a first run and six on request
 //
-// Every screen asks something or pays something off, and every one of them
-// wears the Sakura shell frame. Setup used to be the only surface in Kunai
-// without it, which is why it read as a different application.
+// A first launch walks the `quick` flow: what you watch plus a one-line machine
+// verdict, then the consent screen. `/setup`, `kunai --setup` and `m` on the
+// first quick screen walk the `full` six. Every screen wears the Sakura frame.
 //
-// Layout and grammar: `.reference/design/cli/kunai-sakura-systems.html` and
+// Layout and grammar: `.reference/design/cli/kunai-onboarding-v4.html` and
 // `01-shell-footer-contract.md`. Skip contract: `s` takes this step's
 // recommendation, `S` takes every remaining one. `esc`/`q` discard and quit —
 // but only once nothing is decided yet; past screen one they ask first.
@@ -29,165 +29,51 @@ import { useFrameTick } from "./primitives/SakuraPetal";
 import { mountRootContent } from "./root-content-state";
 import { AnalyticsScreen, CONSENT_CHOICES, moveConsentCursor } from "./setup/AnalyticsScreen";
 import { buildDependencyRows, type ScopedDependencyRow } from "./setup/dependency-rows";
-import { SetupFrame, setupContentWidth, type FooterKey } from "./setup/SetupFrame";
+import {
+  DOWNLOAD_QUALITY_RECOMMENDED,
+  FACTORY_INITIAL_STATE,
+  MODE_RECOMMENDED,
+  recommendedLanguageProfiles,
+  SETUP_LANGUAGE_LANES,
+  SETUP_SCREEN_CONTEXT,
+  SETUP_SCREENS,
+  cycleSetupLanguageLane,
+  type SetupFlow,
+  type SetupFlowResult,
+  type SetupInitialState,
+  type SetupLanguageLane,
+  type SetupPrefs,
+} from "./setup/setup-model";
+import { buildFooter, describeChoice, outstandingLines, summaryLines } from "./setup/setup-summary";
+import { buildSetupVerdict, setupDensity } from "./setup/setup-verdict";
+import { SetupFrame, setupContentWidth } from "./setup/SetupFrame";
 import { SetupPointerContext, type SetupPointerActions } from "./setup/SetupPointer";
 import {
   DependencyScreen,
-  dependencyFooter,
   DOWNLOAD_QUALITIES,
   DoneScreen,
   LanguageScreen,
   LibraryScreen,
   MODE_OPTIONS,
   ModeScreen,
-  type SummaryLine,
 } from "./setup/SetupScreens";
+import { MACHINE_FOOTER, MACHINE_INTRO, StartScreen, startFooter } from "./setup/StartScreen";
 import { ViewportResizeGate } from "./shell-primitives";
 import { palette } from "./shell-theme";
 import { useDebouncedViewportPolicy, useShellDimensions } from "./use-viewport-policy";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type Screen = "deps" | "mode" | "language" | "library" | "analytics" | "done";
-
-const SCREEN_ORDER: readonly Screen[] = [
-  "deps",
-  "mode",
-  "language",
-  "library",
-  "analytics",
-  "done",
-];
-
-const SCREEN_CONTEXT: Record<Screen, string> = {
-  deps: "welcome",
-  mode: "what you watch",
-  language: "language",
-  library: "playback & downloads",
-  analytics: "usage ping",
-  done: "ready",
-};
-
-/**
- * Three outcomes, because "skipped" was doing two incompatible jobs.
- *
- * - `completed` — the user answered every step.
- * - `defaults`  — the user waved past some or all of it. The recommended
- *   configuration is written. Previously this wrote *nothing*: `skip()` built
- *   prefs and the caller discarded them, so skipping setup left the install
- *   unconfigured while telling the user it was set up.
- * - `aborted`   — esc. Nothing is written but the onboarding version, so a
- *   deliberate bail-out never rewrites settings the user already had.
- */
-export type SetupFlowResult = "completed" | "defaults" | "aborted";
-
-export type SetupLanguageLane = "series" | "movie" | "anime" | "youtube";
-export type SetupLanguageProfile = {
-  readonly audio: string;
-  readonly subtitle: string;
-};
-export type SetupLanguageProfiles = Readonly<Record<SetupLanguageLane, SetupLanguageProfile>>;
-
-export const SETUP_LANGUAGE_LANES: readonly {
-  readonly value: SetupLanguageLane;
-  readonly label: string;
-}[] = [
-  { value: "series", label: "Shows" },
-  { value: "movie", label: "Movies" },
-  { value: "anime", label: "Anime" },
-  { value: "youtube", label: "YouTube" },
-];
-
-/** Move between media-type language profiles with a wrapping, reversible cycle. */
-export function cycleSetupLanguageLane(
-  current: SetupLanguageLane,
-  delta: number,
-): SetupLanguageLane {
-  const index = SETUP_LANGUAGE_LANES.findIndex((lane) => lane.value === current);
-  const safeIndex = index >= 0 ? index : 0;
-  const next = (safeIndex + delta) % SETUP_LANGUAGE_LANES.length;
-  const wrapped = next < 0 ? next + SETUP_LANGUAGE_LANES.length : next;
-  return SETUP_LANGUAGE_LANES[wrapped]?.value ?? "series";
-}
-
-export interface SetupPrefs {
-  mode: "series" | "anime" | "youtube";
-  languageProfiles: SetupLanguageProfiles;
-  autoNext: boolean;
-  skipIntro: boolean;
-  skipCredits: boolean;
-  downloadsEnabled: boolean;
-  downloadQuality: string;
-  /**
-   * Intent only. The OAuth and IPC handoffs run *after* config commits, so a
-   * browser that never opens costs an account link and not the whole wizard.
-   */
-  connectAniList: boolean;
-  connectTmdb: boolean;
-  presenceDiscord: boolean;
-  /**
-   * Setup-time analytics choice before DO_NOT_TRACK / CI resolution.
-   *
-   * `unchanged` is not "off" — it means the consent screen was never reached, so
-   * whatever the user already had must survive. Collapsing it into `disabled`
-   * would silently opt out someone who had previously opted in and then reran
-   * setup and pressed accept-all. Only a keystroke on that screen moves this
-   * value, in either direction.
-   */
-  analyticsChoice: "enabled" | "disabled" | "unchanged";
-}
-
-/**
- * What every control starts from.
- *
- * `runSetupWizard` builds this from the live config so a rerun shows what is
- * really set. The factory default here is only what an untouched install would
- * answer; hydrating from it instead of hardcoded literals is what stops a rerun
- * from silently severing a linked tracker or rewriting a preference the user
- * already made (#228).
- */
-export interface SetupInitialState {
-  readonly mode: "series" | "anime" | "youtube";
-  readonly languageProfiles: SetupLanguageProfiles;
-  readonly autoNext: boolean;
-  readonly skipIntro: boolean;
-  readonly skipCredits: boolean;
-  readonly downloadsEnabled: boolean;
-  readonly downloadQuality: string;
-  readonly anilistSync: boolean;
-  readonly tmdbSync: boolean;
-  readonly presenceDiscord: boolean;
-}
-
-export const FACTORY_INITIAL_STATE: SetupInitialState = {
-  mode: "series",
-  languageProfiles: recommendedLanguageProfiles(),
-  autoNext: false,
-  skipIntro: false,
-  skipCredits: false,
-  downloadsEnabled: false,
-  downloadQuality: "1080p",
-  anilistSync: false,
-  tmdbSync: false,
-  presenceDiscord: false,
-};
-
-/** The value `s` ("use recommended") restores on a screen, per screen kind. */
-const MODE_RECOMMENDED = "series";
-const DOWNLOAD_QUALITY_RECOMMENDED = "1080p";
-
-function recommendedLanguageProfiles(): SetupLanguageProfiles {
-  const profile = (): SetupLanguageProfile => ({
-    audio: RECOMMENDED_AUDIO_PREFERENCE,
-    subtitle: RECOMMENDED_SUBTITLE_PREFERENCE,
-  });
-  return {
-    series: profile(),
-    movie: profile(),
-    anime: profile(),
-    youtube: profile(),
-  };
-}
+export {
+  FACTORY_INITIAL_STATE,
+  SETUP_LANGUAGE_LANES,
+  cycleSetupLanguageLane,
+  type SetupFlow,
+  type SetupFlowResult,
+  type SetupInitialState,
+  type SetupLanguageLane,
+  type SetupLanguageProfile,
+  type SetupLanguageProfiles,
+  type SetupPrefs,
+} from "./setup/setup-model";
 
 function languageLaneForMode(mode: SetupPrefs["mode"]): SetupLanguageLane {
   return mode;
@@ -219,6 +105,8 @@ export function SetupShell({
   downloadPath = "your data directory",
   initial = FACTORY_INITIAL_STATE,
   analyticsPayload,
+  flow: initialFlow = "full",
+  playerName,
 }: {
   snapshot: CapabilitySnapshot;
   analyticsPayload: AnalyticsPayload;
@@ -229,6 +117,10 @@ export function SetupShell({
   downloadPath?: string;
   /** Current configuration, hydrated into every control. See #228. */
   initial?: SetupInitialState;
+  /** `quick` on a first launch; `full` when setup was asked for. */
+  flow?: SetupFlow;
+  /** The player this session drives, when it is not mpv. */
+  playerName?: string | undefined;
 }) {
   // Columns only. The frame takes its height from its container via flexGrow —
   // sizing to `stdout.rows` is what pushed the footer off the bottom of the
@@ -243,7 +135,13 @@ export function SetupShell({
 
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [rechecking, setRechecking] = useState(false);
+  const [flow, setFlow] = useState<SetupFlow>(initialFlow);
+  const order = SETUP_SCREENS[flow];
   const [screenIdx, setScreenIdx] = useState(0);
+  /** `d` on the quick first screen: the full machine table, in place. */
+  const [machineOpen, setMachineOpen] = useState(false);
+  /** `p` at the size floor: the consent payload's values instead of its keys. */
+  const [pingExpanded, setPingExpanded] = useState(false);
   const [completionOutcome, setCompletionOutcome] = useState<SetupFlowResult>("completed");
   /** Deepest screen reached — an abort after this point was a real decision. */
   const deepestRef = React.useRef(0);
@@ -299,13 +197,22 @@ export function SetupShell({
     useState<SetupPrefs["analyticsChoice"]>("unchanged");
 
   const tick = useFrameTick(rechecking, RECHECK_TICK_MS);
-  const screen = SCREEN_ORDER[screenIdx] as Screen;
+  const screen = order[screenIdx] ?? "analytics";
+  const contentWidth = setupContentWidth(frameWidth);
+  const density = setupDensity(contentWidth, rows);
 
   const depRows: readonly ScopedDependencyRow[] = buildDependencyRows(snapshot, {
     dataDir: downloadPath,
   });
 
   const mode = MODE_OPTIONS[modeIdx]?.value ?? "series";
+  const verdict = buildSetupVerdict({
+    snapshot,
+    rows: depRows,
+    lane: mode,
+    density,
+    playerName,
+  });
   const activeLanguageProfile = languageProfiles[languageLane];
   const audioIdx = recommendedIndex(AUDIO_PREFERENCE_OPTIONS, activeLanguageProfile.audio);
   const subtitleIdx = recommendedIndex(SUBTITLE_PREFERENCE_OPTIONS, activeLanguageProfile.subtitle);
@@ -331,16 +238,34 @@ export function SetupShell({
     };
   }
 
-  function advance() {
-    if (screenIdx < SCREEN_ORDER.length - 1) {
+  /**
+   * `decision` is the consent answer to finish with. It defaults to the
+   * recorded one, and the consent screen passes what it has just committed:
+   * in the quick flow that screen is the last, so finishing happens in the
+   * same keystroke, before the state update is visible to this closure.
+   */
+  function advance(decision: SetupPrefs["analyticsChoice"] = analyticsDecision) {
+    if (screenIdx < order.length - 1) {
       if (screen === "mode") setLanguageLane(languageLaneForMode(mode));
       setShowFix(false);
+      setMachineOpen(false);
       setConfirmingAbort(false);
       deepestRef.current = Math.max(deepestRef.current, screenIdx + 1);
       setScreenIdx((current) => current + 1);
     } else {
-      finish(completionOutcome, buildPrefs(analyticsDecision), deepestRef.current);
+      deepestRef.current = Math.max(deepestRef.current, screenIdx);
+      finish(completionOutcome, buildPrefs(decision), deepestRef.current);
     }
+  }
+
+  /** `m` on the quick first screen: the remaining questions, from language on. */
+  function openFullSetup() {
+    const languageIdx = SETUP_SCREENS.full.indexOf("language");
+    setFlow("full");
+    setMachineOpen(false);
+    setLanguageLane(languageLaneForMode(mode));
+    deepestRef.current = Math.max(deepestRef.current, languageIdx);
+    setScreenIdx(languageIdx);
   }
 
   function back() {
@@ -362,7 +287,7 @@ export function SetupShell({
    */
   function acceptRemainingDefaults() {
     const prefs = buildPrefs(analyticsDecision);
-    const remaining = new Set(SCREEN_ORDER.slice(screenIdx));
+    const remaining = new Set(order.slice(screenIdx));
     const nextPrefs: SetupPrefs = {
       ...prefs,
       ...(remaining.has("mode") ? { mode: MODE_RECOMMENDED } : {}),
@@ -397,8 +322,8 @@ export function SetupShell({
     setShowFix(false);
     setConfirmingAbort(false);
     setCompletionOutcome("defaults");
-    deepestRef.current = Math.max(deepestRef.current, SCREEN_ORDER.length - 1);
-    setScreenIdx(SCREEN_ORDER.length - 1);
+    deepestRef.current = Math.max(deepestRef.current, order.length - 1);
+    setScreenIdx(order.length - 1);
   }
 
   function abort() {
@@ -438,6 +363,7 @@ export function SetupShell({
    */
   function applyScreenRecommendation() {
     switch (screen) {
+      case "start":
       case "mode":
         setModeIdx(
           indexOfValue(
@@ -484,10 +410,13 @@ export function SetupShell({
     })();
   }
 
+  const showingMachine = screen === "deps" || machineOpen;
+
   function move(delta: number) {
     const clamp = (value: number, max: number) => Math.min(Math.max(0, value), max);
-    if (screen === "deps") setDepIdx((i) => clamp(i + delta, depRows.length - 1));
-    else if (screen === "mode") setModeIdx((i) => clamp(i + delta, MODE_OPTIONS.length - 1));
+    if (showingMachine) setDepIdx((i) => clamp(i + delta, depRows.length - 1));
+    else if (screen === "mode" || screen === "start")
+      setModeIdx((i) => clamp(i + delta, MODE_OPTIONS.length - 1));
     else if (screen === "language") {
       if (langFocus === "audio") {
         const next = clamp(audioIdx + delta, AUDIO_PREFERENCE_OPTIONS.length - 1);
@@ -552,6 +481,16 @@ export function SetupShell({
       return;
     }
 
+    // The machine table is a view inside screen one: leaving it is not
+    // leaving setup, and no other key acts on the lanes behind it.
+    if (machineOpen) {
+      if (key.upArrow) move(-1);
+      else if (key.downArrow) move(1);
+      else if (input === "r" || input === "R") recheck();
+      else if (input !== " " && !key.tab) setMachineOpen(false);
+      return;
+    }
+
     if (key.escape || input === "q" || input === "Q") {
       requestAbort();
       return;
@@ -560,8 +499,10 @@ export function SetupShell({
     // `S` — accept every remaining recommendation and open the final review.
     // The consent screen has no default to accept, so it stays put and
     // chooses nothing: a keystroke aimed at everything else answers neither.
+    // The quick flow has nothing left to accept, so there it only moves on.
     if (input === "S") {
-      if (screen !== "analytics") acceptRemainingDefaults();
+      if (screen === "start") advance();
+      else if (screen !== "analytics") acceptRemainingDefaults();
       return;
     }
 
@@ -570,10 +511,26 @@ export function SetupShell({
     // The consent screen recommends nothing, so there `s` is its labelled
     // "don't share" key: an explicit answer, and never an opt-in.
     if (input === "s") {
-      if (screen === "analytics") commitAnalytics("disabled");
-      else applyScreenRecommendation();
-      advance();
+      if (screen === "analytics") {
+        commitAnalytics("disabled");
+        advance("disabled");
+      } else {
+        applyScreenRecommendation();
+        advance();
+      }
       return;
+    }
+
+    if (screen === "start") {
+      if (input === "r" || input === "R") return recheck();
+      if (input === "d" || input === "D") return setMachineOpen(true);
+      if (input === "m" || input === "M") return openFullSetup();
+    }
+    // The size floor shows the payload's values as a view of its own. While
+    // it is open the answers are not on screen, so no key may reach them.
+    if (screen === "analytics" && density === "tiny") {
+      if (pingExpanded) return setPingExpanded(false);
+      if (input === "p" || input === "P") return setPingExpanded(true);
     }
 
     if (screen === "deps") {
@@ -592,7 +549,10 @@ export function SetupShell({
       // "enabled", and it says whatever the cursor is on; with none, it waits.
       if (screen === "analytics") {
         if (analyticsIdx === null) return;
-        commitAnalytics(CONSENT_CHOICES[analyticsIdx] ?? "disabled");
+        const choice = CONSENT_CHOICES[analyticsIdx] ?? "disabled";
+        commitAnalytics(choice);
+        advance(choice);
+        return;
       }
       advance();
       return;
@@ -680,14 +640,26 @@ export function SetupShell({
         setConfirmingAbort(false);
         return;
       }
+      if (machineOpen) {
+        if (key === "r") recheck();
+        else if (key === "d") setMachineOpen(false);
+        return;
+      }
+      if (pingExpanded) return setPingExpanded(false);
       if (key === "enter") {
         // A pointer can never grant the keystroke-only analytics consent.
         if (screen !== "analytics") advance();
       } else if (key === "b") back();
       else if (key === "s") {
-        if (screen === "analytics") commitAnalytics("disabled");
-        else applyScreenRecommendation();
-        advance();
+        if (screen === "analytics") {
+          commitAnalytics("disabled");
+          advance("disabled");
+        } else {
+          applyScreenRecommendation();
+          advance();
+        }
+      } else if (key === "m") {
+        if (screen === "start") openFullSetup();
       } else if (key === "S") {
         if (screen !== "analytics") acceptRemainingDefaults();
       } else if (key === "a") applyLanguageProfileToAll();
@@ -696,14 +668,24 @@ export function SetupShell({
         setLangFocus((current) => (current === "audio" ? "subtitle" : "audio"));
       else if (key === "space") toggle();
       else if (key === "r") recheck();
-      else if (key === "d") setShowFix((current) => !current);
+      else if (key === "d") {
+        if (screen === "start") setMachineOpen(true);
+        else setShowFix((current) => !current);
+      }
     },
   };
 
-  const footer = buildFooter(screen, {
-    hasFix: Boolean(depRows[depIdx]?.fix),
-    isFirst: screenIdx === 0,
-  });
+  const footer =
+    screen === "start"
+      ? machineOpen
+        ? MACHINE_FOOTER
+        : startFooter({ attention: verdict.attention, density })
+      : pingExpanded
+        ? [{ key: "any key", label: "back" }]
+        : buildFooter(screen, {
+            hasFix: Boolean(depRows[depIdx]?.fix),
+            isFirst: screenIdx === 0,
+          });
 
   // The handlers close over this render's state, so the latest set is kept in
   // a ref and the context gets one stable object that delegates to it: click
@@ -715,22 +697,38 @@ export function SetupShell({
       <ViewportResizeGate kind="picker" message="Resize terminal to run setup">
         <SetupFrame
           width={frameWidth}
-          context={SCREEN_CONTEXT[screen]}
+          context={machineOpen ? "this machine" : SETUP_SCREEN_CONTEXT[screen]}
           step={screenIdx}
-          totalSteps={SCREEN_ORDER.length}
+          totalSteps={order.length}
           footer={footer}
+          dense={density === "tiny"}
           // The summary screen draws its own, in a pose that means the waiting is
-          // over. The frame would otherwise stack a second one above it.
-          companion={screen === "deps" ? "setup" : null}
+          // over. The frame would otherwise stack a second one above it. She
+          // also yields her rows wherever the decision needs them.
+          companion={
+            screen === "deps" || (screen === "start" && density === "wide" && !machineOpen)
+              ? "setup"
+              : null
+          }
         >
-          {screen === "deps" ? (
+          {showingMachine ? (
             <DependencyScreen
               rows={depRows}
               selected={depIdx}
               rechecking={rechecking}
               tick={tick}
-              showFix={showFix}
-              contentWidth={setupContentWidth(frameWidth)}
+              showFix={showFix || machineOpen}
+              contentWidth={contentWidth}
+              {...(machineOpen ? { heading: "This machine", intro: MACHINE_INTRO[density] } : {})}
+            />
+          ) : null}
+          {screen === "start" && !machineOpen ? (
+            <StartScreen
+              selected={modeIdx}
+              verdict={verdict}
+              rechecking={rechecking}
+              tick={tick}
+              density={density}
             />
           ) : null}
           {screen === "mode" ? <ModeScreen selected={modeIdx} /> : null}
@@ -738,7 +736,7 @@ export function SetupShell({
             <LanguageScreen
               lanes={SETUP_LANGUAGE_LANES}
               activeLane={languageLane}
-              contentWidth={setupContentWidth(frameWidth)}
+              contentWidth={contentWidth}
               audioOptions={AUDIO_PREFERENCE_OPTIONS}
               subtitleOptions={SUBTITLE_PREFERENCE_OPTIONS}
               audioIndex={audioIdx}
@@ -764,12 +762,18 @@ export function SetupShell({
             />
           ) : null}
           {screen === "analytics" ? (
-            <AnalyticsScreen selectedIndex={analyticsIdx} payload={analyticsPayload} />
+            <AnalyticsScreen
+              selectedIndex={analyticsIdx}
+              payload={analyticsPayload}
+              density={density}
+              contentWidth={contentWidth}
+              expanded={pingExpanded}
+            />
           ) : null}
           {screen === "done" ? (
             <DoneScreen
               compact={rows < 30}
-              contentWidth={setupContentWidth(frameWidth)}
+              contentWidth={contentWidth}
               headline={describeChoice(buildPrefs(analyticsDecision))}
               summary={summaryLines(buildPrefs(analyticsDecision))}
               outstanding={outstandingLines(depRows)}
@@ -788,136 +792,6 @@ export function SetupShell({
       </ViewportResizeGate>
     </SetupPointerContext.Provider>
   );
-}
-
-function buildFooter(
-  screen: Screen,
-  context: { readonly hasFix: boolean; readonly isFirst: boolean },
-): readonly FooterKey[] {
-  const back: FooterKey[] = context.isFirst ? [] : [{ key: "b", label: "back" }];
-  switch (screen) {
-    case "deps":
-      return dependencyFooter(context.hasFix);
-    case "mode":
-      return [
-        { key: "enter", label: "confirm" },
-        { key: "↑↓", label: "choose" },
-        ...back,
-        { key: "s", label: "recommended" },
-        { key: "S", label: "finish defaults" },
-      ];
-    case "language":
-      // tab and ↑↓ are named in the screen body, right where they act; the
-      // footer keeps only the decisions.
-      return [
-        { key: "enter", label: "next" },
-        { key: "tab", label: "profile" },
-        { key: "←→", label: "audio / subs" },
-        { key: "a", label: "copy to all" },
-        { key: "S", label: "finish defaults" },
-        ...back,
-      ];
-    case "library":
-      return [
-        { key: "space", label: "toggle" },
-        { key: "↑↓", label: "choose" },
-        { key: "enter", label: "next" },
-        { key: "s", label: "recommended" },
-        { key: "S", label: "finish defaults" },
-        ...back,
-      ];
-    case "analytics":
-      return [
-        { key: "↑↓", label: "choose" },
-        { key: "enter", label: "confirm" },
-        { key: "s", label: "don't share" },
-        ...back,
-      ];
-    case "done":
-      return [
-        { key: "enter", label: "start watching" },
-        { key: "b", label: "change something" },
-      ];
-  }
-}
-
-function describeChoice(prefs: SetupPrefs): string {
-  const modeLabel = MODE_OPTIONS.find((option) => option.value === prefs.mode)?.label ?? "Shows";
-  return `${modeLabel} first · every profile stays editable`;
-}
-
-function summaryLines(prefs: SetupPrefs): readonly SummaryLine[] {
-  const lines: SummaryLine[] = [];
-  for (const lane of SETUP_LANGUAGE_LANES) {
-    const profile = prefs.languageProfiles[lane.value];
-    const audio =
-      AUDIO_PREFERENCE_OPTIONS.find((option) => option.value === profile.audio)?.label ??
-      profile.audio;
-    const subtitle =
-      SUBTITLE_PREFERENCE_OPTIONS.find((option) => option.value === profile.subtitle)?.label ??
-      profile.subtitle;
-    lines.push({
-      ok: true,
-      label: `${lane.label} language`,
-      detail: `${audio} audio · ${subtitle} subtitles`,
-    });
-  }
-  lines.push({
-    ok: prefs.downloadsEnabled,
-    label: prefs.downloadsEnabled ? "Downloads on" : "Downloads off",
-    detail: prefs.downloadsEnabled ? prefs.downloadQuality : "stream-only · change in /settings",
-  });
-  const skips = [prefs.skipIntro ? "intros" : null, prefs.skipCredits ? "credits" : null].filter(
-    Boolean,
-  );
-  lines.push({
-    ok: skips.length > 0,
-    label: skips.length > 0 ? "Auto-skip" : "Auto-skip off",
-    detail: skips.length > 0 ? skips.join(" and ") : "nothing skipped",
-  });
-  lines.push({
-    ok: prefs.autoNext,
-    label: prefs.autoNext ? "Autoplay on" : "Autoplay off",
-    detail: prefs.autoNext ? "next episode rolls on" : "stops after each episode",
-  });
-  if (prefs.analyticsChoice !== "unchanged") {
-    lines.push({
-      ok: prefs.analyticsChoice === "enabled",
-      label: prefs.analyticsChoice === "enabled" ? "Usage ping on" : "Usage ping off",
-      detail: "change any time in /settings",
-    });
-  }
-  // Accounts are linked after the wizard commits, so they are reported as
-  // pending rather than done — saying "connected" before the browser has even
-  // opened would be the kind of small lie that erodes the rest.
-  if (prefs.connectAniList) {
-    lines.push({
-      ok: false,
-      label: "AniList",
-      detail: "opens after setup — your browser finishes the link",
-    });
-  }
-  if (prefs.connectTmdb) {
-    lines.push({
-      ok: false,
-      label: "TMDB",
-      detail: "opens after setup — your browser finishes the link",
-    });
-  }
-  if (prefs.presenceDiscord) {
-    lines.push({
-      ok: false,
-      label: "Discord presence",
-      detail: "connects when Discord is running",
-    });
-  }
-  return lines;
-}
-
-function outstandingLines(rows: readonly ScopedDependencyRow[]): readonly SummaryLine[] {
-  return rows
-    .filter((row) => row.state !== "ok" && row.fix !== null)
-    .map((row) => ({ ok: false, label: row.name, detail: row.detail }));
 }
 
 // ─── F1 capture harness ───────────────────────────────────────────────────────
@@ -947,6 +821,8 @@ export function runSetupFlow(
     /** Current configuration to hydrate the controls from. See #228. */
     readonly initial?: SetupInitialState;
     readonly analyticsPayload: AnalyticsPayload;
+    readonly flow?: SetupFlow | undefined;
+    readonly playerName?: string | undefined;
   },
 ): {
   result: Promise<SetupFlowPayload>;
@@ -961,6 +837,8 @@ export function runSetupFlow(
         {...(options.onRecheck ? { onRecheck: options.onRecheck } : {})}
         {...(options.downloadPath ? { downloadPath: options.downloadPath } : {})}
         {...(options.initial ? { initial: options.initial } : {})}
+        flow={options.flow ?? "full"}
+        playerName={options.playerName}
         analyticsPayload={options.analyticsPayload}
       />
     ),

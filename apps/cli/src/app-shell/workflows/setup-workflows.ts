@@ -16,6 +16,7 @@ import { getKunaiPaths } from "@/services/storage/storage-read-models";
 import { probeCapabilities } from "@/ui";
 import type { KitsuneConfig } from "@kunai/config";
 
+import { announceShellLine } from "../contextual-tips";
 import { runSetupFlow as runSetupFlowShell, type SetupInitialState } from "../setup-shell";
 import { openTrackerConnectShell, type TrackerConnectOutcome } from "../tracker-connect-shell";
 import { turnOnTrackerSync } from "./tracker-connect";
@@ -83,9 +84,21 @@ export function wizardInitialStateFromConfig(
   };
 }
 
+/** The player the verdict line names, when this session does not drive mpv. */
+export function setupPlayerName(mode: Container["playerMode"] | undefined): string | undefined {
+  if (!mode) return undefined;
+  if (mode.kind === "managed-vlc") return "VLC";
+  if (mode.kind === "android-handoff") {
+    return mode.target === "vlc" ? "VLC" : mode.target === "mpv" ? "mpv" : "your video player";
+  }
+  return undefined;
+}
+
 function note(container: Container, message: string): void {
   container.stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note: message });
 }
+
+export const SETUP_SAVED_LINE = "Setup saved · /setup for language and more";
 
 export async function confirmProtocolHandoff(handoff: KunaiHandoffLaunch): Promise<boolean> {
   const choice = await chooseFromListShell({
@@ -148,6 +161,7 @@ export async function runSetupWizard({
   const snapshot = container.capabilitySnapshot ?? (await probeForSelectedPlayer());
 
   const defaultDownloadPath = join(dirname(getKunaiPaths().dataDbPath), "downloads");
+  const playerName = setupPlayerName(container.playerMode);
   const { result } = runFlow(snapshot, {
     downloadPath: current.downloadPath || defaultDownloadPath,
     // `[r]` re-probes rather than making the user quit and relaunch after
@@ -157,6 +171,9 @@ export async function runSetupWizard({
     // wizard rewrites only what the screens showed (#228).
     initial: wizardInitialStateFromConfig(current, snapshot.ytDlp),
     analyticsPayload: container.usageAnalytics.describePayload(),
+    // A first launch asks two things; asking for setup gets all six screens.
+    flow: force ? "full" : "quick",
+    playerName,
   });
   const { outcome, prefs, answeredScreens } = await result;
   // One writer: the service owns what a consent choice means in config, and
@@ -272,6 +289,8 @@ export async function runSetupWizard({
     if (snapshotted) {
       note(container, "Your previous settings were saved — restore them from /settings.");
     }
+    // The quick flow has no review screen, so Browse says it once instead.
+    if (!force) announceShellLine(SETUP_SAVED_LINE);
   }
 
   // The wizard IS the disclosure for this user. Clear the pending flag the

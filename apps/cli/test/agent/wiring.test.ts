@@ -579,3 +579,38 @@ describe("agent wiring · playback failure", () => {
     );
   }, 45_000);
 });
+
+describe("agent wiring · first-run Browse", () => {
+  it("the field is live before the picks land, and a typed query searches", async () => {
+    // The landing a never-onboarded install gets. Picks used to be awaited
+    // before Browse mounted (no typing until the catalog answered) and then
+    // took focus when they arrived, so "type a title, press Enter" opened a
+    // recommendation. Whether the picks land before, during or after the
+    // typing below is exactly the race this must survive, so the scenario
+    // does not wait for them.
+    await withSession(
+      "wiring-first-browse",
+      { seed: "fresh", bootstrap: { initialRoute: "recommendation" }, mpv: "fake" },
+      async (s) => {
+        await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+        // Something to do is on screen with the field, not instead of it.
+        expect(s.frames().some((f) => f.includes("Or start here"))).toBe(true);
+
+        s.press("smoke", K.enter);
+        await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
+        expect(s.frame()).toContain("2 results");
+        // Backend witness: Enter searched. Nothing was resolved or played.
+        expect(s.inspect().history()).toEqual([]);
+
+        // The reverse case: Enter on the result list is what plays.
+        s.press(K.enter);
+        await s.waitForBackend(
+          (i) => i.history().length > 0,
+          "history records the title the user chose",
+          30_000,
+        );
+        expect(s.inspect().history()[0]?.title_id).toBe("tmdb:smoke-movie-1");
+      },
+    );
+  }, 60_000);
+});

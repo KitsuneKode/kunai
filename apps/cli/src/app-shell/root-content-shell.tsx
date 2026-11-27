@@ -5,6 +5,7 @@ import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import { Box } from "ink";
 import React from "react";
 
+import { buildErrorNextStep, UNEXPLAINED_FAILURE_MESSAGE } from "./playback-error-next-step";
 import { buildPlaybackFailureWaterfall } from "./playback-failure-waterfall";
 import { PlaybackRootContent, type PlaybackRootContentInput } from "./playback-mount-shell";
 import { clearPlaybackShellError, peekPlaybackShellError } from "./playback-shell-error-capture";
@@ -15,6 +16,7 @@ import type { RootOwnedOverlay } from "./root-shell-state";
 import { ErrorShell, RootIdleShell } from "./root-status-shells";
 import { RootContentSuspension } from "./RootContentSuspension";
 import { RootOverlayLoader } from "./RootOverlayLoader";
+import { buildDependencyRows } from "./setup/dependency-rows";
 
 export type RootContentRendererContext = {
   readonly container: Container;
@@ -72,9 +74,30 @@ export function renderErrorRootContent(
     recentEvents: container.diagnosticsService.getRecent(40),
   });
 
+  // The same row model setup and the startup strip read, so the command a
+  // failure names is the one this machine was already told about.
+  const snapshot = container.capabilitySnapshot;
+  const fixFor = (id: string) =>
+    snapshot ? (buildDependencyRows(snapshot).find((row) => row.id === id)?.fix ?? null) : null;
+  const canRetry = true;
+  const canPickProvider = Boolean(state.currentTitle);
+
   return (
     <ErrorShell
-      message={state.playbackError || "An unknown error occurred"}
+      message={
+        state.playbackError || state.playbackProblem?.userMessage || UNEXPLAINED_FAILURE_MESSAGE
+      }
+      nextStep={buildErrorNextStep({
+        problem: state.playbackProblem,
+        canRetry,
+        canPickProvider,
+        commands: {
+          player: fixFor("mpv"),
+          ytDlp: fixFor("yt-dlp"),
+          curlImpersonate: fixFor("curl-impersonate"),
+        },
+        curlImpersonates: snapshot?.curl.impersonates,
+      })}
       scenario={toErrorScenario(state.playbackProblem, {
         providerName:
           container.providerRegistry.get(state.provider)?.metadata.name ?? state.provider,

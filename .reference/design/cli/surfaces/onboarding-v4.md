@@ -50,9 +50,9 @@ to someone about to choose anime, `yt-dlp` only to someone about to choose YouTu
 is one key away (`d`).
 
 **Language, playback toggles, downloads and accounts are deferred.** They keep the values the
-config already has. `m` on screen one, `/setup` and `kunai --setup` walk the full five-screen
-flow (merged first screen, language, playback / downloads / accounts, usage ping, review). Asking
-for setup means wanting all of it; being ambushed by it on first launch does not.
+config already has. `/setup` and `kunai --setup` walk the six shipped screens, unchanged, and `m`
+on screen one joins that flow at language. Asking for setup means wanting all of it; being
+ambushed by it on first launch does not.
 
 **The summary screen is gone from the first run.** Setup ends in Browse with one line saying it
 was saved. The review screen stays in the full flow, where there is something to review.
@@ -63,16 +63,16 @@ and the other explicit routes go where they were told. Nothing is written, so th
 
 **The consent screen keeps its contract and gains a layout.** See the next section.
 
-**Browse is ready to type.** The search field owns the keyboard on arrival. Picks load underneath
-and never take focus from a query in progress. While they load, the field is live and three
-commands are offered. (The focus fix itself is owned by the pretag PR,
-`fix/pretag-scorecard-2026-11-27`.)
+**Browse is ready to type.** The search field owns the keyboard on arrival. Startup picks are
+mounted, not awaited, and when they land they never take focus from the field. While they load,
+the field is live and three commands are offered.
 
 **No player has one message.** What is missing, the one command for this OS, and the key that
 re-checks — on setup screen one, in the installer's last lines, and in the play-time failure.
 
 **A failure names the next step.** The panel order is fixed: what failed, `Next`, then the
-evidence. The keys are the ones the panel already had (`r`, `p`, Enter / Esc).
+evidence. The sentence is the one the failure classifier already writes. `Next` never names a
+key the panel does not have. The keys are the ones the panel already had (`r`, `p`, Enter / Esc).
 
 ## The consent screen: what is fixed in place
 
@@ -82,14 +82,22 @@ Read with `.docs/analytics-privacy-contract.md`. Nothing here loosens it.
 - No row is pre-selected and neither is marked recommended. The cursor starts on no row.
 - Enter does nothing until an arrow has chosen a row. Enter on "Share anonymous usage" is the
   only keystroke that can record `enabled`.
-- `s` is "don't share". `S` and `m` choose nothing here. A pointer cannot grant consent.
+- `s` is "don't share". `S`, `m` and `p` choose nothing here. A pointer cannot grant consent.
 - Leaving without answering (esc, a launch that skipped setup, a non-TTY run) records
   `unchanged`: no `installId`, no send, and no silent opt-out of someone who had opted in.
 - The payload preview is still `describePayload()` itself.
 
-What changed is fit. Below 70 content columns the two option details use their short form and
-the payload wraps to the frame instead of to a fixed 60 columns. At the 40×16 floor the preview
-collapses to the payload's field names, read from the same object, and `p` expands the values.
+What changed is fit, and one consequence of being last. Below 70 content columns the two option
+details use their short form and the payload wraps to the frame instead of to a fixed 60
+columns. At the size floor (under 44 content columns, or too few rows for the narrow layout) the
+preview is the payload's field names, read from the same object, and every line truncates
+instead of wrapping: a setup screen that is too tall does not scroll, it drops rows, and on
+`main` the rows it dropped were the title and an answer. `p` opens the values as a view of their
+own; while it is open the answers are off screen, so every key only closes it.
+
+In the two-screen flow the consent screen is the last one, so the keystroke that answers it also
+finishes setup. The answer is passed to the finish call directly rather than read back from
+state, so the committed value and the written value cannot differ.
 
 ## Exact copy
 
@@ -97,7 +105,7 @@ collapses to the payload's field names, read from the same object, and `p` expan
 
 ```text
 Done.
-Watch something now:
+Watch something:
   kunai -q -S "Dune"     search and play in one step
   kunai                  browse, with a two-question setup
 
@@ -105,9 +113,9 @@ Update any time:  kunai upgrade
 Remove:           kunai uninstall
 ```
 
-No player: `No video player found — Kunai needs mpv or VLC to play anything.` then
-`Run this to install one:` and the command. The closing block then opens with
-`Then watch something:`.
+No player: `No video player found — Kunai needs mpv or VLC to play anything.` VLC but no mpv:
+`mpv is not installed — Kunai will play in VLC. mpv is optional.` The command offer that follows
+is unchanged.
 
 ### Setup 1⁄2 — context `welcome`
 
@@ -140,7 +148,7 @@ Verdict lines:
 | no player                       | `✗ No video player found — nothing can play yet` · the command · `Run it in another terminal, then press r. VLC works too.`           |
 | anime lane, no curl-impersonate | `△ Anime search can come back empty here` · the command · `Cloudflare turns away plain requests. Shows & movies are not affected.`    |
 | YouTube lane, no yt-dlp         | `△ YouTube needs yt-dlp` · the command                                                                                               |
-| re-checking                     | `❀ Checking this machine again…`                                                                                                     |
+| re-checking                     | `Checking this machine again…` (the title petal blooms)                                                                                                   |
 
 Narrow sub line: `Sets where Kunai starts. Tab switches later.` Narrow no-player hint:
 `Install it, then press r. VLC works too.` At 40 columns lane details and the defaults note are
@@ -149,7 +157,8 @@ dropped; the three lanes and the verdict never are.
 ### Setup 1⁄2 · `d` — context `this machine`
 
 Title `This machine`, sub `What Kunai found, and the one command for anything missing.` The rows
-are the dependency table as before. Footer: `[d] back  [r] recheck  [↑↓] choose  [esc] quit`.
+are the dependency table as before. Footer: `[d] back  [r] recheck  [↑↓] choose`. Any other key
+returns to the lanes; the quit key leaves the view, not setup.
 
 ### Setup 2⁄2 — context `usage ping`
 
@@ -167,9 +176,9 @@ Nothing is sent unless you choose to share.
 
 ### First Browse
 
-- Hint under the field while it has focus and picks are listed:
-  `Type a title, then enter · ↓ picks · / commands`
-- After a first-run setup: `✓ Setup saved · /setup for language, downloads and accounts`
+- On the shell's transient row for ten seconds: `Setup saved · /setup for language and more`
+- Hint under the field, picks listed, field empty: `Type a title, then enter · ↓ picks`
+- Hint while startup picks load: `Type a title, then enter · no need to wait`
 - Cold cache, in place of the list:
 
 ```text
@@ -181,37 +190,46 @@ Or start here
   /random    pick something for me
 ```
 
-- Offline or failed: `○  Can't reach the internet` /
-  `Kunai needs a connection to search and stream. Check it, then run /discover.`
+- Picks never arrived: `No picks to show right now` /
+  `Type a title to search. No connection? Check it, then run /discover.`
 
 ### No results
 
 ```text
-· No results for “frieren” in shows & movies
+· No results for "frieren" in shows & movies
 Press Tab to search anime instead, or try fewer words.
 ```
 
 In anime mode the second line reads `Press Tab to search shows & movies instead, or try fewer words.`
+A known cause (a provider that threw, TMDB unreachable) still replaces the second line.
 
 ### Failure panel
 
-Heading stays `Playback failed`. Then one sentence, then `Next`.
+Heading stays `Playback failed`. Then the classifier's sentence, or `The stream did not start.`
+when there is none (it used to read `An unknown error occurred`). Then `Next`.
 
-| Cause                        | Sentence                                                              | Next                                                                                             |
-| ---------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| source down / stream expired | `<Source> found <title>, but the stream it returned would not start.` | `press p and pick another source`                                                                |
-| offline / network blocked    | `Kunai could not reach the internet.`                                 | `check your connection, then press r to try again`                                               |
-| CAPTCHA / Cloudflare         | `<Source> answered with a browser check that Kunai cannot pass here.` | `press p and pick another source` · `To fix it for good, install curl-impersonate:` · command    |
-| no player                    | `No video player found. Kunai plays in mpv or VLC.`                   | `install one, then press r` · command                                                            |
-| anything else                | `The stream did not start.`                                           | `press r to try again, or p to pick another source`                                              |
+| Cause                                 | Next                                                                                          |
+| ------------------------------------- | --------------------------------------------------------------------------------------------- |
+| no stream from the source             | `press p and pick another source`                                                             |
+| offline / network                     | `check your connection, then press r to try again`                                            |
+| blocked, rate-limited (CAPTCHA)       | `press p and pick another source` · `To fix it for good, install curl-impersonate:` · command |
+| no player                             | `install a player, then press r` · command                                                    |
+| yt-dlp missing                        | `install yt-dlp, then press r` · command                                                      |
+| stream expired, player stuck or gone  | `press r — Kunai fetches a fresh stream`                                                      |
+| provider needs a session              | `press p for another source, or add the session in /settings`                                 |
+| anything else                         | `press r to try again, or p to pick another source`                                           |
 
-Last row: `r retry  ·  Enter / Esc back to results`.
+The curl-impersonate lines appear only on a machine without it. Without a source picker the `p`
+half is dropped; without retry the step reads `press Enter to go back and try again`. Last row,
+unchanged: `r retry  ·  Enter / Esc dismiss`.
 
 ## Variants
 
 - **`--plain`**: no borders, glyphs or selection band. Selection is `[selected]`, the verdict is
   `[ok]` / `[warning]` / `[missing]`. On the consent screen neither row carries `[selected]`
   until an arrow is pressed.
+- **40×16**: lane details, the companion, the defaults note and the footer's surface label go
+  first. The three lanes, the verdict and both consent rows never do.
 - **`NO_COLOR`**: nothing on these screens is carried by colour alone. Selection has the `▌`
   rule, state has its glyph and its words. The board's `NO_COLOR` button shows every frame so.
 - **Reduced motion**: the only motion in setup is the petal while `r` re-probes. With reduced
@@ -225,5 +243,10 @@ Last row: `r retry  ·  Enter / Esc back to results`.
   board as proposed.
 - The header's `series · vidlink` context during setup, which says nothing to someone who has not
   chosen yet.
-- VLC's dependency row and the player-requirement logic: the pretag PR.
+- VLC's dependency row, the recheck that keeps a VLC session, and the single mpv/VLC capability
+  rule come from the base branch (`fix/pretag-scorecard-2026-11-27`); this work reads them.
+- The play-time sentence that still opens with "mpv is required for playback". `Next` now names
+  "a player" beside it, but the sentence itself is unchanged.
+- An offline-aware version of "No picks to show right now". Discover swallows its own network
+  errors, so Browse cannot yet tell "offline" from "nothing to recommend".
 - The "Next up" home row: PR #847.

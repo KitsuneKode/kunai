@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-26T11:55:00Z"
+lastReviewed: "2026-11-27T08:10:05Z"
 ---
 
 # Kunai — Download, Offline Library, And Onboarding
@@ -42,10 +42,40 @@ Layering rule: UI asks services for capability/state; services do not render UI.
 
 ## Setup Wizard Behavior
 
-Six screens, in order: dependencies, mode, language, playback/downloads &
-accounts, usage ping, done. Implementation is
-`apps/cli/src/app-shell/setup-shell.tsx`; the write map is
-`runSetupWizard` in `apps/cli/src/app-shell/workflows/setup-workflows.ts`.
+Two flows, chosen by how setup was reached (`SetupFlow` in
+`apps/cli/src/app-shell/setup/setup-model.ts`):
+
+- **`quick` — a first launch.** Two screens: what you watch plus a one-line
+  machine verdict, then usage ping. It ends in Browse, with no review screen.
+- **`full` — `/setup`, `kunai --setup`, or `m` on the first quick screen.** Six
+  screens, in order: dependencies, mode, language, playback/downloads &
+  accounts, usage ping, done.
+
+Implementation is `apps/cli/src/app-shell/setup-shell.tsx`; the write map is
+`runSetupWizard` in `apps/cli/src/app-shell/workflows/setup-workflows.ts`, which
+picks `full` when forced and `quick` otherwise. The design board is
+`.reference/design/cli/kunai-onboarding-v4.html`.
+
+- **A launch that names its destination skips setup.** `-S`, `-i`, `--continue`,
+  `--history`, `--offline`, `--download`, a startup route or a share link goes
+  where it was told (`launchHasDestination` in
+  `apps/cli/src/app/bootstrap/startup-setup.ts`). Nothing about onboarding is
+  written, so the next bare `kunai` still offers setup, and analytics stays
+  `unset` — off — until the consent screen is answered. `--setup` still wins.
+- **The quick flow writes only what it showed.** Mode and the consent answer.
+  Every other control comes back exactly as hydrated, so language profiles,
+  playback toggles, download settings and linked accounts are untouched.
+- **The machine verdict follows the highlighted lane.** `buildSetupVerdict`
+  (`apps/cli/src/app-shell/setup/setup-verdict.ts`) reduces the dependency rows
+  to "is there a player" plus the one dependency the lane under the cursor
+  leans on: `curl-impersonate` for anime, `yt-dlp` for YouTube. `d` opens the
+  full table in place and `r` re-probes.
+- **Layout follows rows as well as columns.** `setupDensity` picks `wide`,
+  `narrow` or `tiny` from the space the screen really gets. A setup screen that
+  is too tall does not scroll, it drops rows, so each layout is chosen only
+  where all of it fits. At the size floor the consent screen truncates every
+  line instead of wrapping, and `p` opens the payload's values as a view that
+  swallows every key until it closes.
 
 - **Every control hydrates from the live config.** `wizardInitialStateFromConfig`
   reads mode, language, playback toggles, download enablement and quality,
@@ -78,13 +108,18 @@ accounts, usage ping, done. Implementation is
   ask about — `quality` — are preserved per lane. Press `a` to copy the active
   lane's audio and subtitle choices to all four lanes; changing any lane later
   remains independent.
-- **Playback defaults are conservative.** Autoplay, intro skipping, and credit
-  skipping start off. Press `s` to apply the recommended all-on playback
-  defaults, or `S` to accept every remaining recommendation and jump to the final
-  review. Neither key writes configuration — `S` opens the review screen, and the
-  wizard saves only when you press Enter there.
-- **Analytics is keystroke-gated.** Consent is recorded when the user presses a
-  key on the consent screen, never when they arrive on it. Arriving and stepping
+- **Playback toggles show what the config holds.** On a fresh install that is
+  autoplay, intro skipping and credit skipping on. In the full flow, press `s`
+  to apply the recommended all-on playback defaults, or `S` to accept every
+  remaining recommendation and jump to the final review. Neither key writes
+  configuration — `S` opens the review screen, and the wizard saves only when
+  you press Enter there. In the quick flow there is nothing left to accept, so
+  `S` on the first screen only moves on.
+- **Analytics is keystroke-gated, in both flows.** Consent is recorded when the user presses a
+  key on the consent screen, never when they arrive on it. In the quick flow
+  that screen is the last one, so the answering keystroke also finishes setup;
+  the answer is handed to the finish call directly rather than read back from
+  state. Arriving and stepping
   back leaves the value `unchanged`, which is neither an opt-in nor an opt-out.
   See [analytics-privacy-contract.md](analytics-privacy-contract.md).
 - **Account links run after config commits, and only report success.**

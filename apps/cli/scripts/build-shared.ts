@@ -530,7 +530,11 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // The pre-release player-capability rule (VLC parity across startup, setup,
 // and doctor), TMDB credential routing, and browse-focus copy on top measured
 // 3,328,807 bytes together; 3251 KiB leaves 217.
-export const NPM_BUNDLE_BUDGET_KB = 3_251;
+// Onboarding v4 (the two-screen first run with its machine verdict, the
+// density-aware consent screen, startup picks mounted under a live field, and
+// the failure panel's next step) on top measured 3,340,882 bytes: +12,075, all
+// screen code and copy. No dependency or asset. 3263 KiB leaves 430.
+export const NPM_BUNDLE_BUDGET_KB = 3_263;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
