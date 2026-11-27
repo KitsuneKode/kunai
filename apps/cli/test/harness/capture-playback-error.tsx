@@ -8,8 +8,9 @@ import { captureSurface } from "./render-capture";
 export function playbackErrorNode() {
   return (
     <ErrorShell
-      message="An unknown error occurred"
+      message="The stream did not start."
       scenario={{ kind: "provider-timeout", providerName: "allmanga", elapsedSec: 12 }}
+      nextStep={{ text: "press r to try again, or p to pick another source", extra: [] }}
       waterfall={{
         title: "Source attempts",
         truncated: true,

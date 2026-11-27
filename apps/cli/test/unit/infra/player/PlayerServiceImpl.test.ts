@@ -178,6 +178,52 @@ describe("PlayerServiceImpl diagnostics", () => {
     });
   });
 
+  test("one-shot playback turns an unanswered resume offer into mpv's start position", async () => {
+    const events: DiagnosticEventInput[] = [];
+    let launchedWith: Parameters<typeof launchMpv>[0] | null = null;
+    const { service } = createService(events, {
+      // SAFETY: the capture returns a full PlaybackResult; only the input is inspected.
+      launchMpv: (async (options) => {
+        launchedWith = options;
+        return createPlaybackResult();
+      }) as typeof launchMpv,
+    });
+
+    await service.play(createStream({ subtitle: undefined }), {
+      url: "https://cdn.example/show/episode.mp4",
+      displayTitle: "Episode 2",
+      playbackMode: "manual",
+      startAt: 0,
+      resumePromptAt: 612,
+      resumeStartChoicePrompt: true,
+    });
+
+    expect(launchedWith).toMatchObject({ startAt: 612 });
+  });
+
+  test("one-shot playback keeps an explicit start position ahead of the resume offer", async () => {
+    const events: DiagnosticEventInput[] = [];
+    let launchedWith: Parameters<typeof launchMpv>[0] | null = null;
+    const { service } = createService(events, {
+      // SAFETY: the capture returns a full PlaybackResult; only the input is inspected.
+      launchMpv: (async (options) => {
+        launchedWith = options;
+        return createPlaybackResult();
+      }) as typeof launchMpv,
+    });
+
+    await service.play(createStream({ subtitle: undefined }), {
+      url: "https://cdn.example/show/episode.mp4",
+      displayTitle: "Episode 2",
+      playbackMode: "manual",
+      startAt: 44,
+      resumePromptAt: 612,
+      resumeStartChoicePrompt: true,
+    });
+
+    expect(launchedWith).toMatchObject({ startAt: 44 });
+  });
+
   test("one-shot playback hands mpv the resolve gate's evidence, so a fresh pass is not re-probed", async () => {
     const events: DiagnosticEventInput[] = [];
     let launchedWith: Parameters<typeof launchMpv>[0] | null = null;

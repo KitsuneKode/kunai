@@ -188,6 +188,8 @@ describe("plain / screen-reader rendering across every shell surface", () => {
     const missingMpvSnapshot: CapabilitySnapshot = {
       mpv: false,
       mpvRequired: true,
+      vlc: true,
+      vlcRequired: false,
       ytDlp: true,
       ffprobe: true,
       curl: { present: true, impersonates: true, profile: "chrome" },

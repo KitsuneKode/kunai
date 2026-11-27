@@ -33,6 +33,7 @@ import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers
 import { finalizeCycleSourceInventory } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
 import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
+import { CHROME_124_USER_AGENT } from "../shared/user-agent";
 import {
   fetchHianimeEpisodeCatalog,
   HIANIME_SUPPORTED_SERVER,
@@ -192,8 +193,7 @@ function linksToCandidates(
       headers: {
         Referer: link.referer,
         Origin: origin,
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "User-Agent": CHROME_124_USER_AGENT,
       },
       qualityLabel: quality.qualityLabel,
       qualityRank: quality.qualityRank,

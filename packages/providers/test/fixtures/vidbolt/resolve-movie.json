@@ -1,0 +1,64 @@
+{
+  "capturedFrom": "GET https://vidbolt.pro/api/resolve?type=movie&id=550 (redacted)",
+  "steps": [
+    {
+      "exclude": "",
+      "body": {
+        "stream": {
+          "server": "orion",
+          "sources": [
+            {
+              "url": "https://media.example/vidbolt/redacted/index.m3u8",
+              "kind": "hls",
+              "quality": "1080p",
+              "master": "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"subs\",NAME=\"English\",DEFAULT=YES,AUTOSELECT=YES,FORCED=NO,LANGUAGE=\"en\",URI=\"subtitles_english.m3u8\"\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aac\",LANGUAGE=\"eng\",NAME=\"English\",DEFAULT=YES,URI=\"track_english.m3u8\"\n#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aac\",LANGUAGE=\"ita\",NAME=\"Italian\",DEFAULT=NO,URI=\"track_italian.m3u8\"\n#EXT-X-STREAM-INF:BANDWIDTH=5000000,AUDIO=\"aac\",RESOLUTION=1920x1080,SUBTITLES=\"subs\",CLOSED-CAPTIONS=NONE\nvideo_1080p.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=2000000,AUDIO=\"aac\",RESOLUTION=1280x720,SUBTITLES=\"subs\",CLOSED-CAPTIONS=NONE\nvideo_720p.m3u8\n"
+            }
+          ],
+          "thumbnails": "redacted",
+          "resolvedAt": 1795762133720,
+          "freshUntil": 1795848533720
+        }
+      }
+    },
+    {
+      "exclude": "orion",
+      "body": {
+        "stream": {
+          "server": "vega",
+          "sources": [
+            {
+              "url": "https://proxy.example/vidbolt/redacted/720.m3u8",
+              "kind": "hls",
+              "quality": "720p",
+              "language": "English"
+            },
+            {
+              "url": "https://proxy.example/vidbolt/redacted/480.m3u8",
+              "kind": "hls",
+              "quality": "480p",
+              "language": "English"
+            }
+          ],
+          "subtitles": [
+            {
+              "url": "https://subs.example/vidbolt/redacted/English.vtt",
+              "label": "en",
+              "lang": "en"
+            },
+            {
+              "url": "https://subs.example/vidbolt/redacted/Arabic.vtt",
+              "label": "ar",
+              "lang": "ar"
+            }
+          ],
+          "resolvedAt": 1795762133720,
+          "freshUntil": 1795848533720
+        }
+      }
+    },
+    {
+      "exclude": "orion,vega",
+      "body": { "stream": null }
+    }
+  ]
+}

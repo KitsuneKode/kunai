@@ -13,6 +13,9 @@ const DOCS_ROOT = path.join(ROOT, "docs");
 const PROVIDER_BOOTSTRAP_PATH = path.join(ROOT, "apps/cli/src/container/bootstrap-providers.ts");
 const REGISTRY_PATH = path.join(ROOT, "apps/cli/src/domain/session/command-registry.ts");
 const SYNC_SCRIPT_PATH = path.join(ROOT, "apps/docs/scripts/sync-code-metadata.ts");
+const DEFAULT_CONFIG_PATH = path.join(ROOT, "packages/config/src/defaults.ts");
+const PLATFORM_ASSETS_PATH = path.join(ROOT, "apps/cli/src/services/update/platform-assets.ts");
+const INTERNAL_PROVIDERS_PATH = path.join(ROOT, ".docs/providers.md");
 
 const MODULE_TO_ID: Record<string, string> = {
   videasyProviderModule: "videasy",
@@ -20,11 +23,14 @@ const MODULE_TO_ID: Record<string, string> = {
   rivestreamProviderModule: "rivestream",
   movyProviderModule: "movy",
   vidrockProviderModule: "vidrock",
+  vidboltProviderModule: "vidbolt",
   allmangaProviderModule: "allanime",
   hianimeProviderModule: "hianime",
   animeggProviderModule: "animegg",
   kickassanimeProviderModule: "kickassanime",
   miruroProviderModule: "miruro",
+  anilightProviderModule: "anilight",
+  anidapProviderModule: "anidap",
   youtubeProviderModule: "youtube",
 };
 
@@ -84,6 +90,109 @@ describe("docs codegen drift", () => {
     for (const moduleName of modules) {
       expect(syncScript).toContain(`${moduleName}:`);
     }
+  });
+
+  test("provider lane order metadata matches config defaults", () => {
+    const defaults = fs.readFileSync(DEFAULT_CONFIG_PATH, "utf-8");
+    const stringValue = (key: string) => {
+      const marker = `${key}: "`;
+      const startIndex = defaults.indexOf(marker);
+      if (startIndex < 0) throw new Error(`missing ${key}`);
+      const valueStart = startIndex + marker.length;
+      const valueEnd = defaults.indexOf('"', valueStart);
+      return defaults.slice(valueStart, valueEnd);
+    };
+    const arrayValue = (key: string) => {
+      const marker = `${key}: [`;
+      const startIndex = defaults.indexOf(marker);
+      if (startIndex < 0) throw new Error(`missing ${key}`);
+      const bodyStart = startIndex + marker.length;
+      const bodyEnd = defaults.indexOf("]", bodyStart);
+      return [...defaults.slice(bodyStart, bodyEnd).matchAll(/"([^"]+)"/g)]
+        .map((match) => match[1])
+        .filter((value): value is string => Boolean(value));
+    };
+    const dedupe = (values: readonly string[]) => [...new Set(values)];
+
+    const seriesDefault = stringValue("provider");
+    const animeDefault = stringValue("animeProvider");
+    const youtubeDefault = stringValue("youtubeProvider");
+    const seriesRest = arrayValue("providerPriority");
+    const animeRest = arrayValue("animeProviderPriority");
+    const youtubeRest = arrayValue("youtubeProviderPriority");
+
+    expect(codeMetadata.providerDefaults.revision).toBe(
+      Number(defaults.match(/providerDefaultsRevision:\s*(\d+)/)?.[1]),
+    );
+    expect(codeMetadata.providerDefaults.series.order).toEqual(
+      dedupe([seriesDefault, ...seriesRest]),
+    );
+    expect(codeMetadata.providerDefaults.anime.order).toEqual(dedupe([animeDefault, ...animeRest]));
+    expect(codeMetadata.providerDefaults.youtube.order).toEqual(
+      dedupe([youtubeDefault, ...youtubeRest]),
+    );
+  });
+
+  test("release target metadata matches the published target contract", () => {
+    const platformAssets = fs.readFileSync(PLATFORM_ASSETS_PATH, "utf-8");
+    const ids = [...platformAssets.matchAll(/releaseBinaryTarget\(\{\s*id:\s*"([^"]+)"/g)]
+      .map((match) => match[1])
+      .filter((id): id is string => Boolean(id));
+
+    expect(codeMetadata.releaseTargets.map((target) => target.id)).toEqual(ids);
+    expect(codeMetadata.releaseTargets).toHaveLength(10);
+    expect(
+      codeMetadata.releaseTargets.find((target) => target.id === "linux-x64")?.supportTier,
+    ).toBe("supported");
+    expect(
+      codeMetadata.releaseTargets.find((target) => target.id === "windows-arm64")?.supportTier,
+    ).toBe("experimental");
+  });
+
+  test("player support metadata mirrors the player-choice contract", () => {
+    expect(codeMetadata.playerSupport.desktopManagedPlayers).toEqual(["mpv", "vlc"]);
+    expect(codeMetadata.playerSupport.androidTargets).toEqual(["chooser", "mpv", "vlc"]);
+  });
+
+  test("generated provider-order and platform tables replace stale manual matrices", () => {
+    const providers = fs.readFileSync(path.join(DOCS_ROOT, "users/providers.mdx"), "utf-8");
+    const supported = fs.readFileSync(
+      path.join(DOCS_ROOT, "users/supported-and-unsupported.mdx"),
+      "utf-8",
+    );
+    const platforms = fs.readFileSync(path.join(DOCS_ROOT, "users/platforms.mdx"), "utf-8");
+    const install = fs.readFileSync(path.join(DOCS_ROOT, "users/install-and-update.mdx"), "utf-8");
+
+    expect(providers).toContain("<ProviderOrderTable />");
+    expect(supported).toContain("<ProviderOrderTable />");
+    expect(supported).toContain("<PlatformSupportTable />");
+    expect(platforms).toContain("<PlatformSupportTable />");
+    expect(install).toContain("<PlatformSupportTable />");
+    expect(supported).not.toContain("| AniDB (`anidb`)");
+    expect(providers).not.toContain(
+      '"providerPriority": ["rivestream", "vidrock", "movy", "videasy"]',
+    );
+    expect(providers).not.toContain(
+      '"animeProviderPriority": ["animegg", "kickassanime", "miruro", "allanime"]',
+    );
+    expect(supported).not.toContain("In 0.3.0");
+    expect(platforms).not.toContain("Support posture (0.3.0)");
+    expect(install).not.toContain("Platform support matrix (0.3.0)");
+  });
+
+  test("internal provider authority does not list retired AniDB as active", () => {
+    const content = fs.readFileSync(INTERNAL_PROVIDERS_PATH, "utf-8");
+    const activeStart = content.indexOf("## Active Beta Providers");
+    const activeEnd = content.indexOf("Cineby is not a production provider", activeStart);
+    const activeSection = content.slice(activeStart, activeEnd);
+
+    expect(activeStart).toBeGreaterThanOrEqual(0);
+    expect(activeEnd).toBeGreaterThan(activeStart);
+    expect(activeSection).not.toContain("| AniDB");
+    expect(content).toContain(
+      '`animeProviderPriority: ["kickassanime", "animegg", "miruro", "allanime"]`',
+    );
+    expect(content).toContain("provider-defaults revision 8");
   });
 
   test("command count matches registry parse", () => {

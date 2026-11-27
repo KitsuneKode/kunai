@@ -4,7 +4,8 @@
 │ │ Playback failed                                                            │
 │ │ ✗  timed out after 12s                                                     │
 │ │ allmanga                                                                   │
-│ │ r retry · /fallback for another provider                                   │
+│ │                                                                            │
+│ │ Next  press r to try again, or p to pick another source                    │
 │ │                                                                            │
 │ │ Source attempts  ·  more in /diagnostics                                   │
 │ │ ✓ search  ·  0.4s                                                          │

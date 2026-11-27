@@ -7,6 +7,7 @@
 // actually ends up serving it, and the track-pick helpers bound to all that.
 // Every later stage of the iteration reads these from one `EpisodeAttempt`.
 // =============================================================================
+import { offerContinueSourceChoice } from "@/app/playback/continue-source-choice";
 import { resolveLocalEpisodePlayback } from "@/app/playback/episode-playback-source";
 import { playbackDeadStreamScopeKey } from "@/app/playback/playback-dead-stream-ledger";
 import { updatePlaybackFeedback } from "@/app/playback/playback-phase-feedback";
@@ -139,6 +140,27 @@ export async function resolveEpisodeSourceAuthority(
   if (run.sessionSoftProviderId && run.sessionSoftProviderId !== configuredProviderId) {
     run.sessionSoftProviderId = null;
   }
+  if (run.continueSourcePromptPending && !isOfflineLaunch) {
+    run.continueSourcePromptPending = false;
+    const sourceChoice = await offerContinueSourceChoice({
+      container,
+      title,
+      episode: currentEpisode,
+    });
+    if (sourceChoice === "cancelled") {
+      return {
+        kind: "exit",
+        step: {
+          status: "success",
+          value: title.launchSource === "history" ? "back_to_history" : "back_to_results",
+        },
+      };
+    }
+    if (sourceChoice === "local" || sourceChoice === "online") {
+      run.episodePlaybackSourceOverride = sourceChoice;
+    }
+  }
+
   const sourceAuthority = await resolvePlaybackSourceAuthority({
     configuredProviderId: run.sessionSoftProviderId ?? configuredProviderId,
     offlineOnly: isOfflineLaunch,

@@ -28,12 +28,15 @@ import {
 } from "@kunai/types";
 
 import { allmangaProviderModule } from "../src/allmanga/direct";
+import { anidapProviderModule } from "../src/anidap/direct";
+import { anilightProviderModule } from "../src/anilight/direct";
 import { animeggProviderModule } from "../src/animegg/direct";
 import { hianimeProviderModule } from "../src/hianime/direct";
 import { kickassanimeProviderModule } from "../src/kickassanime/direct";
 import { miruroProviderModule } from "../src/miruro/direct";
 import { movyProviderModule } from "../src/movy/direct";
 import { rivestreamProviderModule } from "../src/rivestream/direct";
+import { vidboltProviderModule } from "../src/vidbolt/direct";
 import { videasyProviderModule } from "../src/videasy/index";
 import { vidlinkProviderModule } from "../src/vidlink/direct";
 import { vidrockProviderModule } from "../src/vidrock/direct";
@@ -174,6 +177,12 @@ export const PROBES: readonly ProbeSpec[] = [
     input: MOVIE_INPUT,
   },
   {
+    id: "vidbolt",
+    module: vidboltProviderModule,
+    frontDoor: "https://vidbolt.pro",
+    input: MOVIE_INPUT,
+  },
+  {
     // The provider id is "allanime" (AllAnime upstream); "allmanga" is the
     // module's internal directory name, not the id rows carry.
     id: "allanime",
@@ -191,6 +200,18 @@ export const PROBES: readonly ProbeSpec[] = [
     id: "miruro",
     module: miruroProviderModule,
     frontDoor: "https://www.miruro.bz",
+    input: ONE_PIECE_ANILIST,
+  },
+  {
+    id: "anilight",
+    module: anilightProviderModule,
+    frontDoor: "https://api.anilight.live",
+    input: ONE_PIECE_ANILIST,
+  },
+  {
+    id: "anidap",
+    module: anidapProviderModule,
+    frontDoor: "https://anidap.lol",
     input: ONE_PIECE_ANILIST,
   },
   {

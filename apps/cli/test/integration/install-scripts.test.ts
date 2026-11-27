@@ -467,6 +467,7 @@ describe("install.sh environment fallbacks", () => {
       expect(result.status).toBe(0);
       // Whatever this host has installed, the deps section must not run at all.
       expect(result.stdout).not.toContain("mpv is not installed");
+      expect(result.stdout).not.toContain("No video player found");
       expect(result.stdout).not.toContain("already installed");
     } finally {
       sandbox.cleanup();
@@ -2582,6 +2583,7 @@ describe("install.sh optional dependency consent", () => {
       "warn() { printf '! %s\\n' \"$*\"; }",
       "run() { printf '[RAN] %s\\n' \"$*\"; }",
       `eval "$(sed -n '/^dependency_install_command() {/,/^}/p' ${JSON.stringify(INSTALL_SH)})"`,
+      `eval "$(sed -n '/^have_vlc() {/,/^}/p' ${JSON.stringify(INSTALL_SH)})"`,
       `eval "$(sed -n '/^missing_dependencies() {/,/^}/p' ${JSON.stringify(INSTALL_SH)})"`,
       `eval "$(sed -n '/^install_optional_deps() {/,/^}/p' ${JSON.stringify(INSTALL_SH)})"`,
       extraDefs,
@@ -2651,6 +2653,24 @@ describe("install.sh optional dependency consent", () => {
     expect(output).toContain("already installed");
     expect(output).not.toContain("This will run");
     expect(output).not.toContain("[RAN]");
+  });
+
+  test("a machine with neither player is told so, with both named", () => {
+    const output = evalInstallSh(
+      "SKIP_DEPS=0; DRY=1; YES=0; install_optional_deps",
+      'have() { case "$1" in pacman) return 0;; *) return 1;; esac; }; HOME=/nonexistent',
+    );
+    expect(output).toContain("No video player found — Kunai needs mpv or VLC to play anything.");
+  });
+
+  test("a VLC-only machine is not told that nothing can play", () => {
+    const output = evalInstallSh(
+      "SKIP_DEPS=0; DRY=1; YES=0; install_optional_deps",
+      'have() { case "$1" in vlc|pacman) return 0;; *) return 1;; esac; }',
+    );
+    expect(output).toContain("Kunai will play in VLC");
+    expect(output).not.toContain("No video player found");
+    expect(output).not.toContain("needs it to play anything");
   });
 
   test("--yes, --dry-run, and a run with no terminal print the command instead of escalating", () => {

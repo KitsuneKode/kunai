@@ -56,6 +56,7 @@ import {
 import { selectReadyStream } from "../shared/startup-selection";
 import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { trimTrailingSlashes } from "../shared/trim-trailing-slashes";
+import { CHROME_124_USER_AGENT } from "../shared/user-agent";
 import { movyManifest, MOVY_PROVIDER_ID } from "./manifest";
 import { decryptMovyPayload, MovyDecryptError } from "./streamcrypto";
 
@@ -76,8 +77,7 @@ export function effectiveMovyApiBase(): string {
   return trimTrailingSlashes(requireEffectiveProviderHost(MOVY_PROVIDER_ID, [MOVY_API_BASE]));
 }
 
-const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+const USER_AGENT = CHROME_124_USER_AGENT;
 
 /**
  * Lane order mirrors the site's own picker. Every lane is tried in order;

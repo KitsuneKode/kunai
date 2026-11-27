@@ -158,13 +158,17 @@ kunai -S "Dune"
 ### Search and Resume
 
 ```bash
-kunai                       # open the shell
+kunai -q -S "Dune"          # search and play the top result
+kunai                       # browse; the first run asks two questions
 kunai -a -S "Demon Slayer"  # search anime
 kunai -y -S "live coding"   # search YouTube
-kunai --continue           # resume an unfinished title
+kunai --continue            # resume an unfinished title
 ```
 
-These search commands open results; select a title before playback begins.
+`-q` plays the top result. Without it, a search opens results; select a title
+to play. A command that names what to open skips setup, so `kunai --setup`
+above is optional: a bare `kunai` asks what you watch most and whether to share
+an anonymous usage ping, then opens Browse with the cursor in the search field.
 
 <a id="features"></a>
 

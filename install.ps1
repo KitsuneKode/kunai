@@ -101,6 +101,14 @@ function Write-Utf8File([string]$Path, [string]$Content) {
 function Write-Info($m) { Write-Host "-> $m" }
 function Write-Warn($m) { Write-Host "! $m" -ForegroundColor Yellow }
 function Test-Cmd($name) { [bool](Get-Command $name -ErrorAction SilentlyContinue) }
+# Mirrors the CLI's own VLC discovery: PATH, then the default install roots.
+function Test-VlcPresent {
+  if (Test-Cmd 'vlc') { return $true }
+  foreach ($root in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+    if ($root -and (Test-Path (Join-Path $root 'VideoLAN\VLC\vlc.exe'))) { return $true }
+  }
+  return $false
+}
 
 function Test-CanonicalVersion([string]$Value) {
   return [bool]($Value -match '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$')
@@ -2117,7 +2125,12 @@ function Install-OptionalDeps {
   # -Yes installed -- even when mpv was already on PATH.
   $missing = @()
   if (-not (Test-Cmd 'mpv')) {
-    Write-Warn 'mpv is not installed - Kunai needs it to play anything.'
+    # VLC is a player too: `--player auto` plays there when mpv is absent.
+    if (Test-VlcPresent) {
+      Write-Info 'mpv is not installed - with the default player setting (auto), Kunai will play in VLC. mpv is optional.'
+    } else {
+      Write-Warn 'No video player found - Kunai needs mpv or VLC to play anything.'
+    }
     $missing += 'mpv'
   }
   if (-not (Test-Cmd 'yt-dlp') -and -not $portableYtdlp) {
@@ -2562,6 +2575,8 @@ switch ($Method) {
 Install-OptionalDeps
 
 Write-Host 'Done.' -ForegroundColor Green
-Write-Host 'Try:  kunai -S "Frieren" -a'
+Write-Host 'Watch something:'
+Write-Host '  kunai -q -S "Dune"     search and play in one step'
+Write-Host '  kunai                  browse, with a two-question setup'
 Write-Host 'Update any time:  kunai upgrade'
 Write-Host 'Remove:          kunai uninstall'

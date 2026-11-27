@@ -35,11 +35,12 @@ import { join, resolve as resolvePath } from "node:path";
 import { titleInfoFromSearchResult } from "@/app/bootstrap/title-info";
 import type { SearchResult, StreamInfo, TitleInfo } from "@/domain/types";
 import { decodePng } from "@/image/decode";
+import { startHlsRelay, streamNeedsHlsRelay } from "@/infra/player/hls-relay";
 import {
   guardedYtdlRawOptions,
   normalizeStreamHttpHeaders,
 } from "@/infra/player/mpv-stream-http-headers";
-import { materializeDeferredMediaForPlayback } from "@/services/playback/deferred-media-materializer";
+import { materializePlaybackMediaForPlayback } from "@/services/playback/playback-media-materializer";
 import { summarizeProviderTraceEvents } from "@kunai/core";
 import { isHlsPlaylistUrl, probeStreamReachability } from "@kunai/providers";
 import { isJsonString } from "@kunai/types";
@@ -53,8 +54,23 @@ import {
 } from "./provider-smoke";
 import { directSmokeArgs } from "./smoke-argv";
 
-const MOVIE_PROVIDER_IDS = ["vidlink", "movy", "rivestream", "vidrock", "videasy"] as const;
-const ANIME_PROVIDER_IDS = ["hianime", "kickassanime", "animegg", "miruro", "allanime"] as const;
+const MOVIE_PROVIDER_IDS = [
+  "vidlink",
+  "movy",
+  "rivestream",
+  "vidrock",
+  "videasy",
+  "vidbolt",
+] as const;
+const ANIME_PROVIDER_IDS = [
+  "hianime",
+  "kickassanime",
+  "animegg",
+  "miruro",
+  "allanime",
+  "anilight",
+  "anidap",
+] as const;
 const YOUTUBE_PROVIDER_IDS = ["youtube"] as const;
 const ALL_PROVIDER_IDS = [
   ...MOVIE_PROVIDER_IDS,
@@ -890,10 +906,19 @@ async function decodeFirstFrame(input: {
   const started = Date.now();
   const outputDir = mkdtempSync(join(tmpdir(), "kunai-audit-frame-"));
   let materializedCleanup: (() => Promise<void>) | null = null;
+  let hlsRelay: ReturnType<typeof startHlsRelay> | null = null;
   try {
-    const materialized = await materializeDeferredMediaForPlayback(input.stream);
+    const materialized = await materializePlaybackMediaForPlayback(input.stream);
     materializedCleanup = materialized.cleanup;
-    const stream = materialized.stream;
+    let stream = materialized.stream;
+    if (streamNeedsHlsRelay(stream.url)) {
+      try {
+        hlsRelay = startHlsRelay(stream.url, stream.headers ?? {});
+        stream = { ...stream, url: hlsRelay.proxyUrl };
+      } catch {
+        // Mirror production: a missing relay degrades to the direct URL.
+      }
+    }
     const targetName = `${sanitizeFileName(input.key)}.png`;
     const targetPath = join(input.framesRoot, targetName);
     const headers = normalizeStreamHttpHeaders(stream.headers);
@@ -908,9 +933,10 @@ async function decodeFirstFrame(input: {
       "--vo=image",
       "--vo-image-format=png",
       `--vo-image-outdir=${outputDir}`,
-      // Zero is often a fade-in black frame even when the stream is healthy;
-      // a written black PNG proves decode mechanically but not visually.
-      "--start=10",
+      // Zero is often a fade-in black frame even when the stream is healthy.
+      // Ten seconds is needlessly expensive on a non-seekable relayed lane,
+      // where mpv must download and discard everything before the target.
+      "--start=2",
       "--frames=1",
       "--cache=yes",
       "--really-quiet",
@@ -1005,6 +1031,7 @@ async function decodeFirstFrame(input: {
       durationMs: Date.now() - started,
     };
   } finally {
+    hlsRelay?.stop("playback-end");
     if (materializedCleanup) await materializedCleanup().catch(() => {});
     rmSync(outputDir, { recursive: true, force: true });
   }
