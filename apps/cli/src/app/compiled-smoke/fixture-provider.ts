@@ -201,6 +201,22 @@ const allanimeManifest = defineProviderManifest({
   relaySafe: true,
 });
 
+/**
+ * Park a resolve until a driver lets it go.
+ *
+ * A fixture resolve returns in a microtask, so the surface that exists only
+ * while providers are being tried — the wait, where the companion leans in — is
+ * on screen for less than a frame and no driver can witness it. Setting
+ * `KUNAI_SMOKE_RESOLVE_HOLD` to a path keeps the resolve pending until that
+ * file exists: the driver reads the frame it came for, then creates the file.
+ * A gate rather than a delay, so nothing is racing a clock.
+ */
+async function holdResolve(): Promise<void> {
+  const gate = process.env.KUNAI_SMOKE_RESOLVE_HOLD?.trim();
+  if (!gate) return;
+  while (!(await Bun.file(gate).exists())) await Bun.sleep(25);
+}
+
 export const videasySmokeProviderModule: CoreProviderModule = {
   providerId: "videasy",
   manifest: videasyManifest,
@@ -246,6 +262,7 @@ export const videasySmokeProviderModule: CoreProviderModule = {
     return out;
   },
   async resolve(input) {
+    await holdResolve();
     return resolvedResult("videasy", pickUrl(input), input.title.id);
   },
 };
@@ -275,6 +292,7 @@ export const allanimeSmokeProviderModule: CoreProviderModule = {
     return [{ index: 7, label: "Episode 7", totalEpisodeCount: 12 }];
   },
   async resolve(input) {
+    await holdResolve();
     return resolvedResult("allanime", pickUrl(input), input.title.id);
   },
 };

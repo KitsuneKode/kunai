@@ -29,12 +29,12 @@ export type CompanionMoment =
   | "rerouting"
   /** The race has run past the stall threshold. */
   | "dragging"
-  /** A stream resolved; the handoff to the player is next. */
-  | "handoff"
-  /** The same handoff, reached only after a provider had failed. */
+  /** A stream resolved and is being carried to the player. */
+  | "carrying"
+  /** The same carry, reached only after a provider had failed. */
   | "recovered"
-  /** Playback is running. */
-  | "watching"
+  /** The player has the stream and is coming up; nothing left to do but watch. */
+  | "handoff"
   /** The resolve failed and the surface is offering ways out. */
   | "stuck"
   /** An error surface that already says so in words of its own. */
@@ -50,10 +50,15 @@ export type CompanionMoment =
  * The pose each moment draws. Every pose appears here at least once: a pose no
  * moment reaches is art embedded in the binary that no code path can draw.
  *
- * The hunt is three of them. `seek` is the wait — she leans in while providers
- * race, and keeps leaning when one dies or the race drags. `go` is the single
- * beat where the stream is found and carried to the player. `oops` is the
- * failure. She is drawn for the wait and for the failure, never for success.
+ * The hunt is four of them, in order. `seek` is the wait — she leans in while
+ * providers race, and keeps leaning when one dies or the race drags. `go` is
+ * the single beat where the stream is found and carried to the player. `watch`
+ * is the last wait: the player has it, and she sits back while it comes up.
+ * `oops` is the failure.
+ *
+ * She is drawn for the waits and for the failure, never for success. Once
+ * playback is running there is no moment at all — the terminal is a control
+ * surface for something being watched somewhere else, and she is out of frame.
  *
  * The two empty states differ on purpose. `missing` is a search that found
  * nothing, so she peeks over the edge at where the results should be; `empty`
@@ -65,9 +70,9 @@ const POSE_BY_MOMENT = {
   seeking: "seek",
   rerouting: "seek",
   dragging: "seek",
-  handoff: "go",
+  carrying: "go",
   recovered: "go",
-  watching: "watch",
+  handoff: "watch",
   stuck: "oops",
   trouble: "oops",
   missing: "peek",
@@ -78,10 +83,10 @@ const POSE_BY_MOMENT = {
 /**
  * What she says at each moment, or `null` where she says nothing.
  *
- * The silences are decisions. `watching` is someone watching: a line there is a
- * line in the way. `settled` already carries a summary. And `trouble`,
- * `missing` and `empty` sit beside a `StateBlock`, which speaks for itself — a
- * second line under it would be the same thought twice.
+ * The silences are decisions. `carrying` is one beat between two lines, and a
+ * healthy session is held to four of them. `settled` already carries a summary.
+ * And `trouble`, `missing` and `empty` sit beside a `StateBlock`, which speaks
+ * for itself — a second line under it would be the same thought twice.
  */
 const VOICE_BY_MOMENT = {
   setup: "first-run",
@@ -89,9 +94,9 @@ const VOICE_BY_MOMENT = {
   seeking: "resolving",
   rerouting: "dead-end",
   dragging: "slow",
-  handoff: "handoff",
+  carrying: null,
   recovered: "found",
-  watching: null,
+  handoff: "handoff",
   stuck: "error",
   trouble: null,
   missing: null,
@@ -121,8 +126,15 @@ export type CompanionCue = {
   readonly picture: boolean;
 };
 
-/** Seconds into a resolve after which the shell itself says it is slow. */
-const STALL_THRESHOLD_SECONDS = 10;
+/**
+ * Seconds into a resolve after which the shell itself calls the source slow
+ * (`SLOW_RESOLVE_SECONDS` in `provider-resolve-user-state.ts`). She says it is
+ * dragging at the same moment the footer does, not before.
+ */
+const STALL_THRESHOLD_SECONDS = 20;
+
+/** Providers are being tried: the wait she leans into. */
+const RACE_STAGES: ReadonlySet<string> = new Set(["finding-stream", "preparing-provider"]);
 
 /**
  * The cue a loading surface is in, or `null` for no companion at all.
@@ -133,9 +145,9 @@ const STALL_THRESHOLD_SECONDS = 10;
  * card ended up drawing its type row across her face. She fills the empty
  * frame, she does not crowd a full one.
  *
- * `issue` and `elapsed` are the shell's own state — the issue it is already
- * displaying, the seconds it is already counting — so each change of moment
- * here is a transition the surface went through, not a timer of hers.
+ * `issue` and `elapsed` are the shell's own state — the structured problem it
+ * is already reporting, the seconds it is already counting — so each change of
+ * moment here is a transition the surface went through, not a timer of hers.
  */
 export function momentForLoading({
   operation,
@@ -149,7 +161,7 @@ export function momentForLoading({
   readonly stage?: string;
   readonly hasPoster: boolean;
   readonly failed: boolean;
-  /** The problem the shell is currently reporting, if any. */
+  /** The structured problem the shell is reporting, if any — never advisory prose. */
   readonly issue?: string | null;
   /** Seconds this wait has run. */
   readonly elapsed?: number;
@@ -158,21 +170,23 @@ export function momentForLoading({
   // surface is telling someone something went wrong, and that outranks artwork.
   if (failed) return { moment: "stuck", picture: true };
   const picture = !hasPoster;
-  // The last stage before the player takes the terminal: the stream is found
-  // and being handed over. It is brief, which is exactly why it earns the carry
-  // pose. An issue still on screen here means it took a second provider.
-  if (stage === "starting-playback") {
-    return { moment: issue ? "recovered" : "handoff", picture };
-  }
-  if (operation === "resolving") {
+  // Someone is watching, and it worked. Neither is a moment for her.
+  if (operation === "playing") return null;
+  // The stage is what says where a bootstrap is, not the operation: the shell
+  // reports `loading` for most of a resolve, and only the stage tells the race
+  // from the carry from the handoff.
+  if (stage === "starting-playback") return { moment: "handoff", picture };
+  // The stream is found and being carried to the player. It is brief, which is
+  // exactly why it earns the carry pose. A problem still on screen here means
+  // it took a second provider to get one, and that is the one time she says so.
+  if (stage === "preparing-player") return { moment: issue ? "recovered" : "carrying", picture };
+  if (RACE_STAGES.has(stage ?? "") || operation === "resolving") {
     if (issue) return { moment: "rerouting", picture };
     if (elapsed >= STALL_THRESHOLD_SECONDS) return { moment: "dragging", picture };
     return { moment: "seeking", picture };
   }
-  // Someone is watching. No line, and no picture where there is a poster.
-  if (operation === "playing") return picture ? { moment: "watching", picture } : null;
-  // `loading` is the generic case and says nothing about what is happening, so
-  // there is no pose that would mean anything on it.
+  // A `loading` with no stage says nothing about what is happening, so there is
+  // no pose that would mean anything on it.
   return null;
 }
 

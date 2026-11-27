@@ -7,6 +7,7 @@ import {
   setCompanionPreferenceSource,
   type CompanionPreference,
 } from "@/app-shell/companion-policy";
+import { __testing as probeTesting } from "@/image/probe";
 
 const TTY = { isTTY: true } as const;
 const PIPE = { isTTY: false } as const;
@@ -82,6 +83,39 @@ describe("companion mode", () => {
 
   test("tmux stays on the unicode floor", () => {
     expect(companionMode({ ...KITTY, TMUX: "1" }, TTY)).toBe("glyph");
+  });
+
+  test("tmux passing through to a Kitty terminal draws her", () => {
+    // The one multiplexer case that is safe: she is placeholder text in the
+    // pane, which tmux moves and clips like any other cell.
+    const tmux = {
+      major: 3,
+      minor: 5,
+      passthrough: "on",
+      clientTerm: "xterm-kitty",
+      clientFeatures: [],
+    };
+    probeTesting.setProbed({ sixel: false, kittyGraphics: true, tmux });
+    try {
+      withRealTty(() => {
+        expect(companionMode({ TMUX: "/tmp/tmux-1/default,1,0", TERM: "tmux-256color" }, TTY)).toBe(
+          "graphics",
+        );
+      });
+      // Passthrough switched off: the escapes would never reach the terminal.
+      probeTesting.setProbed({
+        sixel: false,
+        kittyGraphics: true,
+        tmux: { ...tmux, passthrough: "off" },
+      });
+      withRealTty(() => {
+        expect(companionMode({ TMUX: "/tmp/tmux-1/default,1,0", TERM: "tmux-256color" }, TTY)).toBe(
+          "glyph",
+        );
+      });
+    } finally {
+      probeTesting.reset();
+    }
   });
 
   test("a terminal with no image capability falls to the glyph, never half-block", () => {

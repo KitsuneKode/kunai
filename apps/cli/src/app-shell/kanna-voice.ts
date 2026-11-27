@@ -190,6 +190,24 @@ export function stablePick(seed: string): number {
 }
 
 /**
+ * What sits under the search loader's label.
+ *
+ * The sakura loader is the brand motif and stays the motion on this surface;
+ * she speaks through its sublabel rather than beside it. The two requests that
+ * have something specific to say — trending, recommendations — keep saying it.
+ * A plain search had only a generic line there, and that is the one she takes.
+ */
+export function searchLoaderSublabel(message: string, mode: CompanionMode): string {
+  const lowered = message.toLowerCase();
+  if (lowered.includes("trending")) return "Fetching what's popular right now";
+  if (lowered.includes("recommend")) return "Building picks from your watch history";
+  return (
+    kannaText("searching", mode, stablePick(message)) ??
+    "Matching titles across the catalog · usually a few seconds"
+  );
+}
+
+/**
  * The completion kind for a skipped segment. `PlaybackSkipKind` stays an infra
  * type — this takes the raw string so callers in any layer can map it without
  * pulling the player runtime into a copy decision.

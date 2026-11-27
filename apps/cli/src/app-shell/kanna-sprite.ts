@@ -17,7 +17,7 @@
 // deleted when the last surface lets go — and again on a global wipe and on
 // exit, so nothing is left in the terminal after Kunai is gone.
 
-import { getTerminalCellPixels } from "@/image/cell-size";
+import { getTerminalCellPixels, type CellPixels } from "@/image/cell-size";
 import { debugImage } from "@/image/debug";
 import type { DecodedImage } from "@/image/decode";
 import {
@@ -32,6 +32,7 @@ import {
 } from "@/image/kitty-animation";
 import { preparePoster } from "@/image/native-image";
 import { CELL_ASPECT } from "@/image/renderers/sixel";
+import { createKeyedJoiner } from "@/infra/concurrency/keyed-joiner";
 
 import { companionMotion, companionPetPath, companionStripPath } from "./companion-assets";
 import type { CompanionPose } from "./companion-policy";
@@ -67,6 +68,7 @@ const runtime = {
     process.stdout.write(text);
   },
   passthrough: kittyPlaceholderPassthrough,
+  env: (): NodeJS.ProcessEnv => process.env,
 };
 
 /**
@@ -78,8 +80,10 @@ const runtime = {
  * screen pixel: no resampling, so no blur and no stretch. Without a measurement
  * the usual 1:2 cell is assumed and the terminal fits whatever it gets.
  */
-export function kannaSlot(rows: number): KannaSlot {
-  const cell = getTerminalCellPixels();
+export function kannaSlot(
+  rows: number,
+  cell: CellPixels | null = getTerminalCellPixels(),
+): KannaSlot {
   if (!cell) {
     const cols = Math.max(2, Math.round(rows * CELL_ASPECT));
     return { rows, cols, pixels: rows * 20 };
@@ -94,7 +98,12 @@ export function kannaSpriteAvailable(): boolean {
 }
 
 const sprites = new Map<string, KannaSprite>();
-const inflight = new Map<string, Promise<KannaSprite | null>>();
+/**
+ * Two surfaces asking for one pose share one upload. Nothing here is ever
+ * abandoned on purpose — an upload that outlives its callers checks for that
+ * itself and deletes what it sent — so the work always runs to the end.
+ */
+const uploads = createKeyedJoiner<KannaSprite | null>({ whenAbandoned: "finish" });
 const epochListeners = new Set<() => void>();
 let holders = 0;
 /** Bumped whenever every id went dead at once, so mounted surfaces re-acquire. */
@@ -161,7 +170,6 @@ function deleteSprite(sprite: KannaSprite): void {
 export function releaseAllKannaSprites(): void {
   for (const sprite of sprites.values()) deleteSprite(sprite);
   sprites.clear();
-  inflight.clear();
 }
 
 function forgetSprites(): void {
@@ -206,6 +214,7 @@ async function uploadSprite(
   ];
   const ptyBytes = await sendCommands(commands, {
     passthrough: passthrough ?? undefined,
+    env: runtime.env(),
     write: runtime.write,
   });
   const sprite: KannaSprite = {
@@ -238,25 +247,24 @@ export function acquireKannaSprite(
   pose: CompanionPose,
   slot: KannaSlot,
   animated: boolean,
+  /** The epoch the caller rendered under; a stale one starts a fresh upload. */
+  seenEpoch: number = epoch,
 ): Promise<KannaSprite | null> {
   const key = spriteKey(pose, slot, animated);
   const ready = sprites.get(key);
   if (ready) return Promise.resolve(ready);
-  const pending = inflight.get(key);
-  if (pending) return pending;
-
-  const task = uploadSprite(pose, slot, animated)
-    .catch((error: unknown) => {
-      debugImage(`kanna sprite failed: ${error instanceof Error ? error.message : String(error)}`);
-      return null;
-    })
-    .then((sprite) => {
-      if (inflight.get(key) === task) inflight.delete(key);
+  // The epoch is part of the join key: an upload begun before a wipe will
+  // throw its result away, and nobody asking afterwards should wait on it.
+  return uploads.join(`${seenEpoch}:${key}`, async () => {
+    try {
+      const sprite = await uploadSprite(pose, slot, animated);
       if (sprite) sprites.set(key, sprite);
       return sprite;
-    });
-  inflight.set(key, task);
-  return task;
+    } catch (error) {
+      debugImage(`kanna sprite failed: ${error instanceof Error ? error.message : String(error)}`);
+      return null;
+    }
+  });
 }
 
 /** The sprite if it is already uploaded — for a first render with no flash. */
@@ -309,7 +317,6 @@ export const __testing = {
   },
   reset(): void {
     sprites.clear();
-    inflight.clear();
     holders = 0;
   },
 };

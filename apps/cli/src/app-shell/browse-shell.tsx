@@ -5,7 +5,7 @@ import { recordKeystroke, recordRender } from "@/app-shell/diagnostics/render-tr
 import { useCalendarNow } from "@/app-shell/hooks/use-calendar-now";
 import { useDwellPrefetch } from "@/app-shell/hooks/use-dwell-prefetch";
 import { useSettledValue } from "@/app-shell/hooks/use-settled-value";
-import { kannaDoneText, type KannaDoneKind } from "@/app-shell/kanna-voice";
+import { kannaDoneText, searchLoaderSublabel, type KannaDoneKind } from "@/app-shell/kanna-voice";
 import { useLineEditor } from "@/app-shell/line-editor";
 import { useRootContentSuspended } from "@/app-shell/RootContentSuspension";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
@@ -2281,13 +2281,7 @@ export function BrowseShell<T>({
               label={
                 emptyMessage.trim().length > 0 ? emptyMessage.replace(/\.\.\.$/, "…") : "Loading…"
               }
-              sublabel={
-                emptyMessage.toLowerCase().includes("trending")
-                  ? "Fetching what's popular right now"
-                  : emptyMessage.toLowerCase().includes("recommend")
-                    ? "Building picks from your watch history"
-                    : "Matching titles across the catalog · usually a few seconds"
-              }
+              sublabel={searchLoaderSublabel(emptyMessage, companionMode())}
               active
             />
           </Box>
@@ -2477,6 +2471,15 @@ export function BrowseShell<T>({
           />
         ) : searchState === "ready" && lastSearchedQuery.length > 0 ? (
           <Box marginTop={2} flexDirection="column" flexGrow={1}>
+            <CompanionHost
+              moment={momentForBrowseEmpty({
+                kind: "no-results",
+                hasArtwork: false,
+                ultraCompact,
+                mode: companionMode(),
+              })}
+              rows={4}
+            />
             <StateBlock
               model={{
                 kind: "empty",
@@ -2487,16 +2490,6 @@ export function BrowseShell<T>({
                   emptyMessage || "Try a different title, adjust filters, or browse by genre.",
               }}
               width={Math.min(innerWidth, 72)}
-            />
-            <CompanionHost
-              moment={momentForBrowseEmpty({
-                kind: "empty",
-                hasArtwork: false,
-                ultraCompact,
-                mode: companionMode(),
-              })}
-              rows={3}
-              marginTop={1}
             />
           </Box>
         ) : searchState === "error" ? (
@@ -2547,7 +2540,7 @@ export function BrowseShell<T>({
                 ultraCompact,
                 mode: companionMode(),
               })}
-              rows={3}
+              rows={4}
               marginTop={1}
             />
             {idleContextStatus === "loading" && showIdleLoadingHint ? (

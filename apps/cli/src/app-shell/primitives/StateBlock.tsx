@@ -2,11 +2,12 @@ import { sanitizeTerminalText } from "@/domain/text-display";
 import { Box, Text } from "ink";
 import React from "react";
 
-import { companionFallbackGlyph, companionMode } from "../companion-policy";
+import { companionMode } from "../companion-policy";
 import { companionLineFor } from "../kanna-voice";
 import { plainModeEnabled, plainStatePrefix } from "../plain-mode";
 import { palette, semanticToneColor } from "../shell-theme";
 import { ActionList } from "./ActionList";
+import { KannaLine } from "./KannaLine";
 import {
   getStateBlockGlyph,
   getStateBlockTone,
@@ -25,10 +26,11 @@ function colorForTone(tone: StateBlockTone): string {
  * The empty / loading / error surface every list shell shares.
  *
  * On the two kinds that leave a person with nothing to look at — `empty` and
- * `error` — the companion adds one short line. That is the whole of her
- * presence here: text, so it reaches every terminal rather than the four that
- * can host a graphics protocol, and one row, so no pane has to be re-laid out
- * to accommodate her. `KUNAI_PET=off` silences it along with everything else.
+ * `error` — the companion adds one short line, and an ear that twitches now and
+ * then. That is the whole of her presence here: text, so it reaches every
+ * terminal rather than the four that can host a graphics protocol, and one row,
+ * so no pane has to be re-laid out to accommodate her. `KUNAI_PET=off` silences
+ * it along with everything else.
  */
 export function StateBlock({
   model,
@@ -54,11 +56,7 @@ export function StateBlock({
       {model.detail ? (
         <Text color={palette.muted}>{sanitizeTerminalText(model.detail)}</Text>
       ) : null}
-      {companion ? (
-        <Text color={palette.dim}>
-          {companionFallbackGlyph()} {companion}
-        </Text>
-      ) : null}
+      {companion ? <KannaLine line={companion} /> : null}
       {model.actions && model.actions.length > 0 ? (
         <Box marginTop={1}>
           <ActionList rows={model.actions} width={width} />

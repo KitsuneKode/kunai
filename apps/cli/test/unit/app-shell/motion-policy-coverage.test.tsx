@@ -28,6 +28,7 @@ const AUDITED_ANIMATED_FILES: ReadonlyMap<
   ["apps/cli/src/app-shell/primitives/SakuraPetal.tsx", { gate: "reducedMotionEnabled" }],
   ["apps/cli/src/app-shell/primitives/LoadingState.tsx", { gate: "reducedMotionEnabled" }],
   ["apps/cli/src/app-shell/SakuraLoader.tsx", { gate: "reducedMotionEnabled" }],
+  ["apps/cli/src/app-shell/primitives/KannaLine.tsx", { gate: "useFrameTick" }],
   ["apps/cli/src/app-shell/setup-shell.tsx", { gate: "useFrameTick" }],
   ["apps/cli/src/app-shell/setup/SetupScreens.tsx", { gate: "reducedMotionEnabled" }],
   ["apps/cli/src/app-shell/exit-shell.tsx", { gate: "reducedMotionEnabled" }],
