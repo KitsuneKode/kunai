@@ -149,6 +149,36 @@ depends on the server and some subtitles are burned into the video.
 
 </ProviderDocSection>
 
+<ProviderDocSection id="vidbolt" title="VidBolt">
+
+**Adapter role:** last movies/series fallback. VidBolt enumerates server slots and quality variants, including multi-audio HLS lanes when the upstream master declares them.
+
+**Config id:** `vidbolt`.
+
+**Caveats:** some HLS CDNs sign every playlist. Kunai materializes the master playlist so playlist credentials reach child renditions; if the upstream rotates that shape, playback can fail even while title resolution still works.
+
+</ProviderDocSection>
+
+<ProviderDocSection id="anilight" title="AniLight">
+
+**Adapter role:** anime fallback after AllManga. AniLight uses its own AniList-backed catalogue and separate sub/dub source queries.
+
+**Config id:** `anilight`.
+
+**Caveats:** media is served through AniLight's declared proxy. Subbed episodes can carry soft captions; dub availability is title- and episode-specific, and Kunai does not silently substitute sub for a requested dub.
+
+</ProviderDocSection>
+
+<ProviderDocSection id="anidap" title="Anidap">
+
+**Adapter role:** final anime fallback. Anidap exposes multiple sub and dub server slots with provider-supplied playback headers.
+
+**Config id:** `anidap`.
+
+**Caveats:** not every server is independent infrastructure: some slots share media backends already used by other anime providers. Server choice is available with `/source` when inventory is offered.
+
+</ProviderDocSection>
+
 <ProviderDocSection id="youtube" title="YouTube">
 
 **Adapter role:** YouTube mode: Invidious search, yt-dlp stream handoff to the selected player. This is not a TMDB movie/series adapter.

@@ -14,6 +14,10 @@ import { normalizeStreamHttpHeaders } from "@/infra/player/mpv-stream-http-heade
 const RELAY = "http://127.0.0.1:9";
 const BASE = "https://vault-06.uwucdn.top/path/to/index.m3u8?token=abc%2B%2F%3D";
 
+function relaySegmentB64(line: string): string {
+  return line.match(/\/s\/([^".]+)/)?.[1] ?? "";
+}
+
 describe("hls-relay gating", () => {
   test("disables curl config and redirect following before every other argument", () => {
     const args = buildHlsRelayCurlArgs(
@@ -283,9 +287,10 @@ describe("hls-relay gating", () => {
     expect(requests).toBe(2);
   });
 
-  test("streamNeedsHlsRelay matches only uwucdn/owocdn hosts", () => {
+  test("streamNeedsHlsRelay matches only exact allowlisted CDN apexes", () => {
     expect(streamNeedsHlsRelay("https://vault-06.uwucdn.top/x/index.m3u8")).toBe(true);
     expect(streamNeedsHlsRelay("https://vault-15.owocdn.top/x/index.m3u8")).toBe(true);
+    expect(streamNeedsHlsRelay("https://gzip.rousav.tech/x/index.m3u8")).toBe(true);
     expect(
       streamNeedsHlsRelay("https://fast.speedzy.net/v3-hls-playback/abc/1080/index.m3u8"),
     ).toBe(false);
@@ -303,8 +308,8 @@ describe("hls-relay gating", () => {
    * The original patterns were unanchored substring tests (`/\.uwucdn\./i`).
    * Matching the registrable-looking shape is still insufficient: a wildcard
    * TLD accepts attacker-owned `uwucdn.com`, `uwucdn.attacker`, and equivalent
-   * subdomains. Only the two observed `.top` apexes and their real subdomains
-   * belong to this local relay.
+   * subdomains. Only the observed CDN apexes and their real subdomains belong
+   * to this local relay.
    */
   test.each([
     // Attacker-registrable TLDs and suffixes.
@@ -336,6 +341,7 @@ describe("hls-relay gating", () => {
     "https://sun.paleoak.top/x.m3u8",
     "https://moon.zenoak.top/x.m3u8",
     "https://edge.stillhaven.top/x.m3u8",
+    "https://gzip.rousav.tech/x.m3u8",
     "https://vault-06.uwucdn.top/x.m3u8",
     "https://a.b.c.owocdn.top/x.m3u8",
     // URL.hostname normalizes case and excludes the port before this check.
@@ -448,22 +454,37 @@ describe("rewriteHlsPlaylistForRelay", () => {
 
     expect(lines[0]).toBe("#EXTM3U");
     expect(lines[1]).toContain('URI="http://127.0.0.1:9/s/');
-    expect(fromB64Url(lines[1]!.match(/\/s\/([^"]+)/)![1]!)).toBe(
+    expect(fromB64Url(relaySegmentB64(lines[1]!))).toBe(
       "https://vault-06.uwucdn.top/path/to/key.key",
     );
-    expect(fromB64Url(lines[2]!.match(/\/s\/([^"]+)/)![1]!)).toBe(
+    expect(fromB64Url(relaySegmentB64(lines[2]!))).toBe(
       "https://vault-06.uwucdn.top/path/to/init.mp4",
     );
-    expect(fromB64Url(lines[4]!.replace(`${RELAY}/s/`, ""))).toBe(
+    expect(fromB64Url(relaySegmentB64(lines[4]!))).toBe(
       "https://vault-06.uwucdn.top/path/to/seg001.ts",
     );
-    expect(fromB64Url(lines[5]!.replace(`${RELAY}/s/`, ""))).toBe(
+    expect(fromB64Url(relaySegmentB64(lines[5]!))).toBe(
       "https://vault-06.uwucdn.top/root/seg002.ts",
     );
-    expect(fromB64Url(lines[6]!.replace(`${RELAY}/s/`, ""))).toBe(
+    expect(fromB64Url(relaySegmentB64(lines[6]!))).toBe(
       "https://vault-06.uwucdn.top/abs/seg003.ts?q=1",
     );
     expect(lines[8]).toBe("# comment stays");
+  });
+
+  test("gives obfuscated media segments an ffmpeg-accepted extension", () => {
+    const input = ["#EXTM3U", "#EXTINF:10,", "tiles/00000.jpg", "caption.vtt"].join("\n");
+    const out = rewriteHlsPlaylistForRelay(input, BASE, RELAY);
+    const lines = out.split("\n");
+
+    expect(lines[2]).toContain(".ts");
+    expect(fromB64Url(relaySegmentB64(lines[2]!))).toBe(
+      "https://vault-06.uwucdn.top/path/to/tiles/00000.jpg",
+    );
+    expect(lines[3]).toContain(".vtt");
+    expect(fromB64Url(relaySegmentB64(lines[3]!))).toBe(
+      "https://vault-06.uwucdn.top/path/to/caption.vtt",
+    );
   });
 
   test("routes nested playlists through /p/", () => {

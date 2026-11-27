@@ -554,7 +554,15 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // 1,040 bytes.
 // The profile checks merged with onboarding v4 measured 3,355,286 bytes
 // with Bun 1.4.5: +6,822 over #854 alone. 3277 KiB leaves 362 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_277;
+// Separately, provider batch 1 (#862: the VidBolt, AniLight and Anidap adapters, their
+// registration and defaults, signed-HLS playlist handling, Malay subtitle
+// normalization and the local relay's handling of obfuscated media segments)
+// on top measured 3,378,230 bytes: +29,766, after sharing the provider JSON
+// transport, episode identity parsing and language-list normalization. No
+// dependency or asset. 3300 KiB leaves 970 bytes.
+// With both #862 and the profile checks, Bun 1.4.5 measured 3,385,051
+// bytes: +6,821 over #862 alone. 3306 KiB leaves 293 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_306;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

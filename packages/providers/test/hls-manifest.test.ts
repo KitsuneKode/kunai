@@ -6,6 +6,7 @@ import {
   manifestUsesHostRootSegmentPaths,
   parseFirstHlsMediaSegmentPath,
   parseFirstHlsVariantPath,
+  resolveHlsPlaylistUrl,
   resolveHlsSegmentUrl,
   shouldMaterializeHlsManifest,
 } from "../src/shared/hls-manifest";
@@ -130,6 +131,33 @@ describe("hls-manifest helpers", () => {
     expect(
       shouldMaterializeHlsManifest("https://light.goldweather.net/token/index.m3u8", relativeOnly),
     ).toBe(false);
+  });
+
+  test("propagates api_key credentials only to same-origin nested playlists", () => {
+    const master = "https://cdn.example/media/title/index.m3u8?api_key=secret&other=1";
+    expect(resolveHlsPlaylistUrl(master, "video_720p.m3u8")).toBe(
+      "https://cdn.example/media/title/video_720p.m3u8?api_key=secret",
+    );
+    expect(resolveHlsPlaylistUrl(master, "video_720p.m3u8?api_key=child")).toBe(
+      "https://cdn.example/media/title/video_720p.m3u8?api_key=child",
+    );
+    expect(resolveHlsSegmentUrl(master, "video_720p/00000.ts")).toBe(
+      "https://cdn.example/media/title/video_720p/00000.ts",
+    );
+  });
+
+  test("materializes signed master playlists whose child playlists need credentials", () => {
+    const master = [
+      "#EXTM3U",
+      '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="English",URI="audio.m3u8"',
+      '#EXT-X-STREAM-INF:BANDWIDTH=1000000,AUDIO="a"',
+      "video.m3u8",
+    ].join("\n");
+    const url = "https://cdn.example/media/title/index.m3u8?api_key=secret";
+    expect(shouldMaterializeHlsManifest(url, master)).toBe(true);
+    const output = absolutizeHlsManifest(master, url);
+    expect(output).toContain('URI="https://cdn.example/media/title/audio.m3u8?api_key=secret"');
+    expect(output).toContain("\nhttps://cdn.example/media/title/video.m3u8?api_key=secret");
   });
 });
 

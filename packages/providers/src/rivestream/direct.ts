@@ -65,6 +65,7 @@ import { selectReadyStream } from "../shared/startup-selection";
 import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import { trimTrailingSlashes } from "../shared/trim-trailing-slashes";
+import { CHROME_124_USER_AGENT } from "../shared/user-agent";
 import { rivestreamManifest, RIVESTREAM_PROVIDER_ID } from "./manifest";
 import { parseRivestreamProxyHeaders, unwrapRivestreamProxyUrl } from "./proxy-url";
 import {
@@ -102,8 +103,7 @@ export function effectiveRivestreamReferer(): string {
   return RIVESTREAM_REFERER;
 }
 
-const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+const USER_AGENT = CHROME_124_USER_AGENT;
 
 /** Live client adds `cb` only for these two providers (`Date.now()/3e6`). */
 const RIVESTREAM_CACHE_BUSTER_PROVIDERS = new Set(["primevids", "citadel"]);
