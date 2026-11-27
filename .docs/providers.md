@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-26T16:28:50Z"
+lastReviewed: "2026-11-27"
 ---
 
 # Kunai — Provider Guide
@@ -384,11 +384,16 @@ Provider priority is user-configurable:
 
 - `provider` / `animeProvider` remain the default provider for a new session mode.
 - `providerPriority` controls movie/series fallback and picker order.
-  The shipped default is `["rivestream", "vidrock", "movy", "videasy"]` behind the
-  `vidlink` lane lead: Rivestream first (eleven-service local cycle behind the
-  shared resolve gate), VidRock second (multi-lane AES-GCM payloads behind the
-  direct-stream gate), Movy next (lane-local recovery), Videasy last and still loaded (session/turnstile-gated
-  with a rotted `videasy.to` domain — a working fallback, not a removal).
+  The shipped default is `["movy", "rivestream", "vidrock", "videasy"]` behind the
+  `vidlink` lane lead (`packages/config/src/defaults.ts`, provider-defaults
+  revision 8): Movy first (lane-local recovery; the one fallback that resolved
+  and streamed on the 2026-11-26 runs), then Rivestream (eleven-service local
+  cycle behind the shared resolve gate), VidRock (multi-lane AES-GCM payloads
+  behind the direct-stream gate), and Videasy last and still loaded
+  (session/turnstile-gated with a rotted `videasy.to` domain — registered, not
+  removed). The picker shows this same order and never re-sorts it by health;
+  what each row says about its provider is in
+  [title-provider-health-and-cache-reset.md](./title-provider-health-and-cache-reset.md).
   Other unlisted providers stay reachable after configured entries unless
   explicitly switched off.
 - `animeProviderPriority` controls anime fallback and picker order.
@@ -810,8 +815,9 @@ Active providers are registered in `apps/cli/src/container/bootstrap-providers.t
 it live, and release signoff derives its cases from that list plus the configured lane defaults.
 
 `hianime` is the **default** anime provider (`animeProvider: "hianime"`,
-`animeProviderPriority: ["animegg", "kickassanime", "miruro", "allanime"]`,
-provider-defaults revision 7). The lead moved off AniDB when anidb.app stopped
+`animeProviderPriority: ["kickassanime", "animegg", "miruro", "allanime"]`,
+provider-defaults revision 8, which put KickAssAnime ahead of AnimeGG after it
+resolved and streamed on every 2026-11-26 run). The lead moved off AniDB when anidb.app stopped
 serving the old origin (HTTP 302 to an unrelated site, 2026-10-24), matching
 ani-cli's earlier move to HiAnime (c99221d). The AniDB provider module was
 removed; the MAL lookup for AniSkip still handles historic catalog IDs.
@@ -861,9 +867,10 @@ from that alone, and ~1.1 s once `pewe` was quarantined.
 
 Miruro's own single point of failure is `miruro.bz`/`.ru` — every one of its
 backends is reached through it, so the providers behind it are the ones that
-share none of that. AnimeGG stays the first fallback because its independent
-catalog and stream path returned four streams in the November 23 hosted sweep.
-That resolve took 21.9 seconds and missed the 12-second default attempt budget.
+share none of that. AnimeGG was the first fallback through revision 7 because
+its independent catalog and stream path returned four streams in the November 23
+hosted sweep; that resolve took 21.9 seconds and missed the 12-second default
+attempt budget. Revision 8 moved KickAssAnime ahead of it.
 KickAssAnime and Miruro returned access refusals on that runner, and AllAnime
 had stale stream authorization. KickAssAnime and AnimeGG each have their own
 catalog, site and CDN. Both can match a title from another catalog and remember
@@ -913,7 +920,7 @@ default to the table — a bump alone stamps configs without changing them.
 | `vidrock`      | movie, series | direct-http | `packages/providers/src/vidrock/direct.ts`      |
 | `animegg`      | anime         | direct-http | `packages/providers/src/animegg/direct.ts`      |
 | `kickassanime` | anime         | direct-http | `packages/providers/src/kickassanime/direct.ts` |
-| `allanime`     | anime, series | direct-http | `packages/providers/src/allmanga/direct.ts`     |
+| `allanime`     | anime         | direct-http | `packages/providers/src/allmanga/direct.ts`     |
 | `hianime`      | anime         | direct-http | `packages/providers/src/hianime/direct.ts`      |
 | `miruro`       | anime         | direct-http | `packages/providers/src/miruro/direct.ts`       |
 | `youtube`      | video         | direct-http | `packages/providers/src/youtube/direct.ts`      |
@@ -922,7 +929,7 @@ default to the table — a bump alone stamps configs without changing them.
 
 Provider manifests expose `catalogIdentity` (`provider-native` | `anilist` | `tmdb`) via `resolveProviderCatalogIdentity()` in `@kunai/core`.
 
-- **KickAssAnime (`kickassanime`)** — `provider-native`; third in the default anime order, behind HiAnime and Miruro. Slugs are
+- **KickAssAnime (`kickassanime`)** — `provider-native`; second in the default anime order, the first fallback behind HiAnime. Slugs are
   `name-<4 hex>` (`sousou-no-frieren-2d15`), and only that shape is accepted as a native id, so an
   AniList id or another site's slug is never sent as one. A title from any other catalog is matched
   by name and year — exactly one hit, or the provider steps aside — and the slug is then stored
