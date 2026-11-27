@@ -19,7 +19,7 @@ import {
   disposeIsolatedCliProfile,
 } from "../integration/helpers/isolated-container";
 import { K } from "./keys";
-import { startTmuxSession } from "./tmux-session";
+import { startTmuxSession, type TmuxSession } from "./tmux-session";
 
 const hasTmux = Bun.which("tmux") !== null;
 if (!hasTmux) {
@@ -28,6 +28,26 @@ if (!hasTmux) {
 }
 
 const itTmux = hasTmux ? it : it.skip;
+
+/**
+ * Move off the first mode row. Setup's input handler attaches in an effect
+ * after the first paint, so a key sent the instant "What do you watch most?"
+ * appears can land before anything listens. Resend only while the highlight
+ * is still on the first row: a press that did land has moved it, so this can
+ * never overshoot.
+ */
+async function moveToSecondMode(s: TmuxSession): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await s.send(K.down);
+    try {
+      await s.waitFor((f) => f.includes("▌ Anime"), "Anime highlighted", 2_000);
+      return;
+    } catch (error) {
+      if (!(await s.see()).includes("▌ Shows & movies")) throw error;
+    }
+  }
+  await s.waitFor((f) => f.includes("▌ Anime"), "Anime highlighted");
+}
 
 describe("agent driver · fresh-profile onboarding", () => {
   itTmux("the expanded preview owns input at 40×16", async () => {
@@ -98,8 +118,7 @@ describe("agent driver · fresh-profile onboarding", () => {
         await s.waitFor((f) => f.includes("What do you watch most?"), "quick setup");
         const before = s.inspect().config();
         expect(before.defaultDownloadQuality).toBe("2160p");
-        await s.send(K.down);
-        await s.waitFor((f) => f.includes("▌ Anime"), "Anime highlighted");
+        await moveToSecondMode(s);
         await s.send(K.enter);
         await s.waitFor((f) => f.includes("Share anonymous usage"), "neutral consent");
         await s.send("s");

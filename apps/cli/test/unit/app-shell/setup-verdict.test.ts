@@ -48,7 +48,7 @@ function verdict(
 ) {
   return buildSetupVerdict({
     snapshot: snap,
-    rows: buildDependencyRows(snap, { which: pacmanOnly }),
+    rows: buildDependencyRows(snap, { which: pacmanOnly, platform: "linux" }),
     lane,
     density,
     playerName,
