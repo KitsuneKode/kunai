@@ -11,6 +11,12 @@ type Repository = Pick<
 >;
 export type CountableTitleProviderFailure = "timeout" | "no-streams" | "dead-stream" | "parse";
 
+export type TitleProviderFailure = {
+  readonly consecutiveFailures: number;
+  readonly errorClass?: CountableTitleProviderFailure;
+  readonly lastFailureAt?: string;
+};
+
 export class TitleProviderHealthService {
   constructor(
     private readonly repository: Repository,
@@ -93,6 +99,17 @@ export class TitleProviderHealthService {
     const record = this.repository.get(titleId, providerId, this.now());
     if (!record?.suggestedProviderId) return null;
     return { providerId, suggestedProviderId: record.suggestedProviderId };
+  }
+
+  /** The live failure streak for one provider on one title, or null when it has none. */
+  getFailure(titleId: string, providerId: string): TitleProviderFailure | null {
+    const record = this.repository.get(titleId, providerId, this.now());
+    if (!record || record.consecutiveFailures <= 0) return null;
+    return {
+      consecutiveFailures: record.consecutiveFailures,
+      errorClass: record.errorClass,
+      lastFailureAt: record.lastFailureAt,
+    };
   }
 
   clear(titleId: string, providerId?: string): void {

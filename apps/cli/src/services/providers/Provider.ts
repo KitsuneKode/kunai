@@ -70,6 +70,7 @@ export function createProviderFromModule(
     providerLane: lane,
     catalogIdentity: resolveProviderCatalogIdentity(manifest),
     domain: manifest.domain,
+    knownIssue: manifest.knownIssue,
   };
 
   return {

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-27T18:14:08Z"
+lastReviewed: "2026-11-27T20:05:20Z"
 ---
 
 # Provider Usage Matrix
@@ -54,6 +54,13 @@ and probed. YouTube works. VidRock, Videasy, Miruro, and
 AllManga remain registered but must not count toward working-provider capacity
 until a probed stream and decode frame exist. Anidap adds partially independent
 capacity, not a clean fourth backend: some slots overlap HiAnime/KickAssAnime.
+
+Videasy and VidRock carry this audit's finding as `knownIssue` in their
+manifests, so the provider picker says so before anyone tries them. Miruro
+(reset from this network, not proven dead) and AllManga (a CAPTCHA wall, which
+varies by network) do not: a fault that depends on where you are is what the
+local health stores are for. Delete a `knownIssue` in the same change that
+records a probed, decoded stream for that provider here.
 
 ## Feature Matrix
 

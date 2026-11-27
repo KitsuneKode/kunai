@@ -301,6 +301,8 @@ export interface ProviderMetadata {
   readonly providerLane: ProviderLane;
   readonly catalogIdentity?: "provider-native" | "anilist" | "tmdb";
   readonly domain?: string;
+  /** Manifest-declared upstream fault; see `ProviderKnownIssue` in `@kunai/core`. */
+  readonly knownIssue?: { readonly since: string; readonly summary: string };
 }
 
 export interface SearchMetadata {

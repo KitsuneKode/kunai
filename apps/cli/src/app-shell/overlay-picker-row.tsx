@@ -13,6 +13,7 @@ export function PickerOptionRow({
   accentColor,
   pickerAccent,
   labelColor,
+  alignBadgeEnd = false,
 }: {
   readonly label: string;
   readonly detail?: string;
@@ -23,6 +24,8 @@ export function PickerOptionRow({
   readonly pickerAccent: string;
   /** Force the label hue (destructive rows go red even unselected). Overrides the neutral default. */
   readonly labelColor?: string;
+  /** Pad the badge to the row's right edge, so a list of states reads as one column. */
+  readonly alignBadgeEnd?: boolean;
 }) {
   const plain = plainModeEnabled();
   // Treatment C: a single accent bar marks the selected row (paired with the
@@ -36,6 +39,8 @@ export function PickerOptionRow({
   const detailBudget = contentWidth - truncatedLabel.length - 2;
   const truncatedDetail =
     detail && detailBudget >= 5 ? truncateLine(detail, detailBudget) : undefined;
+  const textWidth = truncatedLabel.length + (truncatedDetail ? truncatedDetail.length + 2 : 0);
+  const badgeGap = alignBadgeEnd && badgeSuffix ? Math.max(0, contentWidth - textWidth) : 0;
 
   return (
     <>
@@ -53,6 +58,7 @@ export function PickerOptionRow({
       ) : null}
       {badgeSuffix ? (
         <Text color={selected ? pickerAccent : (accentColor ?? palette.dim)} wrap="truncate-end">
+          {" ".repeat(badgeGap)}
           {badgeSuffix}
         </Text>
       ) : null}
