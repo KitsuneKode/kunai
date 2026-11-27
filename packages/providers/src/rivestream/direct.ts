@@ -42,6 +42,7 @@ import {
 import {
   dropRefusedStreams,
   resolveGateBudgetMs,
+  selectProbedFinalStream,
   selectVerifiedStream,
 } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
@@ -55,7 +56,6 @@ import {
   createVariantId,
   detectDynamicRangeFromLabel,
   finalizeCycleSourceInventory,
-  normalizeProviderDisplayLabel,
   normalizeQualityLabel,
   providerInventorySourceId,
   qualityRankFromLabel,
@@ -66,6 +66,19 @@ import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitl
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import { trimTrailingSlashes } from "../shared/trim-trailing-slashes";
 import { rivestreamManifest, RIVESTREAM_PROVIDER_ID } from "./manifest";
+import { parseRivestreamProxyHeaders, unwrapRivestreamProxyUrl } from "./proxy-url";
+import {
+  displayRivestreamProviderLabel,
+  displayRivestreamSourceLabel,
+  extractRivestreamCaptions,
+  getRivestreamRawSources,
+  inferRivestreamAudioLanguage,
+  inferRivestreamAudioSubtitle,
+  rivestreamFailureClassFromProviderError,
+  type RivestreamProviderServicesResponse,
+  type RivestreamResolvedCandidate,
+  type RivestreamSourceResponse,
+} from "./source-model";
 
 export { RIVESTREAM_PROVIDER_ID };
 export const RIVESTREAM_REFERER = "https://www.rivestream.app/";
@@ -132,6 +145,7 @@ export const RIVESTREAM_SOURCE_TIMEOUT_MS = 3_500;
  * loudly here, not as wasted live attempts.
  */
 export const RIVESTREAM_STATIC_PROVIDER_SERVICES = [
+  "riven",
   "apogee",
   "vanguard",
   "oberon",
@@ -200,55 +214,6 @@ export function demoteRivestreamDeadBackends(providers: readonly string[]): read
   if (healthy.length === providers.length) return [...providers];
   const demoted = providers.filter((provider) => isRivestreamDemotedBackend(provider));
   return [...healthy, ...demoted];
-}
-
-type RivestreamProviderServicesResponse = {
-  readonly data?: unknown;
-};
-
-type RivestreamRawSource = {
-  readonly url?: string;
-  readonly quality?: string;
-  readonly format?: string;
-};
-
-type RivestreamSourceResponse = {
-  readonly data?:
-    | readonly RivestreamRawSource[]
-    | {
-        readonly sources?: readonly RivestreamRawSource[];
-        readonly captions?: readonly RivestreamRawSubtitle[];
-      };
-};
-
-type RivestreamRawSubtitle = {
-  readonly url?: string;
-  readonly lang?: string;
-  readonly language?: string;
-  readonly file?: string;
-  readonly label?: string;
-};
-
-type RivestreamResolvedCandidate = {
-  readonly provider: string;
-  readonly sourceId: string;
-  readonly streams: readonly StreamCandidate[];
-  readonly variants: readonly ProviderVariantCandidate[];
-  readonly subtitles: readonly SubtitleCandidate[];
-};
-
-function getRivestreamRawSources(
-  data: RivestreamSourceResponse["data"],
-): readonly RivestreamRawSource[] {
-  if (Array.isArray(data)) return data;
-  if (isRivestreamSourceEnvelope(data)) return data.sources ?? [];
-  return [];
-}
-
-function isRivestreamSourceEnvelope(
-  data: RivestreamSourceResponse["data"],
-): data is { readonly sources?: readonly RivestreamRawSource[] } {
-  return typeof data === "object" && data !== null && !Array.isArray(data) && "sources" in data;
 }
 
 // Ported 32-bit MurmurHash custom algorithm
@@ -680,6 +645,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
         variants: selectedVariants,
         subtitles,
         provider: serverUsed,
+        candidateGateStream,
       } = cycleResult.selected;
       const streams = [...selectedStreams];
       const variants = [...selectedVariants];
@@ -694,7 +660,64 @@ export const rivestreamProviderModule: CoreProviderModule = {
         preferredStreamId: input.preferredStreamId,
         preferredSourceId: input.preferredSourceId,
       });
-      const selectedStream = selection.selected;
+
+      const gated = await selectProbedFinalStream({
+        selected: selection.selected,
+        selectableStreams,
+        candidateGateStream,
+        context,
+        signal: context.signal,
+        timeoutMs: gateTimeoutMs,
+        maxProbes: RIVESTREAM_RESOLVE_GATE_MAX_PROBES,
+      });
+      if (context.signal?.aborted) {
+        return createExhaustedResult(
+          input,
+          context,
+          RIVESTREAM_PROVIDER_ID,
+          {
+            code: "cancelled",
+            message: "Rivestream resolve-gate probe was cancelled",
+            retryable: false,
+          },
+          {
+            cachePolicy,
+            events,
+            failures,
+            sources: finalizeCycleSourceInventory({
+              sources: sourceInventorySeeds,
+              attempts: cycleResult.attempts,
+            }),
+            startedAt,
+          },
+        );
+      }
+      if (!gated.accepted) {
+        const gateFailure: Omit<ProviderFailure, "providerId" | "at"> = {
+          code: "not-found",
+          message: `Rivestream selected stream is unreachable (${gated.reason})`,
+          retryable: true,
+        };
+        return createExhaustedResult(input, context, RIVESTREAM_PROVIDER_ID, gateFailure, {
+          cachePolicy,
+          events,
+          failures: [
+            ...failures,
+            { providerId: RIVESTREAM_PROVIDER_ID, at: context.now(), ...gateFailure },
+          ],
+          sources: finalizeCycleSourceInventory({
+            sources: sourceInventorySeeds,
+            attempts: cycleResult.attempts,
+          }),
+          startedAt,
+        });
+      }
+
+      const selectedStream = gated.stream;
+      const shippedStreams = dropRefusedStreams(streams, gated.refusals);
+      const shippedVariants = variants.filter((variant) =>
+        shippedStreams.some((stream) => stream.variantId === variant.id),
+      );
       const selectedSource = {
         ...createSourceCandidateFromStream({
           providerId: RIVESTREAM_PROVIDER_ID,
@@ -720,16 +743,19 @@ export const rivestreamProviderModule: CoreProviderModule = {
         status: "resolved",
         providerId: RIVESTREAM_PROVIDER_ID,
         selectedStreamId: selectedStream.id,
-        selectionDecision: selection.decision,
+        selectionDecision: {
+          ...selection.decision,
+          selectedQualityRank: selectedStream.qualityRank,
+        },
         sources: finalizeCycleSourceInventory({
           sources: sourceInventorySeeds,
           attempts: cycleResult.attempts,
           selectedSources: [selectedSource],
-          streams,
+          streams: shippedStreams,
           selectedStreamId: selectedStream.id,
         }),
-        streams,
-        variants,
+        streams: shippedStreams,
+        variants: shippedVariants,
         subtitles,
         cachePolicy,
         trace: createResolveTrace({
@@ -1083,61 +1109,6 @@ function isRivestreamAbortOrTimeoutError(error: unknown): boolean {
   return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
 }
 
-export function parseRivestreamProxyHeaders(sourceUrl: string): Record<string, string> | null {
-  let params: URLSearchParams;
-  try {
-    const url = new URL(sourceUrl);
-    // Only the observed wrapper may declare playback request headers. A query
-    // on any arbitrary media host is not authorization to override them.
-    if (
-      url.protocol !== "https:" ||
-      url.hostname !== "proxy.valhallastream.com" ||
-      url.port ||
-      url.username ||
-      url.password ||
-      url.pathname !== "/m3u8"
-    )
-      return null;
-    params = url.searchParams;
-  } catch {
-    return null;
-  }
-  const raw = params.get("headers");
-  if (!raw || raw.length > 8192) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
-  const headers: Record<string, string> = {};
-  for (const [name, value] of Object.entries(parsed as Record<string, unknown>)) {
-    if (typeof value !== "string") continue;
-    const key = name.toLowerCase();
-    if (!["referer", "origin", "user-agent"].includes(key)) continue;
-    // Reject, do not concatenate, injected header lines. Keep transport and
-    // credential headers out of this untrusted query-string declaration.
-    if (
-      value.length > 2048 ||
-      [...value].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)
-    )
-      continue;
-    const cleaned = value.trim();
-    if (!cleaned) continue;
-    if (key === "referer" || key === "origin") {
-      try {
-        const target = new URL(cleaned);
-        if (target.protocol !== "https:" || target.username || target.password) continue;
-      } catch {
-        continue;
-      }
-    }
-    headers[key] = cleaned;
-  }
-  return Object.keys(headers).length > 0 ? headers : null;
-}
-
 export function resolveRivestreamStreamHeaders(sourceUrl: string): Record<string, string> {
   const proxyHeaders = parseRivestreamProxyHeaders(sourceUrl);
   if (!proxyHeaders) {
@@ -1186,7 +1157,11 @@ async function resolveRivestreamProviderCandidate({
     }
     throw error;
   }
-  const rawSources = getRivestreamRawSources(sourceData.data);
+  const rawSources = getRivestreamRawSources(sourceData.data).map((source) => {
+    if (!source.url) return source;
+    const playbackHeaders = resolveRivestreamStreamHeaders(source.url);
+    return { ...source, url: unwrapRivestreamProxyUrl(source.url), playbackHeaders };
+  });
   if (rawSources.length === 0) {
     throw createProviderCycleFailureError(candidate, {
       failureClass: "candidate-empty",
@@ -1212,7 +1187,7 @@ async function resolveRivestreamProviderCandidate({
         resolvesLocally: context.fetch?.resolvesLocally,
         fetch: context.fetch?.fetch.bind(context.fetch) ?? fetch,
         masterUrl: source.url,
-        headers: resolveRivestreamStreamHeaders(source.url),
+        headers: source.playbackHeaders ?? resolveRivestreamStreamHeaders(source.url),
         // The per-candidate controller aborts at candidateTimeoutMs — ladder
         // expansion runs after the prefetch, so a hung master must die with
         // the attempt instead of lingering as an orphan fetch.
@@ -1258,7 +1233,7 @@ async function resolveRivestreamProviderCandidate({
         : source.url.includes(".mpd")
           ? "dash"
           : "mp4";
-    const streamHeaders = resolveRivestreamStreamHeaders(source.url);
+    const streamHeaders = source.playbackHeaders ?? resolveRivestreamStreamHeaders(source.url);
     const normalizedAudioLanguage =
       inferRivestreamAudioLanguage(provider, qualityStr) ??
       normalizeIsoLanguageCode(input.preferredAudioLanguage);
@@ -1293,21 +1268,23 @@ async function resolveRivestreamProviderCandidate({
     const rows: {
       url: string;
       qualityStr: string;
+      qualityRank?: number;
       dynamicRange?: import("@kunai/types").VideoDynamicRange;
     }[] = ladder
       ? ladder.map((v) => ({
           url: v.url,
           qualityStr: v.qualityLabel,
+          qualityRank: v.qualityRank,
           dynamicRange: v.dynamicRange,
         }))
       : [{ url: source.url, qualityStr }];
 
     for (const row of rows) {
       const qualityLabel = normalizeQualityLabel(row.qualityStr);
-      const qualityRank = qualityRankFromLabel(row.qualityStr) ?? 0;
-      const streamId = createStreamId(RIVESTREAM_PROVIDER_ID, [row.url]);
-      const variantId = createVariantId(RIVESTREAM_PROVIDER_ID, [sourceId, qualityLabel, row.url]);
-
+      const qualityRank = row.qualityRank ?? qualityRankFromLabel(row.qualityStr) ?? 0;
+      const requestIdentity = [row.url, streamHeaders];
+      const streamId = createStreamId(RIVESTREAM_PROVIDER_ID, requestIdentity);
+      const variantId = createVariantId(RIVESTREAM_PROVIDER_ID, [sourceId, ...requestIdentity]);
       streams.push({
         id: streamId,
         providerId: RIVESTREAM_PROVIDER_ID,
@@ -1394,12 +1371,19 @@ async function resolveRivestreamProviderCandidate({
     });
   }
   // Keep the alternatives, drop the rungs the gate proved dead.
-  streams = dropRefusedStreams(streams, selection.refusedHosts);
+  streams = dropRefusedStreams(streams, selection.refusals);
   variants = variants.filter((variant) =>
     streams.some((candidateStream) => candidateStream.variantId === variant.id),
   );
 
-  return { provider, sourceId, streams, variants, subtitles };
+  return {
+    provider,
+    sourceId,
+    streams,
+    variants,
+    subtitles,
+    candidateGateStream: selection.stream,
+  };
 }
 
 /**
@@ -1425,68 +1409,4 @@ export const RIVESTREAM_CANDIDATE_TIMEOUT_MS = 10_000;
  */
 export const RIVESTREAM_RESOLVE_GATE_TIMEOUT_MS = 6_000;
 
-function extractRivestreamCaptions(
-  data: RivestreamSourceResponse["data"],
-): readonly RivestreamRawSubtitle[] {
-  if (!data || typeof data !== "object" || Array.isArray(data) || !("captions" in data)) {
-    return [];
-  }
-  return Array.isArray(data.captions) ? data.captions : [];
-}
-
-function rivestreamFailureClassFromProviderError(
-  error: ProviderHttpError,
-):
-  | "candidate-network"
-  | "candidate-empty"
-  | "candidate-timeout"
-  | "candidate-blocked"
-  | "candidate-rate-limited"
-  | "candidate-server-error"
-  | "candidate-parse" {
-  if (error.code === "timeout") return "candidate-timeout";
-  if (error.code === "blocked") return "candidate-blocked";
-  if (error.code === "rate-limited") return "candidate-rate-limited";
-  if (error.code === "provider-unavailable") return "candidate-server-error";
-  if (error.code === "parse-failed") return "candidate-parse";
-  if (error.code === "not-found") return "candidate-empty";
-  return "candidate-network";
-}
-
-function displayRivestreamProviderLabel(provider: string): string {
-  return normalizeProviderDisplayLabel(provider) ?? provider;
-}
-
-/** Short uppercase tag for the inferred audio language, e.g. "EN", "HI". */
-function rivestreamAudioLanguageTag(provider: string): string | undefined {
-  const language = inferRivestreamAudioLanguage(provider, undefined);
-  return language ? language.toUpperCase() : undefined;
-}
-
-/** Human source label that also carries the inferred audio language at a glance. */
-function displayRivestreamSourceLabel(provider: string): string {
-  const label = displayRivestreamProviderLabel(provider);
-  const tag = rivestreamAudioLanguageTag(provider);
-  return tag ? `${label} · ${tag}` : label;
-}
-
-function inferRivestreamAudioSubtitle(provider: string): string {
-  const language = inferRivestreamAudioLanguage(provider, undefined);
-  const label = displayRivestreamProviderLabel(provider);
-  if (language) {
-    return `${language.toUpperCase()} · ${label}`;
-  }
-  return `Rivestream · ${label}`;
-}
-
-function inferRivestreamAudioLanguage(
-  provider: string | undefined,
-  quality: string | undefined,
-): string | undefined {
-  const raw = [provider, quality].filter(Boolean).join(" ").toLowerCase();
-  if (raw.includes("hindi")) return "hi";
-  if (raw.includes("german")) return "de";
-  if (raw.includes("spanish")) return "es";
-  if (raw.includes("english") || raw.includes("flowcast") || raw.includes("primevids")) return "en";
-  return undefined;
-}
+const RIVESTREAM_RESOLVE_GATE_MAX_PROBES = 3;

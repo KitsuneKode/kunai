@@ -47,6 +47,13 @@ describe("decodePng rejects what it cannot read", () => {
     expect(() => decodePng(new Uint8Array([1, 2, 3, 4]))).toThrow();
     expect(() => decodePng(new Uint8Array())).toThrow();
   });
+
+  test("throws on a PNG truncated after IHDR or before its terminal chunk", () => {
+    const png = makeRgbPng(2, 1, [255, 0, 0, 0, 255, 0]);
+
+    expect(() => decodePng(png.slice(0, 24))).toThrow();
+    expect(() => decodePng(png.slice(0, -1))).toThrow();
+  });
 });
 
 describe("parseSizeSpec", () => {

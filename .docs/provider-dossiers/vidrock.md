@@ -1,11 +1,32 @@
 ---
 status: current
-lastReviewed: "2026-11-24T09:34:20Z"
+lastReviewed: "2026-11-27"
 ---
 
 # Provider: VidRock
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
+
+## Live capability audit (2026-11-27)
+
+**Status: broken for playback despite API resolution.** Do not read a
+`resolved` result here as a working stream: the resolve gate did not positively
+verify these cases, and independent probes refused them.
+
+- Fixture coverage: Inception, Fight Club, Breaking Bad S01E01, Dutton Ranch
+  S01E01.
+- Result: 4/4 API resolves returned streams, but 0/4 independently probed
+  selected streams were reachable; probes answered HTTP 502. mpv exited without
+  writing a decode frame.
+- Inventory: 4-7 named servers per case (`Astra`, `Atlas`, `Elara`, `Lyra`,
+  plus case-specific rows), with advertised audio labels `en`, `hi`, and `ta`;
+  no quality rank, dynamic-range, or subtitle inventory was exposed.
+- Resolve latency was 3.43-4.54 s.
+- Actual attempted media dependencies: `cdn.ngcloud.app`,
+  `cdn2.ngcloud.app`, `img1.hscow.com`, and `img1.fcxmb.com`.
+- Disposition: keep registered but demoted behind VidLink, Movy, and
+  Rivestream. No deterministic adapter fix was established; the measured
+  failure is upstream media delivery.
 
 ## Production status (2026-11-24)
 

@@ -1,31 +1,55 @@
 ---
 status: current
-lastReviewed: "2026-10-24"
+lastReviewed: "2026-11-27"
 ---
 
 # Provider: Rivestream
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
+## Live capability audit (2026-11-27)
+
+**Status: working after the adapter repair in this audit; upstream coverage is
+still brittle.** The pre-repair run resolved 0/4 fixtures. Two independent
+defects were measured: `cors.corsflix.net` reset or hung while its embedded
+direct target answered HTTP 200, and valid nested playlists named
+`*.m3u8.png` were not recognized as variant URIs. After unwrapping that
+observed wrapper, preserving its declared playback headers, and parsing the
+variant URI by `#EXT-X-STREAM-INF` position:
+
+- Fixture coverage: Inception, Fight Club, Breaking Bad S01E01, Dutton Ranch
+  S01E01.
+- Result: 4/4 resolves succeeded and 4/4 independently probed selected streams
+  were reachable. Fight Club produced a real 3840x2160 decode frame.
+- Inventory: the cycle selected the first working backend, `Riven`, so the
+  audit does not claim a full backend inventory. Movies measured 2160p; both
+  series episodes measured 1080p. The Riven master advertised separate audio
+  renditions but no ISO language metadata that the adapter could surface, and
+  no subtitle sidecars were measured.
+- Resolve latency after repair was 2.09-4.56 s.
+- Actual media dependency: `norway-canary.bigbang.cymru` direct HLS. The API
+  dependency remains `scrapper.rivestream.app`; `cors.corsflix.net` is treated
+  as metadata carrying the direct target, not as the media path.
+
 ## Summary
 
 - **Media kinds:** Movies, TV Series.
-- **Search support:** Yes. API based.
-- **Episode catalog support:** Yes.
+- **Search support:** No in the production contract. The scraper backend has metadata endpoints, but the production adapter is TMDB-keyed and resolver-only.
+- **Episode catalog support:** No in the production contract; season/episode coordinates come from the TMDB lane.
 - **Stream resolve support:** Yes. Uses MurmurHash + a custom `cArray` salt to generate a `secretKey` for API authorization.
 - **Language/audio/subtitle model:** Relies heavily on external service node names multiplexed with quality (e.g., `FlowCast (1080)`).
 - **Server/source model:** Aggregator. Pulls from various underlying hosting providers.
 - **Quality model:** Standard HLS and direct `.mp4`.
 - **Thumbnail/poster support:** Yes. Backend fetch provides VTT/BIF files for the player seek-bar.
 - **Known failure modes:** `cArray` salt rotation breaks the MurmurHash `secretKey` generation, resulting in 401 Unauthorized errors.
-- **Demoted backends (2026-10-14):** `savannah`, `prometheus`, `quasar`, and `solstice` return no sources for titles other mirrors serve, and `primevids` answers 403. They trail the service cycle as a last resort (`RIVESTREAM_DEMOTED_BACKENDS`) and are skipped by prefetch — the cycle stops at the first working mirror (e.g. citadel) without spending an attempt on them. Nothing is dropped: a recovered backend still resolves when everything ahead fails.
+- **Demoted backends (2026-10-14):** `savannah`, `prometheus`, `quasar`, and `solstice` return no sources for titles other mirrors serve. (`primevids` answered 403 on 2026-10-14 and returned sources again on 2026-11-12, so it is no longer demoted.) They trail the service cycle as a last resort (`RIVESTREAM_DEMOTED_BACKENDS`) and are skipped by prefetch — the cycle stops at the first working mirror (e.g. citadel) without spending an attempt on them. Nothing is dropped: a recovered backend still resolves when everything ahead fails.
 
 ## User-Facing Capabilities
 
 | Capability            | Supported | Evidence                                    | Notes                                                     |
 | --------------------- | --------: | ------------------------------------------- | --------------------------------------------------------- |
-| Search                |       yes | API                                         | Stable. User-visible.                                     |
-| Episode list          |       yes | API                                         | Stable. Cache identity.                                   |
+| Search                |        no | not in production contract                  | TMDB lane owns search.                                    |
+| Episode list          |        no | not in production contract                  | TMDB lane owns season/episode identity.                   |
 | Server switch         |       yes | Multiple upstream nodes                     | "FlowCast", etc. User-visible.                            |
 | Quality switch        |       yes | String merged in source                     | `FlowCast (1080)`. Engine must regex/split this.          |
 | Audio language switch |       yes | HLS manifest                                | MPV relies on standard HLS `#EXT-X-MEDIA` tags.           |
@@ -95,8 +119,10 @@ Query-string headers are accepted only on the exact HTTPS
 The JSON declaration is capped at 8192 characters; only Referer, Origin and
 User-Agent survive, with bounded values and no control bytes. Host, connection
 and credential overrides are rejected; unrelated hosts cannot declare headers.
-No URL unwrapping was introduced. The normal stream target guard still checks
-all fetched manifests, redirects and probe destinations.
+(Superseded 2026-11-27: `cors.corsflix.net/m3u8?url=` is now unwrapped to its
+HTTPS target, and that host may declare the same bounded headers; see the live
+audit section.) The normal stream target guard still checks all fetched
+manifests, redirects and probe destinations.
 
 A bounded isolated TMDB 550 movie resolve returned the 720/480 HLS source with
 26 subtitles. The API also returned Vanguard's 4K HDR wrapper. A separate guarded

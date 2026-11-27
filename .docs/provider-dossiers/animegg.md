@@ -1,11 +1,31 @@
 ---
 status: current
-lastReviewed: "2026-11-24T13:06:38Z"
+lastReviewed: "2026-11-27"
 ---
 
 # Provider: AnimeGG
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
+
+## Live capability audit (2026-11-27)
+
+**Status: partial.** Search and episode catalogs are healthy, but only one of
+four stream cases resolved inside the audit budget.
+
+- Fixture coverage: One Piece episode 1 and Dandadan episode 1, each in sub
+  and dub.
+- Search/catalog: provider search selected `One Piece` (`one-piece`, 1166
+  episodes) and `Dandadan` (`dandadan`, 19 episodes).
+- Result: Dandadan episode 1 sub resolved, probed reachable, and produced a
+  real 1920x1080 decode frame. One Piece sub, One Piece dub, and Dandadan dub
+  each exhausted the 12 s budget with `Provider did not return a stream
+  within 12s`.
+- Inventory on the working case: four direct quality rows (`360p`, `480p`,
+  `720p`, `1080p`), Japanese audio, and no separate subtitle tracks.
+- Working-case resolve latency was 6.18 s.
+- Actual media dependency: the per-request `vidcache.net:8161` redirect target
+  of `/play`; `www.animegg.org` only issues the 302. AnimeGG is independent of
+  the Krussdomi/Dramahot CDNs used by the other working anime providers.
 
 ## Request Summary
 

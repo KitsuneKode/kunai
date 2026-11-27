@@ -1,24 +1,48 @@
 ---
 status: current
-lastReviewed: "2026-11-24T09:34:20Z"
+lastReviewed: "2026-11-27"
 ---
 
 # Provider: AllManga / AllAnime
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
 
+## Live capability audit (2026-11-27)
+
+**Status: catalog healthy; stream playback CAPTCHA-blocked.** This audit fixed
+the crypto rotation but did not restore stream resolution from this network.
+
+- Crypto evidence: the pinned profile moved from build 189 to live build 193.
+  Bootstrap returned HTTP 200 with `epoch: 5`, `partB`, and `k: "k7"`; the
+  freshness canary now reports `diagnosis: "current"`, `pinnedBuildId: "193"`,
+  `pinnedEpoch: 5`, and `epochsBehind: 0`.
+- Rotation shape: build 193 uses boot payload order
+  `lane:buildId:host:group:epoch`, boot prefix `ueQcEF8Ty:`, and a
+  315360000000 ms epoch scale with 86400000 ms grace. Those constants rotate
+  as one unit and are pinned in `packages/providers/src/allmanga/crypto.ts`.
+- Search/catalog: provider search and episode catalogs still loaded. Dandadan
+  exposed 12 episodes; the broad One Piece search selected `ONE PIECE
+  HEROINES`, so broad-search ordering is not a suitable playback benchmark.
+- Stream result: all four sub/dub cases stopped at `AllMangaCaptchaError`:
+  `AllAnime requires a captcha for stream sources from this network`. No
+  stream URL, probe, or decode success is claimed.
+- Disposition: keep AllManga registered and last in the anime fallback order.
+  The repair proves the authorization profile is current; CAPTCHA egress is
+  now the blocker, not stale crypto.
+
 ## Summary
 
 - **Runtime class:** Direct HTTP GraphQL + decoded source APIs. No browser should be needed on the hot path.
 - **Reference implementation:** Local ani-cli checkout at `~/Projects/osc/ani-cli` — historical only: ani-cli v5 (2026-08-01) moved to anidb.app and deleted its AllAnime code, so the live mkissa JS chunk is the sole source of truth now.
 - **Production module:** `packages/providers/src/allmanga/*`.
-- **Current status (2026-11-24):** The November 23 provider sweep exhausted
-  resolution with stale crypto after refresh. The hosted canary reported
-  `build-id-rotated` for pinned build 189. The site is reachable, and its
-  bootstrap refused unauthenticated requests during investigation. Kunai
-  keeps AllManga registered at the end of the anime fallback order and tells
-  users to choose another provider if the stream authorization is out of date.
-  See [canary issue #724](https://github.com/KitsuneKode/kunai/issues/724).
+- **Current status (2026-11-27):** The build-189 rotation behind
+  [canary issue #724](https://github.com/KitsuneKode/kunai/issues/724) is
+  repaired: build 193 is pinned as a complete profile and the live freshness
+  canary returns HTTP 200, `diagnosis: "current"`, epoch 5, and zero epochs
+  behind. Search and episode catalogs still load. Stream source resolution is
+  nevertheless CAPTCHA-blocked from the audited network, so Kunai keeps
+  AllManga registered at the end of the anime fallback order and must not
+  claim playback until a probed stream exists.
 
 ## Current Evidence
 
@@ -35,7 +59,7 @@ Current Kunai flow, derived from the live mkissa chunk (ani-cli v5 no longer imp
 
 ```text
 episode GraphQL persisted GET + aaReq + x-build-id
-  -> "tobeparsed" AES-256-GCM payload (rotating key, pinned build 189, 7-day epochs)
+  -> "tobeparsed" AES-256-GCM payload (rotating key, pinned build 193, 3650-day epochs)
   -> decoded source names + encoded API paths (or direct https embeds)
   -> per-source API fetch on allanime.day
   -> mp4 / HLS candidates, or deferred Ak DASH descriptor with separate video/audio
@@ -101,24 +125,27 @@ The experiment generated a temporary MPD from one selected video representation 
 ## Known
 
 - Search/catalog uses GraphQL with the provider referer; historical successful probes above are dated evidence.
-- The October 22 bootstrap success was for build 181. The current build is
-  pinned in `packages/providers/src/allmanga/crypto.ts`. Bootstrap success
-  and playable-stream verification are separate checkpoints.
+- The November 27 bootstrap success was for build 193, epoch 5. The current
+  build is pinned in `packages/providers/src/allmanga/crypto.ts`. Bootstrap
+  success and playable-stream verification are separate checkpoints: the same
+  audit that proved build 193 current still hit CAPTCHA before stream sources.
 - Source APIs can return valid data that is not a single HLS/mp4 URL.
 - Returning only the `Ak` video URL would be wrong because audio is separate.
 - `rawUrls` is adapted into an opaque deferred DASH descriptor containing both selected video and audio representations; subtitles remain attached. Deterministic coverage is in `packages/providers/test/allmanga.test.ts`. This implementation does not establish current live playback.
 
 ## Recovering a build rotation
 
-This section records past rotations when the provider exposed a public
-bootstrap. Treat authentication, CAPTCHA, and WAF refusals as stopping points.
-Recovery for build 189 is waiting for a supported public interface.
+This section records rotations when the provider exposed a public bootstrap.
+Treat authentication, CAPTCHA, and WAF refusals as stopping points. Build 193
+was recovered on 2026-11-27: bootstrap accepted the complete profile, while
+stream resolution remained blocked by CAPTCHA, so bootstrap freshness is the
+validated boundary.
 
 Upstream rotates the client crypto roughly monthly
-(`81` → `119` → `140` → `166` → `171` → `177` → `181`). The _derivation_
-constants move together — build id, salts, fragment offsets, mask fragments,
-key, epoch — and a partial update fails exactly like a total one, so recover
-those as a set. The persisted-query hash rotates on its own schedule and can be
+(`81` → `119` → `140` → `166` → `171` → `177` → `181` → `189` → `193`). The
+_derivation_ constants move together — build id, salts, fragment offsets, mask
+fragments, key, epoch length/grace — and a partial update fails exactly like a
+total one, so recover those as a set. The persisted-query hash rotates on its own schedule and can be
 stale while the derivation set is current, or the reverse; either way every
 resolve returns zero streams, so check both. Done 2026-09-08 for `140` → `166`,
 2026-10-13 for `171` → `177` (two intermediate builds `172`–`176` never made it
@@ -138,7 +165,8 @@ was read), and 2026-10-19 for `177` → `181`.
 **Then re-extract from the crypto chunk.** It is the chunk under
 `cdn.mkissa.net/all/mk/_app/immutable/chunks/` containing both `buildId` and
 `client-crypto` (`BVxTyUEI.js` on 2026-09-08, `RD7DzHLl.js` on 2026-10-13,
-`Cs-j4hUW.js` on 2026-10-19); reach it by crawling `_app/immutable/entry/app.*.js`.
+`Cs-j4hUW.js` on 2026-10-19, `CkL4bHwD.js` on 2026-11-27); reach it by
+crawling `_app/immutable/entry/app.*.js`.
 Strings are 3-character fragments in a rotated table, so nothing greps out as a
 literal — and **every symbol name in this section rotates with the build**, so
 find them by shape, not by name. On build 177 the pieces were: `tu()` returns
@@ -178,7 +206,9 @@ Historic name map for orientation: 140/166 called the table `Xc`, the accessor
 is the boot payload field order and rotates independently of the separator;
 build 140 signed `group.host.lane.buildId.epoch`, build 166 signed
 `group:lane:epoch:host:buildId`, build 177 signs `group/lane/host/buildId/epoch`,
-build 181 signs `buildId:group:host:epoch:lane` joined by `:`.
+build 181 signs `buildId:group:host:epoch:lane` joined by `:`; build 193
+signs `lane:buildId:host:group:epoch` joined by `:` and uses a 315360000000 ms
+epoch scale with 86400000 ms grace.
 
 **The persisted query hash rotates too**, and separately. It is a true persisted
 query — the document is never sent — so a stale hash returns
@@ -192,11 +222,15 @@ mobile-only `$qat` lines omitted — the pinned hash is the desktop variant.
 Build 181 kept the episode template byte-identical to 177, so the hash did not
 rotate; verify by resolving rather than assuming.
 
-Confirm the whole chain live before landing: bootstrap must answer `200` with a
-`partB`, the episode GET must return `"tobeparsed"` rather than an
-`AA_CRYPTO_*` or `PersistedQueryNotFound` error, and the resolved URL must
-decode — `mpv --no-config --vo=null --ao=null --frames=2`. On 2026-09-08 that
-chain produced h264 1920x1080 with `alang=jpn` audio from `video.wixstatic.com`.
+Confirm the chain as far upstream allows before landing: bootstrap must answer
+`200` with a `partB`; when CAPTCHA does not intervene, the episode GET must
+return `"tobeparsed"` rather than an `AA_CRYPTO_*` or
+`PersistedQueryNotFound` error, and the resolved URL must decode —
+`mpv --no-config --vo=null --ao=null --frames=2`. On 2026-09-08 that full
+chain produced h264 1920x1080 with `alang=jpn` audio from
+`video.wixstatic.com`. On 2026-11-27 build 193 bootstrap answered 200, but
+CAPTCHA stopped every audited stream resolve before the episode/decrypt and
+decode checkpoints, so those checkpoints remain unproven for this rotation.
 
 `NEED_CAPTCHA` after a few rapid resolves is upstream rate limiting, not a
 crypto fault; it surfaces as `AllMangaCaptchaError` and must not be worked
