@@ -3355,7 +3355,9 @@ describePwsh("install.ps1 dedicated profile contract", () => {
                 wrapped.exited,
               ]);
               expect(wrappedStatus).toBe(0);
-              expect(resolve(wrappedStdout.trim())).toBe(resolve(sandbox.profileDir));
+              expect(realpathSync(resolve(wrappedStdout.trim()))).toBe(
+                realpathSync(sandbox.profileDir),
+              );
             } finally {
               writeFileSync(versionedPath, v1Body);
             }

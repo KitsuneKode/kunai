@@ -401,7 +401,8 @@ test("runUninstall refuses an injected profileDir that is not the resolved profi
     purge: false,
     layout: { ...layout, profileDir: join(root, "elsewhere") },
   });
-  expect(code).toBe(1);
+  // DesktopProfileError — invalid/unowned profile roots exit 2.
+  expect(code).toBe(2);
 });
 
 test("runUninstall under an owned profile purges managed dirs but keeps the root and marker", async () => {
