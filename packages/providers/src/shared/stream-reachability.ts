@@ -201,9 +201,7 @@ export async function probeStreamReachability(
 
 /** Provider resolve gates allow slow CDNs through as unverified; only definitive failures block. */
 export function isStreamReachableForResolve(probe: StreamReachabilityProbeResult): boolean {
-  if (probe.status === "reachable" || probe.status === "timeout") {
-    return true;
-  }
+  if (probe.status === "reachable" || probe.status === "timeout") return true;
   return probe.status === "unreachable" && !probe.definitive;
 }
 
