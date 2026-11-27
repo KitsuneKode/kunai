@@ -42,6 +42,12 @@ export type MpvAvsyncRecoveryOptions = {
   readonly maxResyncsPerEpisode?: number;
 };
 
+export type MpvAvsyncRecoverySnapshot = {
+  readonly resyncCount: number;
+  readonly exhausted: boolean;
+  readonly overLimitSamples: number;
+};
+
 /**
  * Episode-scoped drift evidence and recovery budget.
  *
@@ -110,11 +116,7 @@ export class MpvAvsyncRecoveryTracker {
   }
 
   /** Current episode budget/state, exposed for focused tests and diagnostics. */
-  snapshot(): {
-    readonly resyncCount: number;
-    readonly exhausted: boolean;
-    readonly overLimitSamples: number;
-  } {
+  snapshot(): MpvAvsyncRecoverySnapshot {
     return {
       resyncCount: this.resyncCount,
       exhausted: this.recoveryExhausted,

@@ -877,7 +877,7 @@
     {
       "short": "",
       "long": "--mpv-hwdec",
-      "description": "Hardware decode: auto | auto-safe | auto-copy | off | backend"
+      "description": "Hardware decode: mpv-default | auto | auto-safe | auto-copy | off | backend"
     },
     {
       "short": "",

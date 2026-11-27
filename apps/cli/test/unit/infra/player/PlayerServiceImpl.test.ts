@@ -1145,7 +1145,7 @@ describe("PlayerServiceImpl hardware decode selection", () => {
   async function launchWithHwdec(
     configMode: MpvHwdecMode,
     cachedProbe: MpvHardwareAccelProbe,
-    options: { freshProbe?: Promise<MpvHardwareAccelProbe> } = {},
+    hwdec: { freshProbe?: Promise<MpvHardwareAccelProbe> } = {},
   ) {
     const events: DiagnosticEventInput[] = [];
     let launchedMpv: MpvRuntimeOptions | undefined;
@@ -1159,12 +1159,12 @@ describe("PlayerServiceImpl hardware decode selection", () => {
       },
       probeMpvHwdec: async () => {
         freshProbeRuns += 1;
-        return await (options.freshProbe ?? cachedProbe);
+        return await (hwdec.freshProbe ?? cachedProbe);
       },
       // SAFETY: the capture double honors the launch result contract; only
       // the runtime-options input is inspected in this hardware-mode test.
-      launchMpv: (async (options) => {
-        launchedMpv = options.mpv;
+      launchMpv: (async (launch) => {
+        launchedMpv = launch.mpv;
         return createPlaybackResult();
       }) as typeof launchMpv,
     });
