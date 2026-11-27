@@ -244,7 +244,7 @@ profile_marker_ok() {
 	# Pure-Bash exact-byte check (no `cmp` dependency — profile validation must
 	# run on a bare PATH). `read -d ''` succeeds only on an embedded NUL and
 	# strips it, so a "success" means the file could never have matched.
-	if IFS= read -r -d '' bytes < "$marker"; then return 1; fi
+	if IFS= read -r -d '' bytes <"$marker"; then return 1; fi
 	[[ "$bytes" == $'kunai-profile-v1\n' ]]
 }
 
