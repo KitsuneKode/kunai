@@ -187,6 +187,36 @@ describe("stream reachability", () => {
     ]);
   });
 
+  test("an obfuscated .m3u8.png master served as image/png is probed through its variant", async () => {
+    // A HEAD used to settle this as verified-reachable: neither the URL nor the
+    // content type said HLS, so the dead variant behind it was never fetched.
+    const urls: string[] = [];
+    const fetchImpl = async (url: string) => {
+      urls.push(url);
+      if (url.includes("index.m3u8.png")) {
+        return response(
+          200,
+          [
+            "#EXTM3U",
+            "#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=1920x1080",
+            "v1080.m3u8.png",
+          ].join("\n"),
+          { "content-type": "image/png" },
+        );
+      }
+      return response(404, "gone");
+    };
+
+    const probe = await probeStreamReachability({
+      url: "https://cdn.example/token/index.m3u8.png?exp=1",
+      fetchImpl,
+      timeoutMs: 500,
+    });
+
+    expect(probe.status).not.toBe("reachable");
+    expect(urls).toContain("https://cdn.example/token/v1080.m3u8.png");
+  });
+
   test("HLS segment probe fails when first segment is unreachable", async () => {
     const probe = await probeStreamReachability({
       url: "https://cdn.example/stream.m3u8",

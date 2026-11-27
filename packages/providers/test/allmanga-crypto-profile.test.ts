@@ -6,6 +6,7 @@ import {
   ALLMANGA_MASK_FRAGMENTS,
   buildAllMangaBootToken,
   currentAllMangaEpochCandidates,
+  describeAllMangaCryptoOverrideProblem,
   getEffectiveAllMangaEpochMs,
 } from "../src/allmanga/crypto";
 import type { AllMangaBootPart } from "../src/allmanga/crypto";
@@ -87,5 +88,24 @@ describe("allmanga crypto profile", () => {
     } finally {
       setActiveProviderHotfixManifest(null);
     }
+  });
+
+  test("a blank numeric field in a hotfix rotation is rejected, not read as 0", () => {
+    const complete = {
+      buildId: ALLMANGA_CRYPTO_PROFILE.buildId,
+      saltMul: String(ALLMANGA_CRYPTO_PROFILE.saltMul),
+      saltAdd: String(ALLMANGA_CRYPTO_PROFILE.saltAdd),
+      fragMul: String(ALLMANGA_CRYPTO_PROFILE.fragMul),
+      fragAdd: String(ALLMANGA_CRYPTO_PROFILE.fragAdd),
+      bootPrefix: ALLMANGA_CRYPTO_PROFILE.bootPrefix,
+      bootJoin: ALLMANGA_CRYPTO_PROFILE.bootJoin,
+      bootParts: ALLMANGA_CRYPTO_PROFILE.bootParts.join(","),
+      maskFragments: ALLMANGA_CRYPTO_PROFILE.maskFragments.join(","),
+      epochMs: String(ALLMANGA_CRYPTO_PROFILE.epochMs),
+      epochGraceMs: String(ALLMANGA_CRYPTO_PROFILE.epochGraceMs),
+    };
+    expect(describeAllMangaCryptoOverrideProblem(complete)).toBeNull();
+    expect(describeAllMangaCryptoOverrideProblem({ ...complete, epochGraceMs: "" })).not.toBeNull();
+    expect(describeAllMangaCryptoOverrideProblem({ ...complete, saltAdd: "  " })).not.toBeNull();
   });
 });

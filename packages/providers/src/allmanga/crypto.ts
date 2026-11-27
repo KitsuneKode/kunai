@@ -208,21 +208,26 @@ export function describeAllMangaCryptoOverrideProblem(
     : "AllManga cryptoOverrides names a buildId but the rotation profile is incomplete or malformed (saltMul, saltAdd, fragMul, fragAdd, bootPrefix, bootJoin, 5 bootParts, 4 maskFragments, epochMs, epochGraceMs)";
 }
 
+/** `Number("")` is 0, so a blank manifest field would read as a real constant. */
+function overrideInteger(value: string | undefined): number {
+  return value === undefined || value.trim() === "" ? Number.NaN : Number(value);
+}
+
 function parseAllMangaCryptoProfileOverride(
   overrides: Readonly<Record<string, string>>,
 ): AllMangaCryptoProfile | null {
   if (!overrides.buildId) return null;
 
-  const saltMul = Number(overrides.saltMul);
-  const saltAdd = Number(overrides.saltAdd);
-  const fragMul = Number(overrides.fragMul);
-  const fragAdd = Number(overrides.fragAdd);
+  const saltMul = overrideInteger(overrides.saltMul);
+  const saltAdd = overrideInteger(overrides.saltAdd);
+  const fragMul = overrideInteger(overrides.fragMul);
+  const fragAdd = overrideInteger(overrides.fragAdd);
   const bootPrefix = overrides.bootPrefix;
   const bootJoin = overrides.bootJoin;
   const bootPartsRaw = overrides.bootParts?.split(",").map((p) => p.trim()) ?? [];
   const maskFragments = overrides.maskFragments?.split(",").map((f) => f.trim()) ?? [];
-  const epochMs = Number(overrides.epochMs);
-  const epochGraceMs = Number(overrides.epochGraceMs);
+  const epochMs = overrideInteger(overrides.epochMs);
+  const epochGraceMs = overrideInteger(overrides.epochGraceMs);
 
   if (
     !Number.isInteger(saltMul) ||

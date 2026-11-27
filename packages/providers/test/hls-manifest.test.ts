@@ -111,3 +111,27 @@ describe("hls-manifest helpers", () => {
     ).toBe(false);
   });
 });
+
+describe("parseFirstHlsVariantPath variant preference", () => {
+  test("an audio-only STREAM-INF ahead of the video variant does not win", () => {
+    const master = [
+      "#EXTM3U",
+      '#EXT-X-STREAM-INF:BANDWIDTH=128000,CODECS="mp4a.40.2"',
+      "index-a1.m3u8",
+      '#EXT-X-STREAM-INF:BANDWIDTH=4000000,RESOLUTION=1920x1080,CODECS="avc1.640028,mp4a.40.2"',
+      "index-v1.m3u8",
+    ].join("\n");
+    expect(parseFirstHlsVariantPath(master)).toBe("index-v1.m3u8");
+  });
+
+  test("without RESOLUTION it falls back to the filename heuristic over STREAM-INF entries", () => {
+    const master = [
+      "#EXTM3U",
+      "#EXT-X-STREAM-INF:BANDWIDTH=128000",
+      "audio/a1.m3u8.png",
+      "#EXT-X-STREAM-INF:BANDWIDTH=4000000",
+      "video/v1.m3u8.png",
+    ].join("\n");
+    expect(parseFirstHlsVariantPath(master)).toBe("video/v1.m3u8.png");
+  });
+});

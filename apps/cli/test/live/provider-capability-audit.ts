@@ -1090,7 +1090,9 @@ function errorMessage(cause: unknown): string {
 function redactText(value: string): string {
   return value
     .replace(/https?:\/\/[^\s"')]+/gi, (url) => `https://${hostnameOf(url) || "REDACTED"}`)
-    .replace(/\/home\/[^\s"')]+/gi, "/home/REDACTED");
+    .replace(/\/home\/[^\s"')]+/gi, "/home/REDACTED")
+    .replace(/\/Users\/[^\s"')]+/g, "/Users/REDACTED")
+    .replace(/[A-Z]:\\Users\\[^\s"')]+/gi, "C:\\Users\\REDACTED");
 }
 
 function cleanMpvArg(value: string): string {

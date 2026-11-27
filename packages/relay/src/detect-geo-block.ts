@@ -12,7 +12,9 @@ export interface GeoBlockDetection {
 }
 
 const GEO_BLOCK_PATTERNS = [
-  { reason: "need-captcha", pattern: /NEED_CAPTCHA|need[_\s-]?captcha/i },
+  // `requires a captcha` is AllMangaCaptchaError's message, which is what the
+  // resolve problem sees after the provider classifies NEED_CAPTCHA itself.
+  { reason: "need-captcha", pattern: /NEED_CAPTCHA|need[_\s-]?captcha|requires? a captcha/i },
   { reason: "turnstile", pattern: /cf-turnstile|turnstile challenge/i },
 ] as const;
 

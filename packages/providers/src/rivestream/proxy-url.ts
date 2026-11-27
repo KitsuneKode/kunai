@@ -79,15 +79,18 @@ export function parseRivestreamProxyHeaders(sourceUrl: string): Record<string, s
       continue;
     const cleaned = value.trim();
     if (!cleaned) continue;
+    let value_ = cleaned;
     if (key === "referer" || key === "origin") {
       try {
         const target = new URL(cleaned);
         if (target.protocol !== "https:" || target.username || target.password) continue;
+        // Send exactly what was validated: an Origin is scheme://host[:port].
+        if (key === "origin") value_ = target.origin;
       } catch {
         continue;
       }
     }
-    headers[key] = cleaned;
+    headers[key] = value_;
   }
   return Object.keys(headers).length > 0 ? headers : null;
 }

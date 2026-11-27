@@ -69,7 +69,6 @@ import { rivestreamManifest, RIVESTREAM_PROVIDER_ID } from "./manifest";
 import { parseRivestreamProxyHeaders, unwrapRivestreamProxyUrl } from "./proxy-url";
 
 export { RIVESTREAM_PROVIDER_ID };
-export { parseRivestreamProxyHeaders, unwrapRivestreamProxyUrl } from "./proxy-url";
 export const RIVESTREAM_REFERER = "https://www.rivestream.app/";
 /**
  * Live Watch bundle (2026-11-12, module 2873) calls this host.
@@ -134,6 +133,7 @@ export const RIVESTREAM_SOURCE_TIMEOUT_MS = 3_500;
  * loudly here, not as wasted live attempts.
  */
 export const RIVESTREAM_STATIC_PROVIDER_SERVICES = [
+  "riven",
   "apogee",
   "vanguard",
   "oberon",
@@ -1137,7 +1137,7 @@ async function resolveRivestreamProviderCandidate({
   }
   const rawSources = getRivestreamRawSources(sourceData.data).map((source) => {
     if (!source.url) return source;
-    const playbackHeaders = parseRivestreamProxyHeaders(source.url) ?? undefined;
+    const playbackHeaders = resolveRivestreamStreamHeaders(source.url);
     return { ...source, url: unwrapRivestreamProxyUrl(source.url), playbackHeaders };
   });
   if (rawSources.length === 0) {

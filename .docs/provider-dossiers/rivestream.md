@@ -42,7 +42,7 @@ variant URI by `#EXT-X-STREAM-INF` position:
 - **Quality model:** Standard HLS and direct `.mp4`.
 - **Thumbnail/poster support:** Yes. Backend fetch provides VTT/BIF files for the player seek-bar.
 - **Known failure modes:** `cArray` salt rotation breaks the MurmurHash `secretKey` generation, resulting in 401 Unauthorized errors.
-- **Demoted backends (2026-10-14):** `savannah`, `prometheus`, `quasar`, and `solstice` return no sources for titles other mirrors serve, and `primevids` answers 403. They trail the service cycle as a last resort (`RIVESTREAM_DEMOTED_BACKENDS`) and are skipped by prefetch — the cycle stops at the first working mirror (e.g. citadel) without spending an attempt on them. Nothing is dropped: a recovered backend still resolves when everything ahead fails.
+- **Demoted backends (2026-10-14):** `savannah`, `prometheus`, `quasar`, and `solstice` return no sources for titles other mirrors serve. (`primevids` answered 403 on 2026-10-14 and returned sources again on 2026-11-12, so it is no longer demoted.) They trail the service cycle as a last resort (`RIVESTREAM_DEMOTED_BACKENDS`) and are skipped by prefetch — the cycle stops at the first working mirror (e.g. citadel) without spending an attempt on them. Nothing is dropped: a recovered backend still resolves when everything ahead fails.
 
 ## User-Facing Capabilities
 
@@ -119,8 +119,10 @@ Query-string headers are accepted only on the exact HTTPS
 The JSON declaration is capped at 8192 characters; only Referer, Origin and
 User-Agent survive, with bounded values and no control bytes. Host, connection
 and credential overrides are rejected; unrelated hosts cannot declare headers.
-No URL unwrapping was introduced. The normal stream target guard still checks
-all fetched manifests, redirects and probe destinations.
+(Superseded 2026-11-27: `cors.corsflix.net/m3u8?url=` is now unwrapped to its
+HTTPS target, and that host may declare the same bounded headers; see the live
+audit section.) The normal stream target guard still checks all fetched
+manifests, redirects and probe destinations.
 
 A bounded isolated TMDB 550 movie resolve returned the 720/480 HLS source with
 26 subtitles. The API also returned Vanguard's 4K HDR wrapper. A separate guarded

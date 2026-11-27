@@ -2,12 +2,8 @@ import { beforeEach, expect, test } from "bun:test";
 
 import type { LooseJsonValue, ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
 
-import {
-  clearRivestreamCachesForTest,
-  parseRivestreamProxyHeaders,
-  unwrapRivestreamProxyUrl,
-  rivestreamProviderModule,
-} from "../src/rivestream/direct";
+import { clearRivestreamCachesForTest, rivestreamProviderModule } from "../src/rivestream/direct";
+import { parseRivestreamProxyHeaders, unwrapRivestreamProxyUrl } from "../src/rivestream/proxy-url";
 
 const INPUT: ProviderResolveInput = {
   title: { id: "tmdb:550", tmdbId: "550", title: "Fight Club", kind: "movie" },
@@ -172,6 +168,42 @@ test("an unwrapped corsflix source keeps the wrapper's playback headers through 
     origin: "https://vidrift.in",
     "user-agent": "browser",
   });
+});
+
+test("a wrapper that declares only Referer and Origin keeps the default User-Agent", async () => {
+  const target = "https://cdn.example/origin/index.m3u8?exp=1";
+  const wrapped = `https://cors.corsflix.net/m3u8?url=${encodeURIComponent(target)}&headers=${encodeURIComponent(
+    JSON.stringify({ Referer: "https://vidrift.in/", Origin: "https://vidrift.in/path,extra" }),
+  )}`;
+  const seenUserAgents = new Set<string | null>();
+  const context: ProviderRuntimeContext = {
+    providerId: "rivestream",
+    now: () => "2026-11-27T00:00:00Z",
+    fetch: {
+      runtime: "direct-http",
+      resolvesLocally: () => false,
+      fetch: async (targetInput, init) => {
+        const href = String(targetInput);
+        if (href.includes("/api/providers")) return Response.json({ data: ["riven"] });
+        if (href.includes("/api/provider"))
+          return Response.json({
+            data: { sources: [{ url: wrapped, quality: "1080p", format: "hls" }], captions: [] },
+          });
+        seenUserAgents.add(new Headers(init?.headers).get("user-agent"));
+        if (href === target) return new Response("#EXTM3U\n#EXTINF:4,\nsegment.ts\n");
+        return new Response(new Uint8Array(2048), {
+          status: 206,
+          headers: { "content-type": "video/mp2t" },
+        });
+      },
+    },
+  };
+  const result = await rivestreamProviderModule.resolve(INPUT, context);
+  expect(result.status).toBe("resolved");
+  expect(seenUserAgents.has(null)).toBe(false);
+  expect(result.streams[0]?.headers?.["user-agent"]).toBeTruthy();
+  // The Origin sent is the validated origin, not the raw declaration.
+  expect(result.streams[0]?.headers?.origin).toBe("https://vidrift.in");
 });
 
 test("source switching resolves the requested source's own quality rows", async () => {
