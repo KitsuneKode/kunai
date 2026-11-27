@@ -66,6 +66,23 @@ describe("overlay footer actions", () => {
     expect(hintRows.every((action) => action.action === undefined)).toBe(true);
   });
 
+  test("empty overlay lists keep only actions that do not need a selection", () => {
+    expect(queueFooterActions({ hasRows: false }).map((action) => action.label)).toEqual([
+      "commands",
+      "close",
+    ]);
+    expect(historyFooterActions({ hasRows: false }).map((action) => action.label)).toEqual([
+      "tabs",
+      "commands",
+      "close",
+    ]);
+    expect(
+      notificationsFooterActions({ tab: "active", paginated: false }, false).map(
+        (action) => action.label,
+      ),
+    ).toEqual(["sort", "archive", "commands", "close"]);
+  });
+
   test("narrow widths keep the footer to a couple hints plus the command tail", () => {
     const visible = selectFooterActions(queueFooterActions(), "detailed", 80);
 

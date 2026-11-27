@@ -1,5 +1,6 @@
 import { buildFooterActionsFromBindings } from "./keybindings";
 import type { NotificationsTab } from "./notifications-view";
+import { emptySafeFooterActions } from "./shell-primitives";
 import type { FooterAction } from "./types";
 
 /**
@@ -14,28 +15,56 @@ import type { FooterAction } from "./types";
  * `esc close` tail is always appended so deeper actions stay discoverable.
  */
 
-export function queueFooterActions(): readonly FooterAction[] {
-  return buildFooterActionsFromBindings("queue", {
+type EmptyableFooterInput = {
+  /** False on a zero-row surface; row-scoped hints are removed by the shared helper. */
+  readonly hasRows?: boolean;
+};
+
+const rowsPresent = (input: EmptyableFooterInput | undefined) => input?.hasRows ?? true;
+
+function withSelectionRequired(
+  actions: readonly FooterAction[],
+  labels: readonly string[],
+): readonly FooterAction[] {
+  const required = new Set(labels);
+  return actions.map((action) =>
+    required.has(action.label) ? { ...action, requiresSelection: true } : action,
+  );
+}
+
+export function queueFooterActions(input?: EmptyableFooterInput): readonly FooterAction[] {
+  const actions = buildFooterActionsFromBindings("queue", {
     ids: ["queue-play", "queue-reorder", "queue-remove", "queue-clear", "queue-restore"],
     overrides: {
       "queue-play": { primary: true },
     },
   });
+  return emptySafeFooterActions(
+    withSelectionRequired(actions, ["play", "reorder", "remove", "clear", "restore"]),
+    rowsPresent(input),
+  );
 }
 
-export function historyFooterActions(): readonly FooterAction[] {
-  return buildFooterActionsFromBindings("history", {
+export function historyFooterActions(input?: EmptyableFooterInput): readonly FooterAction[] {
+  const actions = buildFooterActionsFromBindings("history", {
     ids: ["history-resume", "history-menu", "history-queue", "history-tab"],
     overrides: {
       "history-resume": { primary: true },
     },
   });
+  return emptySafeFooterActions(
+    withSelectionRequired(actions, ["resume", "actions", "up next"]),
+    rowsPresent(input),
+  );
 }
 
-export function notificationsFooterActions(input: {
-  readonly tab: NotificationsTab;
-  readonly paginated: boolean;
-}): readonly FooterAction[] {
+export function notificationsFooterActions(
+  input: {
+    readonly tab: NotificationsTab;
+    readonly paginated: boolean;
+  },
+  hasRows = true,
+): readonly FooterAction[] {
   // Lifecycle keys (r/x/d/A/C) stay in command help only; the persistent footer
   // carries the navigation grammar: act, actions, sort, tab, optional paging.
   const ids = [
@@ -45,36 +74,42 @@ export function notificationsFooterActions(input: {
     "notifications-tab",
     ...(input.paginated ? ["notifications-page"] : []),
   ];
-  return buildFooterActionsFromBindings("notifications", {
+  const actions = buildFooterActionsFromBindings("notifications", {
     ids,
     overrides: {
       "notifications-action": { label: "act", primary: true },
       "notifications-tab": { label: input.tab === "active" ? "archive" : "active" },
     },
   });
+  return emptySafeFooterActions(withSelectionRequired(actions, ["act", "actions"]), hasRows);
 }
 
 export function downloadQueueFooterActions(input: {
   readonly hasJobs: boolean;
 }): readonly FooterAction[] {
-  if (!input.hasJobs) {
-    // Empty queue: don't advertise play/remove from the Up Next binding set.
-    return [];
-  }
   // Display-only — DownloadManagerContent owns the real key loop.
-  return [
-    { key: "↵", label: "play done", primary: true },
-    { key: "r", label: "retry" },
-    { key: "x", label: "remove" },
-    { key: "a", label: "repair" },
-  ];
+  return emptySafeFooterActions(
+    [
+      { key: "↵", label: "play done", primary: true, requiresSelection: true },
+      { key: "r", label: "retry", requiresSelection: true },
+      { key: "x", label: "remove", requiresSelection: true },
+      { key: "a", label: "repair", requiresSelection: true },
+      { key: "/", label: "commands", action: "command-mode" },
+      { key: "esc", label: "close", action: "quit" },
+    ],
+    input.hasJobs,
+  );
 }
 
-export function libraryFooterActions(): readonly FooterAction[] {
-  return buildFooterActionsFromBindings("library", {
+export function libraryFooterActions(input?: EmptyableFooterInput): readonly FooterAction[] {
+  const actions = buildFooterActionsFromBindings("library", {
     ids: ["library-open", "library-delete", "library-protect", "library-tab"],
     overrides: {
       "library-open": { primary: true },
     },
   });
+  return emptySafeFooterActions(
+    withSelectionRequired(actions, ["open", "delete", "protect"]),
+    rowsPresent(input),
+  );
 }

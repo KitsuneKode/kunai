@@ -143,6 +143,43 @@ async function pressEscape(handle: { stdin: { enqueue: (data: string) => void } 
 }
 
 describe("library input ownership", () => {
+  test("an empty offline library hides row-scoped footer keys but keeps exit keys", async () => {
+    const handle = render(
+      <LibraryShell container={fixture({ entries: [] })} onClose={() => {}} />,
+      { columns: 100, rows: 40 },
+    );
+    try {
+      await waitForFrame(handle, "No offline titles yet");
+      const frame = stripAnsi(handle.lastFrame());
+      expect(frame).not.toContain("[enter] open");
+      expect(frame).not.toContain("[x] delete");
+      expect(frame).not.toContain("[p] protect");
+      expect(frame).toContain("[/] commands");
+      expect(frame).toContain("[esc] close");
+    } finally {
+      handle.unmount();
+    }
+  });
+
+  test("an empty downloads queue hides job keys but keeps commands and close", async () => {
+    const handle = render(
+      <LibraryShell container={fixture()} onClose={() => {}} initialView="queue" />,
+      { columns: 100, rows: 40 },
+    );
+    try {
+      await waitForFrame(handle, "No downloads queued");
+      const frame = stripAnsi(handle.lastFrame());
+      expect(frame).not.toContain("play done");
+      expect(frame).not.toContain("[r] retry");
+      expect(frame).not.toContain("[x] remove");
+      expect(frame).not.toContain("[a] repair");
+      expect(frame).toContain("[/] commands");
+      expect(frame).toContain("[esc] close");
+    } finally {
+      handle.unmount();
+    }
+  });
+
   test("the palette-opening slash never becomes a library filter", async () => {
     const handle = render(<LibraryShell container={fixture()} onClose={() => {}} />, {
       columns: 100,

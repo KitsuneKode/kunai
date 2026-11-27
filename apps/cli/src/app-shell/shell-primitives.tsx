@@ -118,6 +118,20 @@ export type ContextStripItem = {
   tone?: InlineBadgeTone;
 };
 
+/**
+ * Empty-list footer grammar. Row-scoped hints (`requiresSelection`) vanish when
+ * there is no row they can act on; navigation, palette, and close affordances
+ * stay because they still work. Callers mark scope at the binding/footer model
+ * instead of every surface re-learning which keys are dead.
+ */
+export function emptySafeFooterActions(
+  actions: readonly FooterAction[],
+  hasRows: boolean,
+): readonly FooterAction[] {
+  if (hasRows) return actions;
+  return actions.filter((action) => action.requiresSelection !== true);
+}
+
 export function selectFooterActions(
   actions: readonly FooterAction[],
   mode: ShellFooterMode,

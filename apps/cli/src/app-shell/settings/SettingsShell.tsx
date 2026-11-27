@@ -294,7 +294,7 @@ export function SettingsShell({
                 applyResult(handleSettingsPointer(event, state, { container, registryCtx }))
         }
       />
-      <SettingsFooter state={state} mode={footerMode} />
+      <SettingsFooter state={state} mode={footerMode} commandMode={commandMode} />
     </>
   );
 }

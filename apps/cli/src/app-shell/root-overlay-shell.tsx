@@ -63,7 +63,7 @@ import {
 
 import { requestBrowseIdleContextRefresh } from "./browse-idle-context";
 import { cancelAllRootOverlays, cancelRootOverlay } from "./cancel-root-overlay";
-import { resolveCommandContext, resolveCommands, type ResolvedAppCommand } from "./commands";
+import { resolveCommandContext, resolveCommands } from "./commands";
 import { diagnosticsVisibleRows } from "./diagnostics-dashboard-model";
 import { sanitizeTerminalText } from "./shell-text";
 
@@ -120,6 +120,7 @@ import {
   type GuideRow,
 } from "./guide-model";
 import { GuideShell } from "./guide-shell";
+import { HelpShell } from "./help-shell";
 import { HistoryShell } from "./history-shell";
 import {
   buildHistoryView,
@@ -128,7 +129,7 @@ import {
   type HistoryTypeFilter,
 } from "./history-view";
 import { routeOverlayInput } from "./input-router";
-import { helpSections, helpSectionsForScope, type HelpSection, type KeyScope } from "./keybindings";
+import { helpSectionsForScope, type KeyScope } from "./keybindings";
 import {
   getOverlayContentViewport,
   getOverlayHostChromeRows,
@@ -173,7 +174,6 @@ import {
   type HistoryPickerOptionsContext,
   sortProvidersByConfigPriority,
 } from "./panel-data";
-import { plainModeEnabled, plainTabLabel } from "./plain-mode";
 import { createQueuePosterResolver } from "./queue-poster-resolver";
 import { QueueShell } from "./queue-shell";
 import type { QueueViewRow } from "./queue-view";
@@ -251,10 +251,10 @@ import {
 } from "./use-notifications-overlay-input";
 import { useShellDimensions } from "./use-viewport-policy";
 
+export { buildHelpTabRows, HELP_TABS, helpTabRows, HelpShell } from "./help-shell";
+
 /** Stable empty favorites reference for non-tracks overlays (keeps effect deps referentially stable). */
 const EMPTY_TRACKS_FAVORITES: readonly string[] = [];
-
-const HELP_TABS_INTERNAL = helpSections().map((section) => section.group);
 
 /** Human-readable scope labels for the help overlay header. */
 const HELP_SCOPE_LABELS = {
@@ -271,16 +271,6 @@ const HELP_SCOPE_LABELS = {
   history: "history",
   notifications: "notifications",
 } satisfies Record<KeyScope, string>;
-
-const HELP_SECTION_BY_GROUP = new Map<string, HelpSection>(
-  helpSections().map((section) => [section.group, section]),
-);
-
-/**
- * Render rows for a given help tab. Exported for testability — the live
- * `HelpShell` calls this directly and the help-overlay test asserts the
- * overlay's content matches the registry.
- */
 
 /**
  * What to tell someone whose install cannot update itself.
@@ -301,29 +291,6 @@ function describeUnmanagedUpdate(
   if (action.kind === "run-command") return action.message;
   if (action.kind === "open-release-page") return action.message;
   return "This install is managed elsewhere — update through the tool that installed Kunai.";
-}
-
-export function helpTabRows(tab: string): readonly { key: string; desc: string }[] {
-  return (HELP_SECTION_BY_GROUP.get(tab)?.items ?? []).map((hint) => ({
-    key: hint.keys,
-    desc: hint.label,
-  }));
-}
-
-/**
- * Ordered list of help tab groups. Mirrors `helpSections().map(s => s.group)`
- * but is captured at module load so the renderer doesn't re-derive it on
- * every render. Exported for testability.
- */
-export const HELP_TABS: readonly string[] = HELP_TABS_INTERNAL;
-
-/**
- * Test-only: build the live help tab rows from the same `helpTabRows`
- * helper the overlay uses. Lets the test assert the registry-driven
- * content without spinning up the full HelpShell component.
- */
-export function buildHelpTabRows(tab: string): readonly { key: string; desc: string }[] {
-  return helpTabRows(tab);
 }
 
 function wrapOverlayLayout(
@@ -358,151 +325,6 @@ function findDiagnosticsSpanIdNearScroll(
     if (spanId) return spanId;
   }
   return null;
-}
-
-export function HelpShell({
-  sections,
-  scopeLabel,
-  commandMode,
-  commandInput,
-  commandCursor,
-  commands,
-  highlightedIndex,
-  footerActions,
-  onClose,
-}: {
-  /** Scope-filtered help sections for the surface beneath the overlay. */
-  sections: readonly HelpSection[];
-  /** Human label for the active scope, shown in the header (e.g. "playing"). */
-  scopeLabel: string;
-  commandMode: boolean;
-  commandInput: string;
-  commandCursor: number;
-  commands: readonly ResolvedAppCommand[];
-  highlightedIndex: number;
-  footerActions: readonly FooterAction[];
-  onClose: () => void;
-}) {
-  const tabs = sections.length > 0 ? sections.map((section) => section.group) : HELP_TABS;
-  const sectionByGroup = useMemo(
-    () => new Map(sections.map((section) => [section.group, section])),
-    [sections],
-  );
-  const [activeTab, setActiveTab] = useState<string>(tabs[0] ?? "Global");
-  // Scope can change while the overlay is open (playback starts/ends); keep the
-  // active tab valid instead of rendering an empty body.
-  const safeActiveTab = tabs.includes(activeTab) ? activeTab : (tabs[0] ?? "Global");
-
-  useInput(
-    (input, key) => {
-      if (commandMode) return;
-      if (key.tab) {
-        setActiveTab((prev) => {
-          const idx = tabs.indexOf(prev);
-          const delta = key.shift ? -1 : 1;
-          const next = tabs[(idx + delta + tabs.length) % tabs.length];
-          return next ?? tabs[0] ?? prev;
-        });
-        return;
-      }
-      if (input === "?") {
-        // The global `?` binding only fires "open help". When help is already
-        // at the top, the same key should close it. Bail to Esc-style close
-        // here so the user has a single, predictable toggle key.
-        onClose();
-      }
-    },
-    { isActive: !commandMode },
-  );
-
-  const plain = plainModeEnabled();
-  const rows = (sectionByGroup.get(safeActiveTab)?.items ?? []).map((hint) => ({
-    key: hint.keys,
-    desc: hint.label,
-  }));
-  // Dense reference card: split the active section's rows into two balanced
-  // columns so a long surface (player/postPlayback) reads without scrolling.
-  // Plain mode keeps one column so a screen reader hears each binding in order.
-  const half = Math.ceil(rows.length / 2);
-  const leftRows = rows.slice(0, half);
-  const rightRows = rows.slice(half);
-  const keyColWidth = Math.max(8, ...rows.map((row) => row.key.length));
-  const renderColumn = (columnRows: typeof rows, side: "left" | "right") => (
-    <Box flexDirection="column" flexGrow={1} marginRight={side === "left" ? 2 : 0}>
-      {columnRows.map((row) => (
-        <Box key={row.key} flexDirection="row" marginBottom={0} flexWrap="nowrap">
-          <Text color={palette.accent}>{row.key.padEnd(keyColWidth)}</Text>
-          <Text color={palette.textDim}> {row.desc}</Text>
-        </Box>
-      ))}
-    </Box>
-  );
-  const renderPlainRows = (
-    <Box flexDirection="column" marginTop={1}>
-      {rows.map((row) => (
-        <Text key={row.key} color={palette.text}>
-          {`${row.key}  ${row.desc}`}
-        </Text>
-      ))}
-    </Box>
-  );
-
-  return (
-    <Box flexDirection="column" flexGrow={1}>
-      <Box flexDirection="column" paddingX={1} marginTop={1}>
-        <Box flexDirection="row" flexWrap="nowrap">
-          <Text color={palette.accent} bold>
-            {plain ? "Help" : "❀ Help"}
-          </Text>
-          <Text color={palette.muted}>{plain ? `: ${scopeLabel}` : `  ·  ${scopeLabel}`}</Text>
-        </Box>
-        <Text color={palette.dim}>
-          {plain
-            ? "Tab or Shift+Tab cycles sections. Esc or ? closes"
-            : "Tab / Shift+Tab cycles sections · Esc or ? closes"}
-        </Text>
-        <Box flexDirection="row" marginTop={1} marginBottom={0} flexWrap="wrap">
-          {tabs.map((tab) => (
-            <Box key={tab} marginRight={3} flexDirection="column">
-              <Text color={safeActiveTab === tab ? palette.accent : palette.dim}>
-                {plainTabLabel(tab, safeActiveTab === tab, plain)}
-              </Text>
-              {!plain && safeActiveTab === tab ? (
-                <Text color={palette.accent}>{"─".repeat(tab.length)}</Text>
-              ) : null}
-            </Box>
-          ))}
-        </Box>
-        {plain ? (
-          renderPlainRows
-        ) : (
-          <Box flexDirection="row" marginTop={1}>
-            {renderColumn(leftRows, "left")}
-            {rightRows.length > 0 ? renderColumn(rightRows, "right") : null}
-          </Box>
-        )}
-      </Box>
-      {commandMode ? (
-        <CommandPalette
-          input={commandInput}
-          cursor={commandCursor}
-          commands={commands}
-          highlightedIndex={highlightedIndex}
-        />
-      ) : null}
-      <ShellFooter
-        taskLabel={
-          plain
-            ? "Tab or Shift+Tab cycles sections. Esc or ? closes"
-            : "Tab/Shift+Tab sections · Esc or ? closes"
-        }
-        actions={footerActions}
-        mode="detailed"
-        commandMode={commandMode}
-        companionHint
-      />
-    </Box>
-  );
 }
 
 function readCachedHistoryNextReleases(
@@ -2384,10 +2206,13 @@ export function RootOverlayShell({
           // to land and a broken action was indistinguishable from an ignored
           // keypress. The status clears itself after 2.5s.
           taskLabel={overlayStatus ?? "Notifications"}
-          actions={notificationsFooterActions({
-            tab: notificationsState.tab,
-            paginated: notificationsView.totalPages > 1,
-          })}
+          actions={notificationsFooterActions(
+            {
+              tab: notificationsState.tab,
+              paginated: notificationsView.totalPages > 1,
+            },
+            notificationsView.rows.length > 0,
+          )}
           mode="detailed"
           commandMode={commandMode}
           terminalWidth={cols}
@@ -2476,7 +2301,7 @@ export function RootOverlayShell({
           // which self-clears after 2.5s) so it stays visible until the second
           // press or a disarm — notifications-footer pattern.
           taskLabel={queueConfirm?.prompt ?? overlayStatus ?? "Up Next"}
-          actions={queueFooterActions()}
+          actions={queueFooterActions({ hasRows: queueView.rows.length > 0 })}
           mode="detailed"
           commandMode={commandMode}
           terminalWidth={cols}
@@ -2501,7 +2326,7 @@ export function RootOverlayShell({
             {
               label: loadingAsyncLines
                 ? "loading history"
-                : `${historyView.flatRows.length} titles · ${historyView.tabLabels[historyView.tabIndex] ?? "All"}`,
+                : `${countLabel(historyView.flatRows.length, "title")} · ${historyView.tabLabels[historyView.tabIndex] ?? "All"}`,
               tone: "info",
             },
             ...(overlayStatus ? [{ label: overlayStatus, tone: "warning" as const }] : []),
@@ -2534,7 +2359,7 @@ export function RootOverlayShell({
                 ? "History · l local, s stream, Esc cancel"
                 : "History"
           }
-          actions={historyFooterActions()}
+          actions={historyFooterActions({ hasRows: historyView.flatRows.length > 0 })}
           mode="detailed"
           commandMode={commandMode}
           terminalWidth={cols}
