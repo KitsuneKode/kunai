@@ -193,7 +193,9 @@ export function describeServiceKeys(status: ServiceKeysStatus): ShellPanelLine {
       ? `TMDB: your ${active.kind === "bearer" ? "read token" : "key"} (${active.origin === "env" ? "KUNAI_TMDB_API_KEY" : "settings"}), direct to TMDB`
       : active.source === "kunai"
         ? "TMDB: Kunai's key — add your own free key in Settings → Accounts for independent quota"
-        : "TMDB: borrowed fallback key — add your own free key in Settings → Accounts";
+        : active.source === "legacy"
+          ? "TMDB: borrowed fallback key — add your own free key in Settings → Accounts"
+          : "TMDB: no shipped key — add your own free key in Settings → Accounts";
   const subtitles = status.wyzieConfigured
     ? "subtitle search: your Wyzie key"
     : "subtitle search: no Wyzie key (online subtitle search off)";

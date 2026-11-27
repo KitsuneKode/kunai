@@ -211,7 +211,7 @@ Kunai works without any key. Your own free TMDB key makes the catalog faster and
 2. Copy either the **API Key** or the **API Read Access Token**.
 3. Open **Settings → Accounts → Your API keys → TMDB key**, paste it, and press Enter.
 
-With your key, Kunai asks TMDB directly first. The key is stored in your system's credential store (macOS Keychain, Windows Credential Manager, or Secret Service on Linux) when one is available, not in `config.json`. If TMDB ever rejects it, Kunai keeps working on its fallbacks and `/diagnostics` says so under **Service keys**.
+With your key, Kunai asks TMDB directly first; Kunai's bundled release key uses the same direct-first order. Keyless installs ask the third-party mirrors first. Credentials never go to those mirrors. Your key is stored in your system's credential store (macOS Keychain, Windows Credential Manager, or Secret Service on Linux) when one is available, not in `config.json`. If TMDB ever rejects it, Kunai keeps working on its fallbacks and `/diagnostics` says so under **Service keys**.
 
 `KUNAI_TMDB_API_KEY` in your environment overrides the setting, and is also the key TMDB account sync uses.
 

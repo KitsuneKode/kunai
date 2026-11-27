@@ -7,6 +7,7 @@ import {
   isPlausibleTmdbCredential,
   resolveTmdbApiKey,
   setTmdbUserKeySource,
+  shippedTmdbApiKey,
   tmdbCredentialStatus,
   TMDB_ALT_BASE,
   TMDB_DIRECT_BASE,
@@ -43,16 +44,21 @@ function serve(respond: (url: string) => Response): SeenRequest[] {
 const isDirect = (url: string) => url.startsWith(TMDB_DIRECT_BASE) || url.startsWith(TMDB_ALT_BASE);
 
 let originalEnvKey: string | undefined;
+let originalBundledKey: string | undefined;
 
 beforeEach(() => {
   // A developer's own KUNAI_TMDB_API_KEY would override every settings fixture.
   originalEnvKey = process.env.KUNAI_TMDB_API_KEY;
+  originalBundledKey = process.env.KUNAI_BUNDLED_TMDB_API_KEY;
   delete process.env.KUNAI_TMDB_API_KEY;
+  delete process.env.KUNAI_BUNDLED_TMDB_API_KEY;
 });
 
 afterEach(() => {
   if (originalEnvKey === undefined) delete process.env.KUNAI_TMDB_API_KEY;
   else process.env.KUNAI_TMDB_API_KEY = originalEnvKey;
+  if (originalBundledKey === undefined) delete process.env.KUNAI_BUNDLED_TMDB_API_KEY;
+  else process.env.KUNAI_BUNDLED_TMDB_API_KEY = originalBundledKey;
   globalThis.fetch = originalFetch;
   setTmdbUserKeySource(null);
   clearTmdbSessionCache();
@@ -135,5 +141,64 @@ describe("the user's own TMDB key", () => {
     const seen = serve(() => Response.json({ ok: true }));
     await fetchTmdbJsonWithFallback("/movie/550");
     expect(isDirect(seen[0]?.url ?? "")).toBe(false);
+  });
+});
+
+describe("the bundled Kunai TMDB key", () => {
+  const bundledKey = "abcdef0123456789abcdef0123456789";
+
+  test("asks TMDB directly before the mirrors", async () => {
+    process.env.KUNAI_BUNDLED_TMDB_API_KEY = bundledKey;
+    const seen = serve(() => Response.json({ ok: true }));
+    await fetchTmdbJsonWithFallback("/movie/550");
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.url.startsWith(`${TMDB_DIRECT_BASE}/movie/550?api_key=`)).toBe(true);
+    expect(seen[0]?.url).toContain(`api_key=${bundledKey}`);
+  });
+
+  test("uses mirrors as fallback and never sends the bundled credential to them", async () => {
+    process.env.KUNAI_BUNDLED_TMDB_API_KEY = bundledKey;
+    const seen = serve((url) =>
+      isDirect(url) ? new Response("down", { status: 503 }) : Response.json({ via: "mirror" }),
+    );
+
+    expect(await fetchTmdbJsonWithFallback("/movie/550")).toEqual({ via: "mirror" });
+    expect(seen.slice(0, 2).every((request) => isDirect(request.url))).toBe(true);
+    expect(seen.some((request) => !isDirect(request.url))).toBe(true);
+    for (const request of seen.filter((entry) => !isDirect(entry.url))) {
+      expect(request.url).not.toContain("api_key=");
+      expect(request.url).not.toContain(bundledKey);
+      expect(request.authorization).toBeNull();
+    }
+  });
+
+  test("a v4 bearer token is never forwarded when mirrors answer as fallback", async () => {
+    setTmdbUserKeySource(() => V4_TOKEN);
+    const seen = serve((url) =>
+      isDirect(url) ? new Response("down", { status: 503 }) : Response.json({ via: "mirror" }),
+    );
+
+    expect(await fetchTmdbJsonWithFallback("/movie/550")).toEqual({ via: "mirror" });
+    for (const request of seen.filter((entry) => !isDirect(entry.url))) {
+      expect(request.authorization).toBeNull();
+      expect(request.url).not.toContain(V4_TOKEN);
+    }
+  });
+
+  test("with no shipped credential, direct TMDB hosts are not walked at all", async () => {
+    const seen = serve((url) =>
+      isDirect(url) ? Response.json({ via: "direct" }) : new Response("down", { status: 503 }),
+    );
+
+    await expect(
+      fetchTmdbJsonWithFallback("/movie/550", undefined, 6_000, () => shippedTmdbApiKey(null)),
+    ).rejects.toThrow();
+    expect(seen.some((request) => isDirect(request.url))).toBe(false);
+    expect(seen.length).toBeGreaterThan(0);
+  });
+
+  test("the shipped-key resolver already handles the legacy fallback being absent", () => {
+    expect(shippedTmdbApiKey(null)).toEqual({ key: "", source: "none", kind: "api-key" });
   });
 });
