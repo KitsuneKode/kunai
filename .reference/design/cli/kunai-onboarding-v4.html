@@ -1,0 +1,1937 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Kunai — Onboarding v4 (install → first frame)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    /* Live tokens — packages/design/src/tokens.ts. They beat every older board. */
+    --scrim: #080509;
+    --bg: #100b0f;
+    --surface: #1c1620;
+    --line: #473b51;
+    --line-soft: #281f2e;
+    --text: #f6eff4;
+    --text-2: #d6cbd6;
+    --muted: #beb1c0;
+    --dim: #a494a7;
+    --rose: #ff8fb0;
+    --rose-soft: #ffc6d8;
+    --fill: #2c1622;        /* accentFill — the selected-row band */
+    --ok: #54d6a0;
+    --ok-dim: #3a9a78;
+    --warn: #f59a3c;
+    --err: #ff5d5d;
+    --err-text: #ff9791;
+    --info: #5fb6ff;
+    --font: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; color: var(--text-2); font-family: var(--font);
+    font-size: 14px; line-height: 1.5; letter-spacing: .1px;
+    background:
+      radial-gradient(circle at 90% -8%, rgba(255,143,176,.10), transparent 40rem),
+      radial-gradient(circle at 4% 6%, rgba(109,133,246,.06), transparent 34rem),
+      var(--scrim);
+  }
+  main { max-width: 1500px; margin: 0 auto; padding: 44px 28px 130px; }
+  h1 { font-size: 27px; font-weight: 700; color: var(--text); margin: 0; letter-spacing: -.3px; }
+  .petal { color: var(--rose); }
+  .sub { color: var(--muted); margin: 10px 0 0; max-width: 96ch; }
+  h2 { margin: 64px 0 6px; font-size: 12px; font-weight: 700; color: var(--rose);
+       text-transform: uppercase; letter-spacing: .2em; }
+  .h2sub { color: var(--muted); font-size: 13px; margin: 0 0 4px; max-width: 110ch; }
+  h3 { margin: 0; font-size: 14px; font-weight: 700; color: var(--text); }
+  code { color: var(--rose-soft); font-family: inherit; }
+  a { color: var(--rose); }
+  .callout { border-left: 2px solid var(--rose); padding: 4px 0 4px 14px; margin: 18px 0; color: var(--muted); max-width: 110ch; }
+  .callout b { color: var(--text); }
+
+  /* journey strip */
+  .journey { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 22px; }
+  .lane { border: 1px solid var(--line-soft); border-radius: 10px; background: var(--bg); padding: 16px 18px; }
+  .lane h4 { margin: 0 0 10px; font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+  .lane.after h4 { color: var(--ok); }
+  .steps { display: flex; flex-wrap: wrap; gap: 6px 4px; align-items: center; }
+  .step { border: 1px solid var(--line); border-radius: 6px; padding: 3px 9px; color: var(--text-2); font-size: 12.5px; white-space: nowrap; }
+  .step.gone { color: var(--dim); text-decoration: line-through; border-style: dashed; }
+  .step.play { border-color: var(--ok-dim); color: var(--ok); }
+  .step.key { border-color: var(--rose); color: var(--rose); }
+  .arrow { color: var(--dim); }
+  .count { margin-top: 12px; color: var(--muted); font-size: 12.5px; }
+  .count b { color: var(--text); }
+
+  table { border-collapse: collapse; margin-top: 18px; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 22px 6px 0; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; }
+  td.n { color: var(--text); font-weight: 700; }
+  td.n.good { color: var(--ok); }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 10px 18px; margin-top: 18px; font-size: 12.5px; color: var(--muted); }
+
+  /* state */
+  .state { margin-top: 30px; }
+  .state > header { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .tag { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; border-radius: 20px; padding: 1px 10px; border: 1px solid var(--line); color: var(--muted); }
+  .tag.new { color: var(--ok); border-color: var(--ok-dim); }
+  .tag.changed { color: var(--rose); border-color: var(--rose); }
+  .tag.pretag, .tag.pr847 { color: var(--info); border-color: var(--info); }
+  .tag.later { color: var(--warn); border-color: var(--warn); }
+  .why { color: var(--muted); font-size: 13px; margin: 6px 0 0; max-width: 110ch; }
+  .shots { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; margin-top: 12px; }
+  figure.shot { margin: 0; max-width: 100%; }
+  figcaption { color: var(--dim); font-size: 11.5px; margin-bottom: 5px; letter-spacing: .06em; }
+  figcaption b { color: var(--muted); font-weight: 500; }
+
+  /* a terminal, one cell per character */
+  pre.term {
+    margin: 0; font-family: var(--font); font-size: 13px; line-height: 1.35; letter-spacing: 0;
+    color: var(--text-2); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px;
+    box-sizing: content-box; overflow-x: auto; white-space: pre; max-width: calc(100vw - 82px);
+    box-shadow: 0 24px 70px rgba(0,0,0,.5);
+    font-variant-ligatures: none;
+  }
+  .tty pre.term { background: #0b080b; }
+  pre.term i { font-style: normal; display: inline-flex; justify-content: center; overflow: visible; vertical-align: top; height: 1.35em; white-space: pre; }
+  pre.term i.g { width: 1ch; }
+  pre.term i.w2 { width: 2ch; }
+  pre.term i.rule { height: 1.35em; background: linear-gradient(var(--line), var(--line)) center / 100% 1px no-repeat; }
+  .t { color: var(--text); } .b { font-weight: 700; } .m { color: var(--muted); } .d { color: var(--dim); }
+  .r { color: var(--rose); } .o { color: var(--ok); } .w { color: var(--warn); } .e { color: var(--err-text); }
+  .sel { background: var(--fill); }
+  .chip { background: var(--text); color: var(--bg); font-weight: 700; }
+  .inv { background: var(--text-2); color: var(--bg); }
+  .d .rule, i.rule { color: var(--line); }
+
+  /* NO_COLOR and reduced-motion toggles act on every frame at once */
+  .controls { position: sticky; top: 0; z-index: 5; margin: 26px -28px 0; padding: 10px 28px;
+    background: color-mix(in srgb, var(--scrim) 88%, transparent); backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--line-soft); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
+  .controls button { font: inherit; color: var(--text-2); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 3px 12px; cursor: pointer; }
+  .controls button[aria-pressed="true"] { border-color: var(--rose); color: var(--rose); }
+  .controls button:focus-visible { outline: 2px solid var(--rose); outline-offset: 2px; }
+  .controls nav { margin-left: auto; display: flex; gap: 14px; flex-wrap: wrap; }
+  .controls nav a { color: var(--muted); text-decoration: none; }
+  .controls nav a:hover { color: var(--rose); }
+
+  body.no-color pre.term span, body.no-color pre.term { color: #d6d6d6 !important; }
+  body.no-color pre.term .sel { background: transparent; }
+  body.no-color pre.term .chip, body.no-color pre.term .inv { background: #d6d6d6; color: #101010 !important; }
+  body.no-color pre.term .b { font-weight: 700; }
+  body.no-color pre.term { background: #101010; }
+
+  @media (max-width: 900px) { .journey { grid-template-columns: 1fr; } main { padding: 28px 16px 90px; } .controls { margin: 20px -16px 0; padding: 10px 16px; } pre.term { max-width: calc(100vw - 58px); } }
+</style>
+</head>
+<body>
+<main>
+
+  <h1>Kunai · <span class="petal">❀</span> Onboarding v4 — install to first frame</h1>
+  <p class="sub">Every state between <code>curl … | bash</code> and a decoded frame, drawn cell for cell at <b>100×30</b> and <b>54×25</b>, plus the 40×16 floor. Colours are the live tokens in <code>packages/design/src/tokens.ts</code>; the Sakura rose palette is kept. Copy on this board is the copy that ships — the notes file <code>surfaces/onboarding-v4.md</code> lists it as plain text.</p>
+
+  <div class="journey">
+    <div class="lane">
+      <h4>Before · bare <code>kunai</code> on a fresh machine</h4>
+      <div class="steps">
+        <span class="step">install</span><span class="arrow">→</span>
+        <span class="step gone">1⁄6 machine</span><span class="arrow">→</span>
+        <span class="step gone">2⁄6 mode</span><span class="arrow">→</span>
+        <span class="step gone">3⁄6 language</span><span class="arrow">→</span>
+        <span class="step gone">4⁄6 playback, downloads, accounts</span><span class="arrow">→</span>
+        <span class="step">5⁄6 usage ping</span><span class="arrow">→</span>
+        <span class="step gone">6⁄6 summary</span><span class="arrow">→</span>
+        <span class="step">picks list, focus on the list</span><span class="arrow">→</span>
+        <span class="step">find the search field</span><span class="arrow">→</span>
+        <span class="step">results</span><span class="arrow">→</span>
+        <span class="step play">▶ frame</span>
+      </div>
+      <p class="count"><b>6</b> setup screens · <b>6</b> keystrokes before Browse · <b>18</b> settings asked · a typed query lands on a recommendation</p>
+    </div>
+    <div class="lane after">
+      <h4>After</h4>
+      <div class="steps">
+        <span class="step">install</span><span class="arrow">→</span>
+        <span class="step key">1⁄2 what you watch + machine verdict</span><span class="arrow">→</span>
+        <span class="step">2⁄2 usage ping</span><span class="arrow">→</span>
+        <span class="step">Browse, cursor in the field</span><span class="arrow">→</span>
+        <span class="step">results</span><span class="arrow">→</span>
+        <span class="step play">▶ frame</span>
+      </div>
+      <p class="count"><b>2</b> setup screens · <b>2</b> keystrokes before Browse · <b>2</b> settings asked</p>
+      <div class="steps" style="margin-top:12px">
+        <span class="step">install</span><span class="arrow">→</span>
+        <span class="step key">kunai -q -S "Dune"</span><span class="arrow">→</span>
+        <span class="step play">▶ frame</span>
+      </div>
+      <p class="count"><b>0</b> setup screens. A launch that names what to play is not interrupted; setup waits for the next bare <code>kunai</code>, and analytics stays <code>unset</code> — off — until then.</p>
+    </div>
+  </div>
+
+  <table>
+    <tr><th></th><th>Before</th><th>After</th></tr>
+    <tr><td>Setup screens before Browse</td><td class="n">6</td><td class="n good">2</td></tr>
+    <tr><td>Keystrokes to leave setup (declining analytics)</td><td class="n">6</td><td class="n good">2</td></tr>
+    <tr><td>Settings asked before the first stream</td><td class="n">18</td><td class="n good">2</td></tr>
+    <tr><td>Screens between <code>kunai -q -S "Dune"</code> and the player, fresh install</td><td class="n">6</td><td class="n good">0</td></tr>
+    <tr><td>Time Browse refuses typing on a cold cache</td><td class="n">until the catalog answers</td><td class="n good">none</td></tr>
+    <tr><td>Consent screen at 54×25</td><td class="n">title and both option labels clipped</td><td class="n good">whole screen fits</td></tr>
+  </table>
+
+  <div class="callout"><b>What did not move.</b> The consent screen is still its own screen, still neutral, still keystroke-gated: no row is pre-selected, Enter is inert until an arrow picks a row, <code>s</code> is “don't share”, a mouse click cannot grant consent, and no skip, accept-defaults or non-interactive path can write <code>enabled</code> or create an <code>installId</code>. Shortening setup removed four screens around it and nothing from it. Keyboard-first, mouse and tap targets, and the footer grammar (<code>[key] label</code>, surface label on the right) are unchanged.</div>
+
+  <div class="controls" role="toolbar" aria-label="Board display">
+    <span>Render every frame as</span>
+    <button type="button" id="toggle-color" aria-pressed="false">NO_COLOR</button>
+    <span class="legend-inline">· reduced motion: nothing on this board moves, and neither does setup except the recheck petal</span>
+    <nav>
+      <a href="#install">install</a><a href="#setup">setup</a><a href="#browse">browse</a><a href="#search">search</a><a href="#play">play &amp; fail</a><a href="#return">return</a><a href="#variants">phone · plain</a>
+    </nav>
+  </div>
+
+<section id="install">
+<h2>0 · Install</h2>
+<p class="h2sub">The installer's last lines are the first instruction a stranger reads. They now end on the one command that plays something, and they name a player problem before Kunai is ever launched.</p>
+<article class="state" id="install-ready">
+<header><h3>Installer finishes · a player is present</h3><span class="tag changed">changed in v4</span></header>
+<p class="why">Was: Try <code>kunai -S "Frieren" -a</code> and <code>kunai --setup</code>. A search that stops at a list, then a wizard. Now the first line plays.</p>
+<div class="shots">
+<figure class="shot s100 tty">
+<figcaption><b>100 cols</b> </figcaption>
+<pre class="term" style="width:100ch"> <span class="m">$ curl -fsSL https://kunai.sh/install.sh | bash</span>                                                    
+ <span class="t b">Kunai installer</span>                                                                                    
+ <span class="t">Installed kunai <i class="g">→</i> ~/.local/bin/kunai (v0.4.0)</span>                                                      
+ <span class="t">kunai is on PATH (~/.local/bin).</span>                                                                   
+ <span class="t">mpv and yt-dlp are already installed.</span>                                                              
+                                                                                                    
+ <span class="t b">Done.</span>                                                                                              
+ <span class="t">Watch something now:</span>                                                                               
+   <span class="r">kunai -q -S "Dune"</span><span class="d">     search and play in one step</span>                                               
+   <span class="r">kunai</span><span class="d">                  browse, with a two-question setup</span>                                         
+                                                                                                    
+ <span class="d">Update any time:  kunai upgrade</span>                                                                    
+ <span class="d">Remove:           kunai uninstall</span>                                                                  
+ <span class="m">$ </span><span class="inv"> </span>                                                                                                </pre>
+</figure>
+<figure class="shot s54 tty">
+<figcaption><b>54 cols</b> </figcaption>
+<pre class="term" style="width:54ch"> <span class="m">$ curl -fsSL https://kunai.sh/install.sh | bash</span>      
+ <span class="t b">Kunai installer</span>                                      
+ <span class="t">Installed kunai <i class="g">→</i> ~/.local/bin/kunai</span>                 
+ <span class="t">kunai is on PATH (~/.local/bin).</span>                     
+ <span class="t">mpv and yt-dlp are already installed.</span>                
+                                                      
+ <span class="t b">Done.</span>                                                
+ <span class="t">Watch something now:</span>                                 
+   <span class="r">kunai -q -S "Dune"</span>                                 
+ <span class="d">  search and play in one step</span>                        
+   <span class="r">kunai</span>                                              
+ <span class="d">  browse, with a two-question setup</span>                  
+                                                      
+ <span class="d">Update any time:  kunai upgrade</span>                      
+ <span class="d">Remove:           kunai uninstall</span>                    
+ <span class="m">$ </span><span class="inv"> </span>                                                  </pre>
+</figure>
+</div>
+</article>
+<article class="state" id="install-noplayer">
+<header><h3>Installer finishes · no player on the machine</h3><span class="tag changed">changed in v4</span></header>
+<p class="why">One warning, one command for this package manager. The installer still never runs sudo without being asked.</p>
+<div class="shots">
+<figure class="shot s100 tty">
+<figcaption><b>100 cols</b> </figcaption>
+<pre class="term" style="width:100ch"> <span class="m">$ curl -fsSL https://kunai.sh/install.sh | bash</span>                                                    
+ <span class="t b">Kunai installer</span>                                                                                    
+ <span class="t">Installed kunai <i class="g">→</i> ~/.local/bin/kunai (v0.4.0)</span>                                                      
+ <span class="t">kunai is on PATH (~/.local/bin).</span>                                                                   
+                                                                                                    
+ <span class="w">No video player found <i class="g">—</i> Kunai needs mpv or VLC to play anything.</span>                                   
+ <span class="t">Run this to install one:</span>                                                                           
+   <span class="r">sudo pacman -S mpv yt-dlp</span>                                                                        
+                                                                                                    
+ <span class="t b">Done.</span>                                                                                              
+ <span class="t">Then watch something:</span>                                                                              
+   <span class="r">kunai -q -S "Dune"</span><span class="d">     search and play in one step</span>                                               
+   <span class="r">kunai</span><span class="d">                  browse, with a two-question setup</span>                                         
+                                                                                                    
+ <span class="d">Update any time:  kunai upgrade</span>                                                                    
+ <span class="d">Remove:           kunai uninstall</span>                                                                  
+ <span class="m">$ </span><span class="inv"> </span>                                                                                                </pre>
+</figure>
+<figure class="shot s54 tty">
+<figcaption><b>54 cols</b> </figcaption>
+<pre class="term" style="width:54ch"> <span class="m">$ curl -fsSL https://kunai.sh/install.sh | bash</span>      
+ <span class="t b">Kunai installer</span>                                      
+ <span class="t">Installed kunai <i class="g">→</i> ~/.local/bin/kunai</span>                 
+ <span class="t">kunai is on PATH (~/.local/bin).</span>                     
+                                                      
+ <span class="w">No video player found <i class="g">—</i> Kunai needs mpv or VLC.</span>      
+ <span class="t">Run this to install one:</span>                             
+   <span class="r">sudo pacman -S mpv yt-dlp</span>                          
+                                                      
+ <span class="t b">Done.</span>                                                
+ <span class="t">Then watch something:</span>                                
+   <span class="r">kunai -q -S "Dune"</span>                                 
+ <span class="d">  search and play in one step</span>                        
+   <span class="r">kunai</span>                                              
+ <span class="d">  browse, with a two-question setup</span>                  
+                                                      
+ <span class="d">Update any time:  kunai upgrade</span>                      
+ <span class="d">Remove:           kunai uninstall</span>                    
+ <span class="m">$ </span><span class="inv"> </span>                                                  </pre>
+</figure>
+</div>
+</article>
+</section>
+
+<section id="setup">
+<h2>1 · First launch — setup, two screens</h2>
+<p class="h2sub">Six screens became two. Screen one asks the only question that changes where Kunai starts and answers “can this machine play?” in a single line. Screen two is the consent screen, untouched in meaning. Language, downloads, playback toggles and accounts keep their defaults and move behind <code>m</code> and <code>/setup</code>.</p>
+<article class="state" id="ready-mpv">
+<header><h3>1⁄2 · mpv found</h3><span class="tag new">new in v4</span></header>
+<p class="why">Dependency detection is automatic and collapses to one mint line when nothing needs attention. <code>d</code> opens the full table for anyone who wants it.</p>
+<div class="shots">
+<figure class="shot s100">
+<figcaption><b>100×30</b> </figcaption>
+<pre class="term" style="width:100ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Setup </span>  <span class="m">series <i class="g">·</i> vidlink</span>                                                     <span class="o"><i class="g">●</i></span><span class="m"> ready</span> 
+                                                                                                    
+                                                                                                    
+   <span class="t b">welcome</span>                                                                              <span class="m">setup </span><span class="r b">1</span><span class="m"><i class="g">⁄</i>2</span>   
+ <span class="d"><i class="rule" style="width:98ch"></i></span> 
+                                                                                                    
+          <i class="w2">🦊</i>                                                                                        
+                                                                                                    
+          <span class="o"><i class="g">❀</i></span>  <span class="t b">What do you watch most?</span>                                                                
+             <span class="m">Sets where Kunai starts. Tab switches lanes any time.</span>                                  
+                                                                                                    
+          <span class="sel"><span class="r"><i class="g">▌</i></span> <span class="t b">Shows &amp; movies</span>                                                                </span>          
+          <span class="sel">    <span class="m">TMDB catalog, series and films</span>                                              </span>          
+            <span class="t">Anime</span>                                                                                   
+              <span class="d">AniList catalog, sub and dub</span>                                                          
+            <span class="t">YouTube</span>                                                                                 
+              <span class="d">Search and play from YouTube</span>                                                          
+                                                                                                    
+          <span class="o b"><i class="g">✓</i></span> <span class="t">Ready to play in mpv</span>                                                                    
+                                                                                                    
+          <span class="d">Language, downloads and accounts start on their defaults.</span>                                 
+          <span class="d">m sets them now <i class="g">·</i> /setup changes them any time</span>                                            
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+ <span class="d"><i class="rule" style="width:98ch"></i></span> 
+   <span class="r">[enter]</span> <span class="t">continue</span>  <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">choose</span>  <span class="r">[d]</span> <span class="t">this machine</span>  <span class="r">[m]</span> <span class="t">more setup</span>  <span class="r">[esc]</span> <span class="t">quit</span>              <span class="d">Setup</span>   </pre>
+</figure>
+<figure class="shot s54">
+<figcaption><b>54×25</b> </figcaption>
+<pre class="term" style="width:54ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Setup </span>  <span class="m">series <i class="g">·</i> vid<i class="g">…</i></span>  <span class="o"><i class="g">●</i></span><span class="m"> ready <i class="g">·</i> 54<i class="g">×</i>25</span> 
+                                                      
+                                                      
+   <span class="t b">welcome</span>                                <span class="m">setup </span><span class="r b">1</span><span class="m"><i class="g">⁄</i>2</span>   
+ <span class="d"><i class="rule" style="width:52ch"></i></span> 
+                                                      
+   <span class="o"><i class="g">❀</i></span>  <span class="t b">What do you watch most?</span>                         
+      <span class="m">Sets where Kunai starts. Tab switches later.</span>    
+                                                      
+   <span class="sel"><span class="r"><i class="g">▌</i></span> <span class="t b">Shows &amp; movies</span>                                </span>   
+   <span class="sel">    <span class="m">TMDB catalog, series and films</span>              </span>   
+     <span class="t">Anime</span>                                            
+       <span class="d">AniList catalog, sub and dub</span>                   
+     <span class="t">YouTube</span>                                          
+       <span class="d">Search and play from YouTube</span>                   
+                                                      
+   <span class="o b"><i class="g">✓</i></span> <span class="t">Ready to play in mpv</span>                             
+                                                      
+   <span class="d">Language, downloads and accounts keep their</span>        
+   <span class="d">defaults <i class="g">·</i> m sets them now <i class="g">·</i> /setup later</span>          
+                                                      
+                                                      
+ <span class="d"><i class="rule" style="width:52ch"></i></span> 
+   <span class="r">[enter]</span> <span class="t">continue</span>  <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">choose</span>              <span class="d">Setup</span>   
+   <span class="r">[d]</span> <span class="t">this machine</span>  <span class="r">[m]</span> <span class="t">more setup</span>  <span class="r">[esc]</span> <span class="t">quit</span>       </pre>
+</figure>
+</div>
+</article>
+<article class="state" id="ready-vlc">
+<header><h3>1⁄2 · VLC only</h3><span class="tag pretag">built on the pretag PR</span></header>
+<p class="why">A VLC-only machine is ready, and says so. The player-requirement logic and its copy are owned by the pretag PR; this screen reads its result.</p>
+<div class="shots">
+<figure class="shot s100">
+<figcaption><b>100×30</b> </figcaption>
+<pre class="term" style="width:100ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Setup </span>  <span class="m">series <i class="g">·</i> vidlink</span>                                                     <span class="o"><i class="g">●</i></span><span class="m"> ready</span> 
+                                                                                                    
+                                                                                                    
+   <span class="t b">welcome</span>                                                                              <span class="m">setup </span><span class="r b">1</span><span class="m"><i class="g">⁄</i>2</span>   
+ <span class="d"><i class="rule" style="width:98ch"></i></span> 
+                                                                                                    
+          <i class="w2">🦊</i>                                                                                        
+                                                                                                    
+          <span class="o"><i class="g">❀</i></span>  <span class="t b">What do you watch most?</span>                                                                
+             <span class="m">Sets where Kunai starts. Tab switches lanes any time.</span>                                  
+                                                                                                    
+          <span class="sel"><span class="r"><i class="g">▌</i></span> <span class="t b">Shows &amp; movies</span>                                                                </span>          
+          <span class="sel">    <span class="m">TMDB catalog, series and films</span>                                              </span>          
+            <span class="t">Anime</span>                                                                                   
+              <span class="d">AniList catalog, sub and dub</span>                                                          
+            <span class="t">YouTube</span>                                                                                 
+              <span class="d">Search and play from YouTube</span>                                                          
+                                                                                                    
+          <span class="o b"><i class="g">✓</i></span> <span class="t">Ready to play in VLC</span>                                                                    
+                                                                                                    
+          <span class="d">Language, downloads and accounts start on their defaults.</span>                                 
+          <span class="d">m sets them now <i class="g">·</i> /setup changes them any time</span>                                            
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+ <span class="d"><i class="rule" style="width:98ch"></i></span> 
+   <span class="r">[enter]</span> <span class="t">continue</span>  <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">choose</span>  <span class="r">[d]</span> <span class="t">this machine</span>  <span class="r">[m]</span> <span class="t">more setup</span>  <span class="r">[esc]</span> <span class="t">quit</span>              <span class="d">Setup</span>   </pre>
+</figure>
+<figure class="shot s54">
+<figcaption><b>54×25</b> </figcaption>
+<pre class="term" style="width:54ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Setup </span>  <span class="m">series <i class="g">·</i> vid<i class="g">…</i></span>  <span class="o"><i class="g">●</i></span><span class="m"> ready <i class="g">·</i> 54<i class="g">×</i>25</span> 
+                                                      
+                                                      
+   <span class="t b">welcome</span>                                <span class="m">setup </span><span class="r b">1</span><span class="m"><i class="g">⁄</i>2</span>   
+ <span class="d"><i class="rule" style="width:52ch"></i></span> 
+                                                      
+   <span class="o"><i class="g">❀</i></span>  <span class="t b">What do you watch most?</span>                         
+      <span class="m">Sets where Kunai starts. Tab switches later.</span>    
+                                                      
+   <span class="sel"><span class="r"><i class="g">▌</i></span> <span class="t b">Shows &amp; movies</span>                                </span>   
+   <span class="sel">    <span class="m">TMDB catalog, series and films</span>              </span>   
+     <span class="t">Anime</span>                                            
+       <span class="d">AniList catalog, sub and dub</span>                   
+     <span class="t">YouTube</span>                                          
+       <span class="d">Search and play from YouTube</span>                   
+                                                      
+   <span class="o b"><i class="g">✓</i></span> <span class="t">Ready to play in VLC</span>                             
+                                                      
+   <span class="d">Language, downloads and accounts keep their</span>        
+   <span class="d">defaults <i class="g">·</i> m sets them now <i class="g">·</i> /setup later</span>          
+                                                      
+                                                      
+ <span class="d"><i class="rule" style="width:52ch"></i></span> 
+   <span class="r">[enter]</span> <span class="t">continue</span>  <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">choose</span>              <span class="d">Setup</span>   
+   <span class="r">[d]</span> <span class="t">this machine</span>  <span class="r">[m]</span> <span class="t">more setup</span>  <span class="r">[esc]</span> <span class="t">quit</span>       </pre>
+</figure>
+</div>
+</article>
+<article class="state" id="ready-none">
+<header><h3>1⁄2 · no player at all</h3><span class="tag new">new in v4</span></header>
+<p class="why">What is missing, the one command for this OS, and the key that re-checks. <code>r</code> moves to the front of the footer. Enter still continues: browsing works without a player.</p>
+<div class="shots">
+<figure class="shot s100">
+<figcaption><b>100×30</b> </figcaption>
+<pre class="term" style="width:100ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Setup </span>  <span class="m">series <i class="g">·</i> vidlink</span>                                                     <span class="o"><i class="g">●</i></span><span class="m"> ready</span> 
+                                                                                                    
+                                                                                                    
+   <span class="t b">welcome</span>                                                                              <span class="m">setup </span><span class="r b">1</span><span class="m"><i class="g">⁄</i>2</span>   
+ <span class="d"><i class="rule" style="width:98ch"></i></span> 
+                                                                                                    
+          <i class="w2">🦊</i>                                                                                        
+                                                                                                    
+          <span class="o"><i class="g">❀</i></span>  <span class="t b">What do you watch most?</span>                                                                
+             <span class="m">Sets where Kunai starts. Tab switches lanes any time.</span>                                  
+                                                                                                    
+          <span class="sel"><span class="r"><i class="g">▌</i></span> <span class="t b">Shows &amp; movies</span>                                                                </span>          
+          <span class="sel">    <span class="m">TMDB catalog, series and films</span>                                              </span>          
+            <span class="t">Anime</span>                                                                                   
+              <span class="d">AniList catalog, sub and dub</span>                                                          
+            <span class="t">YouTube</span>                                                                                 
+              <span class="d">Search and play from YouTube</span>                                                          
+                                                                                                    
+          <span class="e b"><i class="g">✗</i></span> <span class="t">No video player found</span><span class="m"> <i class="g">—</i> nothing can play yet</span>                                            
+            <span class="r">sudo pacman -S mpv</span>                                                                      
+            <span class="m">Run it in another terminal, then press r. VLC works too.</span>                                
+                                                                                                    
+          <span class="d">Language, downloads and accounts start on their defaults.</span>                                 
+          <span class="d">m sets them now <i class="g">·</i> /setup changes them any time</span>                                            
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+ <span class="d"><i class="rule" style="width:98ch"></i></span> 
+   <span class="r">[r]</span> <span class="t">recheck</span>  <span class="r">[enter]</span> <span class="t">continue</span>  <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">choose</span>  <span class="r">[d]</span> <span class="t">this machine</span>  <span class="r">[esc]</span> <span class="t">quit</span>                 <span class="d">Setup</span>   </pre>
+</figure>
+<figure class="shot s54">
+<figcaption><b>54×25</b> </figcaption>
+<pre class="term" style="width:54ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Setup </span>  <span class="m">series <i class="g">·</i> vid<i class="g">…</i></span>  <span class="o"><i class="g">●</i></span><span class="m"> ready <i class="g">·</i> 54<i class="g">×</i>25</span> 
+                                                      
+                                                      
+   <span class="t b">welcome</span>                                <span class="m">setup </span><span class="r b">1</span><span class="m"><i class="g">⁄</i>2</span>   
+ <span class="d"><i class="rule" style="width:52ch"></i></span> 
+                                                      
+   <span class="o"><i class="g">❀</i></span>  <span class="t b">What do you watch most?</span>                         
+      <span class="m">Sets where Kunai starts. Tab switches later.</span>    
+                                                      
+   <span class="sel"><span class="r"><i class="g">▌</i></span> <span class="t b">Shows &amp; movies</span>                                </span>   
+   <span class="sel">    <span class="m">TMDB catalog, series and films</span>              </span>   
+     <span class="t">Anime</span>                                            
+       <span class="d">AniList catalog, sub and dub</span>                   
+     <span class="t">YouTube</span>                                          
+       <span class="d">Search and play from YouTube</span>                   
+                                                      
+   <span class="e b"><i class="g">✗</i></span> <span class="t">No video player found</span>                            
+     <span class="r">sudo pacman -S mpv</span>                               
+     <span class="m">Install it, then press r. VLC works too.</span>         
+                                                      
+                                                      
+                                                      
+ <span class="d"><i class="rule" style="width:52ch"></i></span> 
+   <span class="r">[r]</span> <span class="t">recheck</span>  <span class="r">[enter]</span> <span class="t">continue</span>              <span class="d">Setup</span>   
+   <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">choose</span>  <span class="r">[d]</span> <span class="t">this machine</span>  <span class="r">[esc]</span> <span class="t">quit</span>          </pre>
+</figure>
+</div>
+</article>
+<article class="state" id="ready-anime">
+<header><h3>1⁄2 · Anime highlighted, curl-impersonate missing</h3><span class="tag new">new in v4</span></header>
+<p class="why">The machine line follows the highlighted lane. curl-impersonate is only mentioned to someone about to pick anime; yt-dlp only to someone about to pick YouTube.</p>
+<div class="shots">
+<figure class="shot s100">
+<figcaption><b>100×30</b> </figcaption>
+<pre class="term" style="width:100ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Setup </span>  <span class="m">series <i class="g">·</i> vidlink</span>                                                     <span class="o"><i class="g">●</i></span><span class="m"> ready</span> 
+                                                                                                    
+                                                                                                    
+   <span class="t b">welcome</span>                                                                              <span class="m">setup </span><span class="r b">1</span><span class="m"><i class="g">⁄</i>2</span>   
+ <span class="d"><i class="rule" style="width:98ch"></i></span> 
+                                                                                                    
+          <i class="w2">🦊</i>                                                                                        
+                                                                                                    
+          <span class="o"><i class="g">❀</i></span>  <span class="t b">What do you watch most?</span>                                                                
+             <span class="m">Sets where Kunai starts. Tab switches lanes any time.</span>                                  
+                                                                                                    
+            <span class="t">Shows &amp; movies</span>                                                                          
+              <span class="d">TMDB catalog, series and films</span>                                                        
+          <span class="sel"><span class="r"><i class="g">▌</i></span> <span class="t b">Anime</span>                                                                         </span>          
+          <span class="sel">    <span class="m">AniList catalog, sub and dub</span>                                                </span>          
+            <span class="t">YouTube</span>                                                                                 
+              <span class="d">Search and play from YouTube</span>                                                          
+                                                                                                    
+          <span class="o b"><i class="g">✓</i></span> <span class="t">Ready to play in mpv</span>                                                                    
+          <span class="w b"><i class="g">△</i></span> <span class="t">Anime search can come back empty here</span>                                                   
+            <span class="r">sudo pacman -S curl-impersonate</span>                                                         
+            <span class="m">Cloudflare turns away plain requests. Shows &amp; movies are not affected.</span>                  
+                                                                                                    
+          <span class="d">Language, downloads and accounts start on their defaults.</span>                                 
+          <span class="d">m sets them now <i class="g">·</i> /setup changes them any time</span>                                            
+                                                                                                    
+                                                                                                    
+                                                                                                    
+ <span class="d"><i class="rule" style="width:98ch"></i></span> 
+   <span class="r">[r]</span> <span class="t">recheck</span>  <span class="r">[enter]</span> <span class="t">continue</span>  <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">choose</span>  <span class="r">[d]</span> <span class="t">this machine</span>  <span class="r">[esc]</span> <span class="t">quit</span>                 <span class="d">Setup</span>   </pre>
+</figure>
+<figure class="shot s54">
+<figcaption><b>54×25</b> </figcaption>
+<pre class="term" style="width:54ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Setup </span>  <span class="m">series <i class="g">·</i> vid<i class="g">…</i></span>  <span class="o"><i class="g">●</i></span><span class="m"> ready <i class="g">·</i> 54<i class="g">×</i>25</span> 
+                                                      
+                                                      
+   <span class="t b">welcome</span>                                <span class="m">setup </span><span class="r b">1</span><span class="m"><i class="g">⁄</i>2</span>   
+ <span class="d"><i class="rule" style="width:52ch"></i></span> 
+                                                      
+   <span class="o"><i class="g">❀</i></span>  <span class="t b">What do you watch most?</span>                         
+      <span class="m">Sets where Kunai starts. Tab switches later.</span>    
+                                                      
+     <span class="t">Shows &amp; movies</span>                                   
+       <span class="d">TMDB catalog, series and films</span>                 
+   <span class="sel"><span class="r"><i class="g">▌</i></span> <span class="t b">Anime</span>                                         </span>   
+   <span class="sel">    <span class="m">AniList catalog, sub and dub</span>                </span>   
+     <span class="t">YouTube</span>                                          
+       <span class="d">Search and play from YouTube</span>                   
+                                                      
+   <span class="o b"><i class="g">✓</i></span> <span class="t">Ready to play in mpv</span>                             
+   <span class="w b"><i class="g">△</i></span> <span class="t">Anime search can come back empty here</span>            
+     <span class="r">sudo pacman -S curl-impersonate</span>                  
+                                                      
+                                                      
+                                                      
+ <span class="d"><i class="rule" style="width:52ch"></i></span> 
+   <span class="r">[r]</span> <span class="t">recheck</span>  <span class="r">[enter]</span> <span class="t">continue</span>              <span class="d">Setup</span>   
+   <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">choose</span>  <span class="r">[d]</span> <span class="t">this machine</span>  <span class="r">[esc]</span> <span class="t">quit</span>          </pre>
+</figure>
+</div>
+</article>
+<article class="state" id="ready-recheck">
+<header><h3>1⁄2 · re-checking after an install (`r`)</h3><span class="tag kept">unchanged</span></header>
+<p class="why">The petal blooms only while the probe runs. With reduced motion it is a still petal and the sentence carries the state.</p>
+<div class="shots">
+<figure class="shot s100">
+<figcaption><b>100×30</b> </figcaption>
+<pre class="term" style="width:100ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Setup </span>  <span class="m">series <i class="g">·</i> vidlink</span>                                                     <span class="o"><i class="g">●</i></span><span class="m"> ready</span> 
+                                                                                                    
+                                                                                                    
+   <span class="t b">welcome</span>                                                                              <span class="m">setup </span><span class="r b">1</span><span class="m"><i class="g">⁄</i>2</span>   
+ <span class="d"><i class="rule" style="width:98ch"></i></span> 
+                                                                                                    
+          <i class="w2">🦊</i>                                                                                        
+                                                                                                    
+          <span class="o"><i class="g">❀</i></span>  <span class="t b">What do you watch most?</span>                                                                
+             <span class="m">Sets where Kunai starts. Tab switches lanes any time.</span>                                  
+                                                                                                    
+          <span class="sel"><span class="r"><i class="g">▌</i></span> <span class="t b">Shows &amp; movies</span>                                                                </span>          
+          <span class="sel">    <span class="m">TMDB catalog, series and films</span>                                              </span>          
+            <span class="t">Anime</span>                                                                                   
+              <span class="d">AniList catalog, sub and dub</span>                                                          
+            <span class="t">YouTube</span>                                                                                 
+              <span class="d">Search and play from YouTube</span>                                                          
+                                                                                                    
+          <span class="r"><i class="g">❀</i></span> <span class="t">Checking this machine again<i class="g">…</i></span>                                                            
+                                                                                                    
+          <span class="d">Language, downloads and accounts start on their defaults.</span>                                 
+          <span class="d">m sets them now <i class="g">·</i> /setup changes them any time</span>                                            
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+ <span class="d"><i class="rule" style="width:98ch"></i></span> 
+   <span class="r">[r]</span> <span class="t">recheck</span>  <span class="r">[enter]</span> <span class="t">continue</span>  <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">choose</span>  <span class="r">[d]</span> <span class="t">this machine</span>  <span class="r">[esc]</span> <span class="t">quit</span>                 <span class="d">Setup</span>   </pre>
+</figure>
+<figure class="shot s54">
+<figcaption><b>54×25</b> </figcaption>
+<pre class="term" style="width:54ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Setup </span>  <span class="m">series <i class="g">·</i> vid<i class="g">…</i></span>  <span class="o"><i class="g">●</i></span><span class="m"> ready <i class="g">·</i> 54<i class="g">×</i>25</span> 
+                                                      
+                                                      
+   <span class="t b">welcome</span>                                <span class="m">setup </span><span class="r b">1</span><span class="m"><i class="g">⁄</i>2</span>   
+ <span class="d"><i class="rule" style="width:52ch"></i></span> 
+                                                      
+   <span class="o"><i class="g">❀</i></span>  <span class="t b">What do you watch most?</span>                         
+      <span class="m">Sets where Kunai starts. Tab switches later.</span>    
+                                                      
+   <span class="sel"><span class="r"><i class="g">▌</i></span> <span class="t b">Shows &amp; movies</span>                                </span>   
+   <span class="sel">    <span class="m">TMDB catalog, series and films</span>              </span>   
+     <span class="t">Anime</span>                                            
+       <span class="d">AniList catalog, sub and dub</span>                   
+     <span class="t">YouTube</span>                                          
+       <span class="d">Search and play from YouTube</span>                   
+                                                      
+   <span class="r"><i class="g">❀</i></span> <span class="t">Checking this machine again<i class="g">…</i></span>                     
+                                                      
+   <span class="d">Language, downloads and accounts keep their</span>        
+   <span class="d">defaults <i class="g">·</i> m sets them now <i class="g">·</i> /setup later</span>          
+                                                      
+                                                      
+ <span class="d"><i class="rule" style="width:52ch"></i></span> 
+   <span class="r">[r]</span> <span class="t">recheck</span>  <span class="r">[enter]</span> <span class="t">continue</span>              <span class="d">Setup</span>   
+   <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">choose</span>  <span class="r">[d]</span> <span class="t">this machine</span>  <span class="r">[esc]</span> <span class="t">quit</span>          </pre>
+</figure>
+</div>
+</article>
+<article class="state" id="machine">
+<header><h3>1⁄2 · `d` — this machine</h3><span class="tag changed">changed in v4</span></header>
+<p class="why">The old first screen, now one keystroke away instead of in the way. Selected row shows what breaks and the single command that fixes it.</p>
+<div class="shots">
+<figure class="shot s100">
+<figcaption><b>100×30</b> </figcaption>
+<pre class="term" style="width:100ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Setup </span>  <span class="m">series <i class="g">·</i> vidlink</span>                                                     <span class="o"><i class="g">●</i></span><span class="m"> ready</span> 
+                                                                                                    
+                                                                                                    
+   <span class="t b">this machine</span>                                                                         <span class="m">setup </span><span class="r b">1</span><span class="m"><i class="g">⁄</i>2</span>   
+ <span class="d"><i class="rule" style="width:98ch"></i></span> 
+                                                                                                    
+          <span class="o"><i class="g">❀</i></span>  <span class="t b">This machine</span>                                                                           
+             <span class="m">What Kunai found, and the one command for anything missing.</span>                            
+                                                                                                    
+            <span class="o b"><i class="g">✓</i></span> <span class="t">mpv               </span><span class="d">found on PATH                        </span> <span class="d">playback            </span>          
+            <span class="o b"><i class="g">✓</i></span> <span class="t">VLC               </span><span class="d">found on PATH                        </span> <span class="d">playback            </span>          
+            <span class="o b"><i class="g">✓</i></span> <span class="t">yt-dlp            </span><span class="d">found on PATH                        </span> <span class="d">youtube <i class="g">·</i> downloads </span>          
+            <span class="o b"><i class="g">✓</i></span> <span class="t">ffmpeg            </span><span class="d">found on PATH                        </span> <span class="d">quality <i class="g">·</i> downloads </span>          
+          <span class="sel"><span class="r"><i class="g">▌</i></span> <span class="w b"><i class="g">△</i></span> <span class="t">curl-impersonate  </span><span class="d">only plain curl                      </span> <span class="d">anime search        </span></span>          
+              <span class="m">Cloudflare fingerprints the handshake, so anime search can come back empty.</span>           
+              <span class="r">sudo pacman -S curl-impersonate</span>                                                       
+            <span class="w b"><i class="g">△</i></span> <span class="t">posters           </span><span class="d">this terminal has no image support   </span> <span class="d">artwork             </span>          
+            <span class="o b"><i class="g">✓</i></span> <span class="t">data &amp; cache      </span><span class="d">~/.local/share/kunai                 </span> <span class="d">history <i class="g">·</i> offline   </span>          
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+ <span class="d"><i class="rule" style="width:98ch"></i></span> 
+   <span class="r">[d]</span> <span class="t">back</span>  <span class="r">[r]</span> <span class="t">recheck</span>  <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">choose</span>  <span class="r">[esc]</span> <span class="t">quit</span>                                           <span class="d">Setup</span>   </pre>
+</figure>
+<figure class="shot s54">
+<figcaption><b>54×25</b> </figcaption>
+<pre class="term" style="width:54ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Setup </span>  <span class="m">series <i class="g">·</i> vid<i class="g">…</i></span>  <span class="o"><i class="g">●</i></span><span class="m"> ready <i class="g">·</i> 54<i class="g">×</i>25</span> 
+                                                      
+                                                      
+   <span class="t b">this machine</span>                           <span class="m">setup </span><span class="r b">1</span><span class="m"><i class="g">⁄</i>2</span>   
+ <span class="d"><i class="rule" style="width:52ch"></i></span> 
+                                                      
+   <span class="o"><i class="g">❀</i></span>  <span class="t b">This machine</span>                                    
+      <span class="m">What Kunai found, and the fix for the rest.</span>     
+                                                      
+     <span class="o b"><i class="g">✓</i></span> <span class="t">mpv               </span><span class="d">found on PATH             </span>   
+     <span class="o b"><i class="g">✓</i></span> <span class="t">VLC               </span><span class="d">found on PATH             </span>   
+     <span class="o b"><i class="g">✓</i></span> <span class="t">yt-dlp            </span><span class="d">found on PATH             </span>   
+     <span class="o b"><i class="g">✓</i></span> <span class="t">ffmpeg            </span><span class="d">found on PATH             </span>   
+   <span class="sel"><span class="r"><i class="g">▌</i></span> <span class="w b"><i class="g">△</i></span> <span class="t">curl-impersonate  </span><span class="d">only plain curl           </span></span>   
+       <span class="m">Anime search can come back empty.</span>              
+       <span class="r">sudo pacman -S curl-impersonate</span>                
+     <span class="w b"><i class="g">△</i></span> <span class="t">posters           </span><span class="d">no image support          </span>   
+     <span class="o b"><i class="g">✓</i></span> <span class="t">data &amp; cache      </span><span class="d">~/.local/share/kunai      </span>   
+                                                      
+                                                      
+                                                      
+                                                      
+ <span class="d"><i class="rule" style="width:52ch"></i></span> 
+   <span class="r">[d]</span> <span class="t">back</span>  <span class="r">[r]</span> <span class="t">recheck</span>  <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">choose</span>         <span class="d">Setup</span>   
+   <span class="r">[esc]</span> <span class="t">quit</span>                                         </pre>
+</figure>
+</div>
+</article>
+<article class="state" id="consent">
+<header><h3>2⁄2 · usage ping — neutral</h3><span class="tag changed">changed in v4</span></header>
+<p class="why">Contract unchanged: no row is pre-selected, Enter does nothing until an arrow picks one, <code>s</code> means don't share, a pointer cannot grant consent, and no skip path reaches <code>enabled</code>. Changed: it now fits. At 54×25 today the two option labels and the title are pushed out of the frame.</p>
+<div class="shots">
+<figure class="shot s100">
+<figcaption><b>100×30</b> </figcaption>
+<pre class="term" style="width:100ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Setup </span>  <span class="m">series <i class="g">·</i> vidlink</span>                                                     <span class="o"><i class="g">●</i></span><span class="m"> ready</span> 
+                                                                                                    
+                                                                                                    
+   <span class="t b">usage ping</span>                                                                           <span class="m">setup </span><span class="r b">2</span><span class="m"><i class="g">⁄</i>2</span>   
+ <span class="d"><i class="rule" style="width:98ch"></i></span> 
+                                                                                                    
+          <span class="t b">Share anonymous usage with Kunai?</span>                                                         
+          <span class="m">Pick one with <i class="g">↑</i><i class="g">↓</i> and Enter. Nothing is sent unless you choose to share.</span>                   
+                                                                                                    
+            <span class="t">Share anonymous usage</span>                                                                   
+              <span class="d">One ping a day. Counts installs, not people. The id changes every month.</span>              
+            <span class="t">Don't share</span>                                                                             
+              <span class="d">No network calls. No install id stored on disk.</span>                                       
+                                                                                                    
+          <span class="m">The whole ping, as it would be sent</span>                                                       
+            <span class="t">{ "id": "&lt;generated when you enable&gt;",</span>                                                  
+            <span class="t">  "cohort": "&lt;the month you enable&gt;", "day": "2026-11-27",</span>                              
+            <span class="t">  "version": "0.4.0", "os": "linux", "arch": "x64" }</span>                                    
+            <span class="d">Never: titles <i class="g">·</i> queries <i class="g">·</i> providers <i class="g">·</i> URLs <i class="g">·</i> paths <i class="g">·</i> your IP</span>                            
+            <span class="d">The raw id never leaves this machine. Off in /settings deletes it.</span>                      
+            <span class="d">See every ping that was sent: kunai analytics log</span>                                       
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+ <span class="d"><i class="rule" style="width:98ch"></i></span> 
+   <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">choose</span>  <span class="r">[enter]</span> <span class="t">confirm</span>  <span class="r">[s]</span> <span class="t">don't share</span>  <span class="r">[b]</span> <span class="t">back</span>                                  <span class="d">Setup</span>   </pre>
+</figure>
+<figure class="shot s54">
+<figcaption><b>54×25</b> </figcaption>
+<pre class="term" style="width:54ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Setup </span>  <span class="m">series <i class="g">·</i> vid<i class="g">…</i></span>  <span class="o"><i class="g">●</i></span><span class="m"> ready <i class="g">·</i> 54<i class="g">×</i>25</span> 
+                                                      
+                                                      
+   <span class="t b">usage ping</span>                             <span class="m">setup </span><span class="r b">2</span><span class="m"><i class="g">⁄</i>2</span>   
+ <span class="d"><i class="rule" style="width:52ch"></i></span> 
+                                                      
+   <span class="t b">Share anonymous usage with Kunai?</span>                  
+   <span class="m">Nothing is sent unless you choose to share.</span>        
+                                                      
+     <span class="t">Share anonymous usage</span>                            
+       <span class="d">One ping a day. Counts installs, not people.</span>   
+     <span class="t">Don't share</span>                                      
+       <span class="d">No network calls. No install id on disk.</span>       
+                                                      
+   <span class="m">The whole ping, as it would be sent</span>                
+     <span class="t">{ "id": "&lt;generated when you enable&gt;",</span>           
+     <span class="t">  "cohort": "&lt;the month you enable&gt;",</span>            
+     <span class="t">  "day": "2026-11-27", "version": "0.4.0",</span>       
+     <span class="t">  "os": "linux", "arch": "x64" }</span>                 
+     <span class="d">Never: titles <i class="g">·</i> queries <i class="g">·</i> providers <i class="g">·</i> URLs <i class="g">·</i></span>     
+     <span class="d">paths <i class="g">·</i> your IP. Off in /settings deletes it.</span>    
+     <span class="d">Sent pings: kunai analytics log</span>                  
+ <span class="d"><i class="rule" style="width:52ch"></i></span> 
+   <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">choose</span>  <span class="r">[enter]</span> <span class="t">confirm</span>               <span class="d">Setup</span>   
+   <span class="r">[s]</span> <span class="t">don't share</span>  <span class="r">[b]</span> <span class="t">back</span>                          </pre>
+</figure>
+</div>
+</article>
+<article class="state" id="consent-cursor">
+<header><h3>2⁄2 · after ↓ — a row is chosen, nothing is saved yet</h3><span class="tag kept">unchanged</span></header>
+<p class="why">The cursor is not an answer. Enter on this row is the one keystroke that can say <code>enabled</code>.</p>
+<div class="shots">
+<figure class="shot s100">
+<figcaption><b>100×30</b> </figcaption>
+<pre class="term" style="width:100ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Setup </span>  <span class="m">series <i class="g">·</i> vidlink</span>                                                     <span class="o"><i class="g">●</i></span><span class="m"> ready</span> 
+                                                                                                    
+                                                                                                    
+   <span class="t b">usage ping</span>                                                                           <span class="m">setup </span><span class="r b">2</span><span class="m"><i class="g">⁄</i>2</span>   
+ <span class="d"><i class="rule" style="width:98ch"></i></span> 
+                                                                                                    
+          <span class="t b">Share anonymous usage with Kunai?</span>                                                         
+          <span class="m">Pick one with <i class="g">↑</i><i class="g">↓</i> and Enter. Nothing is sent unless you choose to share.</span>                   
+                                                                                                    
+          <span class="sel"><span class="r"><i class="g">▌</i></span> <span class="t b">Share anonymous usage</span>                                                         </span>          
+          <span class="sel">    <span class="m">One ping a day. Counts installs, not people. The id changes every month.</span>    </span>          
+            <span class="t">Don't share</span>                                                                             
+              <span class="d">No network calls. No install id stored on disk.</span>                                       
+                                                                                                    
+          <span class="m">The whole ping, as it would be sent</span>                                                       
+            <span class="t">{ "id": "&lt;generated when you enable&gt;",</span>                                                  
+            <span class="t">  "cohort": "&lt;the month you enable&gt;", "day": "2026-11-27",</span>                              
+            <span class="t">  "version": "0.4.0", "os": "linux", "arch": "x64" }</span>                                    
+            <span class="d">Never: titles <i class="g">·</i> queries <i class="g">·</i> providers <i class="g">·</i> URLs <i class="g">·</i> paths <i class="g">·</i> your IP</span>                            
+            <span class="d">The raw id never leaves this machine. Off in /settings deletes it.</span>                      
+            <span class="d">See every ping that was sent: kunai analytics log</span>                                       
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+ <span class="d"><i class="rule" style="width:98ch"></i></span> 
+   <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">choose</span>  <span class="r">[enter]</span> <span class="t">confirm</span>  <span class="r">[s]</span> <span class="t">don't share</span>  <span class="r">[b]</span> <span class="t">back</span>                                  <span class="d">Setup</span>   </pre>
+</figure>
+<figure class="shot s54">
+<figcaption><b>54×25</b> </figcaption>
+<pre class="term" style="width:54ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Setup </span>  <span class="m">series <i class="g">·</i> vid<i class="g">…</i></span>  <span class="o"><i class="g">●</i></span><span class="m"> ready <i class="g">·</i> 54<i class="g">×</i>25</span> 
+                                                      
+                                                      
+   <span class="t b">usage ping</span>                             <span class="m">setup </span><span class="r b">2</span><span class="m"><i class="g">⁄</i>2</span>   
+ <span class="d"><i class="rule" style="width:52ch"></i></span> 
+                                                      
+   <span class="t b">Share anonymous usage with Kunai?</span>                  
+   <span class="m">Nothing is sent unless you choose to share.</span>        
+                                                      
+   <span class="sel"><span class="r"><i class="g">▌</i></span> <span class="t b">Share anonymous usage</span>                         </span>   
+   <span class="sel">    <span class="m">One ping a day. Counts installs, not people.</span></span>   
+     <span class="t">Don't share</span>                                      
+       <span class="d">No network calls. No install id on disk.</span>       
+                                                      
+   <span class="m">The whole ping, as it would be sent</span>                
+     <span class="t">{ "id": "&lt;generated when you enable&gt;",</span>           
+     <span class="t">  "cohort": "&lt;the month you enable&gt;",</span>            
+     <span class="t">  "day": "2026-11-27", "version": "0.4.0",</span>       
+     <span class="t">  "os": "linux", "arch": "x64" }</span>                 
+     <span class="d">Never: titles <i class="g">·</i> queries <i class="g">·</i> providers <i class="g">·</i> URLs <i class="g">·</i></span>     
+     <span class="d">paths <i class="g">·</i> your IP. Off in /settings deletes it.</span>    
+     <span class="d">Sent pings: kunai analytics log</span>                  
+ <span class="d"><i class="rule" style="width:52ch"></i></span> 
+   <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">choose</span>  <span class="r">[enter]</span> <span class="t">confirm</span>               <span class="d">Setup</span>   
+   <span class="r">[s]</span> <span class="t">don't share</span>  <span class="r">[b]</span> <span class="t">back</span>                          </pre>
+</figure>
+</div>
+</article>
+</section>
+
+<section id="browse">
+<h2>2 · First Browse — ready to type</h2>
+<p class="h2sub">Setup ends in Browse, not on a summary screen. The cursor is in the search field; picks sit underneath as something to choose, never as something that swallows the first keystrokes.</p>
+<article class="state" id="browse-warm">
+<header><h3>Warm cache · picks already on disk</h3><span class="tag pretag">built on the pretag PR</span></header>
+<p class="why">Focus is the search field (the pretag PR owns that fix). New here: the one-line hint under the field and the <code>Setup saved</code> line replacing the six-row summary screen.</p>
+<div class="shots">
+<figure class="shot s100">
+<figcaption><b>100×30</b> </figcaption>
+<pre class="term" style="width:100ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Browse </span>  <span class="m">series <i class="g">·</i> vidlink</span>                                                    <span class="o"><i class="g">●</i></span><span class="m"> ready</span> 
+                                                                                                    
+                                                                                                    
+ <span class="m">12 recommendation picks <i class="g">·</i> series and movies</span>                                                        
+                                                                                                    
+ <span class="m">Search title</span>                                                                                       
+                                                                                                    
+  <span class="r"><i class="g">⌕</i></span>  <span class="inv"> </span><span class="d">Breaking Bad</span>                                                                                  
+ <span class="d"><i class="rule" style="width:92ch"></i></span>       
+ <span class="m">Type a title, then enter <i class="g">·</i> <i class="g">↓</i> picks <i class="g">·</i> / commands</span>                                                    
+ <span class="d"><i class="rule" style="width:92ch"></i></span>       
+                                                                                                    
+   <span class="t">Avengers: Doomsday (2026)                         </span>  <span class="d">Movie</span>                                        
+   <span class="t">The Hunger Games: Sunrise on the Reaping (2026)   </span>  <span class="d">Movie</span>                                        
+   <span class="t">The Odyssey (2026)                                </span>  <span class="d">Movie</span>                                        
+   <span class="t">Stranger Things (2016)                            </span>  <span class="d">Series</span>                                       
+   <span class="t">Severance (2022)                                  </span>  <span class="d">Series</span>                                       
+   <span class="t">Dune: Part Three (2026)                           </span>  <span class="d">Movie</span>                                        
+ <span class="d"> <i class="g">▼</i> 6 more</span>                                                                                          
+                                                                                                    
+ <span class="o"><i class="g">✓</i></span> <span class="m">Setup saved <i class="g">·</i> /setup for language, downloads and accounts</span>                                        
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+ <span class="d">Browse</span>                                                                                             
+                                                                                                    
+ <span class="r">[enter]</span> <span class="t">search</span>  <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">navigate <i class="g">·</i> <i class="g">↓</i> picks</span>  <span class="r">[Tab / <i class="g">⇧</i>Tab]</span> <span class="t">anime mode</span>  <span class="r">[/]</span> <span class="t">commands</span>                     </pre>
+</figure>
+<figure class="shot s54">
+<figcaption><b>54×25</b> </figcaption>
+<pre class="term" style="width:54ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Browse </span>  <span class="m">series <i class="g">·</i> vi<i class="g">…</i></span>  <span class="o"><i class="g">●</i></span><span class="m"> ready <i class="g">·</i> 54<i class="g">×</i>25</span> 
+                                                      
+                                                      
+ <span class="m">12 recommendation picks</span>                              
+                                                      
+ <span class="m">Search title</span>                                         
+                                                      
+  <span class="r"><i class="g">⌕</i></span>  <span class="inv"> </span><span class="d">Breaking Bad</span>                                    
+ <span class="d"><i class="rule" style="width:46ch"></i></span>       
+ <span class="m">Type a title, then enter <i class="g">·</i> <i class="g">↓</i> picks</span>                   
+ <span class="d"><i class="rule" style="width:46ch"></i></span>       
+                                                      
+   <span class="t">Avengers: Doomsday (2026)           </span>  <span class="d">Movie</span>        
+   <span class="t">The Hunger Games: Sunrise on the Re<i class="g">…</i></span>  <span class="d">Movie</span>        
+   <span class="t">The Odyssey (2026)                  </span>  <span class="d">Movie</span>        
+   <span class="t">Stranger Things (2016)              </span>  <span class="d">Series</span>       
+   <span class="t">Severance (2022)                    </span>  <span class="d">Series</span>       
+ <span class="d"> <i class="g">▼</i> 6 more</span>                                            
+                                                      
+ <span class="o"><i class="g">✓</i></span> <span class="m">Setup saved <i class="g">·</i> /setup changes it</span>                    
+                                                      
+ <span class="d">Browse</span>                                               
+                                                      
+ <span class="r">[enter]</span> <span class="t">search</span>  <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">navigate <i class="g">·</i> <i class="g">↓</i> picks</span>              
+ <span class="r">[Tab / <i class="g">⇧</i>Tab]</span> <span class="t">anime mode</span>  <span class="r">[/]</span> <span class="t">commands</span>                </pre>
+</figure>
+</div>
+</article>
+<article class="state" id="browse-cold">
+<header><h3>Cold cache · picks still loading</h3><span class="tag new">new in v4</span></header>
+<p class="why">Was: a static “welcome to kunai” screen that accepts no typing until the network answers. Now Browse mounts at once, the field is live, and three commands are offered while the picks load. When they land they replace this block without moving the field.</p>
+<div class="shots">
+<figure class="shot s100">
+<figcaption><b>100×30</b> </figcaption>
+<pre class="term" style="width:100ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Browse </span>  <span class="m">series <i class="g">·</i> vidlink</span>                                                    <span class="o"><i class="g">●</i></span><span class="m"> ready</span> 
+                                                                                                    
+                                                                                                    
+ <span class="m">Finding something to watch<i class="g">…</i></span>                                                                        
+                                                                                                    
+ <span class="m">Search title</span>                                                                                       
+                                                                                                    
+  <span class="r"><i class="g">⌕</i></span>  <span class="inv"> </span><span class="d">Breaking Bad</span>                                                                                  
+ <span class="d"><i class="rule" style="width:92ch"></i></span>       
+ <span class="m">Type a title, then enter <i class="g">—</i> search does not wait for the picks</span>                                      
+ <span class="d"><i class="rule" style="width:92ch"></i></span>       
+                                                                                                    
+ <span class="r"><i class="g">❀</i></span>  <span class="t">Finding something to watch<i class="g">…</i></span>                                                                     
+                                                                                                    
+ <span class="m">Or start here</span>                                                                                      
+   <span class="r">/trending</span>  <span class="m">what is popular this week</span>                                                             
+   <span class="r">/calendar</span>  <span class="m">what airs today</span>                                                                       
+   <span class="r">/random</span>    <span class="m">pick something for me</span>                                                                 
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+ <span class="d">Browse</span>                                                                                             
+                                                                                                    
+ <span class="r">[enter]</span> <span class="t">search</span>  <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">navigate <i class="g">·</i> <i class="g">↓</i> picks</span>  <span class="r">[Tab / <i class="g">⇧</i>Tab]</span> <span class="t">anime mode</span>  <span class="r">[/]</span> <span class="t">commands</span>                     </pre>
+</figure>
+<figure class="shot s54">
+<figcaption><b>54×25</b> </figcaption>
+<pre class="term" style="width:54ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Browse </span>  <span class="m">series <i class="g">·</i> vi<i class="g">…</i></span>  <span class="o"><i class="g">●</i></span><span class="m"> ready <i class="g">·</i> 54<i class="g">×</i>25</span> 
+                                                      
+                                                      
+ <span class="m">Finding something to watch<i class="g">…</i></span>                          
+                                                      
+ <span class="m">Search title</span>                                         
+                                                      
+  <span class="r"><i class="g">⌕</i></span>  <span class="inv"> </span><span class="d">Breaking Bad</span>                                    
+ <span class="d"><i class="rule" style="width:46ch"></i></span>       
+ <span class="m">Type a title, then enter <i class="g">·</i> / commands</span>                
+ <span class="d"><i class="rule" style="width:46ch"></i></span>       
+                                                      
+ <span class="r"><i class="g">❀</i></span>  <span class="t">Finding something to watch<i class="g">…</i></span>                       
+                                                      
+ <span class="m">Or start here</span>                                        
+   <span class="r">/trending</span>  <span class="m">popular this week</span>                       
+   <span class="r">/calendar</span>  <span class="m">airing today</span>                            
+   <span class="r">/random</span>    <span class="m">surprise me</span>                             
+                                                      
+                                                      
+                                                      
+ <span class="d">Browse</span>                                               
+                                                      
+ <span class="r">[enter]</span> <span class="t">search</span>  <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">navigate <i class="g">·</i> <i class="g">↓</i> picks</span>              
+ <span class="r">[Tab / <i class="g">⇧</i>Tab]</span> <span class="t">anime mode</span>  <span class="r">[/]</span> <span class="t">commands</span>                </pre>
+</figure>
+</div>
+</article>
+<article class="state" id="browse-offline">
+<header><h3>Offline or the catalog failed</h3><span class="tag new">new in v4</span></header>
+<p class="why">Says what is wrong and what to do. A fresh install has no downloads, so it does not point at /library.</p>
+<div class="shots">
+<figure class="shot s100">
+<figcaption><b>100×30</b> </figcaption>
+<pre class="term" style="width:100ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Browse </span>  <span class="m">series <i class="g">·</i> vidlink</span>                                                    <span class="o"><i class="g">●</i></span><span class="m"> ready</span> 
+                                                                                                    
+                                                                                                    
+ <span class="m">Picks unavailable</span>                                                                                  
+                                                                                                    
+ <span class="m">Search title</span>                                                                                       
+                                                                                                    
+  <span class="r"><i class="g">⌕</i></span>  <span class="inv"> </span><span class="d">Breaking Bad</span>                                                                                  
+ <span class="d"><i class="rule" style="width:92ch"></i></span>       
+ <span class="m">Type a title, then enter <i class="g">·</i> / commands</span>                                                              
+ <span class="d"><i class="rule" style="width:92ch"></i></span>       
+                                                                                                    
+ <span class="d"><i class="g">○</i></span>  <span class="t">Can't reach the internet</span>                                                                        
+    <span class="m">Kunai needs a connection to search and stream. Check it, then run /discover.</span>                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+ <span class="d">Browse</span>                                                                                             
+                                                                                                    
+ <span class="r">[enter]</span> <span class="t">search</span>  <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">navigate <i class="g">·</i> <i class="g">↓</i> picks</span>  <span class="r">[Tab / <i class="g">⇧</i>Tab]</span> <span class="t">anime mode</span>  <span class="r">[/]</span> <span class="t">commands</span>                     </pre>
+</figure>
+<figure class="shot s54">
+<figcaption><b>54×25</b> </figcaption>
+<pre class="term" style="width:54ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Browse </span>  <span class="m">series <i class="g">·</i> vi<i class="g">…</i></span>  <span class="o"><i class="g">●</i></span><span class="m"> ready <i class="g">·</i> 54<i class="g">×</i>25</span> 
+                                                      
+                                                      
+ <span class="m">Picks unavailable</span>                                    
+                                                      
+ <span class="m">Search title</span>                                         
+                                                      
+  <span class="r"><i class="g">⌕</i></span>  <span class="inv"> </span><span class="d">Breaking Bad</span>                                    
+ <span class="d"><i class="rule" style="width:46ch"></i></span>       
+ <span class="m">Type a title, then enter <i class="g">·</i> / commands</span>                
+ <span class="d"><i class="rule" style="width:46ch"></i></span>       
+                                                      
+ <span class="d"><i class="g">○</i></span>  <span class="t">Can't reach the internet</span>                          
+    <span class="m">Kunai needs a connection to search and</span>            
+    <span class="m">stream. Check it, then run /discover.</span>             
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+ <span class="d">Browse</span>                                               
+                                                      
+ <span class="r">[enter]</span> <span class="t">search</span>  <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">navigate <i class="g">·</i> <i class="g">↓</i> picks</span>              
+ <span class="r">[Tab / <i class="g">⇧</i>Tab]</span> <span class="t">anime mode</span>  <span class="r">[/]</span> <span class="t">commands</span>                </pre>
+</figure>
+</div>
+</article>
+<article class="state" id="browse-typed">
+<header><h3>Typing — the query owns the keyboard</h3><span class="tag pretag">built on the pretag PR</span></header>
+<p class="why">Letters go to the field and Enter searches, whatever is listed underneath.</p>
+<div class="shots">
+<figure class="shot s100">
+<figcaption><b>100×30</b> </figcaption>
+<pre class="term" style="width:100ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Browse </span>  <span class="m">series <i class="g">·</i> vidlink</span>                                                    <span class="o"><i class="g">●</i></span><span class="m"> ready</span> 
+                                                                                                    
+                                                                                                    
+ <span class="m">12 recommendation picks <i class="g">·</i> series and movies</span>                                                        
+                                                                                                    
+ <span class="m">Search title</span>                                                                                       
+                                                                                                    
+  <span class="r"><i class="g">›</i></span> <span class="t">dune</span><span class="inv"> </span>                                                                                           
+ <span class="d"><i class="rule" style="width:92ch"></i></span>       
+ <span class="m">enter searches for <i class="g">“</i>dune<i class="g">”</i> <i class="g">·</i> <i class="g">↓</i> picks <i class="g">·</i> / commands</span>                                                   
+ <span class="d"><i class="rule" style="width:92ch"></i></span>       
+                                                                                                    
+   <span class="t">Avengers: Doomsday (2026)                         </span>  <span class="d">Movie</span>                                        
+   <span class="t">The Hunger Games: Sunrise on the Reaping (2026)   </span>  <span class="d">Movie</span>                                        
+   <span class="t">The Odyssey (2026)                                </span>  <span class="d">Movie</span>                                        
+   <span class="t">Stranger Things (2016)                            </span>  <span class="d">Series</span>                                       
+   <span class="t">Severance (2022)                                  </span>  <span class="d">Series</span>                                       
+   <span class="t">Dune: Part Three (2026)                           </span>  <span class="d">Movie</span>                                        
+ <span class="d"> <i class="g">▼</i> 6 more</span>                                                                                          
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+ <span class="d">Browse</span>                                                                                             
+                                                                                                    
+ <span class="r">[enter]</span> <span class="t">search</span>  <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">navigate <i class="g">·</i> <i class="g">↓</i> picks</span>  <span class="r">[Tab / <i class="g">⇧</i>Tab]</span> <span class="t">anime mode</span>  <span class="r">[/]</span> <span class="t">commands</span>                     </pre>
+</figure>
+<figure class="shot s54">
+<figcaption><b>54×25</b> </figcaption>
+<pre class="term" style="width:54ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Browse </span>  <span class="m">series <i class="g">·</i> vi<i class="g">…</i></span>  <span class="o"><i class="g">●</i></span><span class="m"> ready <i class="g">·</i> 54<i class="g">×</i>25</span> 
+                                                      
+                                                      
+ <span class="m">12 recommendation picks</span>                              
+                                                      
+ <span class="m">Search title</span>                                         
+                                                      
+  <span class="r"><i class="g">›</i></span> <span class="t">dune</span><span class="inv"> </span>                                             
+ <span class="d"><i class="rule" style="width:46ch"></i></span>       
+ <span class="m">enter searches <i class="g">·</i> <i class="g">↓</i> picks</span>                             
+ <span class="d"><i class="rule" style="width:46ch"></i></span>       
+                                                      
+   <span class="t">Avengers: Doomsday (2026)           </span>  <span class="d">Movie</span>        
+   <span class="t">The Hunger Games: Sunrise on the Re<i class="g">…</i></span>  <span class="d">Movie</span>        
+   <span class="t">The Odyssey (2026)                  </span>  <span class="d">Movie</span>        
+   <span class="t">Stranger Things (2016)              </span>  <span class="d">Series</span>       
+   <span class="t">Severance (2022)                    </span>  <span class="d">Series</span>       
+ <span class="d"> <i class="g">▼</i> 6 more</span>                                            
+                                                      
+                                                      
+                                                      
+ <span class="d">Browse</span>                                               
+                                                      
+ <span class="r">[enter]</span> <span class="t">search</span>  <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">navigate <i class="g">·</i> <i class="g">↓</i> picks</span>              
+ <span class="r">[Tab / <i class="g">⇧</i>Tab]</span> <span class="t">anime mode</span>  <span class="r">[/]</span> <span class="t">commands</span>                </pre>
+</figure>
+</div>
+</article>
+</section>
+
+<section id="search">
+<h2>3 · First search</h2>
+
+<article class="state" id="results">
+<header><h3>Results</h3><span class="tag kept">unchanged</span></header>
+<p class="why">Unchanged. Enter on the highlighted row plays.</p>
+<div class="shots">
+<figure class="shot s100">
+<figcaption><b>100×30</b> </figcaption>
+<pre class="term" style="width:100ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Search </span>  <span class="m">series <i class="g">·</i> vidlink</span>                                                    <span class="o"><i class="g">●</i></span><span class="m"> ready</span> 
+                                                                                                    
+                                                                                                    
+ <span class="m">3 results <i class="g">·</i> TMDB</span>                                                                                   
+                                                                                                    
+ <span class="m">Search title</span>                                                                                       
+                                                                                                    
+  <span class="r"><i class="g">›</i></span> <span class="t">dune</span>                                                                                            
+ <span class="d"><i class="rule" style="width:92ch"></i></span>       
+ <span class="d"><i class="rule" style="width:92ch"></i></span>       
+ <span class="sel"><span class="r"><i class="g">▌</i></span> <span class="t b">Dune (2021)                                       </span>  <span class="m">Movie</span>                                 </span>       
+   <span class="t">Dune: Part Two (2024)                             </span>  <span class="d">Movie</span>                                        
+   <span class="t">Dune: Prophecy (2024)                             </span>  <span class="d">Series</span>                                       
+                                                                                                    
+ <span class="d">┌────────────────────────┐</span>                                                                         
+ <span class="d">│</span> <span class="t b">Dune                  </span> <span class="d">│</span>                                                                         
+ <span class="d">│</span> <span class="m">movie <i class="g">·</i> 2021          </span> <span class="d">│</span>                                                                         
+ <span class="d">│</span>                        <span class="d">│</span>                                                                         
+ <span class="d">│</span> <span class="t">Paul Atreides arrives </span> <span class="d">│</span>                                                                         
+ <span class="d">│</span> <span class="t">on Arrakis<i class="g">…</i>           </span> <span class="d">│</span>                                                                         
+ <span class="d">└────────────────────────┘</span>                                                                         
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+ <span class="d">Search</span>                                                                                             
+                                                                                                    
+ <span class="r">[enter]</span> <span class="t">play</span>  <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">navigate</span>  <span class="r">[i]</span> <span class="t">details</span>  <span class="r">[/]</span> <span class="t">commands</span>                                             </pre>
+</figure>
+<figure class="shot s54">
+<figcaption><b>54×25</b> </figcaption>
+<pre class="term" style="width:54ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Search </span>  <span class="m">series <i class="g">·</i> vi<i class="g">…</i></span>  <span class="o"><i class="g">●</i></span><span class="m"> ready <i class="g">·</i> 54<i class="g">×</i>25</span> 
+                                                      
+                                                      
+ <span class="m">3 results <i class="g">·</i> TMDB</span>                                     
+                                                      
+ <span class="m">Search title</span>                                         
+                                                      
+  <span class="r"><i class="g">›</i></span> <span class="t">dune</span>                                              
+ <span class="d"><i class="rule" style="width:46ch"></i></span>       
+ <span class="d"><i class="rule" style="width:46ch"></i></span>       
+ <span class="sel"><span class="r"><i class="g">▌</i></span> <span class="t b">Dune (2021)                         </span>  <span class="m">Movie</span> </span>       
+   <span class="t">Dune: Part Two (2024)               </span>  <span class="d">Movie</span>        
+   <span class="t">Dune: Prophecy (2024)               </span>  <span class="d">Series</span>       
+                                                      
+ <span class="d">┌────────────────────────┐</span>                           
+ <span class="d">│</span> <span class="t b">Dune                  </span> <span class="d">│</span>                           
+ <span class="d">│</span> <span class="m">movie <i class="g">·</i> 2021          </span> <span class="d">│</span>                           
+ <span class="d">│</span>                        <span class="d">│</span>                           
+ <span class="d">│</span> <span class="t">Paul Atreides arrives </span> <span class="d">│</span>                           
+ <span class="d">│</span> <span class="t">on Arrakis<i class="g">…</i>           </span> <span class="d">│</span>                           
+ <span class="d">└────────────────────────┘</span>                           
+ <span class="d">Search</span>                                               
+                                                      
+ <span class="r">[enter]</span> <span class="t">play</span>  <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">navigate</span>  <span class="r">[i]</span> <span class="t">details</span>             
+ <span class="r">[/]</span> <span class="t">commands</span>                                         </pre>
+</figure>
+</div>
+</article>
+<article class="state" id="no-results">
+<header><h3>No results</h3><span class="tag changed">changed in v4</span></header>
+<p class="why">Was: “No results found. Adjust the query and try again.” The commonest first-run miss is an anime title searched in shows & movies, so the empty state names the lane and the key that switches it.</p>
+<div class="shots">
+<figure class="shot s100">
+<figcaption><b>100×30</b> </figcaption>
+<pre class="term" style="width:100ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Search </span>  <span class="m">series <i class="g">·</i> vidlink</span>                                                    <span class="o"><i class="g">●</i></span><span class="m"> ready</span> 
+                                                                                                    
+                                                                                                    
+ <span class="m">Search title</span>                                                                                       
+                                                                                                    
+  <span class="r"><i class="g">⌕</i></span>  <span class="t">frieren</span><span class="inv"> </span>                                                                                       
+ <span class="d"><i class="rule" style="width:92ch"></i></span>       
+                                                                                                    
+ <span class="m">Type a title <i class="g">·</i> / commands <i class="g">·</i> /filters guided search</span>                                                 
+                                                                                                    
+ <span class="d"><i class="rule" style="width:92ch"></i></span>       
+                                                                                                    
+ <span class="d"><i class="g">·</i></span> <span class="t">No results for <i class="g">“</i>frieren<i class="g">”</i> in shows &amp; movies</span>                                                       
+ <span class="m">Press Tab to search anime instead, or try fewer words.</span>                                             
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+ <span class="d">Search</span>                                                                                             
+                                                                                                    
+ <span class="r">[enter]</span> <span class="t">search</span>  <span class="r">[Tab / <i class="g">⇧</i>Tab]</span> <span class="t">anime mode</span>  <span class="r">[/]</span> <span class="t">commands</span>                                              </pre>
+</figure>
+<figure class="shot s54">
+<figcaption><b>54×25</b> </figcaption>
+<pre class="term" style="width:54ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Search </span>  <span class="m">series <i class="g">·</i> vi<i class="g">…</i></span>  <span class="o"><i class="g">●</i></span><span class="m"> ready <i class="g">·</i> 54<i class="g">×</i>25</span> 
+                                                      
+                                                      
+ <span class="m">Search title</span>                                         
+                                                      
+  <span class="r"><i class="g">⌕</i></span>  <span class="t">frieren</span><span class="inv"> </span>                                         
+ <span class="d"><i class="rule" style="width:46ch"></i></span>       
+                                                      
+ <span class="m">Type a title <i class="g">·</i> / commands <i class="g">·</i> /filters guided search</span>   
+                                                      
+ <span class="d"><i class="rule" style="width:46ch"></i></span>       
+                                                      
+ <span class="d"><i class="g">·</i></span> <span class="t">No results for <i class="g">“</i>frieren<i class="g">”</i> in shows &amp; movies</span>         
+ <span class="m">Press Tab to search anime, or try fewer words.</span>       
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+ <span class="d">Search</span>                                               
+                                                      
+ <span class="r">[enter]</span> <span class="t">search</span>  <span class="r">[Tab / <i class="g">⇧</i>Tab]</span> <span class="t">anime mode</span>              
+ <span class="r">[/]</span> <span class="t">commands</span>                                         </pre>
+</figure>
+</div>
+</article>
+</section>
+
+<section id="play">
+<h2>4 · Resolving, playing, and the first failure</h2>
+<p class="h2sub">A failure panel now has three parts in a fixed order: what failed, the single next step, then the evidence. The keys are the ones the panel already had.</p>
+<article class="state" id="resolving">
+<header><h3>Resolving</h3><span class="tag kept">unchanged</span></header>
+<p class="why">Unchanged.</p>
+<div class="shots">
+<figure class="shot s100">
+<figcaption><b>100×30</b> </figcaption>
+<pre class="term" style="width:100ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Playback </span>  <span class="m">series <i class="g">·</i> vidlink</span>                                                  <span class="o"><i class="g">●</i></span><span class="m"> ready</span> 
+                                                                                                    
+                                                                                                    
+ <span class="t b">Dune</span>                                                                                               
+                                                                                                    
+                                                                                                    
+   <span class="r"><i class="g">❀</i></span>    <span class="t">Finding a stream</span> <span class="m"><i class="g">·</i> Vidlink</span>                                                                  
+                                                                                                    
+        <span class="o"><i class="g">✓</i></span> <span class="t">Resolving</span>                                                                                 
+        <span class="r"><i class="g">◓</i></span> <span class="t">Providers</span>                                                                                 
+        <span class="d"><i class="g">·</i> Player</span>                                                                                    
+        <span class="d"><i class="g">·</i> Buffering</span>                                                                                 
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+ <span class="d">Starting playback  <i class="g">·</i>  q / Esc cancel</span>                                                               
+                                                                                                    
+ <span class="r">[q]</span> <span class="t">cancel <i class="g">→</i> results</span>  <span class="r">[o]</span> <span class="t">tracks</span>  <span class="r">[/]</span> <span class="t">commands</span>                                                     </pre>
+</figure>
+<figure class="shot s54">
+<figcaption><b>54×25</b> </figcaption>
+<pre class="term" style="width:54ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Playback </span>  <span class="m">series <i class="g">·</i> <i class="g">…</i></span>  <span class="o"><i class="g">●</i></span><span class="m"> ready <i class="g">·</i> 54<i class="g">×</i>25</span> 
+                                                      
+                                                      
+ <span class="t b">Dune</span>                                                 
+                                                      
+                                                      
+   <span class="r"><i class="g">❀</i></span>    <span class="t">Finding a stream</span> <span class="m"><i class="g">·</i> Vidlink</span>                    
+                                                      
+        <span class="o"><i class="g">✓</i></span> <span class="t">Resolving</span>                                   
+        <span class="r"><i class="g">◓</i></span> <span class="t">Providers</span>                                   
+        <span class="d"><i class="g">·</i> Player</span>                                      
+        <span class="d"><i class="g">·</i> Buffering</span>                                   
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+ <span class="d">Starting playback  <i class="g">·</i>  q / Esc cancel</span>                 
+                                                      
+ <span class="r">[q]</span> <span class="t">cancel <i class="g">→</i> results</span>  <span class="r">[o]</span> <span class="t">tracks</span>  <span class="r">[/]</span> <span class="t">commands</span>       </pre>
+</figure>
+</div>
+</article>
+<article class="state" id="playing">
+<header><h3>First play</h3><span class="tag kept">unchanged</span></header>
+<p class="why">Unchanged.</p>
+<div class="shots">
+<figure class="shot s100">
+<figcaption><b>100×30</b> </figcaption>
+<pre class="term" style="width:100ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Now Playing </span>  <span class="m">series <i class="g">·</i> vidlink</span>                                               <span class="o"><i class="g">●</i></span><span class="m"> ready</span> 
+                                                                                                    
+                                                                                                    
+ <span class="t b">Dune</span>                                                                                      <span class="m"><i class="g">↗</i> Share</span>  
+                                                                                                    
+ <span class="d"><i class="rule" style="width:61ch"></i></span>                                      
+                                                                                                    
+ <span class="t">Playing in mpv</span>                                                                                     
+                                                                                                    
+ <span class="m">SRC</span>  <span class="t">Vidlink</span>                                                                                       
+                                                                                                    
+ <span class="m">NOW</span>  <span class="t">1080p</span>  <span class="m"><i class="g">·</i>  subs off <i class="g">·</i> autoskip <i class="g">·</i> autoplay</span>                                                      
+                                                                                                    
+ <span class="m">Tracks and subtitles can also be changed in mpv <i class="g">·</i> ? for all keys</span>                                   
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+ <span class="d">Playback</span>                                                                                           
+                                                                                                    
+ <span class="r">[o]</span> <span class="t">tracks</span>  <span class="r">[k]</span> <span class="t">quality</span>  <span class="r">[q]</span> <span class="t">stop</span>  <span class="r">[/]</span> <span class="t">commands</span>                                                    </pre>
+</figure>
+<figure class="shot s54">
+<figcaption><b>54×25</b> </figcaption>
+<pre class="term" style="width:54ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Now Playing </span>  <span class="m">series<i class="g">…</i></span>  <span class="o"><i class="g">●</i></span><span class="m"> ready <i class="g">·</i> 54<i class="g">×</i>25</span> 
+                                                      
+                                                      
+ <span class="t b">Dune</span>                                        <span class="m"><i class="g">↗</i> Share</span>  
+                                                      
+ <span class="d"><i class="rule" style="width:46ch"></i></span>       
+                                                      
+ <span class="t">Playing in mpv</span>                                       
+                                                      
+ <span class="m">SRC</span>  <span class="t">Vidlink</span>                                         
+                                                      
+ <span class="m">NOW</span>  <span class="t">1080p</span>  <span class="m"><i class="g">·</i> subs off <i class="g">·</i> autoskip</span>                    
+                                                      
+ <span class="m">Tracks and subtitles can also be changed in mpv</span>      
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+ <span class="d">Playback</span>                                             
+                                                      
+ <span class="r">[o]</span> <span class="t">tracks</span>  <span class="r">[k]</span> <span class="t">quality</span>  <span class="r">[q]</span> <span class="t">stop</span>  <span class="r">[/]</span> <span class="t">commands</span>      </pre>
+</figure>
+</div>
+</article>
+<article class="state" id="fail-source">
+<header><h3>Failure · the source is down or its stream expired</h3><span class="tag changed">changed in v4</span></header>
+<p class="why">Was: “Playback failed / An unknown error occurred”.</p>
+<div class="shots">
+<figure class="shot s100">
+<figcaption><b>100×30</b> </figcaption>
+<pre class="term" style="width:100ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Playback </span>  <span class="m">series <i class="g">·</i> vidlink</span>                                                  <span class="o"><i class="g">●</i></span><span class="m"> ready</span> 
+                                                                                                    
+                                                                                                    
+                                                                                                    
+ <span class="e">╭──────────────────────────────────────────────────────────────────────────╮</span>                       
+ <span class="e">│</span> <span class="e">│</span> <span class="e b">Playback failed</span>                                                        <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span> <span class="t">Vidlink found Dune, but the stream it returned would not start.</span>        <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span>                                                                        <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span> <span class="r b">Next</span>  <span class="t">press p and pick another source <i class="g">—</i> VidKing is ready</span>               <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span>                                                                        <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span> <span class="d">Provider attempts</span>                                                      <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span> <span class="e">x</span> <span class="t">Vidlink</span><span class="d">  <i class="g">·</i>  stream expired</span>                                           <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span>                                                                        <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span> <span class="d">r retry  <i class="g">·</i>  Enter / Esc back to results</span>                                <span class="e">│</span>                       
+ <span class="e">│</span> <span class="r b">[p] providers</span>                                                            <span class="e">│</span>                       
+ <span class="e">╰──────────────────────────────────────────────────────────────────────────╯</span>                       
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+ <span class="d">Playback</span>                                                                                           
+                                                                                                    
+ <span class="r">[r]</span> <span class="t">retry</span>  <span class="r">[p]</span> <span class="t">providers</span>  <span class="r">[esc]</span> <span class="t">back</span>                                                               </pre>
+</figure>
+<figure class="shot s54">
+<figcaption><b>54×25</b> </figcaption>
+<pre class="term" style="width:54ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Playback </span>  <span class="m">series <i class="g">·</i> <i class="g">…</i></span>  <span class="o"><i class="g">●</i></span><span class="m"> ready <i class="g">·</i> 54<i class="g">×</i>25</span> 
+                                                      
+                                                      
+                                                      
+ <span class="e">╭──────────────────────────────────────────────╮</span>     
+ <span class="e">│</span> <span class="e">│</span> <span class="e b">Playback failed</span>                            <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span> <span class="t">Vidlink found Dune, but its stream</span>         <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span> <span class="t">would not start.</span>                           <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span>                                            <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span> <span class="r b">Next</span>  <span class="t">press p <i class="g">—</i> pick another source</span>        <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span>                                            <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span> <span class="d">Provider attempts</span>                          <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span> <span class="e">x</span> <span class="t">Vidlink</span><span class="d">  <i class="g">·</i>  stream expired</span>               <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span>                                            <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span> <span class="d">r retry  <i class="g">·</i>  Enter / Esc back to results</span>    <span class="e">│</span>     
+ <span class="e">│</span> <span class="r b">[p] providers</span>                                <span class="e">│</span>     
+ <span class="e">╰──────────────────────────────────────────────╯</span>     
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+ <span class="d">Playback</span>                                             
+                                                      
+ <span class="r">[r]</span> <span class="t">retry</span>  <span class="r">[p]</span> <span class="t">providers</span>  <span class="r">[esc]</span> <span class="t">back</span>                 </pre>
+</figure>
+</div>
+</article>
+<article class="state" id="fail-offline">
+<header><h3>Failure · network blocked or offline</h3><span class="tag changed">changed in v4</span></header>
+<p class="why">No source picker is offered: another source cannot fix a missing connection.</p>
+<div class="shots">
+<figure class="shot s100">
+<figcaption><b>100×30</b> </figcaption>
+<pre class="term" style="width:100ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Playback </span>  <span class="m">series <i class="g">·</i> vidlink</span>                                                  <span class="o"><i class="g">●</i></span><span class="m"> ready</span> 
+                                                                                                    
+                                                                                                    
+                                                                                                    
+ <span class="e">╭──────────────────────────────────────────────────────────────────────────╮</span>                       
+ <span class="e">│</span> <span class="e">│</span> <span class="e b">Playback failed</span>                                                        <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span> <span class="t">Kunai could not reach the internet.</span>                                    <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span>                                                                        <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span> <span class="r b">Next</span>  <span class="t">check your connection, then press r to try again</span>                 <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span>                                                                        <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span> <span class="d">r retry  <i class="g">·</i>  Enter / Esc back to results</span>                                <span class="e">│</span>                       
+ <span class="e">╰──────────────────────────────────────────────────────────────────────────╯</span>                       
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+ <span class="d">Playback</span>                                                                                           
+                                                                                                    
+ <span class="r">[r]</span> <span class="t">retry</span>  <span class="r">[esc]</span> <span class="t">back</span>                                                                              </pre>
+</figure>
+<figure class="shot s54">
+<figcaption><b>54×25</b> </figcaption>
+<pre class="term" style="width:54ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Playback </span>  <span class="m">series <i class="g">·</i> <i class="g">…</i></span>  <span class="o"><i class="g">●</i></span><span class="m"> ready <i class="g">·</i> 54<i class="g">×</i>25</span> 
+                                                      
+                                                      
+                                                      
+ <span class="e">╭──────────────────────────────────────────────╮</span>     
+ <span class="e">│</span> <span class="e">│</span> <span class="e b">Playback failed</span>                            <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span> <span class="t">Kunai could not reach the internet.</span>        <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span>                                            <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span> <span class="r b">Next</span>  <span class="t">check your connection, then press r</span>  <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span>                                            <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span> <span class="d">r retry  <i class="g">·</i>  Enter / Esc back to results</span>    <span class="e">│</span>     
+ <span class="e">╰──────────────────────────────────────────────╯</span>     
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+ <span class="d">Playback</span>                                             
+                                                      
+ <span class="r">[r]</span> <span class="t">retry</span>  <span class="r">[esc]</span> <span class="t">back</span>                                </pre>
+</figure>
+</div>
+</article>
+<article class="state" id="fail-challenge">
+<header><h3>Failure · CAPTCHA or Cloudflare challenge</h3><span class="tag changed">changed in v4</span></header>
+<p class="why">The quick way out first, the permanent fix second, with the command for this OS.</p>
+<div class="shots">
+<figure class="shot s100">
+<figcaption><b>100×30</b> </figcaption>
+<pre class="term" style="width:100ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Playback </span>  <span class="m">series <i class="g">·</i> vidlink</span>                                                  <span class="o"><i class="g">●</i></span><span class="m"> ready</span> 
+                                                                                                    
+                                                                                                    
+                                                                                                    
+ <span class="e">╭──────────────────────────────────────────────────────────────────────────╮</span>                       
+ <span class="e">│</span> <span class="e">│</span> <span class="e b">Playback failed</span>                                                        <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span> <span class="t">HiAnime answered with a browser check that Kunai cannot pass here.</span>     <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span>                                                                        <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span> <span class="r b">Next</span>  <span class="t">press p and pick another source</span>                                  <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span> <span class="m">      To fix it for good, install curl-impersonate:</span>                    <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span>       <span class="r">sudo pacman -S curl-impersonate</span>                                  <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span>                                                                        <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span> <span class="d">Provider attempts</span>                                                      <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span> <span class="e">x</span> <span class="t">HiAnime</span><span class="d">  <i class="g">·</i>  blocked by Cloudflare</span>                                    <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span>                                                                        <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span> <span class="d">r retry  <i class="g">·</i>  Enter / Esc back to results</span>                                <span class="e">│</span>                       
+ <span class="e">│</span> <span class="r b">[p] providers</span>                                                            <span class="e">│</span>                       
+ <span class="e">╰──────────────────────────────────────────────────────────────────────────╯</span>                       
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+ <span class="d">Playback</span>                                                                                           
+                                                                                                    
+ <span class="r">[r]</span> <span class="t">retry</span>  <span class="r">[p]</span> <span class="t">providers</span>  <span class="r">[esc]</span> <span class="t">back</span>                                                               </pre>
+</figure>
+<figure class="shot s54">
+<figcaption><b>54×25</b> </figcaption>
+<pre class="term" style="width:54ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Playback </span>  <span class="m">series <i class="g">·</i> <i class="g">…</i></span>  <span class="o"><i class="g">●</i></span><span class="m"> ready <i class="g">·</i> 54<i class="g">×</i>25</span> 
+                                                      
+                                                      
+                                                      
+ <span class="e">╭──────────────────────────────────────────────╮</span>     
+ <span class="e">│</span> <span class="e">│</span> <span class="e b">Playback failed</span>                            <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span> <span class="t">HiAnime asked for a browser check Kunai</span>    <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span> <span class="t">cannot pass here.</span>                          <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span>                                            <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span> <span class="r b">Next</span>  <span class="t">press p <i class="g">—</i> pick another source</span>        <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span> <span class="m">      Or install curl-impersonate:</span>         <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span>       <span class="r">sudo pacman -S curl-impersonate</span>      <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span>                                            <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span> <span class="d">Provider attempts</span>                          <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span> <span class="e">x</span> <span class="t">HiAnime</span><span class="d">  <i class="g">·</i>  blocked by Cloudflare</span>        <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span>                                            <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span> <span class="d">r retry  <i class="g">·</i>  Enter / Esc back to results</span>    <span class="e">│</span>     
+ <span class="e">│</span> <span class="r b">[p] providers</span>                                <span class="e">│</span>     
+ <span class="e">╰──────────────────────────────────────────────╯</span>     
+                                                      
+                                                      
+                                                      
+ <span class="d">Playback</span>                                             
+                                                      
+ <span class="r">[r]</span> <span class="t">retry</span>  <span class="r">[p]</span> <span class="t">providers</span>  <span class="r">[esc]</span> <span class="t">back</span>                 </pre>
+</figure>
+</div>
+</article>
+<article class="state" id="fail-player">
+<header><h3>Failure · no player at play time</h3><span class="tag changed">changed in v4</span></header>
+<p class="why">Reached by someone who continued past the setup warning, or who launched with <code>-S</code> and skipped setup.</p>
+<div class="shots">
+<figure class="shot s100">
+<figcaption><b>100×30</b> </figcaption>
+<pre class="term" style="width:100ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Playback </span>  <span class="m">series <i class="g">·</i> vidlink</span>                                                  <span class="o"><i class="g">●</i></span><span class="m"> ready</span> 
+                                                                                                    
+                                                                                                    
+                                                                                                    
+ <span class="e">╭──────────────────────────────────────────────────────────────────────────╮</span>                       
+ <span class="e">│</span> <span class="e">│</span> <span class="e b">Playback failed</span>                                                        <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span> <span class="t">No video player found. Kunai plays in mpv or VLC.</span>                      <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span>                                                                        <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span> <span class="r b">Next</span>  <span class="t">install one, then press r</span>                                        <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span>       <span class="r">sudo pacman -S mpv</span>                                               <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span>                                                                        <span class="e">│</span>                       
+ <span class="e">│</span> <span class="e">│</span> <span class="d">r retry  <i class="g">·</i>  Enter / Esc back to results</span>                                <span class="e">│</span>                       
+ <span class="e">╰──────────────────────────────────────────────────────────────────────────╯</span>                       
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+ <span class="d">Playback</span>                                                                                           
+                                                                                                    
+ <span class="r">[r]</span> <span class="t">retry</span>  <span class="r">[esc]</span> <span class="t">back</span>                                                                              </pre>
+</figure>
+<figure class="shot s54">
+<figcaption><b>54×25</b> </figcaption>
+<pre class="term" style="width:54ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Playback </span>  <span class="m">series <i class="g">·</i> <i class="g">…</i></span>  <span class="o"><i class="g">●</i></span><span class="m"> ready <i class="g">·</i> 54<i class="g">×</i>25</span> 
+                                                      
+                                                      
+                                                      
+ <span class="e">╭──────────────────────────────────────────────╮</span>     
+ <span class="e">│</span> <span class="e">│</span> <span class="e b">Playback failed</span>                            <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span> <span class="t">No video player found.</span>                     <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span> <span class="t">Kunai plays in mpv or VLC.</span>                 <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span>                                            <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span> <span class="r b">Next</span>  <span class="t">install one, then press r</span>            <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span>       <span class="r">sudo pacman -S mpv</span>                   <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span>                                            <span class="e">│</span>     
+ <span class="e">│</span> <span class="e">│</span> <span class="d">r retry  <i class="g">·</i>  Enter / Esc back to results</span>    <span class="e">│</span>     
+ <span class="e">╰──────────────────────────────────────────────╯</span>     
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+ <span class="d">Playback</span>                                             
+                                                      
+ <span class="r">[r]</span> <span class="t">retry</span>  <span class="r">[esc]</span> <span class="t">back</span>                                </pre>
+</figure>
+</div>
+</article>
+</section>
+
+<section id="return">
+<h2>5 · First quit, first return</h2>
+
+<article class="state" id="quit">
+<header><h3>First quit — back in the terminal</h3><span class="tag later">proposed · not built</span></header>
+<p class="why">Today Kunai exits without a word. Proposed, not built in this pass: one line naming where it stopped and the command that resumes.</p>
+<div class="shots">
+<figure class="shot s100 tty">
+<figcaption><b>100 cols</b> </figcaption>
+<pre class="term" style="width:100ch"> <span class="m">$ kunai -q -S "Dune"</span>                                                                               
+ <span class="t">Kunai <i class="g">·</i> stopped at 42:10 of Dune</span>                                                                   
+ <span class="t">Pick it up again: <span class="r">kunai --continue</span></span>                                                                 
+ <span class="m">$ </span><span class="inv"> </span>                                                                                                </pre>
+</figure>
+<figure class="shot s54 tty">
+<figcaption><b>54 cols</b> </figcaption>
+<pre class="term" style="width:54ch"> <span class="m">$ kunai -q -S "Dune"</span>                                 
+ <span class="t">Kunai <i class="g">·</i> stopped at 42:10 of Dune</span>                     
+ <span class="t">Pick it up again: <span class="r">kunai --continue</span></span>                   
+ <span class="m">$ </span><span class="inv"> </span>                                                  </pre>
+</figure>
+</div>
+</article>
+<article class="state" id="return">
+<header><h3>First return</h3><span class="tag pr847">PR #847</span></header>
+<p class="why">The “Next up” row is PR #847. Nothing changes here; it is on the board because it is where the journey lands.</p>
+<div class="shots">
+<figure class="shot s100">
+<figcaption><b>100×30</b> </figcaption>
+<pre class="term" style="width:100ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Browse </span>  <span class="m">series <i class="g">·</i> vidlink</span>                                                    <span class="o"><i class="g">●</i></span><span class="m"> ready</span> 
+                                                                                                    
+                                                                                                    
+                                                                                                    
+ <span class="m">Search title</span>                                                                                       
+                                                                                                    
+  <span class="r"><i class="g">⌕</i></span>  <span class="inv"> </span><span class="d">Breaking Bad</span>                                                                                  
+ <span class="d"><i class="rule" style="width:92ch"></i></span>       
+                                                                                                    
+ <span class="m">Type a title <i class="g">·</i> <i class="g">↓</i> for you now <i class="g">·</i> / commands</span>                                                          
+                                                                                                    
+ <span class="d"><i class="rule" style="width:92ch"></i></span>       
+                                                                                                    
+ <span class="m">For you now</span>                                                                                        
+   <span class="r"><i class="g">▶</i></span> <span class="t">Next up</span>  <span class="t">Severance <i class="g">·</i> S01E02 <i class="g">·</i> Half Loop</span>                                                        
+   <span class="r"><i class="g">✧</i></span> <span class="t">Trending this week</span>  <span class="m">see what's popular</span>                                                         
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+ <span class="d">Browse</span>                                                                                             
+                                                                                                    
+ <span class="r">[enter]</span> <span class="t">search</span>  <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">navigate <i class="g">·</i> <i class="g">↓</i> for you now</span>  <span class="r">[Tab / <i class="g">⇧</i>Tab]</span> <span class="t">anime mode</span>  <span class="r">[/]</span> <span class="t">commands</span>               </pre>
+</figure>
+<figure class="shot s54">
+<figcaption><b>54×25</b> </figcaption>
+<pre class="term" style="width:54ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Browse </span>  <span class="m">series <i class="g">·</i> vi<i class="g">…</i></span>  <span class="o"><i class="g">●</i></span><span class="m"> ready <i class="g">·</i> 54<i class="g">×</i>25</span> 
+                                                      
+                                                      
+                                                      
+ <span class="m">Search title</span>                                         
+                                                      
+  <span class="r"><i class="g">⌕</i></span>  <span class="inv"> </span><span class="d">Breaking Bad</span>                                    
+ <span class="d"><i class="rule" style="width:46ch"></i></span>       
+                                                      
+ <span class="m">Type a title <i class="g">·</i> <i class="g">↓</i> for you now <i class="g">·</i> / commands</span>            
+                                                      
+ <span class="d"><i class="rule" style="width:46ch"></i></span>       
+                                                      
+ <span class="m">For you now</span>                                          
+   <span class="r"><i class="g">▶</i></span> <span class="t">Next up</span>  <span class="t">Severance S01E02</span>                        
+   <span class="r"><i class="g">✧</i></span> <span class="t">Trending this week</span>  <span class="m">see what's popular</span>           
+                                                      
+                                                      
+                                                      
+                                                      
+                                                      
+ <span class="d">Browse</span>                                               
+                                                      
+ <span class="r">[enter]</span> <span class="t">search</span>  <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">navigate <i class="g">·</i> <i class="g">↓</i> for you now</span>        
+ <span class="r">[Tab / <i class="g">⇧</i>Tab]</span> <span class="t">anime mode</span>  <span class="r">[/]</span> <span class="t">commands</span>                </pre>
+</figure>
+</div>
+</article>
+</section>
+
+<section id="variants">
+<h2>6 · Phone width, --plain, NO_COLOR, reduced motion</h2>
+<p class="h2sub">40×16 is the smallest terminal the shell accepts. Supporting text goes before the decision does: lane details, the companion and the defaults note drop first; the lanes, the verdict and both consent rows never do.</p>
+<article class="state" id="phone-ready">
+<header><h3>40×16 · 1⁄2</h3><span class="tag new">new in v4</span></header>
+
+<div class="shots">
+<figure class="shot s40">
+<figcaption><b>40×16</b> </figcaption>
+<pre class="term" style="width:40ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Setup </span>   <span class="o"><i class="g">●</i></span><span class="m"> ready <i class="g">·</i> 40<i class="g">×</i>16</span> 
+                                        
+   <span class="t b">welcome</span>                  <span class="m">setup </span><span class="r b">1</span><span class="m"><i class="g">⁄</i>2</span>   
+ <span class="d"><i class="rule" style="width:38ch"></i></span> 
+   <span class="t b">What do you watch most?</span>              
+   <span class="sel"><span class="r"><i class="g">▌</i></span> <span class="t b">Shows &amp; movies</span>                  </span>   
+     <span class="t">Anime</span>                              
+     <span class="t">YouTube</span>                            
+                                        
+   <span class="o b"><i class="g">✓</i></span> <span class="t">Ready to play in mpv</span>               
+                                        
+                                        
+ <span class="d"><i class="rule" style="width:38ch"></i></span> 
+   <span class="r">[enter]</span> <span class="t">continue</span>             <span class="d">Setup</span>   
+   <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">choose</span>  <span class="r">[d]</span> <span class="t">details</span>             
+   <span class="r">[esc]</span> <span class="t">quit</span>                           </pre>
+</figure>
+</div>
+</article>
+<article class="state" id="phone-none">
+<header><h3>40×16 · 1⁄2 · no player</h3><span class="tag new">new in v4</span></header>
+
+<div class="shots">
+<figure class="shot s40">
+<figcaption><b>40×16</b> </figcaption>
+<pre class="term" style="width:40ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Setup </span>   <span class="o"><i class="g">●</i></span><span class="m"> ready <i class="g">·</i> 40<i class="g">×</i>16</span> 
+                                        
+   <span class="t b">welcome</span>                  <span class="m">setup </span><span class="r b">1</span><span class="m"><i class="g">⁄</i>2</span>   
+ <span class="d"><i class="rule" style="width:38ch"></i></span> 
+   <span class="t b">What do you watch most?</span>              
+   <span class="sel"><span class="r"><i class="g">▌</i></span> <span class="t b">Shows &amp; movies</span>                  </span>   
+     <span class="t">Anime</span>                              
+     <span class="t">YouTube</span>                            
+                                        
+   <span class="e b"><i class="g">✗</i></span> <span class="t">No video player found</span>              
+     <span class="r">sudo pacman -S mpv</span>                 
+     <span class="m">then press r <i class="g">·</i> VLC works too</span>       
+                                        
+ <span class="d"><i class="rule" style="width:38ch"></i></span> 
+   <span class="r">[r]</span> <span class="t">recheck</span>                  <span class="d">Setup</span>   
+   <span class="r">[enter]</span> <span class="t">continue</span>  <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">choose</span>        </pre>
+</figure>
+</div>
+</article>
+<article class="state" id="phone-consent">
+<header><h3>40×16 · 2⁄2</h3><span class="tag changed">changed in v4</span></header>
+<p class="why">The payload collapses to its field names, read from the same <code>describePayload()</code> object, so it still cannot drift from the wire. <code>p</code> shows the values.</p>
+<div class="shots">
+<figure class="shot s40">
+<figcaption><b>40×16</b> </figcaption>
+<pre class="term" style="width:40ch"> <i class="w2">🦊</i> <span class="t b">Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="chip"> Setup </span>   <span class="o"><i class="g">●</i></span><span class="m"> ready <i class="g">·</i> 40<i class="g">×</i>16</span> 
+                                        
+   <span class="t b">usage ping</span>               <span class="m">setup </span><span class="r b">2</span><span class="m"><i class="g">⁄</i>2</span>   
+ <span class="d"><i class="rule" style="width:38ch"></i></span> 
+   <span class="t b">Share anonymous usage?</span>               
+   <span class="m">Nothing is sent unless you choose.</span>   
+     <span class="t">Share anonymous usage</span>              
+     <span class="t">Don't share</span>                        
+   <span class="m">The whole ping:</span>                      
+     <span class="t">id <i class="g">·</i> cohort <i class="g">·</i> day <i class="g">·</i> version <i class="g">·</i> os</span>   
+     <span class="t"><i class="g">·</i> arch</span>  <span class="d">p shows the values</span>         
+   <span class="d">Never: titles, queries, URLs, your IP</span>
+ <span class="d"><i class="rule" style="width:38ch"></i></span> 
+   <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">choose</span>                  <span class="d">Setup</span>   
+   <span class="r">[enter]</span> <span class="t">confirm</span>  <span class="r">[s]</span> <span class="t">don't share</span>     
+   <span class="r">[b]</span> <span class="t">back</span>                             </pre>
+</figure>
+</div>
+</article>
+<article class="state" id="plain-ready">
+<header><h3>--plain · 1⁄2</h3><span class="tag new">new in v4</span></header>
+<p class="why">No borders, no glyphs, no band: selection and state are words.</p>
+<div class="shots">
+<figure class="shot s100">
+<figcaption><b>100×30</b> </figcaption>
+<pre class="term" style="width:100ch"><span class="t b"> Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="t b">Setup</span>  <span class="m">series <i class="g">·</i> vidlink</span>                                                            <span class="m">ready</span> 
+                                                                                                    
+                                                                                                    
+   <span class="t b">welcome</span>                                                                              <span class="m">setup </span><span class="r b">1</span><span class="m"><i class="g">⁄</i>2</span>   
+                                                                                                    
+                                                                                                    
+          <span class="t b">What do you watch most?</span>                                                                   
+          <span class="m">Sets where Kunai starts. Tab switches lanes any time.</span>                                     
+                                                                                                    
+          <span class="t b">[selected] Shows &amp; movies</span>                                                                 
+              <span class="m">TMDB catalog, series and films</span>                                                        
+            <span class="t">Anime</span>                                                                                   
+              <span class="d">AniList catalog, sub and dub</span>                                                          
+            <span class="t">YouTube</span>                                                                                 
+              <span class="d">Search and play from YouTube</span>                                                          
+                                                                                                    
+          <span class="t">[ok] Ready to play in mpv</span>                                                                 
+                                                                                                    
+          <span class="d">Language, downloads and accounts start on their defaults.</span>                                 
+          <span class="d">m sets them now, /setup changes them any time.</span>                                            
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+                                                                                                    
+   <span class="r">[enter]</span> <span class="t">continue</span>  <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">choose</span>  <span class="r">[d]</span> <span class="t">this machine</span>  <span class="r">[m]</span> <span class="t">more setup</span>  <span class="r">[esc]</span> <span class="t">quit</span>              <span class="d">Setup</span>   </pre>
+</figure>
+<figure class="shot s54">
+<figcaption><b>54×25</b> </figcaption>
+<pre class="term" style="width:54ch"><span class="t b"> Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="t b">Setup</span>  <span class="m">series <i class="g">·</i> vidlink</span>      <span class="m">ready <i class="g">·</i> 54<i class="g">×</i>25</span> 
+                                                      
+                                                      
+   <span class="t b">welcome</span>                                <span class="m">setup </span><span class="r b">1</span><span class="m"><i class="g">⁄</i>2</span>   
+                                                      
+                                                      
+   <span class="t b">What do you watch most?</span>                            
+   <span class="m">Sets where Kunai starts. Tab switches later.</span>       
+                                                      
+   <span class="t b">[selected] Shows &amp; movies</span>                          
+       <span class="m">TMDB catalog, series and films</span>                 
+     <span class="t">Anime</span>                                            
+       <span class="d">AniList catalog, sub and dub</span>                   
+     <span class="t">YouTube</span>                                          
+       <span class="d">Search and play from YouTube</span>                   
+                                                      
+   <span class="t">[ok] Ready to play in mpv</span>                          
+                                                      
+   <span class="d">Language, downloads and accounts keep their</span>        
+   <span class="d">defaults. m sets them now, /setup later.</span>           
+                                                      
+                                                      
+                                                      
+   <span class="r">[enter]</span> <span class="t">continue</span>  <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">choose</span>              <span class="d">Setup</span>   
+   <span class="r">[d]</span> <span class="t">this machine</span>  <span class="r">[m]</span> <span class="t">more setup</span>  <span class="r">[esc]</span> <span class="t">quit</span>       </pre>
+</figure>
+</div>
+</article>
+<article class="state" id="plain-consent">
+<header><h3>--plain · 2⁄2</h3><span class="tag kept">unchanged</span></header>
+<p class="why">Neither row carries <code>[selected]</code> until an arrow is pressed.</p>
+<div class="shots">
+<figure class="shot s54">
+<figcaption><b>54×25</b> </figcaption>
+<pre class="term" style="width:54ch"><span class="t b"> Kunai</span><span class="d">  <i class="g">·</i>  </span><span class="t b">Setup</span>  <span class="m">series <i class="g">·</i> vidlink</span>      <span class="m">ready <i class="g">·</i> 54<i class="g">×</i>25</span> 
+                                                      
+                                                      
+   <span class="t b">usage ping</span>                             <span class="m">setup </span><span class="r b">2</span><span class="m"><i class="g">⁄</i>2</span>   
+                                                      
+                                                      
+   <span class="t b">Share anonymous usage with Kunai?</span>                  
+   <span class="m">Nothing is sent unless you choose to share.</span>        
+                                                      
+     <span class="t">Share anonymous usage</span>                            
+       <span class="d">One ping a day. Counts installs, not people.</span>   
+     <span class="t">Don't share</span>                                      
+       <span class="d">No network calls. No install id on disk.</span>       
+                                                      
+   <span class="m">The whole ping, as it would be sent</span>                
+     <span class="t">{ "id": "&lt;generated when you enable&gt;",</span>           
+     <span class="t">  "cohort": "&lt;the month you enable&gt;",</span>            
+     <span class="t">  "day": "2026-11-27", "version": "0.4.0",</span>       
+     <span class="t">  "os": "linux", "arch": "x64" }</span>                 
+     <span class="d">Never: titles, queries, providers, URLs,</span>         
+     <span class="d">paths, your IP. Off in /settings deletes it.</span>     
+                                                      
+                                                      
+   <span class="r">[<i class="g">↑</i><i class="g">↓</i>]</span> <span class="t">choose</span>  <span class="r">[enter]</span> <span class="t">confirm</span>               <span class="d">Setup</span>   
+   <span class="r">[s]</span> <span class="t">don't share</span>  <span class="r">[b]</span> <span class="t">back</span>                          </pre>
+</figure>
+</div>
+</article>
+</section>
+
+  <h2 id="rerun">Rerun · <code>/setup</code> and <code>kunai --setup</code></h2>
+  <p class="h2sub">Asking for setup means you want the whole thing. A rerun, or <code>m</code> on the first screen, walks five screens: the merged first screen above, then language, then playback / downloads / accounts, then usage ping, then the review. Those three middle screens are the shipped ones, unchanged, so they are not redrawn here. Every control still hydrates from the live config and a rerun still writes back exactly what the screens showed.</p>
+
+</main>
+<script>
+  const button = document.getElementById("toggle-color");
+  button.addEventListener("click", () => {
+    const on = document.body.classList.toggle("no-color");
+    button.setAttribute("aria-pressed", String(on));
+  });
+</script>
+</body>
+</html>
