@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 
 import {
   formatProviderHealthBadge,
-  formatProviderHealthPickerLabelSuffix,
   isProviderFallbackEligible,
   resolveEffectiveProviderHealth,
 } from "@/services/playback/provider-health-policy";
@@ -61,19 +60,6 @@ describe("provider-health-policy", () => {
     expect(effective?.effectiveStatus).toBe("healthy");
     expect(effective?.healedByTtl).toBe(true);
     expect(isProviderFallbackEligible(effective)).toBe(true);
-  });
-
-  test("formatProviderHealthPickerLabelSuffix only surfaces actionable states", () => {
-    const down = resolveEffectiveProviderHealth(health("down", "2026-06-23T11:00:00.000Z", 3), NOW);
-    expect(formatProviderHealthPickerLabelSuffix(down ?? undefined, { now: NOW })).toContain(
-      "down",
-    );
-    expect(
-      formatProviderHealthPickerLabelSuffix(
-        resolveEffectiveProviderHealth(health("healthy", "2026-06-23T11:00:00.000Z"), NOW),
-        { now: NOW },
-      ),
-    ).toBeNull();
   });
 });
 
@@ -156,17 +142,4 @@ describe("failure rate feeds effective status", () => {
     expect(effective?.effectiveStatus).toBe("degraded");
     expect(effective?.healedByTtl).toBe(true);
   });
-});
-
-test("the current provider never claims it was skipped in auto-fallback", () => {
-  const down = resolveEffectiveProviderHealth(health("down", "2026-06-23T11:00:00.000Z", 3), NOW);
-  const suffix = formatProviderHealthPickerLabelSuffix(down ?? undefined, {
-    now: NOW,
-    isCurrentProvider: true,
-  });
-  expect(suffix).toContain("down");
-  expect(suffix).not.toContain("skipped in auto-fallback");
-
-  const nonCurrent = formatProviderHealthPickerLabelSuffix(down ?? undefined, { now: NOW });
-  expect(nonCurrent).toContain("skipped in auto-fallback");
 });

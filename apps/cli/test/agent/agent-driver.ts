@@ -75,8 +75,13 @@ export interface AgentSessionOptions {
    * one explicit scenario). A record is written verbatim as config.json.
    */
   readonly seed?: AgentSessionSeed;
-  /** `"smoke"` (default) loads fixture providers through the real env gate. */
-  readonly providers?: "smoke" | "none";
+  /**
+   * `"smoke"` (default) loads fixture providers through the real env gate.
+   * `"production"` keeps the fixture catalog but loads the bundled roster, for
+   * surfaces that read real manifests (the provider picker). It is for looking
+   * at providers, never for resolving through them — that would be live network.
+   */
+  readonly providers?: "smoke" | "production" | "none";
   /** `"fake"` PATH-shims the fake mpv so playback flows can run in-process. */
   readonly mpv?: "fake" | "none";
   readonly fakeMpvMode?: "normal" | "fail-pre-loaded" | "hold";
@@ -348,6 +353,9 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
         loadCompiledSmokeProviderOverride(),
         loadCompiledSmokeSearchDefinitions(),
       ]);
+    }
+    if (options.providers === "production") {
+      ({ searchServiceDefinitions } = await import(FIXTURE_PROVIDER));
     }
     container = await createContainer({ providerModulesOverride, searchServiceDefinitions });
     // Mirror main.ts: the rendered shell and the phase loop must read the same

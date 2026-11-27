@@ -107,7 +107,6 @@ export function formatProviderHealthAge(
 export function formatProviderHealthBadge(
   health: EffectiveProviderHealth | undefined,
   now: Date = new Date(),
-  options?: { readonly isCurrentProvider?: boolean },
 ): string | null {
   if (!health) return null;
 
@@ -122,25 +121,8 @@ export function formatProviderHealthBadge(
       : health.effectiveStatus;
 
   const parts = [statusLabel, failures, age].filter(Boolean);
-  // "skipped in auto-fallback" on the provider currently playing is a false
-  // statement — it is running, not skipped.
-  if (health.effectiveStatus === "down" && !options?.isCurrentProvider) {
+  if (health.effectiveStatus === "down") {
     parts.push("skipped in auto-fallback");
   }
   return parts.join(" · ");
-}
-
-export function formatProviderHealthPickerLabelSuffix(
-  health: EffectiveProviderHealth | undefined,
-  options?: { readonly now?: Date; readonly isCurrentProvider?: boolean },
-): string | null {
-  if (!health) return null;
-  if (health.effectiveStatus !== "down" && health.effectiveStatus !== "degraded") {
-    return null;
-  }
-  const now = options?.now ?? new Date();
-  const badge = formatProviderHealthBadge(health, now, {
-    isCurrentProvider: options?.isCurrentProvider,
-  });
-  return badge ? `  ·  ${badge}` : null;
 }

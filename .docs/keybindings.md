@@ -2,7 +2,7 @@
 title: Kunai CLI Keybindings
 description: Screen-by-screen keybinding map for the Kunai terminal shell.
 status: current
-lastReviewed: "2026-11-26T15:42:10Z"
+lastReviewed: "2026-11-27"
 ---
 
 # Kunai CLI Keybindings
@@ -60,7 +60,7 @@ visibly different.
 | `/filters` | Open guided search facets                                                         |
 | `Esc`      | Clear/back depending on focused state                                             |
 
-Use `/provider` from browse or playback command surfaces to change provider. Provider switching should stay explicit; opening the provider picker does not change provider until a row is confirmed.
+Use `/provider` from browse or playback command surfaces to change provider. From browse it opens the provider actions menu (switch for this session, defaults and priority, on/off switches, definitions) and the picker is its first row; a session switch does not rewrite the saved default. While playing, the same command opens the Tracks panel at its provider section instead. Provider switching should stay explicit; opening the provider picker does not change provider until a row is confirmed. Its footer is the whole key reference — `[↑↓] select`, `[enter] switch`, `[esc] close` (`show all` while a filter is typed), `[/] commands` — and a chip a narrow terminal drops is named in the footer's text line instead.
 
 ## Mouse in browse results
 
@@ -148,7 +148,7 @@ These keys are available while `mpv` is active and the shell is supervising it.
 | `o`         | Open source picker without changing source until selection is confirmed                                                                            |
 | `Shift+F`   | Try fallback provider when available (bare `f` is intentionally unbound)                                                                           |
 | `l`         | Favourite / unfavourite the current title (not `f`, which sits beside `Shift+F`)                                                                   |
-| `/provider` | Open provider picker without changing provider until a row is confirmed                                                                            |
+| `/provider` | Open the Tracks panel at its provider section; nothing changes until a row is confirmed                                                            |
 | `Ctrl+R`    | Refresh / recover the current stream                                                                                                               |
 | `s`         | Reload subtitles                                                                                                                                   |
 | `b`         | Manually skip the currently offered timing segment                                                                                                 |

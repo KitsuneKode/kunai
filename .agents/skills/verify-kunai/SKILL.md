@@ -67,18 +67,18 @@ journal, and writes a bundle (transcript, frames, per-step DB deltas).
 - `<wait-config:key=value>` — pause until the debounced write lands in
   `config.json`, not just in the frame
 
-| Flag                      | Meaning                                                                         |
-| ------------------------- | ------------------------------------------------------------------------------- |
-| `--show a,b`              | `frame,keys,history,queue,config,tables,delta,journal` (default `frame,tables`) |
-| `--wait-for TEXT`         | after the keys, wait for a frame (`/re/` for regex)                             |
-| `--evidence DIR`          | write the bundle — keep it outside any profile                                  |
-| `--verify-citation TEXT`  | nonzero exit unless TEXT is in the captured evidence                            |
-| `--seed onboarded\|fresh` | profile seed (default `onboarded`)                                              |
-| `--providers smoke\|none` | fixture providers (default `smoke`)                                             |
-| `--mpv fake\|none`        | PATH-shim fake mpv (default `none`)                                             |
-| `--fake-mpv-mode M`       | `normal \| fail-pre-loaded \| hold`                                             |
-| `--width N` / `--rows N`  | terminal size (default 100×30)                                                  |
-| `--set-env K=V`           | extra env for the run (repeatable)                                              |
+| Flag                                  | Meaning                                                                                                                                                         |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--show a,b`                          | `frame,keys,history,queue,config,tables,delta,journal` (default `frame,tables`)                                                                                 |
+| `--wait-for TEXT`                     | after the keys, wait for a frame (`/re/` for regex)                                                                                                             |
+| `--evidence DIR`                      | write the bundle — keep it outside any profile                                                                                                                  |
+| `--verify-citation TEXT`              | nonzero exit unless TEXT is in the captured evidence                                                                                                            |
+| `--seed onboarded\|fresh`             | profile seed (default `onboarded`)                                                                                                                              |
+| `--providers smoke\|production\|none` | fixture providers (default `smoke`); `production` is the bundled roster behind the fixture catalog, for surfaces that read real manifests — look, never resolve |
+| `--mpv fake\|none`                    | PATH-shim fake mpv (default `none`)                                                                                                                             |
+| `--fake-mpv-mode M`                   | `normal \| fail-pre-loaded \| hold`                                                                                                                             |
+| `--width N` / `--rows N`              | terminal size (default 100×30)                                                                                                                                  |
+| `--set-env K=V`                       | extra env for the run (repeatable)                                                                                                                              |
 
 `--show keys` lists the `[key]` hints the current frame advertises — read it
 before writing a key plan for an unfamiliar surface. `--seed fresh` writes no

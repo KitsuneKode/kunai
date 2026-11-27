@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-26T11:11:58Z"
+lastReviewed: "2026-11-27"
 ---
 
 # Title provider health, cache layers, and reset
@@ -64,10 +64,48 @@ Background prune default: **7 days** (`providerHealthRetentionDays`). Title-scop
 
 ### 2.3 Visibility
 
-- **Provider picker** — health badge per provider (`down`, `degraded`, failure count, skipped note)
+- **Provider picker** — every row states where the provider stands; see §2.4
 - **Runtime health line** — merges resolve traces with persisted memory for the active provider
 - **Diagnostics panel** — **Provider memory** section lists lane providers with effective status and fallback eligibility
 - **Resolve feedback** — when providers are skipped: `Miruro (down) skipped in auto-fallback — /reset-provider-health to retry`
+
+### 2.4 What the provider picker says, and from what
+
+`resolveProviderPickerStatus` (`apps/cli/src/app-shell/provider-picker-status.ts`)
+turns evidence into a row state: a tone, a badge, and a one-line explanation.
+No provider is named in UI code: a row reads broken only because a store
+recorded a failure or its manifest declared a fault. `providerPickerSources`
+(`apps/cli/src/app-shell/overlay-provider-picker.ts`) is the one place the
+evidence is read.
+
+| State (tone)          | Row badge                                              | Evidence                                                                                                                     |
+| --------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| healthy (success)     | `healthy · 6m ago`                                     | Layer B: the last resolve succeeded and nothing below applies                                                                |
+| failing (warning)     | `degraded · 3 failures · 5m ago`, `1 failure · 6m ago` | Layer B is `degraded`, or holds a failure streak the store still calls `healthy` (one failure does)                          |
+| failing (warning)     | `failing on this title`, `2 endpoints quarantined`     | Layer C has a live streak for the title in hand; or `ProviderEndpointHealthService.countQuarantinedByProvider` is above zero |
+| down (error)          | `down · 5 failures · 12m ago`                          | Layer B is effectively `down`; the detail leads with `skipped in auto-fallback`, except on the provider in use               |
+| known issue (error)   | `known issue · 2026-11-27`                             | The manifest's `knownIssue`, when no local resolve has succeeded; the detail leads with its summary                          |
+| not checked (neutral) | `not checked yet`, `not rechecked · failed 9h ago`     | No row at all; or a failure that TTL healing aged out, which lifts it out of fallback's way and is not a success             |
+
+Rules that are easy to break:
+
+- **Local success outranks the manifest.** A published binary cannot learn that
+  an upstream recovered, so `knownIssue` is shown as a dated claim and only
+  while this device has no successful resolve. A live local failure is reported
+  first, with the claim as context.
+- **The picker never re-sorts.** Rows keep the configured priority order; a down
+  provider stays where the user put it and stays selectable. Fallback order is
+  `ProviderCandidatePlanner`'s business and reads none of this.
+- **The state is words, in the badge.** The badge is reserved before the row is
+  truncated and reads the same under `NO_COLOR` and in plain mode. Below 72
+  columns it shrinks to one or two words (`down`, `not checked`).
+- **One footer.** The count is the context strip's. The footer's text line is
+  the highlighted row's state as a sentence, and its chips are every key the
+  picker answers to. A chip the row has no room for is named at the start of
+  the text line, so no key goes unadvertised at any width.
+- **The other entry point draws no badge.** The picker offered while a stream is
+  resolving (`openProviderPicker`) is a list shell with a label and a detail, so
+  `providerOptionsForListShell` moves the state to the front of the detail.
 
 ---
 
@@ -173,6 +211,8 @@ Stream keys are in the JSON/file cache store cleared by `/clear-cache` stream op
 | File                                            | Role                                                 |
 | ----------------------------------------------- | ---------------------------------------------------- |
 | `provider-health-policy.ts`                     | Effective status TTL, fallback eligibility, badges   |
+| `app-shell/provider-picker-status.ts`           | Evidence → picker row state (§2.4)                   |
+| `app-shell/overlay-provider-picker.ts`          | Picker evidence readers and footer                   |
 | `provider-health-reset.ts`                      | Scoped reset picker + apply                          |
 | `TitleProviderHealthService.ts`                 | Suggestion + retention                               |
 | `ProviderCandidatePlanner.ts`                   | Skips effective-`down` fallbacks                     |
