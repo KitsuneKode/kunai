@@ -1,13 +1,6 @@
 import type { CoreProviderModule } from "@kunai/core";
 import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
-import {
-  httpStatusIsRetryable,
-  httpStatusToResolveErrorCode,
-  ProviderHttpError,
-} from "@kunai/types";
 
-import { providerFetch } from "../runtime/fetch";
-import { directStreamFetchSignal } from "../shared/direct-stream-source";
 import {
   masterVariantsNeedSeparateAudio,
   parseHlsMasterMaxHeight,
@@ -20,6 +13,7 @@ import {
   type MultiSourceResolvePayload,
   type MultiSourceSubtitleInput,
 } from "../shared/multi-source-resolver";
+import { createDirectProviderResponseFetch } from "../shared/provider-json-fetch";
 import { FILESUN_PROVIDER_ID, filesunManifest } from "./manifest";
 
 export { FILESUN_PROVIDER_ID };
@@ -27,6 +21,9 @@ export { FILESUN_PROVIDER_ID };
 const LOOKUP = "https://pal.hls.lol/fs/embed";
 const EMBED_ORIGIN = "https://embedsun.cc";
 const PLAYBACK_HEADERS = { Referer: `${EMBED_ORIGIN}/` };
+
+const get = createDirectProviderResponseFetch(FILESUN_PROVIDER_ID, "FileSuN", 8_000);
+const ATLANTIC_HEADERS = { Referer: "https://atlantic.bz/" };
 
 interface FileSunLookup {
   readonly found?: boolean;
@@ -68,32 +65,6 @@ function lookupUrl(input: ProviderResolveInput): string | undefined {
   return `${LOOKUP}?${params}`;
 }
 
-async function get(
-  context: ProviderRuntimeContext,
-  url: string,
-  headers: Record<string, string>,
-  stage: string,
-): Promise<Response> {
-  const response = await providerFetch(context, url, {
-    headers,
-    signal: directStreamFetchSignal(context.signal, 8_000),
-    redirect: "error",
-  });
-  if (!response.ok) {
-    const status = response.status;
-    await response.body?.cancel().catch(() => undefined);
-    throw new ProviderHttpError({
-      providerId: FILESUN_PROVIDER_ID,
-      stage,
-      status,
-      message: `FileSuN ${stage} returned HTTP ${status}`,
-      code: httpStatusToResolveErrorCode(status),
-      retryable: httpStatusIsRetryable(status),
-    });
-  }
-  return response;
-}
-
 function captions(html: string): MultiSourceSubtitleInput[] {
   const block = /\bvar\s+baseTracks\s*=\s*\[([\s\S]*?)\];/.exec(html)?.[1];
   if (!block) return [];
@@ -115,12 +86,9 @@ async function fetchPayload(
   const path = lookupUrl(input);
   if (!path) return null;
   const lookup = await readJsonObjectBody<FileSunLookup>(
-    await get(
-      context,
-      path,
-      { Accept: "application/json", Referer: "https://atlantic.bz/" },
-      "lookup",
-    ),
+    await get(context, path, "lookup", {
+      headers: { ...ATLANTIC_HEADERS, Accept: "application/json" },
+    }),
   );
   if (lookup?.found !== true || !Array.isArray(lookup.embeds)) return null;
   const embed = httpsUrl(lookup.embeds.find((row) => row?.name === "FileSuN")?.url);
@@ -132,13 +100,15 @@ async function fetchPayload(
     return null;
   }
   const html = await (
-    await get(context, embed.href, { Referer: "https://atlantic.bz/" }, "embed")
+    await get(context, embed.href, "embed", { headers: ATLANTIC_HEADERS })
   ).text();
   const url = httpsUrl(/\bsources\s*:\s*\[\s*\{\s*file\s*:\s*['"]([^'"]+)['"]/.exec(html)?.[1]);
   if (!url || !url.hostname.endsWith(".vmpx.online") || !url.pathname.endsWith(".m3u8")) {
     return null;
   }
-  const master = await (await get(context, url.href, PLAYBACK_HEADERS, "manifest")).text();
+  const master = await (
+    await get(context, url.href, "manifest", { headers: PLAYBACK_HEADERS })
+  ).text();
   if (!master.trimStart().startsWith("#EXTM3U")) return null;
   const renditions = parseHlsMasterRenditions(master, url.href);
   const subtitles = captions(html);

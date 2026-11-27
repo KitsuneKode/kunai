@@ -1,12 +1,5 @@
 import type { CoreProviderModule } from "@kunai/core";
-import {
-  httpStatusIsRetryable,
-  httpStatusToResolveErrorCode,
-  isJsonObject,
-  isJsonString,
-  ProviderHttpError,
-  type JsonValue,
-} from "@kunai/types";
+import { isJsonObject, isJsonString, type JsonValue } from "@kunai/types";
 import type {
   ProviderEpisodeListInput,
   ProviderResolveInput,
@@ -15,10 +8,8 @@ import type {
   TitleIdentity,
 } from "@kunai/types";
 
-import { providerFetch } from "../runtime/fetch";
 import { isAnimeDubAudioPreference } from "../shared/anime-audio-intent";
 import { formatAnimeEpisodeLabel } from "../shared/anime-metadata";
-import { directStreamFetchSignal } from "../shared/direct-stream-source";
 import { parseHlsMasterMaxHeight } from "../shared/hls-ladder";
 import { readJsonObjectBody } from "../shared/json-body";
 import {
@@ -27,6 +18,7 @@ import {
   type MultiSourceSubtitleInput,
 } from "../shared/multi-source-resolver";
 import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
+import { createDirectProviderResponseFetch } from "../shared/provider-json-fetch";
 import { matchProviderCatalogTitle } from "../shared/provider-title-match";
 import { ANIMEPARADISE_PROVIDER_ID, animeparadiseManifest } from "./manifest";
 
@@ -39,6 +31,8 @@ const HEADERS = { Referer: `${SITE}/` };
 const SAFE_ID = /^[A-Za-z0-9_-]{1,128}$/;
 const EPISODE_UID = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
 const OPAQUE_LOCATOR = /^[A-Za-z0-9_-]{1,2048}$/;
+
+const get = createDirectProviderResponseFetch(ANIMEPARADISE_PROVIDER_ID, "AnimeParadise", 6_000);
 
 interface AnimeRow {
   readonly _id?: string;
@@ -64,32 +58,6 @@ interface EpisodeRow {
 interface ApiResult<T> {
   readonly success?: boolean;
   readonly data?: T;
-}
-
-async function get(
-  context: ProviderRuntimeContext,
-  url: string,
-  stage: string,
-  init: RequestInit = {},
-): Promise<Response> {
-  const response = await providerFetch(context, url, {
-    ...init,
-    signal: directStreamFetchSignal(context.signal, 6_000),
-    redirect: "error",
-  });
-  if (!response.ok) {
-    const status = response.status;
-    await response.body?.cancel().catch(() => undefined);
-    throw new ProviderHttpError({
-      providerId: ANIMEPARADISE_PROVIDER_ID,
-      stage,
-      status,
-      message: `AnimeParadise ${stage} returned HTTP ${status}`,
-      code: httpStatusToResolveErrorCode(status),
-      retryable: httpStatusIsRetryable(status),
-    });
-  }
-  return response;
 }
 
 async function json<T>(

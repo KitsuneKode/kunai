@@ -123,10 +123,9 @@
       "mediaKinds": ["movie", "series"],
       "capabilities": ["source-resolve", "subtitle-resolve", "quality-ranked"],
       "notes": [
-        "Browserless: pal.hls.lol/fs/embed answers {found, embeds} by title, year and type (plus 1-based seasonId/episodeId for TV); the FileSuN row is an embedsun.cc JW Player page whose sources array names a direct HLS master on *.vmpx.online.",
-        "One verified server only: the VOE and Doodstream embed rows exist upstream but were not verified in the 2026-11-27 intake and are not resolved here.",
-        "Subtitles come from the page's baseTracks captions on srt.vidmoly.me plus any SUBTITLES renditions in the fetched master; no multiaudio inventory was measured.",
-        "All-HTTP local integration: no credentials, JS execution, browser session, or media relay — metadata stays direct, so relaySafe is off."
+        "Atlantic title/year lookup; TV coordinates are 1-based.",
+        "Only the FileSuN embed is verified and resolved; direct HLS with captions.",
+        "Local HTTP only: no browser, credentials, or relay."
       ]
     },
     {
@@ -291,11 +290,9 @@
       "mediaKinds": ["anime"],
       "capabilities": ["search", "episode-list", "source-resolve", "subtitle-resolve", "quality-ranked"],
       "notes": [
-        "Browserless: public /search and /anime/{slug} JSON, then the watch page's own Flight POST to its getEpisode server action. The action id is discovered by reading at most two same-site bundle chunks named by the watch page's WatchProvider module — remote code is read, never executed.",
-        "Catalog identity is verified canonically: the title search must resolve to exactly one row, and /anime/{slug} must agree on _id and the AniList/MAL mapping before an id is used — a sequel cannot borrow its first season's episodes.",
-        "One verified HLS server on stream.animeparadise.moe, muxed audio (sub only — no dub was observed). Subtitles arrive as ASS on api.animeparadise.moe/stream/file and VTT on stream.animeparadise.moe/captions.",
-        "Transport drift: the streamLink locator is an opaque upstream handle answered through stream.animeparadise.moe/m3u8; the Next-Action id rotates per deployment, so resolve re-reads it from the current bundle every time.",
-        "All-HTTP local integration: no credentials, JS execution, browser session, or media relay — metadata stays direct, so relaySafe is off."
+        "AniList/MAL identity is checked before episode lookup.",
+        "Reads the watch page's rotating Flight action without executing scripts.",
+        "Direct, local-only HLS with sub audio and ASS/VTT tracks; no relay."
       ]
     },
     {

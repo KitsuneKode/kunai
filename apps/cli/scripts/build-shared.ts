@@ -542,7 +542,12 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // ISO language-list normalization, and repeated Chrome user-agent literals kept
 // this below the adapters' initial 3,360,822-byte measurement. No dependency
 // or asset. 3281 KiB leaves 648 bytes; public launcher budgets are unchanged.
-export const NPM_BUNDLE_BUDGET_KB = 3_281;
+// Batch 2 adds FileSuN (movies/series) and AnimeParadise (anime). The merged
+// bundle measured 3,371,877 bytes before sharing their HTTP response handling
+// and shortening manifest notes, and 3,370,242 after (-1,635). That is 10,498
+// bytes over the previous cap. 3292 KiB leaves 766 bytes; no dependencies,
+// assets, or public launcher budget changes.
+export const NPM_BUNDLE_BUDGET_KB = 3_292;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

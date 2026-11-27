@@ -43,9 +43,8 @@ export const filesunManifest = defineProviderManifest({
   browserSafe: false,
   relaySafe: false,
   notes: [
-    "Browserless: pal.hls.lol/fs/embed answers {found, embeds} by title, year and type (plus 1-based seasonId/episodeId for TV); the FileSuN row is an embedsun.cc JW Player page whose sources array names a direct HLS master on *.vmpx.online.",
-    "One verified server only: the VOE and Doodstream embed rows exist upstream but were not verified in the 2026-11-27 intake and are not resolved here.",
-    "Subtitles come from the page's baseTracks captions on srt.vidmoly.me plus any SUBTITLES renditions in the fetched master; no multiaudio inventory was measured.",
-    "All-HTTP local integration: no credentials, JS execution, browser session, or media relay — metadata stays direct, so relaySafe is off.",
+    "Atlantic title/year lookup; TV coordinates are 1-based.",
+    "Only the FileSuN embed is verified and resolved; direct HLS with captions.",
+    "Local HTTP only: no browser, credentials, or relay.",
   ],
 });
