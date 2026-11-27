@@ -2,8 +2,7 @@ import { existsSync } from "node:fs";
 import { rm, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { PlaybackResult } from "@/domain/types";
-import type { SubtitleTrack } from "@/domain/types";
+import type { PlaybackResult, SubtitleTrack } from "@/domain/types";
 import { createPrivateTempDir } from "@/infra/fs/temp-dir";
 import { scrubbedChildEnv } from "@/infra/os/child-env";
 import { discoverMpvInvocation } from "@/infra/player/mpv-discovery";
@@ -58,6 +57,7 @@ import {
 export { shouldApplyStartAtSeek };
 export { isLocalHlsManifestPlaybackUrl } from "@/infra/player/mpv-playback-url";
 export { isAllowedMpvUrl, type MpvUrlKind } from "@/infra/player/mpv-playback-url";
+import { mpvHwdecArgs } from "@/infra/player/mpv-hwdec-args";
 import { unrecoverableStallEvent } from "@/infra/player/mpv-in-process-reconnect";
 import { MpvLaunchError } from "@/infra/player/mpv-launch-error";
 import { launchPreflight, type ResolveGateStream } from "@/infra/player/mpv-launch-preflight";
@@ -83,8 +83,7 @@ import {
 import { findActivePlaybackSkip, type PlaybackSkipConfig } from "@/infra/player/playback-skip";
 import { createPlaybackWatchdog } from "@/infra/player/playback-watchdog";
 import type { ActivePlayerControl } from "@/infra/player/PlayerControlService";
-import type { PlayerPlaybackEvent } from "@/infra/player/PlayerService";
-import type { LateSubtitleAttachment } from "@/infra/player/PlayerService";
+import type { LateSubtitleAttachment, PlayerPlaybackEvent } from "@/infra/player/PlayerService";
 import {
   SubtitleFiles,
   prepareLaunchSubtitles,
@@ -891,19 +890,7 @@ export function buildMpvArgs(
   if (demuxerLavfOptions) {
     args.push(`--demuxer-lavf-o=${demuxerLavfOptions}`);
   }
-  if (config?.mpv?.hwdecMode === "off") {
-    args.push("--hwdec=no");
-  } else if (config?.mpv?.hwdecMode === "auto") {
-    if (config.mpv.hwdecBackend) {
-      // The probe is only a yes/no gate; the real video output re-picks the
-      // direct or copy-back backend for mpv's automatic safe policy.
-      args.push(`--hwdec=${config.mpv.hwdecBackend}`);
-    }
-  } else if (config?.mpv?.hwdecMode && config.mpv.hwdecMode !== "mpv-default") {
-    // The config union is closed mpv vocabulary, so this remains one safe argv
-    // token rather than a user-controlled option string.
-    args.push(`--hwdec=${config.mpv.hwdecMode}`);
-  }
+  args.push(...mpvHwdecArgs(config?.mpv));
   if (config?.mpv?.clean || config?.mpv?.noUserConfig) args.push("--no-config");
   const hdrArgs = resolveMpvHdrArgs({
     hdrMode: config?.mpv?.hdrMode,

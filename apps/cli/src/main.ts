@@ -886,7 +886,6 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   // Silence pre-TUI console output when onboarding will run — the system
   // check slide shows the same information visually inside the TUI.
   const [
-    { getKunaiPaths },
     { isBelowOnboardedFloor, maybeRunStartupSetup, shouldRunSetupWizard },
     { effectivePlayerChoice },
     { resolveMachinePlayerMode },
@@ -899,9 +898,9 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       resolveLaunchMode,
       resolveStartupInitialRoute,
     },
+    { readStartupConfigPeek, resolveStartupMpvHwdecMode },
     { recordStartupPlayerDiagnostic },
   ] = await Promise.all([
-    import("@kunai/storage"),
     import("@/app/bootstrap/startup-setup"),
     import("@/domain/playback/player-choice"),
     import("@/infra/player/installed-players"),
@@ -909,21 +908,10 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     import("@/container"),
     import("@/app/session/session-overrides"),
     import("@/app/bootstrap/bootstrap-intent"),
+    import("@/app/bootstrap/startup-config-peek"),
     import("@/app/bootstrap/startup-player-diagnostic"),
   ]);
-  type ConfigPeek = {
-    onboardingVersion?: number;
-    downloadOnboardingDismissed?: boolean;
-    defaultMode?: string;
-    player?: string;
-  };
-  const configJson = await (async (): Promise<ConfigPeek> => {
-    try {
-      return (await Bun.file(getKunaiPaths().configPath).json()) as ConfigPeek;
-    } catch {
-      return {};
-    }
-  })();
+  const configJson = await readStartupConfigPeek();
   // Interactivity is part of the question: this decides whether `checkDeps`
   // stays silent because the wizard will show the same information visually.
   // (Piped launches were already rejected above, so only TTY sessions get here.)
@@ -951,6 +939,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   const capabilitySnapshot = await checkDeps(KUNAI_VERSION, {
     silent: onboardingWillRun,
     playerMode: startupPlayerMode,
+    mpvHwdecMode: resolveStartupMpvHwdecMode(args.mpvHwdec, configJson.mpvHwdec),
     requireYtDlp: launchNeedsYtDlp(args, configJson.defaultMode, pendingShareLaunch?.ref.kind),
   });
 

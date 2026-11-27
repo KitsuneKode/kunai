@@ -293,6 +293,7 @@ describe("buildDependencyRows", () => {
     const noHardware = buildDependencyRows({
       ...base,
       mpv: true,
+      mpvHwdecMode: "auto",
       mpvHardwareAccel: {
         ...emptyMpvHardwareAccelProbe("no-hardware"),
         probed: true,
@@ -303,6 +304,43 @@ describe("buildDependencyRows", () => {
     expect(noHardware?.state).toBe("degraded");
     expect(noHardware?.detail).toContain("help lists nvdec");
     expect(noHardware?.consequence).toContain("software/default decode");
+  });
+
+  test("mpv-default keeps unused probe-negative states neutral and informational", async () => {
+    const base = await bareSnapshot();
+    const rowsFor = (status: "no-hardware" | "probe-failed" | "not-probed") =>
+      buildDependencyRows({
+        ...base,
+        mpv: true,
+        mpvHwdecMode: "mpv-default",
+        mpvHardwareAccel: emptyMpvHardwareAccelProbe(status),
+      }).find((candidate) => candidate.id === "mpv-hwaccel");
+
+    const noHardware = rowsFor("no-hardware");
+    expect(noHardware?.state).toBe("ok");
+    expect(noHardware?.detail).toContain("unused by mpv-hwdec=mpv-default");
+    expect(noHardware?.consequence).toBeUndefined();
+
+    const failed = rowsFor("probe-failed");
+    expect(failed?.state).toBe("ok");
+    expect(failed?.detail).toContain("unused by mpv-hwdec=mpv-default");
+    expect(failed?.consequence).toBeUndefined();
+
+    const notProbed = rowsFor("not-probed");
+    expect(notProbed?.state).toBe("ok");
+    expect(notProbed?.detail).toBe("not probed · unused by mpv-hwdec=mpv-default");
+    expect(notProbed?.detail).not.toContain("[r]");
+  });
+
+  test("probe-guided auto keeps negative probe states actionable", async () => {
+    const base = await bareSnapshot();
+    const row = buildDependencyRows({
+      ...base,
+      mpv: true,
+      mpvHwdecMode: "auto",
+      mpvHardwareAccel: emptyMpvHardwareAccelProbe("not-probed"),
+    }).find((candidate) => candidate.id === "mpv-hwaccel");
+    expect(row?.detail).toBe("not probed yet · [r] recheck probes");
   });
 
   test("mpv degrades rather than blocks", async () => {

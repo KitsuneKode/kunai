@@ -361,6 +361,25 @@ describe("mpv-ipc", () => {
     });
   });
 
+  test("routes playback-restart events to the persistent output lifecycle callback", async () => {
+    const restarts: number[] = [];
+    await withFakeMpvSocket(true, async ({ emitData }) => {
+      const session = await openMpvIpcSession({
+        endpoint: { kind: "unix_socket", path: "/private/kunai.sock" },
+        onPropertyUpdate() {},
+        onEndFile() {},
+        onPlaybackRestart({ observedAt }) {
+          restarts.push(observedAt);
+        },
+      });
+
+      emitData(Buffer.from('{"event":"playback-restart"}\n'));
+      expect(restarts).toHaveLength(1);
+      expect(restarts[0]).toBeGreaterThan(0);
+      await session.close();
+    });
+  });
+
   test("a property with no value is answered, not reported as a failed command", async () => {
     await withFakeMpvSocket(true, async ({ emitData, written }) => {
       const reported: string[] = [];

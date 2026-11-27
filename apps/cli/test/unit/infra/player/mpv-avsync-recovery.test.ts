@@ -33,22 +33,45 @@ function sustainedDrift(
   ];
 }
 
+function trackerWithOutput(now: () => number): MpvAvsyncRecoveryTracker {
+  const tracker = new MpvAvsyncRecoveryTracker({ now });
+  tracker.noteOutputStarted();
+  return tracker;
+}
+
 describe("MpvAvsyncRecoveryTracker", () => {
-  test("sustained drift authorizes one correction after the restart grace", () => {
+  test("sustained drift authorizes one correction after output-start grace", () => {
     let now = 10_000;
-    const tracker = new MpvAvsyncRecoveryTracker({ now: () => now });
+    const tracker = trackerWithOutput(() => now);
     expect(sustainedDrift(tracker, 10_000).every((decision) => decision.kind === "none")).toBe(
       true,
     );
 
-    tracker.restartEpisode();
     now = 11_100;
     expect(sustainedDrift(tracker, 11_100).at(-1)).toEqual({ kind: "resync", attempt: 1 });
   });
 
-  test("paused-for-cache suppresses and clears stale drift evidence", () => {
+  test("episode creation does not start grace; delayed first output does", () => {
     let now = 10_000;
     const tracker = new MpvAvsyncRecoveryTracker({ now: () => now });
+    tracker.restartEpisode();
+
+    // A slow network can spend well over the one-second grace before mpv has
+    // output. Those samples are not evidence of a wedged decoder.
+    now = 11_500;
+    expect(sustainedDrift(tracker, 11_500).at(-1)?.kind).toBe("none");
+
+    tracker.noteOutputStarted();
+    now = 12_000;
+    expect(sustainedDrift(tracker, 12_000).at(-1)?.kind).toBe("none");
+
+    now = 12_600;
+    expect(sustainedDrift(tracker, 12_600).at(-1)).toEqual({ kind: "resync", attempt: 1 });
+  });
+
+  test("paused-for-cache suppresses and clears stale drift evidence", () => {
+    let now = 10_000;
+    const tracker = trackerWithOutput(() => now);
     now = 11_100;
     tracker.evaluate(0.5, 11_100, guards());
     tracker.evaluate(0.5, 11_200, guards());
@@ -64,7 +87,7 @@ describe("MpvAvsyncRecoveryTracker", () => {
 
   test("resume seeks and Kunai-issued seeks suppress recovery without counting drift", () => {
     let now = 10_000;
-    const tracker = new MpvAvsyncRecoveryTracker({ now: () => now });
+    const tracker = trackerWithOutput(() => now);
     now = 11_100;
     expect(sustainedDrift(tracker, 11_100, { resumeSeekPending: true }).at(-1)?.kind).toBe("none");
 
@@ -77,7 +100,7 @@ describe("MpvAvsyncRecoveryTracker", () => {
 
   test("a seeking transition clears evidence instead of carrying it across the seek", () => {
     let now = 10_000;
-    const tracker = new MpvAvsyncRecoveryTracker({ now: () => now });
+    const tracker = trackerWithOutput(() => now);
     now = 11_100;
     tracker.evaluate(0.5, 11_100, guards());
     tracker.evaluate(0.5, 11_200, guards());
@@ -90,12 +113,16 @@ describe("MpvAvsyncRecoveryTracker", () => {
 
   test("drift returning immediately after a resync exhausts recovery instead of looping", () => {
     let now = 10_000;
-    const tracker = new MpvAvsyncRecoveryTracker({ now: () => now });
+    const tracker = trackerWithOutput(() => now);
     now = 11_100;
     expect(sustainedDrift(tracker, 11_100).at(-1)).toEqual({ kind: "resync", attempt: 1 });
 
     now = 12_000;
-    expect(sustainedDrift(tracker, 12_000).at(-1)?.kind).toBe("none");
+    expect(sustainedDrift(tracker, 12_000).at(-1)).toEqual({
+      kind: "give-up",
+      reason: "drift-returned",
+      resyncCount: 1,
+    });
     expect(tracker.snapshot()).toMatchObject({ exhausted: true, resyncCount: 1 });
 
     now = 20_000;
@@ -104,7 +131,7 @@ describe("MpvAvsyncRecoveryTracker", () => {
 
   test("separated failures use at most two corrections per episode", () => {
     let now = 10_000;
-    const tracker = new MpvAvsyncRecoveryTracker({ now: () => now });
+    const tracker = trackerWithOutput(() => now);
     now = 11_100;
     expect(sustainedDrift(tracker, 11_100).at(-1)).toEqual({ kind: "resync", attempt: 1 });
 
@@ -112,10 +139,15 @@ describe("MpvAvsyncRecoveryTracker", () => {
     expect(sustainedDrift(tracker, 17_000).at(-1)).toEqual({ kind: "resync", attempt: 2 });
 
     now = 23_000;
-    expect(sustainedDrift(tracker, 23_000).at(-1)?.kind).toBe("none");
+    expect(sustainedDrift(tracker, 23_000).at(-1)).toEqual({
+      kind: "give-up",
+      reason: "budget-exhausted",
+      resyncCount: 2,
+    });
     expect(tracker.snapshot()).toMatchObject({ exhausted: true, resyncCount: 2 });
 
     tracker.restartEpisode();
+    tracker.noteOutputStarted();
     now = 24_200;
     expect(sustainedDrift(tracker, 24_200).at(-1)).toEqual({ kind: "resync", attempt: 1 });
   });
@@ -127,7 +159,7 @@ describe("MpvAvsyncRecoveryTracker", () => {
       { live: true },
     ] satisfies Partial<MpvAvsyncRecoveryGuards>[]) {
       let now = 10_000;
-      const tracker = new MpvAvsyncRecoveryTracker({ now: () => now });
+      const tracker = trackerWithOutput(() => now);
       now = 11_100;
       expect(sustainedDrift(tracker, 11_100, override).at(-1)?.kind).toBe("none");
     }

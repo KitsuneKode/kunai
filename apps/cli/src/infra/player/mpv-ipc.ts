@@ -58,12 +58,15 @@ type EndFileHandler = (message: {
   observedAt: number;
 }) => void;
 type FileLoadedHandler = (message: { observedAt: number }) => void;
+type PlaybackRestartHandler = (message: { observedAt: number }) => void;
 
 export type MpvIpcSessionOptions = {
   endpoint: MpvIpcEndpoint;
   onPropertyUpdate: PropertyUpdateHandler;
   onEndFile: EndFileHandler;
   onFileLoaded?: FileLoadedHandler;
+  /** mpv restarted real playback output (initial start, reload, or seek completion). */
+  onPlaybackRestart?: PlaybackRestartHandler;
   /** Property set to observe; defaults to the shared low-cost playback set. */
   observedProperties?: readonly string[];
   /**
@@ -288,6 +291,7 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
               options.onPropertyUpdate,
               options.onEndFile,
               options.onFileLoaded,
+              options.onPlaybackRestart,
             );
           }
           offset = end;
@@ -448,6 +452,7 @@ function dispatchMessage(
   onPropertyUpdate: PropertyUpdateHandler,
   onEndFile: EndFileHandler,
   onFileLoaded?: FileLoadedHandler,
+  onPlaybackRestart?: PlaybackRestartHandler,
 ) {
   const observedAt = Date.now();
 
@@ -467,6 +472,11 @@ function dispatchMessage(
 
   if (message.event === "file-loaded") {
     onFileLoaded?.({ observedAt });
+    return;
+  }
+
+  if (message.event === "playback-restart") {
+    onPlaybackRestart?.({ observedAt });
     return;
   }
 

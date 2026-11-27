@@ -18,10 +18,7 @@ import type { Logger } from "@/infra/logger/Logger";
 import type { Tracer } from "@/infra/tracer/Tracer";
 import { launchMpv, shouldApplyStartAtSeek } from "@/mpv";
 import { formatTimestamp } from "@/services/continuation/history-progress";
-import {
-  buildPlaybackDiagnosticEvent,
-  type DiagnosticFailureClass,
-} from "@/services/diagnostics/diagnostic-event-helpers";
+import { buildPlaybackDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 import type { DiagnosticsService } from "@/services/diagnostics/DiagnosticsService";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
 import type { ConfigService } from "@/services/persistence/ConfigService";
@@ -43,10 +40,11 @@ import { classifyMpvLaunchError } from "./mpv-launch-error";
 import { killActiveMpvProcessesSync as killRegisteredMpvProcesses } from "./mpv-process-registry";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
 import { normalizeStreamHttpHeaders } from "./mpv-stream-http-headers";
-import { PersistentMpvSession, type PlayerCycleOptions } from "./PersistentMpvSession";
+import type { PlayerCycleOptions } from "./persistent-player-cycle";
+import { PersistentMpvSession } from "./PersistentMpvSession";
 import { PlaybackAbortedError } from "./playback-aborted";
+import { wrapPlaybackEventDiagnostics } from "./playback-event-diagnostics";
 import {
-  classifyPlaybackFailureFromEvent,
   classifyPlaybackFailureFromResult,
   recoveryForPlaybackFailure,
 } from "./playback-failure-classifier";
@@ -201,11 +199,13 @@ export class PlayerServiceImpl implements PlayerService {
     generation: PlaybackGeneration,
     retiredGeneration: PlaybackGeneration | null,
   ): Promise<PlaybackResult> {
-    const publish = this.wrapPlaybackEventHandler(
+    const publish = wrapPlaybackEventDiagnostics({
       generation,
-      options.onPlaybackEvent,
-      options.correlation,
-    );
+      handler: options.onPlaybackEvent,
+      correlation: options.correlation,
+      isCurrentGeneration: (candidate) => this.isCurrentGeneration(candidate),
+      diagnostics: this.deps.diagnostics,
+    });
     let terminalHlsFailure: { readonly detail?: string; readonly httpStatus?: number } | null =
       null;
     // Addon streams are remote direct-media files that must reach mpv exactly
@@ -639,7 +639,12 @@ export class PlayerServiceImpl implements PlayerService {
     localGeneration: PlaybackGeneration,
     retiredPersistentGeneration: PlaybackGeneration,
   ): Promise<PlaybackResult> {
-    const publish = this.wrapPlaybackEventHandler(localGeneration, options.onPlaybackEvent);
+    const publish = wrapPlaybackEventDiagnostics({
+      generation: localGeneration,
+      handler: options.onPlaybackEvent,
+      isCurrentGeneration: (candidate) => this.isCurrentGeneration(candidate),
+      diagnostics: this.deps.diagnostics,
+    });
     // Local playback is one-shot. Retire an idle autoplay-chain process first
     // so only the local player owns controls and a visible mpv window.
     await this.retirePersistentSession(retiredPersistentGeneration);
@@ -872,39 +877,21 @@ export class PlayerServiceImpl implements PlayerService {
   }
 
   /**
-   * The single public boundary. Raw `PlayerPlaybackEvent` callbacks live only
-   * below this line; above it every consumer receives an envelope carrying the
-   * generation that produced the event. A retired generation returns here, so
-   * it can publish neither a public event nor a diagnostic.
+   * Generation fencing stays method-shaped because lifecycle tests exercise the
+   * boundary directly; the diagnostic mechanics live in playback-event-diagnostics.
    */
   private wrapPlaybackEventHandler(
     generation: PlaybackGeneration,
     handler: ((input: PlayerPlaybackEventEnvelope) => void) | undefined,
     correlation: PlayerOptions["correlation"] = undefined,
   ): (event: PlayerPlaybackEvent) => void {
-    return (event) => {
-      if (!this.isCurrentGeneration(generation)) return;
-      const failureClass = classifyPlaybackFailureFromEvent(event);
-      const diagnosticFailureClass = mapPlaybackFailureToDiagnosticFailure(failureClass);
-      this.deps.diagnostics.record(
-        buildPlaybackDiagnosticEvent({
-          operation: operationForPlaybackEvent(event),
-          stage: event.type,
-          status: diagnosticFailureClass ? "failed" : "progress",
-          severity: diagnosticFailureClass ? "degraded" : "healthy",
-          failureClass: diagnosticFailureClass,
-          message: "MPV runtime event",
-          correlation,
-          context: {
-            event: event.type,
-            ...event,
-            playbackFailureClass: failureClass,
-            recovery: recoveryForPlaybackFailure(failureClass),
-          },
-        }),
-      );
-      handler?.({ generation, event });
-    };
+    return wrapPlaybackEventDiagnostics({
+      generation,
+      handler,
+      correlation,
+      isCurrentGeneration: (candidate) => this.isCurrentGeneration(candidate),
+      diagnostics: this.deps.diagnostics,
+    });
   }
 
   private maybeStartHlsRelay(stream: StreamInfo, options: PlayerOptions): StreamInfo {
@@ -1008,40 +995,5 @@ function safeUrlHost(url: string | null | undefined): string | null {
     return new URL(url).hostname;
   } catch {
     return null;
-  }
-}
-
-function operationForPlaybackEvent(event: PlayerPlaybackEvent): string {
-  switch (event.type) {
-    case "network-buffering":
-    case "network-sample":
-    case "stream-slow":
-    case "stream-stalled":
-      return "mpv.network.sample";
-    case "ipc-command-failed":
-    case "ipc-stalled":
-    case "mpv-in-process-reconnect":
-      return "mpv.ipc.event";
-    default:
-      return "mpv.runtime.event";
-  }
-}
-
-function mapPlaybackFailureToDiagnosticFailure(
-  failureClass: ReturnType<typeof classifyPlaybackFailureFromEvent>,
-): DiagnosticFailureClass | undefined {
-  switch (failureClass) {
-    case "none":
-      return undefined;
-    case "network-buffering":
-    case "slow-stream":
-    case "expired-stream":
-      return "http";
-    case "seek-stuck":
-      return "timeout";
-    case "ipc-stuck":
-      return "ipc";
-    default:
-      return "unknown";
   }
 }

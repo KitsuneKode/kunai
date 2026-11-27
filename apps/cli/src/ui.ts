@@ -24,6 +24,7 @@ import {
 } from "@/infra/player/mpv-hwaccel-probe";
 import { discoverVlcBinary } from "@/infra/player/vlc/vlc-launch";
 import { redactDiagnosticValue, resolveRedactionHomeDir } from "@/services/diagnostics/redaction";
+import type { MpvHwdecMode } from "@kunai/config";
 import { resolveAnidbCurl } from "@kunai/providers";
 import { getKunaiPaths } from "@kunai/storage";
 import { isJsonString } from "@kunai/types";
@@ -94,6 +95,8 @@ export interface CapabilitySnapshot {
   readonly image: ImageCapability;
   /** mpv `--hwdec=help` plus the compressed auto-safe sample result; cache-only on ordinary startup. */
   readonly mpvHardwareAccel: MpvHardwareAccelProbe;
+  /** Effective configured decode policy; probe evidence is actionable only for probe-guided `auto`. */
+  readonly mpvHwdecMode?: MpvHwdecMode;
   readonly issues: readonly CapabilityIssue[];
 }
 
@@ -194,6 +197,8 @@ export async function probeCapabilities(
     probeMpvHwaccel?: boolean;
     /** Hardware probe seam. Injected by tests; receives the same discovery seams. */
     probeMpvHardwareAcceleration?: (deps: MpvHwaccelProbeDeps) => Promise<MpvHardwareAccelProbe>;
+    /** Effective configured decode policy, so probe status can be interpreted as relevant or informational. */
+    mpvHwdecMode?: MpvHwdecMode;
   } = {},
 ): Promise<CapabilitySnapshot> {
   const requireYtDlp = options.requireYtDlp ?? false;
@@ -388,6 +393,7 @@ export async function probeCapabilities(
     curl,
     image,
     mpvHardwareAccel,
+    mpvHwdecMode: options.mpvHwdecMode ?? "mpv-default",
     issues,
   };
 }

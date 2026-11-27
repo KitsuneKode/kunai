@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-12-24T00:00:00Z"
+lastReviewed: "2026-11-27T20:08:00Z"
 ---
 
 # mpv in-process stream reconnect (persistent session)
@@ -120,10 +120,12 @@ Resync is deliberately conservative. The extracted tracker in
 `infra/player/mpv-avsync-recovery.ts` is suppressed while paused, cache-waiting,
 core-idle, seeking, during Kunai-issued resume/reconnect work, reconnecting,
 live, retired, missing IPC, before video output has started, or while another
-correction is in flight. Startup and each restart get a short grace period. One
-correction cools down for five seconds; if drift returns immediately after a
-resync the tracker gives up rather than seek-looping, and an episode receives at
-most two separated corrections. Each attempted correction records a diagnostic
+correction is in flight. The grace clock is armed by mpv's `playback-restart`
+or first video-output evidence rather than by `play()`/spawn, so a slow network
+cannot consume it before the first frame. One correction cools down for five
+seconds; if drift returns immediately after a resync the tracker gives up rather
+than seek-looping, and an episode receives at most two separated corrections.
+Each attempted correction and each give-up decision records a diagnostic
 event. Non-finite or in-range drift clears accumulated evidence, and starting a
 new cycle resets the tracker without inventing a pause-state change. The feature
 is controlled by `mpvAvsyncRecovery` (default `true`) and can be disabled from

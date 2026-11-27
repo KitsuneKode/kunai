@@ -92,6 +92,12 @@ export type PlayerPlaybackEvent =
       driftSeconds: number;
       attempt: number;
     }
+  | {
+      /** Sustained drift survived the bounded recovery budget; mpv continues with ordinary frame dropping. */
+      type: "avsync-recovery-exhausted";
+      reason: "drift-returned" | "budget-exhausted";
+      resyncCount: number;
+    }
   | { type: "player-closing" }
   | { type: "player-closed" }
   | { type: "segment-skipped"; kind: PlaybackSkipKind; automatic: boolean }

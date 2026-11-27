@@ -33,6 +33,12 @@ export type MpvAvsyncRecoveryDecision =
       readonly kind: "resync";
       /** One-based corrective attempt inside this episode. */
       readonly attempt: number;
+    }
+  | {
+      /** Recovery is disabled for the rest of this episode; mpv keeps its ordinary frame dropping. */
+      readonly kind: "give-up";
+      readonly reason: "drift-returned" | "budget-exhausted";
+      readonly resyncCount: number;
     };
 
 export type MpvAvsyncRecoveryOptions = {
@@ -63,7 +69,7 @@ export class MpvAvsyncRecoveryTracker {
   private readonly maxResyncsPerEpisode: number;
   private overLimitSamples = 0;
   private driftFirstObservedAt = 0;
-  private episodeStartedAt: number;
+  private outputStartedAt: number | null = null;
   private resyncCount = 0;
   private lastResyncAt: number | null = null;
   private recoveryExhausted = false;
@@ -76,16 +82,24 @@ export class MpvAvsyncRecoveryTracker {
     this.restartGraceMs = options.restartGraceMs ?? AVSYNC_RESTART_GRACE_MS;
     this.postResyncGiveUpMs = options.postResyncGiveUpMs ?? AVSYNC_POST_RESYNC_GIVE_UP_MS;
     this.maxResyncsPerEpisode = options.maxResyncsPerEpisode ?? AVSYNC_MAX_RESYNCS_PER_EPISODE;
-    this.episodeStartedAt = this.now();
   }
 
   /** Start a new file/episode budget and drop evidence left by the old one. */
   restartEpisode(): void {
     this.clearEvidence();
-    this.episodeStartedAt = this.now();
+    this.outputStartedAt = null;
     this.resyncCount = 0;
     this.lastResyncAt = null;
     this.recoveryExhausted = false;
+  }
+
+  /**
+   * Playback output restarted. This is deliberately not episode creation: a
+   * slow network may otherwise consume the whole grace before the first frame.
+   */
+  noteOutputStarted(): void {
+    this.outputStartedAt = this.now();
+    this.clearEvidence();
   }
 
   clearEvidence(): void {
@@ -153,7 +167,7 @@ export class MpvAvsyncRecoveryTracker {
     }
 
     const now = this.now();
-    if (now - this.episodeStartedAt < this.restartGraceMs) {
+    if (this.outputStartedAt === null || now - this.outputStartedAt < this.restartGraceMs) {
       this.clearEvidence();
       return { kind: "none" };
     }
@@ -176,7 +190,7 @@ export class MpvAvsyncRecoveryTracker {
     if (this.lastResyncAt !== null && observedAt - this.lastResyncAt < this.postResyncGiveUpMs) {
       this.recoveryExhausted = true;
       this.clearEvidence();
-      return { kind: "none" };
+      return { kind: "give-up", reason: "drift-returned", resyncCount: this.resyncCount };
     }
     if (this.lastResyncAt !== null && now - this.lastResyncAt < AVSYNC_RESYNC_COOLDOWN_MS) {
       return { kind: "none" };
@@ -184,7 +198,7 @@ export class MpvAvsyncRecoveryTracker {
     if (this.resyncCount >= this.maxResyncsPerEpisode) {
       this.recoveryExhausted = true;
       this.clearEvidence();
-      return { kind: "none" };
+      return { kind: "give-up", reason: "budget-exhausted", resyncCount: this.resyncCount };
     }
 
     this.resyncCount += 1;
