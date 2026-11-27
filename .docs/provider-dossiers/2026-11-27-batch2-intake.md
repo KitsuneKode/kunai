@@ -5,6 +5,8 @@ lastReviewed: "2026-11-27"
 
 # Batch 2 Provider Intake (2026-11-27)
 
+> Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
+
 Follow-up to the [FMHY survey](./2026-11-27-fmhy-candidate-survey.md). The
 [usage matrix](./usage-matrix.md) is the capacity baseline. A 200 from an embed,
 a player label, and even a decoded preroll do not count as title playback.
