@@ -43,6 +43,8 @@ export interface PlaybackRunState {
   recoveryQualityCeiling: RecoveryQualityCeiling | null;
   /** Forced local/online source selection for the next episode, when requested. */
   episodePlaybackSourceOverride: "local" | "online" | null;
+  /** Whether the first resolve of a continue/resume launch still owes the Ask source choice. */
+  continueSourcePromptPending: boolean;
   /** Timing metadata for a locally-resolved (offline) episode, when applicable. */
   localEpisodeTiming: PlaybackTimingMetadata | null;
   /** Download job id backing the current local playback, when applicable. */
@@ -72,6 +74,7 @@ export function createPlaybackRunState(init: {
     startupProviderHopUsed: false,
     recoveryQualityCeiling: null,
     episodePlaybackSourceOverride: null,
+    continueSourcePromptPending: false,
     localEpisodeTiming: null,
     localPlaybackJobId: null,
     localPlaybackSource: null,

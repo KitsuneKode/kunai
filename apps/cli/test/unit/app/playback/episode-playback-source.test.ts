@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { resolveLocalEpisodePlayback } from "@/app/playback/episode-playback-source";
+import {
+  mapContinuePreferenceToSourcePreference,
+  resolveLocalEpisodePlayback,
+} from "@/app/playback/episode-playback-source";
 import type { Container } from "@/container";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
 import type { LocalPlaybackSource } from "@/services/offline/local-playback-source";
@@ -30,6 +33,15 @@ const SOURCE: LocalPlaybackSource = {
   providerEpisodeIdentity: { providerId: "allanime", value: "1" },
   filePath: "/tmp/demo.mkv",
 };
+
+describe("mapContinuePreferenceToSourcePreference", () => {
+  test("keeps Ask distinct from Auto so the playback layer can prompt", () => {
+    expect(mapContinuePreferenceToSourcePreference("ask")).toBe("ask");
+    expect(mapContinuePreferenceToSourcePreference("auto")).toBe("prefer-local");
+    expect(mapContinuePreferenceToSourcePreference("local")).toBe("prefer-local");
+    expect(mapContinuePreferenceToSourcePreference("stream")).toBe("prefer-online");
+  });
+});
 
 describe("resolveLocalEpisodePlayback", () => {
   test("matches canonical assets without serving a different native episode at the same UI index", async () => {

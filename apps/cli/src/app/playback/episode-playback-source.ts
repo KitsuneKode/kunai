@@ -19,7 +19,40 @@ export function mapContinuePreferenceToSourcePreference(
 ): PlaybackSourcePreference {
   if (preference === "local") return "prefer-local";
   if (preference === "stream") return "prefer-online";
+  if (preference === "ask") return "ask";
   return "prefer-local";
+}
+
+type LocalEpisodePlaybackProbe = {
+  readonly jobId: string;
+  readonly playable: Awaited<ReturnType<Container["offlineLibraryService"]["getPlayableSource"]>>;
+};
+
+async function probeLocalEpisodePlayback(
+  container: Container,
+  title: TitleInfo,
+  episode: EpisodeInfo,
+): Promise<LocalEpisodePlaybackProbe | null> {
+  const mode = container.stateManager.getState().mode;
+  const mediaKind = mode === "youtube" ? "video" : mode === "anime" ? "anime" : title.type;
+  const jobId = findReadyJobIdForEpisode(
+    container.offlineAssetService,
+    container.offlineTitleIdentity.resolveForTitle(title, mode),
+    episode.season,
+    episode.episode,
+    { mediaKind, providerEpisodeIdentity: episode.providerEpisodeIdentity },
+  );
+  if (!jobId) return null;
+  return { jobId, playable: await container.offlineLibraryService.getPlayableSource(jobId) };
+}
+
+export async function hasReadyLocalEpisodePlayback(
+  container: Container,
+  title: TitleInfo,
+  episode: EpisodeInfo,
+): Promise<boolean> {
+  const probe = await probeLocalEpisodePlayback(container, title, episode);
+  return probe?.playable.status === "ready";
 }
 
 export async function resolveLocalEpisodePlayback(
@@ -34,18 +67,9 @@ export async function resolveLocalEpisodePlayback(
 ): Promise<LocalEpisodePlaybackResolution | null> {
   if (options.forceOnline) return null;
 
-  const mode = container.stateManager.getState().mode;
-  const mediaKind = mode === "youtube" ? "video" : mode === "anime" ? "anime" : title.type;
-  const jobId = findReadyJobIdForEpisode(
-    container.offlineAssetService,
-    container.offlineTitleIdentity.resolveForTitle(title, mode),
-    episode.season,
-    episode.episode,
-    { mediaKind, providerEpisodeIdentity: episode.providerEpisodeIdentity },
-  );
-  if (!jobId) return null;
-
-  const playable = await container.offlineLibraryService.getPlayableSource(jobId);
+  const probe = await probeLocalEpisodePlayback(container, title, episode);
+  if (!probe) return null;
+  const { jobId, playable } = probe;
   if (options.forceLocal && playable.status === "ready") {
     return buildLocalEpisodeResolution(playable);
   }

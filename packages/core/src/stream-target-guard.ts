@@ -167,6 +167,20 @@ async function resolveHostAddresses(host: string): Promise<string[]> {
   }
 }
 
+/**
+ * Which hop a probe failed on. After a redirect the failing host is the
+ * redirect target, not the URL the caller asked for, and refusal evidence must
+ * name the host that actually failed. Recorded beside the error rather than by
+ * wrapping it, so callers that throw their own typed errors from a fetch port
+ * still catch exactly what they threw.
+ */
+const probeFailureTargets = new WeakMap<Error, string>();
+
+/** The URL of the hop a probe error came from, when `fetchProbeTarget` saw it. */
+export function probeFailureTarget(error: Error): string | undefined {
+  return probeFailureTargets.get(error);
+}
+
 export type ProbeFetchOutcome =
   | {
       readonly kind: "response";
@@ -175,7 +189,7 @@ export type ProbeFetchOutcome =
        *  base that relative playlist URIs resolve against. */
       readonly finalUrl: string;
     }
-  | { readonly kind: "blocked"; readonly reason: string }
+  | { readonly kind: "blocked"; readonly reason: string; readonly url: string }
   | { readonly kind: "timeout" };
 
 /**
@@ -222,6 +236,7 @@ export async function fetchProbeTarget(options: {
       ? AbortSignal.any([options.init.signal, options.parentSignal])
       : (options.init.signal ?? options.parentSignal);
   let target = options.url;
+  const blocked = (reason: string): ProbeFetchOutcome => ({ kind: "blocked", reason, url: target });
   let headersInit = options.init.headers;
   for (let hop = 0; ; hop++) {
     if (signal?.aborted || options.remaining() <= 0) {
@@ -229,7 +244,7 @@ export async function fetchProbeTarget(options: {
     }
     const literalBlocked = blockedLiteralTargetReason(target);
     if (literalBlocked) {
-      return { kind: "blocked", reason: literalBlocked };
+      return blocked(literalBlocked);
     }
     let requestTarget = target;
     let requestInit: RequestInit & { proxy?: false; tls?: { serverName: string } } =
@@ -249,14 +264,16 @@ export async function fetchProbeTarget(options: {
         return { kind: "timeout" };
       }
       if (addresses.length === 0) {
-        return { kind: "blocked", reason: `No vetted DNS address for ${host}` };
+        return blocked(`No vetted DNS address for ${host}`);
       }
       for (const address of addresses) {
         const reason = isPrivateLiteralAddress(address);
-        if (reason) return { kind: "blocked", reason: `${reason} (DNS answer for ${host})` };
+        if (reason) {
+          return blocked(`${reason} (DNS answer for ${host})`);
+        }
       }
       const address = addresses[0];
-      if (!address) return { kind: "blocked", reason: `No vetted DNS address for ${host}` };
+      if (!address) return blocked(`No vetted DNS address for ${host}`);
       const pinned = new URL(target);
       pinned.hostname = address.includes(":") ? `[${address}]` : address;
       const headers = new Headers(headersInit);
@@ -275,11 +292,17 @@ export async function fetchProbeTarget(options: {
     if (signal?.aborted || options.remaining() <= 0) {
       return { kind: "timeout" };
     }
-    const response = await options.fetchImpl(requestTarget, {
-      ...requestInit,
-      redirect: "manual",
-      signal: signal ?? null,
-    });
+    let response: Response;
+    try {
+      response = await options.fetchImpl(requestTarget, {
+        ...requestInit,
+        redirect: "manual",
+        signal: signal ?? null,
+      });
+    } catch (error) {
+      if (error instanceof Error) probeFailureTargets.set(error, target);
+      throw error;
+    }
     if (options.followRedirects !== false && REDIRECT_STATUSES.has(response.status)) {
       const location = response.headers.get("location");
       if (location && hop < MAX_PROBE_REDIRECT_HOPS) {

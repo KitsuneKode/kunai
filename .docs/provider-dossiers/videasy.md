@@ -1,11 +1,22 @@
 ---
 status: current
-lastReviewed: "2026-11-24T09:34:20Z"
+lastReviewed: "2026-11-27"
 ---
 
 # Provider: Videasy
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
+
+## Live capability audit (2026-11-27)
+
+**Status: broken.** Inception, Fight Club, Breaking Bad S01E01, and Dutton
+Ranch S01E01 each exhausted the 12 s audit budget with `Provider did not
+return a stream within 12s`.
+
+No media host, quality, audio, subtitle, probe, or decode evidence was
+produced. Keep Videasy registered as the last movie/series fallback rather
+than hiding it, but do not treat it as a working provider in capacity
+planning.
 
 ## Production status (2026-11-24)
 

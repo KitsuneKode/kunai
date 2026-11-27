@@ -527,14 +527,29 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // release-backed next-episode rule for the row, `--continue`, History and
 // Calendar, plus the successor auto-launch) measured 3,325,627 bytes, +829;
 // 3249 KiB leaves 1,349. No dependency or asset.
-// The pre-release player-capability rule (VLC parity across startup, setup,
-// and doctor), TMDB credential routing, and browse-focus copy on top measured
-// 3,328,807 bytes together; 3251 KiB leaves 217.
-// Onboarding v4 (the two-screen first run with its machine verdict, the
-// density-aware consent screen, startup picks mounted under a live field, and
-// the failure panel's next step) on top measured 3,340,882 bytes: +12,075, all
-// screen code and copy. No dependency or asset. 3263 KiB leaves 430.
-export const NPM_BUNDLE_BUDGET_KB = 3_263;
+// The 2026-11-27 provider live-audit repair (Rivestream wrapper unwrapping,
+// HLS inventory expansion and backend demotion, plus the AllManga rotation
+// profile) measured 3,328,718 bytes after merging next-up and scoped stream
+// refusal evidence: +3,091 over that merged tree. No dependency or asset.
+// 3251 KiB leaves 306 bytes; public launcher budgets are unchanged.
+// Recording the failing redirect hop on probe errors (so refusal evidence
+// names the host that failed) measured 3,329,213 bytes: +495. No dependency
+// or asset. 3252 KiB leaves 835 bytes.
+// The pre-release player-capability rule (one mpv/VLC requirement across
+// startup, setup and doctor), credential-aware TMDB routing and the
+// browse-focus copy (#853) measured 3,332,573 bytes: +3,360. No dependency or
+// asset. 3255 KiB leaves 547 bytes.
+// Promptless-player resume, the Continue source `ask` choice, YouTube session
+// overrides and the Discover startup route (#852) on top measured 3,336,807
+// bytes: +4,234. No dependency or asset; the Continue picker stays lazy.
+// 3259 KiB leaves 409 bytes.
+// Onboarding v4 (the two-screen quick setup, its machine verdict and consent
+// screen, the launch gate that skips setup for a named destination, the live
+// first Browse and the failure panel's Next row; #854) on top measured
+// 3,348,464 bytes: +11,657, all screen code and copy. No dependency or asset;
+// `splitting: false` means lazy loading cannot recover it. 3271 KiB leaves
+// 1,040 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_271;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

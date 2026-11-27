@@ -17,6 +17,13 @@ export interface DecodedImage {
 }
 
 const PNG_HEADER_BYTES = 8;
+const PNG_SIGNATURE_HIGH = 0x89504e47;
+const PNG_SIGNATURE_LOW = 0x0d0a1a0a;
+const PNG_CHUNK_IHDR = 0x49484452;
+const PNG_CHUNK_PLTE = 0x504c5445;
+const PNG_CHUNK_IDAT = 0x49444154;
+const PNG_CHUNK_IEND = 0x49454e44;
+const PNG_CHUNK_TRNS = 0x74524e53;
 const CHUNK_LENGTH_BYTES = 4;
 const CHUNK_TYPE_BYTES = 4;
 const CHUNK_CRC_BYTES = 4;
@@ -54,6 +61,7 @@ type PngChunks = {
   readonly idat: Uint8Array;
   readonly palette: Uint8Array | null;
   readonly transparency: Uint8Array | null;
+  readonly complete: boolean;
 };
 
 function readPngChunks(bytes: Uint8Array, view: DataView): PngChunks {
@@ -61,28 +69,27 @@ function readPngChunks(bytes: Uint8Array, view: DataView): PngChunks {
   let palette: Uint8Array | null = null;
   let transparency: Uint8Array | null = null;
   let offset = PNG_HEADER_BYTES;
+  let complete = false;
 
   while (offset + CHUNK_LENGTH_BYTES + CHUNK_TYPE_BYTES <= bytes.length) {
     const length = view.getUint32(offset);
-    const type = String.fromCharCode(
-      bytes[offset + 4] as number,
-      bytes[offset + 5] as number,
-      bytes[offset + 6] as number,
-      bytes[offset + 7] as number,
-    );
+    const type = view.getUint32(offset + CHUNK_LENGTH_BYTES);
     const dataStart = offset + CHUNK_LENGTH_BYTES + CHUNK_TYPE_BYTES;
     const dataEnd = dataStart + length;
-    if (dataEnd > bytes.length) break;
+    const nextOffset = dataEnd + CHUNK_CRC_BYTES;
+    if (nextOffset > bytes.length) break;
 
-    if (type === "IDAT") idatParts.push(bytes.subarray(dataStart, dataEnd));
-    else if (type === "PLTE") palette = bytes.subarray(dataStart, dataEnd);
-    else if (type === "tRNS") transparency = bytes.subarray(dataStart, dataEnd);
-    else if (type === "IEND") break;
-
-    offset = dataEnd + CHUNK_CRC_BYTES;
+    if (type === PNG_CHUNK_IDAT) idatParts.push(bytes.subarray(dataStart, dataEnd));
+    else if (type === PNG_CHUNK_PLTE) palette = bytes.subarray(dataStart, dataEnd);
+    else if (type === PNG_CHUNK_TRNS) transparency = bytes.subarray(dataStart, dataEnd);
+    if (type === PNG_CHUNK_IEND) {
+      complete = length === 0 && nextOffset === bytes.length;
+      break;
+    }
+    offset = nextOffset;
   }
 
-  return { idat: concatBytes(idatParts), palette, transparency };
+  return { idat: concatBytes(idatParts), palette, transparency, complete };
 }
 
 function concatBytes(parts: readonly Uint8Array[]): Uint8Array {
@@ -230,7 +237,17 @@ function samplesToRgba(
 
 export function decodePng(bytes: Uint8Array): DecodedImage {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (
+    bytes.byteLength < 33 ||
+    view.getUint32(0) !== PNG_SIGNATURE_HIGH ||
+    view.getUint32(4) !== PNG_SIGNATURE_LOW ||
+    view.getUint32(8) !== 13 ||
+    view.getUint32(12) !== PNG_CHUNK_IHDR
+  ) {
+    throw new Error("invalid PNG header");
+  }
   const header = readPngHeader(view);
+  if (header.width <= 0 || header.height <= 0) throw new Error("PNG dimensions must be positive");
 
   if (header.interlace !== 0) {
     // Adam7 needs seven sub-image passes. Posters are not interlaced in
@@ -247,11 +264,16 @@ export function decodePng(bytes: Uint8Array): DecodedImage {
   }
 
   const chunks = readPngChunks(bytes, view);
-  if (chunks.idat.length === 0) throw new Error("PNG has no IDAT data");
+  if (!chunks.complete) throw new Error("truncated PNG");
+  if (chunks.idat.length === 0) throw new Error("missing PNG IDAT");
 
   const sampleStep = header.bitDepth === 16 ? 2 : 1;
   const bytesPerPixel = channels * sampleStep;
   const inflated = new Uint8Array(inflateSync(chunks.idat));
+  const stride = header.width * bytesPerPixel;
+  if (inflated.byteLength !== (stride + 1) * header.height) {
+    throw new Error("truncated PNG");
+  }
   const samples = unfilterScanlines(inflated, header.width, header.height, bytesPerPixel);
 
   return {

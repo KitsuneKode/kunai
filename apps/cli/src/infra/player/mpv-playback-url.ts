@@ -1,3 +1,5 @@
+import { isHlsPlaylistUrl } from "@kunai/core";
+
 export type MpvUrlKind = "remote" | "local";
 
 /** Restricts provider-controlled media targets to HTTP(S); trusted local surfaces may use files. */
@@ -13,7 +15,7 @@ export function isAllowedMpvUrl(url: string, kind: MpvUrlKind): boolean {
 /** Remote HTTP(S) HLS manifest URL. */
 export function isRemoteHlsManifestPlaybackUrl(url: string): boolean {
   const trimmed = url.trim();
-  return /^https?:\/\//i.test(trimmed) && /\.m3u8(?:[?#]|$)/i.test(trimmed);
+  return /^https?:\/\//i.test(trimmed) && isHlsPlaylistUrl(trimmed);
 }
 
 /** Local `.m3u8` paths produced by the HLS manifest materializer (not remote URLs). */

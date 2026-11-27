@@ -114,7 +114,7 @@ Remove:           kunai uninstall
 ```
 
 No player: `No video player found — Kunai needs mpv or VLC to play anything.` VLC but no mpv:
-`mpv is not installed — Kunai will play in VLC. mpv is optional.` The command offer that follows
+`mpv is not installed — with the default player setting (auto), Kunai will play in VLC. mpv is optional.` The command offer that follows
 is unchanged.
 
 ### Setup 1⁄2 — context `welcome`

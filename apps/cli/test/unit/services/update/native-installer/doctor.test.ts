@@ -501,6 +501,7 @@ describe("buildDoctorReport on Android", () => {
   async function reportFor(input: {
     readonly env: Readonly<Record<string, string | undefined>>;
     readonly launchers: readonly string[];
+    readonly installedPlayers?: { readonly mpv: boolean; readonly vlc: boolean };
   }) {
     const { root, layout } = await makeRoot();
     const asked: unknown[] = [];
@@ -512,6 +513,7 @@ describe("buildDoctorReport on Android", () => {
       platform: "linux",
       fileExists: existsSync,
       env: input.env,
+      installedPlayers: input.installedPlayers,
       androidIntentRuntime: {
         which: (command) => (input.launchers.includes(command) ? `/usr/bin/${command}` : null),
       },
@@ -526,7 +528,11 @@ describe("buildDoctorReport on Android", () => {
   test("a phone install is not broken for lacking desktop mpv", async () => {
     const android = await reportFor({ env: TERMUX_ENV, launchers: ["termux-am"] });
     expect(android.asked).toEqual([{ kind: "android-handoff", target: "chooser" }]);
-    const desktop = await reportFor({ env: {}, launchers: [] });
+    const desktop = await reportFor({
+      env: {},
+      launchers: [],
+      installedPlayers: { mpv: true, vlc: false },
+    });
     expect(desktop.asked).toEqual([{ kind: "managed-mpv" }]);
   });
 

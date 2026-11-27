@@ -2275,8 +2275,11 @@ print_android_player_guidance() {
 # VLC-only machine must not be told that nothing can play. The app-bundle paths
 # mirror the CLI's own discovery; a drag-installed VLC.app is not on PATH.
 have_vlc() {
-	have vlc ||
-		[[ -x /Applications/VLC.app/Contents/MacOS/VLC ]] ||
+	have vlc && return 0
+	# Only macOS discovers the app bundle; elsewhere a shared home's VLC.app
+	# is not a player the CLI can launch.
+	[[ "${HOST_OS:-}" == "darwin" ]] || return 1
+	[[ -x /Applications/VLC.app/Contents/MacOS/VLC ]] ||
 		[[ -x "${HOME:-}/Applications/VLC.app/Contents/MacOS/VLC" ]]
 }
 
@@ -2334,7 +2337,7 @@ install_optional_deps() {
 	printf '\n'
 	if [[ " ${missing[*]} " == *" mpv "* ]]; then
 		if have_vlc; then
-			info "mpv is not installed — Kunai will play in VLC. mpv is optional."
+			info "mpv is not installed — with the default player setting (auto), Kunai will play in VLC. mpv is optional."
 		else
 			warn "No video player found — Kunai needs mpv or VLC to play anything."
 		fi

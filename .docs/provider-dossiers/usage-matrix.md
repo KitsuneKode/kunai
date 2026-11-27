@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-09-29"
+lastReviewed: "2026-11-27"
 ---
 
 # Provider Usage Matrix
@@ -15,6 +15,37 @@ This document normalizes and compares behavior across all Kunai provider engines
 - **Release Schedule Reconciliation:** AllManga's `broadcastInterval` + `uploadDates` logic supersedes the need for AniList reconciliation for Anime.
 - **ISO Language Normalization:** The shell strictly uses ISO 639-1 (e.g., `de`, `en`, `ja`). Engines are responsible for translating this into their specific backend quirks (Cineby's `killjoy`, AllManga's `translationType="sub"`, VidKing's `quality="Hindi"`).
 - **State Handover:** When the user switches languages in the UI, if the provider treats Sub/Dub as separate episodes (e.g., AllManga), the Shell MUST restart the stream and pass `--start={currentTime}` to MPV to resume playback seamlessly.
+
+## Live capability audit — 2026-11-27
+
+Method: `apps/cli/test/live/provider-capability-audit.ts` ran the production
+registry in an isolated profile across two movies, two series episodes, two
+anime shows in sub and dub, and one YouTube fixture. "Resolved" means the
+provider returned candidates; it is not playback. "Probe" is an independent
+reachability probe of the selected candidate. "Decode" means mpv wrote a PNG
+frame that was opened and confirmed to be real video. YouTube is the one
+exception to ordinary URL probing: its watch-page locator is not a media URL,
+so yt-dlp/mpv decode is the playback proof.
+
+| Lane         | Provider                | Live state                                | Cases and proof                                                                                         | Measured inventory                                                                                        | Latency                      | Actual upstream dependency / independence                                                                                                                                       |
+| ------------ | ----------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| movie/series | **VidLink**             | working                                   | 4/4 resolved, 4/4 probes reachable, Inception decoded at 1920x1080                                      | 1080p DASH; `en/id/ms/tl` subtitles; audio and HDR not exposed                                            | 1.57-1.87 s                  | `sacdn.hakunaymatata.com`; metadata path uses `vidlink.pro` + `enc-dec.app`; independent of the other measured CDNs                                                             |
+| movie/series | **Movy**                | working                                   | 4/4 resolved, 4/4 probes reachable, Inception decoded at 3840x2160                                      | 15 lanes offered; selected rows 480p-2160p; English sidecars on 2/4 cases; audio/HDR not exposed          | 2.87-5.27 s                  | `moon.goldenkite.top`; seed/metadata at `api.wecollege.net`; independent media CDN                                                                                              |
+| movie/series | **Rivestream**          | repaired; working                         | pre-fix 0/4; post-fix 4/4 resolved and probed, Fight Club decoded at 3840x2160                          | first working backend `Riven`; movies 2160p, series 1080p; no usable ISO audio/subtitle metadata measured | 2.09-4.56 s post-fix         | `scrapper.rivestream.app` API + `norway-canary.bigbang.cymru` media; aggregator backends can overlap VidRock CDNs such as `img1.hscow.com`, so independence is backend-specific |
+| movie/series | **VidRock**             | broken playback                           | 4/4 API resolves but 0/4 probes reachable; HTTP 502; no PNG                                             | 4-7 servers; advertised `en/hi/ta`; no quality/subtitle inventory                                         | 3.43-4.54 s to API inventory | `cdn.ngcloud.app`, `cdn2.ngcloud.app`, `img1.hscow.com`, `img1.fcxmb.com`; shares at least the `hscow` CDN family with some Rivestream backends                                 |
+| movie/series | **Videasy**             | broken                                    | 0/4 resolved; every case timed out at 12 s                                                              | none measured                                                                                             | n/a                          | no media host reached; upstream shutdown evidence stands                                                                                                                        |
+| anime        | **HiAnime**             | working sub+dub                           | 4/4 resolved and probed; One Piece E1 sub decoded at 1440x1080                                          | 1080p HLS; `ja` sub / `en` dub; English subtitles; catalogs 1180 and 12 episodes                          | 2.99-4.33 s                  | `hls.dramahot.top` via `ZokoAnime`                                                                                                                                              |
+| anime        | **KickAssAnime**        | mostly working                            | 3/4 resolved and probed; One Piece E1 sub decoded at 1920x1080; One Piece E1 dub had no playable server | 1080p HLS; `ja/en` audio; 4 subtitle languages on One Piece, 17 on Dandadan                               | 4.83-7.24 s                  | `bl.krussdomi.com` and `hls.krussdomi.com` (`CatStream`/`VidStreaming`)                                                                                                         |
+| anime        | **AnimeGG**             | partial                                   | 1/4 resolved/probed/decoded: Dandadan E1 sub at 1920x1080; other cases timed out at 12 s                | 360p/480p/720p/1080p direct rows; Japanese audio; no separate subtitles measured                          | 6.18 s for working case      | `vidcache.net:8161` media redirects from `www.animegg.org/play`; independent of the other measured anime CDNs                                                                   |
+| anime        | **Miruro**              | broken from this network                  | numeric-ID smoke reached pipe, then connection reset; no stream/probe/decode                            | none measured                                                                                             | n/a                          | mirrors resolve and `.bz` root answers IPv4+IPv6, so not proven dead; pipe egress is blocked/reset                                                                              |
+| anime        | **AllManga / AllAnime** | catalog healthy; playback CAPTCHA-blocked | build-193 bootstrap 200/current; 0/4 stream resolves passed CAPTCHA; no probe/decode                    | Dandadan catalog 12 episodes; no stream inventory measured                                                | n/a                          | `api.mkissa.net` catalog/bootstrap; CAPTCHA wall before source CDNs                                                                                                             |
+| youtube      | **YouTube**             | working                                   | `Me at the zoo` resolved and decoded at 320x240                                                         | 24 formats, 144p-240p (source-video limit); `de/en` subtitles                                             | 2.02 s                       | YouTube watch metadata + Google media endpoints through yt-dlp; no relay                                                                                                        |
+
+Capacity reading: movie/series has three decode-proven providers (VidLink,
+Movy, Rivestream). Anime has two broadly working providers (HiAnime,
+KickAssAnime) plus one partial independent fallback (AnimeGG). YouTube works.
+VidRock, Videasy, Miruro, and AllManga remain registered but must not count
+toward working-provider capacity until a probed stream and decode frame exist.
 
 ## Feature Matrix
 

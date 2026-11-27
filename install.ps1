@@ -2127,7 +2127,7 @@ function Install-OptionalDeps {
   if (-not (Test-Cmd 'mpv')) {
     # VLC is a player too: `--player auto` plays there when mpv is absent.
     if (Test-VlcPresent) {
-      Write-Info 'mpv is not installed - Kunai will play in VLC. mpv is optional.'
+      Write-Info 'mpv is not installed - with the default player setting (auto), Kunai will play in VLC. mpv is optional.'
     } else {
       Write-Warn 'No video player found - Kunai needs mpv or VLC to play anything.'
     }

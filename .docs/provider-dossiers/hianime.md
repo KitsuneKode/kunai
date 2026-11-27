@@ -1,12 +1,29 @@
 ---
 status: current
-lastReviewed: "2026-10-25"
+lastReviewed: "2026-11-27"
 ---
 
 # Provider Research Dossier — HiAnime (`hianime`)
 
 > Agent-facing (L3). Live material: responses recorded 2026-09-13 against
 > `hianime.at` with plain curl + Chrome 124 UA. No browser, no auth, no account.
+
+## Live capability audit (2026-11-27)
+
+**Status: working for both sub and dub lanes.**
+
+- Fixture coverage: One Piece episode 1 (long-running) and Dandadan episode 1
+  (recent), each in sub and dub.
+- Search/catalog: provider search selected `One Piece` (`one-piece-1`, 1180
+  episodes) and `Dandadan` (`dan-da-dan-86`, 12 episodes).
+- Result: 4/4 resolves succeeded and 4/4 independently probed selected streams
+  were reachable. One Piece episode 1 sub produced a real 1440x1080 decode
+  frame.
+- Inventory: one selected 1080p HLS stream and two source candidates per case;
+  one English subtitle track. Audio metadata correctly split Japanese (`ja`)
+  for sub and English (`en`) for dub. No HDR metadata exposed.
+- Resolve latency was 2.99-4.33 s.
+- Actual media dependency: `hls.dramahot.top` behind the `ZokoAnime` server.
 
 Parity reference: ani-cli `5.1.6` (`/home/kitsunekode/Projects/osc/ani-cli`,
 single `ani-cli` shell script; pinned in `scripts/parity-references.json`).

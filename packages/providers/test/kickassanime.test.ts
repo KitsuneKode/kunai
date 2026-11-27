@@ -550,6 +550,26 @@ describe("kickassanimeProviderModule", () => {
     expect(results?.[1]?.availableAudioModes).toEqual(["sub"]);
   });
 
+  test("a search that succeeds with no rows is [] — null is reserved for a failed request", async () => {
+    expect(
+      await kickassanimeProviderModule.search?.(
+        { query: "no such show" },
+        contextWith((url) =>
+          new URL(url).pathname === "/api/fsearch" ? json({ result: [] }) : json({}),
+        ),
+      ),
+    ).toEqual([]);
+  });
+
+  test("a 200 search body without a result list is a failed request, not an empty search", async () => {
+    expect(
+      await kickassanimeProviderModule.search?.(
+        { query: "no such show" },
+        contextWith(() => json({})),
+      ),
+    ).toBeNull();
+  });
+
   test("an empty query asks nothing", async () => {
     const requests: string[] = [];
     expect(
