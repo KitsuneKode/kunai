@@ -1002,6 +1002,7 @@ jobs:
         test,
         analytics-postgres,
         agent-real-mpv,
+        windows-batch-rename-probe,
         windows-cli,
         windows-binary,
         macos-cli,
