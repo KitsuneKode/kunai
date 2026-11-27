@@ -36,6 +36,8 @@ function emptyCapabilities(overrides: Partial<CapabilitySnapshot> = {}): Capabil
   return {
     mpv: true,
     mpvRequired: true,
+    vlc: true,
+    vlcRequired: false,
     ffprobe: true,
     ytDlp: true,
     curl: { present: true, impersonates: true, profile: "chrome150" },
@@ -499,9 +501,10 @@ describe("buildDoctorReport on Android", () => {
   async function reportFor(input: {
     readonly env: Readonly<Record<string, string | undefined>>;
     readonly launchers: readonly string[];
+    readonly installedPlayers?: { readonly mpv: boolean; readonly vlc: boolean };
   }) {
     const { root, layout } = await makeRoot();
-    const asked: boolean[] = [];
+    const asked: unknown[] = [];
     const report = await buildDoctorReport({
       layout,
       now: () => FIXED_DATE,
@@ -510,11 +513,12 @@ describe("buildDoctorReport on Android", () => {
       platform: "linux",
       fileExists: existsSync,
       env: input.env,
+      installedPlayers: input.installedPlayers,
       androidIntentRuntime: {
         which: (command) => (input.launchers.includes(command) ? `/usr/bin/${command}` : null),
       },
       probeCapabilities: async (options) => {
-        asked.push(options.requireMpv);
+        asked.push(options.playerMode);
         return emptyCapabilities();
       },
     });
@@ -523,9 +527,35 @@ describe("buildDoctorReport on Android", () => {
 
   test("a phone install is not broken for lacking desktop mpv", async () => {
     const android = await reportFor({ env: TERMUX_ENV, launchers: ["termux-am"] });
-    expect(android.asked).toEqual([false]);
-    const desktop = await reportFor({ env: {}, launchers: [] });
-    expect(desktop.asked).toEqual([true]);
+    expect(android.asked).toEqual([{ kind: "android-handoff", target: "chooser" }]);
+    const desktop = await reportFor({
+      env: {},
+      launchers: [],
+      installedPlayers: { mpv: true, vlc: false },
+    });
+    expect(desktop.asked).toEqual([{ kind: "managed-mpv" }]);
+  });
+
+  test("auto on a VLC-only desktop probes VLC, not mpv, as the required player", async () => {
+    const { root, layout } = await makeRoot();
+    const asked: unknown[] = [];
+    await buildDoctorReport({
+      layout,
+      now: () => FIXED_DATE,
+      runningExecutable: { path: layout.launcherPath, version: "1.0.0" },
+      pathValue: join(root, "bin"),
+      platform: "linux",
+      fileExists: existsSync,
+      env: {},
+      playerChoice: "auto",
+      installedPlayers: { mpv: false, vlc: true },
+      probeCapabilities: async (options) => {
+        asked.push(options.playerMode);
+        return emptyCapabilities({ mpv: false, vlc: true, mpvRequired: false, vlcRequired: true });
+      },
+    });
+
+    expect(asked).toEqual([{ kind: "managed-vlc" }]);
   });
 
   test("reports the player handoff launcher when one exists", async () => {

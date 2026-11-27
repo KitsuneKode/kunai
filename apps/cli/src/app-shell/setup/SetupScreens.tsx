@@ -113,7 +113,9 @@ export function DependencyScreen({
         )}
       </Box>
       <Box marginBottom={1} flexDirection="column">
-        <Text color={palette.muted}>Kunai finds playable streams and hands them to mpv.</Text>
+        <Text color={palette.muted}>
+          Kunai finds playable streams and hands them to mpv or VLC.
+        </Text>
         <Text color={palette.muted}>
           {rechecking ? "Checking this machine again…" : "Here's what's on this machine."}
         </Text>

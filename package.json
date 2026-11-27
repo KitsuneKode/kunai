@@ -128,6 +128,7 @@
     "verify:build-pipeline:all-targets": "bun run scripts/verify-build-pipeline.ts --all-targets",
     "verify:readme:commands": "bun run scripts/verify-readme-commands.ts",
     "verify:doc-paths": "bun run scripts/verify-doc-paths.ts",
+    "verify:docs-codegen": "bun run --cwd apps/docs verify:codegen",
     "wip:audit": "bun run scripts/wip-guard.ts audit",
     "wip:backup": "bun run scripts/wip-guard.ts backup",
     "verify:doc-coverage": "bun run scripts/verify-doc-coverage.ts",
@@ -157,7 +158,7 @@
     "release:publish": "bun run scripts/publish-npm-release.ts",
     "release:publish:check": "bun run scripts/publish-npm-release.ts",
     "verify:dependency-patches": "bun run scripts/verify-dependency-patches.mjs",
-    "ci:preflight": "bun run lint:anti-slop:baseline && bun run verify:doc-paths && bun run verify:doc-frontmatter && bun run fmt:root:check",
+    "ci:preflight": "bun run lint:anti-slop:baseline && bun run verify:doc-paths && bun run verify:doc-frontmatter && bun run verify:docs-codegen && bun run fmt:root:check",
     "audit:dependencies": "bun run scripts/audit-dependencies.ts"
   },
   "dependencies": {

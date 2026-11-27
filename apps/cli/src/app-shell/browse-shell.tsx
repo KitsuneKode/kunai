@@ -2163,7 +2163,7 @@ export function BrowseShell<T>({
                           ? "Type a title · ↓ for you now · / commands"
                           : "Type a title · / commands · /guide tour · /filters guided search"
                         : listFocused
-                          ? undefined
+                          ? "results own keys · Esc search"
                           : "↓ results · / commands"
                 }
                 maxWidth={innerWidth}

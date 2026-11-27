@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "generate": "bun ../../scripts/packaging/render-installers.ts public --website && bun run scripts/sync-code-metadata.ts && bun run scripts/sync-repo-content.ts && fumadocs-mdx",
+    "verify:codegen": "bun run scripts/check-codegen-freshness.ts",
     "dev": "bun run generate && next dev",
     "build:app": "NEXT_TELEMETRY_DISABLED=1 next build",
     "build": "bun run generate && bun run build:app",

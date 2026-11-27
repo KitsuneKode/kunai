@@ -22,6 +22,8 @@ function frame(selectedIndex: number | null = null, payload = UNSET_PAYLOAD_FIXT
 const READY: CapabilitySnapshot = {
   mpv: true,
   mpvRequired: true,
+  vlc: true,
+  vlcRequired: false,
   ffprobe: true,
   ytDlp: true,
   curl: { present: true, impersonates: true, profile: "chrome150" },

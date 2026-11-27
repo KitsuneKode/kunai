@@ -74,6 +74,21 @@ export function buildDependencyRows(
       : null),
   });
 
+  const vlcIssue = issue("vlc-missing");
+  const vlcRequired = snapshot.vlcRequired;
+  rows.push({
+    id: "vlc",
+    name: "VLC",
+    scope: "always",
+    state: vlcRequired && !snapshot.vlc ? "degraded" : "ok",
+    role: "playback",
+    detail: snapshot.vlc ? "found" : vlcRequired ? "not found" : "not required by selected player",
+    fix: vlcIssue ? fixFor(vlcIssue.install, which) : null,
+    ...(vlcRequired && !snapshot.vlc
+      ? { consequence: "Nothing can play until this is installed." }
+      : null),
+  });
+
   const ytDlpIssue = issue("yt-dlp-missing");
   rows.push({
     id: "yt-dlp",
