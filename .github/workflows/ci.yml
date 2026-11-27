@@ -407,6 +407,12 @@ jobs:
         with:
           turbo-cache-prefix: windows-cli
 
+      - name: Probe batch rename exit status
+        if: matrix.shard == 1
+        shell: pwsh
+        timeout-minutes: 2
+        run: bun run --cwd apps/cli test:file test/integration/windows-batch-rename-probe.test.ts
+
       - name: Provision native mpv
         shell: pwsh
         timeout-minutes: 8
