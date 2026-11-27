@@ -76,12 +76,28 @@ export function buildDiagnosticsPanelLinesFromInsight({
   const healthLines = healthSections.flatMap((section) =>
     section.rows.map((row) => healthRowToPanelLine(row)),
   );
-  const verdictLines: readonly ShellPanelLine[] = shouldRenderVerdictRow(
+  const verdictRow: readonly ShellPanelLine[] = shouldRenderVerdictRow(
     verdictDetail,
     healthLines.map((line) => line.detail ?? ""),
   )
-    ? [sectionHeader("Verdict"), { label: "Verdict", detail: verdictDetail, tone: verdictTone }]
+    ? [{ label: "Verdict", detail: verdictDetail, tone: verdictTone }]
     : [];
+
+  const startupFailureLead: readonly ShellPanelLine[] =
+    insight.sessionVerdict.severity === "blocked" ||
+    insight.sessionVerdict.severity === "recoverable"
+      ? [
+          {
+            label: "Why it didn't start",
+            detail: insight.likelyCause,
+            tone: verdictTone,
+          },
+        ]
+      : [];
+  const verdictLines: readonly ShellPanelLine[] =
+    startupFailureLead.length > 0 || verdictRow.length > 0
+      ? [sectionHeader("Verdict"), ...startupFailureLead, ...verdictRow]
+      : [];
 
   return [
     ...verdictLines,

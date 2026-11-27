@@ -760,7 +760,11 @@ export function formatDoctorReportText(report: DoctorReport): string {
   }
   lines.push("");
   lines.push("Findings");
-  for (const finding of report.findings) {
+  const severityOrder = { error: 0, warning: 1, info: 2 } as const;
+  const orderedFindings = [...report.findings].sort(
+    (left, right) => severityOrder[left.severity] - severityOrder[right.severity],
+  );
+  for (const finding of orderedFindings) {
     lines.push(`  [${finding.severity}] ${finding.code}: ${finding.message}`);
     if (finding.remediation.length) {
       lines.push("    Remediation:");

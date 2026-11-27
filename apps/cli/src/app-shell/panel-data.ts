@@ -158,6 +158,8 @@ export type DiagnosticsPanelLineInput = {
   releaseSummary?: { titleCount: number; episodeCount: number } | null;
   releaseDiagnostics?: ReleaseProgressDiagnosticsSummary | null;
   presenceSnapshot?: PresenceSnapshot | null;
+  /** False when the shell connectivity service currently reports the machine offline. */
+  networkAvailable?: boolean;
   memorySamples?: readonly RuntimeMemorySample[];
   providers?: readonly ProviderMetadata[];
   getProviderHealth?: (providerId: ProviderId) => ProviderHealth | undefined;
@@ -212,6 +214,7 @@ export function buildDiagnosticsPanelLines({
   releaseSummary,
   releaseDiagnostics,
   presenceSnapshot,
+  networkAvailable,
   memorySamples,
   providers,
   getProviderHealth,
@@ -230,6 +233,7 @@ export function buildDiagnosticsPanelLines({
     releaseSummary,
     releaseDiagnostics,
     presenceSnapshot,
+    networkAvailable,
     memorySamples,
     getProviderHealth,
   });

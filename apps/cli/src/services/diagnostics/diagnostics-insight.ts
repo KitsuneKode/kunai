@@ -128,6 +128,8 @@ export type BuildDiagnosticsInsightInput = {
   readonly memorySnapshot?: RuntimeMemorySnapshot;
   readonly memorySamples?: readonly RuntimeMemorySample[];
   readonly getProviderHealth?: (providerId: ProviderId) => ProviderHealth | undefined;
+  /** Live reachability from the shell connectivity service; false must override playback-derived optimism. */
+  readonly networkAvailable?: boolean;
 };
 
 // ---------------------------------------------------------------------------
@@ -221,13 +223,24 @@ export function formatHealthRowDetail(row: DiagnosticsHealthRow): string {
 // ---------------------------------------------------------------------------
 
 export function buildDiagnosticsInsight(input: BuildDiagnosticsInsightInput): DiagnosticsInsight {
-  const runtimeHealth = buildRuntimeHealthSnapshot({
+  const observedRuntimeHealth = buildRuntimeHealthSnapshot({
     recentEvents: input.recentEvents,
     currentProvider: input.state.provider,
     memorySnapshot: input.memorySnapshot,
     memorySamples: input.memorySamples,
     persistedProviderHealth: input.getProviderHealth?.(input.state.provider),
   });
+  const runtimeHealth =
+    input.networkAvailable === false
+      ? {
+          ...observedRuntimeHealth,
+          network: {
+            label: "Network",
+            detail: "offline — streaming and metadata requests are unreachable",
+            tone: "error" as const,
+          },
+        }
+      : observedRuntimeHealth;
 
   const healthRows = buildHealthRows(input, runtimeHealth);
   const degradedSubsystems = healthRows
@@ -419,7 +432,7 @@ function buildHealthRows(
       "subtitles",
       subtitleSeverity,
       resolveSubtitleReason(state, subtitleOutcome),
-      subtitleSeverity === "healthy" ? "none" : "retry",
+      subtitleSeverity === "recoverable" ? "retry" : "none",
     ),
     buildHealthRow(
       "downloads",

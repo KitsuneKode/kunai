@@ -163,6 +163,10 @@ describe("panel-data", () => {
     // The problem is reported on its own subsystem row. It used to be repeated
     // verbatim as a Verdict row above it; that duplicate is now suppressed when
     // a single health row already says the same thing.
+    const lead = lines.find((line) => line.label === "Why it didn't start");
+    expect(lead?.detail).toBe("The stream expired.");
+    expect(lead?.tone).toBe("warning");
+
     const playback = lines.find((line) => line.label === "Playback");
     expect(playback?.detail).toContain("stream expired");
     expect(playback?.detail).toMatch(/refresh source/i);
