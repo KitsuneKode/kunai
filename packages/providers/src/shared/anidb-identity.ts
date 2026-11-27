@@ -7,13 +7,13 @@ import {
 } from "./curl-impersonate";
 import { TTLCache } from "./provider-cache";
 import { createTimeoutSignal } from "./timeout-signal";
+import { CHROME_124_USER_AGENT } from "./user-agent";
 
 export { resolveCurlCandidate as resolveAnidbCurl } from "./curl-impersonate";
 
 const ANIDB_BASE = "https://anidb.app";
 const ANIDB_REFERER = "https://anidb.app/";
-const ANIDB_USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+const ANIDB_USER_AGENT = CHROME_124_USER_AGENT;
 
 /** curl reports the final status after redirects; the body keeps the rest. */
 const ANIDB_STATUS_WRITE_OUT = ["-w", "\n%{http_code}"] as const;

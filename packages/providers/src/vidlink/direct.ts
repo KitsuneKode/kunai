@@ -29,6 +29,7 @@ import { readJsonObjectBody } from "../shared/json-body";
 import { isSafeManifestHttpsUrl } from "../shared/manifest-bundle";
 import { sleepAbortable } from "../shared/timeout-signal";
 import { trimTrailingSlashes } from "../shared/trim-trailing-slashes";
+import { CHROME_137_USER_AGENT } from "../shared/user-agent";
 import { vidlinkManifest, VIDLINK_PROVIDER_ID } from "./manifest";
 
 export { VIDLINK_PROVIDER_ID };
@@ -74,8 +75,7 @@ export function effectiveVidlinkEncDecBase(): string {
   const override = getProviderCryptoOverride(VIDLINK_PROVIDER_ID, "encDecBase", ENC_DEC_BASE);
   return isSafeManifestHttpsUrl(override) ? trimTrailingSlashes(override) : ENC_DEC_BASE;
 }
-const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36";
+const USER_AGENT = CHROME_137_USER_AGENT;
 const VIDLINK_FETCH_TIMEOUT_MS = 20_000;
 const ENC_DEC_CACHE_TTL_MS = 30 * 60_000;
 /**

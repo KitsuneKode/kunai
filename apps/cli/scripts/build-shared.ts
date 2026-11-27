@@ -549,7 +549,13 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // 3,348,464 bytes: +11,657, all screen code and copy. No dependency or asset;
 // `splitting: false` means lazy loading cannot recover it. 3271 KiB leaves
 // 1,040 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_271;
+// Provider batch 1 (#862: the VidBolt, AniLight and Anidap adapters, their
+// registration and defaults, signed-HLS playlist handling, Malay subtitle
+// normalization and the local relay's handling of obfuscated media segments)
+// on top measured 3,378,230 bytes: +29,766, after sharing the provider JSON
+// transport, episode identity parsing and language-list normalization. No
+// dependency or asset. 3300 KiB leaves 970 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_300;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

@@ -1,5 +1,7 @@
 import {
   allmangaProviderModule,
+  anidapProviderModule,
+  anilightProviderModule,
   animeggProviderModule,
   hianimeProviderModule,
   kickassanimeProviderModule,
@@ -8,6 +10,7 @@ import {
   miruroProviderModule,
   rivestreamProviderModule,
   videasyProviderModule,
+  vidboltProviderModule,
   vidlinkProviderModule,
 } from "@kunai/providers";
 import { buildProviderRelayRegistry } from "@kunai/relay";
@@ -26,11 +29,14 @@ export const relayProviderModules = [
   vidrockProviderModule,
   rivestreamProviderModule,
   movyProviderModule,
+  vidboltProviderModule,
   allmangaProviderModule,
   hianimeProviderModule,
   animeggProviderModule,
   kickassanimeProviderModule,
   miruroProviderModule,
+  anilightProviderModule,
+  anidapProviderModule,
 ] as const;
 
 export const relayRegistry = buildProviderRelayRegistry(relayProviderModules);
