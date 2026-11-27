@@ -2128,7 +2128,7 @@ function Install-OptionalDeps {
   $missing = @()
   if (-not (Test-Cmd 'mpv')) {
     if (Test-VlcInstalled) {
-      Write-Info 'mpv is not installed. Kunai will play in VLC; mpv is recommended for seamless episode chaining and live track switching.'
+      Write-Info 'mpv is not installed. With the default player setting (auto), Kunai plays in VLC; mpv is recommended for seamless episode chaining and live track switching.'
     } else {
       Write-Warn 'Neither mpv nor VLC is installed - Kunai needs one of them to play anything. mpv is recommended.'
     }

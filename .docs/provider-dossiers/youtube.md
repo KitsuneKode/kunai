@@ -1,11 +1,24 @@
 ---
 status: current
-lastReviewed: "2026-11-24T12:44:00Z"
+lastReviewed: "2026-11-27"
 ---
 
 # Provider: YouTube (`youtube`)
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
+
+## Live capability audit (2026-11-27)
+
+**Status: working.** Provider search selected the canonical `Me at the zoo`
+upload (`youtube:jNQXAC9IVRw`). Resolution returned 24 yt-dlp formats in
+2.02 s, spanning 144p and 240p because that is what the 2005 source video
+carries; no higher-quality absence should be inferred from this fixture.
+German and English subtitle tracks were exposed.
+
+The watch-page locator is intentionally not probed as an ordinary direct
+media URL. Playback proof instead came from the yt-dlp/mpv path, which wrote
+a real 320x240 PNG frame. Actual dependencies remain YouTube watch metadata
+plus Google-hosted media endpoints selected by yt-dlp; no relay is involved.
 
 ## Sweep dependency (2026-11-24)
 

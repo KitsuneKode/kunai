@@ -3,6 +3,7 @@ import type { ProviderRuntimeContext, StreamCandidate } from "@kunai/types";
 import { runStreamHealthCheck, STREAM_HEALTH_DEFAULTS } from "./stream-health";
 import {
   isStreamReachableForResolve,
+  streamUrlHost,
   type StreamReachabilityProbeResult,
 } from "./stream-reachability";
 
@@ -114,26 +115,28 @@ export type VerifiedStreamSelection<TStream> =
       readonly stream: TStream;
       readonly verified: boolean;
       /**
-       * Hosts proven dead during the walk. The caller must drop their streams:
-       * leaving a refused rung in the inventory lets selection ship the very
-       * stream the gate rejected.
+       * URL or host evidence gathered before the accepted stream. The caller
+       * must drop matching rungs: leaving one in inventory lets selection ship
+       * the exact stream the gate rejected.
        */
-      readonly refusedHosts: ReadonlySet<string>;
+      readonly refusals: ReadonlySet<string>;
     }
-  | { readonly accepted: false; readonly reason: string };
+  | {
+      readonly accepted: false;
+      readonly reason: string;
+      /** Present on failure too, so a caller can tell whether prior proof is still usable. */
+      readonly refusals: ReadonlySet<string>;
+    };
 
 /**
  * The first stream of a source that actually verifies.
  *
- * A refusal is evidence about *that stream*, not about the source: a candidate
- * often carries several qualities, and they do not always sit on the same host.
- * Rejecting the whole source on the first refusal throws away rungs that would
- * have played, so the walk continues and the source is refused only when every
- * distinct host has refused.
- *
- * One probe per host, because a host answers the same for every rung it serves
- * — the extra probes would cost latency inside the candidate's budget and tell
- * us nothing new.
+ * HTTP, manifest, and media refusals are evidence about the exact URL: one HLS
+ * rung can 404 while its sibling on the same CDN host plays. Transport and
+ * target-guard refusals are evidence about the host and skip only that host's
+ * later URLs. This keeps the walk bounded by the caller's input slice or
+ * candidate timer without repeating probes that cannot reach a different
+ * answer.
  */
 export async function selectVerifiedStream<
   TStream extends Pick<StreamCandidate, "url" | "headers">,
@@ -149,11 +152,10 @@ export async function selectVerifiedStream<
   readonly timeoutMs?: number;
 }): Promise<VerifiedStreamSelection<TStream>> {
   let firstReason: string | undefined;
-  const refusedHosts = new Set<string>();
+  const refusals = new Set<string>();
 
   for (const stream of streams) {
-    const host = streamHost(stream.url);
-    if (host && refusedHosts.has(host)) continue;
+    if (isStreamRefused(stream, refusals)) continue;
 
     const verdict = await verifyCandidateStream({
       stream,
@@ -162,36 +164,120 @@ export async function selectVerifiedStream<
       ...(timeoutMs === undefined ? null : { timeoutMs }),
     });
     if (verdict.accepted) {
-      return { accepted: true, stream, verified: verdict.verified, refusedHosts };
+      return { accepted: true, stream, verified: verdict.verified, refusals };
     }
 
     firstReason ??= verdict.reason;
-    if (host) refusedHosts.add(host);
+    const probe = verdict.probe?.status === "unreachable" ? verdict.probe : undefined;
+    if (probe?.refusalScope === "host") {
+      // A playlist can fail on an absolute variant or segment host different
+      // from the stream's own host. That evidence suppresses the host that
+      // actually failed, while the stream URL itself is refused without
+      // indicting healthy sibling URLs on the playlist's host.
+      const originalHost = streamUrlHost(stream.url);
+      const refusedHost = probe.refusalHost || originalHost;
+      if (refusedHost) refusals.add(hostRefusalKey(refusedHost));
+      else refusals.add(urlRefusalKey(stream.url, stream.headers));
+      if (originalHost && refusedHost !== originalHost) {
+        refusals.add(urlRefusalKey(stream.url, stream.headers));
+      }
+    } else {
+      refusals.add(urlRefusalKey(stream.url, stream.headers));
+    }
   }
 
-  return { accepted: false, reason: firstReason ?? "candidate has no stream url" };
+  return {
+    accepted: false,
+    reason: firstReason ?? "candidate has no stream url",
+    refusals,
+  };
+}
+
+export type ProbedFinalStreamSelection<TStream> =
+  | {
+      readonly accepted: true;
+      readonly stream: TStream;
+      readonly refusals: ReadonlySet<string>;
+    }
+  | {
+      readonly accepted: false;
+      readonly reason: string;
+      readonly refusals: ReadonlySet<string>;
+    };
+
+/**
+ * Probe the stream startup selection will ship, then fall back to the stream
+ * that already passed the candidate gate.
+ *
+ * The bounded walk is intentionally small so a dead high-quality ladder cannot
+ * consume the whole resolve. That bound must not throw away the lower-ranked
+ * proof that let this candidate survive cycling: when the walk exhausts, that
+ * exact object is still eligible unless the walk just gathered URL or host
+ * evidence against it. Object identity is deliberate — a duplicate URL with
+ * different playback headers is a different request.
+ */
+export async function selectProbedFinalStream<
+  TStream extends Pick<StreamCandidate, "url" | "headers">,
+>({
+  selected,
+  selectableStreams,
+  candidateGateStream,
+  context,
+  signal,
+  timeoutMs,
+  maxProbes,
+}: {
+  readonly selected: TStream;
+  readonly selectableStreams: readonly TStream[];
+  readonly candidateGateStream: TStream;
+  readonly context: ProviderRuntimeContext;
+  readonly signal?: AbortSignal;
+  readonly timeoutMs?: number;
+  readonly maxProbes: number;
+}): Promise<ProbedFinalStreamSelection<TStream>> {
+  const gateOrder = [selected, ...selectableStreams.filter((stream) => stream !== selected)].slice(
+    0,
+    maxProbes,
+  );
+  const gated = await selectVerifiedStream({ streams: gateOrder, context, signal, timeoutMs });
+  if (gated.accepted) return gated;
+
+  if (
+    selectableStreams.includes(candidateGateStream) &&
+    !isStreamRefused(candidateGateStream, gated.refusals)
+  ) {
+    return { accepted: true, stream: candidateGateStream, refusals: gated.refusals };
+  }
+  return gated;
+}
+
+/** Whether prior gate evidence already refuses this exact URL or its host. */
+export function isStreamRefused<
+  TStream extends Pick<StreamCandidate, "url"> & Partial<Pick<StreamCandidate, "headers">>,
+>(stream: TStream, refusals: ReadonlySet<string>): boolean {
+  if (refusals.has(urlRefusalKey(stream.url, stream.headers))) return true;
+  const host = streamUrlHost(stream.url);
+  return host.length > 0 && refusals.has(hostRefusalKey(host));
 }
 
 /**
- * Drop the streams whose host the gate proved dead.
- *
- * The walk refuses a host, not a rung, so the caller cannot just remove the one
- * stream that failed — every rung on that host is equally gone. Leaving them in
- * lets startup selection ship the exact stream the gate rejected, which is
- * usually the highest quality and therefore the one it prefers.
+ * Drop the streams the gate proved dead, whether the evidence was the exact
+ * URL (an HTTP/media refusal) or the whole host (a transport/guard refusal).
  */
-export function dropRefusedStreams<TStream extends Pick<StreamCandidate, "url">>(
-  streams: readonly TStream[],
-  refusedHosts: ReadonlySet<string>,
-): TStream[] {
-  if (refusedHosts.size === 0) return [...streams];
-  return streams.filter((stream) => !refusedHosts.has(streamHost(stream.url)));
+export function dropRefusedStreams<
+  TStream extends Pick<StreamCandidate, "url"> & Partial<Pick<StreamCandidate, "headers">>,
+>(streams: readonly TStream[], refusals: ReadonlySet<string>): TStream[] {
+  if (refusals.size === 0) return [...streams];
+  return streams.filter((stream) => !isStreamRefused(stream, refusals));
 }
 
-function streamHost(url: string | undefined): string {
-  try {
-    return new URL(url ?? "").host.toLowerCase();
-  } catch {
-    return "";
-  }
+function urlRefusalKey(url: string | undefined, headers?: Record<string, string>): string {
+  const requestHeaders = Object.entries(headers ?? {})
+    .map(([name, value]) => [name.toLowerCase(), value] as const)
+    .sort(([left], [right]) => left.localeCompare(right));
+  return `url:${url ?? ""}:${JSON.stringify(requestHeaders)}`;
+}
+
+function hostRefusalKey(host: string): string {
+  return `host:${host}`;
 }

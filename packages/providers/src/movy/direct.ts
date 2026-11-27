@@ -34,6 +34,7 @@ import {
 import {
   dropRefusedStreams,
   resolveGateBudgetMs,
+  selectProbedFinalStream,
   selectVerifiedStream,
 } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
@@ -136,7 +137,7 @@ const MOVY_RESOLVE_GATE_MAX_PROBES = 3;
 
 /**
  * Keep only variants that still name a shipped stream — a variant whose rungs
- * all sat on a refused host would offer a quality ladder that resolves nothing.
+ * were all refused by the gate would offer a quality ladder that resolves nothing.
  */
 function dropRefusedVariants(
   variants: readonly ProviderVariantCandidate[],
@@ -303,6 +304,7 @@ type MovyResolvedCandidate = {
   readonly streams: readonly StreamCandidate[];
   readonly variants: readonly ProviderVariantCandidate[];
   readonly subtitles: readonly SubtitleCandidate[];
+  readonly candidateGateStream: StreamCandidate;
 };
 
 async function resolveMovyLaneCandidate({
@@ -504,7 +506,7 @@ async function resolveMovyLaneCandidate({
     });
   }
   // Keep the alternatives, drop the rungs the gate proved dead.
-  const gatedStreams = dropRefusedStreams(streams, selection.refusedHosts);
+  const gatedStreams = dropRefusedStreams(streams, selection.refusals);
   const gatedVariants = variants.filter((variant) =>
     gatedStreams.some((stream) => stream.variantId === variant.id),
   );
@@ -514,6 +516,7 @@ async function resolveMovyLaneCandidate({
     streams: gatedStreams,
     variants: gatedVariants,
     subtitles: [...new Map(subtitles.map((subtitle) => [subtitle.url, subtitle])).values()],
+    candidateGateStream: selection.stream,
   };
 }
 
@@ -785,6 +788,7 @@ export async function resolveMovyDirect(
     variants: selectedVariants,
     subtitles,
     provider: laneUsed,
+    candidateGateStream,
   } = cycleResult.selected;
   const streams = [...selectedStreams];
   const variants = [...selectedVariants];
@@ -800,21 +804,17 @@ export async function resolveMovyDirect(
   });
 
   // Resolve gate: the chosen stream is probed with its own headers before any
-  // success is reported. A rejected candidate refuses its whole host, and the
-  // walk continues through the rank-ordered remainder — a dead CDN lane must
-  // end in an exhausted result, never a shipped "resolved".
-  const probeTimeoutMs = resolveGateBudgetMs(
-    providerCycleCandidateTimeoutMs(input.startupPriority ?? "balanced", MOVY_CANDIDATE_TIMEOUT_MS),
-  );
-  const gateOrder = [
-    selection.selected,
-    ...selectableStreams.filter((stream) => stream.id !== selection.selected.id),
-  ].slice(0, MOVY_RESOLVE_GATE_MAX_PROBES);
-  const gated = await selectVerifiedStream({
-    streams: gateOrder,
+  // success is reported. URL-scoped refusals leave sibling rungs eligible, and
+  // the walk continues through the rank-ordered remainder — a dead CDN lane
+  // must end in an exhausted result, never a shipped "resolved".
+  const gated = await selectProbedFinalStream({
+    selected: selection.selected,
+    selectableStreams,
+    candidateGateStream,
     context,
     signal: context.signal,
-    timeoutMs: probeTimeoutMs,
+    timeoutMs: gateTimeoutMs,
+    maxProbes: MOVY_RESOLVE_GATE_MAX_PROBES,
   });
 
   if (context.signal?.aborted) {
@@ -843,7 +843,7 @@ export async function resolveMovyDirect(
   }
 
   const selectedStream = gated.stream;
-  const shippedStreams = dropRefusedStreams(streams, gated.refusedHosts);
+  const shippedStreams = dropRefusedStreams(streams, gated.refusals);
   const selectedSource = {
     ...createSourceCandidateFromStream({
       providerId: MOVY_PROVIDER_ID,

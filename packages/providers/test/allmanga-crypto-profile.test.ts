@@ -1,12 +1,16 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setSystemTime, test } from "bun:test";
 
 import {
   ALLMANGA_BUILD_ID,
   ALLMANGA_CRYPTO_PROFILE,
   ALLMANGA_MASK_FRAGMENTS,
   buildAllMangaBootToken,
+  currentAllMangaEpochCandidates,
+  describeAllMangaCryptoOverrideProblem,
+  getEffectiveAllMangaEpochMs,
 } from "../src/allmanga/crypto";
 import type { AllMangaBootPart } from "../src/allmanga/crypto";
+import { setActiveProviderHotfixManifest } from "../src/shared/hotfix-runtime";
 
 /**
  * Conformance for the pinned mkissa crypto profile. Per-build golden vectors
@@ -52,5 +56,61 @@ describe("allmanga crypto profile", () => {
         contentLane: "k7",
       }),
     );
+  });
+  test("a hotfix rotation profile carries its epoch scale into candidate selection", () => {
+    setSystemTime(new Date("2026-11-27T12:00:00.000Z"));
+    try {
+      setActiveProviderHotfixManifest({
+        schemaVersion: 1,
+        revision: 1,
+        generatedAt: "2026-11-27T00:00:00.000Z",
+        expiresAt: "2026-11-28T00:00:00.000Z",
+        providers: {
+          allanime: {
+            cryptoOverrides: {
+              buildId: "205",
+              saltMul: "17",
+              saltAdd: "23",
+              fragMul: "11",
+              fragAdd: "3",
+              bootPrefix: "PRE:",
+              bootJoin: "|",
+              bootParts: "group,host,lane,buildId,epoch",
+              maskFragments: "AAAAAAAAAAA=,BBBBBBBBBBB=,CCCCCCCCCCC=,DDDDDDDDDDD=",
+              epochMs: "120000",
+              epochGraceMs: "10000",
+            },
+          },
+        },
+      });
+      try {
+        expect(getEffectiveAllMangaEpochMs()).toBe(120_000);
+        expect(currentAllMangaEpochCandidates(5 * 120_000 + 1_000)).toEqual([4, 5]);
+        expect(currentAllMangaEpochCandidates(5 * 120_000 + 11_000)).toEqual([5]);
+      } finally {
+        setActiveProviderHotfixManifest(null);
+      }
+    } finally {
+      setSystemTime();
+    }
+  });
+
+  test("a blank numeric field in a hotfix rotation is rejected, not read as 0", () => {
+    const complete = {
+      buildId: ALLMANGA_CRYPTO_PROFILE.buildId,
+      saltMul: String(ALLMANGA_CRYPTO_PROFILE.saltMul),
+      saltAdd: String(ALLMANGA_CRYPTO_PROFILE.saltAdd),
+      fragMul: String(ALLMANGA_CRYPTO_PROFILE.fragMul),
+      fragAdd: String(ALLMANGA_CRYPTO_PROFILE.fragAdd),
+      bootPrefix: ALLMANGA_CRYPTO_PROFILE.bootPrefix,
+      bootJoin: ALLMANGA_CRYPTO_PROFILE.bootJoin,
+      bootParts: ALLMANGA_CRYPTO_PROFILE.bootParts.join(","),
+      maskFragments: ALLMANGA_CRYPTO_PROFILE.maskFragments.join(","),
+      epochMs: String(ALLMANGA_CRYPTO_PROFILE.epochMs),
+      epochGraceMs: String(ALLMANGA_CRYPTO_PROFILE.epochGraceMs),
+    };
+    expect(describeAllMangaCryptoOverrideProblem(complete)).toBeNull();
+    expect(describeAllMangaCryptoOverrideProblem({ ...complete, epochGraceMs: "" })).not.toBeNull();
+    expect(describeAllMangaCryptoOverrideProblem({ ...complete, saltAdd: "  " })).not.toBeNull();
   });
 });

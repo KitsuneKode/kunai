@@ -182,7 +182,6 @@ export const animeggProviderModule: CoreProviderModule = {
     if (!query) return null;
     const html = await fetchText(animeggSearchPath(query), context);
     const results = parseAnimeggSearchResults(html).slice(0, 40);
-    if (results.length === 0) return null;
 
     return results.map((result): ProviderSearchResult => {
       // Every AnimeGG entry is a series page, even one-episode films; the
@@ -386,7 +385,7 @@ export const animeggProviderModule: CoreProviderModule = {
     if (!gated.accepted) {
       return fail("not-found", `AnimeGG selected stream is unreachable (${gated.reason})`, true);
     }
-    const shippedStreams = dropRefusedStreams(streams, gated.refusedHosts);
+    const shippedStreams = dropRefusedStreams(streams, gated.refusals);
 
     const inventory: ProviderSourceCandidate[] = [
       createSourceCandidateFromStream({

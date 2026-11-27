@@ -1,11 +1,26 @@
 ---
 status: current
-lastReviewed: "2026-11-24T09:34:20Z"
+lastReviewed: "2026-11-27"
 ---
 
 # Provider: Miruro
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
+
+## Live capability audit (2026-11-27)
+
+**Status: broken from this network, but not proven dead.** Miruro requires a
+numeric AniList ID; the titleless audit fallback correctly refused that shape.
+The focused production smoke then used `anilist:21` and reached the pipe
+stage, where every resolve failed with `curl: (35) Recv failure: Connection
+reset by peer`.
+
+Reachability evidence argues against calling the domains dead: DoH answered
+for all four mirror hosts, and `https://www.miruro.bz/` returned HTTP 200 over
+both IPv4 and IPv6 with a Chrome TLS fingerprint. The pipe itself was reset,
+so no stream, probe, quality, audio, subtitle, or decode success is claimed.
+Keep Miruro demoted behind the working anime providers until the pipe path is
+measurable again.
 
 ## Summary
 

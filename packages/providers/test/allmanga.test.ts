@@ -24,10 +24,12 @@ import {
   buildAllMangaAaReq,
   buildAllMangaBootToken,
   ALLMANGA_CRYPTO_PROFILE,
+  ALLMANGA_EPOCH_MS,
   ALLMANGA_KEY_HEX,
   ALLMANGA_QUERY_HASH,
   BUNDLED_ALLMANGA_CRYPTO,
   buildStreamHeaders,
+  currentAllMangaEpochCandidates,
   classifyAllMangaBootstrapFailure,
   AllMangaCaptchaError,
   AllMangaQueryDriftError,
@@ -344,7 +346,7 @@ type PostedEpisodeDocument = {
 describe("AllManga crypto material (mkissa bootstrap)", () => {
   const partBBytes = Array.from({ length: 32 }, (_, index) => index + 1);
   const PART_B = Buffer.from(partBBytes).toString("base64");
-  const EXPECTED_KEY_HEX = "5e211454f2b9b5c5733c01000c7b1ae5318ac1dd7b70be3a747461e4161915c6";
+  const EXPECTED_KEY_HEX = "9d1082156fe3512115db2e708c423695798f95ac33d14c7a45ab4f5e6dd44e52";
   const PLAIN_SOURCE_JSON = JSON.stringify({
     data: {
       episode: {
@@ -382,7 +384,7 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
         }
         return new Response(
           JSON.stringify({
-            epoch: 6900,
+            epoch: 5,
             partB: PART_B,
             k: "k7",
             switchAt: Date.now() + 86_400_000,
@@ -435,17 +437,17 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     using site = mockCryptoSiteFetch({ apiResponses: [PLAIN_SOURCE_JSON] });
     const epochContext: ProviderRuntimeContext = {
       ...TEST_CONTEXT,
-      now: () => new Date(6900 * 604_800_000 + 2 * 86_400_000).toISOString(),
+      now: () => new Date(5 * ALLMANGA_EPOCH_MS + 2 * 86_400_000).toISOString(),
     };
 
     const material = await getAllMangaCryptoMaterial(epochContext, "ua");
     expect(material?.keyHex).toBe(EXPECTED_KEY_HEX);
-    expect(material?.epoch).toBe(6900);
+    expect(material?.epoch).toBe(5);
     expect(material?.queryHash).toBe(ALLMANGA_QUERY_HASH);
     expect(material?.buildId).toBe(ALLMANGA_CRYPTO_PROFILE.buildId);
     expect(site.bootstrapHeaders?.get("x-build-id")).toBe(ALLMANGA_CRYPTO_PROFILE.buildId);
     expect(site.bootstrapHeaders?.get("x-aa-boot")).toBe(
-      "0d07dd32f2883e6912611b28d252ce1ef03e71aaf497b26039547808d1a7b696",
+      "2e30fb8d2789a805348d50b8e21125e6354d7609e17b8615fe3d848e963675f1",
     );
     expect(site.bootstrapHeaders?.get("origin")).toBe("https://mkissa.to");
     expect(site.bootstrapHeaders?.get("referer")).toBe("https://mkissa.to/");
@@ -455,23 +457,23 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     expect(site.bootstrapFetchCount).toBe(1);
   });
 
-  test("matches independent build-189 derivation and boot-token vectors", () => {
-    expect(hashBuildId("189").toString("hex")).toBe(
-      "fb4111e6be0cd5ab7bc09876cf95653a825029ff4f14ecba03d9a90ed6a47dc3",
+  test("matches independent build-193 derivation and boot-token vectors", () => {
+    expect(hashBuildId("193").toString("hex")).toBe(
+      "18cff0a16419c6fda26f12cbf4ab6c1dc0f5a2591ecbfea75017c8f9ac511ec5",
     );
-    expect(deriveMaskKey("189").toString("hex")).toBe(
-      "5f231750f7bfb2cd7a360a0c017515f52098d2c96e66a9226d6e7af80b070ae6",
+    expect(deriveMaskKey("193").toString("hex")).toBe(
+      "9c1281116ae556291cd1257c814c3985689d86b826c75b625cb1544270ca5172",
     );
-    expect(deriveKeyFromPartB(PART_B, "189").toString("hex")).toBe(EXPECTED_KEY_HEX);
+    expect(deriveKeyFromPartB(PART_B, "193").toString("hex")).toBe(EXPECTED_KEY_HEX);
     expect(
       buildAllMangaBootToken({
-        buildId: "189",
-        epoch: 6900,
+        buildId: "193",
+        epoch: 5,
         keyGroup: "mkissa",
         refererHost: "mkissa.to",
         contentLane: "k7",
       }),
-    ).toBe("0d07dd32f2883e6912611b28d252ce1ef03e71aaf497b26039547808d1a7b696");
+    ).toBe("2e30fb8d2789a805348d50b8e21125e6354d7609e17b8615fe3d848e963675f1");
   });
 
   test("bundled fallback key is derived under the pinned profile", () => {
@@ -479,12 +481,22 @@ describe("AllManga crypto material (mkissa bootstrap)", () => {
     // a guaranteed decrypt failure. This is what made the 140 -> 171 rotation
     // fail silently: the buildId moved and the bundled key did not.
     // `livePartB` is the partB the live bootstrap actually returned on
-    // 2026-11-22 (build 189, epoch 2968), so it must derive ALLMANGA_KEY_HEX.
-    const livePartB = "ulfpKBI9TlAz2m5Re1g/WTcANktJ+XsMlJboJ/g6Fb4=";
+    // 2026-11-27 (build 193, epoch 5), so it must derive ALLMANGA_KEY_HEX.
+    const livePartB = "lwciaLjEt1feeB41SaXtoVCz0ikeRVG5zz0WIB8L3g4=";
     expect(deriveKeyFromPartB(livePartB, ALLMANGA_CRYPTO_PROFILE.buildId).toString("hex")).toBe(
       ALLMANGA_KEY_HEX,
     );
     expect(BUNDLED_ALLMANGA_CRYPTO.buildId).toBe(ALLMANGA_CRYPTO_PROFILE.buildId);
+  });
+
+  test("uses the build-193 epoch scale exposed by bootstrap", () => {
+    // Build 193 moved epochs off the old 7-day bucket: the bootstrap response
+    // reports epochMs=315360000000 and graceMs=86400000.
+    expect(ALLMANGA_EPOCH_MS).toBe(315_360_000_000);
+    const dayMs = 86_400_000;
+    const epochStart = 5 * ALLMANGA_EPOCH_MS;
+    expect(currentAllMangaEpochCandidates(epochStart + 12 * 60 * 60 * 1000)).toEqual([4, 5]);
+    expect(currentAllMangaEpochCandidates(epochStart + 2 * dayMs)).toEqual([5]);
   });
 
   test("classifies the two rotation failures apart", () => {

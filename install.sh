@@ -139,6 +139,7 @@ have() { command -v "$1" >/dev/null 2>&1; }
 # looks: PATH, then the macOS app bundle. Flatpak VLC is deliberately not used.
 have_vlc() {
 	have vlc && return 0
+	[[ "$HOST_OS" == "darwin" ]] || return 1
 	[[ -x /Applications/VLC.app/Contents/MacOS/VLC ]] && return 0
 	[[ -x "${HOME:-}/Applications/VLC.app/Contents/MacOS/VLC" ]]
 }
@@ -2332,7 +2333,7 @@ install_optional_deps() {
 	printf '\n'
 	if [[ " ${missing[*]} " == *" mpv "* ]]; then
 		if have_vlc; then
-			info "mpv is not installed. Kunai will play in VLC; mpv is recommended for seamless episode chaining and live track switching."
+			info "mpv is not installed. With the default player setting (auto), Kunai plays in VLC; mpv is recommended for seamless episode chaining and live track switching."
 		else
 			warn "Neither mpv nor VLC is installed — Kunai needs one of them to play anything. mpv is recommended."
 		fi
