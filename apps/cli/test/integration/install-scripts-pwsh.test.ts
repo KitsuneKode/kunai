@@ -3400,7 +3400,7 @@ describePwsh("install.ps1 dedicated profile contract", () => {
                   ...launcherEnv,
                   KUNAI_TEST_PROFILE_LAUNCHER: launcher,
                   KUNAI_TEST_PROFILE_PROBE: probe,
-                  ...(replaceLauncher ? { KUNAI_TEST_MOVED_LAUNCHER: movedLauncher } : {}),
+                  KUNAI_TEST_MOVED_LAUNCHER: replaceLauncher ? movedLauncher : "",
                   ERRORLEVEL: "123",
                 };
                 delete wrapperEnv.KUNAI_CONFIG_DIR;
