@@ -22,7 +22,7 @@ function contextReturning(
     fetch: {
       runtime: "direct-http",
       fetch: async (url: string | URL | Request, init?: RequestInit) =>
-        handler(typeof url === "string" ? url : url instanceof URL ? url.href : url.url, init),
+        handler(url instanceof URL ? url.href : url instanceof Request ? url.url : url, init),
     },
   };
 }
@@ -30,7 +30,7 @@ function contextReturning(
 function anidapContext(): ProviderRuntimeContext {
   return contextReturning((url, init) => {
     if (url === "https://graphql.anidap.lol/graphql") {
-      const body = typeof init?.body === "string" ? init.body : "";
+      const body = init?.body ? String(init.body) : "";
       if (body.includes("searchAnime")) {
         return Response.json({ data: { searchAnime: { items: [fixture.anime] } } });
       }

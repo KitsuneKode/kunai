@@ -17,6 +17,7 @@ import {
 import { readJsonObjectBody } from "../shared/json-body";
 import {
   resolveMultiSourceProvider,
+  type MultiSourceEmptySourceInput,
   type MultiSourceResolvePayload,
   type MultiSourceStreamInput,
   type MultiSourceSubtitleInput,
@@ -32,6 +33,8 @@ const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36";
 const FETCH_TIMEOUT_MS = 20_000;
 const MAX_SERVER_STEPS = 8;
+
+type VidboltStreamHeaders = NonNullable<MultiSourceStreamInput["headers"]>;
 
 interface VidboltSourceEntry {
   readonly url?: string;
@@ -91,7 +94,7 @@ function vidboltApiUrl(input: ProviderResolveInput, excluded: readonly string[])
   return `${VIDBOLT_API_BASE}/resolve?${params.toString()}`;
 }
 
-function streamHeaders(): Record<string, string> {
+function streamHeaders(): VidboltStreamHeaders {
   return {
     Accept: "*/*",
     Origin: VIDBOLT_ORIGIN,
@@ -106,12 +109,7 @@ async function fetchVidboltPayload(
 ): Promise<MultiSourceResolvePayload | null> {
   const streams: MultiSourceStreamInput[] = [];
   const subtitles: MultiSourceSubtitleInput[] = [];
-  const emptySources: {
-    readonly sourceKey: string;
-    readonly label?: string;
-    readonly host?: string;
-    readonly metadata?: Record<string, unknown>;
-  }[] = [];
+  const emptySources: MultiSourceEmptySourceInput[] = [];
   const excluded: string[] = [];
   const headers = streamHeaders();
 
@@ -182,7 +180,7 @@ function refererFor(input: ProviderResolveInput): string {
 function collectVidboltSource(
   server: string,
   source: VidboltSourceEntry,
-  headers: Record<string, string>,
+  headers: VidboltStreamHeaders,
   streams: MultiSourceStreamInput[],
   subtitles: MultiSourceSubtitleInput[],
 ): void {

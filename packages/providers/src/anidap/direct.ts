@@ -12,6 +12,7 @@ import {
   httpStatusToResolveErrorCode,
   ProviderHttpError,
 } from "@kunai/types";
+import { z } from "zod";
 
 import { providerFetch } from "../runtime/fetch";
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
@@ -20,6 +21,7 @@ import { directStreamFetchSignal } from "../shared/direct-stream-source";
 import { readJsonObjectBody } from "../shared/json-body";
 import {
   resolveMultiSourceProvider,
+  type MultiSourceEmptySourceInput,
   type MultiSourceResolvePayload,
   type MultiSourceStreamInput,
   type MultiSourceSubtitleInput,
@@ -38,22 +40,46 @@ const FETCH_TIMEOUT_MS = 20_000;
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36";
 
-interface AnidapAnimeNode {
-  readonly id?: string;
-  readonly anilistId?: number;
-  readonly malId?: number;
-  readonly titleRomaji?: string;
-  readonly titleEnglish?: string;
-  readonly titles?: Record<string, string>;
-  readonly episodeCount?: number | null;
-  readonly seasonYear?: number;
-  readonly format?: string;
-  readonly coverImage?: { readonly large?: string; readonly extraLarge?: string } | string;
-  readonly bannerImage?: string;
-  readonly description?: string;
-  readonly popularity?: number;
-  readonly averageScore?: number;
-}
+const optionalString = z
+  .string()
+  .nullish()
+  .transform((value) => value ?? undefined);
+const optionalNumber = z
+  .number()
+  .nullish()
+  .transform((value) => value ?? undefined);
+
+const anidapCoverImageObjectSchema = z.object({
+  large: z.string().optional(),
+  extraLarge: z.string().optional(),
+});
+
+const anidapCoverImageSchema = z
+  .union([z.string().transform((large) => ({ large })), anidapCoverImageObjectSchema])
+  .nullish()
+  .transform((value) => (value ? anidapCoverImageObjectSchema.parse(value) : undefined));
+
+const anidapAnimeNodeSchema = z.object({
+  id: optionalString,
+  anilistId: optionalNumber,
+  malId: optionalNumber,
+  titleRomaji: optionalString,
+  titleEnglish: optionalString,
+  titles: z
+    .record(z.string(), z.string())
+    .nullish()
+    .transform((value) => value ?? undefined),
+  episodeCount: optionalNumber,
+  seasonYear: optionalNumber,
+  format: optionalString,
+  coverImage: anidapCoverImageSchema,
+  bannerImage: optionalString,
+  description: optionalString,
+  popularity: optionalNumber,
+  averageScore: optionalNumber,
+});
+
+type AnidapAnimeNode = z.infer<typeof anidapAnimeNodeSchema>;
 
 interface AnidapEpisode {
   readonly number?: number;
@@ -65,18 +91,21 @@ interface AnidapEpisode {
   readonly hasSub?: boolean;
 }
 
-interface AnidapServerEntry {
-  readonly id?: string;
-  readonly type?: string;
-  readonly url?: string;
-  readonly default?: boolean;
-  readonly tip?: string;
-}
+const anidapServerEntrySchema = z.union([
+  z.string().transform((id) => ({ id, tip: undefined, default: undefined })),
+  z.object({
+    id: z.string().optional(),
+    default: z.boolean().optional(),
+    tip: z.string().optional(),
+  }),
+]);
 
-interface AnidapServersPayload {
-  readonly subProviders?: readonly (string | AnidapServerEntry)[];
-  readonly dubProviders?: readonly (string | AnidapServerEntry)[];
-}
+const anidapServersPayloadSchema = z.object({
+  subProviders: z.array(anidapServerEntrySchema).optional(),
+  dubProviders: z.array(anidapServerEntrySchema).optional(),
+});
+
+type AnidapServersPayload = z.infer<typeof anidapServersPayloadSchema>;
 
 interface AnidapSourceEntry {
   readonly url?: string;
@@ -114,7 +143,13 @@ interface AnidapServerSlot {
   readonly isDefault: boolean;
 }
 
-function requestHeaders(extra: Record<string, string> = {}): Record<string, string> {
+type AnidapRequestHeaders = NonNullable<MultiSourceStreamInput["headers"]>;
+type AnidapFetchInit = Omit<RequestInit, "headers"> & {
+  readonly headers?: AnidapRequestHeaders;
+};
+type AnidapGraphqlVariables = { readonly q: string } | { readonly value: number };
+
+function requestHeaders(extra: AnidapRequestHeaders = {}): AnidapRequestHeaders {
   return {
     Accept: "application/json",
     Origin: SITE_ORIGIN,
@@ -128,11 +163,11 @@ async function fetchJson<T>(
   context: ProviderRuntimeContext,
   url: string,
   stage: string,
-  init?: RequestInit,
+  init?: AnidapFetchInit,
 ): Promise<T | null> {
   const response = await providerFetch(context, url, {
     ...init,
-    headers: { ...requestHeaders(), ...(init?.headers as Record<string, string> | undefined) },
+    headers: { ...requestHeaders(), ...init?.headers },
     signal: directStreamFetchSignal(context.signal, FETCH_TIMEOUT_MS),
   });
   if (!response.ok) {
@@ -153,10 +188,11 @@ async function fetchJson<T>(
 async function graphql<T>(
   context: ProviderRuntimeContext,
   query: string,
-  variables: Record<string, unknown>,
+  variables: AnidapGraphqlVariables,
   stage: string,
+  schema: z.ZodType<T>,
 ): Promise<T | null> {
-  const payload = await fetchJson<{ data?: T; errors?: readonly { message?: string }[] }>(
+  const payload = await fetchJson<{ data?: unknown; errors?: readonly { message?: string }[] }>(
     context,
     GRAPHQL_URL,
     stage,
@@ -175,18 +211,35 @@ async function graphql<T>(
       retryable: false,
     });
   }
-  return payload?.data ?? null;
+  if (payload?.data === undefined) return null;
+  const parsed = schema.safeParse(payload.data);
+  if (!parsed.success) {
+    throw new ProviderHttpError({
+      providerId: ANIDAP_PROVIDER_ID,
+      stage,
+      message: `Anidap GraphQL ${stage} returned a shape Kunai does not read`,
+      code: "parse-failed",
+      retryable: false,
+    });
+  }
+  return parsed.data;
 }
 
 const ANIME_FIELDS =
   "id anilistId malId titleRomaji titleEnglish episodeCount seasonYear format type coverImage bannerImage description popularity averageScore";
 
+const anidapSearchDataSchema = z.object({
+  searchAnime: z.object({ items: z.array(anidapAnimeNodeSchema).nullish() }).nullish(),
+});
+const anidapLookupDataSchema = z.object({ anime: anidapAnimeNodeSchema.nullish() });
+
 async function searchRows(query: string, context: ProviderRuntimeContext) {
-  const data = await graphql<{ searchAnime?: { items?: AnidapAnimeNode[] } }>(
+  const data = await graphql(
     context,
     `query($q:String!){ searchAnime(query:$q,limit:20,includeAdult:false){ items{ ${ANIME_FIELDS} } } }`,
     { q: query },
     "search",
+    anidapSearchDataSchema,
   );
   return data?.searchAnime?.items ?? [];
 }
@@ -196,11 +249,12 @@ async function lookupAnime(
   key: "anilistId" | "malId",
   value: number,
 ): Promise<AnidapAnimeNode | null> {
-  const data = await graphql<{ anime?: AnidapAnimeNode }>(
+  const data = await graphql(
     context,
     `query($value:Int!){ anime(${key}:$value){ ${ANIME_FIELDS} } }`,
     { value },
     "catalog lookup",
+    anidapLookupDataSchema,
   );
   return data?.anime ?? null;
 }
@@ -279,20 +333,18 @@ async function fetchServers(
   episode: number,
   context: ProviderRuntimeContext,
 ): Promise<AnidapServerSlot[]> {
-  const data = await fetchJson<AnidapServersPayload>(
+  const body = await fetchJson<unknown>(
     context,
     `${REST_BASE}/servers?id=${encodeURIComponent(slug)}&epNum=${episode}`,
     "server list",
   );
+  const parsed = anidapServersPayloadSchema.safeParse(body);
+  const data = parsed.success ? parsed.data : null;
   const slots: AnidapServerSlot[] = [];
-  const append = (
-    entries: readonly (string | AnidapServerEntry)[] | undefined,
-    mode: "sub" | "dub",
-  ) => {
+  const append = (entries: AnidapServersPayload["subProviders"], mode: "sub" | "dub") => {
     for (const entry of entries ?? []) {
-      const object = typeof entry === "string" ? { id: entry } : entry;
-      if (!object.id) continue;
-      slots.push({ id: object.id, mode, tip: object.tip, isDefault: object.default === true });
+      if (!entry.id) continue;
+      slots.push({ id: entry.id, mode, tip: entry.tip, isDefault: entry.default === true });
     }
   };
   append(data?.subProviders, "sub");
@@ -384,7 +436,7 @@ function collectProviderPayload(
       type: track.url,
     });
   }
-  const timing: Record<string, unknown> = {};
+  const timing: NonNullable<MultiSourceStreamInput["metadata"]> = {};
   const chapters = payload?.chapters ?? [];
   const intro = payload?.intro ?? chapters.find((chapter) => /intro/i.test(chapter.title ?? ""));
   const outro =
@@ -441,8 +493,10 @@ async function fetchAnidapPayload(
   const preferredSource = /^source:anidap:(sub|dub)[-_]([a-z0-9-]+)$/.exec(
     input.preferredSourceId ?? "",
   );
+  const preferredMode =
+    preferredSource?.[1] === "dub" ? "dub" : preferredSource?.[1] === "sub" ? "sub" : undefined;
   const mode =
-    (preferredSource?.[1] as "sub" | "dub" | undefined) ??
+    preferredMode ??
     resolveAnimeAudioIntent(
       input.preferredAudioLanguage ?? input.preferredPresentation ?? "original",
     ).catalogMode;
@@ -483,12 +537,7 @@ async function fetchAnidapPayload(
 
   const streams: MultiSourceStreamInput[] = [];
   const subtitles: MultiSourceSubtitleInput[] = [];
-  const emptySources: {
-    readonly sourceKey: string;
-    readonly label?: string;
-    readonly host?: string;
-    readonly metadata?: Record<string, unknown>;
-  }[] = [];
+  const emptySources: MultiSourceEmptySourceInput[] = [];
   const results = await Promise.all(
     modeSlots.slice(0, 6).map(async (slot) => {
       try {
@@ -546,10 +595,7 @@ export const anidapProviderModule: CoreProviderModule = {
     }
     return rows.slice(0, 40).map((row) => {
       const title = row.titleEnglish ?? row.titleRomaji ?? row.id ?? "Untitled";
-      const cover =
-        typeof row.coverImage === "string"
-          ? row.coverImage
-          : (row.coverImage?.extraLarge ?? row.coverImage?.large);
+      const cover = row.coverImage?.extraLarge ?? row.coverImage?.large;
       return {
         id: row.id ?? "",
         type: "series" as const,

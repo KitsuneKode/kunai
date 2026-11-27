@@ -27,7 +27,7 @@ function contextReturning(
     fetch: {
       runtime: "direct-http",
       fetch: async (url: string | URL | Request, init?: RequestInit) =>
-        handler(typeof url === "string" ? url : url instanceof URL ? url.href : url.url, init),
+        handler(url instanceof URL ? url.href : url instanceof Request ? url.url : url, init),
     },
   };
 }

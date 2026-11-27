@@ -47,8 +47,8 @@ export interface MultiSourceStreamInput {
   readonly hardSubLanguage?: string;
   readonly subtitleDelivery?: StreamCandidate["subtitleDelivery"];
   readonly subtitleLanguages?: readonly string[];
-  readonly headers?: Record<string, string>;
-  readonly metadata?: Record<string, unknown>;
+  readonly headers?: StreamCandidate["headers"];
+  readonly metadata?: StreamCandidate["metadata"];
 }
 
 export interface MultiSourceSubtitleInput {
@@ -59,18 +59,20 @@ export interface MultiSourceSubtitleInput {
   readonly type?: string;
 }
 
+export interface MultiSourceEmptySourceInput {
+  readonly sourceKey: string;
+  readonly label?: string;
+  readonly host?: string;
+  readonly metadata?: ProviderSourceCandidate["metadata"];
+}
+
 export interface MultiSourceResolvePayload {
   readonly streams: readonly MultiSourceStreamInput[];
   readonly subtitles?: readonly MultiSourceSubtitleInput[];
   readonly externalIds?: ProviderExternalIds;
   readonly release?: ProviderReleaseInfo;
   /** Source rows with no stream remain visible as skipped inventory. */
-  readonly emptySources?: readonly {
-    readonly sourceKey: string;
-    readonly label?: string;
-    readonly host?: string;
-    readonly metadata?: Record<string, unknown>;
-  }[];
+  readonly emptySources?: readonly MultiSourceEmptySourceInput[];
 }
 
 export interface MultiSourceResolverOptions {
