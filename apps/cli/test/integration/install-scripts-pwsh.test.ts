@@ -3321,7 +3321,7 @@ describePwsh("install.ps1 dedicated profile contract", () => {
       const sumsFor = (body: string) =>
         `${createHash("sha256").update(body).digest("hex")}  ${asset}\n`;
 
-      const sandbox = createInstallerSandbox("install-ps1-profile (lifecycle)", {
+      const sandbox = createInstallerSandbox("install-ps1-profile (lifecycle)!", {
         freshProfile: true,
       });
       const defaultSentinels = [
@@ -3409,7 +3409,7 @@ describePwsh("install.ps1 dedicated profile contract", () => {
                     PWSH_PATH,
                     "-NoProfile",
                     "-Command",
-                    "& $env:KUNAI_TEST_PROFILE_LAUNCHER run $env:KUNAI_TEST_PROFILE_PROBE 'plain(parentheses)' 'quoted argument' ; exit $LASTEXITCODE",
+                    "& $env:KUNAI_TEST_PROFILE_LAUNCHER run $env:KUNAI_TEST_PROFILE_PROBE 'plain(parentheses)' 'quoted & argument' 'literal!KUNAI_CONFIG_DIR!' ; exit $LASTEXITCODE",
                   ],
                   { env: wrapperEnv, stdout: "pipe", stderr: "pipe" },
                 );
@@ -3423,8 +3423,9 @@ describePwsh("install.ps1 dedicated profile contract", () => {
                 );
                 expect(JSON.parse(wrappedStdout)).toEqual({
                   profile: sandbox.profileDir,
-                  args: ["plain(parentheses)", "quoted argument"],
+                  args: ["plain(parentheses)", "quoted & argument", "literal!KUNAI_CONFIG_DIR!"],
                 });
+                expect(wrappedStderr).toBe("");
                 expect(existsSync(movedLauncher)).toBe(replaceLauncher);
               } finally {
                 if (existsSync(movedLauncher)) renameSync(movedLauncher, launcher);

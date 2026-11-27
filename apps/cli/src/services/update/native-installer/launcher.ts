@@ -28,14 +28,16 @@ import { parseCanonicalVersion } from "../version";
 function profileLauncherScript(version: string, platform: NodeJS.Platform): string {
   if (!parseCanonicalVersion(version)) throw new Error("Invalid profile launcher version");
   if (platform === "win32") {
-    // Keep exit on the parsed payload line in case upgrade/uninstall replaces this file.
-    // CALL expands ERRORLEVEL only after the payload exits.
+    // Capture arguments before enabling delayed expansion, preserving literal bangs.
+    // Launch and exit on one parsed line; CALL can reopen the replaced batch file.
     return [
       "@echo off",
       "setlocal EnableExtensions DisableDelayedExpansion",
       'for %%I in ("%~dp0..") do set "KUNAI_CONFIG_DIR=%%~fI"',
       'set "ERRORLEVEL="',
-      `"%KUNAI_CONFIG_DIR%\\data\\versions\\${version}\\kunai.exe" %* & call exit /b %%ERRORLEVEL%%`,
+      "set __KUNAI_LAUNCHER_ARGS=%*",
+      "setlocal EnableDelayedExpansion",
+      `"!KUNAI_CONFIG_DIR!\\data\\versions\\${version}\\kunai.exe" !__KUNAI_LAUNCHER_ARGS! & exit /b !ERRORLEVEL!`,
       "",
     ].join("\r\n");
   }

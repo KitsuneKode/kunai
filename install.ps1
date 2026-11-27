@@ -1737,7 +1737,9 @@ function Update-Launcher([string]$VersionPath, [string]$LauncherPath, [string]$V
         'setlocal EnableExtensions DisableDelayedExpansion',
         'for %%I in ("%~dp0..") do set "KUNAI_CONFIG_DIR=%%~fI"',
         'set "ERRORLEVEL="',
-        ('"%KUNAI_CONFIG_DIR%\data\versions\{0}\kunai.exe" %* & call exit /b %%ERRORLEVEL%%' -f $Ver),
+        'set __KUNAI_LAUNCHER_ARGS=%*',
+        'setlocal EnableDelayedExpansion',
+        ('"!KUNAI_CONFIG_DIR!\data\versions\{0}\kunai.exe" !__KUNAI_LAUNCHER_ARGS! & exit /b !ERRORLEVEL!' -f $Ver),
         ''
       )
       Write-Utf8File $candidate ($lines -join "`r`n")
