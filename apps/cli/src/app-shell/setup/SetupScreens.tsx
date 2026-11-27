@@ -3,6 +3,7 @@
 // Every screen asks something or pays something off. The old flow spent three
 // of seven slides asking nothing, which is why it read as a slideshow.
 
+import { PROVIDER_QUALITY_PREFERENCE_OPTIONS } from "@/domain/media/media-preferences";
 import { Box, Text } from "ink";
 import React from "react";
 
@@ -18,6 +19,7 @@ import { BLOOM_FRAMES, STATIC_PETAL } from "../primitives/SakuraPetal";
 import { truncateLine } from "../shell-text";
 import { palette } from "../shell-theme";
 import type { ScopedDependencyRow } from "./dependency-rows";
+import { DOWNLOAD_QUALITY_RECOMMENDED } from "./setup-model";
 import { ChoiceRow, ScreenTitle, ToggleRow, type FooterKey } from "./SetupFrame";
 import { SetupTarget } from "./SetupPointer";
 
@@ -31,7 +33,17 @@ export const MODE_OPTIONS = [
   { value: "youtube" as const, label: "YouTube", detail: "Search and play from YouTube" },
 ];
 
-export const DOWNLOAD_QUALITIES = ["1080p", "best", "720p", "480p"] as const;
+/**
+ * The full quality vocabulary, recommended value first. A shorter local list
+ * meant a config already set to 2160p or 1440p hydrated to index 0 and was
+ * written back as 1080p by a `/setup` that never touched the row.
+ */
+export const DOWNLOAD_QUALITIES: readonly string[] = [
+  DOWNLOAD_QUALITY_RECOMMENDED,
+  ...PROVIDER_QUALITY_PREFERENCE_OPTIONS.map((option) => option.value).filter(
+    (value) => value !== DOWNLOAD_QUALITY_RECOMMENDED,
+  ),
+];
 
 function stateGlyph(state: ScopedDependencyRow["state"]): string {
   if (state === "ok") return "✓";

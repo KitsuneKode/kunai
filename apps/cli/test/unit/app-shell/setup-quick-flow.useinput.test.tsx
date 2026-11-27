@@ -54,7 +54,8 @@ const HYDRATED: SetupInitialState = {
   skipIntro: true,
   skipCredits: false,
   downloadsEnabled: true,
-  downloadQuality: "720p",
+  // Outside the old four-value setup list on purpose: 2160p used to come back as 1080p.
+  downloadQuality: "2160p",
   anilistSync: true,
   tmdbSync: false,
   presenceDiscord: true,
