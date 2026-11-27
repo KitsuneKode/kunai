@@ -1,0 +1,2528 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Kunai — Shell v4 State Redesign Board (Sakura · Ember Dusk)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    /* Live Ember Dusk tokens — packages/design/src/tokens.ts (single source of truth) */
+    --scrim:          #080509;
+    --bg:             #100b0f;
+    --surface:        #1c1620;
+    --surface-elev:   #2a2030;
+    --surface-active: #3a2b40;
+    --raised:         #44354d;
+    --line:           #473b51;
+    --line-soft:      #281f2e;
+    --line-strong:    #62526c;
+    --line-control:   #786782;
+
+    --accent:         #ff8fb0;
+    --accent-soft:    #ffc6d8;
+    --accent-deep:    #d85f86;
+    --accent-dim:     #7e3350;
+    --accent-fill:    #2c1622;
+
+    --ok:             #54d6a0;
+    --ok-dim:         #3a9a78;
+    --ok-fill:        #122a22;
+
+    --warn:           #f59a3c;
+    --warn-dim:       #b06f28;
+    --warn-fill:      #2e2012;
+
+    --danger:         #ff5d5d;
+    --danger-dim:     #a02b2b;
+    --danger-fill:    #341515;
+    --danger-text:    #ff9791;
+
+    --info:           #5fb6ff;
+    --info-dim:       #3c7fbf;
+    --info-fill:      #112230;
+
+    --milestone:      #6d85f6;
+    --milestone-text: #9db2ff;
+    --milestone-fill: #151a32;
+
+    --text:           #f6eff4;
+    --text-dim:       #d6cbd6;
+    --muted:          #beb1c0;
+    --dim:            #a494a7;
+    --faint:          #3a3340;
+
+    --font: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    color: var(--text-dim);
+    font-family: var(--font);
+    font-size: 13.5px;
+    line-height: 1.5;
+    background:
+      radial-gradient(circle at 92% -4%, rgba(255, 143, 176, 0.12), transparent 36rem),
+      radial-gradient(circle at 4% 8%, rgba(109, 133, 246, 0.08), transparent 30rem),
+      var(--scrim);
+  }
+
+  /* Sticky top bar */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    background: rgba(16, 11, 15, 0.94);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line-soft);
+    padding: 10px 24px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 18px;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .topbar-brand { color: var(--text); font-weight: 700; font-size: 13px; white-space: nowrap; }
+  .topbar-brand .petal { color: var(--accent); }
+  .filter-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .fbtn {
+    background: var(--surface);
+    border: 1px solid var(--line-soft);
+    color: var(--muted);
+    font: inherit;
+    font-size: 11.5px;
+    padding: 3px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: border-color 120ms, background 120ms, color 120ms;
+  }
+  .fbtn:hover { border-color: var(--line-control); color: var(--text); }
+  .fbtn.active { background: var(--accent-fill); border-color: var(--accent); color: var(--text); font-weight: 700; }
+
+  .layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); max-width: 1620px; margin: 0 auto; }
+  .toc {
+    position: sticky;
+    top: 52px;
+    height: calc(100vh - 52px);
+    overflow-y: auto;
+    border-right: 1px solid var(--line-soft);
+    padding: 20px 14px 40px;
+    font-size: 12px;
+  }
+  .toc-h { color: var(--dim); font-size: 10.5px; text-transform: uppercase; letter-spacing: .16em; margin: 14px 0 6px 8px; }
+  .toc-h:first-child { margin-top: 0; }
+  .toc a {
+    display: block;
+    color: var(--muted);
+    text-decoration: none;
+    padding: 4px 8px;
+    border-radius: 5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .toc a:hover { background: var(--surface); color: var(--text); }
+  .toc a .n { color: var(--accent); font-weight: 700; margin-right: 6px; }
+
+  main { padding: 34px 32px 120px; min-width: 0; }
+  h1 { font-size: 26px; font-weight: 700; color: var(--text); margin: 0; letter-spacing: -.3px; }
+  h1 .petal { color: var(--accent); }
+  .sub { color: var(--muted); margin: 10px 0 0; max-width: 96ch; }
+  .lead-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 22px; }
+  .grammar-card {
+    background: var(--surface);
+    border: 1px solid var(--line-soft);
+    border-radius: 9px;
+    padding: 13px 15px;
+  }
+  .grammar-card .gk { color: var(--accent); font-size: 11px; text-transform: uppercase; letter-spacing: .15em; font-weight: 700; }
+  .grammar-card .gt { color: var(--text); font-weight: 700; margin-top: 5px; font-size: 13.5px; }
+  .grammar-card .gd { color: var(--muted); font-size: 12px; margin-top: 5px; line-height: 1.45; }
+
+  /* Surface sections */
+  section.surf { margin-top: 64px; scroll-margin-top: 68px; }
+  .surf-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--line-soft); padding-bottom: 10px; }
+  .surf-head h2 { margin: 0; font-size: 14px; font-weight: 700; color: var(--accent); text-transform: uppercase; letter-spacing: .16em; }
+  .surf-head .owner { color: var(--dim); font-size: 12px; }
+  .surf-sub { color: var(--muted); font-size: 13px; margin: 10px 0 14px; max-width: 104ch; }
+
+  /* Delta note */
+  .delta {
+    border-left: 2px solid var(--ok-dim);
+    background: rgba(18, 42, 34, 0.35);
+    padding: 8px 14px;
+    margin-top: 14px;
+    border-radius: 0 7px 7px 0;
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+  .delta b { color: var(--ok); }
+  .delta code { color: var(--text); background: var(--surface); padding: 1px 5px; border-radius: 4px; font-size: 11.5px; }
+  .handoff {
+    border-left: 2px solid var(--info-dim);
+    background: rgba(17, 34, 48, 0.35);
+    padding: 7px 14px;
+    margin-top: 10px;
+    border-radius: 0 7px 7px 0;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .handoff b { color: var(--info); }
+
+  /* Semantic inline helpers */
+  .text { color: var(--text); }
+  .t2 { color: var(--text-dim); }
+  .muted { color: var(--muted); }
+  .dim { color: var(--dim); }
+  .rose { color: var(--accent); }
+  .rose-soft { color: var(--accent-soft); }
+  .ok { color: var(--ok); }
+  .warn { color: var(--warn); }
+  .err { color: var(--danger-text); }
+  .info { color: var(--info); }
+  .mile { color: var(--milestone-text); }
+  .b { font-weight: 700; }
+
+  /* Canonical Terminal Frame */
+  .term {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--bg);
+    box-shadow: 0 22px 64px rgba(0, 0, 0, 0.52);
+    overflow: hidden;
+    position: relative;
+    margin-top: 14px;
+  }
+  .term::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--accent-soft), transparent);
+    opacity: .42;
+  }
+  .term.state-tag-wrap { display: flex; flex-direction: column; }
+  .sbadge {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .14em;
+    padding: 1px 7px;
+    border-radius: 4px;
+    background: var(--surface-elev);
+    color: var(--muted);
+    border: 1px solid var(--line-soft);
+    pointer-events: none;
+  }
+  .head, .foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line-soft);
+    color: var(--muted);
+    font-size: 12.5px;
+  }
+  .foot { border-bottom: 0; border-top: 1px solid var(--line-soft); padding: 8px 16px; }
+  .body { padding: 15px 18px 18px; }
+  .brand { color: var(--accent); font-weight: 700; }
+  .chip { background: var(--text); color: var(--bg); font-weight: 700; border-radius: 4px; padding: 1px 8px; }
+  .k { color: var(--accent); font-weight: 700; }
+  .ki { color: var(--info); font-weight: 700; }
+  .kd { color: var(--danger-text); font-weight: 700; }
+  .km { color: var(--muted); font-weight: 700; }
+  .surf-lbl { color: var(--dim); font-size: 11.5px; white-space: nowrap; }
+
+  /* Two-column wide layout & rail */
+  .split { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 22px; }
+  .rail { border-left: 1px solid var(--line-soft); padding-left: 18px; }
+  .poster {
+    height: 112px;
+    border-radius: 7px;
+    border: 1px solid var(--line-soft);
+    background: linear-gradient(150deg, rgba(255, 143, 176, 0.22), var(--bg));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent-soft);
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: .06em;
+    text-align: center;
+  }
+  .fact { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; padding: 2px 0; }
+  .fact .fk { color: var(--muted); }
+  .fact .fv { color: var(--text-dim); text-align: right; }
+  .cta {
+    margin-top: 10px;
+    background: var(--accent-fill);
+    border: 1px solid var(--accent-dim);
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: var(--text);
+    font-weight: 700;
+    font-size: 12.5px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  /* Rows & bars */
+  .grp { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 0 6px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .14em; font-weight: 700; }
+  .grp:first-child { margin-top: 0; }
+  .row {
+    display: grid;
+    grid-template-columns: 16px minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+    padding: 4px 8px 4px 0;
+    border-radius: 5px;
+    font-size: 13px;
+  }
+  .row.sel { background: var(--accent-fill); color: var(--text); }
+  .row.sel .ttl { color: var(--text); font-weight: 700; }
+  .row .bar { color: var(--accent); font-weight: 700; }
+  .row .ttl { color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .rt { color: var(--muted); font-size: 12px; white-space: nowrap; }
+
+  .input-box {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 10px;
+  }
+  .input-box.focused { border-bottom-color: var(--accent); background: rgba(44, 22, 34, 0.35); border-radius: 5px 5px 0 0; }
+  .cur { display: inline-block; width: 8px; height: 15px; background: var(--accent); vertical-align: -2px; margin-left: 1px; }
+
+  .tabs { display: flex; gap: 16px; font-size: 12.5px; margin-bottom: 10px; align-items: center; }
+  .tabs .on { color: var(--text); font-weight: 700; border-bottom: 2px solid var(--accent); padding-bottom: 2px; }
+  .tabs .off { color: var(--dim); }
+
+  /* State cards grid (Loading, Empty, Partial, Error, Offline, Narrow, Plain) */
+  .state-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    margin-top: 14px;
+  }
+  .scard {
+    border: 1px solid var(--line-soft);
+    border-radius: 9px;
+    background: var(--bg);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .scard-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 12px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line-soft);
+    font-size: 11px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    font-weight: 700;
+  }
+  .scard-top .st-load { color: var(--accent); }
+  .scard-top .st-empty { color: var(--muted); }
+  .scard-top .st-part { color: var(--warn); }
+  .scard-top .st-err { color: var(--danger-text); }
+  .scard-top .st-off { color: var(--warn); }
+  .scard-top .st-nar { color: var(--info); }
+  .scard-top .st-plain { color: var(--ok); }
+  .scard-body {
+    padding: 12px 14px;
+    flex: 1;
+    font-size: 12.5px;
+    line-height: 1.48;
+  }
+  .scard-foot {
+    padding: 6px 12px;
+    background: var(--surface);
+    border-top: 1px solid var(--line-soft);
+    font-size: 11.5px;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  /* Literal monospace terminal cells for narrow 54x25, 40-col, and --plain */
+  .narrow-pair { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+  pre.tty {
+    margin: 0;
+    padding: 10px 11px;
+    background: #0c080b;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    font-family: var(--font);
+    font-size: 11.5px;
+    line-height: 1.38;
+    color: var(--text-dim);
+    overflow-x: auto;
+    white-space: pre;
+  }
+  pre.tty.w54 { width: 57ch; max-width: 100%; }
+  pre.tty.w40 { width: 43ch; max-width: 100%; }
+  pre.tty.plain {
+    background: #0d0d10;
+    border: 1px dashed var(--line-control);
+    color: #e6e2e8;
+    width: 100%;
+    white-space: pre-wrap;
+  }
+  .tty-cap { font-size: 10.5px; color: var(--dim); text-transform: uppercase; letter-spacing: .12em; margin-bottom: 4px; }
+
+  /* Special banners */
+  .banner {
+    border: 1px solid var(--warn-dim);
+    background: var(--warn-fill);
+    border-radius: 7px;
+    padding: 9px 12px;
+    margin-bottom: 10px;
+  }
+  .banner.err-b { border-color: var(--danger-dim); background: var(--danger-fill); }
+  .banner.confirm-b { border-color: var(--warn); background: var(--warn-fill); }
+  .banner.info-b { border-color: var(--info-dim); background: var(--info-fill); }
+
+  .pbar-wrap { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
+  .pbar { flex: 1; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .pbar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent-deep), var(--accent)); }
+  .pbar.ok-bar > i { background: var(--ok); }
+  .pbar.err-bar > i { background: var(--danger); }
+
+  .pill { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .pill.rose { color: var(--accent); border-color: var(--accent-dim); background: var(--accent-fill); }
+  .pill.ok { color: var(--ok); border-color: var(--ok-dim); background: var(--ok-fill); }
+  .pill.warn { color: var(--warn); border-color: var(--warn-dim); background: var(--warn-fill); }
+  .pill.err { color: var(--danger-text); border-color: var(--danger-dim); background: var(--danger-fill); }
+
+  /* Filter hiding */
+  body[data-filter]:not([data-filter="all"]) [data-state] { display: none; }
+  body[data-filter="success"] [data-state="success"] { display: block; }
+  body[data-filter="loading"] [data-state="loading"] { display: flex; }
+  body[data-filter="empty"] [data-state="empty"] { display: flex; }
+  body[data-filter="partial"] [data-state="partial"] { display: flex; }
+  body[data-filter="error"] [data-state="error"] { display: flex; }
+  body[data-filter="offline"] [data-state="offline"] { display: flex; }
+  body[data-filter="narrow"] [data-state="narrow"] { display: flex; }
+  body[data-filter="plain"] [data-state="plain"] { display: flex; }
+  body[data-filter]:not([data-filter="all"]):not([data-filter="success"]) .state-grid { grid-template-columns: 1fr; }
+
+  @media (max-width: 1100px) {
+    .layout { grid-template-columns: 1fr; }
+    .toc { display: none; }
+    .lead-grid { grid-template-columns: repeat(2, 1fr); }
+    .state-grid { grid-template-columns: 1fr; }
+    .split { grid-template-columns: 1fr; }
+    .rail { border-left: 0; border-top: 1px solid var(--line-soft); padding-left: 0; padding-top: 12px; }
+  }
+</style>
+</head>
+<body data-filter="all">
+
+<header class="topbar">
+  <div class="topbar-brand">🦊 Kunai · <span class="petal">❀</span> Shell v4 State Redesign Board <span class="dim">· Ember Dusk live tokens</span></div>
+  <div class="filter-bar" role="group" aria-label="Filter states">
+    <button class="fbtn active" data-f="all">All states</button>
+    <button class="fbtn" data-f="success">Success</button>
+    <button class="fbtn" data-f="loading">Loading</button>
+    <button class="fbtn" data-f="empty">Empty</button>
+    <button class="fbtn" data-f="partial">Partial</button>
+    <button class="fbtn" data-f="error">Error</button>
+    <button class="fbtn" data-f="offline">Offline</button>
+    <button class="fbtn" data-f="narrow">Narrow 54×25 / 40c</button>
+    <button class="fbtn" data-f="plain">Plain</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" aria-label="Surfaces">
+    <div class="toc-h">Contract</div>
+    <a href="#grammars"><span class="n">§</span>4 Consistency Grammars</a>
+    <a href="#esc-ladder"><span class="n">⎋</span>Global Esc Ladder</a>
+    <div class="toc-h">14 Surfaces</div>
+    <a href="#s1"><span class="n">01</span>Home / Browse &amp; For you</a>
+    <a href="#s2"><span class="n">02</span>Search &amp; Filters</a>
+    <a href="#s3"><span class="n">03</span>Details &amp; Episode Picker</a>
+    <a href="#s4"><span class="n">04</span>Where to start?</a>
+    <a href="#s5"><span class="n">05</span>Resolving &amp; Failover</a>
+    <a href="#s6"><span class="n">06</span>Tracks &amp; Quality</a>
+    <a href="#s7"><span class="n">07</span>Post-play &amp; Up Next</a>
+    <a href="#s8"><span class="n">08</span>History Tabs</a>
+    <a href="#s9"><span class="n">09</span>Library &amp; Downloads</a>
+    <a href="#s10"><span class="n">10</span>Calendar &amp; Notifications</a>
+    <a href="#s11"><span class="n">11</span>Settings</a>
+    <a href="#s12"><span class="n">12</span>Palette, Help &amp; Guide</a>
+    <a href="#s13"><span class="n">13</span>Diagnostics &amp; Doctor</a>
+    <a href="#s14"><span class="n">14</span>Confirms &amp; Esc</a>
+  </nav>
+
+  <main>
+    <h1>Kunai · <span class="petal">❀</span> Shell v4 — Every Surface, Every State</h1>
+    <p class="sub">
+      Supersedes piecemeal screen tweaks with one state-complete visual system on the live Ember Dusk Sakura tokens
+      (<code>packages/design/src/tokens.ts</code>). Every surface below was audited against live L2 <code>agent:drive</code>
+      captures at 120×32, 54×25, 40×20, and <code>KUNAI_PLAIN=1</code>. Paired with
+      <code>surfaces/shell-v4-state-inventory.md</code> (112 surface×state rows), <code>02-state-ux.md</code> (consistency rules),
+      and <code>shell-v4-implementation-map.md</code> (18 ranked changes + giant-file shrink plan).
+    </p>
+    <div class="handoff">
+      <b>Scope boundary:</b> Onboarding (install, setup wizard, first Browse intro, first stream card) is owned by a separate track and is not redesigned here; handoff seams into Home/Browse and Settings are noted where relevant.
+    </div>
+
+    <!-- ==================== 4 GRAMMARS ==================== -->
+    <section id="grammars" style="margin-top:26px; scroll-margin-top:68px;">
+      <div class="lead-grid">
+        <div class="grammar-card">
+          <div class="gk">1 · Loading Grammar</div>
+          <div class="gt"><span class="rose">◌ verb…</span> + static slot</div>
+          <div class="gd">Header says <code>◌ loading…</code> (never <code>● ready</code>). Body uses one <code>LoadingState</code> in a reserved slot. Multi-step rail stays 1:1 synced with headline. Plain mode suppresses 1s tick redraws.</div>
+        </div>
+        <div class="grammar-card">
+          <div class="gk">2 · Error Grammar</div>
+          <div class="gt"><span class="err">× What</span> · Why · 1 key</div>
+          <div class="gd">Static (zero animation). Header switches to <code>● issue</code>. Body names what failed, what was preserved, and one primary recovery key (<code>▌ ↵</code>). Diagnostics stays behind <code>[d]</code>. Footer swaps to recovery keys only.</div>
+        </div>
+        <div class="grammar-card">
+          <div class="gk">3 · Empty Grammar</div>
+          <div class="gt"><span class="muted">· Empty</span> · Next verb</div>
+          <div class="gd">Names what is empty and the one action that populates it. Never prints contradicting <code>🦊 empty for now</code> above live rows. Empty lists strip dead row verbs (<code>[enter]</code>, <code>[x]</code>, <code>[m]</code>) from <code>ShellFooter</code>.</div>
+        </div>
+        <div class="grammar-card">
+          <div class="gk">4 · Focus-Owner Grammar</div>
+          <div class="gt"><span class="rose">▌</span> or <span class="rose">⌕</span> — never both</div>
+          <div class="gd">Exactly one owner per frame: text input owns rose <code>⌕</code> + rule; list owns column-0 <code>▌</code> + <code>accentFill</code>; two-pane keeps passive <code>▸</code>; armed <code>ConfirmStrip</code> takes focus &amp; swaps footer to <code>[y] confirm [esc] cancel</code>.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== 01 HOME / BROWSE ==================== -->
+    <section class="surf" id="s1">
+      <div class="surf-head">
+        <h2>01 · Home / Browse &amp; "For you now"</h2>
+        <span class="owner">browse-shell.tsx · browse-idle-actions.ts · HomeIdleDeck (new)</span>
+      </div>
+      <p class="surf-sub">Empty-query home owns all 7 return-loop rows (new-since-visit, continue, offline-ready, queue next, saved, unwatched releases, calendar nudge). Focus handoff from Search to the home deck is now unmistakable without reading the footer.</p>
+
+      <div class="term" data-state="success">
+        <div class="head">
+          <span><span class="brand">🦊 Kunai</span> · <span class="chip">Browse</span> <span class="muted">series · vidlink</span></span>
+          <span><span class="ok">●</span> ready · <span class="muted">🔥 3d</span> · 120×32</span>
+        </div>
+        <div class="body">
+          <div class="input-box focused">
+            <span><span class="rose b">⌕</span> <span class="dim">Type a title, e.g. Breaking Bad</span><span class="cur"></span></span>
+            <span class="dim">↵ search · Tab anime</span>
+          </div>
+          <div class="grp">
+            <span>For you now</span>
+            <span class="pill rose">↓ jump here</span>
+          </div>
+          <div class="row"><span class="bar"></span><span class="ttl"><span class="ok">●</span> 3 new episodes since Tuesday</span><span class="rt">Tracked calendar</span></div>
+          <div class="row"><span class="bar"></span><span class="ttl"><span class="rose">⏸</span> MARRIAGETOXIN <span class="muted">· S01E05 · 12m left</span></span><span class="rt">Continue</span></div>
+          <div class="row"><span class="bar"></span><span class="ttl"><span class="ok">⬇</span> Frieren <span class="muted">· S01E04 · ready offline</span></span><span class="rt ok">Offline ready</span></div>
+          <div class="row"><span class="bar"></span><span class="ttl"><span class="ok">▶</span> DR. STONE <span class="muted">· S04E08 · Up Next #1</span></span><span class="rt">Queue next</span></div>
+          <div class="row"><span class="bar"></span><span class="ttl"><span class="rose">◈</span> Vinland Saga <span class="muted">· watchlist (6 saved)</span></span><span class="rt">Saved</span></div>
+          <div class="row"><span class="bar"></span><span class="ttl"><span class="info">◷</span> 2 tracked shows airing today</span><span class="rt">Calendar</span></div>
+          <div style="margin-top:10px; padding-top:8px; border-top:1px solid var(--line-soft); font-size:12px" class="dim">
+            After pressing <span class="rose b">↓</span> (or <span class="rose b">Enter</span> on empty query): search dims to <span class="text">›</span> and row 1 takes <span class="rose b">▌</span> + <span class="text">accentFill</span> + inline <span class="rose">↵ open · m menu</span>.
+          </div>
+        </div>
+        <div class="foot">
+          <span><span class="k">[enter]</span> search &nbsp; <span class="ki">[↓]</span> for you now &nbsp; <span class="ki">[tab]</span> anime mode &nbsp; <span class="km">[/]</span> commands</span>
+          <span class="surf-lbl">Browse</span>
+        </div>
+      </div>
+
+      <div class="state-grid">
+        <div class="scard" data-state="loading">
+          <div class="scard-top"><span class="st-load">Loading</span><span class="dim">Header: ◌ loading…</span></div>
+          <div class="scard-body">
+            <div class="input-box focused"><span><span class="rose">⌕</span> <span class="dim">Type a title…</span><span class="cur"></span></span><span class="dim">ready to type</span></div>
+            <div class="grp"><span>For you now</span></div>
+            <div class="rose">❀ Loading your recent watches and releases…</div>
+            <div class="dim" style="margin-top:4px">(Reserved 3-row slot — search stays live, zero layout jump)</div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[enter]</span> search · <span class="km">[/]</span> commands</span><span>Browse</span></div>
+        </div>
+
+        <div class="scard" data-state="empty">
+          <div class="scard-top"><span class="st-empty">Empty (fresh profile)</span><span class="dim">Onboarding handoff</span></div>
+          <div class="scard-body">
+            <div class="input-box focused"><span><span class="rose">⌕</span> <span class="dim">Type a title, e.g. Breaking Bad</span><span class="cur"></span></span></div>
+            <div class="grp"><span>For you now</span><span class="pill rose">↓ jump here</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl"><span class="rose">✧</span> Trending this week <span class="muted">· see what's popular</span></span><span class="rt">/trending</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl"><span class="info">◈</span> Today's releases <span class="muted">· airing schedule</span></span><span class="rt">/calendar</span></div>
+            <div class="dim" style="margin-top:6px">No contradicting "🦊 empty for now" above actionable rows.</div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[enter]</span> search · <span class="ki">[↓]</span> picks · <span class="km">[/]</span> commands</span><span>Browse</span></div>
+        </div>
+
+        <div class="scard" data-state="partial">
+          <div class="scard-top"><span class="st-part">Partial (deck focused + degraded counts)</span><span class="dim">Focus: Deck</span></div>
+          <div class="scard-body">
+            <div class="input-box"><span><span class="dim">›</span> <span class="dim">Search title (↑ to type)</span></span></div>
+            <div class="grp"><span>For you now</span><span class="rose">focused</span></div>
+            <div class="row sel"><span class="bar">▌</span><span class="ttl"><span class="rose">⏸</span> MARRIAGETOXIN <span class="muted">· S01E05 · 12m left</span></span><span class="rt rose">↵ resume · m menu</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl"><span class="ok">⬇</span> Frieren <span class="muted">· S01E04 · ready offline</span></span><span class="rt ok">Offline</span></div>
+            <div class="warn" style="margin-top:6px; font-size:12px">△ Release counts paused · /calendar to retry</div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[enter]</span> resume · <span class="ki">[m]</span> menu · <span class="ki">[↑]</span> search · <span class="km">[/]</span> cmds</span><span>Browse</span></div>
+        </div>
+
+        <div class="scard" data-state="error">
+          <div class="scard-top"><span class="st-err">Error</span><span class="err">Header: ● issue</span></div>
+          <div class="scard-body">
+            <div class="err b">× Could not load home data</div>
+            <div class="muted" style="margin-top:3px">Local history store is busy. Search and playback still work.</div>
+            <div class="row sel" style="margin-top:8px"><span class="bar">▌</span><span class="ttl">↵ Retry loading home</span><span class="rt rose">r</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl muted">Open diagnostics</span><span class="rt dim">d</span></div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[r]</span> retry · <span class="ki">[d]</span> diagnostics · <span class="km">[/]</span> commands</span><span>Browse</span></div>
+        </div>
+
+        <div class="scard" data-state="offline">
+          <div class="scard-top"><span class="st-off">Offline</span><span class="warn">Header: ● offline</span></div>
+          <div class="scard-body">
+            <div class="input-box focused"><span><span class="rose">⌕</span> <span class="dim">Search your offline library &amp; history…</span><span class="cur"></span></span></div>
+            <div class="grp"><span>Ready offline</span><span class="pill ok">4 titles</span></div>
+            <div class="row sel"><span class="bar">▌</span><span class="ttl"><span class="ok">⬇</span> Frieren <span class="muted">· S01E04 · ready offline</span></span><span class="rt rose">↵ play</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl"><span class="ok">◈</span> Open offline library <span class="muted">· 3.2 GB local</span></span><span class="rt">/library</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl dim">⏸ MARRIAGETOXIN · S01E05</span><span class="rt dim">needs network</span></div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[enter]</span> play offline · <span class="ki">[l]</span> library · <span class="km">[/]</span> commands</span><span>Browse · offline</span></div>
+        </div>
+
+        <div class="scard" data-state="narrow">
+          <div class="scard-top"><span class="st-nar">Narrow · 54×25 &amp; 40 cols</span><span class="dim">Zero collisions</span></div>
+          <div class="scard-body">
+            <div class="narrow-pair">
+              <div>
+                <div class="tty-cap">54 × 25</div>
+                <pre class="tty w54">🦊 Kunai · Browse               ● ready · 54×25
+
+ ⌕ Type a title…█
+──────────────────────────────────────────────────
+For you now                              ↓ to pick
+  ● 3 new episodes since Tue
+  ⏸ MARRIAGETOXIN · S01E05 · 12m left
+  ⬇ Frieren · S01E04 · offline
+
+[enter] search  [↓] picks  [/] commands</pre>
+              </div>
+              <div>
+                <div class="tty-cap">40 cols</div>
+                <pre class="tty w40">🦊 · Browse              ● ready · 40×20
+
+ ⌕ Search title…█
+────────────────────────────────────
+For you now                      ↓
+  ● 3 new since Tue
+  ⏸ MARRIAGETOXIN · E05
+  ⬇ Frieren · E04
+
+[↓] picks  [/] cmds</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="scard" data-state="plain" style="grid-column: 1 / -1;">
+          <div class="scard-top"><span class="st-plain">Plain / Screen-Reader Mode (--plain)</span><span class="ok">Zero box lines · Explicit placeholder</span></div>
+          <div class="scard-body">
+            <pre class="tty plain">Kunai | Browse | series | Status: ready
+Focus: Search input
+Search title (focused): (empty, e.g. Breaking Bad)
+For you now (press Down to select):
+  New since visit: 3 new episodes since Tuesday
+  Continue: MARRIAGETOXIN, S01E05, 12m left
+  Offline ready: Frieren, S01E04
+Actions: [enter] search, [down] for you now, [tab] anime mode, [/] commands</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="delta">
+        <b>Changed vs today:</b> Removed double horizontal rules (<code>shell-frame.tsx:293</code> + <code>browse-shell.tsx:2221</code>), removed contradicting <code>🦊 empty for now</code> above <code>For you now</code>, added explicit <code>↓ jump here</code> pill on the deck header + Enter-on-empty handoff, fixed 40-col <code>this one's bare.ed facets</code> wrap collision, and made plain-mode placeholders explicitly say <code>(empty, e.g. …)</code> with zero box-drawing rules.
+      </div>
+    </section>
+
+    <!-- ==================== 02 SEARCH & FILTERS ==================== -->
+    <section class="surf" id="s2">
+      <div class="surf-head">
+        <h2>02 · Search Results &amp; Filters</h2>
+        <span class="owner">browse-shell.tsx · PreviewRail.tsx · suggestion-band-ui.tsx · ink-shell.tsx (/filters)</span>
+      </div>
+      <p class="surf-sub">Separates submitted query, type-ahead suggestion band, local <code>Ctrl+F</code> narrow filter, and guided <code>/filters</code> facets. Wide terminals (≥120 cols) now always get Sakura's clean <code>PreviewRail</code> instead of truncated debug metadata.</p>
+
+      <div class="term" data-state="success">
+        <div class="head">
+          <span><span class="brand">🦊 Kunai</span> · <span class="chip">Search</span> <span class="muted">series · 14 results · TMDB</span></span>
+          <span><span class="ok">●</span> ready · 120×32</span>
+        </div>
+        <div class="body">
+          <div class="input-box">
+            <span><span class="dim">›</span> <span class="text">dune</span> <span class="pill rose" style="margin-left:8px">year:2024 ×</span></span>
+            <span class="dim">↑ edit · Ctrl+F narrow</span>
+          </div>
+          <div class="split">
+            <div>
+              <div class="row sel"><span class="bar">▌</span><span class="ttl">Dune: Part Two <span class="muted">(2024)</span></span><span class="rt">Movie · <span class="rose">♥</span></span></div>
+              <div class="row"><span class="bar"></span><span class="ttl">Dune: Prophecy <span class="muted">(2024)</span></span><span class="rt">Series · S1</span></div>
+              <div class="row"><span class="bar"></span><span class="ttl">Dune <span class="muted">(2021)</span></span><span class="rt ok">✓ watched</span></div>
+              <div class="row"><span class="bar"></span><span class="ttl">Jodorowsky's Dune <span class="muted">(2013)</span></span><span class="rt">Movie</span></div>
+              <div class="dim" style="font-size:12px; margin-top:6px">▼ 10 more results</div>
+            </div>
+            <div class="rail">
+              <div class="poster">DUNE:<br>PART TWO</div>
+              <div class="text b" style="margin-top:8px">Dune: Part Two</div>
+              <div class="muted" style="font-size:12px">Movie · 2024 · 2h 46m · ★ 8.2</div>
+              <div class="dim" style="font-size:12px; margin-top:6px">Paul Atreides unites with the Fremen while seeking revenge against the conspirators who destroyed his family.</div>
+              <div class="fact" style="margin-top:8px"><span class="fk">progress</span><span class="fv rose">42% · 1:09:12</span></div>
+              <div class="fact"><span class="fk">watchlist</span><span class="fv ok">saved</span></div>
+              <div class="cta"><span>▸ Resume 1:09:12</span><span class="rose">↵</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="foot">
+          <span><span class="k">[enter]</span> resume &nbsp; <span class="ki">[i]</span> details &nbsp; <span class="ki">[m]</span> start menu &nbsp; <span class="ki">[q]</span> up next &nbsp; <span class="km">[/]</span> commands</span>
+          <span class="surf-lbl">Search</span>
+        </div>
+      </div>
+
+      <div class="state-grid">
+        <div class="scard" data-state="loading">
+          <div class="scard-top"><span class="st-load">Loading (Query + Type-ahead)</span><span class="dim">Header: ◌ searching…</span></div>
+          <div class="scard-body">
+            <div class="input-box focused"><span><span class="rose">⌕</span> <span class="text">frier</span><span class="dim">en</span><span class="cur"></span></span><span class="dim">→ accept</span></div>
+            <div style="border:1px solid var(--line-soft); border-radius:6px; padding:6px 10px; background:var(--surface)">
+              <div class="dim" style="font-size:10.5px; text-transform:uppercase">Suggestions · Local + Catalog</div>
+              <div class="row"><span class="bar"></span><span class="ttl">Frieren: Beyond Journey's End</span><span class="rt ok">history</span></div>
+              <div class="dim">░░░░░░░░░░░░░░░░░░ <span style="font-size:11px">fetching catalog…</span></div>
+            </div>
+            <div class="rose" style="margin-top:10px">❀ Searching "frieren" across TMDB…</div>
+          </div>
+          <div class="scard-foot"><span><span class="ki">[esc]</span> cancel · <span class="km">[/]</span> commands</span><span>Search</span></div>
+        </div>
+
+        <div class="scard" data-state="empty">
+          <div class="scard-top"><span class="st-empty">Empty (Zero hits vs Filter empty)</span></div>
+          <div class="scard-body">
+            <div class="muted b">· No results for "frierennn" in Series</div>
+            <div class="dim" style="margin-top:3px">Check spelling, or press <span class="text">Tab</span> to try Anime mode.</div>
+            <div style="margin-top:10px; padding-top:8px; border-top:1px solid var(--line-soft)">
+              <div class="muted b">· No results match filter "year:2026"</div>
+              <div class="dim" style="margin-top:3px">Press <span class="text">Esc</span> to clear the filter and return to 14 results.</div>
+            </div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[tab]</span> anime mode · <span class="ki">[esc]</span> clear · <span class="km">[/]</span> cmds</span><span>Search</span></div>
+        </div>
+
+        <div class="scard" data-state="partial">
+          <div class="scard-top"><span class="st-part">Partial (Local filter + Degraded lane + /filters)</span></div>
+          <div class="scard-body">
+            <div class="input-box focused"><span><span class="rose b">Filter</span> <span class="text">part two</span><span class="cur"></span></span><span class="dim">1 of 14 · Esc clear</span></div>
+            <div class="row sel"><span class="bar">▌</span><span class="ttl">Dune: Part Two (2024)</span><span class="rt">Movie</span></div>
+            <div class="warn" style="margin-top:8px; font-size:12px">△ Partial results · AniList timed out (TMDB shown)</div>
+            <div class="dim" style="margin-top:6px; font-size:11.5px"><code>/filters</code> picker: removes 3× subtitle repeat and adds <code>[enter] apply</code> to footer.</div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[enter]</span> play · <span class="ki">[esc]</span> clear filter · <span class="km">[/]</span> cmds</span><span>Search · filtered</span></div>
+        </div>
+
+        <div class="scard" data-state="error">
+          <div class="scard-top"><span class="st-err">Error</span><span class="err">Header: ● issue</span></div>
+          <div class="scard-body">
+            <div class="err b">× Search failed</div>
+            <div class="muted" style="margin-top:3px">TMDB timed out after 8s. Your local history and library still work.</div>
+            <div class="row sel" style="margin-top:8px"><span class="bar">▌</span><span class="ttl">↵ Retry search for "dune"</span><span class="rt rose">r</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl muted">Switch to Anime catalog</span><span class="rt dim">tab</span></div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[r]</span> retry · <span class="ki">[tab]</span> anime · <span class="ki">[esc]</span> edit · <span class="km">[/]</span> cmds</span><span>Search</span></div>
+        </div>
+
+        <div class="scard" data-state="offline">
+          <div class="scard-top"><span class="st-off">Offline (Local search fallback)</span><span class="warn">Header: ● offline</span></div>
+          <div class="scard-body">
+            <div class="banner info-b" style="padding:5px 9px; font-size:12px"><span class="warn">●</span> Offline search · matching your library, history &amp; watchlist</div>
+            <div class="row sel"><span class="bar">▌</span><span class="ttl">Frieren: Beyond Journey's End</span><span class="rt ok">⬇ 4 eps offline</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl dim">Dune: Part Two (2024)</span><span class="rt dim">history · needs net</span></div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[enter]</span> play offline · <span class="ki">[esc]</span> clear · <span class="km">[/]</span> cmds</span><span>Search · offline</span></div>
+        </div>
+
+        <div class="scard" data-state="narrow">
+          <div class="scard-top"><span class="st-nar">Narrow · 54×25 &amp; 40 cols</span><span class="dim">Fixes row overwrite</span></div>
+          <div class="scard-body">
+            <div class="narrow-pair">
+              <div>
+                <div class="tty-cap">54 × 25 (5 rows fit, clean ▼)</div>
+                <pre class="tty w54">🦊 Kunai · Search · 14          ● ready · 54×25
+ › dune
+──────────────────────────────────────────────────
+▌ Dune: Part Two (2024)                    Movie
+  Dune: Prophecy (2024)                   Series
+  Dune (2021)                          ✓ watched
+  Jodorowsky's Dune (2013)                 Movie
+  ▼ 10 more
+
+[enter] play  [i] details  [/] commands</pre>
+              </div>
+              <div>
+                <div class="tty-cap">40 cols (no ▼ overwrite!)</div>
+                <pre class="tty w40">🦊 · Search (14)         ● ready · 40×22
+ › dune
+────────────────────────────────────
+▌ Dune: Part Two (2024)
+  Dune: Prophecy (2024)
+  Dune (2021)
+  ▼ 11 more
+
+[enter] play  [/] cmds</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="scard" data-state="plain" style="grid-column: 1 / -1;">
+          <div class="scard-top"><span class="st-plain">Plain Mode</span><span class="ok">2-line summary · no "No poster URL returned"</span></div>
+          <div class="scard-body">
+            <pre class="tty plain">Kunai | Search | series | 14 results | Status: ready
+Search title: dune
+Focus: Results list (1 of 14)
+[selected] Dune: Part Two (2024) | Movie | 42% watched
+  Dune: Prophecy (2024) | Series
+Selected summary: Movie, 2024, 2h 46m — Paul Atreides unites with the Fremen... (Press i for full details)
+Actions: [enter] resume, [i] details, [m] start menu, [/] commands</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="delta">
+        <b>Changed vs today:</b> Fixed live 40×22 bug where <code>▼ ...</code> overwrote row 1 (<code>layout-policy.ts:337</code>); lowered <code>PreviewRail</code> threshold from 140→120 cols to replace raw <code>DetailsSheetUI</code> (<code>Title ali… No alternate titl…</code>); added offline local-index search fallback; fixed <code>/filters</code> triple subtitle repeat and missing <code>[enter] apply</code>.
+      </div>
+    </section>
+
+    <!-- ==================== 03 DETAILS & EPISODES ==================== -->
+    <section class="surf" id="s3">
+      <div class="surf-head">
+        <h2>03 · Title Detail, Seasons &amp; Episode Picker</h2>
+        <span class="owner">details-sheet-ui.tsx · overlay-panel.tsx · tmdb-season-episode-pickers.ts</span>
+      </div>
+      <p class="surf-sub">Details opens in its own clean overlay frame (no leftover search bar or garbled heading). Episode Picker keeps season tabs, explicit state words, and a height-reserved preview rail.</p>
+
+      <div class="term" data-state="success">
+        <div class="head">
+          <span><span class="brand">🦊 Kunai</span> · <span class="chip">Episodes</span> <span class="muted">DR. STONE · Season 4 (33 eps)</span></span>
+          <span><span class="ok">●</span> ready · 120×32</span>
+        </div>
+        <div class="body">
+          <div class="tabs"><span class="off">S1</span><span class="off">S2</span><span class="off">S3</span><span class="on">S4</span><span class="dim" style="margin-left:auto; font-size:11.5px">s switch season · type to filter</span></div>
+          <div class="split">
+            <div>
+              <div class="row"><span class="bar"></span><span class="ttl muted">E29 · Two Million Years of Being</span><span class="rt ok">✓ watched</span></div>
+              <div class="row"><span class="bar"></span><span class="ttl muted">E30 · Light of Hope</span><span class="rt ok">✓ watched</span></div>
+              <div class="row sel"><span class="bar">▌</span><span class="ttl">E31 · Unknown Known <span class="muted">· 24m</span></span><span class="rt rose b">▸ current · 79%</span></div>
+              <div class="row"><span class="bar"></span><span class="ttl">E32 · Challengers of Science <span class="muted">· 24m</span></span><span class="rt ok">● ready</span></div>
+              <div class="row"><span class="bar"></span><span class="ttl dim">E33 · Science Future</span><span class="rt dim">airs Jun 4</span></div>
+            </div>
+            <div class="rail">
+              <div class="poster">E31 · DR. STONE</div>
+              <div class="text b" style="margin-top:8px">E31 · Unknown Known</div>
+              <div class="dim" style="font-size:12px; margin-top:4px">With the computer completed, the team needs a user interface: a television.</div>
+              <div class="fact" style="margin-top:8px"><span class="fk">aired</span><span class="fv">May 14, 2026</span></div>
+              <div class="fact"><span class="fk">progress</span><span class="fv rose">18:49 / 24:00 · 79%</span></div>
+              <div class="cta"><span>▸ Resume E31</span><span class="rose">↵</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="foot">
+          <span><span class="k">[enter]</span> resume &nbsp; <span class="ki">[s]</span> season &nbsp; <span class="ki">[d]</span> download &nbsp; <span class="ki">[esc]</span> back &nbsp; <span class="km">[/]</span> commands</span>
+          <span class="surf-lbl">Episodes · S4</span>
+        </div>
+      </div>
+
+      <div class="state-grid">
+        <div class="scard" data-state="loading">
+          <div class="scard-top"><span class="st-load">Loading</span><span class="dim">Fixes "Saving settings…" bug!</span></div>
+          <div class="scard-body">
+            <div class="rose">❀ Loading Season 4 episodes for DR. STONE…</div>
+            <div class="dim" style="margin-top:6px">Details sheet: reserved poster frame + <code>❀ Loading synopsis &amp; cast…</code> (never bare <code>Loading...</code>).</div>
+          </div>
+          <div class="scard-foot"><span><span class="ki">[esc]</span> cancel</span><span>Episodes</span></div>
+        </div>
+
+        <div class="scard" data-state="empty">
+          <div class="scard-top"><span class="st-empty">Empty (Unaired season)</span></div>
+          <div class="scard-body">
+            <div class="muted b">· No episodes released in Season 5 yet</div>
+            <div class="dim" style="margin-top:3px">Press <span class="text">s</span> to pick another season, or follow to be notified when E01 airs.</div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[s]</span> switch season · <span class="ki">[esc]</span> back</span><span>Episodes</span></div>
+        </div>
+
+        <div class="scard" data-state="partial">
+          <div class="scard-top"><span class="st-part">Partial (Clean Details Sheet overlay)</span><span class="dim">Header: Details</span></div>
+          <div class="scard-body">
+            <div style="display:flex; gap:14px; align-items:flex-start">
+              <div class="poster" style="width:74px; height:84px; flex-shrink:0; font-size:12px">SM</div>
+              <div>
+                <div class="text b">Smoke Movie</div>
+                <div class="muted" style="font-size:12px">Movie · 2026 · VidLink</div>
+                <div class="t2" style="margin-top:6px; font-size:12px">Compiled smoke movie.</div>
+                <div class="dim" style="margin-top:4px; font-size:11.5px">Cast &amp; trailer unavailable from catalog</div>
+              </div>
+            </div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[enter]</span> play · <span class="ki">[w]</span> watchlist · <span class="ki">[d]</span> download · <span class="ki">[esc]</span> close</span><span>Details</span></div>
+        </div>
+
+        <div class="scard" data-state="error">
+          <div class="scard-top"><span class="st-err">Error (No silent bounce!)</span><span class="err">Header: ● issue</span></div>
+          <div class="scard-body">
+            <div class="err b">× Could not load seasons for Smoke Series</div>
+            <div class="muted" style="margin-top:3px">Catalog metadata request failed. Retry or start from Episode 1 directly.</div>
+            <div class="row sel" style="margin-top:8px"><span class="bar">▌</span><span class="ttl">↵ Retry season catalog</span><span class="rt rose">r</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl">Start S01E01 directly</span><span class="rt dim">1</span></div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[r]</span> retry · <span class="ki">[esc]</span> back · <span class="km">[/]</span> commands</span><span>Episodes</span></div>
+        </div>
+
+        <div class="scard" data-state="offline">
+          <div class="scard-top"><span class="st-off">Offline (Local episodes only)</span><span class="warn">Header: ● offline</span></div>
+          <div class="scard-body">
+            <div class="row sel"><span class="bar">▌</span><span class="ttl">E04 · The Land Where Souls Rest</span><span class="rt ok">⬇ offline</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl">E05 · Phantoms of the Dead</span><span class="rt ok">⬇ offline</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl dim">E06 · The Hero of the Village</span><span class="rt dim">not downloaded</span></div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[enter]</span> play offline · <span class="ki">[esc]</span> back</span><span>Episodes · offline</span></div>
+        </div>
+
+        <div class="scard" data-state="narrow">
+          <div class="scard-top"><span class="st-nar">Narrow · 54×25 &amp; 40 cols</span><span class="dim">Poster hides &lt;72c</span></div>
+          <div class="scard-body">
+            <div class="narrow-pair">
+              <div>
+                <div class="tty-cap">54 × 25 (Details — no poster squeeze)</div>
+                <pre class="tty w54">🦊 Kunai · Details · Smoke      ● ready · 54×25
+Smoke Movie · Movie · 2026
+Synopsis: Compiled smoke movie.
+Providers: VidLink
+
+[enter] play  [w] watchlist  [esc] close</pre>
+              </div>
+              <div>
+                <div class="tty-cap">40 cols (Episodes)</div>
+                <pre class="tty w40">🦊 · Episodes · S4       ● ready · 40×20
+  E30 Light of Hope                ✓
+▌ E31 Unknown Known              ▸ 79%
+  E32 Challengers of Science       ●
+
+[enter] play  [s] season  [esc] back</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="scard" data-state="plain" style="grid-column: 1 / -1;">
+          <div class="scard-top"><span class="st-plain">Plain Mode</span><span class="ok">No "no preview art" · explicit focus</span></div>
+          <div class="scard-body">
+            <pre class="tty plain">Kunai | Episodes | DR. STONE Season 4 | Status: ready
+Focus: Episode list (3 of 33)
+  E30: Light of Hope (24m, watched)
+[selected] E31: Unknown Known (24m, current, 79% watched)
+  E32: Challengers of Science (24m, ready)
+Actions: [enter] resume, [s] season, [d] download, [esc] back</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="delta">
+        <b>Changed vs today:</b> Fixed live Details bugs (garbled <code>Smoke Movieer</code>, leftover search bar, unframed <code>S</code>, footer advertising <code>[i] details</code> while open); fixed <code>overlay-panel.tsx:197</code> printing <code>"Saving settings…"</code> on episode-picker busy; replaced silent bounce on season-fetch failure with visible <code>StateBlock(error)</code>; collapsed <code>SheetPoster</code> below 72 cols.
+      </div>
+    </section>
+
+    <!-- ==================== 04 WHERE TO START ==================== -->
+    <section class="surf" id="s4">
+      <div class="surf-head">
+        <h2>04 · "Where to start?" &amp; Continue "Ask" Seam</h2>
+        <span class="owner">title-control-menu.ts · smart-auto-launch.ts · ContinueSourcePrompt (new)</span>
+      </div>
+      <p class="surf-sub">Compact <code>ActionList</code> dialog (no useless filter bar for 4 choices). Directly fixes the two reviewer-flagged seam bugs: Continue "Ask" now asks everywhere (Browse, History, Post-play), and VLC resume discloses start-time support honestly.</p>
+
+      <div class="term" data-state="success">
+        <div class="head">
+          <span><span class="brand">🦊 Kunai</span> · <span class="chip">Where to start?</span> <span class="muted">DR. STONE · 4 seasons</span></span>
+          <span><span class="ok">●</span> ready · 120×32</span>
+        </div>
+        <div class="body">
+          <div class="row sel"><span class="bar">▌</span><span class="ttl">Resume S04E07 at 18:49 <span class="muted">· Unknown Known</span></span><span class="rt rose b">79% · 5m left · ↵</span></div>
+          <div class="row"><span class="bar"></span><span class="ttl">Next episode · S04E08 <span class="muted">· Challengers of Science</span></span><span class="rt ok">● ready</span></div>
+          <div class="row"><span class="bar"></span><span class="ttl">Pick season or episode <span class="muted">· browse all 69 episodes</span></span><span class="rt muted">e</span></div>
+          <div class="row"><span class="bar"></span><span class="ttl">Start over · S01E01 <span class="muted">· rewatch from beginning</span></span><span class="rt dim">0:00</span></div>
+          <div class="dim" style="margin-top:10px; font-size:12px">Plain Enter on Browse resumes automatically · <span class="text">m</span> always opens this menu.</div>
+        </div>
+        <div class="foot">
+          <span><span class="k">[enter]</span> play &nbsp; <span class="ki">[↑↓]</span> choose &nbsp; <span class="ki">[esc]</span> back &nbsp; <span class="km">[/]</span> commands</span>
+          <span class="surf-lbl">Where to start?</span>
+        </div>
+      </div>
+
+      <div class="state-grid">
+        <div class="scard" data-state="loading">
+          <div class="scard-top"><span class="st-load">Loading</span><span class="dim">No 2s cursor freeze</span></div>
+          <div class="scard-body">
+            <div class="rose">❀ Checking your saved progress and episode list…</div>
+            <div class="dim" style="margin-top:4px">Opens sheet immediately on <code>m</code> instead of freezing Browse.</div>
+          </div>
+          <div class="scard-foot"><span><span class="ki">[esc]</span> cancel</span><span>Where to start?</span></div>
+        </div>
+
+        <div class="scard" data-state="empty">
+          <div class="scard-top"><span class="st-empty">Empty (Unreleased title)</span></div>
+          <div class="scard-body">
+            <div class="muted b">· No episodes released yet</div>
+            <div class="dim" style="margin-top:3px">Premieres Oct 2026 — follow to get a notice when E01 is playable.</div>
+            <div class="row sel" style="margin-top:8px"><span class="bar">▌</span><span class="ttl">↵ Follow title</span><span class="rt rose">w</span></div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[enter]</span> follow · <span class="ki">[esc]</span> back</span><span>Where to start?</span></div>
+        </div>
+
+        <div class="scard" data-state="partial">
+          <div class="scard-top"><span class="st-part">Partial · Continue "Ask" + VLC Honesty</span><span class="warn">Fixes seam drop!</span></div>
+          <div class="scard-body">
+            <div class="text b" style="margin-bottom:6px">MARRIAGETOXIN · S01E05 (18:49 saved)</div>
+            <div class="row sel"><span class="bar">▌</span><span class="ttl">Resume offline copy · 18:49</span><span class="rt ok">⬇ local · 1.1 GB · l</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl">Resume online stream · 18:49</span><span class="rt muted">vidlink · s</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl">Choose episode…</span><span class="rt dim">e</span></div>
+            <div class="warn" style="margin-top:8px; font-size:11.5px">VLC note when --player vlc cannot seek stream: row explicitly shows <code>(VLC starts at 0:00)</code> — never silent.</div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[l]</span> local · <span class="ki">[s]</span> stream · <span class="ki">[esc]</span> back</span><span>ContinueSourcePrompt</span></div>
+        </div>
+
+        <div class="scard" data-state="error">
+          <div class="scard-top"><span class="st-err">Error</span><span class="err">Header: ● issue</span></div>
+          <div class="scard-body">
+            <div class="err b">× Could not load episode list</div>
+            <div class="muted" style="margin-top:3px">Catalog did not respond. Retry or play S01E01 directly.</div>
+            <div class="row sel" style="margin-top:8px"><span class="bar">▌</span><span class="ttl">↵ Retry</span><span class="rt rose">r</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl">Play S01E01 directly</span><span class="rt dim">1</span></div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[r]</span> retry · <span class="ki">[esc]</span> back</span><span>Where to start?</span></div>
+        </div>
+
+        <div class="scard" data-state="offline">
+          <div class="scard-top"><span class="st-off">Offline</span><span class="warn">Header: ● offline</span></div>
+          <div class="scard-body">
+            <div class="row sel"><span class="bar">▌</span><span class="ttl">Resume offline · S01E05 at 18:49</span><span class="rt ok">⬇ local</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl">Pick downloaded episode (4 ready)</span><span class="rt ok">e</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl dim">Stream online</span><span class="rt dim">needs network</span></div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[enter]</span> play offline · <span class="ki">[esc]</span> back</span><span>Where to start? · offline</span></div>
+        </div>
+
+        <div class="scard" data-state="narrow">
+          <div class="scard-top"><span class="st-nar">Narrow · 54×25 &amp; 40 cols</span></div>
+          <div class="scard-body">
+            <div class="narrow-pair">
+              <div>
+                <div class="tty-cap">54 × 25</div>
+                <pre class="tty w54">🦊 Kunai · Where to start?      ● ready · 54×25
+▌ Resume S04E07 · 18:49                   79%
+  Next episode · S04E08                 ready
+  Pick season / episode                     e
+  Start over · S01E01
+
+[enter] play  [esc] back</pre>
+              </div>
+              <div>
+                <div class="tty-cap">40 cols</div>
+                <pre class="tty w40">🦊 · Start · DR. STONE  ● ready · 40×20
+▌ Resume S04E07 (18:49)
+  Next · S04E08
+  Pick episode (e)
+  Start over · S01E01
+
+[enter] play  [esc] back</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="scard" data-state="plain" style="grid-column: 1 / -1;">
+          <div class="scard-top"><span class="st-plain">Plain Mode</span><span class="ok">No useless Filter prompt</span></div>
+          <div class="scard-body">
+            <pre class="tty plain">Kunai | Where to start? | DR. STONE | Status: ready
+Focus: Start options (1 of 4)
+[selected] Resume S04E07 at 18:49 (79% watched, 5m left)
+  Next episode: S04E08 Challengers of Science
+  Pick season or episode (e)
+  Start over at S01E01
+Actions: [enter] play, [esc] back</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="delta">
+        <b>Changed vs today:</b> Replaced filter-boxed <code>chooseFromListShell</code> with a compact <code>ActionList</code> (≤6 options); added shared <code>ContinueSourcePrompt</code> so <code>continueSourcePreference="ask"</code> works identically from Browse, History, and Post-play; added explicit VLC timestamp honesty.
+      </div>
+    </section>
+
+    <!-- ==================== 05 RESOLVING, NOW PLAYING & FAILOVER ==================== -->
+    <section class="surf" id="s5">
+      <div class="surf-head">
+        <h2>05 · Resolving, Now Playing &amp; Provider-Failover</h2>
+        <span class="owner">loading-shell.tsx · loading-shell-runtime.ts · playback-recovery-view-model.ts · FailoverBanner (new)</span>
+      </div>
+      <p class="surf-sub">Header accurately separates <code>Resolving</code> (<code>◌ resolving…</code>) from <code>Now Playing</code> (<code>▸ playing</code>). Mid-stream failover keeps the control deck visible under an amber <code>FailoverBanner</code> stating the exact preserved timestamp. Total failure routes to <code>Playback issue</code>, never silently dumping into <code>Tracks</code>.</p>
+
+      <div class="term" data-state="success">
+        <div class="head">
+          <span><span class="brand">🦊 Kunai</span> · <span class="chip">Now Playing</span> <span class="muted">DR. STONE · S04E07 · allanime</span></span>
+          <span><span class="rose">▸</span> playing · <span class="pill ok">stable</span> · 120×32</span>
+        </div>
+        <div class="body">
+          <div class="split">
+            <div>
+              <div style="display:flex; justify-content:space-between; align-items:baseline">
+                <div>
+                  <div class="text b" style="font-size:18px">DR. STONE</div>
+                  <div class="t2">E31 · Unknown Known <span class="muted">· S04E07</span></div>
+                </div>
+                <span class="dim" style="font-size:12px">↗ Share (/share)</span>
+              </div>
+              <div class="pbar-wrap">
+                <span class="text b">12:30</span>
+                <div class="pbar"><i style="width:52%"></i></div>
+                <span class="muted">24:00</span>
+                <span class="rose b">52%</span>
+              </div>
+              <div style="display:grid; grid-template-columns:46px 1fr; gap:6px 10px; margin-top:10px; font-size:12.5px">
+                <span class="dim b">SRC</span><span class="text">SmokeServer <span class="muted">· allanime · 1080p</span></span>
+                <span class="dim b">NOW</span><span><span class="text">JP audio · EN sub</span> · autoskip <span class="ok">on</span> · autoplay <span class="ok">on</span></span>
+                <span class="dim b">GO</span><span><span class="rose b">n</span> next &nbsp; <span class="rose b">p</span> prev &nbsp; <span class="rose b">b</span> skip &nbsp; <span class="info b">e</span> episodes &nbsp; <span class="info b">o</span> tracks</span>
+              </div>
+              <div class="grp" style="margin-top:14px"><span>Up next</span></div>
+              <div class="row"><span class="bar"></span><span class="ttl">E32 · Challengers of Science <span class="muted">· 24m</span></span><span class="rt ok">● ready</span></div>
+            </div>
+            <div class="rail">
+              <div class="poster">DR. STONE<br>S04E07</div>
+              <div class="fact" style="margin-top:8px"><span class="fk">player</span><span class="fv">mpv · IPC live</span></div>
+              <div class="fact"><span class="fk">health</span><span class="fv ok">stable</span></div>
+              <div class="fact"><span class="fk">next armed</span><span class="fv ok">E32</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="foot">
+          <span><span class="k">[space]</span> pause &nbsp; <span class="ki">[o]</span> tracks &nbsp; <span class="ki">[e]</span> episodes &nbsp; <span class="kd">[q]</span> stop &nbsp; <span class="km">[/]</span> commands</span>
+          <span class="surf-lbl">Now Playing</span>
+        </div>
+      </div>
+
+      <div class="state-grid">
+        <div class="scard" data-state="loading">
+          <div class="scard-top"><span class="st-load">Loading (Resolving — synced stage rail)</span><span class="rose">Chip: Resolving · ◌ resolving…</span></div>
+          <div class="scard-body">
+            <div class="text b">DR. STONE <span class="muted" style="font-weight:400">· S04E07</span></div>
+            <div class="rose b" style="margin-top:8px">❀ Launching mpv · SmokeServer · 1080p</div>
+            <div style="margin-top:8px; padding-left:14px; font-size:12px">
+              <div class="ok">✓ Catalog matched</div>
+              <div class="ok">✓ Source verified (SmokeServer)</div>
+              <div class="rose">◓ Starting mpv session</div>
+              <div class="dim">· First decoded frame</div>
+            </div>
+            <div class="dim" style="margin-top:8px; font-size:11.5px">session · autoskip <span class="ok">on</span> · autoplay <span class="ok">on</span></div>
+          </div>
+          <div class="scard-foot"><span><span class="kd">[esc]</span> cancel · <span class="ki">[⇧F]</span> fallback · <span class="km">[/]</span> cmds</span><span>Resolving</span></div>
+        </div>
+
+        <div class="scard" data-state="partial">
+          <div class="scard-top"><span class="st-part">Mid-Stream Provider Failover (FailoverBanner)</span><span class="warn">Header: ◌ switching…</span></div>
+          <div class="scard-body">
+            <div class="banner">
+              <div class="warn b">◐ Stream dropped on VidKing — switching to Rivestream</div>
+              <div class="t2" style="margin-top:3px; font-size:12px">Holding position at <span class="text b">14:22</span> · mpv will resume automatically (attempt 1 of 2)</div>
+              <div class="dim" style="margin-top:3px; font-size:11.5px">On VLC: "VLC will reopen at 14:22 (0:00 if mirror is unseekable)"</div>
+            </div>
+            <div class="pbar-wrap" style="margin:6px 0">
+              <span class="warn b">14:22</span>
+              <div class="pbar"><i style="width:60%; background:var(--warn)"></i></div>
+              <span class="muted">24:00</span>
+            </div>
+            <div class="dim" style="font-size:11.5px">Control deck stays visible underneath — never tears down to blank screen.</div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[o]</span> pick source · <span class="ki">[⇧F]</span> next provider · <span class="kd">[q]</span> stop · <span class="km">[/]</span> cmds</span><span>Now Playing · failover</span></div>
+        </div>
+
+        <div class="scard" data-state="error">
+          <div class="scard-top"><span class="st-err">Error (Playback issue — never silent Tracks!)</span><span class="err">Header: ● issue</span></div>
+          <div class="scard-body">
+            <div class="err b">× Stream stalled</div>
+            <div class="muted" style="margin-top:2px">mpv stopped receiving data. <span class="ok">14:22 saved · not marked watched.</span></div>
+            <div class="row sel" style="margin-top:8px"><span class="bar">▌</span><span class="ttl">↵ Recover stream</span><span class="rt rose">r</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl">Fallback to Rivestream</span><span class="rt muted">⇧F</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl">Choose another source</span><span class="rt muted">o</span></div>
+            <div class="dim" style="margin-top:6px; font-size:11.5px">[d] diagnostics</div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[r]</span> recover · <span class="ki">[⇧F]</span> fallback · <span class="ki">[o]</span> sources · <span class="km">[/]</span> cmds</span><span>Playback issue</span></div>
+        </div>
+
+        <div class="scard" data-state="empty">
+          <div class="scard-top"><span class="st-empty">Empty (No playable source exhausted)</span><span class="err">Header: ● issue</span></div>
+          <div class="scard-body">
+            <div class="err b">× No playable source for DR. STONE S04E07</div>
+            <div class="muted" style="margin-top:3px">Tried 2 providers (6 sources) · progress saved at 12:30.</div>
+            <div class="row sel" style="margin-top:8px"><span class="bar">▌</span><span class="ttl">↵ Pick source or provider</span><span class="rt rose">o</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl muted">Open diagnostics</span><span class="rt dim">d</span></div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[o]</span> sources · <span class="ki">[d]</span> diagnostics · <span class="ki">[esc]</span> back</span><span>Playback issue</span></div>
+        </div>
+
+        <div class="scard" data-state="offline">
+          <div class="scard-top"><span class="st-off">Offline (Fail-fast + local handoff)</span><span class="warn">Header: ● offline</span></div>
+          <div class="scard-body">
+            <div class="err b">× Cannot stream S04E07 while offline</div>
+            <div class="muted" style="margin-top:3px">This episode is not downloaded. 4 other episodes of DR. STONE are ready offline.</div>
+            <div class="row sel" style="margin-top:8px"><span class="bar">▌</span><span class="ttl">↵ Open offline episodes</span><span class="rt ok">e</span></div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[e]</span> offline episodes · <span class="ki">[esc]</span> back</span><span>Playback · offline</span></div>
+        </div>
+
+        <div class="scard" data-state="narrow">
+          <div class="scard-top"><span class="st-nar">Narrow · 54×25 &amp; 40 cols</span><span class="dim">Fixes header bleed + missing stop!</span></div>
+          <div class="scard-body">
+            <div class="narrow-pair">
+              <div>
+                <div class="tty-cap">54 × 25</div>
+                <pre class="tty w54">🦊 Kunai · Playing             ▸ playing · 54×25
+DR. STONE · S04E07
+12:30 ██████████░░░░░░░░░░ 24:00 · 52%
+SRC  SmokeServer · 1080p
+NOW  JP · EN sub · autoskip · autoplay
+GO   n next · p prev · e eps · o tracks
+
+[o] tracks  [q] stop  [/] commands</pre>
+              </div>
+              <div>
+                <div class="tty-cap">40 cols (no bleed, stop+cmds pinned)</div>
+                <pre class="tty w40">🦊 · Playing               ▸ 12:30/24:00
+DR. STONE · S04E07
+██████████░░░░░░░░░░░░ 52%
+1080p · EN sub · SmokeServer
+
+[q] stop  [o] tracks  [/] cmds</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="scard" data-state="plain" style="grid-column: 1 / -1;">
+          <div class="scard-top"><span class="st-plain">Plain Mode</span><span class="ok">Zero 1s tick chatter · milestones only</span></div>
+          <div class="scard-body">
+            <pre class="tty plain">Kunai | Now Playing | DR. STONE S04E07 | Status: playing
+Source: SmokeServer (allanime, 1080p, JP audio, EN subtitles)
+Session: autoskip on, autoplay on
+Up next: E32 Challengers of Science
+(Elapsed time updates suppressed in plain mode; failover announces once on transition)
+Actions: [q] stop, [o] tracks, [e] episodes, [/] commands</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="delta">
+        <b>Changed vs today:</b> Split header pill <code>Resolving</code> (<code>◌ resolving…</code>) from <code>Now Playing</code> (<code>▸ playing</code>); synced stage rail to headline; added amber <code>FailoverBanner</code> with preserved timestamp; routed total failure to <code>PlaybackRecoveryView</code> instead of silently opening <code>Tracks</code> with <code>● ready</code>; fixed 40×20 header bleed (<code>🦊 Kun · Now Playin● Playing</code>) and pinned <code>[q] stop</code> + <code>[/] cmds</code>; stopped 1s polling redraws in plain mode.
+      </div>
+    </section>
+
+    <!-- ==================== 06 TRACKS & QUALITY ==================== -->
+    <section class="surf" id="s6">
+      <div class="surf-head">
+        <h2>06 · Tracks (Audio &amp; Subtitles) &amp; Quality</h2>
+        <span class="owner">tracks-panel-shell.tsx · tracks-panel-layout.ts · track-capabilities.ts</span>
+      </div>
+      <p class="surf-sub">Unified panel for <code>/tracks</code>, <code>/source</code>, and <code>/quality</code>. Single-option sections render as calm facts; widened left rail eliminates <code>SmokeSer…</code>/<code>Subtitle…</code> truncation; narrow view uses a 1-line section tab strip instead of a 1-row stacked peephole.</p>
+
+      <div class="term" data-state="success">
+        <div class="head">
+          <span><span class="brand">🦊 Kunai</span> · <span class="chip">Tracks</span> <span class="muted">DR. STONE · S04E07 · vidlink</span></span>
+          <span><span class="ok">●</span> ready · 120×32</span>
+        </div>
+        <div class="body">
+          <div class="muted" style="font-size:12px; margin-bottom:10px">1 provider · 6 sources · 3 qualities · 10 subtitles</div>
+          <div style="display:grid; grid-template-columns: 230px minmax(0,1fr); gap:20px;">
+            <div style="border-right:1px solid var(--line-soft); padding-right:14px;">
+              <div style="padding:5px 8px; border-radius:5px; color:var(--muted)"><span class="dim">  </span>Provider<div class="dim" style="padding-left:14px; font-size:11.5px">VidLink</div></div>
+              <div style="padding:5px 8px; border-radius:5px; background:var(--surface-elev); color:var(--text)"><span class="rose b">▸ </span><b>Source</b> <span class="dim">(6)</span><div class="ok" style="padding-left:14px; font-size:11.5px">SmokeServer</div></div>
+              <div style="padding:5px 8px; border-radius:5px; color:var(--muted)"><span class="dim">  </span>Quality <span class="dim">(3)</span><div class="dim" style="padding-left:14px; font-size:11.5px">1080p</div></div>
+              <div style="padding:5px 8px; border-radius:5px; color:var(--muted)"><span class="dim">  </span>Audio<div class="dim" style="padding-left:14px; font-size:11.5px">Japanese (only)</div></div>
+              <div style="padding:5px 8px; border-radius:5px; color:var(--muted)"><span class="dim">  </span>Subtitles <span class="dim">(10)</span><div class="ok" style="padding-left:14px; font-size:11.5px">English</div></div>
+            </div>
+            <div>
+              <div class="grp"><span>Source · 6 mirrors</span><span class="dim">f favorite</span></div>
+              <div class="row sel"><span class="bar">▌</span><span class="ttl"><span class="ok">✓</span> SmokeServer <span class="muted">· 1080p · Original</span></span><span class="rt ok">current</span></div>
+              <div class="row"><span class="bar"></span><span class="ttl">Cypher <span class="muted">· 1080p · Original</span></span><span class="rt muted">↵ switch</span></div>
+              <div class="row"><span class="bar"></span><span class="ttl">Fade <span class="muted">· 1080p · Hindi dub · <span class="rose">♥</span></span></span><span class="rt muted">↵ switch</span></div>
+              <div class="row"><span class="bar"></span><span class="ttl dim">× Killjoy <span class="dim">· German dub</span></span><span class="rt err">timeout · ↵ retry</span></div>
+              <div class="row"><span class="bar"></span><span class="ttl dim">◌ Brook <span class="dim">· French dub</span></span><span class="rt dim">probing…</span></div>
+              <div class="row"><span class="bar"></span><span class="ttl dim">— Law <span class="dim">· movies only</span></span><span class="rt dim">unavailable</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="foot">
+          <span><span class="ki">[←→]</span> pane &nbsp; <span class="k">[enter]</span> switch &nbsp; <span class="ki">[f]</span> favorite &nbsp; <span class="ki">[esc]</span> back &nbsp; <span class="km">[/]</span> commands</span>
+          <span class="surf-lbl">Tracks</span>
+        </div>
+      </div>
+
+      <div class="state-grid">
+        <div class="scard" data-state="loading">
+          <div class="scard-top"><span class="st-load">Loading (Phase B background probe)</span></div>
+          <div class="scard-body">
+            <div class="rose">❀ Checking available sources and subtitle tracks…</div>
+            <div class="dim" style="margin-top:6px">Already-verified mirrors stay selectable while remaining mirrors show quiet <code>◌ probing…</code>.</div>
+          </div>
+          <div class="scard-foot"><span><span class="ki">[esc]</span> back</span><span>Tracks</span></div>
+        </div>
+
+        <div class="scard" data-state="empty">
+          <div class="scard-top"><span class="st-empty">Empty &amp; Single-Option Fact Section</span></div>
+          <div class="scard-body">
+            <div class="muted b">· No stream details yet</div>
+            <div class="dim" style="margin-top:2px">Tracks appear once playback resolves a source.</div>
+            <div style="margin-top:10px; padding-top:8px; border-top:1px solid var(--line-soft)">
+              <div class="text b">Quality <span class="muted" style="font-weight:400">· fact only</span></div>
+              <div class="muted">1080p — single variant exposed by VidLink (no picker needed).</div>
+            </div>
+          </div>
+          <div class="scard-foot"><span><span class="ki">[r]</span> refresh · <span class="ki">[esc]</span> back</span><span>Tracks</span></div>
+        </div>
+
+        <div class="scard" data-state="partial">
+          <div class="scard-top"><span class="st-part">Partial (Subtitles grid — Off first)</span></div>
+          <div class="scard-body">
+            <div class="grp"><span>Subtitles · 10 tracks attached to mpv</span></div>
+            <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:4px 10px; font-size:12px">
+              <span class="dim">Subtitles off</span><span class="ok b" style="background:var(--accent-fill); padding:1px 5px; border-radius:4px">▌ ✓ English</span><span class="t2">Español</span>
+              <span class="t2">Français</span><span class="t2">Deutsch</span><span class="t2">Português</span>
+            </div>
+            <div class="dim" style="margin-top:6px; font-size:11.5px">Switches instantly in mpv without restarting the stream.</div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[enter]</span> select sub · <span class="ki">[←→]</span> pane · <span class="ki">[esc]</span> back</span><span>Tracks · Subtitles</span></div>
+        </div>
+
+        <div class="scard" data-state="error">
+          <div class="scard-top"><span class="st-err">Error (Switch failed — stream intact)</span><span class="err">Inline banner</span></div>
+          <div class="scard-body">
+            <div class="banner err-b" style="padding:7px 10px">
+              <div class="err b">× Could not switch to Killjoy (timeout)</div>
+              <div class="t2" style="font-size:12px">Still playing <span class="ok">SmokeServer</span> at 12:30. Pick another mirror or retry.</div>
+            </div>
+            <div class="row sel"><span class="bar">▌</span><span class="ttl"><span class="ok">✓</span> SmokeServer</span><span class="rt ok">still playing</span></div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[enter]</span> switch · <span class="ki">[r]</span> retry · <span class="ki">[esc]</span> back</span><span>Tracks</span></div>
+        </div>
+
+        <div class="scard" data-state="offline">
+          <div class="scard-top"><span class="st-off">Offline (Local file tracks)</span><span class="ok">● local file</span></div>
+          <div class="scard-body">
+            <div class="muted" style="font-size:12px; margin-bottom:6px">Local file · Provider &amp; Source hidden</div>
+            <div class="row"><span class="bar"></span><span class="ttl">Quality</span><span class="rt muted">1080p (local file)</span></div>
+            <div class="row sel"><span class="bar">▌</span><span class="ttl"><span class="ok">✓</span> Audio · Japanese</span><span class="rt ok">embedded (1 of 2)</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl">Subtitles · English</span><span class="rt ok">local sidecar</span></div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[enter]</span> switch · <span class="ki">[esc]</span> back</span><span>Tracks · local</span></div>
+        </div>
+
+        <div class="scard" data-state="narrow">
+          <div class="scard-top"><span class="st-nar">Narrow · 54×25 &amp; 40 cols</span><span class="dim">Tab strip replaces 1-row stack</span></div>
+          <div class="scard-body">
+            <div class="narrow-pair">
+              <div>
+                <div class="tty-cap">54 × 25 (6+ rows visible!)</div>
+                <pre class="tty w54">🦊 Kunai · Tracks               ● ready · 54×25
+[Source]  Quality  Audio  Subs             Tab
+▌ ✓ SmokeServer                         current
+  Cypher · 1080p
+  Fade · Hindi ♥
+  × Killjoy · timeout                     retry
+  ◌ Brook · probing…
+[tab] section  [enter] switch  [esc] back</pre>
+              </div>
+              <div>
+                <div class="tty-cap">40 cols</div>
+                <pre class="tty w40">🦊 · Tracks              ● ready · 40×20
+Source · [tab]
+▌ ✓ SmokeServer
+  Cypher · 1080p
+  Fade · Hindi ♥
+  × Killjoy (timeout)
+[enter] switch  [esc] back</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="scard" data-state="plain" style="grid-column: 1 / -1;">
+          <div class="scard-top"><span class="st-plain">Plain Mode</span><span class="ok">Accurate Tab hint · explicit section focus</span></div>
+          <div class="scard-body">
+            <pre class="tty plain">Kunai | Tracks | DR. STONE S04E07 | Status: ready
+Focus: Source section (1 of 6) — Tab for next section
+[selected] SmokeServer (current, 1080p, Original audio)
+  Cypher (1080p, Original audio)
+  Killjoy (failed: timeout, Enter to retry)
+Actions: [tab] next section, [enter] switch, [f] favorite, [esc] back</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="delta">
+        <b>Changed vs today:</b> Widened section column to two-line cards (no more <code>SmokeSer…</code> / <code>Subtitle…</code>); added explicit <code>[←→] pane</code> in footer + passive <code>▸</code> marker on active section; added failure reasons (<code>timeout</code>) beside <code>× Retry</code>; replaced 1-row narrow stack with a section tab strip (6× more visible rows at 54×25); hid Provider/Source on local offline playback.
+      </div>
+    </section>
+
+    <!-- ==================== 07 POST-PLAY & UP NEXT ==================== -->
+    <section class="surf" id="s7">
+      <div class="surf-head">
+        <h2>07 · Post-play, Autoplay &amp; Up Next Queue</h2>
+        <span class="owner">post-play-shell.tsx · post-play-view.ts · queue-shell.tsx · root-overlay-shell.tsx</span>
+      </div>
+      <p class="surf-sub">Fixed header chip (<code>Post-play</code>, not <code>Up Next</code>), killed the 58-col card overflow at 40–54 cols, removed the duplicate Resume CTA &amp; phantom <code>x cancel</code>, and moved Up Next's <code>▌</code> bar to column 0.</p>
+
+      <div class="term" data-state="success">
+        <div class="head">
+          <span><span class="brand">🦊 Kunai</span> · <span class="chip">Post-play</span> <span class="muted">DR. STONE · S04E07 · vidlink</span></span>
+          <span><span class="ok">●</span> ready · 120×32</span>
+        </div>
+        <div class="body">
+          <div class="split">
+            <div>
+              <div class="text b" style="font-size:18px">DR. STONE</div>
+              <div class="muted">E31 · Unknown Known · S04E07</div>
+              <div class="ok" style="margin-top:6px">✓ Episode complete <span class="muted">· watched 24m · 1080p</span></div>
+              <div class="grp" style="margin-top:12px"><span>Next</span></div>
+              <div class="row sel"><span class="bar">▌</span><span class="ttl">↵ Next episode <span class="muted">· E32 Challengers of Science · 24m</span></span><span class="rt rose b">enter</span></div>
+              <div class="row"><span class="bar"></span><span class="ttl">Episodes <span class="muted">· Season 4 (33 eps)</span></span><span class="rt muted">e</span></div>
+              <div class="row"><span class="bar"></span><span class="ttl">Replay from start</span><span class="rt muted">r</span></div>
+              <div class="grp"><span>Because you watched this</span></div>
+              <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:6px">
+                <div style="border:1px solid var(--line-soft); border-radius:6px; padding:7px 9px; background:var(--surface)"><span class="rose b">1</span> <span class="text b">Frieren</span><div class="dim" style="font-size:11.5px">same patience</div></div>
+                <div style="border:1px solid var(--line-soft); border-radius:6px; padding:7px 9px; background:var(--surface)"><span class="rose b">2</span> <span class="text b">Vinland Saga</span><div class="dim" style="font-size:11.5px">craft → survival</div></div>
+                <div style="border:1px solid var(--line-soft); border-radius:6px; padding:7px 9px; background:var(--surface)"><span class="rose b">3</span> <span class="text b">Heavenly Delusion</span><div class="dim" style="font-size:11.5px">rebuilding world</div></div>
+              </div>
+            </div>
+            <div class="rail">
+              <div class="poster">E32 · UP NEXT</div>
+              <div class="text b" style="margin-top:8px">E32 · Challengers of Science</div>
+              <div class="ok" style="font-size:12px">● available · 24m</div>
+              <div class="fact" style="margin-top:8px"><span class="fk">season</span><span class="fv">7 / 12 · 58%</span></div>
+              <div class="fact"><span class="fk">queue</span><span class="fv">2 items in Up Next</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="foot">
+          <span><span class="k">[enter]</span> next &nbsp; <span class="ki">[r]</span> replay &nbsp; <span class="ki">[e]</span> episodes &nbsp; <span class="ki">[1-3]</span> pick &nbsp; <span class="km">[/]</span> commands</span>
+          <span class="surf-lbl">Post-play · complete</span>
+        </div>
+      </div>
+
+      <div class="state-grid">
+        <div class="scard" data-state="partial">
+          <div class="scard-top"><span class="st-part">Stopped Early · Autoplay · Caught Up · Series Complete</span></div>
+          <div class="scard-body">
+            <div class="text b">Smoke Movie <span class="warn" style="font-weight:400">· ⏸ Stopped early · 0:12 / 10:00 (2%)</span></div>
+            <div class="row sel" style="margin-top:6px"><span class="bar">▌</span><span class="ttl">↵ Resume 0:12 <span class="muted">· same stream</span></span><span class="rt rose">enter</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl">Replay from start</span><span class="rt muted">r</span></div>
+            <div style="margin-top:10px; padding-top:8px; border-top:1px solid var(--line-soft); font-size:12px">
+              <div><span class="rose b">▶ AUTOPLAY IN 5s</span> · E32 Challengers · <span class="kd">[x] cancel autoplay</span></div>
+              <div style="margin-top:4px"><span class="ok b">◉ CAUGHT UP</span> · Jujutsu Kaisen S2 · next broadcast Thu 23:00 (in 3d)</div>
+              <div style="margin-top:4px"><span class="mile b">✦ SERIES COMPLETE</span> · The Wire · 60 eps · 5 seasons · <span class="rose">1</span> Treme</div>
+            </div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[enter]</span> resume · <span class="ki">[r]</span> replay · <span class="ki">[s]</span> search · <span class="km">[/]</span> cmds</span><span>Post-play</span></div>
+        </div>
+
+        <div class="scard" data-state="loading">
+          <div class="scard-top"><span class="st-load">Loading (Up Next claiming + Recs slot)</span></div>
+          <div class="scard-body">
+            <div class="grp"><span>Up Next · 2 queued</span></div>
+            <div class="row sel"><span class="bar">▌</span><span class="ttl"><span class="dim">SM</span> <span class="rose">◌</span> Smoke Movie <span class="muted">· Movie</span></span><span class="rt rose">starting…</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl"><span class="dim">DS</span> DR. STONE <span class="muted">· S04E08</span></span><span class="rt muted">queued</span></div>
+            <div class="rose" style="margin-top:8px; font-size:12px">❀ Finding picks after DR. STONE… <span class="dim">(reserved slot)</span></div>
+          </div>
+          <div class="scard-foot"><span><span class="ki">[J/K]</span> reorder · <span class="kd">[x]</span> remove · <span class="km">[/]</span> commands</span><span>Up Next</span></div>
+        </div>
+
+        <div class="scard" data-state="empty">
+          <div class="scard-top"><span class="st-empty">Empty (Up Next — honest footer!)</span></div>
+          <div class="scard-body">
+            <div class="muted b">· Up Next is empty</div>
+            <div class="dim" style="margin-top:3px">Press <span class="text">q</span> on any title in Browse, History, or Post-play to queue it.</div>
+            <div class="dim" style="margin-top:6px; font-size:11.5px">Row verbs (<code>play</code>, <code>reorder</code>, <code>remove</code>) removed when empty.</div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[r]</span> restore last queue · <span class="ki">[esc]</span> back · <span class="km">[/]</span> cmds</span><span>Up Next</span></div>
+        </div>
+
+        <div class="scard" data-state="error">
+          <div class="scard-top"><span class="st-err">Error (Did not start &amp; Queue failed row)</span><span class="err">Header: ● issue</span></div>
+          <div class="scard-body">
+            <div class="err b">× Playback did not start</div>
+            <div class="muted" style="margin-top:2px">Stream expired before mpv opened. <span class="ok">Not marked watched.</span></div>
+            <div class="row sel" style="margin-top:6px"><span class="bar">▌</span><span class="ttl">↵ Retry playback</span><span class="rt rose">r</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl">Choose source</span><span class="rt muted">o</span></div>
+            <div class="dim" style="margin-top:6px; font-size:11.5px">Queue failed row: <code>▌ × Smoke Movie  didn't start · Enter retry</code></div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[r]</span> retry · <span class="ki">[o]</span> sources · <span class="ki">[d]</span> diag · <span class="km">[/]</span> cmds</span><span>Playback issue</span></div>
+        </div>
+
+        <div class="scard" data-state="offline">
+          <div class="scard-top"><span class="st-off">Offline Post-play</span><span class="warn">Header: ● offline</span></div>
+          <div class="scard-body">
+            <div class="ok b">✓ E04 complete · Frieren</div>
+            <div class="row sel" style="margin-top:6px"><span class="bar">▌</span><span class="ttl">↵ Next episode · E05 <span class="ok">(⬇ offline)</span></span><span class="rt rose">enter</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl">Replay E04</span><span class="rt muted">r</span></div>
+            <div class="dim" style="margin-top:6px; font-size:11.5px">Online recommendation cards hidden while offline.</div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[enter]</span> next offline · <span class="ki">[r]</span> replay · <span class="km">[/]</span> cmds</span><span>Post-play · offline</span></div>
+        </div>
+
+        <div class="scard" data-state="narrow">
+          <div class="scard-top"><span class="st-nar">Narrow · 54×25 &amp; 40 cols</span><span class="dim">Kills 58-col overflow!</span></div>
+          <div class="scard-body">
+            <div class="narrow-pair">
+              <div>
+                <div class="tty-cap">54 × 25 (single clean Resume)</div>
+                <pre class="tty w54">🦊 Kunai · Post-play            ● ready · 54×25
+Smoke Movie · ⏸ stopped early
+█┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈ 0:12 / 10:00 (2%)
+
+▌ ↵ Resume 0:12 · same stream              [↵]
+  Replay from start                        [r]
+
+[enter] resume  [r] replay  [/] commands</pre>
+              </div>
+              <div>
+                <div class="tty-cap">40 cols (zero wrap, [/] pinned)</div>
+                <pre class="tty w40">🦊 · Post-play           ● ready · 40×20
+Smoke Movie · 0:12 / 10:00 (2%)
+█┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+
+▌ ↵ Resume 0:12
+  Replay [r]
+
+[enter] resume  [/] cmds</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="scard" data-state="plain" style="grid-column: 1 / -1;">
+          <div class="scard-top"><span class="st-plain">Plain Mode</span><span class="ok">Header: Post-play · no ⏸ emoji · no double Resume</span></div>
+          <div class="scard-body">
+            <pre class="tty plain">Kunai | Post-play | Smoke Movie | Status: ready
+Stopped early: 0:12 of 10:00 (2%)
+Focus: Post-play actions (1 of 2)
+[selected] Resume from 0:12 [enter] — same stream, same position
+  Replay from start [r]
+Actions: [enter] resume, [r] replay, [s] search, [/] commands</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="delta">
+        <b>Changed vs today:</b> Fixed Post-play header chip (<code>Up Next</code> → <code>Post-play</code>); removed <code>Math.max(60, …)</code> overflow in <code>post-play-shell.tsx:510</code> that broke 54×25 and 40×20; eliminated doubled Resume card on <code>stopped early</code> + phantom <code>x cancel</code>; moved Up Next focus bar <code>▌</code> to column 0 (was <code>SM   ▌ Smoke Movie</code>); removed dead footer keys on empty Up Next.
+      </div>
+    </section>
+
+    <!-- ==================== 08 HISTORY TABS ==================== -->
+    <section class="surf" id="s8">
+      <div class="surf-head">
+        <h2>08 · History Tabs</h2>
+        <span class="owner">root-overlay-shell.tsx · history-view.ts · use-history-overlay-input.ts · ContinueSourcePrompt (new)</span>
+      </div>
+      <p class="surf-sub">Resume-first memory layer with <code>Continue · Completed · New episodes · All</code> tabs, 1-key Play Next on finished rows (#847), fixed <code>1 title</code> grammar, wide <code>PreviewRail</code> at ≥120 cols, and an unmistakable Continue "Ask" strip when local + stream both exist.</p>
+
+      <div class="term" data-state="success">
+        <div class="head">
+          <span><span class="brand">🦊 Kunai</span> · <span class="chip">History</span> <span class="muted">4 titles · Continue</span></span>
+          <span><span class="ok">●</span> ready · 120×32</span>
+        </div>
+        <div class="body">
+          <div class="tabs"><span class="on">Continue</span><span class="off">Completed</span><span class="off">New episodes</span><span class="off">All</span><span class="dim" style="margin-left:auto; font-size:11.5px">Tab cycle · ←→ type: All</span></div>
+          <div class="split">
+            <div>
+              <div class="row sel"><span class="bar">▌</span><span class="ttl">Frieren: Beyond Journey's End <span class="muted">· S01E28</span></span><span class="rt rose b">62% · 2h ago</span></div>
+              <div class="row"><span class="bar"></span><span class="ttl">MARRIAGETOXIN <span class="muted">· S01E05</span></span><span class="rt ok">⬇ local · 79%</span></div>
+              <div class="row"><span class="bar"></span><span class="ttl">DR. STONE <span class="muted">· S04E07 finished</span></span><span class="rt ok">▶ E08 next</span></div>
+              <div class="row"><span class="bar"></span><span class="ttl">Smoke Movie <span class="muted">· Movie</span></span><span class="rt muted">2% · just now</span></div>
+            </div>
+            <div class="rail">
+              <div class="poster">FRIEREN</div>
+              <div class="text b" style="margin-top:8px">Frieren · S01E28</div>
+              <div class="fact" style="margin-top:6px"><span class="fk">saved</span><span class="fv rose">14:52 / 24:00 (62%)</span></div>
+              <div class="fact"><span class="fk">watched</span><span class="fv">2 hours ago</span></div>
+              <div class="fact"><span class="fk">source</span><span class="fv ok">local + allanime</span></div>
+              <div class="cta"><span>▸ Resume S01E28</span><span class="rose">↵</span></div>
+              <div class="dim" style="font-size:11.5px; margin-top:6px">[l] local · [s] stream</div>
+            </div>
+          </div>
+        </div>
+        <div class="foot">
+          <span><span class="k">[enter]</span> resume &nbsp; <span class="ki">[tab]</span> tab &nbsp; <span class="ki">[q]</span> up next &nbsp; <span class="kd">[x]</span> remove &nbsp; <span class="km">[/]</span> commands</span>
+          <span class="surf-lbl">History · Continue</span>
+        </div>
+      </div>
+
+      <div class="state-grid">
+        <div class="scard" data-state="loading">
+          <div class="scard-top"><span class="st-load">Loading</span><span class="dim">Header: ◌ loading…</span></div>
+          <div class="scard-body">
+            <div class="tabs"><span class="on">Continue</span><span class="off">Completed</span><span class="off">New episodes</span><span class="off">All</span></div>
+            <div class="rose">❀ Loading your watch history…</div>
+          </div>
+          <div class="scard-foot"><span><span class="ki">[esc]</span> back</span><span>History</span></div>
+        </div>
+
+        <div class="scard" data-state="empty">
+          <div class="scard-top"><span class="st-empty">Empty (Tab-aware · Zero dead footer keys)</span></div>
+          <div class="scard-body">
+            <div class="muted b">· Nothing in progress</div>
+            <div class="dim" style="margin-top:3px">Finished shows live in Completed; press <span class="text">Tab</span> to switch or <code>/search</code> to start watching.</div>
+            <div class="dim" style="margin-top:6px; font-size:11.5px">No "mpv-only" wording; no dead <code>[enter] resume [m] [q]</code> in footer.</div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[tab]</span> switch tab · <span class="ki">[esc]</span> back · <span class="km">[/]</span> cmds</span><span>History · empty</span></div>
+        </div>
+
+        <div class="scard" data-state="partial">
+          <div class="scard-top"><span class="st-part">Partial · Continue "Ask" Local vs Stream</span><span class="warn">Visible strip + swapped footer</span></div>
+          <div class="scard-body">
+            <div class="row sel"><span class="bar">▌</span><span class="ttl">MARRIAGETOXIN <span class="muted">· S01E05</span></span><span class="rt ok">⬇ local · 79%</span></div>
+            <div class="banner info-b" style="margin-top:10px; padding:7px 10px">
+              <div class="text b">▶ Choose source for MARRIAGETOXIN S01E05 (18:49)</div>
+              <div class="muted" style="font-size:12px"><span class="ok b">[l]</span> offline file (1.1 GB) &nbsp;·&nbsp; <span class="rose b">[s]</span> stream (vidlink)</div>
+            </div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[l]</span> offline file · <span class="ki">[s]</span> stream · <span class="ki">[esc]</span> cancel</span><span>History · choose source</span></div>
+        </div>
+
+        <div class="scard" data-state="error">
+          <div class="scard-top"><span class="st-err">Error</span><span class="err">Header: ● issue</span></div>
+          <div class="scard-body">
+            <div class="err b">× Could not read watch history</div>
+            <div class="muted" style="margin-top:3px">Your local database file was not modified. Retry or inspect diagnostics.</div>
+            <div class="row sel" style="margin-top:8px"><span class="bar">▌</span><span class="ttl">↵ Retry reading history</span><span class="rt rose">r</span></div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[r]</span> retry · <span class="ki">[d]</span> diagnostics · <span class="ki">[esc]</span> back</span><span>History</span></div>
+        </div>
+
+        <div class="scard" data-state="offline">
+          <div class="scard-top"><span class="st-off">Offline</span><span class="warn">Header: ● offline</span></div>
+          <div class="scard-body">
+            <div class="row sel"><span class="bar">▌</span><span class="ttl">Frieren <span class="muted">· S01E04</span></span><span class="rt ok">42% · ⬇ offline</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl dim">The Boys · S01E02</span><span class="rt dim">15% · needs network</span></div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[enter]</span> play offline · <span class="ki">[tab]</span> tab · <span class="ki">[esc]</span> back</span><span>History · offline</span></div>
+        </div>
+
+        <div class="scard" data-state="narrow">
+          <div class="scard-top"><span class="st-nar">Narrow · 54×25 &amp; 40 cols</span></div>
+          <div class="scard-body">
+            <div class="narrow-pair">
+              <div>
+                <div class="tty-cap">54 × 25 (single-line tab+type strip)</div>
+                <pre class="tty w54">🦊 Kunai · History              ● ready · 54×25
+Continue · All (4)                    [tab / ←→]
+▌ Frieren · S01E28                   62% · 2h ago
+  MARRIAGETOXIN · S01E05             ⬇ 79%
+  DR. STONE · S04E07                 ▶ E08 next
+
+[enter] resume  [tab] tab  [/] commands</pre>
+              </div>
+              <div>
+                <div class="tty-cap">40 cols</div>
+                <pre class="tty w40">🦊 · History             ● ready · 40×20
+Continue · All (4)
+▌ Frieren · E28                     62%
+  MARRIAGETOXIN · E05             ⬇ 79%
+  DR. STONE · E07                ▶ next
+
+[enter] resume  [/] cmds</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="scard" data-state="plain" style="grid-column: 1 / -1;">
+          <div class="scard-top"><span class="st-plain">Plain Mode</span><span class="ok">onRedraw() gated off · zero navigation chatter</span></div>
+          <div class="scard-body">
+            <pre class="tty plain">Kunai | History | Continue (4 titles) | Status: ready
+Focus: History list (1 of 4)
+[selected] Frieren: Beyond Journey's End, S01E28, 62% watched, 2 hours ago
+  MARRIAGETOXIN, S01E05, 79% watched, offline copy ready
+  DR. STONE, S04E07 finished, Enter plays S04E08 next
+Actions: [enter] resume, [tab] next tab, [q] up next, [x] remove, [/] commands</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="delta">
+        <b>Changed vs today:</b> Fixed <code>1 titles</code> plural bug (<code>root-overlay-shell.tsx:2504</code>); removed dead footer keys on empty History; added <code>PreviewRail</code> at ≥120 cols; elevated Continue "Ask" out of plain footer text into visible <code>ContinueSourcePrompt</code> + swapped footer chips; gated off 7 <code>ctx.onRedraw()</code> calls in <code>use-history-overlay-input.ts</code> under <code>--plain</code>.
+      </div>
+    </section>
+
+    <!-- ==================== 09 LIBRARY & DOWNLOADS ==================== -->
+    <section class="surf" id="s9">
+      <div class="surf-head">
+        <h2>09 · Library &amp; Downloads</h2>
+        <span class="owner">library-shell.tsx · download-manager-shell.tsx · download-confirmation-shell.tsx</span>
+      </div>
+      <p class="surf-sub">Unified two-tab offline shelf (<code>Library · Downloads</code>), both using shared <code>ShellFooter</code> and <code>ConfirmStrip</code>. Fixed-width tabular progress columns prevent tick jitter; when downloads are disabled in Settings, empty state offers a 1-key jump to enable them instead of a dead <code>/download</code> hint.</p>
+
+      <div class="term" data-state="success">
+        <div class="head">
+          <span><span class="brand">🦊 Kunai</span> · <span class="chip">Library</span> <span class="muted">14 titles · 3.2 GB offline</span></span>
+          <span><span class="ok">●</span> ready · 120×32</span>
+        </div>
+        <div class="body">
+          <div class="tabs"><span class="on">Library</span><span class="off">Downloads (2 active · 1 failed)</span><span class="dim" style="margin-left:auto; font-size:11.5px">Tab switch</span></div>
+          <div class="split">
+            <div>
+              <div class="grp"><span>In progress</span></div>
+              <div class="row sel"><span class="bar">▌</span><span class="ttl">DR. STONE <span class="muted">· S04</span></span><span class="rt ok">↓ 7/12 ep · <span class="warn">△ 1 repair</span></span></div>
+              <div class="row"><span class="bar"></span><span class="ttl">Frieren <span class="muted">⚲ · S01</span></span><span class="rt ok">↓ 4 ep</span></div>
+              <div class="grp"><span>Downloads queue snapshot</span></div>
+              <div class="row"><span class="bar"></span><span class="ttl">Solo Leveling <span class="muted">· S01E03</span></span><span class="rt rose">↓ 64% · 1m left</span></div>
+              <div class="row"><span class="bar"></span><span class="ttl">The Boys <span class="muted">· S02E01</span></span><span class="rt err">× failed · source gone</span></div>
+            </div>
+            <div class="rail">
+              <div class="poster">DR. STONE<br>OFFLINE</div>
+              <div class="text b" style="margin-top:8px">DR. STONE · Season 4</div>
+              <div class="fact" style="margin-top:6px"><span class="fk">offline</span><span class="fv ok">7 of 12 episodes</span></div>
+              <div class="fact"><span class="fk">disk</span><span class="fv">1.4 GB</span></div>
+              <div class="fact"><span class="fk">protected</span><span class="fv muted">no (p toggle)</span></div>
+              <div class="cta"><span>▸ Resume E31 offline</span><span class="rose">↵</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="foot">
+          <span><span class="k">[enter]</span> open &nbsp; <span class="ki">[p]</span> protect &nbsp; <span class="kd">[x]</span> delete &nbsp; <span class="ki">[tab]</span> downloads &nbsp; <span class="km">[/]</span> commands</span>
+          <span class="surf-lbl">Library</span>
+        </div>
+      </div>
+
+      <div class="state-grid">
+        <div class="scard" data-state="loading">
+          <div class="scard-top"><span class="st-load">Loading (Both tabs)</span><span class="dim">Header: ◌ loading…</span></div>
+          <div class="scard-body">
+            <div class="tabs"><span class="on">Library</span><span class="off">Downloads</span></div>
+            <div class="rose">❀ Loading offline titles and disk usage…</div>
+            <div class="dim" style="margin-top:4px">Downloads tab shows <code>❀ Loading download queue…</code> (eliminates empty flash).</div>
+          </div>
+          <div class="scard-foot"><span><span class="ki">[tab]</span> downloads · <span class="ki">[esc]</span> back</span><span>Library</span></div>
+        </div>
+
+        <div class="scard" data-state="empty">
+          <div class="scard-top"><span class="st-empty">Empty (Downloads off vs Enabled empty)</span></div>
+          <div class="scard-body">
+            <div class="muted b">· Downloads are turned off</div>
+            <div class="dim" style="margin-top:2px">Enable downloads in Settings → Playback &amp; Offline to save episodes locally.</div>
+            <div class="row sel" style="margin-top:6px"><span class="bar">▌</span><span class="ttl">↵ Open download settings</span><span class="rt rose">g</span></div>
+            <div class="dim" style="margin-top:8px; font-size:11.5px">When enabled &amp; empty: <code>· No offline titles yet</code> — zero dead <code>[x] delete [p] protect</code> in footer, zero text below footer!</div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[g]</span> settings · <span class="ki">[tab]</span> downloads · <span class="ki">[esc]</span> back</span><span>Library</span></div>
+        </div>
+
+        <div class="scard" data-state="partial">
+          <div class="scard-top"><span class="st-part">Partial · Active Queue + Repairable Job</span><span class="ok">Shared ShellFooter!</span></div>
+          <div class="scard-body">
+            <div class="muted" style="font-size:12px; margin-bottom:6px"><span class="rose b">1</span> downloading · <b>1</b> queued · <span class="warn b">1</span> repairable · 2.4 MB/s</div>
+            <div class="row sel"><span class="bar">▌</span><span class="ttl">DR. STONE · S04E30</span><span class="rt warn">△ repairable · sidecar missing</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl">Solo Leveling · S01E03</span><span class="rt rose">↓ 64% · 1m</span></div>
+            <div class="pbar-wrap" style="margin:4px 0 0 18px"><div class="pbar"><i style="width:64%"></i></div><span class="rose b" style="font-size:11.5px">64%</span></div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[r]</span> repair · <span class="kd">[x]</span> delete files · <span class="ki">[X]</span> record only · <span class="ki">[tab]</span> lib</span><span>Downloads</span></div>
+        </div>
+
+        <div class="scard" data-state="error">
+          <div class="scard-top"><span class="st-err">Error (Failed job + Retained-file receipt)</span></div>
+          <div class="scard-body">
+            <div class="banner err-b" style="padding:7px 10px">
+              <div class="err b">× Could not delete local file (permission denied)</div>
+              <div class="t2" style="font-size:12px">Record kept so you can retry cleanup, or press <span class="text b">X</span> to remove the record only.</div>
+            </div>
+            <div class="row sel"><span class="bar">▌</span><span class="ttl">The Boys · S02E01</span><span class="rt err">× failed · source gone</span></div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[r]</span> retry · <span class="ki">[X]</span> remove record · <span class="ki">[esc]</span> back</span><span>Downloads</span></div>
+        </div>
+
+        <div class="scard" data-state="offline">
+          <div class="scard-top"><span class="st-off">Offline (Library ready · Queue paused)</span><span class="ok">Local playback works</span></div>
+          <div class="scard-body">
+            <div class="ok b">● Offline library ready · 14 titles (3.2 GB)</div>
+            <div class="row sel" style="margin-top:6px"><span class="bar">▌</span><span class="ttl">Frieren · S01E10</span><span class="rt warn">⏸ paused (waiting for network)</span></div>
+            <div class="dim" style="margin-top:4px; font-size:11.5px">[r] retry disabled while offline (reason: reconnect to resume downloads).</div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[tab]</span> library · <span class="kd">[x]</span> remove · <span class="ki">[esc]</span> back</span><span>Downloads · offline</span></div>
+        </div>
+
+        <div class="scard" data-state="narrow">
+          <div class="scard-top"><span class="st-nar">Narrow · 54×25 &amp; 40 cols</span><span class="dim">Drops ASCII bar &lt;60c</span></div>
+          <div class="scard-body">
+            <div class="narrow-pair">
+              <div>
+                <div class="tty-cap">54 × 25 (Downloads)</div>
+                <pre class="tty w54">🦊 Kunai · Downloads            ● ready · 54×25
+Library  [Downloads]                       Tab
+▌ Solo Leveling · S01E03          ↓ 64% · 1m
+  The Boys · S02E01              × failed
+  The Pitt · S01E06             ✓ 412 MB
+
+[r] retry  [x] cancel  [tab] lib  [/] cmds</pre>
+              </div>
+              <div>
+                <div class="tty-cap">40 cols (compact confirmation)</div>
+                <pre class="tty w40">🦊 · Downloads           ● ready · 40×20
+Downloads · [tab]
+▌ Solo Leveling E03                64%
+  The Boys E01                 × fail
+  The Pitt E06                 ✓ ready
+
+[tab] lib  [/] cmds</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="scard" data-state="plain" style="grid-column: 1 / -1;">
+          <div class="scard-top"><span class="st-plain">Plain Mode</span><span class="ok">Includes DownloadConfirmation plain branch · no % tick spam</span></div>
+          <div class="scard-body">
+            <pre class="tty plain">Kunai | Downloads | Status: ready
+Summary: 1 downloading, 1 queued, 1 failed
+Focus: Download queue (1 of 3)
+[selected] Solo Leveling S01E03 — downloading (64%, 1m left)
+  The Boys S02E01 — failed (source gone, press r to retry)
+Actions: [x] abort, [tab] library, [/] commands</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="delta">
+        <b>Changed vs today:</b> Migrated <code>download-manager-shell.tsx</code> onto shared <code>ShellFooter</code> (was unbracketed custom text with 0 advertised keys); removed dead footer keys + post-footer text on empty Library; added 1-key <code>[g] settings</code> when downloads are off; added <code>--plain</code> support to <code>DownloadConfirmationContent</code> and compacted its 8-part profile string; unified delete confirms onto <code>ConfirmStrip</code>.
+      </div>
+    </section>
+
+    <!-- ==================== 10 CALENDAR & NOTIFICATIONS ==================== -->
+    <section class="surf" id="s10">
+      <div class="surf-head">
+        <h2>10 · Calendar &amp; Notifications</h2>
+        <span class="owner">calendar-ui.tsx · calendar-ui.model.ts · use-calendar-route.ts · notifications-view.ts</span>
+      </div>
+      <p class="surf-sub">Fixes the live Calendar error bug (header stuck on <code>● Searching…</code> + leaked Browse footer), enforces aired-vs-playable honesty (<code>aired · resolving</code> never opens a dead resolve), standardizes naming to <code>Calendar</code>, and cleans up empty Notifications.</p>
+
+      <div class="term" data-state="success">
+        <div class="head">
+          <span><span class="brand">🦊 Kunai</span> · <span class="chip">Calendar</span> <span class="muted">Fri 23 · Spring 2026</span></span>
+          <span><span class="ok">●</span> ready · 120×32</span>
+        </div>
+        <div class="body">
+          <div class="tabs">
+            <span class="on">All</span><span class="off">Anime</span><span class="off">Series</span><span class="off">Movies</span><span class="off">Tracked</span>
+            <span style="margin-left:auto" class="dim">‹ Thu 22 &nbsp;<span class="pill rose">Fri 23</span>&nbsp; Sat 24 ›</span>
+          </div>
+          <div class="split">
+            <div>
+              <div class="grp"><span>For you · releasing today</span></div>
+              <div class="row sel"><span class="bar">▌</span><span class="ttl"><span class="rose">●</span> Frieren <span class="muted">· S01E29</span></span><span class="rt ok">✓ available · 3 new since E5</span></div>
+              <div class="row"><span class="bar"></span><span class="ttl"><span class="ok">★</span> Eminence in Shadow <span class="muted">· S03E04</span></span><span class="rt rose">◷ in 3h 20m</span></div>
+              <div class="row"><span class="bar"></span><span class="ttl"><span class="ok">★</span> One Piece <span class="muted">· E1142</span></span><span class="rt dim">◐ aired · resolving</span></div>
+              <div class="grp"><span>Also today</span></div>
+              <div class="row"><span class="bar"></span><span class="ttl">Kaiju No. 8 <span class="muted">· S02E07</span></span><span class="rt ok">✓ available</span></div>
+            </div>
+            <div class="rail">
+              <div class="poster">FRIEREN<br>S01E29</div>
+              <div class="text b" style="margin-top:8px">Frieren · S01E29</div>
+              <div class="fact" style="margin-top:6px"><span class="fk">status</span><span class="fv ok">available now</span></div>
+              <div class="fact"><span class="fk">return</span><span class="fv rose">3 new since E5</span></div>
+              <div class="cta"><span>▸ Watch S01E29</span><span class="rose">↵</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="foot">
+          <span><span class="k">[enter]</span> open &nbsp; <span class="ki">[tab]</span> type &nbsp; <span class="ki">[←→]</span> day &nbsp; <span class="ki">[i]</span> details &nbsp; <span class="km">[/]</span> commands</span>
+          <span class="surf-lbl">Calendar</span>
+        </div>
+      </div>
+
+      <div class="state-grid">
+        <div class="scard" data-state="loading">
+          <div class="scard-top"><span class="st-load">Loading (Mounted chrome first)</span><span class="dim">Header: ◌ loading…</span></div>
+          <div class="scard-body">
+            <div class="tabs"><span class="on">All</span><span class="off">Anime</span><span class="off">Series</span><span class="off">Movies</span><span class="off">Tracked</span></div>
+            <div class="rose">❀ Fetching releases for Today…</div>
+          </div>
+          <div class="scard-foot"><span><span class="ki">[esc]</span> back · <span class="km">[/]</span> commands</span><span>Calendar</span></div>
+        </div>
+
+        <div class="scard" data-state="empty">
+          <div class="scard-top"><span class="st-empty">Empty (Calendar &amp; Notifications)</span></div>
+          <div class="scard-body">
+            <div class="muted b">· No Anime releases today</div>
+            <div class="dim" style="margin-top:2px">Press <span class="text">←→</span> for another day, or <span class="text">Tab</span> to view All types.</div>
+            <div style="margin-top:10px; padding-top:8px; border-top:1px solid var(--line-soft)">
+              <div class="muted b">· You're all caught up <span class="dim">(Notifications)</span></div>
+              <div class="dim" style="margin-top:2px">New episodes, downloads, and recoverable queues appear here.</div>
+            </div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[tab]</span> archive / type · <span class="ki">[esc]</span> back · <span class="km">[/]</span> cmds</span><span>Calendar / Inbox</span></div>
+        </div>
+
+        <div class="scard" data-state="partial">
+          <div class="scard-top"><span class="st-part">Partial · Schedule degraded + Notification Play-Now confirm</span></div>
+          <div class="scard-body">
+            <div class="warn" style="font-size:12px; margin-bottom:8px">△ Partial schedule · AniList timed out (TMDB shown) · r retry</div>
+            <div class="banner confirm-b" style="padding:7px 10px">
+              <div class="warn b">⚠ Switch playback from The Boys to Frieren E29?</div>
+              <div class="t2" style="font-size:12px">Progress on The Boys (06:42) will be saved.</div>
+            </div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[y]</span> play now · <span class="ki">[q]</span> add to Up Next · <span class="ki">[esc]</span> cancel</span><span>Notifications</span></div>
+        </div>
+
+        <div class="scard" data-state="error">
+          <div class="scard-top"><span class="st-err">Error (Fixes ● Searching… + Browse footer!)</span><span class="err">Header: ● issue</span></div>
+          <div class="scard-body">
+            <div class="err b">× Schedule unavailable</div>
+            <div class="muted" style="margin-top:3px">Could not reach the release schedule. Search and offline library still work.</div>
+            <div class="row sel" style="margin-top:8px"><span class="bar">▌</span><span class="ttl">↵ Retry schedule</span><span class="rt rose">r</span></div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[r]</span> retry · <span class="ki">[esc]</span> back · <span class="km">[/]</span> commands</span><span>Calendar</span></div>
+        </div>
+
+        <div class="scard" data-state="offline">
+          <div class="scard-top"><span class="st-off">Offline (Cached schedule fallback)</span><span class="warn">Header: ● offline</span></div>
+          <div class="scard-body">
+            <div class="warn" style="font-size:12px; margin-bottom:6px">△ Offline · showing cached schedule from 3h ago</div>
+            <div class="row sel"><span class="bar">▌</span><span class="ttl">Frieren · S01E29</span><span class="rt ok">⬇ offline ready</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl dim">Kaiju No. 8 · S02E07</span><span class="rt dim">needs network</span></div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[enter]</span> play offline · <span class="ki">[esc]</span> back</span><span>Calendar · cached</span></div>
+        </div>
+
+        <div class="scard" data-state="narrow">
+          <div class="scard-top"><span class="st-nar">Narrow · 54×25 &amp; 40 cols</span></div>
+          <div class="scard-body">
+            <div class="narrow-pair">
+              <div>
+                <div class="tty-cap">54 × 25</div>
+                <pre class="tty w54">🦊 Kunai · Calendar             ● ready · 54×25
+Anime · ‹ Thu [Fri 23] Sat ›             Tab
+▌ ● Frieren · S01E29                 ✓ now
+  ★ Eminence · S03E04               ◷ 3h 20m
+  ★ One Piece · E1142              ◐ resolving
+
+[enter] open  [tab] type  [/] commands</pre>
+              </div>
+              <div>
+                <div class="tty-cap">40 cols</div>
+                <pre class="tty w40">🦊 · Calendar            ● ready · 40×20
+‹ Fri 23 › · Anime [tab]
+▌ ● Frieren E29                       ✓
+  ★ Eminence E04                    ◷ 3h
+  ★ One Piece E1142                   ◐
+
+[enter] open  [/] cmds</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="scard" data-state="plain" style="grid-column: 1 / -1;">
+          <div class="scard-top"><span class="st-plain">Plain Mode</span><span class="ok">Own Calendar footer · zero mascot chatter</span></div>
+          <div class="scard-body">
+            <pre class="tty plain">Kunai | Calendar | Fri 23 (today) | Type: All | Status: ready
+Focus: Releases (1 of 4)
+[selected] [new] Frieren S01E29 — available now, 3 new since E5
+  [tracked] Eminence in Shadow S03E04 — airs in 3h 20m
+  [tracked] One Piece E1142 — aired, resolving (not playable yet)
+Actions: [enter] open, [tab] type, [left/right] day, [/] commands</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="delta">
+        <b>Changed vs today:</b> Fixed live Calendar error bug (header <code>● Searching…</code> → <code>● issue</code>, removed dead day strip, replaced leaked Browse footer with <code>[r] retry [esc] back [/] commands</code>); removed contradicting <code>🦊 this one's bare</code> + dead keys on empty Notifications; added cached-schedule offline fallback; unified Notifications play-now switch onto <code>ConfirmStrip</code>.
+      </div>
+    </section>
+
+    <!-- ==================== 11 SETTINGS ==================== -->
+    <section class="surf" id="s11">
+      <div class="surf-head">
+        <h2>11 · Settings</h2>
+        <span class="owner">settings/SettingsOverlay.tsx · settings/SettingsShell.tsx · settings/registry/*</span>
+      </div>
+      <p class="surf-sub">Migrates Settings onto shared <code>ShellFooter</code> (now discoverable via mouse chips &amp; <code>--show keys</code>), drops the <code>▌ ▸</code> double glyph, adds effect-timing labels + env-var lock explanations, fixes 40-col label wrap collisions, and pins save errors at top.</p>
+
+      <div class="term" data-state="success">
+        <div class="head">
+          <span><span class="brand">🦊 Kunai</span> · <span class="chip">Settings</span> <span class="muted">General · immediate &amp; next-launch prefs</span></span>
+          <span><span class="ok">●</span> ready · 120×32</span>
+        </div>
+        <div class="body">
+          <div class="tabs"><span class="on">General</span><span class="off">Sources</span><span class="off">Playback &amp; Offline</span><span class="off">Accounts &amp; Sync</span><span class="off">Privacy &amp; System</span><span class="dim" style="margin-left:auto; font-size:11.5px">Tab / ⇧Tab</span></div>
+          <div class="grp"><span>Startup &amp; Shell</span></div>
+          <div class="row sel"><span class="bar">▌</span><span class="ttl">Default startup mode</span><span class="rt text b">Series mode ›</span></div>
+          <div class="dim" style="padding-left:24px; font-size:11.5px; margin-bottom:4px">First catalog after launch · <span class="muted">applies next launch</span></div>
+          <div class="row"><span class="bar"></span><span class="ttl">Theme</span><span class="rt muted">Ember Dusk ›</span></div>
+          <div class="row"><span class="bar"></span><span class="ttl">Plain / screen-reader mode</span><span class="rt dim">○ off</span></div>
+          <div class="row"><span class="bar"></span><span class="ttl">Shortcut tips</span><span class="rt ok">● on</span></div>
+          <div class="grp"><span>Continue &amp; Player</span></div>
+          <div class="row"><span class="bar"></span><span class="ttl">Continue source preference</span><span class="rt rose">Ask (local vs stream) ›</span></div>
+          <div class="row"><span class="bar"></span><span class="ttl">Video player</span><span class="rt muted">mpv ›</span></div>
+        </div>
+        <div class="foot">
+          <span><span class="k">[enter]</span> change &nbsp; <span class="ki">[tab]</span> section &nbsp; <span class="ki">[/]</span> search &nbsp; <span class="ki">[esc]</span> close</span>
+          <span class="surf-lbl">Settings · General</span>
+        </div>
+      </div>
+
+      <div class="state-grid">
+        <div class="scard" data-state="loading">
+          <div class="scard-top"><span class="st-load">Loading (Config lock wait)</span><span class="dim">Header: ◌ saving…</span></div>
+          <div class="scard-body">
+            <div class="rose">◌ Saving Playback &amp; Offline…</div>
+            <div class="dim" style="margin-top:4px">Non-blocking inline indicator during cross-process config lock (up to 5s).</div>
+          </div>
+          <div class="scard-foot"><span><span class="ki">[↑↓]</span> browse · <span class="ki">[esc]</span> close</span><span>Settings</span></div>
+        </div>
+
+        <div class="scard" data-state="empty">
+          <div class="scard-top"><span class="st-empty">Empty (Filter miss)</span></div>
+          <div class="scard-body">
+            <div class="input-box focused"><span><span class="rose">⌕</span> <span class="text">proxy</span><span class="cur"></span></span><span class="dim">0 matches</span></div>
+            <div class="muted b">· No settings match "proxy"</div>
+            <div class="dim" style="margin-top:2px">Press <span class="text">Esc</span> to clear search and view all sections.</div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[esc]</span> clear search</span><span>Settings</span></div>
+        </div>
+
+        <div class="scard" data-state="partial">
+          <div class="scard-top"><span class="st-part">Partial · Env-Locked + Effect Timing</span></div>
+          <div class="scard-body">
+            <div class="row sel"><span class="bar">▌</span><span class="ttl">Plain / screen-reader mode</span><span class="rt ok">● on <span class="pill warn">env</span></span></div>
+            <div class="warn" style="padding-left:24px; font-size:11.5px; margin-top:3px">Pinned by KUNAI_PLAIN=1 — unset in shell to edit in-app.</div>
+            <div class="dim" style="margin-top:8px; font-size:11.5px">Every setting carries an explicit effect-timing tag (<code>applies immediately</code> / <code>next playback</code> / <code>next launch</code>) and passes a wired-reader check.</div>
+          </div>
+          <div class="scard-foot"><span><span class="ki">[tab]</span> section · <span class="ki">[/]</span> search · <span class="ki">[esc]</span> close</span><span>Settings</span></div>
+        </div>
+
+        <div class="scard" data-state="error">
+          <div class="scard-top"><span class="st-err">Error (Pinned top save-error strip)</span><span class="err">Header: ● issue</span></div>
+          <div class="scard-body">
+            <div class="banner err-b" style="padding:7px 10px">
+              <div class="err b">× Could not save settings</div>
+              <div class="t2" style="font-size:12px">Another Kunai session holds the config lock. Your change was not written.</div>
+            </div>
+            <div class="dim" style="font-size:11.5px">Pinned above the scroll window so it can never be clipped off-screen.</div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[r]</span> retry save · <span class="ki">[esc]</span> close</span><span>Settings</span></div>
+        </div>
+
+        <div class="scard" data-state="offline">
+          <div class="scard-top"><span class="st-off">Offline</span><span class="warn">Local prefs editable</span></div>
+          <div class="scard-body">
+            <div class="row"><span class="bar"></span><span class="ttl">Theme · Ember Dusk</span><span class="rt ok">editable offline</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl dim">AniList sync</span><span class="rt warn">paused (offline)</span></div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[enter]</span> change · <span class="ki">[esc]</span> close</span><span>Settings · offline</span></div>
+        </div>
+
+        <div class="scard" data-state="narrow">
+          <div class="scard-top"><span class="st-nar">Narrow · 54×25 &amp; 40 cols</span><span class="dim">Stacked 2-line selected row</span></div>
+          <div class="scard-body">
+            <div class="narrow-pair">
+              <div>
+                <div class="tty-cap">54 × 25</div>
+                <pre class="tty w54">🦊 Kunai · Settings             ● ready · 54×25
+[General]  Sources  Playback ›             Tab
+▌ Default startup mode            Series mode ›
+  First catalog · applies next launch
+  Theme                             Ember Dusk ›
+  Shortcut tips                            ● on
+
+[enter] change  [tab] tab  [esc] close</pre>
+              </div>
+              <div>
+                <div class="tty-cap">40 cols (no label/value collision!)</div>
+                <pre class="tty w40">🦊 · Settings            ● ready · 40×20
+General (1/5) · [tab]
+▌ Default startup mode
+  Series mode › (next launch)
+  Theme · Ember Dusk ›
+  Shortcut tips · ● on
+
+[enter] edit  [esc] close</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="scard" data-state="plain" style="grid-column: 1 / -1;">
+          <div class="scard-top"><span class="st-plain">Plain Mode</span><span class="ok">Full section name · ShellFooter Actions: · no onRedraw()</span></div>
+          <div class="scard-body">
+            <pre class="tty plain">Kunai | Settings | Section 1 of 5: General | Status: ready
+Focus: General settings (1 of 8)
+[selected] Default startup mode: Series mode (applies next launch, Enter to change)
+  Theme: Ember Dusk (applies immediately)
+  Plain / screen-reader mode: on (pinned by KUNAI_PLAIN=1)
+Actions: [enter] change, [tab] next section, [/] search, [esc] close</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="delta">
+        <b>Changed vs today:</b> Replaced custom unbracketed footer with shared <code>ShellFooter</code>; removed double glyph <code>▌ ▸</code>; stacked selected row on 40 cols (fixes <code>▌▸Default startup · Series / mode mode</code> wrap collision); pinned save errors above list; added effect-timing + env-var lock reason; gated off <code>onRedraw()</code> in <code>SettingsShell.tsx:242,258</code> under plain mode.
+      </div>
+    </section>
+
+    <!-- ==================== 12 PALETTE, HELP & GUIDE ==================== -->
+    <section class="surf" id="s12">
+      <div class="surf-head">
+        <h2>12 · Command Palette, Help &amp; Guide</h2>
+        <span class="owner">shell-command-ui.tsx · shell-command-model.ts · layout-policy.ts · guide-shell.tsx · root-overlay-shell.tsx (HelpShell)</span>
+      </div>
+      <p class="surf-sub">Fixes the live 1-row Command Palette peephole bug (now shows 8–10 commands cleanly at 120×32), prioritizes command prefix &amp; <code>JUMP TO</code> local titles over fuzzy description matches, adds 1-key catalog search fallback on empty palette, and fixes Help column clipping (<code>Tab / ⇧Ta</code>).</p>
+
+      <div class="term" data-state="success">
+        <div class="head">
+          <span><span class="brand">🦊 Kunai</span> · <span class="chip">Command palette</span> <span class="muted">scoped to Browse · 35 commands</span></span>
+          <span><span class="ok">●</span> ready · 120×32</span>
+        </div>
+        <div class="body">
+          <div class="input-box focused">
+            <span><span class="rose b">/</span><span class="text">sm</span><span class="cur"></span></span>
+            <span class="dim">Tab complete · Esc close</span>
+          </div>
+          <div class="grp"><span>Jump to · local titles</span><span class="dim">Movie · vidlink</span></div>
+          <div class="row sel"><span class="bar">▌</span><span class="ttl"><span class="rose b">Sm</span>oke Movie</span><span class="rt ok">queued · Up Next</span></div>
+          <div class="row"><span class="bar"></span><span class="ttl"><span class="rose b">Sm</span>oke Series</span><span class="rt muted">history · S01E02</span></div>
+          <div class="grp"><span>Global commands</span></div>
+          <div class="row"><span class="bar"></span><span class="ttl">/series-mode</span><span class="rt muted">Switch into series and movies mode</span></div>
+          <div class="row"><span class="bar"></span><span class="ttl">/settings</span><span class="rt muted">Open Kunai preferences</span></div>
+          <div class="row"><span class="bar"></span><span class="ttl">/search</span><span class="rt muted">Start a fresh catalog search</span></div>
+        </div>
+        <div class="foot">
+          <span><span class="k">[enter]</span> run &nbsp; <span class="ki">[tab]</span> complete &nbsp; <span class="ki">[↑↓]</span> choose &nbsp; <span class="ki">[esc]</span> close</span>
+          <span class="surf-lbl">Command palette</span>
+        </div>
+      </div>
+
+      <div class="state-grid">
+        <div class="scard" data-state="loading">
+          <div class="scard-top"><span class="st-load">Loading</span><span class="ok">0ms instant open</span></div>
+          <div class="scard-body">
+            <div class="t2">Command Palette, <code>?</code> Help, and <code>/guide</code> open synchronously from local state (zero spinner). Running an async command (like <code>/trending</code>) closes the palette immediately and hands off to the target surface's <code>LoadingState</code>.</div>
+          </div>
+          <div class="scard-foot"><span>Instant local index</span><span>Palette / Help / Guide</span></div>
+        </div>
+
+        <div class="scard" data-state="empty">
+          <div class="scard-top"><span class="st-empty">Empty (1-key search escape hatch!)</span></div>
+          <div class="scard-body">
+            <div class="input-box focused"><span><span class="rose b">/</span><span class="text">frieren</span><span class="cur"></span></span><span class="dim">0 commands</span></div>
+            <div class="muted">· No command matches "/frieren"</div>
+            <div class="row sel" style="margin-top:6px"><span class="bar">▌</span><span class="ttl">↵ Search catalog for "frieren"</span><span class="rt rose">enter</span></div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[enter]</span> search · <span class="ki">[esc]</span> close</span><span>Palette</span></div>
+        </div>
+
+        <div class="scard" data-state="partial">
+          <div class="scard-top"><span class="st-part">Help (fixed columns) &amp; Guide (clean footer)</span></div>
+          <div class="scard-body">
+            <div class="tabs"><span class="on">While browsing</span><span class="off">Global</span><span class="off">Commands</span></div>
+            <div style="display:grid; grid-template-columns: 110px 1fr; gap:3px 10px; font-size:12px">
+              <span class="rose b">Tab / ⇧Tab</span><span>Cycle catalog mode (series / anime / YouTube)</span>
+              <span class="rose b">Enter</span><span>Play / resume highlighted title</span>
+              <span class="rose b">m</span><span>Open "Where to start?" menu</span>
+              <span class="rose b">i</span><span>Open full Details sheet</span>
+            </div>
+            <div class="dim" style="margin-top:8px; font-size:11.5px"><code>/guide</code> drops triple-repeated key hints and brackets <code>[enter] run [?] keys [esc] close</code>.</div>
+          </div>
+          <div class="scard-foot"><span><span class="ki">[tab]</span> section · <span class="ki">[esc]</span> close</span><span>Help · browse</span></div>
+        </div>
+
+        <div class="scard" data-state="error">
+          <div class="scard-top"><span class="st-err">Disabled / Wrong-surface Command</span></div>
+          <div class="scard-body">
+            <div class="row sel"><span class="bar">▌</span><span class="ttl dim">/tracks</span><span class="rt warn">unavailable here</span></div>
+            <div class="warn" style="padding-left:24px; font-size:12px; margin-top:3px">Unavailable: no active playback — start a title first.</div>
+            <div class="dim" style="margin-top:6px; font-size:11.5px">Disabled reason shows ONLY for the focused row (no per-row noise).</div>
+          </div>
+          <div class="scard-foot"><span><span class="ki">[↑↓]</span> choose · <span class="ki">[esc]</span> close</span><span>Palette</span></div>
+        </div>
+
+        <div class="scard" data-state="offline">
+          <div class="scard-top"><span class="st-off">Offline</span><span class="warn">Local commands first</span></div>
+          <div class="scard-body">
+            <div class="row sel"><span class="bar">▌</span><span class="ttl">/library</span><span class="rt ok">Open offline titles</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl">/history</span><span class="rt muted">Open watch history</span></div>
+            <div class="row"><span class="bar"></span><span class="ttl dim">/trending</span><span class="rt warn">offline — needs network</span></div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[enter]</span> run · <span class="ki">[esc]</span> close</span><span>Palette · offline</span></div>
+        </div>
+
+        <div class="scard" data-state="narrow">
+          <div class="scard-top"><span class="st-nar">Narrow · 54×25 &amp; 40 cols</span><span class="dim">Single-col Help · 6-row Palette</span></div>
+          <div class="scard-body">
+            <div class="narrow-pair">
+              <div>
+                <div class="tty-cap">54 × 25 (Palette — 6 rows, no 1-row bug!)</div>
+                <pre class="tty w54">🦊 Kunai · Palette              ● ready · 54×25
+ / █                                 35 commands
+──────────────────────────────────────────────────
+▌ /continue     Unfinished &amp; recent watches
+  /history      Open watch history
+  /library      Open offline titles
+  /calendar     Release schedule
+  /settings     Preferences
+  ▼ 30 more
+[enter] run  [tab] complete  [esc] close</pre>
+              </div>
+              <div>
+                <div class="tty-cap">40 cols (Help single-column)</div>
+                <pre class="tty w40">🦊 · Help · Browse       ● ready · 40×20
+While browsing · [tab]
+Enter       Play / resume title
+Tab / ⇧Tab  Cycle catalog mode
+i           Show details
+m           Where to start?
+q           Add to Up Next
+
+[tab] section  [esc] close</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="scard" data-state="plain" style="grid-column: 1 / -1;">
+          <div class="scard-top"><span class="st-plain">Plain Mode</span><span class="ok">Strips ❀ &amp; ← Back · announces Focus</span></div>
+          <div class="scard-body">
+            <pre class="tty plain">Kunai | Command palette | 35 commands | Status: ready
+Focus: Command palette (1 of 35)
+Command input (focused): /sm
+[selected] Jump to: Smoke Movie (Movie, queued in Up Next)
+  /series-mode — Switch into series and movies mode
+Actions: [enter] run, [tab] complete, [esc] close</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="delta">
+        <b>Changed vs today:</b> Fixed <code>getBrowseCommandPaletteMaxVisible</code> (<code>layout-policy.ts:151</code>) that crushed the 120×32 palette to 1 row; removed duplicate bottom <code>✓ 🦊 queued.</code> toast (<code>browse-shell.tsx:2631</code>); ranked prefix &amp; <code>JUMP TO</code> above fuzzy matches; fixed clipped <code>Tab / ⇧Ta</code> in Help; deduplicated Guide key hints &amp; added bracketed <code>[enter] run</code>; stripped <code>❀</code> in plain mode.
+      </div>
+    </section>
+
+    <!-- ==================== 13 DIAGNOSTICS & DOCTOR ==================== -->
+    <section class="surf" id="s13">
+      <div class="surf-head">
+        <h2>13 · Diagnostics, "A Title Will Not Start" &amp; <code>kunai doctor</code></h2>
+        <span class="owner">diagnostics-panel-lines.ts · diagnostics-insight.ts · services/update/run-doctor.ts</span>
+      </div>
+      <p class="surf-sub">Kills the absurd <code>· Retry</code> suffix on Healthy/Disabled rows, fixes false <code>Network OK</code> when offline, leads with a 3-line "Why it didn't start" card after failure, and reorders <code>kunai doctor</code> so blockers print first instead of line 32.</p>
+
+      <div class="term" data-state="success">
+        <div class="head">
+          <span><span class="brand">🦊 Kunai</span> · <span class="chip">Diagnostics</span> <span class="muted">healthy · 0 issues</span></span>
+          <span><span class="ok">●</span> ready · 120×32</span>
+        </div>
+        <div class="body">
+          <div class="grp"><span>Verdict</span><span class="dim">Space expands developer traces</span></div>
+          <div class="row"><span class="bar"></span><span class="ttl ok b">✓ Healthy — No issues in this session</span><span class="rt dim">0 warnings</span></div>
+          <div class="grp"><span>Subsystems</span></div>
+          <div class="fact"><span class="fk">Playback</span><span class="fv ok">OK · no playback errors</span></div>
+          <div class="fact"><span class="fk">Provider</span><span class="fv muted">videasy · ready (no resolve traces yet)</span></div>
+          <div class="fact"><span class="fk">Subtitles</span><span class="fv muted">Off by preference</span></div>
+          <div class="fact"><span class="fk">Network</span><span class="fv ok">OK · online</span></div>
+          <div class="fact"><span class="fk">Memory</span><span class="fv">App 184 MiB · mpv 0 MiB</span></div>
+          <div class="grp"><span>Developer evidence (collapsed)</span></div>
+          <div class="dim" style="font-size:12px">▸ Recent spans (0) · press <span class="text">Space</span> to expand correlation IDs &amp; raw traces</div>
+        </div>
+        <div class="foot">
+          <span><span class="k">[e]</span> export support bundle &nbsp; <span class="ki">[space]</span> traces &nbsp; <span class="ki">[esc]</span> close &nbsp; <span class="km">[/]</span> commands</span>
+          <span class="surf-lbl">Diagnostics</span>
+        </div>
+      </div>
+
+      <div class="state-grid">
+        <div class="scard" data-state="partial">
+          <div class="scard-top"><span class="st-part">"A title will not start" Triage Card</span><span class="err">Leads panel on failure</span></div>
+          <div class="scard-body">
+            <div class="banner err-b" style="padding:8px 11px">
+              <div class="err b">× Why Frieren S01E29 did not start</div>
+              <div class="t2" style="font-size:12px; margin-top:3px"><b>Cause:</b> VidKing returned 403; AllAnime timed out after 15s.</div>
+              <div class="muted" style="font-size:12px; margin-top:2px"><b>Next:</b> Try <code>/provider</code> to switch, or press <span class="rose b">e</span> to export a redacted support bundle.</div>
+            </div>
+            <div class="dim" style="font-size:11.5px">▸ 2 failed provider attempts (Space to expand raw trace)</div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[e]</span> export bundle · <span class="ki">[r]</span> reset provider health · <span class="ki">[esc]</span> close</span><span>Diagnostics</span></div>
+        </div>
+
+        <div class="scard" data-state="error">
+          <div class="scard-top"><span class="st-err">kunai doctor (Errors FIRST!)</span><span class="err">Non-interactive CLI</span></div>
+          <div class="scard-body">
+            <pre class="tty plain" style="border-style:solid; border-color:var(--line)">Kunai doctor · 2 errors, 1 info
+× Config dir not writable (/home/user/.config/kunai)
+  Fix: check folder ownership (avoid running kunai with sudo).
+× Data dir not writable (/home/user/.local/share/kunai)
+  Fix: chmod/chown ~/.local/share/kunai to your user.
+✓ Dependencies: mpv, yt-dlp, ffprobe, curl (chrome150)
+· Run `kunai doctor --verbose` for manifest, locks &amp; paths.</pre>
+          </div>
+          <div class="scard-foot"><span>Blockers on line 2 (was line 32!)</span><span>kunai doctor</span></div>
+        </div>
+
+        <div class="scard" data-state="loading">
+          <div class="scard-top"><span class="st-load">Loading (Exporting support bundle)</span></div>
+          <div class="scard-body">
+            <div class="rose">◌ Writing redacted support bundle…</div>
+            <div class="ok" style="margin-top:8px">✓ Support bundle saved: <code>~/.cache/kunai/kunai-diag-20261127.json</code></div>
+            <div class="dim" style="font-size:11.5px; margin-top:2px">Stream URLs, cookies, headers, and sync tokens were redacted.</div>
+          </div>
+          <div class="scard-foot"><span><span class="ki">[esc]</span> close</span><span>Diagnostics</span></div>
+        </div>
+
+        <div class="scard" data-state="empty">
+          <div class="scard-top"><span class="st-empty">Empty / Clean Session</span></div>
+          <div class="scard-body">
+            <div class="ok b">✓ Healthy · No issues in this session</div>
+            <div class="muted" style="margin-top:3px">No resolve traces recorded yet. Play a title to capture startup evidence.</div>
+            <div class="dim" style="margin-top:6px; font-size:11.5px">No bogus <code>· Retry</code> on Healthy or Disabled rows.</div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[e]</span> export bundle · <span class="ki">[esc]</span> close</span><span>Diagnostics</span></div>
+        </div>
+
+        <div class="scard" data-state="offline">
+          <div class="scard-top"><span class="st-off">Offline (Honest Network row)</span><span class="warn">Never green OK offline!</span></div>
+          <div class="scard-body">
+            <div class="warn b">△ Network · Offline — local library and cached playback only</div>
+            <div class="muted" style="margin-top:4px; font-size:12px">Diagnostics export still works offline to save a bundle for later upload.</div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[e]</span> export bundle · <span class="ki">[esc]</span> close</span><span>Diagnostics · offline</span></div>
+        </div>
+
+        <div class="scard" data-state="narrow">
+          <div class="scard-top"><span class="st-nar">Narrow · 54×25 &amp; 40 cols</span><span class="dim">Compact Label: detail</span></div>
+          <div class="scard-body">
+            <div class="narrow-pair">
+              <div>
+                <div class="tty-cap">54 × 25</div>
+                <pre class="tty w54">🦊 Kunai · Diagnostics          ● ready · 54×25
+Verdict: ✓ Healthy · 0 issues
+Playback: OK
+Provider: videasy (idle)
+Subtitles: Off by preference
+Memory: 184 MiB
+[e] export  [space] traces  [esc] close</pre>
+              </div>
+              <div>
+                <div class="tty-cap">40 cols</div>
+                <pre class="tty w40">🦊 · Diagnostics         ● ready · 40×20
+✓ Healthy · 0 issues
+Playback: OK
+Memory: 184 MiB
+▸ Traces (0) [space]
+[e] export  [esc] close</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="scard" data-state="plain" style="grid-column: 1 / -1;">
+          <div class="scard-top"><span class="st-plain">Plain Mode</span><span class="ok">No ─── rules · clean key: value lines</span></div>
+          <div class="scard-body">
+            <pre class="tty plain">Kunai | Diagnostics | Status: ready
+Verdict: Healthy — No issues in this session
+Playback: OK — no playback errors
+Provider: videasy — no resolve traces yet
+Subtitles: Off by preference
+Actions: [e] export support bundle, [space] toggle traces, [esc] close</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="delta">
+        <b>Changed vs today:</b> Removed bogus <code>· Retry</code> on Healthy verdict and disabled subtitles (<code>diagnostics-panel-lines.ts:68</code>); fixed false <code>Network OK</code> offline; added 3-line "Why it didn't start" lead card; collapsed empty Developer Evidence by default; reordered <code>kunai doctor</code> (<code>services/update/run-doctor.ts</code>) so errors print first.
+      </div>
+    </section>
+
+    <!-- ==================== 14 DESTRUCTIVE CONFIRMS & ESC ==================== -->
+    <section class="surf" id="s14">
+      <div class="surf-head">
+        <h2>14 · Destructive Confirms (<code>ConfirmStrip</code>) &amp; Global <code>Esc</code> Semantics</h2>
+        <span class="owner">ConfirmStrip.tsx (new) · esc-stack.ts (new) · root-overlay-shell.tsx · library-shell.tsx · download-manager-shell.tsx</span>
+      </div>
+      <p class="surf-sub">Replaces four conflicting confirmation mechanics (<code>y/Esc</code> printed 3× in History, double-press <code>x</code> in Library/Downloads/Up Next, modal picker in Playlists, and the Up Next Esc bug) with one universal <code>ConfirmStrip</code> primitive and one 10-step <code>resolveEscStack</code> contract.</p>
+
+      <div class="term" data-state="success">
+        <div class="head">
+          <span><span class="brand">🦊 Kunai</span> · <span class="chip">Library</span> <span class="muted">14 titles · 3.2 GB offline</span></span>
+          <span><span class="warn">●</span> confirm · 120×32</span>
+        </div>
+        <div class="body">
+          <div class="row sel"><span class="bar">▌</span><span class="ttl">Frieren <span class="muted">· S01</span></span><span class="rt ok">↓ 4 ep · 1.4 GB</span></div>
+          <div class="row"><span class="bar"></span><span class="ttl">DR. STONE <span class="muted">· S04</span></span><span class="rt ok">↓ 7 ep · 2.1 GB</span></div>
+          <div class="banner confirm-b" style="margin-top:14px">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:12px">
+              <div>
+                <div class="warn b">⚠ Delete Frieren (4 local files, 1.4 GB)?</div>
+                <div class="muted" style="font-size:12px">Permanent file deletion — cannot be undone with z. Press X instead to keep files and remove record only.</div>
+              </div>
+              <span class="pill warn">armed</span>
+            </div>
+          </div>
+        </div>
+        <div class="foot">
+          <span><span class="kd">[y]</span> delete files &nbsp; <span class="k">[esc]</span> cancel</span>
+          <span class="surf-lbl">Confirm · Library</span>
+        </div>
+      </div>
+
+      <div class="state-grid">
+        <div class="scard" data-state="loading">
+          <div class="scard-top"><span class="st-load">Loading (Deleting files)</span></div>
+          <div class="scard-body">
+            <div class="rose">◌ Removing 4 local files for Frieren (1.4 GB)…</div>
+            <div class="dim" style="margin-top:4px">Row locked until SQLite + filesystem receipt settles.</div>
+          </div>
+          <div class="scard-foot"><span>Working…</span><span>ConfirmStrip</span></div>
+        </div>
+
+        <div class="scard" data-state="empty">
+          <div class="scard-top"><span class="st-empty">Empty (No dead delete key)</span></div>
+          <div class="scard-body">
+            <div class="t2">Empty lists never advertise <code>[x]</code> or <code>[c]</code> in the footer. Pressing a delete hotkey on an empty list emits one quiet transient line (<code>Nothing to remove</code>) and never arms <code>ConfirmStrip</code>.</div>
+          </div>
+          <div class="scard-foot"><span>No dead confirm</span><span>All lists</span></div>
+        </div>
+
+        <div class="scard" data-state="partial">
+          <div class="scard-top"><span class="st-part">Record-Only (X) vs Undoable Completion</span></div>
+          <div class="scard-body">
+            <div class="banner confirm-b" style="padding:7px 10px">
+              <div class="warn b">⚠ Remove record for Frieren? Local files will be kept.</div>
+            </div>
+            <div style="margin-top:6px; font-size:12px">
+              <div class="ok">✓ Removed Smoke Movie from Up Next · <span class="rose b">z undo</span> <span class="dim">(undoable SQLite)</span></div>
+              <div class="ok" style="margin-top:3px">✓ Deleted 4 local files (1.4 GB) for Frieren <span class="dim">(permanent — no z hint)</span></div>
+            </div>
+          </div>
+          <div class="scard-foot"><span><span class="kd">[y]</span> remove record · <span class="k">[esc]</span> cancel</span><span>ConfirmStrip</span></div>
+        </div>
+
+        <div class="scard" data-state="error">
+          <div class="scard-top"><span class="st-err">Error (Retained-file receipt)</span></div>
+          <div class="scard-body">
+            <div class="err b">× Could not delete local file (permission denied)</div>
+            <div class="muted" style="margin-top:2px">Record retained so you can retry cleanup or remove the record only.</div>
+          </div>
+          <div class="scard-foot"><span><span class="k">[r]</span> retry delete · <span class="ki">[X]</span> remove record · <span class="ki">[esc]</span> dismiss</span><span>ConfirmStrip</span></div>
+        </div>
+
+        <div class="scard" data-state="offline">
+          <div class="scard-top"><span class="st-off">Offline (Local scope honesty)</span></div>
+          <div class="scard-body">
+            <div class="banner confirm-b" style="padding:7px 10px">
+              <div class="warn b">⚠ Delete all local history for Frieren?</div>
+              <div class="muted" style="font-size:12px">Local Kunai history only — synced AniList/TMDB records stay untouched.</div>
+            </div>
+          </div>
+          <div class="scard-foot"><span><span class="kd">[y]</span> delete local · <span class="k">[esc]</span> cancel</span><span>Confirm · offline</span></div>
+        </div>
+
+        <div class="scard" data-state="narrow">
+          <div class="scard-top"><span class="st-nar">Narrow · 54×25 &amp; 40 cols</span><span class="dim">Single occurrence (no 3× repeat!)</span></div>
+          <div class="scard-body">
+            <div class="narrow-pair">
+              <div>
+                <div class="tty-cap">54 × 25</div>
+                <pre class="tty w54">🦊 Kunai · History             ● confirm · 54×25
+▌ Smoke Movie · Movie                        2%
+
+⚠ Delete episode progress for Smoke Movie?
+[y] delete progress  [esc] cancel</pre>
+              </div>
+              <div>
+                <div class="tty-cap">40 cols</div>
+                <pre class="tty w40">🦊 · History           ● confirm · 40×20
+▌ Smoke Movie                        2%
+
+⚠ Delete Smoke Movie progress?
+[y] delete  [esc] cancel</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="scard" data-state="plain" style="grid-column: 1 / -1;">
+          <div class="scard-top"><span class="st-plain">Plain Mode</span><span class="ok">Spoken once · underlying row actions suppressed</span></div>
+          <div class="scard-body">
+            <pre class="tty plain">Kunai | History | Status: confirm
+Focus: Confirmation
+Confirm: Delete episode progress for Smoke Movie?
+Actions: [y] confirm delete, [esc] cancel</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="delta">
+        <b>Changed vs today:</b> Replaced 4 different delete-confirm UXs with one <code>ConfirmStrip</code> primitive (<code>[y] confirm [esc] cancel</code> everywhere, keyed by target ID so background refreshes can never retarget a delete); eliminated triple-repeated History delete text + stale <code>[enter] resume</code> footer; fixed Up Next Esc bug where <code>queueConfirm</code> was omitted from <code>confirmationActive</code> at <code>root-overlay-shell.tsx:1783</code>.
+      </div>
+    </section>
+
+    <!-- ==================== ESC LADDER ==================== -->
+    <section class="surf" id="esc-ladder">
+      <div class="surf-head">
+        <h2>Global <code>Esc</code> Unwinding Ladder (<code>resolveEscStack</code>)</h2>
+        <span class="owner">apps/cli/src/app-shell/esc-stack.ts (new pure reducer)</span>
+      </div>
+      <p class="surf-sub">One press peels exactly one layer. <code>Esc</code> never confirms, never starts playback, and never exits Kunai by accident.</p>
+      <div class="term">
+        <div class="body" style="display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:8px 24px; font-size:12.5px">
+          <div><span class="rose b">1.</span> Active text edit (Settings input / rename) → cancel edit</div>
+          <div><span class="rose b">6.</span> Child sheet / submenu (Details, Settings sub) → parent</div>
+          <div><span class="rose b">2.</span> Armed <code>ConfirmStrip</code> / <code>ContinueSourcePrompt</code> → disarm</div>
+          <div><span class="rose b">7.</span> Top overlay / picker (Tracks, History, etc.) → close</div>
+          <div><span class="rose b">3.</span> Command palette (<code>/</code>) → close &amp; restore focus</div>
+          <div><span class="rose b">8.</span> Cancellable resolve / loading → abort to results</div>
+          <div><span class="rose b">4.</span> Type-ahead suggestion band → dismiss for draft</div>
+          <div><span class="rose b">9.</span> Post-play → back to previous Search results</div>
+          <div><span class="rose b">5.</span> Active filter / query (<code>Ctrl+F</code> → chips → query) → clear</div>
+          <div><span class="rose b">10.</span> Browse home (empty query) → calm no-op (quit = <code>Ctrl+C</code>)</div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+  const buttons = document.querySelectorAll('.fbtn');
+  buttons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const f = btn.dataset.f;
+      document.body.dataset.filter = f;
+      buttons.forEach((b) => b.classList.toggle('active', b === btn));
+    });
+  });
+</script>
+</body>
+</html>
