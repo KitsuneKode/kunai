@@ -39,7 +39,7 @@ import {
   guardedYtdlRawOptions,
   normalizeStreamHttpHeaders,
 } from "@/infra/player/mpv-stream-http-headers";
-import { materializeDeferredMediaForPlayback } from "@/services/playback/deferred-media-materializer";
+import { materializePlaybackMediaForPlayback } from "@/services/playback/playback-media-materializer";
 import { summarizeProviderTraceEvents } from "@kunai/core";
 import { isHlsPlaylistUrl, probeStreamReachability } from "@kunai/providers";
 import { isJsonString } from "@kunai/types";
@@ -906,7 +906,7 @@ async function decodeFirstFrame(input: {
   const outputDir = mkdtempSync(join(tmpdir(), "kunai-audit-frame-"));
   let materializedCleanup: (() => Promise<void>) | null = null;
   try {
-    const materialized = await materializeDeferredMediaForPlayback(input.stream);
+    const materialized = await materializePlaybackMediaForPlayback(input.stream);
     materializedCleanup = materialized.cleanup;
     const stream = materialized.stream;
     const targetName = `${sanitizeFileName(input.key)}.png`;
