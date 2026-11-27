@@ -95,8 +95,13 @@ export function activateCachedProviderHotfixManifest(
     nowMs: options.nowMs,
   });
   if (cached.status !== "active") return cached.status;
+  const fixedNowMs = options.nowMs;
+  const fixedClock = fixedNowMs === undefined ? undefined : () => fixedNowMs;
   setActiveProviderHotfixManifest(cached.manifest);
-  reloadProviderRegistryPriority(container, { schedule: options.schedule, nowMs: options.clock });
+  reloadProviderRegistryPriority(container, {
+    schedule: options.schedule,
+    nowMs: options.clock ?? fixedClock,
+  });
   return cached.status;
 }
 
@@ -121,8 +126,11 @@ export async function updateProviderDefinitionsFromShell(
     knownProvidersByLane: groupProvidersByLane(container.engine.modules),
   });
   if (result.status === "updated" || result.status === "unchanged") {
+    const fixedNowMs = options.nowMs;
     setActiveProviderHotfixManifest(result.manifest);
-    reloadProviderRegistryPriority(container);
+    reloadProviderRegistryPriority(container, {
+      nowMs: fixedNowMs === undefined ? undefined : () => fixedNowMs,
+    });
     return result.status === "updated"
       ? `Updated to rev ${result.manifest.revision}`
       : `Already up to date (rev ${result.manifest.revision})`;
@@ -146,8 +154,11 @@ export async function rollbackProviderDefinitionsFromShell(
     nowMs: options.nowMs,
   });
   if (rolled.ok) {
+    const fixedNowMs = options.nowMs;
     setActiveProviderHotfixManifest(rolled.manifest);
-    reloadProviderRegistryPriority(container);
+    reloadProviderRegistryPriority(container, {
+      nowMs: fixedNowMs === undefined ? undefined : () => fixedNowMs,
+    });
     return `Rolled back to rev ${rolled.manifest.revision}`;
   }
   return `Rollback skipped: ${rolled.reason}`;

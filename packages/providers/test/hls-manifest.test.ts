@@ -90,6 +90,27 @@ describe("hls-manifest helpers", () => {
     expect(parseFirstHlsVariantPath(master)).toBe("video_2160p.m3u8.png?exp=1&sig=abc");
   });
 
+  test("skips ordinary comments after STREAM-INF without crossing a stream boundary", () => {
+    const master = [
+      "#EXTM3U",
+      "#EXT-X-STREAM-INF:BANDWIDTH=4000000,RESOLUTION=1920x1080",
+      "# packager comment before the video URI",
+      "video/v1.m3u8.png",
+      "#EXT-X-STREAM-INF:BANDWIDTH=128000",
+      "# comment inside the audio-only entry",
+      "audio/a1.m3u8.png",
+    ].join("\n");
+    expect(parseFirstHlsVariantPath(master)).toBe("video/v1.m3u8.png");
+
+    const boundaryOnly = [
+      "#EXTM3U",
+      "#EXT-X-STREAM-INF:BANDWIDTH=4000000",
+      "#EXT-X-STREAM-INF:BANDWIDTH=128000",
+      "audio/a1.m3u8.png",
+    ].join("\n");
+    expect(parseFirstHlsVariantPath(boundaryOnly)).toBe("audio/a1.m3u8.png");
+  });
+
   test("parses obfuscated media segment names", () => {
     const media = ["#EXTM3U", "#EXTINF:4,", "seg-1-v1-a1.ts.html"].join("\n");
     expect(isHlsMasterPlaylist(media)).toBe(false);

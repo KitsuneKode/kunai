@@ -36,7 +36,7 @@
   "packages/providers/src/allmanga/direct.ts": 1006,
   "packages/providers/src/miruro/direct.ts": 2644,
   "packages/providers/src/movy/direct.ts": 914,
-  "packages/providers/src/rivestream/direct.ts": 1447,
+  "packages/providers/src/rivestream/direct.ts": 1414,
   "packages/providers/src/shared/stream-reachability.ts": 881,
   "packages/providers/src/videasy/direct.ts": 2569,
   "packages/storage/src/migrations.ts": 1277,

@@ -63,7 +63,8 @@ export function parseFirstHlsVariantPath(manifestText: string): string | null {
     for (let follow = index + 1; follow < lines.length; follow += 1) {
       const candidate = lines[follow]?.trim() ?? "";
       if (!candidate) continue;
-      if (candidate.startsWith("#")) break;
+      if (candidate.startsWith("#") && !candidate.startsWith("#EXT")) continue;
+      if (candidate.startsWith("#EXT")) break;
       variants.push({ uri: candidate, hasResolution: /RESOLUTION=/i.test(tag) });
       break;
     }

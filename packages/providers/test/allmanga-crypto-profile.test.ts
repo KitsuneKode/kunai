@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, setSystemTime, test } from "bun:test";
 
 import {
   ALLMANGA_BUILD_ID,
@@ -58,35 +58,40 @@ describe("allmanga crypto profile", () => {
     );
   });
   test("a hotfix rotation profile carries its epoch scale into candidate selection", () => {
-    setActiveProviderHotfixManifest({
-      schemaVersion: 1,
-      revision: 1,
-      generatedAt: "2026-11-27T00:00:00.000Z",
-      expiresAt: "2026-11-28T00:00:00.000Z",
-      providers: {
-        allanime: {
-          cryptoOverrides: {
-            buildId: "205",
-            saltMul: "17",
-            saltAdd: "23",
-            fragMul: "11",
-            fragAdd: "3",
-            bootPrefix: "PRE:",
-            bootJoin: "|",
-            bootParts: "group,host,lane,buildId,epoch",
-            maskFragments: "AAAAAAAAAAA=,BBBBBBBBBBB=,CCCCCCCCCCC=,DDDDDDDDDDD=",
-            epochMs: "120000",
-            epochGraceMs: "10000",
+    setSystemTime(new Date("2026-11-27T12:00:00.000Z"));
+    try {
+      setActiveProviderHotfixManifest({
+        schemaVersion: 1,
+        revision: 1,
+        generatedAt: "2026-11-27T00:00:00.000Z",
+        expiresAt: "2026-11-28T00:00:00.000Z",
+        providers: {
+          allanime: {
+            cryptoOverrides: {
+              buildId: "205",
+              saltMul: "17",
+              saltAdd: "23",
+              fragMul: "11",
+              fragAdd: "3",
+              bootPrefix: "PRE:",
+              bootJoin: "|",
+              bootParts: "group,host,lane,buildId,epoch",
+              maskFragments: "AAAAAAAAAAA=,BBBBBBBBBBB=,CCCCCCCCCCC=,DDDDDDDDDDD=",
+              epochMs: "120000",
+              epochGraceMs: "10000",
+            },
           },
         },
-      },
-    });
-    try {
-      expect(getEffectiveAllMangaEpochMs()).toBe(120_000);
-      expect(currentAllMangaEpochCandidates(5 * 120_000 + 1_000)).toEqual([4, 5]);
-      expect(currentAllMangaEpochCandidates(5 * 120_000 + 11_000)).toEqual([5]);
+      });
+      try {
+        expect(getEffectiveAllMangaEpochMs()).toBe(120_000);
+        expect(currentAllMangaEpochCandidates(5 * 120_000 + 1_000)).toEqual([4, 5]);
+        expect(currentAllMangaEpochCandidates(5 * 120_000 + 11_000)).toEqual([5]);
+      } finally {
+        setActiveProviderHotfixManifest(null);
+      }
     } finally {
-      setActiveProviderHotfixManifest(null);
+      setSystemTime();
     }
   });
 

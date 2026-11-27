@@ -55,7 +55,6 @@ import {
   createVariantId,
   detectDynamicRangeFromLabel,
   finalizeCycleSourceInventory,
-  normalizeProviderDisplayLabel,
   normalizeQualityLabel,
   providerInventorySourceId,
   qualityRankFromLabel,
@@ -67,6 +66,16 @@ import { createTimeoutSignal } from "../shared/timeout-signal";
 import { trimTrailingSlashes } from "../shared/trim-trailing-slashes";
 import { rivestreamManifest, RIVESTREAM_PROVIDER_ID } from "./manifest";
 import { parseRivestreamProxyHeaders, unwrapRivestreamProxyUrl } from "./proxy-url";
+import {
+  displayRivestreamProviderLabel,
+  displayRivestreamSourceLabel,
+  extractRivestreamCaptions,
+  getRivestreamRawSources,
+  inferRivestreamAudioLanguage,
+  inferRivestreamAudioSubtitle,
+  rivestreamFailureClassFromProviderError,
+  type RivestreamSourceResponse,
+} from "./source-model";
 
 export { RIVESTREAM_PROVIDER_ID };
 export const RIVESTREAM_REFERER = "https://www.rivestream.app/";
@@ -208,31 +217,6 @@ type RivestreamProviderServicesResponse = {
   readonly data?: unknown;
 };
 
-type RivestreamRawSource = {
-  readonly url?: string;
-  readonly quality?: string;
-  readonly format?: string;
-  /** Headers captured before an observed wrapper is unwrapped. */
-  readonly playbackHeaders?: Record<string, string>;
-};
-
-type RivestreamSourceResponse = {
-  readonly data?:
-    | readonly RivestreamRawSource[]
-    | {
-        readonly sources?: readonly RivestreamRawSource[];
-        readonly captions?: readonly RivestreamRawSubtitle[];
-      };
-};
-
-type RivestreamRawSubtitle = {
-  readonly url?: string;
-  readonly lang?: string;
-  readonly language?: string;
-  readonly file?: string;
-  readonly label?: string;
-};
-
 type RivestreamResolvedCandidate = {
   readonly provider: string;
   readonly sourceId: string;
@@ -240,20 +224,6 @@ type RivestreamResolvedCandidate = {
   readonly variants: readonly ProviderVariantCandidate[];
   readonly subtitles: readonly SubtitleCandidate[];
 };
-
-function getRivestreamRawSources(
-  data: RivestreamSourceResponse["data"],
-): readonly RivestreamRawSource[] {
-  if (Array.isArray(data)) return data;
-  if (isRivestreamSourceEnvelope(data)) return data.sources ?? [];
-  return [];
-}
-
-function isRivestreamSourceEnvelope(
-  data: RivestreamSourceResponse["data"],
-): data is { readonly sources?: readonly RivestreamRawSource[] } {
-  return typeof data === "object" && data !== null && !Array.isArray(data) && "sources" in data;
-}
 
 // Ported 32-bit MurmurHash custom algorithm
 const cArray = [
@@ -698,7 +668,65 @@ export const rivestreamProviderModule: CoreProviderModule = {
         preferredStreamId: input.preferredStreamId,
         preferredSourceId: input.preferredSourceId,
       });
-      const selectedStream = selection.selected;
+
+      const gateOrder = [
+        selection.selected,
+        ...selectableStreams.filter((stream) => stream.id !== selection.selected.id),
+      ].slice(0, RIVESTREAM_RESOLVE_GATE_MAX_PROBES);
+      const gated = await selectVerifiedStream({
+        streams: gateOrder,
+        context,
+        signal: context.signal,
+        timeoutMs: gateTimeoutMs,
+      });
+      if (context.signal?.aborted) {
+        return createExhaustedResult(
+          input,
+          context,
+          RIVESTREAM_PROVIDER_ID,
+          {
+            code: "cancelled",
+            message: "Rivestream resolve-gate probe was cancelled",
+            retryable: false,
+          },
+          {
+            cachePolicy,
+            events,
+            failures,
+            sources: finalizeCycleSourceInventory({
+              sources: sourceInventorySeeds,
+              attempts: cycleResult.attempts,
+            }),
+            startedAt,
+          },
+        );
+      }
+      if (!gated.accepted) {
+        const gateFailure: Omit<ProviderFailure, "providerId" | "at"> = {
+          code: "not-found",
+          message: `Rivestream selected stream is unreachable (${gated.reason})`,
+          retryable: true,
+        };
+        return createExhaustedResult(input, context, RIVESTREAM_PROVIDER_ID, gateFailure, {
+          cachePolicy,
+          events,
+          failures: [
+            ...failures,
+            { providerId: RIVESTREAM_PROVIDER_ID, at: context.now(), ...gateFailure },
+          ],
+          sources: finalizeCycleSourceInventory({
+            sources: sourceInventorySeeds,
+            attempts: cycleResult.attempts,
+          }),
+          startedAt,
+        });
+      }
+
+      const selectedStream = gated.stream;
+      const shippedStreams = dropRefusedStreams(streams, gated.refusedHosts);
+      const shippedVariants = variants.filter((variant) =>
+        shippedStreams.some((stream) => stream.variantId === variant.id),
+      );
       const selectedSource = {
         ...createSourceCandidateFromStream({
           providerId: RIVESTREAM_PROVIDER_ID,
@@ -724,16 +752,19 @@ export const rivestreamProviderModule: CoreProviderModule = {
         status: "resolved",
         providerId: RIVESTREAM_PROVIDER_ID,
         selectedStreamId: selectedStream.id,
-        selectionDecision: selection.decision,
+        selectionDecision: {
+          ...selection.decision,
+          selectedQualityRank: selectedStream.qualityRank,
+        },
         sources: finalizeCycleSourceInventory({
           sources: sourceInventorySeeds,
           attempts: cycleResult.attempts,
           selectedSources: [selectedSource],
-          streams,
+          streams: shippedStreams,
           selectedStreamId: selectedStream.id,
         }),
-        streams,
-        variants,
+        streams: shippedStreams,
+        variants: shippedVariants,
         subtitles,
         cachePolicy,
         trace: createResolveTrace({
@@ -1380,68 +1411,4 @@ export const RIVESTREAM_CANDIDATE_TIMEOUT_MS = 10_000;
  */
 export const RIVESTREAM_RESOLVE_GATE_TIMEOUT_MS = 6_000;
 
-function extractRivestreamCaptions(
-  data: RivestreamSourceResponse["data"],
-): readonly RivestreamRawSubtitle[] {
-  if (!data || typeof data !== "object" || Array.isArray(data) || !("captions" in data)) {
-    return [];
-  }
-  return Array.isArray(data.captions) ? data.captions : [];
-}
-
-function rivestreamFailureClassFromProviderError(
-  error: ProviderHttpError,
-):
-  | "candidate-network"
-  | "candidate-empty"
-  | "candidate-timeout"
-  | "candidate-blocked"
-  | "candidate-rate-limited"
-  | "candidate-server-error"
-  | "candidate-parse" {
-  if (error.code === "timeout") return "candidate-timeout";
-  if (error.code === "blocked") return "candidate-blocked";
-  if (error.code === "rate-limited") return "candidate-rate-limited";
-  if (error.code === "provider-unavailable") return "candidate-server-error";
-  if (error.code === "parse-failed") return "candidate-parse";
-  if (error.code === "not-found") return "candidate-empty";
-  return "candidate-network";
-}
-
-function displayRivestreamProviderLabel(provider: string): string {
-  return normalizeProviderDisplayLabel(provider) ?? provider;
-}
-
-/** Short uppercase tag for the inferred audio language, e.g. "EN", "HI". */
-function rivestreamAudioLanguageTag(provider: string): string | undefined {
-  const language = inferRivestreamAudioLanguage(provider, undefined);
-  return language ? language.toUpperCase() : undefined;
-}
-
-/** Human source label that also carries the inferred audio language at a glance. */
-function displayRivestreamSourceLabel(provider: string): string {
-  const label = displayRivestreamProviderLabel(provider);
-  const tag = rivestreamAudioLanguageTag(provider);
-  return tag ? `${label} · ${tag}` : label;
-}
-
-function inferRivestreamAudioSubtitle(provider: string): string {
-  const language = inferRivestreamAudioLanguage(provider, undefined);
-  const label = displayRivestreamProviderLabel(provider);
-  if (language) {
-    return `${language.toUpperCase()} · ${label}`;
-  }
-  return `Rivestream · ${label}`;
-}
-
-function inferRivestreamAudioLanguage(
-  provider: string | undefined,
-  quality: string | undefined,
-): string | undefined {
-  const raw = [provider, quality].filter(Boolean).join(" ").toLowerCase();
-  if (raw.includes("hindi")) return "hi";
-  if (raw.includes("german")) return "de";
-  if (raw.includes("spanish")) return "es";
-  if (raw.includes("english") || raw.includes("flowcast") || raw.includes("primevids")) return "en";
-  return undefined;
-}
+const RIVESTREAM_RESOLVE_GATE_MAX_PROBES = 3;

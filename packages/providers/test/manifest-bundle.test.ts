@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
 import { generateKeyPairSync } from "node:crypto";
 
 import {
@@ -46,7 +46,11 @@ import {
 } from "../src/vidrock/direct";
 
 afterEach(() => {
-  setActiveProviderHotfixManifest(null);
+  try {
+    setActiveProviderHotfixManifest(null);
+  } finally {
+    setSystemTime();
+  }
 });
 
 const NOW_MS = Date.parse("2026-11-22T00:00:00Z");
@@ -248,6 +252,7 @@ describe("signed hot-update provider manifest bundle", () => {
   });
 
   test("hotfix runtime overrides Rivestream host and AllManga rotation profile atomically", () => {
+    setSystemTime(new Date(NOW_MS));
     expect(effectiveRivestreamScraperBase()).toBe(RIVESTREAM_SCRAPER_BASE);
     expect(effectiveRivestreamReferer()).toBe(RIVESTREAM_REFERER);
     expect(getEffectiveAllMangaCryptoProfile()).toEqual(ALLMANGA_CRYPTO_PROFILE);
@@ -326,6 +331,7 @@ describe("signed hot-update provider manifest bundle", () => {
   });
 
   test("hotfix runtime overrides mirrors and crypto across all direct-domain providers", () => {
+    setSystemTime(new Date(NOW_MS));
     const newVidrockKey = "a".repeat(64);
     setActiveProviderHotfixManifest(
       sampleManifest({

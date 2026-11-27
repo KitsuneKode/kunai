@@ -182,7 +182,6 @@ export const animeggProviderModule: CoreProviderModule = {
     if (!query) return null;
     const html = await fetchText(animeggSearchPath(query), context);
     const results = parseAnimeggSearchResults(html).slice(0, 40);
-    if (results.length === 0) return null;
 
     return results.map((result): ProviderSearchResult => {
       // Every AnimeGG entry is a series page, even one-episode films; the

@@ -40,7 +40,8 @@ import {
 } from "@/infra/player/mpv-stream-http-headers";
 import { materializeDeferredMediaForPlayback } from "@/services/playback/deferred-media-materializer";
 import { summarizeProviderTraceEvents } from "@kunai/core";
-import { probeStreamReachability } from "@kunai/providers";
+import { isHlsPlaylistUrl, probeStreamReachability } from "@kunai/providers";
+import { isJsonString } from "@kunai/types";
 import type { ProviderResolveResult, StreamCandidate } from "@kunai/types";
 
 import {
@@ -140,12 +141,13 @@ type ProviderContainer = Awaited<ReturnType<typeof import("@/container").createC
 
 type SearchAudit = {
   readonly support: "provider-search" | "not-in-provider-contract";
-  readonly status?: "ok" | "empty" | "transport-error" | "error";
+  readonly status?: "ok" | "empty" | "transport-error" | "error" | "no-verified-match";
   readonly durationMs?: number;
   readonly resultCount?: number;
   readonly selectedTitle?: string;
   readonly selectedId?: string;
   readonly selectedYear?: string;
+  readonly expectedIdFound?: boolean;
   readonly error?: string;
 };
 
@@ -209,7 +211,7 @@ type ResolveAudit = {
   readonly sourceLabels: readonly string[];
   readonly streamReachabilityVerified: boolean;
   readonly probe?: {
-    readonly outcome: "reachable" | "unreachable" | "inconclusive" | "not-run";
+    readonly outcome: "reachable" | "unreachable" | "refused" | "inconclusive" | "not-run";
     readonly durationMs?: number;
     readonly reason?: string;
     readonly contentType?: string;
@@ -239,6 +241,7 @@ type CaseAudit = {
   readonly fixture: string;
   readonly expectation?: string;
   readonly audio?: "sub" | "dub";
+  readonly titleSource?: "verified-search" | "query-only";
   readonly search?: SearchAudit;
   readonly episodeList?: EpisodeListAudit;
   readonly resolve: ResolveAudit;
@@ -260,6 +263,7 @@ type ProviderAudit = {
     readonly exhausted: number;
     readonly errors: number;
     readonly probesReachable: number;
+    readonly probesUnreachable: number;
     readonly probesRefused: number;
     readonly decodeOk: boolean;
     readonly decodePngPath?: string;
@@ -276,59 +280,73 @@ type ProviderAudit = {
 createProviderSmokeProfile("capability-audit");
 const { createContainer, disposeContainer } = await import("@/container");
 const auditContainer = await createContainer({ debug: true });
-
-const requested = new Set(directSmokeArgs().map((arg) => arg.toLowerCase()));
-const providerIds: readonly ProviderId[] =
-  requested.size === 0
-    ? ALL_PROVIDER_IDS
-    : ALL_PROVIDER_IDS.filter((id) => requested.has(id) || requested.has(providerLane(id)));
-const decodeEnabled = auditDecodeEnabled();
 const decodedProviders = new Set<string>();
-const framesRoot = auditFramesRoot();
-mkdirSync(framesRoot, { recursive: true });
+let decodeEnabled = false;
+let framesRoot = "";
 
-if (providerIds.length === 0) {
-  console.log(
-    JSON.stringify({
-      ok: false,
-      stage: "selection",
-      requested: [...requested],
-      available: ALL_PROVIDER_IDS,
-    }),
-  );
-  process.exit(1);
+try {
+  await runCapabilityAudit();
+} finally {
+  await disposeContainer(auditContainer);
 }
 
-const providers: ProviderAudit[] = [];
-for (const providerId of providerIds) {
-  providers.push(await auditProvider(auditContainer, providerId));
-}
+async function runCapabilityAudit(): Promise<void> {
+  const requested = new Set(directSmokeArgs().map((arg) => arg.toLowerCase()));
+  const providerIds: readonly ProviderId[] =
+    requested.size === 0
+      ? ALL_PROVIDER_IDS
+      : ALL_PROVIDER_IDS.filter((id) => requested.has(id) || requested.has(providerLane(id)));
+  decodeEnabled = auditDecodeEnabled();
+  framesRoot = auditFramesRoot();
+  mkdirSync(framesRoot, { recursive: true });
 
-const report = {
-  ok: true,
-  generatedAt: new Date().toISOString(),
-  isolatedProfile: true,
-  framesRoot,
-  decodeEnabled,
-  fixtures: {
-    movies: MOVIE_FIXTURES.map((fixture) => fixture.title.name),
-    series: SERIES_FIXTURES.map(
-      (fixture) => `${fixture.title.name} S${fixture.season}E${fixture.episode}`,
-    ),
-    anime: ANIME_FIXTURES.map(
-      (fixture) => `${fixture.query} E${fixture.episode} (${fixture.expectation}, sub+dub)`,
-    ),
-    youtube: `${YOUTUBE_FIXTURE.query} (${YOUTUBE_FIXTURE.expectedId})`,
-  },
-  providers,
-};
-const json = `${redactText(JSON.stringify(report, null, 2))}\n`;
-console.log(json.trimEnd());
-const artifactPath = auditArtifactPath();
-if (artifactPath) {
-  await Bun.write(resolvePath(artifactPath), json);
+  if (providerIds.length === 0) {
+    console.log(
+      JSON.stringify({
+        ok: false,
+        stage: "selection",
+        requested: [...requested],
+        available: ALL_PROVIDER_IDS,
+      }),
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  const providers: ProviderAudit[] = [];
+  for (const providerId of providerIds) {
+    providers.push(await auditProvider(auditContainer, providerId));
+  }
+
+  const report = {
+    ok: true,
+    generatedAt: new Date().toISOString(),
+    isolatedProfile: true,
+    framesRoot,
+    decodeEnabled,
+    fixtures: {
+      movies: MOVIE_FIXTURES.map((fixture) => fixture.title.name),
+      series: SERIES_FIXTURES.map(
+        (fixture) => `${fixture.title.name} S${fixture.season}E${fixture.episode}`,
+      ),
+      anime: ANIME_FIXTURES.map(
+        (fixture) => `${fixture.query} E${fixture.episode} (${fixture.expectation}, sub+dub)`,
+      ),
+      youtube: `${YOUTUBE_FIXTURE.query} (${YOUTUBE_FIXTURE.expectedId})`,
+    },
+    providers,
+  };
+  const json = `${JSON.stringify(
+    report,
+    (_key, value) => (isJsonString(value) ? redactText(value) : value),
+    2,
+  )}\n`;
+  console.log(json.trimEnd());
+  const artifactPath = auditArtifactPath();
+  if (artifactPath) {
+    await Bun.write(resolvePath(artifactPath), json);
+  }
 }
-await disposeContainer(auditContainer);
 
 function auditDecodeEnabled(): boolean {
   return process.env.KUNAI_AUDIT_DECODE !== "0";
@@ -406,7 +424,8 @@ async function auditProvider(
     exhausted: cases.filter((item) => item.resolve.status === "exhausted").length,
     errors: cases.filter((item) => item.resolve.status === "error").length,
     probesReachable: cases.filter((item) => item.resolve.probe?.outcome === "reachable").length,
-    probesRefused: cases.filter((item) => item.resolve.probe?.outcome === "unreachable").length,
+    probesUnreachable: cases.filter((item) => item.resolve.probe?.outcome === "unreachable").length,
+    probesRefused: cases.filter((item) => item.resolve.probe?.outcome === "refused").length,
     decodeOk: Boolean(decode),
     maxQualityRank: Math.max(0, ...cases.map((item) => item.resolve.maxQualityRank)),
     servers: uniqueStrings(cases.flatMap((item) => item.resolve.servers)),
@@ -418,7 +437,7 @@ async function auditProvider(
   if (latencies.length > 0) {
     Object.assign(aggregate, {
       fastestResolveMs: latencies[0],
-      medianResolveMs: latencies[Math.floor((latencies.length - 1) / 2)],
+      medianResolveMs: medianOfSorted(latencies),
     });
   }
   return {
@@ -507,7 +526,7 @@ async function searchAnimeFixture(
         title: null,
         search: {
           support: "provider-search",
-          status: results.length === 0 ? "empty" : "ok",
+          status: results.length === 0 ? "empty" : "no-verified-match",
           durationMs,
           resultCount: results.length,
         },
@@ -577,6 +596,7 @@ async function auditAnimeCase(
     fixture: `${fixture.query} E${fixture.episode}`,
     expectation: fixture.expectation,
     audio,
+    titleSource: searchedTitle ? "verified-search" : "query-only",
     search,
     resolve: resolution,
   };
@@ -637,18 +657,18 @@ async function auditYoutubeCase(
         audioPreference: container.config.youtubeLanguageProfile.audio,
         subtitlePreference: container.config.youtubeLanguageProfile.subtitle,
       });
-      const selected =
-        results?.find(
-          (result) =>
-            result.externalIds?.youtubeId === YOUTUBE_FIXTURE.expectedId ||
-            result.id === `youtube:${YOUTUBE_FIXTURE.expectedId}`,
-        ) ?? results?.[0];
+      const selected = results?.find(
+        (result) =>
+          result.externalIds?.youtubeId === YOUTUBE_FIXTURE.expectedId ||
+          result.id === `youtube:${YOUTUBE_FIXTURE.expectedId}`,
+      );
       const searchAudit: SearchAudit = {
         support: "provider-search",
         status: results === null ? "transport-error" : results.length === 0 ? "empty" : "ok",
         durationMs: Date.now() - started,
         resultCount: results?.length ?? 0,
       };
+      if (results !== null) Object.assign(searchAudit, { expectedIdFound: Boolean(selected) });
       if (selected) {
         Object.assign(searchAudit, {
           selectedTitle: selected.title,
@@ -723,16 +743,22 @@ async function resolveAndMeasure(input: {
   const structuredError = resolveThrew ? providerSmokeError(resolveError) : null;
   const streams = result?.streams ?? [];
   const streamSummaries = streams.slice(0, 24).map(summarizeStream);
+  const selectedCandidate = stream ? findSelectedStreamCandidate(stream, result) : undefined;
   const selected = stream ? summarizeSelectedStream(stream, result) : undefined;
-  const probe = await probeSelectedStream(stream);
+  const probe = await probeSelectedStream(stream, selectedCandidate);
   const alreadyProven = decodedProviders.has(input.providerId);
+  const probeRefused = probe?.outcome === "refused";
   const decode = stream
     ? await decodeFirstFrame({
         stream,
         key: input.decodeKey,
-        enabled: input.decodeEnabled && !alreadyProven,
+        enabled: input.decodeEnabled && !alreadyProven && !probeRefused,
         framesRoot: input.framesRoot,
-        skipReason: alreadyProven ? "decode already proven for this provider" : undefined,
+        skipReason: alreadyProven
+          ? "decode already proven for this provider"
+          : probeRefused
+            ? "network guard refused the independent probe target"
+            : undefined,
       })
     : { attempted: false, ok: false, reason: "no stream resolved" };
   if (decode.ok) decodedProviders.add(input.providerId);
@@ -794,7 +820,10 @@ async function resolveAndMeasure(input: {
   return audit;
 }
 
-async function probeSelectedStream(stream: StreamInfo | null): Promise<ResolveAudit["probe"]> {
+async function probeSelectedStream(
+  stream: StreamInfo | null,
+  selectedCandidate?: StreamCandidate,
+): Promise<ResolveAudit["probe"]> {
   if (!stream?.url || stream.deferredLocator || !/^https?:\/\//i.test(stream.url)) {
     return { outcome: "not-run" };
   }
@@ -807,14 +836,27 @@ async function probeSelectedStream(stream: StreamInfo | null): Promise<ResolveAu
   }
   const started = Date.now();
   try {
+    const playlist =
+      selectedCandidate?.protocol === "hls" ||
+      selectedCandidate?.protocol === "dash" ||
+      isHlsPlaylistUrl(stream.url) ||
+      /\.mpd(?:[?#]|$)/i.test(stream.url);
     const probe = await probeStreamReachability({
       url: stream.url,
       headers: stream.headers,
+      requireDirectMedia: !playlist,
       timeoutMs: 5_000,
     });
-    const outcome = smokeStreamReachable(probe);
+    const reachable = smokeStreamReachable(probe);
+    const guardRefused = probe.status === "unreachable" && isNetworkGuardRefusal(probe.reason);
     const audit: NonNullable<ResolveAudit["probe"]> = {
-      outcome: outcome === true ? "reachable" : outcome === false ? "unreachable" : "inconclusive",
+      outcome: guardRefused
+        ? "refused"
+        : reachable === true
+          ? "reachable"
+          : reachable === false
+            ? "unreachable"
+            : "inconclusive",
       durationMs: Date.now() - started,
     };
     if (probe.status === "unreachable") Object.assign(audit, { reason: redactText(probe.reason) });
@@ -883,7 +925,7 @@ async function decodeFirstFrame(input: {
             `--ytdl-raw-options=${guardedYtdlRawOptions(stream.ytdlRawOptions)}`,
           ]
         : []),
-      ...(/mp4upload\.com$/i.test(hostnameOf(stream.url)) ? ["--tls-verify=no"] : []),
+      ...(isMp4uploadHost(hostnameOf(stream.url)) ? ["--tls-verify=no"] : []),
       "--",
       stream.url,
     ];
@@ -935,8 +977,17 @@ async function decodeFirstFrame(input: {
     }
 
     const writtenPath = join(outputDir, written[0] ?? "");
+    const dimensions = pngDimensions(writtenPath);
+    if (!dimensions) {
+      return {
+        attempted: true,
+        ok: false,
+        reason: "mpv wrote a PNG whose dimensions could not be validated",
+        bytes: statSync(writtenPath).size,
+        durationMs: Date.now() - started,
+      };
+    }
     copyFileSync(writtenPath, targetPath);
-    const dimensions = pngDimensions(targetPath);
     return {
       attempted: true,
       ok: true,
@@ -1065,10 +1116,10 @@ function chooseSearchResult(
   query: string,
 ): SearchResult | undefined {
   const normalizedQuery = normalizeTitle(query);
-  return (
-    results.find((result) => normalizeTitle(result.title) === normalizedQuery) ??
-    results.find((result) => normalizeTitle(result.title).startsWith(normalizedQuery)) ??
-    results[0]
+  return results.find(
+    (result) =>
+      normalizeTitle(result.title) === normalizedQuery ||
+      result.titleAliases?.some((alias) => normalizeTitle(alias.value) === normalizedQuery),
   );
 }
 
@@ -1085,6 +1136,35 @@ function uniqueStrings(values: readonly (string | undefined)[]): string[] {
 
 function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
+}
+
+function medianOfSorted(values: readonly number[]): number {
+  const middle = Math.floor(values.length / 2);
+  return values.length % 2 === 1
+    ? (values[middle] ?? 0)
+    : ((values[middle - 1] ?? 0) + (values[middle] ?? 0)) / 2;
+}
+
+function isNetworkGuardRefusal(reason: string): boolean {
+  return (
+    reason === "blocked-target" ||
+    reason.startsWith("blocked stream target:") ||
+    reason.startsWith("HLS segment blocked:")
+  );
+}
+
+function isMp4uploadHost(hostname: string): boolean {
+  return hostname === "mp4upload.com" || hostname.endsWith(".mp4upload.com");
+}
+
+function findSelectedStreamCandidate(
+  stream: StreamInfo,
+  result: ProviderResolveResult | null,
+): StreamCandidate | undefined {
+  return (
+    result?.streams.find((item) => (item.url ?? item.deferredLocator) === stream.url) ??
+    result?.streams.find((item) => item.id === result.selectedStreamId)
+  );
 }
 
 function redactText(value: string): string {
@@ -1109,12 +1189,22 @@ function sanitizeFileName(value: string): string {
 function pngDimensions(path: string): { readonly width: number; readonly height: number } | null {
   try {
     const bytes = readFileSync(path);
-    const pngMagic = bytes.length > 24 && bytes[0] === 0x89 && bytes[1] === 0x50;
+    const pngMagic =
+      bytes.length >= 24 &&
+      bytes[0] === 0x89 &&
+      bytes[1] === 0x50 &&
+      bytes[2] === 0x4e &&
+      bytes[3] === 0x47 &&
+      bytes[4] === 0x0d &&
+      bytes[5] === 0x0a &&
+      bytes[6] === 0x1a &&
+      bytes[7] === 0x0a &&
+      bytes.toString("ascii", 12, 16) === "IHDR";
     if (!pngMagic) return null;
-    return {
-      width: bytes.readUInt32BE(16),
-      height: bytes.readUInt32BE(20),
-    };
+    const width = bytes.readUInt32BE(16);
+    const height = bytes.readUInt32BE(20);
+    if (width <= 0 || height <= 0) return null;
+    return { width, height };
   } catch {
     return null;
   }

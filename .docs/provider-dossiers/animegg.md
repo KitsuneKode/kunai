@@ -23,8 +23,9 @@ four stream cases resolved inside the audit budget.
 - Inventory on the working case: four direct quality rows (`360p`, `480p`,
   `720p`, `1080p`), Japanese audio, and no separate subtitle tracks.
 - Working-case resolve latency was 6.18 s.
-- Actual media dependency: `www.animegg.org` itself, making AnimeGG independent
-  of the Krussdomi/Dramahot CDNs used by the other working anime providers.
+- Actual media dependency: the per-request `vidcache.net:8161` redirect target
+  of `/play`; `www.animegg.org` only issues the 302. AnimeGG is independent of
+  the Krussdomi/Dramahot CDNs used by the other working anime providers.
 
 ## Request Summary
 

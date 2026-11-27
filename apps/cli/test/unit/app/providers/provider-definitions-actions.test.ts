@@ -117,7 +117,7 @@ describe("TUI provider definitions actions", () => {
         }),
     });
     expect(first).toBe("Updated to rev 5");
-    expect(getActiveProviderHotfixManifest()?.revision).toBe(5);
+    expect(getActiveProviderHotfixManifest(NOW_MS)?.revision).toBe(5);
     expect(priorityUpdates.at(-1)?.disabledProviderIds).toContain("vidlink");
 
     const rev6 = signProviderManifest(
@@ -149,7 +149,7 @@ describe("TUI provider definitions actions", () => {
       nowMs: NOW_MS,
     });
     expect(rolled).toBe("Rolled back to rev 5");
-    expect(getActiveProviderHotfixManifest()?.revision).toBe(5);
+    expect(getActiveProviderHotfixManifest(NOW_MS)?.revision).toBe(5);
     expect(priorityUpdates.at(-1)?.disabledProviderIds).toContain("vidlink");
   });
 

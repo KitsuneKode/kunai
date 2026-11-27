@@ -469,7 +469,7 @@ describe("provider hotfix manifest runtime", () => {
       "https://github.com/KitsuneKode/kunai/releases/download/provider-manifest/provider-manifest.json",
     ]);
     expect(absent).not.toBe("updated");
-    expect(getActiveProviderHotfixManifest()).toBeNull();
+    expect(getActiveProviderHotfixManifest(NOW_MS)).toBeNull();
 
     const rev4 = signProviderManifest(makeManifest({ revision: 4 }), privatePem, "key-2026");
     const first = await maybeBackgroundRefreshProviderManifest({
@@ -480,7 +480,7 @@ describe("provider hotfix manifest runtime", () => {
       fetchImpl: jsonFetch(rev4),
     });
     expect(first).toBe("updated");
-    expect(getActiveProviderHotfixManifest()?.revision).toBe(4);
+    expect(getActiveProviderHotfixManifest(NOW_MS)?.revision).toBe(4);
 
     // Fresh cached file skips within minIntervalMs.
     let calls = 0;
