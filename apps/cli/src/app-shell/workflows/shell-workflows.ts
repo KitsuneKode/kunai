@@ -42,7 +42,7 @@ import { planEpisodeQueue } from "@/domain/queue/QueuePlanner";
 import type { SessionState } from "@/domain/session/SessionState";
 import { isPlaybackSessionActive } from "@/domain/session/SessionState";
 import { parsePlaybackTargetRef } from "@/domain/share/playback-target-ref";
-import type { EpisodeInfo as PlaybackEpisodeInfo, StreamInfo, TitleInfo } from "@/domain/types";
+import type { EpisodeInfo as PlaybackEpisodeInfo, SearchResult, TitleInfo } from "@/domain/types";
 import { readClipboard } from "@/infra/clipboard";
 import { openExternalUrlAndWait, defaultKunaiDocsUrl } from "@/infra/shell/open-external-url";
 import {
@@ -1166,6 +1166,10 @@ export async function enqueueCurrentPlaybackDownload({
 
   try {
     const timing = await resolveTimingSnapshot(container);
+    const resolved = state.stream?.providerResolveResult;
+    const selectedStream = resolved?.streams.find(
+      (candidate) => candidate.id === resolved.selectedStreamId,
+    );
     const job = await container.downloadService.enqueue({
       title: state.currentTitle,
       episode: state.currentEpisode,
@@ -1197,8 +1201,8 @@ export async function enqueueCurrentPlaybackDownload({
             : state.currentTitle.type === "movie"
               ? state.movieLanguageProfile.quality
               : state.seriesLanguageProfile.quality,
-      selectedSourceId: getSelectedPlaybackSourceId(state.stream),
-      selectedStreamId: state.stream?.providerResolveResult?.selectedStreamId,
+      selectedSourceId: selectedStream?.sourceId,
+      selectedStreamId: resolved?.selectedStreamId,
       selectedQualityLabel: resolveDownloadQualityCeiling(
         container.config.defaultDownloadQuality,
         state.mode === "youtube"
@@ -1208,7 +1212,7 @@ export async function enqueueCurrentPlaybackDownload({
             : state.currentTitle.type === "movie"
               ? state.movieLanguageProfile.quality
               : state.seriesLanguageProfile.quality,
-        getSelectedPlaybackQualityLabel(state.stream),
+        selectedStream?.qualityLabel,
       ),
       timing,
     });
@@ -1287,24 +1291,13 @@ export async function enqueueCurrentPlaybackDownload({
   }
 }
 
-function getSelectedPlaybackSourceId(stream: StreamInfo | null | undefined): string | undefined {
-  const result = stream?.providerResolveResult;
-  const selected = result?.streams.find((candidate) => candidate.id === result.selectedStreamId);
-  return selected?.sourceId;
-}
-
-function getSelectedPlaybackQualityLabel(
-  stream: StreamInfo | null | undefined,
-): string | undefined {
-  const result = stream?.providerResolveResult;
-  const selected = result?.streams.find((candidate) => candidate.id === result.selectedStreamId);
-  return selected?.qualityLabel;
-}
-
-export async function downloadSelectedResult(container: Container): Promise<void> {
+export async function downloadSelectedResult(
+  container: Container,
+  result?: SearchResult,
+): Promise<void> {
   const { stateManager, providerRegistry } = container;
   const state = stateManager.getState();
-  const selected = state.searchResults[state.selectedResultIndex];
+  const selected = result ?? state.searchResults[state.selectedResultIndex];
   if (!selected) {
     stateManager.dispatch({
       type: "SET_PLAYBACK_FEEDBACK",

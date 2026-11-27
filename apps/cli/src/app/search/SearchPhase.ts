@@ -1028,15 +1028,15 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               emptyMessage: "Trending is unavailable right now. Search still works normally.",
             };
           },
-          onLoadRecommendations: async () => {
+          onLoadRecommendations: async (isCurrent) => {
             stateManager.dispatch({ type: "SET_SEARCH_QUERY", query: "" });
             stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "loading" });
             const toBrowseResponse = async (
               discover: Awaited<ReturnType<typeof loadDiscoverResults>>,
             ) => {
               const results = [...discover.results];
-              stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results });
               const freshBrowseContext = await loadBrowseDisplayContext(container, results);
+              if (isCurrent()) stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results });
               return {
                 options: results.map((r) =>
                   mapBrowseResultOption(container, freshBrowseContext, r),
@@ -1174,11 +1174,9 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           }
 
           if (outcome.action === "download") {
-            if (outcome.value) {
-              syncSelectedResultIndex(stateManager, outcome.value);
-            }
+            if (outcome.value) syncSelectedResultIndex(stateManager, outcome.value);
             const { downloadSelectedResult } = await import("../../app-shell/workflows");
-            await downloadSelectedResult(container);
+            await downloadSelectedResult(container, outcome.value);
             continue;
           }
 

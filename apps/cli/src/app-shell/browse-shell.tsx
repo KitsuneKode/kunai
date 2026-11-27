@@ -283,7 +283,7 @@ export function BrowseShell<T>({
     response: BrowseShellSearchResponse<T>,
   ) => void;
   onLoadDiscovery?: () => Promise<BrowseShellSearchResponse<T>>;
-  onLoadRecommendations?: () => Promise<BrowseShellSearchResponse<T>>;
+  onLoadRecommendations?: (isCurrent: () => boolean) => Promise<BrowseShellSearchResponse<T>>;
   settings?: KitsuneConfig;
   onQueueSelected?: (value: T) => Promise<void> | void;
   onWatchlistSelected?: (value: T) => Promise<void> | void;
@@ -775,6 +775,7 @@ export function BrowseShell<T>({
       ? firstRun.STARTUP_EMPTY_TITLE
       : "Recommendations are unavailable right now.";
     const requestId = searchRequestGateRef.current.begin();
+    const isCurrent = () => mountedRef.current && searchRequestGateRef.current.isCurrent(requestId);
     setQuery("");
     setLastSearchedQuery("");
     setSearchState("loading");
@@ -789,8 +790,8 @@ export function BrowseShell<T>({
     leaveCalendarSurface();
 
     try {
-      const response = await onLoadRecommendations();
-      if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) return;
+      const response = await onLoadRecommendations(isCurrent);
+      if (!isCurrent()) return;
 
       // Cold cache: stay on the loading surface until the network refresh lands.
       // Warm cache: paint immediately, then soft-refresh in the background.
@@ -798,7 +799,7 @@ export function BrowseShell<T>({
         setResultSubtitle(response.subtitle);
         setEmptyMessage(loadingLabel);
         const nextResponse = await response.revalidate;
-        if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) return;
+        if (!isCurrent()) return;
         setOptions(nextResponse.options);
         setSelectedIndex(0);
         setResultSubtitle(nextResponse.subtitle);
@@ -819,9 +820,7 @@ export function BrowseShell<T>({
       if (response.revalidate) {
         void response.revalidate
           .then((nextResponse) => {
-            if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) {
-              return undefined;
-            }
+            if (!isCurrent()) return undefined;
             setOptions(nextResponse.options);
             setSelectedIndex(0);
             setResultSubtitle(nextResponse.subtitle);
@@ -835,7 +834,7 @@ export function BrowseShell<T>({
           });
       }
     } catch (error) {
-      if (!mountedRef.current || !searchRequestGateRef.current.isCurrent(requestId)) return;
+      if (!isCurrent()) return;
 
       setSearchState("error");
       setOptions([]);
@@ -1810,8 +1809,6 @@ export function BrowseShell<T>({
       (listFocused && input.toLowerCase() === "d")
     ) {
       if (selectedOption && displayOptions.length > 0 && !queryDirty && searchState === "ready") {
-        // Carry the highlighted row: the download target is read out of session
-        // state, which only tracks the cursor for actions that report it.
         onResolve("download", selectedOption.value);
       }
       return;
@@ -2796,7 +2793,7 @@ export function openBrowseShell<T>({
     response: BrowseShellSearchResponse<T>,
   ) => void;
   onLoadDiscovery?: () => Promise<BrowseShellSearchResponse<T>>;
-  onLoadRecommendations?: () => Promise<BrowseShellSearchResponse<T>>;
+  onLoadRecommendations?: (isCurrent: () => boolean) => Promise<BrowseShellSearchResponse<T>>;
   settings?: KitsuneConfig;
   onQueueSelected?: (value: T) => Promise<void> | void;
   onWatchlistSelected?: (value: T) => Promise<void> | void;

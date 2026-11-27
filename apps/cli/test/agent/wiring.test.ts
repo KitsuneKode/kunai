@@ -22,6 +22,64 @@ import { onboardedConfig } from "./seed";
 
 const SETTINGS_KEY = "/";
 
+describe("agent wiring · recommendation refresh", () => {
+  it("keeps the highlighted search result as the download target after late picks arrive", async () => {
+    const picksRequested = Promise.withResolvers<void>();
+    const releasePicks = Promise.withResolvers<void>();
+    const picksMapped = Promise.withResolvers<void>();
+    let readResults: (() => readonly string[]) | undefined;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async (url: Parameters<typeof fetch>[0]) => {
+        if (!String(url).includes("/trending/all/week")) throw new Error("fixture request only");
+        picksRequested.resolve();
+        await releasePicks.promise;
+        return Response.json({
+          results: [{ id: 854, media_type: "movie", title: "Late Recommendation" }],
+        });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    try {
+      await withSession(
+        "wiring-late-picks",
+        {
+          bootstrap: { initialRoute: "recommendation" },
+          beforeMount({ container }) {
+            readResults = () => container.stateManager.getState().searchResults.map((r) => r.title);
+            container.downloadService.getEnqueueEligibility = () => ({ allowed: true });
+            const service = container.resultEnrichmentService;
+            const enrich = service.enrichResults.bind(service);
+            service.enrichResults = async (results, options) => {
+              const enriched = await enrich(results, options);
+              if (options?.preloadedHistory && results[0]?.title === "Late Recommendation") {
+                setImmediate(picksMapped.resolve);
+              }
+              return enriched;
+            };
+          },
+        },
+        async (s) => {
+          await s.waitForFrame((f) => f.includes("Finding something to watch"), "cold picks");
+          await picksRequested.promise;
+          s.press("smoke", K.enter);
+          await s.waitForFrame((f) => f.includes("▌ Smoke Movie"), "search results");
+          releasePicks.resolve();
+          await picksMapped.promise;
+          expect(s.frame()).toContain("▌ Smoke Movie");
+          s.press("d");
+          await s.waitForFrame((f) => /Download .+\?/u.test(f), "download confirmation");
+          expect(s.frame()).toContain("Download Smoke Movie?");
+          expect(readResults?.()).toEqual(["Smoke Movie", "Smoke Series"]);
+        },
+      );
+    } finally {
+      releasePicks.resolve();
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 describe("agent wiring · first-run browse focus", () => {
   it("makes recommendation-list keyboard ownership explicit before typed input", async () => {
     const originalFetch = globalThis.fetch;
