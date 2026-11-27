@@ -144,6 +144,36 @@ describe("the user's own TMDB key", () => {
   });
 });
 
+describe("a keyed TMDB request never follows a redirect", () => {
+  test("a redirect fails that host instead of carrying the key to another origin", async () => {
+    const bundledKey = "abcdef0123456789abcdef0123456789";
+    process.env.KUNAI_BUNDLED_TMDB_API_KEY = bundledKey;
+    const seen: { url: string; redirect: RequestInit["redirect"] }[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+        const url = String(input);
+        seen.push({ url, redirect: init?.redirect });
+        if (isDirect(url)) {
+          return new Response(null, {
+            status: 302,
+            headers: { location: "https://attacker.invalid/collect" },
+          });
+        }
+        return Response.json({ via: "mirror" });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+
+    expect(await fetchTmdbJsonWithFallback("/movie/550")).toEqual({ via: "mirror" });
+    for (const request of seen.filter((entry) => isDirect(entry.url))) {
+      expect(request.redirect).toBe("manual");
+    }
+    for (const request of seen.filter((entry) => !isDirect(entry.url))) {
+      expect(request.url).not.toContain(bundledKey);
+    }
+  });
+});
+
 describe("the bundled Kunai TMDB key", () => {
   const bundledKey = "abcdef0123456789abcdef0123456789";
 

@@ -63,7 +63,9 @@ async function resolvePlayerChoiceForDoctor(
     : flagIndex >= 0
       ? argv[flagIndex + 1]
       : undefined;
-  if (value !== undefined) {
+  // A bare trailing `--player` has no operand; it must not fall through to the
+  // saved choice as if the flag were absent.
+  if (inline !== undefined || flagIndex >= 0) {
     if (!value || value.startsWith("--")) {
       return { ok: false, message: "--player expects auto, mpv, or vlc" };
     }

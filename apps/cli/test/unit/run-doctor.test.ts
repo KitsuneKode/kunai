@@ -344,6 +344,25 @@ describe("runDoctor", () => {
     }
   });
 
+  test("a trailing doctor --player with no value exits as usage, not with the saved choice", async () => {
+    const { layout } = await makeLayout();
+    const originalError = console.error;
+    console.error = () => {};
+    try {
+      expect(
+        await runDoctor({
+          argv: ["doctor", "--strict", "--json", "--player"],
+          layout,
+          probeCapabilities: async () => {
+            throw new Error("probe must not run");
+          },
+        }),
+      ).toBe(2);
+    } finally {
+      console.error = originalError;
+    }
+  });
+
   test("text mode prints human-readable report without writing", async () => {
     const { layout } = await makeLayout();
     const lines: string[] = [];

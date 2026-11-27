@@ -308,8 +308,9 @@ export function clearTmdbSessionCache(): void {
 const RATE_LIMITED_RETRY_AFTER_MS = 30 * 1000;
 
 /** A 4xx other than 429: TMDB's real answer, identical on every host. */
+/** A 4xx is TMDB's answer to the request. A 3xx (a keyed request never follows one) is not. */
 function isDefinitiveTmdbStatus(status: number): boolean {
-  return status < 500 && status !== 429;
+  return status >= 400 && status < 500 && status !== 429;
 }
 
 /** The shape a show or season answer must have before it may be kept as last-known-good. */
@@ -420,7 +421,14 @@ async function fetchTmdbHostJson(
   const headers: Record<string, string> =
     credential?.kind === "bearer" ? { authorization: `Bearer ${credential.key}` } : {};
   return observeOnlineIfBound("search-error", async () => {
-    const res = await fetch(url, { headers, signal: withTimeoutSignal(signal, timeoutMs) });
+    // A keyed request never follows a redirect: the v3 key rides in this URL,
+    // and fetch would carry it to whatever origin the redirect names. A 3xx
+    // here fails this host, and the caller's fallback moves on.
+    const res = await fetch(url, {
+      headers,
+      redirect: credential ? "manual" : "follow",
+      signal: withTimeoutSignal(signal, timeoutMs),
+    });
     if (res.status === 401 && credential) {
       await res.body?.cancel().catch(() => undefined);
       throw new TmdbCredentialRejectedError(credential);
