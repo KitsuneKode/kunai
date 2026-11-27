@@ -18,6 +18,7 @@ describe("runCapabilities", () => {
     expect(report.themes).toContain("nord");
     expect(report.hdrModes).toEqual(["auto", "passthrough", "tone-map", "sdr-only"]);
     expect(report.mpvHwdecModes).toEqual([
+      "mpv-default",
       "auto",
       "auto-safe",
       "auto-copy",

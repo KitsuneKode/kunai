@@ -91,19 +91,19 @@ export function buildDependencyRows(
           ? "degraded"
           : "ok",
     role: "playback · GPU decode",
-    detail: hwUnavailable
-      ? snapshot.mpvRequired
+    detail: !snapshot.mpvRequired
+      ? "not used by the selected player"
+      : hwUnavailable
         ? "skipped — mpv not found"
-        : "not required by selected player"
-      : hw.status === "hardware"
-        ? `auto-safe ok (${hw.autoSafeDriver})${hw.fromCache ? " · cached" : ""}`
-        : hw.status === "no-hardware"
-          ? hw.drivers.length
-            ? `no usable auto-safe path · help lists ${hw.drivers.join(", ")}`
-            : "no usable auto-safe path"
-          : hw.status === "probe-failed"
-            ? "probe failed or timed out · playback uses mpv default"
-            : "not probed yet · kunai doctor verifies",
+        : hw.status === "hardware"
+          ? `auto-safe ok (${hw.autoSafeDriver})${hw.fromCache ? " · cached" : ""}`
+          : hw.status === "no-hardware"
+            ? hw.drivers.length
+              ? `no usable auto-safe path · help lists ${hw.drivers.join(", ")}`
+              : "no usable auto-safe path"
+            : hw.status === "probe-failed"
+              ? "probe failed or timed out · playback uses mpv default"
+              : "not probed yet · [r] recheck probes",
     fix: null,
     ...(hw.status === "no-hardware" || hw.status === "probe-failed"
       ? {

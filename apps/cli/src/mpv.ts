@@ -895,11 +895,11 @@ export function buildMpvArgs(
     args.push("--hwdec=no");
   } else if (config?.mpv?.hwdecMode === "auto") {
     if (config.mpv.hwdecBackend) {
-      // Probe output is exact mpv vocabulary (including `-copy` backends), not a
-      // user-supplied option string; emit it as one argv token.
+      // The probe is only a yes/no gate; the real video output re-picks the
+      // direct or copy-back backend for mpv's automatic safe policy.
       args.push(`--hwdec=${config.mpv.hwdecBackend}`);
     }
-  } else if (config?.mpv?.hwdecMode) {
+  } else if (config?.mpv?.hwdecMode && config.mpv.hwdecMode !== "mpv-default") {
     // The config union is closed mpv vocabulary, so this remains one safe argv
     // token rather than a user-controlled option string.
     args.push(`--hwdec=${config.mpv.hwdecMode}`);

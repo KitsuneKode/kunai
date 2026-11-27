@@ -10,13 +10,14 @@ export interface MpvRuntimeOptions {
   /** HDR / tone-mapping policy for mpv playback. */
   readonly hdrMode?: HdrMode;
   /**
-   * Hardware-decode policy. `auto` emits `hwdecBackend` only when a bounded
-   * probe proved one; `off` always emits `--hwdec=no`; mpv automatic and
-   * explicit backend modes are forwarded verbatim.
+   * Hardware-decode policy. `mpv-default` emits no flag; `auto` emits
+   * `hwdecBackend` only when a bounded probe proved hardware decoding;
+   * `off` always emits `--hwdec=no`; mpv automatic and explicit backend modes
+   * are forwarded verbatim.
    */
   readonly hwdecMode?: MpvHwdecMode;
-  /** Exact mpv backend selected by the cached probe, including any `-copy` suffix. */
-  readonly hwdecBackend?: string;
+  /** Decode policy selected after the probe gate (`auto-safe` for probe-guided auto). */
+  readonly hwdecBackend?: "auto-safe";
   /** True when the installed mpv binary advertises `vo=gpu-next` (probed once). */
   readonly supportsGpuNext?: boolean;
 }

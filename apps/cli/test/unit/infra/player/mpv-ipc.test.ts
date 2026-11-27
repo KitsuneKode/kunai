@@ -4,6 +4,7 @@ import {
   buildMpvIpcCommand,
   MPV_INITIAL_PROPERTIES,
   MPV_OBSERVED_PROPERTIES,
+  MPV_PERSISTENT_OBSERVED_PROPERTIES,
   openMpvIpcSession,
   parseMpvIpcLine,
 } from "@/infra/player/mpv-ipc";
@@ -187,8 +188,8 @@ describe("mpv-ipc", () => {
       "track-list",
       "sid",
       "sub-visibility",
-      "avsync",
     ]);
+    expect(MPV_PERSISTENT_OBSERVED_PROPERTIES).toEqual([...MPV_OBSERVED_PROPERTIES, "avsync"]);
   });
 
   test("parses successful command responses with request ids", () => {

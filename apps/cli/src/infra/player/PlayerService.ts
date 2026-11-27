@@ -85,6 +85,13 @@ export type PlayerPlaybackEvent =
       codec?: string;
     }
   | { type: "seek-stalled"; secondsSeeking: number }
+  | {
+      /** Kunai reset sustained A/V drift by seeking to the position already being watched. */
+      type: "avsync-resync";
+      positionSeconds: number;
+      driftSeconds: number;
+      attempt: number;
+    }
   | { type: "player-closing" }
   | { type: "player-closed" }
   | { type: "segment-skipped"; kind: PlaybackSkipKind; automatic: boolean }

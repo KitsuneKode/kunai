@@ -263,13 +263,16 @@ export async function probeCapabilities(
     ...(options.exists && { exists: options.exists }),
     platform,
   };
-  const mpvHardwareAccel = !mpv
-    ? emptyMpvHardwareAccelProbe("mpv-not-found")
-    : options.probeMpvHardwareAcceleration
-      ? await options.probeMpvHardwareAcceleration(hwaccelDeps)
-      : options.probeMpvHwaccel === true
-        ? await probeMpvHardwareAcceleration({ ...hwaccelDeps, refreshCache: true })
-        : await readCachedMpvHardwareAcceleration(hwaccelDeps);
+  const mpvHardwareAccel =
+    playerMode.kind !== "managed-mpv"
+      ? emptyMpvHardwareAccelProbe("not-probed")
+      : !mpv
+        ? emptyMpvHardwareAccelProbe("mpv-not-found")
+        : options.probeMpvHardwareAcceleration
+          ? await options.probeMpvHardwareAcceleration(hwaccelDeps)
+          : options.probeMpvHwaccel === true
+            ? await probeMpvHardwareAcceleration({ ...hwaccelDeps, refreshCache: true })
+            : await readCachedMpvHardwareAcceleration(hwaccelDeps);
 
   if (mpvRequired && !mpv) {
     issues.push({

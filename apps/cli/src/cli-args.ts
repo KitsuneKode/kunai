@@ -109,7 +109,7 @@ PLAYBACK PICKS (this run only — config.json untouched)
       --sub <lang>         Subtitles: en | interactive | none | hi | pt | ar | de | es | fr | ja
       --dub                Shortcut for --audio dub
       --hdr <mode>         HDR mode: auto | passthrough | tone-map | sdr-only
-      --mpv-hwdec <mode>   Hardware decode: auto | auto-safe | auto-copy | off | backend
+      --mpv-hwdec <mode>   Hardware decode: mpv-default | auto | auto-safe | auto-copy | off | backend
       --mpv-avsync-recovery <on|off>
                            Correct sustained mpv audio/video drift
 

@@ -14,6 +14,7 @@ import {
 import type { AndroidIntentRuntime } from "@/infra/player/android-intent-launcher";
 import { detectInstalledPlayers } from "@/infra/player/installed-players";
 import type { CapabilitySnapshot, CurlCapability } from "@/ui";
+import type { MpvHwdecMode } from "@kunai/config";
 
 import {
   inspectInstallManifest,
@@ -30,6 +31,7 @@ import {
   versionBinaryPath,
   type InstallLayoutPaths,
 } from "./install-layout";
+import { describeMpvHwaccel, mpvHwdecEmittedFor } from "./mpv-hwdec-report";
 import { isMuslEnvironmentSync } from "./musl";
 import { listInstallTransactions, type InstallTransactionRecord } from "./transaction";
 import { inspectVersionLock, type VersionLockInspection } from "./version-lock";
@@ -107,6 +109,12 @@ export interface DoctorReport {
   readonly transactions: readonly InstallTransactionRecord[];
   readonly platform: DoctorPlatformInfo;
   readonly dependencies: CapabilitySnapshot;
+  readonly playback?: {
+    readonly playerKind: string;
+    readonly mpvHwdec: MpvHwdecMode;
+    /** Value passed as `--hwdec`; null means Kunai emits no override. */
+    readonly mpvHwdecEmitted: string | null;
+  };
   readonly storage: readonly DoctorStorageInfo[];
   readonly findings: readonly DoctorFinding[];
 }
@@ -129,6 +137,8 @@ export type BuildDoctorReportInput = {
   readonly installedPlayers?: InstalledPlayers;
   /** Already-resolved player mode seam for callers that compose it upstream. */
   readonly playerMode?: PlayerMode;
+  /** Configured managed-mpv hardware decode policy; defaults to no Kunai override. */
+  readonly mpvHwdecMode?: MpvHwdecMode;
   readonly probeStorage?: () => Promise<readonly DoctorStorageInfo[]>;
   /** Environment seam for Android/Termux detection. Defaults to process.env. */
   readonly env?: Readonly<Record<string, string | undefined>>;
@@ -519,7 +529,7 @@ export async function buildDoctorReport(input: BuildDoctorReportInput = {}): Pro
     input.probeCapabilities ??
     (async (options: { readonly playerMode: PlayerMode }) => {
       const { probeCapabilities } = await import("@/ui");
-      return probeCapabilities({ ...options, probeMpvHwaccel: !android });
+      return probeCapabilities(options);
     });
 
   const manifest = await inspectManifest();
@@ -616,6 +626,12 @@ export async function buildDoctorReport(input: BuildDoctorReportInput = {}): Pro
   };
 
   const dependencies = await probe({ playerMode });
+  const mpvHwdecMode = input.mpvHwdecMode ?? "mpv-default";
+  const playback = {
+    playerKind: playerMode.kind,
+    mpvHwdec: mpvHwdecMode,
+    mpvHwdecEmitted: mpvHwdecEmittedFor(mpvHwdecMode, dependencies.mpvHardwareAccel),
+  };
   const detectedMethod = detectInstallMethod({
     platform,
     fileExists,
@@ -635,29 +651,13 @@ export async function buildDoctorReport(input: BuildDoctorReportInput = {}): Pro
     transactions,
     platform: platformInfo,
     dependencies,
+    playback,
     storage: await (input.probeStorage ?? (() => probeStorageWritability(layout)))(),
   };
 
   const findings = collectFindings({ report: base, detectedKind: detectedMethod.kind });
   if (android) findings.push(androidPlayerHandoffFinding(input.androidIntentRuntime));
   return { ...base, findings };
-}
-
-function describeMpvHwaccel(hw: CapabilitySnapshot["mpvHardwareAccel"]): string {
-  const cached = hw.fromCache ? " · cached" : "";
-  const listed = hw.drivers.length ? ` · help lists ${hw.drivers.join(", ")}` : "";
-  switch (hw.status) {
-    case "hardware":
-      return `auto-safe ok (${hw.autoSafeDriver})${cached}${listed}`;
-    case "no-hardware":
-      return `no usable auto-safe path${cached}${listed || " · no GPU decoders in help"}`;
-    case "probe-failed":
-      return `probe failed or timed out · playback uses mpv default${listed}`;
-    case "mpv-not-found":
-      return "skipped — mpv not found";
-    case "not-probed":
-      return "not probed yet · playback uses mpv default until a probe completes";
-  }
 }
 
 /** Human-readable doctor output covering the same fields as the JSON report. */
@@ -766,7 +766,16 @@ export function formatDoctorReportText(report: DoctorReport): string {
     // so `curl=ok` on its own was a misleading line in a health report.
     `  mpv=${report.dependencies.mpv ? "ok" : "missing"} vlc=${report.dependencies.vlc ? "ok" : "missing"} yt-dlp=${report.dependencies.ytDlp ? "ok" : "missing"} ffprobe=${report.dependencies.ffprobe ? "ok" : "missing"} curl=${describeCurl(report.dependencies.curl)}`,
   );
-  lines.push(`  mpv-hwdec=${describeMpvHwaccel(report.dependencies.mpvHardwareAccel)}`);
+  const hwdecPlayback = report.playback;
+  const hwdecPassed = hwdecPlayback
+    ? hwdecPlayback.mpvHwdecEmitted === null
+      ? "passes no --hwdec flag"
+      : `passes --hwdec=${hwdecPlayback.mpvHwdecEmitted}`
+    : "playback policy unavailable";
+  const hwdecConfigured = hwdecPlayback ? `${hwdecPlayback.mpvHwdec} · ` : "";
+  lines.push(
+    `  mpv-hwdec=${hwdecConfigured}${hwdecPassed} · probe: ${describeMpvHwaccel(report.dependencies.mpvHardwareAccel)}`,
+  );
   lines.push("");
   lines.push("Storage");
   for (const store of report.storage) {

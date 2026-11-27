@@ -44,7 +44,7 @@ export function normalizeHdrMode<T>(value: T): KitsuneConfig["hdrMode"] {
 }
 
 export function normalizeMpvHwdec<T>(value: T): KitsuneConfig["mpvHwdec"] {
-  return isMpvHwdecMode(value) ? value : "auto";
+  return isMpvHwdecMode(value) ? value : "mpv-default";
 }
 
 export function normalizeBytes<T>(value: T, fallback: number): number {

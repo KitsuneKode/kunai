@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-27T17:34:15Z"
+lastReviewed: "2026-12-24T00:00:00Z"
 ---
 
 # Feature Map
@@ -99,8 +99,8 @@ callbacks. See [features/pointer-controls.md](./features/pointer-controls.md).
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
 | Playback state machine                                    | `apps/cli/src/app/playback/PlaybackPhase.ts` (outline), `playback-episode-bootstrap.ts`, `playback-episode-iteration.ts` (one loop iteration; its stage modules are listed in the `PlaybackPhase.ts` header) | [architecture.md](./architecture.md)                                             |
 | mpv launch + IPC (socket / named pipe)                    | `apps/cli/src/infra/player/*`, `apps/cli/src/mpv.ts`                                                                                                                                                         | [quickstart.md](./quickstart.md)                                                 |
-| Hardware decode probe and playback decision               | `apps/cli/src/infra/player/mpv-hwaccel-probe.ts`, `mpv-runtime-options.ts`, `PlayerServiceImpl.ts`                                                                                                           | [mpv-in-process-reconnect.md](./mpv-in-process-reconnect.md)                     |
-| A/V-sync drift recovery                                   | `apps/cli/src/infra/player/PersistentMpvSession.ts`                                                                                                                                                          | [mpv-in-process-reconnect.md](./mpv-in-process-reconnect.md)                     |
+| Hardware decode probe and playback decision               | `apps/cli/src/infra/player/mpv-hwaccel-probe.ts`, `mpv-hwdec-policy.ts`, `mpv-runtime-options.ts`, `PlayerServiceImpl.ts`                                                                                    | [mpv-in-process-reconnect.md](./mpv-in-process-reconnect.md)                     |
+| A/V-sync drift recovery                                   | `apps/cli/src/infra/player/mpv-avsync-recovery.ts`, `PersistentMpvSession.ts`                                                                                                                                | [mpv-in-process-reconnect.md](./mpv-in-process-reconnect.md)                     |
 | Android detached handoff + stream gateway                 | `apps/cli/src/infra/player/handoff-player-service.ts`, `stream-gateway.ts`, `android-intent-launcher.ts`                                                                                                     | [architecture.md](./architecture.md)                                             |
 | DASH manifest + template routes                           | `apps/cli/src/infra/player/dash-gateway-manifest.ts`, `manifest-prefix.ts`                                                                                                                                   | [architecture.md](./architecture.md)                                             |
 | Persistent session + autoplay                             | `apps/cli/src/infra/player/PersistentMpvSession.ts`                                                                                                                                                          | [mpv-in-process-reconnect.md](./mpv-in-process-reconnect.md)                     |

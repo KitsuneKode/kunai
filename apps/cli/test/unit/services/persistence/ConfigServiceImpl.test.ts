@@ -162,7 +162,7 @@ describe("ConfigServiceImpl", () => {
         mpvHwdec: "cuda" as never,
       }),
     );
-    expect(malformed.mpvHwdec).toBe("auto");
+    expect(malformed.mpvHwdec).toBe("mpv-default");
   });
 
   test("normalizes provider priority lists on load and update", async () => {

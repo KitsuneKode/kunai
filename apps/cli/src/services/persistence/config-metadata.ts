@@ -12,7 +12,12 @@ export type ConfigSection =
   | "presence"
   | "updates";
 
-export type ConfigEffectTiming = "immediate" | "after-save" | "next-resolve" | "next-playback";
+export type ConfigEffectTiming =
+  | "immediate"
+  | "after-save"
+  | "next-resolve"
+  | "next-playback"
+  | "next-player-process";
 
 export type ConfigPrivacy = "local" | "sensitive";
 
@@ -132,7 +137,7 @@ export const CONFIG_METADATA = [
     key: "mpvHwdec",
     label: "Hardware decoding",
     section: "playback",
-    effect: "next-playback",
+    effect: "next-player-process",
     privacy: "local",
     editable: true,
     options: [...MPV_HWDEC_MODES],

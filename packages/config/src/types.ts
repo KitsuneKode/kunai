@@ -33,11 +33,13 @@ export function isHdrMode<T>(value: T): value is T & HdrMode {
 }
 
 /**
- * Hardware decoding policy for managed mpv playback. `auto` is Kunai's
- * probe-guided default; `auto-safe` and `auto-copy` are mpv's own automatic
+ * Hardware decoding policy for managed mpv playback. `mpv-default` emits no
+ * Kunai override so mpv.conf and mpv's own default win; `auto` is Kunai's
+ * probe-guided opt-in; `auto-safe` and `auto-copy` are mpv's own automatic
  * policies; the backend names are explicit mpv decoders.
  */
 export const MPV_HWDEC_MODES = [
+  "mpv-default",
   "auto",
   "auto-safe",
   "auto-copy",
@@ -241,9 +243,10 @@ export interface KitsuneConfig {
   providerDns: "doh" | "system";
   hdrMode: HdrMode;
   /**
-   * Managed mpv hardware decoding. `auto` uses the cached probe's exact backend
-   * when one is known to work and otherwise leaves mpv/user configuration alone;
-   * `off` force-disables hardware decoding for Kunai-launched mpv.
+   * Managed mpv hardware decoding. `mpv-default` emits no Kunai `--hwdec`
+   * override, so mpv.conf and mpv's own default remain authoritative. `auto` is
+   * an explicit opt-in that uses the cached probe as a yes/no gate and then
+   * asks mpv for `auto-safe`; `off` force-disables hardware decoding.
    */
   mpvHwdec: MpvHwdecMode;
   /** Correct sustained mpv A/V drift with a bounded same-position resync seek. */

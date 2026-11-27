@@ -84,6 +84,7 @@ function createService(
     };
     launchMpv?: typeof launchMpv;
     config?: unknown;
+    readCachedMpvHwdec?: () => Promise<MpvHardwareAccelProbe>;
     probeMpvHwdec?: () => Promise<MpvHardwareAccelProbe>;
   } = {},
 ) {
@@ -1095,15 +1096,24 @@ describe("PlayerServiceImpl hardware decode selection", () => {
     };
   }
 
-  async function launchWithHwdec(configMode: MpvHwdecMode, probe: MpvHardwareAccelProbe) {
+  async function launchWithHwdec(
+    configMode: MpvHwdecMode,
+    cachedProbe: MpvHardwareAccelProbe,
+    options: { freshProbe?: Promise<MpvHardwareAccelProbe> } = {},
+  ) {
     const events: DiagnosticEventInput[] = [];
     let launchedMpv: MpvRuntimeOptions | undefined;
-    let probeRuns = 0;
+    let cacheReads = 0;
+    let freshProbeRuns = 0;
     const { service } = createService(events, {
       config: playbackConfig(configMode),
+      readCachedMpvHwdec: async () => {
+        cacheReads += 1;
+        return cachedProbe;
+      },
       probeMpvHwdec: async () => {
-        probeRuns += 1;
-        return probe;
+        freshProbeRuns += 1;
+        return await (options.freshProbe ?? cachedProbe);
       },
       // SAFETY: the capture double honors the launch result contract; only
       // the runtime-options input is inspected in this hardware-mode test.
@@ -1114,11 +1124,11 @@ describe("PlayerServiceImpl hardware decode selection", () => {
     });
 
     await service.play(createStream(), { url: createStream().url, displayTitle: "Episode" });
-    return { launchedMpv, probeRuns };
+    return { launchedMpv, cacheReads, freshProbeRuns };
   }
 
-  test("auto mode uses the bounded probe's exact backend", async () => {
-    const probe = {
+  function hardwareProbe() {
+    return {
       ...emptyMpvHardwareAccelProbe("hardware"),
       probed: true,
       autoSafeOk: true,
@@ -1126,68 +1136,85 @@ describe("PlayerServiceImpl hardware decode selection", () => {
       probedAt: 1,
       fromCache: true,
     };
-    const { launchedMpv, probeRuns } = await launchWithHwdec("auto", probe);
-    expect(probeRuns).toBe(1);
+  }
+
+  test("auto mode uses a cached hardware verdict as a yes/no gate for mpv auto-safe", async () => {
+    const { launchedMpv, cacheReads, freshProbeRuns } = await launchWithHwdec(
+      "auto",
+      hardwareProbe(),
+    );
+    expect(cacheReads).toBe(1);
+    expect(freshProbeRuns).toBe(0);
     expect(launchedMpv).toMatchObject({
       hwdecMode: "auto",
-      hwdecBackend: "nvdec-copy",
+      hwdecBackend: "auto-safe",
     });
   });
 
-  test("auto mode emits no hwdec backend when the probe is absent or negative", async () => {
-    const { launchedMpv, probeRuns } = await launchWithHwdec(
+  test("a cache miss launches with mpv defaults and warms one background probe", async () => {
+    let finishProbe!: (probe: MpvHardwareAccelProbe) => void;
+    const freshProbe = new Promise<MpvHardwareAccelProbe>((resolve) => {
+      finishProbe = resolve;
+    });
+    const { launchedMpv, cacheReads, freshProbeRuns } = await launchWithHwdec(
       "auto",
       emptyMpvHardwareAccelProbe("not-probed"),
+      { freshProbe },
     );
-    expect(probeRuns).toBe(1);
+
+    // The fresh probe is deliberately still pending: first playback must not wait for it.
+    expect(freshProbeRuns).toBe(1);
+    expect(cacheReads).toBe(1);
     expect(launchedMpv).toMatchObject({ hwdecMode: "auto" });
     expect(launchedMpv?.hwdecBackend).toBeUndefined();
+    finishProbe(hardwareProbe());
+    await freshProbe;
   });
 
-  test("mpv automatic and explicit backend modes do not run Kunai's probe", async () => {
-    for (const mode of ["auto-safe", "auto-copy", "videotoolbox"] as const) {
-      const { launchedMpv, probeRuns } = await launchWithHwdec(
+  test("mpv automatic, explicit backend, and mpv-default modes do not run Kunai's probe", async () => {
+    for (const mode of ["mpv-default", "auto-safe", "auto-copy", "videotoolbox"] as const) {
+      const { launchedMpv, cacheReads, freshProbeRuns } = await launchWithHwdec(
         mode,
         emptyMpvHardwareAccelProbe("not-probed"),
       );
-      expect(probeRuns).toBe(0);
+      expect(cacheReads).toBe(0);
+      expect(freshProbeRuns).toBe(0);
       expect(launchedMpv).toMatchObject({ hwdecMode: mode });
       expect(launchedMpv?.hwdecBackend).toBeUndefined();
     }
   });
 
-  test("auto mode remembers one probe result across playback launches", async () => {
+  test("auto mode shares one background probe across cache-miss playback launches", async () => {
     const events: DiagnosticEventInput[] = [];
-    let probeRuns = 0;
-    const probe = {
-      ...emptyMpvHardwareAccelProbe("hardware"),
-      probed: true,
-      autoSafeOk: true,
-      autoSafeDriver: "nvdec-copy",
-    };
+    let freshProbeRuns = 0;
+    let finishProbe!: (probe: MpvHardwareAccelProbe) => void;
+    const freshProbe = new Promise<MpvHardwareAccelProbe>((resolve) => {
+      finishProbe = resolve;
+    });
     const { service } = createService(events, {
       config: playbackConfig("auto"),
+      readCachedMpvHwdec: async () => emptyMpvHardwareAccelProbe("not-probed"),
       probeMpvHwdec: async () => {
-        probeRuns += 1;
-        return probe;
+        freshProbeRuns += 1;
+        return await freshProbe;
       },
       launchMpv: (async () => createPlaybackResult()) as typeof launchMpv,
     });
 
     await service.play(createStream(), { url: createStream().url, displayTitle: "One" });
     await service.play(createStream(), { url: createStream().url, displayTitle: "Two" });
-    expect(probeRuns).toBe(1);
+    expect(freshProbeRuns).toBe(1);
+    finishProbe(hardwareProbe());
+    await freshProbe;
   });
 
   test("off mode never runs the probe and force-disables hardware decode downstream", async () => {
-    const probe = {
-      ...emptyMpvHardwareAccelProbe("hardware"),
-      probed: true,
-      autoSafeOk: true,
-      autoSafeDriver: "nvdec-copy",
-    };
-    const { launchedMpv, probeRuns } = await launchWithHwdec("off", probe);
-    expect(probeRuns).toBe(0);
+    const { launchedMpv, cacheReads, freshProbeRuns } = await launchWithHwdec(
+      "off",
+      hardwareProbe(),
+    );
+    expect(cacheReads).toBe(0);
+    expect(freshProbeRuns).toBe(0);
     expect(launchedMpv).toMatchObject({ hwdecMode: "off" });
     expect(launchedMpv?.hwdecBackend).toBeUndefined();
   });

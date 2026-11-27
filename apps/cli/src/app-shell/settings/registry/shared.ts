@@ -81,9 +81,13 @@ export const HDR_MODE_OPTIONS: readonly EnumOption[] = HDR_MODES.map((value) => 
 }));
 
 const MPV_HWDEC_MODE_META = {
+  "mpv-default": {
+    label: "mpv default",
+    detail: "Pass no hwdec flag; mpv.conf and mpv's own default decide",
+  },
   auto: {
     label: "Auto",
-    detail: "Probe mpv once, cache the working GPU decoder, and use it when playback launches",
+    detail: "Probe whether hardware decoding works, then let mpv choose auto-safe at playback",
   },
   "auto-safe": {
     label: "mpv auto-safe",

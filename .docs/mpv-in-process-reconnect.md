@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-27T17:34:15Z"
+lastReviewed: "2026-12-24T00:00:00Z"
 ---
 
 # mpv in-process stream reconnect (persistent session)
@@ -63,30 +63,49 @@ If reconnect **fails** or limits are hit, the cycle ends and the usual `Playback
 
 ## Hardware decode probe and selection
 
-Hardware acceleration is decided once per playback launch, not at startup and
-not by probing on every file load in the persistent chain. `PlayerServiceImpl`
+Hardware acceleration is decided once per mpv process launch, not at startup
+and not by probing on every file load in the persistent chain. `PlayerServiceImpl`
 reads the configured `mpvHwdec` mode into `MpvRuntimeOptions`; only `auto`
-needs Kunai's machine evidence, so mpv startup calls
-`infra/player/mpv-hwaccel-probe.ts` before building argv in that mode. The
-probe is bounded (1.5 s for `--hwdec=help`, 3 s for a tiny stdin-fed decode),
-joined across concurrent callers, and cached for seven days under the OS cache
-directory, keyed by platform and the mpv invocation shape. The decode child is
-killed as soon as mpv reports decoded-frame evidence because some mpv builds
-hang in shutdown even after a successful null-output decode. Setup and doctor
-call `readCachedMpvHardwareAcceleration()` only, so they report the last result
-without spawning mpv.
+uses Kunai's machine evidence. The default `mpv-default` intentionally emits no
+hardware-decoder argument at all, so the user's mpv.conf and mpv's own defaults
+keep precedence. On an `auto` cache hit, successful hardware evidence makes the
+launch pass mpv's mode `--hwdec=auto-safe`; on a cache miss or a negative probe
+result the launch starts immediately with no `--hwdec` argument and, if probing
+is available, warms one shared bounded probe in the background for the next mpv
+process start. An already-running persistent mpv keeps its process arguments
+until the next process start; changing the setting does not rewrite a reused
+process mid-chain.
 
-A successful probe returns the exact decoder mpv selected for `auto-safe`
-(such as `nvdec-copy` or `videotoolbox-copy`) and Kunai passes that as
-`--hwdec=<decoder>` for both one-shot and persistent playback. If mpv is
-missing, times out before decode evidence, lists no GPU decoder, or falls back
-to software for the sample, `auto` emits no hardware-decoder argument and
-leaves mpv's own default intact. `auto-safe` and `auto-copy` are forwarded
-directly without running Kunai's probe. `off` emits `--hwdec=no`. Explicit
-modes such as `vaapi` or `videotoolbox` are forwarded directly and are the
-user's responsibility. No platform result is hard-coded: discovery is
-OS-aware and injectable, while mpv's own `auto-safe` negotiation chooses the
-backend available on that host.
+The probe in `infra/player/mpv-hwaccel-probe.ts` is bounded (1.5 s for
+`--hwdec=help`, 3 s for a tiny stdin-fed decode), joined across concurrent
+callers, and cached for seven days under the OS cache directory, keyed by
+platform and the mpv invocation shape. The decode probe is a yes/no gate, not a
+backend pin: because it must use null video output, direct decoders often cannot
+create their real device there and mpv may report a copy fallback. Kunai records
+that evidence for diagnostics but passes only `auto-safe`, letting mpv renegotiate
+a direct backend with the real video output at playback time. As soon as decoded-frame
+evidence is read the child is terminated, first with SIGTERM and then SIGKILL after
+a short grace, because some mpv builds hang in shutdown even after a successful
+null-output decode. Output read before termination is retained in the result. Failed
+spawns and timeouts are not disk-cached, so the next explicit or playback-triggered
+probe can retry.
+
+Ordinary startup capability probing, setup rendering, and `kunai doctor` call
+`readCachedMpvHardwareAcceleration()` only, so they report the last result
+without spawning mpv. Setup's explicit `[r]` recheck is the deliberate exception:
+it refreshes capabilities, including the hardware probe. Playback-triggered
+`auto` cache misses also warm the cache in the background, never in the launch
+path.
+
+`auto` emits `--hwdec=auto-safe` only after successful cached hardware evidence.
+If mpv is missing, times out before decode evidence, lists no GPU decoder, or
+falls back to software for the sample, `auto` emits no hardware-decoder argument
+and leaves mpv's own default intact. `mpv-default` always does that. `auto-safe`
+and `auto-copy` are forwarded directly without running Kunai's probe. `off`
+emits `--hwdec=no`. Explicit modes such as `vaapi` or `videotoolbox` are
+forwarded directly and are the user's responsibility. No platform result is
+hard-coded: discovery is OS-aware and injectable, while mpv's own `auto-safe`
+negotiation chooses the backend available on that host.
 
 ## A/V-sync drift recovery
 
@@ -97,14 +116,21 @@ three samples spanning 300 ms — triggers one corrective absolute seek to the
 current playback position. The seek resets mpv's decoder/audio clocks without
 tearing down the stream, unlike an in-process reconnect.
 
-Resync is deliberately conservative. It is suppressed while paused, seeking,
-reconnecting, live, retired, missing IPC, or already in flight, and one
-correction cools down for five seconds before another can run. Non-finite or
-in-range drift clears accumulated evidence, and starting a new cycle resets the
-tracker. The feature is controlled by `mpvAvsyncRecovery` (default `true`) and
-can be disabled from Settings, `config.json`, or `--mpv-avsync-recovery off`
-for a run. One-shot playback does not run this recovery because there is no
-long-lived IPC supervisor after launch.
+Resync is deliberately conservative. The extracted tracker in
+`infra/player/mpv-avsync-recovery.ts` is suppressed while paused, cache-waiting,
+core-idle, seeking, during Kunai-issued resume/reconnect work, reconnecting,
+live, retired, missing IPC, before video output has started, or while another
+correction is in flight. Startup and each restart get a short grace period. One
+correction cools down for five seconds; if drift returns immediately after a
+resync the tracker gives up rather than seek-looping, and an episode receives at
+most two separated corrections. Each attempted correction records a diagnostic
+event. Non-finite or in-range drift clears accumulated evidence, and starting a
+new cycle resets the tracker without inventing a pause-state change. The feature
+is controlled by `mpvAvsyncRecovery` (default `true`) and can be disabled from
+Settings, `config.json`, or `--mpv-avsync-recovery off` for a run. One-shot
+playback does not run this recovery because there is no long-lived IPC supervisor
+after launch, and one-shot playback does not observe per-frame `avsync` solely
+for subtitle bookkeeping.
 
 ## Limits and backoff
 
@@ -122,10 +148,12 @@ long-lived IPC supervisor after launch.
 
 ## Configuration (`~/.config/kunai/config.json`)
 
-| Field                                    | Default | Meaning                                                                                                       |
-| ---------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------- |
-| `mpvInProcessStreamReconnect`            | `true`  | Master switch. `false` disables automatic same-URL reloads (manual **Ctrl+r** / shell refresh still work).    |
-| `mpvInProcessStreamReconnectMaxAttempts` | `1`     | Max reload attempts **per episode play**, and also the cap. Set `0` to disable (same as turning off retries). |
+| Field                                    | Default       | Meaning                                                                                                                                         |
+| ---------------------------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mpvInProcessStreamReconnect`            | `true`        | Master switch. `false` disables automatic same-URL reloads (manual **Ctrl+r** / shell refresh still work).                                      |
+| `mpvInProcessStreamReconnectMaxAttempts` | `1`           | Max reload attempts **per episode play**, and also the cap. Set `0` to disable (same as turning off retries).                                   |
+| `mpvHwdec`                               | `mpv-default` | Hardware-decoder policy: pass no override, probe and use mpv `auto-safe`, use mpv automatic modes, force software, or pass an explicit backend. |
+| `mpvAvsyncRecovery`                      | `true`        | Bounded sustained-drift correction in the supervised persistent mpv session.                                                                    |
 
 ## Relationship to other recovery
 

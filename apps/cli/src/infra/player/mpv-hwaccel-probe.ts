@@ -7,6 +7,7 @@ import { getKunaiPaths } from "@kunai/storage";
 import { z } from "zod";
 
 import { discoverMpvInvocation, type MpvInvocation } from "./mpv-discovery";
+import { registerMpvProcess } from "./mpv-process-registry";
 
 /** Hardware decoder backends surfaced in doctor/setup copy. */
 export const MPV_GPU_HW_DECODER_IDS = [
@@ -201,7 +202,7 @@ type MpvHwaccelProcessIo = {
   readonly stdout: ReadableStream<Uint8Array>;
   readonly stderr: ReadableStream<Uint8Array>;
   readonly exited: Promise<number>;
-  kill(): void;
+  kill(signal?: NodeJS.Signals): void;
 };
 
 async function readProcessStream(
@@ -229,53 +230,104 @@ async function finishProcess(
   timeoutMs: number,
   stopAfterOutput?: (output: string) => boolean,
 ): Promise<MpvHwaccelProcessResult> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let stdout = "";
+  let stderr = "";
   let terminatedByProbe = false;
-  const kill = () => {
+  let stoppedForOutput = false;
+  let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
+  let evidenceResolve: (() => void) | undefined;
+  const evidenceSeen = new Promise<void>((resolve) => {
+    evidenceResolve = resolve;
+  });
+
+  const terminate = () => {
+    if (terminatedByProbe) return;
     terminatedByProbe = true;
     try {
-      proc.kill();
+      proc.kill("SIGTERM");
     } catch {
       // Already exited.
     }
+    // A probe child must never become an orphaned decoder process. Give mpv a
+    // short chance to close its demuxer, then force the bounded probe closed.
+    forceKillTimer = setTimeout(() => {
+      try {
+        proc.kill("SIGKILL");
+      } catch {
+        // Already exited.
+      }
+    }, 150);
+    forceKillTimer.unref?.();
   };
-  const deadline = new Promise<MpvHwaccelProcessResult>((resolve) => {
-    timer = setTimeout(() => {
-      kill();
-      resolve({ exitCode: null, stdout: "", stderr: "", timedOut: true, terminatedByProbe });
-    }, timeoutMs);
-  });
-  let stoppedForOutput = false;
-  const stopWhenReady = (output: string) => {
-    if (stoppedForOutput || !stopAfterOutput?.(output)) return;
-    stoppedForOutput = true;
-    kill();
+  const clearForceKill = () => {
+    if (forceKillTimer) clearTimeout(forceKillTimer);
+    forceKillTimer = undefined;
+  };
+  const noteOutput = (stream: "stdout" | "stderr") => {
+    return (output: string) => {
+      if (stream === "stdout") stdout = output;
+      else stderr = output;
+      if (
+        stoppedForOutput ||
+        !stopAfterOutput?.(`${stdout}
+${stderr}`)
+      )
+        return;
+      stoppedForOutput = true;
+      terminate();
+      evidenceResolve?.();
+    };
   };
 
   const completed = (async (): Promise<MpvHwaccelProcessResult> => {
     try {
-      const [stdout, stderr, exitCode] = await Promise.all([
-        readProcessStream(proc.stdout, stopWhenReady),
-        readProcessStream(proc.stderr, stopWhenReady),
+      const [out, err, exitCode] = await Promise.all([
+        readProcessStream(proc.stdout, noteOutput("stdout")),
+        readProcessStream(proc.stderr, noteOutput("stderr")),
         proc.exited,
       ]);
+      stdout = out;
+      stderr = err;
+      clearForceKill();
       return { exitCode, stdout, stderr, timedOut: false, terminatedByProbe };
     } catch {
+      clearForceKill();
       return {
         exitCode: null,
-        stdout: "",
-        stderr: "",
+        stdout,
+        stderr,
         timedOut: false,
         spawnFailed: true,
         terminatedByProbe,
       };
     }
   })();
+  // The returned race can finish before the reader/exit promise (evidence and
+  // timeout both do that deliberately); attach a noop rejection handler so the
+  // background completion can never surface as an unhandled rejection.
+  void completed.catch(() => {});
+
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<MpvHwaccelProcessResult>((resolve) => {
+    deadlineTimer = setTimeout(() => {
+      terminate();
+      resolve({ exitCode: null, stdout, stderr, timedOut: true, terminatedByProbe });
+    }, timeoutMs);
+  });
+  void deadline.catch(() => {});
+
+  const evidence = evidenceSeen.then((): MpvHwaccelProcessResult => ({
+    exitCode: null,
+    stdout,
+    stderr,
+    timedOut: false,
+    terminatedByProbe,
+  }));
 
   try {
-    return await Promise.race([completed, deadline]);
+    return await Promise.race([completed, deadline, evidence]);
   } finally {
-    clearTimeout(timer);
+    if (deadlineTimer) clearTimeout(deadlineTimer);
   }
 }
 
@@ -303,12 +355,14 @@ async function defaultRunProcess(
     } catch {
       return spawnFailure();
     }
+    const unregister = registerMpvProcess(proc);
+    void proc.exited.then(unregister, unregister);
     try {
       proc.stdin.write(options.stdin);
       proc.stdin.end();
     } catch {
       try {
-        proc.kill();
+        proc.kill("SIGKILL");
       } catch {
         // Already exited.
       }
@@ -324,6 +378,8 @@ async function defaultRunProcess(
       stderr: "pipe",
       env: scrubbedChildEnv(),
     });
+    const unregister = registerMpvProcess(proc);
+    void proc.exited.then(unregister, unregister);
     return await finishProcess(proc, options.timeoutMs, options.stopAfterOutput);
   } catch {
     return spawnFailure();

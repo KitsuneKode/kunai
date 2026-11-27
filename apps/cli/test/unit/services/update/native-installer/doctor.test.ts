@@ -287,6 +287,7 @@ describe("buildDoctorReport", () => {
       pathValue: join(root, "bin"),
       platform: "linux",
       fileExists: existsSync,
+      mpvHwdecMode: "auto",
       probeCapabilities: async () =>
         emptyCapabilities({
           mpvHardwareAccel: {
@@ -301,7 +302,7 @@ describe("buildDoctorReport", () => {
         }),
     });
     expect(formatDoctorReportText(report)).toContain(
-      "mpv-hwdec=auto-safe ok (nvdec-copy) · cached · help lists vaapi, nvdec",
+      "mpv-hwdec=auto · passes --hwdec=auto-safe · probe: auto-safe ok (nvdec-copy) · cached · help lists vaapi, nvdec",
     );
 
     const missing = await buildDoctorReport({
@@ -317,7 +318,9 @@ describe("buildDoctorReport", () => {
           mpvHardwareAccel: emptyMpvHardwareAccelProbe("mpv-not-found"),
         }),
     });
-    expect(formatDoctorReportText(missing)).toContain("mpv-hwdec=skipped — mpv not found");
+    expect(formatDoctorReportText(missing)).toContain(
+      "mpv-hwdec=mpv-default · passes no --hwdec flag · probe: skipped — mpv not found",
+    );
   });
 
   test("treats curl helper execution failure as an error finding", async () => {

@@ -44,6 +44,7 @@ import {
   parseSkipPromptDurationMs,
   resolveKunaiMpvBridgeScriptPath,
 } from "./kunai-mpv-bridge";
+import { MpvAvsyncRecoveryTracker } from "./mpv-avsync-recovery";
 import { discoverMpvInvocation } from "./mpv-discovery";
 import { probeMpvHdrCapability } from "./mpv-hdr";
 import {
@@ -54,7 +55,12 @@ import {
   watchdogReconnectTrigger,
   type InProcessReconnectTrigger,
 } from "./mpv-in-process-reconnect";
-import { openMpvIpcSession, waitForMpvIpcEndpoint, type MpvIpcSession } from "./mpv-ipc";
+import {
+  MPV_PERSISTENT_OBSERVED_PROPERTIES,
+  openMpvIpcSession,
+  waitForMpvIpcEndpoint,
+  type MpvIpcSession,
+} from "./mpv-ipc";
 import {
   createMpvIpcEndpoint,
   ipcServerCliArg,
@@ -116,11 +122,6 @@ export {
 
 const IN_PROCESS_RECONNECT_BASE_BACKOFF_MS = 1_800;
 const IN_PROCESS_RECONNECT_MAX_BACKOFF_MS = 16_000;
-const AVSYNC_DRIFT_LIMIT_SECONDS = 0.3;
-const AVSYNC_DRIFT_SAMPLES_REQUIRED = 3;
-const AVSYNC_DRIFT_SUSTAINED_MS = 300;
-const AVSYNC_RESYNC_COOLDOWN_MS = 5_000;
-
 /**
  * Upper bound on a reconnect budget handed to `create` in a raw config object.
  * Well above the persisted cap (`MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS`) so the
@@ -336,9 +337,9 @@ export class PersistentMpvSession {
   private reconnectInFlight = false;
   private isPaused = false;
   private isSeeking = false;
-  private avsyncOverLimitSamples = 0;
-  private avsyncDriftFirstObservedAt = 0;
-  private lastAvsyncResyncAt: number | null = null;
+  private isPausedForCache = false;
+  private isCoreIdle = false;
+  private readonly avsyncRecovery: MpvAvsyncRecoveryTracker;
   private avsyncResyncInFlight = false;
   private pendingInProcessReconnect: {
     seekSeconds: number;
@@ -353,6 +354,9 @@ export class PersistentMpvSession {
     private readonly onControlReady: (control: ActivePlayerControl | null) => void,
     private readonly runtime: PersistentMpvSessionRuntime,
   ) {
+    this.avsyncRecovery = new MpvAvsyncRecoveryTracker({
+      now: () => (this.runtime.now ?? Date.now)(),
+    });
     this.playbackStream = initialStream;
     this.currentOptions = initialOptions;
     this.currentControl = {
@@ -922,14 +926,23 @@ export class PersistentMpvSession {
       try {
         openedIpcSession = await this.runtime.openIpcSession({
           endpoint: this.ipcEndpoint,
+          observedProperties: MPV_PERSISTENT_OBSERVED_PROPERTIES,
           onPropertyUpdate: ({ name, value, observedAt }) => {
             if (name === "pause") this.isPaused = value === true;
-            if (name === "seeking") this.isSeeking = value === true;
+            if (name === "seeking") {
+              this.isSeeking = value === true;
+              this.avsyncRecovery.noteSeeking(this.isSeeking);
+            }
+            if (name === "paused-for-cache") {
+              this.isPausedForCache = value === true;
+              this.avsyncRecovery.notePausedForCache(this.isPausedForCache);
+            }
+            if (name === "core-idle") this.isCoreIdle = value === true;
             if (name === "avsync") {
               if (isJsonNumber(value) && Number.isFinite(value)) {
                 this.noteAvsyncDrift(value, observedAt);
               } else {
-                this.resetAvsyncDrift();
+                this.avsyncRecovery.clearEvidence();
               }
             }
             this.propertyRouter.handlePropertyUpdate({ name, value, observedAt });
@@ -1094,64 +1107,53 @@ export class PersistentMpvSession {
     });
   }
 
-  private resetAvsyncDrift(): void {
-    this.avsyncOverLimitSamples = 0;
-    this.avsyncDriftFirstObservedAt = 0;
+  /** Send one Kunai-owned seek while keeping drift evidence suppressed for its duration. */
+  private async sendKunaiSeek(session: MpvIpcSession, positionSeconds: number, timeoutMs: number) {
+    this.avsyncRecovery.beginKunaiSeek();
+    try {
+      return await session.send(["seek", positionSeconds, "absolute"], timeoutMs);
+    } finally {
+      this.avsyncRecovery.endKunaiSeek();
+    }
   }
 
   /**
    * mpv's `avsync` property is seconds of audio/video displacement. Brief drift
-   * is normal while a stream starts or seeks; sustained drift usually means the
-   * demuxer/decoder pipeline has wedged. A same-position seek rebuilds that
-   * pipeline without changing what the user is watching. The sample count,
-   * sustained window, and cooldown keep this from becoming a seek loop.
+   * is normal while a stream starts or seeks; sustained drift can mean the
+   * demuxer/decoder pipeline wedged. The pure tracker owns evidence and the
+   * episode budget; this method performs and reports the seek it authorizes.
    */
   private noteAvsyncDrift(driftSeconds: number, observedAt: number): void {
-    if (this.currentCycleOptions().avsyncRecovery === false) {
-      this.resetAvsyncDrift();
-      return;
-    }
-    if (Math.abs(driftSeconds) <= AVSYNC_DRIFT_LIMIT_SECONDS) {
-      this.resetAvsyncDrift();
-      return;
-    }
-    if (
-      this.isPaused ||
-      this.isSeeking ||
-      this.reconnectInFlight ||
-      this.playbackStream.isLive ||
-      this.avsyncResyncInFlight ||
-      this.retired ||
-      !this.ipcSession
-    ) {
-      this.resetAvsyncDrift();
-      return;
-    }
-
-    const now = (this.runtime.now ?? Date.now)();
-    if (
-      this.lastAvsyncResyncAt !== null &&
-      now - this.lastAvsyncResyncAt < AVSYNC_RESYNC_COOLDOWN_MS
-    ) {
-      return;
-    }
-    if (this.avsyncDriftFirstObservedAt === 0) this.avsyncDriftFirstObservedAt = observedAt;
-    this.avsyncOverLimitSamples += 1;
-    if (
-      this.avsyncOverLimitSamples < AVSYNC_DRIFT_SAMPLES_REQUIRED ||
-      observedAt - this.avsyncDriftFirstObservedAt < AVSYNC_DRIFT_SUSTAINED_MS
-    ) {
-      return;
-    }
+    const decision = this.avsyncRecovery.evaluate(driftSeconds, observedAt, {
+      enabled: this.currentCycleOptions().avsyncRecovery !== false,
+      paused: this.isPaused,
+      coreIdle: this.isCoreIdle,
+      live: this.playbackStream.isLive === true,
+      reconnecting: this.reconnectInFlight,
+      resumeSeekPending: this.resumeSeekPending,
+      outputStarted: this.activeCycle?.output.started === true,
+      retired: this.retired,
+      hasIpcSession: this.ipcSession !== null,
+      resyncInFlight: this.avsyncResyncInFlight,
+    });
+    if (decision.kind !== "resync") return;
 
     const position = this.currentPositionSeconds;
-    if (position <= 0) return;
-    this.resetAvsyncDrift();
-    this.lastAvsyncResyncAt = now;
-    this.avsyncResyncInFlight = true;
     const session = this.ipcSession;
-    void session
-      .send(["seek", position, "absolute"], 1_000)
+    if (position <= 0 || !session) return;
+    this.avsyncResyncInFlight = true;
+    dbg("mpv-ipc", "avsync-resync", {
+      positionSeconds: position,
+      driftSeconds: driftSeconds,
+      attempt: decision.attempt,
+    });
+    this.currentCycleOptions().onPlaybackEvent?.({
+      type: "avsync-resync",
+      positionSeconds: position,
+      driftSeconds,
+      attempt: decision.attempt,
+    });
+    void this.sendKunaiSeek(session, position, 1_000)
       .catch(() => {})
       .finally(() => {
         this.avsyncResyncInFlight = false;
@@ -1163,10 +1165,8 @@ export class PersistentMpvSession {
     this.reconnectTryCount = 0;
     this.reconnectBackoffUntilMs = 0;
     this.reconnectInFlight = false;
-    this.isPaused = false;
-    this.isSeeking = false;
-    this.resetAvsyncDrift();
-    this.lastAvsyncResyncAt = null;
+    // Pause/seeking are mpv-owned; only a fresh property report may change them.
+    this.avsyncRecovery.restartEpisode();
     this.pendingInProcessReconnect = null;
     this.currentPositionSeconds = 0;
     this.skippedSegments = new Set<string>();
@@ -1539,7 +1539,7 @@ export class PersistentMpvSession {
     }
     if (!activeSkip || !this.ipcSession || this.skippedSegments.has(activeSkip.key)) return false;
     this.skippedSegments.add(activeSkip.key);
-    await this.ipcSession.send(["seek", activeSkip.endSeconds, "absolute"], 1_000);
+    await this.sendKunaiSeek(this.ipcSession, activeSkip.endSeconds, 1_000);
     options.onPlaybackEvent?.({ type: "segment-skipped", kind: activeSkip.kind, automatic: true });
     return true;
   }
@@ -1551,7 +1551,7 @@ export class PersistentMpvSession {
   ): Promise<boolean> {
     if (!this.ipcSession || this.skippedSegments.has(segment.key)) return false;
     this.clearSkipPromptState();
-    const seekResult = await this.ipcSession.send(["seek", segment.endSeconds, "absolute"], 1_000);
+    const seekResult = await this.sendKunaiSeek(this.ipcSession, segment.endSeconds, 1_000);
     if (!seekResult.ok) return false;
     this.skippedSegments.add(segment.key);
     options.onPlaybackEvent?.({ type: "segment-skipped", kind: segment.kind, automatic });
@@ -1575,7 +1575,7 @@ export class PersistentMpvSession {
     const target = this.currentOptions.resumePromptAt;
     if (!target || target <= 0 || !this.ipcSession || !this.activeCycle) return;
 
-    const seekResult = await this.ipcSession.send(["seek", target, "absolute"], 2_000);
+    const seekResult = await this.sendKunaiSeek(this.ipcSession, target, 2_000);
     if (seekResult.ok) {
       this.currentPositionSeconds = target;
       noteTrustedSeek(this.activeCycle.stats, target);
@@ -2085,10 +2085,7 @@ export class PersistentMpvSession {
     const opts = this.currentCycleOptions();
     try {
       if (spec.shouldSeek && this.ipcSession) {
-        const seekResult = await this.ipcSession.send(
-          ["seek", spec.seekSeconds, "absolute"],
-          3_000,
-        );
+        const seekResult = await this.sendKunaiSeek(this.ipcSession, spec.seekSeconds, 3_000);
         if (!isCurrent()) return;
         if (seekResult.ok) {
           this.currentPositionSeconds = spec.seekSeconds;
