@@ -193,7 +193,7 @@ describe("AnimeParadise direct resolver", () => {
     expect(result.streams[0]?.headers?.Referer).toBe(`${SITE}/`);
     expect(
       captured
-        .filter(({ url }) => url.startsWith(MEDIA))
+        .filter(({ url }) => new URL(url).origin === MEDIA)
         .every(({ init }) => new Headers(init?.headers).get("referer") === `${SITE}/`),
     ).toBe(true);
 
