@@ -64,6 +64,7 @@ import { selectReadyStream } from "../shared/startup-selection";
 import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import { trimTrailingSlashes } from "../shared/trim-trailing-slashes";
+import { selectRivestreamFinalStream } from "./final-gate";
 import { rivestreamManifest, RIVESTREAM_PROVIDER_ID } from "./manifest";
 import { parseRivestreamProxyHeaders, unwrapRivestreamProxyUrl } from "./proxy-url";
 import {
@@ -74,6 +75,8 @@ import {
   inferRivestreamAudioLanguage,
   inferRivestreamAudioSubtitle,
   rivestreamFailureClassFromProviderError,
+  type RivestreamProviderServicesResponse,
+  type RivestreamResolvedCandidate,
   type RivestreamSourceResponse,
 } from "./source-model";
 
@@ -212,18 +215,6 @@ export function demoteRivestreamDeadBackends(providers: readonly string[]): read
   const demoted = providers.filter((provider) => isRivestreamDemotedBackend(provider));
   return [...healthy, ...demoted];
 }
-
-type RivestreamProviderServicesResponse = {
-  readonly data?: unknown;
-};
-
-type RivestreamResolvedCandidate = {
-  readonly provider: string;
-  readonly sourceId: string;
-  readonly streams: readonly StreamCandidate[];
-  readonly variants: readonly ProviderVariantCandidate[];
-  readonly subtitles: readonly SubtitleCandidate[];
-};
 
 // Ported 32-bit MurmurHash custom algorithm
 const cArray = [
@@ -654,6 +645,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
         variants: selectedVariants,
         subtitles,
         provider: serverUsed,
+        candidateGateStream,
       } = cycleResult.selected;
       const streams = [...selectedStreams];
       const variants = [...selectedVariants];
@@ -669,15 +661,14 @@ export const rivestreamProviderModule: CoreProviderModule = {
         preferredSourceId: input.preferredSourceId,
       });
 
-      const gateOrder = [
-        selection.selected,
-        ...selectableStreams.filter((stream) => stream.id !== selection.selected.id),
-      ].slice(0, RIVESTREAM_RESOLVE_GATE_MAX_PROBES);
-      const gated = await selectVerifiedStream({
-        streams: gateOrder,
+      const gated = await selectRivestreamFinalStream({
+        selected: selection.selected,
+        selectableStreams,
+        candidateGateStream,
         context,
         signal: context.signal,
         timeoutMs: gateTimeoutMs,
+        maxProbes: RIVESTREAM_RESOLVE_GATE_MAX_PROBES,
       });
       if (context.signal?.aborted) {
         return createExhaustedResult(
@@ -723,7 +714,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
       }
 
       const selectedStream = gated.stream;
-      const shippedStreams = dropRefusedStreams(streams, gated.refusedHosts);
+      const shippedStreams = dropRefusedStreams(streams, gated.refusals);
       const shippedVariants = variants.filter((variant) =>
         shippedStreams.some((stream) => stream.variantId === variant.id),
       );
@@ -1380,12 +1371,19 @@ async function resolveRivestreamProviderCandidate({
     });
   }
   // Keep the alternatives, drop the rungs the gate proved dead.
-  streams = dropRefusedStreams(streams, selection.refusedHosts);
+  streams = dropRefusedStreams(streams, selection.refusals);
   variants = variants.filter((variant) =>
     streams.some((candidateStream) => candidateStream.variantId === variant.id),
   );
 
-  return { provider, sourceId, streams, variants, subtitles };
+  return {
+    provider,
+    sourceId,
+    streams,
+    variants,
+    subtitles,
+    candidateGateStream: selection.stream,
+  };
 }
 
 /**

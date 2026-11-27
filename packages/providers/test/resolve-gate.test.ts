@@ -2,7 +2,11 @@ import { describe, expect, test } from "bun:test";
 
 import type { ProviderRuntimeContext } from "@kunai/types";
 
-import { selectVerifiedStream, verifyCandidateStream } from "../src/shared/resolve-gate";
+import {
+  dropRefusedStreams,
+  selectVerifiedStream,
+  verifyCandidateStream,
+} from "../src/shared/resolve-gate";
 
 /**
  * The gate exists to make "verified" and "shipped" the same request.
@@ -182,32 +186,59 @@ describe("selectVerifiedStream", () => {
     expect(result.accepted === false && result.reason).toContain("403");
   });
 
-  test("probes each host once, because a host answers the same for every rung", async () => {
+  test("probes a sibling URL on the same host after a URL-scoped refusal", async () => {
     // Counted by distinct URL, not by fetch: one probe of a direct stream is
     // itself a HEAD plus a ranged GET, so raw request count measures the
     // probe's internals rather than this walk.
     const probed: string[] = [];
-    const context = {
-      fetch: {
-        runtime: "direct-http" as const,
-        fetch: async (url: string) => {
-          probed.push(String(url));
-          return new Response("forbidden", { status: 403 });
-        },
-      },
-    } as unknown as ProviderRuntimeContext;
+    const { context } = contextRecording((url) => {
+      probed.push(url);
+      if (url.includes("1080")) return new Response("forbidden", { status: 403 });
+      return new Response(null, { status: 200 });
+    });
 
-    await selectVerifiedStream({
+    const streams = [
+      stream("a", "https://same.example/1080.mp4"),
+      stream("b", "https://same.example/720.mp4"),
+      stream("c", "https://same.example/480.mp4"),
+    ];
+    const result = await selectVerifiedStream({ streams, context });
+
+    expect(result.accepted).toBe(true);
+    expect(result.accepted === true && result.stream.id).toBe("b");
+    expect(new Set(probed)).toEqual(
+      new Set(["https://same.example/1080.mp4", "https://same.example/720.mp4"]),
+    );
+    expect(dropRefusedStreams(streams, result.refusals).map((entry) => entry.id)).toEqual([
+      "b",
+      "c",
+    ]);
+  });
+
+  test("skips sibling URLs after a host-scoped transport refusal", async () => {
+    const probed: string[] = [];
+    const { context } = contextRecording((url) => {
+      probed.push(url);
+      if (url.includes("dead.example")) {
+        throw new Error("getaddrinfo ENOTFOUND dead.example");
+      }
+      return new Response(null, { status: 200 });
+    });
+
+    const result = await selectVerifiedStream({
       streams: [
-        stream("a", "https://same.example/1080.mp4"),
-        stream("b", "https://same.example/720.mp4"),
-        stream("c", "https://same.example/480.mp4"),
+        stream("a", "https://dead.example/1080.mp4"),
+        stream("b", "https://dead.example/720.mp4"),
+        stream("c", "https://live.example/480.mp4"),
       ],
       context,
     });
 
-    expect(new Set(probed).size).toBe(1);
-    expect(probed.every((url) => url.includes("1080"))).toBe(true);
+    expect(result.accepted).toBe(true);
+    expect(result.accepted === true && result.stream.id).toBe("c");
+    expect(new Set(probed)).toEqual(
+      new Set(["https://dead.example/1080.mp4", "https://live.example/480.mp4"]),
+    );
   });
 
   test("rejects an empty candidate rather than reporting success", async () => {

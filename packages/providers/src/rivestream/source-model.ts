@@ -1,5 +1,20 @@
+import type { ProviderVariantCandidate, StreamCandidate, SubtitleCandidate } from "@kunai/types";
+
 import { ProviderHttpError } from "../runtime/fetch";
 import { normalizeProviderDisplayLabel } from "../shared/source-inventory";
+
+export type RivestreamProviderServicesResponse = {
+  readonly data?: unknown;
+};
+
+export type RivestreamResolvedCandidate = {
+  readonly provider: string;
+  readonly sourceId: string;
+  readonly streams: readonly StreamCandidate[];
+  readonly variants: readonly ProviderVariantCandidate[];
+  readonly subtitles: readonly SubtitleCandidate[];
+  readonly candidateGateStream: StreamCandidate;
+};
 
 export type RivestreamRawSource = {
   readonly url?: string;

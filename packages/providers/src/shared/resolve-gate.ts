@@ -114,26 +114,28 @@ export type VerifiedStreamSelection<TStream> =
       readonly stream: TStream;
       readonly verified: boolean;
       /**
-       * Hosts proven dead during the walk. The caller must drop their streams:
-       * leaving a refused rung in the inventory lets selection ship the very
-       * stream the gate rejected.
+       * URL or host evidence gathered before the accepted stream. The caller
+       * must drop matching rungs: leaving one in inventory lets selection ship
+       * the exact stream the gate rejected.
        */
-      readonly refusedHosts: ReadonlySet<string>;
+      readonly refusals: ReadonlySet<string>;
     }
-  | { readonly accepted: false; readonly reason: string };
+  | {
+      readonly accepted: false;
+      readonly reason: string;
+      /** Present on failure too, so a caller can tell whether prior proof is still usable. */
+      readonly refusals: ReadonlySet<string>;
+    };
 
 /**
  * The first stream of a source that actually verifies.
  *
- * A refusal is evidence about *that stream*, not about the source: a candidate
- * often carries several qualities, and they do not always sit on the same host.
- * Rejecting the whole source on the first refusal throws away rungs that would
- * have played, so the walk continues and the source is refused only when every
- * distinct host has refused.
- *
- * One probe per host, because a host answers the same for every rung it serves
- * — the extra probes would cost latency inside the candidate's budget and tell
- * us nothing new.
+ * HTTP, manifest, and media refusals are evidence about the exact URL: one HLS
+ * rung can 404 while its sibling on the same CDN host plays. Transport and
+ * target-guard refusals are evidence about the host and skip only that host's
+ * later URLs. This keeps the walk bounded by the caller's input slice or
+ * candidate timer without repeating probes that cannot reach a different
+ * answer.
  */
 export async function selectVerifiedStream<
   TStream extends Pick<StreamCandidate, "url" | "headers">,
@@ -149,11 +151,10 @@ export async function selectVerifiedStream<
   readonly timeoutMs?: number;
 }): Promise<VerifiedStreamSelection<TStream>> {
   let firstReason: string | undefined;
-  const refusedHosts = new Set<string>();
+  const refusals = new Set<string>();
 
   for (const stream of streams) {
-    const host = streamHost(stream.url);
-    if (host && refusedHosts.has(host)) continue;
+    if (isStreamRefused(stream, refusals)) continue;
 
     const verdict = await verifyCandidateStream({
       stream,
@@ -162,30 +163,50 @@ export async function selectVerifiedStream<
       ...(timeoutMs === undefined ? null : { timeoutMs }),
     });
     if (verdict.accepted) {
-      return { accepted: true, stream, verified: verdict.verified, refusedHosts };
+      return { accepted: true, stream, verified: verdict.verified, refusals };
     }
 
     firstReason ??= verdict.reason;
-    if (host) refusedHosts.add(host);
+    const scope = verdict.probe?.status === "unreachable" ? verdict.probe.refusalScope : "url";
+    refusals.add(refusalKey(stream.url, scope === "host" ? "host" : "url"));
   }
 
-  return { accepted: false, reason: firstReason ?? "candidate has no stream url" };
+  return {
+    accepted: false,
+    reason: firstReason ?? "candidate has no stream url",
+    refusals,
+  };
+}
+
+/** Whether prior gate evidence already refuses this exact URL or its host. */
+export function isStreamRefused<TStream extends Pick<StreamCandidate, "url">>(
+  stream: TStream,
+  refusals: ReadonlySet<string>,
+): boolean {
+  if (refusals.has(refusalKey(stream.url, "url"))) return true;
+  const host = streamHost(stream.url);
+  return host.length > 0 && refusals.has(hostRefusalKey(host));
 }
 
 /**
- * Drop the streams whose host the gate proved dead.
- *
- * The walk refuses a host, not a rung, so the caller cannot just remove the one
- * stream that failed — every rung on that host is equally gone. Leaving them in
- * lets startup selection ship the exact stream the gate rejected, which is
- * usually the highest quality and therefore the one it prefers.
+ * Drop the streams the gate proved dead, whether the evidence was the exact
+ * URL (an HTTP/media refusal) or the whole host (a transport/guard refusal).
  */
 export function dropRefusedStreams<TStream extends Pick<StreamCandidate, "url">>(
   streams: readonly TStream[],
-  refusedHosts: ReadonlySet<string>,
+  refusals: ReadonlySet<string>,
 ): TStream[] {
-  if (refusedHosts.size === 0) return [...streams];
-  return streams.filter((stream) => !refusedHosts.has(streamHost(stream.url)));
+  if (refusals.size === 0) return [...streams];
+  return streams.filter((stream) => !isStreamRefused(stream, refusals));
+}
+
+function refusalKey(url: string | undefined, scope: "host" | "url"): string {
+  const host = streamHost(url);
+  return scope === "host" && host ? hostRefusalKey(host) : `url:${url ?? ""}`;
+}
+
+function hostRefusalKey(host: string): string {
+  return `host:${host}`;
 }
 
 function streamHost(url: string | undefined): string {

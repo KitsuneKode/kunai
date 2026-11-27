@@ -14,6 +14,7 @@ import {
   parseFirstHlsVariantPath,
   resolveHlsSegmentUrl,
 } from "./hls-manifest";
+import { isDefinitiveHttpStatus, isDefinitiveNetworkError } from "./refusal-classification";
 import {
   hasFragmentedMp4Prefix,
   hasImageContainerMagic,
@@ -36,7 +37,16 @@ export type { ProbeFetchOutcome, StreamReachabilityFetch } from "@kunai/core";
 
 export type StreamReachabilityProbeResult =
   | { readonly status: "reachable"; readonly contentType?: string }
-  | { readonly status: "unreachable"; readonly reason: string; readonly definitive: boolean }
+  | {
+      readonly status: "unreachable";
+      readonly reason: string;
+      readonly definitive: boolean;
+      /**
+       * Transport and target-guard failures indict the host; HTTP, manifest,
+       * and media evidence indict only the URL that was probed.
+       */
+      readonly refusalScope?: "host" | "url";
+    }
   | { readonly status: "timeout" };
 
 export type ProbeStreamReachabilityInput = {
@@ -331,6 +341,7 @@ async function fetchPlaylistText(
           status: "unreachable",
           reason: `blocked stream target: ${outcome.reason}`,
           definitive: true,
+          refusalScope: "host",
         },
       };
     }
@@ -366,6 +377,7 @@ async function fetchPlaylistText(
         status: "unreachable",
         reason: message,
         definitive: isDefinitiveNetworkError(message),
+        refusalScope: "host",
       },
     };
   } finally {
@@ -522,6 +534,7 @@ async function probeHttpStatus(
         status: "unreachable",
         reason: `blocked stream target: ${outcome.reason}`,
         definitive: true,
+        refusalScope: "host",
       };
     }
     const response = outcome.response;
@@ -546,6 +559,7 @@ async function probeHttpStatus(
       status: "unreachable",
       reason: message,
       definitive: isDefinitiveNetworkError(message),
+      refusalScope: "host",
     };
   } finally {
     deadline.release();
@@ -778,7 +792,12 @@ async function probeDirectMedia(
     });
     if (outcome.kind === "timeout") return { status: "timeout" };
     if (outcome.kind === "blocked") {
-      return { status: "unreachable", reason: "blocked-target", definitive: true };
+      return {
+        status: "unreachable",
+        reason: "blocked-target",
+        definitive: true,
+        refusalScope: "host",
+      };
     }
     const response = outcome.response;
     if (response.status >= 300 && response.status < 400) {
@@ -829,53 +848,11 @@ async function probeDirectMedia(
   } catch {
     if (signal.aborted) return { status: "timeout" };
     // No raw cause: a transport message can quote the URL it failed on.
-    return { status: "unreachable", reason: "network-error", definitive: false };
+    return {
+      status: "unreachable",
+      reason: "network-error",
+      definitive: false,
+      refusalScope: "host",
+    };
   }
-}
-
-/**
- * Every 4xx is a refusal, and a refusal is a verdict.
- *
- * 429 was briefly treated as transient on the theory that a CDN throttling a CLI
- * probe says nothing about whether the stream plays. Live evidence says
- * otherwise: VidLink's CDN (`bcdn.hakunaymatata.com`) answers 429 to GET, HEAD
- * and ranged GET alike for every candidate, so letting the probe pass just hands
- * mpv a 587-byte nginx error page instead of a video. The gate exists to stop
- * exactly that, and a provider that fails here lets a working one take over.
- *
- * If a status ever needs to be treated as transient, it needs evidence that the
- * stream actually plays afterwards — a passing probe is not the goal, playback is.
- */
-function isDefinitiveHttpStatus(status: number): boolean {
-  return status >= 400 && status < 500;
-}
-
-function isDefinitiveNetworkError(message: string): boolean {
-  const lower = message.toLowerCase();
-  return (
-    lower.includes("connection refused") ||
-    lower.includes("econnrefused") ||
-    lower.includes("name or service not known") ||
-    lower.includes("getaddrinfo") ||
-    lower.includes("enotfound") ||
-    lower.includes("unable to connect") ||
-    lower.includes("certificate has expired") ||
-    (lower.includes("certificate") && lower.includes("expired")) ||
-    /*
-      An unverifiable chain is as deterministic as an expired one: retrying
-      cannot heal it, and mpv's TLS stack fails the same way against the same
-      trust decision — so the stream must be rejected, not passed through
-      lenient as "maybe a slow CDN". Covers OpenSSL/BoringSSL phrasings:
-      "unable to verify the first certificate", "unable to verify leaf
-      signature", "unable to get local issuer certificate",
-      "self signed certificate in certificate chain".
-    */
-    lower.includes("unable to verify") ||
-    lower.includes("unable to get local issuer") ||
-    lower.includes("self signed certificate") ||
-    lower.includes("certificate verify failed") ||
-    lower.includes("unsupported protocol") ||
-    lower.includes("unknown scheme") ||
-    lower.includes("url using bad/illegal format")
-  );
 }

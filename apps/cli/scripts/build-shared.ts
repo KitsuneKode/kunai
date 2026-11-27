@@ -529,9 +529,9 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // 3249 KiB leaves 1,349. No dependency or asset.
 // The 2026-11-27 provider live-audit repair (Rivestream wrapper unwrapping,
 // HLS inventory expansion and backend demotion, plus the AllManga rotation
-// profile) measured 3,327,859 bytes after merging next-up: +2,232 over that
-// merged tree. No dependency or asset. 3251 KiB leaves 1,165 bytes; public
-// launcher budgets are unchanged.
+// profile) measured 3,328,718 bytes after merging next-up and scoped stream
+// refusal evidence: +3,091 over that merged tree. No dependency or asset.
+// 3251 KiB leaves 306 bytes; public launcher budgets are unchanged.
 export const NPM_BUNDLE_BUDGET_KB = 3_251;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
