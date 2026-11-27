@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-11-27
+Last updated: 2026-11-28
 
 This is the **only index of active work** in `.plans/`. Everything indexed here
 is unfinished. Landed, superseded, and one-shot plans live in
@@ -28,6 +28,8 @@ so it is not re-derived — not because it is scheduled.
 | [kunai-principal-grill-qa.md](./kunai-principal-grill-qa.md)                         | Product/architecture decisions already pressure-tested |
 
 ## Active tracks
+
+Product direction: [Stremio-like client and surface for everyone (with unmerged branch/worktree triage)](./2026-11-28-stremio-like-client.md).
 
 Current execution: [v0.4.0 launch sequence and a reason to come back](./2026-11-27-launch-and-retention.md).
 
@@ -91,6 +93,7 @@ archive and put only the residue here.
 
 | Track                        | Remaining                                                                                                                                                                                                                  | Plan                                                                                                                                                                                                                                                                                                                                                |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Stremio-like client          | Phase 0–4: gateway-confined addon HLS/DASH (M2), vaulted addon URLs, hot-reload install, aggregated source picker, `/catalog`/`/meta`/`/subtitles`, Trakt sync, `kunai serve` web companion, Cast A/V, and branch triage   | [2026-11-28-stremio-like-client.md](./2026-11-28-stremio-like-client.md)                                                                                                                                                                                                                                                                            |
 | Mobile terminal runtime      | Node/a-Shell host proofs and the Termux binary + player handoff (#287) implemented; physical qualification, catalog/providers, installers, and publishing remain                                                           | [runtime](../.docs/mobile-terminal-runtime.md) · [device lab](../.docs/mobile-device-lab.md) · [mobile app design](./mobile-app-runtime.md) · [terminal handoff](./mobile-terminal-handoff.md) · [handoff implementation](./mobile-terminal-handoff-implementation.md) · [mobile parity and phone web](./2026-10-11-mobile-parity-and-phone-web.md) |
 | Queue and phone follow-up    | Truthful queue state; qualify real phone request profiles, offline durability, and no-store touch direction                                                                                                                | [decisions and evidence](2026-10-03-queue-mobile-followup.md)                                                                                                                                                                                                                                                                                       |
 | Provider playback resilience | Miruro gate budget. The AllManga crypto canary is scheduled (#721) and red since 2026-11-23 (#724)                                                                                                                         | [provider-playback-resilience.md](./provider-playback-resilience.md)                                                                                                                                                                                                                                                                                |
