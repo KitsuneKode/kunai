@@ -12,6 +12,8 @@ import {
  */
 export const RELAY_CAPABLE_PROVIDER_OPTIONS = [
   { value: "allanime", label: "AllAnime" },
+  { value: "anidap", label: "Anidap" },
+  { value: "anilight", label: "AniLight" },
   { value: "animegg", label: "AnimeGG" },
   { value: "hianime", label: "HiAnime" },
   { value: "kickassanime", label: "KickAssAnime" },
@@ -21,6 +23,7 @@ export const RELAY_CAPABLE_PROVIDER_OPTIONS = [
   { value: "rivestream", label: "Rivestream" },
   { value: "movy", label: "Movy" },
   { value: "vidrock", label: "VidRock" },
+  { value: "vidbolt", label: "VidBolt" },
 ] as const;
 
 export type RelayCapableProviderId = (typeof RELAY_CAPABLE_PROVIDER_OPTIONS)[number]["value"];

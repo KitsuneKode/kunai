@@ -8,11 +8,14 @@
     "vidrock",
     "rivestream",
     "movy",
+    "vidbolt",
     "allanime",
     "hianime",
     "miruro",
     "animegg",
     "kickassanime",
+    "anilight",
+    "anidap",
     "youtube"
   ],
   "providers": [
@@ -93,6 +96,20 @@
         "Each lane is a distinct upstream scraper (stillhaven, vidzy, workers.dev proxies, multi-language mirrors); lanes surface as individual sources so server switching and fallback cycling apply per lane.",
         "Anime lane (anikoto/sources-id) is not wired yet — movies and series only.",
         "External dependency: api.wecollege.net is movy.sx's own backend; if it moves or rate-limits, resolve degrades to the next provider."
+      ]
+    },
+    {
+      "id": "vidbolt",
+      "displayName": "VidBolt",
+      "description": "Movies and series through VidBolt's multi-server direct API",
+      "domain": "vidbolt.pro",
+      "recommended": false,
+      "mediaKinds": ["movie", "series"],
+      "capabilities": ["source-resolve", "subtitle-resolve", "multi-source", "quality-ranked"],
+      "notes": [
+        "Browserless TMDB-addressed API: /api/resolve?type=movie&id= or type=tv&id=&season=&episode=, then server iteration through the public exclude parameter.",
+        "Embedded HLS master text is parsed locally for rendition languages, subtitle playlists, and variant inventory; media remains direct.",
+        "No Cloudflare/Turnstile bypass: a challenge response is classified as blocked and the lane falls through."
       ]
     },
     {
@@ -204,6 +221,48 @@
         "The variant playlists are video-only (the audio lives in the rendition group), so the ladder is never expanded into per-quality URLs — mpv gets the master and picks. That is also why qualityRank is 0 rather than an invented height.",
         "Only the HLS lanes are used: the servers list rotated VidStreaming to CatStream on the same cat-player page (2026-10-04), and both names stay playable. BirdStream serves DASH with many subtitle languages, but its manifest answered 404 for the title tested; the doubled slash in its URL (https:////bl.krussdomi.com) is normalized if it is ever enabled. CatStream's manifest now arrives protocol-relative (//bl.krussdomi.com/…), pinned to https by the same normalizer.",
         "The domain rotates (kaa.to -> kaa.mx -> kickass-anime.ro -> kaa.lt). kickass-anime.ro still 301s to the current one and is asked when kaa.lt stops answering at connection level. Its redirect is read by hand (redirect: manual) and accepted only for an https `kaa.<tld>` / `kickass-anime.<tld>` host: an old alias can lapse and be bought, and following it blindly would hand the new owner the API base and every stream URL behind it."
+      ]
+    },
+    {
+      "id": "anilight",
+      "displayName": "AniLight",
+      "description": "Anime episodes in sub and dub through AniLight's AniList-native API",
+      "domain": "anilight.live",
+      "recommended": false,
+      "mediaKinds": ["anime"],
+      "capabilities": [
+        "search",
+        "episode-list",
+        "source-resolve",
+        "subtitle-resolve",
+        "multi-source",
+        "quality-ranked"
+      ],
+      "notes": [
+        "Browserless AniList bridge: /api/anime/check-exists?anilistId= resolves the provider slug, /api/watch/{slug} carries episode availability, and /api/sources uses a short-lived x-source-session token.",
+        "Sub and dub are separate audio presentations; a missing requested mode fails closed rather than silently substituting the other audio.",
+        "Opaque upstream media tokens are played through the provider-declared streamProxies (/e/{token}); caption tokens use /api/proxy/captions?token=... ."
+      ]
+    },
+    {
+      "id": "anidap",
+      "displayName": "Anidap",
+      "description": "Anime episodes in sub and dub through Anidap's catalog and server slots",
+      "domain": "anidap.lol",
+      "recommended": false,
+      "mediaKinds": ["anime"],
+      "capabilities": [
+        "search",
+        "episode-list",
+        "source-resolve",
+        "subtitle-resolve",
+        "multi-source",
+        "quality-ranked"
+      ],
+      "notes": [
+        "Browserless catalog path: GraphQL anime/searchAnime resolves AniList or title identity to the provider slug; chad.anidap.lol carries episodes, server slots, and source payloads.",
+        "Sub and dub provider slots stay separate. Provider-supplied media headers ride the exact stream candidate into the shared resolve gate.",
+        "Some Anidap slots share AnimeX/aniwatch infrastructure; backend independence is documented in the dossier rather than overstated."
       ]
     },
     {

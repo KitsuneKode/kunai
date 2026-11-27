@@ -108,12 +108,15 @@ describe("production provider defaults", () => {
     // so existing configs and cache keys keep resolving.
     expect(modules.map((module) => module.providerId).sort()).toEqual([
       "allanime",
+      "anidap",
+      "anilight",
       "animegg",
       "hianime",
       "kickassanime",
       "miruro",
       "movy",
       "rivestream",
+      "vidbolt",
       "videasy",
       "vidlink",
       "vidrock",
