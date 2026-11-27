@@ -1,7 +1,7 @@
 ---
 status: active
 created: "2026-11-28"
-lastReviewed: "2026-11-28"
+lastReviewed: "2026-11-27"
 ---
 
 # Plan: Stremio-like client and surface for everyone
@@ -148,7 +148,14 @@ Every capability below is verified in the current `main` tree:
    Extend `apps/cli/src/infra/player/stream-gateway.ts` so every addon stream —
    direct MP4/MKV, HLS `.m3u8`, and DASH `.mpd` — is fetched on Kunai's pinned,
    SSRF-checked connection instead of letting mpv re-resolve the addon hostname.
-   Keep redirects refused or re-checked per hop. This simultaneously resolves
+   Keep redirects refused or re-checked per hop. The gateway alone is not
+   enough: today the addon resolve gate (`requireDirectMedia: true` in
+   `packages/providers/src/stremio-addon/module.ts`) and the playback preflight
+   (`isStremioPlayback` in `apps/cli/src/services/playback/StreamHealthService.ts`)
+   both reject `.m3u8` and `.mpd` before a stream reaches it. Relax both for
+   gateway-routed addon streams only, still probing the playlist the gateway will
+   serve, so verified and confined playback holds for every addon stream. This
+   simultaneously resolves
    security finding M2 in
    [2026-11-25-security-and-improvement-review.md](./2026-11-25-security-and-improvement-review.md)
    and removes the largest real-world Stremio addon compatibility barrier (most
