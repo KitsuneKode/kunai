@@ -60,6 +60,7 @@ export type PlayerLaunchInput = {
   readonly ledger: PlaybackLedgerSlot;
   readonly startAt?: number;
   readonly resumePromptAt?: number;
+  readonly resumeOfferOverlayOnly?: boolean;
   readonly playbackMode?: "manual" | "autoplay-chain";
   readonly timing?: PlaybackTimingMetadata | null;
   readonly onNearEof?: () => void;
@@ -81,6 +82,7 @@ export async function launchPlayback(input: PlayerLaunchInput): Promise<Playback
     ledger: ledgerSlot,
     startAt = 0,
     resumePromptAt = 0,
+    resumeOfferOverlayOnly = false,
     playbackMode = "manual",
     timing = null,
     onNearEof,
@@ -218,6 +220,7 @@ export async function launchPlayback(input: PlayerLaunchInput): Promise<Playback
         config,
       }),
       resumePromptAt,
+      resumeOfferOverlayOnly,
       attach: false,
       playbackMode,
       resumeStartChoicePrompt: suppressResumePrompt ? false : config.resumeStartChoicePrompt,
@@ -436,6 +439,7 @@ export async function playEpisode(
       ledger: host.ledger,
       startAt: startIntent.startAt,
       resumePromptAt: startIntent.resumePromptAt,
+      resumeOfferOverlayOnly: startIntent.resumeOfferOverlayOnly,
       playbackMode: run.playbackSession.mode,
       timing: playbackTiming,
       onNearEof: maybePrefetchNext,

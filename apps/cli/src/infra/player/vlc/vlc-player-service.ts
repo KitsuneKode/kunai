@@ -306,6 +306,7 @@ export class VlcPlayerService implements PlayerService {
           startAt: options.startAt,
           resumePromptAt: options.resumePromptAt,
           resumeStartChoicePrompt: options.resumeStartChoicePrompt,
+          resumeOfferOverlayOnly: options.resumeOfferOverlayOnly,
         }),
         subtitle: target.subtitle,
       };

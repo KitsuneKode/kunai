@@ -526,7 +526,9 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // The four-finding playback/startup correctness sweep measured 3,328,686 bytes.
 // No dependency or asset; the interactive Continue source picker is loaded only
 // when a prompt can be shown. 3251 KiB leaves 338 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_251;
+// With the Restart start-position fix from the #852 review on top it measured
+// 3,329,033 bytes; 3252 KiB leaves 1,015. No dependency or asset.
+export const NPM_BUNDLE_BUDGET_KB = 3_252;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

@@ -107,6 +107,7 @@ describe("offerContinueSourceChoice", () => {
       title: TITLE,
       episode: EPISODE,
       hasReadyLocal: async () => true,
+      interactive: false,
     });
 
     expect(result).toBe("online");

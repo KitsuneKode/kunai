@@ -44,6 +44,8 @@ export async function offerContinueSourceChoice(input: {
   readonly episode: EpisodeInfo;
   readonly hasReadyLocal?: () => Promise<boolean>;
   readonly choose?: () => Promise<ContinueSourceChoice | null>;
+  /** Whether a person can answer a picker; defaults to stdin being a TTY. */
+  readonly interactive?: boolean;
 }): Promise<ContinueSourcePromptOutcome> {
   const { container, title } = input;
   if (container.config.continueSourcePreference !== "ask") return "not-needed";
@@ -52,7 +54,8 @@ export async function offerContinueSourceChoice(input: {
   const hasReadyLocal =
     input.hasReadyLocal ?? (() => hasReadyLocalEpisodePlayback(container, title, input.episode));
   if (!(await hasReadyLocal())) return "not-needed";
-  if (!input.choose && !process.stdin.isTTY) return "online";
+  const interactive = input.interactive ?? process.stdin.isTTY === true;
+  if (!input.choose && !interactive) return "online";
   const choice = await (input.choose ?? (() => chooseContinueSourceWithShell(title)))();
   return choice ?? "cancelled";
 }

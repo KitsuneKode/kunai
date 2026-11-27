@@ -4,6 +4,11 @@ export type PlaybackStartIntent = {
   readonly startAt: number;
   readonly resumePromptAt: number;
   readonly suppressResumePrompt: boolean;
+  /**
+   * The resume offer is for persistent mpv's overlay only (the user chose
+   * Restart). Players that cannot prompt start at `startAt`, not at the offer.
+   */
+  readonly resumeOfferOverlayOnly?: boolean;
 };
 
 function normalizeSeconds(seconds: number | undefined): number {
@@ -72,11 +77,12 @@ export function startFromEpisodeSelection(selection: EpisodeSelection): Playback
   }
 
   if (normalizeSeconds(selection.startAt) > 0) {
-    return {
+    const offer: PlaybackStartIntent = {
       startAt: 0,
       resumePromptAt: normalizeSeconds(selection.startAt),
       suppressResumePrompt: false,
     };
+    return selection.restart ? { ...offer, resumeOfferOverlayOnly: true } : offer;
   }
 
   return startAtResumePoint(selection.startAt ?? 0, {
