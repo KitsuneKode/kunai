@@ -109,14 +109,15 @@ Example (not the shipped defaults; those use `audio: "original"` and `quality: "
 {
   "animeLanguageProfile": { "audio": "ja", "subtitle": "en", "quality": "1080p" },
   "seriesLanguageProfile": { "audio": "en", "subtitle": "en", "quality": "best" },
-  "movieLanguageProfile": { "audio": "en", "subtitle": "en", "quality": "best" }
+  "movieLanguageProfile": { "audio": "en", "subtitle": "en", "quality": "best" },
+  "youtubeLanguageProfile": { "audio": "original", "subtitle": "en", "quality": "1080p" }
 }
 ```
 
 - `animeTitlePreference`: display English, romaji, native, or provider-native titles.
 - `favoriteSources`: pin preferred source/server names to the top of pickers.
 
-See [Media selection](/docs/users/media-selection) for how profiles flow into resolution and mpv.
+See [Media selection](/docs/users/media-selection) for how profiles flow into resolution and mpv. The per-run `--quality`, `--audio`, and `--sub` flags apply to all four profiles for that launch only, including YouTube; invalid values are usage errors before the shell starts.
 
 ### Playback and recovery
 

@@ -736,10 +736,6 @@ export class ConfigServiceImpl implements ConfigService {
     return [...this.config.youtubeProviderPriority];
   }
 
-  get youtubeLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
-    return this.config.youtubeLanguageProfile;
-  }
-
   get youtubeMetadata(): KitsuneConfig["youtubeMetadata"] {
     return { ...this.config.youtubeMetadata };
   }
@@ -813,6 +809,10 @@ export class ConfigServiceImpl implements ConfigService {
 
   get movieLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
     return this.sessionOverrides.movieLanguageProfile ?? this.config.movieLanguageProfile;
+  }
+
+  get youtubeLanguageProfile(): import("./ConfigService").MediaLanguageProfile {
+    return this.sessionOverrides.youtubeLanguageProfile ?? this.config.youtubeLanguageProfile;
   }
 
   get animeTitlePreference(): "english" | "romaji" | "native" | "provider" {
@@ -1174,17 +1174,16 @@ export class ConfigServiceImpl implements ConfigService {
         }
       }
       partial[key] = persisted;
-      if (keptAny) {
-        const effective: import("./ConfigService").MediaLanguageProfile = { ...persisted };
-        for (const field of PROFILE_FIELDS) {
-          if (override[field] !== saved[field] && incoming[field] === override[field]) {
-            const value = override[field];
-            if (value === undefined) delete effective[field];
-            else effective[field] = value;
-          }
+      if (!keptAny) continue;
+      const effective: import("./ConfigService").MediaLanguageProfile = { ...persisted };
+      for (const field of PROFILE_FIELDS) {
+        if (override[field] !== saved[field] && incoming[field] === override[field]) {
+          const value = override[field];
+          if (value === undefined) delete effective[field];
+          else effective[field] = value;
         }
-        keptProfileOverrides[key] = effective;
       }
+      keptProfileOverrides[key] = effective;
     }
     return { partial, keptProfileOverrides };
   }
@@ -1475,6 +1474,7 @@ const SESSION_PROFILE_KEYS = [
   "animeLanguageProfile",
   "seriesLanguageProfile",
   "movieLanguageProfile",
+  "youtubeLanguageProfile",
 ] as const;
 const PROFILE_FIELDS = ["audio", "subtitle", "quality"] as const;
 
