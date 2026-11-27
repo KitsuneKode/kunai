@@ -140,9 +140,9 @@ archive and put only the residue here.
 
 ### Security review
 
-| Track                           | Remaining                                                                                                                                                                                | Plan                                                                                          |
-| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Security and improvement review | M1, M4, M5, L2 and the signing pin are fixed (#781, #779, #778, #835). Open: Stremio probe/player connection split (M2), analytics admission cost (M3), first media URL on mpv argv (L1) | [2026-11-25 security and improvement review](./2026-11-25-security-and-improvement-review.md) |
+| Track                           | Remaining                                                                                                                                                                                                | Plan                                                                                          |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Security and improvement review | M1, M4, M5, L2, the M3 SQL half and the signing pin are fixed (#781, #779, #778, #797, #835). Open: Stremio probe/player connection split (M2), the M3 edge rate limit, first media URL on mpv argv (L1) | [2026-11-25 security and improvement review](./2026-11-25-security-and-improvement-review.md) |
 
 ### Verification and CI
 

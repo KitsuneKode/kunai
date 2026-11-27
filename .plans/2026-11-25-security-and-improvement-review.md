@@ -12,18 +12,19 @@ Verification used the pinned source, existing automated tests and harmless local
 
 Fixed on `main` since this review; the finding text below is kept as written:
 
-| Finding                          | Fixed by | What changed                                                                              |
-| -------------------------------- | -------- | ----------------------------------------------------------------------------------------- |
-| M1 provider subtitles            | #781     | Remote subtitles from every provider go through the guarded fetch                         |
-| M4 stale upgrade activation      | #779     | Install intent reaches the activation lock; a stale upgrade never overwrites a newer one  |
-| M5 unpinned yt-dlp in CI         | #778     | CI installs a presence stub (`.github/scripts/yt-dlp-ci-stub.sh`) that tests never invoke |
-| L2 provider-matrix shell input   | #778     | The provider selection passes through the environment and is validated before use         |
-| Release enrollment (signing pin) | #835     | `apps/cli/src/services/update/release-key.json` carries the release key                   |
+| Finding                          | Fixed by | What changed                                                                                            |
+| -------------------------------- | -------- | ------------------------------------------------------------------------------------------------------- |
+| M1 provider subtitles            | #781     | Remote subtitles from every provider go through the guarded fetch                                       |
+| M4 stale upgrade activation      | #779     | Install intent reaches the activation lock; a stale upgrade never overwrites a newer one                |
+| M5 unpinned yt-dlp in CI         | #778     | CI installs a presence stub (`.github/scripts/yt-dlp-ci-stub.sh`) that tests never invoke               |
+| L2 provider-matrix shell input   | #778     | The provider selection passes through the environment and is validated before use                       |
+| M3 analytics admission (SQL)     | #797     | A repeat ping spends no budget; once the ceiling is reached nothing is written, not even the budget row |
+| Release enrollment (signing pin) | #835     | `apps/cli/src/services/update/release-key.json` carries the release key                                 |
 
 Still open: **M2** (Stremio probe and player use separate connections; stays
-behind the experimental gate), **M3** (analytics admission still mutates the
-budget row), **L1** (the first remote media URL and referrer are on mpv's
-argv), and top-10 items 4–10.
+behind the experimental gate), the **M3** rate control in front of the function
+(a hosting firewall rule, owned by the analytics redesign plan), **L1** (the
+first remote media URL and referrer are on mpv's argv), and top-10 items 4–10.
 
 ## Security findings
 
