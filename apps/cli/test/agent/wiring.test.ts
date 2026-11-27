@@ -12,6 +12,7 @@ import { Database } from "bun:sqlite";
 import { describe, expect, it } from "bun:test";
 import { join } from "node:path";
 
+import { measureColumns } from "@/app-shell/shell-text";
 import type { JsonObject } from "@kunai/types";
 
 import { createAgentSession, type AgentSession } from "./agent-driver";
@@ -19,6 +20,10 @@ import { K } from "./keys";
 import { onboardedConfig } from "./seed";
 
 const SETTINGS_KEY = "/";
+
+function occurrences(frame: string, needle: string): number {
+  return frame.split(needle).length - 1;
+}
 
 async function withSession(
   label: string,
@@ -217,6 +222,33 @@ describe("agent wiring · post-play history", () => {
         "history_progress contains the played title",
       );
     });
+  }, 45_000);
+});
+
+describe("agent wiring · post-play shell v4 state", () => {
+  it("keeps stopped-early honest and inside a 40-column terminal", async () => {
+    await withSession(
+      "wiring-post-play-narrow",
+      { mpv: "fake", columns: 40, rows: 20 },
+      async (s) => {
+        await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+        s.press("movie", K.enter);
+        await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
+        s.press(K.enter);
+        await s.waitForFrame((f) => f.includes("Post-play"), "post-play surface", 30_000);
+
+        const frame = s.frame();
+        expect(frame).toContain("Post-play");
+        expect(frame).not.toContain("Up Next");
+        expect(frame).toContain("[enter] resume");
+        expect(frame).not.toContain("x cancel");
+        expect(frame).not.toContain("▶ RESUME");
+        expect(occurrences(frame, "Resume")).toBeLessThanOrEqual(1);
+        for (const line of frame.split("\n")) {
+          expect(measureColumns(line.trimEnd())).toBeLessThanOrEqual(40);
+        }
+      },
+    );
   }, 45_000);
 });
 

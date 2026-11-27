@@ -36,7 +36,7 @@ export function resolveHeaderDestination(input: {
   }
 
   if (rootContent?.kind === "post-playback") {
-    return "Up Next";
+    return "Post-play";
   }
 
   if (rootContent?.kind === "playback" || rootContent?.kind === "loading") {
