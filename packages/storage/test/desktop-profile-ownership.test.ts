@@ -127,15 +127,21 @@ describe("checkDesktopProfile ownership", () => {
     if (process.platform === "win32") return;
     const parent = mkdtempSync(join(tmpdir(), "kunai-owner-alias-"));
     roots.push(parent);
-    const real = join(parent, "xdg");
+    // The aliased dir must actually be a platform default on every supported
+    // host: XDG on Linux, ~/Library/Application Support on macOS.
+    const home = join(parent, "home");
+    const real =
+      process.platform === "darwin"
+        ? join(home, "Library", "Application Support")
+        : join(parent, "xdg");
     const alias = join(parent, "alias");
-    mkdirSync(real);
+    mkdirSync(real, { recursive: true });
     symlinkSync(real, alias);
 
     const homeSaved = process.env.HOME;
     const xdgSaved = process.env.XDG_CONFIG_HOME;
     try {
-      process.env.HOME = join(parent, "home");
+      process.env.HOME = home;
       // The lexical override lives under the alias, not the default root —
       // only the physical comparison catches that they are the same dir.
       process.env.XDG_CONFIG_HOME = real;

@@ -85,9 +85,6 @@ export function getInstallLayoutPaths(
     overrides.env ??
     (crossPathFamily ? { ...process.env, KUNAI_CONFIG_DIR: undefined } : process.env);
   const kunai = getKunaiPaths({ platform: storagePlatformFor(platform), env });
-  const dataDir = overrides.dataDir ?? kunai.dataDir;
-  const cacheDir = overrides.cacheDir ?? kunai.cacheDir;
-  const configDir = overrides.configDir ?? kunai.configDir;
   // Join for `platform`, not for the host. `node:path` always follows the host,
   // so asking for a Linux layout from Windows returned `\data\kunai\versions` —
   // the storage dirs above were already resolved for the target platform, and
@@ -96,11 +93,23 @@ export function getInstallLayoutPaths(
   // Attach profileDir only for a true profile-based layout: an injected
   // configDir/dataDir/cacheDir triple under the same env would otherwise be
   // mislabeled as profile-owned and wrongly gate uninstall ownership checks.
+  // Overrides that merely spell the canonical dir differently (`…/.`, case on
+  // Windows) count as matches, but the canonical env-derived dir is what the
+  // layout keeps.
+  const directoryIdentity = (dir: string) => {
+    const normalized = joinFor(dir, ".");
+    return platform === "win32" ? normalized.toLowerCase() : normalized;
+  };
+  const sameDirectory = (override: string | undefined, expected: string) =>
+    override === undefined || directoryIdentity(override) === directoryIdentity(expected);
   const isProfileLayout =
     kunai.profileDir !== undefined &&
-    dataDir === kunai.dataDir &&
-    cacheDir === kunai.cacheDir &&
-    configDir === kunai.configDir;
+    sameDirectory(overrides.dataDir, kunai.dataDir) &&
+    sameDirectory(overrides.cacheDir, kunai.cacheDir) &&
+    sameDirectory(overrides.configDir, kunai.configDir);
+  const dataDir = isProfileLayout ? kunai.dataDir : (overrides.dataDir ?? kunai.dataDir);
+  const cacheDir = isProfileLayout ? kunai.cacheDir : (overrides.cacheDir ?? kunai.cacheDir);
+  const configDir = isProfileLayout ? kunai.configDir : (overrides.configDir ?? kunai.configDir);
 
   const base: Omit<InstallLayoutPaths, "profileDir"> = {
     dataDir,

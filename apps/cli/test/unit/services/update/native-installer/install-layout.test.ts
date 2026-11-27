@@ -155,50 +155,51 @@ describe("install layout paths", () => {
   test("an injected env with a valid profile produces a matching config and launcher", () => {
     // Same contract the shell installers derive: profile-rooted config dir
     // and a launcher under <profile>/bin — per path family, in-memory only.
-    const cases =
-      process.platform === "win32"
-        ? [
-            {
-              platform: "win32" as const,
-              env: {
-                USERPROFILE: "C:\\Users\\T",
-                APPDATA: "C:\\Users\\T\\AppData\\Roaming",
-                LOCALAPPDATA: "C:\\Users\\T\\AppData\\Local",
-                KUNAI_CONFIG_DIR: "C:\\profile",
-              },
-              configDir: "C:\\profile\\config",
-              launcherPath: "C:\\profile\\bin\\kunai.exe",
-            },
-            {
-              platform: "linux" as const,
-              env: { HOME: "/home/t", KUNAI_CONFIG_DIR: "/srv/profile" },
-              configDir: "/srv/profile/config",
-              launcherPath: "/srv/profile/bin/kunai",
-            },
-          ]
-        : [
-            {
-              platform: "linux" as const,
-              env: { HOME: "/home/t", KUNAI_CONFIG_DIR: "/srv/profile" },
-              configDir: "/srv/profile/config",
-              launcherPath: "/srv/profile/bin/kunai",
-            },
-            {
-              platform: "win32" as const,
-              env: {
-                USERPROFILE: "C:\\Users\\T",
-                APPDATA: "C:\\Users\\T\\AppData\\Roaming",
-                LOCALAPPDATA: "C:\\Users\\T\\AppData\\Local",
-                KUNAI_CONFIG_DIR: "C:\\profile",
-              },
-              configDir: "C:\\profile\\config",
-              launcherPath: "C:\\profile\\bin\\kunai.exe",
-            },
-          ];
-    for (const { platform, env, configDir, launcherPath } of cases) {
-      const layout = getInstallLayoutPaths({ platform, env });
-      expect(layout.configDir).toBe(configDir);
-      expect(layout.launcherPath).toBe(launcherPath);
+    const cases = [
+      {
+        platform: "win32" as const,
+        env: {
+          USERPROFILE: "C:\\Users\\T",
+          APPDATA: "C:\\Users\\T\\AppData\\Roaming",
+          LOCALAPPDATA: "C:\\Users\\T\\AppData\\Local",
+          KUNAI_CONFIG_DIR: "C:\\profile",
+        },
+        configDir: "C:\\profile\\config",
+        launcherPath: "C:\\profile\\bin\\kunai.exe",
+        profileDir: "C:\\profile",
+      },
+      {
+        platform: "linux" as const,
+        env: { HOME: "/home/t", KUNAI_CONFIG_DIR: "/srv/profile" },
+        configDir: "/srv/profile/config",
+        launcherPath: "/srv/profile/bin/kunai",
+        profileDir: "/srv/profile",
+      },
+    ];
+    for (const testCase of cases) {
+      const layout = getInstallLayoutPaths({ platform: testCase.platform, env: testCase.env });
+      expect(layout.configDir).toBe(testCase.configDir);
+      expect(layout.launcherPath).toBe(testCase.launcherPath);
+      expect(layout.profileDir).toBe(testCase.profileDir);
+
+      // An override that only spells the canonical dir differently still
+      // resolves to the canonical dir and keeps the profile attachment.
+      const alias = getInstallLayoutPaths({
+        platform: testCase.platform,
+        env: testCase.env,
+        configDir: testCase.configDir + (testCase.platform === "win32" ? "\\." : "/."),
+      });
+      expect(alias.configDir).toBe(testCase.configDir);
+      expect(alias.profileDir).toBe(testCase.profileDir);
+
+      // A genuinely different configDir is not the profile layout.
+      const foreign = getInstallLayoutPaths({
+        platform: testCase.platform,
+        env: testCase.env,
+        configDir: `${testCase.configDir}-other`,
+      });
+      expect(foreign.configDir).toBe(`${testCase.configDir}-other`);
+      expect(foreign.profileDir).toBeUndefined();
     }
   });
 });

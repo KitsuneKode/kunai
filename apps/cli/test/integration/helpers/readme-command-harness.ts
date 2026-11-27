@@ -302,13 +302,19 @@ function profileEnv(
   extras: NodeJS.ProcessEnv = {},
 ): NodeJS.ProcessEnv {
   const pathParts = [profile.binDir, profile.shimDir, "/usr/bin", "/bin"];
+  // A leaked KUNAI_DATA_DIR/KUNAI_CACHE_DIR from the outer env would redirect
+  // storage away from this profile's dedicated root — strip them before
+  // spreading. Storage derives from the profile's KUNAI_CONFIG_DIR, not from
+  // HOME/XDG, so no other KUNAI_*_DIR overrides are needed to keep the
+  // installer and the CLI aligned.
+  const inherited = { ...process.env };
+  delete inherited.KUNAI_DATA_DIR;
+  delete inherited.KUNAI_CACHE_DIR;
   return {
-    ...process.env,
+    ...inherited,
     ...profile.env,
     ...extras,
     KUNAI_BIN_DIR: profile.binDir,
-    // install.sh derives config/data/cache from HOME/XDG, the same roots the
-    // CLI reads — no KUNAI_*_DIR overrides are needed to keep them aligned.
     PATH: pathParts.join(":"),
     CI: "1",
     DO_NOT_TRACK: "1",

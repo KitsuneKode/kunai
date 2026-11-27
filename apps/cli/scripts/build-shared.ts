@@ -560,8 +560,9 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // on top measured 3,378,230 bytes: +29,766, after sharing the provider JSON
 // transport, episode identity parsing and language-list normalization. No
 // dependency or asset. 3300 KiB leaves 970 bytes.
-// With both #862 and the profile checks, Bun 1.4.5 measured 3,385,051
-// bytes: +6,821 over #862 alone. 3306 KiB leaves 293 bytes.
+// With #862 and the profile checks (including canonical layout comparisons),
+// Bun 1.4.5 measured 3,385,214 bytes: +6,984 over #862 alone.
+// 3306 KiB leaves 130 bytes.
 export const NPM_BUNDLE_BUDGET_KB = 3_306;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */

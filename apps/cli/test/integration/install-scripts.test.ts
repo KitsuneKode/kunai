@@ -2719,26 +2719,33 @@ describe("install.sh optional dependency consent", () => {
 describe("install.sh dedicated profile contract", () => {
   const dryRun = ["--dry-run", "--yes", "--skip-deps", "--version", "9.8.7"];
 
-  test("a profile-only dry run reports the derived layout and writes nothing", () => {
-    const sandbox = createInstallerSandbox("install-sh-profile-dry", { freshProfile: true });
-    try {
-      const result = runInstallSh(dryRun, profileOnlyInstallerEnv(sandbox.env));
-      expect(result.status).toBe(0);
-      const out = `${result.stdout}${result.stderr}`;
-      expect(out).toContain(join(sandbox.profileDir, "config", "install.json"));
-      expect(out).toContain(join(sandbox.profileDir, "data", "versions"));
-      expect(out).toContain(join(sandbox.profileDir, "bin", "kunai"));
-      // Manual activation guidance, never an rc-file edit.
-      expect(out).toContain("PATH was not changed");
-      expect(out).toContain("export KUNAI_CONFIG_DIR=");
-      expect(existsSync(sandbox.profileDir)).toBe(false);
-      expect(existsSync(join(sandbox.root, ".bashrc"))).toBe(false);
-      expect(existsSync(join(sandbox.root, ".profile"))).toBe(false);
-      expect(existsSync(join(sandbox.root, ".bash_profile"))).toBe(false);
-    } finally {
-      sandbox.cleanup();
-    }
-  });
+  test.each([false, true])(
+    "a profile-only dry run reports the derived layout and writes nothing (precreate=%s)",
+    (precreate) => {
+      const sandbox = createInstallerSandbox("install-sh-profile-dry", { freshProfile: true });
+      try {
+        if (precreate) mkdirSync(sandbox.profileDir);
+        const result = runInstallSh(dryRun, profileOnlyInstallerEnv(sandbox.env));
+        expect(result.status).toBe(0);
+        const out = `${result.stdout}${result.stderr}`;
+        expect(out).toContain(join(sandbox.profileDir, "config", "install.json"));
+        expect(out).toContain(join(sandbox.profileDir, "data", "versions"));
+        expect(out).toContain(join(sandbox.profileDir, "bin", "kunai"));
+        // Manual activation guidance, never an rc-file edit.
+        expect(out).toContain("PATH was not changed");
+        expect(out).toContain("export KUNAI_CONFIG_DIR=");
+        // A dry run creates nothing: an absent root stays absent, a pre-created
+        // empty root stays empty and unmarked.
+        expect(existsSync(sandbox.profileDir)).toBe(precreate);
+        expect(existsSync(join(sandbox.profileDir, ".kunai-profile"))).toBe(false);
+        expect(existsSync(join(sandbox.root, ".bashrc"))).toBe(false);
+        expect(existsSync(join(sandbox.root, ".profile"))).toBe(false);
+        expect(existsSync(join(sandbox.root, ".bash_profile"))).toBe(false);
+      } finally {
+        sandbox.cleanup();
+      }
+    },
+  );
 
   test.each(["rel/p", "", " /profile"])(
     "a malformed KUNAI_CONFIG_DIR (%j) is refused before any write",
@@ -2850,13 +2857,16 @@ describe("install.sh dedicated profile contract", () => {
     const sumsFor = (body: string) =>
       `${createHash("sha256").update(body).digest("hex")}  ${asset}\n`;
 
-    const sandbox = createInstallerSandbox("install-sh-profile-lifecycle", { freshProfile: true });
+    const sandbox = createInstallerSandbox("install-sh-profile lifecycle", { freshProfile: true });
     const bashrc = join(sandbox.root, ".bashrc");
     const loginRc = join(sandbox.root, ".profile");
     writeFileSync(bashrc, "# fixture bashrc\n");
     writeFileSync(loginRc, "# fixture profile\n");
     // A fake account-wide Kunai dir outside the profile must survive untouched.
-    const defaultSentinel = join(sandbox.root, "kunai", "sentinel.txt");
+    const defaultSentinel =
+      process.platform === "darwin"
+        ? join(sandbox.root, "Library", "Application Support", "kunai", "sentinel.txt")
+        : join(sandbox.root, "kunai", "sentinel.txt");
     mkdirSync(dirname(defaultSentinel), { recursive: true });
     writeFileSync(defaultSentinel, "default profile\n");
     const markerPath = join(sandbox.profileDir, ".kunai-profile");
@@ -2899,12 +2909,20 @@ describe("install.sh dedicated profile contract", () => {
             SHELL: "/bin/bash",
           };
 
+          mkdirSync(sandbox.profileDir, { recursive: true });
           const install = await runInstallShAsync(
             ["--yes", "--skip-deps", "--version", "9.8.7"],
             env,
           );
           expect(install.status, `${install.stdout}--ERR--${install.stderr}`).toBe(0);
           expect(`${install.stdout}${install.stderr}`).toContain("PATH was not changed");
+          // The sandbox label contains a space, so the profile footer must
+          // print shell-escaped (%q) invocation lines a user can paste.
+          const escapedRoot = sandbox.profileDir.replaceAll(" ", "\\ ");
+          const escapedLauncher = launcher.replaceAll(" ", "\\ ");
+          expect(`${install.stdout}${install.stderr}`).toContain(
+            `KUNAI_CONFIG_DIR=${escapedRoot} ${escapedLauncher}`,
+          );
 
           expect(readFileSync(markerPath, "utf8")).toBe("kunai-profile-v1\n");
           expect(readFileSync(bashrc, "utf8")).toBe("# fixture bashrc\n");

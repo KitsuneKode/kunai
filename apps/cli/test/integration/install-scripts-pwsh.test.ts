@@ -3151,9 +3151,14 @@ describePwsh("install.ps1 dedicated profile contract", () => {
       const sandbox = createInstallerSandbox("install-ps1-profile-lifecycle", {
         freshProfile: true,
       });
-      const defaultSentinel = join(sandbox.root, "kunai", "sentinel.txt");
-      mkdirSync(dirname(defaultSentinel), { recursive: true });
-      writeFileSync(defaultSentinel, "default profile\n");
+      const defaultSentinels = [
+        join(sandbox.root, "appdata", "kunai", "sentinel.txt"),
+        join(sandbox.root, "localappdata", "kunai", "sentinel.txt"),
+      ];
+      for (const sentinel of defaultSentinels) {
+        mkdirSync(dirname(sentinel), { recursive: true });
+        writeFileSync(sentinel, "default profile\n");
+      }
       const markerPath = join(sandbox.profileDir, ".kunai-profile");
       const launcher = join(sandbox.profileDir, "bin", "kunai.exe");
 
@@ -3216,7 +3221,9 @@ describePwsh("install.ps1 dedicated profile contract", () => {
             expect(existsSync(join(sandbox.profileDir, "tmp"))).toBe(false);
             expect(readFileSync(markerPath, "utf8")).toBe("kunai-profile-v1\n");
             expect(readFileSync(sibling, "utf8")).toBe("unrelated\n");
-            expect(readFileSync(defaultSentinel, "utf8")).toBe("default profile\n");
+            for (const sentinel of defaultSentinels) {
+              expect(readFileSync(sentinel, "utf8")).toBe("default profile\n");
+            }
           },
         );
       } finally {

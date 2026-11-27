@@ -292,7 +292,7 @@ check_profile_filesystem() {
 		nonempty="$(
 			shopt -s nullglob dotglob
 			_entries=("$PROFILE_DIR"/*)
-			((${#_entries[@]} > 0)) && printf '%s\n' "${_entries[0]}"
+			if ((${#_entries[@]} > 0)); then printf '%s\n' "${_entries[0]}"; fi
 		)"
 		[[ -n "$nonempty" ]] &&
 			fail_profile 'has no valid .kunai-profile ownership marker'
@@ -2720,16 +2720,13 @@ main() {
 	# one plays something. `-q` takes the top result; a bare `kunai` browses.
 	bold "Done."
 	if [[ -n "$PROFILE_DIR" ]]; then
-		local _q
+		local _root _q
+		printf -v _root '%q' "$PROFILE_DIR"
 		printf -v _q '%q' "$BIN_DIR/kunai"
-		cat <<EOF
-This install belongs to the profile at $PROFILE_DIR.
-Invoke it with the env var set, e.g.:
-  KUNAI_CONFIG_DIR=$PROFILE_DIR $_q -S "Frieren" -a
-
-Update any time:  KUNAI_CONFIG_DIR=$PROFILE_DIR $_q upgrade
-Remove:           KUNAI_CONFIG_DIR=$PROFILE_DIR $_q uninstall
-EOF
+		printf 'This install belongs to the profile at %s.\nInvoke it with the env var set, e.g.:\n' "$PROFILE_DIR"
+		printf '  KUNAI_CONFIG_DIR=%s %s -S "Frieren" -a\n\n' "$_root" "$_q"
+		printf 'Update any time:  KUNAI_CONFIG_DIR=%s %s upgrade\n' "$_root" "$_q"
+		printf 'Remove:           KUNAI_CONFIG_DIR=%s %s uninstall\n' "$_root" "$_q"
 		return
 	fi
 	cat <<EOF
