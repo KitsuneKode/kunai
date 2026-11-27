@@ -252,6 +252,31 @@ describe("agent wiring · post-play shell v4 state", () => {
   }, 45_000);
 });
 
+describe("agent wiring · calendar error state", () => {
+  it("shows an issue header and dedicated retry footer without dead day chrome", async () => {
+    await withSession(
+      "wiring-calendar-error",
+      { providers: "none", columns: 120, rows: 32 },
+      async (s) => {
+        await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+        s.press("/", "calendar", K.enter);
+        await s.waitForFrame(
+          (f) => f.includes("Could not reach the release schedule") && f.includes("● issue"),
+          "settled calendar issue",
+        );
+        const frame = s.frame();
+        expect(frame).toContain("● issue");
+        expect(frame).not.toContain("● ready");
+        expect(frame).toContain("[r] retry");
+        expect(frame).toContain("[esc] back");
+        expect(frame).not.toContain("anime mode");
+        expect(frame).not.toContain("← → day");
+        expect(s.sessionState().searchState).toBe("error");
+      },
+    );
+  }, 45_000);
+});
+
 describe("agent wiring · anime episode picker", () => {
   it("opens with the cursor on an episode, so one Enter plays it", async () => {
     // The picker used to open on nothing when the current episode was not in

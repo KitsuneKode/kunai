@@ -97,6 +97,7 @@ import {
   buildCalendarLoadingState,
   buildCalendarPreviewRailModel,
   buildCalendarRenderRows,
+  deriveCalendarReleaseState,
   filterCalendarOptionsByDay,
   filterCalendarOptionsByType,
   windowCalendarRowsByLines,
@@ -120,7 +121,13 @@ import {
   type DetailsSheetHistory,
 } from "./details-sheet.model";
 import { useCalendarCursor, type CalendarKeyboardCursor } from "./hooks/use-calendar-cursor";
-import { useCalendarRoute, type CalendarRouteRequest } from "./hooks/use-calendar-route";
+import {
+  calendarSessionStatusForTransition,
+  useCalendarRoute,
+  type CalendarRouteKind,
+  type CalendarRouteRequest,
+  type CalendarSessionStatus,
+} from "./hooks/use-calendar-route";
 import { useCalendarState } from "./hooks/use-calendar-state";
 import { resolveSuggestionDebounceMs, useSearchSuggestions } from "./hooks/use-search-suggestions";
 import { undisplayPlacementsKeepCache } from "./image-pane";
@@ -237,6 +244,7 @@ export function BrowseShell<T>({
   onSearch,
   onLoadCalendar,
   onCalendarAccepted,
+  onCalendarStatus,
   onLoadDiscovery,
   onLoadRecommendations,
   settings,
@@ -287,6 +295,8 @@ export function BrowseShell<T>({
     request: CalendarRouteRequest,
     response: BrowseShellSearchResponse<T>,
   ) => void;
+  /** Session status implied by non-success calendar route transitions. */
+  onCalendarStatus?: (status: CalendarSessionStatus) => void;
   onLoadDiscovery?: () => Promise<BrowseShellSearchResponse<T>>;
   onLoadRecommendations?: () => Promise<BrowseShellSearchResponse<T>>;
   settings?: KitsuneConfig;
@@ -495,6 +505,15 @@ export function BrowseShell<T>({
   });
   const calendarRouteKind = calendarRouteState.state.kind;
   const calendarRoutePending = calendarRouteKind === "loading" || calendarRouteKind === "retrying";
+  const calendarStatusRef = useRef(onCalendarStatus);
+  calendarStatusRef.current = onCalendarStatus;
+  const previousCalendarRouteKindRef = useRef<CalendarRouteKind | null>(null);
+  useEffect(() => {
+    const previous = previousCalendarRouteKindRef.current;
+    previousCalendarRouteKindRef.current = calendarRouteKind;
+    const status = calendarSessionStatusForTransition(previous, calendarRouteKind);
+    if (status) calendarStatusRef.current?.(status);
+  }, [calendarRouteKind]);
 
   useEffect(() => {
     if (!loadIdleContext) return;
@@ -1390,7 +1409,8 @@ export function BrowseShell<T>({
     hasResultSubtitle: !ultraCompact && Boolean(resultStatus.primary || resultStatus.secondary),
     hasFilterBar: showResultFilterBar,
     hasFilterBadges: activeFilterBadges.length > 0 && !ultraCompact,
-    hasCalendarChrome: isCalendarView && calendarDays.length > 0 && !ultraCompact,
+    hasCalendarChrome:
+      isCalendarView && calendarRouteKind !== "error" && calendarDays.length > 0 && !ultraCompact,
     hasContextStrip: Boolean(activeOverlay || (queryDirty && displayOptions.length > 0)),
     hasQueryDirtyHint:
       queryDirty && displayOptions.length > 0 && !ultraCompact && !commandMode && !isCalendarView,
@@ -1773,6 +1793,20 @@ export function BrowseShell<T>({
       ? (calendarKeyboardCursorRef.current.option ?? selectedOption)
       : selectedOption;
     if (listFocused && key.return && !key.shift && inputSelectedOption && searchState === "ready") {
+      if (isCalendarView) {
+        const releaseState = deriveCalendarReleaseState(inputSelectedOption, calendarNow);
+        // `aired · resolving` is broadcast state, not playable availability.
+        // Enter explains the release instead of launching a playback resolve
+        // that cannot produce a source.
+        if (
+          releaseState === "resolving" ||
+          releaseState === "countdown" ||
+          releaseState === "missed"
+        ) {
+          openDetailsOverlay();
+          return;
+        }
+      }
       onSubmit(inputSelectedOption.value);
       return;
     }
@@ -2117,7 +2151,9 @@ export function BrowseShell<T>({
             <Text color={palette.accent}>◈ </Text>
             <Text color={palette.text}>schedule</Text>
             <Text color={palette.dim} dimColor>
-              {"  ·  ← → day  ·  ⇥ type  ·  ↵ open  ·  / commands"}
+              {calendarRouteKind === "error"
+                ? "  ·  r retry  ·  esc back  ·  / commands"
+                : "  ·  ← → day  ·  ⇥ type  ·  ↵ open  ·  / commands"}
             </Text>
           </Box>
         ) : (
@@ -2232,7 +2268,10 @@ export function BrowseShell<T>({
           </Text>
         </Box>
 
-        {isCalendarView && calendarDays.length > 0 && !ultraCompact ? (
+        {isCalendarView &&
+        calendarRouteKind !== "error" &&
+        calendarDays.length > 0 &&
+        !ultraCompact ? (
           <Box flexDirection="column">
             <CalendarTypeTabs
               activeTab={calendarTypeTab}
@@ -2662,6 +2701,29 @@ export function BrowseShell<T>({
               ]
             : []),
         ];
+        if (calendarRouteKind === "error") {
+          const calendarErrorActions = selectFooterActions(
+            [
+              { key: "r", label: "retry", primary: true },
+              { key: "esc", label: "back", action: "quit" },
+              { key: "/", label: "commands", action: "command-mode" },
+            ],
+            effectiveFooterMode,
+            viewport.columns,
+            viewport.breakpoint === "narrow" ? 3 : 5,
+          );
+          return (
+            <ShellFooter
+              taskLabel="Calendar · issue"
+              mode={effectiveFooterMode}
+              commandMode={commandMode}
+              actions={calendarErrorActions}
+              terminalWidth={viewport.columns}
+              maxVisible={viewport.breakpoint === "narrow" ? 3 : 5}
+              companionHint
+            />
+          );
+        }
         const allBrowseFooterActions: readonly FooterAction[] = [
           {
             key: "enter",
@@ -2760,6 +2822,7 @@ export function openBrowseShell<T>({
   onSearch,
   onLoadCalendar,
   onCalendarAccepted,
+  onCalendarStatus,
   onLoadDiscovery,
   onLoadRecommendations,
   settings,
@@ -2803,6 +2866,8 @@ export function openBrowseShell<T>({
     request: CalendarRouteRequest,
     response: BrowseShellSearchResponse<T>,
   ) => void;
+  /** Session status implied by non-success calendar route transitions. */
+  onCalendarStatus?: (status: CalendarSessionStatus) => void;
   onLoadDiscovery?: () => Promise<BrowseShellSearchResponse<T>>;
   onLoadRecommendations?: () => Promise<BrowseShellSearchResponse<T>>;
   settings?: KitsuneConfig;
@@ -2862,6 +2927,7 @@ export function openBrowseShell<T>({
         onSearch={onSearch}
         onLoadCalendar={onLoadCalendar}
         onCalendarAccepted={onCalendarAccepted}
+        onCalendarStatus={onCalendarStatus}
         onLoadDiscovery={onLoadDiscovery}
         onLoadRecommendations={onLoadRecommendations}
         settings={settings}

@@ -922,9 +922,11 @@ export function AppRoot({ container }: { container: Container }) {
       ? "loading"
       : state.searchState === "loading"
         ? "searching"
-        : state.playbackStatus === "error"
-          ? "error"
-          : "ready";
+        : state.searchState === "error"
+          ? "issue"
+          : state.playbackStatus === "error"
+            ? "error"
+            : "ready";
   const playbackSubtitle = buildPlaybackSubtitleLine(state);
   const playbackSubtitleStatus = buildPlaybackSubtitleStatusLine(state);
   const visiblePresenceBootLine = presenceProvider === "discord" ? presenceBootLine : null;
