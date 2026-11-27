@@ -160,12 +160,12 @@ See [Customization](/docs/users/customization) and [Providers](/docs/users/provi
 On desktop mpv, `mpvHwdec` controls hardware video decoding. The default
 `auto` asks mpv once (with a small bounded probe, cached for seven days) which
 safe copy-back decoder actually works on the machine, then uses that exact
-decoder for playback. Linux/Unix decisions prefer VA-API/NVDEC/Vulkan-class
-backends, macOS prefers VideoToolbox, and Windows prefers D3D11VA-class
-backends; explicit mpv decoder names are also accepted. `auto-safe` and
-`auto-copy` use mpv's automatic modes without pinning the probed decoder, and
-`off` leaves mpv completely alone. If mpv is missing, the probe cannot run, or
-no GPU path proves usable, playback falls back to mpv's own default rather
+decoder for playback. Discovery is OS-aware on Linux, macOS, and Windows, while
+mpv chooses among the backends actually available on the host; explicit mpv
+decoder names are also accepted. `auto-safe` and
+`auto-copy` use mpv's automatic modes without pinning a decoder, and `off`
+forces software decoding. If mpv is missing, the probe cannot run, or no GPU
+path proves usable, `auto` playback falls back to mpv's own default rather
 than failing. Settings → Playback, `config.json`, or `--mpv-hwdec` can change
 or disable the behavior.
 

@@ -45,11 +45,15 @@ import {
   normalizeModePatch,
   normalizeMpvHwdec,
   normalizeMpvReconnectAttempts,
+  normalizeOptionalSecret,
   normalizePrePlayConfirm,
   normalizeProviderDns,
   normalizeRecoveryMode,
   normalizeRunwayTarget,
   normalizeStartupPriority,
+  normalizeStringList,
+  normalizeVideasySessionExpiresAt,
+  isExpiredVideasySession,
 } from "./config-scalar-normalizers";
 import {
   collectDirtyVaultFields,
@@ -1406,32 +1410,6 @@ export class ConfigServiceImpl implements ConfigService {
     }
     await this.persistConfig();
   }
-}
-
-function normalizeStringList<T>(values: T): readonly string[] {
-  if (!Array.isArray(values)) return [];
-  return [
-    ...new Set(
-      values
-        .filter(isJsonString)
-        .map((value) => value.trim())
-        .filter(Boolean),
-    ),
-  ];
-}
-
-function normalizeOptionalSecret<T>(value: T): string {
-  return isJsonString(value) ? value.trim() : "";
-}
-
-function normalizeVideasySessionExpiresAt<T, U>(value: T, token?: U): number {
-  const expiresAt = typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
-  if (!normalizeOptionalSecret(token)) return 0;
-  return isExpiredVideasySession(expiresAt) ? 0 : expiresAt;
-}
-
-function isExpiredVideasySession(expiresAt: number): boolean {
-  return expiresAt > 0 && expiresAt <= Date.now();
 }
 
 function retiredProductionProviderFieldSlice(

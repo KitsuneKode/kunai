@@ -535,7 +535,13 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // Recording the failing redirect hop on probe errors (so refusal evidence
 // names the host that failed) measured 3,329,213 bytes: +495. No dependency
 // or asset. 3252 KiB leaves 835 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_252;
+// The mpv hardware-decode probe and persistent A/V-sync recovery slice measured
+// 3,341,646 bytes: +12,433 over that tree. Trimming came first: replacing the
+// initial embedded MP4 probe clip with a 60-byte SEI-free H.264 sample reduced
+// the branch build by 3,216 bytes; the rest is distributed playback, settings,
+// diagnostics, and completion code with no dependency or asset. 3265 KiB leaves
+// 690 bytes; public launcher budgets are unchanged.
+export const NPM_BUNDLE_BUDGET_KB = 3_265;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

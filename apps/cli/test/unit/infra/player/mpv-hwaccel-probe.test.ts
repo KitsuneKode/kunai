@@ -27,6 +27,7 @@ const HELP_WITH_GPU_DRIVERS = [
 type ProbeCall = {
   readonly argv: readonly string[];
   readonly stdinLength: number;
+  readonly stopsAfterOutput: boolean;
 };
 
 type RunBehavior = {
@@ -50,7 +51,11 @@ function createRunProcess(initial: RunBehavior = successfulBehavior()) {
   const calls: ProbeCall[] = [];
   let behavior = initial;
   const runProcess: MpvHwaccelRunProcess = async (argv, options) => {
-    calls.push({ argv, stdinLength: options.stdin?.length ?? 0 });
+    calls.push({
+      argv,
+      stdinLength: options.stdin?.length ?? 0,
+      stopsAfterOutput: options.stopAfterOutput !== undefined,
+    });
     const isHelp = argv.includes("--hwdec=help");
     const override = isHelp ? behavior.help : behavior.decode;
     return {
@@ -127,7 +132,9 @@ describe("probeMpvHardwareAcceleration", () => {
     expect(fixture.calls[0]?.argv).toEqual(["mpv", "--no-config", "--hwdec=help"]);
     expect(fixture.calls[1]?.argv).toContain("--hwdec=auto-safe");
     expect(fixture.calls[1]?.argv.at(-1)).toBe("-");
-    expect(fixture.calls[1]?.stdinLength).toBeGreaterThan(1_000);
+    expect(fixture.calls[1]?.stdinLength).toBeGreaterThan(0);
+    expect(fixture.calls[0]?.stopsAfterOutput).toBe(false);
+    expect(fixture.calls[1]?.stopsAfterOutput).toBe(true);
     expect(result).toMatchObject({
       probed: true,
       autoSafeOk: true,
@@ -229,6 +236,49 @@ describe("probeMpvHardwareAcceleration", () => {
       const retried = await probeMpvHardwareAcceleration(deps);
       expect(retried.status).toBe("hardware");
       expect(fixture.calls).toHaveLength(4);
+    });
+  });
+
+  test("probe-terminated decode evidence completes even when mpv does not exit cleanly", async () => {
+    const fixture = createRunProcess({
+      decode: {
+        exitCode: null,
+        stdout: "Using hardware decoding (nvdec-copy).\n[vd] Decoder format: 64x64 nv12",
+        stderr: "",
+        timedOut: true,
+        terminatedByProbe: true,
+      },
+    });
+
+    const result = await probeMpvHardwareAcceleration(depsFor(fixture.runProcess));
+
+    expect(result).toMatchObject({
+      probed: true,
+      status: "hardware",
+      autoSafeOk: true,
+      autoSafeDriver: "nvdec-copy",
+    });
+  });
+
+  test("probe-terminated software decode evidence is a cacheable negative result", async () => {
+    await withCacheFile(async (cacheFile) => {
+      const fixture = createRunProcess({
+        decode: {
+          exitCode: null,
+          stdout: "[vd] Using software decoding.\n[vd] Decoder format: 64x64 yuv420p",
+          stderr: "",
+          timedOut: true,
+          terminatedByProbe: true,
+        },
+      });
+      const deps = depsFor(fixture.runProcess, { cacheFile });
+
+      const first = await probeMpvHardwareAcceleration(deps);
+      const second = await probeMpvHardwareAcceleration(deps);
+
+      expect(first.status).toBe("no-hardware");
+      expect(second).toMatchObject({ status: "no-hardware", fromCache: true });
+      expect(fixture.calls).toHaveLength(2);
     });
   });
 

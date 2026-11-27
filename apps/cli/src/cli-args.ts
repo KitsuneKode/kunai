@@ -6,14 +6,8 @@ import {
 } from "@/domain/media/media-preferences";
 import { parsePlayerChoice, type PlayerChoice } from "@/domain/playback/player-choice";
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
-import {
-  HDR_MODES,
-  isHdrMode,
-  isMpvHwdecMode,
-  MPV_HWDEC_MODES,
-  type HdrMode,
-  type MpvHwdecMode,
-} from "@kunai/config";
+import { HDR_MODES, isHdrMode, type HdrMode } from "@kunai/config";
+import { isMpvHwdecMode, MPV_HWDEC_MODES, type MpvHwdecMode } from "@kunai/config";
 
 /**
  * A malformed invocation — unknown flag, missing value, mistyped subcommand,

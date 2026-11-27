@@ -65,25 +65,28 @@ If reconnect **fails** or limits are hit, the cycle ends and the usual `Playback
 
 Hardware acceleration is decided once per playback launch, not at startup and
 not by probing on every file load in the persistent chain. `PlayerServiceImpl`
-reads the configured `mpvHwdec` mode into `MpvRuntimeOptions`; when the mode
-needs machine evidence (`auto`, `auto-safe`, or `auto-copy`), mpv startup calls
-`infra/player/mpv-hwaccel-probe.ts` before building argv. The probe is bounded
-(1.5 s for `--hwdec=help`, 3 s for a tiny stdin-fed decode), joined across
-concurrent callers, and cached for seven days under the OS cache directory,
-keyed by platform and the mpv invocation shape. Setup and doctor call
-`readCachedMpvHardwareAcceleration()` only, so they report the last result
+reads the configured `mpvHwdec` mode into `MpvRuntimeOptions`; only `auto`
+needs Kunai's machine evidence, so mpv startup calls
+`infra/player/mpv-hwaccel-probe.ts` before building argv in that mode. The
+probe is bounded (1.5 s for `--hwdec=help`, 3 s for a tiny stdin-fed decode),
+joined across concurrent callers, and cached for seven days under the OS cache
+directory, keyed by platform and the mpv invocation shape. The decode child is
+killed as soon as mpv reports decoded-frame evidence because some mpv builds
+hang in shutdown even after a successful null-output decode. Setup and doctor
+call `readCachedMpvHardwareAcceleration()` only, so they report the last result
 without spawning mpv.
 
 A successful probe returns the exact decoder mpv selected for `auto-safe`
 (such as `nvdec-copy` or `videotoolbox-copy`) and Kunai passes that as
 `--hwdec=<decoder>` for both one-shot and persistent playback. If mpv is
-missing, times out, lists no GPU decoder, or cannot decode the sample, Kunai
-emits no hardware-decoder argument and leaves mpv's own default intact. `off`
-also emits no override. Explicit modes such as `vaapi` or `videotoolbox` are
-forwarded directly and are the user's responsibility. Platform naming is a
-preference order, not a hard-coded host result: Linux/Unix prefers `vaapi`,
-`nvdec`, `vulkan`, `vdpau`, `qsv`; macOS prefers `videotoolbox`; Windows
-prefers `d3d11va`, `qsv`, `nvdec`, `dxva2`.
+missing, times out before decode evidence, lists no GPU decoder, or falls back
+to software for the sample, `auto` emits no hardware-decoder argument and
+leaves mpv's own default intact. `auto-safe` and `auto-copy` are forwarded
+directly without running Kunai's probe. `off` emits `--hwdec=no`. Explicit
+modes such as `vaapi` or `videotoolbox` are forwarded directly and are the
+user's responsibility. No platform result is hard-coded: discovery is
+OS-aware and injectable, while mpv's own `auto-safe` negotiation chooses the
+backend available on that host.
 
 ## A/V-sync drift recovery
 
