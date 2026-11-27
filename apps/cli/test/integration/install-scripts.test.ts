@@ -258,6 +258,9 @@ function runInstallShForAndroid(machine: "aarch64" | "x86_64"): {
 
     const androidEnv = { ...sandbox.env };
     delete androidEnv.KUNAI_BIN_DIR;
+    // A profile root would route the launcher to <root>/bin by design; this
+    // scenario pins the no-override Termux layout, where $PREFIX/bin wins.
+    delete androidEnv.KUNAI_CONFIG_DIR;
     return runInstallSh(["--dry-run", "--yes", "--skip-deps", "--version", "9.8.7"], {
       ...androidEnv,
       PATH: `${shimDir}${delimiter}${sandbox.env.PATH ?? ""}`,

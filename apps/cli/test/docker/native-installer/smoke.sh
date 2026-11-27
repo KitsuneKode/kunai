@@ -16,7 +16,9 @@ FIXTURE="${FIXTURE_ROOT:-/fixture}"
 
 export HOME="${KUNAI_TEST_HOME:-/tmp/kunai-home}"
 export KUNAI_BIN_DIR="$HOME/.local/bin"
-export KUNAI_CONFIG_DIR="$HOME/.config/kunai"
+CONFIG_DIR="$HOME/.config/kunai"
+# Runtime config override stays unset: the CLI resolves the same default layout from HOME/XDG.
+unset KUNAI_CONFIG_DIR 2>/dev/null || true
 export KUNAI_DATA_DIR="$HOME/.local/share/kunai"
 export KUNAI_CACHE_DIR="$HOME/.cache/kunai"
 export KUNAI_DL_BASE="${KUNAI_DL_BASE:-http://127.0.0.1:9876}"
@@ -52,21 +54,22 @@ reset_home() {
   mkdir -p "$HOME"
   # Restore default layout env for scenarios that do not call apply_layout_env.
   export KUNAI_BIN_DIR="$HOME/.local/bin"
-  export KUNAI_CONFIG_DIR="$HOME/.config/kunai"
+  CONFIG_DIR="$HOME/.config/kunai"
   export KUNAI_DATA_DIR="$HOME/.local/share/kunai"
   export KUNAI_CACHE_DIR="$HOME/.cache/kunai"
-  unset XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME 2>/dev/null || true
+  unset XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME KUNAI_CONFIG_DIR 2>/dev/null || true
 }
 
 apply_layout_env() {
   export KUNAI_BIN_DIR="$1"
-  export KUNAI_CONFIG_DIR="$2"
+  CONFIG_DIR="$2"
+  unset KUNAI_CONFIG_DIR 2>/dev/null || true
   export KUNAI_DATA_DIR="$3"
   export KUNAI_CACHE_DIR="$4"
-  export XDG_CONFIG_HOME="$(dirname "$KUNAI_CONFIG_DIR")"
+  export XDG_CONFIG_HOME="$(dirname "$CONFIG_DIR")"
   export XDG_DATA_HOME="$(dirname "$KUNAI_DATA_DIR")"
   export XDG_CACHE_HOME="$(dirname "$KUNAI_CACHE_DIR")"
-  mkdir -p "$KUNAI_BIN_DIR" "$KUNAI_CONFIG_DIR" "$KUNAI_DATA_DIR" "$KUNAI_CACHE_DIR"
+  mkdir -p "$KUNAI_BIN_DIR" "$CONFIG_DIR" "$KUNAI_DATA_DIR" "$KUNAI_CACHE_DIR"
 }
 
 start_fixture_server() {
@@ -120,7 +123,7 @@ assert_no_operational_residue() {
 
 assert_schema2_manifest() {
   local version="$1"
-  local path="$KUNAI_CONFIG_DIR/install.json"
+  local path="$CONFIG_DIR/install.json"
   [[ -f "$path" ]] || fail "install.json missing"
   grep -qE '"schemaVersion"[[:space:]]*:[[:space:]]*2' "$path" || fail "install.json missing schemaVersion"
   grep -qE '"method"[[:space:]]*:[[:space:]]*"binary"' "$path" || fail "install.json method not binary"
@@ -166,8 +169,8 @@ seed_user_data() {
   # Create every directory written below, including the config dir. Most
   # scenarios seed after an install has already made it, but stale-lock-recovery
   # seeds first — the helper must not depend on that ordering.
-  mkdir -p "$KUNAI_CONFIG_DIR" "$KUNAI_DATA_DIR/downloads" "$HOME/external-downloads"
-  printf '{"theme":"sakura"}\n' >"$KUNAI_CONFIG_DIR/config.json"
+  mkdir -p "$CONFIG_DIR" "$KUNAI_DATA_DIR/downloads" "$HOME/external-downloads"
+  printf '{"theme":"sakura"}\n' >"$CONFIG_DIR/config.json"
   printf 'history-db\n' >"$KUNAI_DATA_DIR/kunai-data.sqlite"
   printf 'offline\n' >"$KUNAI_DATA_DIR/downloads/ep1.mkv"
   printf 'external\n' >"$HOME/external-downloads/movie.mkv"
@@ -175,7 +178,7 @@ seed_user_data() {
 }
 
 assert_user_data_preserved() {
-  [[ -f "$KUNAI_CONFIG_DIR/config.json" ]] || fail "user config.json was removed"
+  [[ -f "$CONFIG_DIR/config.json" ]] || fail "user config.json was removed"
   [[ -f "$KUNAI_DATA_DIR/kunai-data.sqlite" ]] || fail "user history db was removed"
   [[ -f "$KUNAI_DATA_DIR/downloads/ep1.mkv" ]] || fail "user downloads were removed"
   [[ -f "$HOME/external-downloads/movie.mkv" ]] || fail "external download was removed"
@@ -188,7 +191,7 @@ assert_owned_state_removed() {
   [[ ! -d "$KUNAI_CACHE_DIR/staging" ]] || fail "staging dir still present"
   [[ ! -d "$KUNAI_DATA_DIR/transactions" ]] || fail "transactions dir still present"
   [[ ! -d "$KUNAI_DATA_DIR/locks" ]] || fail "locks dir still present"
-  [[ ! -f "$KUNAI_CONFIG_DIR/install.json" ]] || fail "install.json still present"
+  [[ ! -f "$CONFIG_DIR/install.json" ]] || fail "install.json still present"
 }
 
 # --- scenarios ---
@@ -231,7 +234,7 @@ scenario_checksum_rejection() {
     fail "install failure did not mention checksum (output: $out)"
 
   [[ ! -e "$KUNAI_BIN_DIR/kunai" ]] || fail "launcher created after checksum failure"
-  [[ ! -f "$KUNAI_CONFIG_DIR/install.json" ]] || fail "manifest created after checksum failure"
+  [[ ! -f "$CONFIG_DIR/install.json" ]] || fail "manifest created after checksum failure"
   [[ ! -f "$KUNAI_DATA_DIR/versions/1.0.0/kunai" ]] || fail "version binary created after checksum failure"
   assert_no_operational_residue
   [[ -f "$HOME/preexisting.txt" ]] || fail "preexisting user file was removed"
@@ -245,7 +248,7 @@ scenario_reinstall_idempotent() {
   install_pinned 1.0.0
   assert_version_layout 1.0.0
   local installed_at target_before
-  installed_at="$(grep -oE '"installedAt"[[:space:]]*:[[:space:]]*"[^"]+"' "$KUNAI_CONFIG_DIR/install.json" | head -1)"
+  installed_at="$(grep -oE '"installedAt"[[:space:]]*:[[:space:]]*"[^"]+"' "$CONFIG_DIR/install.json" | head -1)"
   target_before="$(readlink -f "$KUNAI_BIN_DIR/kunai")"
   [[ -n "$installed_at" ]] || fail "installedAt missing after first install"
 
@@ -255,8 +258,8 @@ scenario_reinstall_idempotent() {
   local target_after
   target_after="$(readlink -f "$KUNAI_BIN_DIR/kunai")"
   [[ "$target_after" == "$target_before" ]] || fail "launcher target changed on reinstall"
-  grep -qF "$installed_at" "$KUNAI_CONFIG_DIR/install.json" || fail "installedAt changed on reinstall"
-  if grep -qE '"previousVersion"' "$KUNAI_CONFIG_DIR/install.json"; then
+  grep -qF "$installed_at" "$CONFIG_DIR/install.json" || fail "installedAt changed on reinstall"
+  if grep -qE '"previousVersion"' "$CONFIG_DIR/install.json"; then
     fail "previousVersion should be absent on same-version reinstall"
   fi
   local version_dirs
@@ -272,7 +275,7 @@ scenario_upgrade_rollback() {
   install_pinned 1.0.0
   "$KUNAI_BIN_DIR/kunai" upgrade
   assert_version_layout 1.0.1
-  grep -qE '"previousVersion"[[:space:]]*:[[:space:]]*"1\.0\.0"' "$KUNAI_CONFIG_DIR/install.json" ||
+  grep -qE '"previousVersion"[[:space:]]*:[[:space:]]*"1\.0\.0"' "$CONFIG_DIR/install.json" ||
     fail "manifest missing previousVersion 1.0.0"
   [[ -f "$KUNAI_DATA_DIR/versions/1.0.0/kunai" ]] || fail "1.0.0 not retained after upgrade"
 
@@ -282,7 +285,7 @@ scenario_upgrade_rollback() {
 
   "$KUNAI_BIN_DIR/kunai" rollback --dry-run >/tmp/kunai-rollback-dry.txt
   grep -qi 'dry-run' /tmp/kunai-rollback-dry.txt || fail "rollback --dry-run missing dry-run marker"
-  grep -qE '"activeVersion"[[:space:]]*:[[:space:]]*"1\.0\.1"' "$KUNAI_CONFIG_DIR/install.json" ||
+  grep -qE '"activeVersion"[[:space:]]*:[[:space:]]*"1\.0\.1"' "$CONFIG_DIR/install.json" ||
     fail "dry-run mutated activeVersion"
 
   "$KUNAI_BIN_DIR/kunai" rollback
@@ -388,7 +391,7 @@ scenario_full_lifecycle() {
 
   if command -v script >/dev/null 2>&1; then
     rm -f /tmp/kunai-setup-nompv.log
-    printf '{"onboardingVersion":0,"downloadOnboardingDismissed":false}\n' >"$KUNAI_CONFIG_DIR/config.json"
+    printf '{"onboardingVersion":0,"downloadOnboardingDismissed":false}\n' >"$CONFIG_DIR/config.json"
     script -qec "$KUNAI_BIN_DIR/kunai --setup" /tmp/kunai-setup-nompv.log >/dev/null 2>&1 &
     local setup_pid=$!
     sleep 2.5
@@ -421,7 +424,7 @@ EOF
 
   "$KUNAI_BIN_DIR/kunai" upgrade
   assert_version_layout 1.0.1
-  grep -qE '"previousVersion"[[:space:]]*:[[:space:]]*"1\.0\.0"' "$KUNAI_CONFIG_DIR/install.json" ||
+  grep -qE '"previousVersion"[[:space:]]*:[[:space:]]*"1\.0\.0"' "$CONFIG_DIR/install.json" ||
     fail "manifest missing previousVersion 1.0.0"
   pass "kunai upgrade moved launcher to v1.0.1"
 
@@ -431,7 +434,7 @@ EOF
   "$KUNAI_BIN_DIR/kunai" doctor --json >/tmp/kunai-doctor.json
   grep -qE '"schemaVersion"[[:space:]]*:[[:space:]]*1' /tmp/kunai-doctor.json || fail "doctor JSON missing schemaVersion"
   grep -q '"manifest"' /tmp/kunai-doctor.json || fail "doctor JSON missing manifest"
-  grep -qE '"activeVersion"[[:space:]]*:[[:space:]]*"1\.0\.1"' "$KUNAI_CONFIG_DIR/install.json" ||
+  grep -qE '"activeVersion"[[:space:]]*:[[:space:]]*"1\.0\.1"' "$CONFIG_DIR/install.json" ||
     fail "doctor mutated activeVersion"
   pass "kunai doctor --json"
 
@@ -442,7 +445,7 @@ EOF
 
   "$KUNAI_BIN_DIR/kunai" rollback --dry-run >/tmp/kunai-rollback-dry.txt
   grep -qi 'dry-run' /tmp/kunai-rollback-dry.txt || fail "rollback --dry-run missing dry-run marker"
-  grep -qE '"activeVersion"[[:space:]]*:[[:space:]]*"1\.0\.1"' "$KUNAI_CONFIG_DIR/install.json" ||
+  grep -qE '"activeVersion"[[:space:]]*:[[:space:]]*"1\.0\.1"' "$CONFIG_DIR/install.json" ||
     fail "dry-run mutated activeVersion"
   pass "kunai rollback --dry-run"
 
@@ -456,7 +459,7 @@ EOF
   pass "kunai rollback --to 1.0.0"
 
   "$KUNAI_BIN_DIR/kunai" upgrade
-  grep -qE '"activeVersion"[[:space:]]*:[[:space:]]*"1\.0\.1"' "$KUNAI_CONFIG_DIR/install.json" ||
+  grep -qE '"activeVersion"[[:space:]]*:[[:space:]]*"1\.0\.1"' "$CONFIG_DIR/install.json" ||
     fail "re-upgrade to 1.0.1 failed"
 
   seed_user_data

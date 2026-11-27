@@ -66,7 +66,7 @@ docker run --rm --network none \
 		profile=/tmp/kunai-release-smoke
 		export HOME="$profile/home"
 		export KUNAI_BIN_DIR="$profile/bin"
-		export KUNAI_CONFIG_DIR="$profile/config"
+		export KUNAI_CONFIG_DIR="$profile"
 		export KUNAI_DATA_DIR="$profile/data"
 		export KUNAI_CACHE_DIR="$profile/cache"
 		export KUNAI_DL_BASE=file:///release
@@ -80,7 +80,7 @@ docker run --rm --network none \
 			--skip-deps \
 			--skip-path-update
 
-		manifest="$KUNAI_CONFIG_DIR/install.json"
+		manifest="$KUNAI_CONFIG_DIR/config/install.json"
 		test -f "$manifest"
 		grep -F "\"activeVersion\": \"$KUNAI_RELEASE_VERSION\"" "$manifest"
 		grep -F "\"artifactName\": \"$KUNAI_RELEASE_ASSET\"" "$manifest"

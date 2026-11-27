@@ -41,8 +41,19 @@ $OnWindows = if ($null -eq $IsWindows) { $true } else { $IsWindows }
 $DlBase = if ($env:KUNAI_DL_BASE) { $env:KUNAI_DL_BASE } else { 'https://github.com/KitsuneKode/kunai/releases' }
 $ReleasesApi = if ($env:KUNAI_RELEASES_API) { $env:KUNAI_RELEASES_API } else { 'https://api.github.com/repos/KitsuneKode/kunai/releases/latest' }
 $Package = '@kitsunekode/kunai'
-$BinDir = if ($env:KUNAI_BIN_DIR) { $env:KUNAI_BIN_DIR } else { Join-Path $env:LOCALAPPDATA 'kunai\bin' }
-$DataDir = if ($env:KUNAI_DATA_DIR) { $env:KUNAI_DATA_DIR } else { Join-Path $env:LOCALAPPDATA 'kunai' }
+# KUNAI_CONFIG_DIR names a dedicated Kunai profile root — <root>\config,
+# <root>\data, <root>\cache, <root>\bin — not a config directory, matching the
+# CLI's own layout under the same variable. A set value that is not absolute
+# is a configuration error, not a fallthrough.
+$ProfileDir = $env:KUNAI_CONFIG_DIR
+if ($null -ne $ProfileDir) {
+  $isAbsolute = if ($OnWindows) { $ProfileDir -match '^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/]+[\\/][^\\/]+)' } else { $ProfileDir.StartsWith('/') }
+  if (-not $isAbsolute) {
+    throw 'KUNAI_CONFIG_DIR must be an absolute path to a Kunai profile directory'
+  }
+}
+$BinDir = if ($env:KUNAI_BIN_DIR) { $env:KUNAI_BIN_DIR } elseif ($ProfileDir) { Join-Path $ProfileDir 'bin' } else { Join-Path $env:LOCALAPPDATA 'kunai\bin' }
+$DataDir = if ($env:KUNAI_DATA_DIR) { $env:KUNAI_DATA_DIR } elseif ($ProfileDir) { Join-Path $ProfileDir 'data' } else { Join-Path $env:LOCALAPPDATA 'kunai' }
 # Official yt-dlp Windows builds. `/latest/download` is a redirect GitHub
 # serves for the current release; tests can point this at a local fixture.
 $YtdlpReleaseBase = if ($env:KUNAI_YTDLP_RELEASE_BASE) {
@@ -62,8 +73,8 @@ $CurlImpersonateWin64Digest = if ($env:KUNAI_CURL_IMPERSONATE_SHA256) {
 } else {
   'f7faa8c42b63b4a96245429e46956e11ae7d7076d60f65768c0018d3bb18d7e5'
 }
-$ConfigDir = if ($env:KUNAI_CONFIG_DIR) { $env:KUNAI_CONFIG_DIR } else { Join-Path $env:APPDATA 'kunai' }
-$CacheDir = if ($env:KUNAI_CACHE_DIR) { $env:KUNAI_CACHE_DIR } else { Join-Path $env:LOCALAPPDATA 'kunai\cache' }
+$ConfigDir = if ($ProfileDir) { Join-Path $ProfileDir 'config' } else { Join-Path $env:APPDATA 'kunai' }
+$CacheDir = if ($env:KUNAI_CACHE_DIR) { $env:KUNAI_CACHE_DIR } elseif ($ProfileDir) { Join-Path $ProfileDir 'cache' } else { Join-Path $env:LOCALAPPDATA 'kunai\cache' }
 $BinPath = Join-Path $BinDir 'kunai.exe'
 $VersionsDir = Join-Path $DataDir 'versions'
 $LocksDir = Join-Path $DataDir 'locks'

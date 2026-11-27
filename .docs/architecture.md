@@ -329,6 +329,18 @@ success and restoring the secret next launch. Native credential latency therefor
 extends this critical section; sibling operations can report bounded lock contention
 while a slow keychain operation is running.
 
+**Profile root override.** `KUNAI_CONFIG_DIR` names a dedicated Kunai profile
+root, not a config directory; `getKunaiPaths` resolves `<root>/config`,
+`<root>/data`, `<root>/cache` and `<root>/tmp`, reporting the root as
+`KunaiPaths.profileDir` (the extra `config` level is what safe uninstall needs:
+nothing may recursively delete the external root). A set value that is not
+absolute is a configuration error, never a fallthrough, and nothing migrates
+between roots — unset the variable to return to platform defaults. With
+`profileDir` set, `createCredentialVault` is always the file vault (OS vaults
+are account-wide) and the installer launcher lands under `<root>/bin`, outside
+the removable siblings. User-facing semantics:
+`docs/users/install-and-update.mdx` → “Custom profile root”.
+
 **Continuation launches** (History, inline Continue, Calendar) select the title
 before the episode: `SELECT_TITLE` clears any episode dispatched ahead of it.
 Calendar's launcher (`launchCalendarContinue`) selects both itself, so the

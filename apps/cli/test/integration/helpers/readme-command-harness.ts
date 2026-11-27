@@ -294,11 +294,8 @@ function profileEnv(
     ...profile.env,
     ...extras,
     KUNAI_BIN_DIR: profile.binDir,
-    // Keep installer overrides aligned with getKunaiPaths so install.sh and the
-    // CLI agree under the shadow HOME on darwin (Library) and linux (XDG).
-    KUNAI_CONFIG_DIR: profile.configDir,
-    KUNAI_DATA_DIR: profile.dataDir,
-    KUNAI_CACHE_DIR: profile.cacheDir,
+    // install.sh derives config/data/cache from HOME/XDG, the same roots the
+    // CLI reads — no KUNAI_*_DIR overrides are needed to keep them aligned.
     PATH: pathParts.join(":"),
     CI: "1",
     DO_NOT_TRACK: "1",

@@ -15,6 +15,10 @@
 # root is refused unless KUNAI_INSTALL_ALLOW_ROOT=1 — a sudo install lands in
 # /root and the user never gets kunai on PATH.
 #
+# KUNAI_CONFIG_DIR selects a dedicated profile root (absolute only): config,
+# data, cache and bin resolve as <root>/config, <root>/data, <root>/cache and
+# <root>/bin, matching the CLI's own layout under the same variable.
+#
 # Installs Kunai only. After install, use `kunai upgrade` and `kunai uninstall`
 # for lifecycle — the install script does not remove or update an install.
 #
@@ -90,8 +94,19 @@ Linux)
 *) HOST_OS="unknown" ;;
 esac
 
+# A set-but-non-absolute KUNAI_CONFIG_DIR is a configuration error, not a
+# fallthrough (see the header for the profile-root layout).
+if [[ ${KUNAI_CONFIG_DIR+x} ]]; then
+	[[ "$KUNAI_CONFIG_DIR" == /* ]] || {
+		printf '%s\n' 'KUNAI_CONFIG_DIR must be an absolute path to a Kunai profile directory' >&2
+		exit 1
+	}
+fi
+
 if [[ -n "${KUNAI_BIN_DIR:-}" ]]; then
 	BIN_DIR="$KUNAI_BIN_DIR"
+elif [[ -n "${KUNAI_CONFIG_DIR:-}" ]]; then
+	BIN_DIR="${KUNAI_CONFIG_DIR%/}/bin"
 elif [[ "$HOST_OS" == android && -n "${PREFIX:-}" ]]; then
 	BIN_DIR="$PREFIX/bin"
 else
@@ -103,12 +118,19 @@ fi
 [[ "$ACTIVATION_LOCK_CORRUPT_GRACE_MS" =~ ^[0-9]+$ ]] || ACTIVATION_LOCK_CORRUPT_GRACE_MS=250
 ((ACTIVATION_LOCK_POLL_MS > 0)) || ACTIVATION_LOCK_POLL_MS=1
 
-if [[ "$HOST_OS" == "darwin" ]]; then
-	CONFIG_DIR="${KUNAI_CONFIG_DIR:-$HOME/Library/Application Support/kunai}"
+# KUNAI_DATA_DIR / KUNAI_CACHE_DIR remain installer-only overrides; the CLI
+# itself always derives data and cache from the profile root or platform
+# defaults. Do not combine differing per-dir overrides with KUNAI_CONFIG_DIR.
+if [[ -n "${KUNAI_CONFIG_DIR:-}" ]]; then
+	CONFIG_DIR="${KUNAI_CONFIG_DIR%/}/config"
+	DATA_DIR="${KUNAI_DATA_DIR:-${KUNAI_CONFIG_DIR%/}/data}"
+	CACHE_DIR="${KUNAI_CACHE_DIR:-${KUNAI_CONFIG_DIR%/}/cache}"
+elif [[ "$HOST_OS" == "darwin" ]]; then
+	CONFIG_DIR="$HOME/Library/Application Support/kunai"
 	DATA_DIR="${KUNAI_DATA_DIR:-$HOME/Library/Application Support/kunai}"
 	CACHE_DIR="${KUNAI_CACHE_DIR:-$HOME/Library/Caches/kunai}"
 else
-	CONFIG_DIR="${KUNAI_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kunai}"
+	CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/kunai"
 	DATA_DIR="${KUNAI_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/kunai}"
 	CACHE_DIR="${KUNAI_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/kunai}"
 fi

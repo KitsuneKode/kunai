@@ -102,3 +102,137 @@ describe("getKunaiPaths home resolution", () => {
     expect(paths.configDir).toBe("C:\\sandbox\\AppData\\Roaming\\kunai");
   });
 });
+
+// Pin the full override layout on each target, even when its default roots are set.
+describe("getKunaiPaths KUNAI_CONFIG_DIR profile root", () => {
+  const PROFILE_CASES = [
+    {
+      platform: "linux",
+      profile: "/sandbox/profile",
+      env: {
+        KUNAI_CONFIG_DIR: "/sandbox/profile",
+        HOME: "/home/tester",
+        USERPROFILE: "/home/tester",
+        XDG_CONFIG_HOME: "/home/tester/.config",
+        XDG_DATA_HOME: "/home/tester/.local/share",
+        XDG_CACHE_HOME: "/home/tester/.cache",
+      },
+      expected: {
+        configDir: "/sandbox/profile/config",
+        dataDir: "/sandbox/profile/data",
+        cacheDir: "/sandbox/profile/cache",
+        tempDir: "/sandbox/profile/tmp",
+        configPath: "/sandbox/profile/config/config.json",
+        mpvBridgePath: "/sandbox/profile/config/mpv/kunai-bridge.lua",
+        dataDbPath: "/sandbox/profile/data/kunai-data.sqlite",
+        cacheDbPath: "/sandbox/profile/cache/kunai-cache.sqlite",
+        logPath: "/sandbox/profile/data/logs.txt",
+      },
+    },
+    {
+      platform: "darwin",
+      profile: "/Users/test/Profile With Spaces",
+      env: {
+        KUNAI_CONFIG_DIR: "/Users/test/Profile With Spaces",
+        HOME: "/Users/test",
+        USERPROFILE: "/Users/test",
+        TMPDIR: "/var/folders/xx",
+      },
+      expected: {
+        configDir: "/Users/test/Profile With Spaces/config",
+        dataDir: "/Users/test/Profile With Spaces/data",
+        cacheDir: "/Users/test/Profile With Spaces/cache",
+        tempDir: "/Users/test/Profile With Spaces/tmp",
+        configPath: "/Users/test/Profile With Spaces/config/config.json",
+        mpvBridgePath: "/Users/test/Profile With Spaces/config/mpv/kunai-bridge.lua",
+        dataDbPath: "/Users/test/Profile With Spaces/data/kunai-data.sqlite",
+        cacheDbPath: "/Users/test/Profile With Spaces/cache/kunai-cache.sqlite",
+        logPath: "/Users/test/Profile With Spaces/data/logs.txt",
+      },
+    },
+    {
+      platform: "win32",
+      profile: "C:\\Sandbox\\Profile",
+      env: {
+        KUNAI_CONFIG_DIR: "C:\\Sandbox\\Profile",
+        USERPROFILE: "C:\\Users\\test",
+        HOME: "C:\\Users\\test",
+        APPDATA: "C:\\Users\\test\\AppData\\Roaming",
+        LOCALAPPDATA: "C:\\Users\\test\\AppData\\Local",
+      },
+      expected: {
+        configDir: "C:\\Sandbox\\Profile\\config",
+        dataDir: "C:\\Sandbox\\Profile\\data",
+        cacheDir: "C:\\Sandbox\\Profile\\cache",
+        tempDir: "C:\\Sandbox\\Profile\\tmp",
+        configPath: "C:\\Sandbox\\Profile\\config\\config.json",
+        mpvBridgePath: "C:\\Sandbox\\Profile\\config\\mpv\\kunai-bridge.lua",
+        dataDbPath: "C:\\Sandbox\\Profile\\data\\kunai-data.sqlite",
+        cacheDbPath: "C:\\Sandbox\\Profile\\cache\\kunai-cache.sqlite",
+        logPath: "C:\\Sandbox\\Profile\\data\\logs.txt",
+      },
+    },
+  ] as const;
+
+  for (const { platform, profile, env, expected } of PROFILE_CASES) {
+    test(`${platform}: resolves every root under the profile`, () => {
+      expect(getKunaiPaths({ platform, env })).toEqual({ profileDir: profile, ...expected });
+    });
+  }
+
+  test("accepts a trailing separator", () => {
+    const paths = getKunaiPaths({
+      platform: "linux",
+      env: { KUNAI_CONFIG_DIR: "/sandbox/profile/" },
+    });
+
+    expect(paths.configDir).toBe("/sandbox/profile/config");
+    expect(paths.dataDbPath).toBe("/sandbox/profile/data/kunai-data.sqlite");
+  });
+
+  test.each(["linux", "darwin", "win32"] as const)(
+    "%s: an empty override is a configuration error, not a fallthrough",
+    (platform) => {
+      expect(() => getKunaiPaths({ platform, env: { KUNAI_CONFIG_DIR: "" } })).toThrow(
+        "KUNAI_CONFIG_DIR must be an absolute path to a Kunai profile directory",
+      );
+    },
+  );
+
+  test.each(["linux", "darwin", "win32"] as const)(
+    "%s: a relative override is a configuration error",
+    (platform) => {
+      expect(() =>
+        getKunaiPaths({ platform, env: { KUNAI_CONFIG_DIR: "relative/profile" } }),
+      ).toThrow("KUNAI_CONFIG_DIR must be an absolute path to a Kunai profile directory");
+    },
+  );
+
+  // `\foo` and `/foo` both resolve against the current drive — each parses
+  // with a lone separator as its root, which is as non-absolute as `.\foo`
+  // even though `isAbsolute` accepts the leading separator.
+  test.each(["\\relative-to-drive", "/relative-to-drive"])(
+    "win32: a drive-root-relative override is a configuration error (%s)",
+    (override) => {
+      expect(() =>
+        getKunaiPaths({ platform: "win32", env: { KUNAI_CONFIG_DIR: override } }),
+      ).toThrow("KUNAI_CONFIG_DIR must be an absolute path to a Kunai profile directory");
+    },
+  );
+
+  test("win32: a UNC root is accepted as absolute", () => {
+    const paths = getKunaiPaths({
+      platform: "win32",
+      env: { KUNAI_CONFIG_DIR: "\\\\server\\share\\kunai" },
+    });
+
+    expect(paths.profileDir).toBe("\\\\server\\share\\kunai");
+    expect(paths.configDir).toBe("\\\\server\\share\\kunai\\config");
+  });
+
+  test("an unset override leaves profileDir absent", () => {
+    const paths = getKunaiPaths({ platform: "linux", env: { HOME: "/sandbox" } });
+
+    expect(paths.profileDir).toBeUndefined();
+  });
+});

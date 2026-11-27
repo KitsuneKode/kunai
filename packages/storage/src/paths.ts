@@ -10,6 +10,15 @@ export interface KunaiPathOptions {
 }
 
 export interface KunaiPaths {
+  /**
+   * Set only when `KUNAI_CONFIG_DIR` names a dedicated Kunai profile root.
+   * Its presence marks a self-contained profile — `<root>/config`,
+   * `<root>/data`, `<root>/cache`, `<root>/tmp` — which callers use to pick
+   * profile-local behaviour: the file credential vault (the OS vaults are
+   * account-wide, not profile-isolated) and a profile-local installer bin.
+   * Undefined for the platform-default layout.
+   */
+  readonly profileDir?: string;
   readonly configDir: string;
   readonly dataDir: string;
   readonly cacheDir: string;
@@ -51,17 +60,31 @@ export function joinerForNodePlatform(
 export function getKunaiPaths(options: KunaiPathOptions = {}): KunaiPaths {
   const platform = options.platform ?? normalizePlatform(process.platform);
   const env = options.env ?? process.env;
-  // `homedir()` is the last resort, not the first. On Linux the XDG variables
-  // below already override every root, and on Windows APPDATA/LOCALAPPDATA do —
-  // but the macOS layout derives *everything* from `home`, and Bun's `homedir()`
-  // reads the account record rather than `HOME`. That left macOS with no way to
-  // redirect its storage root from the environment at all: a test that set the
-  // documented variables still resolved the real `~/Library/Application Support`
-  // and wrote the developer's live profile.
-  const home = options.homeDir ?? firstNonEmpty(env.HOME, env.USERPROFILE) ?? homedir();
+  const path = platform === "win32" ? win32Path : posixPath;
+  // `KUNAI_CONFIG_DIR` is an absolute path to a dedicated Kunai profile root,
+  // not a config-directory override. A set-but-invalid value — empty, relative,
+  // or drive-root-relative on Windows (`\foo`, whose `parse().root` is a single
+  // separator) — is a configuration error, not a fallthrough: silently ignoring
+  // it would resolve the default profile anyway and write where the user did
+  // not ask.
+  const override = env.KUNAI_CONFIG_DIR;
+  const driveRootRelative = platform === "win32" && path.parse(override ?? "").root.length === 1;
+  if (override !== undefined && (!path.isAbsolute(override) || driveRootRelative)) {
+    throw new Error("KUNAI_CONFIG_DIR must be an absolute path to a Kunai profile directory");
+  }
   const join = joinerFor(platform);
+  const profileDir = override === undefined ? undefined : path.normalize(override);
 
-  const dirs = getBaseDirs(platform, env, home);
+  const dirs =
+    profileDir === undefined
+      ? defaultBaseDirs(platform, env, options.homeDir)
+      : {
+          profileDir,
+          configDir: join(profileDir, "config"),
+          dataDir: join(profileDir, "data"),
+          cacheDir: join(profileDir, "cache"),
+          tempDir: join(profileDir, "tmp"),
+        };
 
   return {
     ...dirs,
@@ -96,11 +119,19 @@ function firstNonEmpty(...values: readonly (string | undefined)[]): string | und
   return undefined;
 }
 
-function getBaseDirs(
+function defaultBaseDirs(
   platform: StoragePlatform,
   env: Record<string, string | undefined>,
-  home: string,
+  homeDir?: string,
 ): Pick<KunaiPaths, "configDir" | "dataDir" | "cacheDir" | "tempDir"> {
+  // `homedir()` is the last resort, not the first. On Linux the XDG variables
+  // below already override every root, and on Windows APPDATA/LOCALAPPDATA do —
+  // but the macOS layout derives *everything* from `home`, and Bun's `homedir()`
+  // reads the account record rather than `HOME`. That left macOS with no way to
+  // redirect its storage root from the environment at all: a test that set the
+  // documented variables still resolved the real `~/Library/Application Support`
+  // and wrote the developer's live profile.
+  const home = homeDir ?? firstNonEmpty(env.HOME, env.USERPROFILE) ?? homedir();
   const join = joinerFor(platform);
 
   if (platform === "darwin") {

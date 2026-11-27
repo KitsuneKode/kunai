@@ -18,6 +18,8 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { delimiter as PATH_DELIMITER, posix as posixPath, win32 as win32Path } from "node:path";
 
 import { blockedLiteralTargetReason, getProviderDohResolver, proxyAppliesTo } from "@kunai/core";
+// Subpath import on purpose: providers must not pull the SQLite-bearing index.
+import { getKunaiPaths } from "@kunai/storage/paths";
 
 export type CurlCandidate = {
   readonly path: string;
@@ -169,9 +171,13 @@ function defaultListPathEntries(): readonly string[] {
  * directly instead of trusting PATH to carry it.
  */
 function defaultManagedWrapperDirs(): readonly ManagedWrapperDir[] {
+  // Synthetic win32 tests inject their own managed directories rather than scanning the host.
+  if (process.platform !== "win32") return [];
+  const paths = getKunaiPaths({ platform: "win32" });
   const dataRoot =
-    process.env.KUNAI_DATA_DIR ??
-    (process.env.LOCALAPPDATA ? win32Path.join(process.env.LOCALAPPDATA, "kunai") : null);
+    paths.profileDir !== undefined
+      ? paths.dataDir
+      : (process.env.KUNAI_DATA_DIR ?? (process.env.LOCALAPPDATA ? paths.dataDir : undefined));
   if (!dataRoot) return [];
   const root = win32Path.join(dataRoot, "deps", "curl-impersonate");
   const dirs: ManagedWrapperDir[] = [];

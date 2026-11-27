@@ -16,6 +16,7 @@ import {
   vaultSyncTokenFileIo,
 } from "@/services/persistence/credential-vault-io";
 import { SyncTokenStore, type SyncTokens } from "@/services/persistence/SyncTokenStore";
+import { getKunaiPaths } from "@kunai/storage";
 
 /** In-memory vault with optional failure scripting. */
 function fakeVault(overrides: Partial<CredentialVaultPort> = {}): CredentialVaultPort & {
@@ -370,6 +371,28 @@ describe("createCredentialVault backend selection", () => {
     });
     expect(vault.backend).toBe("secret-service");
     expect(spawned[0]).toEqual(["secret-tool", "lookup", "service", "kunai", "key", "__probe__"]);
+  });
+
+  test("a profile root forces the file vault even when a native backend is requested", async () => {
+    // The OS vaults are account-wide: a `KUNAI_CONFIG_DIR` run must not touch
+    // the developer's keychain, whatever `KUNAI_CREDENTIAL_BACKEND` asks for.
+    // Throwing which/spawn prove no probe ever ran.
+    const paths = getKunaiPaths({ platform: "darwin", env: { KUNAI_CONFIG_DIR: dir } });
+    const vault = await createCredentialVault({
+      paths,
+      platform: "darwin",
+      env: { KUNAI_CREDENTIAL_BACKEND: "keychain" },
+      which: () => {
+        throw new Error("which must not run under a profile override");
+      },
+      spawn: (() => {
+        throw new Error("spawn must not run under a profile override");
+      }) as CredentialSpawn,
+    });
+    expect(vault.backend).toBe("file");
+    await vault.set("k", "fixture-profile-secret");
+    const onDisk = JSON.parse(await readFile(join(dir, "config", "secrets.json"), "utf8"));
+    expect(onDisk.k).toBe("fixture-profile-secret");
   });
 });
 

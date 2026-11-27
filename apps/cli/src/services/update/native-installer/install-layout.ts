@@ -93,7 +93,16 @@ export function getInstallLayoutPaths(
     locksDir: joinFor(dataDir, "locks"),
     transactionsDir: joinFor(dataDir, "transactions"),
     stagingRoot: joinFor(cacheDir, "staging"),
-    launcherPath: overrides.launcherPath ?? defaultLauncherPath(platform),
+    // A profile root gets a profile-local launcher under `<profile>/bin` —
+    // outside the config/data/cache siblings, which uninstall may remove.
+    launcherPath:
+      overrides.launcherPath ??
+      (kunai.profileDir === undefined
+        ? defaultLauncherPath(platform)
+        : joinFor(
+            process.env.KUNAI_BIN_DIR || joinFor(kunai.profileDir, "bin"),
+            binaryFileName(platform),
+          )),
     binaryFileName: binaryFileName(platform),
   };
 }

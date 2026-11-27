@@ -289,6 +289,10 @@ async function probeBackend(
 export async function createCredentialVault(
   deps: CredentialVaultDeps,
 ): Promise<CredentialVaultPort> {
+  // A `KUNAI_CONFIG_DIR` profile is self-contained: the OS vaults are
+  // account-wide, not profile-isolated, so even an explicit native-backend
+  // env override must not let a profile-directed run reach the global vault.
+  if (deps.paths.profileDir !== undefined) return fileVault(deps.paths);
   const env = deps.env ?? process.env;
   const forced = env["KUNAI_CREDENTIAL_BACKEND"];
   if (forced === "file") return fileVault(deps.paths);
