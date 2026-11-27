@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T09:50:19Z"
+lastReviewed: "2026-11-27T13:02:09Z"
 ---
 
 # Kunai — Terminal Design System (Sakura)
