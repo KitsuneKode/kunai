@@ -536,11 +536,12 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // names the host that failed) measured 3,329,213 bytes: +495. No dependency
 // or asset. 3252 KiB leaves 835 bytes.
 // Batch 1 provider adapters (VidBolt movies/series, AniLight/Anidap anime),
-// registration/defaults, and signed-HLS playlist handling measured 3,360,822
-// bytes. Sharing the provider JSON fetch transport, native episode identity
-// parsing, ISO language-list normalization, and repeated Chrome user-agent
-// literals reduced that to 3,358,901 bytes (-1,921). No dependency or asset.
-// 3281 KiB leaves 843 bytes; public launcher budgets are unchanged.
+// registration/defaults, signed-HLS playlist handling, Malay normalization, and
+// relay presentation for obfuscated media segments measured 3,359,096 bytes.
+// Sharing the provider JSON fetch transport, native episode identity parsing,
+// ISO language-list normalization, and repeated Chrome user-agent literals kept
+// this below the adapters' initial 3,360,822-byte measurement. No dependency
+// or asset. 3281 KiB leaves 648 bytes; public launcher budgets are unchanged.
 export const NPM_BUNDLE_BUDGET_KB = 3_281;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
