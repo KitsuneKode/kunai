@@ -223,6 +223,8 @@ export interface ContainerOptions {
   shellChrome?: ShellChrome;
   capabilitySnapshot?: CapabilitySnapshot | null;
   playerChoice?: PlayerChoice;
+  /** Already resolved by startup; container bootstrap only rediscovers when embedding/tests omit it. */
+  playerMode?: PlayerMode;
   appVersion?: string;
   debugJson?: boolean;
   debugSession?: boolean;

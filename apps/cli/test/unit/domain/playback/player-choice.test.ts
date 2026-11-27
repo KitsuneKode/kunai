@@ -4,6 +4,7 @@ import {
   detectPlayerPlatform,
   normalizePlayerPlatform,
   parsePlayerChoice,
+  requiredManagedPlayer,
   resolvePlayerMode,
   type SupportedPlayerPlatform,
 } from "@/domain/playback/player-choice";
@@ -67,6 +68,14 @@ describe("player choice", () => {
         installed: { mpv: false, vlc: true },
       }),
     ).toEqual({ kind: "android-handoff", target: "chooser" });
+  });
+
+  test("one shared rule maps each selected player mode to its managed dependency", () => {
+    expect(requiredManagedPlayer({ kind: "managed-mpv" })).toBe("mpv");
+    expect(requiredManagedPlayer({ kind: "managed-vlc" })).toBe("vlc");
+    expect(requiredManagedPlayer({ kind: "android-handoff", target: "chooser" })).toBeNull();
+    expect(requiredManagedPlayer({ kind: "android-handoff", target: "mpv" })).toBeNull();
+    expect(requiredManagedPlayer({ kind: "android-handoff", target: "vlc" })).toBeNull();
   });
 
   test("normalizes Bun and Node platform values without treating unknown systems as Android", () => {

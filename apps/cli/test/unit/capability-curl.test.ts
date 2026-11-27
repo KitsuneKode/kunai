@@ -40,10 +40,14 @@ function windowsPathWith(...commands: readonly string[]) {
 
 describe("probeCapabilities — curl for the default anime provider", () => {
   test("does not report desktop mpv as required for detached playback", async () => {
-    const snapshot = await probeCapabilities({ ...pathWith("curl"), requireMpv: false });
+    const snapshot = await probeCapabilities({
+      ...pathWith("curl"),
+      playerMode: { kind: "android-handoff", target: "chooser" },
+    });
 
     expect(snapshot.mpv).toBe(false);
     expect(snapshot.issues.map((issue) => issue.id)).not.toContain("mpv-missing");
+    expect(snapshot.issues.map((issue) => issue.id)).not.toContain("vlc-missing");
   });
 
   test("reports plain curl as present but not impersonating", async () => {
@@ -93,7 +97,9 @@ describe("probeCapabilities — curl for the default anime provider", () => {
     expect(issue?.severity).toBe("degraded");
     // The message has to name what actually breaks; "curl not found" alone
     // gives the user no reason to care.
-    expect(issue?.message).toContain("AniDB");
+    expect(issue?.message).toContain("HiAnime");
+    expect(issue?.message).toContain("Miruro");
+    expect(issue?.message).not.toContain("AniDB");
     expect(issue?.remediation.length).toBeGreaterThan(0);
     // Only one curl issue at a time, or the notice reads as two problems.
     expect(snapshot.issues.map((i) => i.id)).not.toContain("curl-impersonate-missing");

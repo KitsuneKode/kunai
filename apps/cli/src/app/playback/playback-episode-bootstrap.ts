@@ -9,6 +9,7 @@
 
 import { episodeInfoFromSelection } from "@/app/bootstrap/episode-info-from-catalog";
 import { consumeShareBootstrapStartSeconds } from "@/app/bootstrap/share-bootstrap-start";
+import { shouldOfferContinueSourcePrompt } from "@/app/playback/continue-source-choice";
 import { resolveLocalEpisodePlayback } from "@/app/playback/episode-playback-source";
 import { gatePlaybackDependencies } from "@/app/playback/playback-dependency-gate";
 import { getAnimeEpisodeOptions } from "@/app/playback/playback-episode-catalog";
@@ -405,6 +406,15 @@ export async function bootstrapPlaybackEpisode(
     run.pendingStart = sharedStartOverride(bootstrapStartSeconds) ?? run.pendingStart;
   }
 
+  if (title.playbackSourceOverride) {
+    run.episodePlaybackSourceOverride = title.playbackSourceOverride;
+  }
+  run.continueSourcePromptPending = shouldOfferContinueSourcePrompt({
+    launchSource: title.launchSource,
+    startAt: run.pendingStart.startAt,
+    suppressResumePrompt: run.pendingStart.suppressResumePrompt,
+    playbackSourceOverride: title.playbackSourceOverride,
+  });
   stateManager.dispatch({ type: "SELECT_EPISODE", episode });
   run.playbackSession = transitionPlaybackSession(
     context,

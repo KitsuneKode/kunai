@@ -32,7 +32,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { forceSettleAllRootContent } from "@/app-shell/root-content-state";
-import type { SessionController } from "@/app/session/SessionController";
+import type { SessionBootstrap, SessionController } from "@/app/session/SessionController";
 import type { ShutdownIntent } from "@/app/session/shutdown-coordinator";
 import { bindShutdownRequestHandler } from "@/app/session/shutdown-request";
 import type { Container } from "@/container";
@@ -83,12 +83,13 @@ export interface AgentSessionOptions {
   /** Record a step journal (frame + DB delta per event) for evidence bundles. */
   readonly recordEvidence?: boolean;
   readonly extraEnv?: Record<string, string>;
-  /**
-   * Seed backend state through the real repositories after the container
-   * opens and before the shell mounts, so the first frame reads it — the
-   * state a returning user boots into.
-   */
-  readonly beforeMount?: (container: Container) => void;
+  /** Bootstrap input for the first session loop, mirroring main.ts startup flags. */
+  readonly bootstrap?: SessionBootstrap;
+  /** Runs after the real container exists and before the shell/session loop mount. */
+  readonly beforeMount?: (input: {
+    readonly container: Container;
+    readonly profile: IsolatedCliProfile;
+  }) => void | Promise<void>;
 }
 
 export interface JournalEntry {
@@ -362,8 +363,7 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
       container.config.youtubeProvider,
     );
 
-    options.beforeMount?.(container);
-
+    await options.beforeMount?.({ container, profile });
     const { AppRoot } = await import("@/app-shell/ink-shell");
     handle = render(createElement(AppRoot, { container }), { columns, rows });
   } catch (error) {
@@ -409,8 +409,8 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
     if (loopError) throw loopError;
   };
 
-  const startLoop = () => {
-    runPromise = controller.run({}).catch((error) => {
+  const startLoop = (bootstrap: SessionBootstrap = {}) => {
+    runPromise = controller.run(bootstrap).catch((error) => {
       // A failed loop is a finding, not a crash — surface it on the next wait.
       loopError = error instanceof Error ? error : new Error(String(error));
     });
@@ -423,7 +423,7 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
     quitIntent = intent;
     controller.beginShutdown();
   });
-  startLoop();
+  startLoop(options.bootstrap ?? {});
 
   const stopLoop = async () => {
     if (!runPromise) return;

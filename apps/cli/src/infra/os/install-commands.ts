@@ -105,6 +105,16 @@ export const MPV_INSTALL: PlatformInstall = {
   fallback: "https://mpv.io/installation/",
 };
 
+export const VLC_INSTALL: PlatformInstall = {
+  arch: "sudo pacman -S vlc",
+  debian: "sudo apt install vlc",
+  fedora: "sudo dnf install vlc",
+  suse: "sudo zypper install vlc",
+  darwin: "brew install --cask vlc",
+  win32: "winget install --id VideoLAN.VLC -e",
+  fallback: "https://www.videolan.org/vlc/",
+};
+
 export const YT_DLP_INSTALL: PlatformInstall = {
   arch: "sudo pacman -S yt-dlp",
   debian: "sudo apt install yt-dlp",

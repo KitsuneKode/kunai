@@ -4,12 +4,15 @@ import { dirname as nodeDirname, win32 } from "node:path";
 
 const { W_OK } = fsConstants;
 
-import { detectPlayerPlatform } from "@/domain/playback/player-choice";
 import {
-  defaultAndroidIntentRuntime,
-  resolveAndroidIntentCommand,
-  type AndroidIntentRuntime,
-} from "@/infra/player/android-intent-launcher";
+  detectPlayerPlatform,
+  resolvePlayerMode,
+  type InstalledPlayers,
+  type PlayerChoice,
+  type PlayerMode,
+} from "@/domain/playback/player-choice";
+import type { AndroidIntentRuntime } from "@/infra/player/android-intent-launcher";
+import { detectInstalledPlayers } from "@/infra/player/installed-players";
 import type { CapabilitySnapshot, CurlCapability } from "@/ui";
 import { joinerForNodePlatform } from "@kunai/storage";
 
@@ -22,6 +25,7 @@ import { detectInstallMethod } from "../install-method";
 import { findKunaiPathCandidates } from "../path-candidates";
 import { detectPlatform, resolveReleaseBinaryTarget } from "../platform-assets";
 import { parseCanonicalVersion } from "../version";
+import { androidPlayerHandoffFinding } from "./android-player-handoff-finding";
 import {
   getInstallLayoutPaths,
   versionBinaryPath,
@@ -118,8 +122,14 @@ export type BuildDoctorReportInput = {
   readonly fileExists?: (path: string) => boolean;
   readonly inspectManifest?: () => Promise<InstallManifestInspection>;
   readonly probeCapabilities?: (options: {
-    readonly requireMpv: boolean;
+    readonly playerMode: PlayerMode;
   }) => Promise<CapabilitySnapshot>;
+  /** Effective configured/flagged player choice; auto when omitted. */
+  readonly playerChoice?: PlayerChoice;
+  /** Discovery seam for `--player auto`; defaults to real executable discovery. */
+  readonly installedPlayers?: InstalledPlayers;
+  /** Already-resolved player mode seam for callers that compose it upstream. */
+  readonly playerMode?: PlayerMode;
   readonly probeStorage?: () => Promise<readonly DoctorStorageInfo[]>;
   /** Environment seam for Android/Termux detection. Defaults to process.env. */
   readonly env?: Readonly<Record<string, string | undefined>>;
@@ -434,7 +444,10 @@ function collectFindings(input: {
     // attempt it and throw mid-request) — both are errors so the exit code is
     // honest for scripts. yt-dlp/ffmpeg/missing-curl stay warnings: each gates
     // one lane, not the product.
-    const core = issue.id === "mpv-missing" || issue.id === "curl-invocation-failed";
+    const core =
+      issue.id === "mpv-missing" ||
+      issue.id === "vlc-missing" ||
+      issue.id === "curl-invocation-failed";
     findings.push({
       severity: issue.severity === "fatal" || core ? "error" : "warning",
       code: issue.id,
@@ -489,12 +502,28 @@ export async function buildDoctorReport(input: BuildDoctorReportInput = {}): Pro
   };
 
   const inspectManifest = input.inspectManifest ?? (() => inspectInstallManifest(layout.configDir));
-  // On Android, playback hands videos to VLC or mpv-android; a desktop mpv is
-  // not part of a working install there, so its absence is not an error.
-  const android = detectPlayerPlatform({ platform, env: input.env ?? process.env }) === "android";
+  // One rule, shared with startup and setup: resolve the player first, then
+  // probe the binary that mode actually requires. On Android neither desktop
+  // binary is required because playback is handed to another app.
+  const playerPlatform = detectPlayerPlatform({ platform, env: input.env ?? process.env });
+  const android = playerPlatform === "android";
+  const playerChoice = input.playerChoice ?? "auto";
+  const installedPlayers =
+    playerChoice === "auto" && playerPlatform !== "android"
+      ? (input.installedPlayers ?? detectInstalledPlayers())
+      : undefined;
+  const playerMode =
+    input.playerMode ??
+    (installedPlayers === undefined
+      ? resolvePlayerMode({ choice: playerChoice, platform: playerPlatform })
+      : resolvePlayerMode({
+          choice: playerChoice,
+          platform: playerPlatform,
+          installed: installedPlayers,
+        }));
   const probe =
     input.probeCapabilities ??
-    (async (options: { readonly requireMpv: boolean }) => {
+    (async (options: { readonly playerMode: PlayerMode }) => {
       const { probeCapabilities } = await import("@/ui");
       return probeCapabilities(options);
     });
@@ -592,7 +621,7 @@ export async function buildDoctorReport(input: BuildDoctorReportInput = {}): Pro
     ...(target ? { targetId: target.id } : {}),
   };
 
-  const dependencies = await probe({ requireMpv: !android });
+  const dependencies = await probe({ playerMode });
   const detectedMethod = detectInstallMethod({
     platform,
     fileExists,
@@ -624,43 +653,11 @@ export async function buildDoctorReport(input: BuildDoctorReportInput = {}): Pro
   return { ...base, findings };
 }
 
-/**
- * Whether Kunai can hand a video to a player on this phone. It needs one of
- * Termux's intent launchers; without one, every play fails before the player.
- */
-function androidPlayerHandoffFinding(
-  runtime: Pick<AndroidIntentRuntime, "which"> = defaultAndroidIntentRuntime,
-): DoctorFinding {
-  const command = resolveAndroidIntentCommand({
-    target: "chooser",
-    url: "https://example.invalid/kunai-doctor-check",
-    runtime: { ...defaultAndroidIntentRuntime, which: runtime.which },
-  });
-  if (command.ok) {
-    return {
-      severity: "info",
-      code: "android-player-handoff",
-      message: `Android playback hands videos to VLC or mpv-android through ${command.launcher}.`,
-      remediation: [],
-    };
-  }
-  return {
-    severity: "warning",
-    code: "android-player-handoff-missing",
-    message:
-      "No Android intent launcher was found, so Kunai cannot hand a video to VLC or mpv-android.",
-    remediation: [
-      "pkg install termux-am",
-      "Install VLC for Android or mpv-android, then run kunai doctor again.",
-    ],
-  };
-}
-
 /** Human-readable doctor output covering the same fields as the JSON report. */
 /**
  * `ok` is reserved for a curl that can actually clear a Cloudflare challenge.
  * Plain curl reports `plain` rather than `ok`, because reporting it as healthy
- * is what let an empty AniDB search look like a working install.
+ * is what let an empty anime-provider search look like a working install.
  */
 function describeCurl(curl: CurlCapability): string {
   if (!curl.present) return "missing";
@@ -760,7 +757,7 @@ export function formatDoctorReportText(report: DoctorReport): string {
     // curl reports what it can actually do, not merely that it exists: plain
     // curl is present nearly everywhere and still gets challenged by Cloudflare,
     // so `curl=ok` on its own was a misleading line in a health report.
-    `  mpv=${report.dependencies.mpv ? "ok" : "missing"} yt-dlp=${report.dependencies.ytDlp ? "ok" : "missing"} ffprobe=${report.dependencies.ffprobe ? "ok" : "missing"} curl=${describeCurl(report.dependencies.curl)}`,
+    `  mpv=${report.dependencies.mpv ? "ok" : "missing"} vlc=${report.dependencies.vlc ? "ok" : "missing"} yt-dlp=${report.dependencies.ytDlp ? "ok" : "missing"} ffprobe=${report.dependencies.ffprobe ? "ok" : "missing"} curl=${describeCurl(report.dependencies.curl)}`,
   );
   lines.push("");
   lines.push("Storage");
