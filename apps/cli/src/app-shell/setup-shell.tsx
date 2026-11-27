@@ -4,8 +4,7 @@
 // verdict, then the consent screen. `/setup`, `kunai --setup` and `m` on the
 // first quick screen walk the `full` six. Every screen wears the Sakura frame.
 //
-// Layout and grammar: `.reference/design/cli/kunai-onboarding-v4.html` and
-// `01-shell-footer-contract.md`. Skip contract: `s` takes this step's
+// Skip contract: `s` takes this step's
 // recommendation, `S` takes every remaining one. `esc`/`q` discard and quit —
 // but only once nothing is decided yet; past screen one they ask first.
 //
@@ -26,7 +25,7 @@ import React, { useMemo, useRef, useState } from "react";
 
 import { ROOT_HORIZONTAL_PADDING } from "./layout-policy";
 import { useFrameTick } from "./primitives/SakuraPetal";
-import { mountRootContent } from "./root-content-state";
+import { mountRootContent, useRootInterruptCapture } from "./root-content-state";
 import { AnalyticsScreen, CONSENT_CHOICES, moveConsentCursor } from "./setup/AnalyticsScreen";
 import { buildDependencyRows, type ScopedDependencyRow } from "./setup/dependency-rows";
 import {
@@ -200,6 +199,8 @@ export function SetupShell({
   const screen = order[screenIdx] ?? "analytics";
   const contentWidth = setupContentWidth(frameWidth);
   const density = setupDensity(contentWidth, rows);
+  const previewOpen = screen === "analytics" && density === "tiny" && pingExpanded;
+  useRootInterruptCapture(previewOpen && !viewport.tooSmall);
 
   const depRows: readonly ScopedDependencyRow[] = buildDependencyRows(snapshot, {
     dataDir: downloadPath,
@@ -473,6 +474,9 @@ export function SetupShell({
     // decisions the user cannot see.
     if (viewport.tooSmall) return;
 
+    // The expanded payload owns the whole surface, including quit and skip.
+    if (previewOpen) return setPingExpanded(false);
+
     // Abort is a two-keystroke decision once anything has been answered. The
     // confirming keypress is consumed: whatever it was, it does not also act.
     if (confirmingAbort) {
@@ -526,12 +530,8 @@ export function SetupShell({
       if (input === "d" || input === "D") return setMachineOpen(true);
       if (input === "m" || input === "M") return openFullSetup();
     }
-    // The size floor shows the payload's values as a view of its own. While
-    // it is open the answers are not on screen, so no key may reach them.
-    if (screen === "analytics" && density === "tiny") {
-      if (pingExpanded) return setPingExpanded(false);
-      if (input === "p" || input === "P") return setPingExpanded(true);
-    }
+    if (screen === "analytics" && density === "tiny" && (input === "p" || input === "P"))
+      return setPingExpanded(true);
 
     if (screen === "deps") {
       if (input === "r" || input === "R") {
@@ -645,7 +645,7 @@ export function SetupShell({
         else if (key === "d") setMachineOpen(false);
         return;
       }
-      if (pingExpanded) return setPingExpanded(false);
+      if (previewOpen) return setPingExpanded(false);
       if (key === "enter") {
         // A pointer can never grant the keystroke-only analytics consent.
         if (screen !== "analytics") advance();
@@ -680,7 +680,7 @@ export function SetupShell({
       ? machineOpen
         ? MACHINE_FOOTER
         : startFooter({ attention: verdict.attention, density })
-      : pingExpanded
+      : previewOpen
         ? [{ key: "any key", label: "back" }]
         : buildFooter(screen, {
             hasFix: Boolean(depRows[depIdx]?.fix),
@@ -767,7 +767,7 @@ export function SetupShell({
               payload={analyticsPayload}
               density={density}
               contentWidth={contentWidth}
-              expanded={pingExpanded}
+              expanded={previewOpen}
             />
           ) : null}
           {screen === "done" ? (

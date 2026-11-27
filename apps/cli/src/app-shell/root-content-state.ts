@@ -1,7 +1,7 @@
 import { clearRootContentTransitionFrame } from "@/app-shell/shell-screen-clear";
 import type { SessionState } from "@/domain/session/SessionState";
 import type { ReactElement } from "react";
-import { useSyncExternalStore } from "react";
+import { useLayoutEffect, useSyncExternalStore } from "react";
 
 import { resolveRootShellSurface, type RootShellSurface } from "./root-shell-state";
 
@@ -21,6 +21,7 @@ type MountedRootContent<TResult> = {
 };
 
 const rootContentSubscribers = new Set<() => void>();
+let rootInterruptCaptured = false;
 let rootContentSession: RootContentSession | null = null;
 let rootContentNextId = 1;
 
@@ -46,6 +47,21 @@ function notifyRootContentSubscribers() {
 
 export function getRootContentSession(): RootContentSession | null {
   return rootContentSession;
+}
+
+export function isRootInterruptCaptured(): boolean {
+  return rootInterruptCaptured;
+}
+
+/** The mounted view handles Ctrl+C like its other input while it is modal. */
+export function useRootInterruptCapture(active: boolean): void {
+  useLayoutEffect(() => {
+    if (!active) return;
+    rootInterruptCaptured = true;
+    return () => {
+      rootInterruptCaptured = false;
+    };
+  }, [active]);
 }
 
 export function subscribeRootContentSession(subscriber: () => void): () => void {

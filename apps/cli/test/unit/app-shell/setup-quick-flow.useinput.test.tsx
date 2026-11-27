@@ -154,6 +154,53 @@ describe("quick setup · two screens", () => {
 });
 
 describe("quick setup · the consent screen keeps its contract", () => {
+  test("every wizard key only closes the expanded preview at 40×16", () => {
+    const { handle, frame, results } = start({ columns: 40, rows: 16 });
+    try {
+      handle.stdin.enqueue(ENTER);
+      handle.stdin.enqueue(DOWN);
+      const keys = [
+        ENTER,
+        UP,
+        DOWN,
+        "\x1b[D",
+        "\x1b[C",
+        "\t",
+        "\x1b[Z",
+        " ",
+        "\x7f",
+        "q",
+        "Q",
+        "s",
+        "S",
+        "b",
+        "B",
+        "p",
+        "P",
+        "r",
+        "R",
+        "m",
+        "M",
+        "d",
+        "D",
+        "a",
+        "A",
+        "/",
+      ];
+      for (const key of keys) {
+        handle.stdin.enqueue("p");
+        expect(frame()).toContain("Any key goes back.");
+        handle.stdin.enqueue(key);
+        expect(frame()).toContain("▌ Share anonymous usage");
+        expect(frame()).not.toContain("Any key goes back.");
+        expect(frame()).not.toContain("again to");
+        expect(results).toHaveLength(0);
+      }
+    } finally {
+      handle.unmount();
+    }
+  });
+
   test("Enter does nothing until an arrow has chosen a row", () => {
     const { handle, results, frame } = start();
     try {

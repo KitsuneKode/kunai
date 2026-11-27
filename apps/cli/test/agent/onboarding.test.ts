@@ -11,6 +11,7 @@
  */
 import { describe, expect, it } from "bun:test";
 
+import { K } from "./keys";
 import { startTmuxSession } from "./tmux-session";
 
 const hasTmux = Bun.which("tmux") !== null;
@@ -22,15 +23,60 @@ if (!hasTmux) {
 const itTmux = hasTmux ? it : it.skip;
 
 describe("agent driver · fresh-profile onboarding", () => {
+  itTmux("the expanded preview owns input at 40×16", async () => {
+    const s = await startTmuxSession({ seed: "fresh", columns: 40, rows: 16 });
+    try {
+      await s.waitFor((f) => f.includes("What do you watch most?"), "quick setup");
+      const consentState = () => {
+        const config = s.inspect().config();
+        return {
+          analytics: config.analytics ?? "unset",
+          analyticsNoticeShown: config.analyticsNoticeShown ?? false,
+          installId: config.installId ?? "",
+          onboardingVersion: config.onboardingVersion ?? 0,
+          downloadOnboardingDismissed: config.downloadOnboardingDismissed ?? false,
+        };
+      };
+      const before = consentState();
+      await s.send(K.enter);
+      await s.waitFor((f) => f.includes("Share anonymous usage?"), "neutral consent");
+      await s.send(K.enter);
+      await s.send("S");
+      await s.send("p");
+      await s.waitFor((f) => f.includes("Any key goes back."), "expanded preview");
+      await s.send(K.esc);
+      await s.waitFor((f) => f.includes("Share anonymous usage?"), "Escape closes preview");
+      expect(consentState()).toEqual(before);
+
+      await s.send(K.down);
+      await s.waitFor((f) => f.includes("▌ Share anonymous usage"), "share row highlighted");
+      for (const key of ["s", K.ctrlC]) {
+        await s.send("p");
+        await s.waitFor((f) => f.includes("Any key goes back."), "expanded preview");
+        await s.send(key);
+        await s.waitFor((f) => f.includes("▌ Share anonymous usage"), "preview closes only");
+        expect(consentState()).toEqual(before);
+        expect(await s.isDead()).toBe(false);
+      }
+
+      await s.send("s");
+      await s.waitFor((f) => f.includes("Setup saved"), "explicit decline finishes setup");
+      const config = s.inspect().config();
+      expect(config.onboardingVersion).toBeGreaterThan(0);
+      expect(config.analytics).toBe("disabled");
+      expect(config.installId).toBe("");
+    } finally {
+      await s.stop();
+    }
+  });
+
   itTmux(
     "the setup wizard commits an onboarded config without touching analytics",
     async () => {
-      // --debug writes logs.txt under CLI_ROOT; on a timeout the waitFor dump
-      // tails it, which is what makes a blank-pane stall diagnosable on CI.
       const s = await startTmuxSession({
         name: "onboarding-proof",
         seed: "fresh",
-        command: "--debug",
+        command: "--setup",
       });
       try {
         // First paint is a cold `bun src/main.ts` boot inside tmux — on a
