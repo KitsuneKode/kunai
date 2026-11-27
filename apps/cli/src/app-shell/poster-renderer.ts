@@ -61,20 +61,6 @@ export function allocKittyImageId(shared: boolean): number {
   return shared ? allocSharedKittyId() : allocId();
 }
 
-const wipeListeners = new Set<() => void>();
-
-/**
- * Hear about a global wipe. `d=A` frees every image in the terminal, including
- * ones the placement registry never knew about; an owner that keeps its own
- * ids has to forget them here or it will go on printing cells for a dead image.
- */
-export function onTerminalImagesWiped(listener: () => void): () => void {
-  wipeListeners.add(listener);
-  return () => {
-    wipeListeners.delete(listener);
-  };
-}
-
 export function deleteKittyImage(imageId: number): void {
   if (tmuxImages.delete(imageId)) {
     process.stdout.write(wrapTmuxPassthrough(`\x1b_Ga=d,d=I,i=${imageId},q=2;\x1b\\`));
@@ -94,7 +80,6 @@ export function deleteAllTerminalImages(): void {
     process.stdout.write("\x1b_Ga=d,d=A;\x1b\\");
   }
   clearKittyPlacementRegistry();
-  for (const listener of wipeListeners) listener();
 }
 
 const DIACRITICS: readonly number[] = [

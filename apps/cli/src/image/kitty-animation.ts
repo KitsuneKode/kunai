@@ -112,12 +112,19 @@ export function transmitCommand(imageId: number, frame: RgbaFrame): KittyCommand
 }
 
 /**
+ * Below the text, above cell backgrounds. Her cells hold nothing but
+ * placeholders, so this only matters where a terminal composites a neighbour's
+ * glyph overhang — and there the text must win.
+ */
+export const SPRITE_Z_INDEX = -1;
+
+/**
  * A virtual placement: no position, only a cell box. The image appears wherever
  * placeholder cells carrying its id are printed, which is what lets Ink own the
  * layout.
  */
 export function virtualPlacementCommand(imageId: number, cols: number, rows: number): KittyCommand {
-  return { keys: `a=p,U=1,i=${imageId},c=${cols},r=${rows},q=2` };
+  return { keys: `a=p,U=1,i=${imageId},c=${cols},r=${rows},z=${SPRITE_Z_INDEX},q=2` };
 }
 
 /**
@@ -185,6 +192,24 @@ export function deleteImageCommand(imageId: number): KittyCommand {
  * for passthrough, one wrap per chunk.
  */
 export function encodeCommand(command: KittyCommand, passthrough?: "tmux"): string {
+  const memo = encoded.get(command);
+  const key = passthrough ?? "direct";
+  const hit = memo?.[key];
+  if (hit !== undefined) return hit;
+  const escape = encodeUncached(command, passthrough);
+  encoded.set(command, { ...memo, [key]: escape });
+  return escape;
+}
+
+/**
+ * Escapes already built, per command object. A sprite keeps its commands for
+ * the life of the process, so re-sending one after a delete — the last surface
+ * let go, then a new one mounted — costs the write and nothing else: no deflate,
+ * no base64. The encode happens once per command.
+ */
+const encoded = new WeakMap<KittyCommand, { direct?: string; tmux?: string }>();
+
+function encodeUncached(command: KittyCommand, passthrough?: "tmux"): string {
   const wrap = (escape: string) => (passthrough ? wrapTmuxPassthrough(escape) : escape);
   if (!command.pixels) return wrap(`\x1b_G${command.keys};\x1b\\`);
 

@@ -5,6 +5,8 @@ import {
 } from "@/domain/session/session-display";
 import type { SessionState } from "@/domain/session/SessionState";
 
+import type { CompanionMode } from "./companion-policy";
+import { kannaText, stablePick } from "./kanna-voice";
 import type { ShellStatusTone } from "./types";
 
 type ProviderNameLookup = {
@@ -89,6 +91,7 @@ export function buildRootStatusSummary({
   networkAvailable = true,
   playbackIsLocal = false,
   providerRegistry,
+  companion = "off",
 }: {
   state: SessionState;
   currentViewLabel: string;
@@ -103,6 +106,8 @@ export function buildRootStatusSummary({
   networkAvailable?: boolean;
   playbackIsLocal?: boolean;
   providerRegistry?: ProviderNameLookup;
+  /** Whether she may speak here. The default keeps the plain copy. */
+  companion?: CompanionMode;
 }): RootStatusSummary {
   const isActivePlayback =
     rootStatus === "playing" ||
@@ -228,7 +233,14 @@ export function buildRootStatusSummary({
   } else if (offlineMode && !isActivePlayback) {
     alert = { text: "offline mode · library only", tone: "info" };
   } else if (!networkAvailable && !offlineMode && !isActivePlayback) {
-    alert = { text: "network unavailable · local copies preferred", tone: "warning" };
+    // The network dropping is a transition she names, and says what still
+    // works. With her off it stays the plain status.
+    alert = {
+      text:
+        kannaText("offline", companion, stablePick("offline")) ??
+        "network unavailable · local copies preferred",
+      tone: "warning",
+    };
   }
   // Standing notification count is NOT an alert — the alert slot is reserved for
   // transient alarms (playback problem, autoplay paused, download progress).

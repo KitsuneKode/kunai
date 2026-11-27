@@ -14,8 +14,8 @@
 //
 // It touches no profile: nothing here opens config, data or cache.
 
-import { CompanionPet } from "@/app-shell/CompanionPet";
 import { companionMode, type CompanionPose } from "@/app-shell/companion-policy";
+import { CompanionPet } from "@/app-shell/CompanionPet";
 import { kannaSlot, releaseAllKannaSprites } from "@/app-shell/kanna-sprite";
 import { reducedMotionEnabled } from "@/app-shell/motion-policy";
 import { detectImageCapability } from "@/image";

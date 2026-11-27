@@ -7,12 +7,9 @@ import { companionFallbackGlyph, companionMode, type CompanionPose } from "./com
 import {
   acquireKannaSprite,
   holdKannaSprites,
-  kannaEpoch,
   kannaSlot,
   kannaSpriteAvailable,
   readyKannaSprite,
-  subscribeKannaEpoch,
-  type KannaSprite,
 } from "./kanna-sprite";
 import { reducedMotionEnabled } from "./motion-policy";
 import { MiniPosterTile } from "./primitives/MiniPosterTile";
@@ -68,39 +65,40 @@ function subscribeCellSize(listener: () => void): () => void {
 }
 
 function SpritePet({ pose, rows }: { readonly pose: CompanionPose; readonly rows: number }) {
-  // Both are inputs to the slot and the upload: a new cell size changes how
-  // many pixels she needs, and a new epoch means every id she had is dead.
-  const cells = useSyncExternalStore(subscribeCellSize, () => cellSizeVersion);
-  const epoch = useSyncExternalStore(subscribeKannaEpoch, kannaEpoch);
+  // Subscribed for the re-render alone: a new cell size changes the slot below,
+  // which is what the upload keys on.
+  useSyncExternalStore(subscribeCellSize, () => cellSizeVersion);
   // No motion under reduced motion: one drawing goes up, and no frames follow.
   const animated = !reducedMotionEnabled();
-  const slot = kannaSlot(rows);
-  // `undefined` is still uploading; `null` is an upload that could not happen.
-  const [sprite, setSprite] = useState<KannaSprite | null | undefined>(
-    () => readyKannaSprite(pose, slot, animated) ?? undefined,
-  );
+  const { cols, pixels } = kannaSlot(rows);
+  // Read from the sprite table on every render rather than kept in state, so a
+  // pose change shows the new pose the instant it is uploaded and never shows
+  // the old one in the meantime. The state is only a "something landed" nudge.
+  const ready = readyKannaSprite(pose, { rows, cols, pixels }, animated);
+  const [failed, setFailed] = useState<string | null>(null);
+  const [, setLanded] = useState(0);
+  const key = `${pose}:${rows}x${cols}:${pixels}:${animated}`;
 
   useEffect(() => {
     const release = holdKannaSprites();
     let current = true;
-    void acquireKannaSprite(pose, slot, animated).then((next) => {
-      if (current) setSprite(next);
+    void acquireKannaSprite(pose, { rows, cols, pixels }, animated).then((sprite) => {
+      if (!current) return undefined;
+      if (sprite) setLanded((n) => n + 1);
+      else setFailed(key);
+      return undefined;
     });
     return () => {
       current = false;
       release();
     };
-    // `slot` is derived from `rows` and `cells`; naming it would re-run on
-    // every render, since it is a fresh object each time.
-  }, [pose, rows, animated, cells, epoch]);
+  }, [key, pose, rows, cols, pixels, animated]);
 
   // The picture could not be prepared here, so she is the glyph — the same
   // floor every terminal without a graphics protocol stands on.
-  if (sprite === null) return <Text>{companionFallbackGlyph()}</Text>;
+  if (failed === key) return <Text>{companionFallbackGlyph()}</Text>;
   // Reserve the slot while the upload is in flight, so she arrives into a space
   // already hers rather than pushing the text beside her sideways.
-  if (!sprite || sprite.rows !== slot.rows || sprite.cols !== slot.cols) {
-    return <Box width={slot.cols} height={slot.rows} />;
-  }
-  return <Text>{sprite.placeholder}</Text>;
+  if (!ready) return <Box width={cols} height={rows} />;
+  return <Text>{ready.placeholder}</Text>;
 }

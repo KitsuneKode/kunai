@@ -14,8 +14,13 @@
 //
 // What this module owns is the lifetime of those ids: one upload per pose and
 // pixel size, shared by every surface that shows her, and every one of them
-// deleted when the last surface lets go — and again on a global wipe and on
-// exit, so nothing is left in the terminal after Kunai is gone.
+// deleted when the last surface lets go and again on exit, so nothing is left
+// in the terminal after Kunai is gone.
+//
+// The shell's global wipe (`d=A`, on surface changes and resizes) is not her
+// concern. It deletes the placements visible on screen, and a virtual placement
+// is not one: kitty 0.51 and Ghostty 1.4 both keep drawing her through it,
+// checked by screenshot. Re-uploading on every wipe would be churn for nothing.
 
 import { getTerminalCellPixels } from "@/image/cell-size";
 import { debugImage } from "@/image/debug";
@@ -28,6 +33,7 @@ import {
   transmitCommand,
   virtualPlacementCommand,
   type AnimationStep,
+  type KittyCommand,
   type RgbaFrame,
 } from "@/image/kitty-animation";
 import { preparePoster } from "@/image/native-image";
@@ -39,7 +45,6 @@ import {
   allocKittyImageId,
   buildPlaceholder,
   kittyPlaceholderPassthrough,
-  onTerminalImagesWiped,
 } from "./poster-renderer";
 
 export type KannaSprite = {
@@ -67,7 +72,11 @@ const runtime = {
     process.stdout.write(text);
   },
   passthrough: kittyPlaceholderPassthrough,
+  env: (): NodeJS.ProcessEnv => process.env,
 };
+
+/** Pixels per row when the terminal never reported its cell size. */
+const FALLBACK_CELL_HEIGHT_PX = 20;
 
 /**
  * Size her from the cell the terminal measured, not from a guess.
@@ -82,7 +91,7 @@ export function kannaSlot(rows: number): KannaSlot {
   const cell = getTerminalCellPixels();
   if (!cell) {
     const cols = Math.max(2, Math.round(rows * CELL_ASPECT));
-    return { rows, cols, pixels: rows * 20 };
+    return { rows, cols, pixels: rows * FALLBACK_CELL_HEIGHT_PX };
   }
   const pixels = rows * cell.height;
   return { rows, cols: Math.max(2, Math.ceil(pixels / cell.width)), pixels };
@@ -93,12 +102,25 @@ export function kannaSpriteAvailable(): boolean {
   return runtime.passthrough() !== undefined;
 }
 
-const sprites = new Map<string, KannaSprite>();
+/**
+ * One pose at one size, built once for the life of the process.
+ *
+ * The id is fixed with it, so the commands — and the escapes `encodeCommand`
+ * memoizes for them — stay valid across a delete and a re-send. Decode, resize,
+ * frame delta and deflate each happen once per entry, however often she comes
+ * and goes.
+ */
+type SpriteBuild = {
+  readonly sprite: KannaSprite;
+  readonly commands: readonly KittyCommand[];
+  readonly passthrough: "tmux" | undefined;
+};
+
+const builds = new Map<string, SpriteBuild>();
+/** Keys whose image is in the terminal right now. */
+const live = new Set<string>();
 const inflight = new Map<string, Promise<KannaSprite | null>>();
-const epochListeners = new Set<() => void>();
 let holders = 0;
-/** Bumped whenever every id went dead at once, so mounted surfaces re-acquire. */
-let epoch = 0;
 let exitHooked = false;
 
 function spriteKey(pose: CompanionPose, slot: KannaSlot, animated: boolean): string {
@@ -152,80 +174,90 @@ async function loadDrawings(
   };
 }
 
-function deleteSprite(sprite: KannaSprite): void {
-  const passthrough = runtime.passthrough() ?? undefined;
-  runtime.write(encodeCommand(deleteImageCommand(sprite.imageId), passthrough));
+function deleteKey(key: string): void {
+  const build = builds.get(key);
+  if (!build || !live.delete(key)) return;
+  runtime.write(encodeCommand(deleteImageCommand(build.sprite.imageId), build.passthrough));
 }
 
 /** Delete every sprite from the terminal. Synchronous, so it is safe on exit. */
 export function releaseAllKannaSprites(): void {
-  for (const sprite of sprites.values()) deleteSprite(sprite);
-  sprites.clear();
-  inflight.clear();
+  // Deleting the entry being visited is safe in a Set's iterator.
+  for (const key of live) deleteKey(key);
 }
-
-function forgetSprites(): void {
-  // A wipe took the images already; the ids are deleted again by name because
-  // a virtual placement is not a visible one, and whether `d=A` reaches it is
-  // the terminal's call. Deleting a dead id is free.
-  releaseAllKannaSprites();
-  epoch += 1;
-  for (const listener of epochListeners) listener();
-}
-
-onTerminalImagesWiped(forgetSprites);
 
 function hookExit(): void {
   if (exitHooked) return;
   exitHooked = true;
-  // The shutdown path wipes the terminal, but a crash or a lost race with the
-  // force-exit timer skips it. `exit` always runs and a TTY write is
-  // synchronous, so this is the one place that cannot be skipped.
+  // Unmounting the last surface deletes her, but a crash, a signal, or a lost
+  // race with the force-exit timer can skip the unmount. `exit` always runs —
+  // every signal handler in `main.ts` ends in `process.exit` — and a TTY write
+  // is synchronous, so this is the one place that cannot be skipped.
   process.once("exit", releaseAllKannaSprites);
 }
 
-async function uploadSprite(
+async function buildSprite(
   pose: CompanionPose,
   slot: KannaSlot,
   animated: boolean,
-): Promise<KannaSprite | null> {
+): Promise<SpriteBuild | null> {
   const passthrough = runtime.passthrough();
   if (passthrough === undefined) return null;
-  const startedAt = epoch;
 
   const drawings = await loadDrawings(pose, slot.pixels, animated);
   const first = drawings?.frames[drawings.loop[0]?.frame ?? 0];
   if (!drawings || !first) return null;
 
   const imageId = allocKittyImageId(passthrough === "tmux");
-  hookExit();
   const commands = [
     transmitCommand(imageId, first),
     virtualPlacementCommand(imageId, slot.cols, slot.rows),
     ...animationCommands(imageId, drawings.frames, drawings.loop),
   ];
-  const ptyBytes = await sendCommands(commands, {
-    passthrough: passthrough ?? undefined,
-    write: runtime.write,
-  });
-  const sprite: KannaSprite = {
-    imageId,
-    placeholder: buildPlaceholder(imageId, slot.rows, slot.cols),
-    rows: slot.rows,
-    cols: slot.cols,
-    pixels: slot.pixels,
-    animated: drawings.loop.length > 1,
-  };
   debugImage(
-    `kanna ${pose} ${slot.pixels}px: ${drawings.frames.length} drawing(s), ${commands.length} command(s), ${ptyBytes} bytes on the pty`,
+    `kanna ${pose} ${slot.pixels}px: ${drawings.frames.length} drawing(s), ${commands.length} command(s)`,
   );
-  // Wiped, or let go of by every surface, while the upload was in flight: the
-  // id would never be printed, so it must not be left behind.
-  if (startedAt !== epoch || holders === 0) {
-    deleteSprite(sprite);
+  return {
+    sprite: {
+      imageId,
+      placeholder: buildPlaceholder(imageId, slot.rows, slot.cols),
+      rows: slot.rows,
+      cols: slot.cols,
+      pixels: slot.pixels,
+      animated: drawings.loop.length > 1,
+    },
+    commands,
+    passthrough: passthrough ?? undefined,
+  };
+}
+
+async function uploadSprite(
+  key: string,
+  pose: CompanionPose,
+  slot: KannaSlot,
+  animated: boolean,
+): Promise<KannaSprite | null> {
+  const build = builds.get(key) ?? (await buildSprite(pose, slot, animated));
+  if (!build) return null;
+  builds.set(key, build);
+  // Every surface let go while the pixels were being prepared. Keep the build
+  // for next time, but put nothing in the terminal that nobody will print.
+  if (holders === 0) return null;
+
+  hookExit();
+  const ptyBytes = await sendCommands(build.commands, {
+    passthrough: build.passthrough,
+    write: runtime.write,
+    env: runtime.env(),
+  });
+  live.add(key);
+  debugImage(`kanna ${pose} sent: ${ptyBytes} bytes on the pty`);
+  // Let go of while the commands were going out: delete what just landed.
+  if (holders === 0) {
+    deleteKey(key);
     return null;
   }
-  return sprite;
+  return build.sprite;
 }
 
 /**
@@ -239,33 +271,32 @@ export function acquireKannaSprite(
   slot: KannaSlot,
   animated: boolean,
 ): Promise<KannaSprite | null> {
-  const key = spriteKey(pose, slot, animated);
-  const ready = sprites.get(key);
+  const ready = readyKannaSprite(pose, slot, animated);
   if (ready) return Promise.resolve(ready);
+  const key = spriteKey(pose, slot, animated);
   const pending = inflight.get(key);
   if (pending) return pending;
 
-  const task = uploadSprite(pose, slot, animated)
+  const task = uploadSprite(key, pose, slot, animated)
     .catch((error: unknown) => {
       debugImage(`kanna sprite failed: ${error instanceof Error ? error.message : String(error)}`);
       return null;
     })
-    .then((sprite) => {
+    .finally(() => {
       if (inflight.get(key) === task) inflight.delete(key);
-      if (sprite) sprites.set(key, sprite);
-      return sprite;
     });
   inflight.set(key, task);
   return task;
 }
 
-/** The sprite if it is already uploaded — for a first render with no flash. */
+/** The sprite if it is in the terminal right now — for a render with no flash. */
 export function readyKannaSprite(
   pose: CompanionPose,
   slot: KannaSlot,
   animated: boolean,
 ): KannaSprite | null {
-  return sprites.get(spriteKey(pose, slot, animated)) ?? null;
+  const key = spriteKey(pose, slot, animated);
+  return live.has(key) ? (builds.get(key)?.sprite ?? null) : null;
 }
 
 /**
@@ -290,25 +321,18 @@ export function holdKannaSprites(): () => void {
   };
 }
 
-export function subscribeKannaEpoch(listener: () => void): () => void {
-  epochListeners.add(listener);
-  return () => {
-    epochListeners.delete(listener);
-  };
-}
-
-export function kannaEpoch(): number {
-  return epoch;
-}
-
 export const __testing = {
   runtime,
   sliceFrames,
-  get sprites() {
-    return sprites;
+  liveIds(): number[] {
+    return [...live].flatMap((key) => {
+      const build = builds.get(key);
+      return build ? [build.sprite.imageId] : [];
+    });
   },
   reset(): void {
-    sprites.clear();
+    builds.clear();
+    live.clear();
     inflight.clear();
     holders = 0;
   },

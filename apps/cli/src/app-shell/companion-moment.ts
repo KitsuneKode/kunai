@@ -23,6 +23,8 @@ export type CompanionMoment =
   | "setup"
   /** The setup summary — the waiting is over. */
   | "settled"
+  /** A search query is out and nothing has come back yet. */
+  | "searching"
   /** Providers are racing for a stream. */
   | "seeking"
   /** One provider died and the race moved on to the next. */
@@ -62,6 +64,7 @@ export type CompanionMoment =
 const POSE_BY_MOMENT = {
   setup: "wait",
   settled: "idle",
+  searching: "seek",
   seeking: "seek",
   rerouting: "seek",
   dragging: "seek",
@@ -86,6 +89,7 @@ const POSE_BY_MOMENT = {
 const VOICE_BY_MOMENT = {
   setup: "first-run",
   settled: null,
+  searching: "searching",
   seeking: "resolving",
   rerouting: "dead-end",
   dragging: "slow",
@@ -177,16 +181,19 @@ export function momentForLoading({
 }
 
 /**
- * The moment a bare browse surface is in, or `null` for no companion.
+ * The cue a bare browse surface is in, or `null` for no companion.
  *
  * Same rule as `momentForLoading` — she fills the empty frame, she does not
  * crowd a full one — plus two narrower gates this surface needs:
  *
- * - Glyph terminals already hear her here: the `StateBlock` voice line carries
- *   a 🦊 of its own. A second lone glyph beside it reads as a stray emoji, so
- *   only the real illustration earns the frame.
- * - Ultra-compact viewports have no spare rows for her; the voice line still
- *   reaches them.
+ * - On the settled surfaces (nothing asked, nothing found, a failure) glyph
+ *   terminals already hear her: the `StateBlock` voice line carries a 🦊 of its
+ *   own. A second lone glyph beside it reads as a stray emoji, so only the real
+ *   illustration earns the frame there.
+ * - Ultra-compact viewports have no spare rows for her picture.
+ *
+ * A search in flight is different: the surface says "searching" and nothing
+ * else, so her line is the only voice on it and every tier gets it.
  */
 export function momentForBrowseEmpty({
   kind,
@@ -194,16 +201,22 @@ export function momentForBrowseEmpty({
   ultraCompact,
   mode,
 }: {
-  /** `no-results` is a search that found nothing; `empty` is nothing asked yet. */
-  readonly kind: "empty" | "no-results" | "error";
+  /**
+   * `searching` is a query in flight; `no-results` a search that found nothing;
+   * `empty` nothing asked yet.
+   */
+  readonly kind: "searching" | "empty" | "no-results" | "error";
   readonly hasArtwork: boolean;
   readonly ultraCompact: boolean;
   readonly mode: CompanionMode;
-}): CompanionMoment | null {
-  if (mode !== "graphics" || ultraCompact) return null;
+}): CompanionCue | null {
+  if (mode === "off") return null;
+  const picture = mode === "graphics" && !ultraCompact;
+  if (kind === "searching") return { moment: "searching", picture };
+  if (!picture) return null;
   // Failure leads, same as loading: an error surface is telling someone
   // something went wrong, and that outranks an empty frame.
-  if (kind === "error") return "trouble";
+  if (kind === "error") return { moment: "trouble", picture };
   if (hasArtwork) return null;
-  return kind === "no-results" ? "missing" : "empty";
+  return { moment: kind === "no-results" ? "missing" : "empty", picture };
 }

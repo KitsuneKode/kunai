@@ -7,6 +7,7 @@ import {
   momentForBrowseEmpty,
   momentForLoading,
   poseForMoment,
+  voiceForMoment,
   type CompanionMoment,
 } from "@/app-shell/companion-moment";
 import type { CompanionPose } from "@/app-shell/companion-policy";
@@ -16,7 +17,16 @@ const read = (rel: string) => readFileSync(path.join(SHELL, rel), "utf8");
 
 describe("poses", () => {
   test("every moment resolves to a pose that exists", () => {
-    const poses = new Set<CompanionPose>(["idle", "watch", "go", "wait", "oops", "nap"]);
+    const poses = new Set<CompanionPose>([
+      "idle",
+      "wait",
+      "seek",
+      "go",
+      "watch",
+      "oops",
+      "nap",
+      "peek",
+    ]);
     for (const moment of COMPANION_MOMENTS) expect(poses).toContain(poseForMoment(moment));
   });
 
@@ -26,7 +36,6 @@ describe("poses", () => {
     // reach is bytes shipped to every user that no code path can draw.
     const embedded = [...read("companion-assets.ts").matchAll(/^\s{2}(\w+):/gmu)].map((m) => m[1]);
     const reachable = new Set(COMPANION_MOMENTS.map((moment) => poseForMoment(moment)));
-    // `seek` is held back for a redraw, so `seeking` draws `go` for now.
     expect(embedded.length).toBeGreaterThan(0);
     for (const pose of embedded) {
       // SAFETY: the assertion only satisfies `Set<CompanionPose>.has`, which
@@ -37,23 +46,81 @@ describe("poses", () => {
   });
 });
 
-describe("momentForLoading", () => {
-  const base = { hasPoster: false, failed: false } as const;
-
-  test("the poster wins wherever there is one", () => {
-    // Two images on one surface is how the social card ended up drawing its
-    // type row across her face. Content artwork is what the reader came for.
-    for (const operation of ["resolving", "playing", "loading"] as const) {
-      expect(momentForLoading({ ...base, operation, hasPoster: true })).toBeNull();
+describe("the hunt", () => {
+  test("she leans in while providers race, and keeps leaning while it goes badly", () => {
+    // The wait is hers. A dead provider and a dragging race are the same wait,
+    // so the pose holds and only the line changes.
+    for (const moment of ["searching", "seeking", "rerouting", "dragging"] as const) {
+      expect(poseForMoment(moment), moment).toBe("seek");
     }
   });
 
+  test("failure is oops, empty is peek or nap, success is never drawn", () => {
+    expect(poseForMoment("stuck")).toBe("oops");
+    expect(poseForMoment("trouble")).toBe("oops");
+    expect(poseForMoment("missing")).toBe("peek");
+    expect(poseForMoment("empty")).toBe("nap");
+    // `handoff` is the last beat of the wait, not a success screen: the player
+    // has not taken the terminal yet. Nothing after it draws her.
+    expect(poseForMoment("handoff")).toBe("go");
+  });
+
+  test("she is silent while someone is watching or reading", () => {
+    // `watching` is someone watching; the settled screens have a StateBlock or
+    // a summary that already speaks.
+    for (const moment of ["watching", "settled", "trouble", "missing", "empty"] as const) {
+      expect(voiceForMoment(moment), moment).toBeNull();
+    }
+  });
+
+  test("a healthy session meets at most four of her lines", () => {
+    // search → resolve → handoff → quit. More than four and she is chattering.
+    const healthy: CompanionMoment[] = ["searching", "seeking", "handoff", "farewell"];
+    expect(healthy.filter((moment) => voiceForMoment(moment) !== null).length).toBeLessThanOrEqual(
+      4,
+    );
+  });
+});
+
+describe("momentForLoading", () => {
+  const base = { hasPoster: false, failed: false } as const;
+
+  test("the poster wins the picture, but not the line", () => {
+    // Two images on one surface is how the social card ended up drawing its
+    // type row across her face. The line is one dim row and competes with
+    // nothing, so it stays.
+    expect(momentForLoading({ ...base, operation: "resolving", hasPoster: true })).toEqual({
+      moment: "seeking",
+      picture: false,
+    });
+    expect(momentForLoading({ ...base, operation: "playing", hasPoster: true })).toBeNull();
+    expect(momentForLoading({ ...base, operation: "loading", hasPoster: true })).toBeNull();
+  });
+
   test("she fills an empty frame during a resolve", () => {
-    expect(momentForLoading({ ...base, operation: "resolving" })).toBe("seeking");
+    expect(momentForLoading({ ...base, operation: "resolving" })).toEqual({
+      moment: "seeking",
+      picture: true,
+    });
+  });
+
+  test("a provider dying moves the line on, not the pose", () => {
+    expect(
+      momentForLoading({ ...base, operation: "resolving", issue: "allanime timed out" })?.moment,
+    ).toBe("rerouting");
+  });
+
+  test("a race past the stall threshold says so, once", () => {
+    expect(momentForLoading({ ...base, operation: "resolving", elapsed: 9 })?.moment).toBe(
+      "seeking",
+    );
+    expect(momentForLoading({ ...base, operation: "resolving", elapsed: 10 })?.moment).toBe(
+      "dragging",
+    );
   });
 
   test("and while playback is running", () => {
-    expect(momentForLoading({ ...base, operation: "playing" })).toBe("watching");
+    expect(momentForLoading({ ...base, operation: "playing" })?.moment).toBe("watching");
   });
 
   test("a generic load says nothing, so she says nothing", () => {
@@ -64,55 +131,92 @@ describe("momentForLoading", () => {
     // The regression: the shell passed its side-panel gate as `hasPoster`, and
     // that panel also opens for a title detail or video metadata with no
     // artwork — silencing her on exactly the surface she exists for.
-    expect(momentForLoading({ ...base, operation: "resolving", hasPoster: false })).toBe("seeking");
+    expect(momentForLoading({ ...base, operation: "resolving", hasPoster: false })?.picture).toBe(
+      true,
+    );
     expect(read("loading-shell.tsx")).toContain("Boolean(state.posterUrl)");
     expect(read("loading-shell.tsx")).not.toMatch(/hasPoster: showSidePanel/u);
   });
 
   test("the handoff stage outranks the operation it happens during", () => {
-    expect(momentForLoading({ ...base, operation: "resolving", stage: "starting-playback" })).toBe(
-      "handoff",
-    );
+    expect(
+      momentForLoading({ ...base, operation: "resolving", stage: "starting-playback" })?.moment,
+    ).toBe("handoff");
+    expect(
+      momentForLoading({
+        ...base,
+        operation: "resolving",
+        stage: "starting-playback",
+        issue: "first provider failed",
+      })?.moment,
+    ).toBe("recovered");
   });
 
   test("failure outranks everything, poster included", () => {
     // The one moment worth crowding artwork for: the surface is telling someone
     // something went wrong.
-    expect(momentForLoading({ operation: "resolving", hasPoster: true, failed: true })).toBe(
-      "trouble",
-    );
+    expect(momentForLoading({ operation: "resolving", hasPoster: true, failed: true })).toEqual({
+      moment: "stuck",
+      picture: true,
+    });
     expect(
       momentForLoading({
         operation: "playing",
         stage: "starting-playback",
         hasPoster: true,
         failed: true,
-      }),
-    ).toBe("trouble");
+      })?.moment,
+    ).toBe("stuck");
   });
 });
 
 describe("momentForBrowseEmpty", () => {
   const base = { kind: "empty", hasArtwork: false, ultraCompact: false } as const;
 
-  test("she sits on the bare launch frame", () => {
-    expect(momentForBrowseEmpty({ ...base, mode: "graphics" })).toBe("empty");
+  test("she sleeps on the bare launch frame", () => {
+    expect(momentForBrowseEmpty({ ...base, mode: "graphics" })).toEqual({
+      moment: "empty",
+      picture: true,
+    });
+  });
+
+  test("a search that found nothing gets her peeking, not asleep", () => {
+    expect(momentForBrowseEmpty({ ...base, kind: "no-results", mode: "graphics" })?.moment).toBe(
+      "missing",
+    );
+  });
+
+  test("a search in flight is a wait, in every tier", () => {
+    // The surface says "searching" and nothing else, so her line is the only
+    // voice on it — the glyph tier included.
+    expect(momentForBrowseEmpty({ ...base, kind: "searching", mode: "graphics" })).toEqual({
+      moment: "searching",
+      picture: true,
+    });
+    expect(momentForBrowseEmpty({ ...base, kind: "searching", mode: "glyph" })).toEqual({
+      moment: "searching",
+      picture: false,
+    });
+    expect(momentForBrowseEmpty({ ...base, kind: "searching", mode: "off" })).toBeNull();
   });
 
   test("failure leads here too — an error surface outranks an empty frame", () => {
-    expect(momentForBrowseEmpty({ ...base, kind: "error", mode: "graphics" })).toBe("trouble");
+    expect(momentForBrowseEmpty({ ...base, kind: "error", mode: "graphics" })?.moment).toBe(
+      "trouble",
+    );
   });
 
   test("content artwork wins — she does not crowd a full frame", () => {
     expect(momentForBrowseEmpty({ ...base, hasArtwork: true, mode: "graphics" })).toBeNull();
   });
 
-  test("the glyph tier already speaks on these surfaces — no lone emoji row", () => {
+  test("the glyph tier already speaks on settled surfaces — no lone emoji row", () => {
     // StateBlock's voice line carries a 🦊 of its own; a second glyph standing
     // alone under it is noise, not presence.
     for (const mode of ["glyph", "off"] as const) {
-      expect(momentForBrowseEmpty({ ...base, mode })).toBeNull();
-      expect(momentForBrowseEmpty({ ...base, kind: "error", mode })).toBeNull();
+      for (const kind of ["empty", "no-results", "error"] as const) {
+        expect(momentForBrowseEmpty({ ...base, kind, mode })).toBeNull();
+      }
     }
   });
 
@@ -134,11 +238,14 @@ describe("no moment is a dead letter", () => {
     ]
       .map((file) => read(file))
       .join("\n");
-    const momentModule = read("companion-moment.ts");
+    // The deciders, not the tables: a moment named only in the pose and voice
+    // maps is exactly the dead letter this looks for.
+    const module = read("companion-moment.ts");
+    const deciders = module.slice(module.indexOf("export function momentForLoading"));
     for (const moment of COMPANION_MOMENTS) {
-      const reported =
-        sources.includes(`"${moment}"`) || momentModule.includes(`return "${moment}"`);
-      expect(reported).toBe(true);
+      const quoted = new RegExp(`"${moment}"`, "u");
+      const reported = quoted.test(sources) || quoted.test(deciders);
+      expect(reported, moment).toBe(true);
     }
   });
 });
@@ -175,7 +282,8 @@ describe("single ownership", () => {
     // sites remembered the guard; one did not. The host owns the margin now, so
     // there is no wrapper left to forget.
     const host = readFileSync(path.join(SHELL, "CompanionHost.tsx"), "utf8");
-    expect(host).toContain('if (moment === null || companionMode() === "off") return null;');
+    expect(host).toContain('if (moment === null || mode === "off") return null;');
+    expect(host).toContain("if (!drawn && line === null) return null;");
   });
 
   test("no call site wraps the companion in its own spacing Box", () => {
@@ -208,10 +316,16 @@ describe("moment vocabulary", () => {
     const named: CompanionMoment[] = [
       "setup",
       "settled",
+      "searching",
       "seeking",
+      "rerouting",
+      "dragging",
       "handoff",
+      "recovered",
       "watching",
+      "stuck",
       "trouble",
+      "missing",
       "empty",
       "farewell",
     ];

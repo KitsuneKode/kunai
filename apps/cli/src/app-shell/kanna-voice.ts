@@ -29,7 +29,6 @@ export type KannaMoment =
   | "dead-end"
   | "found"
   | "handoff"
-  | "resume"
   | "first-run"
   | "goodbye"
   | "offline"
@@ -64,8 +63,6 @@ const LINES = {
   // The player takes over. It is mpv on most machines and VLC on some, so the
   // line does not name either.
   handoff: ["over to the player.", "it's yours.", "handing it off."],
-  // Picking up mid-episode. She remembers without making a thing of it.
-  resume: ["picking up where you left off.", "back where you stopped.", "same spot as before."],
   // Setup, once. Welcoming, still brief.
   "first-run": ["let's get you set up.", "one look around, then we start.", "this part is quick."],
   // On the way out. Warm, three words.

@@ -77,13 +77,18 @@ export function ExitShell({ onDone }: { onDone: () => void }) {
 
   const isDim = step === "dim" || step === "footer-gone";
   const showFox = step === "fox" || step === "closing" || step === "done";
+  const retired = companionMode() === "off";
 
   return (
     <Box flexDirection="column" paddingY={1}>
       <CompanionHost moment={showFox ? "farewell" : null} rows={4} marginBottom={1} />
-      <Text dimColor={isDim} color={palette.dim}>
-        {showFox ? "◉  see you next time" : ""}
-      </Text>
+      {/* Her goodbye is the host's line. Only with her retired does the
+          screen say it in its own words, so it is never said twice. */}
+      {retired ? (
+        <Text dimColor={isDim} color={palette.dim}>
+          {showFox ? "◉  see you next time" : ""}
+        </Text>
+      ) : null}
       {(step === "closing" || step === "done") && <Text color={palette.accent}>◈ kunai</Text>}
     </Box>
   );

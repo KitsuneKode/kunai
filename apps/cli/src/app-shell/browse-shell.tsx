@@ -2488,16 +2488,7 @@ export function BrowseShell<T>({
               }}
               width={Math.min(innerWidth, 72)}
             />
-            <CompanionHost
-              moment={momentForBrowseEmpty({
-                kind: "empty",
-                hasArtwork: false,
-                ultraCompact,
-                mode: companionMode(),
-              })}
-              rows={3}
-              marginTop={1}
-            />
+            <BrowseCompanion kind="no-results" hasArtwork={false} ultraCompact={ultraCompact} />
           </Box>
         ) : searchState === "error" ? (
           <Box marginTop={1} flexDirection="column" flexGrow={1}>
@@ -2513,22 +2504,15 @@ export function BrowseShell<T>({
               }}
               width={Math.min(innerWidth, 72)}
             />
-            <CompanionHost
-              moment={momentForBrowseEmpty({
-                kind: "error",
-                hasArtwork: false,
-                ultraCompact,
-                mode: companionMode(),
-              })}
-              rows={3}
-              marginTop={1}
-            />
+            <BrowseCompanion kind="error" hasArtwork={false} ultraCompact={ultraCompact} />
           </Box>
         ) : (
           <Box marginTop={1} flexGrow={1} flexDirection="column">
             <StateBlock
               model={{
-                kind: "empty",
+                // A search in flight is not an empty frame. Rendered as one, it
+                // put "empty for now." and a sleeping fox under "Searching for…".
+                kind: searchState === "loading" ? "loading" : "empty",
                 // Guard against a transiently empty message so the body never
                 // renders as a blank surface between state transitions.
                 title:
@@ -2537,18 +2521,13 @@ export function BrowseShell<T>({
               }}
               width={Math.min(innerWidth, 72)}
             />
-            <CompanionHost
-              moment={momentForBrowseEmpty({
-                kind: "empty",
-                // The launch rows below (jump back in, surprises) already fill
-                // this frame — where they are, the surface is not bare and she
-                // does not crowd it.
-                hasArtwork: Boolean(idleReturnLoopModel && idleReturnLoopModel.rows.length > 0),
-                ultraCompact,
-                mode: companionMode(),
-              })}
-              rows={3}
-              marginTop={1}
+            <BrowseCompanion
+              kind={searchState === "loading" ? "searching" : "empty"}
+              // The launch rows below (jump back in, surprises) already fill
+              // this frame — where they are, the surface is not bare and she
+              // does not crowd it.
+              hasArtwork={Boolean(idleReturnLoopModel && idleReturnLoopModel.rows.length > 0)}
+              ultraCompact={ultraCompact}
             />
             {idleContextStatus === "loading" && showIdleLoadingHint ? (
               <Text color={palette.dim} dimColor>
@@ -2900,4 +2879,20 @@ export function openBrowseShell<T>({
   });
 
   return session.result;
+}
+
+/** The companion on a bare browse frame: one cue, decided by `momentForBrowseEmpty`. */
+function BrowseCompanion({
+  kind,
+  hasArtwork,
+  ultraCompact,
+}: {
+  readonly kind: "searching" | "empty" | "no-results" | "error";
+  readonly hasArtwork: boolean;
+  readonly ultraCompact: boolean;
+}) {
+  const cue = momentForBrowseEmpty({ kind, hasArtwork, ultraCompact, mode: companionMode() });
+  return (
+    <CompanionHost moment={cue?.moment ?? null} picture={cue?.picture} rows={3} marginTop={1} />
+  );
 }
