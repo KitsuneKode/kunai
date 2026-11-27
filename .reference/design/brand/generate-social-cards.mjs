@@ -6,6 +6,8 @@ import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { poseSvg } from "./kanna-rig.mjs";
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 // Three levels: brand → design → .reference → repo root. Two lands on
 // `.reference/`, which silently wrote `.reference/.github/social-preview.png`.
@@ -31,10 +33,11 @@ const PALETTE = {
   info: "#5fb6ff",
 };
 
-// Kanna, traced. `kanna-bust.svg` carries her own <defs> (the #shade gradients
-// and clip paths), so both halves are lifted: the defs are merged into each
-// card's <defs>, and the drawable groups are placed like any other art.
-const kannaSvg = readFileSync(join(HERE, "kanna-bust.svg"), "utf8");
+// Kanna, traced. The bust is one pose of `kanna.svg`; `poseSvg` returns it as a
+// standalone document carrying its own <defs> (the #shade gradients and clip
+// paths), so both halves are lifted: the defs are merged into each card's
+// <defs>, and the drawable groups are placed like any other art.
+const kannaSvg = poseSvg(readFileSync(join(HERE, "kanna.svg"), "utf8"), "bust");
 const mascotDefs = kannaSvg.match(/<defs>([\s\S]*?)<\/defs>/u)[1].trim();
 const mascotBody = kannaSvg.match(/<\/defs>([\s\S]*)<\/svg>/u)[1].trim();
 // Her art is 928 square with the ink inset; these place it like the old 128px
