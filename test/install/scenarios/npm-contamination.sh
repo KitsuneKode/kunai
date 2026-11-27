@@ -51,10 +51,10 @@ export KUNAI_DL_BASE="file://$FAKE_RELEASE/releases"
 export KUNAI_RELEASES_API="file://$FAKE_RELEASE/api/latest.json"
 export KUNAI_BIN_DIR="$HOME/.local/bin"
 export KUNAI_DATA_DIR="$HOME/.local/share/kunai"
-# Default layout on purpose: the runtime profile override stays unset and the
-# installer derives config from HOME; a local name only for the manifest path.
+# Default layout on purpose: keep the runtime profile override unset and use
+# the container's Linux XDG config location for the manifest assertion.
 unset KUNAI_CONFIG_DIR 2>/dev/null || true
-CONFIG_DIR="$HOME/.config/kunai"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/kunai"
 
 install_log="$(/harness/install.sh --method binary --yes --skip-deps 2>&1)" || {
 	printf '%s\n' "$install_log"
