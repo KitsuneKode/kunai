@@ -81,7 +81,7 @@ describe("agent wiring · recommendation refresh", () => {
 });
 
 describe("agent wiring · first-run browse focus", () => {
-  it("makes recommendation-list keyboard ownership explicit before typed input", async () => {
+  it("takes typed input on arrival and moves to picks only after Down", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = Object.assign(
       () => Promise.reject(new Error("network disabled for deterministic first-run focus test")),
@@ -124,18 +124,26 @@ describe("agent wiring · first-run browse focus", () => {
             20_000,
           );
 
-          expect(s.frame()).toContain("results own keys · Esc search");
-
-          s.press("series");
-          await s.waitSettled();
-          expect(s.frame()).not.toContain("⌕ series");
+          expect(s.frame()).toContain("Type a title, then enter · ↓ picks");
+          s.press("x");
+          await s.waitForFrame((f) => /⌕\s+x/u.test(f), "typed into the initial query field");
+          s.press(K.backspace);
+          await s.waitForFrame((f) => f.includes("↓ picks"), "query cleared");
+          s.press(K.down);
+          await s.waitForFrame(
+            (f) => f.includes("results own keys · Esc search") && f.includes("▌ Smoke Movie"),
+            "Down puts focus on the recommendation",
+          );
 
           s.press(K.esc);
-          await s.waitForFrame((f) => f.includes("⌕"), "search field focused");
+          await s.waitForFrame((f) => f.includes("↓ picks"), "Escape returns to search");
           s.press("series");
-          await s.waitForFrame((f) => f.includes("series"), "query draft visible");
+          await s.waitForFrame((f) => f.includes("Query changed"), "query draft accepted");
           s.press(K.enter);
-          await s.waitForFrame((f) => f.includes("Smoke Series"), "typed query searched");
+          await s.waitForFrame(
+            (f) => f.includes("1 result · Smoke TMDB") && f.includes("▌ Smoke Series"),
+            "typed query searched",
+          );
         },
       );
     } finally {
