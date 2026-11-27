@@ -216,9 +216,18 @@ describe("getKunaiPaths KUNAI_CONFIG_DIR profile root", () => {
     (override) => {
       expect(() =>
         getKunaiPaths({ platform: "win32", env: { KUNAI_CONFIG_DIR: override } }),
-      ).toThrow("is not absolute");
+      ).toThrow(`KUNAI_CONFIG_DIR="${override}" is not absolute`);
     },
   );
+
+  test("keeps a profile refusal on one line without escaping backslashes", () => {
+    expect(() =>
+      getKunaiPaths({
+        platform: "linux",
+        env: { KUNAI_CONFIG_DIR: "/sandbox/bad\\name\nnew line\x1b" },
+      }),
+    ).toThrow('KUNAI_CONFIG_DIR="/sandbox/bad\\name?new line?" uses an unsupported path spelling');
+  });
 
   test("win32: a UNC root is accepted as absolute", () => {
     const paths = getKunaiPaths({

@@ -149,9 +149,7 @@ describe("checkDesktopProfile ownership", () => {
       process.env.KUNAI_CONFIG_DIR = typed;
       // The diagnostic names the spelling the user configured, not the
       // physical path it resolves to.
-      expect(() => checkDesktopProfile("prepare")).toThrow(
-        `KUNAI_CONFIG_DIR=${JSON.stringify(typed)}`,
-      );
+      expect(() => checkDesktopProfile("prepare")).toThrow(`KUNAI_CONFIG_DIR="${typed}"`);
       expect(() => checkDesktopProfile("prepare")).toThrow(
         "overlaps a platform-default Kunai directory",
       );

@@ -138,7 +138,8 @@ path_contains() (
 )
 
 fail_profile() {
-	printf 'KUNAI_CONFIG_DIR=%s %s\n' "${KUNAI_CONFIG_DIR:-}" "$1" >&2
+	local display="${KUNAI_CONFIG_DIR:-}"
+	printf 'KUNAI_CONFIG_DIR=%s %s\n' "${display//[[:cntrl:]]/?}" "$1" >&2
 	exit 1
 }
 

@@ -7,7 +7,7 @@ export class DesktopProfileError extends Error {
     hint = "Set an absolute path to a dedicated Kunai profile or unset it to use the default profile.",
     variable = "KUNAI_CONFIG_DIR",
   ) {
-    super(`${variable}=${JSON.stringify(value)} ${reason}. ${hint}`);
+    super(`${variable}="${value.replace(/[\p{Cc}\p{Zl}\p{Zp}]/gu, "?")}" ${reason}. ${hint}`);
   }
 }
 

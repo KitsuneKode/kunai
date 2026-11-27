@@ -2824,21 +2824,24 @@ describe("install.sh dedicated profile contract", () => {
     },
   );
 
-  test.each(["rel/p", "", " /profile"])(
-    "a malformed KUNAI_CONFIG_DIR (%j) is refused before any write",
-    (value) => {
-      const sandbox = createInstallerSandbox("install-sh-profile-bad", { freshProfile: true });
-      try {
-        const env = { ...profileOnlyInstallerEnv(sandbox.env), KUNAI_CONFIG_DIR: value };
-        const result = runInstallSh(dryRun, env);
-        expect(result.status).not.toBe(0);
-        expect(`${result.stdout}${result.stderr}`).toContain("absolute path");
-        expect(existsSync(join(sandbox.profileDir, ".kunai-profile"))).toBe(false);
-      } finally {
-        sandbox.cleanup();
-      }
-    },
-  );
+  test.each([
+    ["rel/p", "rel/p"],
+    ["", ""],
+    [" /profile", " /profile"],
+    ["/bad\\name\nprofile", "/bad\\name?profile"],
+  ])("a malformed KUNAI_CONFIG_DIR (%j) is refused before any write", (value, display) => {
+    const sandbox = createInstallerSandbox("install-sh-profile-bad", { freshProfile: true });
+    try {
+      const env = { ...profileOnlyInstallerEnv(sandbox.env), KUNAI_CONFIG_DIR: value };
+      const result = runInstallSh(dryRun, env);
+      expect(result.status).not.toBe(0);
+      expect(`${result.stdout}${result.stderr}`).toContain("absolute path");
+      expect(result.stderr).toContain(`KUNAI_CONFIG_DIR=${display} must be an absolute path`);
+      expect(existsSync(join(sandbox.profileDir, ".kunai-profile"))).toBe(false);
+    } finally {
+      sandbox.cleanup();
+    }
+  });
 
   test.each([
     ["KUNAI_DATA_DIR", "data"],

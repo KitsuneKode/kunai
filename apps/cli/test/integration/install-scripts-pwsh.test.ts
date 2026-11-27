@@ -9,6 +9,7 @@ import {
   mkdtempSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   symlinkSync,
   utimesSync,
@@ -3371,12 +3372,19 @@ describePwsh("install.ps1 dedicated profile contract", () => {
             const probe = join(sandbox.root, "profile probe.js");
             writeFileSync(
               probe,
-              "console.log(JSON.stringify({profile: process.env.KUNAI_CONFIG_DIR, args: process.argv.slice(2)})); process.exitCode = 37;\n",
+              [
+                'import { renameSync, writeSync } from "node:fs";',
+                "const { KUNAI_TEST_PROFILE_LAUNCHER: launcher, KUNAI_TEST_MOVED_LAUNCHER: moved } = process.env;",
+                "if (moved) renameSync(launcher, moved);",
+                'writeSync(1, JSON.stringify({ profile: process.env.KUNAI_CONFIG_DIR, args: process.argv.slice(2) }) + "\\n");',
+                "process.exit(37);",
+              ].join("\n") + "\n",
             );
             const assertProfileLauncher = async (
               version: string,
               originalBody: string,
               launcherEnv: NodeJS.ProcessEnv,
+              replaceLauncher = false,
             ) => {
               const versionedPath = join(
                 sandbox.profileDir,
@@ -3385,12 +3393,15 @@ describePwsh("install.ps1 dedicated profile contract", () => {
                 version,
                 "kunai.exe",
               );
+              const movedLauncher = `${launcher}.probe-renamed`;
               copyFileSync(process.execPath, versionedPath);
               try {
                 const wrapperEnv: NodeJS.ProcessEnv = {
                   ...launcherEnv,
                   KUNAI_TEST_PROFILE_LAUNCHER: launcher,
                   KUNAI_TEST_PROFILE_PROBE: probe,
+                  ...(replaceLauncher ? { KUNAI_TEST_MOVED_LAUNCHER: movedLauncher } : {}),
+                  ERRORLEVEL: "123",
                 };
                 delete wrapperEnv.KUNAI_CONFIG_DIR;
                 const wrapped = Bun.spawn(
@@ -3414,7 +3425,9 @@ describePwsh("install.ps1 dedicated profile contract", () => {
                   profile: sandbox.profileDir,
                   args: ["plain(parentheses)", "quoted argument"],
                 });
+                expect(existsSync(movedLauncher)).toBe(replaceLauncher);
               } finally {
+                if (existsSync(movedLauncher)) renameSync(movedLauncher, launcher);
                 writeFileSync(versionedPath, originalBody);
               }
             };
@@ -3444,7 +3457,7 @@ describePwsh("install.ps1 dedicated profile contract", () => {
             const manifest = readInstallerManifest(sandbox.configDir);
             expect(manifest.activeVersion).toBe("9.8.8");
 
-            await assertProfileLauncher("9.8.8", v2Body, env);
+            await assertProfileLauncher("9.8.8", v2Body, env, true);
 
             const uninstall = await runKunai(["uninstall", "--purge"], env);
             expect(uninstall.status, `${uninstall.stdout}--ERR--${uninstall.stderr}`).toBe(0);
