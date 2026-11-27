@@ -79,6 +79,17 @@ describe("hls-manifest helpers", () => {
     expect(parseFirstHlsVariantPath(master)).toBe("index-v1-a1.m3u8");
   });
 
+  test("parses the variant URI after STREAM-INF even when the playlist extension is obfuscated", () => {
+    const master = [
+      "#EXTM3U",
+      '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="English",URI="audio.m3u8.png?exp=1"',
+      '#EXT-X-STREAM-INF:BANDWIDTH=24000000,RESOLUTION=3840x1600,AUDIO="audio"',
+      "video_2160p.m3u8.png?exp=1&sig=abc",
+    ].join("\n");
+    expect(isHlsMasterPlaylist(master)).toBe(true);
+    expect(parseFirstHlsVariantPath(master)).toBe("video_2160p.m3u8.png?exp=1&sig=abc");
+  });
+
   test("parses obfuscated media segment names", () => {
     const media = ["#EXTM3U", "#EXTINF:4,", "seg-1-v1-a1.ts.html"].join("\n");
     expect(isHlsMasterPlaylist(media)).toBe(false);

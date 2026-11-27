@@ -600,6 +600,8 @@ describe("provider hotfix manifest runtime", () => {
               bootJoin: "|",
               bootParts: "group,host,lane,buildId,epoch",
               maskFragments: "AAAAAAAAAAA=,BBBBBBBBBBB=,CCCCCCCCCCC=,DDDDDDDDDDD=",
+              epochMs: "604800000",
+              epochGraceMs: "86400000",
             },
           },
         },

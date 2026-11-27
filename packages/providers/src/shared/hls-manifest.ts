@@ -51,8 +51,25 @@ export function isHlsMasterPlaylist(manifestText: string): boolean {
 
 /** First nested playlist URI from a master playlist; prefers video/index-v variants. */
 export function parseFirstHlsVariantPath(manifestText: string): string | null {
+  const lines = manifestText.split(/\r?\n/);
+  // RFC 8216 puts the variant URI on the first non-tag line after
+  // `#EXT-X-STREAM-INF`. The extension is not part of the contract: Rivestream
+  // backends currently obfuscate playlists as `.m3u8.png`, so extension-based
+  // parsing misreads a valid master as having no variant at all.
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!lines[index]?.trim().startsWith("#EXT-X-STREAM-INF")) continue;
+    for (let follow = index + 1; follow < lines.length; follow += 1) {
+      const candidate = lines[follow]?.trim() ?? "";
+      if (!candidate) continue;
+      if (candidate.startsWith("#")) break;
+      return candidate;
+    }
+  }
+
+  // Some packagers emit a bare list of nested playlists without STREAM-INF.
+  // Keep the legacy heuristic for those, but only as a fallback.
   const uris: string[] = [];
-  for (const line of manifestText.split(/\r?\n/)) {
+  for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
     if (isHlsPlaylistUrl(trimmed) || /\.m3u8(?:[?#]|$)/i.test(trimmed)) {

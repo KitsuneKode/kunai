@@ -5,8 +5,11 @@ import {
   ALLMANGA_CRYPTO_PROFILE,
   ALLMANGA_MASK_FRAGMENTS,
   buildAllMangaBootToken,
+  currentAllMangaEpochCandidates,
+  getEffectiveAllMangaEpochMs,
 } from "../src/allmanga/crypto";
 import type { AllMangaBootPart } from "../src/allmanga/crypto";
+import { setActiveProviderHotfixManifest } from "../src/shared/hotfix-runtime";
 
 /**
  * Conformance for the pinned mkissa crypto profile. Per-build golden vectors
@@ -52,5 +55,37 @@ describe("allmanga crypto profile", () => {
         contentLane: "k7",
       }),
     );
+  });
+  test("a hotfix rotation profile carries its epoch scale into candidate selection", () => {
+    setActiveProviderHotfixManifest({
+      schemaVersion: 1,
+      revision: 1,
+      generatedAt: "2026-11-27T00:00:00.000Z",
+      expiresAt: "2026-11-28T00:00:00.000Z",
+      providers: {
+        allanime: {
+          cryptoOverrides: {
+            buildId: "205",
+            saltMul: "17",
+            saltAdd: "23",
+            fragMul: "11",
+            fragAdd: "3",
+            bootPrefix: "PRE:",
+            bootJoin: "|",
+            bootParts: "group,host,lane,buildId,epoch",
+            maskFragments: "AAAAAAAAAAA=,BBBBBBBBBBB=,CCCCCCCCCCC=,DDDDDDDDDDD=",
+            epochMs: "120000",
+            epochGraceMs: "10000",
+          },
+        },
+      },
+    });
+    try {
+      expect(getEffectiveAllMangaEpochMs()).toBe(120_000);
+      expect(currentAllMangaEpochCandidates(5 * 120_000 + 1_000)).toEqual([4, 5]);
+      expect(currentAllMangaEpochCandidates(5 * 120_000 + 11_000)).toEqual([5]);
+    } finally {
+      setActiveProviderHotfixManifest(null);
+    }
   });
 });

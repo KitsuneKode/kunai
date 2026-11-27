@@ -14,13 +14,14 @@ import { isSafeManifestHttpsUrl } from "../shared/manifest-bundle";
  * path — and as of ani-cli `a6ac602` (v5) there is no upstream AllAnime path at
  * all to check parity against. Live mkissa:
  * - ships a rotating `buildId` (`81` → `119` → `140` → `166` → `171` → `177`
- *   → `181`)
+ *   → `181` → `189` → `193`)
  *   plus four base64 mask fragments in the app chunk
  * - boots keys via `GET /client-crypto/v1/bootstrap?buildId=&k=` with
  *   `x-build-id` + HMAC `x-aa-boot`
  * - signs `aaReq` as AES-GCM over `{v,ts,epoch,buildId,qh,k}` with IV
  *   `SHA-256(epoch:buildId:qh:ts:k)[0:12]`
- * - rotates the epoch scale: 7-day epochs (604800000 ms), 1-day grace
+ * - rotates the epoch scale; build 193 uses 3650-day epochs (315360000000 ms),
+ *   still with a 1-day grace
  *
  * **A rotation moves every constant here at once**, so update them together and
  * assume none carried over. The 2026-09-08 rotation (140 → 166) changed the
@@ -89,23 +90,29 @@ export type AllMangaCryptoProfile = {
   readonly bootParts: readonly AllMangaBootPart[];
   /** Four base64 8-byte mask fragments. */
   readonly maskFragments: readonly string[];
+  /** Epoch length and near-boundary grace from live bootstrap JSON. */
+  readonly epochMs: number;
+  readonly epochGraceMs: number;
 };
 
 /**
- * Live profile, extracted from `cdn.mkissa.net/all/mk/_app/immutable/chunks/DmW2_MRj.js`
- * on 2026-11-12 and confirmed live on epoch 2968 (HTTP 200).
- * The next epoch in the grace window answered `403 invalid_boot_token`.
+ * Live profile, extracted from `cdn.mkissa.net/all/mk/_app/immutable/chunks/CkL4bHwD.js`
+ * on 2026-11-27 and confirmed live on epoch 5 (HTTP 200). The bootstrap response
+ * reported `epochMs: 315360000000`, `graceMs: 86400000`, and the partB pinned
+ * into the fallback material below.
  */
 export const ALLMANGA_CRYPTO_PROFILE: AllMangaCryptoProfile = {
-  buildId: "189",
-  saltMul: 175,
-  saltAdd: 202,
-  fragMul: 129,
-  fragAdd: 61,
-  bootPrefix: "iGmNgPGdi:",
-  bootJoin: "|",
-  bootParts: ["epoch", "lane", "group", "host", "buildId"],
-  maskFragments: ["pF98Ab2CCc0=", "gEhpQrtSn+M=", "oPeHj9dBNTU=", "7XcuzKoXhgs="],
+  buildId: "193",
+  saltMul: 205,
+  saltAdd: 41,
+  fragMul: 215,
+  fragAdd: 80,
+  bootPrefix: "ueQcEF8Ty:",
+  bootJoin: ":",
+  bootParts: ["lane", "buildId", "host", "group", "epoch"],
+  maskFragments: ["hI3RQE5scOQ=", "aZlAcGKA4p8=", "BpZqf9YyKxs=", "iXO5zhmOKgI="],
+  epochMs: 315_360_000_000,
+  epochGraceMs: 86_400_000,
 };
 
 export const ALLMANGA_BUILD_ID = ALLMANGA_CRYPTO_PROFILE.buildId;
@@ -127,8 +134,8 @@ export const ALLMANGA_BOOTSTRAP_URL = "https://api.mkissa.net/client-crypto/v1/b
 export const ALLMANGA_SITE_ORIGIN = "https://mkissa.to";
 
 /** Epoch length (ms) and near-boundary grace from live bootstrap JSON. */
-export const ALLMANGA_EPOCH_MS = 604_800_000;
-export const ALLMANGA_EPOCH_GRACE_MS = 86_400_000;
+export const ALLMANGA_EPOCH_MS = ALLMANGA_CRYPTO_PROFILE.epochMs;
+export const ALLMANGA_EPOCH_GRACE_MS = ALLMANGA_CRYPTO_PROFILE.epochGraceMs;
 /** aaReq timestamp bucket (5 minutes). */
 export const ALLMANGA_AA_REQ_BUCKET_MS = 300_000;
 
@@ -150,19 +157,20 @@ export type AllMangaCryptoMaterial = {
 };
 
 /**
- * Last-known-good material when bootstrap fails (epoch 2968, build 189),
- * captured from a live bootstrap on 2026-11-22. It must be derived under the
+ * Last-known-good material when bootstrap fails (epoch 5, build 193),
+ * captured from a live bootstrap on 2026-11-27. It must be derived under the
  * same profile as {@link ALLMANGA_CRYPTO_PROFILE}: a key left over from an
  * older build is not a degraded fallback, it is a guaranteed decrypt failure.
  * `allmanga.test.ts` pins that relationship.
  *
- * The epoch is a 7-day bucket, so this fallback goes stale on its own. It
+ * The epoch is a long-lived bucket on build 193, but it still goes stale on
+ * the next rotation. It
  * exists to survive a brief bootstrap outage, not to replace one — a resolve
  * that quietly runs on a fallback two epochs old looks exactly like a dead
  * provider.
  */
-export const ALLMANGA_KEY_HEX = "e574fe78e582fc9d49ec645d7a2d2aac1798e482279fd22ef9f892dff33d1f58";
-export const ALLMANGA_EPOCH = 2968;
+export const ALLMANGA_KEY_HEX = "0b15a379d221e17ec2a93b49c8e9d424382e549138820adb938c42626fc18f7c";
+export const ALLMANGA_EPOCH = 5;
 
 export const BUNDLED_ALLMANGA_CRYPTO: AllMangaCryptoMaterial = {
   keyHex: ALLMANGA_KEY_HEX,
@@ -197,7 +205,7 @@ export function describeAllMangaCryptoOverrideProblem(
   if (!overrides?.buildId) return null;
   return parseAllMangaCryptoProfileOverride(overrides)
     ? null
-    : "AllManga cryptoOverrides names a buildId but the rotation profile is incomplete or malformed (saltMul, saltAdd, fragMul, fragAdd, bootPrefix, bootJoin, 5 bootParts, 4 maskFragments)";
+    : "AllManga cryptoOverrides names a buildId but the rotation profile is incomplete or malformed (saltMul, saltAdd, fragMul, fragAdd, bootPrefix, bootJoin, 5 bootParts, 4 maskFragments, epochMs, epochGraceMs)";
 }
 
 function parseAllMangaCryptoProfileOverride(
@@ -213,6 +221,8 @@ function parseAllMangaCryptoProfileOverride(
   const bootJoin = overrides.bootJoin;
   const bootPartsRaw = overrides.bootParts?.split(",").map((p) => p.trim()) ?? [];
   const maskFragments = overrides.maskFragments?.split(",").map((f) => f.trim()) ?? [];
+  const epochMs = Number(overrides.epochMs);
+  const epochGraceMs = Number(overrides.epochGraceMs);
 
   if (
     !Number.isInteger(saltMul) ||
@@ -226,7 +236,11 @@ function parseAllMangaCryptoProfileOverride(
       VALID_BOOT_PARTS.has(p as AllMangaBootPart),
     ) ||
     maskFragments.length !== 4 ||
-    maskFragments.some((f) => Buffer.from(f, "base64").length !== 8)
+    maskFragments.some((f) => Buffer.from(f, "base64").length !== 8) ||
+    !Number.isInteger(epochMs) ||
+    epochMs <= 0 ||
+    !Number.isInteger(epochGraceMs) ||
+    epochGraceMs < 0
   ) {
     return null;
   }
@@ -241,6 +255,8 @@ function parseAllMangaCryptoProfileOverride(
     bootJoin,
     bootParts: bootPartsRaw,
     maskFragments,
+    epochMs,
+    epochGraceMs,
   };
 }
 
@@ -302,9 +318,19 @@ export function deriveKeyFromPartB(partB: string, buildId?: string): Buffer {
   return key;
 }
 
+export function getEffectiveAllMangaEpochMs(): number {
+  return getEffectiveAllMangaCryptoProfile().epochMs;
+}
+
+export function getEffectiveAllMangaEpochGraceMs(): number {
+  return getEffectiveAllMangaCryptoProfile().epochGraceMs;
+}
+
 export function currentAllMangaEpochCandidates(nowMs: number = Date.now()): readonly number[] {
-  const current = Math.floor(nowMs / ALLMANGA_EPOCH_MS);
-  const nearBoundary = nowMs - current * ALLMANGA_EPOCH_MS < ALLMANGA_EPOCH_GRACE_MS && current > 0;
+  const epochMs = getEffectiveAllMangaEpochMs();
+  const current = Math.floor(nowMs / epochMs);
+  const nearBoundary =
+    nowMs - current * epochMs < getEffectiveAllMangaEpochGraceMs() && current > 0;
   return nearBoundary ? [current - 1, current] : [current];
 }
 

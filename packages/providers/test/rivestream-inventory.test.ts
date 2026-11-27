@@ -5,6 +5,7 @@ import type { LooseJsonValue, ProviderResolveInput, ProviderRuntimeContext } fro
 import {
   clearRivestreamCachesForTest,
   parseRivestreamProxyHeaders,
+  unwrapRivestreamProxyUrl,
   rivestreamProviderModule,
 } from "../src/rivestream/direct";
 
@@ -49,6 +50,35 @@ test("known wrapper headers reject controls and transport overrides", () => {
   ).toEqual({ referer: "https://www.rivestream.app/", "user-agent": "browser" });
 });
 
+test("the live corsflix wrapper yields its direct media target and playback headers", () => {
+  const target =
+    "https://norway-canary.bigbang.cymru/origin_movie/movies/tmdb-27205-Inception-2010-v2/index.m3u8.png?exp=1795905000&sig=abc";
+  const wrapped = `https://cors.corsflix.net/m3u8?url=${encodeURIComponent(target)}&headers=${encodeURIComponent(
+    JSON.stringify({
+      Referer: "https://vidrift.in/",
+      Origin: "https://vidrift.in",
+      "User-Agent": "Mozilla/5.0",
+    }),
+  )}`;
+  expect(parseRivestreamProxyHeaders(wrapped)).toEqual({
+    referer: "https://vidrift.in/",
+    origin: "https://vidrift.in",
+    "user-agent": "Mozilla/5.0",
+  });
+  expect(unwrapRivestreamProxyUrl(wrapped)).toBe(target);
+});
+
+test("corsflix targets that are not safe direct HTTPS media stay wrapped", () => {
+  for (const target of [
+    "http://cdn.example/master.m3u8",
+    "https://user:pass@cdn.example/master.m3u8",
+    "https://127.0.0.1/master.m3u8",
+  ]) {
+    const wrapped = `https://cors.corsflix.net/m3u8?url=${encodeURIComponent(target)}`;
+    expect(unwrapRivestreamProxyUrl(wrapped)).toBe(wrapped);
+  }
+});
+
 test("HLS expansion and exact rendition selection use the candidate headers and retain manifest tracks", async () => {
   const url = wrapper("proxy.valhallastream.com", { Referer: "https://media.example/" });
   const context: ProviderRuntimeContext = {
@@ -84,6 +114,64 @@ test("HLS expansion and exact rendition selection use the candidate headers and 
   ).toBe(true);
   expect(result.streams.every((s) => s.audioLanguages?.includes("en"))).toBe(true);
   expect(result.subtitles.map((s) => s.url)).toContain("https://proxy.valhallastream.com/en.vtt");
+});
+
+test("an unwrapped corsflix source keeps the wrapper's playback headers through probing", async () => {
+  const target = "https://cdn.example/origin/index.m3u8.png?exp=1&sig=abc";
+  const wrapped = `https://cors.corsflix.net/m3u8?url=${encodeURIComponent(target)}&headers=${encodeURIComponent(
+    JSON.stringify({
+      Referer: "https://vidrift.in/",
+      Origin: "https://vidrift.in",
+      "User-Agent": "browser",
+    }),
+  )}`;
+  const master = [
+    "#EXTM3U",
+    '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="English",URI="audio.m3u8.png?exp=1"',
+    '#EXT-X-STREAM-INF:BANDWIDTH=24000000,RESOLUTION=3840x1600,AUDIO="audio"',
+    "video_2160p.m3u8.png?exp=1",
+  ].join("\n");
+  const context: ProviderRuntimeContext = {
+    providerId: "rivestream",
+    now: () => "2026-11-27T00:00:00Z",
+    fetch: {
+      runtime: "direct-http",
+      resolvesLocally: () => false,
+      fetch: async (targetInput, init) => {
+        const href = String(targetInput);
+        if (href.includes("/api/providers")) return Response.json({ data: ["riven"] });
+        if (href.includes("/api/provider"))
+          return Response.json({
+            data: { sources: [{ url: wrapped, quality: "4K", format: "hls" }], captions: [] },
+          });
+        const headers = new Headers(init?.headers);
+        if (
+          headers.get("referer") !== "https://vidrift.in/" ||
+          headers.get("origin") !== "https://vidrift.in"
+        )
+          return new Response("denied", { status: 403 });
+        if (href === target) return new Response(master);
+        if (href.includes("video_2160p.m3u8.png"))
+          return new Response("#EXTM3U\n#EXTINF:4,\nsegment.ts\n");
+        if (href.endsWith("segment.ts"))
+          return new Response(new Uint8Array(2048), {
+            status: 206,
+            headers: { "content-type": "video/mp2t" },
+          });
+        return new Response("missing", { status: 404 });
+      },
+    },
+  };
+  const result = await rivestreamProviderModule.resolve(INPUT, context);
+  expect(result.status).toBe("resolved");
+  expect(result.streams).toHaveLength(1);
+  expect(result.streams[0]?.url).toBe(target);
+  expect(result.streams[0]?.qualityRank).toBe(2160);
+  expect(result.streams[0]?.headers).toMatchObject({
+    referer: "https://vidrift.in/",
+    origin: "https://vidrift.in",
+    "user-agent": "browser",
+  });
 });
 
 test("source switching resolves the requested source's own quality rows", async () => {

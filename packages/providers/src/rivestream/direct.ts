@@ -62,6 +62,7 @@ import {
   streamPresentationFields,
 } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
+import { blockedLiteralTargetReason } from "../shared/stream-reachability";
 import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import { trimTrailingSlashes } from "../shared/trim-trailing-slashes";
@@ -210,6 +211,8 @@ type RivestreamRawSource = {
   readonly url?: string;
   readonly quality?: string;
   readonly format?: string;
+  /** Headers captured before an observed wrapper is unwrapped. */
+  readonly playbackHeaders?: Record<string, string>;
 };
 
 type RivestreamSourceResponse = {
@@ -1083,25 +1086,62 @@ function isRivestreamAbortOrTimeoutError(error: unknown): boolean {
   return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
 }
 
-export function parseRivestreamProxyHeaders(sourceUrl: string): Record<string, string> | null {
-  let params: URLSearchParams;
+const RIVESTREAM_PROXY_HEADER_HOSTS = new Set(["proxy.valhallastream.com", "cors.corsflix.net"]);
+const RIVESTREAM_PROXY_UNWRAP_HOSTS = new Set(["cors.corsflix.net"]);
+
+function parseRivestreamProxyWrapperParams(
+  sourceUrl: string,
+  allowedHosts: ReadonlySet<string>,
+): URLSearchParams | null {
   try {
     const url = new URL(sourceUrl);
-    // Only the observed wrapper may declare playback request headers. A query
-    // on any arbitrary media host is not authorization to override them.
+    // Only observed wrappers may declare playback request headers or a direct
+    // target. A query on any arbitrary media host is not authorization to
+    // override either one.
     if (
       url.protocol !== "https:" ||
-      url.hostname !== "proxy.valhallastream.com" ||
+      !allowedHosts.has(url.hostname) ||
       url.port ||
       url.username ||
       url.password ||
       url.pathname !== "/m3u8"
     )
       return null;
-    params = url.searchParams;
+    return url.searchParams;
   } catch {
     return null;
   }
+}
+
+/**
+ * Unwrap a dead wrapper whose only purpose is to carry the real media URL and
+ * playback headers. The target is still provider markup, so literal private or
+ * non-HTTPS targets stay wrapped and the guarded stream probe remains the
+ * boundary that decides reachability.
+ */
+export function unwrapRivestreamProxyUrl(sourceUrl: string): string {
+  const params = parseRivestreamProxyWrapperParams(sourceUrl, RIVESTREAM_PROXY_UNWRAP_HOSTS);
+  const raw = params?.get("url");
+  if (!raw || raw.length > 4096) return sourceUrl;
+  try {
+    const target = new URL(raw);
+    if (
+      target.protocol !== "https:" ||
+      target.username ||
+      target.password ||
+      blockedLiteralTargetReason(target.toString()) !== null
+    ) {
+      return sourceUrl;
+    }
+    return target.toString();
+  } catch {
+    return sourceUrl;
+  }
+}
+
+export function parseRivestreamProxyHeaders(sourceUrl: string): Record<string, string> | null {
+  const params = parseRivestreamProxyWrapperParams(sourceUrl, RIVESTREAM_PROXY_HEADER_HOSTS);
+  if (!params) return null;
   const raw = params.get("headers");
   if (!raw || raw.length > 8192) return null;
   let parsed: unknown;
@@ -1186,7 +1226,11 @@ async function resolveRivestreamProviderCandidate({
     }
     throw error;
   }
-  const rawSources = getRivestreamRawSources(sourceData.data);
+  const rawSources = getRivestreamRawSources(sourceData.data).map((source) => {
+    if (!source.url) return source;
+    const playbackHeaders = parseRivestreamProxyHeaders(source.url) ?? undefined;
+    return { ...source, url: unwrapRivestreamProxyUrl(source.url), playbackHeaders };
+  });
   if (rawSources.length === 0) {
     throw createProviderCycleFailureError(candidate, {
       failureClass: "candidate-empty",
@@ -1212,7 +1256,7 @@ async function resolveRivestreamProviderCandidate({
         resolvesLocally: context.fetch?.resolvesLocally,
         fetch: context.fetch?.fetch.bind(context.fetch) ?? fetch,
         masterUrl: source.url,
-        headers: resolveRivestreamStreamHeaders(source.url),
+        headers: source.playbackHeaders ?? resolveRivestreamStreamHeaders(source.url),
         // The per-candidate controller aborts at candidateTimeoutMs — ladder
         // expansion runs after the prefetch, so a hung master must die with
         // the attempt instead of lingering as an orphan fetch.
@@ -1258,7 +1302,7 @@ async function resolveRivestreamProviderCandidate({
         : source.url.includes(".mpd")
           ? "dash"
           : "mp4";
-    const streamHeaders = resolveRivestreamStreamHeaders(source.url);
+    const streamHeaders = source.playbackHeaders ?? resolveRivestreamStreamHeaders(source.url);
     const normalizedAudioLanguage =
       inferRivestreamAudioLanguage(provider, qualityStr) ??
       normalizeIsoLanguageCode(input.preferredAudioLanguage);
@@ -1293,18 +1337,20 @@ async function resolveRivestreamProviderCandidate({
     const rows: {
       url: string;
       qualityStr: string;
+      qualityRank?: number;
       dynamicRange?: import("@kunai/types").VideoDynamicRange;
     }[] = ladder
       ? ladder.map((v) => ({
           url: v.url,
           qualityStr: v.qualityLabel,
+          qualityRank: v.qualityRank,
           dynamicRange: v.dynamicRange,
         }))
       : [{ url: source.url, qualityStr }];
 
     for (const row of rows) {
       const qualityLabel = normalizeQualityLabel(row.qualityStr);
-      const qualityRank = qualityRankFromLabel(row.qualityStr) ?? 0;
+      const qualityRank = row.qualityRank ?? qualityRankFromLabel(row.qualityStr) ?? 0;
       const streamId = createStreamId(RIVESTREAM_PROVIDER_ID, [row.url]);
       const variantId = createVariantId(RIVESTREAM_PROVIDER_ID, [sourceId, qualityLabel, row.url]);
 

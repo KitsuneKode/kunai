@@ -163,7 +163,11 @@ export async function expandHlsMasterInventory(
       const declaredTop = parseHlsMasterMaxHeight(text);
       return {
         isHls: true,
-        variants: [declaredTop ? { ...fallback, qualityRank: declaredTop } : fallback],
+        variants: [
+          declaredTop
+            ? { ...fallback, qualityLabel: `${declaredTop}p`, qualityRank: declaredTop }
+            : fallback,
+        ],
         ...renditions,
         probe: { kind: "ok", httpStatus: response.status },
       };
