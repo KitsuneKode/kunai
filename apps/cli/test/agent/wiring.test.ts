@@ -13,6 +13,7 @@ import { describe, expect, it } from "bun:test";
 import { join } from "node:path";
 
 import type { Container } from "@/container";
+import { RecommendationCacheRepository } from "@kunai/storage";
 import type { JsonObject } from "@kunai/types";
 
 import { createAgentSession, type AgentSession } from "./agent-driver";
@@ -20,6 +21,70 @@ import { K } from "./keys";
 import { onboardedConfig } from "./seed";
 
 const SETTINGS_KEY = "/";
+
+describe("agent wiring · first-run browse focus", () => {
+  it("makes recommendation-list keyboard ownership explicit before typed input", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (() =>
+      Promise.reject(
+        new Error("network disabled for deterministic first-run focus test"),
+      )) as unknown as typeof fetch;
+    try {
+      await withSession(
+        "wiring-first-run-focus",
+        {
+          columns: 54,
+          rows: 25,
+          bootstrap: { initialRoute: "recommendation" },
+          beforeMount({ container }) {
+            const now = Date.now();
+            new RecommendationCacheRepository(container.cacheDb).set(
+              "catalog:trending:series",
+              JSON.stringify({
+                cachedAt: now,
+                sourceId: "tmdb",
+                results: [
+                  {
+                    id: "tmdb:smoke-movie-1",
+                    type: "movie",
+                    title: "Smoke Movie",
+                    year: "2026",
+                    overview: "Compiled smoke movie",
+                    posterPath: null,
+                  },
+                ],
+              }),
+              new Date(now + 14 * 24 * 60 * 60 * 1000).toISOString(),
+              new Date(now).toISOString(),
+            );
+          },
+        },
+        async (s) => {
+          await s.waitForFrame(
+            (f) => f.includes("Search title") && f.includes("Smoke Movie"),
+            "first-run recommendation surface",
+            20_000,
+          );
+
+          expect(s.frame()).toContain("results own keys · Esc search");
+
+          s.press("series");
+          await s.waitSettled();
+          expect(s.frame()).not.toContain("⌕ series");
+
+          s.press(K.esc);
+          await s.waitForFrame((f) => f.includes("⌕"), "search field focused");
+          s.press("series");
+          await s.waitForFrame((f) => f.includes("series"), "query draft visible");
+          s.press(K.enter);
+          await s.waitForFrame((f) => f.includes("Smoke Series"), "typed query searched");
+        },
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }, 45_000);
+});
 
 async function withSession(
   label: string,
@@ -255,7 +320,7 @@ describe("agent wiring · next up on the home row", () => {
     // so reconciliation calls the title caught-up (nothing aired since the
     // last watch). The home row must still offer episode 2.
     const finishedAt = "2026-11-20T10:00:00.000Z";
-    const seedNextUp = (container: Container) => {
+    const seedNextUp = ({ container }: { readonly container: Container }) => {
       container.historyRepository.upsertProgress({
         title: { id: "tmdb:smoke-series-1", kind: "series", title: "Smoke Series" },
         episode: { season: 1, episode: 1 },
