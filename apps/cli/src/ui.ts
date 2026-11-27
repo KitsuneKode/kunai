@@ -15,8 +15,16 @@ import {
   type PlatformInstall,
 } from "@/infra/os/install-commands";
 import { discoverMpvInvocation } from "@/infra/player/mpv-discovery";
+import {
+  emptyMpvHardwareAccelProbe,
+  probeMpvHardwareAcceleration,
+  readCachedMpvHardwareAcceleration,
+  type MpvHardwareAccelProbe,
+  type MpvHwaccelProbeDeps,
+} from "@/infra/player/mpv-hwaccel-probe";
 import { discoverVlcBinary } from "@/infra/player/vlc/vlc-launch";
 import { redactDiagnosticValue, resolveRedactionHomeDir } from "@/services/diagnostics/redaction";
+import type { MpvHwdecMode } from "@kunai/config";
 import { resolveAnidbCurl } from "@kunai/providers";
 import { getKunaiPaths } from "@kunai/storage";
 import { isJsonString } from "@kunai/types";
@@ -85,6 +93,10 @@ export interface CapabilitySnapshot {
    */
   readonly curl: CurlCapability;
   readonly image: ImageCapability;
+  /** mpv `--hwdec=help` plus the compressed auto-safe sample result; cache-only on ordinary startup. */
+  readonly mpvHardwareAccel: MpvHardwareAccelProbe;
+  /** Effective configured decode policy; probe evidence is actionable only for probe-guided `auto`. */
+  readonly mpvHwdecMode?: MpvHwdecMode;
   readonly issues: readonly CapabilityIssue[];
 }
 
@@ -178,6 +190,15 @@ export async function probeCapabilities(
     env?: Readonly<Record<string, string | undefined>>;
     /** Home-directory seam for macOS app-bundle player discovery. Injected by tests. */
     homeDir?: string;
+    /**
+     * Run a fresh bounded mpv hardware-decode probe. Default false: ordinary
+     * startup/setup reads only the disk cache and never spawns mpv for this.
+     */
+    probeMpvHwaccel?: boolean;
+    /** Hardware probe seam. Injected by tests; receives the same discovery seams. */
+    probeMpvHardwareAcceleration?: (deps: MpvHwaccelProbeDeps) => Promise<MpvHardwareAccelProbe>;
+    /** Effective configured decode policy, so probe status can be interpreted as relevant or informational. */
+    mpvHwdecMode?: MpvHwdecMode;
   } = {},
 ): Promise<CapabilitySnapshot> {
   const requireYtDlp = options.requireYtDlp ?? false;
@@ -242,6 +263,21 @@ export async function probeCapabilities(
     profile: resolvedCurl?.profile ?? null,
   };
   const image = detectImageCapability();
+  const hwaccelDeps: MpvHwaccelProbeDeps = {
+    which,
+    ...(options.exists && { exists: options.exists }),
+    platform,
+  };
+  const mpvHardwareAccel =
+    playerMode.kind !== "managed-mpv"
+      ? emptyMpvHardwareAccelProbe("not-probed")
+      : !mpv
+        ? emptyMpvHardwareAccelProbe("mpv-not-found")
+        : options.probeMpvHardwareAcceleration
+          ? await options.probeMpvHardwareAcceleration(hwaccelDeps)
+          : options.probeMpvHwaccel === true
+            ? await probeMpvHardwareAcceleration({ ...hwaccelDeps, refreshCache: true })
+            : await readCachedMpvHardwareAcceleration(hwaccelDeps);
 
   if (mpvRequired && !mpv) {
     issues.push({
@@ -356,6 +392,8 @@ export async function probeCapabilities(
     ytDlp,
     curl,
     image,
+    mpvHardwareAccel,
+    mpvHwdecMode: options.mpvHwdecMode ?? "mpv-default",
     issues,
   };
 }

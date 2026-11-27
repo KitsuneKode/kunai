@@ -85,6 +85,19 @@ export type PlayerPlaybackEvent =
       codec?: string;
     }
   | { type: "seek-stalled"; secondsSeeking: number }
+  | {
+      /** Kunai reset sustained A/V drift by seeking to the position already being watched. */
+      type: "avsync-resync";
+      positionSeconds: number;
+      driftSeconds: number;
+      attempt: number;
+    }
+  | {
+      /** Sustained drift survived the bounded recovery budget; mpv continues with ordinary frame dropping. */
+      type: "avsync-recovery-exhausted";
+      reason: "drift-returned" | "budget-exhausted";
+      resyncCount: number;
+    }
   | { type: "player-closing" }
   | { type: "player-closed" }
   | { type: "segment-skipped"; kind: PlaybackSkipKind; automatic: boolean }

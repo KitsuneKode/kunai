@@ -43,12 +43,17 @@ import {
   normalizeHdrMode,
   normalizeMaxConcurrentDownloads,
   normalizeModePatch,
+  normalizeMpvHwdec,
   normalizeMpvReconnectAttempts,
+  normalizeOptionalSecret,
   normalizePrePlayConfirm,
   normalizeProviderDns,
   normalizeRecoveryMode,
   normalizeRunwayTarget,
   normalizeStartupPriority,
+  normalizeStringList,
+  normalizeVideasySessionExpiresAt,
+  isExpiredVideasySession,
 } from "./config-scalar-normalizers";
 import {
   collectDirtyVaultFields,
@@ -331,6 +336,8 @@ export class ConfigServiceImpl implements ConfigService {
       startupPriority: normalizeStartupPriority(loaded.startupPriority),
       providerDns: normalizeProviderDns(loaded.providerDns),
       hdrMode: normalizeHdrMode(loaded.hdrMode),
+      mpvHwdec: normalizeMpvHwdec(loaded.mpvHwdec),
+      mpvAvsyncRecovery: loaded.mpvAvsyncRecovery !== false,
       mpvInProcessStreamReconnectMaxAttempts: normalizeMpvReconnectAttempts(
         loaded.mpvInProcessStreamReconnectMaxAttempts,
       ),
@@ -974,6 +981,14 @@ export class ConfigServiceImpl implements ConfigService {
     return this.sessionOverrides.hdrMode ?? this.config.hdrMode;
   }
 
+  get mpvHwdec(): KitsuneConfig["mpvHwdec"] {
+    return this.sessionOverrides.mpvHwdec ?? this.config.mpvHwdec;
+  }
+
+  get mpvAvsyncRecovery(): boolean {
+    return this.sessionOverrides.mpvAvsyncRecovery ?? this.config.mpvAvsyncRecovery;
+  }
+
   get offlineArtworkCacheEnabled(): boolean {
     return this.config.offlineArtworkCacheEnabled;
   }
@@ -1394,32 +1409,6 @@ export class ConfigServiceImpl implements ConfigService {
     }
     await this.persistConfig();
   }
-}
-
-function normalizeStringList<T>(values: T): readonly string[] {
-  if (!Array.isArray(values)) return [];
-  return [
-    ...new Set(
-      values
-        .filter(isJsonString)
-        .map((value) => value.trim())
-        .filter(Boolean),
-    ),
-  ];
-}
-
-function normalizeOptionalSecret<T>(value: T): string {
-  return isJsonString(value) ? value.trim() : "";
-}
-
-function normalizeVideasySessionExpiresAt<T, U>(value: T, token?: U): number {
-  const expiresAt = typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : 0;
-  if (!normalizeOptionalSecret(token)) return 0;
-  return isExpiredVideasySession(expiresAt) ? 0 : expiresAt;
-}
-
-function isExpiredVideasySession(expiresAt: number): boolean {
-  return expiresAt > 0 && expiresAt <= Date.now();
 }
 
 function retiredProductionProviderFieldSlice(

@@ -256,4 +256,37 @@ describe("mpv URL safety", () => {
     expect(attached).toBe(1);
     expect(commands).toEqual([["sub-add", "/local/owned.vtt", "auto", "", "en"]]);
   });
+
+  test("emits probed, automatic, explicit, and disabled hardware decode modes", () => {
+    const base = {
+      url: "https://cdn.example/video.mp4",
+      headers: {},
+      subtitle: null,
+      displayTitle: "Hardware decode",
+    } as const;
+
+    const probed = buildMpvArgs(base, null, {
+      mpv: { hwdecMode: "auto", hwdecBackend: "auto-safe" },
+    });
+    expect(probed).toContain("--hwdec=auto-safe");
+    expect(probed).not.toContain("--hwdec=no");
+
+    const unprobed = buildMpvArgs(base, null, { mpv: { hwdecMode: "auto" } });
+    expect(unprobed.some((arg) => arg.startsWith("--hwdec="))).toBe(false);
+
+    const mpvDefault = buildMpvArgs(base, null, { mpv: { hwdecMode: "mpv-default" } });
+    expect(mpvDefault.some((arg) => arg.startsWith("--hwdec="))).toBe(false);
+
+    const autoSafe = buildMpvArgs(base, null, { mpv: { hwdecMode: "auto-safe" } });
+    expect(autoSafe).toContain("--hwdec=auto-safe");
+
+    const explicit = buildMpvArgs(base, null, { mpv: { hwdecMode: "videotoolbox" } });
+    expect(explicit).toContain("--hwdec=videotoolbox");
+
+    const off = buildMpvArgs(base, null, {
+      mpv: { hwdecMode: "off", hwdecBackend: "auto-safe" },
+    });
+    expect(off).toContain("--hwdec=no");
+    expect(off).not.toContain("--hwdec=auto-safe");
+  });
 });

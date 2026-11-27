@@ -157,8 +157,10 @@ export async function runSetupWizard({
   // Recheck deliberately reuses it rather than rediscovering a different auto
   // answer halfway through setup: installing mpv in another pane must not make
   // the deps screen contradict the VLC service this session already selected.
-  const probeForSelectedPlayer = () => probe({ playerMode: container.playerMode });
-  const snapshot = container.capabilitySnapshot ?? (await probeForSelectedPlayer());
+  const probeForSelectedPlayer = () =>
+    probe({ playerMode: container.playerMode, mpvHwdecMode: container.config.mpvHwdec });
+  const baseSnapshot = container.capabilitySnapshot ?? (await probeForSelectedPlayer());
+  const snapshot = { ...baseSnapshot, mpvHwdecMode: container.config.mpvHwdec };
 
   const defaultDownloadPath = join(dirname(getKunaiPaths().dataDbPath), "downloads");
   const playerName = setupPlayerName(container.playerMode);
@@ -166,7 +168,12 @@ export async function runSetupWizard({
     downloadPath: current.downloadPath || defaultDownloadPath,
     // `[r]` re-probes rather than making the user quit and relaunch after
     // installing something in another pane.
-    onRecheck: probeForSelectedPlayer,
+    onRecheck: () =>
+      probe({
+        playerMode: container.playerMode,
+        probeMpvHwaccel: true,
+        mpvHwdecMode: container.config.mpvHwdec,
+      }),
     // The controls start from what is actually configured, so completing the
     // wizard rewrites only what the screens showed (#228).
     initial: wizardInitialStateFromConfig(current, snapshot.ytDlp),

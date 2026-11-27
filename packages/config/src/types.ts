@@ -1,3 +1,4 @@
+import { isJsonString } from "@kunai/types";
 import type { ProviderRelayConfig, StartupPriority } from "@kunai/types";
 
 export type ContinueSourcePreference = "auto" | "local" | "stream" | "ask";
@@ -27,8 +28,35 @@ export type RecoveryMode = "guided" | "fallback-first" | "manual";
 export const HDR_MODES = ["auto", "passthrough", "tone-map", "sdr-only"] as const;
 export type HdrMode = (typeof HDR_MODES)[number];
 
-export function isHdrMode(value: unknown): value is HdrMode {
-  return typeof value === "string" && (HDR_MODES as readonly string[]).includes(value);
+export function isHdrMode<T>(value: T): value is T & HdrMode {
+  return isJsonString(value) && HDR_MODES.some((mode) => mode === value);
+}
+
+/**
+ * Hardware decoding policy for managed mpv playback. `mpv-default` emits no
+ * Kunai override so mpv.conf and mpv's own default win; `auto` is Kunai's
+ * probe-guided opt-in; `auto-safe` and `auto-copy` are mpv's own automatic
+ * policies; the backend names are explicit mpv decoders.
+ */
+export const MPV_HWDEC_MODES = [
+  "mpv-default",
+  "auto",
+  "auto-safe",
+  "auto-copy",
+  "off",
+  "vaapi",
+  "nvdec",
+  "vdpau",
+  "vulkan",
+  "qsv",
+  "videotoolbox",
+  "d3d11va",
+  "dxva2",
+] as const;
+export type MpvHwdecMode = (typeof MPV_HWDEC_MODES)[number];
+
+export function isMpvHwdecMode<T>(value: T): value is T & MpvHwdecMode {
+  return isJsonString(value) && MPV_HWDEC_MODES.some((mode) => mode === value);
 }
 
 /** Saved player when `--player` is not given; VLC is an Android handoff target. */
@@ -214,6 +242,15 @@ export interface KitsuneConfig {
    */
   providerDns: "doh" | "system";
   hdrMode: HdrMode;
+  /**
+   * Managed mpv hardware decoding. `mpv-default` emits no Kunai `--hwdec`
+   * override, so mpv.conf and mpv's own default remain authoritative. `auto` is
+   * an explicit opt-in that uses the cached probe as a yes/no gate and then
+   * asks mpv for `auto-safe`; `off` force-disables hardware decoding.
+   */
+  mpvHwdec: MpvHwdecMode;
+  /** Correct sustained mpv A/V drift with a bounded same-position resync seek. */
+  mpvAvsyncRecovery: boolean;
   /** `--player` wins; this is the choice when the flag is absent. */
   player: PlayerPreference;
   offlineArtworkCacheEnabled: boolean;

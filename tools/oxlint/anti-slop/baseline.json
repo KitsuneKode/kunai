@@ -5,7 +5,7 @@
   "anti-slop(no-module-load-env-read)": 59,
   "anti-slop(no-object-parameters)": 2,
   "anti-slop(no-reflect-get)": 2,
-  "anti-slop(no-runtime-typeof)": 804,
+  "anti-slop(no-runtime-typeof)": 803,
   "anti-slop(no-unknown-parameters)": 289,
   "anti-slop(no-unknown-returns)": 58,
   "anti-slop(no-unsafe-dictionary-type)": 325,

@@ -30,6 +30,9 @@ export const MPV_OBSERVED_PROPERTIES = [
   "sub-visibility",
 ] as const;
 
+/** Persistent playback additionally watches decoder clock drift; one-shot playback does not need the per-frame cost. */
+export const MPV_PERSISTENT_OBSERVED_PROPERTIES = [...MPV_OBSERVED_PROPERTIES, "avsync"] as const;
+
 export const MPV_INITIAL_PROPERTIES = ["playback-time", "duration", "percent-pos"] as const;
 
 type MpvIpcMessage = {
@@ -55,12 +58,17 @@ type EndFileHandler = (message: {
   observedAt: number;
 }) => void;
 type FileLoadedHandler = (message: { observedAt: number }) => void;
+type PlaybackRestartHandler = (message: { observedAt: number }) => void;
 
 export type MpvIpcSessionOptions = {
   endpoint: MpvIpcEndpoint;
   onPropertyUpdate: PropertyUpdateHandler;
   onEndFile: EndFileHandler;
   onFileLoaded?: FileLoadedHandler;
+  /** mpv restarted real playback output (initial start, reload, or seek completion). */
+  onPlaybackRestart?: PlaybackRestartHandler;
+  /** Property set to observe; defaults to the shared low-cost playback set. */
+  observedProperties?: readonly string[];
   /**
    * Every settled command except mpv's "property unavailable" answer, which is
    * a reply (no value yet), not a failure to report.
@@ -283,6 +291,7 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
               options.onPropertyUpdate,
               options.onEndFile,
               options.onFileLoaded,
+              options.onPlaybackRestart,
             );
           }
           offset = end;
@@ -303,7 +312,7 @@ export async function openMpvIpcSession(options: MpvIpcSessionOptions): Promise<
 
   // Subscribe to all observed properties and request initial values in a single write.
   let initPayload = "";
-  for (const name of MPV_OBSERVED_PROPERTIES) {
+  for (const name of options.observedProperties ?? MPV_OBSERVED_PROPERTIES) {
     initPayload += buildMpvIpcCommand(["observe_property", nextRequestId, name], nextRequestId);
     nextRequestId++;
   }
@@ -443,6 +452,7 @@ function dispatchMessage(
   onPropertyUpdate: PropertyUpdateHandler,
   onEndFile: EndFileHandler,
   onFileLoaded?: FileLoadedHandler,
+  onPlaybackRestart?: PlaybackRestartHandler,
 ) {
   const observedAt = Date.now();
 
@@ -462,6 +472,11 @@ function dispatchMessage(
 
   if (message.event === "file-loaded") {
     onFileLoaded?.({ observedAt });
+    return;
+  }
+
+  if (message.event === "playback-restart") {
+    onPlaybackRestart?.({ observedAt });
     return;
   }
 

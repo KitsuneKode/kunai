@@ -6,6 +6,7 @@ import {
   MPV_INSTALL,
   resolveInstallCommand,
 } from "@/infra/os/install-commands";
+import { emptyMpvHardwareAccelProbe } from "@/infra/player/mpv-hwaccel-probe";
 import type { CapabilitySnapshot } from "@/ui";
 import React from "react";
 
@@ -27,6 +28,7 @@ const MISSING_MPV: CapabilitySnapshot = {
     available: false,
     reason: "test fixture",
   },
+  mpvHardwareAccel: emptyMpvHardwareAccelProbe("mpv-not-found"),
   issues: [
     {
       id: "mpv-missing",

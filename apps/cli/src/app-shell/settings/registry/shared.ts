@@ -12,7 +12,7 @@ import type {
   QuitNearEndThresholdMode,
 } from "@/services/persistence/ConfigService";
 import { resolvePresenceClientIdSource } from "@/services/presence/PresenceServiceImpl";
-import { HDR_MODES } from "@kunai/config";
+import { HDR_MODES, MPV_HWDEC_MODES, type MpvHwdecMode } from "@kunai/config";
 import type { StartupPriority } from "@kunai/types";
 
 import type { EnumOption } from "../types";
@@ -78,6 +78,67 @@ export const HDR_MODE_OPTIONS: readonly EnumOption[] = HDR_MODES.map((value) => 
   value,
   label: HDR_MODE_META[value].label,
   detail: HDR_MODE_META[value].detail,
+}));
+
+const MPV_HWDEC_MODE_META = {
+  "mpv-default": {
+    label: "mpv default",
+    detail: "Pass no hwdec flag; mpv.conf and mpv's own default decide",
+  },
+  auto: {
+    label: "Auto",
+    detail: "Probe whether hardware decoding works, then let mpv choose auto-safe at playback",
+  },
+  "auto-safe": {
+    label: "mpv auto-safe",
+    detail: "Use mpv's safe hardware decoding without Kunai pinning a backend",
+  },
+  "auto-copy": {
+    label: "mpv auto-copy",
+    detail: "Use mpv's copy-back hardware decoding without Kunai pinning a backend",
+  },
+  off: {
+    label: "Off",
+    detail: "Force software decoding for Kunai-launched mpv",
+  },
+  vaapi: {
+    label: "VA-API",
+    detail: "Force mpv's VA-API decoder (common on Linux Intel/AMD GPUs)",
+  },
+  nvdec: {
+    label: "NVDEC",
+    detail: "Force mpv's NVIDIA decoder",
+  },
+  vdpau: {
+    label: "VDPAU",
+    detail: "Force mpv's VDPAU decoder (legacy Linux NVIDIA path)",
+  },
+  vulkan: {
+    label: "Vulkan",
+    detail: "Force mpv's Vulkan hardware decoder",
+  },
+  qsv: {
+    label: "Quick Sync",
+    detail: "Force Intel Quick Sync Video decoding",
+  },
+  videotoolbox: {
+    label: "VideoToolbox",
+    detail: "Force Apple's VideoToolbox decoder on macOS",
+  },
+  d3d11va: {
+    label: "D3D11VA",
+    detail: "Force Direct3D 11 video acceleration on Windows",
+  },
+  dxva2: {
+    label: "DXVA2",
+    detail: "Force the legacy DirectX video acceleration path on Windows",
+  },
+} as const satisfies Record<MpvHwdecMode, { readonly label: string; readonly detail: string }>;
+
+export const MPV_HWDEC_MODE_OPTIONS: readonly EnumOption[] = MPV_HWDEC_MODES.map((value) => ({
+  value,
+  label: MPV_HWDEC_MODE_META[value].label,
+  detail: MPV_HWDEC_MODE_META[value].detail,
 }));
 
 export const ANIME_TITLE_SETTINGS_OPTIONS: readonly EnumOption[] = [

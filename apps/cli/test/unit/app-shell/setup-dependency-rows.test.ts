@@ -11,6 +11,7 @@ import {
   VLC_INSTALL,
   YT_DLP_INSTALL,
 } from "@/infra/os/install-commands";
+import { emptyMpvHardwareAccelProbe } from "@/infra/player/mpv-hwaccel-probe";
 import { probeCapabilities } from "@/ui";
 
 const NOTHING = { which: () => null, listPathEntries: () => [], exists: () => false };
@@ -262,6 +263,84 @@ describe("buildDependencyRows", () => {
     expect(row?.state).toBe("degraded");
     expect(row?.detail).toContain("cannot execute");
     expect(row?.fix).not.toBeNull();
+  });
+
+  test("mpv hwdec row reports cache state without being an installable dependency", async () => {
+    const base = await bareSnapshot();
+    const hardware = {
+      ...emptyMpvHardwareAccelProbe("hardware"),
+      probed: true,
+      autoSafeOk: true,
+      autoSafeDriver: "nvdec-copy",
+      drivers: ["nvdec", "vaapi"] as const,
+      probedAt: 1,
+      fromCache: true,
+    };
+    const rows = buildDependencyRows({ ...base, mpv: true, mpvHardwareAccel: hardware });
+    const row = rows.find((candidate) => candidate.id === "mpv-hwaccel");
+    expect(row).toMatchObject({ state: "ok", fix: null });
+    expect(row?.detail).toContain("auto-safe ok (nvdec-copy)");
+    expect(row?.detail).toContain("cached");
+
+    const missing = buildDependencyRows({
+      ...base,
+      mpv: false,
+      mpvHardwareAccel: emptyMpvHardwareAccelProbe("mpv-not-found"),
+    }).find((candidate) => candidate.id === "mpv-hwaccel");
+    expect(missing?.state).toBe("degraded");
+    expect(missing?.detail).toContain("mpv not found");
+
+    const noHardware = buildDependencyRows({
+      ...base,
+      mpv: true,
+      mpvHwdecMode: "auto",
+      mpvHardwareAccel: {
+        ...emptyMpvHardwareAccelProbe("no-hardware"),
+        probed: true,
+        drivers: ["nvdec"] as const,
+        probedAt: 1,
+      },
+    }).find((candidate) => candidate.id === "mpv-hwaccel");
+    expect(noHardware?.state).toBe("degraded");
+    expect(noHardware?.detail).toContain("help lists nvdec");
+    expect(noHardware?.consequence).toContain("software/default decode");
+  });
+
+  test("mpv-default keeps unused probe-negative states neutral and informational", async () => {
+    const base = await bareSnapshot();
+    const rowsFor = (status: "no-hardware" | "probe-failed" | "not-probed") =>
+      buildDependencyRows({
+        ...base,
+        mpv: true,
+        mpvHwdecMode: "mpv-default",
+        mpvHardwareAccel: emptyMpvHardwareAccelProbe(status),
+      }).find((candidate) => candidate.id === "mpv-hwaccel");
+
+    const noHardware = rowsFor("no-hardware");
+    expect(noHardware?.state).toBe("ok");
+    expect(noHardware?.detail).toContain("unused by mpv-hwdec=mpv-default");
+    expect(noHardware?.consequence).toBeUndefined();
+
+    const failed = rowsFor("probe-failed");
+    expect(failed?.state).toBe("ok");
+    expect(failed?.detail).toContain("unused by mpv-hwdec=mpv-default");
+    expect(failed?.consequence).toBeUndefined();
+
+    const notProbed = rowsFor("not-probed");
+    expect(notProbed?.state).toBe("ok");
+    expect(notProbed?.detail).toBe("not probed · unused by mpv-hwdec=mpv-default");
+    expect(notProbed?.detail).not.toContain("[r]");
+  });
+
+  test("probe-guided auto keeps negative probe states actionable", async () => {
+    const base = await bareSnapshot();
+    const row = buildDependencyRows({
+      ...base,
+      mpv: true,
+      mpvHwdecMode: "auto",
+      mpvHardwareAccel: emptyMpvHardwareAccelProbe("not-probed"),
+    }).find((candidate) => candidate.id === "mpv-hwaccel");
+    expect(row?.detail).toBe("not probed yet · [r] recheck probes");
   });
 
   test("mpv degrades rather than blocks", async () => {

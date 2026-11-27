@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
 import { buildRemediationLines, MPV_INSTALL } from "@/infra/os/install-commands";
+import { emptyMpvHardwareAccelProbe } from "@/infra/player/mpv-hwaccel-probe";
 import {
   buildDoctorReport,
   formatDoctorReportText,
@@ -48,6 +49,7 @@ function emptyCapabilities(overrides: Partial<CapabilitySnapshot> = {}): Capabil
       available: false,
       reason: "test",
     },
+    mpvHardwareAccel: emptyMpvHardwareAccelProbe("not-probed"),
     issues: [],
     ...overrides,
   };
@@ -274,6 +276,104 @@ describe("buildDoctorReport", () => {
     expect(text.match(/mpv not found/g)).toEqual(["mpv not found"]);
     expect(text).not.toContain("openSUSEsudo");
     expect(text).toMatch(/openSUSE\s+sudo zypper install mpv/);
+  });
+
+  test("doctor text reports the cached hardware decode probe and mpv-absent skip", async () => {
+    const { root, layout } = await makeRoot();
+    const report = await buildDoctorReport({
+      layout,
+      now: () => FIXED_DATE,
+      runningExecutable: { path: layout.launcherPath, version: "1.0.0" },
+      pathValue: join(root, "bin"),
+      platform: "linux",
+      fileExists: existsSync,
+      mpvHwdecMode: "auto",
+      probeCapabilities: async () =>
+        emptyCapabilities({
+          mpvHardwareAccel: {
+            ...emptyMpvHardwareAccelProbe("hardware"),
+            probed: true,
+            autoSafeOk: true,
+            autoSafeDriver: "nvdec-copy",
+            drivers: ["vaapi", "nvdec"],
+            probedAt: 1,
+            fromCache: true,
+          },
+        }),
+    });
+    expect(formatDoctorReportText(report)).toContain(
+      "mpv-hwdec=auto · passes --hwdec=auto-safe · probe: auto-safe ok (nvdec-copy) · cached · help lists vaapi, nvdec",
+    );
+
+    const missing = await buildDoctorReport({
+      layout,
+      now: () => FIXED_DATE,
+      runningExecutable: { path: layout.launcherPath, version: "1.0.0" },
+      pathValue: join(root, "bin"),
+      platform: "linux",
+      fileExists: existsSync,
+      probeCapabilities: async () =>
+        emptyCapabilities({
+          mpv: false,
+          mpvHardwareAccel: emptyMpvHardwareAccelProbe("mpv-not-found"),
+        }),
+    });
+    expect(formatDoctorReportText(missing)).toContain(
+      "mpv-hwdec=mpv-default · passes no --hwdec flag · probe: skipped — mpv not found",
+    );
+  });
+
+  test("does not report an mpv hwdec flag for VLC or Android playback", async () => {
+    const { root, layout } = await makeRoot();
+    const report = await buildDoctorReport({
+      layout,
+      now: () => FIXED_DATE,
+      runningExecutable: { path: layout.launcherPath, version: "1.0.0" },
+      pathValue: join(root, "bin"),
+      platform: "linux",
+      fileExists: existsSync,
+      playerChoice: "vlc",
+      mpvHwdecMode: "off",
+      probeCapabilities: async () =>
+        emptyCapabilities({
+          mpv: true,
+          mpvRequired: false,
+          vlc: true,
+          vlcRequired: true,
+          mpvHardwareAccel: emptyMpvHardwareAccelProbe("not-probed"),
+        }),
+    });
+
+    expect(report.playback).toMatchObject({
+      playerKind: "managed-vlc",
+      mpvHwdec: "off",
+      mpvHwdecEmitted: null,
+    });
+    const text = formatDoctorReportText(report);
+    expect(text).toContain(
+      "mpv-hwdec=off · not applicable to managed-vlc playback · probe: not probed yet",
+    );
+    expect(text).not.toContain("passes --hwdec=no");
+
+    const android = await buildDoctorReport({
+      layout,
+      now: () => FIXED_DATE,
+      runningExecutable: { path: layout.launcherPath, version: "1.0.0" },
+      pathValue: join(root, "bin"),
+      platform: "linux",
+      fileExists: existsSync,
+      playerMode: { kind: "android-handoff", target: "chooser" },
+      mpvHwdecMode: "off",
+      probeCapabilities: async () => emptyCapabilities(),
+    });
+    expect(android.playback).toMatchObject({
+      playerKind: "android-handoff",
+      mpvHwdec: "off",
+      mpvHwdecEmitted: null,
+    });
+    expect(formatDoctorReportText(android)).toContain(
+      "mpv-hwdec=off · not applicable to android-handoff playback",
+    );
   });
 
   test("treats curl helper execution failure as an error finding", async () => {
