@@ -558,6 +558,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     const { runDoctor } = await import("./services/update/run-doctor");
     process.exit(
       await runDoctor({
+        argv,
         json: argv.includes("--json"),
         strict: argv.includes("--strict"),
         runningExecutable: { path: process.execPath, version: KUNAI_VERSION },
@@ -910,6 +911,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     { createContainer, disposeContainer },
     { resolveSessionConfigOverrides },
     { resolveBootstrapIntent, resolveLaunchMode },
+    { recordStartupPlayerDiagnostic },
   ] = await Promise.all([
     import("@kunai/storage"),
     import("@/app/bootstrap/startup-setup"),
@@ -919,6 +921,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     import("@/container"),
     import("@/app/session/session-overrides"),
     import("@/app/bootstrap/bootstrap-intent"),
+    import("@/app/bootstrap/startup-player-diagnostic"),
   ]);
   type ConfigPeek = {
     onboardingVersion?: number;
@@ -959,7 +962,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   const startupPlayerMode = resolveMachinePlayerMode(args.player);
   const capabilitySnapshot = await checkDeps(KUNAI_VERSION, {
     silent: onboardingWillRun,
-    requireMpv: startupPlayerMode.kind === "managed-mpv",
+    playerMode: startupPlayerMode,
     requireYtDlp: launchNeedsYtDlp(args, configJson.defaultMode, pendingShareLaunch?.ref.kind),
   });
 
@@ -977,6 +980,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     debugSession: args.debugSession,
     mpv: args.mpv,
     playerChoice: args.player,
+    playerMode: startupPlayerMode,
     shellChrome: args.shellChrome,
     capabilitySnapshot,
     appVersion: KUNAI_VERSION,
@@ -1309,20 +1313,11 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     }
   }
 
-  // Missing mpv no longer aborts startup — setup and non-playback surfaces stay
-  // usable. PlaybackPhase gates dynamically before provider/history work.
-  if (startupPlayerMode.kind === "managed-mpv" && !capabilitySnapshot.mpv) {
-    container.diagnosticsService.record({
-      category: "session",
-      operation: "startup.capability.mpv-missing",
-      message: "mpv missing at startup — shell will mount; playback remains gated",
-      context: {
-        issues: capabilitySnapshot.issues
-          .filter((issue) => issue.id === "mpv-missing")
-          .map((issue) => issue.message),
-      },
-    });
-  }
+  recordStartupPlayerDiagnostic({
+    diagnostics: container.diagnosticsService,
+    playerMode: startupPlayerMode,
+    capabilitySnapshot,
+  });
 
   const shellLoadStartedAt = args.debug ? performance.now() : 0;
   const [

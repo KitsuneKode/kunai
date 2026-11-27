@@ -150,9 +150,9 @@ brew install kitsunekode/kunai/kunai
 ```
 
 The formula fetches the same checksum-pinned release archives as the installer
-and installs the binary as `kunai`. `mpv` is your own install (`brew install
-mpv`). Kunai needs it for playback but the formula does not force it as a
-dependency. Use `brew upgrade kunai` and `brew uninstall kunai` for this install,
+and installs the binary as `kunai`. The player is your own install: `brew install
+mpv` (recommended), or VLC. Kunai needs one of them for playback, but the
+formula does not force either as a dependency. Use `brew upgrade kunai` and `brew uninstall kunai` for this install,
 including v0.3.0. Starting with v0.4.0, Kunai detects the Cellar path and
 displays those commands.
 
@@ -184,7 +184,7 @@ less PKGBUILD
 makepkg -si
 ```
 
-`mpv` is a hard dependency; `yt-dlp`, `ffmpeg`, and `curl` are optional
+A desktop player (`mpv` or VLC) is required for playback; `yt-dlp`, `ffmpeg`, and `curl` are optional
 dependencies for extra sources and downloads. `kunai upgrade` detects
 `/usr/bin/kunai` and prints your package-manager update path (`yay -Syu
 kunai-bin` or your AUR helper); `kunai uninstall` prints `sudo pacman -R
@@ -287,7 +287,7 @@ skipped. Before 0.3.0 a missing terminal defaulted to yes and could run
 
 ### Optional dependencies
 
-Kunai needs `mpv` to play anything, and `yt-dlp` for YouTube. **Package-manager
+Kunai needs `mpv` or VLC to play anything on desktop, and `yt-dlp` for YouTube. **Package-manager
 installs are never run unless you confirm on a real terminal.** The installer
 checks whether they are already present, and if they are not it prints the exact
 command for your package manager.
@@ -295,7 +295,7 @@ command for your package manager.
 On a TTY it offers to run that command:
 
 ```
-! mpv is not installed — Kunai needs it to play anything.
+! no supported desktop player is installed — Kunai needs mpv or VLC to play anything.
 
   This will run:
     sudo pacman -S --needed mpv yt-dlp
@@ -431,20 +431,16 @@ The update panel shows install-method-aware guidance:
 
 You can snooze automatic checks for seven days or disable them from the update panel. Manual `/update` always remains available.
 
-## Platform support matrix (0.3.0)
+## Platform support matrix
 
-| Target                                        | Status                                                                        |
-| --------------------------------------------- | ----------------------------------------------------------------------------- |
-| `linux-x64`, `linux-arm64` (glibc)            | **Supported**                                                                 |
-| `linux-x64-musl`, `linux-arm64-musl` (Alpine) | **Supported**                                                                 |
-| `darwin-x64`, `darwin-arm64`                  | **Beta**                                                                      |
-| `windows-x64`                                 | **Beta**                                                                      |
-| `windows-arm64`                               | **Experimental**                                                              |
-| `android-arm64`, `android-x64` (Bionic)       | **Experimental preview; API 28 artifact floor, device qualification pending** |
-| WSL                                           | Linux binary + Linux mpv/PATH/data, not Windows-native                        |
-| FreeBSD / other BSD                           | **Unsupported** binary; npm/bun/source only                                   |
-| iOS / iPadOS                                  | **Unsupported**; terminal runtime and VLC handoff remain unproven             |
-| Code signing / notarization                   | Not in beta scope; see [Unsigned binaries](#unsigned-binaries-beta) above     |
+<PlatformSupportTable />
+
+| Environment               | Status                                                                    |
+| ------------------------- | ------------------------------------------------------------------------- |
+| WSL                       | Linux binary + Linux player/PATH/data, not Windows-native                 |
+| FreeBSD / other BSD       | **Unsupported** binary; npm/bun/source only                               |
+| iOS / iPadOS              | **Unsupported**; terminal runtime and VLC handoff remain unproven         |
+| Code signing/notarization | Not in beta scope; see [Unsigned binaries](#unsigned-binaries-beta) above |
 
 ### Alpine / musl quick start
 

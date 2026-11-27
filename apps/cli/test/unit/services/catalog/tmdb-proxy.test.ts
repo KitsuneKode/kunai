@@ -354,6 +354,9 @@ describe("TMDB API key resolution", () => {
     const original = process.env.KUNAI_BUNDLED_TMDB_API_KEY;
     try {
       delete process.env.KUNAI_BUNDLED_TMDB_API_KEY;
+      if (LEGACY_PUBLIC_TMDB_API_KEY === null) {
+        throw new Error("legacy TMDB key fixture retired; update this resolution test");
+      }
       expect(resolveTmdbApiKey({})).toEqual({
         key: LEGACY_PUBLIC_TMDB_API_KEY,
         source: "legacy",

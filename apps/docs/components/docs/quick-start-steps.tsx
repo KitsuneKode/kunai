@@ -33,11 +33,14 @@ kunai --version`}
         </p>
       </Step>
       <Step>
-        <h3 className="text-fd-foreground m-0 text-lg font-medium">Install mpv, then run setup</h3>
+        <h3 className="text-fd-foreground m-0 text-lg font-medium">
+          Install a player, then run setup
+        </h3>
         <p className="text-fd-muted-foreground mt-2 text-sm leading-relaxed">
-          Playback needs an <code>mpv</code> binary on the same <code>PATH</code> as Kunai. Setup
-          and browsing still work when mpv is missing; only committed playback startup requires it.
-          Kunai looks for <code>mpv</code> / <code>mpv.exe</code>, not <code>mpvnet.exe</code>.
+          Playback needs <code>mpv</code> (recommended) or desktop VLC. With the default{" "}
+          <code>--player auto</code>, Kunai uses mpv when it is on <code>PATH</code> and VLC
+          otherwise. Setup and browsing work without either; only playback needs one. Kunai looks
+          for <code>mpv</code> / <code>mpv.exe</code>, not <code>mpvnet.exe</code>.
         </p>
         <div className="mt-2">
           <DynamicCodeBlock

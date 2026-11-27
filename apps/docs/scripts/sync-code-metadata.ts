@@ -270,6 +270,35 @@ type ShortcutMetadata = {
   readonly order: number;
 };
 
+type ProviderLaneMetadata = {
+  readonly defaultProvider: string;
+  readonly fallbackPriority: readonly string[];
+  readonly order: readonly string[];
+};
+
+type ProviderDefaultsMetadata = {
+  readonly revision: number;
+  readonly series: ProviderLaneMetadata;
+  readonly anime: ProviderLaneMetadata;
+  readonly youtube: ProviderLaneMetadata;
+};
+
+type ReleaseTargetMetadata = {
+  readonly id: string;
+  readonly triple: string;
+  readonly out: string;
+  readonly os: string;
+  readonly arch: string;
+  readonly libc: string | undefined;
+  readonly supportTier: "supported" | "beta" | "experimental";
+  readonly archiveName: string;
+};
+
+type PlayerSupportMetadata = {
+  readonly desktopManagedPlayers: readonly string[];
+  readonly androidTargets: readonly string[];
+};
+
 function parseFeatureStatusYaml(content: string): FeatureStatusEntry[] {
   const features: FeatureStatusEntry[] = [];
   const allowed = new Set(["shipped", "beta", "planned"]);
@@ -329,6 +358,108 @@ function syncRuntimeBaseline(): RuntimeBaseline {
   };
 }
 
+function extractConfigString(content: string, key: string): string {
+  const match = content.match(new RegExp(`\\b${key}:\\s*"([^"]+)"`));
+  if (!match?.[1]) throw new Error(`Missing string config value: ${key}`);
+  return match[1];
+}
+
+function extractConfigStringArray(content: string, key: string): string[] {
+  const match = content.match(new RegExp(`\\b${key}:\\s*\\[([\\s\\S]*?)\\]`));
+  if (!match?.[1]) throw new Error(`Missing array config value: ${key}`);
+  return [...match[1].matchAll(/"([^"]+)"/g)]
+    .map((entry) => entry[1])
+    .filter((entry): entry is string => Boolean(entry));
+}
+
+function providerLane(defaultProvider: string, fallbackPriority: string[]): ProviderLaneMetadata {
+  return {
+    defaultProvider,
+    fallbackPriority,
+    order: [...new Set([defaultProvider, ...fallbackPriority])],
+  };
+}
+
+function syncProviderDefaults(): ProviderDefaultsMetadata {
+  const defaultsPath = path.join(ROOT_DIR, "packages/config/src/defaults.ts");
+  const content = fs.readFileSync(defaultsPath, "utf-8");
+  const revisionMatch = content.match(/\bproviderDefaultsRevision:\s*(\d+)/);
+  if (!revisionMatch?.[1]) {
+    throw new Error("Missing providerDefaultsRevision in packages/config/src/defaults.ts");
+  }
+
+  const seriesDefault = extractConfigString(content, "provider");
+  const animeDefault = extractConfigString(content, "animeProvider");
+  const youtubeDefault = extractConfigString(content, "youtubeProvider");
+  return {
+    revision: Number(revisionMatch[1]),
+    series: providerLane(seriesDefault, extractConfigStringArray(content, "providerPriority")),
+    anime: providerLane(animeDefault, extractConfigStringArray(content, "animeProviderPriority")),
+    youtube: providerLane(
+      youtubeDefault,
+      extractConfigStringArray(content, "youtubeProviderPriority"),
+    ),
+  };
+}
+
+function extractTargetField(block: string, key: string): string {
+  const match = block.match(new RegExp(`\\b${key}:\\s*"([^"]+)"`));
+  if (!match?.[1]) throw new Error(`Missing release target field: ${key}`);
+  return match[1];
+}
+
+function syncReleaseTargets(): ReleaseTargetMetadata[] {
+  const targetsPath = path.join(ROOT_DIR, "apps/cli/src/services/update/platform-assets.ts");
+  const content = fs.readFileSync(targetsPath, "utf-8");
+  const blocks = [...content.matchAll(/releaseBinaryTarget\(\{([\s\S]*?)\}\s*\)/g)].map(
+    (match) => match[1],
+  );
+  if (blocks.length === 0) {
+    throw new Error("No releaseBinaryTarget entries found in platform-assets.ts");
+  }
+
+  return blocks.map((block) => {
+    if (!block) throw new Error("Empty releaseBinaryTarget entry in platform-assets.ts");
+    const out = extractTargetField(block, "out");
+    const os = extractTargetField(block, "os");
+    const supportTier = extractTargetField(block, "supportTier");
+    if (supportTier !== "supported" && supportTier !== "beta" && supportTier !== "experimental") {
+      throw new Error(`Invalid release support tier: ${supportTier}`);
+    }
+    const libcMatch = block.match(/\blibc:\s*"([^"]+)"/);
+    const archiveStem = out.endsWith(".exe") ? out.slice(0, -4) : out;
+    return {
+      id: extractTargetField(block, "id"),
+      triple: extractTargetField(block, "triple"),
+      out,
+      os,
+      arch: extractTargetField(block, "arch"),
+      libc: libcMatch?.[1],
+      supportTier,
+      archiveName: `${archiveStem}.${os === "windows" ? "zip" : "tar.gz"}`,
+    };
+  });
+}
+
+function unionStringValues(content: string, typeName: string): string[] {
+  const match = content.match(new RegExp(`export type ${typeName} =([^;]+);`));
+  if (!match?.[1]) throw new Error(`Missing union type: ${typeName}`);
+  return [...match[1].matchAll(/"([^"]+)"/g)]
+    .map((entry) => entry[1])
+    .filter((entry): entry is string => Boolean(entry));
+}
+
+function syncPlayerSupport(): PlayerSupportMetadata {
+  const playerChoicePath = path.join(ROOT_DIR, "apps/cli/src/domain/playback/player-choice.ts");
+  const content = fs.readFileSync(playerChoicePath, "utf-8");
+  return {
+    desktopManagedPlayers: unionStringValues(content, "PlayerChoice").filter(
+      (choice) => choice !== "auto",
+    ),
+    androidTargets: unionStringValues(content, "DetachedPlayerTarget"),
+  };
+}
+
 function syncShortcuts(): ShortcutMetadata[] {
   return publicShortcutMetadata().map((row) => ({
     id: row.id,
@@ -355,6 +486,9 @@ export function buildMetadata(): Record<string, unknown> {
   const featureStatus = syncFeatureStatus();
   const runtimeBaseline = syncRuntimeBaseline();
   const shortcuts = syncShortcuts();
+  const providerDefaults = syncProviderDefaults();
+  const releaseTargets = syncReleaseTargets();
+  const playerSupport = syncPlayerSupport();
 
   return {
     version,
@@ -367,6 +501,9 @@ export function buildMetadata(): Record<string, unknown> {
     featureStatus,
     runtimeBaseline,
     shortcuts,
+    providerDefaults,
+    releaseTargets,
+    playerSupport,
   };
 }
 
