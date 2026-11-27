@@ -14,8 +14,8 @@ import {
  *
  * - `quick` — a first launch: what you watch plus the machine verdict, then the
  *   consent screen. Everything else keeps the value the config already has.
- * - `full`  — `/setup`, `kunai --setup`, or `m` on the first quick screen: the
- *   six screens, because asking for setup means wanting all of it.
+ * - `full` — `/setup` and `kunai --setup` start at Dependencies. The first
+ *   quick screen's `m` shortcut joins at Language, screen 3 of 6.
  */
 export type SetupFlow = "quick" | "full";
 

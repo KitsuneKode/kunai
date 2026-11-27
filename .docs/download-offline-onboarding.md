@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-27T08:10:05Z"
+lastReviewed: "2026-11-27T10:29:38Z"
 ---
 
 # Kunai — Download, Offline Library, And Onboarding
@@ -47,9 +47,9 @@ Two flows, chosen by how setup was reached (`SetupFlow` in
 
 - **`quick` — a first launch.** Two screens: what you watch plus a one-line
   machine verdict, then usage ping. It ends in Browse, with no review screen.
-- **`full` — `/setup`, `kunai --setup`, or `m` on the first quick screen.** Six
-  screens, in order: dependencies, mode, language, playback/downloads &
-  accounts, usage ping, done.
+- **`full` starts from `/setup` or `kunai --setup`.** The six screens are
+  Dependencies, Mode, Language, Playback and Downloads, Usage Ping, and Done.
+  Pressing `m` on the first quick screen joins the full flow at Language, screen 3 of 6.
 
 Implementation is `apps/cli/src/app-shell/setup-shell.tsx`; the write map is
 `runSetupWizard` in `apps/cli/src/app-shell/workflows/setup-workflows.ts`, which
@@ -62,9 +62,8 @@ picks `full` when forced and `quick` otherwise. The design board is
   `apps/cli/src/app/bootstrap/startup-setup.ts`). Nothing about onboarding is
   written, so the next bare `kunai` still offers setup, and analytics stays
   `unset` — off — until the consent screen is answered. `--setup` still wins.
-- **The quick flow writes only what it showed.** Mode and the consent answer.
-  Every other control comes back exactly as hydrated, so language profiles,
-  playback toggles, download settings and linked accounts are untouched.
+- **Quick setup saves mode, the consent answer, and onboarding completion.**
+  The full flow also saves language, playback, download, presence, and tracker choices.
 - **The machine verdict follows the highlighted lane.** `buildSetupVerdict`
   (`apps/cli/src/app-shell/setup/setup-verdict.ts`) reduces the dependency rows
   to "is there a player" plus the one dependency the lane under the cursor
