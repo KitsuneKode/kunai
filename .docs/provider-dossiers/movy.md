@@ -1,11 +1,28 @@
 ---
 status: current
-lastReviewed: "2026-11-24T09:34:20Z"
+lastReviewed: "2026-11-27"
 ---
 
 # Provider: Movy
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
+
+## Live capability audit (2026-11-27)
+
+**Status: working for movies and series from this network.** The earlier
+Cloudflare seed failure was not the behavior measured in this audit.
+
+- Fixture coverage: Inception, Fight Club, Breaking Bad S01E01, Dutton Ranch
+  S01E01.
+- Result: 4/4 resolves succeeded, 4/4 independently probed selected streams
+  were reachable, and Inception produced a real 3840x2160 decode frame.
+- Inventory: 15 source lanes offered per case, with the cycle selecting
+  `Movy miami`; four quality rows per selected case (`480p`, `720p`, `1080p`,
+  `2160p`). English sidecar subtitles appeared on Inception and Dutton Ranch
+  only. No audio-language or HDR metadata was exposed on the selected streams.
+- Maximum measured quality: 2160p. Resolve latency was 2.87-5.27 s.
+- Actual media dependency: `moon.goldenkite.top`; metadata/seeding remains
+  dependent on `api.wecollege.net`.
 
 ## Production status (2026-11-24)
 
@@ -14,7 +31,7 @@ the adapter could query any stream lane. A November 24 anonymous request to
 `api.wecollege.net/seed?mediaId=550` returned the same status with a
 Cloudflare block page, while [Movy's public site](https://www.movy.sx/)
 returned HTTP 200. No public replacement for the seed API was verified.
-Movy stays as a fallback after VidRock and before Videasy.
+Movy stayed in the fallback order on that evidence. The 2026-11-27 audit above supersedes the ordering implication: Movy is currently the second movie/series provider, ahead of Rivestream, VidRock, and Videasy.
 
 ## Summary
 
