@@ -466,6 +466,32 @@ describe("PlayerServiceImpl diagnostics", () => {
       context: { event: "mpv-process-started" },
     });
   });
+
+  test("avsync recovery exhaustion is recorded as a give-up diagnostic", () => {
+    const events: DiagnosticEventInput[] = [];
+    const { service } = createService(events);
+    const generation = internals(service).currentGeneration;
+    const wrap = internals(service).wrapPlaybackEventHandler.bind(service);
+
+    wrap(
+      generation,
+      undefined,
+    )({
+      type: "avsync-recovery-exhausted",
+      reason: "budget-exhausted",
+      resyncCount: 2,
+    });
+
+    expect(events[0]).toMatchObject({
+      category: "playback",
+      operation: "mpv.avsync.recovery.give-up",
+      context: {
+        event: "avsync-recovery-exhausted",
+        reason: "budget-exhausted",
+        resyncCount: 2,
+      },
+    });
+  });
 });
 
 describe("PlayerServiceImpl playback generations", () => {

@@ -63,6 +63,10 @@ function operationForPlaybackEvent(event: PlayerPlaybackEvent): string {
     case "ipc-stalled":
     case "mpv-in-process-reconnect":
       return "mpv.ipc.event";
+    case "avsync-resync":
+      return "mpv.avsync.recovery.resync";
+    case "avsync-recovery-exhausted":
+      return "mpv.avsync.recovery.give-up";
     default:
       return "mpv.runtime.event";
   }
