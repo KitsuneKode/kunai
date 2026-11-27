@@ -267,7 +267,8 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
       kind: "enum",
       id: "continueSourcePreference",
       label: "Continue source",
-      detail: "Default local-vs-stream behavior on History Continue rows",
+      detail:
+        "Local copy or stream when you continue (Home, History, Calendar, --continue). Ask streams when nobody can answer",
       options: CONTINUE_SOURCE_PREFERENCE_OPTIONS,
       presentation: "submenu",
       read: (config) => config.continueSourcePreference,

@@ -959,6 +959,7 @@ describe("session overrides", () => {
       service.animeLanguageProfile,
       service.seriesLanguageProfile,
       service.movieLanguageProfile,
+      service.youtubeLanguageProfile,
     ]) {
       expect(profile.quality).toBe("720p");
       expect(profile.audio).toBe("en");
@@ -972,7 +973,7 @@ describe("session overrides", () => {
   });
 
   test("editing one language field in Settings never saves the launch flag's other fields", async () => {
-    for (const lane of ["anime", "series", "movie"] as const) {
+    for (const lane of ["anime", "series", "movie", "youtube"] as const) {
       const profileKey = `${lane}LanguageProfile` as const;
       const saved = { audio: "original", subtitle: "en", quality: "720p" };
       const store = new MemoryConfigStore({ [profileKey]: saved });

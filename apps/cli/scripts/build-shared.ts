@@ -538,11 +538,15 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // The pre-release player-capability rule (one mpv/VLC requirement across
 // startup, setup and doctor), credential-aware TMDB routing and the
 // browse-focus copy (#853) measured 3,332,573 bytes: +3,360. No dependency or
-// asset.
-// The mpv hardware-decode probe and persistent A/V-sync recovery slice is being
-// re-measured on this merged tree; until that build below, keep the provisional
-// merged budget at 3265 KiB rather than adding the two deltas blindly.
-export const NPM_BUNDLE_BUDGET_KB = 3_265;
+// asset. 3255 KiB leaves 547 bytes.
+// Promptless-player resume, the Continue source `ask` choice, YouTube session
+// overrides and the Discover startup route (#852) on top measured 3,336,807
+// bytes: +4,234. No dependency or asset; the Continue picker stays lazy.
+// 3259 KiB leaves 409 bytes.
+// The mpv hardware-decode probe and persistent A/V-sync recovery slice on top
+// measured 3,353,719 bytes: +16,912. No dependency or asset; the probe sample is
+// embedded source data. 3276 KiB leaves 905 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_276;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

@@ -12,6 +12,7 @@ const baseConfig = {
   animeLanguageProfile: { ...BASE_LANE },
   seriesLanguageProfile: { ...BASE_LANE },
   movieLanguageProfile: { ...BASE_LANE },
+  youtubeLanguageProfile: { ...BASE_LANE },
 };
 
 describe("resolveSessionConfigOverrides", () => {
@@ -71,6 +72,18 @@ describe("resolveSessionConfigOverrides", () => {
       animeLanguageProfile: { ...BASE_LANE, quality: "720p" },
       seriesLanguageProfile: { ...BASE_LANE, quality: "720p" },
       movieLanguageProfile: { ...BASE_LANE, quality: "720p" },
+      youtubeLanguageProfile: { ...BASE_LANE, quality: "720p" },
+    });
+  });
+
+  test("--quality, --audio, and --sub also ride the YouTube profile for the session", () => {
+    expect(
+      resolveSessionConfigOverrides(
+        { zen: false, minimal: false, quality: "720p", audio: "en", subtitle: "none" },
+        off,
+      ),
+    ).toMatchObject({
+      youtubeLanguageProfile: { quality: "720p", audio: "en", subtitle: "none" },
     });
   });
 
@@ -87,6 +100,7 @@ describe("resolveSessionConfigOverrides", () => {
       animeLanguageProfile: { audio: "dub", subtitle: "none", quality: "1080p" },
       seriesLanguageProfile: { ...BASE_LANE, subtitle: "none", audio: "dub" },
       movieLanguageProfile: { ...BASE_LANE, subtitle: "none", audio: "dub" },
+      youtubeLanguageProfile: { ...BASE_LANE, subtitle: "none", audio: "dub" },
     });
   });
 

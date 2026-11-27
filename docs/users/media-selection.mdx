@@ -10,21 +10,23 @@ This guide explains what each picker means and when Kunai shows it.
 
 ## Profiles by mode
 
-Anime, series, and movie playback each has its own media profile in `config.json`:
+Anime, series, movie, and YouTube playback each has its own media profile in `config.json`:
 
-| Mode   | Config key              | Typical fields           |
-| ------ | ----------------------- | ------------------------ |
-| Anime  | `animeLanguageProfile`  | audio, subtitle, quality |
-| Series | `seriesLanguageProfile` | audio, subtitle, quality |
-| Movies | `movieLanguageProfile`  | audio, subtitle, quality |
+| Mode    | Config key               | Typical fields           |
+| ------- | ------------------------ | ------------------------ |
+| Anime   | `animeLanguageProfile`   | audio, subtitle, quality |
+| Series  | `seriesLanguageProfile`  | audio, subtitle, quality |
+| Movies  | `movieLanguageProfile`   | audio, subtitle, quality |
+| YouTube | `youtubeLanguageProfile` | audio, subtitle, quality |
 
 Example:
 
 ```json
 {
-  "animeLanguageProfile": { "audio": "ja", "subtitle": "en", "quality": "1080" },
+  "animeLanguageProfile": { "audio": "ja", "subtitle": "en", "quality": "1080p" },
   "seriesLanguageProfile": { "audio": "en", "subtitle": "en" },
-  "movieLanguageProfile": { "audio": "en", "subtitle": "en" }
+  "movieLanguageProfile": { "audio": "en", "subtitle": "en" },
+  "youtubeLanguageProfile": { "audio": "original", "subtitle": "en", "quality": "1080p" }
 }
 ```
 
@@ -36,6 +38,18 @@ Additional anime display preference:
 - `favoriteSources`: pin preferred source/server names to the top of pickers
 
 Configure in `/settings`. See [Customization](/docs/users/customization).
+
+## Per-run playback overrides
+
+`--quality`, `--audio`, `--sub`, and `--dub` override the matching profile for the current launch only. They never write `config.json`, and they apply to all four profiles, including YouTube. Unsupported values are rejected as usage errors before the shell starts.
+
+| Flag        | Accepted values                                                                                         |
+| ----------- | ------------------------------------------------------------------------------------------------------- |
+| `--quality` | `best`, `2160p`, `1440p`, `1080p`, `720p`, `480p`; a bare numeric height such as `1080` becomes `1080p` |
+| `--audio`   | `original`, `en`, `ja`, `hi`, `pt`, `es`, `fr`, `de`, `dub`                                             |
+| `--sub`     | `en`, `interactive`, `none`, `hi`, `pt`, `ar`, `de`, `es`, `fr`, `ja`                                   |
+
+`--dub` is shorthand for `--audio dub` and cannot be combined with `--audio`.
 
 ## What the pickers mean
 

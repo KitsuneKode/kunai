@@ -70,10 +70,17 @@ export async function resolveHistorySelectionLaunch(
   await recordLocalHistorySourceDecision(container, selection, reason);
 
   const episode = episodeFromHistorySelection(selection);
+  const playbackSourceOverride: "local" | "online" | undefined =
+    selection.sourceOverride === "stream"
+      ? "online"
+      : selection.sourceOverride === "local"
+        ? "local"
+        : undefined;
   return {
     title: {
       ...titleFromHistorySelection(selection),
       launchSource: reason === "history" ? "history" : "continue",
+      ...(playbackSourceOverride ? { playbackSourceOverride } : null),
     },
     ...(episode ? { episode } : null),
   };

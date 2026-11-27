@@ -32,6 +32,7 @@ export interface SessionLayoutConfig {
   readonly animeLanguageProfile: MediaLanguageProfile;
   readonly seriesLanguageProfile: MediaLanguageProfile;
   readonly movieLanguageProfile: MediaLanguageProfile;
+  readonly youtubeLanguageProfile: MediaLanguageProfile;
 }
 
 export type SessionConfigOverrides = Partial<{
@@ -45,12 +46,14 @@ export type SessionConfigOverrides = Partial<{
   animeLanguageProfile: MediaLanguageProfile;
   seriesLanguageProfile: MediaLanguageProfile;
   movieLanguageProfile: MediaLanguageProfile;
+  youtubeLanguageProfile: MediaLanguageProfile;
 }>;
 
 const LANGUAGE_LANES = [
   "animeLanguageProfile",
   "seriesLanguageProfile",
   "movieLanguageProfile",
+  "youtubeLanguageProfile",
 ] as const;
 
 /**
@@ -58,11 +61,13 @@ const LANGUAGE_LANES = [
  * `--minimal` enables minimal mode (companion-pane collapse, minimal footer, dim
  * header). `--zen` implies minimal upstream in cli-args, so a zen launch yields
  * both. `--quality`/`--audio`/`--sub` ride the per-lane language profiles for
- * this session — the same fields the Settings rows write, applied to all three
- * provider lanes because a per-run pick should not care which lane the chosen
- * title resolves into. YouTube is untouched: its quality vocabulary and track
- * model are yt-dlp-shaped, not provider-shaped. Already-matching fields are
- * omitted so we never issue a no-op update.
+ * this session — the same fields the Settings rows write, applied to all four
+ * media profiles because a per-run pick should not care which lane the chosen
+ * title resolves into, including YouTube: its resolver accepts the same quality
+ * ceiling labels, while audio/subtitle preferences reach yt-dlp/mpv through the
+ * profile. cli-args rejects values outside the shared vocabularies before this
+ * runs, so an unsupported value can never be silently dropped here.
+ * Already-matching fields are omitted so we never issue a no-op update.
  */
 export function resolveSessionConfigOverrides(
   args: SessionOverrideArgs,
