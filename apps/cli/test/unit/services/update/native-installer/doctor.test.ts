@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
 import { buildRemediationLines, MPV_INSTALL } from "@/infra/os/install-commands";
+import { emptyMpvHardwareAccelProbe } from "@/infra/player/mpv-hwaccel-probe";
 import {
   buildDoctorReport,
   formatDoctorReportText,
@@ -46,6 +47,7 @@ function emptyCapabilities(overrides: Partial<CapabilitySnapshot> = {}): Capabil
       available: false,
       reason: "test",
     },
+    mpvHardwareAccel: emptyMpvHardwareAccelProbe("not-probed"),
     issues: [],
     ...overrides,
   };
@@ -272,6 +274,48 @@ describe("buildDoctorReport", () => {
     expect(text.match(/mpv not found/g)).toEqual(["mpv not found"]);
     expect(text).not.toContain("openSUSEsudo");
     expect(text).toMatch(/openSUSE\s+sudo zypper install mpv/);
+  });
+
+  test("doctor text reports the cached hardware decode probe and mpv-absent skip", async () => {
+    const { root, layout } = await makeRoot();
+    const report = await buildDoctorReport({
+      layout,
+      now: () => FIXED_DATE,
+      runningExecutable: { path: layout.launcherPath, version: "1.0.0" },
+      pathValue: join(root, "bin"),
+      platform: "linux",
+      fileExists: existsSync,
+      probeCapabilities: async () =>
+        emptyCapabilities({
+          mpvHardwareAccel: {
+            ...emptyMpvHardwareAccelProbe("hardware"),
+            probed: true,
+            autoSafeOk: true,
+            autoSafeDriver: "nvdec-copy",
+            drivers: ["vaapi", "nvdec"],
+            probedAt: 1,
+            fromCache: true,
+          },
+        }),
+    });
+    expect(formatDoctorReportText(report)).toContain(
+      "mpv-hwdec=auto-safe ok (nvdec-copy) · cached · help lists vaapi, nvdec",
+    );
+
+    const missing = await buildDoctorReport({
+      layout,
+      now: () => FIXED_DATE,
+      runningExecutable: { path: layout.launcherPath, version: "1.0.0" },
+      pathValue: join(root, "bin"),
+      platform: "linux",
+      fileExists: existsSync,
+      probeCapabilities: async () =>
+        emptyCapabilities({
+          mpv: false,
+          mpvHardwareAccel: emptyMpvHardwareAccelProbe("mpv-not-found"),
+        }),
+    });
+    expect(formatDoctorReportText(missing)).toContain("mpv-hwdec=skipped — mpv not found");
   });
 
   test("treats curl helper execution failure as an error finding", async () => {

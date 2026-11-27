@@ -2,6 +2,7 @@ import type { ContinueSourcePreference } from "@/services/continuation/continuat
 import { DEFAULT_OFFLINE_RUNWAY_TARGET } from "@/services/download/StorageBudgetPolicy";
 import {
   isHdrMode,
+  isMpvHwdecMode,
   MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS,
   type PrePlayConfirmMode,
 } from "@kunai/config";
@@ -40,6 +41,10 @@ export function normalizeStartupPriority<T>(value: T): StartupPriority {
 
 export function normalizeHdrMode<T>(value: T): KitsuneConfig["hdrMode"] {
   return isHdrMode(value) ? value : "auto";
+}
+
+export function normalizeMpvHwdec<T>(value: T): KitsuneConfig["mpvHwdec"] {
+  return isMpvHwdecMode(value) ? value : "auto";
 }
 
 export function normalizeBytes<T>(value: T, fallback: number): number {
@@ -87,5 +92,6 @@ export function normalizeModePatch(partial: Partial<KitsuneConfig>): Partial<Kit
       ? { providerDns: normalizeProviderDns(partial.providerDns) }
       : null),
     ...(partial.hdrMode !== undefined ? { hdrMode: normalizeHdrMode(partial.hdrMode) } : null),
+    ...(partial.mpvHwdec !== undefined ? { mpvHwdec: normalizeMpvHwdec(partial.mpvHwdec) } : null),
   };
 }

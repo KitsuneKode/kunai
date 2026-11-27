@@ -231,6 +231,8 @@ Kunai always launches `mpv` for playback. You can forward diagnostic flags for a
 | `--mpv-clean` | Minimal mpv config for isolation testing |
 | `--no-user-mpv-config` | Ignore user mpv.conf for this run |
 | `--mpv-log-file <path>` | Write mpv log to a specific file |
+| `--mpv-hwdec <mode>` | Override hardware decoding for one run (`auto`, `auto-safe`, `auto-copy`, `off`, or an explicit mpv decoder) |
+| `--mpv-avsync-recovery <on\|off>` | Enable or disable sustained A/V-drift correction for one run |
 
 These are process flags; see [CLI Reference](/docs/users/cli-reference#mpv-and-diagnostics).
 
@@ -252,6 +254,8 @@ Config keys tune the Kunai Lua bridge script:
 | `mpvKunaiScriptOpts` | `--script-opts` entries for the bridge (e.g. `margin_bottom`, `chip_width`). An entry whose key or value contains `,` or `=` is dropped; mpv's option list cannot represent one |
 | `mpvInProcessStreamReconnect` | Reload same URL after network-read-dead stalls |
 | `mpvInProcessStreamReconnectMaxAttempts` | Max reload attempts per playback cycle (clamped 0–1; `0` disables reconnect) |
+| `mpvHwdec` | Hardware decoding preference: `auto` (probe and use mpv's safe copy-back result), `auto-safe`, `auto-copy`, `off`, or an explicit mpv decoder such as `videotoolbox` |
+| `mpvAvsyncRecovery` | Correct sustained audio/video drift in supervised persistent mpv playback (default `true`) |
 
 Example `mpvKunaiScriptOpts`:
 

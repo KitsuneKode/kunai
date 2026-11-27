@@ -490,7 +490,7 @@ export async function buildDoctorReport(input: BuildDoctorReportInput = {}): Pro
     input.probeCapabilities ??
     (async (options: { readonly requireMpv: boolean }) => {
       const { probeCapabilities } = await import("@/ui");
-      return probeCapabilities(options);
+      return probeCapabilities({ ...options, probeMpvHwaccel: !android });
     });
 
   const manifest = await inspectManifest();
@@ -646,6 +646,23 @@ function androidPlayerHandoffFinding(
   };
 }
 
+function describeMpvHwaccel(hw: CapabilitySnapshot["mpvHardwareAccel"]): string {
+  const cached = hw.fromCache ? " · cached" : "";
+  const listed = hw.drivers.length ? ` · help lists ${hw.drivers.join(", ")}` : "";
+  switch (hw.status) {
+    case "hardware":
+      return `auto-safe ok (${hw.autoSafeDriver})${cached}${listed}`;
+    case "no-hardware":
+      return `no usable auto-safe path${cached}${listed || " · no GPU decoders in help"}`;
+    case "probe-failed":
+      return "probe failed or timed out · playback uses mpv default";
+    case "mpv-not-found":
+      return "skipped — mpv not found";
+    case "not-probed":
+      return "not probed yet";
+  }
+}
+
 /** Human-readable doctor output covering the same fields as the JSON report. */
 /**
  * `ok` is reserved for a curl that can actually clear a Cloudflare challenge.
@@ -752,6 +769,7 @@ export function formatDoctorReportText(report: DoctorReport): string {
     // so `curl=ok` on its own was a misleading line in a health report.
     `  mpv=${report.dependencies.mpv ? "ok" : "missing"} yt-dlp=${report.dependencies.ytDlp ? "ok" : "missing"} ffprobe=${report.dependencies.ffprobe ? "ok" : "missing"} curl=${describeCurl(report.dependencies.curl)}`,
   );
+  lines.push(`  mpv-hwdec=${describeMpvHwaccel(report.dependencies.mpvHardwareAccel)}`);
   lines.push("");
   lines.push("Storage");
   for (const store of report.storage) {

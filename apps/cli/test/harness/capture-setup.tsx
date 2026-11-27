@@ -9,6 +9,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { SetupShell } from "@/app-shell/setup-shell";
+import { emptyMpvHardwareAccelProbe } from "@/infra/player/mpv-hwaccel-probe";
 import type { CapabilitySnapshot } from "@/ui";
 import { Box } from "ink";
 import React from "react";
@@ -32,6 +33,7 @@ const READY: CapabilitySnapshot = {
     available: true,
     reason: "capture fixture",
   },
+  mpvHardwareAccel: emptyMpvHardwareAccelProbe("not-probed"),
   issues: [],
 };
 

@@ -187,6 +187,7 @@ describe("mpv-ipc", () => {
       "track-list",
       "sid",
       "sub-visibility",
+      "avsync",
     ]);
   });
 

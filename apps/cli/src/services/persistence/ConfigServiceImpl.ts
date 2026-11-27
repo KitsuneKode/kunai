@@ -43,6 +43,7 @@ import {
   normalizeHdrMode,
   normalizeMaxConcurrentDownloads,
   normalizeModePatch,
+  normalizeMpvHwdec,
   normalizeMpvReconnectAttempts,
   normalizePrePlayConfirm,
   normalizeProviderDns,
@@ -331,6 +332,8 @@ export class ConfigServiceImpl implements ConfigService {
       startupPriority: normalizeStartupPriority(loaded.startupPriority),
       providerDns: normalizeProviderDns(loaded.providerDns),
       hdrMode: normalizeHdrMode(loaded.hdrMode),
+      mpvHwdec: normalizeMpvHwdec(loaded.mpvHwdec),
+      mpvAvsyncRecovery: loaded.mpvAvsyncRecovery !== false,
       mpvInProcessStreamReconnectMaxAttempts: normalizeMpvReconnectAttempts(
         loaded.mpvInProcessStreamReconnectMaxAttempts,
       ),
@@ -972,6 +975,14 @@ export class ConfigServiceImpl implements ConfigService {
   }
   get hdrMode(): KitsuneConfig["hdrMode"] {
     return this.sessionOverrides.hdrMode ?? this.config.hdrMode;
+  }
+
+  get mpvHwdec(): KitsuneConfig["mpvHwdec"] {
+    return this.sessionOverrides.mpvHwdec ?? this.config.mpvHwdec;
+  }
+
+  get mpvAvsyncRecovery(): boolean {
+    return this.sessionOverrides.mpvAvsyncRecovery ?? this.config.mpvAvsyncRecovery;
   }
 
   get offlineArtworkCacheEnabled(): boolean {

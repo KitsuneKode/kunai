@@ -876,6 +876,11 @@
     },
     {
       "short": "",
+      "long": "--mpv-hwdec",
+      "description": "Hardware decode: auto | auto-safe | auto-copy | off | backend"
+    },
+    {
+      "short": "",
       "long": "--player",
       "description": "Player backend: desktop <auto|mpv|vlc>; Android/Termux <auto|mpv|vlc>"
     },

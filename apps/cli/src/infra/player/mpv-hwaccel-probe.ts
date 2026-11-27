@@ -103,7 +103,7 @@ type CachedProbe = z.infer<typeof cachedProbeSchema>;
 
 const probeInFlight = createKeyedJoiner<MpvHardwareAccelProbe>({ whenAbandoned: "finish" });
 
-function emptyProbe(status: MpvHwaccelProbeStatus): MpvHardwareAccelProbe {
+export function emptyMpvHardwareAccelProbe(status: MpvHwaccelProbeStatus): MpvHardwareAccelProbe {
   return {
     probed: false,
     drivers: [],
@@ -326,7 +326,7 @@ async function runFreshProbe(
 
   const helpCompleted = !help.timedOut && !help.spawnFailed && help.exitCode !== null;
   const decodeCompleted = !decode.timedOut && !decode.spawnFailed && decode.exitCode !== null;
-  if (!helpCompleted || !decodeCompleted) return emptyProbe("probe-failed");
+  if (!helpCompleted || !decodeCompleted) return emptyMpvHardwareAccelProbe("probe-failed");
 
   const drivers = parseGpuDriversFromHwdecHelp(`${help.stdout}\n${help.stderr}`);
   // mpv routes these vd lines to stdout on some builds and stderr on others;
@@ -356,7 +356,7 @@ export async function probeMpvHardwareAcceleration(
   deps: MpvHwaccelProbeDeps = {},
 ): Promise<MpvHardwareAccelProbe> {
   const invocation = invocationFor(deps);
-  if (!invocation) return emptyProbe("mpv-not-found");
+  if (!invocation) return emptyMpvHardwareAccelProbe("mpv-not-found");
 
   const platform = deps.platform ?? process.platform;
   const key = probeKey(invocation, platform);
@@ -372,7 +372,7 @@ export async function probeMpvHardwareAcceleration(
       if (result.probed) await writeDiskCache(cacheFileFor(deps), key, result);
       return result;
     } catch {
-      return emptyProbe("probe-failed");
+      return emptyMpvHardwareAccelProbe("probe-failed");
     }
   });
 }
@@ -385,8 +385,10 @@ export async function readCachedMpvHardwareAcceleration(
   deps: MpvHwaccelProbeDeps = {},
 ): Promise<MpvHardwareAccelProbe> {
   const invocation = invocationFor(deps);
-  if (!invocation) return emptyProbe("mpv-not-found");
+  if (!invocation) return emptyMpvHardwareAccelProbe("mpv-not-found");
   const key = probeKey(invocation, deps.platform ?? process.platform);
   const now = (deps.now ?? Date.now)();
-  return (await readDiskCache(cacheFileFor(deps), key, now)) ?? emptyProbe("not-probed");
+  return (
+    (await readDiskCache(cacheFileFor(deps), key, now)) ?? emptyMpvHardwareAccelProbe("not-probed")
+  );
 }

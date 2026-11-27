@@ -155,6 +155,27 @@ Configure in `/settings` or `config.json`:
 
 See [Customization](/docs/users/customization) and [Providers](/docs/users/providers).
 
+## Hardware decoding and sync recovery
+
+On desktop mpv, `mpvHwdec` controls hardware video decoding. The default
+`auto` asks mpv once (with a small bounded probe, cached for seven days) which
+safe copy-back decoder actually works on the machine, then uses that exact
+decoder for playback. Linux/Unix decisions prefer VA-API/NVDEC/Vulkan-class
+backends, macOS prefers VideoToolbox, and Windows prefers D3D11VA-class
+backends; explicit mpv decoder names are also accepted. `auto-safe` and
+`auto-copy` use mpv's automatic modes without pinning the probed decoder, and
+`off` leaves mpv completely alone. If mpv is missing, the probe cannot run, or
+no GPU path proves usable, playback falls back to mpv's own default rather
+than failing. Settings → Playback, `config.json`, or `--mpv-hwdec` can change
+or disable the behavior.
+
+Supervised persistent playback also watches mpv's audio/video drift. Brief
+drift is left to mpv, but drift larger than about 0.3 seconds sustained across
+several samples triggers one corrective seek at the current position. It does
+not run while you pause or seek, during reconnects, or for live streams, and
+it waits five seconds between corrections. Set `mpvAvsyncRecovery` to `false`
+or use `--mpv-avsync-recovery off` to turn it off.
+
 ## Autoplay and auto-skip
 
 | Setting                   | Effect                                                |

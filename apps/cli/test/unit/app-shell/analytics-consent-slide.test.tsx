@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { SetupShell } from "@/app-shell/setup-shell";
 import { AnalyticsScreen } from "@/app-shell/setup/AnalyticsScreen";
+import { emptyMpvHardwareAccelProbe } from "@/infra/player/mpv-hwaccel-probe";
 import type { CapabilitySnapshot } from "@/ui";
 import React from "react";
 
@@ -32,6 +33,7 @@ const READY: CapabilitySnapshot = {
     available: true,
     reason: "test fixture",
   },
+  mpvHardwareAccel: emptyMpvHardwareAccelProbe("not-probed"),
   issues: [],
 };
 

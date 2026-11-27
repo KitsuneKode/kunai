@@ -61,6 +61,48 @@ If reconnect **succeeds**, the current `play()` promise **does not resolve** yet
 
 If reconnect **fails** or limits are hit, the cycle ends and the usual `PlaybackResult` is returned.
 
+## Hardware decode probe and selection
+
+Hardware acceleration is decided once per playback launch, not at startup and
+not by probing on every file load in the persistent chain. `PlayerServiceImpl`
+reads the configured `mpvHwdec` mode into `MpvRuntimeOptions`; when the mode
+needs machine evidence (`auto`, `auto-safe`, or `auto-copy`), mpv startup calls
+`infra/player/mpv-hwaccel-probe.ts` before building argv. The probe is bounded
+(1.5 s for `--hwdec=help`, 3 s for a tiny stdin-fed decode), joined across
+concurrent callers, and cached for seven days under the OS cache directory,
+keyed by platform and the mpv invocation shape. Setup and doctor call
+`readCachedMpvHardwareAcceleration()` only, so they report the last result
+without spawning mpv.
+
+A successful probe returns the exact decoder mpv selected for `auto-safe`
+(such as `nvdec-copy` or `videotoolbox-copy`) and Kunai passes that as
+`--hwdec=<decoder>` for both one-shot and persistent playback. If mpv is
+missing, times out, lists no GPU decoder, or cannot decode the sample, Kunai
+emits no hardware-decoder argument and leaves mpv's own default intact. `off`
+also emits no override. Explicit modes such as `vaapi` or `videotoolbox` are
+forwarded directly and are the user's responsibility. Platform naming is a
+preference order, not a hard-coded host result: Linux/Unix prefers `vaapi`,
+`nvdec`, `vulkan`, `vdpau`, `qsv`; macOS prefers `videotoolbox`; Windows
+prefers `d3d11va`, `qsv`, `nvdec`, `dxva2`.
+
+## A/V-sync drift recovery
+
+mpv exposes audio/video clock drift as the `avsync` property. The persistent
+session observes it along with `pause` and `seeking`. Drift inside ±0.3 s is
+left to mpv's own correction. Sustained drift outside that band — at least
+three samples spanning 300 ms — triggers one corrective absolute seek to the
+current playback position. The seek resets mpv's decoder/audio clocks without
+tearing down the stream, unlike an in-process reconnect.
+
+Resync is deliberately conservative. It is suppressed while paused, seeking,
+reconnecting, live, retired, missing IPC, or already in flight, and one
+correction cools down for five seconds before another can run. Non-finite or
+in-range drift clears accumulated evidence, and starting a new cycle resets the
+tracker. The feature is controlled by `mpvAvsyncRecovery` (default `true`) and
+can be disabled from Settings, `config.json`, or `--mpv-avsync-recovery off`
+for a run. One-shot playback does not run this recovery because there is no
+long-lived IPC supervisor after launch.
+
 ## Limits and backoff
 
 - **`mpvInProcessStreamReconnectMaxAttempts`** (default `1`, and `1` is also the

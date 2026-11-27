@@ -1,3 +1,5 @@
+import { MPV_HWDEC_MODES } from "@kunai/config";
+
 import type { KitsuneConfig } from "./ConfigService";
 
 export type ConfigSection =
@@ -125,6 +127,24 @@ export const CONFIG_METADATA = [
     privacy: "local",
     editable: true,
     options: ["balanced", "fast", "quality-first"],
+  },
+  {
+    key: "mpvHwdec",
+    label: "Hardware decoding",
+    section: "playback",
+    effect: "next-playback",
+    privacy: "local",
+    editable: true,
+    options: [...MPV_HWDEC_MODES],
+  },
+  {
+    key: "mpvAvsyncRecovery",
+    label: "A/V sync recovery",
+    section: "playback",
+    effect: "next-playback",
+    privacy: "local",
+    editable: true,
+    options: ["on", "off"],
   },
   {
     key: "prePlayConfirm",

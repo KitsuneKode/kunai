@@ -7,6 +7,8 @@ const BASE_LANE = { audio: "original", subtitle: "en", quality: "best" };
 const baseConfig = {
   zenMode: false,
   minimalMode: false,
+  mpvHwdec: "auto" as const,
+  mpvAvsyncRecovery: true,
   animeLanguageProfile: { ...BASE_LANE },
   seriesLanguageProfile: { ...BASE_LANE },
   movieLanguageProfile: { ...BASE_LANE },
@@ -100,5 +102,20 @@ describe("resolveSessionConfigOverrides", () => {
     ).toEqual({
       seriesLanguageProfile: { ...BASE_LANE, quality: "best" },
     });
+  });
+
+  test("--mpv-hwdec and --mpv-avsync-recovery are transient playback overrides", () => {
+    expect(
+      resolveSessionConfigOverrides(
+        { zen: false, minimal: false, mpvHwdec: "off", mpvAvsyncRecovery: false },
+        off,
+      ),
+    ).toEqual({ mpvHwdec: "off", mpvAvsyncRecovery: false });
+    expect(
+      resolveSessionConfigOverrides(
+        { zen: false, minimal: false, mpvHwdec: "auto", mpvAvsyncRecovery: true },
+        off,
+      ),
+    ).toEqual({});
   });
 });

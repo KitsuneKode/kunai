@@ -2,8 +2,13 @@ import { describe, expect, test } from "bun:test";
 
 import type { PlaybackGeneration } from "@/domain/playback/playback-generation";
 import type { PlaybackResult, StreamInfo } from "@/domain/types";
+import {
+  emptyMpvHardwareAccelProbe,
+  type MpvHardwareAccelProbe,
+} from "@/infra/player/mpv-hwaccel-probe";
 import { MpvLaunchError } from "@/infra/player/mpv-launch-error";
 import { registerMpvProcess } from "@/infra/player/mpv-process-registry";
+import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
 import { PlaybackAbortedError } from "@/infra/player/playback-aborted";
 import type { ActivePlayerControl } from "@/infra/player/PlayerControlService";
 import type {
@@ -14,6 +19,7 @@ import type {
 import { PlayerServiceImpl } from "@/infra/player/PlayerServiceImpl";
 import type { launchMpv } from "@/mpv";
 import type { DiagnosticEventInput } from "@/services/diagnostics/diagnostic-event";
+import type { MpvHwdecMode } from "@kunai/config";
 
 /** Reaches the generation seams the service owns privately. */
 type GenerationInternals = {
@@ -77,6 +83,8 @@ function createService(
       getActive?: () => ActivePlayerControl | null;
     };
     launchMpv?: typeof launchMpv;
+    config?: unknown;
+    probeMpvHwdec?: () => Promise<MpvHardwareAccelProbe>;
   } = {},
 ) {
   const loggerEntries: Array<{
@@ -1073,3 +1081,110 @@ function nextTurn(): Promise<void> {
     setTimeout(resolve, 0);
   });
 }
+
+describe("PlayerServiceImpl hardware decode selection", () => {
+  function playbackConfig(mpHwdec: MpvHwdecMode) {
+    return {
+      startupPriority: "balanced",
+      hdrMode: "auto",
+      mpvHwdec: mpHwdec,
+      mpvAvsyncRecovery: true,
+      getRaw: () => ({}),
+    };
+  }
+
+  async function launchWithHwdec(configMode: MpvHwdecMode, probe: MpvHardwareAccelProbe) {
+    const events: DiagnosticEventInput[] = [];
+    let launchedMpv: MpvRuntimeOptions | undefined;
+    let probeRuns = 0;
+    const { service } = createService(events, {
+      config: playbackConfig(configMode),
+      probeMpvHwdec: async () => {
+        probeRuns += 1;
+        return probe;
+      },
+      launchMpv: (async (options) => {
+        launchedMpv = options.mpv;
+        return createPlaybackResult();
+      }) as typeof launchMpv,
+    });
+
+    await service.play(createStream(), { url: createStream().url, displayTitle: "Episode" });
+    return { launchedMpv, probeRuns };
+  }
+
+  test("auto mode uses the bounded probe's exact backend", async () => {
+    const probe = {
+      ...emptyMpvHardwareAccelProbe("hardware"),
+      probed: true,
+      autoSafeOk: true,
+      autoSafeDriver: "nvdec-copy",
+      probedAt: 1,
+      fromCache: true,
+    };
+    const { launchedMpv, probeRuns } = await launchWithHwdec("auto", probe);
+    expect(probeRuns).toBe(1);
+    expect(launchedMpv).toMatchObject({
+      hwdecMode: "auto",
+      hwdecBackend: "nvdec-copy",
+    });
+  });
+
+  test("auto mode emits no hwdec backend when the probe is absent or negative", async () => {
+    const { launchedMpv, probeRuns } = await launchWithHwdec(
+      "auto",
+      emptyMpvHardwareAccelProbe("not-probed"),
+    );
+    expect(probeRuns).toBe(1);
+    expect(launchedMpv).toMatchObject({ hwdecMode: "auto" });
+    expect(launchedMpv?.hwdecBackend).toBeUndefined();
+  });
+
+  test("mpv automatic and explicit backend modes do not run Kunai's probe", async () => {
+    for (const mode of ["auto-safe", "auto-copy", "videotoolbox"] as const) {
+      const { launchedMpv, probeRuns } = await launchWithHwdec(
+        mode,
+        emptyMpvHardwareAccelProbe("not-probed"),
+      );
+      expect(probeRuns).toBe(0);
+      expect(launchedMpv).toMatchObject({ hwdecMode: mode });
+      expect(launchedMpv?.hwdecBackend).toBeUndefined();
+    }
+  });
+
+  test("auto mode remembers one probe result across playback launches", async () => {
+    const events: DiagnosticEventInput[] = [];
+    let probeRuns = 0;
+    const probe = {
+      ...emptyMpvHardwareAccelProbe("hardware"),
+      probed: true,
+      autoSafeOk: true,
+      autoSafeDriver: "nvdec-copy",
+    };
+    const { service } = createService(events, {
+      config: playbackConfig("auto"),
+      probeMpvHwdec: async () => {
+        probeRuns += 1;
+        return probe;
+      },
+      launchMpv: (async () => createPlaybackResult()) as typeof launchMpv,
+    });
+
+    await service.play(createStream(), { url: createStream().url, displayTitle: "One" });
+    await service.play(createStream(), { url: createStream().url, displayTitle: "Two" });
+    expect(probeRuns).toBe(1);
+  });
+
+  test("off mode never runs the probe and force-disables hardware decode downstream", async () => {
+    const probe = {
+      ...emptyMpvHardwareAccelProbe("hardware"),
+      probed: true,
+      autoSafeOk: true,
+      autoSafeDriver: "nvdec-copy",
+    };
+    const { launchedMpv, probeRuns } = await launchWithHwdec("off", probe);
+    expect(probeRuns).toBe(0);
+    expect(launchedMpv).toMatchObject({ hwdecMode: "off" });
+    expect(launchedMpv?.hwdecBackend).toBeUndefined();
+  });
+});

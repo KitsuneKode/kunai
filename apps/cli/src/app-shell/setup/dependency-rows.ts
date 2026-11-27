@@ -74,6 +74,45 @@ export function buildDependencyRows(
       : null),
   });
 
+  const hw = snapshot.mpvHardwareAccel;
+  const hwUnavailable = !snapshot.mpv || hw.status === "mpv-not-found";
+  const hwDegraded = hw.status === "no-hardware" || hw.status === "probe-failed";
+  rows.push({
+    id: "mpv-hwaccel",
+    name: "mpv hwdec",
+    scope: "always",
+    state: hwUnavailable
+      ? snapshot.mpvRequired
+        ? "degraded"
+        : "ok"
+      : hw.status === "hardware" || hw.status === "not-probed"
+        ? "ok"
+        : hwDegraded
+          ? "degraded"
+          : "ok",
+    role: "playback · GPU decode",
+    detail: hwUnavailable
+      ? snapshot.mpvRequired
+        ? "skipped — mpv not found"
+        : "not required by selected player"
+      : hw.status === "hardware"
+        ? `auto-safe ok (${hw.autoSafeDriver})${hw.fromCache ? " · cached" : ""}`
+        : hw.status === "no-hardware"
+          ? hw.drivers.length
+            ? `no usable auto-safe path · help lists ${hw.drivers.join(", ")}`
+            : "no usable auto-safe path"
+          : hw.status === "probe-failed"
+            ? "probe failed or timed out · playback uses mpv default"
+            : "not probed yet · first playback or kunai doctor verifies",
+    fix: null,
+    ...(hw.status === "no-hardware" || hw.status === "probe-failed"
+      ? {
+          consequence:
+            "Hardware decoding is optional; playback falls back to mpv's software/default decode path.",
+        }
+      : null),
+  });
+
   const ytDlpIssue = issue("yt-dlp-missing");
   rows.push({
     id: "yt-dlp",

@@ -8,6 +8,7 @@ import {
   type SetupInitialState,
   type SetupPrefs,
 } from "@/app-shell/setup-shell";
+import { emptyMpvHardwareAccelProbe } from "@/infra/player/mpv-hwaccel-probe";
 import type { CapabilitySnapshot } from "@/ui";
 import React from "react";
 
@@ -45,6 +46,7 @@ const READY: CapabilitySnapshot = {
     available: false,
     reason: "test fixture",
   },
+  mpvHardwareAccel: emptyMpvHardwareAccelProbe("not-probed"),
   issues: [],
 };
 

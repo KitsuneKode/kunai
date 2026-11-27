@@ -141,7 +141,7 @@ export async function runSetupWizard({
     downloadPath: current.downloadPath || defaultDownloadPath,
     // `[r]` re-probes rather than making the user quit and relaunch after
     // installing something in another pane.
-    onRecheck: () => probeCapabilities(),
+    onRecheck: () => probeCapabilities({ probeMpvHwaccel: true }),
     // The controls start from what is actually configured, so completing the
     // wizard rewrites only what the screens showed (#228).
     initial: wizardInitialStateFromConfig(current, snapshot.ytDlp),

@@ -31,6 +31,31 @@ export function isHdrMode(value: unknown): value is HdrMode {
   return typeof value === "string" && (HDR_MODES as readonly string[]).includes(value);
 }
 
+/**
+ * Hardware decoding policy for managed mpv playback. `auto` is Kunai's
+ * probe-guided default; `auto-safe` and `auto-copy` are mpv's own automatic
+ * policies; the backend names are explicit mpv decoders.
+ */
+export const MPV_HWDEC_MODES = [
+  "auto",
+  "auto-safe",
+  "auto-copy",
+  "off",
+  "vaapi",
+  "nvdec",
+  "vdpau",
+  "vulkan",
+  "qsv",
+  "videotoolbox",
+  "d3d11va",
+  "dxva2",
+] as const;
+export type MpvHwdecMode = (typeof MPV_HWDEC_MODES)[number];
+
+export function isMpvHwdecMode(value: unknown): value is MpvHwdecMode {
+  return typeof value === "string" && (MPV_HWDEC_MODES as readonly string[]).includes(value);
+}
+
 /** Saved player when `--player` is not given; VLC is an Android handoff target. */
 export const PLAYER_PREFERENCES = ["auto", "mpv", "vlc"] as const;
 export type PlayerPreference = (typeof PLAYER_PREFERENCES)[number];
@@ -214,6 +239,14 @@ export interface KitsuneConfig {
    */
   providerDns: "doh" | "system";
   hdrMode: HdrMode;
+  /**
+   * Managed mpv hardware decoding. `auto` uses the cached probe's exact backend
+   * when one is known to work and otherwise leaves mpv/user configuration alone;
+   * `off` force-disables hardware decoding for Kunai-launched mpv.
+   */
+  mpvHwdec: MpvHwdecMode;
+  /** Correct sustained mpv A/V drift with a bounded same-position resync seek. */
+  mpvAvsyncRecovery: boolean;
   /** `--player` wins; this is the choice when the flag is absent. */
   player: PlayerPreference;
   offlineArtworkCacheEnabled: boolean;

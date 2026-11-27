@@ -17,6 +17,21 @@ describe("runCapabilities", () => {
     expect(report.themes).toContain("ember-dusk");
     expect(report.themes).toContain("nord");
     expect(report.hdrModes).toEqual(["auto", "passthrough", "tone-map", "sdr-only"]);
+    expect(report.mpvHwdecModes).toEqual([
+      "auto",
+      "auto-safe",
+      "auto-copy",
+      "off",
+      "vaapi",
+      "nvdec",
+      "vdpau",
+      "vulkan",
+      "qsv",
+      "videotoolbox",
+      "d3d11va",
+      "dxva2",
+    ]);
+    expect(report.mpvAvsyncRecoveryValues).toEqual(["on", "off"]);
     expect(report.subcommands).toContain("capabilities");
     expect(report.providerHotfixManifest.signatureAlgorithm).toBe("Ed25519");
   });

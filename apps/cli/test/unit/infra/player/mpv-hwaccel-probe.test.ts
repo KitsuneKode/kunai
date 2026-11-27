@@ -243,6 +243,59 @@ describe("probeMpvHardwareAcceleration", () => {
     });
   });
 
+  test("concurrent probes for the same mpv invocation join one in-flight pair of spawns", async () => {
+    let releaseProbe!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseProbe = resolve;
+    });
+    const fixture = createRunProcess();
+    const gatedRunProcess: MpvHwaccelRunProcess = async (argv, options) => {
+      const result = await fixture.runProcess(argv, options);
+      await gate;
+      return result;
+    };
+    const deps = depsFor(gatedRunProcess);
+
+    const first = probeMpvHardwareAcceleration(deps);
+    const second = probeMpvHardwareAcceleration(deps);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fixture.calls).toHaveLength(2);
+
+    releaseProbe();
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    expect(firstResult.status).toBe("hardware");
+    expect(secondResult.status).toBe("hardware");
+    expect(fixture.calls).toHaveLength(2);
+  });
+
+  test("the cache key includes platform and mpv invocation identity", async () => {
+    await withCacheFile(async (cacheFile) => {
+      const linuxFixture = createRunProcess();
+      const linuxDeps = depsFor(linuxFixture.runProcess, { cacheFile, platform: "linux" });
+      await probeMpvHardwareAcceleration(linuxDeps);
+      expect(linuxFixture.calls).toHaveLength(2);
+
+      const windowsFixture = createRunProcess();
+      const windowsDeps = depsFor(windowsFixture.runProcess, { cacheFile, platform: "win32" });
+      const windows = await probeMpvHardwareAcceleration(windowsDeps);
+      expect(windows.fromCache).toBe(false);
+      expect(windowsFixture.calls).toHaveLength(2);
+    });
+  });
+
+  test("refreshCache bypasses a fresh disk entry for explicit diagnostics", async () => {
+    await withCacheFile(async (cacheFile) => {
+      const fixture = createRunProcess();
+      const deps = depsFor(fixture.runProcess, { cacheFile });
+      await probeMpvHardwareAcceleration(deps);
+      expect(fixture.calls).toHaveLength(2);
+
+      const refreshed = await probeMpvHardwareAcceleration({ ...deps, refreshCache: true });
+      expect(refreshed.fromCache).toBe(false);
+      expect(fixture.calls).toHaveLength(4);
+    });
+  });
+
   test("cache-only reads never spawn mpv", async () => {
     await withCacheFile(async (cacheFile) => {
       const fixture = createRunProcess();

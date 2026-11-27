@@ -891,6 +891,19 @@ export function buildMpvArgs(
   if (demuxerLavfOptions) {
     args.push(`--demuxer-lavf-o=${demuxerLavfOptions}`);
   }
+  if (config?.mpv?.hwdecMode === "off") {
+    args.push("--hwdec=no");
+  } else if (config?.mpv?.hwdecMode === "auto") {
+    if (config.mpv.hwdecBackend) {
+      // Probe output is exact mpv vocabulary (including `-copy` backends), not a
+      // user-supplied option string; emit it as one argv token.
+      args.push(`--hwdec=${config.mpv.hwdecBackend}`);
+    }
+  } else if (config?.mpv?.hwdecMode) {
+    // The config union is closed mpv vocabulary, so this remains one safe argv
+    // token rather than a user-controlled option string.
+    args.push(`--hwdec=${config.mpv.hwdecMode}`);
+  }
   if (config?.mpv?.clean || config?.mpv?.noUserConfig) args.push("--no-config");
   const hdrArgs = resolveMpvHdrArgs({
     hdrMode: config?.mpv?.hdrMode,

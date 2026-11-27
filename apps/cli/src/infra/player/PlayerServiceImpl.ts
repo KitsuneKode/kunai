@@ -37,6 +37,7 @@ import {
 } from "./hls-relay";
 import { resolveLocalPlaybackPolicy, type LocalPlaybackPolicyInput } from "./local-playback-policy";
 import { discoverMpvInvocation } from "./mpv-discovery";
+import { type MpvHardwareAccelProbe, probeMpvHardwareAcceleration } from "./mpv-hwaccel-probe";
 import { classifyMpvLaunchError } from "./mpv-launch-error";
 import { killActiveMpvProcessesSync as killRegisteredMpvProcesses } from "./mpv-process-registry";
 import type { MpvRuntimeOptions } from "./mpv-runtime-options";
@@ -83,6 +84,7 @@ export class PlayerServiceImpl implements PlayerService {
   private currentGeneration: PlaybackGeneration = INITIAL_PLAYBACK_GENERATION;
   /** Which generation installed the control the app is currently holding. */
   private activeControlGeneration: PlaybackGeneration | null = null;
+  private hwdecProbeResult: Promise<MpvHardwareAccelProbe> | null = null;
 
   constructor(
     private deps: {
@@ -95,8 +97,44 @@ export class PlayerServiceImpl implements PlayerService {
       presentation?: PlayerPresentationPort;
       /** Deterministic process-boundary seam for player lifecycle tests. */
       launchMpv?: typeof launchMpv;
+      /** Deterministic seam for the bounded hardware decode probe used before playback. */
+      probeMpvHwdec?: () => Promise<MpvHardwareAccelProbe>;
     },
   ) {}
+
+  private probeHwdecOncePerService(): Promise<MpvHardwareAccelProbe> {
+    // The probe itself joins concurrent callers and reads a seven-day disk
+    // cache before spawning mpv. Remembering even a negative result here is
+    // intentional: a transient probe failure must not add two mpv spawns to
+    // every playback launch in the same app session.
+    this.hwdecProbeResult ??= (this.deps.probeMpvHwdec ?? probeMpvHardwareAcceleration)();
+    return this.hwdecProbeResult;
+  }
+
+  /**
+   * Compose the mpv runtime flags for one launch. In `auto` mode the bounded
+   * probe runs on the first playback (or reads its disk cache); a missing,
+   * expired, or negative result emits no `--hwdec` flag so mpv/user
+   * configuration keeps its own default.
+   */
+  private async mpvRuntimeOptions(): Promise<MpvRuntimeOptions> {
+    const options: MpvRuntimeOptions = {
+      ...this.deps.mpv,
+      startupPriority: this.deps.config.startupPriority,
+      hdrMode: this.deps.config.hdrMode,
+      hwdecMode: this.deps.config.mpvHwdec,
+    };
+    if (options.hwdecMode !== "auto") return options;
+    try {
+      const probe = await this.probeHwdecOncePerService();
+      if (probe.autoSafeOk && probe.autoSafeDriver) {
+        return { ...options, hwdecBackend: probe.autoSafeDriver };
+      }
+    } catch {
+      // Probing is best-effort; playback must fall back to mpv defaults.
+    }
+    return options;
+  }
 
   beginShutdown(): void {
     this.shuttingDown = true;
@@ -665,11 +703,7 @@ export class PlayerServiceImpl implements PlayerService {
       onControlReady: (control) => this.setActiveControlFor(localGeneration, control),
       onPlayerReady: options.onPlayerReady,
       onPlaybackEvent: publish,
-      mpv: {
-        ...this.deps.mpv,
-        startupPriority: this.deps.config.startupPriority,
-        hdrMode: this.deps.config.hdrMode,
-      },
+      mpv: await this.mpvRuntimeOptions(),
     });
   }
 
@@ -747,11 +781,7 @@ export class PlayerServiceImpl implements PlayerService {
         },
         onPlayerReady: options.onPlayerReady,
         onPlaybackEvent: publish,
-        mpv: {
-          ...this.deps.mpv,
-          startupPriority: this.deps.config.startupPriority,
-          hdrMode: this.deps.config.hdrMode,
-        },
+        mpv: await this.mpvRuntimeOptions(),
       });
     } finally {
       options.abortSignal?.removeEventListener("abort", stopOnAbort);
@@ -799,6 +829,7 @@ export class PlayerServiceImpl implements PlayerService {
       skipPreview: options.skipPreview,
       skipCredits: options.skipCredits,
       autoNextEnabled: true,
+      avsyncRecovery: this.deps.config.mpvAvsyncRecovery,
       onPlayerReady: options.onPlayerReady,
       onPlaybackEvent: publish,
       onMpvActionRequest: (action: MpvRequestedAction) => {
@@ -814,11 +845,7 @@ export class PlayerServiceImpl implements PlayerService {
       const creation = PersistentMpvSession.create({
         stream,
         options: sharedOptions,
-        mpv: {
-          ...this.deps.mpv,
-          startupPriority: this.deps.config.startupPriority,
-          hdrMode: this.deps.config.hdrMode,
-        },
+        mpv: await this.mpvRuntimeOptions(),
         kitsuneConfig: this.deps.config.getRaw(),
         onControlReady: (control) => this.setActiveControlFor(generation, control),
       });

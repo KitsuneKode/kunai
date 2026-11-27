@@ -35,6 +35,7 @@ import {
   isStremioPlayback,
 } from "@/services/playback/stream-health-check";
 import { MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS } from "@kunai/config";
+import { isJsonNumber } from "@kunai/types";
 
 import { whichLive } from "../os/which";
 import {
@@ -115,6 +116,10 @@ export {
 
 const IN_PROCESS_RECONNECT_BASE_BACKOFF_MS = 1_800;
 const IN_PROCESS_RECONNECT_MAX_BACKOFF_MS = 16_000;
+const AVSYNC_DRIFT_LIMIT_SECONDS = 0.3;
+const AVSYNC_DRIFT_SAMPLES_REQUIRED = 3;
+const AVSYNC_DRIFT_SUSTAINED_MS = 300;
+const AVSYNC_RESYNC_COOLDOWN_MS = 5_000;
 
 /**
  * Upper bound on a reconnect budget handed to `create` in a raw config object.
@@ -156,6 +161,8 @@ export type PlayerCycleOptions = {
   skipPreview?: boolean;
   skipCredits?: boolean;
   autoNextEnabled?: boolean;
+  /** When false, sustained mpv A/V drift is observed but never corrected by Kunai. */
+  avsyncRecovery?: boolean;
   onPlayerReady?: () => void;
   onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;
   /** Aborts addon preflight waits before the file is handed to mpv. */
@@ -327,6 +334,12 @@ export class PersistentMpvSession {
   private reconnectTryCount = 0;
   private reconnectBackoffUntilMs = 0;
   private reconnectInFlight = false;
+  private isPaused = false;
+  private isSeeking = false;
+  private avsyncOverLimitSamples = 0;
+  private avsyncDriftFirstObservedAt = 0;
+  private lastAvsyncResyncAt: number | null = null;
+  private avsyncResyncInFlight = false;
   private pendingInProcessReconnect: {
     seekSeconds: number;
     shouldSeek: boolean;
@@ -910,6 +923,15 @@ export class PersistentMpvSession {
         openedIpcSession = await this.runtime.openIpcSession({
           endpoint: this.ipcEndpoint,
           onPropertyUpdate: ({ name, value, observedAt }) => {
+            if (name === "pause") this.isPaused = value === true;
+            if (name === "seeking") this.isSeeking = value === true;
+            if (name === "avsync") {
+              if (isJsonNumber(value) && Number.isFinite(value)) {
+                this.noteAvsyncDrift(value, observedAt);
+              } else {
+                this.resetAvsyncDrift();
+              }
+            }
             this.propertyRouter.handlePropertyUpdate({ name, value, observedAt });
           },
           onEndFile: ({ reason, fileError, observedAt }) => {
@@ -1072,11 +1094,79 @@ export class PersistentMpvSession {
     });
   }
 
+  private resetAvsyncDrift(): void {
+    this.avsyncOverLimitSamples = 0;
+    this.avsyncDriftFirstObservedAt = 0;
+  }
+
+  /**
+   * mpv's `avsync` property is seconds of audio/video displacement. Brief drift
+   * is normal while a stream starts or seeks; sustained drift usually means the
+   * demuxer/decoder pipeline has wedged. A same-position seek rebuilds that
+   * pipeline without changing what the user is watching. The sample count,
+   * sustained window, and cooldown keep this from becoming a seek loop.
+   */
+  private noteAvsyncDrift(driftSeconds: number, observedAt: number): void {
+    if (this.currentCycleOptions().avsyncRecovery === false) {
+      this.resetAvsyncDrift();
+      return;
+    }
+    if (Math.abs(driftSeconds) <= AVSYNC_DRIFT_LIMIT_SECONDS) {
+      this.resetAvsyncDrift();
+      return;
+    }
+    if (
+      this.isPaused ||
+      this.isSeeking ||
+      this.reconnectInFlight ||
+      this.playbackStream.isLive ||
+      this.avsyncResyncInFlight ||
+      this.retired ||
+      !this.ipcSession
+    ) {
+      this.resetAvsyncDrift();
+      return;
+    }
+
+    const now = (this.runtime.now ?? Date.now)();
+    if (
+      this.lastAvsyncResyncAt !== null &&
+      now - this.lastAvsyncResyncAt < AVSYNC_RESYNC_COOLDOWN_MS
+    ) {
+      return;
+    }
+    if (this.avsyncDriftFirstObservedAt === 0) this.avsyncDriftFirstObservedAt = observedAt;
+    this.avsyncOverLimitSamples += 1;
+    if (
+      this.avsyncOverLimitSamples < AVSYNC_DRIFT_SAMPLES_REQUIRED ||
+      observedAt - this.avsyncDriftFirstObservedAt < AVSYNC_DRIFT_SUSTAINED_MS
+    ) {
+      return;
+    }
+
+    const position = this.currentPositionSeconds;
+    if (position <= 0) return;
+    this.resetAvsyncDrift();
+    this.lastAvsyncResyncAt = now;
+    this.avsyncResyncInFlight = true;
+    const session = this.ipcSession;
+    void session
+      .send(["seek", position, "absolute"], 1_000)
+      .catch(() => {})
+      .finally(() => {
+        this.avsyncResyncInFlight = false;
+      });
+  }
+
   private resetCycleState(): void {
     this.watchdog?.reset();
     this.reconnectTryCount = 0;
     this.reconnectBackoffUntilMs = 0;
     this.reconnectInFlight = false;
+    this.isPaused = false;
+    this.isSeeking = false;
+    this.resetAvsyncDrift();
+    this.lastAvsyncResyncAt = null;
     this.pendingInProcessReconnect = null;
     this.currentPositionSeconds = 0;
     this.skippedSegments = new Set<string>();
