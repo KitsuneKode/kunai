@@ -5,10 +5,13 @@ export const VIDROCK_PROVIDER_ID = "vidrock" as const;
 export const vidrockManifest = defineProviderManifest({
   id: VIDROCK_PROVIDER_ID,
   displayName: "VidRock",
-  aliases: ["Granite", "P-Stream"],
+  aliases: ["Granite"],
   description: "Backup source for movies and series with direct video files",
   domain: "vidrock.net",
   recommended: false,
+  // 2026-11-27 live audit (.docs/provider-dossiers/usage-matrix.md): 4/4 API
+  // resolves, 0/4 stream probes reachable. Drop this the day a probe passes.
+  knownIssue: { since: "2026-11-27", summary: "streams answer HTTP 502" },
   mediaKinds: ["movie", "series"],
   capabilities: ["source-resolve", "multi-source", "quality-ranked"],
   runtimePorts: [

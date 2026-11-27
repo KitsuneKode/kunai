@@ -784,47 +784,79 @@ describe("panel-data", () => {
     ]);
   });
 
-  test("buildProviderPickerOptions surfaces effective health badges", () => {
+  test("buildProviderPickerOptions states each provider's health once, as the row badge", () => {
+    const now = new Date("2026-11-27T12:00:00.000Z");
+    const anime = (id: string, name: string) => ({
+      id,
+      name,
+      description: "Anime provider",
+      isAnimeProvider: true,
+      isYoutubeProvider: false,
+      providerLane: "anime" as const,
+    });
     const options = buildProviderPickerOptions({
       currentProvider: "miruro",
       providers: [
-        {
-          id: "miruro",
-          name: "Miruro",
-          description: "Anime provider",
-          isAnimeProvider: true,
-          isYoutubeProvider: false,
-          providerLane: "anime",
-        },
-        {
-          id: "allanime",
-          name: "AllAnime",
-          description: "Anime provider",
-          isAnimeProvider: true,
-          isYoutubeProvider: false,
-          providerLane: "anime",
-        },
+        anime("miruro", "Miruro"),
+        anime("allanime", "AllAnime"),
+        anime("hianime", "HiAnime"),
       ],
-      getProviderHealth: (providerId) => ({
-        providerId,
-        status: "down",
-        checkedAt: new Date().toISOString(),
-        consecutiveFailures: 7,
-      }),
+      getProviderHealth: (providerId) =>
+        providerId === "hianime"
+          ? undefined
+          : {
+              providerId,
+              status: "down",
+              checkedAt: "2026-11-27T11:58:00.000Z",
+              consecutiveFailures: 7,
+            },
+      now,
     });
 
-    const miruro = options.find((option) => option.value === "miruro");
-    const allanime = options.find((option) => option.value === "allanime");
-    expect(miruro?.detail).toContain("Health:");
-    expect(miruro?.detail).toContain("down");
-    // The playing provider is running, not skipped — the auto-fallback suffix
-    // would be a false statement next to "current", on both label and detail.
+    // Config order is the caller's and survives: a down provider is not re-sorted.
+    expect(options.map((option) => option.value)).toEqual(["miruro", "allanime", "hianime"]);
+
+    const [miruro, allanime, hianime] = options;
+    expect(miruro?.badge).toBe("down · 7 failures · 2m ago");
+    expect(miruro?.tone).toBe("error");
+    // The state lives in the badge alone; the name and detail no longer repeat it.
+    expect(miruro?.label).not.toContain("down");
+    expect(miruro?.detail).not.toContain("Health:");
+    // The playing provider is running, not skipped — the auto-fallback note
+    // would be a false statement next to "current".
     expect(miruro?.detail).not.toContain("skipped in auto-fallback");
-    expect(miruro?.label).toContain("down");
-    expect(miruro?.label).not.toContain("skipped in auto-fallback");
-    // A non-current provider keeps the honest auto-fallback explanation.
-    expect(allanime?.detail).toContain("skipped in auto-fallback");
-    expect(allanime?.label).toContain("skipped in auto-fallback");
+    expect(miruro?.previewBody).toContain("in use now");
+    // A non-current provider keeps the honest auto-fallback explanation, first.
+    expect(allanime?.detail?.startsWith("skipped in auto-fallback")).toBe(true);
+    expect(allanime?.previewBody).toContain("Enter still tries it");
+    // No record is its own state, not an empty row that reads as fine.
+    expect(hianime?.badge).toBe("not checked yet");
+    expect(hianime?.tone).toBe("neutral");
+  });
+
+  test("buildProviderPickerOptions renders aliases and the manifest's known issue", () => {
+    const options = buildProviderPickerOptions({
+      currentProvider: "vidlink",
+      compact: true,
+      providers: [
+        {
+          id: "vidrock",
+          name: "VidRock",
+          aliases: ["Granite"],
+          description: "Backup source",
+          isAnimeProvider: false,
+          isYoutubeProvider: false,
+          providerLane: "series",
+          knownIssue: { since: "2026-11-27", summary: "streams answer HTTP 502" },
+        },
+      ],
+    });
+
+    expect(options[0]?.detail).toBe(
+      "streams answer HTTP 502  ·  Backup source  ·  Known as Granite",
+    );
+    expect(options[0]?.badge).toBe("known issue");
+    expect(options[0]?.tone).toBe("error");
   });
 
   test("buildDiagnosticsPanelLines includes provider memory section", () => {

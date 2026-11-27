@@ -555,10 +555,15 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // on top measured 3,378,230 bytes: +29,766, after sharing the provider JSON
 // transport, episode identity parsing and language-list normalization. No
 // dependency or asset. 3300 KiB leaves 970 bytes.
+// The honest provider picker (#859: per-row status from the health,
+// quarantine and per-title failure stores, the manifest's known issues, and
+// one footer for the keys) on top measured 3,381,740 bytes: +3,510. No
+// dependency or asset. 3303 KiB leaves 532 bytes.
 // The mpv hardware-decode probe and persistent A/V-sync recovery slice merged
-// onto provider batch 1 measured 3,395,449 bytes: +17,219. No dependency or
-// asset; the probe sample is embedded source data. 3316 KiB leaves 135 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_316;
+// onto the honest provider picker measured 3,398,960 bytes: +17,220. No
+// dependency or asset; the probe sample is embedded source data. 3320 KiB
+// leaves 720 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_320;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
