@@ -9,6 +9,8 @@ export * from "./anilight/manifest";
 export * from "./animegg/direct";
 export * from "./animegg/manifest";
 export * from "./animegg/site";
+export * from "./animeparadise/direct";
+export * from "./animeparadise/manifest";
 export * from "./filesun/direct";
 export * from "./filesun/manifest";
 export * from "./hianime/direct";

@@ -79,6 +79,7 @@ export async function loadProductionProviderModules(
     { miruroProviderModule },
     { anilightProviderModule },
     { anidapProviderModule },
+    { animeparadiseProviderModule },
     { youtubeProviderModule },
   ] = await Promise.all([
     import("@kunai/providers/videasy"),
@@ -95,6 +96,7 @@ export async function loadProductionProviderModules(
     import("@kunai/providers/miruro"),
     import("@kunai/providers/anilight"),
     import("@kunai/providers/anidap"),
+    import("@kunai/providers/animeparadise"),
     import("@kunai/providers/youtube"),
   ]);
 
@@ -114,6 +116,7 @@ export async function loadProductionProviderModules(
       kickassanimeProviderModule,
       anilightProviderModule,
       anidapProviderModule,
+      animeparadiseProviderModule,
       youtubeProviderModule,
       // After the bundled providers: an addon the user has not placed in their
       // provider order is a fallback, never the default.

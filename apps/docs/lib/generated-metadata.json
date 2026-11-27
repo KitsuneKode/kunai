@@ -17,6 +17,7 @@
     "kickassanime",
     "anilight",
     "anidap",
+    "animeparadise",
     "youtube"
   ],
   "providers": [
@@ -279,6 +280,22 @@
         "Browserless catalog path: GraphQL anime/searchAnime resolves AniList or title identity to the provider slug; chad.anidap.lol carries episodes, server slots, and source payloads.",
         "Sub and dub provider slots stay separate. Provider-supplied media headers ride the exact stream candidate into the shared resolve gate.",
         "Some Anidap slots share AnimeX/aniwatch infrastructure; backend independence is documented in the dossier rather than overstated."
+      ]
+    },
+    {
+      "id": "animeparadise",
+      "displayName": "AnimeParadise",
+      "description": "Anime through AnimeParadise's own AniList-mapped catalog and direct HLS",
+      "domain": "animeparadise.moe",
+      "recommended": false,
+      "mediaKinds": ["anime"],
+      "capabilities": ["search", "episode-list", "source-resolve", "subtitle-resolve", "quality-ranked"],
+      "notes": [
+        "Browserless: public /search and /anime/{slug} JSON, then the watch page's own Flight POST to its getEpisode server action. The action id is discovered by reading at most two same-site bundle chunks named by the watch page's WatchProvider module — remote code is read, never executed.",
+        "Catalog identity is verified canonically: the title search must resolve to exactly one row, and /anime/{slug} must agree on _id and the AniList/MAL mapping before an id is used — a sequel cannot borrow its first season's episodes.",
+        "One verified HLS server on stream.animeparadise.moe, muxed audio (sub only — no dub was observed). Subtitles arrive as ASS on api.animeparadise.moe/stream/file and VTT on stream.animeparadise.moe/captions.",
+        "Transport drift: the streamLink locator is an opaque upstream handle answered through stream.animeparadise.moe/m3u8; the Next-Action id rotates per deployment, so resolve re-reads it from the current bundle every time.",
+        "All-HTTP local integration: no credentials, JS execution, browser session, or media relay — metadata stays direct, so relaySafe is off."
       ]
     },
     {

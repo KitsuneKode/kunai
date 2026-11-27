@@ -53,6 +53,24 @@ AllManga remain registered but must not count toward working-provider capacity
 until a probed stream and decode frame exist. Anidap adds partially independent
 capacity, not a clean fourth backend: some slots overlap HiAnime/KickAssAnime.
 
+## Batch 2 verification — 2026-11-27
+
+These are targeted runs, not a repeat of the full capability audit. The
+[intake dossier](./2026-11-27-batch2-intake.md) records the raw frame hashes and
+the candidates that did not qualify.
+
+| Lane         | Provider          | Live proof                                                                                                                                                                | Measured inventory                                                                                                                                           | Media hosts                                                                                             |
+| ------------ | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| movie/series | **FileSuN**       | Production CLI smoke: Fight Club selected stream reachable in a 4.10 s resolve. The movie and Game of Thrones S01E01 both decoded inspected 1280x720 frames.              | One server; 720p and 360p for Fight Club; one muxed audio stream, no alternate audio measured. No movie sidecars returned; Romanian VTT verified for S01E01. | `prx-1476-ant.vmpx.online`, `prx-1317-ant.vmpx.online`; Atlantic is lookup only.                        |
+| anime        | **AnimeParadise** | Production CLI smoke: Frieren E01 selected stream reachable in a 10.51 s resolve. The exact positively gated adapter candidate also decoded an inspected 1920x1080 frame. | One HLS server and muxed original/sub audio; no dub observed. 1080p. Seven ASS/VTT tracks across `en`, `it`, `pt`, `es`.                                     | `stream.animeparadise.moe` for master, variants and segments; `api.animeparadise.moe` for ASS sidecars. |
+
+With Batch 2 the measured roster is **five movie/series providers** and **five
+working anime providers plus one partial** (AnimeGG), using the same counting
+rules as the prior audit. Each new provider adds one distinct measured media
+host family. AnimeParadise is sub-only, neither new backend showed 4K, and
+Anidap's existing overlap still applies. Chillflix returned a decoded ad, not
+title playback, so it adds no capacity and is not registered.
+
 ## Feature Matrix
 
 | Provider       | Mode         | Search | Catalog | Sources     | Quality | Audio          | Soft Subs | Hardsub | Downloads | Notes                                                                                                                    |

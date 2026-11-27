@@ -83,7 +83,18 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // AnimeGG on one of two; Miruro (404) and AllManga (#724) stay behind them.
   // Revision 9 appends AniLight and Anidap at the end until future live sweeps
   // earn promotion.
-  animeProviderPriority: ["kickassanime", "animegg", "miruro", "allanime", "anilight", "anidap"],
+  // Revision 11 appends AnimeParadise (verified on the 2026-11-27 intake:
+  // direct stream.animeparadise.moe HLS behind its own AniList-mapped catalog)
+  // as another tail fallback until future live sweeps earn promotion.
+  animeProviderPriority: [
+    "kickassanime",
+    "animegg",
+    "miruro",
+    "allanime",
+    "anilight",
+    "anidap",
+    "animeparadise",
+  ],
   // Bump alongside any lane-default change above; see `providerDefaultsRevision`.
   // Revision 3 leads with VidLink + HiAnime and covers both lanes.
   // Revision 4 reorders dead/degraded tails: Movy is named before Videasy in
@@ -94,7 +105,8 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // Revision 8 puts the fallbacks that work first: Movy, then KickAssAnime.
   // Revision 9 appends VidBolt, AniLight, and Anidap as tail fallbacks.
   // Revision 10 appends FileSuN to the series tail; the anime lane is unchanged.
-  providerDefaultsRevision: 10,
+  // Revision 11 appends AnimeParadise to the anime tail; the series lane is unchanged.
+  providerDefaultsRevision: 11,
   disabledProviders: [],
   stremioAddons: [],
   experimentalStremioAddons: false,

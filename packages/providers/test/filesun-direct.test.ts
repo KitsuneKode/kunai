@@ -7,7 +7,8 @@ import tvLookup from "./fixtures/filesun/lookup-tv.json";
 
 const TV_INPUT: ProviderResolveInput = {
   title: { id: "tmdb:1399", kind: "series", title: "Game of Thrones", year: 2011, tmdbId: "1399" },
-  // The intake verified S02E03; absoluteEpisode must not leak into the lookup.
+  // Use a nontrivial S02E03 to catch absolute-episode addressing: the lookup
+  // must read season/episode, never absoluteEpisode.
   episode: { season: 2, episode: 3, absoluteEpisode: 17 },
   mediaKind: "series",
   intent: "play",
@@ -85,7 +86,7 @@ function healthyHandler(url: string, init?: RequestInit): Response | undefined {
     referers.push(new Headers(init?.headers).get("referer") ?? "");
     return new Response(SEGMENT_BYTES, {
       status: 206,
-      headers: { "content-type": "video/mp2t", "content-range": "bytes 0-65535/2048" },
+      headers: { "content-type": "video/mp2t", "content-range": "bytes 0-2047/2048" },
     });
   }
   return undefined;

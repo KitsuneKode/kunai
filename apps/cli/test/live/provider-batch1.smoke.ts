@@ -43,6 +43,16 @@ const config = {
       externalIds: { anilistId: "21" },
     },
   },
+  animeparadise: {
+    mode: "anime" as const,
+    title: {
+      id: "anilist:154587",
+      type: "series" as const,
+      name: "Frieren: Beyond Journey’s End",
+      year: "2023",
+      externalIds: { anilistId: "154587" },
+    },
+  },
 }[providerId];
 
 if (!config) {
@@ -50,7 +60,7 @@ if (!config) {
     JSON.stringify({
       ok: false,
       stage: "argv",
-      reason: "expected vidbolt|filesun|anilight|anidap",
+      reason: "expected vidbolt|filesun|anilight|anidap|animeparadise",
     }),
   );
   process.exit(1);
