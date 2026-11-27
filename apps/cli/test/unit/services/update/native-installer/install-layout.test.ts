@@ -165,7 +165,7 @@ describe("install layout paths", () => {
           KUNAI_CONFIG_DIR: "C:\\profile",
         },
         configDir: "C:\\profile\\config",
-        launcherPath: "C:\\profile\\bin\\kunai.exe",
+        launcherPath: "C:\\profile\\bin\\kunai.cmd",
         profileDir: "C:\\profile",
       },
       {
@@ -202,4 +202,62 @@ describe("install layout paths", () => {
       expect(foreign.profileDir).toBeUndefined();
     }
   });
+
+  test("default layouts keep an absolute platform launcher and no profile", () => {
+    const cases = [
+      {
+        platform: "linux" as const,
+        env: { HOME: "/home/t" },
+        launcherTail: "/kunai",
+      },
+      {
+        platform: "win32" as const,
+        env: {
+          USERPROFILE: "C:\\Users\\T",
+          APPDATA: "C:\\Users\\T\\AppData\\Roaming",
+          LOCALAPPDATA: "C:\\Users\\T\\AppData\\Local",
+        },
+        launcherTail: "kunai.exe",
+      },
+    ];
+    for (const testCase of cases) {
+      const layout = getInstallLayoutPaths({
+        platform: testCase.platform,
+        env: testCase.env,
+      });
+      expect(layout.profileDir).toBeUndefined();
+      expect(layout.launcherPath.endsWith(testCase.launcherTail)).toBe(true);
+    }
+  });
+
+  test.each([
+    {
+      platform: "linux" as const,
+      env: { HOME: "/home/t", KUNAI_CONFIG_DIR: "/srv/profile" },
+      bin: "/srv/profile/bin",
+      platformDefaultBin: "/home/t/.local/bin",
+    },
+    {
+      platform: "win32" as const,
+      env: {
+        USERPROFILE: "C:\\Users\\T",
+        APPDATA: "C:\\Users\\T\\AppData\\Roaming",
+        LOCALAPPDATA: "C:\\Users\\T\\AppData\\Local",
+        KUNAI_CONFIG_DIR: "C:\\profile",
+      },
+      bin: "C:\\profile\\bin",
+      platformDefaultBin: "C:\\Users\\T\\AppData\\Local\\kunai\\bin",
+    },
+  ])(
+    "a profile accepts KUNAI_BIN_DIR only when it names the derived bin ($platform)",
+    ({ platform, env, bin, platformDefaultBin }) => {
+      const ok = getInstallLayoutPaths({ platform, env: { ...env, KUNAI_BIN_DIR: bin } });
+      expect(ok.profileDir).toBe(env.KUNAI_CONFIG_DIR);
+      for (const bad of ["", join(bin, "..", "other"), platformDefaultBin]) {
+        expect(() =>
+          getInstallLayoutPaths({ platform, env: { ...env, KUNAI_BIN_DIR: bad } }),
+        ).toThrow("KUNAI_BIN_DIR");
+      }
+    },
+  );
 });

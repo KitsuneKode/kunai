@@ -145,7 +145,13 @@ describe("checkDesktopProfile ownership", () => {
       // The lexical override lives under the alias, not the default root —
       // only the physical comparison catches that they are the same dir.
       process.env.XDG_CONFIG_HOME = real;
-      process.env.KUNAI_CONFIG_DIR = join(alias, "kunai");
+      const typed = join(alias, "kunai");
+      process.env.KUNAI_CONFIG_DIR = typed;
+      // The diagnostic names the spelling the user configured, not the
+      // physical path it resolves to.
+      expect(() => checkDesktopProfile("prepare")).toThrow(
+        `KUNAI_CONFIG_DIR=${JSON.stringify(typed)}`,
+      );
       expect(() => checkDesktopProfile("prepare")).toThrow(
         "overlaps a platform-default Kunai directory",
       );

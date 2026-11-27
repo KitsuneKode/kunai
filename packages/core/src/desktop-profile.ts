@@ -1,10 +1,13 @@
 import { posix, win32 } from "node:path";
 
 export class DesktopProfileError extends Error {
-  constructor(value: string, reason: string) {
-    super(
-      `KUNAI_CONFIG_DIR=${JSON.stringify(value)} ${reason}. Set an absolute path to a dedicated Kunai profile or unset it to use the default profile.`,
-    );
+  constructor(
+    value: string,
+    reason: string,
+    hint = "Set an absolute path to a dedicated Kunai profile or unset it to use the default profile.",
+    variable = "KUNAI_CONFIG_DIR",
+  ) {
+    super(`${variable}=${JSON.stringify(value)} ${reason}. ${hint}`);
   }
 }
 

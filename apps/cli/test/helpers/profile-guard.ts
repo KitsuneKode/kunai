@@ -62,7 +62,9 @@ const TRANSIENT_DIRECTORIES: ReadonlySet<string> = new Set(["chapters"]);
  * environment: the preload does, so `env` is the developer's real HOME/XDG/APPDATA.
  */
 export function realProfileTargets(env: NodeJS.ProcessEnv = process.env): ProfileTargets {
-  const paths = getKunaiPaths({ env });
+  // The guard is read-only and must still snapshot the real storage roots even
+  // when the ambient env carries a KUNAI_BIN_DIR that conflicts with a profile.
+  const paths = getKunaiPaths({ env: { ...env, KUNAI_BIN_DIR: undefined } });
   return {
     roots: [...new Set([paths.configDir, paths.dataDir, paths.cacheDir])],
     files: [

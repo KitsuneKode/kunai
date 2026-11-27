@@ -435,9 +435,9 @@ Rules that apply:
 - Uninstall's profile purge removes the `config`, `data`, `cache` and `tmp` directories and the managed launcher. It never removes the profile root, the `.kunai-profile` marker, or unrelated files beside them.
 - Debug logs still go to `./logs.txt` with `--debug`. A custom download directory can live outside the profile root.
 
-Under `KUNAI_CONFIG_DIR` the installers accept `KUNAI_DATA_DIR` and `KUNAI_CACHE_DIR` only when they name exactly `<root>/data` and `<root>/cache`; leave them unset so the installers and the CLI agree on the layout. `KUNAI_BIN_DIR` still overrides the launcher directory.
+Under `KUNAI_CONFIG_DIR` the installers accept `KUNAI_DATA_DIR`, `KUNAI_CACHE_DIR`, and `KUNAI_BIN_DIR` only when they name exactly `<root>/data`, `<root>/cache`, and `<root>/bin`; leave them unset so the installers and the CLI agree on the layout.
 
-Profile installs do not persist PATH; the installers print the session-local activation commands instead. Subsequent `kunai` invocations select the profile explicitly with the variable set, for example `KUNAI_CONFIG_DIR=<root> <root>/bin/kunai upgrade`. Under a profile the installers also refuse the account-wide methods; only the binary method is supported.
+The launcher in `<root>/bin` is a small wrapper — `kunai` on Linux/macOS, `kunai.cmd` on Windows — that binds the profile from its own directory and runs the active versioned payload (on Windows the `kunai.exe` binary lives only inside `<root>/data/versions/<version>/`). Profile installs never persist PATH; the installers print a session-local `export PATH` plus the direct wrapper invocation instead. Subsequent calls need no environment variable, for example `<root>/bin/kunai upgrade` or `<root>/bin/kunai uninstall`. Under a profile the installers also refuse the account-wide methods; only the binary method is supported.
 
 If you exported `KUNAI_CONFIG_DIR` before but want to keep using your existing runtime profile, unset it. The platform-default layout is unchanged. To move the installation itself into the new layout, reinstall with `kunai install` or the installer script rather than copying the old `install.json`, which records absolute paths.
 

@@ -204,10 +204,18 @@ if [[ "$HOST_OS" != android && ${KUNAI_CONFIG_DIR+x} ]]; then
 	fi
 fi
 
-if [[ -n "${KUNAI_BIN_DIR:-}" ]]; then
-	BIN_DIR="$KUNAI_BIN_DIR"
-elif [[ -n "$PROFILE_DIR" ]]; then
+if [[ -n "$PROFILE_DIR" ]]; then
+	# A profile owns its launcher directory outright — an explicit bin override
+	# that names anything else would split the layout the CLI resolves from the
+	# same variable.
 	BIN_DIR="$PROFILE_DIR/bin"
+	if [[ ${KUNAI_BIN_DIR+x} ]] &&
+		{ [[ "$KUNAI_BIN_DIR" != /* ]] ||
+			[[ "$(normalize_profile_path "$KUNAI_BIN_DIR")" != "$BIN_DIR" ]]; }; then
+		fail_profile 'KUNAI_BIN_DIR must equal the profile bin directory'
+	fi
+elif [[ -n "${KUNAI_BIN_DIR:-}" ]]; then
+	BIN_DIR="$KUNAI_BIN_DIR"
 elif [[ "$HOST_OS" == android && -n "${PREFIX:-}" ]]; then
 	BIN_DIR="$PREFIX/bin"
 else
@@ -1708,12 +1716,26 @@ cleanup_abandoned_transactions() {
 }
 
 activate_launcher() {
-	local version_path="$1" launcher="$2"
+	local version_path="$1" launcher="$2" version="$3"
 	local tmp_link
 	mkdir -p "$(dirname "$launcher")"
 	tmp_link="${launcher}.tmp.$$"
 	rm -f "$tmp_link"
-	ln -sfn "$version_path" "$tmp_link"
+	if [[ -n "$PROFILE_DIR" ]]; then
+		# The profile launcher is a wrapper that binds its own profile and execs
+		# the active versioned payload — byte-identical to the one the native
+		# installer writes so uninstall ownership checks recognize it.
+		cat >"$tmp_link" <<-EOF || return 1
+			#!/bin/sh
+			case \$0 in */*) launcher_dir=\${0%/*} ;; *) launcher_dir=. ;; esac
+			profile=\$(CDPATH= cd -L -- "\$launcher_dir/.." && pwd -L) || exit 2
+			export KUNAI_CONFIG_DIR="\$profile"
+			exec "\$profile/data/versions/${version}/kunai" "\$@"
+		EOF
+		chmod +x "$tmp_link" || return 1
+	else
+		ln -sfn "$version_path" "$tmp_link" || return 1
+	fi
 	mv -f "$tmp_link" "$launcher"
 }
 
@@ -1862,14 +1884,13 @@ persist_path() {
 path_hint() {
 	local dir="$1" rc_file
 	if [[ -n "$PROFILE_DIR" ]]; then
-		# A profile install never edits shell rc files: activation is an
-		# explicit env var plus the profile-local launcher.
-		local quoted root
+		# A profile install never edits shell rc files: the profile-local
+		# wrapper binds its own profile, so only PATH convenience is needed.
+		local quoted
 		printf -v quoted '%q' "$dir"
-		printf -v root '%q' "$PROFILE_DIR"
 		info "Profile install: PATH was not changed. In this Bash session run:"
-		info "  export KUNAI_CONFIG_DIR=$root; export PATH=$quoted:\"\$PATH\""
-		info "  KUNAI_CONFIG_DIR=$root $quoted/kunai upgrade"
+		info "  export PATH=$quoted:\"\$PATH\""
+		info "  $quoted/kunai upgrade"
 		return 0
 	fi
 	case ":$PATH:" in
@@ -2173,7 +2194,7 @@ install_binary() {
 		err "Could not snapshot the current launcher before activation."
 		exit 1
 	fi
-	if ! activate_launcher "$version_path" "$BIN_DIR/kunai"; then
+	if ! activate_launcher "$version_path" "$BIN_DIR/kunai" "$resolved_version"; then
 		err "Could not activate the launcher for version $resolved_version."
 		exit 1
 	fi
@@ -2720,13 +2741,12 @@ main() {
 	# one plays something. `-q` takes the top result; a bare `kunai` browses.
 	bold "Done."
 	if [[ -n "$PROFILE_DIR" ]]; then
-		local _root _q
-		printf -v _root '%q' "$PROFILE_DIR"
+		local _q
 		printf -v _q '%q' "$BIN_DIR/kunai"
-		printf 'This install belongs to the profile at %s.\nInvoke it with the env var set, e.g.:\n' "$PROFILE_DIR"
-		printf '  KUNAI_CONFIG_DIR=%s %s -S "Frieren" -a\n\n' "$_root" "$_q"
-		printf 'Update any time:  KUNAI_CONFIG_DIR=%s %s upgrade\n' "$_root" "$_q"
-		printf 'Remove:           KUNAI_CONFIG_DIR=%s %s uninstall\n' "$_root" "$_q"
+		printf 'This install belongs to the profile at %s.\nInvoke its profile launcher directly, e.g.:\n' "$PROFILE_DIR"
+		printf '  %s -S "Frieren" -a\n\n' "$_q"
+		printf 'Update any time:  %s upgrade\n' "$_q"
+		printf 'Remove:           %s uninstall\n' "$_q"
 		return
 	fi
 	cat <<EOF

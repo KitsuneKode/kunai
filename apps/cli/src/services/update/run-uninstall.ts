@@ -112,7 +112,7 @@ export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
     } catch (error) {
       if (!(error instanceof DesktopProfileError)) throw error;
       console.error(error.message);
-      return 1;
+      return 2;
     }
   }
 

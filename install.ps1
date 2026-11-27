@@ -66,22 +66,49 @@ function Get-ExistingItem([string]$Path) {
   }
 }
 
-function Get-PhysicalPath([string]$Path) {
-  # Resolve through every existing ancestor; refuse a reparse point on the
-  # path itself or anywhere above it — aliasing is a fail-closed case.
-  $resolved = $Path
-  $probe = $Path
-  while ($null -ne $probe -and $probe -ne '') {
-    $item = Get-ExistingItem $probe
-    if ($null -ne $item) {
-      if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
-        throw "KUNAI_CONFIG_DIR crosses a reparse point at $probe"
-      }
-      $resolved = $item.FullName + $Path.Substring($probe.Length)
+function Get-PhysicalPath([string]$Path, [int]$LinkDepth = 0) {
+  # Root-down traversal: resolve the symlink at every component, not just the
+  # first existing ancestor — an ancestor search alone misses a link between
+  # two absent levels. Reparse points are followed (bounded at 40) so the
+  # containment checks below compare real locations; anything unresolvable is
+  # a fail-closed refusal.
+  $root = [IO.Path]::GetPathRoot($Path)
+  $resolved = $root
+  # On Unix a backslash is a valid filename character — only '/' separates.
+  $parts = if ($OnWindows) {
+    $Path.Substring($root.Length) -split '[\\/]'
+  } else {
+    $Path.Substring($root.Length) -split '/'
+  }
+  foreach ($part in $parts) {
+    if ($part -eq '') { continue }
+    $next = [IO.Path]::Combine($resolved, $part)
+    $item = Get-ExistingItem $next
+    if ($null -eq $item) { $resolved = $next; continue }
+    if (-not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+      $resolved = $item.FullName
+      continue
     }
-    $parent = Split-Path -Parent $probe
-    if ($parent -eq $probe) { break }
-    $probe = $parent
+    $target = [string]$item.LinkTarget
+    if (-not $target) { $target = [string](@($item.Target)[0]) }
+    if (-not $target -or $LinkDepth -ge 40) {
+      throw "KUNAI_CONFIG_DIR=$profileEnv crosses an unresolvable reparse point at $next while resolving $Path"
+    }
+    if ($OnWindows -and $target -match '^(?:\\\\[?.]\\|\\\?\?\\)') {
+      # \\?\ and \??\ device-namespace prefixes: strip, then accept only the
+      # supported drive-letter and UNC spellings — a real UNC target (\\server)
+      # carries no prefix and must not be refused.
+      $target = $target -replace '^(?:\\\\[?.]\\|\\\?\?\\)', ''
+      if ($target -match '^UNC\\(.+)$') {
+        $target = "\\$($Matches[1])"
+      } elseif ($target -notmatch '^[A-Za-z]:[\\/]') {
+        throw "KUNAI_CONFIG_DIR=$profileEnv reparse target $target uses an unsupported device-namespace spelling while resolving $Path"
+      }
+    }
+    if (-not [IO.Path]::IsPathRooted($target)) {
+      $target = [IO.Path]::Combine($resolved, $target)
+    }
+    $resolved = Get-PhysicalPath ([IO.Path]::GetFullPath($target)) ($LinkDepth + 1)
   }
   return $resolved
 }
@@ -130,7 +157,23 @@ if ($null -ne $profileEnv) {
     }
   }
 }
-$BinDir = if ($env:KUNAI_BIN_DIR) { $env:KUNAI_BIN_DIR } elseif ($ProfileDir) { Join-Path $ProfileDir 'bin' } else { Join-Path $env:LOCALAPPDATA 'kunai\bin' }
+if ($ProfileDir) {
+  # A profile owns its launcher directory outright — an explicit bin override
+  # that names anything else would split the layout the CLI resolves from the
+  # same variable.
+  $BinDir = Join-Path $ProfileDir 'bin'
+  $binEnv = [Environment]::GetEnvironmentVariable('KUNAI_BIN_DIR', 'Process')
+  if ($null -ne $binEnv) {
+    $binAbsolute = if ($OnWindows) { $binEnv -match '^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/]+[\\/][^\\/]+)' } else { $binEnv.StartsWith('/') }
+    if (-not $binAbsolute -or
+      -not [string]::Equals([IO.Path]::GetFullPath($binEnv).TrimEnd([IO.Path]::DirectorySeparatorChar), $BinDir, $comparison)) {
+      throw "KUNAI_BIN_DIR must equal the profile bin directory ($BinDir)"
+    }
+  }
+}
+else {
+  $BinDir = if ($env:KUNAI_BIN_DIR) { $env:KUNAI_BIN_DIR } else { Join-Path $env:LOCALAPPDATA 'kunai\bin' }
+}
 if ($null -ne $ProfileDir) {
   # Explicit data/cache overrides may only name the derived profile dirs —
   # a differing one would split the layout the CLI resolves from the same
@@ -189,9 +232,17 @@ function Test-ProfileMarker {
 
 function Assert-ProfileFilesystem {
   if ($null -eq $ProfileDir) { return }
-  # Physical containment: any reparse point on the root or its ancestors is a
-  # fail-closed refusal, checked before re-running the containment matrix.
+  # The root link itself is still refused outright before any resolution, and
+  # the physical path is then compared against the containment matrix —
+  # reparse ancestors alias the root somewhere else entirely.
+  $rootItem = Get-ExistingItem $ProfileDir
+  if ($null -ne $rootItem -and (-not $rootItem.PSIsContainer -or ($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint))) {
+    throw "KUNAI_CONFIG_DIR=$profileEnv is not a regular directory"
+  }
   $physical = Get-PhysicalPath $ProfileDir
+  if ([string]::Equals($physical, [IO.Path]::GetPathRoot($physical), $comparison)) {
+    throw "KUNAI_CONFIG_DIR=$profileEnv must not be the filesystem root"
+  }
   $homeDir = if ($env:USERPROFILE) { $env:USERPROFILE } else { $env:HOME }
   if ($homeDir -and [IO.Path]::IsPathRooted($homeDir) -and
     (Test-ContainsPath $physical (Get-PhysicalPath ([IO.Path]::GetFullPath($homeDir))))) {
@@ -202,10 +253,6 @@ function Assert-ProfileFilesystem {
     if ((Test-ContainsPath $full $physical) -or (Test-ContainsPath $physical $full)) {
       throw "KUNAI_CONFIG_DIR=$profileEnv overlaps a platform-default Kunai directory"
     }
-  }
-  $rootItem = Get-ExistingItem $ProfileDir
-  if ($null -ne $rootItem -and (-not $rootItem.PSIsContainer -or ($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint))) {
-    throw "KUNAI_CONFIG_DIR=$profileEnv is not a regular directory"
   }
   foreach ($child in 'config', 'data', 'cache', 'tmp', 'bin') {
     $item = Get-ExistingItem (Join-Path $ProfileDir $child)
@@ -244,16 +291,16 @@ function Assert-ProfileOwnership {
 }
 
 function Write-ProfilePathHint {
-  # A profile install never edits the persistent User PATH: activation is an
-  # explicit env var plus the profile-local launcher.
-  $escaped = $ProfileDir.Replace("'", "''")
-  $binEscaped = $BinDir.Replace("'", "''")
+  # A profile install never edits the persistent User PATH: the profile-local
+  # wrapper binds its own profile, so only PATH convenience is needed.
+  $binEscaped = $BinPath.Replace("'", "''")
+  $dirEscaped = $BinDir.Replace("'", "''")
   Write-Info "Profile install: PATH was not changed. In this PowerShell session run:"
-  Write-Info "  `$env:KUNAI_CONFIG_DIR = '$escaped'; `$env:Path = '$binEscaped;' + `$env:Path"
-  Write-Info "  `$env:KUNAI_CONFIG_DIR = '$escaped'; & '$binEscaped\kunai.exe' upgrade"
+  Write-Info "  `$env:Path = '$dirEscaped;' + `$env:Path"
+  Write-Info "  & '$binEscaped' upgrade"
 }
 
-$BinPath = Join-Path $BinDir 'kunai.exe'
+$BinPath = Join-Path $BinDir $(if ($ProfileDir) { 'kunai.cmd' } else { 'kunai.exe' })
 $VersionsDir = Join-Path $DataDir 'versions'
 $LocksDir = Join-Path $DataDir 'locks'
 $TransactionsDir = Join-Path $DataDir 'transactions'
@@ -1676,18 +1723,49 @@ function Finish-InstallTransaction([string]$Path) {
   }
 }
 
-function Update-Launcher([string]$VersionPath, [string]$LauncherPath) {
+function Update-Launcher([string]$VersionPath, [string]$LauncherPath, [string]$Ver) {
   New-Item -ItemType Directory -Force -Path (Split-Path $LauncherPath) | Out-Null
-  if (Test-Path -LiteralPath $LauncherPath) {
-    $aside = "$LauncherPath.old.$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
-    # Never delete the working launcher after a failed move-aside. The caller
-    # holds a durable snapshot and will restore it after any later failure.
-    Move-Item -Force -Path $LauncherPath -Destination $aside
+  $candidate = $null
+  try {
+    if ($ProfileDir) {
+      # The profile launcher is a wrapper that binds its own profile and runs
+      # the active versioned payload — byte-identical to the one the native
+      # installer writes so uninstall ownership checks recognize it.
+      $candidate = "$LauncherPath.new.$PID"
+      $lines = @(
+        '@echo off',
+        'setlocal DisableDelayedExpansion',
+        '(',
+        '  set "KUNAI_CONFIG_DIR=%~dp0.."',
+        ('  "%~dp0..\data\versions\{0}\kunai.exe" %*' -f $Ver),
+        '  exit /b',
+        ')',
+        ''
+      )
+      Write-Utf8File $candidate ($lines -join "`r`n")
+    }
+    if (Test-Path -LiteralPath $LauncherPath) {
+      $aside = "$LauncherPath.old.$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
+      # Never delete the working launcher after a failed move-aside. The caller
+      # holds a durable snapshot and will restore it after any later failure.
+      Move-Item -Force -Path $LauncherPath -Destination $aside
+    }
+    if ($ProfileDir) {
+      [IO.File]::Move($candidate, $LauncherPath)
+      $candidate = $null
+    }
+    else {
+      Copy-Item -Force -Path $VersionPath -Destination $LauncherPath
+      # Clearing the mark-of-the-web is meaningful only on Windows, and the cmdlet
+      # raises an unsuppressable platform error elsewhere.
+      if ($OnWindows) { Unblock-File -Path $LauncherPath -ErrorAction SilentlyContinue }
+    }
   }
-  Copy-Item -Force -Path $VersionPath -Destination $LauncherPath
-  # Clearing the mark-of-the-web is meaningful only on Windows, and the cmdlet
-  # raises an unsuppressable platform error elsewhere.
-  if ($OnWindows) { Unblock-File -Path $LauncherPath -ErrorAction SilentlyContinue }
+  finally {
+    if ($null -ne $candidate -and (Test-Path -LiteralPath $candidate)) {
+      Remove-Item -LiteralPath $candidate -Force -ErrorAction SilentlyContinue
+    }
+  }
 }
 
 function Get-PreviousActiveVersion {
@@ -2539,7 +2617,7 @@ function Install-Binary {
       # Update-Launcher can fail after moving the old launcher but before the
       # replacement copy completes, so restoration is required from invocation.
       $launcherActivated = $true
-      Update-Launcher -VersionPath $versionPath -LauncherPath $BinPath
+      Update-Launcher -VersionPath $versionPath -LauncherPath $BinPath -Ver $resolved
 
       $prevArg = ''
       if ($activationPrevious -and $activationPrevious -ne $resolved) { $prevArg = $activationPrevious }
@@ -2781,13 +2859,12 @@ Install-OptionalDeps
 
 Write-Host 'Done.' -ForegroundColor Green
 if ($ProfileDir) {
-  $escaped = $ProfileDir.Replace("'", "''")
   $binEscaped = $BinPath.Replace("'", "''")
   Write-Host "This install belongs to the profile at $ProfileDir."
-  Write-Host "Invoke it with the env var set, e.g.:"
-  Write-Host "  `$env:KUNAI_CONFIG_DIR = '$escaped'; & '$binEscaped' -S `"Frieren`" -a"
-  Write-Host "Update any time:  `$env:KUNAI_CONFIG_DIR = '$escaped'; & '$binEscaped' upgrade"
-  Write-Host "Remove:           `$env:KUNAI_CONFIG_DIR = '$escaped'; & '$binEscaped' uninstall"
+  Write-Host "Invoke its profile launcher directly, e.g.:"
+  Write-Host "  & '$binEscaped' -S `"Frieren`" -a"
+  Write-Host "Update any time:  & '$binEscaped' upgrade"
+  Write-Host "Remove:           & '$binEscaped' uninstall"
 }
 else {
   Write-Host 'Watch something:'

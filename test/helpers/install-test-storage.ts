@@ -17,6 +17,9 @@ export function installTestStorageIsolation(): void {
   // through the CLI startup gate expects the marker to exist already.
   mkdirSync(profileDir, { recursive: true });
   writeFileSync(join(profileDir, PROFILE_MARKER), PROFILE_MARKER_CONTENT);
+  // An inherited KUNAI_BIN_DIR would conflict with the profile's own bin dir
+  // before any test ran.
+  delete process.env.KUNAI_BIN_DIR;
   Object.assign(process.env, env);
   const cleanup = () => rmSync(root, { recursive: true, force: true, maxRetries: 3 });
   try {

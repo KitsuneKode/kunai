@@ -16,7 +16,12 @@ import {
   versionBinaryPath,
   type InstallLayoutPaths,
 } from "./install-layout";
-import { updateLauncher } from "./launcher";
+import {
+  captureLauncherSnapshot,
+  discardLauncherSnapshot,
+  restoreLauncherSnapshot,
+  updateLauncher,
+} from "./launcher";
 import { beginInstallTransaction, finishInstallTransaction } from "./transaction";
 import { inspectVersionLock, withVersionLock } from "./version-lock";
 import { verifyStoredVersion } from "./version-metadata";
@@ -373,13 +378,19 @@ export async function executeRollback(
                 (await readLauncherTarget(launcherPath)) ??
                 manifest.versionedPath ??
                 versionBinaryPath(layout, manifest.activeVersion);
-
-              await updateLauncher({
-                launcherPath,
-                versionPath: versionBinaryPath(layout, reverify.metadata.version),
-              });
+              const profileSnapshot =
+                layout.profileDir === undefined
+                  ? undefined
+                  : await captureLauncherSnapshot(launcherPath);
+              let preserveProfileSnapshot = false;
 
               try {
+                await updateLauncher({
+                  launcherPath,
+                  versionPath: versionBinaryPath(layout, reverify.metadata.version),
+                  profileVersion:
+                    layout.profileDir === undefined ? undefined : reverify.metadata.version,
+                });
                 await writeInstallManifestUnderActivation(
                   {
                     method: "binary",
@@ -412,9 +423,22 @@ export async function executeRollback(
                   },
                   layout,
                 );
-              } catch (manifestError) {
-                await restoreLauncher(launcherPath, previousLauncherTarget, process.platform);
-                throw manifestError;
+              } catch (error) {
+                if (profileSnapshot) {
+                  try {
+                    await restoreLauncherSnapshot(profileSnapshot);
+                  } catch (restoreError) {
+                    preserveProfileSnapshot = true;
+                    throw restoreError;
+                  }
+                } else {
+                  await restoreLauncher(launcherPath, previousLauncherTarget, process.platform);
+                }
+                throw error;
+              } finally {
+                if (profileSnapshot && !preserveProfileSnapshot) {
+                  await discardLauncherSnapshot(profileSnapshot).catch(() => {});
+                }
               }
 
               return {

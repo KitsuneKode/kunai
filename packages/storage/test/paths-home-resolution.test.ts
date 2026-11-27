@@ -271,7 +271,7 @@ describe("getKunaiPaths KUNAI_CONFIG_DIR profile root", () => {
       expect(
         getKunaiPaths({ platform: "linux", env: { ...linuxEnv, KUNAI_CONFIG_DIR: root } })
           .profileDir,
-      ).toBe("/opt/kunai".includes("..") ? root : root.replace("/home/../", "/"));
+      ).toBe(root.replace("/home/../", "/"));
     });
 
     const winEnv = {

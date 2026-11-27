@@ -167,6 +167,7 @@ export async function nativeUninstall(
     versionsDir: layout.versionsDir,
     expectedSha256,
     platform,
+    profileVersion: layout.profileDir === undefined ? undefined : manifest.activeVersion,
   });
   if (ownership === "unmanaged") {
     return blocked([
@@ -221,6 +222,7 @@ export async function nativeUninstall(
         versionsDir: layout.versionsDir,
         expectedSha256,
         platform,
+        profileVersion: layout.profileDir === undefined ? undefined : manifest.activeVersion,
       });
       if (launcherRemoved) removed.push(layout.launcherPath);
     }

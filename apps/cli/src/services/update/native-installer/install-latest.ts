@@ -407,6 +407,7 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
             await updateLauncher({
               launcherPath,
               versionPath,
+              profileVersion: layout.profileDir === undefined ? undefined : resolved,
             });
             await writeInstallManifestUnderActivation(
               {

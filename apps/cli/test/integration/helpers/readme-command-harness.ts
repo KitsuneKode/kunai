@@ -186,14 +186,15 @@ export function createIsolatedReadmeProfile(label = "readme"): IsolatedReadmePro
     homeDir: home,
     env,
   });
-  // install.sh defaults BIN_DIR to $HOME/.local/bin on every platform.
-  const binDir = join(home, ".local", "bin");
   const shimDir = join(root, "shims");
   // The real CLI spawned by this harness refuses a nonempty unmarked profile
   // root, so seed the ownership marker before any other file lands under it.
   if (paths.profileDir === undefined) {
     throw new Error("readme profile env did not resolve a profile dir");
   }
+  // The profile launcher lives under the profile's own bin dir — an external
+  // KUNAI_BIN_DIR is invalid while KUNAI_CONFIG_DIR is set.
+  const binDir = join(paths.profileDir, "bin");
   mkdirSync(paths.profileDir, { recursive: true });
   writeFileSync(join(paths.profileDir, PROFILE_MARKER), PROFILE_MARKER_CONTENT);
   for (const dir of [home, binDir, shimDir, paths.configDir, paths.dataDir, paths.cacheDir]) {
@@ -310,11 +311,11 @@ function profileEnv(
   const inherited = { ...process.env };
   delete inherited.KUNAI_DATA_DIR;
   delete inherited.KUNAI_CACHE_DIR;
+  delete inherited.KUNAI_BIN_DIR;
   return {
     ...inherited,
     ...profile.env,
     ...extras,
-    KUNAI_BIN_DIR: profile.binDir,
     PATH: pathParts.join(":"),
     CI: "1",
     DO_NOT_TRACK: "1",

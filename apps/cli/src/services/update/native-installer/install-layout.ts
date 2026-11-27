@@ -125,7 +125,13 @@ export function getInstallLayoutPaths(
       overrides.launcherPath ??
       (kunai.profileDir === undefined
         ? defaultLauncherPath(platform)
-        : joinFor(env.KUNAI_BIN_DIR || joinFor(kunai.profileDir, "bin"), binaryFileName(platform))),
+        : joinFor(
+            kunai.profileDir,
+            "bin",
+            // A Windows profile launcher is the .cmd wrapper — the .exe
+            // exists only inside the version store, never in bin.
+            platform === "win32" ? "kunai.cmd" : binaryFileName(platform),
+          )),
     binaryFileName: binaryFileName(platform),
   };
   return kunai.profileDir !== undefined && isProfileLayout

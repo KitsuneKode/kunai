@@ -78,7 +78,27 @@ export function getKunaiPaths(options: KunaiPathOptions = {}): KunaiPaths {
   const home = profileHome(platform, env, options.homeDir);
   const defaults = defaultBaseDirs(platform, env, home);
   const override = resolveDesktopProfileDirs(platform, env.KUNAI_CONFIG_DIR);
-  if (override) assertDedicatedRoot(platform, override.profileDir, home, defaults);
+  if (override) {
+    assertDedicatedRoot(platform, override.profileDir, home, defaults, env.KUNAI_CONFIG_DIR);
+    // A profile owns its launcher directory outright — an explicit bin
+    // override that names anything else would split the layout the CLI
+    // resolves from the same variable.
+    const binDir = env.KUNAI_BIN_DIR;
+    if (binDir !== undefined) {
+      const path = platform === "win32" ? win32Path : posixPath;
+      const bin = path.join(override.profileDir, "bin");
+      const actual = path.normalize(binDir);
+      const driveRootRelative = platform === "win32" && path.parse(binDir).root.length === 1;
+      if (!path.isAbsolute(binDir) || driveRootRelative || path.relative(bin, actual) !== "") {
+        throw new DesktopProfileError(
+          binDir,
+          `must equal ${JSON.stringify(bin)} while KUNAI_CONFIG_DIR is set`,
+          "Unset KUNAI_BIN_DIR to use the profile launcher directory.",
+          "KUNAI_BIN_DIR",
+        );
+      }
+    }
+  }
   const dirs = override ?? defaults;
   const join = joinerFor(platform);
 
@@ -97,6 +117,7 @@ function assertDedicatedRoot(
   root: string,
   home: string,
   defaults: Pick<KunaiPaths, "configDir" | "dataDir" | "cacheDir" | "tempDir">,
+  displayRoot = root,
 ): void {
   const path = platform === "win32" ? win32Path : posixPath;
   // Windows is always case-insensitive; macOS defaults to a case-insensitive
@@ -111,7 +132,7 @@ function assertDedicatedRoot(
   };
   if (contains(root, path.parse(root).root) || (path.isAbsolute(home) && contains(root, home))) {
     throw new DesktopProfileError(
-      root,
+      displayRoot,
       "must not be a filesystem root, home directory, or ancestor of home",
     );
   }
@@ -120,7 +141,7 @@ function assertDedicatedRoot(
       (dir) => path.isAbsolute(dir) && (contains(root, dir) || contains(dir, root)),
     )
   ) {
-    throw new DesktopProfileError(root, "overlaps a platform-default Kunai directory");
+    throw new DesktopProfileError(displayRoot, "overlaps a platform-default Kunai directory");
   }
 }
 
@@ -147,7 +168,7 @@ export function checkDesktopProfile(
   }
   if (expectedRoot !== undefined && profileDir !== expectedRoot) {
     throw new DesktopProfileError(
-      profileDir,
+      env.KUNAI_CONFIG_DIR ?? profileDir,
       `does not match expected profile root ${expectedRoot}`,
     );
   }
@@ -162,22 +183,34 @@ function checkProfileOwnership(
 ): void {
   const join = joinerFor(platform);
   const home = profileHome(platform, env);
+  // Diagnostics name the spelling the user actually configured, not the
+  // normalized path their shell resolved it to.
+  const displayRoot = env.KUNAI_CONFIG_DIR ?? root;
   try {
     const defaults = defaultBaseDirs(platform, env, home);
-    assertDedicatedRoot(platform, physicalPath(root), physicalPath(home), {
-      configDir: physicalPath(defaults.configDir),
-      dataDir: physicalPath(defaults.dataDir),
-      cacheDir: physicalPath(defaults.cacheDir),
-      tempDir: physicalPath(defaults.tempDir),
-    });
     const rootStat = lstatSync(root, { throwIfNoEntry: false });
-    if (rootStat && !rootStat.isDirectory()) {
-      throw new DesktopProfileError(root, "is not a regular directory");
+    if (rootStat?.isSymbolicLink()) {
+      throw new DesktopProfileError(displayRoot, "must not be a symlink");
     }
+    if (rootStat && !rootStat.isDirectory()) {
+      throw new DesktopProfileError(displayRoot, "is not a regular directory");
+    }
+    assertDedicatedRoot(
+      platform,
+      physicalPath(root),
+      physicalPath(home),
+      {
+        configDir: physicalPath(defaults.configDir),
+        dataDir: physicalPath(defaults.dataDir),
+        cacheDir: physicalPath(defaults.cacheDir),
+        tempDir: physicalPath(defaults.tempDir),
+      },
+      env.KUNAI_CONFIG_DIR,
+    );
     for (const child of ["config", "data", "cache", "tmp", "bin"]) {
       const stat = lstatSync(join(root, child), { throwIfNoEntry: false });
       if (stat && !stat.isDirectory()) {
-        throw new DesktopProfileError(root, `has a non-directory or symlink at ${child}`);
+        throw new DesktopProfileError(displayRoot, `has a non-directory or symlink at ${child}`);
       }
     }
     const marker = join(root, PROFILE_MARKER);
@@ -188,7 +221,11 @@ function checkProfileOwnership(
     if (mode === "require" || (rootStat && readdirSync(root).length > 0)) {
       // Another Kunai process may have marked the previously empty root.
       if (ownsRoot()) return;
-      throw new DesktopProfileError(root, `has no valid ${PROFILE_MARKER} ownership marker`);
+      throw new DesktopProfileError(
+        displayRoot,
+        `has no valid ${PROFILE_MARKER} ownership marker`,
+        "Use a profile already owned by Kunai, or install into a new, empty directory.",
+      );
     }
     if (mode === "inspect") return;
     mkdirSync(root, { recursive: true });
@@ -199,7 +236,7 @@ function checkProfileOwnership(
     }
   } catch (error) {
     if (error instanceof DesktopProfileError) throw error;
-    throw new DesktopProfileError(root, "could not be checked or initialized");
+    throw new DesktopProfileError(displayRoot, "could not be checked or initialized");
   }
 }
 

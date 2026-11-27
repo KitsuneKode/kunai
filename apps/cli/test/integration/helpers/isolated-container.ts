@@ -28,8 +28,10 @@ function hostStoragePlatform(): StoragePlatform {
   return "linux";
 }
 
-export function createIsolatedCliProfile(label: string): IsolatedCliProfile {
-  const rootDir = mkdtempSync(join(tmpdir(), `kunai-integration-${label}-`));
+export function createIsolatedCliProfile(
+  label: string,
+  rootDir = mkdtempSync(join(tmpdir(), `kunai-integration-${label}-`)),
+): IsolatedCliProfile {
   const env = storageRootEnv(rootDir);
   const paths = getKunaiPaths({
     platform: hostStoragePlatform(),

@@ -6,6 +6,7 @@ import {
   lstat,
   mkdir,
   readdir,
+  readFile,
   readlink,
   rename,
   rm,
@@ -13,6 +14,40 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+
+import { parseCanonicalVersion } from "../version";
+
+/**
+ * Exact byte content of a dedicated-profile launcher: a small wrapper whose
+ * own directory selects the profile (no KUNAI_CONFIG_DIR needed in the
+ * invoking shell) and whose canonical version selects the versioned payload.
+ * Shared verbatim with install.sh/install.ps1 — ownership checks compare
+ * bytes exactly, so all three must emit identical text, newline conventions
+ * included (\r\n for cmd, \n for sh).
+ */
+function profileLauncherScript(version: string, platform: NodeJS.Platform): string {
+  if (!parseCanonicalVersion(version)) throw new Error("Invalid profile launcher version");
+  if (platform === "win32") {
+    return [
+      "@echo off",
+      "setlocal DisableDelayedExpansion",
+      "(",
+      '  set "KUNAI_CONFIG_DIR=%~dp0.."',
+      `  "%~dp0..\\data\\versions\\${version}\\kunai.exe" %*`,
+      "  exit /b",
+      ")",
+      "",
+    ].join("\r\n");
+  }
+  return [
+    "#!/bin/sh",
+    "case $0 in */*) launcher_dir=${0%/*} ;; *) launcher_dir=. ;; esac",
+    'profile=$(CDPATH= cd -L -- "$launcher_dir/.." && pwd -L) || exit 2',
+    'export KUNAI_CONFIG_DIR="$profile"',
+    `exec "$profile/data/versions/${version}/kunai" "$@"`,
+    "",
+  ].join("\n");
+}
 
 interface LauncherFileOps {
   chmod(path: string, mode: number): Promise<void>;
@@ -56,7 +91,11 @@ interface WindowsLauncherOptions {
 }
 
 async function updateWindowsLauncher(
-  input: { readonly launcherPath: string; readonly versionPath: string },
+  input: {
+    readonly launcherPath: string;
+    readonly versionPath: string;
+    readonly wrapper?: string;
+  },
   options: WindowsLauncherOptions = {},
 ): Promise<void> {
   const fs = options.fs ?? nodeLauncherFileOps;
@@ -72,7 +111,11 @@ async function updateWindowsLauncher(
   await fs.rm(candidate, { force: true }).catch(() => {});
   try {
     // Finish staging the replacement before moving the last-known-good launcher.
-    await fs.copyFile(input.versionPath, candidate);
+    if (input.wrapper !== undefined) {
+      await writeFile(candidate, input.wrapper, { flag: "wx" });
+    } else {
+      await fs.copyFile(input.versionPath, candidate);
+    }
     await fs.chmod(candidate, 0o755).catch(() => {});
 
     if (!existsSync(input.launcherPath)) {
@@ -136,9 +179,19 @@ export async function updateLauncher(input: {
   readonly launcherPath: string;
   readonly versionPath: string;
   readonly platform?: NodeJS.Platform;
+  readonly profileVersion?: string;
 }): Promise<void> {
   const platform = input.platform ?? process.platform;
   await mkdir(dirname(input.launcherPath), { recursive: true });
+
+  // A dedicated profile gets the wrapper script — its own directory selects
+  // the profile, so the invoking shell needs no KUNAI_CONFIG_DIR.
+  if (input.profileVersion !== undefined) {
+    const wrapper = profileLauncherScript(input.profileVersion, platform);
+    if (platform === "win32") await updateWindowsLauncher({ ...input, wrapper });
+    else await atomicWriteBinary(input.launcherPath, new TextEncoder().encode(wrapper));
+    return;
+  }
 
   if (platform === "win32") {
     await updateWindowsLauncher(input);
@@ -255,11 +308,25 @@ export async function inspectLauncherOwnership(input: {
   readonly versionsDir: string;
   readonly expectedSha256?: string;
   readonly platform?: NodeJS.Platform;
+  readonly profileVersion?: string;
 }): Promise<LauncherOwnership> {
   if (!existsSync(input.launcherPath)) return "missing";
 
   const platform = input.platform ?? process.platform;
   const versions = input.versionsDir.replaceAll("\\", "/");
+
+  // A profile launcher is ours only when it is exactly the shared wrapper —
+  // a tampered or foreign script is never adopted or removed.
+  if (input.profileVersion !== undefined) {
+    try {
+      const expected = profileLauncherScript(input.profileVersion, platform);
+      const stat = await lstat(input.launcherPath);
+      if (!stat.isFile() || stat.size !== Buffer.byteLength(expected)) return "unmanaged";
+      return (await readFile(input.launcherPath, "utf8")) === expected ? "managed" : "unmanaged";
+    } catch {
+      return "unmanaged";
+    }
+  }
 
   if (platform === "win32") {
     const expected = input.expectedSha256?.toLowerCase();
@@ -314,6 +381,7 @@ export async function removeLauncherIfVersioned(input: {
   readonly versionsDir: string;
   readonly expectedSha256?: string;
   readonly platform?: NodeJS.Platform;
+  readonly profileVersion?: string;
 }): Promise<boolean> {
   const ownership = await inspectLauncherOwnership(input);
   if (ownership !== "managed") return false;
@@ -322,4 +390,4 @@ export async function removeLauncherIfVersioned(input: {
   return true;
 }
 
-export const __testing = { updateWindowsLauncher };
+export const __testing = { updateWindowsLauncher, profileLauncherScript };
