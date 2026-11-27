@@ -27,7 +27,7 @@ If she ever feels like she is talking too much, that is a bug. [Open an issue](h
 
 ## Where she shows up
 
-She appears while you wait and when something fails, and on the surfaces that would otherwise leave you looking at nothing: an empty frame, a search that found nothing, the setup wizard from [Getting Started](/docs/users/getting-started), and the goodbye screen. She is never drawn on success, and never on a surface you are reading — results, details, settings, or a running episode with its poster on screen.
+She appears while you wait and when something fails, and on the surfaces that would otherwise leave you looking at nothing: an empty frame, a search that found nothing, the setup wizard from [Getting Started](/docs/users/getting-started), and the goodbye screen. She is never drawn on success, and never on a surface you are reading: results, details, settings, or a running episode with its poster on screen.
 
 ```text
 ⠋  Resolving via VidLink
@@ -46,7 +46,7 @@ She appears while you wait and when something fails, and on the surfaces that wo
    🦊 couldn't get there.
 ```
 
-Each line fires when something changes, never on a timer. A healthy session — search, resolve, hand off, quit — meets at most four of them.
+Each line fires when something changes, never on a timer. A healthy session (search, resolve, hand off, quit) meets at most four of them.
 
 ## Poses
 
@@ -56,7 +56,7 @@ Each pose maps to something real that is happening, so she never becomes decorat
 | ------- | --------------------------------- | -------------------------------------------------------------- | ------------------------ |
 | `seek`  | leaning in, ears back, eyes wide  | a search in flight, the provider race, a provider dying        | searching, resolving     |
 | `go`    | mid-stride, the dart in her mouth | the beat between "found it" and the player taking over         | home flow, install pages |
-| `oops`  | ears flat, brows angled           | a failed resolve, a search that errored                        | —                        |
+| `oops`  | ears flat, brows angled           | a failed resolve, a search that errored                        | none                     |
 | `peek`  | paws over the edge, looking       | a search that came back empty                                  | 404s, section rules      |
 | `nap`   | curled, eyes closed               | a bare frame nothing has been asked of yet, the goodbye screen | the roamer asleep        |
 | `wait`  | square and composed               | the setup wizard                                               | empty shelves, install   |
@@ -107,7 +107,7 @@ An explicit `KUNAI_PET` outranks the stored preference: `/pet` will say so rathe
 
 ## Reduced motion
 
-Every animation on this site and in the terminal is gated on your reduced-motion preference — the system setting on the site, `KUNAI_REDUCED_MOTION` or `NO_MOTION` in the terminal, and plain mode. With it on, the terminal is sent one drawing and no animation frames, and her line appears whole instead of typing on. She does not breathe, lean, or react.
+Every animation on this site and in the terminal is gated on your reduced-motion preference: the system setting on the site, `KUNAI_REDUCED_MOTION` or `NO_MOTION` in the terminal, and plain mode. With it on, the terminal is sent one drawing and no animation frames, and her line appears whole instead of typing on. She does not breathe, lean, or react.
 
 The roaming fox is the exception: she is not frozen, she is not rendered at all. Something that follows your pointer has no still version worth showing, so `KunaiFoxRoamer` returns nothing under reduced motion and the stylesheet hides her as a second guard. Every other surface keeps its artwork; only the movement stops.
 
