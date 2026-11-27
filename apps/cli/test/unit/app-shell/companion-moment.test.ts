@@ -94,7 +94,6 @@ describe("momentForLoading", () => {
       picture: false,
     });
     expect(momentForLoading({ ...base, operation: "playing", hasPoster: true })).toBeNull();
-    expect(momentForLoading({ ...base, operation: "loading", hasPoster: true })).toBeNull();
   });
 
   test("she fills an empty frame during a resolve", () => {
@@ -123,8 +122,14 @@ describe("momentForLoading", () => {
     expect(momentForLoading({ ...base, operation: "playing" })?.moment).toBe("watching");
   });
 
-  test("a generic load says nothing, so she says nothing", () => {
-    expect(momentForLoading({ ...base, operation: "loading" })).toBeNull();
+  test("a `loading` bootstrap is the race too", () => {
+    // The presenter reports a race whose playback status is `loading` under
+    // that operation. Reading it as "nothing happening" left her off the
+    // longest wait in the product — caught on a real kitty run.
+    expect(momentForLoading({ ...base, operation: "loading" })).toEqual({
+      moment: "seeking",
+      picture: true,
+    });
   });
 
   test("metadata without artwork is not a poster", () => {
@@ -235,6 +240,7 @@ describe("no moment is a dead letter", () => {
       "setup-shell.tsx",
       "setup/SetupScreens.tsx",
       "exit-shell.tsx",
+      "root-status-shells.tsx",
     ]
       .map((file) => read(file))
       .join("\n");
@@ -295,6 +301,7 @@ describe("single ownership", () => {
       "setup/SetupScreens.tsx",
       "exit-shell.tsx",
       "loading-shell.tsx",
+      "root-status-shells.tsx",
     ]) {
       // A Box whose *only* child is the host exists to space it. A Box that
       // also holds siblings — the summary screen's row, which carries the text

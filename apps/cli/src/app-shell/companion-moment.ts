@@ -168,16 +168,15 @@ export function momentForLoading({
   if (stage === "starting-playback") {
     return { moment: issue ? "recovered" : "handoff", picture };
   }
-  if (operation === "resolving") {
-    if (issue) return { moment: "rerouting", picture };
-    if (elapsed >= STALL_THRESHOLD_SECONDS) return { moment: "dragging", picture };
-    return { moment: "seeking", picture };
-  }
   // Someone is watching. No line, and no picture where there is a poster.
   if (operation === "playing") return picture ? { moment: "watching", picture } : null;
-  // `loading` is the generic case and says nothing about what is happening, so
-  // there is no pose that would mean anything on it.
-  return null;
+  // Everything before playback is the race. `loading` is not a generic load:
+  // the bootstrap presenter reports a race whose playback status is `loading`
+  // under exactly that operation, and treating it as nothing to say left her
+  // off the longest wait in the product.
+  if (issue) return { moment: "rerouting", picture };
+  if (elapsed >= STALL_THRESHOLD_SECONDS) return { moment: "dragging", picture };
+  return { moment: "seeking", picture };
 }
 
 /**

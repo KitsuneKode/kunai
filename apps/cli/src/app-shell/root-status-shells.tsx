@@ -5,6 +5,7 @@ import { measureColumns, truncateLine } from "@/domain/text-display";
 import { Box, Text, useInput } from "ink";
 import React from "react";
 
+import { CompanionHost } from "./CompanionHost";
 import { extractErrorDebugExcerpt } from "./error-debug-excerpt";
 import { MouseTarget } from "./mouse/MouseRegions";
 import { plainModeEnabled } from "./plain-mode";
@@ -32,6 +33,9 @@ export function RootIdleShell({ state }: { state: SessionState }) {
           label={query.length > 0 ? `Searching ${truncateLine(query, 60)}…` : "Searching…"}
           sublabel="esc to cancel"
         />
+        {/* She speaks beside the loader, never instead of it: the sakura is the
+            one motion policy for waiting, and she is the voice over it. */}
+        <CompanionHost moment="searching" rows={3} marginTop={1} />
       </Box>
     );
   }
@@ -55,6 +59,7 @@ export function RootIdleShell({ state }: { state: SessionState }) {
           label={`Preparing ${titleName}…`}
           sublabel="Resolving sources · esc to cancel"
         />
+        <CompanionHost moment="seeking" rows={3} marginTop={1} />
       </Box>
     );
   }
