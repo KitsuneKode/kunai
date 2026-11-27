@@ -175,7 +175,7 @@ export type ProbeFetchOutcome =
        *  base that relative playlist URIs resolve against. */
       readonly finalUrl: string;
     }
-  | { readonly kind: "blocked"; readonly reason: string }
+  | { readonly kind: "blocked"; readonly reason: string; readonly url: string }
   | { readonly kind: "timeout" };
 
 /**
@@ -222,6 +222,7 @@ export async function fetchProbeTarget(options: {
       ? AbortSignal.any([options.init.signal, options.parentSignal])
       : (options.init.signal ?? options.parentSignal);
   let target = options.url;
+  const blocked = (reason: string): ProbeFetchOutcome => ({ kind: "blocked", reason, url: target });
   let headersInit = options.init.headers;
   for (let hop = 0; ; hop++) {
     if (signal?.aborted || options.remaining() <= 0) {
@@ -229,7 +230,7 @@ export async function fetchProbeTarget(options: {
     }
     const literalBlocked = blockedLiteralTargetReason(target);
     if (literalBlocked) {
-      return { kind: "blocked", reason: literalBlocked };
+      return blocked(literalBlocked);
     }
     let requestTarget = target;
     let requestInit: RequestInit & { proxy?: false; tls?: { serverName: string } } =
@@ -249,14 +250,16 @@ export async function fetchProbeTarget(options: {
         return { kind: "timeout" };
       }
       if (addresses.length === 0) {
-        return { kind: "blocked", reason: `No vetted DNS address for ${host}` };
+        return blocked(`No vetted DNS address for ${host}`);
       }
       for (const address of addresses) {
         const reason = isPrivateLiteralAddress(address);
-        if (reason) return { kind: "blocked", reason: `${reason} (DNS answer for ${host})` };
+        if (reason) {
+          return blocked(`${reason} (DNS answer for ${host})`);
+        }
       }
       const address = addresses[0];
-      if (!address) return { kind: "blocked", reason: `No vetted DNS address for ${host}` };
+      if (!address) return blocked(`No vetted DNS address for ${host}`);
       const pinned = new URL(target);
       pinned.hostname = address.includes(":") ? `[${address}]` : address;
       const headers = new Headers(headersInit);

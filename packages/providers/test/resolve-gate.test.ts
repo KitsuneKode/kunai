@@ -186,6 +186,37 @@ describe("selectVerifiedStream", () => {
     expect(result.accepted === false && result.reason).toContain("403");
   });
 
+  test("a URL-scoped refusal does not indict the same URL with different request headers", async () => {
+    const url = "https://cdn.example/shared.mp4";
+    const probedReferers: string[] = [];
+    const { context } = contextRecording((target, init) => {
+      if (target !== url) return new Response("not found", { status: 404 });
+      const referer = new Headers(init?.headers).get("referer") ?? "";
+      probedReferers.push(referer);
+      if (referer === "https://refused.example/") {
+        return new Response("forbidden", { status: 403 });
+      }
+      return new Response(null, {
+        status: 200,
+        headers: { "content-type": "video/mp4" },
+      });
+    });
+
+    const streams = [
+      { id: "refused", url, headers: { referer: "https://refused.example/" } },
+      { id: "allowed", url, headers: { referer: "https://allowed.example/" } },
+    ];
+    const result = await selectVerifiedStream({ streams, context });
+
+    expect(result.accepted).toBe(true);
+    expect(result.accepted === true && result.stream.id).toBe("allowed");
+    expect(probedReferers).toContain("https://refused.example/");
+    expect(probedReferers).toContain("https://allowed.example/");
+    expect(dropRefusedStreams(streams, result.refusals).map((entry) => entry.id)).toEqual([
+      "allowed",
+    ]);
+  });
+
   test("probes a sibling URL on the same host after a URL-scoped refusal", async () => {
     // Counted by distinct URL, not by fetch: one probe of a direct stream is
     // itself a HEAD plus a ranged GET, so raw request count measures the
@@ -239,6 +270,41 @@ describe("selectVerifiedStream", () => {
     expect(new Set(probed)).toEqual(
       new Set(["https://dead.example/1080.mp4", "https://live.example/480.mp4"]),
     );
+  });
+
+  test("a cross-host HLS variant failure does not suppress siblings on the master host", async () => {
+    const masterUrl = "https://master.example/master.m3u8";
+    const variantHostUrl = "https://dead-variant.example/720.m3u8";
+    const siblingUrl = "https://master.example/720.mp4";
+    const probed: string[] = [];
+    const { context } = contextRecording((url) => {
+      probed.push(url);
+      if (url === masterUrl) {
+        return new Response(
+          `#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000,RESOLUTION=1280x720\n${variantHostUrl}\n`,
+          { status: 200 },
+        );
+      }
+      if (url === variantHostUrl) {
+        throw new Error("getaddrinfo ENOTFOUND dead-variant.example");
+      }
+      return new Response(null, {
+        status: 200,
+        headers: { "content-type": "video/mp4" },
+      });
+    });
+
+    const streams = [stream("master", masterUrl), stream("sibling", siblingUrl)];
+    const result = await selectVerifiedStream({ streams, context });
+
+    expect(result.accepted).toBe(true);
+    expect(result.accepted === true && result.stream.id).toBe("sibling");
+    expect(probed).toContain(masterUrl);
+    expect(probed).toContain(variantHostUrl);
+    expect(probed).toContain(siblingUrl);
+    expect(dropRefusedStreams(streams, result.refusals).map((entry) => entry.id)).toEqual([
+      "sibling",
+    ]);
   });
 
   test("rejects an empty candidate rather than reporting success", async () => {

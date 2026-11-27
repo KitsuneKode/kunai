@@ -46,6 +46,8 @@ export type StreamReachabilityProbeResult =
        * and media evidence indict only the URL that was probed.
        */
       readonly refusalScope?: "host" | "url";
+      /** The host whose transport or guard actually failed, when known. */
+      readonly refusalHost?: string;
     }
   | { readonly status: "timeout" };
 
@@ -337,12 +339,7 @@ async function fetchPlaylistText(
     if (outcome.kind === "blocked") {
       return {
         status: "fail",
-        result: {
-          status: "unreachable",
-          reason: `blocked stream target: ${outcome.reason}`,
-          definitive: true,
-          refusalScope: "host",
-        },
+        result: hostUnreachable(`blocked stream target: ${outcome.reason}`, true, outcome.url),
       };
     }
     const response = outcome.response;
@@ -373,12 +370,7 @@ async function fetchPlaylistText(
     const message = error instanceof Error ? error.message : String(error);
     return {
       status: "fail",
-      result: {
-        status: "unreachable",
-        reason: message,
-        definitive: isDefinitiveNetworkError(message),
-        refusalScope: "host",
-      },
+      result: hostUnreachable(message, isDefinitiveNetworkError(message), url),
     };
   } finally {
     deadline.release();
@@ -414,11 +406,7 @@ async function probeHlsMediaSegment(
     });
     if (outcome.kind === "timeout") return { status: "timeout" };
     if (outcome.kind === "blocked") {
-      return {
-        status: "unreachable",
-        reason: `HLS segment blocked: ${outcome.reason}`,
-        definitive: true,
-      };
+      return hostUnreachable(`HLS segment blocked: ${outcome.reason}`, true, outcome.url);
     }
     const response = outcome.response;
     const healthyStatus = (status: number) => (status >= 200 && status < 300) || status === 206;
@@ -484,11 +472,11 @@ async function probeHlsMediaSegment(
       return { status: "timeout" };
     }
     const message = error instanceof Error ? error.message : String(error);
-    return {
-      status: "unreachable",
-      reason: `HLS segment unreachable: ${message}`,
-      definitive: isDefinitiveNetworkError(message),
-    };
+    return hostUnreachable(
+      `HLS segment unreachable: ${message}`,
+      isDefinitiveNetworkError(message),
+      url,
+    );
   } finally {
     deadline.release();
   }
@@ -530,12 +518,7 @@ async function probeHttpStatus(
     });
     if (outcome.kind === "timeout") return { status: "timeout" };
     if (outcome.kind === "blocked") {
-      return {
-        status: "unreachable",
-        reason: `blocked stream target: ${outcome.reason}`,
-        definitive: true,
-        refusalScope: "host",
-      };
+      return hostUnreachable(`blocked stream target: ${outcome.reason}`, true, outcome.url);
     }
     const response = outcome.response;
     await response.body?.cancel().catch(() => undefined);
@@ -555,12 +538,7 @@ async function probeHttpStatus(
       return { status: "timeout" };
     }
     const message = error instanceof Error ? error.message : String(error);
-    return {
-      status: "unreachable",
-      reason: message,
-      definitive: isDefinitiveNetworkError(message),
-      refusalScope: "host",
-    };
+    return hostUnreachable(message, isDefinitiveNetworkError(message), url);
   } finally {
     deadline.release();
   }
@@ -792,12 +770,7 @@ async function probeDirectMedia(
     });
     if (outcome.kind === "timeout") return { status: "timeout" };
     if (outcome.kind === "blocked") {
-      return {
-        status: "unreachable",
-        reason: "blocked-target",
-        definitive: true,
-        refusalScope: "host",
-      };
+      return hostUnreachable("blocked-target", true, outcome.url);
     }
     const response = outcome.response;
     if (response.status >= 300 && response.status < 400) {
@@ -848,11 +821,28 @@ async function probeDirectMedia(
   } catch {
     if (signal.aborted) return { status: "timeout" };
     // No raw cause: a transport message can quote the URL it failed on.
-    return {
-      status: "unreachable",
-      reason: "network-error",
-      definitive: false,
-      refusalScope: "host",
-    };
+    return hostUnreachable("network-error", false, input.url);
+  }
+}
+
+function hostUnreachable(
+  reason: string,
+  definitive: boolean,
+  url: string,
+): StreamReachabilityProbeResult {
+  return {
+    status: "unreachable",
+    reason,
+    definitive,
+    refusalScope: "host",
+    refusalHost: streamUrlHost(url),
+  };
+}
+
+export function streamUrlHost(url: string | undefined): string {
+  try {
+    return new URL(url ?? "").host.toLowerCase();
+  } catch {
+    return "";
   }
 }

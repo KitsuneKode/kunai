@@ -174,3 +174,65 @@ test("does not reuse the candidate-gated stream after the final gate refuses its
 
   expect(result.status).toBe("exhausted");
 });
+
+test("the same unwrapped URL with different playback headers has distinct stream identities", async () => {
+  const target = "https://cdn.example/shared.mp4";
+  const wrap = (referer: string) =>
+    `https://cors.corsflix.net/m3u8?url=${encodeURIComponent(target)}&headers=${encodeURIComponent(
+      JSON.stringify({ Referer: referer, "User-Agent": "fixture" }),
+    )}`;
+  const firstReferer = "https://first.example/";
+  const secondReferer = "https://second.example/";
+  const probedReferers: string[] = [];
+  const context: ProviderRuntimeContext = {
+    now: () => "2026-11-27T00:00:00.000Z",
+    signal: new AbortController().signal,
+    fetch: {
+      runtime: "direct-http",
+      fetch: async (input, init) => {
+        const url = String(input);
+        if (url.includes("/api/providers")) return Response.json({ data: ["citadel"] });
+        if (url.includes("/api/provider?")) {
+          return Response.json({
+            data: {
+              sources: [
+                { url: wrap(firstReferer), quality: "720p" },
+                { url: wrap(secondReferer), quality: "720p" },
+              ],
+              captions: [],
+            },
+          });
+        }
+        if (url === target) {
+          probedReferers.push(new Headers(init?.headers).get("referer") ?? "");
+          return new Response(null, {
+            status: 200,
+            headers: { "content-type": "video/mp4", "content-length": "1024" },
+          });
+        }
+        return new Response("not found", { status: 404 });
+      },
+    },
+  };
+
+  const result = await rivestreamProviderModule.resolve(
+    {
+      title: { id: "tmdb:550", tmdbId: "550", kind: "movie", title: "Fight Club" },
+      mediaKind: "movie",
+      startupPriority: "balanced",
+      intent: "play",
+      allowedRuntimes: ["direct-http"],
+    },
+    context,
+  );
+
+  expect(result.status).toBe("resolved");
+  expect(result.streams).toHaveLength(2);
+  expect(new Set(result.streams.map((stream) => stream.id)).size).toBe(2);
+  expect(new Set((result.variants ?? []).map((variant) => variant.id)).size).toBe(2);
+  expect(result.streams.map((stream) => stream.headers?.referer)).toEqual([
+    firstReferer,
+    secondReferer,
+  ]);
+  expect(probedReferers).toContain(firstReferer);
+});

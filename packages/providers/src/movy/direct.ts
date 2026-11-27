@@ -34,6 +34,7 @@ import {
 import {
   dropRefusedStreams,
   resolveGateBudgetMs,
+  selectProbedFinalStream,
   selectVerifiedStream,
 } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
@@ -303,6 +304,7 @@ type MovyResolvedCandidate = {
   readonly streams: readonly StreamCandidate[];
   readonly variants: readonly ProviderVariantCandidate[];
   readonly subtitles: readonly SubtitleCandidate[];
+  readonly candidateGateStream: StreamCandidate;
 };
 
 async function resolveMovyLaneCandidate({
@@ -514,6 +516,7 @@ async function resolveMovyLaneCandidate({
     streams: gatedStreams,
     variants: gatedVariants,
     subtitles: [...new Map(subtitles.map((subtitle) => [subtitle.url, subtitle])).values()],
+    candidateGateStream: selection.stream,
   };
 }
 
@@ -785,6 +788,7 @@ export async function resolveMovyDirect(
     variants: selectedVariants,
     subtitles,
     provider: laneUsed,
+    candidateGateStream,
   } = cycleResult.selected;
   const streams = [...selectedStreams];
   const variants = [...selectedVariants];
@@ -803,18 +807,14 @@ export async function resolveMovyDirect(
   // success is reported. URL-scoped refusals leave sibling rungs eligible, and
   // the walk continues through the rank-ordered remainder — a dead CDN lane
   // must end in an exhausted result, never a shipped "resolved".
-  const probeTimeoutMs = resolveGateBudgetMs(
-    providerCycleCandidateTimeoutMs(input.startupPriority ?? "balanced", MOVY_CANDIDATE_TIMEOUT_MS),
-  );
-  const gateOrder = [
-    selection.selected,
-    ...selectableStreams.filter((stream) => stream.id !== selection.selected.id),
-  ].slice(0, MOVY_RESOLVE_GATE_MAX_PROBES);
-  const gated = await selectVerifiedStream({
-    streams: gateOrder,
+  const gated = await selectProbedFinalStream({
+    selected: selection.selected,
+    selectableStreams,
+    candidateGateStream,
     context,
     signal: context.signal,
-    timeoutMs: probeTimeoutMs,
+    timeoutMs: gateTimeoutMs,
+    maxProbes: MOVY_RESOLVE_GATE_MAX_PROBES,
   });
 
   if (context.signal?.aborted) {

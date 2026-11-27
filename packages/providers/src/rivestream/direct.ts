@@ -42,6 +42,7 @@ import {
 import {
   dropRefusedStreams,
   resolveGateBudgetMs,
+  selectProbedFinalStream,
   selectVerifiedStream,
 } from "../shared/resolve-gate";
 import { createExhaustedResult, emitTraceEvent } from "../shared/resolve-helpers";
@@ -64,7 +65,6 @@ import { selectReadyStream } from "../shared/startup-selection";
 import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { createTimeoutSignal } from "../shared/timeout-signal";
 import { trimTrailingSlashes } from "../shared/trim-trailing-slashes";
-import { selectRivestreamFinalStream } from "./final-gate";
 import { rivestreamManifest, RIVESTREAM_PROVIDER_ID } from "./manifest";
 import { parseRivestreamProxyHeaders, unwrapRivestreamProxyUrl } from "./proxy-url";
 import {
@@ -661,7 +661,7 @@ export const rivestreamProviderModule: CoreProviderModule = {
         preferredSourceId: input.preferredSourceId,
       });
 
-      const gated = await selectRivestreamFinalStream({
+      const gated = await selectProbedFinalStream({
         selected: selection.selected,
         selectableStreams,
         candidateGateStream,
@@ -1282,9 +1282,9 @@ async function resolveRivestreamProviderCandidate({
     for (const row of rows) {
       const qualityLabel = normalizeQualityLabel(row.qualityStr);
       const qualityRank = row.qualityRank ?? qualityRankFromLabel(row.qualityStr) ?? 0;
-      const streamId = createStreamId(RIVESTREAM_PROVIDER_ID, [row.url]);
-      const variantId = createVariantId(RIVESTREAM_PROVIDER_ID, [sourceId, qualityLabel, row.url]);
-
+      const requestIdentity = [row.url, streamHeaders];
+      const streamId = createStreamId(RIVESTREAM_PROVIDER_ID, requestIdentity);
+      const variantId = createVariantId(RIVESTREAM_PROVIDER_ID, [sourceId, ...requestIdentity]);
       streams.push({
         id: streamId,
         providerId: RIVESTREAM_PROVIDER_ID,

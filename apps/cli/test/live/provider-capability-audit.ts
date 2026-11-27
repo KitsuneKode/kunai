@@ -34,6 +34,7 @@ import { join, resolve as resolvePath } from "node:path";
 
 import { titleInfoFromSearchResult } from "@/app/bootstrap/title-info";
 import type { SearchResult, StreamInfo, TitleInfo } from "@/domain/types";
+import { decodePng } from "@/image/decode";
 import {
   guardedYtdlRawOptions,
   normalizeStreamHttpHeaders,
@@ -1188,23 +1189,9 @@ function sanitizeFileName(value: string): string {
 
 function pngDimensions(path: string): { readonly width: number; readonly height: number } | null {
   try {
-    const bytes = readFileSync(path);
-    const pngMagic =
-      bytes.length >= 24 &&
-      bytes[0] === 0x89 &&
-      bytes[1] === 0x50 &&
-      bytes[2] === 0x4e &&
-      bytes[3] === 0x47 &&
-      bytes[4] === 0x0d &&
-      bytes[5] === 0x0a &&
-      bytes[6] === 0x1a &&
-      bytes[7] === 0x0a &&
-      bytes.toString("ascii", 12, 16) === "IHDR";
-    if (!pngMagic) return null;
-    const width = bytes.readUInt32BE(16);
-    const height = bytes.readUInt32BE(20);
-    if (width <= 0 || height <= 0) return null;
-    return { width, height };
+    const decoded = decodePng(new Uint8Array(readFileSync(path)));
+    if (decoded.width <= 0 || decoded.height <= 0) return null;
+    return { width: decoded.width, height: decoded.height };
   } catch {
     return null;
   }
