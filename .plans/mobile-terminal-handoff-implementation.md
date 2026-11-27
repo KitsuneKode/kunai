@@ -20,7 +20,7 @@
 - Command execution always uses fixed argument arrays; no stream value is interpolated into a shell command.
 - `providerRelay.baseUrl` remains empty by default and the relay remains metadata-only.
 - Analytics remains explicit opt-in; mobile and non-interactive paths must not create an install ID or send.
-- Tests use `storageRootEnv`; never use `KUNAI_CONFIG_DIR` or the developer's live databases.
+- Tests use `storageRootEnv`; never point a run at the developer's live databases.
 - Deterministic, Android runtime, live provider, VLC/mpv, terminal, installer, and release-approval gates are reported separately.
 
 ## File structure

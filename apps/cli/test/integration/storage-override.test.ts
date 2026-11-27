@@ -28,21 +28,18 @@ import { applyStorageRootEnv } from "../helpers/storage-env";
 describe("KUNAI_CONFIG_DIR profile root", () => {
   let root: string;
   let restoreEnv: () => void;
-  let previousOverride: string | undefined;
 
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), "kunai-storage-override-"));
     restoreEnv = applyStorageRootEnv(join(root, "home"));
-    // The override must start absent both ways: a leaked value from an outer
-    // shell would corrupt the *default* profile resolution this test pins,
-    // not just move the one under test.
-    previousOverride = process.env.KUNAI_CONFIG_DIR;
+    // This test pins the platform-*default* layout, so the profile override —
+    // applied by the helper and inherited from the preload — must be absent
+    // while the fake OS defaults are seeded and resolved. The test itself
+    // sets the override under `root` before startup.
     delete process.env.KUNAI_CONFIG_DIR;
   });
 
   afterEach(() => {
-    if (previousOverride === undefined) delete process.env.KUNAI_CONFIG_DIR;
-    else process.env.KUNAI_CONFIG_DIR = previousOverride;
     restoreEnv();
     rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   });

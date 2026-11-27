@@ -57,9 +57,8 @@ if [[ "$observed_tag" != "$TAG" ]]; then
 fi
 echo "releases/latest reports $TAG"
 
-# A full profile sandbox. KUNAI_CONFIG_DIR alone is not isolation: install.sh
-# derives DATA_DIR and CACHE_DIR from HOME/XDG independently, so a partial
-# override writes a real profile on any machine that has one.
+# A full profile sandbox exercised through the default install layout: the
+# override stays unset so HOME/XDG drive every path the run checks.
 SANDBOX="$(mktemp -d)"
 cleanup() {
 	rm -rf "$SANDBOX"
@@ -75,6 +74,9 @@ export KUNAI_BIN_DIR="$SANDBOX/bin"
 export KUNAI_SOURCE_DIR="$SANDBOX/src"
 # Parity with the musl smoke: nothing here owns a shell rc file worth writing.
 export KUNAI_SKIP_PATH_UPDATE=1
+# The smoke pins the default install layout, so an inherited profile override
+# must not redirect it.
+unset KUNAI_CONFIG_DIR
 mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$APPDATA" "$KUNAI_BIN_DIR"
 
 # `--yes --skip-deps` is what makes this non-interactive, and both halves

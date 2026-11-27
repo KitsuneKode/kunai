@@ -20,17 +20,11 @@ touches; do not read `.docs/` end to end. Vocabulary lives in
 
 ## The four ways to hurt yourself
 
-1. **Writing to the real profile.** `KUNAI_CONFIG_DIR` is **not** an override —
-   a run that relies on it silently uses the developer's live config and can
-   migrate it. Isolate with `storageRootEnv` (HOME + XDG + APPDATA). Never point
-   tests or a debug run at the live SQLite databases; copy them to a shadow
-   directory first. Data flows one way: into your sandbox, never back out.
-   `bun test` runs with the real home, and a test that mounts a shell or boots a
-   service writes the live profile unless it isolates itself with
-   `applyStorageRootEnv`. The CLI test preload fails any run that changed the
-   real config, data or cache directory and names the files; fix the leaker,
-   do not skip the check. To find one, run the suite with every storage root
-   pointed at a stand-in profile, then bisect — never against your own.
+1. **Writing to the real profile.** Test preloads redirect storage and
+   credentials to a temporary profile. Use `storageRootEnv` for standalone
+   harnesses or `KUNAI_CONFIG_DIR` for a dedicated manual profile; never point
+   tests or debug runs at live SQLite files. The CLI preload also checks the
+   original profile for lasting changes; fix any reported bypass.
 2. **Believing a green gate.** A passing root `bun run typecheck` / `test` can be
    a turbo cache replay — re-run with `--force` or per-package before claiming
    green. Pwsh-gated installer tests land in the "N skip" line, not the failure
@@ -209,7 +203,9 @@ the verifier keys off that.
 Paths are platform-resolved by `getKunaiPaths()` in
 `packages/storage/src/paths.ts` — Linux `~/.config/kunai`, macOS
 `~/Library/Application Support/kunai`, Windows `%APPDATA%\kunai`. Never hardcode
-`~/.config`. Config is `configDir/config.json`; the mpv bridge script is
+`~/.config`. `KUNAI_CONFIG_DIR` selects a dedicated profile root instead
+(config/data/cache siblings under it); see
+[install-and-update.mdx](docs/users/install-and-update.mdx). Config is `configDir/config.json`; the mpv bridge script is
 `configDir/mpv/kunai-bridge.lua`; `kunai-data.sqlite` lives in the OS data dir
 and `kunai-cache.sqlite` in the OS cache dir; `./logs.txt` exists only under
 `--debug`. SQLite owns history and cache — the JSON history and cache stores are

@@ -5,13 +5,15 @@ import { join } from "node:path";
 import { getKunaiPaths } from "@kunai/storage";
 
 /**
- * `bun test` runs with the developer's real home, so a test that mounts a shell or boots a service
- * without isolating itself writes the real Kunai profile. One did: BrowseShell saves a submitted
- * search query, and a multi-file run overwrote a 50-entry history with test strings.
+ * The preload redirects storage to a throwaway profile, but this guard runs first and is the
+ * backstop: a test that mounts a shell or boots a service against the developer's real profile
+ * (because it captured paths before the sandbox applied, or resolved absolute paths itself)
+ * still fails the run. One did: BrowseShell saves a submitted search query, and a multi-file
+ * run overwrote a 50-entry history with test strings.
  *
  * The guard snapshots the real config, data and cache directories (and, by name, `config.json`,
- * the mpv bridge script and both SQLite databases) when the test process starts, and fails the run
- * if anything in them differs when it ends.
+ * the mpv bridge script and both SQLite databases) when the test process starts, and fails the
+ * run if anything in them differs when it ends.
  *
  * It detects lasting changes; it is NOT a write barrier. A write still lands — the guard only makes
  * the run that caused it fail, naming the path — and a write that is undone before the run ends
@@ -145,9 +147,9 @@ export function describeProfileLeak(differences: readonly ProfileDifference[]): 
     "This test run changed your real Kunai profile:",
     ...lines,
     "",
-    "A test that mounts a shell or boots a service must isolate itself with",
-    "applyStorageRootEnv (apps/cli/test/helpers/storage-env.ts). Run the files separately and in",
-    "groups to find which one wrote; a lone file can exit before its write lands.",
+    "A test bypassed the preload sandbox. Use applyStorageRootEnv",
+    "(apps/cli/test/helpers/storage-env.ts) when a test needs a separate profile. Run the files",
+    "separately and in groups to find which one wrote; a lone file can exit before its write lands.",
     "If you were using Kunai itself while the tests ran, re-run. To skip this check, set",
     "KUNAI_TEST_SKIP_PROFILE_GUARD=1.",
     "",
@@ -164,7 +166,24 @@ export function describeProfileLeak(differences: readonly ProfileDifference[]): 
 export function installProfileGuard(env: NodeJS.ProcessEnv = process.env): void {
   if (env.KUNAI_TEST_SKIP_PROFILE_GUARD === "1") return;
   // Resolve once, now: a test that applies a sandbox later must not move what the guard watches.
-  const { roots, files } = realProfileTargets({ ...env });
+  // Watch both the platform default profile and the profile a valid inherited
+  // KUNAI_CONFIG_DIR would select — either is a real profile the suite must not touch. A
+  // malformed inherited override is a configuration error the storage resolver rejects, not a
+  // profile to watch.
+  const { KUNAI_CONFIG_DIR: override, ...defaultEnv } = env;
+  let { roots, files } = realProfileTargets(defaultEnv);
+  if (override !== undefined) {
+    let active: ProfileTargets | undefined;
+    try {
+      active = realProfileTargets(env);
+    } catch {
+      // A malformed inherited override does not point at a profile to watch.
+    }
+    if (active) {
+      roots = [...new Set([...roots, ...active.roots])];
+      files = [...new Set([...files, ...active.files])];
+    }
+  }
   const before = snapshotProfile(roots, files);
   try {
     afterAll(() => {

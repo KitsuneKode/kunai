@@ -377,7 +377,7 @@ describe("createCredentialVault backend selection", () => {
     // The OS vaults are account-wide: a `KUNAI_CONFIG_DIR` run must not touch
     // the developer's keychain, whatever `KUNAI_CREDENTIAL_BACKEND` asks for.
     // Throwing which/spawn prove no probe ever ran.
-    const paths = getKunaiPaths({ platform: "darwin", env: { KUNAI_CONFIG_DIR: dir } });
+    const paths = getKunaiPaths({ env: { KUNAI_CONFIG_DIR: dir } });
     const vault = await createCredentialVault({
       paths,
       platform: "darwin",

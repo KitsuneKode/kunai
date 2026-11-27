@@ -154,6 +154,7 @@ function assertIsolatedProfile(sidecar: SessionSidecar): void {
     throw new Error("session profile must be a private directory inside the temporary root");
   }
   for (const key of [
+    "KUNAI_CONFIG_DIR",
     "HOME",
     "USERPROFILE",
     "XDG_CONFIG_HOME",

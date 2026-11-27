@@ -7,9 +7,9 @@
 #   ./test/vhs/isolated-kunai.sh --setup
 #   ./test/vhs/isolated-kunai.sh --harness test/harness/ui-demo.ts
 #
-# `KUNAI_CONFIG_DIR` is NOT an override — a run that relies on it silently uses
-# the live profile. The full storage-root set from `test/helpers/storage-env.ts`
-# is required. PATH is kept as the caller's: its entries are absolute, so moving
+# `KUNAI_CONFIG_DIR` selects the sandbox as the dedicated profile root, and the
+# storage-root set from `test/helpers/storage-env.ts` covers every reader that
+# ignores it. PATH is kept as the caller's: its entries are absolute, so moving
 # HOME hides nothing, and restating it dropped /opt/homebrew/bin (mpv on Apple
 # Silicon). TMPDIR moves inside the sandbox too, so a harness that makes its own
 # scratch under `os.tmpdir()` is removed with it.
@@ -19,6 +19,9 @@
 set -euo pipefail
 
 SANDBOX_PARENT="${TMPDIR:-/tmp}"
+# KUNAI_CONFIG_DIR requires an absolute path; a relative TMPDIR would produce
+# a relative sandbox.
+[[ "$SANDBOX_PARENT" == /* ]] || SANDBOX_PARENT="$PWD/$SANDBOX_PARENT"
 
 # The EXIT trap below covers a normal exit and HUP/INT/TERM, but VHS tears the
 # terminal down hard when a tape ends while the program still runs, and then no
@@ -57,11 +60,10 @@ fi
 # seeding the floor would re-open the wizard the moment the floor is raised.
 # Analytics stays unset with an empty installId: only an explicit keystroke may
 # turn it on, and a tape is not a keystroke. DO_NOT_TRACK backs that up.
-# The seed goes where `getKunaiPaths` will look: `$XDG_CONFIG_HOME/kunai` on
-# Linux, `%APPDATA%\kunai` on Windows (both are the sandbox below), and
-# `$HOME/Library/Application Support/kunai` on macOS, which ignores XDG.
-mkdir -p "$SANDBOX/kunai" "$SANDBOX/tmp"
-cat > "$SANDBOX/kunai/config.json" <<'JSON'
+# The seed goes where the profile root resolves it on every platform:
+# `$KUNAI_CONFIG_DIR/config/config.json`.
+mkdir -p "$SANDBOX/config" "$SANDBOX/tmp"
+cat > "$SANDBOX/config/config.json" <<'JSON'
 {
   "onboardingVersion": 3,
   "analytics": "unset",
@@ -71,14 +73,11 @@ cat > "$SANDBOX/kunai/config.json" <<'JSON'
   "providerRelay": { "baseUrl": "" }
 }
 JSON
-if [[ "$(uname -s)" == "Darwin" ]]; then
-  mkdir -p "$SANDBOX/Library/Application Support/kunai"
-  cp "$SANDBOX/kunai/config.json" "$SANDBOX/Library/Application Support/kunai/config.json"
-fi
 
 # NOT `exec`: exec replaces this shell, so the EXIT trap never runs and every
 # tape leaves its sandbox behind. Run as a child and let the trap clean up.
 env \
+  KUNAI_CONFIG_DIR="$SANDBOX" \
   HOME="$SANDBOX" USERPROFILE="$SANDBOX" \
   XDG_CONFIG_HOME="$SANDBOX" XDG_DATA_HOME="$SANDBOX" \
   XDG_CACHE_HOME="$SANDBOX" XDG_STATE_HOME="$SANDBOX" \

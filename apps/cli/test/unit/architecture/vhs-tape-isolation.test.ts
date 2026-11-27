@@ -81,6 +81,7 @@ describe("VHS tape wait patterns still match the UI", () => {
 // Exercise the wrapper itself: a harness script reports the environment it was
 // given, and the sandbox it ran in must be gone once the wrapper exits.
 const ROOT_KEYS = [
+  "KUNAI_CONFIG_DIR",
   "HOME",
   "USERPROFILE",
   "XDG_CONFIG_HOME",

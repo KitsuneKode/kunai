@@ -415,7 +415,7 @@ Rules that apply:
 - Uninstall's profile purge removes the config, data and cache directories, not the profile root itself.
 - Debug logs still go to `./logs.txt` with `--debug`. A custom download directory can live outside the profile root. The override does not change whether installers register the launcher on your PATH.
 
-`KUNAI_DATA_DIR` and `KUNAI_CACHE_DIR` remain **installer-only** overrides; the running CLI always derives data and cache from the profile root or the platform defaults. Do not combine per-directory overrides that disagree with the profile root.
+`KUNAI_DATA_DIR` and `KUNAI_CACHE_DIR` can still customize the shell installers. They do not relocate the CLI's databases. When using `KUNAI_CONFIG_DIR`, leave them unset so the installers and the CLI agree on the layout.
 
 If you exported `KUNAI_CONFIG_DIR` before but want to keep using your existing runtime profile, unset it. The platform-default layout is unchanged. To move the installation itself into the new layout, reinstall with `kunai install` or the installer script rather than copying the old `install.json`, which records absolute paths.
 
