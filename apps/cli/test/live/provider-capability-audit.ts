@@ -53,8 +53,23 @@ import {
 } from "./provider-smoke";
 import { directSmokeArgs } from "./smoke-argv";
 
-const MOVIE_PROVIDER_IDS = ["vidlink", "movy", "rivestream", "vidrock", "videasy"] as const;
-const ANIME_PROVIDER_IDS = ["hianime", "kickassanime", "animegg", "miruro", "allanime"] as const;
+const MOVIE_PROVIDER_IDS = [
+  "vidlink",
+  "movy",
+  "rivestream",
+  "vidrock",
+  "videasy",
+  "vidbolt",
+] as const;
+const ANIME_PROVIDER_IDS = [
+  "hianime",
+  "kickassanime",
+  "animegg",
+  "miruro",
+  "allanime",
+  "anilight",
+  "anidap",
+] as const;
 const YOUTUBE_PROVIDER_IDS = ["youtube"] as const;
 const ALL_PROVIDER_IDS = [
   ...MOVIE_PROVIDER_IDS,
