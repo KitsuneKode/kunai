@@ -97,7 +97,7 @@ import {
   buildCalendarLoadingState,
   buildCalendarPreviewRailModel,
   buildCalendarRenderRows,
-  deriveCalendarReleaseState,
+  shouldOpenCalendarDetailsInsteadOfPlay,
   filterCalendarOptionsByDay,
   filterCalendarOptionsByType,
   windowCalendarRowsByLines,
@@ -116,15 +116,15 @@ import {
   type DetailsPanelData,
 } from "./details-panel";
 import {
+  buildDetailsFetchErrorSheet,
   buildDetailsSheet,
   type DetailsSheetAvailability,
   type DetailsSheetHistory,
 } from "./details-sheet.model";
 import { useCalendarCursor, type CalendarKeyboardCursor } from "./hooks/use-calendar-cursor";
 import {
-  calendarSessionStatusForTransition,
   useCalendarRoute,
-  type CalendarRouteKind,
+  useCalendarSessionStatus,
   type CalendarRouteRequest,
   type CalendarSessionStatus,
 } from "./hooks/use-calendar-route";
@@ -285,7 +285,6 @@ export function BrowseShell<T>({
     request: CalendarRouteRequest,
     response: BrowseShellSearchResponse<T>,
   ) => void;
-  /** Session status implied by non-success calendar route transitions. */
   onCalendarStatus?: (status: CalendarSessionStatus) => void;
   onLoadDiscovery?: () => Promise<BrowseShellSearchResponse<T>>;
   onLoadRecommendations?: () => Promise<BrowseShellSearchResponse<T>>;
@@ -495,15 +494,7 @@ export function BrowseShell<T>({
   });
   const calendarRouteKind = calendarRouteState.state.kind;
   const calendarRoutePending = calendarRouteKind === "loading" || calendarRouteKind === "retrying";
-  const calendarStatusRef = useRef(onCalendarStatus);
-  calendarStatusRef.current = onCalendarStatus;
-  const previousCalendarRouteKindRef = useRef<CalendarRouteKind | null>(null);
-  useEffect(() => {
-    const previous = previousCalendarRouteKindRef.current;
-    previousCalendarRouteKindRef.current = calendarRouteKind;
-    const status = calendarSessionStatusForTransition(previous, calendarRouteKind);
-    if (status) calendarStatusRef.current?.(status);
-  }, [calendarRouteKind]);
+  useCalendarSessionStatus(calendarRouteKind, onCalendarStatus);
 
   useEffect(() => {
     if (!loadIdleContext) return;
@@ -983,13 +974,7 @@ export function BrowseShell<T>({
               current.sheet
                 ? {
                     ...current,
-                    sheet: buildDetailsSheet({
-                      seed,
-                      detail: null,
-                      ...local,
-                      detailError:
-                        "Could not load season and episode details — check the connection, then reopen Details",
-                    }),
+                    sheet: buildDetailsFetchErrorSheet({ seed, ...local }),
                   }
                 : current,
             );
@@ -1809,15 +1794,7 @@ export function BrowseShell<T>({
       : selectedOption;
     if (listFocused && key.return && !key.shift && inputSelectedOption && searchState === "ready") {
       if (isCalendarView) {
-        const releaseState = deriveCalendarReleaseState(inputSelectedOption, calendarNow);
-        // `aired · resolving` is broadcast state, not playable availability.
-        // Enter explains the release instead of launching a playback resolve
-        // that cannot produce a source.
-        if (
-          releaseState === "resolving" ||
-          releaseState === "countdown" ||
-          releaseState === "missed"
-        ) {
+        if (shouldOpenCalendarDetailsInsteadOfPlay(inputSelectedOption, calendarNow)) {
           openDetailsOverlay();
           return;
         }

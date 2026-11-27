@@ -65,6 +65,21 @@ export function calendarSessionStatusForTransition(
   return null;
 }
 
+export function useCalendarSessionStatus(
+  kind: CalendarRouteKind,
+  onStatus: ((status: CalendarSessionStatus) => void) | undefined,
+): void {
+  const statusRef = useRef(onStatus);
+  statusRef.current = onStatus;
+  const previousKindRef = useRef<CalendarRouteKind | null>(null);
+  useEffect(() => {
+    const previous = previousKindRef.current;
+    previousKindRef.current = kind;
+    const status = calendarSessionStatusForTransition(previous, kind);
+    if (status) statusRef.current?.(status);
+  }, [kind]);
+}
+
 /**
  * User-facing failure copy. Source errors carry URLs, tokens, and stack noise;
  * the surface gets one bounded sentence and the detail continues through

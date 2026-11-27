@@ -387,14 +387,11 @@ function orderTrackCapabilityGroups(
       // a selection applies.
       rows: entry.rows.map((row) => ({
         ...row,
-        // One row is a fact, not a choice: enabling it invites the user to
-        // "switch" to the value already in effect.
-        enabled: row.enabled && entry.rows.length > 1,
         label: sanitizeTerminalText(row.label),
         reason: row.reason !== undefined ? sanitizeTerminalText(row.reason) : undefined,
         detail: row.detail !== undefined ? sanitizeTerminalText(row.detail) : undefined,
       })),
-      selectable: entry.rows.length > 1 && entry.rows.some((row) => row.enabled),
+      selectable: entry.rows.some((row) => row.enabled),
       emptyReason: entry.emptyReason,
     });
   }

@@ -1,7 +1,7 @@
 import { describePlaybackSubtitleStatus } from "@/app/playback/subtitle-status";
 import { formatPlaybackGeneration } from "@/domain/playback/playback-generation";
 import type { PlaybackProblemAction } from "@/domain/playback/playback-problem";
-import type { SessionState } from "@/domain/session/SessionState";
+import type { PlaybackStatus, SessionState } from "@/domain/session/SessionState";
 import { buildPlaybackSourceInventoryDiagnosticsSummary } from "@/services/playback/PlaybackSourceInventoryProjection";
 import { presenceStatusDetail } from "@/services/presence/presence-status-line";
 import type { PresenceSnapshot } from "@/services/presence/PresenceService";
@@ -9,8 +9,11 @@ import type { ReleaseProgressDiagnosticsSummary } from "@/services/storage/stora
 import type { ProviderHealth, ProviderId } from "@kunai/types";
 
 import type { DiagnosticEvent } from "./diagnostic-event";
+import { NO_ACTION_LABEL } from "./diagnostics-health-format";
 import { buildRuntimeHealthSnapshot } from "./runtime-health";
 import type { RuntimeMemorySample, RuntimeMemorySnapshot } from "./runtime-memory";
+
+export { formatHealthRowDetail, NO_ACTION_LABEL } from "./diagnostics-health-format";
 
 // ---------------------------------------------------------------------------
 // Shared taxonomy
@@ -64,7 +67,7 @@ export type DiagnosticsCurrentPlaybackEvidence = {
   readonly episode: string;
   readonly mode: string;
   readonly provider: string;
-  readonly playbackStatus: string;
+  readonly playbackStatus: PlaybackStatus;
   /** Formatted current generation, e.g. `process 4 · cycle 9`. */
   readonly playbackGeneration: string;
   readonly sourceState: string;
@@ -128,7 +131,6 @@ export type BuildDiagnosticsInsightInput = {
   readonly memorySnapshot?: RuntimeMemorySnapshot;
   readonly memorySamples?: readonly RuntimeMemorySample[];
   readonly getProviderHealth?: (providerId: ProviderId) => ProviderHealth | undefined;
-  /** Live reachability from the shell connectivity service; false must override playback-derived optimism. */
   readonly networkAvailable?: boolean;
 };
 
@@ -164,9 +166,6 @@ export function formatHealthStatusLabel(severity: DiagnosticSeverity): string {
   }
 }
 
-/** Rendered rows drop this label rather than repeating it; see formatHealthRowDetail. */
-export const NO_ACTION_LABEL = "No action needed";
-
 export function formatRecommendedActionLabel(action: RecommendedAction): string {
   switch (action) {
     case "none":
@@ -196,51 +195,19 @@ export function formatRecommendedActionLabel(action: RecommendedAction): string 
   }
 }
 
-/**
- * Join the parts a row actually has something to say with.
- *
- * Every segment used to be appended unconditionally, which made the panel harder
- * to scan than it needed to be: "No action needed" repeated on every healthy row
- * (silence already means that), and rows whose reason restates their status read
- * as "unavailable · unavailable". A quiet row is the point — noise here competes
- * with the one line that matters.
- */
-export function formatHealthRowDetail(row: DiagnosticsHealthRow): string {
-  const segments = [row.label, row.reason, row.recommendedActionLabel];
-  const meaningful: string[] = [];
-  for (const segment of segments) {
-    const trimmed = segment?.trim();
-    if (!trimmed) continue;
-    if (trimmed === NO_ACTION_LABEL) continue;
-    if (meaningful.some((seen) => seen.toLowerCase() === trimmed.toLowerCase())) continue;
-    meaningful.push(trimmed);
-  }
-  return meaningful.join("  ·  ");
-}
-
 // ---------------------------------------------------------------------------
 // Insight builder
 // ---------------------------------------------------------------------------
 
 export function buildDiagnosticsInsight(input: BuildDiagnosticsInsightInput): DiagnosticsInsight {
-  const observedRuntimeHealth = buildRuntimeHealthSnapshot({
+  const runtimeHealth = buildRuntimeHealthSnapshot({
     recentEvents: input.recentEvents,
     currentProvider: input.state.provider,
     memorySnapshot: input.memorySnapshot,
     memorySamples: input.memorySamples,
     persistedProviderHealth: input.getProviderHealth?.(input.state.provider),
+    networkAvailable: input.networkAvailable,
   });
-  const runtimeHealth =
-    input.networkAvailable === false
-      ? {
-          ...observedRuntimeHealth,
-          network: {
-            label: "Network",
-            detail: "offline — streaming and metadata requests are unreachable",
-            tone: "error" as const,
-          },
-        }
-      : observedRuntimeHealth;
 
   const healthRows = buildHealthRows(input, runtimeHealth);
   const degradedSubsystems = healthRows

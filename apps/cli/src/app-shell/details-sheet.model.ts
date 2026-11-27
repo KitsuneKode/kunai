@@ -181,3 +181,16 @@ export function buildDetailsSheet(input: {
     detailError,
   };
 }
+
+export function buildDetailsFetchErrorSheet(input: {
+  readonly seed: DetailsSheetSeed;
+  readonly history: DetailsSheetHistory | null;
+  readonly availability: DetailsSheetAvailability | null;
+}): DetailsSheetModel {
+  return buildDetailsSheet({
+    ...input,
+    detail: null,
+    detailError:
+      "Could not load season and episode details — check the connection, then reopen Details",
+  });
+}
