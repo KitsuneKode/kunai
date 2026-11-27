@@ -820,20 +820,8 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   // no database, no terminal probe, no dependency check. That is what
   // "without changing state" has to mean.
   if (args.dryRun) {
-    const {
-      formatBootstrapPlan,
-      resolveBootstrapIntent,
-      resolveLaunchMode,
-      resolveLaunchSurfaceName,
-    } = await import("@/app/bootstrap/bootstrap-intent");
-    const plan = formatBootstrapPlan({
-      intent: resolveBootstrapIntent(args),
-      mode: resolveLaunchMode(args) ?? "movie/series",
-      route: resolveLaunchSurfaceName(args),
-      shareAction: pendingShareLaunch?.action,
-      download: args.download,
-      setup: args.setup,
-    });
+    const { formatLaunchDryRunPlan } = await import("@/app/bootstrap/dry-run-plan");
+    const plan = await formatLaunchDryRunPlan(args, pendingShareLaunch);
     process.stdout.write(`${plan.join("\n")}\n`);
     return;
   }
@@ -957,7 +945,12 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     { checkDeps },
     { createContainer, disposeContainer },
     { resolveSessionConfigOverrides },
-    { resolveBootstrapIntent, resolveLaunchMode },
+    {
+      hasExplicitStartupTarget,
+      resolveBootstrapIntent,
+      resolveLaunchMode,
+      resolveStartupInitialRoute,
+    },
   ] = await Promise.all([
     import("@kunai/storage"),
     import("@/app/bootstrap/startup-setup"),
@@ -1527,11 +1520,19 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
         args.episode !== undefined
           ? { season: args.season ?? 1, episode: args.episode }
           : shareRequestedEpisode,
-      initialRoute:
-        args.initialRoute ??
-        (freshInstall && !bootstrapTitle && !bootstrapQuery && !args.offline
-          ? "recommendation"
-          : undefined),
+      initialRoute: resolveStartupInitialRoute({
+        explicitRoute: args.initialRoute,
+        discoverShowOnStartup: config.discoverShowOnStartup,
+        freshInstall,
+        hasExplicitTarget: hasExplicitStartupTarget({
+          hasBootstrapTarget: Boolean(bootstrapTitle || bootstrapQuery),
+          offline: args.offline,
+          history: args.history,
+          continuePlayback: args.continuePlayback,
+          download: args.download,
+          shareLaunch: pendingShareLaunch !== null,
+        }),
+      }),
       autoPickSearchResultIndex: autoPick,
     });
 

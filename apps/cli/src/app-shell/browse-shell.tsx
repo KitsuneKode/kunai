@@ -2625,9 +2625,6 @@ export function BrowseShell<T>({
         />
       ) : null}
 
-      {settings?.discoverShowOnStartup && (
-        <Text color={palette.dim}>/ recommendation · based on your history</Text>
-      )}
       {actionFeedback ? <Text color={palette.ok}>{`✓ ${actionFeedback}`}</Text> : null}
       {(() => {
         const browseBindingIds: string[] = [
