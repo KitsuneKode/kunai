@@ -1,6 +1,6 @@
 import { rm, rmdir } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, posix, win32 } from "node:path";
+import { dirname, posix, win32 } from "node:path";
 
 import { getKunaiPaths, joinerForNodePlatform, type StoragePlatform } from "@kunai/storage";
 
@@ -38,13 +38,16 @@ function storagePlatformFor(platform: NodeJS.Platform): StoragePlatform {
   return platform === "darwin" || platform === "win32" ? platform : "linux";
 }
 
-function defaultLauncherPath(platform: NodeJS.Platform = process.platform): string {
-  if (platform === "win32") {
-    const local = process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local");
-    return join(local, "kunai", "bin", "kunai.exe");
-  }
-  const binDir = process.env.KUNAI_BIN_DIR ?? join(homedir(), ".local", "bin");
-  return join(binDir, "kunai");
+function defaultLauncherPath(
+  platform: NodeJS.Platform,
+  env: NodeJS.ProcessEnv,
+  defaultDataDir: string,
+): string {
+  const joinFor = joinerForNodePlatform(platform);
+  if (platform === "win32") return joinFor(defaultDataDir, "bin", "kunai.exe");
+  const home = env.HOME?.trim() || env.USERPROFILE?.trim() || homedir();
+  const binDir = env.KUNAI_BIN_DIR || joinFor(home, ".local", "bin");
+  return joinFor(binDir, "kunai");
 }
 
 /**
@@ -124,7 +127,7 @@ export function getInstallLayoutPaths(
     launcherPath:
       overrides.launcherPath ??
       (kunai.profileDir === undefined
-        ? defaultLauncherPath(platform)
+        ? defaultLauncherPath(platform, env, kunai.dataDir)
         : joinFor(
             kunai.profileDir,
             "bin",

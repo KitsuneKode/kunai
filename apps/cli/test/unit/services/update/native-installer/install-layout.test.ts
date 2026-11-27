@@ -208,7 +208,12 @@ describe("install layout paths", () => {
       {
         platform: "linux" as const,
         env: { HOME: "/home/t" },
-        launcherTail: "/kunai",
+        launcherPath: "/home/t/.local/bin/kunai",
+      },
+      {
+        platform: "darwin" as const,
+        env: { HOME: "/Users/t" },
+        launcherPath: "/Users/t/.local/bin/kunai",
       },
       {
         platform: "win32" as const,
@@ -217,7 +222,7 @@ describe("install layout paths", () => {
           APPDATA: "C:\\Users\\T\\AppData\\Roaming",
           LOCALAPPDATA: "C:\\Users\\T\\AppData\\Local",
         },
-        launcherTail: "kunai.exe",
+        launcherPath: "C:\\Users\\T\\AppData\\Local\\kunai\\bin\\kunai.exe",
       },
     ];
     for (const testCase of cases) {
@@ -226,7 +231,7 @@ describe("install layout paths", () => {
         env: testCase.env,
       });
       expect(layout.profileDir).toBeUndefined();
-      expect(layout.launcherPath.endsWith(testCase.launcherTail)).toBe(true);
+      expect(layout.launcherPath).toBe(testCase.launcherPath);
     }
   });
 
