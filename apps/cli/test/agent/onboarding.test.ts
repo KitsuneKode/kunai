@@ -49,6 +49,28 @@ async function moveToSecondMode(s: TmuxSession): Promise<void> {
   await s.waitFor((f) => f.includes("▌ Anime"), "Anime highlighted");
 }
 
+/**
+ * Open the consent payload preview. Like the first setup screen, consent
+ * attaches its input handler in an effect after it paints, so a `p` sent the
+ * instant the title appears can land before anything listens. Resend only
+ * while the preview is still closed: a press that landed has opened it, so
+ * this can never toggle it shut again.
+ */
+async function openPreview(s: TmuxSession): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await s.send("p");
+    try {
+      await s.waitFor((f) => f.includes("Any key goes back."), "expanded preview", 2_000);
+      return;
+    } catch (error) {
+      const frame = await s.see();
+      if (frame.includes("Any key goes back.")) return;
+      if (!frame.includes("p for values")) throw error;
+    }
+  }
+  await s.waitFor((f) => f.includes("Any key goes back."), "expanded preview");
+}
+
 describe("agent driver · fresh-profile onboarding", () => {
   itTmux("the expanded preview owns input at 40×16", async () => {
     const s = await startTmuxSession({ seed: "fresh", columns: 40, rows: 16 });
@@ -67,19 +89,23 @@ describe("agent driver · fresh-profile onboarding", () => {
       const before = consentState();
       await s.send(K.enter);
       await s.waitFor((f) => f.includes("Share anonymous usage?"), "neutral consent");
+      // Opening the preview first proves the consent handler is listening, so
+      // the inert keys below are tested, not dropped before it attached.
+      await openPreview(s);
+      await s.send(K.esc);
+      await s.waitFor((f) => f.includes("p for values"), "Escape closes preview");
+      // Enter with no row chosen and `S` choose nothing: still on consent.
       await s.send(K.enter);
       await s.send("S");
-      await s.send("p");
-      await s.waitFor((f) => f.includes("Any key goes back."), "expanded preview");
+      await openPreview(s);
       await s.send(K.esc);
-      await s.waitFor((f) => f.includes("Share anonymous usage?"), "Escape closes preview");
+      await s.waitFor((f) => f.includes("p for values"), "Escape closes preview");
       expect(consentState()).toEqual(before);
 
       await s.send(K.down);
       await s.waitFor((f) => f.includes("▌ Share anonymous usage"), "share row highlighted");
       for (const key of ["s", K.ctrlC]) {
-        await s.send("p");
-        await s.waitFor((f) => f.includes("Any key goes back."), "expanded preview");
+        await openPreview(s);
         await s.send(key);
         await s.waitFor((f) => f.includes("▌ Share anonymous usage"), "preview closes only");
         expect(consentState()).toEqual(before);
