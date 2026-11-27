@@ -41,6 +41,7 @@ import {
   createVariantCandidateFromStream,
 } from "../shared/source-inventory";
 import { selectReadyStream } from "../shared/startup-selection";
+import { CHROME_124_USER_AGENT } from "../shared/user-agent";
 import { animeggManifest, ANIMEGG_PROVIDER_ID } from "./manifest";
 import {
   animeggEmbedPath,
@@ -58,8 +59,7 @@ import {
 export { ANIMEGG_PROVIDER_ID };
 
 const ANIMEGG_FETCH_TIMEOUT_MS = 12_000;
-const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+const USER_AGENT = CHROME_124_USER_AGENT;
 
 /**
  * The site needs no referer and no cookie, on any of its four documents or on

@@ -7,18 +7,11 @@ import type {
   ProviderSearchInput,
   ProviderSearchResult,
 } from "@kunai/types";
-import {
-  httpStatusIsRetryable,
-  httpStatusToResolveErrorCode,
-  ProviderHttpError,
-} from "@kunai/types";
+import { ProviderHttpError } from "@kunai/types";
 import { z } from "zod";
 
-import { providerFetch } from "../runtime/fetch";
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import { formatAnimeEpisodeLabel } from "../shared/anime-metadata";
-import { directStreamFetchSignal } from "../shared/direct-stream-source";
-import { readJsonObjectBody } from "../shared/json-body";
 import {
   resolveMultiSourceProvider,
   type MultiSourceEmptySourceInput,
@@ -26,9 +19,14 @@ import {
   type MultiSourceStreamInput,
   type MultiSourceSubtitleInput,
 } from "../shared/multi-source-resolver";
-import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
+import {
+  episodeNumberFromProviderIdentity,
+  selectProviderEpisodeNumber,
+} from "../shared/provider-episode-number";
+import { createProviderJsonFetch } from "../shared/provider-json-fetch";
 import { matchProviderCatalogTitle } from "../shared/provider-title-match";
 import { normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
+import { CHROME_137_USER_AGENT } from "../shared/user-agent";
 import { ANIDAP_PROVIDER_ID, anidapManifest } from "./manifest";
 
 export { ANIDAP_PROVIDER_ID };
@@ -37,8 +35,7 @@ const GRAPHQL_URL = "https://graphql.anidap.lol/graphql";
 const REST_BASE = "https://chad.anidap.lol/rest/api";
 const SITE_ORIGIN = "https://anidap.lol";
 const FETCH_TIMEOUT_MS = 20_000;
-const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36";
+const USER_AGENT = CHROME_137_USER_AGENT;
 
 const optionalString = z
   .string()
@@ -55,9 +52,11 @@ const anidapCoverImageObjectSchema = z.object({
 });
 
 const anidapCoverImageSchema = z
-  .union([z.string().transform((large) => ({ large })), anidapCoverImageObjectSchema])
-  .nullish()
-  .transform((value) => (value ? anidapCoverImageObjectSchema.parse(value) : undefined));
+  .union([
+    z.string().transform((large): z.infer<typeof anidapCoverImageObjectSchema> => ({ large })),
+    anidapCoverImageObjectSchema,
+  ])
+  .nullish();
 
 const anidapAnimeNodeSchema = z.object({
   id: optionalString,
@@ -143,47 +142,15 @@ interface AnidapServerSlot {
   readonly isDefault: boolean;
 }
 
-type AnidapRequestHeaders = NonNullable<MultiSourceStreamInput["headers"]>;
-type AnidapFetchInit = Omit<RequestInit, "headers"> & {
-  readonly headers?: AnidapRequestHeaders;
-};
+const fetchJson = createProviderJsonFetch({
+  providerId: ANIDAP_PROVIDER_ID,
+  label: "Anidap",
+  origin: SITE_ORIGIN,
+  userAgent: USER_AGENT,
+  timeoutMs: FETCH_TIMEOUT_MS,
+});
+
 type AnidapGraphqlVariables = { readonly q: string } | { readonly value: number };
-
-function requestHeaders(extra: AnidapRequestHeaders = {}): AnidapRequestHeaders {
-  return {
-    Accept: "application/json",
-    Origin: SITE_ORIGIN,
-    Referer: `${SITE_ORIGIN}/`,
-    "User-Agent": USER_AGENT,
-    ...extra,
-  };
-}
-
-async function fetchJson<T>(
-  context: ProviderRuntimeContext,
-  url: string,
-  stage: string,
-  init?: AnidapFetchInit,
-): Promise<T | null> {
-  const response = await providerFetch(context, url, {
-    ...init,
-    headers: { ...requestHeaders(), ...init?.headers },
-    signal: directStreamFetchSignal(context.signal, FETCH_TIMEOUT_MS),
-  });
-  if (!response.ok) {
-    const status = response.status;
-    await response.body?.cancel().catch(() => undefined);
-    throw new ProviderHttpError({
-      providerId: ANIDAP_PROVIDER_ID,
-      stage,
-      status,
-      message: `Anidap ${stage} returned HTTP ${status}`,
-      code: status === 404 || status === 410 ? "not-found" : httpStatusToResolveErrorCode(status),
-      retryable: httpStatusIsRetryable(status),
-    });
-  }
-  return readJsonObjectBody<T>(response);
-}
 
 async function graphql<T>(
   context: ProviderRuntimeContext,
@@ -473,20 +440,15 @@ function collectProviderPayload(
   }
 }
 
-function episodeNumberFromIdentity(input: ProviderResolveInput): number | undefined {
-  const identity = input.episode?.providerEpisodeIdentity;
-  if (identity?.providerId !== ANIDAP_PROVIDER_ID) return undefined;
-  const match = /^ep:(\d+)$/.exec(identity.value);
-  return match?.[1] ? Number.parseInt(match[1], 10) : undefined;
-}
-
 async function fetchAnidapPayload(
   input: ProviderResolveInput,
   context: ProviderRuntimeContext,
 ): Promise<MultiSourceResolvePayload | null> {
   const slug = await resolveSlug(input.title, context);
   if (!slug) return null;
-  const episode = episodeNumberFromIdentity(input) ?? selectProviderEpisodeNumber(input.episode);
+  const episode =
+    episodeNumberFromProviderIdentity(input.episode, ANIDAP_PROVIDER_ID) ??
+    selectProviderEpisodeNumber(input.episode);
   const episodes = await fetchEpisodes(slug, context);
   const episodeRow = episodes.find((row) => row.number === episode);
   if (!episodeRow) return null;
@@ -521,18 +483,12 @@ async function fetchAnidapPayload(
 
   const slots = await fetchServers(slug, episode, context);
   let modeSlots = slots.filter((slot) => slot.mode === mode);
-  if (preferredSource?.[2]) {
-    modeSlots = [
-      ...modeSlots.filter((slot) => slot.id === preferredSource[2]),
-      ...modeSlots.filter((slot) => slot.id !== preferredSource[2] && slot.isDefault),
-      ...modeSlots.filter((slot) => slot.id !== preferredSource[2] && !slot.isDefault),
-    ];
-  } else {
-    modeSlots = [
-      ...modeSlots.filter((slot) => slot.isDefault),
-      ...modeSlots.filter((slot) => !slot.isDefault),
-    ];
-  }
+  const preferredServerId = preferredSource?.[2];
+  modeSlots = [
+    ...modeSlots.filter((slot) => slot.id === preferredServerId),
+    ...modeSlots.filter((slot) => slot.id !== preferredServerId && slot.isDefault),
+    ...modeSlots.filter((slot) => slot.id !== preferredServerId && !slot.isDefault),
+  ];
   if (modeSlots.length === 0) return null;
 
   const streams: MultiSourceStreamInput[] = [];

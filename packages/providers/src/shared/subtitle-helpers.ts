@@ -190,6 +190,16 @@ export function normalizeIsoLanguageCode(value: string | undefined): string | un
   return /^[a-z]{2}$/.test(normalized) ? normalized : undefined;
 }
 
+export function normalizeIsoLanguageList(values: readonly (string | undefined)[]): string[] {
+  return [
+    ...new Set(
+      values
+        .map((language) => normalizeIsoLanguageCode(language) ?? language?.trim())
+        .filter((language): language is string => Boolean(language)),
+    ),
+  ];
+}
+
 export function subtitleLanguageDisplayName(code: string | undefined): string | undefined {
   if (!code) return undefined;
   const normalized = code.toLowerCase().trim();

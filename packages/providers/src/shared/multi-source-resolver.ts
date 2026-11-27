@@ -33,7 +33,11 @@ import {
   qualityRankFromLabel,
 } from "./source-inventory";
 import { selectReadyStream } from "./startup-selection";
-import { inferSubtitleFormat, normalizeIsoLanguageCode } from "./subtitle-helpers";
+import {
+  inferSubtitleFormat,
+  normalizeIsoLanguageCode,
+  normalizeIsoLanguageList,
+} from "./subtitle-helpers";
 
 /** One already-located media URL a small multi-server adapter can hand to the shared resolver. */
 export interface MultiSourceStreamInput {
@@ -133,20 +137,8 @@ function normalizeStreams(
     const protocol = entry.protocol ?? inferProtocol(url);
     const qualityLabel = normalizeQualityLabel(entry.qualityHint);
     const qualityRank = qualityRankFromLabel(entry.qualityHint) ?? 0;
-    const audioLanguages = [
-      ...new Set(
-        (entry.audioLanguages ?? [])
-          .map((language) => normalizeIsoLanguageCode(language) ?? language.trim())
-          .filter(Boolean),
-      ),
-    ];
-    const subtitleLanguages = [
-      ...new Set(
-        (entry.subtitleLanguages ?? [])
-          .map((language) => normalizeIsoLanguageCode(language) ?? language.trim())
-          .filter(Boolean),
-      ),
-    ];
+    const audioLanguages = normalizeIsoLanguageList(entry.audioLanguages ?? []);
+    const subtitleLanguages = normalizeIsoLanguageList(entry.subtitleLanguages ?? []);
     const languageEvidence = audioLanguages.map((language) =>
       createProviderLanguageEvidence({
         role: "audio",
