@@ -25,10 +25,10 @@ const SETTINGS_KEY = "/";
 describe("agent wiring · first-run browse focus", () => {
   it("makes recommendation-list keyboard ownership explicit before typed input", async () => {
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (() =>
-      Promise.reject(
-        new Error("network disabled for deterministic first-run focus test"),
-      )) as unknown as typeof fetch;
+    globalThis.fetch = Object.assign(
+      () => Promise.reject(new Error("network disabled for deterministic first-run focus test")),
+      { preconnect: originalFetch.preconnect },
+    );
     try {
       await withSession(
         "wiring-first-run-focus",

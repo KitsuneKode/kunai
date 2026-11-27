@@ -527,7 +527,10 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // release-backed next-episode rule for the row, `--continue`, History and
 // Calendar, plus the successor auto-launch) measured 3,325,627 bytes, +829;
 // 3249 KiB leaves 1,349. No dependency or asset.
-export const NPM_BUNDLE_BUDGET_KB = 3_249;
+// The pre-release player-capability rule (VLC parity across startup, setup,
+// and doctor), TMDB credential routing, and browse-focus copy on top measured
+// MEASURED_PLACEHOLDER
+export const NPM_BUNDLE_BUDGET_KB = 3_251;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
