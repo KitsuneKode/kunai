@@ -104,7 +104,7 @@ describe("real profile guard", () => {
       "leak",
       false,
       [],
-      join(fakeProfile, "config", "leaked.json"),
+      join(fakeProfile, "profile", "config", "leaked.json"),
     );
     expect(output).toContain("changed your real Kunai profile");
     expect(output).toContain("leaked.json");
@@ -129,7 +129,7 @@ describe("real profile guard", () => {
       "leak",
       false,
       ["--parallel=2"],
-      join(fakeProfile, "config", "leaked.json"),
+      join(fakeProfile, "profile", "config", "leaked.json"),
     );
     expect(output).toContain("changed your real Kunai profile");
     expect(output).toContain("leaked.json");
@@ -141,7 +141,7 @@ describe("real profile guard", () => {
       "leak",
       true,
       [],
-      join(fakeProfile, "config", "leaked.json"),
+      join(fakeProfile, "profile", "config", "leaked.json"),
     );
     expect(output).not.toContain("changed your real Kunai profile");
     expect(status).toBe(0);

@@ -1,12 +1,16 @@
+import { join } from "node:path";
+
 /**
  * Environment overrides that redirect Kunai's resolved storage roots into a
  * throwaway directory, on every platform: `KUNAI_CONFIG_DIR` selects a
- * dedicated profile root (`<dir>/config`, `<dir>/data`, `<dir>/cache`), and the
- * legacy per-root variables (`HOME`/`USERPROFILE`, the XDG trio, `APPDATA`/
- * `LOCALAPPDATA`) all point at the same directory so non-profile resolutions —
- * installer scripts, shell readers, older fixtures — land there too.
- * `DO_NOT_TRACK` and the file credential backend keep a sandboxed run from
- * counting as a real install or touching the account-wide OS vault.
+ * dedicated profile root at `<dir>/profile` — deliberately a child of home,
+ * never home itself, since a profile root that equals home (or sits above it) is a
+ * configuration error — and the legacy per-root variables (`HOME`/
+ * `USERPROFILE`, the XDG trio, `APPDATA`/`LOCALAPPDATA`) point at `dir` so
+ * non-profile resolutions — installer scripts, shell readers, older fixtures —
+ * land there too. `DO_NOT_TRACK` and the file credential backend keep a
+ * sandboxed run from counting as a real install or touching the account-wide
+ * OS vault.
  *
  * TMPDIR/TMP/TEMP are deliberately absent: `os.tmpdir()` follows them, so a
  * caller that disposes its root while the env is still applied leaves every
@@ -16,7 +20,7 @@
  */
 export function storageRootEnv(dir: string): Record<string, string> {
   return {
-    KUNAI_CONFIG_DIR: dir,
+    KUNAI_CONFIG_DIR: join(dir, "profile"),
     HOME: dir,
     USERPROFILE: dir,
     XDG_CONFIG_HOME: dir,

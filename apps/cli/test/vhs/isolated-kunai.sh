@@ -7,7 +7,7 @@
 #   ./test/vhs/isolated-kunai.sh --setup
 #   ./test/vhs/isolated-kunai.sh --harness test/harness/ui-demo.ts
 #
-# `KUNAI_CONFIG_DIR` selects the sandbox as the dedicated profile root, and the
+# `KUNAI_CONFIG_DIR` selects a profile dir inside the sandbox, and the
 # storage-root set from `test/helpers/storage-env.ts` covers every reader that
 # ignores it. PATH is kept as the caller's: its entries are absolute, so moving
 # HOME hides nothing, and restating it dropped /opt/homebrew/bin (mpv on Apple
@@ -61,9 +61,10 @@ fi
 # Analytics stays unset with an empty installId: only an explicit keystroke may
 # turn it on, and a tape is not a keystroke. DO_NOT_TRACK backs that up.
 # The seed goes where the profile root resolves it on every platform:
-# `$KUNAI_CONFIG_DIR/config/config.json`.
-mkdir -p "$SANDBOX/config" "$SANDBOX/tmp"
-cat > "$SANDBOX/config/config.json" <<'JSON'
+# `$KUNAI_CONFIG_DIR/config/config.json`; the marker claims the seeded profile.
+mkdir -p "$SANDBOX/profile/config" "$SANDBOX/tmp"
+printf '%s\n' kunai-profile-v1 > "$SANDBOX/profile/.kunai-profile"
+cat > "$SANDBOX/profile/config/config.json" <<'JSON'
 {
   "onboardingVersion": 3,
   "analytics": "unset",
@@ -77,7 +78,7 @@ JSON
 # NOT `exec`: exec replaces this shell, so the EXIT trap never runs and every
 # tape leaves its sandbox behind. Run as a child and let the trap clean up.
 env \
-  KUNAI_CONFIG_DIR="$SANDBOX" \
+  KUNAI_CONFIG_DIR="$SANDBOX/profile" \
   HOME="$SANDBOX" USERPROFILE="$SANDBOX" \
   XDG_CONFIG_HOME="$SANDBOX" XDG_DATA_HOME="$SANDBOX" \
   XDG_CACHE_HOME="$SANDBOX" XDG_STATE_HOME="$SANDBOX" \

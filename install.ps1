@@ -43,17 +43,109 @@ $ReleasesApi = if ($env:KUNAI_RELEASES_API) { $env:KUNAI_RELEASES_API } else { '
 $Package = '@kitsunekode/kunai'
 # KUNAI_CONFIG_DIR names a dedicated Kunai profile root — <root>\config,
 # <root>\data, <root>\cache, <root>\bin — not a config directory, matching the
-# CLI's own layout under the same variable. A set value that is not absolute
-# is a configuration error, not a fallthrough.
-$ProfileDir = $env:KUNAI_CONFIG_DIR
-if ($null -ne $ProfileDir) {
-  $isAbsolute = if ($OnWindows) { $ProfileDir -match '^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/]+[\\/][^\\/]+)' } else { $ProfileDir.StartsWith('/') }
-  if (-not $isAbsolute) {
+# CLI's own layout under the same variable. The checks below mirror
+# checkDesktopProfile in packages/storage/src/paths.ts: a set value that is
+# not absolute (or uses a namespace/ADS/dot-space spelling on Windows) is a
+# configuration error, not a fallthrough.
+$comparison = if ($OnWindows) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
+function Test-ContainsPath([string]$Parent, [string]$Child) {
+  # Child equals Parent or sits beneath it — component-wise, on the target's
+  # separator and case convention.
+  $p = $Parent.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+  if ([string]::Equals($p, $Child, $script:comparison)) { return $true }
+  return $Child.StartsWith("$p$([IO.Path]::DirectorySeparatorChar)", $script:comparison)
+}
+function Get-ExistingItem([string]$Path) {
+  # The item at Path, or $null when it does not exist — any other access
+  # failure propagates instead of masquerading as "absent".
+  try {
+    return Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+  }
+  catch [System.Management.Automation.ItemNotFoundException] {
+    return $null
+  }
+}
+
+function Get-PhysicalPath([string]$Path) {
+  # Resolve through every existing ancestor; refuse a reparse point on the
+  # path itself or anywhere above it — aliasing is a fail-closed case.
+  $resolved = $Path
+  $probe = $Path
+  while ($null -ne $probe -and $probe -ne '') {
+    $item = Get-ExistingItem $probe
+    if ($null -ne $item) {
+      if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+        throw "KUNAI_CONFIG_DIR crosses a reparse point at $probe"
+      }
+      $resolved = $item.FullName + $Path.Substring($probe.Length)
+    }
+    $parent = Split-Path -Parent $probe
+    if ($parent -eq $probe) { break }
+    $probe = $parent
+  }
+  return $resolved
+}
+$ProfileDir = $null
+$profileEnv = [Environment]::GetEnvironmentVariable('KUNAI_CONFIG_DIR', 'Process')
+if ($null -ne $profileEnv) {
+  $isAbsolute = if ($OnWindows) { $profileEnv -match '^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/]+[\\/][^\\/]+)' } else { $profileEnv.StartsWith('/') }
+  if (-not $isAbsolute -or $profileEnv -match '[\r\n]') {
     throw 'KUNAI_CONFIG_DIR must be an absolute path to a Kunai profile directory'
+  }
+  $ProfileDir = [IO.Path]::GetFullPath($profileEnv)
+  # Trim trailing separators while keeping the filesystem root (PS 5.1 / .NET
+  # Framework has no TrimEndingDirectorySeparator).
+  $trimmed = $ProfileDir.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+  $pathRoot = [IO.Path]::GetPathRoot($ProfileDir)
+  $ProfileDir = if ($trimmed.Length -ge $pathRoot.Length) { $trimmed } else { $pathRoot }
+  if ($OnWindows) {
+    if ($ProfileDir -match '^\\\\[?.]\\' -or
+      ($ProfileDir.Substring($pathRoot.Length) -split '[\\/]' | Where-Object { $_ -match '[: ]$|\.$' -or $_.Contains(':') })) {
+      throw "KUNAI_CONFIG_DIR=$profileEnv uses an unsupported path spelling"
+    }
+  }
+  # A profile root at the filesystem root, at home, or above home would own
+  # more than a Kunai profile.
+  $homeDir = if ($env:USERPROFILE) { $env:USERPROFILE } else { $env:HOME }
+  if ($ProfileDir -eq $pathRoot) {
+    throw "KUNAI_CONFIG_DIR=$profileEnv must not be the filesystem root"
+  }
+  if ($homeDir -and [IO.Path]::IsPathRooted($homeDir)) {
+    if (Test-ContainsPath $ProfileDir ([IO.Path]::GetFullPath($homeDir))) {
+      throw "KUNAI_CONFIG_DIR=$profileEnv must not be a home directory or an ancestor of home"
+    }
+  }
+  # Platform defaults are derived independently of the installer-only data/
+  # cache overrides; a profile may not equal, contain, or sit inside any.
+  $defaultRoots = @(
+    (Join-Path $env:APPDATA 'kunai'),
+    (Join-Path $env:LOCALAPPDATA 'kunai'),
+    (Join-Path $env:LOCALAPPDATA 'kunai\cache'),
+    (Join-Path ([IO.Path]::GetTempPath()) 'kunai')
+  )
+  foreach ($d in $defaultRoots) {
+    $full = [IO.Path]::GetFullPath($d)
+    if ((Test-ContainsPath $full $ProfileDir) -or (Test-ContainsPath $ProfileDir $full)) {
+      throw "KUNAI_CONFIG_DIR=$profileEnv overlaps a platform-default Kunai directory"
+    }
   }
 }
 $BinDir = if ($env:KUNAI_BIN_DIR) { $env:KUNAI_BIN_DIR } elseif ($ProfileDir) { Join-Path $ProfileDir 'bin' } else { Join-Path $env:LOCALAPPDATA 'kunai\bin' }
-$DataDir = if ($env:KUNAI_DATA_DIR) { $env:KUNAI_DATA_DIR } elseif ($ProfileDir) { Join-Path $ProfileDir 'data' } else { Join-Path $env:LOCALAPPDATA 'kunai' }
+if ($null -ne $ProfileDir) {
+  # Explicit data/cache overrides may only name the derived profile dirs —
+  # a differing one would split the layout the CLI resolves from the same
+  # variable. An empty value counts as set.
+  $DataDir = Join-Path $ProfileDir 'data'
+  $dataEnv = [Environment]::GetEnvironmentVariable('KUNAI_DATA_DIR', 'Process')
+  if ($null -ne $dataEnv -and
+    (-not [IO.Path]::IsPathRooted($dataEnv) -or
+     -not [string]::Equals([IO.Path]::GetFullPath($dataEnv).TrimEnd([IO.Path]::DirectorySeparatorChar), $DataDir, $comparison))) {
+    throw 'KUNAI_DATA_DIR must equal the profile data directory'
+  }
+}
+else {
+  $DataDir = if ($env:KUNAI_DATA_DIR) { $env:KUNAI_DATA_DIR } else { Join-Path $env:LOCALAPPDATA 'kunai' }
+}
 # Official yt-dlp Windows builds. `/latest/download` is a redirect GitHub
 # serves for the current release; tests can point this at a local fixture.
 $YtdlpReleaseBase = if ($env:KUNAI_YTDLP_RELEASE_BASE) {
@@ -74,7 +166,93 @@ $CurlImpersonateWin64Digest = if ($env:KUNAI_CURL_IMPERSONATE_SHA256) {
   'f7faa8c42b63b4a96245429e46956e11ae7d7076d60f65768c0018d3bb18d7e5'
 }
 $ConfigDir = if ($ProfileDir) { Join-Path $ProfileDir 'config' } else { Join-Path $env:APPDATA 'kunai' }
-$CacheDir = if ($env:KUNAI_CACHE_DIR) { $env:KUNAI_CACHE_DIR } elseif ($ProfileDir) { Join-Path $ProfileDir 'cache' } else { Join-Path $env:LOCALAPPDATA 'kunai\cache' }
+if ($null -ne $ProfileDir) {
+  $CacheDir = Join-Path $ProfileDir 'cache'
+  $cacheEnv = [Environment]::GetEnvironmentVariable('KUNAI_CACHE_DIR', 'Process')
+  if ($null -ne $cacheEnv -and
+    (-not [IO.Path]::IsPathRooted($cacheEnv) -or
+     -not [string]::Equals([IO.Path]::GetFullPath($cacheEnv).TrimEnd([IO.Path]::DirectorySeparatorChar), $CacheDir, $comparison))) {
+    throw 'KUNAI_CACHE_DIR must equal the profile cache directory'
+  }
+}
+else {
+  $CacheDir = if ($env:KUNAI_CACHE_DIR) { $env:KUNAI_CACHE_DIR } else { Join-Path $env:LOCALAPPDATA 'kunai\cache' }
+}
+function Test-ProfileMarker {
+  $marker = Join-Path $ProfileDir '.kunai-profile'
+  $item = Get-ExistingItem $marker
+  if ($null -eq $item -or $item.PSIsContainer -or
+    ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { return $false }
+  # Exact byte comparison — ReadAllText would happily swallow a BOM.
+  return [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($marker)) -ceq "kunai-profile-v1`n"
+}
+
+function Assert-ProfileFilesystem {
+  if ($null -eq $ProfileDir) { return }
+  # Physical containment: any reparse point on the root or its ancestors is a
+  # fail-closed refusal, checked before re-running the containment matrix.
+  $physical = Get-PhysicalPath $ProfileDir
+  $homeDir = if ($env:USERPROFILE) { $env:USERPROFILE } else { $env:HOME }
+  if ($homeDir -and [IO.Path]::IsPathRooted($homeDir) -and
+    (Test-ContainsPath $physical (Get-PhysicalPath ([IO.Path]::GetFullPath($homeDir))))) {
+    throw "KUNAI_CONFIG_DIR=$profileEnv must not be a home directory or an ancestor of home"
+  }
+  foreach ($d in $script:defaultRoots) {
+    $full = Get-PhysicalPath ([IO.Path]::GetFullPath($d))
+    if ((Test-ContainsPath $full $physical) -or (Test-ContainsPath $physical $full)) {
+      throw "KUNAI_CONFIG_DIR=$profileEnv overlaps a platform-default Kunai directory"
+    }
+  }
+  $rootItem = Get-ExistingItem $ProfileDir
+  if ($null -ne $rootItem -and (-not $rootItem.PSIsContainer -or ($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint))) {
+    throw "KUNAI_CONFIG_DIR=$profileEnv is not a regular directory"
+  }
+  foreach ($child in 'config', 'data', 'cache', 'tmp', 'bin') {
+    $item = Get-ExistingItem (Join-Path $ProfileDir $child)
+    if ($null -ne $item -and (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint))) {
+      throw "KUNAI_CONFIG_DIR=$profileEnv has a non-directory or reparse point at $child"
+    }
+  }
+  if (Test-ProfileMarker) { return }
+  # An absent or empty root may be claimed on install; a nonempty unmarked
+  # root belongs to something else and is refused even on dry-run. A listing
+  # failure propagates — never claim a root we cannot inspect.
+  if ($null -ne $rootItem -and
+    (Get-ChildItem -LiteralPath $ProfileDir -Force -ErrorAction Stop | Select-Object -First 1)) {
+    throw "KUNAI_CONFIG_DIR=$profileEnv has no valid .kunai-profile ownership marker"
+  }
+}
+
+# Claim an empty/absent profile root for a real install. Dry-run never writes.
+function Assert-ProfileOwnership {
+  if ($null -eq $ProfileDir) { return }
+  Assert-ProfileFilesystem
+  if (Test-ProfileMarker) { return }
+  New-Item -ItemType Directory -Force -Path $ProfileDir | Out-Null
+  $marker = Join-Path $ProfileDir '.kunai-profile'
+  try {
+    $stream = [IO.File]::Open($marker, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+    try {
+      $bytes = [Text.Encoding]::ASCII.GetBytes("kunai-profile-v1`n")
+      $stream.Write($bytes, 0, $bytes.Length)
+    }
+    finally { $stream.Dispose() }
+  }
+  catch [System.IO.IOException] {
+    if (-not (Test-ProfileMarker)) { throw }
+  }
+}
+
+function Write-ProfilePathHint {
+  # A profile install never edits the persistent User PATH: activation is an
+  # explicit env var plus the profile-local launcher.
+  $escaped = $ProfileDir.Replace("'", "''")
+  $binEscaped = $BinDir.Replace("'", "''")
+  Write-Info "Profile install: PATH was not changed. In this PowerShell session run:"
+  Write-Info "  `$env:KUNAI_CONFIG_DIR = '$escaped'; `$env:Path = '$binEscaped;' + `$env:Path"
+  Write-Info "  `$env:KUNAI_CONFIG_DIR = '$escaped'; & '$binEscaped\kunai.exe' upgrade"
+}
+
 $BinPath = Join-Path $BinDir 'kunai.exe'
 $VersionsDir = Join-Path $DataDir 'versions'
 $LocksDir = Join-Path $DataDir 'locks'
@@ -843,7 +1021,10 @@ function Write-Manifest(
   [long]$ArchiveSizeBytes = 0,
   [string]$ArchiveSourceUrl = ''
 ) {
-  if ($DryRun) { Write-Info "[dry-run] would write schema-2 manifest ($MethodName)"; return }
+  if ($DryRun) {
+    Write-Info "[dry-run] would write schema-2 manifest ($MethodName) to $(Join-Path $ConfigDir 'install.json')"
+    return
+  }
   New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
   $manifestPath = Join-Path $ConfigDir 'install.json'
   $now = Get-IsoNow
@@ -1533,6 +1714,8 @@ public static class KunaiEnvBroadcast {
 }
 
 function Add-UserPath([string]$Dir) {
+  # A profile install never persists PATH: activation is explicit per session.
+  if ($ProfileDir) { return }
   # The 'User' environment target and the WM_SETTINGCHANGE broadcast that makes
   # it visible are both Windows-only; there is no persistent equivalent to
   # update elsewhere, and reading the target throws off-Windows.
@@ -2415,7 +2598,10 @@ function Install-Binary {
 
   Add-UserPath $BinDir
   Write-KunaiPathDiagnostic $BinPath
-  if ($SkipPathUpdate) {
+  if ($ProfileDir) {
+    Write-ProfilePathHint
+  }
+  elseif ($SkipPathUpdate) {
     Write-Info "PATH activation is environment-managed; ensure $BinDir is present before running kunai."
   }
   else {
@@ -2497,6 +2683,14 @@ if (-not $DryRun -and $OnWindows -and -not ($env:KUNAI_INSTALL_ALLOW_ELEVATED -m
   }
 }
 
+# A dedicated profile only supports the binary method: npm/bun install
+# account-wide and source builds outside the profile layout. The filesystem
+# and ownership checks run before any manifest read/write/install.
+if ($null -ne $ProfileDir -and $Method -ne 'binary') {
+  throw "KUNAI_CONFIG_DIR only supports -Method binary; unset KUNAI_CONFIG_DIR for -Method $Method."
+}
+if ($DryRun) { Assert-ProfileFilesystem } else { Assert-ProfileOwnership }
+
 Write-Host 'Kunai installer' -ForegroundColor Cyan
 
 switch ($Method) {
@@ -2573,6 +2767,17 @@ switch ($Method) {
 Install-OptionalDeps
 
 Write-Host 'Done.' -ForegroundColor Green
-Write-Host 'Try:  kunai -S "Frieren" -a'
-Write-Host 'Update any time:  kunai upgrade'
-Write-Host 'Remove:          kunai uninstall'
+if ($ProfileDir) {
+  $escaped = $ProfileDir.Replace("'", "''")
+  $binEscaped = $BinPath.Replace("'", "''")
+  Write-Host "This install belongs to the profile at $ProfileDir."
+  Write-Host "Invoke it with the env var set, e.g.:"
+  Write-Host "  `$env:KUNAI_CONFIG_DIR = '$escaped'; & '$binEscaped' -S `"Frieren`" -a"
+  Write-Host "Update any time:  `$env:KUNAI_CONFIG_DIR = '$escaped'; & '$binEscaped' upgrade"
+  Write-Host "Remove:           `$env:KUNAI_CONFIG_DIR = '$escaped'; & '$binEscaped' uninstall"
+}
+else {
+  Write-Host 'Try:  kunai -S "Frieren" -a'
+  Write-Host 'Update any time:  kunai upgrade'
+  Write-Host 'Remove:          kunai uninstall'
+}

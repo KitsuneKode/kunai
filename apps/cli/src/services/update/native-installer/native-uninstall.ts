@@ -2,6 +2,8 @@ import { existsSync } from "node:fs";
 import { readdir, rm, rmdir } from "node:fs/promises";
 import { join } from "node:path";
 
+import { checkDesktopProfile, DesktopProfileError } from "@kunai/storage";
+
 import {
   inspectInstallManifest,
   isVersionedBinaryManifest,
@@ -9,7 +11,12 @@ import {
   sameInstallManifestPublication,
   type InstallManifest,
 } from "../install-manifest";
-import { getInstallLayoutPaths, type InstallLayoutPaths } from "./install-layout";
+import {
+  getInstallLayoutPaths,
+  sameInstallLauncherPath,
+  uninstallStorageRoots,
+  type InstallLayoutPaths,
+} from "./install-layout";
 import {
   inspectLauncherOwnership,
   removeLauncherCopyAsides,
@@ -109,9 +116,29 @@ export async function nativeUninstall(
   const preserved: string[] = [];
   const downloadsDefault = join(layout.dataDir, "downloads");
 
+  // A profile layout must be owned before any manifest is read or mutated;
+  // the marker check is what lets uninstall distinguish its root from an
+  // unrelated directory the env happens to name.
+  if (layout.profileDir !== undefined) {
+    try {
+      checkDesktopProfile("require", layout.profileDir);
+    } catch (error) {
+      if (error instanceof DesktopProfileError) return blocked([layout.profileDir]);
+      throw error;
+    }
+  }
+
   const manifest = await readInstallManifest(layout.configDir);
   if (!manifest || !isVersionedBinaryManifest(manifest)) {
     return blocked([layout.configDir, layout.dataDir, layout.cacheDir]);
+  }
+  // Inside a profile the configured launcher is authoritative; a manifest
+  // pointing elsewhere is refused rather than trusted as a removal target.
+  if (
+    layout.profileDir !== undefined &&
+    !sameInstallLauncherPath(manifest.launcherPath, layout.launcherPath)
+  ) {
+    return blocked([layout.configDir, layout.launcherPath]);
   }
 
   // Active locks / transactions block before any mutation — force never deletes live locks.
@@ -253,8 +280,9 @@ export async function nativeUninstall(
     if (options.purge && !lifecyclePartial) {
       // Remove dataDir last: it contains the compatibility lifecycle and
       // activation files. The purge-safe lifecycle guard lives beside it and
-      // remains held until every root operation has completed.
-      for (const root of [layout.configDir, layout.cacheDir, layout.dataDir]) {
+      // remains held until every root operation has completed. Under a profile
+      // the managed tmp sibling also goes; the root and its marker never do.
+      for (const root of uninstallStorageRoots(layout)) {
         if (preserveSet.has(root)) {
           preserved.push(root);
           continue;

@@ -15,6 +15,8 @@ export type InstallLayoutPaths = {
   readonly dataDir: string;
   readonly cacheDir: string;
   readonly configDir: string;
+  /** Present only when this layout resolves inside a dedicated profile root. */
+  readonly profileDir?: string;
   readonly versionsDir: string;
   readonly locksDir: string;
   readonly transactionsDir: string;
@@ -84,8 +86,16 @@ export function getInstallLayoutPaths(
   // the storage dirs above were already resolved for the target platform, and
   // the separators then contradicted them.
   const joinFor = joinerForNodePlatform(platform);
+  // Attach profileDir only for a true profile-based layout: an injected
+  // configDir/dataDir/cacheDir triple under the same env would otherwise be
+  // mislabeled as profile-owned and wrongly gate uninstall ownership checks.
+  const isProfileLayout =
+    kunai.profileDir !== undefined &&
+    dataDir === kunai.dataDir &&
+    cacheDir === kunai.cacheDir &&
+    configDir === kunai.configDir;
 
-  return {
+  const base: Omit<InstallLayoutPaths, "profileDir"> = {
     dataDir,
     cacheDir,
     configDir,
@@ -105,6 +115,9 @@ export function getInstallLayoutPaths(
           )),
     binaryFileName: binaryFileName(platform),
   };
+  return kunai.profileDir !== undefined && isProfileLayout
+    ? { ...base, profileDir: kunai.profileDir }
+    : base;
 }
 
 /**
@@ -119,6 +132,38 @@ export function getInstallLayoutPaths(
 function joinerForLayoutPath(anyLayoutDir: string): (...segments: string[]) => string {
   const isWindowsLayout = /^[A-Za-z]:[\\/]/.test(anyLayoutDir) || anyLayoutDir.startsWith("\\\\");
   return joinerForNodePlatform(isWindowsLayout ? "win32" : "linux");
+}
+
+/**
+ * Launcher-path equality for the layout the paths describe — a drive/UNC
+ * launcher is a Windows layout and compares case-insensitively even when the
+ * host is POSIX. A profile must never act on a manifest launcher that
+ * disagrees with its configured one.
+ */
+export function sameInstallLauncherPath(manifestPath: string, configuredPath: string): boolean {
+  if (/^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/])/.test(configuredPath)) {
+    return (
+      win32.normalize(manifestPath).toLowerCase() === win32.normalize(configuredPath).toLowerCase()
+    );
+  }
+  return posix.normalize(manifestPath) === posix.normalize(configuredPath);
+}
+
+/**
+ * Roots an uninstall `--purge` removes, ordered so `dataDir` goes last (it owns
+ * the lifecycle/activation serialization). Under a profile the `tmp` sibling is
+ * also managed; the profile root itself and its ownership marker never are.
+ */
+export function uninstallStorageRoots(
+  layout: Pick<InstallLayoutPaths, "profileDir" | "configDir" | "dataDir" | "cacheDir">,
+): readonly string[] {
+  const joinFor = joinerForLayoutPath(layout.configDir);
+  return [
+    layout.configDir,
+    layout.cacheDir,
+    ...(layout.profileDir ? [joinFor(layout.profileDir, "tmp")] : []),
+    layout.dataDir,
+  ];
 }
 
 /** Absolute path for a versioned binary: `{dataDir}/versions/{semver}/kunai`. */

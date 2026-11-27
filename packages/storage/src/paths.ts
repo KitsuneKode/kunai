@@ -1,7 +1,20 @@
+import {
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { posix as posixPath, win32 as win32Path } from "node:path";
 
-import { resolveDesktopProfileDirs } from "@kunai/core/desktop-profile";
+import { DesktopProfileError, resolveDesktopProfileDirs } from "@kunai/core/desktop-profile";
+
+export { DesktopProfileError };
+
+export const PROFILE_MARKER = ".kunai-profile";
+export const PROFILE_MARKER_CONTENT = "kunai-profile-v1\n";
 
 export type StoragePlatform = "linux" | "darwin" | "win32";
 
@@ -62,13 +75,11 @@ export function joinerForNodePlatform(
 export function getKunaiPaths(options: KunaiPathOptions = {}): KunaiPaths {
   const platform = options.platform ?? normalizePlatform(process.platform);
   const env = options.env ?? process.env;
-  // `KUNAI_CONFIG_DIR` is an absolute path to a dedicated Kunai profile root,
-  // not a config-directory override; a set-but-invalid value is a
-  // configuration error thrown by the shared desktop-profile policy, not a
-  // fallthrough. Returns undefined when unset so the platform defaults apply.
-  const dirs =
-    resolveDesktopProfileDirs(platform, env.KUNAI_CONFIG_DIR) ??
-    defaultBaseDirs(platform, env, options.homeDir);
+  const home = profileHome(platform, env, options.homeDir);
+  const defaults = defaultBaseDirs(platform, env, home);
+  const override = resolveDesktopProfileDirs(platform, env.KUNAI_CONFIG_DIR);
+  if (override) assertDedicatedRoot(platform, override.profileDir, home, defaults);
+  const dirs = override ?? defaults;
   const join = joinerFor(platform);
 
   return {
@@ -79,6 +90,117 @@ export function getKunaiPaths(options: KunaiPathOptions = {}): KunaiPaths {
     cacheDbPath: join(dirs.cacheDir, "kunai-cache.sqlite"),
     logPath: join(dirs.dataDir, "logs.txt"),
   };
+}
+
+function assertDedicatedRoot(
+  platform: StoragePlatform,
+  root: string,
+  home: string,
+  defaults: Pick<KunaiPaths, "configDir" | "dataDir" | "cacheDir" | "tempDir">,
+): void {
+  const path = platform === "win32" ? win32Path : posixPath;
+  // Windows is always case-insensitive; macOS defaults to a case-insensitive
+  // volume — compare lowered so `users/x` cannot alias `Users/x`.
+  const lower = platform === "darwin" || platform === "win32";
+  const contains = (parent: string, child: string) => {
+    const relative = path.relative(
+      lower ? parent.toLowerCase() : parent,
+      lower ? child.toLowerCase() : child,
+    );
+    return !path.isAbsolute(relative) && relative !== ".." && !relative.startsWith(`..${path.sep}`);
+  };
+  if (contains(root, path.parse(root).root) || (path.isAbsolute(home) && contains(root, home))) {
+    throw new DesktopProfileError(
+      root,
+      "must not be a filesystem root, home directory, or ancestor of home",
+    );
+  }
+  if (
+    Object.values(defaults).some(
+      (dir) => path.isAbsolute(dir) && (contains(root, dir) || contains(dir, root)),
+    )
+  ) {
+    throw new DesktopProfileError(root, "overlaps a platform-default Kunai directory");
+  }
+}
+
+function physicalPath(path: string): string {
+  const native = process.platform === "win32" ? win32Path : posixPath;
+  if (lstatSync(path, { throwIfNoEntry: false })) return realpathSync(path);
+  const parent = native.dirname(path);
+  return parent === path ? path : native.join(physicalPath(parent), native.basename(path));
+}
+
+/** Check on-disk ownership before using or purging a desktop override. */
+export function checkDesktopProfile(
+  mode: "prepare" | "inspect" | "require",
+  expectedRoot?: string,
+): void {
+  const platform = normalizePlatform(process.platform);
+  const env = process.env;
+  const { profileDir } = getKunaiPaths();
+  if (profileDir === undefined) {
+    if (expectedRoot !== undefined) {
+      throw new DesktopProfileError(expectedRoot, "is not the resolved profile root");
+    }
+    return;
+  }
+  if (expectedRoot !== undefined && profileDir !== expectedRoot) {
+    throw new DesktopProfileError(
+      profileDir,
+      `does not match expected profile root ${expectedRoot}`,
+    );
+  }
+  checkProfileOwnership(profileDir, mode, platform, env);
+}
+
+function checkProfileOwnership(
+  root: string,
+  mode: "prepare" | "inspect" | "require",
+  platform: StoragePlatform,
+  env: NodeJS.ProcessEnv,
+): void {
+  const join = joinerFor(platform);
+  const home = profileHome(platform, env);
+  try {
+    const defaults = defaultBaseDirs(platform, env, home);
+    assertDedicatedRoot(platform, physicalPath(root), physicalPath(home), {
+      configDir: physicalPath(defaults.configDir),
+      dataDir: physicalPath(defaults.dataDir),
+      cacheDir: physicalPath(defaults.cacheDir),
+      tempDir: physicalPath(defaults.tempDir),
+    });
+    const rootStat = lstatSync(root, { throwIfNoEntry: false });
+    if (rootStat && !rootStat.isDirectory()) {
+      throw new DesktopProfileError(root, "is not a regular directory");
+    }
+    for (const child of ["config", "data", "cache", "tmp", "bin"]) {
+      const stat = lstatSync(join(root, child), { throwIfNoEntry: false });
+      if (stat && !stat.isDirectory()) {
+        throw new DesktopProfileError(root, `has a non-directory or symlink at ${child}`);
+      }
+    }
+    const marker = join(root, PROFILE_MARKER);
+    const ownsRoot = () =>
+      lstatSync(marker, { throwIfNoEntry: false })?.isFile() &&
+      readFileSync(marker, "utf8") === PROFILE_MARKER_CONTENT;
+    if (ownsRoot()) return;
+    if (mode === "require" || (rootStat && readdirSync(root).length > 0)) {
+      // Another Kunai process may have marked the previously empty root.
+      if (ownsRoot()) return;
+      throw new DesktopProfileError(root, `has no valid ${PROFILE_MARKER} ownership marker`);
+    }
+    if (mode === "inspect") return;
+    mkdirSync(root, { recursive: true });
+    try {
+      writeFileSync(marker, PROFILE_MARKER_CONTENT, { flag: "wx", mode: 0o600 });
+    } catch (error) {
+      if (!ownsRoot()) throw error;
+    }
+  } catch (error) {
+    if (error instanceof DesktopProfileError) throw error;
+    throw new DesktopProfileError(root, "could not be checked or initialized");
+  }
 }
 
 function normalizePlatform(platform: NodeJS.Platform): StoragePlatform {
@@ -104,10 +226,22 @@ function firstNonEmpty(...values: readonly (string | undefined)[]): string | und
   return undefined;
 }
 
-function defaultBaseDirs(
+function profileHome(
   platform: StoragePlatform,
   env: Record<string, string | undefined>,
   homeDir?: string,
+): string {
+  const home =
+    platform === "win32"
+      ? firstNonEmpty(env.USERPROFILE, env.HOME)
+      : firstNonEmpty(env.HOME, env.USERPROFILE);
+  return homeDir ?? home ?? homedir();
+}
+
+function defaultBaseDirs(
+  platform: StoragePlatform,
+  env: Record<string, string | undefined>,
+  home: string,
 ): Pick<KunaiPaths, "configDir" | "dataDir" | "cacheDir" | "tempDir"> {
   // `homedir()` is the last resort, not the first. On Linux the XDG variables
   // below already override every root, and on Windows APPDATA/LOCALAPPDATA do —
@@ -116,7 +250,6 @@ function defaultBaseDirs(
   // redirect its storage root from the environment at all: a test that set the
   // documented variables still resolved the real `~/Library/Application Support`
   // and wrote the developer's live profile.
-  const home = homeDir ?? firstNonEmpty(env.HOME, env.USERPROFILE) ?? homedir();
   const join = joinerFor(platform);
 
   if (platform === "darwin") {
@@ -130,8 +263,8 @@ function defaultBaseDirs(
   }
 
   if (platform === "win32") {
-    const roaming = env.APPDATA ?? join(home, "AppData", "Roaming");
-    const local = env.LOCALAPPDATA ?? join(home, "AppData", "Local");
+    const roaming = firstNonEmpty(env.APPDATA) ?? join(home, "AppData", "Roaming");
+    const local = firstNonEmpty(env.LOCALAPPDATA) ?? join(home, "AppData", "Local");
     return {
       configDir: join(roaming, "kunai"),
       dataDir: join(local, "kunai"),
@@ -141,9 +274,9 @@ function defaultBaseDirs(
   }
 
   return {
-    configDir: join(env.XDG_CONFIG_HOME ?? join(home, ".config"), "kunai"),
-    dataDir: join(env.XDG_DATA_HOME ?? join(home, ".local", "share"), "kunai"),
-    cacheDir: join(env.XDG_CACHE_HOME ?? join(home, ".cache"), "kunai"),
+    configDir: join(firstNonEmpty(env.XDG_CONFIG_HOME) ?? join(home, ".config"), "kunai"),
+    dataDir: join(firstNonEmpty(env.XDG_DATA_HOME) ?? join(home, ".local", "share"), "kunai"),
+    cacheDir: join(firstNonEmpty(env.XDG_CACHE_HOME) ?? join(home, ".cache"), "kunai"),
     tempDir: join(env.TMPDIR ?? tmpdir(), "kunai"),
   };
 }

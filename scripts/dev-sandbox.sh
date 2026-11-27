@@ -3,7 +3,7 @@
 # Run Kunai against a throwaway profile, so a manual test cannot touch the real
 # one.
 #
-# KUNAI_CONFIG_DIR selects the sandbox as the dedicated profile root, so config,
+# KUNAI_CONFIG_DIR selects a profile dir inside the sandbox, so config,
 # data, cache and credentials all resolve under it. The remaining roots below
 # are the same set apps/cli/test/helpers/storage-env.ts uses, deliberately every
 # platform's roots at once: XDG_* covers Linux, HOME and
@@ -90,7 +90,7 @@ echo
 exec env \
   DO_NOT_TRACK=1 \
   KUNAI_CREDENTIAL_BACKEND=file \
-  KUNAI_CONFIG_DIR="$SANDBOX" \
+  KUNAI_CONFIG_DIR="$SANDBOX/profile" \
   HOME="$SANDBOX" \
   USERPROFILE="$SANDBOX" \
   XDG_CONFIG_HOME="$SANDBOX" \

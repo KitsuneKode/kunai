@@ -194,7 +194,7 @@ describe("getKunaiPaths KUNAI_CONFIG_DIR profile root", () => {
     "%s: an empty override is a configuration error, not a fallthrough",
     (platform) => {
       expect(() => getKunaiPaths({ platform, env: { KUNAI_CONFIG_DIR: "" } })).toThrow(
-        "KUNAI_CONFIG_DIR must be an absolute path to a Kunai profile directory",
+        "is not absolute",
       );
     },
   );
@@ -204,7 +204,7 @@ describe("getKunaiPaths KUNAI_CONFIG_DIR profile root", () => {
     (platform) => {
       expect(() =>
         getKunaiPaths({ platform, env: { KUNAI_CONFIG_DIR: "relative/profile" } }),
-      ).toThrow("KUNAI_CONFIG_DIR must be an absolute path to a Kunai profile directory");
+      ).toThrow("is not absolute");
     },
   );
 
@@ -216,7 +216,7 @@ describe("getKunaiPaths KUNAI_CONFIG_DIR profile root", () => {
     (override) => {
       expect(() =>
         getKunaiPaths({ platform: "win32", env: { KUNAI_CONFIG_DIR: override } }),
-      ).toThrow("KUNAI_CONFIG_DIR must be an absolute path to a Kunai profile directory");
+      ).toThrow("is not absolute");
     },
   );
 
@@ -234,5 +234,104 @@ describe("getKunaiPaths KUNAI_CONFIG_DIR profile root", () => {
     const paths = getKunaiPaths({ platform: "linux", env: { HOME: "/sandbox" } });
 
     expect(paths.profileDir).toBeUndefined();
+  });
+
+  // Dedicated-root containment policy, mirrored by both shell installers: a
+  // profile root may not be the filesystem root, equal or contain home, or
+  // overlap any platform-default dir in either direction.
+  describe("dedicated-root containment", () => {
+    const linuxEnv = {
+      HOME: "/home/test",
+      XDG_CONFIG_HOME: "/home/test/.config",
+      XDG_DATA_HOME: "/home/test/.local/share",
+      XDG_CACHE_HOME: "/home/test/.cache",
+      TMPDIR: "/var/tmp",
+    };
+
+    test.each([
+      ["filesystem root", "/"],
+      ["home itself", "/home/test"],
+      ["ancestor of home", "/home"],
+      ["default config dir", "/home/test/.config/kunai"],
+      ["ancestor of a default", "/home/test/.config"],
+      ["inside a default", "/home/test/.config/kunai/profile"],
+      ["inside the default temp dir", "/var/tmp/kunai/profile"],
+    ])("linux: rejects %s", (_label, root) => {
+      expect(() =>
+        getKunaiPaths({ platform: "linux", env: { ...linuxEnv, KUNAI_CONFIG_DIR: root } }),
+      ).toThrow(/must not be|overlaps a platform-default/);
+    });
+
+    test.each([
+      ["sibling of home", "/opt/kunai"],
+      ["sibling sharing a name prefix", "/home/test2/profile"],
+      ["dot-dot spelling of a valid sibling", "/home/../opt/kunai"],
+      ["default-adjacent sibling", "/home/test/.cache/kunai-profile"],
+    ])("linux: accepts %s", (_label, root) => {
+      expect(
+        getKunaiPaths({ platform: "linux", env: { ...linuxEnv, KUNAI_CONFIG_DIR: root } })
+          .profileDir,
+      ).toBe("/opt/kunai".includes("..") ? root : root.replace("/home/../", "/"));
+    });
+
+    const winEnv = {
+      USERPROFILE: "C:\\Users\\test",
+      HOME: "C:\\Users\\test",
+      APPDATA: "C:\\Users\\test\\AppData\\Roaming",
+      LOCALAPPDATA: "C:\\Users\\test\\AppData\\Local",
+    };
+
+    test.each([
+      ["home itself", "C:\\Users\\test"],
+      ["ancestor of home", "C:\\Users"],
+      ["UNC share root", "\\\\server\\share"],
+      ["default dir, different case", "c:\\users\\test\\appdata\\roaming\\kunai"],
+      ["inside the default", "C:\\Users\\test\\AppData\\Local\\kunai\\profile"],
+      ["ancestor of the default", "C:\\Users\\test\\AppData\\Local"],
+    ])("win32: rejects %s", (_label, root) => {
+      expect(() =>
+        getKunaiPaths({ platform: "win32", env: { ...winEnv, KUNAI_CONFIG_DIR: root } }),
+      ).toThrow(/must not be|overlaps a platform-default|unsupported path spelling/);
+    });
+
+    test.each(["C:\\Sandbox\\profile ", "C:\\Sandbox\\profile."])(
+      "win32: a trailing-space/dot component is an unsupported spelling (%s)",
+      (override) => {
+        expect(() =>
+          getKunaiPaths({ platform: "win32", env: { ...winEnv, KUNAI_CONFIG_DIR: override } }),
+        ).toThrow("unsupported path spelling");
+      },
+    );
+
+    // macOS volumes default to case-insensitive, so `users/…` aliases `Users/…`:
+    // containment compares lowered, the same convention both installers use.
+    const darwinEnv = { HOME: "/Users/Fixture", TMPDIR: "/var/folders/tmp" };
+
+    test.each([
+      ["home itself", "/Users/Fixture"],
+      ["home via a case alias", "/users/fixture"],
+      ["ancestor of home", "/Users"],
+      ["the app support default", "/Users/Fixture/Library/Application Support/kunai"],
+      ["default via a case alias", "/users/fixture/library/application support/kunai"],
+      ["ancestor of the default", "/Users/Fixture/Library/Application Support"],
+      ["inside the default", "/Users/Fixture/Library/Application Support/kunai/profile"],
+      ["the caches default", "/Users/Fixture/Library/Caches/kunai"],
+      ["inside the default temp dir", "/var/folders/tmp/kunai/profile"],
+    ])("darwin: rejects %s", (_label, root) => {
+      expect(() =>
+        getKunaiPaths({ platform: "darwin", env: { ...darwinEnv, KUNAI_CONFIG_DIR: root } }),
+      ).toThrow(/must not be|overlaps a platform-default/);
+    });
+
+    test.each([
+      ["a sibling outside home", "/opt/kunai-profile"],
+      ["a sibling sharing a name prefix", "/Users/Fixture2/profile"],
+      ["a default-adjacent sibling", "/Users/Fixture/Library/Caches/kunai-profile"],
+    ])("darwin: accepts %s", (_label, root) => {
+      expect(
+        getKunaiPaths({ platform: "darwin", env: { ...darwinEnv, KUNAI_CONFIG_DIR: root } })
+          .profileDir,
+      ).toBe(root);
+    });
   });
 });

@@ -174,7 +174,7 @@ function defaultManagedWrapperDirs(): readonly ManagedWrapperDir[] {
   if (process.platform !== "win32") return [];
   const dataRoot =
     resolveDesktopProfileDirs("win32", process.env.KUNAI_CONFIG_DIR)?.dataDir ??
-    process.env.KUNAI_DATA_DIR ??
+    (process.env.KUNAI_DATA_DIR || undefined) ??
     (process.env.LOCALAPPDATA ? win32Path.join(process.env.LOCALAPPDATA, "kunai") : undefined);
   if (!dataRoot) return [];
   const root = win32Path.join(dataRoot, "deps", "curl-impersonate");
@@ -359,13 +359,8 @@ export function resolveCurlCandidate(
     };
   };
 
-  for (const wrapper of wrappers) {
-    const resolved = which(wrapper.name);
-    if (!resolved) continue;
-    const candidate = candidateFor(wrapper, resolved);
-    if (candidate) return candidate;
-  }
-
+  // The managed copy is validated before PATH: the installer owns it, while a
+  // PATH wrapper could be anything the caller's shell happens to resolve.
   if (platform === "win32") {
     const managedWrapperDirs = environment.managedWrapperDirs ?? defaultManagedWrapperDirs;
     for (const { dir, entries } of managedWrapperDirs()) {
@@ -378,6 +373,13 @@ export function resolveCurlCandidate(
         if (candidate) return candidate;
       }
     }
+  }
+
+  for (const wrapper of wrappers) {
+    const resolved = which(wrapper.name);
+    if (!resolved) continue;
+    const candidate = candidateFor(wrapper, resolved);
+    if (candidate) return candidate;
   }
 
   let plain = which("curl");

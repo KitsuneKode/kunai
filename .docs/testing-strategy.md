@@ -63,8 +63,10 @@ test preload (`test/helpers/storage-preload.ts` at the root,
 `apps/cli/test/storage-preload.ts` for the CLI) that runs
 `installTestStorageIsolation()` before any test module loads: one throwaway
 `KUNAI_CONFIG_DIR` profile per process — and therefore per `--parallel` worker —
-with HOME/USERPROFILE, the XDG trio, APPDATA/LOCALAPPDATA all pointed at the
-same nonempty directories, the file credential backend, and `DO_NOT_TRACK=1`.
+rooted at `<root>/profile` (a child of, never equal to, the fake home) with
+the `.kunai-profile` ownership marker seeded up front, while HOME/USERPROFILE,
+the XDG trio, APPDATA/LOCALAPPDATA all point at `<root>` itself, plus the file
+credential backend and `DO_NOT_TRACK=1`.
 TMPDIR/TMP/TEMP are left alone so unrelated `os.tmpdir()` fixtures keep working.
 Standalone harnesses (launchers, shells, non-`bun test` entrypoints) get the same
 environment from `storageRootEnv()` in `test/helpers/storage-env.ts`, re-exported

@@ -61,21 +61,30 @@ export function withCommandPath(
   return next;
 }
 
-export function createInstallerSandbox(name: string) {
+export function createInstallerSandbox(
+  name: string,
+  options?: { readonly freshProfile?: boolean },
+) {
   const root = mkdtempSync(join(tmpdir(), `kunai-${name}-`));
-  const binDir = join(root, "bin");
-  const dataDir = join(root, "data");
-  const configDir = join(root, "config");
-  const cacheDir = join(root, "cache");
+  // The profile root is a child of the fixture home (`HOME` is `root`), the
+  // topology storageRootEnv installs — config/data/cache/bin live under it.
+  const profileDir = join(root, "profile");
+  const binDir = join(profileDir, "bin");
+  const dataDir = join(profileDir, "data");
+  const configDir = join(profileDir, "config");
+  const cacheDir = join(profileDir, "cache");
+  if (!options?.freshProfile) {
+    mkdirSync(profileDir, { recursive: true });
+    writeFileSync(join(profileDir, ".kunai-profile"), "kunai-profile-v1\n");
+  }
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     ...windowsShellEnvDefaults(root),
     KUNAI_BIN_DIR: binDir,
+    // The profile root derives profile/data and profile/cache — the same
+    // literals the fields above name — while the explicit installer-only
+    // data/cache knobs stay aligned with it.
     KUNAI_DATA_DIR: dataDir,
-    // The profile root derives root/config, root/data and root/cache —
-    // the same literals the fields above name — while the explicit
-    // installer-only data/cache knobs stay aligned with it.
-    KUNAI_CONFIG_DIR: root,
     KUNAI_CACHE_DIR: cacheDir,
     // Redirecting filesystem roots does not redirect HKCU\Environment. Every
     // successful binary fixture used to append this temporary bin directory
@@ -84,6 +93,7 @@ export function createInstallerSandbox(name: string) {
   };
   return {
     root,
+    profileDir,
     binDir,
     dataDir,
     configDir,
@@ -91,6 +101,19 @@ export function createInstallerSandbox(name: string) {
     env,
     cleanup: () => removeTempDir(root),
   };
+}
+
+/**
+ * Drop every installer-only path knob so the scripts derive the whole layout
+ * from `KUNAI_CONFIG_DIR` — the env a real profile user actually runs with.
+ */
+export function profileOnlyInstallerEnv(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const env = { ...source };
+  delete env.KUNAI_BIN_DIR;
+  delete env.KUNAI_DATA_DIR;
+  delete env.KUNAI_CACHE_DIR;
+  delete env.KUNAI_SKIP_PATH_UPDATE;
+  return env;
 }
 
 export function seedActivationLock(

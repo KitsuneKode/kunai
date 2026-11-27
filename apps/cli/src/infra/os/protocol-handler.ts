@@ -54,12 +54,24 @@ export function buildProtocolHandlerInstallPlan({
   executable = whichLive("kunai") ?? process.argv[1] ?? "kunai",
   home = process.env.HOME,
   xdgDataHome = process.env.XDG_DATA_HOME,
+  profileRoot = process.env.KUNAI_CONFIG_DIR ?? null,
 }: {
   readonly platform?: NodeJS.Platform;
   readonly executable?: string;
   readonly home?: string;
   readonly xdgDataHome?: string;
+  readonly profileRoot?: string | null;
 } = {}): ProtocolHandlerInstallPlan {
+  if (profileRoot !== null) {
+    return {
+      supported: false,
+      writes: [],
+      commands: [],
+      notes: [
+        "Cannot register an account-wide kunai:// handler with KUNAI_CONFIG_DIR set. Unset it and use the default profile to register the handler.",
+      ],
+    };
+  }
   if (platform !== "linux") {
     return {
       supported: false,

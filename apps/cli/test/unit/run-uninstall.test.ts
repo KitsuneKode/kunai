@@ -382,3 +382,83 @@ test("system-package channel plans manual removal guidance and never deletes the
   expect(p.kind).toBe("manual");
   if (p.kind === "manual") expect(p.message).toContain("pacman -R kunai-bin");
 });
+
+test("runUninstall refuses an injected profileDir that is not the resolved profile root", async () => {
+  // The layout seam is for tests of the *default* layout: a profileDir it
+  // carries must match the environment's own override, or ownership cannot
+  // be trusted and nothing — not even the manifest — may be read.
+  const root = await mkdtemp(join(tmpdir(), "kunai-run-uninstall-foreign-profile-"));
+  made.push(root);
+  const layout = getInstallLayoutPaths({
+    dataDir: join(root, "data"),
+    cacheDir: join(root, "cache"),
+    configDir: join(root, "config"),
+    launcherPath: join(root, "bin", "kunai"),
+    platform: "linux",
+  });
+
+  const code = await runUninstall({
+    purge: false,
+    layout: { ...layout, profileDir: join(root, "elsewhere") },
+  });
+  expect(code).toBe(1);
+});
+
+test("runUninstall under an owned profile purges managed dirs but keeps the root and marker", async () => {
+  if (process.platform === "win32") return;
+  const root = await mkdtemp(join(tmpdir(), "kunai-run-uninstall-profile-"));
+  made.push(root);
+  const profileDir = join(root, "profile");
+  await mkdir(profileDir, { recursive: true });
+  await writeFile(join(profileDir, ".kunai-profile"), "kunai-profile-v1\n");
+  // An unrelated sibling inside the profile survives the purge.
+  await writeFile(join(profileDir, "keep-me.txt"), "unrelated");
+
+  const saved = process.env.KUNAI_CONFIG_DIR;
+  process.env.KUNAI_CONFIG_DIR = profileDir;
+  try {
+    const layout = getInstallLayoutPaths({ platform: "linux" });
+    expect(layout.profileDir).toBe(profileDir);
+    // A non-binary manifest under a profile cannot delegate to an
+    // account-wide remover: manual plan, but --purge still clears storage.
+    await mkdir(layout.configDir, { recursive: true });
+    await writeInstallManifest(
+      {
+        method: "npm-global",
+        activeVersion: "1.0.0",
+        launcherPath: layout.launcherPath,
+        downloadBaseUrl: "https://registry.npmjs.org",
+      },
+      layout,
+    );
+    for (const dir of [layout.dataDir, layout.cacheDir, join(profileDir, "tmp")]) {
+      await mkdir(dir, { recursive: true });
+    }
+    await writeFile(join(layout.dataDir, "kunai-data.sqlite"), "data");
+
+    const commands: string[][] = [];
+    const code = await runUninstall({
+      purge: true,
+      force: true,
+      layout,
+      platform: "linux",
+      execImpl: async (command) => {
+        commands.push([...command]);
+        return 0;
+      },
+    });
+
+    expect(code).toBe(0);
+    expect(commands).toEqual([]);
+    expect(existsSync(layout.configDir)).toBe(false);
+    expect(existsSync(layout.dataDir)).toBe(false);
+    expect(existsSync(layout.cacheDir)).toBe(false);
+    expect(existsSync(join(profileDir, "tmp"))).toBe(false);
+    expect(existsSync(join(profileDir, ".kunai-profile"))).toBe(true);
+    expect(existsSync(join(profileDir, "keep-me.txt"))).toBe(true);
+    expect(existsSync(profileDir)).toBe(true);
+  } finally {
+    if (saved === undefined) delete process.env.KUNAI_CONFIG_DIR;
+    else process.env.KUNAI_CONFIG_DIR = saved;
+  }
+});

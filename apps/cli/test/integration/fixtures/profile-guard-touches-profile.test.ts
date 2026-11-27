@@ -23,8 +23,8 @@ test("optionally writes into the profile it was started with", () => {
   if (mode === "sandbox") {
     const home = process.env.HOME;
     if (home === undefined) throw new Error("the storage preload must install HOME");
-    expect(paths.configPath).toBe(join(home, "config", "config.json"));
-    expect(process.env.KUNAI_CONFIG_DIR).toBe(home);
+    expect(paths.configPath).toBe(join(home, "profile", "config", "config.json"));
+    expect(process.env.KUNAI_CONFIG_DIR).toBe(join(home, "profile"));
     for (const key of [
       "USERPROFILE",
       "XDG_CONFIG_HOME",

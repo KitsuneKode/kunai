@@ -15,7 +15,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
 
 import type { InstallManifest } from "@/services/update/install-manifest";
@@ -32,6 +32,7 @@ import {
   createInstallerSandbox,
   hostInstallShAsset,
   installCommandShim,
+  profileOnlyInstallerEnv,
   seedActivationLock,
   seedLifecycleLock,
   withCommandPath,
@@ -450,6 +451,9 @@ describe("install.sh environment fallbacks", () => {
       installCommandShim(shimDir, "node");
       installCommandShim(shimDir, "npm");
       const env = withCommandPath({ ...sandbox.env, KUNAI_INSTALL_METHOD: "npm" }, shimDir);
+      // npm/bun install account-wide and are refused under a dedicated
+      // profile; these fixtures pin the account-wide layout.
+      delete env.KUNAI_CONFIG_DIR;
 
       const result = runInstallSh(["--dry-run", "--yes"], env);
       expect(result.status).toBe(0);
@@ -2030,7 +2034,9 @@ describe("install.sh lifecycle contract", () => {
     const digest = createHash("sha256").update(body).digest("hex");
     const sandbox = createInstallerSandbox("install-sh-activation-failure");
     const activationPath = seedActivationLock(sandbox.dataDir, { pid: 2_147_483_646 });
-    writeFileSync(sandbox.configDir, "not-a-directory");
+    // The account-wide layout resolves config under XDG_CONFIG_HOME — that is
+    // where the manifest commit must fail, so the file goes there.
+    writeFileSync(join(sandbox.root, "kunai"), "not-a-directory");
     try {
       await withReleaseFixture(
         {
@@ -2038,10 +2044,14 @@ describe("install.sh lifecycle contract", () => {
           "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
         },
         async (baseUrl) => {
-          const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
-            ...sandbox.env,
-            KUNAI_DL_BASE: baseUrl,
-          });
+          const env: NodeJS.ProcessEnv = { ...sandbox.env, KUNAI_DL_BASE: baseUrl };
+          // The publication failure relies on configDir being a plain file,
+          // which profile validation refuses before the lock even exists.
+          delete env.KUNAI_CONFIG_DIR;
+          const result = await runInstallShAsync(
+            ["--yes", "--skip-deps", "--version", "9.8.7"],
+            env,
+          );
           expect(result.status).not.toBe(0);
           expect(existsSync(activationPath)).toBe(false);
         },
@@ -2190,16 +2200,18 @@ describe("install.sh package activeVersion", () => {
       );
       installCommandShim(shimDir, "kunai", '#!/bin/sh\necho "kunai 1.0.0 (stale-path)"\n');
 
-      const result = runInstallSh(["--method", "npm", "--yes", "--skip-deps"], {
+      const env: NodeJS.ProcessEnv = {
         ...sandbox.env,
         KUNAI_NPM_ROOT: npmRoot,
         KUNAI_NPM_PREFIX: npmPrefix,
         KUNAI_BUN_MARKER: join(sandbox.root, "bun-invoked"),
         PATH: `${shimDir}${delimiter}${sandbox.env.PATH ?? ""}`,
-      });
+      };
+      delete env.KUNAI_CONFIG_DIR;
+      const result = runInstallSh(["--method", "npm", "--yes", "--skip-deps"], env);
 
       expect(result.status).toBe(0);
-      const manifest = readInstallerManifest(sandbox.configDir);
+      const manifest = readInstallerManifest(join(sandbox.root, "kunai"));
       expect(manifest.method).toBe("npm-global");
       expect(manifest.activeVersion).toBe("4.5.6");
       expect(manifest.activeVersion).not.toBe("latest");
@@ -2227,14 +2239,16 @@ describe("install.sh package activeVersion", () => {
       installCommandShim(shimDir, "bun", "#!/bin/sh\nexit 0\n");
       installCommandShim(shimDir, "kunai", '#!/bin/sh\necho "kunai 1.0.0 (stale-path)"\n');
 
-      const result = runInstallSh(["--method", "bun", "--yes", "--skip-deps"], {
+      const env: NodeJS.ProcessEnv = {
         ...sandbox.env,
         BUN_INSTALL: bunRoot,
         PATH: `${shimDir}${delimiter}${sandbox.env.PATH ?? ""}`,
-      });
+      };
+      delete env.KUNAI_CONFIG_DIR;
+      const result = runInstallSh(["--method", "bun", "--yes", "--skip-deps"], env);
 
       expect(result.status).toBe(0);
-      const manifest = readInstallerManifest(sandbox.configDir);
+      const manifest = readInstallerManifest(join(sandbox.root, "kunai"));
       expect(manifest.method).toBe("bun-global");
       expect(manifest.activeVersion).toBe("7.8.9");
       expect(manifest.activeVersion).not.toBe("latest");
@@ -2267,18 +2281,20 @@ describe("install.sh package activeVersion", () => {
         '#!/bin/sh\ncase "$1 $2" in "root -g") echo "$KUNAI_NPM_ROOT" ;; "prefix -g") echo "$KUNAI_NPM_PREFIX" ;; esac\nexit 0\n',
       );
 
+      const env: NodeJS.ProcessEnv = {
+        ...sandbox.env,
+        KUNAI_NPM_ROOT: npmRoot,
+        KUNAI_NPM_PREFIX: join(sandbox.root, "npm-prefix"),
+        PATH: `${shimDir}${delimiter}${sandbox.env.PATH ?? ""}`,
+      };
+      delete env.KUNAI_CONFIG_DIR;
       const result = runInstallSh(
         ["--method", "npm", "--version", "4.5.6", "--yes", "--skip-deps"],
-        {
-          ...sandbox.env,
-          KUNAI_NPM_ROOT: npmRoot,
-          KUNAI_NPM_PREFIX: join(sandbox.root, "npm-prefix"),
-          PATH: `${shimDir}${delimiter}${sandbox.env.PATH ?? ""}`,
-        },
+        env,
       );
 
       expect(result.status).not.toBe(0);
-      expect(existsSync(join(sandbox.configDir, "install.json"))).toBe(false);
+      expect(existsSync(join(sandbox.root, "kunai", "install.json"))).toBe(false);
       expect(existsSync(join(sandbox.dataDir, "locks", "activation.lock"))).toBe(false);
     } finally {
       sandbox.cleanup();
@@ -2670,6 +2686,264 @@ describe("install.sh optional dependency consent", () => {
       expect(output).not.toContain("This will run");
       expect(output).toContain("Run this to install them:");
       expect(output.split("sudo pacman -S --needed mpv yt-dlp").length - 1).toBe(1);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Dedicated profile contract (KUNAI_CONFIG_DIR). These run the real script
+// against freshProfile sandboxes — no marker is pre-seeded — so the only
+// layout inputs are the profile env and the sandboxed filesystem.
+// ---------------------------------------------------------------------------
+
+describe("install.sh dedicated profile contract", () => {
+  const dryRun = ["--dry-run", "--yes", "--skip-deps", "--version", "9.8.7"];
+
+  test("a profile-only dry run reports the derived layout and writes nothing", () => {
+    const sandbox = createInstallerSandbox("install-sh-profile-dry", { freshProfile: true });
+    try {
+      const result = runInstallSh(dryRun, profileOnlyInstallerEnv(sandbox.env));
+      expect(result.status).toBe(0);
+      const out = `${result.stdout}${result.stderr}`;
+      expect(out).toContain(join(sandbox.profileDir, "config", "install.json"));
+      expect(out).toContain(join(sandbox.profileDir, "data", "versions"));
+      expect(out).toContain(join(sandbox.profileDir, "bin", "kunai"));
+      // Manual activation guidance, never an rc-file edit.
+      expect(out).toContain("PATH was not changed");
+      expect(out).toContain("export KUNAI_CONFIG_DIR=");
+      expect(existsSync(sandbox.profileDir)).toBe(false);
+      expect(existsSync(join(sandbox.root, ".bashrc"))).toBe(false);
+      expect(existsSync(join(sandbox.root, ".profile"))).toBe(false);
+      expect(existsSync(join(sandbox.root, ".bash_profile"))).toBe(false);
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test.each(["rel/p", "", " /profile"])(
+    "a malformed KUNAI_CONFIG_DIR (%j) is refused before any write",
+    (value) => {
+      const sandbox = createInstallerSandbox("install-sh-profile-bad", { freshProfile: true });
+      try {
+        const env = { ...profileOnlyInstallerEnv(sandbox.env), KUNAI_CONFIG_DIR: value };
+        const result = runInstallSh(dryRun, env);
+        expect(result.status).not.toBe(0);
+        expect(`${result.stdout}${result.stderr}`).toContain("absolute path");
+        expect(existsSync(join(sandbox.profileDir, ".kunai-profile"))).toBe(false);
+      } finally {
+        sandbox.cleanup();
+      }
+    },
+  );
+
+  test.each([
+    ["KUNAI_DATA_DIR", "data"],
+    ["KUNAI_DATA_DIR", ""],
+    ["KUNAI_CACHE_DIR", "cache"],
+    ["KUNAI_CACHE_DIR", ""],
+  ])("a %s override that names no derived dir (%j) is refused", (key, value) => {
+    const sandbox = createInstallerSandbox("install-sh-profile-split", { freshProfile: true });
+    try {
+      const env = {
+        ...profileOnlyInstallerEnv(sandbox.env),
+        [key]: value === "" ? "" : join(sandbox.root, value),
+      };
+      const result = runInstallSh(dryRun, env);
+      expect(result.status).not.toBe(0);
+      expect(`${result.stdout}${result.stderr}`).toContain("KUNAI_");
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("data/cache overrides equal to the derived dirs are accepted after normalization", () => {
+    const sandbox = createInstallerSandbox("install-sh-profile-derived", { freshProfile: true });
+    try {
+      const env = {
+        ...profileOnlyInstallerEnv(sandbox.env),
+        KUNAI_DATA_DIR: join(sandbox.profileDir, "data", "..", "data"),
+        KUNAI_CACHE_DIR: join(sandbox.profileDir, "cache") + "/",
+      };
+      const result = runInstallSh(dryRun, env);
+      expect(result.status).toBe(0);
+      expect(existsSync(sandbox.profileDir)).toBe(false);
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("a nonempty root without a marker is refused and never adopted", () => {
+    const sandbox = createInstallerSandbox("install-sh-profile-unmarked", { freshProfile: true });
+    try {
+      mkdirSync(sandbox.profileDir, { recursive: true });
+      const sentinel = join(sandbox.profileDir, "unrelated.txt");
+      writeFileSync(sentinel, "not kunai\n");
+      const result = runInstallSh(dryRun, profileOnlyInstallerEnv(sandbox.env));
+      expect(result.status).not.toBe(0);
+      expect(`${result.stdout}${result.stderr}`).toContain(".kunai-profile");
+      expect(readFileSync(sentinel, "utf8")).toBe("not kunai\n");
+      expect(existsSync(join(sandbox.profileDir, ".kunai-profile"))).toBe(false);
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test.each([
+    ["the home directory", (s: ReturnType<typeof createInstallerSandbox>) => s.root],
+    ["an ancestor of home", (s: ReturnType<typeof createInstallerSandbox>) => dirname(s.root)],
+    [
+      "a platform-default Kunai directory",
+      (s: ReturnType<typeof createInstallerSandbox>) => join(s.root, "kunai"),
+    ],
+  ])("a hazardous profile root (%s) is refused", (_label, pick) => {
+    const sandbox = createInstallerSandbox("install-sh-profile-hazard", { freshProfile: true });
+    try {
+      const env = { ...profileOnlyInstallerEnv(sandbox.env), KUNAI_CONFIG_DIR: pick(sandbox) };
+      const result = runInstallSh(dryRun, env);
+      expect(result.status).not.toBe(0);
+      expect(`${result.stdout}${result.stderr}`).toContain("KUNAI_CONFIG_DIR");
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("installs, upgrades and purges a real profile without touching account-wide roots", async () => {
+    const asset = hostInstallShAsset();
+    const v1Body = "#!/bin/sh\nprintf '%s\\n' '9.8.7'\n";
+    const v2Body = "#!/bin/sh\nprintf '%s\\n' '9.8.8'\n";
+    const sumsFor = (body: string) =>
+      `${createHash("sha256").update(body).digest("hex")}  ${asset}\n`;
+
+    const sandbox = createInstallerSandbox("install-sh-profile-lifecycle", { freshProfile: true });
+    const bashrc = join(sandbox.root, ".bashrc");
+    const loginRc = join(sandbox.root, ".profile");
+    writeFileSync(bashrc, "# fixture bashrc\n");
+    writeFileSync(loginRc, "# fixture profile\n");
+    // A fake account-wide Kunai dir outside the profile must survive untouched.
+    const defaultSentinel = join(sandbox.root, "kunai", "sentinel.txt");
+    mkdirSync(dirname(defaultSentinel), { recursive: true });
+    writeFileSync(defaultSentinel, "default profile\n");
+    const markerPath = join(sandbox.profileDir, ".kunai-profile");
+    const launcher = join(sandbox.profileDir, "bin", "kunai");
+
+    const runKunai = async (args: string[], env: NodeJS.ProcessEnv) => {
+      const proc = Bun.spawn([process.execPath, join(REPO_ROOT, "apps/cli/src/main.ts"), ...args], {
+        env,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const [stdout, stderr, status] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]);
+      return { status, stdout, stderr };
+    };
+    const launcherVersion = async () => {
+      const proc = Bun.spawn([launcher], { stdout: "pipe", stderr: "pipe" });
+      const [stdout, status] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+      return { status, stdout: stdout.trim() };
+    };
+
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body: v1Body },
+          "/download/v9.8.7/SHA256SUMS": { body: sumsFor(v1Body) },
+          [`/download/v9.8.8/${asset}`]: { body: v2Body },
+          "/download/v9.8.8/SHA256SUMS": { body: sumsFor(v2Body) },
+          "/latest": { body: JSON.stringify({ tag_name: "v9.8.8" }) },
+        },
+        async (baseUrl) => {
+          const env = {
+            ...profileOnlyInstallerEnv(sandbox.env),
+            KUNAI_DL_BASE: baseUrl,
+            KUNAI_RELEASES_API: `${baseUrl}/latest`,
+            // Explicit so the PATH/rc branch reads bash, not a leaked login shell.
+            SHELL: "/bin/bash",
+          };
+
+          const install = await runInstallShAsync(
+            ["--yes", "--skip-deps", "--version", "9.8.7"],
+            env,
+          );
+          expect(install.status, `${install.stdout}--ERR--${install.stderr}`).toBe(0);
+          expect(`${install.stdout}${install.stderr}`).toContain("PATH was not changed");
+
+          expect(readFileSync(markerPath, "utf8")).toBe("kunai-profile-v1\n");
+          expect(readFileSync(bashrc, "utf8")).toBe("# fixture bashrc\n");
+          expect(readFileSync(loginRc, "utf8")).toBe("# fixture profile\n");
+          expect(await launcherVersion()).toEqual({ status: 0, stdout: "9.8.7" });
+
+          const sibling = join(sandbox.profileDir, "keep-me.txt");
+          writeFileSync(sibling, "unrelated\n");
+          // Managed sentinels the purge must remove.
+          writeFileSync(join(sandbox.profileDir, "data", "kunai-data.sqlite"), "sqlite\n");
+          mkdirSync(join(sandbox.profileDir, "tmp"), { recursive: true });
+          writeFileSync(join(sandbox.profileDir, "tmp", "scratch"), "tmp\n");
+
+          const upgrade = await runKunai(["upgrade"], env);
+          expect(`${upgrade.stdout}${upgrade.stderr}`).toContain("9.8.8");
+          expect(upgrade.status).toBe(0);
+          expect(await launcherVersion()).toEqual({ status: 0, stdout: "9.8.8" });
+          const manifest = readInstallerManifest(sandbox.configDir);
+          expect(manifest.activeVersion).toBe("9.8.8");
+
+          const uninstall = await runKunai(["uninstall", "--purge"], env);
+          expect(uninstall.status).toBe(0);
+
+          expect(existsSync(launcher)).toBe(false);
+          expect(existsSync(join(sandbox.profileDir, "data"))).toBe(false);
+          expect(existsSync(join(sandbox.profileDir, "cache"))).toBe(false);
+          expect(existsSync(join(sandbox.profileDir, "config"))).toBe(false);
+          expect(existsSync(join(sandbox.profileDir, "tmp"))).toBe(false);
+          // The profile root, its marker, unrelated siblings, the account-wide
+          // dir, and the rc files all survive a purge.
+          expect(readFileSync(markerPath, "utf8")).toBe("kunai-profile-v1\n");
+          expect(readFileSync(sibling, "utf8")).toBe("unrelated\n");
+          expect(readFileSync(defaultSentinel, "utf8")).toBe("default profile\n");
+          expect(readFileSync(bashrc, "utf8")).toBe("# fixture bashrc\n");
+          expect(readFileSync(loginRc, "utf8")).toBe("# fixture profile\n");
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("kunai uninstall --purge refuses an unmarked nonempty root and mutates nothing", async () => {
+    const sandbox = createInstallerSandbox("install-sh-profile-refuse", { freshProfile: true });
+    const markerPath = join(sandbox.profileDir, ".kunai-profile");
+    const sentinels = [
+      join(sandbox.profileDir, "config", "install.json"),
+      join(sandbox.profileDir, "data", "kunai-data.sqlite"),
+      join(sandbox.profileDir, "tmp", "scratch"),
+    ];
+    for (const sentinel of sentinels) {
+      mkdirSync(dirname(sentinel), { recursive: true });
+      writeFileSync(sentinel, "sentinel\n");
+    }
+    try {
+      const proc = Bun.spawn(
+        [process.execPath, join(REPO_ROOT, "apps/cli/src/main.ts"), "uninstall", "--purge"],
+        {
+          env: profileOnlyInstallerEnv(sandbox.env),
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+      const [, , status] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]);
+      expect(status).not.toBe(0);
+      expect(existsSync(markerPath)).toBe(false);
+      for (const sentinel of sentinels) {
+        expect(readFileSync(sentinel, "utf8")).toBe("sentinel\n");
+      }
+    } finally {
+      sandbox.cleanup();
     }
   });
 });

@@ -40,6 +40,7 @@ import {
   DEFAULT_DL_BASE,
   getInstallLayoutPaths,
   removeStagingAndPruneParents,
+  sameInstallLauncherPath,
   stagingDirForVersion,
   versionBinaryPath,
   type InstallLayoutPaths,
@@ -384,7 +385,21 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
               return { status: "superseded" as const, activeVersion };
             }
           }
-          const launcherPath = activeManifest?.launcherPath ?? layout.launcherPath;
+          // Inside a profile the configured launcher is authoritative; a
+          // manifest pointing elsewhere is refused rather than trusted.
+          if (
+            layout.profileDir !== undefined &&
+            activeManifest !== null &&
+            !sameInstallLauncherPath(activeManifest.launcherPath, layout.launcherPath)
+          ) {
+            throw new Error(
+              `install.json launcher ${activeManifest.launcherPath} disagrees with the profile's configured launcher ${layout.launcherPath}`,
+            );
+          }
+          const launcherPath =
+            layout.profileDir !== undefined
+              ? layout.launcherPath
+              : (activeManifest?.launcherPath ?? layout.launcherPath);
           const launcherSnapshot = await captureLauncherSnapshot(launcherPath);
           let preserveSnapshot = false;
 

@@ -265,6 +265,23 @@ describe("createCredentialVault backend selection", () => {
     expect(vault.backend).toBe("file");
   });
 
+  test("a dedicated profile root always uses the file vault and reports why", async () => {
+    const fallbacks: string[] = [];
+    const vault = await createCredentialVault({
+      paths: Object.assign(fakePaths(dir), { profileDir: join(dir, "profile") }),
+      // Even an explicit native-backend override must not reach the OS vault.
+      env: { KUNAI_CREDENTIAL_BACKEND: "keychain" },
+      platform: "darwin",
+      which: () => null,
+      spawn: () => {
+        throw new Error("should never probe an account-wide vault under a profile");
+      },
+      onFallback: (backend, reason) => fallbacks.push(`${backend}:${reason}`),
+    });
+    expect(vault.backend).toBe("file");
+    expect(fallbacks).toEqual(["file:dedicated profile root"]);
+  });
+
   test("headless Linux without secret-tool falls back to file with a notice", async () => {
     const fallbacks: string[] = [];
     const vault = await createCredentialVault({
@@ -422,6 +439,19 @@ describe("Windows file-fallback notice", () => {
     const lines: string[] = [];
     noticeFileFallbackOnce({ configDir: dir, platform: "linux", write: (l) => lines.push(l) });
     expect(lines).toEqual([]);
+  });
+
+  test("a dedicated profile prints the plaintext notice once, on any platform", () => {
+    const lines: string[] = [];
+    const write = (line: string) => lines.push(line);
+    const configDir = join(dir, "profile", "config");
+    noticeFileFallbackOnce({ configDir, platform: "linux", profileRoot: true, write });
+    expect(lines).toEqual([
+      "Dedicated Kunai profile: credentials are stored in plaintext secrets.json in this profile.\n",
+    ]);
+    // Second startup keeps quiet — the marker was created before printing.
+    noticeFileFallbackOnce({ configDir, platform: "linux", profileRoot: true, write });
+    expect(lines).toHaveLength(1);
   });
 });
 

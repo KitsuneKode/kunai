@@ -57,4 +57,26 @@ describe("CLI usage errors exit 2", () => {
 
     expect(status).toBe(0);
   });
+
+  test.each(["rel/p", "", " /profile"])(
+    "a malformed KUNAI_CONFIG_DIR (%j) exits 2 with one stderr line even for --version",
+    (value) => {
+      const root = mkdtempSync(join(tmpdir(), "kunai-usage-err-kcd-"));
+      try {
+        const env = { ...process.env, ...storageRootEnv(root), KUNAI_CONFIG_DIR: value };
+        const result = spawnSync("bun", ["apps/cli/src/main.ts", "--version"], {
+          cwd: repoRoot,
+          env,
+          encoding: "utf8",
+          timeout: 30_000,
+        });
+        expect(result.status ?? -1).toBe(2);
+        const lines = (result.stderr ?? "").trim().split("\n");
+        expect(lines).toHaveLength(1);
+        expect(lines[0]).toContain("KUNAI_CONFIG_DIR");
+      } finally {
+        removeTempDir(root);
+      }
+    },
+  );
 });

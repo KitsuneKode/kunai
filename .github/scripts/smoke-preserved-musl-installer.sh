@@ -66,9 +66,9 @@ docker run --rm --network none \
 		profile=/tmp/kunai-release-smoke
 		export HOME="$profile/home"
 		export KUNAI_BIN_DIR="$profile/bin"
-		export KUNAI_CONFIG_DIR="$profile"
-		export KUNAI_DATA_DIR="$profile/data"
-		export KUNAI_CACHE_DIR="$profile/cache"
+		export KUNAI_CONFIG_DIR="$profile/profile"
+		export KUNAI_DATA_DIR="$profile/profile/data"
+		export KUNAI_CACHE_DIR="$profile/profile/cache"
 		export KUNAI_DL_BASE=file:///release
 		export KUNAI_SKIP_PATH_UPDATE=1
 		mkdir -p "$HOME"

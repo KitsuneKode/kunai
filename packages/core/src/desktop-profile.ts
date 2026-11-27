@@ -1,5 +1,13 @@
 import { posix, win32 } from "node:path";
 
+export class DesktopProfileError extends Error {
+  constructor(value: string, reason: string) {
+    super(
+      `KUNAI_CONFIG_DIR=${JSON.stringify(value)} ${reason}. Set an absolute path to a dedicated Kunai profile or unset it to use the default profile.`,
+    );
+  }
+}
+
 /** Resolve the dedicated profile selected by KUNAI_CONFIG_DIR for a desktop host. */
 export function resolveDesktopProfileDirs(
   platform: "linux" | "darwin" | "win32",
@@ -9,9 +17,20 @@ export function resolveDesktopProfileDirs(
   const path = platform === "win32" ? win32 : posix;
   const driveRootRelative = platform === "win32" && path.parse(override).root.length === 1;
   if (!path.isAbsolute(override) || driveRootRelative) {
-    throw new Error("KUNAI_CONFIG_DIR must be an absolute path to a Kunai profile directory");
+    throw new DesktopProfileError(override, "is not absolute");
   }
-  const profileDir = path.normalize(override);
+  const profileDir = path.resolve(override);
+  if (
+    /[\r\n\0]/.test(override) ||
+    (platform === "win32" &&
+      (/^\\\\[?.]\\/.test(profileDir) ||
+        profileDir
+          .slice(path.parse(profileDir).root.length)
+          .split("\\")
+          .some((part) => part.includes(":") || /[ .]$/.test(part))))
+  ) {
+    throw new DesktopProfileError(override, "uses an unsupported path spelling");
+  }
   return {
     profileDir,
     configDir: path.join(profileDir, "config"),

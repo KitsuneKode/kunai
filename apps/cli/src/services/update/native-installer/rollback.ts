@@ -12,6 +12,7 @@ import { parseCanonicalVersion } from "../version";
 import { withActivationLock } from "./activation-lock";
 import {
   getInstallLayoutPaths,
+  sameInstallLauncherPath,
   versionBinaryPath,
   type InstallLayoutPaths,
 } from "./install-layout";
@@ -347,6 +348,20 @@ export async function executeRollback(
                   reason: "Install ownership changed after rollback planning; refusing activation",
                 };
               }
+              // Inside a profile the configured launcher is authoritative;
+              // a manifest pointing elsewhere is refused, not trusted.
+              if (
+                layout.profileDir !== undefined &&
+                !sameInstallLauncherPath(manifest.launcherPath, layout.launcherPath)
+              ) {
+                return {
+                  status: "refused" as const,
+                  code: "ownership-changed" as const,
+                  reason: `install.json launcher ${manifest.launcherPath} disagrees with the profile's configured launcher ${layout.launcherPath}`,
+                };
+              }
+              const launcherPath =
+                layout.profileDir !== undefined ? layout.launcherPath : manifest.launcherPath;
               if (manifest.activeVersion === candidate.version) {
                 return {
                   status: "refused" as const,
@@ -355,12 +370,12 @@ export async function executeRollback(
                 };
               }
               const previousLauncherTarget =
-                (await readLauncherTarget(manifest.launcherPath)) ??
+                (await readLauncherTarget(launcherPath)) ??
                 manifest.versionedPath ??
                 versionBinaryPath(layout, manifest.activeVersion);
 
               await updateLauncher({
-                launcherPath: manifest.launcherPath,
+                launcherPath,
                 versionPath: versionBinaryPath(layout, reverify.metadata.version),
               });
 
@@ -370,7 +385,7 @@ export async function executeRollback(
                     method: "binary",
                     activeVersion: reverify.metadata.version,
                     previousVersion: manifest.activeVersion,
-                    launcherPath: manifest.launcherPath,
+                    launcherPath,
                     versionedPath: versionBinaryPath(layout, reverify.metadata.version),
                     downloadBaseUrl: manifest.downloadBaseUrl,
                     target: reverify.metadata.target,
@@ -398,11 +413,7 @@ export async function executeRollback(
                   layout,
                 );
               } catch (manifestError) {
-                await restoreLauncher(
-                  manifest.launcherPath,
-                  previousLauncherTarget,
-                  process.platform,
-                );
+                await restoreLauncher(launcherPath, previousLauncherTarget, process.platform);
                 throw manifestError;
               }
 
