@@ -323,6 +323,59 @@ describe("buildDoctorReport", () => {
     );
   });
 
+  test("does not report an mpv hwdec flag for VLC or Android playback", async () => {
+    const { root, layout } = await makeRoot();
+    const report = await buildDoctorReport({
+      layout,
+      now: () => FIXED_DATE,
+      runningExecutable: { path: layout.launcherPath, version: "1.0.0" },
+      pathValue: join(root, "bin"),
+      platform: "linux",
+      fileExists: existsSync,
+      playerChoice: "vlc",
+      mpvHwdecMode: "off",
+      probeCapabilities: async () =>
+        emptyCapabilities({
+          mpv: true,
+          mpvRequired: false,
+          vlc: true,
+          vlcRequired: true,
+          mpvHardwareAccel: emptyMpvHardwareAccelProbe("not-probed"),
+        }),
+    });
+
+    expect(report.playback).toMatchObject({
+      playerKind: "managed-vlc",
+      mpvHwdec: "off",
+      mpvHwdecEmitted: null,
+    });
+    const text = formatDoctorReportText(report);
+    expect(text).toContain(
+      "mpv-hwdec=off · not applicable to managed-vlc playback · probe: not probed yet",
+    );
+    expect(text).not.toContain("passes --hwdec=no");
+
+    const android = await buildDoctorReport({
+      layout,
+      now: () => FIXED_DATE,
+      runningExecutable: { path: layout.launcherPath, version: "1.0.0" },
+      pathValue: join(root, "bin"),
+      platform: "linux",
+      fileExists: existsSync,
+      playerMode: { kind: "android-handoff", target: "chooser" },
+      mpvHwdecMode: "off",
+      probeCapabilities: async () => emptyCapabilities(),
+    });
+    expect(android.playback).toMatchObject({
+      playerKind: "android-handoff",
+      mpvHwdec: "off",
+      mpvHwdecEmitted: null,
+    });
+    expect(formatDoctorReportText(android)).toContain(
+      "mpv-hwdec=off · not applicable to android-handoff playback",
+    );
+  });
+
   test("treats curl helper execution failure as an error finding", async () => {
     const { root, layout } = await makeRoot();
     await seedLegacyManifestAndStaleState(root, layout);

@@ -21,10 +21,10 @@ export function describeMpvHwaccel(hw: CapabilitySnapshot["mpvHardwareAccel"]): 
     case "no-hardware":
       return `no usable auto-safe path${cached}${listed || " · no GPU decoders in help"}`;
     case "probe-failed":
-      return `probe failed or timed out · playback uses mpv default${listed}`;
+      return `probe failed or timed out${listed}`;
     case "mpv-not-found":
       return "skipped — mpv not found";
     case "not-probed":
-      return "not probed yet · playback uses mpv default until a probe completes";
+      return "not probed yet";
   }
 }

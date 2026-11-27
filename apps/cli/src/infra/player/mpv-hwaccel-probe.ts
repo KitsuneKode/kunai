@@ -198,6 +198,21 @@ async function writeDiskCache(
   }
 }
 
+type MpvHwaccelForceKillTimer = {
+  readonly cancel: () => void;
+  readonly unref?: () => void;
+};
+
+export type MpvHwaccelForceKillScheduler = (kill: () => void) => MpvHwaccelForceKillTimer;
+
+const defaultForceKillScheduler: MpvHwaccelForceKillScheduler = (kill) => {
+  const timer = setTimeout(kill, 150);
+  return {
+    cancel: () => clearTimeout(timer),
+    unref: () => timer.unref?.(),
+  };
+};
+
 type MpvHwaccelProcessIo = {
   readonly stdout: ReadableStream<Uint8Array>;
   readonly stderr: ReadableStream<Uint8Array>;
@@ -225,23 +240,25 @@ async function readProcessStream(
   }
 }
 
-async function finishProcess(
+export async function finishMpvHwaccelProbeProcess(
   proc: MpvHwaccelProcessIo,
   timeoutMs: number,
   stopAfterOutput?: (output: string) => boolean,
+  scheduleForceKill: MpvHwaccelForceKillScheduler = defaultForceKillScheduler,
 ): Promise<MpvHwaccelProcessResult> {
   let stdout = "";
   let stderr = "";
   let terminatedByProbe = false;
   let stoppedForOutput = false;
-  let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
+  let forceKillTimer: MpvHwaccelForceKillTimer | undefined;
+  let processExited = false;
   let evidenceResolve: (() => void) | undefined;
   const evidenceSeen = new Promise<void>((resolve) => {
     evidenceResolve = resolve;
   });
 
   const terminate = () => {
-    if (terminatedByProbe) return;
+    if (terminatedByProbe || processExited) return;
     terminatedByProbe = true;
     try {
       proc.kill("SIGTERM");
@@ -250,19 +267,27 @@ async function finishProcess(
     }
     // A probe child must never become an orphaned decoder process. Give mpv a
     // short chance to close its demuxer, then force the bounded probe closed.
-    forceKillTimer = setTimeout(() => {
+    forceKillTimer = scheduleForceKill(() => {
       try {
         proc.kill("SIGKILL");
       } catch {
         // Already exited.
       }
-    }, 150);
+    });
     forceKillTimer.unref?.();
   };
   const clearForceKill = () => {
-    if (forceKillTimer) clearTimeout(forceKillTimer);
+    forceKillTimer?.cancel();
     forceKillTimer = undefined;
   };
+  void proc.exited.then(
+    () => {
+      processExited = true;
+      clearForceKill();
+      return null;
+    },
+    () => null,
+  );
   const noteOutput = (stream: "stdout" | "stderr") => {
     return (output: string) => {
       if (stream === "stdout") stdout = output;
@@ -291,7 +316,7 @@ ${stderr}`)
       clearForceKill();
       return { exitCode, stdout, stderr, timedOut: false, terminatedByProbe };
     } catch {
-      clearForceKill();
+      terminate();
       return {
         exitCode: null,
         stdout,
@@ -368,7 +393,7 @@ async function defaultRunProcess(
       }
       return spawnFailure();
     }
-    return finishProcess(proc, options.timeoutMs, options.stopAfterOutput);
+    return finishMpvHwaccelProbeProcess(proc, options.timeoutMs, options.stopAfterOutput);
   }
 
   try {
@@ -380,7 +405,7 @@ async function defaultRunProcess(
     });
     const unregister = registerMpvProcess(proc);
     void proc.exited.then(unregister, unregister);
-    return await finishProcess(proc, options.timeoutMs, options.stopAfterOutput);
+    return await finishMpvHwaccelProbeProcess(proc, options.timeoutMs, options.stopAfterOutput);
   } catch {
     return spawnFailure();
   }

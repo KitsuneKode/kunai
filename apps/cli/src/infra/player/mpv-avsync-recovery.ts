@@ -24,6 +24,7 @@ export type MpvAvsyncRecoveryGuards = {
   readonly outputStarted: boolean;
   readonly retired: boolean;
   readonly hasIpcSession: boolean;
+  readonly hasSeekablePosition: boolean;
   readonly resyncInFlight: boolean;
 };
 
@@ -158,6 +159,7 @@ export class MpvAvsyncRecoveryTracker {
       guards.retired ||
       !guards.outputStarted ||
       !guards.hasIpcSession ||
+      !guards.hasSeekablePosition ||
       this.seeking ||
       this.pausedForCache ||
       this.kunaiSeekInFlight > 0;

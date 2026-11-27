@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-27T20:08:00Z"
+lastReviewed: "2026-11-27T21:31:00Z"
 ---
 
 # mpv in-process stream reconnect (persistent session)
@@ -86,9 +86,11 @@ that evidence for diagnostics but passes only `auto-safe`, letting mpv renegotia
 a direct backend with the real video output at playback time. As soon as decoded-frame
 evidence is read the child is terminated, first with SIGTERM and then SIGKILL after
 a short grace, because some mpv builds hang in shutdown even after a successful
-null-output decode. Output read before termination is retained in the result. Failed
-spawns and timeouts are not disk-cached, so the next explicit or playback-triggered
-probe can retry.
+null-output decode. The same bounded termination applies when an output stream
+fails while the child is still running; a partial decoder-format line in that
+failure remains diagnostic text, not successful decode evidence. Output read before
+termination is retained in the result. Failed spawns and timeouts are not
+disk-cached, so the next explicit or playback-triggered probe can retry.
 
 Ordinary startup capability probing, setup rendering, and `kunai doctor` call
 `readCachedMpvHardwareAcceleration()` only, so they report the last result
@@ -96,6 +98,11 @@ without spawning mpv. Setup's explicit `[r]` recheck is the deliberate exception
 it refreshes capabilities, including the hardware probe. Playback-triggered
 `auto` cache misses also warm the cache in the background, never in the launch
 path.
+
+Doctor derives the emitted `--hwdec` value only for managed mpv playback. VLC
+and Android handoff report the mpv setting as not applicable and carry a null
+emitted value; the probe description itself is probe state only, while the
+separate playback-policy segment says what managed mpv will pass.
 
 `auto` emits `--hwdec=auto-safe` only after successful cached hardware evidence.
 If mpv is missing, times out before decode evidence, lists no GPU decoder, or
@@ -110,7 +117,8 @@ negotiation chooses the backend available on that host.
 ## A/V-sync drift recovery
 
 mpv exposes audio/video clock drift as the `avsync` property. The persistent
-session observes it along with `pause` and `seeking`. Drift inside ±0.3 s is
+session observes it along with `pause`, `seeking`, cache/idle state, and the
+current positive playback position. Drift inside ±0.3 s is
 left to mpv's own correction. Sustained drift outside that band — at least
 three samples spanning 300 ms — triggers one corrective absolute seek to the
 current playback position. The seek resets mpv's decoder/audio clocks without

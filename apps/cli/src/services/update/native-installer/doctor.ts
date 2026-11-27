@@ -630,7 +630,10 @@ export async function buildDoctorReport(input: BuildDoctorReportInput = {}): Pro
   const playback = {
     playerKind: playerMode.kind,
     mpvHwdec: mpvHwdecMode,
-    mpvHwdecEmitted: mpvHwdecEmittedFor(mpvHwdecMode, dependencies.mpvHardwareAccel),
+    mpvHwdecEmitted:
+      playerMode.kind === "managed-mpv"
+        ? mpvHwdecEmittedFor(mpvHwdecMode, dependencies.mpvHardwareAccel)
+        : null,
   };
   const detectedMethod = detectInstallMethod({
     platform,
@@ -768,9 +771,11 @@ export function formatDoctorReportText(report: DoctorReport): string {
   );
   const hwdecPlayback = report.playback;
   const hwdecPassed = hwdecPlayback
-    ? hwdecPlayback.mpvHwdecEmitted === null
-      ? "passes no --hwdec flag"
-      : `passes --hwdec=${hwdecPlayback.mpvHwdecEmitted}`
+    ? hwdecPlayback.playerKind === "managed-mpv"
+      ? hwdecPlayback.mpvHwdecEmitted === null
+        ? "passes no --hwdec flag"
+        : `passes --hwdec=${hwdecPlayback.mpvHwdecEmitted}`
+      : `not applicable to ${hwdecPlayback.playerKind} playback`
     : "playback policy unavailable";
   const hwdecConfigured = hwdecPlayback ? `${hwdecPlayback.mpvHwdec} · ` : "";
   lines.push(

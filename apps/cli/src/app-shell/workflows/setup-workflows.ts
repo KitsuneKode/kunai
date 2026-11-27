@@ -159,7 +159,8 @@ export async function runSetupWizard({
   // the deps screen contradict the VLC service this session already selected.
   const probeForSelectedPlayer = () =>
     probe({ playerMode: container.playerMode, mpvHwdecMode: container.config.mpvHwdec });
-  const snapshot = container.capabilitySnapshot ?? (await probeForSelectedPlayer());
+  const baseSnapshot = container.capabilitySnapshot ?? (await probeForSelectedPlayer());
+  const snapshot = { ...baseSnapshot, mpvHwdecMode: container.config.mpvHwdec };
 
   const defaultDownloadPath = join(dirname(getKunaiPaths().dataDbPath), "downloads");
   const playerName = setupPlayerName(container.playerMode);

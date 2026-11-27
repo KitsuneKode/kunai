@@ -16,6 +16,7 @@ function guards(overrides: Partial<MpvAvsyncRecoveryGuards> = {}): MpvAvsyncReco
     outputStarted: true,
     retired: false,
     hasIpcSession: true,
+    hasSeekablePosition: true,
     resyncInFlight: false,
     ...overrides,
   };
@@ -150,6 +151,25 @@ describe("MpvAvsyncRecoveryTracker", () => {
     tracker.noteOutputStarted();
     now = 24_200;
     expect(sustainedDrift(tracker, 24_200).at(-1)).toEqual({ kind: "resync", attempt: 1 });
+  });
+
+  test("a zero playback position suppresses drift without charging the recovery budget", () => {
+    let now = 10_000;
+    const tracker = trackerWithOutput(() => now);
+    now = 11_100;
+    expect(sustainedDrift(tracker, 11_100, { hasSeekablePosition: false }).at(-1)?.kind).toBe(
+      "none",
+    );
+    expect(tracker.snapshot()).toMatchObject({ resyncCount: 0, overLimitSamples: 0 });
+
+    now = 12_100;
+    expect(sustainedDrift(tracker, 12_100, { hasSeekablePosition: false }).at(-1)?.kind).toBe(
+      "none",
+    );
+    expect(tracker.snapshot()).toMatchObject({ resyncCount: 0, exhausted: false });
+
+    now = 13_100;
+    expect(sustainedDrift(tracker, 13_100).at(-1)).toEqual({ kind: "resync", attempt: 1 });
   });
 
   test("cache stalls, core idle, missing output, and live playback are suppressed", () => {

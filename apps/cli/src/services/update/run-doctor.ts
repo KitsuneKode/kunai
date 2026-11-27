@@ -31,6 +31,8 @@ export type RunDoctorOptions = {
   readonly argv?: readonly string[];
   /** Configured mpv hardware decode policy seam; normally read from config.json. */
   readonly mpvHwdecMode?: MpvHwdecMode;
+  /** Test/embedding seam for the config read used when no explicit mode was composed. */
+  readonly readMpvHwdecMode?: () => Promise<MpvHwdecMode>;
 };
 
 type MutableBuildDoctorReportInput = {
@@ -135,7 +137,7 @@ export async function runDoctor(opts: RunDoctorOptions = {}): Promise<number> {
     ...(opts.inspectManifest ? { inspectManifest: opts.inspectManifest } : {}),
     ...(opts.probeCapabilities ? { probeCapabilities: opts.probeCapabilities } : {}),
     playerChoice: playerChoice.value,
-    mpvHwdecMode: opts.mpvHwdecMode ?? (await readConfiguredMpvHwdec()),
+    mpvHwdecMode: opts.mpvHwdecMode ?? (await (opts.readMpvHwdecMode ?? readConfiguredMpvHwdec)()),
   };
   if (opts.installedPlayers !== undefined) input.installedPlayers = opts.installedPlayers;
   if (opts.playerMode !== undefined) input.playerMode = opts.playerMode;

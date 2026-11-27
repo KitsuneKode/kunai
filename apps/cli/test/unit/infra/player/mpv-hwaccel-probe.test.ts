@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import {
   MPV_HWACCEL_PROBE_CACHE_TTL_MS,
+  finishMpvHwaccelProbeProcess,
   parseAutoSafeDriver,
   parseGpuDriversFromHwdecHelp,
   probeMpvHardwareAcceleration,
@@ -120,6 +121,65 @@ describe("mpv hwaccel probe parsing", () => {
     expect(parseAutoSafeDriver("Using hardware decoding (nvdec-copy).")).toBe("nvdec-copy");
     expect(parseAutoSafeDriver("[vd] Using hardware decoding (vaapi).")).toBe("vaapi");
     expect(parseAutoSafeDriver("software decoding only")).toBe("");
+  });
+});
+
+describe("finishMpvHwaccelProbeProcess", () => {
+  test("terminates a still-running child when an output stream rejects", async () => {
+    const encoder = new TextEncoder();
+    let stdoutPulls = 0;
+    const stdout = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        stdoutPulls += 1;
+        if (stdoutPulls === 1) {
+          controller.enqueue(encoder.encode("Decoder format: h264\n"));
+          return;
+        }
+        controller.error(new Error("stdout pipe reset"));
+      },
+    });
+    const stderr = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.close();
+      },
+    });
+    const signals: Array<NodeJS.Signals | undefined> = [];
+    let forceKill: (() => void) | undefined;
+    let forceKillCancelled = false;
+
+    const result = await finishMpvHwaccelProbeProcess(
+      {
+        stdout,
+        stderr,
+        exited: new Promise<number>(() => {}),
+        kill(signal) {
+          signals.push(signal);
+        },
+      },
+      10_000,
+      undefined,
+      (kill) => {
+        forceKill = kill;
+        return {
+          cancel: () => {
+            forceKillCancelled = true;
+          },
+          unref: () => undefined,
+        };
+      },
+    );
+
+    expect(result).toMatchObject({
+      exitCode: null,
+      stdout: "Decoder format: h264\n",
+      timedOut: false,
+      spawnFailed: true,
+      terminatedByProbe: true,
+    });
+    expect(signals).toEqual(["SIGTERM"]);
+    expect(forceKillCancelled).toBe(false);
+    forceKill?.();
+    expect(signals).toEqual(["SIGTERM", "SIGKILL"]);
   });
 });
 

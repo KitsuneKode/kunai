@@ -62,7 +62,9 @@ export class MpvAvsyncController {
       return;
     }
     if (update.name === "core-idle") {
-      this.coreIdle = update.value === true;
+      const coreIdle = update.value === true;
+      if (coreIdle && !this.coreIdle) this.tracker.clearEvidence();
+      this.coreIdle = coreIdle;
       return;
     }
     if (
@@ -92,6 +94,7 @@ export class MpvAvsyncController {
 
   private evaluateDrift(driftSeconds: number, observedAt: number): void {
     const session = this.deps.ipcSession();
+    const position = this.deps.positionSeconds();
     const decision = this.tracker.evaluate(driftSeconds, observedAt, {
       enabled: this.deps.enabled(),
       paused: this.paused,
@@ -102,6 +105,7 @@ export class MpvAvsyncController {
       outputStarted: this.deps.outputStarted(),
       retired: this.deps.retired(),
       hasIpcSession: session !== null,
+      hasSeekablePosition: position > 0,
       resyncInFlight: this.resyncInFlight,
     });
     if (decision.kind === "give-up") {
@@ -118,7 +122,6 @@ export class MpvAvsyncController {
     }
     if (decision.kind !== "resync") return;
 
-    const position = this.deps.positionSeconds();
     if (position <= 0 || !session) return;
     this.resyncInFlight = true;
     dbg("mpv-ipc", "avsync-resync", {
