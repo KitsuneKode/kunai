@@ -135,6 +135,13 @@ info() { printf '→ %s\n' "$*"; }
 warn() { printf '! \033[33m%s\033[0m\n' "$*"; }
 err() { printf '✗ %s\n' "$*" >&2; }
 have() { command -v "$1" >/dev/null 2>&1; }
+# The same places `discoverVlcBinary` (apps/cli/src/infra/player/vlc/vlc-launch.ts)
+# looks: PATH, then the macOS app bundle. Flatpak VLC is deliberately not used.
+have_vlc() {
+	have vlc && return 0
+	[[ -x /Applications/VLC.app/Contents/MacOS/VLC ]] && return 0
+	[[ -x "${HOME:-}/Applications/VLC.app/Contents/MacOS/VLC" ]]
+}
 
 # Prompt the user via the controlling terminal, so it still works under
 # `curl … | bash` (where stdin is the script pipe, not the keyboard).
@@ -2324,7 +2331,11 @@ install_optional_deps() {
 
 	printf '\n'
 	if [[ " ${missing[*]} " == *" mpv "* ]]; then
-		warn "mpv is not installed — Kunai needs it to play anything."
+		if have_vlc; then
+			info "mpv is not installed. Kunai will play in VLC; mpv is recommended for seamless episode chaining and live track switching."
+		else
+			warn "Neither mpv nor VLC is installed — Kunai needs one of them to play anything. mpv is recommended."
+		fi
 	fi
 	if [[ " ${missing[*]} " == *" yt-dlp "* ]]; then
 		warn "yt-dlp is not installed — YouTube playback and downloads need it."

@@ -102,6 +102,16 @@ function Write-Info($m) { Write-Host "-> $m" }
 function Write-Warn($m) { Write-Host "! $m" -ForegroundColor Yellow }
 function Test-Cmd($name) { [bool](Get-Command $name -ErrorAction SilentlyContinue) }
 
+# The same places `discoverVlcBinary` (apps/cli/src/infra/player/vlc/vlc-launch.ts)
+# looks on Windows: PATH, then Program Files / Program Files (x86).
+function Test-VlcInstalled {
+  if (Test-Cmd 'vlc') { return $true }
+  foreach ($root in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+    if ($root -and (Test-Path -LiteralPath (Join-Path $root 'VideoLAN\VLC\vlc.exe'))) { return $true }
+  }
+  return $false
+}
+
 function Test-CanonicalVersion([string]$Value) {
   return [bool]($Value -match '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$')
 }
@@ -2117,7 +2127,11 @@ function Install-OptionalDeps {
   # -Yes installed -- even when mpv was already on PATH.
   $missing = @()
   if (-not (Test-Cmd 'mpv')) {
-    Write-Warn 'mpv is not installed - Kunai needs it to play anything.'
+    if (Test-VlcInstalled) {
+      Write-Info 'mpv is not installed. Kunai will play in VLC; mpv is recommended for seamless episode chaining and live track switching.'
+    } else {
+      Write-Warn 'Neither mpv nor VLC is installed - Kunai needs one of them to play anything. mpv is recommended.'
+    }
     $missing += 'mpv'
   }
   if (-not (Test-Cmd 'yt-dlp') -and -not $portableYtdlp) {

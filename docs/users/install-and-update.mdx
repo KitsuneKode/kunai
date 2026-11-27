@@ -150,9 +150,9 @@ brew install kitsunekode/kunai/kunai
 ```
 
 The formula fetches the same checksum-pinned release archives as the installer
-and installs the binary as `kunai`. `mpv` is your own install (`brew install
-mpv`). Kunai needs it for playback but the formula does not force it as a
-dependency. Use `brew upgrade kunai` and `brew uninstall kunai` for this install,
+and installs the binary as `kunai`. The player is your own install: `brew install
+mpv` (recommended), or VLC. Kunai needs one of them for playback, but the
+formula does not force either as a dependency. Use `brew upgrade kunai` and `brew uninstall kunai` for this install,
 including v0.3.0. Starting with v0.4.0, Kunai detects the Cellar path and
 displays those commands.
 
