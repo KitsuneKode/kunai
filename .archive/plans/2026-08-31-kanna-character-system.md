@@ -1,6 +1,8 @@
 # Kanna Character System
 
-Status: steps 1-6 landed in #285; residue below
+Status: **landed** — steps 1-6 in #285; the redraws, the full trace and the
+graphics tier on real terminals on `feat/kanna-alive` (2026-11-27). Archived;
+the residue is one row in [roadmap.md](../../.plans/roadmap.md).
 Owner: brand
 Created: 2026-08-31
 Target: 0.3.0
@@ -305,10 +307,19 @@ where noted.
    four are still raster, snapped to the brand palette on export.
 6. **`generate-mascot.mjs` deleted** — done. One source of truth.
 
-## What is actually left
+## What landed after #285
 
-- **`seek` and `peek` redraws.** Until then `seeking` draws `go`, which is one
-  line in `companion-moment.ts`, and the 404 keeps `oops`.
-- **Trace the four remaining full-body poses**, so every still comes from vector
-  rather than a palette-snapped raster.
-- **Graphics tier on a real terminal** for the surfaces beyond setup.
+- **`seek` and `peek` redraws** — both re-posed from their own traced pieces;
+  `seeking` draws `seek`, a search with no results draws `peek`.
+- **Every pose traced** into the one layered `kanna.svg`, with per-pose
+  animation strips and a motion manifest exported beside the stills.
+- **Graphics tier on real terminals.** kitty 0.51 and Ghostty 1.4 (and tmux
+  passthrough into kitty) draw her as a Kitty sprite: transmitted once, placed
+  by Unicode-placeholder cells Ink prints as text, animated by the terminal.
+  Checked by screenshot through keypresses, resizes and a provider race. How it
+  works lives in [poster-image-rendering.md](../../.docs/poster-image-rendering.md).
+
+## Residue
+
+- iTerm2, WezTerm and Sixel terminals get the still through the poster overlay;
+  none of the three has been seen on a real terminal yet.

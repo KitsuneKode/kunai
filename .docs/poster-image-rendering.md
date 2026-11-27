@@ -92,6 +92,50 @@ were retired, and `jpeg-js` is test-support only.
 
 In Ink, browse and playback companion panes both render `placeholder` for **`kitty`** and **`text`**; only **`none`** (or missing URL while loading) shows the unavailable copy.
 
+## Kanna, the companion sprite
+
+The companion is the one image that animates, and it takes the protocol further
+than posters do. `apps/cli/src/app-shell/kanna-sprite.ts` owns her lifetime and
+`apps/cli/src/image/kitty-animation.ts` builds the escapes.
+
+- **Placed by text, never by cursor.** Each pose and size is transmitted once
+  under an id (`a=t`) and given a virtual placement (`a=p,U=1,c=…,r=…`). Ink
+  prints the placeholder cells (U+10EEEE, row/column diacritics, foreground
+  colour = the id) as ordinary text, so she survives every full-frame repaint,
+  resize and scroll with no escape output per frame. `repaintAfterInkRender`
+  stays true; she needs nothing from it.
+- **Under the text.** The virtual placement carries `z=-1`: above cell
+  backgrounds, below any glyph.
+- **Animated by the terminal.** The other drawings of the pose's strip go up as
+  `a=f` frames — only the rectangle that differs from the rest drawing, written
+  with `X=1`; a beat that repeats a drawing is copied from its earlier frame
+  (`c=`). `a=a` sets the first gap and runs the loop forever (`s=3,v=1`). Gaps
+  come from `brand/pets/motion.json`, written by the same export that cuts the
+  strips. Under reduced motion one drawing goes up and no frame follows.
+- **Encoded once.** Decode, resize, delta and deflate happen once per pose and
+  size for the life of the process; the escapes are memoized per command, so a
+  re-send after a delete is a write and nothing else. Local kitty and Ghostty
+  take large payloads as `t=t` temp files; SSH, tmux and small patches go as
+  `m=1` chunks.
+- **Deleted by id** (`a=d,d=I`) when the last surface showing her unmounts, and
+  on `exit` — every signal handler in `main.ts` ends in `process.exit`, so
+  SIGINT and SIGTERM pass through it. The shell's global `d=A` wipe does not
+  touch her: it deletes visible placements, and kitty 0.51 and Ghostty 1.4 both
+  keep drawing a virtual one through it.
+- **Sized from the measured cell.** The slot is `rows` tall and as many columns
+  as make it square; the image is exactly `rows × cell height` pixels, so it is
+  drawn one-to-one.
+- **tmux** gets the same path through passthrough when the probe confirms a
+  Kitty or Ghostty client; every chunk, frame and delete is wrapped.
+
+Other picture terminals get the still through the ordinary poster path
+(`placementSlot="companion"`): iTerm2 and WezTerm as an inline image, Sixel as a
+measured overlay. Her Sixel encode is about 2 ms and at most 12 KB per replay
+at 92 px and 128 colours, inside the overlay byte cap. Everything else is the
+glyph tier, and `off`, plain mode, `NO_COLOR` and redirected output emit no
+graphics escape at all. The tiers and the moments are in
+[`docs/users/kanna.mdx`](../docs/users/kanna.mdx).
+
 ## Source disk cache
 
 Remote poster source bytes are cached under the platform cache directory in

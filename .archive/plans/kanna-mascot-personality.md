@@ -1,10 +1,14 @@
 # Kanna — voice, reactions, and presence
 
+Status: **landed** on `feat/kanna-alive` (2026-11-27). Archived; the residue is
+one row in [roadmap.md](../../.plans/roadmap.md). What shipped is summarised in
+"Landed" at the end, and the user-facing account is `docs/users/kanna.mdx`.
+
 Remaining work on the mascot after [#285](https://github.com/KitsuneKode/kunai/pull/285)
 landed the asset pipeline and the first voice line. This plan owns the
 _personality_: what she says, when she reacts, and what each surface is allowed
 to do. The character art itself is owned by
-[kanna-art-brief.md](../.reference/design/brand/kanna-art-brief.md).
+[kanna-art-brief.md](../../.reference/design/brand/kanna-art-brief.md).
 
 ## The one rule everything else follows
 
@@ -155,3 +159,32 @@ Blocked on a consistent pose sheet landing:
 - The glyph tier alone reads as a character with the picture disabled
 - A full session start → search → resolve → play → quit shows at most **four**
   companion lines. If it shows more, she is chattering, and the fix is deletion.
+
+## Landed
+
+- **§1 voice.** Every moment has at least three lines, and each fires on a state
+  transition through `CompanionHost`: `searching` (a search in flight),
+  `resolving` / `dead-end` / `slow` (the provider race, a provider dying, the
+  stall threshold), `found` / `handoff` (the carry beat), `first-run`
+  (the setup wizard), `goodbye` (exit), `offline` (the root alert when the
+  network drops). In the glyph tier the line is `🦊 line`; beside the picture
+  it is the line alone.
+- **§2 reactions.** The ear twitch, blink and the `seek` lean are played by the
+  terminal as Kitty animation frames — no Ink re-render and no re-upload, which
+  removes the cost this section was written around. The copy-tier reaction is
+  the line typing on once, ≤300 ms, through `useFrameTick`'s `stopAfter`.
+  Everything is still under reduced motion.
+- **§3 pose map**, with the final art: `seek` for every wait, `go` for the
+  handoff beat, `oops` for failure, `peek` for a search with no results, `nap`
+  for a bare frame and the goodbye, `wait` / `idle` for setup, `watch` for
+  playback without a poster. Never during success, never on a surface someone
+  is reading.
+- **§5** — the art this plan was blocked on.
+
+## Residue
+
+- **§4 novelty decay** — bust crop after the first runs. Not started.
+- **`resume`** — the line exists in the plan, not in the code: nothing in the
+  loading state says a playback is a resume, so a pool would have no reader.
+- **A glyph-tier ear twitch.** 🦊 cannot twitch; whether a one-cell cycle beside
+  it reads as her or as noise is undecided.

@@ -144,7 +144,7 @@ describe("the graphics tier on kitty", () => {
     });
     const frame = view.lastFrame();
     expect(frame).toContain("\u{10EEEE}");
-    expect(stripAnsi(frame)).toContain(kannaLinesFor("resolving")[0] as string);
+    expect(stripAnsi(frame)).toContain(kannaLinesFor("resolving").at(0) ?? "<no line>");
     // Her picture stands in for the glyph; both would be her twice.
     expect(frame).not.toContain("🦊");
     const upload = spriteWrites.join("");

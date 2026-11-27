@@ -32,6 +32,9 @@ const AUDITED_ANIMATED_FILES: ReadonlyMap<
   ["apps/cli/src/app-shell/setup/SetupScreens.tsx", { gate: "reducedMotionEnabled" }],
   ["apps/cli/src/app-shell/exit-shell.tsx", { gate: "reducedMotionEnabled" }],
   ["apps/cli/src/app-shell/loading-shell-runtime.ts", { gate: "reducedMotionEnabled" }],
+  // Her line types on once per transition; `useFrameTick` stops after the last
+  // character and pins to frame 0 under reduced motion, where the line is whole.
+  ["apps/cli/src/app-shell/CompanionHost.tsx", { gate: "useFrameTick" }],
 ]);
 
 /**

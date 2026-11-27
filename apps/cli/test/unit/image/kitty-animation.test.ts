@@ -144,7 +144,7 @@ describe("animationCommands", () => {
 
   test("a still has no animation at all", () => {
     // Reduced motion and terminals that cannot animate get exactly one drawing.
-    expect(animationCommands(5, [drawings[0] as RgbaFrame], [])).toEqual([]);
+    expect(animationCommands(5, drawings.slice(0, 1), [])).toEqual([]);
     expect(animationCommands(5, drawings, [{ frame: 0, gapMs: 1000 }])).toEqual([]);
   });
 

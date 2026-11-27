@@ -56,6 +56,8 @@ cli-args.ts → main.ts → container/ → app/bootstrap → app/session (Sessio
 | Rested-row Enter prefetch                                        | `apps/cli/src/app-shell/hooks/use-dwell-prefetch.ts`, `apps/cli/src/app/search/prefetch-browse-entry.ts`             | [ux-architecture.md](./ux-architecture.md)                            |
 | Palette local-title `JUMP TO` rows                               | `apps/cli/src/domain/palette/*`, `apps/cli/src/services/palette/*`, `apps/cli/src/app-shell/palette-title-launch.ts` | [ux-architecture.md](./ux-architecture.md#command-philosophy)         |
 | Companion voice (kanna)                                          | `apps/cli/src/app-shell/kanna-voice.ts`                                                                              | [ux-architecture.md](./ux-architecture.md)                            |
+| Companion moments, poses and the host (kanna)                    | `apps/cli/src/app-shell/companion-moment.ts`, `apps/cli/src/app-shell/CompanionHost.tsx`                             | [ux-architecture.md](./ux-architecture.md)                            |
+| Companion sprite: Kitty placeholders + terminal animation        | `apps/cli/src/app-shell/kanna-sprite.ts`, `apps/cli/src/image/kitty-animation.ts`                                    | [poster-image-rendering.md](./poster-image-rendering.md)              |
 | Once-ever contextual tips                                        | `apps/cli/src/domain/session/contextual-tips.ts`, `apps/cli/src/app-shell/contextual-tips.ts`                        | [ux-architecture.md](./ux-architecture.md#contextual-tips)            |
 
 ## Search and catalog

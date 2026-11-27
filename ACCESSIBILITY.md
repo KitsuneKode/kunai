@@ -56,8 +56,10 @@ output or JSON (`-S --json`, `doctor --json`, `capabilities --json`).
   enabling plain mode stops every animated surface in the shell: petals
   (`SakuraPetal`), the sakura bloom and glimmer label (`SakuraLoader`,
   `SakuraBloom`, `GlimmerLabel`), the braille spinner (`LoadingState`), the
-  setup dependency recheck animation, loading shell animations, and the exit
-  fade sequence (`ExitShell`). Busy messages, progress values, and elapsed
+  setup dependency recheck animation, loading shell animations, the exit
+  fade sequence (`ExitShell`), and the companion: her line appears whole
+  instead of typing on, and on kitty and Ghostty the terminal is sent one
+  still drawing with no animation frames. Busy messages, progress values, and elapsed
   timers remain readable without motion, and an automated inventory test
   (`motion-policy-coverage.test.tsx`) fails if a new animated component skips
   the motion gate.
