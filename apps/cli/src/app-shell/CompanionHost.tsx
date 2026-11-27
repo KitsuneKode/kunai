@@ -1,7 +1,12 @@
 import { Box, Text } from "ink";
 import React, { useState } from "react";
 
-import { poseForMoment, voiceForMoment, type CompanionMoment } from "./companion-moment";
+import {
+  poseForMoment,
+  voiceForMoment,
+  type CompanionCue,
+  type CompanionMoment,
+} from "./companion-moment";
 import { companionFallbackGlyph, companionMode } from "./companion-policy";
 import { CompanionPet } from "./CompanionPet";
 import { kannaLine } from "./kanna-voice";
@@ -38,16 +43,17 @@ import { palette } from "./shell-theme";
  * That is the common case and it is deliberately the easy one to write.
  */
 export function CompanionHost({
-  moment,
-  picture = true,
+  moment: reported,
+  picture: allowed = true,
   rows = 4,
   pick,
   marginTop,
   marginBottom,
   marginRight,
 }: {
-  readonly moment: CompanionMoment | null;
-  /** Whether her picture may be drawn here. The line is decided by the moment. */
+  /** A moment, or a cue that also says whether the picture may be drawn. */
+  readonly moment: CompanionMoment | CompanionCue | null;
+  /** Whether her picture may be drawn here, for a bare moment. The line is decided by the moment. */
   readonly picture?: boolean;
   /** Height in terminal rows. Width is derived so the slot is square on screen. */
   readonly rows?: number;
@@ -62,6 +68,8 @@ export function CompanionHost({
   // the line out from under the reader.
   const [rolled] = useState(() => Math.floor(Math.random() * 997));
   const mode = companionMode();
+  const moment = typeof reported === "string" ? reported : (reported?.moment ?? null);
+  const picture = typeof reported === "string" ? allowed : (reported?.picture ?? false);
   if (moment === null || mode === "off") return null;
 
   const voice = voiceForMoment(moment);

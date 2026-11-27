@@ -184,6 +184,6 @@ describe("sendCommands", () => {
     expect(fileEscapes[0]?.startsWith(`${ESC}_Ga=t,f=32,s=128,v=128,i=7,q=2,t=t;`)).toBe(true);
     // Only the placement crossed the PTY.
     expect(ptyWrites).toEqual([`${ESC}_Ga=p,U=1,i=7,c=9,r=4,z=-1,q=2;${ESC}\\`]);
-    expect(bytes).toBe(ptyWrites[0]?.length);
+    expect(bytes).toBe(ptyWrites[0]?.length ?? -1);
   });
 });

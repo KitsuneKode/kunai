@@ -16,5 +16,6 @@ process.on("SIGINT", () => process.exit(130));
 holdKannaSprites();
 const sprite = await acquireKannaSprite("seek", { rows: 4, cols: 9, pixels: 92 }, true);
 process.stderr.write(sprite ? `ready ${sprite.imageId}\n` : "failed\n");
-// Stay alive until signalled; the interval is what keeps the loop open.
+// The interval only holds the event loop open; nothing waits on it.
+// sleep-allow: a real child process must stay alive until the test signals it
 setInterval(() => undefined, 60_000);

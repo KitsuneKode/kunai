@@ -225,11 +225,6 @@ function encodeUncached(command: KittyCommand, passthrough?: "tmux"): string {
   return out;
 }
 
-/** How many bytes a command puts on the PTY when sent as chunks. */
-export function encodedByteLength(command: KittyCommand): number {
-  return Buffer.byteLength(encodeCommand(command), "latin1");
-}
-
 export type SendOptions = {
   readonly passthrough?: "tmux";
   readonly env?: NodeJS.ProcessEnv;

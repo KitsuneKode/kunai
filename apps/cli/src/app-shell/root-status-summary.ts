@@ -5,7 +5,7 @@ import {
 } from "@/domain/session/session-display";
 import type { SessionState } from "@/domain/session/SessionState";
 
-import type { CompanionMode } from "./companion-policy";
+import { companionMode, type CompanionMode } from "./companion-policy";
 import { kannaText, stablePick } from "./kanna-voice";
 import type { ShellStatusTone } from "./types";
 
@@ -91,7 +91,7 @@ export function buildRootStatusSummary({
   networkAvailable = true,
   playbackIsLocal = false,
   providerRegistry,
-  companion = "off",
+  companion = companionMode(),
 }: {
   state: SessionState;
   currentViewLabel: string;
@@ -106,7 +106,7 @@ export function buildRootStatusSummary({
   networkAvailable?: boolean;
   playbackIsLocal?: boolean;
   providerRegistry?: ProviderNameLookup;
-  /** Whether she may speak here. The default keeps the plain copy. */
+  /** Whether she may speak here. Defaults to this run's tier; tests pin it. */
   companion?: CompanionMode;
 }): RootStatusSummary {
   const isActivePlayback =

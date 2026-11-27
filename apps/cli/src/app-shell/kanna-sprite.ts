@@ -38,6 +38,7 @@ import {
 } from "@/image/kitty-animation";
 import { preparePoster } from "@/image/native-image";
 import { CELL_ASPECT } from "@/image/renderers/sixel";
+import { createKeyedJoiner } from "@/infra/concurrency/keyed-joiner";
 
 import { companionMotion, companionPetPath, companionStripPath } from "./companion-assets";
 import type { CompanionPose } from "./companion-policy";
@@ -119,7 +120,11 @@ type SpriteBuild = {
 const builds = new Map<string, SpriteBuild>();
 /** Keys whose image is in the terminal right now. */
 const live = new Set<string>();
-const inflight = new Map<string, Promise<KannaSprite | null>>();
+/**
+ * One upload per key at a time. `finish`: a surface that lets go mid-upload
+ * must not abort it — the build is kept for the next mount either way.
+ */
+const uploads = createKeyedJoiner<KannaSprite | null>({ whenAbandoned: "finish" });
 let holders = 0;
 let exitHooked = false;
 
@@ -289,14 +294,7 @@ export function acquireKannaSprite(
   const ready = readyKannaSprite(pose, slot, animated);
   if (ready) return Promise.resolve(ready);
   const key = spriteKey(pose, slot, animated);
-  const pending = inflight.get(key);
-  if (pending) return pending;
-
-  const task = uploadOrGlyph(key, pose, slot, animated).finally(() => {
-    if (inflight.get(key) === task) inflight.delete(key);
-  });
-  inflight.set(key, task);
-  return task;
+  return uploads.join(key, () => uploadOrGlyph(key, pose, slot, animated)).catch(() => null);
 }
 
 /** The sprite if it is in the terminal right now — for a render with no flash. */
@@ -343,7 +341,7 @@ export const __testing = {
   reset(): void {
     builds.clear();
     live.clear();
-    inflight.clear();
+    uploads.clear();
     holders = 0;
   },
 };

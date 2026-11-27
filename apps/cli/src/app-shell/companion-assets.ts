@@ -61,6 +61,3 @@ export function companionMotion(pose: CompanionPose): CompanionMotion {
   const { frames, loop } = MOTION[pose];
   return { frames, loop: loop.map(([frame = 0, gapMs = 0]) => [frame, gapMs] as const) };
 }
-
-/** Edge, in pixels, of the still and of every drawing in a strip. */
-export const COMPANION_ART_SIZE: number = motion.size;

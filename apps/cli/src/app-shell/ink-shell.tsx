@@ -43,7 +43,6 @@ import {
 import { useBrowseDestinationLabel } from "./browse-destination";
 import { CapabilityIssueStrip } from "./CapabilityIssueStrip";
 import { dispatchAppCommand } from "./command-router";
-import { companionMode } from "./companion-policy";
 import { setContextualTipListener } from "./contextual-tips";
 import { recordRender } from "./diagnostics/render-trace";
 import { createDismissTimerRegistry, shellFeedbackTimers } from "./dismiss-timer-registry";
@@ -1020,7 +1019,6 @@ export function AppRoot({ container }: { container: Container }) {
       networkAvailable,
       playbackIsLocal,
       providerRegistry: container.providerRegistry,
-      companion: companionMode(),
     }),
   );
   useEffect(() => {
@@ -1040,7 +1038,6 @@ export function AppRoot({ container }: { container: Container }) {
           networkAvailable: rootStatusSummaryInput.networkAvailable,
           playbackIsLocal: rootStatusSummaryInput.playbackIsLocal,
           providerRegistry: container.providerRegistry,
-          companion: companionMode(),
         }),
       );
     }, ROOT_STATUS_DEBOUNCE_MS);
