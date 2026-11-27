@@ -4,6 +4,7 @@ import { emptyMpvHardwareAccelProbe } from "@/infra/player/mpv-hwaccel-probe";
 import {
   describeMpvHwaccel,
   mpvHwdecEmittedFor,
+  mpvHwdecPlaybackReport,
 } from "@/services/update/native-installer/mpv-hwdec-report";
 
 describe("mpv hwdec report copy", () => {
@@ -32,5 +33,20 @@ describe("mpv hwdec report copy", () => {
     expect(mpvHwdecEmittedFor("auto", hardware)).toBe("auto-safe");
     expect(mpvHwdecEmittedFor("auto", failed)).toBeNull();
     expect(mpvHwdecEmittedFor("vaapi", hardware)).toBe("vaapi");
+  });
+
+  test("playback report only emits an mpv flag for managed mpv", () => {
+    const hardware = {
+      ...emptyMpvHardwareAccelProbe("hardware"),
+      probed: true,
+      autoSafeOk: true,
+      autoSafeDriver: "nvdec-copy",
+    };
+
+    expect(mpvHwdecPlaybackReport("managed-mpv", "auto", hardware).mpvHwdecEmitted).toBe(
+      "auto-safe",
+    );
+    expect(mpvHwdecPlaybackReport("managed-vlc", "off", hardware).mpvHwdecEmitted).toBeNull();
+    expect(mpvHwdecPlaybackReport("android-handoff", "off", hardware).mpvHwdecEmitted).toBeNull();
   });
 });

@@ -1,3 +1,4 @@
+import type { PlayerMode } from "@/domain/playback/player-choice";
 import type { CapabilitySnapshot } from "@/ui";
 import type { MpvHwdecMode } from "@kunai/config";
 
@@ -10,6 +11,25 @@ export function mpvHwdecEmittedFor(
   if (mode === "off") return "no";
   if (mode === "auto") return hw.autoSafeOk ? "auto-safe" : null;
   return mode;
+}
+
+export type MpvHwdecPlaybackReport = {
+  readonly playerKind: PlayerMode["kind"];
+  readonly mpvHwdec: MpvHwdecMode;
+  readonly mpvHwdecEmitted: string | null;
+};
+
+/** Build doctor's player-aware playback decode row; non-mpv playback has no mpv flag. */
+export function mpvHwdecPlaybackReport(
+  playerKind: PlayerMode["kind"],
+  mode: MpvHwdecMode,
+  hw: CapabilitySnapshot["mpvHardwareAccel"],
+): MpvHwdecPlaybackReport {
+  return {
+    playerKind,
+    mpvHwdec: mode,
+    mpvHwdecEmitted: playerKind === "managed-mpv" ? mpvHwdecEmittedFor(mode, hw) : null,
+  };
 }
 
 export function describeMpvHwaccel(hw: CapabilitySnapshot["mpvHardwareAccel"]): string {

@@ -31,7 +31,7 @@ import {
   versionBinaryPath,
   type InstallLayoutPaths,
 } from "./install-layout";
-import { describeMpvHwaccel, mpvHwdecEmittedFor } from "./mpv-hwdec-report";
+import { describeMpvHwaccel, mpvHwdecPlaybackReport } from "./mpv-hwdec-report";
 import { isMuslEnvironmentSync } from "./musl";
 import { listInstallTransactions, type InstallTransactionRecord } from "./transaction";
 import { inspectVersionLock, type VersionLockInspection } from "./version-lock";
@@ -627,14 +627,11 @@ export async function buildDoctorReport(input: BuildDoctorReportInput = {}): Pro
 
   const dependencies = await probe({ playerMode });
   const mpvHwdecMode = input.mpvHwdecMode ?? "mpv-default";
-  const playback = {
-    playerKind: playerMode.kind,
-    mpvHwdec: mpvHwdecMode,
-    mpvHwdecEmitted:
-      playerMode.kind === "managed-mpv"
-        ? mpvHwdecEmittedFor(mpvHwdecMode, dependencies.mpvHardwareAccel)
-        : null,
-  };
+  const playback = mpvHwdecPlaybackReport(
+    playerMode.kind,
+    mpvHwdecMode,
+    dependencies.mpvHardwareAccel,
+  );
   const detectedMethod = detectInstallMethod({
     platform,
     fileExists,
