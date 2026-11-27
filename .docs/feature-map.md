@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T01:13:27Z"
+lastReviewed: "2026-11-27T11:27:37Z"
 ---
 
 # Feature Map
@@ -42,21 +42,23 @@ cli-args.ts → main.ts → container/ → app/bootstrap → app/session (Sessio
 
 ## Shell (Ink)
 
-| Feature                                                          | Owned by                                                                                                             | Docs                                                                  |
-| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| Command palette, `/` commands                                    | `apps/cli/src/domain/session/command-registry.ts`                                                                    | [ux-architecture.md](./ux-architecture.md)                            |
-| `/guide` discovery overlay                                       | `apps/cli/src/app-shell/guide-model.ts`, `apps/cli/src/app-shell/guide-shell.tsx`                                    | [ux-architecture.md](./ux-architecture.md)                            |
-| Keybindings                                                      | `apps/cli/src/app-shell/keybindings.ts`                                                                              | [keybindings.md](./keybindings.md)                                    |
-| Shell host, overlays, footer                                     | `apps/cli/src/app-shell/*`                                                                                           | [ux-architecture.md](./ux-architecture.md)                            |
-| Pickers (episode, provider, source, quality, audio, subtitle)    | `apps/cli/src/app-shell/pickers/*`                                                                                   | [runtime-boundary-map.md](./runtime-boundary-map.md#picker-ownership) |
-| Settings overlay                                                 | `apps/cli/src/app-shell/settings/*`                                                                                  | [ux-architecture.md](./ux-architecture.md)                            |
-| Theme + design tokens                                            | `packages/design`                                                                                                    | [design-system.md](./design-system.md)                                |
-| Poster previews (Kitty / iTerm2 / sixel / half-block)            | `apps/cli/src/image/*`                                                                                               | [poster-image-rendering.md](./poster-image-rendering.md)              |
-| Browse home return-loop rows (continue, new-since-visit, nudges) | `apps/cli/src/app-shell/browse-idle-{context,actions}.ts`, `return-loop-copy.ts`                                     | [ux-architecture.md](./ux-architecture.md)                            |
-| Rested-row Enter prefetch                                        | `apps/cli/src/app-shell/hooks/use-dwell-prefetch.ts`, `apps/cli/src/app/search/prefetch-browse-entry.ts`             | [ux-architecture.md](./ux-architecture.md)                            |
-| Palette local-title `JUMP TO` rows                               | `apps/cli/src/domain/palette/*`, `apps/cli/src/services/palette/*`, `apps/cli/src/app-shell/palette-title-launch.ts` | [ux-architecture.md](./ux-architecture.md#command-philosophy)         |
-| Companion voice (kanna)                                          | `apps/cli/src/app-shell/kanna-voice.ts`                                                                              | [ux-architecture.md](./ux-architecture.md)                            |
-| Once-ever contextual tips                                        | `apps/cli/src/domain/session/contextual-tips.ts`, `apps/cli/src/app-shell/contextual-tips.ts`                        | [ux-architecture.md](./ux-architecture.md#contextual-tips)            |
+| Feature                                                          | Owned by                                                                                                             | Docs                                                                          |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Command palette, `/` commands                                    | `apps/cli/src/domain/session/command-registry.ts`                                                                    | [ux-architecture.md](./ux-architecture.md)                                    |
+| `/guide` discovery overlay                                       | `apps/cli/src/app-shell/guide-model.ts`, `apps/cli/src/app-shell/guide-shell.tsx`                                    | [ux-architecture.md](./ux-architecture.md)                                    |
+| Keybindings                                                      | `apps/cli/src/app-shell/keybindings.ts`                                                                              | [keybindings.md](./keybindings.md)                                            |
+| Shell host, overlays, footer                                     | `apps/cli/src/app-shell/*`                                                                                           | [ux-architecture.md](./ux-architecture.md)                                    |
+| Pickers (episode, provider, source, quality, audio, subtitle)    | `apps/cli/src/app-shell/pickers/*`                                                                                   | [runtime-boundary-map.md](./runtime-boundary-map.md#picker-ownership)         |
+| Settings overlay                                                 | `apps/cli/src/app-shell/settings/*`                                                                                  | [ux-architecture.md](./ux-architecture.md)                                    |
+| Theme + design tokens                                            | `packages/design`                                                                                                    | [design-system.md](./design-system.md)                                        |
+| Poster previews (Kitty / iTerm2 / sixel / half-block)            | `apps/cli/src/image/*`                                                                                               | [poster-image-rendering.md](./poster-image-rendering.md)                      |
+| Browse home return-loop rows (continue, new-since-visit, nudges) | `apps/cli/src/app-shell/browse-idle-{context,actions}.ts`, `return-loop-copy.ts`                                     | [ux-architecture.md](./ux-architecture.md)                                    |
+| Rested-row Enter prefetch                                        | `apps/cli/src/app-shell/hooks/use-dwell-prefetch.ts`, `apps/cli/src/app/search/prefetch-browse-entry.ts`             | [ux-architecture.md](./ux-architecture.md)                                    |
+| Palette local-title `JUMP TO` rows                               | `apps/cli/src/domain/palette/*`, `apps/cli/src/services/palette/*`, `apps/cli/src/app-shell/palette-title-launch.ts` | [ux-architecture.md](./ux-architecture.md#command-philosophy)                 |
+| Companion voice (kanna)                                          | `apps/cli/src/app-shell/kanna-voice.ts`, `primitives/KannaLine.tsx`                                                  | [ux-architecture.md](./ux-architecture.md)                                    |
+| Companion poses and moments (kanna)                              | `apps/cli/src/app-shell/companion-{moment,policy,assets}.ts`, `CompanionHost.tsx`                                    | [poster-image-rendering.md](./poster-image-rendering.md#the-companion-sprite) |
+| Companion sprite and terminal animation                          | `apps/cli/src/app-shell/kanna-sprite.ts`, `apps/cli/src/image/kitty-animation.ts`                                    | [poster-image-rendering.md](./poster-image-rendering.md#the-companion-sprite) |
+| Once-ever contextual tips                                        | `apps/cli/src/domain/session/contextual-tips.ts`, `apps/cli/src/app-shell/contextual-tips.ts`                        | [ux-architecture.md](./ux-architecture.md#contextual-tips)                    |
 
 ## Search and catalog
 

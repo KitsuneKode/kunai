@@ -5,6 +5,8 @@ import {
 } from "@/domain/session/session-display";
 import type { SessionState } from "@/domain/session/SessionState";
 
+import { companionMode } from "./companion-policy";
+import { kannaText } from "./kanna-voice";
 import type { ShellStatusTone } from "./types";
 
 type ProviderNameLookup = {
@@ -228,7 +230,13 @@ export function buildRootStatusSummary({
   } else if (offlineMode && !isActivePlayback) {
     alert = { text: "offline mode · library only", tone: "info" };
   } else if (!networkAvailable && !offlineMode && !isActivePlayback) {
-    alert = { text: "network unavailable · local copies preferred", tone: "warning" };
+    // The companion states it and says what still works; with her off the
+    // plain alert stands.
+    alert = {
+      text:
+        kannaText("offline", companionMode(), 0) ?? "network unavailable · local copies preferred",
+      tone: "warning",
+    };
   }
   // Standing notification count is NOT an alert — the alert slot is reserved for
   // transient alarms (playback problem, autoplay paused, download progress).

@@ -35,9 +35,9 @@ The illustrated kitsune is the warm face. Raster masters live in `ip-as-logo-bat
 | watch | C1    | 404, mischief, docs hub          |
 | idle  | C2    | home, OG, nav, companion default |
 
-Docs animate with CSS (`apps/docs/app/styles/fox.css`); `prefers-reduced-motion: reduce` freezes on the pose. Favicons, badges, and header chrome keep the **mark**. CLI headers keep `🦊 Kunai`. On Kitty/Ghostty/iTerm/WezTerm the same rasters render as a companion pane (`KUNAI_PET=off` retires her, `KUNAI_PET=glyph` pins 🦊; half-block is skipped because this art turns to noise at two pixels per cell).
+Docs animate with CSS (`apps/docs/app/styles/fox.css`); `prefers-reduced-motion: reduce` freezes on the pose. Favicons, badges, and header chrome keep the **mark**. CLI headers keep `🦊 Kunai`. On Kitty and Ghostty she is an animated sprite the terminal plays itself; on iTerm2, WezTerm and Sixel terminals the same art is a still (`KUNAI_PET=off` retires her, `KUNAI_PET=glyph` pins 🦊; half-block is skipped because this art turns to noise at two pixels per cell).
 
-The old `generate-mascot.mjs` pixel-grid generator was removed; `kanna-bust.svg` is the source of truth.
+The old `generate-mascot.mjs` pixel-grid generator was removed, and so were the single-pose `kanna-bust.svg` and `kanna-idle.svg` files. `kanna.svg` is the source of truth: every pose is one group in it.
 
 ## 4. Color — "Ember Dusk" (proposed token redesign)
 
@@ -146,10 +146,13 @@ Short, precise, a little dry. "Finds the playable stream." "Nothing fabricated."
 ## 6. Asset index
 
 - `kunai-mark.svg` — logo mark (fox + blade)
-- `kanna-bust.svg` — the traced vector source; every static surface renders from it
+- `kanna.svg` — the one layered vector: nine poses, every surface renders from it
+- `kanna-rig.mjs` — the cuts, the motion sheet, and `poseSvg()` (one pose as a standalone document)
+- `kanna-expressions.mjs` — the eye shapes an expression swaps in
 - `ip-as-logo-batch/` — raster masters (A/B/C)
 - `apps/docs/components/brand/kunai-fox.tsx` — live SVG character
-- `trace-kanna.sh` — regenerates `kanna-bust.svg` from the raster master
+- `trace-kanna.mjs` — regenerates `kanna.svg` from the raster masters
+- `export-fox-assets.ts` — rasterizes `kanna.svg` into the site stills, the OG mascot, and the CLI stills, animation strips and motion manifest
 - `generate-social-cards.mjs` — docs OG + GitHub social SVG/PNG exports
 - `kunai-social-docs.svg` / `kunai-social-docs.png` — docs Open Graph master (1200×630)
 - `kunai-social-github.svg` — GitHub social master (1280×640)

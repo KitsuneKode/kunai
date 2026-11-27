@@ -9,15 +9,18 @@ import {
   kannaDoneText,
   kannaLine,
   kannaLinesFor,
+  kannaText,
   LINE_BUDGET,
   momentForStateKind,
+  searchLoaderSublabel,
+  stablePick,
 } from "@/app-shell/kanna-voice";
 
 describe("kanna copy", () => {
   test("every line fits one row and stays in voice", () => {
     for (const moment of KANNA_MOMENTS) {
       const lines = kannaLinesFor(moment);
-      expect(lines.length, moment).toBeGreaterThan(1);
+      expect(lines.length, moment).toBeGreaterThanOrEqual(3);
       for (const line of lines) {
         expect(line.length, line).toBeLessThanOrEqual(LINE_BUDGET);
         // She is brief and level. An exclamation mark or a second sentence is
@@ -116,5 +119,65 @@ describe("which surfaces speak", () => {
 
   test("a quiet kind stays quiet even when the companion is on", () => {
     expect(companionLineFor("loading", "graphics", 0)).toBeNull();
+  });
+});
+
+describe("the moments of a session", () => {
+  test("every moment the plan names has a pool", () => {
+    for (const moment of [
+      "searching",
+      "resolving",
+      "dead-end",
+      "found",
+      "handoff",
+      "resume",
+      "first-run",
+      "goodbye",
+      "offline",
+      "slow",
+    ] as const) {
+      expect(KANNA_MOMENTS, moment).toContain(moment);
+    }
+  });
+
+  test("the handoff names no player — it is mpv on most machines and VLC on some", () => {
+    for (const line of kannaLinesFor("handoff")) expect(line).not.toMatch(/mpv|vlc/iu);
+  });
+
+  test("she is never excited", () => {
+    // Calm, focused, mildly put-out. These are the words that would mean a
+    // mascot had wandered in.
+    for (const moment of KANNA_MOMENTS) {
+      for (const line of kannaLinesFor(moment)) {
+        expect(line, line).not.toMatch(/\b(yay|woo|awesome|amazing|oops|sorry|uh[- ]oh)\b/iu);
+        expect(line, line).toBe(line.toLowerCase());
+      }
+    }
+  });
+});
+
+describe("plain-text slots", () => {
+  test("glyph plus line, or nothing when she is off so the plain copy stands", () => {
+    expect(kannaText("offline", "glyph", 0)).toBe("🦊 no network, but your library still works.");
+    expect(kannaText("offline", "off", 0)).toBeNull();
+  });
+
+  test("a pick derived from the surface's text does not re-roll on re-render", () => {
+    expect(stablePick("Searching for “dune”…")).toBe(stablePick("Searching for “dune”…"));
+    expect(Number.isInteger(stablePick(""))).toBe(true);
+  });
+
+  test("the search loader keeps its specific sublabels and gives her the generic one", () => {
+    expect(searchLoaderSublabel("Loading trending…", "glyph")).toBe(
+      "Fetching what's popular right now",
+    );
+    expect(searchLoaderSublabel("Building recommendations…", "glyph")).toBe(
+      "Building picks from your watch history",
+    );
+    const hers = searchLoaderSublabel("Searching for “dune”…", "glyph");
+    expect(kannaLinesFor("searching").map((line) => `🦊 ${line}`)).toContain(hers);
+    expect(searchLoaderSublabel("Searching for “dune”…", "off")).toBe(
+      "Matching titles across the catalog · usually a few seconds",
+    );
   });
 });

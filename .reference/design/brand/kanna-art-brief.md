@@ -200,21 +200,46 @@ Before a master is committed, check all seven poses together at thumbnail size:
 ## Landing it
 
 1. Drop the new masters in `ip-as-logo-batch/` with the existing naming shape.
-2. Point these two maps at them:
-   - `STILLS` in `apps/docs/components/brand/kunai-fox.tsx`
-   - `DOCS_STILLS_BY_NAME` and `CLI_PETS_BY_NAME` in `export-fox-assets.ts`
-3. `bun .reference/design/brand/export-fox-assets.ts`
-4. `bun apps/docs/scripts/sync-repo-content.ts` to rebake the OG data URL
-5. `bun run test` — the size, alpha and facing guards in
-   `apps/docs/test/kunai-fox.test.ts` will catch an un-quantized or un-cut export
+2. Point `POSES` in `kanna-rig.mjs` at them. A pose with feet is cut from the
+   model sheet on the gap between its rows, not from a split cell file — the
+   figures overrun the sheet's 512px rows and a grid cut clips them flat.
+3. `bun .reference/design/brand/trace-kanna.mjs` — every master into `kanna.svg`.
+   `--debug <dir>` writes a gridded sheet per pose, which is how the ear cuts in
+   `EARS` and the re-pose polygons are placed.
+4. `bun .reference/design/brand/export-fox-assets.ts` — site stills, the OG
+   mascot, and the CLI stills, animation strips and motion manifest.
+5. `bun apps/docs/scripts/sync-repo-content.ts` to rebake the OG data URL.
+6. `bun run test` — the size, alpha and facing guards in
+   `apps/docs/test/kunai-fox.test.ts`, and the strip-versus-manifest guards in
+   `apps/cli/test/unit/app-shell/companion-assets.test.ts`.
 
-The export handles the alpha cut and quantization; nothing needs doing by hand.
-It flood-fills from a plate-coloured border rather than replacing `#1c1620`
-globally, because the eyes are that same colour and a global replace punches
-straight through them.
+The trace handles the alpha cut; nothing needs doing by hand. It flood-fills
+from the corner rather than replacing `#1c1620` globally, because the eyes are
+that same colour and a global replace punches straight through them. It also
+keeps only the outer contour of every region: `vtracer`'s cutout mode punches an
+eye-shaped hole in the fur, and an expression smaller than the eye it replaces
+— the squint, a blink — then sits in a see-through socket. The squint shipped
+that way for months, visible on a light ground and invisible on a dark one.
 
-Once a consistent sheet exists, the next step is tracing her once to SVG. That
-is what unlocks per-part motion on the site — an ear flick, a blink, pupils that
-track the pointer — none of which a flat raster can carry. See
-`apps/docs/components/brand/kunai-fox-live.tsx`, which does the two things a PNG
-can do well rather than four things badly.
+She has been traced. That is what unlocked per-part motion: an ear flick, a
+blink, a lean — in the terminal today, as frames the terminal plays itself. The
+site still shows stills; see `apps/docs/components/brand/kunai-fox-live.tsx` and
+the residue plan.
+
+## What was redrawn, and how
+
+`seek` and `peek` are the two poses whose masters could not ship as drawn. Both
+are still built from traced Kanna, re-posed from clipped pieces — which only
+works because the art is flat, so two pieces of the same fur overlap without a
+seam.
+
+- **`seek`** was a raised paw and nothing else, which at companion size is
+  `idle` with a foot off the ground. It is pitched forward about her hind foot
+  so the chest drops and the tail lifts, both ears are cut off above the skull
+  and laid back, and the eyes are widened with a catchlight.
+- **`peek`** leaned on a ledge in her own fur colour, so the alpha cut shipped
+  her welded to a pink slab. The slab is gone: she is cut on the ledge line and
+  her paws hang over it, so whatever is drawn under her is the edge.
+- **`go`** keeps its dart, redrawn: the dart is plate-coloured and crosses the
+  silhouette, so the flood fill ran up the shaft and ate the fletching and her
+  nose.

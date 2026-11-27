@@ -80,10 +80,15 @@ export function ExitShell({ onDone }: { onDone: () => void }) {
 
   return (
     <Box flexDirection="column" paddingY={1}>
+      {/* The goodbye is hers: the picture where the terminal can draw it, and
+        the line everywhere. With her switched off the frame keeps the plain
+        farewell it always had, so quitting never ends on a blank row. */}
       <CompanionHost moment={showFox ? "farewell" : null} rows={4} marginBottom={1} />
-      <Text dimColor={isDim} color={palette.dim}>
-        {showFox ? "◉  see you next time" : ""}
-      </Text>
+      {companionMode() === "off" ? (
+        <Text dimColor={isDim} color={palette.dim}>
+          {showFox ? "◉  see you next time" : ""}
+        </Text>
+      ) : null}
       {(step === "closing" || step === "done") && <Text color={palette.accent}>◈ kunai</Text>}
     </Box>
   );

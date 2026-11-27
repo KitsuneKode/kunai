@@ -16,6 +16,11 @@ const BROW = {
   l: '<path d="M-48 -74 L 42 -44" stroke="#1C1620" stroke-width="17" stroke-linecap="round" fill="none"/>',
   r: '<path d="M48 -74 L -42 -44" stroke="#1C1620" stroke-width="17" stroke-linecap="round" fill="none"/>',
 };
+/** One cream dot, upper inner corner. Cream, so the art stays three colours. */
+const GLINT = {
+  l: '<circle cx="-11" cy="-24" r="10.5" fill="#FFC6D8"/>',
+  r: '<circle cx="-11" cy="-24" r="10.5" fill="#FFC6D8"/>',
+};
 const CLOSED_ARC =
   '<path d="M-36 6 Q 0 -20 36 6" fill="none" stroke="#1C1620" stroke-width="14" stroke-linecap="round"/>';
 
@@ -55,8 +60,8 @@ export const EXPRESSIONS = {
   halflid: { l: "", r: "", clip: true },
   /** Angled bars over slightly squashed eyes. Annoyed. */
   brow: { l: "scale(1 0.86)", r: "scale(1 0.86)", add: BROW },
-  /** Enlarged. Alert, surprised. */
-  wide: { l: "scale(1.18)", r: "scale(1.18)" },
+  /** Enlarged, with a catchlight. Alert, focused — the hunt. */
+  wide: { l: "scale(1.18)", r: "scale(1.18)", add: GLINT },
   /** An upward arc. Asleep, content. */
   closed: { swap: CLOSED_ARC },
   /** A thin bar. Transient — for animation only, never a resting face. */

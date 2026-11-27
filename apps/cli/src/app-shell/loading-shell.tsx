@@ -9,7 +9,7 @@ import React from "react";
 
 import type { AppCommandId } from "./commands";
 import { momentForLoading } from "./companion-moment";
-import { CompanionHost } from "./CompanionHost";
+import { CompanionCueHost } from "./CompanionHost";
 import { usePlaybackPosterSurfaceCleanup } from "./image-pane";
 import { footerKeyFromBinding, KEYBINDINGS } from "./keybindings";
 import { buildLoadingFooterActions } from "./loading-shell-model";
@@ -542,16 +542,16 @@ export const LoadingShell = React.memo(function LoadingShell({
   // a bare title never renders a lonely panel.
   const hasPanelContent = Boolean(state.posterUrl || state.titleDetail || state.videoMeta);
   const showSidePanel = isWide && (isPlaying || hasPanelContent);
-  // The rule is "the poster wins", so this asks for a poster — not for the side
-  // panel, which also opens for a title detail or video metadata with no
-  // artwork at all. Reusing `showSidePanel` here silenced her on exactly the
-  // surface she exists for: a resolve that has text but nothing to look at.
-  const hasPosterArt = isWide && Boolean(state.posterUrl);
+  // "The poster wins" asks for a poster, not the side panel: that also opens for
+  // metadata with no artwork, which silenced her on exactly the bare resolve.
   const companionMoment = momentForLoading({
     operation: state.operation,
     stage: state.stage,
-    hasPoster: hasPosterArt,
+    hasPoster: isWide && Boolean(state.posterUrl),
+    rows: loadingViewport.rows,
     failed: recoveryView !== null,
+    issue: state.problem?.cause,
+    elapsed,
   });
   const totalPlayingWidth = Math.max(60, terminalColumns - 2);
   const sidePanelWidth = showSidePanel
@@ -873,7 +873,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                 {/* She is here only when the side panel is not: on a narrow
                   terminal, or before any artwork has arrived. A resolve is the
                   longest wait in the product and the emptiest surface in it. */}
-                <CompanionHost moment={companionMoment} rows={3} marginTop={1} />
+                <CompanionCueHost cue={companionMoment} rows={4} marginTop={1} />
 
                 {/* Failure / recovery surface takes priority over the bare issue
                   line: it names what failed and offers recover/fallback/sources/

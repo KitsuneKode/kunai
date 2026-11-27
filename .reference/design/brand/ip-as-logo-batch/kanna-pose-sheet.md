@@ -43,6 +43,12 @@ Seek is the weak cell: a raised paw, not a low lean with ears swept back. Do not
 
 ## Wiring
 
-`carry` and `watch` are wired: `export-fox-assets.ts` maps `kanna-pose-carry.png` to `go` and `kanna-pose-watch.png` to `watch`, for both the site stills and the CLI pets.
+Every pose is traced: `POSES` in `../kanna-rig.mjs` names the master each one
+comes from, `trace-kanna.mjs` writes them all into `../kanna.svg`, and
+`export-fox-assets.ts` rasterizes from that. Nothing reads a master directly
+any more.
 
-`seek` and `peek` are not, and are the two queued for a redraw — `seek` reads as a low idle at companion size, and `peek`'s ledge is the same rose as her fur so the alpha cut ships her welded to it. Until then `seeking` draws `go`, which is one line in `companion-moment.ts`. Point `STILLS` / `DOCS_STILLS_BY_NAME` / `CLI_PETS_BY_NAME` at a redraw only after a human pick, then re-run the export.
+`seek` and `peek` were the two held back. Both now ship, re-posed from their own
+traced pieces rather than regenerated — see "What was redrawn" in
+[../kanna-art-brief.md](../kanna-art-brief.md). If the sheet is ever
+regenerated, redraw `seek` and `carry` together as this file already says.

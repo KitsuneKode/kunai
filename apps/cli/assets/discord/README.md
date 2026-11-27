@@ -8,7 +8,7 @@ Upload these with exact asset keys:
 - `subtitles` from `subtitles.svg` (export to PNG at 1024×1024 before upload if needed)
 
 `kunai.svg` is the source artwork; `kunai.png` is the portal-ready export. Both render Kanna from
-`.reference/design/brand/kanna-bust.svg` on the `#100b0f` terminal background.
+the `bust` pose of `.reference/design/brand/kanna.svg` on the `#100b0f` terminal background.
 
 Discord Rich Presence art asset requirements:
 

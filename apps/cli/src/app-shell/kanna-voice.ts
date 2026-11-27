@@ -10,11 +10,30 @@
  * Rules the pools below keep to, enforced by `kanna-voice.test.ts`:
  *   • one line, `LINE_BUDGET` characters or fewer, so it never wraps a pane
  *   • no exclamation marks, no emoji, no second sentence
+ *   • at least three variants per moment, none repeated within a pool
+ *
+ * Every moment fires on a state transition and never on a timer of its own. A
+ * session that goes launch → search → resolve → play → quit meets four of them
+ * — searching, resolving, handoff, goodbye — and that ceiling is the design: if
+ * a healthy session shows more, she is chattering and the fix is deletion.
  */
 
 import { companionFallbackGlyph, type CompanionMode } from "./companion-policy";
 
-export type KannaMoment = "empty" | "error" | "done";
+export type KannaMoment =
+  | "empty"
+  | "error"
+  | "done"
+  | "searching"
+  | "resolving"
+  | "dead-end"
+  | "found"
+  | "handoff"
+  | "resume"
+  | "first-run"
+  | "goodbye"
+  | "offline"
+  | "slow";
 
 /** One row at the narrowest pane Kunai lays out, minus the glyph and a space. */
 export const LINE_BUDGET = 48;
@@ -34,6 +53,31 @@ const LINES = {
     "credits dodged.",
     "skipped it.",
   ],
+  // A query went out. Unbothered: she has done this before.
+  searching: ["on it.", "sniffing around.", "having a look."],
+  // Providers are being tried. Matter-of-fact, and names that there are several.
+  resolving: ["a few providers deep.", "checking which mirrors are awake.", "running them down."],
+  // One provider failed and others remain. A shrug, then the next one.
+  "dead-end": ["that one's a dead end.", "mirror's down, on to the next.", "no good, moving on."],
+  // A stream resolved after one of those. Quietly pleased, never triumphant.
+  found: ["got one, and it plays.", "this one's good.", "found a live one."],
+  // The player takes over. It is mpv on most machines and VLC on some, so the
+  // line does not name either.
+  handoff: ["over to the player.", "it's yours.", "handing it off."],
+  // Picking up mid-episode. She remembers without making a thing of it.
+  resume: ["picking up where you left off.", "back where you stopped.", "same spot as before."],
+  // Setup, once. Welcoming, still brief.
+  "first-run": ["let's get you set up.", "one look around, then we start.", "this part is quick."],
+  // On the way out. Warm, three words.
+  goodbye: ["see you.", "go rest.", "until next time."],
+  // No network. States it, and says what still works.
+  offline: [
+    "no network, but your library still works.",
+    "offline, so only what's on disk.",
+    "nothing out there, the library's still here.",
+  ],
+  // A resolve passed the stall threshold. Acknowledges the wait, no apology.
+  slow: ["this one's being slow about it.", "still on it, this source drags.", "taking its time."],
 } satisfies Record<KannaMoment, readonly string[]>;
 
 export const KANNA_MOMENTS = Object.keys(LINES) as readonly KannaMoment[];
@@ -118,6 +162,49 @@ export function kannaDoneLine(kind: KannaDoneKind, mode: CompanionMode): string 
 export function kannaDoneText(kind: KannaDoneKind, mode: CompanionMode): string | null {
   const line = kannaDoneLine(kind, mode);
   return line === null ? null : `${companionFallbackGlyph()} ${line}`;
+}
+
+/**
+ * Glyph plus line for a plain-text slot — a status alert, a feedback detail, a
+ * loader's sublabel — or null when the companion is off, so the caller keeps
+ * the plain copy it already had.
+ */
+export function kannaText(moment: KannaMoment, mode: CompanionMode, pick: number): string | null {
+  if (mode === "off") return null;
+  return `${companionFallbackGlyph()} ${kannaLine(moment, pick)}`;
+}
+
+/**
+ * A pick that stays put for as long as the text it was derived from does.
+ *
+ * Plain-text slots have no component to hold a `useState` pick, and a random
+ * one would re-roll on every render. Hashing the surface's own text gives the
+ * same line for the same search and a different one for the next.
+ */
+export function stablePick(seed: string): number {
+  let hash = 0;
+  for (let index = 0; index < seed.length; index++) {
+    hash = (hash * 31 + seed.charCodeAt(index)) >>> 0;
+  }
+  return hash;
+}
+
+/**
+ * What sits under the search loader's label.
+ *
+ * The sakura loader is the brand motif and stays the motion on this surface;
+ * she speaks through its sublabel rather than beside it. The two requests that
+ * have something specific to say — trending, recommendations — keep saying it.
+ * A plain search had only a generic line there, and that is the one she takes.
+ */
+export function searchLoaderSublabel(message: string, mode: CompanionMode): string {
+  const lowered = message.toLowerCase();
+  if (lowered.includes("trending")) return "Fetching what's popular right now";
+  if (lowered.includes("recommend")) return "Building picks from your watch history";
+  return (
+    kannaText("searching", mode, stablePick(message)) ??
+    "Matching titles across the catalog · usually a few seconds"
+  );
 }
 
 /**

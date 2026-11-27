@@ -87,6 +87,8 @@ export type KittyUploadOptions = {
   readonly yieldEveryChunks?: number;
 };
 
+let tempFileSequence = 0;
+
 /** Long enough that no real terminal is still reading; short enough to bound the leak. */
 const TEMP_FILE_SWEEP_MS = 30_000;
 
@@ -157,7 +159,16 @@ function buildControlKeys(encoded: EncodedPayload, options: KittyUploadOptions):
  */
 async function uploadViaTempFile(encoded: EncodedPayload, control: string): Promise<boolean> {
   const hash = createHash("sha256").update(encoded.body).digest("hex").slice(0, 16);
-  const path = join(runtime.tmpdir(), `kunai-tty-graphics-protocol-${process.pid}-${hash}.bin`);
+  // The name is unique per upload, not per content. The terminal deletes the
+  // file once it has read it, so two uploads of the same bytes sharing one path
+  // race: the second write lands, the terminal reads and deletes for the first
+  // escape, and the second escape names a file that is gone. Sent with `q=2`,
+  // that failure is silent — an image id with no pixels behind it.
+  tempFileSequence += 1;
+  const path = join(
+    runtime.tmpdir(),
+    `kunai-tty-graphics-protocol-${process.pid}-${hash}-${tempFileSequence}.bin`,
+  );
   try {
     await runtime.writeFile(path, encoded.body);
   } catch (error) {
@@ -170,6 +181,15 @@ async function uploadViaTempFile(encoded: EncodedPayload, control: string): Prom
   runtime.write(`\x1b_G${control}t=t;${b64Path}\x1b\\`);
   scheduleTempFileSweep(path);
   return true;
+}
+
+/**
+ * Hand the terminal `body` as a temp file under any control prefix — a transmit
+ * or an animation frame. `control` ends with a comma; false means the file
+ * could not be written and the caller should send chunks instead.
+ */
+export function transmitKittyTempFile(control: string, body: Uint8Array): Promise<boolean> {
+  return uploadViaTempFile({ format: "", body }, control);
 }
 
 /**
@@ -186,6 +206,25 @@ function scheduleTempFileSweep(path: string): void {
     });
   }, TEMP_FILE_SWEEP_MS);
   timer.unref?.();
+}
+
+let streamTail: Promise<void> = Promise.resolve();
+
+/**
+ * Run one chunked upload at a time.
+ *
+ * Continuation chunks carry no image id — the terminal attributes them to
+ * whichever transmit is open — and a chunked upload yields to the event loop
+ * between groups. Two uploaders that both write during those gaps splice their
+ * chunks into each other's image, so everything that streams chunks queues here.
+ */
+export function withKittyStream<T>(task: () => Promise<T>): Promise<T> {
+  const run = streamTail.then(task, task);
+  streamTail = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
 }
 
 /** Only the first chunk carries controls. Every non-final chunk is divisible by four. */
@@ -245,7 +284,9 @@ export async function uploadKittyPayload(
 
   const encoded = encodePayload(payload, true);
   if (encoded.body.byteLength === 0) return { sent: false, transmission: "direct" };
-  await uploadViaDirectChunks(encoded, buildControlKeys(encoded, options), options);
+  await withKittyStream(() =>
+    uploadViaDirectChunks(encoded, buildControlKeys(encoded, options), options),
+  );
   return { sent: true, transmission: "direct" };
 }
 

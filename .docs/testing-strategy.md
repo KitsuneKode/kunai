@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-26T10:13:00Z"
+lastReviewed: "2026-11-27T11:27:37Z"
 ---
 
 # Kunai — Testing Strategy
@@ -653,6 +653,22 @@ sequence and resends Esc on a cadence through the settle window — cancel keys
 dropped into an overlay's input-attach gap are a real UX hazard the harness
 survives the way a user does. A phase still parked at the deadline is recorded
 as a `forced-stop` journal finding, not silently abandoned.
+
+Neither driver can see a graphics escape: tmux drops APC sequences, and the
+in-process driver has no TTY, so the companion resolves to `off` there. The
+picture tier is covered by `apps/cli/test/agent/kanna-presence.test.ts`, which
+runs the real `main.ts` under a bare PTY as if inside kitty and reads back the
+bytes it wrote — which commands, how many animation frames per pose, none at all
+with her switched off or in plain mode, and a delete for every image id on
+exit. Bytes say what was sent, not what a terminal drew; the eyes-on check is
+`bun run --cwd apps/cli test/harness/kanna-gallery.tsx` in a real Kitty or
+Ghostty window.
+
+The fixture provider resolves in a microtask, so a surface that exists only
+while providers are being tried is on screen for less than a frame.
+`KUNAI_SMOKE_RESOLVE_HOLD=<path>` parks every fixture resolve until that file
+exists: read the frame you came for, then create the file. It is a gate, not a
+delay, so nothing races a clock.
 
 `KUNAI_REAL_MPV=1` opts into real playback: the harness serves a generated
 mp4 over `Bun.serve`, remaps a fixture stream URL via `KUNAI_SMOKE_MEDIA_BASE`,

@@ -36,8 +36,10 @@ import type { ProviderId } from "@kunai/types";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 import { COMMAND_CONTEXTS, resolveCommandContext } from "./commands";
+import { companionMode } from "./companion-policy";
 import { notePaletteCommand } from "./contextual-tips";
 import { usePosterSurfaceBoundaryCleanup } from "./image-pane";
+import { kannaText, stablePick } from "./kanna-voice";
 import { LoadingShell } from "./loading-shell";
 import { pickPaletteTitle } from "./palette-title-launch";
 import { PLAYBACK_KEYS_PANEL_SESSIONS } from "./playback-keys-panel";
@@ -603,12 +605,16 @@ function PlaybackShell({
         container.stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "loading" });
         container.stateManager.dispatch({
           type: "SET_PLAYBACK_FEEDBACK",
-          detail: result === "resume" ? "Resuming playback" : "Preparing playback",
+          detail:
+            result === "resume"
+              ? (kannaText("resume", companionMode(), stablePick(state.resumeLabel ?? "")) ??
+                "Resuming playback")
+              : "Preparing playback",
         });
       }
       onResolve(result);
     },
-    [container.stateManager, onResolve, openInlineTracks],
+    [container.stateManager, onResolve, openInlineTracks, state.resumeLabel],
   );
 
   const runSelectedPostPlayAction = useCallback(() => {

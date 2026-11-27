@@ -17,6 +17,7 @@ Use an in-process replay for focused wiring. Keep the credential backend `file`.
 | Settings/privacy    | Visible toggle and committed config agree after deferred writes; relaunch retains it                  | Disable and inspect; defaults/abort never mint consent or installId                                           |
 | Cleanup/support     | Doctor is healthy; report has frame + backend; owned stop removes sidecar                             | Tampered paths/vault are rejected before reads; failed start cleaned; evidence survives stop                  |
 | Phone preview       | Named physical device and host show the bounded fixture playing                                       | Reject unsupported request profile honestly; VLC launch alone cannot acknowledge queue consumption            |
+| Companion (Kanna)   | Right pose and line at the moment: `kanna-presence.test.ts` bytes, then the gallery harness by eye    | `KUNAI_PET=off`/`--plain` send no escape and no line; reduced motion sends no frames; ids deleted on exit     |
 
 For series and anime, check their separate identity/episode mapping before
 claiming parity. Queue means watch intent; downloads mean acquisition jobs;

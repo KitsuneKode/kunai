@@ -217,6 +217,32 @@ describe("uploadKittyPayload (direct)", () => {
 });
 
 describe("uploadKittyPayload (t=t file transmission)", () => {
+  test("two uploads of the same bytes never share a file", async () => {
+    // The terminal deletes a temp file once it has read it. A name derived from
+    // content alone let a second upload of the same picture land on the path
+    // the first was about to have deleted from under it — leaving an image id
+    // with nothing behind it, and no error, because the upload is sent `q=2`.
+    const capture = captureWrites();
+    const paths: string[] = [];
+    transportTesting.runtime.writeFile = async (path) => {
+      paths.push(path);
+    };
+    const payload: KittyPayload = { kind: "png", data: new Uint8Array([9, 9, 9, 9]) };
+    try {
+      for (const imageId of [1, 2]) {
+        await uploadKittyPayload(payload, {
+          imageId,
+          preferFileTransmission: true,
+          env: { KITTY_WINDOW_ID: "1" },
+        });
+      }
+      expect(paths).toHaveLength(2);
+      expect(paths[0]).not.toBe(paths[1]);
+    } finally {
+      capture.restore();
+    }
+  });
+
   test("writes a temp file and sends its base64 path", async () => {
     const capture = captureWrites();
     const written = { path: "", body: new Array<number>() };

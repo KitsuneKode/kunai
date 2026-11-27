@@ -1,5 +1,13 @@
 # Kanna — voice, reactions, and presence
 
+> **Landed.** The rest of the voice (§1), the reactions (§2) and the pose map
+> (§3) shipped in the "Kanna alive" change. This file is history. §2's premise —
+> that animation in a graphics terminal means re-uploading the image every
+> frame — turned out to be false on Kitty and Ghostty, which play uploaded
+> frames themselves; the cell-based reactions it proposed shipped anyway, as
+> the tier every terminal gets. Novelty decay (§4) and the docs-site motion
+> (§5) are not done and live in `.plans/2026-11-27-kanna-residue.md`.
+
 Remaining work on the mascot after [#285](https://github.com/KitsuneKode/kunai/pull/285)
 landed the asset pipeline and the first voice line. This plan owns the
 _personality_: what she says, when she reacts, and what each surface is allowed
