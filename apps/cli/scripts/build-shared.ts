@@ -530,7 +530,13 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // accounting, and playback/browse chrome policy. 3250 KiB is the smallest
 // whole-KiB raise over the measured tree and leaves 752 bytes; public launcher
 // budgets are unchanged.
-export const NPM_BUNDLE_BUDGET_KB = 3_250;
+// Tracks panel recovery grammar (wide values, pane cue, narrow section tabs,
+// compact failure causes, and singleton facts) measured 3,330,345 bytes,
+// 2,345 over. The shared row renderer and footer helper keep the implementation
+// deduplicated; the remaining growth is explicit state copy and bounded layout
+// policy. 3253 KiB is the smallest whole-KiB raise over that measurement and
+// leaves 727 bytes; public launcher budgets are unchanged.
+export const NPM_BUNDLE_BUDGET_KB = 3_253;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

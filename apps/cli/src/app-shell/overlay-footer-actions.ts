@@ -113,3 +113,24 @@ export function libraryFooterActions(input?: EmptyableFooterInput): readonly Foo
     rowsPresent(input),
   );
 }
+
+export function tracksFooterActions(input: {
+  readonly hasSwitchable: boolean;
+  readonly sourceSectionActive: boolean;
+}): readonly FooterAction[] {
+  // Tracks owns nested section/options focus. The pane binding is persistent
+  // even though only one direction is meaningful at a time, because the footer
+  // is also the focus cue users look for after ←/→ apparently "stops" rows.
+  return [
+    { key: "↑↓", label: "choose", action: "details" },
+    { key: "←→", label: "pane", action: "details" },
+    ...(input.hasSwitchable
+      ? [{ key: "enter", label: "switch", action: "details" as const, primary: true }]
+      : []),
+    ...(input.sourceSectionActive
+      ? [{ key: "f", label: "favorite", action: "details" as const }]
+      : []),
+    { key: "/", label: "commands", action: "command-mode" },
+    { key: "esc", label: "back", action: "quit" },
+  ];
+}

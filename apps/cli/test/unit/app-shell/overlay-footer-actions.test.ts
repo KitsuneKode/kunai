@@ -4,6 +4,7 @@ import {
   historyFooterActions,
   notificationsFooterActions,
   queueFooterActions,
+  tracksFooterActions,
 } from "@/app-shell/overlay-footer-actions";
 import { selectFooterActions } from "@/app-shell/shell-primitives";
 
@@ -81,6 +82,19 @@ describe("overlay footer actions", () => {
         (action) => action.label,
       ),
     ).toEqual(["sort", "archive", "commands", "close"]);
+  });
+
+  test("tracks footer always exposes pane movement and gates switch on real alternatives", () => {
+    expect(
+      tracksFooterActions({ hasSwitchable: true, sourceSectionActive: true }).map(
+        (action) => `${action.key}:${action.label}`,
+      ),
+    ).toEqual(["↑↓:choose", "←→:pane", "enter:switch", "f:favorite", "/:commands", "esc:back"]);
+    expect(
+      tracksFooterActions({ hasSwitchable: false, sourceSectionActive: false }).map(
+        (action) => action.label,
+      ),
+    ).toEqual(["choose", "pane", "commands", "back"]);
   });
 
   test("narrow widths keep the footer to a couple hints plus the command tail", () => {

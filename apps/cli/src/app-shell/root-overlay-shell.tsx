@@ -156,6 +156,7 @@ import {
   historyFooterActions,
   notificationsFooterActions,
   queueFooterActions,
+  tracksFooterActions,
 } from "./overlay-footer-actions";
 import {
   isOverlayCancelActive,
@@ -2521,21 +2522,11 @@ export function RootOverlayShell({
           />
         ) : null}
         <ShellFooter
-          taskLabel="Tracks"
-          actions={[
-            { key: "↑↓", label: "choose", action: "details" as const },
-            ...(tracksNav.focusedPane === "sections"
-              ? [{ key: "→", label: "options", action: "details" as const }]
-              : []),
-            ...(tracksHasSwitchable
-              ? [{ key: "enter", label: "switch", action: "details" as const, primary: true }]
-              : []),
-            ...(trackGroups[tracksNav.sectionIndex]?.section === "source"
-              ? [{ key: "f", label: "favorite", action: "details" as const }]
-              : []),
-            { key: "/", label: "commands", action: "command-mode" as const },
-            { key: "esc", label: "back", action: "quit" as const },
-          ]}
+          taskLabel={`Tracks · ${tracksNav.focusedPane}`}
+          actions={tracksFooterActions({
+            hasSwitchable: tracksHasSwitchable,
+            sourceSectionActive: trackGroups[tracksNav.sectionIndex]?.section === "source",
+          })}
           mode="detailed"
           commandMode={commandMode}
           companionHint
