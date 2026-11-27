@@ -5,7 +5,6 @@ export const VIDLINK_PROVIDER_ID = "vidlink" as const;
 export const vidlinkManifest = defineProviderManifest({
   id: VIDLINK_PROVIDER_ID,
   displayName: "VidLink",
-  aliases: ["P-Stream"],
   description: "Movies and series with multi-language subtitles",
   domain: "vidlink.pro",
   recommended: true,

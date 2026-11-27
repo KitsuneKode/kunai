@@ -18,6 +18,9 @@ export const videasyManifest = defineProviderManifest({
   // revival needs no code change; only db.wingsdatabase.com (catalog mirror)
   // still answers.
   recommended: false,
+  // 2026-11-27 live audit (.docs/provider-dossiers/usage-matrix.md): 0/4
+  // resolved, every case timed out. Drop this the day a probed stream decodes.
+  knownIssue: { since: "2026-11-27", summary: "every resolve times out" },
   mediaKinds: ["movie", "series"],
   capabilities: ["source-resolve", "subtitle-resolve", "multi-source", "quality-ranked"],
   runtimePorts: [
