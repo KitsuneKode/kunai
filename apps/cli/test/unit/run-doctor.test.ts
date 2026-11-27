@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,9 +8,8 @@ import { emptyMpvHardwareAccelProbe } from "@/infra/player/mpv-hwaccel-probe";
 import { getInstallLayoutPaths } from "@/services/update/native-installer/install-layout";
 import { runDoctor, type RunDoctorOptions } from "@/services/update/run-doctor";
 import type { CapabilitySnapshot } from "@/ui";
-import { getKunaiPaths } from "@kunai/storage";
 
-import { applyStorageRootEnv } from "../helpers/storage-env";
+const realStorageModule = { ...(await import("@kunai/storage")) };
 
 const FIXED_DATE = "2026-07-21T10:00:00.000Z";
 const made: string[] = [];
@@ -260,17 +259,36 @@ describe("runDoctor", () => {
   });
 
   test("an injected mpv hardware mode never touches the profile config path", async () => {
-    const { layout } = await makeLayout();
-    const profileRoot = await mkdtemp(join(tmpdir(), "kunai-run-doctor-profile-"));
-    made.push(profileRoot);
-    const restoreStorage = applyStorageRootEnv(profileRoot);
-    const forbiddenConfigPath = getKunaiPaths().configPath;
-    const originalBunFile = Bun.file;
-    let configPathReads = 0;
-    Bun.file = ((...args: Parameters<typeof Bun.file>) => {
-      if (String(args[0]) === forbiddenConfigPath) configPathReads += 1;
-      return originalBunFile(...args);
-    }) as typeof Bun.file;
+    const { root, layout } = await makeLayout();
+    const trackedPaths = {
+      configDir: layout.configDir,
+      dataDir: join(root, "data"),
+      cacheDir: join(root, "cache"),
+      tempDir: join(root, "temp"),
+      configPath: join(layout.configDir, "config.json"),
+      mpvBridgePath: join(layout.configDir, "mpv", "kunai-bridge.lua"),
+      dataDbPath: join(root, "data", "kunai-data.sqlite"),
+      cacheDbPath: join(root, "cache", "kunai-cache.sqlite"),
+      logPath: join(root, "data", "logs.txt"),
+    };
+    let configPathAccesses = 0;
+    Object.defineProperty(trackedPaths, "configPath", {
+      configurable: true,
+      enumerable: true,
+      get: () => {
+        configPathAccesses += 1;
+        return join(layout.configDir, "config.json");
+      },
+    });
+    mock.module("@kunai/storage", () => ({
+      ...realStorageModule,
+      getKunaiPaths: () => trackedPaths,
+    }));
+    const mockedStorage = await import("@kunai/storage");
+    void mockedStorage.getKunaiPaths().configPath;
+    expect(configPathAccesses).toBe(1);
+    configPathAccesses = 0;
+
     const lines: string[] = [];
     const originalLog = console.log;
     console.log = (...args: unknown[]) => {
@@ -290,15 +308,13 @@ describe("runDoctor", () => {
       });
 
       expect(code).toBe(0);
-      const parsed = JSON.parse(lines[0]!) as {
-        playback?: { mpvHwdec?: string; mpvHwdecEmitted?: string | null };
-      };
+      const parsed = JSON.parse(lines[0]!);
       expect(parsed.playback).toMatchObject({ mpvHwdec: "off", mpvHwdecEmitted: "no" });
-      expect(configPathReads).toBe(0);
+      expect(configPathAccesses).toBe(0);
+      expect(lines).toHaveLength(1);
     } finally {
       console.log = originalLog;
-      Bun.file = originalBunFile;
-      restoreStorage();
+      mock.module("@kunai/storage", () => realStorageModule);
     }
   });
 
