@@ -523,7 +523,11 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // Mid-stream failover (stream-unrecoverable escalation, recovery start intent)
 // and the provider-defaults revision 8 history module on top measured
 // 3,323,126 bytes; 3247 KiB leaves 1,802.
-export const NPM_BUNDLE_BUDGET_KB = 3_247;
+// Main after #845 measured 3,324,798 bytes. Next up on the home row (one
+// release-backed next-episode rule for the row, `--continue`, History and
+// Calendar, plus the successor auto-launch) measured 3,325,627 bytes, +829;
+// 3249 KiB leaves 1,349. No dependency or asset.
+export const NPM_BUNDLE_BUDGET_KB = 3_249;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

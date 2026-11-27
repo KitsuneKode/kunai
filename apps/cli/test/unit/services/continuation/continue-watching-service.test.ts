@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 
 import { ContinueWatchingService } from "@/services/continuation/ContinueWatchingService";
+import { cachedContinuationSignals } from "@/services/continuation/history-continuation-signals";
 import { HistoryRepository, openKunaiDatabase, runMigrations } from "@kunai/storage";
 
 function makeRepo(): HistoryRepository {
@@ -291,4 +292,68 @@ test("projectTitle via HistoryTitleLookup resolves bare TMDB id to tmdb: rows", 
 
   expect(decision.state).toBe("resume");
   expect(decision).toMatchObject({ titleId: "tmdb:42", episode: 4, positionSeconds: 250 });
+});
+
+test("--continue after a finished episode starts the next aired one from the release cache", () => {
+  const repo = makeRepo();
+  repo.upsertProgress({
+    title: { id: "tmdb:1", kind: "series", title: "Binge" },
+    episode: { season: 1, episode: 3 },
+    positionSeconds: 1400,
+    durationSeconds: 1400,
+    completed: true,
+    updatedAt: "2026-11-20T10:00:00.000Z",
+  });
+  const service = new ContinueWatchingService(repo);
+  // Reconciliation reports an old backlog as caught-up; episode 10 has aired.
+  const releaseProgress = {
+    titleId: "tmdb:1",
+    mediaKind: "series" as const,
+    source: "tmdb" as const,
+    title: "Binge",
+    anchorSeason: 1,
+    anchorEpisode: 3,
+    latestAiredSeason: 1,
+    latestAiredEpisode: 10,
+    newEpisodeCount: 0,
+    status: "caught-up" as const,
+    checkedAt: "2026-11-20T11:00:00.000Z",
+    nextCheckAt: "2026-11-21T11:00:00.000Z",
+    staleAfterAt: "2999-01-01T00:00:00.000Z",
+    sourceFingerprint: "series:10",
+    errorCount: 0,
+  };
+
+  const decision = service.startupCandidate({
+    signalsByTitle: (_titleId, anchor) =>
+      cachedContinuationSignals({ entry: anchor, releaseProgress }),
+  });
+
+  expect(decision?.state).toBe("next-up");
+  expect(decision?.target).toMatchObject({ season: 1, episode: 4 });
+  expect(decision?.primaryAction?.kind).toBe("select-online");
+});
+
+test("--continue skips a row at the resume floor for the next title with something to play", () => {
+  const repo = makeRepo();
+  repo.upsertProgress({
+    title: { id: "tmdb:older", kind: "series", title: "Older" },
+    episode: { season: 1, episode: 2 },
+    positionSeconds: 400,
+    durationSeconds: 1400,
+    completed: false,
+    updatedAt: "2026-11-19T10:00:00.000Z",
+  });
+  repo.upsertProgress({
+    title: { id: "tmdb:new", kind: "series", title: "Barely Started" },
+    episode: { season: 1, episode: 1 },
+    positionSeconds: 8,
+    durationSeconds: 1400,
+    completed: false,
+    updatedAt: "2026-11-20T10:00:00.000Z",
+  });
+
+  const decision = new ContinueWatchingService(repo).startupCandidate();
+
+  expect(decision?.target).toMatchObject({ titleId: "tmdb:older", episode: 2 });
 });

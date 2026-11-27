@@ -82,6 +82,12 @@ export interface AgentSessionOptions {
   /** Record a step journal (frame + DB delta per event) for evidence bundles. */
   readonly recordEvidence?: boolean;
   readonly extraEnv?: Record<string, string>;
+  /**
+   * Seed backend state through the real repositories after the container
+   * opens and before the shell mounts, so the first frame reads it — the
+   * state a returning user boots into.
+   */
+  readonly beforeMount?: (container: Container) => void;
 }
 
 export interface JournalEntry {
@@ -354,6 +360,8 @@ export async function createAgentSession(options: AgentSessionOptions): Promise<
       },
       container.config.youtubeProvider,
     );
+
+    options.beforeMount?.(container);
 
     const { AppRoot } = await import("@/app-shell/ink-shell");
     handle = render(createElement(AppRoot, { container }), { columns, rows });
