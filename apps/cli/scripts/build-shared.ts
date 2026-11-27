@@ -539,7 +539,11 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // startup, setup and doctor), credential-aware TMDB routing and the
 // browse-focus copy (#853) measured 3,332,573 bytes: +3,360. No dependency or
 // asset. 3255 KiB leaves 547 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_255;
+// Promptless-player resume, the Continue source `ask` choice, YouTube session
+// overrides and the Discover startup route (#852) on top measured 3,336,807
+// bytes: +4,234. No dependency or asset; the Continue picker stays lazy.
+// 3259 KiB leaves 409 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_259;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

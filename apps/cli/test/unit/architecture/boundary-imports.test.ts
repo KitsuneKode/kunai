@@ -102,6 +102,15 @@ const ALLOWED_APP_SHELL_IMPORTS_BY_FILE = new Map<string, readonly string[]>([
     "apps/cli/src/app/playback/playback-episode-bootstrap.ts",
     ["@/app-shell/title-control/smart-auto-launch"],
   ],
+  [
+    "apps/cli/src/app/playback/continue-source-choice.ts",
+    [
+      // The source answer is a playback-owned decision collected through the
+      // shell's existing list picker; loaded lazily so the picker stays out of
+      // startup until an interactive Continue launch actually needs it.
+      "@/app-shell/ink-shell",
+    ],
+  ],
   ["apps/cli/src/app/playback/playback-stream-prepare.ts", ["@/app-shell/workflows"]],
   ["apps/cli/src/app/playback/playback-stream-ready.ts", ["@/app-shell/workflows"]],
   ["apps/cli/src/app/playback/playback-control-actions.ts", ["@/app-shell/workflows"]],
