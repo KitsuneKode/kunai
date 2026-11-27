@@ -372,6 +372,19 @@ jobs:
           fi
           echo "Every Postgres-gated case executed against a real database."
 
+  windows-batch-rename-probe:
+    name: Windows batch rename probe
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: windows-cli
+      - name: Probe batch rename exit status
+        shell: pwsh
+        run: bun run --cwd apps/cli test:file test/integration/windows-batch-rename-probe.test.ts
+
   windows-cli:
     name: Windows CLI parity (${{ matrix.shard }}/2)
     needs: changes
@@ -406,12 +419,6 @@ jobs:
       - uses: ./.github/actions/setup-bun-monorepo
         with:
           turbo-cache-prefix: windows-cli
-
-      - name: Probe batch rename exit status
-        if: matrix.shard == 1
-        shell: pwsh
-        timeout-minutes: 2
-        run: bun run --cwd apps/cli test:file test/integration/windows-batch-rename-probe.test.ts
 
       - name: Provision native mpv
         shell: pwsh
