@@ -822,12 +822,11 @@ export function runSetupFlow(
     readonly flow?: SetupFlow | undefined;
     readonly playerName?: string | undefined;
   },
-): {
-  result: Promise<SetupFlowPayload>;
-} {
+): { result: Promise<SetupFlowPayload> } {
   const mounted = mountRootContent<SetupFlowPayload>({
     kind: "picker",
     headerLabel: "Setup",
+    ownsMachineVerdict: true,
     renderContent: (finish) => (
       <SetupShell
         snapshot={snapshot}

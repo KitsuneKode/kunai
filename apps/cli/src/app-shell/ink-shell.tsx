@@ -1415,7 +1415,7 @@ export function AppRoot({ container }: { container: Container }) {
       {showAnalyticsNotice ? (
         <AnalyticsDisclosureBanner width={Math.max(36, shellWidth - 2)} />
       ) : null}
-      {container.capabilitySnapshot ? (
+      {container.capabilitySnapshot && !rootContent?.ownsMachineVerdict ? (
         <CapabilityIssueStrip
           snapshot={container.capabilitySnapshot}
           mode={state.mode}

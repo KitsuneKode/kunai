@@ -757,3 +757,43 @@ describe("agent wiring · first-run Browse", () => {
     );
   }, 60_000);
 });
+
+describe("agent wiring · setup owns the machine verdict", () => {
+  it("/setup hides the shell's capability strip at 100×30, and Browse shows it again", async () => {
+    // On a machine missing mpv and ffmpeg the shell strip sat above setup,
+    // which already reports this machine, and pushed the frame past 30 rows:
+    // the terminal scrolled and the setup rows rendered one line off.
+    await withSession(
+      "wiring-setup-strip",
+      {
+        columns: 100,
+        rows: 30,
+        async beforeMount({ container }) {
+          const capabilitySnapshot = await probeCapabilities({
+            playerMode: { kind: "managed-mpv" },
+            which: () => null,
+            listPathEntries: () => [],
+            exists: () => false,
+          });
+          Object.assign(container, { capabilitySnapshot });
+        },
+      },
+      async (s) => {
+        const strip = "Everything else still works";
+        await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+        await s.waitForFrame((f) => f.includes(strip), "capability strip in Browse");
+
+        s.press("/");
+        await s.waitForFrame((f) => f.includes("command"), "command palette");
+        s.press("setup", K.enter);
+        await s.waitForFrame((f) => /setup \d⁄\d/u.test(f), "setup mounted");
+        expect(s.frame()).not.toContain(strip);
+        expect(s.frame().split("\n").length).toBeLessThanOrEqual(30);
+
+        s.press(K.esc);
+        await s.waitForFrame((f) => f.includes("Search title"), "back in browse");
+        await s.waitForFrame((f) => f.includes(strip), "strip returns outside setup");
+      },
+    );
+  }, 45_000);
+});

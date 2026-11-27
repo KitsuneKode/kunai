@@ -13,6 +13,12 @@ export type RootContentSession = {
   element: ReactElement;
   /** Optional AppHeader pill when kind alone is too vague (e.g. picker → Stats). */
   headerLabel?: string;
+  /**
+   * The content reports this machine's capabilities itself (setup's verdict),
+   * so the shell's capability strip would repeat it and push the frame taller
+   * than the terminal.
+   */
+  ownsMachineVerdict?: boolean;
 };
 
 type MountedRootContent<TResult> = {
@@ -216,6 +222,7 @@ export function mountRootContent<TResult>({
   fallbackValue,
   displacedValue,
   headerLabel,
+  ownsMachineVerdict = false,
 }: {
   kind: RootContentKind;
   renderContent: (finish: (value: TResult) => void) => ReactElement;
@@ -223,6 +230,7 @@ export function mountRootContent<TResult>({
   /** Resolves the session if another mount displaces it; defaults to fallbackValue. */
   displacedValue?: TResult;
   headerLabel?: string;
+  ownsMachineVerdict?: boolean;
 }): MountedRootContent<TResult> {
   const sessionId = rootContentNextId++;
   let settled = false;
@@ -267,6 +275,7 @@ export function mountRootContent<TResult>({
     kind,
     element: renderContent(settle),
     ...(headerLabel ? { headerLabel } : null),
+    ownsMachineVerdict,
   });
 
   if (displacedSessionId !== null) {
