@@ -529,9 +529,9 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // 3249 KiB leaves 1,349. No dependency or asset.
 // Kanna as a Kitty sprite (Unicode-placeholder placement, terminal-driven
 // animation frames, the sprite lifetime, her line in the companion host and
-// the motion manifest) measured 3,335,551 bytes, +9,924 over main. The art
+// the motion manifest) measured 3,335,476 bytes, +9,849 over main. The art
 // stays file assets (path strings in the bundle); no dependency.
-// 3258 KiB leaves 641.
+// 3258 KiB leaves 716.
 export const NPM_BUNDLE_BUDGET_KB = 3_258;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
