@@ -217,6 +217,24 @@ describe("stream reachability", () => {
     expect(urls).toContain("https://cdn.example/token/v1080.m3u8.png");
   });
 
+  test("a redirect whose target fails to connect blames the target host, not the first one", async () => {
+    const fetchImpl = async (url: string) => {
+      if (url.startsWith("https://front.example/")) {
+        return response(302, "", { location: "https://cdn.example/media.mp4" });
+      }
+      throw new TypeError("fetch failed: ECONNREFUSED");
+    };
+
+    const probe = await probeStreamReachability({
+      url: "https://front.example/play/1",
+      fetchImpl,
+      timeoutMs: 500,
+    });
+
+    expect(probe.status).toBe("unreachable");
+    expect(probe).toMatchObject({ refusalScope: "host", refusalHost: "cdn.example" });
+  });
+
   test("HLS segment probe fails when first segment is unreachable", async () => {
     const probe = await probeStreamReachability({
       url: "https://cdn.example/stream.m3u8",

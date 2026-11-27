@@ -1015,8 +1015,9 @@ function summarizeSelectedStream(
   result: ProviderResolveResult | null,
 ): StreamSummary {
   const selected =
-    result?.streams.find((item) => (item.url ?? item.deferredLocator) === stream.url) ??
-    result?.streams.find((item) => item.id === result.selectedStreamId);
+    // Id first: two candidates can share a URL with different headers or quality.
+    result?.streams.find((item) => item.id === result.selectedStreamId) ??
+    result?.streams.find((item) => (item.url ?? item.deferredLocator) === stream.url);
   if (selected) return summarizeStream(selected);
   const summary: StreamSummary = {
     id: result?.selectedStreamId ?? "selected",
@@ -1163,17 +1164,22 @@ function findSelectedStreamCandidate(
   result: ProviderResolveResult | null,
 ): StreamCandidate | undefined {
   return (
-    result?.streams.find((item) => (item.url ?? item.deferredLocator) === stream.url) ??
-    result?.streams.find((item) => item.id === result.selectedStreamId)
+    // Id first: two candidates can share a URL with different headers or quality.
+    result?.streams.find((item) => item.id === result.selectedStreamId) ??
+    result?.streams.find((item) => (item.url ?? item.deferredLocator) === stream.url)
   );
 }
 
 function redactText(value: string): string {
-  return value
-    .replace(/https?:\/\/[^\s"')]+/gi, (url) => `https://${hostnameOf(url) || "REDACTED"}`)
-    .replace(/\/home\/[^\s"')]+/gi, "/home/REDACTED")
-    .replace(/\/Users\/[^\s"')]+/g, "/Users/REDACTED")
-    .replace(/[A-Z]:\\Users\\[^\s"')]+/gi, "C:\\Users\\REDACTED");
+  return (
+    value
+      .replace(/https?:\/\/[^\s"')]+/gi, (url) => `https://${hostnameOf(url) || "REDACTED"}`)
+      // yt-dlp extractor args can carry a PO token (`po_token=web+TOKEN`).
+      .replace(/(po_token=)[^;\s"')]+/gi, "$1REDACTED")
+      .replace(/\/home\/[^\s"')]+/gi, "/home/REDACTED")
+      .replace(/\/Users\/[^\s"')]+/g, "/Users/REDACTED")
+      .replace(/[A-Z]:\\Users\\[^\s"')]+/gi, "C:\\Users\\REDACTED")
+  );
 }
 
 function cleanMpvArg(value: string): string {

@@ -376,7 +376,8 @@ export const kickassanimeProviderModule: CoreProviderModule = {
     const results = parseKaaSearchResults(
       await fetchJson(context, "/api/fsearch", { method: "POST", body: { query, page: 1 } }),
     );
-    if (results.length === 0) return null;
+    // A successful search with no rows is `[]`; `null` means the request failed.
+    if (results.length === 0) return [];
 
     return results.map((result): ProviderSearchResult => {
       const posterUrl = result.posterKey

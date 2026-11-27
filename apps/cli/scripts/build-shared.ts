@@ -532,7 +532,10 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // profile) measured 3,328,718 bytes after merging next-up and scoped stream
 // refusal evidence: +3,091 over that merged tree. No dependency or asset.
 // 3251 KiB leaves 306 bytes; public launcher budgets are unchanged.
-export const NPM_BUNDLE_BUDGET_KB = 3_251;
+// Recording the failing redirect hop on probe errors (so refusal evidence
+// names the host that failed) measured 3,329,213 bytes: +495. No dependency
+// or asset. 3252 KiB leaves 835 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_252;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

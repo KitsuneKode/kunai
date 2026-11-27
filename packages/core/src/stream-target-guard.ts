@@ -167,6 +167,20 @@ async function resolveHostAddresses(host: string): Promise<string[]> {
   }
 }
 
+/**
+ * Which hop a probe failed on. After a redirect the failing host is the
+ * redirect target, not the URL the caller asked for, and refusal evidence must
+ * name the host that actually failed. Recorded beside the error rather than by
+ * wrapping it, so callers that throw their own typed errors from a fetch port
+ * still catch exactly what they threw.
+ */
+const probeFailureTargets = new WeakMap<Error, string>();
+
+/** The URL of the hop a probe error came from, when `fetchProbeTarget` saw it. */
+export function probeFailureTarget(error: Error): string | undefined {
+  return probeFailureTargets.get(error);
+}
+
 export type ProbeFetchOutcome =
   | {
       readonly kind: "response";
@@ -278,11 +292,17 @@ export async function fetchProbeTarget(options: {
     if (signal?.aborted || options.remaining() <= 0) {
       return { kind: "timeout" };
     }
-    const response = await options.fetchImpl(requestTarget, {
-      ...requestInit,
-      redirect: "manual",
-      signal: signal ?? null,
-    });
+    let response: Response;
+    try {
+      response = await options.fetchImpl(requestTarget, {
+        ...requestInit,
+        redirect: "manual",
+        signal: signal ?? null,
+      });
+    } catch (error) {
+      if (error instanceof Error) probeFailureTargets.set(error, target);
+      throw error;
+    }
     if (options.followRedirects !== false && REDIRECT_STATUSES.has(response.status)) {
       const location = response.headers.get("location");
       if (location && hop < MAX_PROBE_REDIRECT_HOPS) {

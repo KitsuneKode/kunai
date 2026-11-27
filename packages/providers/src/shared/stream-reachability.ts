@@ -1,6 +1,7 @@
 import {
   createDeadlineSignal,
   fetchProbeTarget,
+  probeFailureTarget,
   isGuardedPlatformFetch,
   type StreamReachabilityFetch,
 } from "@kunai/core";
@@ -368,9 +369,10 @@ async function fetchPlaylistText(
       return { status: "fail", result: { status: "timeout" } };
     }
     const message = error instanceof Error ? error.message : String(error);
+    const failed = error instanceof Error ? (probeFailureTarget(error) ?? url) : url;
     return {
       status: "fail",
-      result: hostUnreachable(message, isDefinitiveNetworkError(message), url),
+      result: hostUnreachable(message, isDefinitiveNetworkError(message), failed),
     };
   } finally {
     deadline.release();
@@ -475,7 +477,7 @@ async function probeHlsMediaSegment(
     return hostUnreachable(
       `HLS segment unreachable: ${message}`,
       isDefinitiveNetworkError(message),
-      url,
+      (error instanceof Error ? probeFailureTarget(error) : undefined) ?? url,
     );
   } finally {
     deadline.release();
@@ -538,7 +540,8 @@ async function probeHttpStatus(
       return { status: "timeout" };
     }
     const message = error instanceof Error ? error.message : String(error);
-    return hostUnreachable(message, isDefinitiveNetworkError(message), url);
+    const failed = error instanceof Error ? (probeFailureTarget(error) ?? url) : url;
+    return hostUnreachable(message, isDefinitiveNetworkError(message), failed);
   } finally {
     deadline.release();
   }
@@ -818,10 +821,11 @@ async function probeDirectMedia(
       return { status: "reachable" };
     }
     return { status: "unreachable", reason: "unsupported-direct-media", definitive: true };
-  } catch {
+  } catch (error) {
     if (signal.aborted) return { status: "timeout" };
     // No raw cause: a transport message can quote the URL it failed on.
-    return hostUnreachable("network-error", false, input.url);
+    const failed = error instanceof Error ? (probeFailureTarget(error) ?? input.url) : input.url;
+    return hostUnreachable("network-error", false, failed);
   }
 }
 
