@@ -1,0 +1,21 @@
+# setup-quick-1-start · narrow (72×34)
+   welcome                                                  setup 1⁄2
+ ──────────────────────────────────────────────────────────────────────
+
+   ❀  What do you watch most?
+      Sets where Kunai starts. Tab switches later.
+
+   ▌ Shows & movies
+       TMDB catalog, series and films
+     Anime
+       AniList catalog, sub and dub
+     YouTube
+       Search and play from YouTube
+
+   ✓ Ready to play in mpv
+
+   Language, downloads and accounts keep their
+   defaults · m sets them now · /setup later
+ ──────────────────────────────────────────────────────────────────────
+   [enter] continue  [↑↓] choose  [d] this machine              Setup
+   [m] more setup  [esc] quit

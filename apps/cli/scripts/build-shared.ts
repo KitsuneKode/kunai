@@ -546,7 +546,15 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // The dedicated desktop profile override, ownership checks, and scoped
 // maintenance on top of #853 and #852 measured 3,343,511 bytes with Bun 1.4.5:
 // +6,704 bytes, no dependency or asset. 3266 KiB leaves 873 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_266;
+// Separately, onboarding v4 (the two-screen quick setup, its machine verdict and consent
+// screen, the launch gate that skips setup for a named destination, the live
+// first Browse and the failure panel's Next row; #854) on top measured
+// 3,348,464 bytes: +11,657, all screen code and copy. No dependency or asset;
+// `splitting: false` means lazy loading cannot recover it. 3271 KiB leaves
+// 1,040 bytes.
+// The profile checks merged with onboarding v4 measured 3,355,286 bytes
+// with Bun 1.4.5: +6,822 over #854 alone. 3277 KiB leaves 362 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_277;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

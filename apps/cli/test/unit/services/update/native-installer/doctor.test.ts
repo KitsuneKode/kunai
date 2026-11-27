@@ -315,7 +315,7 @@ describe("buildDoctorReport", () => {
       now: () => FIXED_DATE,
       runningExecutable: { path: "/tmp/kunai", version: "9.9.9" },
       pathValue: "",
-      platform: "linux",
+      platform: process.platform,
       fileExists: () => false,
       probeCapabilities: async () => emptyCapabilities(),
       inspectManifest: async () => ({

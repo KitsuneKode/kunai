@@ -888,7 +888,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   // check slide shows the same information visually inside the TUI.
   const [
     { getKunaiPaths },
-    { isBelowOnboardedFloor, maybeRunStartupSetup, shouldRunSetupWizard },
+    { isBelowOnboardedFloor, launchHasDestination, maybeRunStartupSetup, shouldRunSetupWizard },
     { effectivePlayerChoice },
     { resolveMachinePlayerMode },
     { checkDeps },
@@ -927,20 +927,19 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   })();
   // Interactivity is part of the question: this decides whether `checkDeps`
   // stays silent because the wizard will show the same information visually.
-  // (Piped launches were already rejected above, so only TTY sessions get here.)
+  const hasDestination = launchHasDestination(args);
   const onboardingWillRun = shouldRunSetupWizard({
     force: args.setup,
     interactive: setupIsInteractive,
+    hasDestination,
     config: {
       onboardingVersion: configJson.onboardingVersion ?? 0,
       downloadOnboardingDismissed: configJson.downloadOnboardingDismissed ?? false,
     },
   });
-  // A never-onboarded install lands on the discover tray instead of an empty
-  // search box — the first screen should be something to watch, not a form.
-  // Captured before the wizard runs so a completed setup still gets the
-  // content-first landing on its first launch. Explicit routes (-S, -i,
-  // --history, --offline, --discover, share links) always win.
+  // A never-onboarded install lands on the discover tray, not an empty search
+  // box. Captured before the wizard runs so a completed setup still gets that
+  // landing on its first launch. Explicit routes (-S, -i, --history) win.
   const freshInstall = isBelowOnboardedFloor(configJson.onboardingVersion ?? 0);
   // Must precede checkDeps: that snapshot records the chosen image protocol, and
   // it is what diagnostics and `/report-issue` carry into a bug report. Probing
@@ -1254,9 +1253,9 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       const isInteractive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
       const outcome = await container.usageAnalytics.onSessionStart({ isInteractive });
       // The setup wizard carries its own consent slide, so raising the banner
-      // here too would disclose twice. The banner only records that the
-      // recommendation was shown; it never answers the setup choice.
-      if (outcome.kind === "needs-disclosure" && !onboardingWillRun) {
+      // too would disclose twice — also true of a fresh launch that deferred
+      // setup. The banner only records that it was shown; it never answers.
+      if (outcome.kind === "needs-disclosure" && !onboardingWillRun && !freshInstall) {
         container.analyticsDisclosurePending = true;
       }
     } catch {
@@ -1428,6 +1427,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       downloadOnboardingDismissed: config.downloadOnboardingDismissed,
     },
     container,
+    hasDestination,
     loadSetupWorkflow: () => import("./app-shell/workflows/setup-workflows"),
   });
   openOfflineLibrary(args, container);

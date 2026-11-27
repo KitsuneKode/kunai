@@ -70,6 +70,7 @@ export function getInstallLayoutPaths(
     readonly configDir?: string;
     readonly launcherPath?: string;
     readonly platform?: NodeJS.Platform;
+    readonly env?: NodeJS.ProcessEnv;
   } = {},
 ): InstallLayoutPaths {
   const platform = overrides.platform ?? process.platform;
@@ -77,7 +78,13 @@ export function getInstallLayoutPaths(
   // name. Calling getKunaiPaths() bare made `platform: "win32"` on Linux return a
   // Windows launcher beside Linux XDG dirs -- a layout no real machine has, so
   // installer tests could agree with each other and disagree with production.
-  const kunai = getKunaiPaths({ platform: storagePlatformFor(platform) });
+  // A cross-family target cannot interpret the host's absolute profile
+  // override — drop it so the target resolves its own injected defaults.
+  const crossPathFamily = (platform === "win32") !== (process.platform === "win32");
+  const env =
+    overrides.env ??
+    (crossPathFamily ? { ...process.env, KUNAI_CONFIG_DIR: undefined } : process.env);
+  const kunai = getKunaiPaths({ platform: storagePlatformFor(platform), env });
   const dataDir = overrides.dataDir ?? kunai.dataDir;
   const cacheDir = overrides.cacheDir ?? kunai.cacheDir;
   const configDir = overrides.configDir ?? kunai.configDir;
@@ -109,10 +116,7 @@ export function getInstallLayoutPaths(
       overrides.launcherPath ??
       (kunai.profileDir === undefined
         ? defaultLauncherPath(platform)
-        : joinFor(
-            process.env.KUNAI_BIN_DIR || joinFor(kunai.profileDir, "bin"),
-            binaryFileName(platform),
-          )),
+        : joinFor(env.KUNAI_BIN_DIR || joinFor(kunai.profileDir, "bin"), binaryFileName(platform))),
     binaryFileName: binaryFileName(platform),
   };
   return kunai.profileDir !== undefined && isProfileLayout

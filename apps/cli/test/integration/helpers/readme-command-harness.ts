@@ -23,7 +23,13 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { getKunaiPaths, type KunaiPaths, type StoragePlatform } from "@kunai/storage";
+import {
+  getKunaiPaths,
+  PROFILE_MARKER,
+  PROFILE_MARKER_CONTENT,
+  type KunaiPaths,
+  type StoragePlatform,
+} from "@kunai/storage";
 
 import { buildPtyCommand } from "../../helpers/pty-command";
 import { storageRootEnv } from "../../helpers/storage-env";
@@ -183,6 +189,13 @@ export function createIsolatedReadmeProfile(label = "readme"): IsolatedReadmePro
   // install.sh defaults BIN_DIR to $HOME/.local/bin on every platform.
   const binDir = join(home, ".local", "bin");
   const shimDir = join(root, "shims");
+  // The real CLI spawned by this harness refuses a nonempty unmarked profile
+  // root, so seed the ownership marker before any other file lands under it.
+  if (paths.profileDir === undefined) {
+    throw new Error("readme profile env did not resolve a profile dir");
+  }
+  mkdirSync(paths.profileDir, { recursive: true });
+  writeFileSync(join(paths.profileDir, PROFILE_MARKER), PROFILE_MARKER_CONTENT);
   for (const dir of [home, binDir, shimDir, paths.configDir, paths.dataDir, paths.cacheDir]) {
     mkdirSync(dir, { recursive: true });
   }

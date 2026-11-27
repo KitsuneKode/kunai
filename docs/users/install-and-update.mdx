@@ -285,6 +285,20 @@ prompts are **skipped, not accepted**, and the installer says which step it
 skipped. Before 0.3.0 a missing terminal defaulted to yes and could run
 `sudo apt-get`/`pacman`/`dnf install` unattended.
 
+### What the installer tells you to run
+
+The installer ends with the two commands that matter:
+
+```
+Watch something:
+  kunai -q -S "Dune"     search and play in one step
+  kunai                  browse, with a two-question setup
+```
+
+`kunai -q -S "Dune"` plays the top result and does not stop for setup. A bare
+`kunai` on a new machine asks two things first. See
+[Getting Started](/docs/users/getting-started#what-the-first-run-asks).
+
 ### Optional dependencies
 
 Kunai needs `mpv` or VLC to play anything on desktop, and `yt-dlp` for YouTube. **Package-manager
@@ -292,10 +306,14 @@ installs are never run unless you confirm on a real terminal.** The installer
 checks whether they are already present, and if they are not it prints the exact
 command for your package manager.
 
+With VLC present and no `mpv`, the installer says that Kunai will play in VLC
+and that `mpv` is optional. It still shows the command, in case you want `mpv`
+too.
+
 On a TTY it offers to run that command:
 
 ```
-! no supported desktop player is installed; Kunai needs mpv or VLC to play anything.
+! No video player found; Kunai needs mpv or VLC to play anything.
 
   This will run:
     sudo pacman -S --needed mpv yt-dlp

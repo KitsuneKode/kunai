@@ -85,6 +85,7 @@ import { resolveHeaderDestination } from "./resolve-header-destination";
 import { RootContentBody } from "./root-content-shell";
 import {
   clearRootContentSession,
+  isRootInterruptCaptured,
   mountRootContent,
   resolveRootContentFromSession,
   useRootContentSession,
@@ -796,11 +797,9 @@ export function AppRoot({ container }: { container: Container }) {
 
   // Global Ctrl+C handler. Ink normalizes control characters to their
   // letter name with key.ctrl=true, so we check both forms for safety.
-  // Route through the shared shutdown request bridge so the coordinator in
-  // main.ts owns the full cleanup sequence (pause downloads, disconnect
-  // Discord, checkpoint playback, kill mpv, unmount Ink).
+  // The shutdown coordinator in main.ts owns cleanup when no modal captures it.
   useInput((input, key) => {
-    if ((input === "c" && key.ctrl) || input === "\x03") {
+    if (!isRootInterruptCaptured() && ((input === "c" && key.ctrl) || input === "\x03")) {
       stdinManager.cleanup();
       requestAppShutdown({ reason: "SIGINT", exitCode: 130 });
     }
@@ -1416,7 +1415,7 @@ export function AppRoot({ container }: { container: Container }) {
       {showAnalyticsNotice ? (
         <AnalyticsDisclosureBanner width={Math.max(36, shellWidth - 2)} />
       ) : null}
-      {container.capabilitySnapshot ? (
+      {container.capabilitySnapshot && !rootContent?.ownsMachineVerdict ? (
         <CapabilityIssueStrip
           snapshot={container.capabilitySnapshot}
           mode={state.mode}

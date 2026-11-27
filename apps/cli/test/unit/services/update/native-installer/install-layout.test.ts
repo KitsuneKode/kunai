@@ -141,4 +141,64 @@ describe("install layout paths", () => {
 
     expect(await readdir(external)).toEqual(["keep.txt"]);
   });
+
+  test("a cross-family target never interprets the host's inherited profile override", () => {
+    // On a Windows CI host process.env.KUNAI_CONFIG_DIR is a drive path a
+    // POSIX target cannot read (and vice versa): the target must resolve its
+    // own defaults instead of throwing or adopting the alien root.
+    const opposite = process.platform === "win32" ? "linux" : "win32";
+    const layout = getInstallLayoutPaths({ platform: opposite });
+    expect(layout.dataDir).toBeTruthy();
+    expect(layout.launcherPath).toBeTruthy();
+  });
+
+  test("an injected env with a valid profile produces a matching config and launcher", () => {
+    // Same contract the shell installers derive: profile-rooted config dir
+    // and a launcher under <profile>/bin — per path family, in-memory only.
+    const cases =
+      process.platform === "win32"
+        ? [
+            {
+              platform: "win32" as const,
+              env: {
+                USERPROFILE: "C:\\Users\\T",
+                APPDATA: "C:\\Users\\T\\AppData\\Roaming",
+                LOCALAPPDATA: "C:\\Users\\T\\AppData\\Local",
+                KUNAI_CONFIG_DIR: "C:\\profile",
+              },
+              configDir: "C:\\profile\\config",
+              launcherPath: "C:\\profile\\bin\\kunai.exe",
+            },
+            {
+              platform: "linux" as const,
+              env: { HOME: "/home/t", KUNAI_CONFIG_DIR: "/srv/profile" },
+              configDir: "/srv/profile/config",
+              launcherPath: "/srv/profile/bin/kunai",
+            },
+          ]
+        : [
+            {
+              platform: "linux" as const,
+              env: { HOME: "/home/t", KUNAI_CONFIG_DIR: "/srv/profile" },
+              configDir: "/srv/profile/config",
+              launcherPath: "/srv/profile/bin/kunai",
+            },
+            {
+              platform: "win32" as const,
+              env: {
+                USERPROFILE: "C:\\Users\\T",
+                APPDATA: "C:\\Users\\T\\AppData\\Roaming",
+                LOCALAPPDATA: "C:\\Users\\T\\AppData\\Local",
+                KUNAI_CONFIG_DIR: "C:\\profile",
+              },
+              configDir: "C:\\profile\\config",
+              launcherPath: "C:\\profile\\bin\\kunai.exe",
+            },
+          ];
+    for (const { platform, env, configDir, launcherPath } of cases) {
+      const layout = getInstallLayoutPaths({ platform, env });
+      expect(layout.configDir).toBe(configDir);
+      expect(layout.launcherPath).toBe(launcherPath);
+    }
+  });
 });
