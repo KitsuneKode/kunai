@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-27T10:00:00Z"
+lastReviewed: "2026-11-27T17:05:15Z"
 ---
 
 # Kunai — Runtime Architecture
