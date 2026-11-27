@@ -75,6 +75,75 @@ back to auto with a debug line. tmux always uses chunked transmission, including
 when `file` is requested. Each chunk and delete is wrapped in tmux passthrough,
 while the Unicode placeholders travel through the normal text grid.
 
+## The companion sprite
+
+Kanna is the one image in the shell that is not a poster, and on Kitty and
+Ghostty she does not go through the poster pipeline. `app-shell/kanna-sprite.ts`
+owns her and `image/kitty-animation.ts` builds what it sends.
+
+**Placed by text.** Ink erases and redraws its whole frame on every render, so
+`repaintAfterInkRender` stays `true` and anything positioned by the cursor is
+wiped or misaligned by the next keystroke. She is transmitted with `a=t` (never
+`a=T`), given a virtual placement (`a=p,U=1`), and handed to Ink as a block of
+placeholder cells naming the image id. The cells are ordinary text: Ink moves,
+scrolls and repaints them, and the terminal draws her wherever they land. Every
+command carries `q=2`, because a reply would arrive on stdin and be read as
+keystrokes.
+
+**Animated by the terminal.** Each pose ships a strip of drawings and a loop
+(`brand/pets/<pose>.strip.png`, `motion.json`). The first drawing is the
+transmit; each later beat is one `a=f` frame, and `a=a,s=3,v=1` sets the loop
+running. After that the terminal owns the clock: a blink costs no render and no
+bytes. Two details make the frames small and correct:
+
+- A beat showing a drawing seen earlier copies the frame that already holds it
+  (`c=<frame>`) with a one-pixel patch that changes nothing. A new drawing is the
+  first frame plus the rectangle that differs. A blink is ~2.5 KB for the whole
+  loop where whole frames would be ~14 KB.
+- Frames are written over their base (`X=1`), not blended, so a pixel that turns
+  transparent actually clears.
+
+Kitty 0.51 and Ghostty 1.4 both play this through a virtual placement. Reduced
+motion sends the one drawing and no frames.
+
+**Sized from the measured cell.** `kannaSlot` takes the cell size the mouse
+session measured and makes the slot as many columns as it takes to be at least
+as wide as it is tall; the strip is resized natively to exactly the slot's
+height in pixels. The terminal therefore draws her one source pixel to one
+screen pixel. Resizing the whole strip in one pass gives every drawing the same
+scale and sampling phase, which is what lets an unchanged pixel drop out of a
+frame delta.
+
+**Transport.** Raw RGBA deflated (`f=32,o=z`), measured smaller than the
+equivalent PNG for every pose (about 15%). On a local kitty or Ghostty a
+payload of 16 KiB or more goes by temp file (`t=t`) and never crosses the PTY;
+SSH, tmux and small patches are chunked. All chunked uploads — hers and the
+posters' — queue through `withKittyStream`, because continuation chunks carry no
+image id and two uploaders writing in each other's gaps splice their images.
+
+**Lifetime.** One upload per pose and pixel size, shared by every surface
+showing her. When the last surface lets go every id is deleted (`a=d,d=I`); the
+same happens on a global wipe (`onTerminalImagesWiped`, since `d=A` kills ids
+the placement registry never knew) and on process exit. Image ids come from the
+poster renderer's counter (`allocKittyImageId`) — ids are a terminal-wide
+namespace.
+
+**Everywhere else.** iTerm2, WezTerm and Sixel terminals draw `<pose>.png`
+through the ordinary measured overlay, still. A Sixel encode of her at terminal
+size measured 6-10 ms per pose, once, then cached. Terminals with no graphics
+protocol get the glyph and the line; half-block is never used for this art.
+
+To look at her on a real terminal, with Ink repainting underneath:
+
+```sh
+bun run --cwd apps/cli test/harness/kanna-gallery.tsx
+```
+
+`apps/cli/test/agent/kanna-presence.test.ts` runs the real `main.ts` under a PTY
+as if inside kitty and asserts the bytes: which commands, how many frames per
+pose, none at all with her off or in plain mode, and a delete for every id on
+exit.
+
 ## Tools
 
 Posters need no external binary. Every renderer consumes one natively prepared

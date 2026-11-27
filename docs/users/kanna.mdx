@@ -27,7 +27,28 @@ If she ever feels like she is talking too much, that is a bug. [Open an issue](h
 
 ## Where she shows up
 
-She appears on the surfaces that would otherwise leave you looking at nothing: an empty list, a failed resolve, the setup wizard from [Getting Started](/docs/users/getting-started), and the goodbye screen. She stays quiet while something is loading or when a step already succeeded, because those already tell you what is happening.
+She appears during the waits and on the failures, because those are the moments a terminal would otherwise leave you looking at nothing: the provider race, a search that came back empty, a resolve that did not work, the setup wizard from [Getting Started](/docs/users/getting-started), and the goodbye. She is never there for a success, and never while you are reading a list or watching something. Once playback is running she is out of the frame.
+
+The longest wait in Kunai is finding a stream, so that is where she works hardest. It is one short story in four beats:
+
+```text
+❀  Resolving via AllAnime
+   ◓ Providers
+   🦊 a few providers deep.          she leans in while they race
+
+   ◑ Stream                          one beat: the stream is found and carried
+
+   ◒ Player
+   🦊·over to the player.            she sits back; the player has it
+
+── or ───────────────────────────
+×  Could not resolve a stream
+   🦊 hit a wall on that one.
+```
+
+If a provider dies and the race moves on she says so (`that one's a dead end.`), if the wait runs long she says that instead (`this one's being slow about it.`), and a stream found only after one of those is the one time she remarks on finding it (`got one, and it plays.`).
+
+On an empty list or an error she adds one line under the message:
 
 ```text
 ·  No results for "dune 2099"
@@ -35,31 +56,58 @@ She appears on the surfaces that would otherwise leave you looking at nothing: a
    🦊 empty for now.
 ```
 
-```text
-×  Could not resolve a stream
-   3 providers tried · allanime, miruro, vidlink
-   🦊 couldn't get there.
-```
+## What she says
+
+Every line is one short sentence, lower case, and never excited. Each belongs to a moment, and each moment is something the program actually did, never a timer of her own:
+
+| Moment                | Sounds like                                 |
+| --------------------- | ------------------------------------------- |
+| a search goes out     | `on it.`                                    |
+| providers racing      | `checking which mirrors are awake.`         |
+| one provider died     | `mirror's down, on to the next.`            |
+| it is taking long     | `taking its time.`                          |
+| found, the hard way   | `got one, and it plays.`                    |
+| handing to the player | `over to the player.`                       |
+| resuming              | `picking up where you left off.`            |
+| first run             | `let's get you set up.`                     |
+| no network            | `no network, but your library still works.` |
+| a list is empty       | `nothing here yet.`                         |
+| something failed      | `couldn't get there.`                       |
+| quitting              | `go rest.`                                  |
+
+A session that goes launch, search, resolve, play, quit hears four of them.
 
 ## Poses
 
 Each pose maps to something real that is happening, so she never becomes decoration.
 
-| Pose    | Reads as                    | Where                                                                 |
-| ------- | --------------------------- | --------------------------------------------------------------------- |
-| `idle`  | sitting, ears up, eyes soft | terminal: at rest and on the setup summary · site: home, social cards |
-| `wait`  | square and composed         | terminal: the setup wizard · site: empty shelves, install             |
-| `go`    | mid-motion, ears swept back | site only: searching, resolving, install pages                        |
-| `watch` | knowing, one ear tipped     | terminal: playback · site: docs hub                                   |
-| `oops`  | ears flat, brows angled     | terminal: a failed resolve · site: 404s                               |
-| `nap`   | curled, eyes closed         | terminal: the goodbye screen · site: the roamer asleep                |
+| Pose    | Reads as                        | In the terminal                                         | On this site           |
+| ------- | ------------------------------- | ------------------------------------------------------- | ---------------------- |
+| `idle`  | sitting, ears up, unimpressed   | the setup summary                                       | home, social cards     |
+| `wait`  | square and composed             | the setup wizard                                        | empty shelves, install |
+| `seek`  | pitched forward, ears laid back | providers racing, rerouting, or dragging                | not yet                |
+| `go`    | trotting, a dart in her mouth   | a stream found and being carried to the player          | searching, resolving   |
+| `watch` | sitting back, eyes half-lidded  | the player coming up with the stream                    | docs hub               |
+| `oops`  | ears flat, brows angled         | a resolve or a search that failed                       | 404s                   |
+| `nap`   | curled, eyes closed             | a frame nothing has been asked of, and the goodbye      | the roamer asleep      |
+| `peek`  | head and paws over an edge      | a search that found nothing: she looks over the message | not yet                |
 
-All six ship, drawn from one locked character. Two more (`seek` and `peek`)
-are drawn but held back for a redraw, so a resolve currently borrows `go`.
+All eight are one fox, traced from one model sheet into one layered drawing.
 
-## Two tiers, and neither is required
+## Three ways she can appear, and none is required
 
-Kanna has a picture tier and a text tier, and **the text tier is the one that matters**. The illustrated fox needs a terminal that can host a graphics protocol (Kitty, Ghostty, iTerm2, or WezTerm). Which terminals qualify on your system is covered in [Platforms](/docs/users/platforms). Everywhere else she is a `🦊` and a line of text, which is the same character doing the same job.
+The text is the tier that matters. The picture is what a capable terminal gets on top.
+
+| Your terminal                         | What you get                                                   |
+| ------------------------------------- | -------------------------------------------------------------- |
+| Kitty, Ghostty                        | the illustrated fox, and she moves: a blink, one ear, a breath |
+| tmux, passing through to one of those | the same, when `allow-passthrough` is on                       |
+| iTerm2, WezTerm, a Sixel terminal     | the illustrated fox, still                                     |
+| everything else                       | `🦊` and her line, with a one-cell flick beside it             |
+
+On Kitty and Ghostty the movement belongs to the terminal. Her drawings are sent once and the terminal plays them on its own clock, so a blink costs Kunai nothing and never repaints your screen. She is sized from your terminal's real cell size, so she is drawn one pixel to one and stays sharp.
+
+She needs room. On a short terminal (under about 28 rows in a list, 30 while loading) and wherever a poster is on screen, the picture steps aside and the line stays. Which terminals qualify for images on your system is covered in [Platforms](/docs/users/platforms).
 
 Half-block rendering is deliberately skipped. This art turns to noise at two pixels per cell, and a smear is worse than a glyph.
 
@@ -90,9 +138,11 @@ An explicit `KUNAI_PET` outranks the stored preference: `/pet` will say so rathe
 
 ## Reduced motion
 
-Every animation on this site and in the terminal is gated on your system's reduced-motion preference. With it on, the illustrated stills hold still; she does not breathe, lean, or react.
+Every animation on this site and in the terminal is gated on a reduced-motion preference: your system's on the site, and `KUNAI_REDUCED_MOTION=1` or `NO_MOTION=1` in the terminal. With it on she holds still everywhere. In the terminal that is literal: one drawing is sent and no animation frames follow, the line appears whole instead of typing on, and the cell beside her glyph stays empty.
 
-The roaming fox is the exception: she is not frozen, she is not rendered at all. Something that follows your pointer has no still version worth showing, so `KunaiFoxRoamer` returns nothing under reduced motion and the stylesheet hides her as a second guard. Every other surface keeps its artwork; only the movement stops.
+The roaming fox on this site is the exception: she is not frozen, she is not rendered at all. Something that follows your pointer has no still version worth showing, so `KunaiFoxRoamer` returns nothing under reduced motion and the stylesheet hides her as a second guard. Every other surface keeps its artwork; only the movement stops.
+
+Plain mode (`--plain`, `KUNAI_PLAIN=1`) retires her completely, the same as `KUNAI_PET=off`.
 
 ## Credits
 

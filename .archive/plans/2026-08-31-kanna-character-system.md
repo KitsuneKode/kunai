@@ -1,6 +1,12 @@
 # Kanna Character System
 
-Status: steps 1-6 landed in #285; residue below
+> **Landed.** Steps 1-6 in #285; the `seek` and `peek` redraws, the trace of
+> every remaining pose into one `kanna.svg`, and a real moment for every pose
+> in the "Kanna alive" change. This file is history. What is still open lives in
+> `.plans/2026-11-27-kanna-residue.md`; where a decision below was revised when
+> it met the running product, that plan says so.
+
+Status: landed; residue in `.plans/2026-11-27-kanna-residue.md`
 Owner: brand
 Created: 2026-08-31
 Target: 0.3.0
