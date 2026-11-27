@@ -7,26 +7,25 @@ import type {
   ProviderSearchInput,
   ProviderSearchResult,
 } from "@kunai/types";
-import {
-  httpStatusIsRetryable,
-  httpStatusToResolveErrorCode,
-  ProviderHttpError,
-} from "@kunai/types";
+import { ProviderHttpError } from "@kunai/types";
+import { z } from "zod";
 
-import { providerFetch } from "../runtime/fetch";
 import { resolveAnimeAudioIntent } from "../shared/anime-audio-intent";
 import { formatAnimeEpisodeLabel } from "../shared/anime-metadata";
-import { directStreamFetchSignal } from "../shared/direct-stream-source";
-import { readJsonObjectBody } from "../shared/json-body";
 import {
   resolveMultiSourceProvider,
   type MultiSourceResolvePayload,
   type MultiSourceStreamInput,
   type MultiSourceSubtitleInput,
 } from "../shared/multi-source-resolver";
-import { selectProviderEpisodeNumber } from "../shared/provider-episode-number";
+import {
+  episodeNumberFromProviderIdentity,
+  selectProviderEpisodeNumber,
+} from "../shared/provider-episode-number";
+import { createProviderJsonFetch } from "../shared/provider-json-fetch";
 import { matchProviderCatalogTitle } from "../shared/provider-title-match";
 import { normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
+import { CHROME_137_USER_AGENT } from "../shared/user-agent";
 import { ANILIGHT_PROVIDER_ID, anilightManifest } from "./manifest";
 
 export { ANILIGHT_PROVIDER_ID };
@@ -34,8 +33,7 @@ export { ANILIGHT_PROVIDER_ID };
 const API_BASE = "https://api.anilight.live/api";
 const SITE_ORIGIN = "https://anilight.live";
 const FETCH_TIMEOUT_MS = 20_000;
-const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36";
+const USER_AGENT = CHROME_137_USER_AGENT;
 
 type AniLightTitle = {
   readonly romaji?: string;
@@ -59,24 +57,35 @@ interface AniLightAnimeRow {
   readonly status?: string;
 }
 
-interface AniLightEpisode {
-  readonly number?: number;
-  readonly epNum?: number;
-  readonly title?: string;
-  readonly img?: string;
-  readonly airedAt?: string;
-  readonly sub?: boolean;
-  readonly dub?: boolean;
-  readonly subReleased?: boolean;
-  readonly dubReleased?: boolean;
-}
+const aniLightEpisodeSchema = z.object({
+  number: z.number().optional(),
+  epNum: z.number().optional(),
+  title: z.string().optional(),
+  img: z.string().optional(),
+  airedAt: z.string().optional(),
+  sub: z.boolean().optional(),
+  dub: z.boolean().optional(),
+  subReleased: z.boolean().optional(),
+  dubReleased: z.boolean().optional(),
+});
 
-interface AniLightWatchPayload {
-  readonly id?: number;
-  readonly episodes?: readonly (AniLightEpisode | number)[];
-  readonly subEpisodes?: number;
-  readonly dubEpisodes?: number;
-}
+const aniLightEpisodeEntrySchema = z.union([
+  z.number().transform((number): z.infer<typeof aniLightEpisodeSchema> => ({
+    number,
+    sub: true,
+    dub: false,
+  })),
+  aniLightEpisodeSchema,
+]);
+
+const aniLightWatchPayloadSchema = z.object({
+  id: z.number().optional(),
+  episodes: z.array(aniLightEpisodeEntrySchema).optional(),
+  subEpisodes: z.number().optional(),
+  dubEpisodes: z.number().optional(),
+});
+
+type AniLightWatchPayload = z.infer<typeof aniLightWatchPayloadSchema>;
 
 interface AniLightTrack {
   readonly id?: string;
@@ -107,44 +116,13 @@ interface AniLightResolvedShow {
   readonly row?: AniLightAnimeRow;
 }
 
-function headers(extra: Record<string, string> = {}): Record<string, string> {
-  return {
-    Accept: "application/json",
-    Origin: SITE_ORIGIN,
-    Referer: `${SITE_ORIGIN}/`,
-    "User-Agent": USER_AGENT,
-    ...extra,
-  };
-}
-
-async function fetchJson<T>(
-  context: ProviderRuntimeContext,
-  url: string,
-  stage: string,
-  init?: RequestInit,
-): Promise<T | null> {
-  const response = await providerFetch(context, url, {
-    ...init,
-    headers: { ...headers(), ...(init?.headers as Record<string, string> | undefined) },
-    signal: directStreamFetchSignal(context.signal, FETCH_TIMEOUT_MS),
-  });
-  if (!response.ok) {
-    const status = response.status;
-    await response.body?.cancel().catch(() => undefined);
-    throw new ProviderHttpError({
-      providerId: ANILIGHT_PROVIDER_ID,
-      stage,
-      status,
-      message: `AniLight ${stage} returned HTTP ${status}`,
-      code: status === 404 || status === 410 ? "not-found" : httpStatusToResolveErrorCode(status),
-      retryable: httpStatusIsRetryable(status),
-    });
-  }
-  if ((init?.method ?? "GET").toUpperCase() === "POST") {
-    return (await response.json()) as T;
-  }
-  return readJsonObjectBody<T>(response);
-}
+const fetchJson = createProviderJsonFetch({
+  providerId: ANILIGHT_PROVIDER_ID,
+  label: "AniLight",
+  origin: SITE_ORIGIN,
+  userAgent: USER_AGENT,
+  timeoutMs: FETCH_TIMEOUT_MS,
+});
 
 async function checkExists(
   anilistId: string,
@@ -222,19 +200,13 @@ async function fetchWatch(
   slug: string,
   context: ProviderRuntimeContext,
 ): Promise<AniLightWatchPayload | null> {
-  return fetchJson<AniLightWatchPayload>(
+  const body = await fetchJson<unknown>(
     context,
     `${API_BASE}/watch/${encodeURIComponent(slug)}`,
     "episode catalog",
   );
-}
-
-function episodeNumber(entry: AniLightEpisode | number): number | undefined {
-  return typeof entry === "number" ? entry : (entry.number ?? entry.epNum);
-}
-
-function episodeObject(entry: AniLightEpisode | number): AniLightEpisode {
-  return typeof entry === "number" ? { number: entry, sub: true, dub: false } : entry;
+  const parsed = aniLightWatchPayloadSchema.safeParse(body);
+  return parsed.success ? parsed.data : null;
 }
 
 async function createSourceSession(context: ProviderRuntimeContext): Promise<string> {
@@ -284,11 +256,10 @@ function mediaUrls(
   value: string | readonly string[] | undefined,
   proxies: readonly string[] | undefined,
 ) {
-  const raw = (Array.isArray(value) ? value : [value]).filter(
-    (entry): entry is string => typeof entry === "string" && entry.trim().length > 0,
-  );
+  const raw = Array.isArray(value) ? value : [value];
   const out: string[] = [];
   for (const entry of raw) {
+    if (!entry?.trim()) continue;
     if (/^https?:\/\//i.test(entry)) {
       out.push(entry);
       continue;
@@ -374,10 +345,13 @@ async function fetchAnilightPayload(
   const entries = watch?.episodes ?? [];
   if (entries.length === 0) return null;
   const requestedEpisode =
-    episodeNumberFromIdentity(input) ?? selectProviderEpisodeNumber(input.episode);
-  const entry = entries.find((candidate) => episodeNumber(candidate) === requestedEpisode);
+    episodeNumberFromProviderIdentity(input.episode, ANILIGHT_PROVIDER_ID) ??
+    selectProviderEpisodeNumber(input.episode);
+  const entry = entries.find(
+    (candidate) => (candidate.number ?? candidate.epNum) === requestedEpisode,
+  );
   if (!entry) return null;
-  const details = episodeObject(entry);
+  const details = entry;
   const preferredSourceMode = input.preferredSourceId?.includes(":dub")
     ? "dub"
     : input.preferredSourceId?.includes(":sub")
@@ -437,13 +411,6 @@ async function fetchAnilightPayload(
       providerNativeIds: { [ANILIGHT_PROVIDER_ID]: show.slug },
     },
   };
-}
-
-function episodeNumberFromIdentity(input: ProviderResolveInput): number | undefined {
-  const identity = input.episode?.providerEpisodeIdentity;
-  if (identity?.providerId !== ANILIGHT_PROVIDER_ID) return undefined;
-  const match = /^ep:(\d+)$/.exec(identity.value);
-  return match?.[1] ? Number.parseInt(match[1], 10) : undefined;
 }
 
 export const anilightProviderModule: CoreProviderModule = {
@@ -511,9 +478,9 @@ export const anilightProviderModule: CoreProviderModule = {
     }
     const entries = watch?.episodes ?? [];
     return entries.flatMap((entry) => {
-      const number = episodeNumber(entry);
+      const number = entry.number ?? entry.epNum;
       if (!number) return [];
-      const details = episodeObject(entry);
+      const details = entry;
       return [
         {
           index: number,

@@ -33,7 +33,11 @@ import {
   qualityRankFromLabel,
 } from "./source-inventory";
 import { selectReadyStream } from "./startup-selection";
-import { inferSubtitleFormat, normalizeIsoLanguageCode } from "./subtitle-helpers";
+import {
+  inferSubtitleFormat,
+  normalizeIsoLanguageCode,
+  normalizeIsoLanguageList,
+} from "./subtitle-helpers";
 
 /** One already-located media URL a small multi-server adapter can hand to the shared resolver. */
 export interface MultiSourceStreamInput {
@@ -47,8 +51,8 @@ export interface MultiSourceStreamInput {
   readonly hardSubLanguage?: string;
   readonly subtitleDelivery?: StreamCandidate["subtitleDelivery"];
   readonly subtitleLanguages?: readonly string[];
-  readonly headers?: Record<string, string>;
-  readonly metadata?: Record<string, unknown>;
+  readonly headers?: StreamCandidate["headers"];
+  readonly metadata?: StreamCandidate["metadata"];
 }
 
 export interface MultiSourceSubtitleInput {
@@ -59,18 +63,20 @@ export interface MultiSourceSubtitleInput {
   readonly type?: string;
 }
 
+export interface MultiSourceEmptySourceInput {
+  readonly sourceKey: string;
+  readonly label?: string;
+  readonly host?: string;
+  readonly metadata?: ProviderSourceCandidate["metadata"];
+}
+
 export interface MultiSourceResolvePayload {
   readonly streams: readonly MultiSourceStreamInput[];
   readonly subtitles?: readonly MultiSourceSubtitleInput[];
   readonly externalIds?: ProviderExternalIds;
   readonly release?: ProviderReleaseInfo;
   /** Source rows with no stream remain visible as skipped inventory. */
-  readonly emptySources?: readonly {
-    readonly sourceKey: string;
-    readonly label?: string;
-    readonly host?: string;
-    readonly metadata?: Record<string, unknown>;
-  }[];
+  readonly emptySources?: readonly MultiSourceEmptySourceInput[];
 }
 
 export interface MultiSourceResolverOptions {
@@ -138,20 +144,8 @@ function normalizeStreams(
     const protocol = entry.protocol ?? inferProtocol(url);
     const qualityLabel = normalizeQualityLabel(entry.qualityHint);
     const qualityRank = qualityRankFromLabel(entry.qualityHint) ?? 0;
-    const audioLanguages = [
-      ...new Set(
-        (entry.audioLanguages ?? [])
-          .map((language) => normalizeIsoLanguageCode(language) ?? language.trim())
-          .filter(Boolean),
-      ),
-    ];
-    const subtitleLanguages = [
-      ...new Set(
-        (entry.subtitleLanguages ?? [])
-          .map((language) => normalizeIsoLanguageCode(language) ?? language.trim())
-          .filter(Boolean),
-      ),
-    ];
+    const audioLanguages = normalizeIsoLanguageList(entry.audioLanguages ?? []);
+    const subtitleLanguages = normalizeIsoLanguageList(entry.subtitleLanguages ?? []);
     const languageEvidence = audioLanguages.map((language) =>
       createProviderLanguageEvidence({
         role: "audio",

@@ -37,7 +37,7 @@
   "packages/providers/src/miruro/direct.ts": 2644,
   "packages/providers/src/movy/direct.ts": 914,
   "packages/providers/src/rivestream/direct.ts": 1412,
-  "packages/providers/src/shared/stream-reachability.ts": 857,
+  "packages/providers/src/shared/stream-reachability.ts": 856,
   "packages/providers/src/videasy/direct.ts": 2569,
   "packages/storage/src/migrations.ts": 1277,
   "packages/storage/src/repositories/download-jobs.ts": 1155,

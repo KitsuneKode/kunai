@@ -26,6 +26,7 @@ const CDN_APEX_HOSTNAMES = [
   "paleoak.top",
   "zenoak.top",
   "stillhaven.top",
+  "rousav.tech",
 ] as const;
 
 /** `#EXTM3U`, as bytes — a playlist is identified without decoding the body. */
@@ -60,11 +61,13 @@ const MAX_CURL_STDERR_CHARS = 8_192;
  * fires when curl cannot report at all — stopped, or never exec'd.
  */
 const CURL_WATCHDOG_MS = 30_000;
+/** Keep Bun above curl's watchdog so a slow segment is cut by curl, not the local server. */
+const SERVE_IDLE_TIMEOUT_SECONDS = 35;
 
 const AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
-/** Check if a stream URL needs the curl-based HLS relay (CDN blocks mpv TLS). */
+/** Check if a stream URL needs the curl-based HLS relay (TLS fingerprint or obfuscated segments). */
 export function streamNeedsHlsRelay(url: string): boolean {
   try {
     return isHlsRelayUpstreamHost(new URL(url).hostname);
@@ -371,7 +374,18 @@ function relayPathForUpstream(fullUrl: string, relayOrigin: string): string {
   if (isHlsPlaylistUrl(fullUrl)) {
     return `${relayOrigin}/p/${b64}.m3u8`;
   }
-  return `${relayOrigin}/s/${b64}`;
+  return `${relayOrigin}/s/${b64}${relaySegmentExtension(fullUrl)}`;
+}
+
+function relaySegmentExtension(fullUrl: string): string {
+  const path = new URL(fullUrl).pathname;
+  const subtitle = /\.(vtt|webvtt)$/i.exec(path);
+  if (subtitle) return `.${subtitle[1]?.toLowerCase()}`;
+  // VidBolt's Rousav lane serves MPEG-TS bytes from `.jpg` names. FFmpeg's
+  // extension-picky HLS guard rejects that before probing, so the relay's
+  // opaque segment URL still carries a media extension. `.ts` is accepted for
+  // MPEG-TS and tolerated for fMP4/AAC lanes by ffmpeg's HLS demuxer.
+  return ".ts";
 }
 
 /** Rewrite an HLS playlist so every media/URI target is fetched through the local relay. */
@@ -418,7 +432,8 @@ export type StartHlsRelayOptions = {
 };
 
 /**
- * Start a curl-based HLS relay for CDNs that block mpv/ffmpeg TLS fingerprints.
+ * Start a curl-based HLS relay for CDNs that block mpv/ffmpeg TLS fingerprints
+ * or hide media segments behind extensions ffmpeg rejects before probing.
  * The relay serves the HLS playlist and proxies segments/keys through curl.
  * Callers own lifetime via stop(); idle auto-stop is a long safety net only.
  */
@@ -462,6 +477,7 @@ export function startHlsRelay(
   const server: Server<undefined> = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
+    idleTimeout: SERVE_IDLE_TIMEOUT_SECONDS,
     async fetch(req) {
       if (stopped) {
         return new Response("relay stopped", { status: 503 });
@@ -519,7 +535,7 @@ export function startHlsRelay(
       if (path.startsWith("/s/")) {
         let srcUrl: string;
         try {
-          srcUrl = fromB64Url(path.slice(3));
+          srcUrl = fromB64Url(path.slice(3).split(".", 1)[0] ?? "");
           assertRelayUpstreamUrl(srcUrl);
         } catch {
           // See above: never echo exception text into a relay response body.

@@ -1,37 +1,41 @@
 import type { CoreProviderModule } from "@kunai/core";
 import type { ProviderResolveInput, ProviderRuntimeContext } from "@kunai/types";
-import {
-  httpStatusIsRetryable,
-  httpStatusToResolveErrorCode,
-  ProviderHttpError,
-} from "@kunai/types";
 
-import { providerFetch } from "../runtime/fetch";
-import { directStreamFetchSignal } from "../shared/direct-stream-source";
 import {
   masterVariantsNeedSeparateAudio,
   parseHlsMasterMaxHeight,
   parseHlsMasterRenditions,
   parseHlsMasterVariants,
 } from "../shared/hls-ladder";
-import { readJsonObjectBody } from "../shared/json-body";
 import {
   resolveMultiSourceProvider,
+  type MultiSourceEmptySourceInput,
   type MultiSourceResolvePayload,
   type MultiSourceStreamInput,
   type MultiSourceSubtitleInput,
 } from "../shared/multi-source-resolver";
+import { createProviderJsonFetch } from "../shared/provider-json-fetch";
 import { normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
+import { CHROME_137_USER_AGENT } from "../shared/user-agent";
 import { VIDBOLT_PROVIDER_ID, vidboltManifest } from "./manifest";
 
 export { VIDBOLT_PROVIDER_ID };
 
 const VIDBOLT_API_BASE = "https://vidbolt.pro/api";
 const VIDBOLT_ORIGIN = "https://vidbolt.pro";
-const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36";
+const USER_AGENT = CHROME_137_USER_AGENT;
 const FETCH_TIMEOUT_MS = 20_000;
 const MAX_SERVER_STEPS = 8;
+
+type VidboltStreamHeaders = NonNullable<MultiSourceStreamInput["headers"]>;
+
+const fetchJson = createProviderJsonFetch({
+  providerId: VIDBOLT_PROVIDER_ID,
+  label: "VidBolt",
+  origin: VIDBOLT_ORIGIN,
+  userAgent: USER_AGENT,
+  timeoutMs: FETCH_TIMEOUT_MS,
+});
 
 interface VidboltSourceEntry {
   readonly url?: string;
@@ -91,7 +95,7 @@ function vidboltApiUrl(input: ProviderResolveInput, excluded: readonly string[])
   return `${VIDBOLT_API_BASE}/resolve?${params.toString()}`;
 }
 
-function streamHeaders(): Record<string, string> {
+function streamHeaders(): VidboltStreamHeaders {
   return {
     Accept: "*/*",
     Origin: VIDBOLT_ORIGIN,
@@ -106,39 +110,19 @@ async function fetchVidboltPayload(
 ): Promise<MultiSourceResolvePayload | null> {
   const streams: MultiSourceStreamInput[] = [];
   const subtitles: MultiSourceSubtitleInput[] = [];
-  const emptySources: {
-    readonly sourceKey: string;
-    readonly label?: string;
-    readonly host?: string;
-    readonly metadata?: Record<string, unknown>;
-  }[] = [];
+  const emptySources: MultiSourceEmptySourceInput[] = [];
   const excluded: string[] = [];
   const headers = streamHeaders();
 
   for (let step = 0; step < MAX_SERVER_STEPS; step += 1) {
     if (context.signal?.aborted) break;
-    const response = await providerFetch(context, vidboltApiUrl(input, excluded), {
-      headers: {
-        Accept: "application/json",
-        Origin: VIDBOLT_ORIGIN,
-        Referer: refererFor(input),
-        "User-Agent": USER_AGENT,
-      },
-      signal: directStreamFetchSignal(context.signal, FETCH_TIMEOUT_MS),
-    });
-    if (!response.ok) {
-      const status = response.status;
-      await response.body?.cancel().catch(() => undefined);
-      throw new ProviderHttpError({
-        providerId: VIDBOLT_PROVIDER_ID,
-        stage: "api",
-        status,
-        message: `VidBolt API returned HTTP ${status}`,
-        code: status === 404 || status === 410 ? "not-found" : httpStatusToResolveErrorCode(status),
-        retryable: httpStatusIsRetryable(status),
-      });
-    }
-    const body = await readJsonObjectBody<VidboltResolveResponse>(response);
+    const body = await fetchJson<VidboltResolveResponse>(
+      context,
+      vidboltApiUrl(input, excluded),
+      "api",
+      { headers: { Referer: refererFor(input) } },
+      "API",
+    );
     const stream = body?.stream;
     const server = stream?.server?.trim();
     if (!stream || !server) break;
@@ -182,7 +166,7 @@ function refererFor(input: ProviderResolveInput): string {
 function collectVidboltSource(
   server: string,
   source: VidboltSourceEntry,
-  headers: Record<string, string>,
+  headers: VidboltStreamHeaders,
   streams: MultiSourceStreamInput[],
   subtitles: MultiSourceSubtitleInput[],
 ): void {
