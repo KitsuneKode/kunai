@@ -569,7 +569,12 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // dependency or asset. 3303 KiB leaves 532 bytes.
 // With #859 and the profile checks, Bun 1.4.5 measured 3,388,722 bytes:
 // +6,982 over #859 alone. 3310 KiB leaves 718 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_310;
+// Provider batch 2 (#863: the FileSuN movies/series and AnimeParadise anime
+// adapters with their registration and defaults) on top measured 3,392,883
+// bytes: +11,143. No dependency or asset. 3314 KiB leaves 653 bytes.
+// On #863 with the profile checks and bound launchers, Bun 1.4.5 measured
+// 3,402,019 bytes: +9,136 over #863 alone. 3323 KiB leaves 733 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_323;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
