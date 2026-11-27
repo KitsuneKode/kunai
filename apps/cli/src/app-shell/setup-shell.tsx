@@ -1,17 +1,12 @@
 // Setup, in two framed screens on a first run and six on request
 //
-// A first launch walks the `quick` flow: what you watch plus a one-line machine
-// verdict, then the consent screen. `/setup`, `kunai --setup` and `m` on the
-// first quick screen walk the `full` six. Every screen wears the Sakura frame.
+// First launch asks what you watch and whether to share usage. `/setup` and
+// `kunai --setup` start the full flow. `m` joins it at Language.
 //
 // Skip contract: `s` takes this step's
 // recommendation, `S` takes every remaining one. `esc`/`q` discard and quit —
 // but only once nothing is decided yet; past screen one they ask first.
 //
-// Every control hydrates from the current config (`SetupInitialState`), so a
-// rerun shows what is really set and completing writes back exactly what the
-// screens showed — rerunning can never silently sever a linked account.
-
 import {
   AUDIO_PREFERENCE_OPTIONS,
   RECOMMENDED_AUDIO_PREFERENCE,
@@ -95,8 +90,6 @@ function recommendedIndex(
 
 const RECHECK_TICK_MS = 150;
 
-// ─── Main SetupShell component ────────────────────────────────────────────────
-
 export function SetupShell({
   snapshot: initialSnapshot,
   finish,
@@ -109,8 +102,12 @@ export function SetupShell({
 }: {
   snapshot: CapabilitySnapshot;
   analyticsPayload: AnalyticsPayload;
-  /** Called with the outcome, the chosen prefs, and how deep the user got. */
-  finish: (result: SetupFlowResult, prefs: SetupPrefs, answeredScreens: number) => void;
+  finish: (
+    result: SetupFlowResult,
+    prefs: SetupPrefs,
+    answeredScreens: number,
+    flow: SetupFlow,
+  ) => void;
   /** Re-probe the machine. Absent in tests that do not exercise `[r]`. */
   onRecheck?: () => Promise<CapabilitySnapshot>;
   downloadPath?: string;
@@ -255,7 +252,7 @@ export function SetupShell({
       setScreenIdx((current) => current + 1);
     } else {
       deepestRef.current = Math.max(deepestRef.current, screenIdx);
-      finish(completionOutcome, buildPrefs(decision), deepestRef.current);
+      finish(completionOutcome, buildPrefs(decision), deepestRef.current, flow);
     }
   }
 
@@ -328,7 +325,7 @@ export function SetupShell({
   }
 
   function abort() {
-    finish("aborted", buildPrefs("unchanged"), deepestRef.current);
+    finish("aborted", buildPrefs("unchanged"), deepestRef.current, flow);
   }
 
   /**
@@ -803,6 +800,7 @@ export { AnalyticsScreen } from "./setup/AnalyticsScreen";
 
 /** What the wizard hands its caller, wherever it ends. */
 export type SetupFlowPayload = {
+  flow: SetupFlow;
   outcome: SetupFlowResult;
   prefs: SetupPrefs;
   /**
@@ -833,7 +831,9 @@ export function runSetupFlow(
     renderContent: (finish) => (
       <SetupShell
         snapshot={snapshot}
-        finish={(outcome, prefs, answeredScreens) => finish({ outcome, prefs, answeredScreens })}
+        finish={(outcome, prefs, answeredScreens, flow) =>
+          finish({ outcome, prefs, answeredScreens, flow })
+        }
         {...(options.onRecheck ? { onRecheck: options.onRecheck } : {})}
         {...(options.downloadPath ? { downloadPath: options.downloadPath } : {})}
         {...(options.initial ? { initial: options.initial } : {})}
@@ -842,10 +842,9 @@ export function runSetupFlow(
         analyticsPayload={options.analyticsPayload}
       />
     ),
-    // Ink teardown settles here. That is not a user decision, so it must not
-    // write settings — `aborted` with zero answers leaves both the existing
-    // config and the onboarding gate alone.
+    // Ink teardown records no answers and leaves the onboarding gate open.
     fallbackValue: {
+      flow: options.flow ?? "full",
       outcome: "aborted",
       prefs: {
         ...FACTORY_INITIAL_STATE,

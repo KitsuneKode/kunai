@@ -10,7 +10,14 @@
  * contract held — nobody keystroked consent, so it must stay "unset".
  */
 import { describe, expect, it } from "bun:test";
+import { join } from "node:path";
 
+import { DEFAULT_CONFIG } from "@kunai/config";
+
+import {
+  createIsolatedCliProfile,
+  disposeIsolatedCliProfile,
+} from "../integration/helpers/isolated-container";
 import { K } from "./keys";
 import { startTmuxSession } from "./tmux-session";
 
@@ -67,6 +74,50 @@ describe("agent driver · fresh-profile onboarding", () => {
       expect(config.installId).toBe("");
     } finally {
       await s.stop();
+    }
+  });
+
+  itTmux("quick setup only writes mode, consent and onboarding keys in config.json", async () => {
+    const profile = createIsolatedCliProfile("quick-setup-config");
+    try {
+      await Bun.write(
+        profile.paths.configPath,
+        JSON.stringify({
+          ...DEFAULT_CONFIG,
+          downloadPath: join(profile.rootDir, "my-downloads"),
+          defaultDownloadQuality: "2160p",
+          downloadsEnabled: true,
+          autoNext: false,
+          skipIntro: false,
+          updateChecksEnabled: false,
+          seriesLanguageProfile: { audio: "ja", subtitle: "none", quality: "720p" },
+        }),
+      );
+      const s = await startTmuxSession({ profile, seed: "fresh", keepProfile: true });
+      try {
+        await s.waitFor((f) => f.includes("What do you watch most?"), "quick setup");
+        const before = s.inspect().config();
+        expect(before.defaultDownloadQuality).toBe("2160p");
+        await s.send(K.down);
+        await s.waitFor((f) => f.includes("▌ Anime"), "Anime highlighted");
+        await s.send(K.enter);
+        await s.waitFor((f) => f.includes("Share anonymous usage"), "neutral consent");
+        await s.send("s");
+        await s.waitFor((f) => f.includes("Setup saved"), "quick setup committed");
+        const after = s.inspect().config();
+        expect(after.onboardingVersion).toBeGreaterThan(0);
+        expect(after).toEqual({
+          ...before,
+          defaultMode: "anime",
+          analytics: "disabled",
+          onboardingVersion: after.onboardingVersion,
+          downloadOnboardingDismissed: true,
+        });
+      } finally {
+        await s.stop();
+      }
+    } finally {
+      disposeIsolatedCliProfile(profile);
     }
   });
 
