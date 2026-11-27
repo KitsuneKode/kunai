@@ -24,7 +24,8 @@ Fixed on `main` since this review; the finding text below is kept as written:
 Still open: **M2** (Stremio probe and player use separate connections; stays
 behind the experimental gate), the **M3** rate control in front of the function
 (a hosting firewall rule, owned by the analytics redesign plan), **L1** (the
-first remote media URL and referrer are on mpv's argv), and top-10 items 4–10.
+first remote media URL and referrer are on mpv's argv), top-10 item 1 (the public
+installer transition is not qualified until the v0.4.0 tag-day check), and items 4–10.
 
 ## Security findings
 
