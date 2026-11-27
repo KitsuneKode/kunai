@@ -2210,11 +2210,19 @@ describe("PersistentMpvSession avsync drift recovery", () => {
         url: `https://video.example/${options.live ? "live" : "vod"}-avsync.m3u8`,
         isLive: options.live === true,
       }),
-      options: {
-        displayTitle: "Episode 1",
-        primarySubtitle: null,
-        ...(options.avsyncRecovery !== undefined ? { avsyncRecovery: options.avsyncRecovery } : {}),
-      },
+      options:
+        options.avsyncRecovery !== undefined
+          ? {
+              displayTitle: "Episode 1",
+              primarySubtitle: null,
+              avsyncRecovery: options.avsyncRecovery,
+            }
+          : {
+              displayTitle: "Episode 1",
+              primarySubtitle: null,
+            },
+      // SAFETY: the session reads only these playback-recovery keys in this
+      // harness; the rest of the persisted config shape is intentionally absent.
       kitsuneConfig: {
         mpvInProcessStreamReconnect: false,
         mpvInProcessStreamReconnectMaxAttempts: 0,

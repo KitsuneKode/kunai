@@ -470,6 +470,8 @@ describe("PlayerServiceImpl playback generations", () => {
     const events: DiagnosticEventInput[] = [];
     const { service } = createService(events, {
       presentation: { isInteractiveShellMounted: () => true },
+      // SAFETY: the launch double returns the full playback result contract;
+      // this test only counts how often playback requested the hardware probe.
       launchMpv: (async () => createPlaybackResult()) as typeof launchMpv,
     });
     const activations: PlaybackGeneration[] = [];
@@ -1103,6 +1105,8 @@ describe("PlayerServiceImpl hardware decode selection", () => {
         probeRuns += 1;
         return probe;
       },
+      // SAFETY: the capture double honors the launch result contract; only
+      // the runtime-options input is inspected in this hardware-mode test.
       launchMpv: (async (options) => {
         launchedMpv = options.mpv;
         return createPlaybackResult();

@@ -156,7 +156,11 @@ describe("ConfigServiceImpl", () => {
     expect((await store.load()).mpvAvsyncRecovery).toBe(true);
 
     const malformed = await ConfigServiceImpl.load(
-      new MemoryConfigStore({ mpvHwdec: "cuda" as never }),
+      new MemoryConfigStore({
+        // SAFETY: deliberately malformed persisted JSON verifies normalization
+        // of a value the typed writer cannot produce.
+        mpvHwdec: "cuda" as never,
+      }),
     );
     expect(malformed.mpvHwdec).toBe("auto");
   });

@@ -1,3 +1,4 @@
+import { isJsonString } from "@kunai/types";
 import type { ProviderRelayConfig, StartupPriority } from "@kunai/types";
 
 export type ContinueSourcePreference = "auto" | "local" | "stream" | "ask";
@@ -27,8 +28,8 @@ export type RecoveryMode = "guided" | "fallback-first" | "manual";
 export const HDR_MODES = ["auto", "passthrough", "tone-map", "sdr-only"] as const;
 export type HdrMode = (typeof HDR_MODES)[number];
 
-export function isHdrMode(value: unknown): value is HdrMode {
-  return typeof value === "string" && (HDR_MODES as readonly string[]).includes(value);
+export function isHdrMode<T>(value: T): value is T & HdrMode {
+  return isJsonString(value) && HDR_MODES.some((mode) => mode === value);
 }
 
 /**
@@ -52,8 +53,8 @@ export const MPV_HWDEC_MODES = [
 ] as const;
 export type MpvHwdecMode = (typeof MPV_HWDEC_MODES)[number];
 
-export function isMpvHwdecMode(value: unknown): value is MpvHwdecMode {
-  return typeof value === "string" && (MPV_HWDEC_MODES as readonly string[]).includes(value);
+export function isMpvHwdecMode<T>(value: T): value is T & MpvHwdecMode {
+  return isJsonString(value) && MPV_HWDEC_MODES.some((mode) => mode === value);
 }
 
 /** Saved player when `--player` is not given; VLC is an Android handoff target. */
