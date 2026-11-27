@@ -1,6 +1,8 @@
 import { homedir, tmpdir } from "node:os";
 import { posix as posixPath, win32 as win32Path } from "node:path";
 
+import { resolveDesktopProfileDirs } from "@kunai/core/desktop-profile";
+
 export type StoragePlatform = "linux" | "darwin" | "win32";
 
 export interface KunaiPathOptions {
@@ -60,31 +62,14 @@ export function joinerForNodePlatform(
 export function getKunaiPaths(options: KunaiPathOptions = {}): KunaiPaths {
   const platform = options.platform ?? normalizePlatform(process.platform);
   const env = options.env ?? process.env;
-  const path = platform === "win32" ? win32Path : posixPath;
   // `KUNAI_CONFIG_DIR` is an absolute path to a dedicated Kunai profile root,
-  // not a config-directory override. A set-but-invalid value — empty, relative,
-  // or drive-root-relative on Windows (`\foo`, whose `parse().root` is a single
-  // separator) — is a configuration error, not a fallthrough: silently ignoring
-  // it would resolve the default profile anyway and write where the user did
-  // not ask.
-  const override = env.KUNAI_CONFIG_DIR;
-  const driveRootRelative = platform === "win32" && path.parse(override ?? "").root.length === 1;
-  if (override !== undefined && (!path.isAbsolute(override) || driveRootRelative)) {
-    throw new Error("KUNAI_CONFIG_DIR must be an absolute path to a Kunai profile directory");
-  }
-  const join = joinerFor(platform);
-  const profileDir = override === undefined ? undefined : path.normalize(override);
-
+  // not a config-directory override; a set-but-invalid value is a
+  // configuration error thrown by the shared desktop-profile policy, not a
+  // fallthrough. Returns undefined when unset so the platform defaults apply.
   const dirs =
-    profileDir === undefined
-      ? defaultBaseDirs(platform, env, options.homeDir)
-      : {
-          profileDir,
-          configDir: join(profileDir, "config"),
-          dataDir: join(profileDir, "data"),
-          cacheDir: join(profileDir, "cache"),
-          tempDir: join(profileDir, "tmp"),
-        };
+    resolveDesktopProfileDirs(platform, env.KUNAI_CONFIG_DIR) ??
+    defaultBaseDirs(platform, env, options.homeDir);
+  const join = joinerFor(platform);
 
   return {
     ...dirs,

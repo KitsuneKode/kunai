@@ -169,7 +169,6 @@
       "dependencies": {
         "@assemblyscript/loader": "catalog:providers",
         "@kunai/core": "workspace:*",
-        "@kunai/storage": "workspace:*",
         "@kunai/types": "workspace:*",
         "zod": "catalog:",
       },

@@ -6,8 +6,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./testing": "./test/helpers/temp-store.ts",
-    "./paths": "./src/paths.ts"
+    "./testing": "./test/helpers/temp-store.ts"
   },
   "scripts": {
     "typecheck": "bun tsc --noEmit",
