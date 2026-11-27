@@ -60,15 +60,8 @@ const clipTo = (id, points) => `<clipPath id="${id}"><path d="${poly(points)}"/>
 const clipToRooted = (id, points, [px, py], radius) =>
   `<clipPath id="${id}"><path d="${poly(points)}"/><circle cx="${px}" cy="${py}" r="${radius}"/></clipPath>`;
 /** Everything except the given polygons. */
-const clipAway = (id, ...shapes) =>
-  `<clipPath id="${id}"><path clip-rule="evenodd" d="${EVERYWHERE}${shapes.map(poly).join("")}"/></clipPath>`;
-
-/** Scale a polygon about a point, so a cut piece overlaps the hole it left. */
-const grow = (points, [px, py], k) =>
-  points.map(([x, y]) => [
-    Number((px + (x - px) * k).toFixed(1)),
-    Number((py + (y - py) * k).toFixed(1)),
-  ]);
+const clipAway = (id, ...cuts) =>
+  `<clipPath id="${id}"><path clip-rule="evenodd" d="${EVERYWHERE}${cuts.map(poly).join("")}"/></clipPath>`;
 
 /**
  * One ear per pose that can flick: the box above the cut that holds its tip,
@@ -367,10 +360,10 @@ export const RESTING = {
 /**
  * What each pose does when the terminal can animate her.
  *
- * `frames` are the distinct drawings, `rest` first; each is the options
- * `poseSvg` takes, or a function of the pose's foot for the ones that press
- * her into the ground. `loop` is the order they play in and how long each
- * holds, in milliseconds. A drawing may appear in the loop more than once — the
+ * `frames` are the distinct drawings, `rest` first; each returns the options
+ * `poseSvg` takes, given the pose's foot for the ones that press her into the
+ * ground. `loop` is the order they play in and how long each holds, in
+ * milliseconds. A drawing may appear in the loop more than once — the
  * terminal is sent it once.
  *
  * She is never excited, so nothing here is fast or large: a blink, one ear, a
@@ -379,73 +372,117 @@ export const RESTING = {
  */
 export const MOTION = {
   idle: {
-    frames: { rest: {}, blink: { expression: "blink" }, ear: { ear: 9 } },
-    loop: [["rest", 3000], ["blink", 120], ["rest", 2300], ["ear", 150]],
+    frames: { rest: () => ({}), blink: () => ({ expression: "blink" }), ear: () => ({ ear: 9 }) },
+    loop: [
+      { frame: "rest", ms: 3000 },
+      { frame: "blink", ms: 120 },
+      { frame: "rest", ms: 2300 },
+      { frame: "ear", ms: 150 },
+    ],
   },
   wait: {
-    frames: { rest: {}, blink: { expression: "blink" }, ear: { ear: 9 } },
-    loop: [["rest", 2400], ["blink", 120], ["rest", 3200], ["ear", 150]],
+    frames: { rest: () => ({}), blink: () => ({ expression: "blink" }), ear: () => ({ ear: 9 }) },
+    loop: [
+      { frame: "rest", ms: 2400 },
+      { frame: "blink", ms: 120 },
+      { frame: "rest", ms: 3200 },
+      { frame: "ear", ms: 150 },
+    ],
   },
   seek: {
     frames: {
-      rest: {},
-      creep: {
+      rest: () => ({}),
+      creep: () => ({
         groups: {
           creep: `rotate(3.5 ${SEEK.hindFoot[0]} ${SEEK.hindFoot[1]})`,
           "ear-l-x": `rotate(-8 ${SEEK.pivotL[0]} ${SEEK.pivotL[1]})`,
           "ear-r-x": `rotate(-8 ${SEEK.pivotR[0]} ${SEEK.pivotR[1]})`,
         },
-      },
-      blink: { expression: "blink" },
+      }),
+      blink: () => ({ expression: "blink" }),
     },
-    loop: [["rest", 620], ["creep", 520], ["rest", 620], ["creep", 520], ["rest", 260], ["blink", 110]],
+    loop: [
+      { frame: "rest", ms: 620 },
+      { frame: "creep", ms: 520 },
+      { frame: "rest", ms: 620 },
+      { frame: "creep", ms: 520 },
+      { frame: "rest", ms: 260 },
+      { frame: "blink", ms: 110 },
+    ],
   },
   go: {
     frames: {
-      rest: {},
+      rest: () => ({}),
       bob: ({ foot }) => ({ body: `translate(0 -16) rotate(-2.5 ${foot[0]} ${foot[1]})` }),
     },
-    loop: [["rest", 170], ["bob", 170]],
+    loop: [
+      { frame: "rest", ms: 170 },
+      { frame: "bob", ms: 170 },
+    ],
   },
   watch: {
-    frames: { rest: {}, blink: { expression: "blink" }, ear: { ear: 9 } },
-    loop: [["rest", 4200], ["blink", 230], ["rest", 2600], ["ear", 150]],
+    frames: { rest: () => ({}), blink: () => ({ expression: "blink" }), ear: () => ({ ear: 9 }) },
+    loop: [
+      { frame: "rest", ms: 4200 },
+      { frame: "blink", ms: 230 },
+      { frame: "rest", ms: 2600 },
+      { frame: "ear", ms: 150 },
+    ],
   },
   oops: {
     frames: {
-      rest: {},
-      blink: { expression: "blink" },
+      rest: () => ({}),
+      blink: () => ({ expression: "blink" }),
       flinch: ({ foot }) => ({ body: squashAbout(foot, 0.035) }),
     },
-    loop: [["rest", 2300], ["blink", 130], ["rest", 1100], ["flinch", 170]],
+    loop: [
+      { frame: "rest", ms: 2300 },
+      { frame: "blink", ms: 130 },
+      { frame: "rest", ms: 1100 },
+      { frame: "flinch", ms: 170 },
+    ],
   },
   nap: {
     frames: {
-      rest: {},
+      rest: () => ({}),
       half: ({ foot }) => ({ body: squashAbout(foot, -0.014) }),
       full: ({ foot }) => ({ body: squashAbout(foot, -0.028) }),
     },
-    loop: [["rest", 1300], ["half", 260], ["full", 1300], ["half", 260]],
+    loop: [
+      { frame: "rest", ms: 1300 },
+      { frame: "half", ms: 260 },
+      { frame: "full", ms: 1300 },
+      { frame: "half", ms: 260 },
+    ],
   },
   peek: {
     frames: {
-      rest: {},
-      blink: { expression: "blink" },
-      left: { glance: [-10, 1] },
-      right: { glance: [10, 1] },
-      duck: { groups: { "head-x": "translate(0 84)" } },
+      rest: () => ({}),
+      blink: () => ({ expression: "blink" }),
+      left: () => ({ glance: [-10, 1] }),
+      right: () => ({ glance: [10, 1] }),
+      duck: () => ({ groups: { "head-x": "translate(0 84)" } }),
     },
     loop: [
-      ["rest", 2200], ["blink", 120], ["rest", 1300], ["left", 800],
-      ["right", 800], ["rest", 900], ["duck", 520],
+      { frame: "rest", ms: 2200 },
+      { frame: "blink", ms: 120 },
+      { frame: "rest", ms: 1300 },
+      { frame: "left", ms: 800 },
+      { frame: "right", ms: 800 },
+      { frame: "rest", ms: 900 },
+      { frame: "duck", ms: 520 },
     ],
   },
 };
 
 /** The `poseSvg` options for one named frame of a pose's motion. */
 export function frameOptions(svg, pose, frame) {
-  const spec = MOTION[pose]?.frames[frame];
-  if (spec === undefined) throw new Error(`pose "${pose}" has no "${frame}" frame`);
-  const options = typeof spec === "function" ? spec({ foot: poseFoot(svg, pose) }) : spec;
-  return { expression: RESTING[pose] ?? undefined, ...options };
+  const draw = MOTION[pose]?.frames[frame];
+  if (draw === undefined) throw new Error(`pose "${pose}" has no "${frame}" frame`);
+  return { expression: restingExpression(pose), ...draw({ foot: poseFoot(svg, pose) }) };
+}
+
+/** The expression a pose rests in, or undefined where the master draws it. */
+export function restingExpression(pose) {
+  return RESTING[pose] ?? undefined;
 }

@@ -56,7 +56,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { MOTION, RESTING, frameOptions, poseSvg } from "./kanna-rig.mjs";
+import { MOTION, frameOptions, poseSvg, restingExpression } from "./kanna-rig.mjs";
 
 /**
  * A private scratch directory for this run.
@@ -87,13 +87,8 @@ const CLI_SIZE = 256;
 /** The vector is rendered this wide before trimming, so every resize is a downscale. */
 const RENDER_WIDTH = 1392;
 
-type Pose = keyof typeof MOTION;
-
 /** Every pose the site serves. `nav` is the bust, exported separately below. */
 const DOCS_POSES = ["idle", "wait", "seek", "go", "watch", "oops", "nap", "peek"] as const;
-/** Every pose the terminal companion loads. */
-const CLI_POSES = Object.keys(MOTION) as readonly Pose[];
-
 /**
  * `peek` is cut flat along the edge she looks over, so it sits on the bottom of
  * its box with no padding under it: whatever the surface draws on the next row
@@ -194,8 +189,7 @@ async function fitInto(source: string, box: string, dest: string, fit: Fit): Pro
 
 /** One still of a pose at rest. */
 async function exportStill(pose: string, dest: string, fit: Fit): Promise<number> {
-  const expression = RESTING[pose as keyof typeof RESTING] ?? undefined;
-  const raster = await rasterize(pose, { expression });
+  const raster = await rasterize(pose, { expression: restingExpression(pose) });
   await fitInto(raster, await unionBox([raster]), dest, fit);
   return Bun.file(dest).size;
 }
@@ -206,19 +200,18 @@ mkdirSync(CLI_PETS, { recursive: true });
 for (const pose of DOCS_POSES) {
   const dest = path.join(DOCS_STILLS, `${pose}.webp`);
   const bytes = await exportStill(pose, dest, { size: 320, fill: SITE_FILL, gravity: "center" });
-  console.log(`docs ${pose}.webp ${bytes} bytes (${RESTING[pose] ?? "as drawn"})`);
+  console.log(`docs ${pose}.webp ${bytes} bytes (${restingExpression(pose) ?? "as drawn"})`);
 }
 
 const navDest = path.join(DOCS_STILLS, "nav.webp");
 console.log(
-  `docs nav.webp ${await exportStill("bust", navDest, { size: 128, fill: SITE_FILL, gravity: "center", cropTop: 100 })} bytes (${RESTING.bust})`,
+  `docs nav.webp ${await exportStill("bust", navDest, { size: 128, fill: SITE_FILL, gravity: "center", cropTop: 100 })} bytes (${restingExpression("bust")})`,
 );
 
 // The terminal set: a still and a strip per pose, every frame of a pose cut to
 // one shared box so nothing shifts between drawings.
 const manifest: Record<string, { frames: number; loop: [number, number][] }> = {};
-for (const pose of CLI_POSES) {
-  const motion = MOTION[pose];
+for (const [pose, motion] of Object.entries(MOTION)) {
   const names = Object.keys(motion.frames);
   const rasters: string[] = [];
   for (const name of names) rasters.push(await rasterize(pose, frameOptions(kanna, pose, name)));
@@ -234,9 +227,11 @@ for (const pose of CLI_POSES) {
     frames.push(frame);
   }
 
+  const [rest] = frames;
+  if (!rest) throw new Error(`pose "${pose}" has no frames`);
   const still = path.join(CLI_PETS, `${pose}.png`);
   const strip = path.join(CLI_PETS, `${pose}.strip.png`);
-  await Bun.write(still, Bun.file(frames[0] as string));
+  await Bun.write(still, Bun.file(rest));
   await run("magick", [
     ...frames,
     "+append",
@@ -247,16 +242,18 @@ for (const pose of CLI_POSES) {
   ]);
   manifest[pose] = {
     frames: names.length,
-    loop: motion.loop.map(([name, ms]) => [names.indexOf(name as string), ms as number]),
+    loop: motion.loop.map(({ frame, ms }) => [names.indexOf(frame), ms]),
   };
   console.log(
     `cli  ${pose}.png ${Bun.file(still).size} bytes · ${pose}.strip.png ${Bun.file(strip).size} bytes (${names.join(", ")})`,
   );
 }
-await Bun.write(
-  path.join(CLI_PETS, "motion.json"),
-  `${JSON.stringify({ size: CLI_SIZE, poses: manifest }, null, 2)}\n`,
-);
+const manifestPath = path.join(CLI_PETS, "motion.json");
+await Bun.write(manifestPath, `${JSON.stringify({ size: CLI_SIZE, poses: manifest }, null, 2)}\n`);
+// Committed, so it has to satisfy `fmt:check` like a hand-written file — and a
+// re-run that changes no art should leave the tree clean.
+const oxfmt = path.join(ROOT, "node_modules/.bin/oxfmt");
+if (await Bun.file(oxfmt).exists()) await run(oxfmt, ["--write", manifestPath]);
 
 // Inlined as base64 into two OG route bundles, so this one is sized to its
 // ~40 KB budget rather than to the 360px the card draws it at. A social card is
@@ -264,7 +261,7 @@ await Bun.write(
 // Guarded by `kunai-fox.test.ts`, which fails if the data URL grows past it.
 const ogDest = path.join(HERE, "kunai-mascot-og.png");
 console.log(
-  `og   kunai-mascot-og.png ${await exportStill("bust", ogDest, { size: 192, fill: SITE_FILL, gravity: "center" })} bytes (${RESTING.bust})`,
+  `og   kunai-mascot-og.png ${await exportStill("bust", ogDest, { size: 192, fill: SITE_FILL, gravity: "center" })} bytes (${restingExpression("bust")})`,
 );
 
 // The scratch directory holds only intermediates; every real output is already

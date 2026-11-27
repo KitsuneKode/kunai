@@ -133,7 +133,7 @@ function traceMaster(name, spec) {
   // The sentinel path is the cut-away background; it is what makes her alpha.
   const drawable = paths
     .filter((p) => !isNear(p.fill, SENTINEL))
-    .map((p) => ({ ...p, box: measure(p.d, p.tx, p.ty, height) }));
+    .map((p) => Object.assign(p, { box: measure(p.d, p.tx, p.ty, height) }));
   const furs = drawable
     .filter((p) => isNear(p.fill, FUR))
     .sort((a, b) => b.box.w * b.box.h - a.box.w * a.box.h);
