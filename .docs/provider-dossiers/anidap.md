@@ -29,19 +29,21 @@ The adapter exposes sub and dub server slots separately, preserves provider-supp
 
 ## Live evidence — 2026-11-27
 
-Title: One Piece, AniList/MAL `21`, slug `one-piece-p8k27`, episode 1 sub.
+Capability audit in an isolated profile, with GraphQL search and REST episode listing exercised before resolve:
 
-- Resolve: `resolved`, 4 sub candidates.
-- Probe: shared resolve gate reachable. Manual playlist probes for Nero/Yuki/Dub Nero returned HTTP 200 `application/vnd.apple.mpegurl` and `#EXTM3U` before implementation.
-- Decode: mpv `--vo=image` wrote `/tmp/kunai-batch1-live/audit-frames-r2/anidap-one-piece-e1-sub.png`; opened and confirmed as real 1920x1080 video.
-- Sub servers: `nero`, `yuki`, `zuna`, `sora`.
-- Dub servers listed upstream: `nero`, `yuki`, `sora` (One Piece episode 1 has dub).
+- Search: One Piece resolved to slug `one-piece-p8k27` (20 results); Dandadan resolved to `dan-da-dan-khp5m` (3 results).
+- Episode catalogs: One Piece returned 1,180 rows; Dandadan returned 12 rows, both with provider-native `ep:{number}` identities.
+- Resolve/probe: 3/4 cases resolved and independently probed reachable. One Piece episode 1 sub, Dandadan episode 1 sub, and Dandadan episode 1 dub succeeded; One Piece episode 1 dub hit the balanced 12 s provider-attempt timeout. That is evidence of a slow/fragile lane, not proof that the dub slot is absent.
+- Decode: mpv `--vo=image` wrote `/var/tmp/kunai-batch1-frames/anidap-one-piece-e1-sub.png`; the PNG was opened and confirmed as real 1920x1080 video.
+- Successful resolve latency measured in the audit: 5.81-9.65 s; independent probes took 2.09-2.19 s.
+- Sub servers inventoried: `nero`, `yuki`, `zuna`, `sora`. Dub servers inventoried: `nero`, `yuki`, `sora`.
 - Quality: server rows report `auto` adaptive HLS rather than explicit static renditions.
-- Audio: Japanese for sub; English for dub rows when selected.
-- Subtitles: English VTT on Yuki/Zuna in the measured sub lane; recorded dub Nero also advertised English, Thai, Vietnamese, and Indonesian.
-- Media CDNs measured: `s-91.megavid.se`, `fetch.nexabloom.top`, `hls.dramahot.top`, `bl.krussdomi.com`; subtitle CDN `315nk.distantdaydreams.org`.
-- Required headers measured: Nero `Referer: https://animex.one/`; Yuki `Origin/Referer: https://megaplay.buzz`; Zuna `Referer: https://zokoanime.video/`; Sora uses a KAA-style mobile user agent/referer.
-- Latency in the capability audit: 5.96-7.55 s across One Piece and Dandadan sub/dub; all 4 cases resolved and probed.
+- Audio: Japanese for sub rows; English for the successful Dandadan dub row.
+- Subtitles: 17 ISO-normalized languages were measured across the successful lanes, including English, Arabic, German, Spanish, French, Indonesian, Italian, Japanese, Korean, Polish, Portuguese, Russian, Thai, Filipino, Turkish, Vietnamese, and Chinese. The live `may` bibliographic Malay code exposed by one upstream row is normalized to ISO 639-1 `ms`.
+- Media CDNs measured: `s-91.megavid.se`, `fetch.nexabloom.top`, `hls.dramahot.top`, `bl.krussdomi.com`, and `hls.krussdomi.com`.
+- Required headers measured: Nero uses `Referer: https://animex.one/`; Yuki uses Megaplay origin/referer headers; Zuna uses ZokoAnime referer headers; Sora uses the KAA-style mobile headers.
+
+The unsuccessful One Piece dub attempt was not retried into a decoded frame, so dub support is verified by Dandadan rather than by both fixtures.
 
 ## Independence assessment
 

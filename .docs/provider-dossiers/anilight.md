@@ -20,26 +20,30 @@ lastReviewed: "2026-11-27"
 The frontend bundle uses:
 
 - `/search?q={query}&hideAdult=true`
+- `/anime/check-exists?anilistId={anilist}`
 - `/anime/{slug}`
-- `/watch/{id}`
+- `/watch/{slug}`
 - `/sources?id={id}&episode={episode}&language=sub|dub&backup=true|false&refresh=1`
 - source-session verification endpoints that the direct adapter does not need for the recorded playback lane
 
-AniList ids bridge to provider-native numeric ids. Episodes keep provider-native identities. Sub and dub are separate source queries. Source URLs are opaque but are played through the declared media proxy, observed as `https://media.satella.buzz`; the adapter preserves that URL shape rather than inventing a local crypto scheme.
+AniList ids bridge to provider-native slugs through `check-exists`. Episodes keep provider-native numeric episode identities. Sub and dub are separate source queries. Source URLs are opaque but are played through the declared media proxy, observed as `https://media.satella.buzz`; the adapter preserves that URL shape rather than inventing a local crypto scheme.
 
 ## Live evidence — 2026-11-27
 
-Title: Frieren: Beyond Journey's End, AniList `154587`, provider id `156`, episode 1 sub.
+Capability audit in an isolated profile, with provider-native search and episode listing exercised before resolve:
 
-- Resolve: `resolved`, 3 candidates.
-- Probe: shared resolve gate reachable.
-- Decode: mpv `--vo=image` wrote `/tmp/kunai-batch1-live/audit-frames-r2/anilight-one-piece-e1-sub.png`; opened and confirmed as real 1440x1080 video. A separate Frieren MP4 decode was also confirmed at `/tmp/kunai-batch1-live/manual-frames/anilight/00000001.png` (1920x1080).
-- Servers/source labels: `Sub kira`, `Sub misa backup`.
-- Qualities: 1080p MP4 plus `auto` HLS backup rows.
-- Audio: Japanese for sub. The recorded dub lane was unavailable and the adapter fails closed rather than silently substituting sub.
-- Subtitles: soft external captions; the audit measured Arabic, German, English, Spanish, French, Italian, Portuguese, and Russian through `api.anilight.live/api/proxy/captions`.
-- Media CDN/proxy: `media.satella.buzz`.
-- Latency in the capability audit: 3.06-3.94 s across One Piece and Dandadan sub/dub; all 4 cases resolved and probed.
+- Search: One Piece resolved to provider id `one-piece-ygce` (8 results); Dandadan resolved to `dandadan` (3 results).
+- Episode catalogs: One Piece returned 1,180 rows; Dandadan returned 12 rows, both with provider-native episode identities.
+- Resolve/probe: 4/4 cases resolved and independently probed reachable — One Piece episode 1 sub+dub and Dandadan episode 1 sub+dub.
+- Decode: mpv `--vo=image` wrote `/var/tmp/kunai-batch1-frames/anilight-one-piece-e1-sub.png`; the PNG was opened and confirmed as real 1440x1080 video.
+- Resolve latency measured in the audit: 3.42-5.27 s; independent probes took 0.79-1.24 s.
+- Servers/source labels: `Sub kira`, `Sub misa backup`, `Dub kira`, `Dub misa backup`.
+- Qualities: 1080p MP4 primary rows plus `auto` HLS backup rows.
+- Audio: Japanese in sub lanes and English in dub lanes.
+- Subtitles: One Piece episode 1 exposed English; Dandadan episode 1 exposed Arabic, German, English, Spanish, French, Italian, Portuguese, and Russian through `api.anilight.live/api/proxy/captions`.
+- Media edge: `media.satella.buzz`; successful MP4 lanes carried no provider-required media headers.
+
+The backup `misa` lane was inventoried but not independently decoded; the audit decodes one proof per provider rather than every source row.
 
 ## Independence assessment
 
