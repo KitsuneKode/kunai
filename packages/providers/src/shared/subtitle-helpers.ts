@@ -78,6 +78,7 @@ const ISO_639_1_MAP: Record<string, string> = {
   srp: "sr",
   serbian: "sr",
   msa: "ms",
+  may: "ms",
   malay: "ms",
   tgl: "tl",
   fil: "tl",

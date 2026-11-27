@@ -1588,6 +1588,7 @@ test("strict language normalizer keeps provider aliases out of public language f
   expect(normalizeIsoLanguageCode("Portuguese (BR)")).toBe("pt");
   expect(normalizeIsoLanguageCode("pt-br")).toBe("pt");
   expect(normalizeIsoLanguageCode("Vietnamese")).toBe("vi");
+  expect(normalizeIsoLanguageCode("may")).toBe("ms");
   expect(normalizeIsoLanguageCode("Vietsub")).toBeUndefined();
   expect(normalizeIsoLanguageCode("HindiCast")).toBeUndefined();
   expect(normalizeIsoLanguageCode("killjoy")).toBeUndefined();
