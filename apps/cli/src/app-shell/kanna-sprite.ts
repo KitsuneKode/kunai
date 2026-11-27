@@ -260,6 +260,21 @@ async function uploadSprite(
   return build.sprite;
 }
 
+/** An upload that cannot throw: any failure leaves her as the glyph. */
+async function uploadOrGlyph(
+  key: string,
+  pose: CompanionPose,
+  slot: KannaSlot,
+  animated: boolean,
+): Promise<KannaSprite | null> {
+  try {
+    return await uploadSprite(key, pose, slot, animated);
+  } catch (error) {
+    debugImage(`kanna sprite failed: ${error instanceof Error ? error.message : String(error)}`);
+    return null;
+  }
+}
+
 /**
  * The sprite for a pose, uploading it the first time it is asked for.
  *
@@ -277,14 +292,9 @@ export function acquireKannaSprite(
   const pending = inflight.get(key);
   if (pending) return pending;
 
-  const task = uploadSprite(key, pose, slot, animated)
-    .catch((error: unknown) => {
-      debugImage(`kanna sprite failed: ${error instanceof Error ? error.message : String(error)}`);
-      return null;
-    })
-    .finally(() => {
-      if (inflight.get(key) === task) inflight.delete(key);
-    });
+  const task = uploadOrGlyph(key, pose, slot, animated).finally(() => {
+    if (inflight.get(key) === task) inflight.delete(key);
+  });
   inflight.set(key, task);
   return task;
 }
