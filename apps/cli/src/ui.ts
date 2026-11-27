@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 
+import { requiredManagedPlayer, type PlayerMode } from "@/domain/playback/player-choice";
 import type { ImageCapability } from "@/image";
 import { detectImageCapability } from "@/image";
 import {
@@ -9,10 +10,12 @@ import {
   CURL_INSTALL,
   FFMPEG_INSTALL,
   MPV_INSTALL,
+  VLC_INSTALL,
   YT_DLP_INSTALL,
   type PlatformInstall,
 } from "@/infra/os/install-commands";
 import { discoverMpvInvocation } from "@/infra/player/mpv-discovery";
+import { discoverVlcBinary } from "@/infra/player/vlc/vlc-launch";
 import { redactDiagnosticValue, resolveRedactionHomeDir } from "@/services/diagnostics/redaction";
 import { resolveAnidbCurl } from "@kunai/providers";
 import { getKunaiPaths } from "@kunai/storage";
@@ -27,6 +30,7 @@ export type CapabilitySeverity = "fatal" | "degraded";
 export interface CapabilityIssue {
   readonly id:
     | "mpv-missing"
+    | "vlc-missing"
     | "yt-dlp-missing"
     | "ffmpeg-missing"
     | "curl-missing"
@@ -42,7 +46,7 @@ export interface CapabilityIssue {
 }
 
 /**
- * What kind of curl AniDB and Miruro can actually drive.
+ * What kind of curl the Cloudflare-backed anime providers can actually drive.
  *
  * A boolean was not enough and the gap was user-visible: plain curl is present
  * on nearly every machine, so `curl: true` reported "anime search ready" while
@@ -67,12 +71,15 @@ export interface CapabilitySnapshot {
   readonly mpv: boolean;
   /** Whether the selected player mode requires a managed mpv binary. */
   readonly mpvRequired: boolean;
+  readonly vlc: boolean;
+  /** Whether the selected player mode requires a managed VLC binary. */
+  readonly vlcRequired: boolean;
   /** Optional post-download probe (`ffprobe` on PATH); not required for the queue. */
   readonly ffprobe: boolean;
   readonly ytDlp: boolean;
   /**
    * The curl the anime-lane providers can use. HiAnime is the default anime
-   * provider and both it and AniDB sit behind Cloudflare, so this is a real
+   * provider and both it and Miruro sit behind Cloudflare, so this is a real
    * dependency of the default route, not a nicety — and plain curl frequently
    * is not enough.
    */
@@ -100,7 +107,7 @@ function capabilityFingerprint(snapshot: CapabilitySnapshot): string {
     .sort()
     .join(",");
   const curlBits = `${snapshot.curl.present ? "1" : "0"}:${snapshot.curl.profile ?? "plain"}`;
-  return `mpv:${snapshot.mpv ? "1" : "0"}:${snapshot.mpvRequired ? "required" : "optional"}|ffprobe:${snapshot.ffprobe ? "1" : "0"}|ytDlp:${snapshot.ytDlp ? "1" : "0"}|curl:${curlBits}|image:${snapshot.image.renderer}|terminal:${snapshot.image.terminal}|issues:${issueBits}`;
+  return `mpv:${snapshot.mpv ? "1" : "0"}:${snapshot.mpvRequired ? "required" : "optional"}|vlc:${snapshot.vlc ? "1" : "0"}:${snapshot.vlcRequired ? "required" : "optional"}|ffprobe:${snapshot.ffprobe ? "1" : "0"}|ytDlp:${snapshot.ytDlp ? "1" : "0"}|curl:${curlBits}|image:${snapshot.image.renderer}|terminal:${snapshot.image.terminal}|issues:${issueBits}`;
 }
 
 async function loadCapabilityNoticeState(): Promise<CapabilityNoticeState | null> {
@@ -149,7 +156,8 @@ async function saveCapabilityNoticeState(state: CapabilityNoticeState): Promise<
  */
 export async function probeCapabilities(
   options: {
-    requireMpv?: boolean;
+    /** Runtime-selected player implementation; defaults to the historical managed-mpv floor. */
+    playerMode?: PlayerMode;
     requireYtDlp?: boolean;
     /** PATH lookup seam; defaults to the real one. Injected by tests. */
     which?: (command: string) => string | null;
@@ -164,12 +172,19 @@ export async function probeCapabilities(
     exists?: (path: string) => boolean;
     /** Wrapper-content seam for the Windows curl-impersonate forwarder check. Injected by tests. */
     readTextFile?: (path: string) => string | null;
-    /** Platform seam for Windows-only curl-impersonate paths. Injected by tests. */
+    /** Platform seam for Windows-only curl-impersonate and player discovery paths. Injected by tests. */
     platform?: NodeJS.Platform;
+    /** Environment seam for platform-specific player discovery. Injected by tests. */
+    env?: Readonly<Record<string, string | undefined>>;
+    /** Home-directory seam for macOS app-bundle player discovery. Injected by tests. */
+    homeDir?: string;
   } = {},
 ): Promise<CapabilitySnapshot> {
   const requireYtDlp = options.requireYtDlp ?? false;
-  const requireMpv = options.requireMpv ?? true;
+  const playerMode = options.playerMode ?? { kind: "managed-mpv" as const };
+  const requiredPlayer = requiredManagedPlayer(playerMode);
+  const mpvRequired = requiredPlayer === "mpv";
+  const vlcRequired = requiredPlayer === "vlc";
   const platform = options.platform ?? process.platform;
   const which = options.which ?? ((command: string) => whichLive(command));
   const issues: CapabilityIssue[] = [];
@@ -179,6 +194,15 @@ export async function probeCapabilities(
     discoverMpvInvocation({
       which,
       ...(options.exists && { exists: options.exists }),
+    }),
+  );
+  const vlc = Boolean(
+    discoverVlcBinary({
+      which,
+      ...(options.exists && { exists: options.exists }),
+      platform,
+      ...(options.env && { env: options.env }),
+      ...(options.homeDir && { homeDir: options.homeDir }),
     }),
   );
   const ffprobe = Boolean(which("ffprobe"));
@@ -219,7 +243,7 @@ export async function probeCapabilities(
   };
   const image = detectImageCapability();
 
-  if (requireMpv && !mpv) {
+  if (mpvRequired && !mpv) {
     issues.push({
       id: "mpv-missing",
       // Missing mpv blocks playback only — setup and non-playback shell still mount.
@@ -227,6 +251,17 @@ export async function probeCapabilities(
       message: "mpv not found — required for playback (shell still available).",
       install: MPV_INSTALL,
       remediation: buildRemediationLines(MPV_INSTALL),
+    });
+  }
+
+  if (vlcRequired && !vlc) {
+    issues.push({
+      id: "vlc-missing",
+      // Missing VLC blocks playback only — setup and non-playback shell still mount.
+      severity: "degraded",
+      message: "VLC not found — required for playback (shell still available).",
+      install: VLC_INSTALL,
+      remediation: buildRemediationLines(VLC_INSTALL),
     });
   }
 
@@ -281,10 +316,10 @@ export async function probeCapabilities(
       id: "curl-missing",
       // Anime is one mode, so this degrades that route rather than blocking the
       // shell — but it is the *default* anime route, so silence here means the
-      // user sees an empty HiAnime or AniDB search with no explanation.
+      // user sees an empty HiAnime or Miruro search with no explanation.
       severity: "degraded",
       message:
-        "curl not found — the anime providers (HiAnime, AniDB) sit behind Cloudflare and need it; anime search may return nothing without it.",
+        "curl not found — the anime providers (HiAnime, Miruro) sit behind Cloudflare and need it; anime search may return nothing without it.",
       install: CURL_INSTALL,
       remediation: [
         ...buildRemediationLines(CURL_INSTALL),
@@ -302,7 +337,7 @@ export async function probeCapabilities(
       // way to learn why the anime providers returned nothing.
       severity: "degraded",
       message:
-        "Only plain curl found — Cloudflare fingerprints the TLS handshake, so HiAnime, AniDB, and Miruro may still be challenged. A curl-impersonate build matches a real browser.",
+        "Only plain curl found — Cloudflare fingerprints the TLS handshake, so HiAnime and Miruro may still be challenged. A curl-impersonate build matches a real browser.",
       install: CURL_IMPERSONATE_INSTALL,
       remediation: buildRemediationLines(CURL_IMPERSONATE_INSTALL),
     });
@@ -314,7 +349,9 @@ export async function probeCapabilities(
 
   return {
     mpv,
-    mpvRequired: requireMpv,
+    mpvRequired,
+    vlc,
+    vlcRequired,
     ffprobe,
     ytDlp,
     curl,

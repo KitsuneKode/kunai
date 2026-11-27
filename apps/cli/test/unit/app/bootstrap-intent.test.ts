@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import { resolveBootstrapIntent, type BootstrapArgs } from "@/app/bootstrap/bootstrap-intent";
+import {
+  resolveBootstrapIntent,
+  hasExplicitStartupTarget,
+  resolveStartupInitialRoute,
+  type BootstrapArgs,
+} from "@/app/bootstrap/bootstrap-intent";
 import { createInitialState, reduceState } from "@/domain/session/SessionState";
 
 const baseState = () =>
@@ -104,4 +109,73 @@ test("a real title name is never overwritten by a later detail fetch", () => {
   );
 
   expect(state.currentTitle?.name).toBe("Dune: Part One");
+});
+
+describe("resolveStartupInitialRoute", () => {
+  test("opens Discover when the startup setting is on and no explicit target exists", () => {
+    expect(
+      resolveStartupInitialRoute({
+        discoverShowOnStartup: true,
+        freshInstall: false,
+        hasExplicitTarget: false,
+      }),
+    ).toBe("recommendation");
+  });
+
+  test("explicit launch targets and explicit routes win over the startup setting", () => {
+    expect(
+      resolveStartupInitialRoute({
+        discoverShowOnStartup: true,
+        freshInstall: false,
+        hasExplicitTarget: true,
+      }),
+    ).toBeUndefined();
+    expect(
+      resolveStartupInitialRoute({
+        explicitRoute: "calendar",
+        discoverShowOnStartup: true,
+        freshInstall: false,
+        hasExplicitTarget: false,
+      }),
+    ).toBe("calendar");
+  });
+
+  test("keeps the first-install Discover landing and stays off by default otherwise", () => {
+    expect(
+      resolveStartupInitialRoute({
+        discoverShowOnStartup: false,
+        freshInstall: true,
+        hasExplicitTarget: false,
+      }),
+    ).toBe("recommendation");
+    expect(
+      resolveStartupInitialRoute({
+        discoverShowOnStartup: false,
+        freshInstall: false,
+        hasExplicitTarget: false,
+      }),
+    ).toBeUndefined();
+  });
+});
+
+test("hasExplicitStartupTarget names every launch route that must beat Discover startup", () => {
+  const base = {
+    hasBootstrapTarget: false,
+    offline: false,
+    history: false,
+    continuePlayback: false,
+    download: false,
+    shareLaunch: false,
+  };
+  expect(hasExplicitStartupTarget(base)).toBe(false);
+  for (const patch of [
+    { hasBootstrapTarget: true },
+    { offline: true },
+    { history: true },
+    { continuePlayback: true },
+    { download: true },
+    { shareLaunch: true },
+  ]) {
+    expect(hasExplicitStartupTarget({ ...base, ...patch })).toBe(true);
+  }
 });

@@ -101,6 +101,7 @@ describe("starting episode selection", () => {
       season: 4,
       episode: 2,
       startAt: 1334,
+      restart: true,
     });
   });
 });

@@ -46,6 +46,35 @@ export type PublicShortcutMetadata = {
   readonly order: number;
 };
 
+export type ProviderLaneMetadata = {
+  readonly defaultProvider: string;
+  readonly fallbackPriority: readonly string[];
+  readonly order: readonly string[];
+};
+
+export type ProviderDefaultsMetadata = {
+  readonly revision: number;
+  readonly series: ProviderLaneMetadata;
+  readonly anime: ProviderLaneMetadata;
+  readonly youtube: ProviderLaneMetadata;
+};
+
+export type ReleaseTargetMetadata = {
+  readonly id: string;
+  readonly triple: string;
+  readonly out: string;
+  readonly os: string;
+  readonly arch: string;
+  readonly libc: string | undefined;
+  readonly supportTier: "supported" | "beta" | "experimental";
+  readonly archiveName: string;
+};
+
+export type PlayerSupportMetadata = {
+  readonly desktopManagedPlayers: readonly string[];
+  readonly androidTargets: readonly string[];
+};
+
 export type CodeMetadata = {
   readonly version: string;
   readonly cliVersion: string;
@@ -57,6 +86,9 @@ export type CodeMetadata = {
   readonly featureStatus: readonly FeatureStatusMetadata[];
   readonly runtimeBaseline: RuntimeBaselineMetadata;
   readonly shortcuts: readonly PublicShortcutMetadata[];
+  readonly providerDefaults: ProviderDefaultsMetadata;
+  readonly releaseTargets: readonly ReleaseTargetMetadata[];
+  readonly playerSupport: PlayerSupportMetadata;
 };
 
 export const codeMetadata = generated as CodeMetadata;

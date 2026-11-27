@@ -9,6 +9,8 @@ import { CliFlagsTable } from "@/components/reference/cli-flags-table";
 import { CommandReference } from "@/components/reference/command-reference";
 import { FeatureStatusTable } from "@/components/reference/feature-status-table";
 import { GlossaryFromCodegen } from "@/components/reference/glossary-from-codegen";
+import { PlatformSupportTable } from "@/components/reference/platform-support-table";
+import { ProviderOrderTable } from "@/components/reference/provider-order-table";
 import { ProviderStatusBoard } from "@/components/reference/provider-status-board";
 import { ProviderTable } from "@/components/reference/provider-table";
 import { ShortcutTable } from "@/components/reference/shortcut-table";
@@ -27,6 +29,8 @@ const fumadocsUiComponents = {
 
 const kunaiMdxComponents = {
   ProviderTable,
+  ProviderOrderTable,
+  PlatformSupportTable,
   ProviderStatusBoard,
   CommandReference,
   CliFlagsTable,

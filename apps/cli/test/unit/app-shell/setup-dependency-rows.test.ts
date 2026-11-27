@@ -8,6 +8,7 @@ import {
   FFMPEG_INSTALL,
   MPV_INSTALL,
   resolveInstallCommand,
+  VLC_INSTALL,
   YT_DLP_INSTALL,
 } from "@/infra/os/install-commands";
 import { probeCapabilities } from "@/ui";
@@ -95,6 +96,7 @@ describe("resolveInstallCommand", () => {
 describe("every dependency is installable on every platform we ship to", () => {
   const INSTALLS = {
     mpv: MPV_INSTALL,
+    vlc: VLC_INSTALL,
     "yt-dlp": YT_DLP_INSTALL,
     ffmpeg: FFMPEG_INSTALL,
     curl: CURL_INSTALL,
@@ -162,12 +164,54 @@ describe("buildDependencyRows", () => {
     const snapshot = await probeCapabilities({
       which: () => null,
       listPathEntries: () => [],
-      requireMpv: false,
+      playerMode: { kind: "managed-vlc" },
     });
     const row = buildDependencyRows(snapshot).find((candidate) => candidate.id === "mpv");
 
     expect(row).toMatchObject({ state: "ok", detail: "not required by selected player" });
     expect(row?.consequence).toBeUndefined();
+  });
+
+  test("a VLC-only auto selection keeps the same dependency verdict after a recheck probe", async () => {
+    const vlcOnlyProbe = {
+      playerMode: { kind: "managed-vlc" } as const,
+      which: (command: string) => (command === "vlc" ? "/usr/bin/vlc" : null),
+      listPathEntries: () => ["vlc"],
+      exists: () => false,
+    };
+    const first = buildDependencyRows(await probeCapabilities(vlcOnlyProbe));
+    const recheck = buildDependencyRows(await probeCapabilities(vlcOnlyProbe));
+
+    for (const rows of [first, recheck]) {
+      expect(rows.find((row) => row.id === "mpv")).toMatchObject({
+        state: "ok",
+        detail: "not required by selected player",
+      });
+      expect(rows.find((row) => row.id === "vlc")).toMatchObject({
+        state: "ok",
+      });
+      expect(rows.find((row) => row.id === "vlc")?.consequence).toBeUndefined();
+    }
+  });
+
+  test("explicit mpv without mpv fails with the mpv install fix", async () => {
+    const rows = buildDependencyRows(
+      await probeCapabilities({ ...NOTHING, playerMode: { kind: "managed-mpv" } }),
+    );
+    const row = rows.find((candidate) => candidate.id === "mpv");
+    expect(row?.state).toBe("degraded");
+    expect(row?.fix).toBeTruthy();
+    expect(row?.consequence).toContain("Nothing can play");
+  });
+
+  test("explicit VLC without VLC fails with the VLC install fix", async () => {
+    const rows = buildDependencyRows(
+      await probeCapabilities({ ...NOTHING, playerMode: { kind: "managed-vlc" } }),
+    );
+    const row = rows.find((candidate) => candidate.id === "vlc");
+    expect(row?.state).toBe("degraded");
+    expect(row?.fix).toBeTruthy();
+    expect(row?.consequence).toContain("Nothing can play");
   });
 
   test("names ffmpeg, not ffprobe", async () => {

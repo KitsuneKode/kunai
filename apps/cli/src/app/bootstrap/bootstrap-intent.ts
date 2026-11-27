@@ -113,6 +113,46 @@ export function resolveAutoPickIndex(args: {
   return args.quick && args.search?.trim() ? 1 : undefined;
 }
 
+/** Whether the invocation already named a startup target or surface whose absence must not be replaced by Discover. */
+export function hasExplicitStartupTarget(input: {
+  readonly hasBootstrapTarget: boolean;
+  readonly offline: boolean;
+  readonly history: boolean;
+  readonly continuePlayback: boolean;
+  readonly download: boolean;
+  readonly shareLaunch: boolean;
+}): boolean {
+  return (
+    input.hasBootstrapTarget ||
+    input.offline ||
+    input.history ||
+    input.continuePlayback ||
+    input.download ||
+    input.shareLaunch
+  );
+}
+
+export type StartupInitialRoute = "recommendation" | "calendar" | "random";
+
+/**
+ * Which content route the shell opens first when the invocation did not ask for
+ * a target. An explicit CLI route always wins; a search, direct id, continue,
+ * history, offline, download, or share launch is a target even when resolution
+ * later comes back empty. First installs keep their content-first landing, and
+ * `discoverShowOnStartup` extends that landing to returning users who enabled it.
+ */
+export function resolveStartupInitialRoute(input: {
+  readonly explicitRoute?: StartupInitialRoute;
+  readonly discoverShowOnStartup: boolean;
+  readonly freshInstall: boolean;
+  readonly hasExplicitTarget: boolean;
+}): StartupInitialRoute | undefined {
+  if (input.explicitRoute) return input.explicitRoute;
+  if (input.hasExplicitTarget) return undefined;
+  if (input.freshInstall || input.discoverShowOnStartup) return "recommendation";
+  return undefined;
+}
+
 /** Named launch surfaces, in the precedence the launch path applies them. */
 export function resolveLaunchSurfaceName(args: {
   readonly offline: boolean;

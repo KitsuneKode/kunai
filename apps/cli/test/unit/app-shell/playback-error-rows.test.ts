@@ -36,7 +36,8 @@ describe("buildErrorRows", () => {
     });
     expect(lines).toContain("✗  timed out after 12s");
     expect(lines).toContain("allmanga");
-    expect(lines).toContain("r retry · /fallback for another provider");
+    // What to press belongs to the `Next` row, not to the scenario's own rows.
+    expect(lines.join("\n")).not.toContain("/fallback");
   });
 
   test("renders stream-broken", () => {

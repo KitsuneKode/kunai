@@ -1563,5 +1563,123 @@
       "tier": "surface",
       "order": 620
     }
-  ]
+  ],
+  "providerDefaults": {
+    "revision": 11,
+    "series": {
+      "defaultProvider": "vidlink",
+      "fallbackPriority": ["movy", "rivestream", "vidrock", "videasy", "vidbolt", "filesun"],
+      "order": ["vidlink", "movy", "rivestream", "vidrock", "videasy", "vidbolt", "filesun"]
+    },
+    "anime": {
+      "defaultProvider": "hianime",
+      "fallbackPriority": ["kickassanime", "animegg", "miruro", "allanime", "anilight", "anidap", "animeparadise"],
+      "order": ["hianime", "kickassanime", "animegg", "miruro", "allanime", "anilight", "anidap", "animeparadise"]
+    },
+    "youtube": {
+      "defaultProvider": "youtube",
+      "fallbackPriority": ["youtube"],
+      "order": ["youtube"]
+    }
+  },
+  "releaseTargets": [
+    {
+      "id": "linux-x64",
+      "triple": "bun-linux-x64",
+      "out": "kunai-linux-x64",
+      "os": "linux",
+      "arch": "x64",
+      "supportTier": "supported",
+      "archiveName": "kunai-linux-x64.tar.gz"
+    },
+    {
+      "id": "linux-x64-musl",
+      "triple": "bun-linux-x64-musl",
+      "out": "kunai-linux-x64-musl",
+      "os": "linux",
+      "arch": "x64",
+      "libc": "musl",
+      "supportTier": "supported",
+      "archiveName": "kunai-linux-x64-musl.tar.gz"
+    },
+    {
+      "id": "linux-arm64",
+      "triple": "bun-linux-arm64",
+      "out": "kunai-linux-arm64",
+      "os": "linux",
+      "arch": "arm64",
+      "supportTier": "supported",
+      "archiveName": "kunai-linux-arm64.tar.gz"
+    },
+    {
+      "id": "linux-arm64-musl",
+      "triple": "bun-linux-arm64-musl",
+      "out": "kunai-linux-arm64-musl",
+      "os": "linux",
+      "arch": "arm64",
+      "libc": "musl",
+      "supportTier": "supported",
+      "archiveName": "kunai-linux-arm64-musl.tar.gz"
+    },
+    {
+      "id": "android-arm64",
+      "triple": "bun-linux-arm64-android",
+      "out": "kunai-android-arm64",
+      "os": "android",
+      "arch": "arm64",
+      "libc": "bionic",
+      "supportTier": "experimental",
+      "archiveName": "kunai-android-arm64.tar.gz"
+    },
+    {
+      "id": "android-x64",
+      "triple": "bun-linux-x64-android",
+      "out": "kunai-android-x64",
+      "os": "android",
+      "arch": "x64",
+      "libc": "bionic",
+      "supportTier": "experimental",
+      "archiveName": "kunai-android-x64.tar.gz"
+    },
+    {
+      "id": "darwin-x64",
+      "triple": "bun-darwin-x64",
+      "out": "kunai-darwin-x64",
+      "os": "darwin",
+      "arch": "x64",
+      "supportTier": "beta",
+      "archiveName": "kunai-darwin-x64.tar.gz"
+    },
+    {
+      "id": "darwin-arm64",
+      "triple": "bun-darwin-arm64",
+      "out": "kunai-darwin-arm64",
+      "os": "darwin",
+      "arch": "arm64",
+      "supportTier": "beta",
+      "archiveName": "kunai-darwin-arm64.tar.gz"
+    },
+    {
+      "id": "windows-x64",
+      "triple": "bun-windows-x64",
+      "out": "kunai-windows-x64.exe",
+      "os": "windows",
+      "arch": "x64",
+      "supportTier": "beta",
+      "archiveName": "kunai-windows-x64.zip"
+    },
+    {
+      "id": "windows-arm64",
+      "triple": "bun-windows-arm64",
+      "out": "kunai-windows-arm64.exe",
+      "os": "windows",
+      "arch": "arm64",
+      "supportTier": "experimental",
+      "archiveName": "kunai-windows-arm64.zip"
+    }
+  ],
+  "playerSupport": {
+    "desktopManagedPlayers": ["mpv", "vlc"],
+    "androidTargets": ["chooser", "mpv", "vlc"]
+  }
 }

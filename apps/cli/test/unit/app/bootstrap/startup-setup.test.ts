@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 
-import { maybeRunStartupSetup, shouldRunSetupWizard } from "@/app/bootstrap/startup-setup";
+import {
+  launchHasDestination,
+  maybeRunStartupSetup,
+  shouldRunSetupWizard,
+} from "@/app/bootstrap/startup-setup";
 
 describe("startup setup policy", () => {
   test("runs when forced or onboarding is incomplete", () => {
@@ -88,6 +92,57 @@ describe("startup setup policy", () => {
       },
     });
 
+    expect(result).toBe("skipped");
+    expect(loads).toBe(0);
+  });
+});
+
+describe("a launch that names its destination skips setup", () => {
+  const fresh = { onboardingVersion: 0, downloadOnboardingDismissed: false };
+
+  test("every explicit route counts, and a bare launch does not", () => {
+    for (const args of [
+      { search: "Dune" },
+      { id: "438631" },
+      { history: true },
+      { continuePlayback: true },
+      { offline: true },
+      { download: true },
+      { initialRoute: "calendar" },
+      { openUrl: "kunai://title/tmdb/438631" },
+      { handoffUrl: "kunai://title/tmdb/438631" },
+    ]) {
+      expect(launchHasDestination(args)).toBe(true);
+    }
+    expect(launchHasDestination({})).toBe(false);
+    // Flags that shape a session without naming where it goes.
+    expect(launchHasDestination({ search: "   " })).toBe(false);
+  });
+
+  test("a fresh install with a destination is not interrupted", () => {
+    expect(shouldRunSetupWizard({ force: false, config: fresh, hasDestination: true })).toBe(false);
+    // The reverse: the next bare launch still offers setup.
+    expect(shouldRunSetupWizard({ force: false, config: fresh, hasDestination: false })).toBe(true);
+  });
+
+  test("--setup wins over a destination", () => {
+    expect(shouldRunSetupWizard({ force: true, config: fresh, hasDestination: true })).toBe(true);
+  });
+
+  test("skipping never loads the workflow, so nothing about onboarding is written", async () => {
+    let loads = 0;
+    const result = await maybeRunStartupSetup({
+      force: false,
+      config: fresh,
+      interactive: true,
+      hasDestination: true,
+      // SAFETY: deliberately partial test stub — the workflow must not be reached.
+      container: {} as never,
+      loadSetupWorkflow: async () => {
+        loads += 1;
+        return { runSetupWizard: async () => "completed" as const };
+      },
+    });
     expect(result).toBe("skipped");
     expect(loads).toBe(0);
   });

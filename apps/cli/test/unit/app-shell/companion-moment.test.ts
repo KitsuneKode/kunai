@@ -197,7 +197,11 @@ describe("single ownership", () => {
   });
 
   test("the setup frame stands down where the screen inside draws its own", () => {
-    expect(read("setup-shell.tsx")).toMatch(/companion=\{screen === "deps" \? "setup" : null\}/u);
+    // She draws on the two first screens only; every other screen, the review
+    // among them, gets `null` so the frame never stacks a second one.
+    expect(read("setup-shell.tsx")).toMatch(
+      /companion=\{\s*screen === "deps" \|\| \(screen === "start" && density === "wide" && !machineOpen\)\s*\? "setup"\s*: null\s*\}/u,
+    );
   });
 });
 

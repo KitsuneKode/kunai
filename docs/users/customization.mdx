@@ -109,14 +109,15 @@ Example (not the shipped defaults; those use `audio: "original"` and `quality: "
 {
   "animeLanguageProfile": { "audio": "ja", "subtitle": "en", "quality": "1080p" },
   "seriesLanguageProfile": { "audio": "en", "subtitle": "en", "quality": "best" },
-  "movieLanguageProfile": { "audio": "en", "subtitle": "en", "quality": "best" }
+  "movieLanguageProfile": { "audio": "en", "subtitle": "en", "quality": "best" },
+  "youtubeLanguageProfile": { "audio": "original", "subtitle": "en", "quality": "1080p" }
 }
 ```
 
 - `animeTitlePreference`: display English, romaji, native, or provider-native titles.
 - `favoriteSources`: pin preferred source/server names to the top of pickers.
 
-See [Media selection](/docs/users/media-selection) for how profiles flow into resolution and mpv.
+See [Media selection](/docs/users/media-selection) for how profiles flow into resolution and mpv. The per-run `--quality`, `--audio`, and `--sub` flags apply to all four profiles for that launch only, including YouTube; invalid values are usage errors before the shell starts.
 
 ### Playback and recovery
 
@@ -127,10 +128,10 @@ See [Media selection](/docs/users/media-selection) for how profiles flow into re
 | `skipIntro`, `skipRecap`, `skipPreview`, `skipCredits` | Auto-skip segments when timing metadata exists |
 | `recoveryMode` | `guided`, `fallback-first`, or `manual` |
 | `player` | Player when `--player` is not given: `auto` (default), `mpv`, or `vlc` (Android). Set it from Settings → Playback; applies on the next start |
-| `resumeStartChoicePrompt` | Resume vs start-over overlay when resuming mid-episode |
+| `resumeStartChoicePrompt` | Resume vs start-over overlay in persistent mpv; VLC and one-shot mpv use the same setting to honor a saved-position offer |
 | `quitNearEndBehavior` | What happens when you quit mpv near the natural end |
 | `quitNearEndThresholdMode` | When "near the end" starts: `credits-or-90-percent` (default), or a fixed percentage |
-| `continueSourcePreference` | Where Continue Watching resumes from: `auto` (default), `local`, `stream`, or `ask` |
+| `continueSourcePreference` | Where Continue Watching resumes from when both sources exist: `auto` (default), `local`, `stream`, or `ask`; non-interactive `ask` falls back to streaming |
 | `prePlayConfirm` | Open the Tracks sheet before launch: `off` (default), `when-choices`, or `always` |
 
 ### Shell density, accessibility, and themes
@@ -141,7 +142,7 @@ See [Media selection](/docs/users/media-selection) for how profiles flow into re
 | `zenMode` / `--zen` | Single-column, minimal chrome; all features still key-reachable |
 | `minimalMode` / `--minimal` | Collapse companion pane and dim header status |
 | `footerHints` | `detailed` or `minimal` footer guidance |
-| `discoverShowOnStartup` | Faint discover hint in browse footer when history exists |
+| `discoverShowOnStartup` | Open Discover/recommendations first on startup when no explicit launch target was supplied |
 | `discoverMode` | What `/discover` mixes: `auto` (default), `unified`, `anime-only` (anime series and films), or `series-only` |
 | `discoverItemLimit` | Rows the Discover tray shows (default `24`) |
 | `powerSaverMode` | Suppress background network and speculative work |
@@ -211,7 +212,7 @@ Kunai works without any key. Your own free TMDB key makes the catalog faster and
 2. Copy either the **API Key** or the **API Read Access Token**.
 3. Open **Settings → Accounts → Your API keys → TMDB key**, paste it, and press Enter.
 
-With your key, Kunai asks TMDB directly first. The key is stored in your system's credential store (macOS Keychain, Windows Credential Manager, or Secret Service on Linux) when one is available, not in `config.json`. If TMDB ever rejects it, Kunai keeps working on its fallbacks and `/diagnostics` says so under **Service keys**.
+With your key, Kunai asks TMDB directly first; Kunai's bundled release key uses the same direct-first order. Keyless installs ask the third-party mirrors first. Credentials never go to those mirrors. Your key is stored in your system's credential store (macOS Keychain, Windows Credential Manager, or Secret Service on Linux) when one is available, not in `config.json`. If TMDB ever rejects it, Kunai keeps working on its fallbacks and `/diagnostics` says so under **Service keys**.
 
 `KUNAI_TMDB_API_KEY` in your environment overrides the setting, and is also the key TMDB account sync uses.
 

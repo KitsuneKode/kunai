@@ -36,6 +36,7 @@ import type {
   PlayerPlaybackEventEnvelope,
   PlayerService,
 } from "../PlayerService";
+import { promptlessResumeStartAt } from "../promptless-resume-start";
 import { getSharedStreamGateway, type GatewaySession } from "../stream-gateway";
 import { createVlcSkipTracker, vlcSeekTarget } from "./vlc-auto-skip";
 import {
@@ -301,7 +302,12 @@ export class VlcPlayerService implements PlayerService {
       const item: VlcItem = {
         url: target.url,
         title: options.displayTitle,
-        startAtSeconds: options.startAt,
+        startAtSeconds: promptlessResumeStartAt({
+          startAt: options.startAt,
+          resumePromptAt: options.resumePromptAt,
+          resumeStartChoicePrompt: options.resumeStartChoicePrompt,
+          resumeOfferOverlayOnly: options.resumeOfferOverlayOnly,
+        }),
         subtitle: target.subtitle,
       };
       if (session) {
