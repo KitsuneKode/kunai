@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-26T10:13:00Z"
+lastReviewed: "2026-11-27T11:27:37Z"
 ---
 
 # Kunai — Testing Strategy
