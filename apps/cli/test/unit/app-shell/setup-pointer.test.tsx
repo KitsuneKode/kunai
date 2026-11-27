@@ -12,6 +12,8 @@ import { renderWithPointer } from "../../support/pointer-render";
 const ready: CapabilitySnapshot = {
   mpv: true,
   mpvRequired: true,
+  vlc: true,
+  vlcRequired: false,
   ffprobe: true,
   ytDlp: true,
   curl: { present: true, impersonates: true, profile: "chrome150" },

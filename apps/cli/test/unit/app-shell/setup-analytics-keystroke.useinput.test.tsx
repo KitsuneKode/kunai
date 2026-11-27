@@ -36,6 +36,8 @@ import { UNSET_PAYLOAD_FIXTURE } from "../../support/analytics-fixtures";
 const READY: CapabilitySnapshot = {
   mpv: true,
   mpvRequired: true,
+  vlc: true,
+  vlcRequired: false,
   ffprobe: true,
   ytDlp: true,
   curl: { present: true, impersonates: true, profile: "chrome150" },

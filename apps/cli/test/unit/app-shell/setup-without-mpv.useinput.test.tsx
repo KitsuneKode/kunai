@@ -16,6 +16,8 @@ import { UNSET_PAYLOAD_FIXTURE } from "../../support/analytics-fixtures";
 const MISSING_MPV: CapabilitySnapshot = {
   mpv: false,
   mpvRequired: true,
+  vlc: true,
+  vlcRequired: false,
   ffprobe: false,
   ytDlp: true,
   curl: { present: true, impersonates: true, profile: "chrome150" },

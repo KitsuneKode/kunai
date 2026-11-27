@@ -103,13 +103,28 @@ export function buildDependencyRows(
             : "no usable auto-safe path"
           : hw.status === "probe-failed"
             ? "probe failed or timed out · playback uses mpv default"
-            : "not probed yet · first playback or kunai doctor verifies",
+            : "not probed yet · kunai doctor verifies",
     fix: null,
     ...(hw.status === "no-hardware" || hw.status === "probe-failed"
       ? {
           consequence:
             "Hardware decoding is optional; playback falls back to mpv's software/default decode path.",
         }
+      : null),
+  });
+
+  const vlcIssue = issue("vlc-missing");
+  const vlcRequired = snapshot.vlcRequired;
+  rows.push({
+    id: "vlc",
+    name: "VLC",
+    scope: "always",
+    state: vlcRequired && !snapshot.vlc ? "degraded" : "ok",
+    role: "playback",
+    detail: snapshot.vlc ? "found" : vlcRequired ? "not found" : "not required by selected player",
+    fix: vlcIssue ? fixFor(vlcIssue.install, which) : null,
+    ...(vlcRequired && !snapshot.vlc
+      ? { consequence: "Nothing can play until this is installed." }
       : null),
   });
 

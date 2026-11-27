@@ -26,6 +26,25 @@ lookup carries only the site name, never what you are watching. Video hosts,
 local addresses and proxied requests use your normal DNS. Turn it off in
 **Settings › Sources › DNS-over-HTTPS** or with `KUNAI_DOH_DISABLE=1`.
 
+## Catalog Lookup Routing
+
+Movie and series search, trending, recommendations, and episode metadata use
+TMDB. Kunai chooses the host order from the credential available:
+
+- **Your own TMDB key or Kunai's bundled release key:** ask TMDB directly first,
+  using the official host and its same-API alias, then fall back to the keyless
+  mirrors when the direct hosts are unavailable.
+- **No user or bundled key:** ask the keyless third-party mirrors first. Direct
+  TMDB remains a fallback only while a legacy borrowed public key is still
+  shipped; that borrowed key is not treated as a real Kunai credential, so the
+  order stays mirror-first until a user or bundled key exists.
+
+Credentials are never sent to the mirrors. A v3 `api_key` query value or a v4
+Bearer token appears only on direct TMDB requests. Mirror requests carry no TMDB
+credential or TMDB authorization header, although whichever host answers can
+still see the catalog lookup itself (for example the title search or series id).
+Error messages and diagnostics redact credential-bearing query values.
+
 ## Provider Fixes
 
 When a provider changes its address or encryption, Kunai can pick up a signed
