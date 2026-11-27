@@ -396,7 +396,7 @@ Install scripts (`install.sh`, `install.ps1`) only install. They do not upgrade 
 
 ## Custom profile root
 
-`KUNAI_CONFIG_DIR` selects a dedicated Kunai **profile root** — the same variable is honoured by the CLI and both installer scripts. It is not a config-directory override; Kunai builds the whole layout underneath it:
+`KUNAI_CONFIG_DIR` selects a dedicated Kunai **profile root** for the CLI and both installer scripts. Kunai builds the whole layout underneath it:
 
 ```text
 <root>/config/config.json          # config + install.json manifest
@@ -409,15 +409,15 @@ Install scripts (`install.sh`, `install.ps1`) only install. They do not upgrade 
 
 Rules that apply:
 
-- **The value must be absolute.** An empty or relative value — including a Windows drive-root-relative path such as `\kunai` — is a startup error (`KUNAI_CONFIG_DIR must be an absolute path to a Kunai profile directory`), not a fallback to defaults.
+- **The value must be absolute.** An empty or relative value, including a Windows drive-root-relative path such as `\kunai`, is a startup error, not a fallback to defaults.
 - **Credentials stay inside the profile.** Under a profile root Kunai always uses file-based credential storage; the account-wide OS vaults (Keychain, libsecret, Windows PasswordVault) are never reachable, even with `KUNAI_CREDENTIAL_BACKEND` set.
-- **Unset it to go back.** Removing the variable returns Kunai to the platform-default layout. Nothing is migrated either way — data never moves between profiles, so switching roots starts a fresh profile.
+- **Unset it to go back.** Removing the variable returns Kunai to the platform-default layout. Kunai does not copy or migrate data between profiles.
 - Uninstall's profile purge removes the config, data and cache directories, not the profile root itself.
-- Debug logs stay `./logs.txt` — scoped to the working directory, `--debug` only — and directories you configure explicitly, like a custom download directory, live outside the profile root. User PATH registration from the installer is unchanged; it is not a profile feature.
+- Debug logs still go to `./logs.txt` with `--debug`. A custom download directory can live outside the profile root. The override does not change whether installers register the launcher on your PATH.
 
 `KUNAI_DATA_DIR` and `KUNAI_CACHE_DIR` remain **installer-only** overrides; the running CLI always derives data and cache from the profile root or the platform defaults. Do not combine per-directory overrides that disagree with the profile root.
 
-If you previously exported `KUNAI_CONFIG_DIR` to point at the config directory itself and only want your existing runtime profile, unset it — the platform-default layout is unchanged and nothing needs to move. Reinstall (`kunai install` or the installer script) is only for opting the _install's own files_ — launcher, versioned binaries, `install.json` — into the new profile layout; do not copy an old `install.json` across, since it records the old absolute paths.
+If you exported `KUNAI_CONFIG_DIR` before but want to keep using your existing runtime profile, unset it. The platform-default layout is unchanged. To move the installation itself into the new layout, reinstall with `kunai install` or the installer script rather than copying the old `install.json`, which records absolute paths.
 
 `kunai --version` prints `kunai <version> (<channel>)`. `install.json` is
 authoritative when present; otherwise Kunai detects the channel from the
