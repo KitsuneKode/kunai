@@ -295,12 +295,17 @@ describe("probeMpvHardwareAcceleration", () => {
 
   test("concurrent probes for the same mpv invocation join one in-flight pair of spawns", async () => {
     let releaseProbe!: () => void;
+    let markBothStarted!: () => void;
     const gate = new Promise<void>((resolve) => {
       releaseProbe = resolve;
+    });
+    const bothStarted = new Promise<void>((resolve) => {
+      markBothStarted = resolve;
     });
     const fixture = createRunProcess();
     const gatedRunProcess: MpvHwaccelRunProcess = async (argv, options) => {
       const result = await fixture.runProcess(argv, options);
+      if (fixture.calls.length === 2) markBothStarted();
       await gate;
       return result;
     };
@@ -308,7 +313,7 @@ describe("probeMpvHardwareAcceleration", () => {
 
     const first = probeMpvHardwareAcceleration(deps);
     const second = probeMpvHardwareAcceleration(deps);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await bothStarted;
     expect(fixture.calls).toHaveLength(2);
 
     releaseProbe();
