@@ -2277,6 +2277,7 @@ export function BrowseShell<T>({
             message={emptyMessage}
             coldStart={coldStart}
             width={innerWidth}
+            rows={viewport.rows}
           />
         ) : displayOptions.length > 0 ? (
           <Box

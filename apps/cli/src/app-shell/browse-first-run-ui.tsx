@@ -57,9 +57,17 @@ export function browseQueryHint(input: {
   return input.queryEmpty ? "Type a title, then enter · ↓ picks" : "↓ results · / commands";
 }
 
-function ColdStart({ width }: { readonly width: number }) {
+function ColdStart({ width, rows }: { readonly width: number; readonly rows: number }) {
   const plain = plainModeEnabled();
-  const tick = useFrameTick(true, 150);
+  const compact = rows < 20;
+  const tick = useFrameTick(!compact, 150);
+  if (compact) {
+    return (
+      <Text color={palette.accent}>
+        {COLD_START_ACTIONS.map((action) => action.command).join(" · ")}
+      </Text>
+    );
+  }
   const petal = reducedMotionEnabled()
     ? STATIC_PETAL
     : (BLOOM_FRAMES[tick % BLOOM_FRAMES.length] ?? STATIC_PETAL);
@@ -95,16 +103,18 @@ export function BrowseLoadingBlock({
   message,
   coldStart,
   width,
+  rows,
 }: {
   readonly message: string;
   /** Picks loading on their own at startup, not a search the user is waiting on. */
   readonly coldStart: boolean;
   readonly width: number;
+  readonly rows: number;
 }) {
   if (coldStart) {
     return (
-      <Box marginTop={1} flexGrow={1} flexDirection="column">
-        <ColdStart width={width} />
+      <Box marginTop={rows < 20 ? 0 : 1} flexGrow={1} flexDirection="column">
+        <ColdStart width={width} rows={rows} />
       </Box>
     );
   }

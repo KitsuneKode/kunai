@@ -700,6 +700,30 @@ describe("agent wiring · playback failure", () => {
 });
 
 describe("agent wiring · first-run Browse", () => {
+  it("shows every cold-start shortcut at 40×16", async () => {
+    const refresh = Promise.withResolvers<void>();
+    await withSession(
+      "wiring-cold-start-floor",
+      {
+        columns: 40,
+        rows: 16,
+        bootstrap: { initialRoute: "recommendation" },
+        beforeMount({ container }) {
+          container.recommendationService.clearCache = () => refresh.promise;
+        },
+      },
+      async (s) => {
+        try {
+          await s.waitForFrame((f) => f.includes("Refreshing recommendation picks"), "cold cache");
+          expect(s.frame()).toContain("/trending · /calendar · /random");
+          expect(s.frame()).toContain("[enter] search");
+        } finally {
+          refresh.reject(new Error("fixture refresh ended"));
+        }
+      },
+    );
+  });
+
   it("the field is live before the picks land, and a typed query searches", async () => {
     // The landing a never-onboarded install gets. Picks used to be awaited
     // before Browse mounted (no typing until the catalog answered) and then

@@ -59,10 +59,13 @@ describe("first-run Browse", () => {
   });
 
   test("the cold start offers commands instead of a bare spinner", () => {
-    const handle = render(<BrowseLoadingBlock message={COLD_START_LABEL} coldStart width={98} />, {
-      columns: 100,
-      rows: 12,
-    });
+    const handle = render(
+      <BrowseLoadingBlock message={COLD_START_LABEL} coldStart width={98} rows={30} />,
+      {
+        columns: 100,
+        rows: 30,
+      },
+    );
     try {
       const frame = stripAnsi(handle.lastFrame());
       expect(frame).toContain("Finding something to watch…");
@@ -76,7 +79,7 @@ describe("first-run Browse", () => {
 
   test("a search the user is waiting on keeps the ordinary loader", () => {
     const handle = render(
-      <BrowseLoadingBlock message="Searching…" coldStart={false} width={98} />,
+      <BrowseLoadingBlock message="Searching…" coldStart={false} width={98} rows={12} />,
       {
         columns: 100,
         rows: 12,
