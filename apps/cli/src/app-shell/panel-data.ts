@@ -29,7 +29,6 @@ import { resolveDownloadFeatureState } from "@/services/download/DownloadFeature
 import type { KitsuneConfig } from "@/services/persistence/ConfigService";
 import {
   formatProviderHealthBadge,
-  formatProviderHealthPickerLabelSuffix,
   resolveEffectiveProviderHealth,
 } from "@/services/playback/provider-health-policy";
 import type { PresenceSnapshot } from "@/services/presence/PresenceService";
@@ -51,6 +50,7 @@ import packageJson from "../../package.json" with { type: "json" };
 import { buildHelpPanelCommandLines } from "../domain/session/command-registry";
 import { buildDiagnosticsPanelLinesFromInsight } from "./diagnostics-panel-lines";
 import { helpSections } from "./keybindings";
+import { providerPickerStatusFor, type ProviderPickerSources } from "./provider-picker-status";
 import { describeHistoryReturnLoopDetail } from "./root-history-bridge";
 import type { ShellPanelLine, ShellPickerOption } from "./types";
 
@@ -803,47 +803,47 @@ export function buildProviderMemoryPanelLines(input: {
   return lines;
 }
 
+/**
+ * Rows for the provider picker. The trailing badge is the provider's state in
+ * words, read from the health stores and the manifest, so it survives both
+ * truncation and NO_COLOR; `previewBody` is the full sentence the footer shows
+ * for the highlighted row. Order is the caller's: this never re-sorts by health.
+ */
 export function buildProviderPickerOptions({
   providers,
   currentProvider,
   previewImageUrl,
-  getProviderHealth,
   isCrossLane,
-}: {
+  compact,
+  now,
+  ...sources
+}: ProviderPickerSources & {
   providers: readonly ProviderMetadata[];
   currentProvider: string;
   previewImageUrl?: string;
-  getProviderHealth?: (providerId: ProviderId) => ProviderHealth | undefined;
   /** Provider comes from the other lane, unlocked by the title's linked catalog ids. */
   isCrossLane?: (metadata: ProviderMetadata) => boolean;
+  /** Narrow terminal: the trailing state shrinks to one or two words. */
+  compact?: boolean;
+  now?: Date;
 }): readonly ShellPickerOption<string>[] {
   return providers.map((provider) => {
-    const effective = getProviderHealth
-      ? resolveEffectiveProviderHealth(getProviderHealth(provider.id))
-      : undefined;
     const isCurrentProvider = provider.id === currentProvider;
-    // The same current-aware badge feeds the detail line — the label fix
-    // without it left "skipped in auto-fallback" on the playing provider.
-    const healthBadge = formatProviderHealthBadge(effective ?? undefined, undefined, {
-      isCurrentProvider,
-    });
-    const healthLabelSuffix = formatProviderHealthPickerLabelSuffix(effective ?? undefined, {
-      isCurrentProvider,
-    });
-    const healthDetail = healthBadge ? `Health: ${healthBadge}` : null;
-    const crossLaneDetail = isCrossLane?.(provider) ? "via linked catalog id" : null;
-    const baseDetail = formatProviderDetail(provider);
-    const baseLabel = markCurrentLabel(provider.name, isCurrentProvider);
+    const status = providerPickerStatusFor(provider, isCurrentProvider, sources, now);
+    const aliases = provider.aliases?.length ? `Known as ${provider.aliases.join(", ")}` : null;
+    const crossLane = isCrossLane?.(provider) ? "via linked catalog id" : null;
+    const label = markCurrentLabel(provider.name, isCurrentProvider);
     return {
       value: provider.id,
-      label: healthLabelSuffix ? `${baseLabel}${healthLabelSuffix}` : baseLabel,
-      detail: [baseDetail, healthDetail, crossLaneDetail].filter(Boolean).join("  ·  "),
+      label,
+      // The reason leads, so it is the last part of the detail to be truncated.
+      detail: [status.reason, provider.description, aliases, crossLane]
+        .filter(Boolean)
+        .join("  ·  "),
+      badge: compact ? status.compactBadge : status.badge,
+      tone: status.tone,
+      previewBody: `${label} · ${status.explanation}`,
       previewImageUrl,
     };
   });
-}
-
-function formatProviderDetail(provider: ProviderMetadata): string {
-  const aliases = provider.aliases?.length ? `Known as ${provider.aliases.join(", ")}` : null;
-  return [provider.description, aliases].filter(Boolean).join("  ·  ");
 }

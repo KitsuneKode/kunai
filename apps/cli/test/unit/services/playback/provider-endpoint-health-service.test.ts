@@ -268,3 +268,41 @@ describe("endpoint quarantine under single-title viewing", () => {
     expect(repo.get("videasy", "cdn")).toBeUndefined();
   });
 });
+
+describe("ProviderEndpointHealthService.countQuarantinedByProvider", () => {
+  const NOW_ISO = "2026-11-27T12:00:00.000Z";
+
+  function record(
+    providerId: string,
+    endpoint: string,
+    quarantinedUntil: string | undefined,
+  ): ProviderEndpointHealthRecord {
+    return {
+      providerId,
+      endpoint,
+      failureClass: "server-error",
+      consecutiveFailures: 3,
+      distinctTitleIds: [],
+      quarantinedUntil,
+      updatedAt: NOW_ISO,
+    };
+  }
+
+  test("counts live quarantines per provider and nothing else", () => {
+    const repo = new MemoryEndpointHealthRepo();
+    repo.set(record("vidrock", "cdn-a", "2026-11-27T12:30:00.000Z"));
+    repo.set(record("vidrock", "cdn-b", "2026-11-27T13:00:00.000Z"));
+    // Expired, and a failure that never reached the quarantine threshold.
+    repo.set(record("vidrock", "cdn-c", "2026-11-27T11:59:59.000Z"));
+    repo.set(record("vidlink", "api", undefined));
+    const service = new ProviderEndpointHealthService(repo, () => new Date(NOW_ISO), [
+      // A curated dead seed is a retired route, not evidence about the provider.
+      { providerId: "videasy", endpoint: "retired", failureClass: "route-dead" },
+    ]);
+
+    const counts = service.countQuarantinedByProvider();
+    expect(counts.get("vidrock")).toBe(2);
+    expect(counts.has("vidlink")).toBe(false);
+    expect(counts.has("videasy")).toBe(false);
+  });
+});

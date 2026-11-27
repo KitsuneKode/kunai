@@ -1,4 +1,5 @@
 import { openListShell } from "@/app-shell/ink-shell";
+import { providerPickerSources } from "@/app-shell/overlay-provider-picker";
 import { chooseEpisodeFromOptions, chooseSeasonFromOptions } from "@/app-shell/pickers";
 import {
   buildPickerActionContext,
@@ -218,7 +219,7 @@ async function switchProviderFromStartingPicker(
       .filter((provider) =>
         providerMetadataMatchesLane(provider, shellModeToProviderLane(state.mode)),
       ),
-    getProviderHealth: (providerId) => container.providerHealth.get(providerId),
+    ...providerPickerSources(container, scope.title.id),
     actionContext: buildPickerActionContext({
       container,
       taskLabel: "Choose provider",
