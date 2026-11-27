@@ -1,11 +1,18 @@
 import { formatLocalDayKey } from "@/app-shell/calendar-ui.model";
 import type { BrowseIdleContext } from "@/app-shell/types";
 import type { Container } from "@/container";
-import { ENGAGE_SECONDS } from "@/domain/playback/progress-engage-policy";
+import {
+  historyLaunchSelectionFromContinuation,
+  type HistoryLaunchSelection,
+} from "@/services/continuation/continuation-launch-selection";
+import { firstPlayableContinuation } from "@/services/continuation/ContinueWatchingService";
+import {
+  cachedContinuationSignals,
+  offlineContinuationSignal,
+} from "@/services/continuation/history-continuation-signals";
 import {
   historyContentType,
   historyEpisodeLabel,
-  isYoutubeHistoryEntry,
   readLatestHistoryByTitle,
 } from "@/services/continuation/history-progress";
 import type { HistoryProgress } from "@/services/storage/storage-read-models";
@@ -50,31 +57,6 @@ export async function buildBrowseIdleContext(
         (Date.parse(right.updatedAt) || 0) - (Date.parse(left.updatedAt) || 0),
     );
 
-    const topEntry = sortedByRecency.find(
-      ([, entry]) => !entry.completed && entry.positionSeconds > ENGAGE_SECONDS,
-    );
-    if (topEntry) {
-      const [titleId, top] = topEntry;
-      const displayTop = applyYoutubeHistoryEnrichment(top);
-      continueWatchingSelection = { titleId, entry: top };
-      const ep = historyEpisodeLabel(displayTop);
-      const topDuration = displayTop.durationSeconds ?? 0;
-      const remainingSecs = topDuration > 0 ? topDuration - top.positionSeconds : 0;
-      const remainingLabel =
-        remainingSecs > 60 ? `${Math.ceil(remainingSecs / 60)}m left` : undefined;
-      continueWatching = {
-        title: displayTop.title,
-        ep,
-        remainingLabel,
-        titleId,
-        mediaKind: isYoutubeHistoryEntry(displayTop)
-          ? "video"
-          : historyContentType(displayTop) === "movie"
-            ? "movie"
-            : "series",
-      };
-    }
-
     const cursors = sortedByRecency
       .filter(([, entry]) => historyContentType(entry) === "series")
       .map(([titleId, entry]) => ({
@@ -84,6 +66,54 @@ export async function buildBrowseIdleContext(
       }));
     const readyAssets = container.offlineAssetService.listNextReadyByTitleCursors(cursors);
     const readyByTitle = new Map(readyAssets.map((asset) => [asset.titleId, asset]));
+    const releaseByTitle = container.releaseProgressCache.getByTitleIds(
+      sortedByRecency.map(([titleId]) => titleId),
+    );
+
+    // The same rule as `--continue`: the newest title with something to play —
+    // resume an unfinished episode, or the next aired one after a finished
+    // episode. A downloaded next episode is left to the offline row below.
+    const decision = firstPlayableContinuation(
+      sortedByRecency,
+      (titleId, anchor) => {
+        const asset = readyByTitle.get(titleId);
+        return cachedContinuationSignals({
+          entry: anchor,
+          releaseProgress: releaseByTitle.get(titleId),
+          offline: offlineContinuationSignal(
+            false,
+            asset?.season !== undefined && asset.episode !== undefined
+              ? { season: asset.season, episode: asset.episode, jobId: asset.originJobId }
+              : undefined,
+          ),
+        });
+      },
+      (candidate) => candidate.primaryAction?.kind !== "play-local",
+    );
+    const sourceEntry = decision?.target ? allHistory[decision.target.titleId] : undefined;
+    if (decision?.target && sourceEntry) {
+      const { target } = decision;
+      const displayTop = applyYoutubeHistoryEnrichment(sourceEntry);
+      continueWatchingSelection = historyLaunchSelectionFromContinuation({
+        ...decision,
+        target: { ...target, sourceEntry },
+      });
+      const isResume = decision.state === "resume";
+      const topDuration = displayTop.durationSeconds ?? 0;
+      const remainingSecs =
+        isResume && topDuration > 0 ? topDuration - sourceEntry.positionSeconds : 0;
+      continueWatching = {
+        title: displayTop.title,
+        ep: isResume
+          ? historyEpisodeLabel(displayTop)
+          : historyEpisodeLabel({ ...displayTop, season: target.season, episode: target.episode }),
+        remainingLabel: remainingSecs > 60 ? `${Math.ceil(remainingSecs / 60)}m left` : undefined,
+        titleId: target.titleId,
+        mediaKind: target.mediaKind,
+        nextUp: !isResume,
+      };
+    }
+
     for (const [titleId, entry] of sortedByRecency) {
       const asset = readyByTitle.get(titleId);
       if (asset?.season === undefined || asset.episode === undefined) continue;
@@ -192,10 +222,8 @@ export async function buildBrowseIdleContext(
   return { idleContext, continueWatchingSelection };
 }
 
-export type ContinueWatchingSelection = {
-  readonly titleId: string;
-  readonly entry: HistoryProgress;
-};
+/** What the home row's continue launches: the history row and the episode to start. */
+export type ContinueWatchingSelection = HistoryLaunchSelection;
 
 let browseIdleRefreshListener: (() => void) | null = null;
 

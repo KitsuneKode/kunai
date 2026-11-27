@@ -68,6 +68,8 @@ function idleRowHint(rowId: string, focused: boolean): string | undefined {
   switch (rowId) {
     case "continue":
       return "↵ resume · m menu";
+    case "next-up":
+      return "↵ play next · m menu";
     case "offline-ready":
       return "↵ play offline";
     case "playlist-next":
@@ -127,18 +129,21 @@ export function buildBrowseIdleReturnLoopModel(
 
   if (idleContext?.continueWatching) {
     const cw = idleContext.continueWatching;
-    const meta = [cw.ep, cw.remainingLabel]
+    const meta = (cw.nextUp ? ["next", cw.ep] : [cw.ep, cw.remainingLabel])
       .filter((part): part is string => Boolean(part))
       .map(sanitizeTerminalText)
       .join(" · ");
     const rowIndex = rows.length;
     rows.push({
       id: "continue",
-      glyph: "⏸",
+      glyph: cw.nextUp ? "▶" : "⏸",
       glyphColor: palette.accent,
       title: sanitizeTerminalText(cw.title),
       meta: meta.length > 0 ? meta : undefined,
-      hint: idleRowHint("continue", options.idleFocused && selectedIndex === rowIndex),
+      hint: idleRowHint(
+        cw.nextUp ? "next-up" : "continue",
+        options.idleFocused && selectedIndex === rowIndex,
+      ),
       focused: options.idleFocused && selectedIndex === rowIndex,
       actionable: true,
     });

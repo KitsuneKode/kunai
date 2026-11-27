@@ -42,7 +42,7 @@ import type { createContainer } from "@/container";
 import type { KunaiShareAction, PlaybackTargetRef } from "@/domain/share/playback-target-ref";
 import type { EpisodeInfo, SearchResult, TitleInfo } from "@/domain/types";
 import { isProcessEntrypoint } from "@/infra/build/entrypoint";
-import type { HistoryProgress, ReleaseProgressProjection } from "@kunai/storage";
+import type { HistoryProgress } from "@kunai/storage";
 
 import packageJson from "../package.json" with { type: "json" };
 
@@ -252,6 +252,8 @@ async function maybeResolveContinueTitle(
   container: Awaited<ReturnType<typeof createContainer>>,
 ): Promise<StartupHistoryTarget | null> {
   if (!args.continuePlayback) return null;
+  const { cachedContinuationSignals, offlineContinuationSignal } =
+    await import("@/services/continuation/history-continuation-signals");
   // Only the head of the recency scan feeds startup: the batch reads below are
   // keyed by its titles, and the candidate is the newest of them with
   // something to play.
@@ -268,11 +270,14 @@ async function maybeResolveContinueTitle(
     // The same 100 rows the signals above were read for: the newest title with
     // something to play, which is not always the newest title.
     scanLimit: 100,
-    signalsByTitle: (titleId) =>
-      buildStartupContinuationSignals({
+    signalsByTitle: (titleId, anchor) =>
+      cachedContinuationSignals({
+        entry: anchor,
         releaseProgress: releaseProgress.get(titleId),
-        offlineEnrolled: offlinePolicies.get(titleId)?.enrolled === true,
-        nextReady: nextReadyByTitle.get(titleId),
+        offline: offlineContinuationSignal(
+          offlinePolicies.get(titleId)?.enrolled === true,
+          nextReadyByTitle.get(titleId),
+        ),
       }),
   });
   if (!decision?.target || !decision.primaryAction) {
@@ -290,15 +295,16 @@ async function maybeResolveContinueTitle(
     {
       applyHistorySelectionProvider,
       episodeFromHistorySelection,
-      historyLaunchSelectionFromContinuation,
       prepareReplayTitleForProvider,
       recordLocalHistorySourceDecision,
       titleFromHistorySelection,
     },
     { recordContinuationProjectDecision, recordContinuationSourceResolution },
+    { historyLaunchSelectionFromContinuation },
   ] = await Promise.all([
     import("@/app/bootstrap/launch-entry"),
     import("@/services/continuation/continuation-diagnostics"),
+    import("@/services/continuation/continuation-launch-selection"),
   ]);
   const selection = historyLaunchSelectionFromContinuation(decision);
   applyHistorySelectionProvider(container, selection);
@@ -359,65 +365,6 @@ function readNextReadyOfflineEpisodes(
     });
   }
   return readyByTitle;
-}
-
-function buildStartupContinuationSignals(input: {
-  readonly releaseProgress?: ReleaseProgressProjection;
-  readonly offlineEnrolled: boolean;
-  readonly nextReady?: {
-    readonly season: number;
-    readonly episode: number;
-    readonly jobId?: string;
-  };
-}) {
-  const releaseProgress = input.releaseProgress;
-  return {
-    nextRelease: releaseProgressToContinuationNextRelease(releaseProgress),
-    newSeason: releaseProgress?.newSeason?.season
-      ? {
-          season: releaseProgress.newSeason.season,
-          availableAt: releaseProgress.newSeason.nextAiringAt,
-        }
-      : null,
-    releaseProgress: releaseProgress
-      ? {
-          newEpisodeCount: releaseProgress.newEpisodeCount,
-          stale: Date.parse(releaseProgress.staleAfterAt) <= Date.now(),
-        }
-      : null,
-    offline:
-      input.offlineEnrolled || input.nextReady
-        ? {
-            enrolled: input.offlineEnrolled,
-            readyNextEpisodes: input.nextReady ? [input.nextReady] : [],
-          }
-        : null,
-  };
-}
-
-function releaseProgressToContinuationNextRelease(
-  projection: ReleaseProgressProjection | undefined,
-) {
-  if (!projection) return null;
-  if (projection.status === "new-episodes" && projection.newEpisodeCount > 0) {
-    const season = projection.anchorSeason ?? projection.latestAiredSeason;
-    if (season === undefined) return null;
-    return {
-      season,
-      episode: projection.anchorEpisode + 1,
-      released: true,
-      availableAt: projection.latestKnownReleaseAt,
-    };
-  }
-  if (projection.nextAiringSeason === undefined || projection.nextAiringEpisode === undefined) {
-    return null;
-  }
-  return {
-    season: projection.nextAiringSeason,
-    episode: projection.nextAiringEpisode,
-    released: projection.status === "new-episodes",
-    availableAt: projection.nextAiringAt,
-  };
 }
 
 async function maybeRunDownloadMode(

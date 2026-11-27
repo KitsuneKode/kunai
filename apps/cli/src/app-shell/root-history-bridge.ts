@@ -6,10 +6,7 @@ import {
 } from "@/services/continuation/continuation-source";
 import { projectContinuationSurface } from "@/services/continuation/continuation-surface-policy";
 import { historyContentType, isFinished } from "@/services/continuation/history-progress";
-import type {
-  HistoryProgress,
-  ReleaseProgressProjection,
-} from "@/services/storage/storage-read-models";
+import type { HistoryProgress } from "@/services/storage/storage-read-models";
 
 export type RootHistorySelection = {
   titleId: string;
@@ -186,30 +183,5 @@ export function buildRootHistorySelection(
       episode: selection.entry.episode ?? selection.entry.absoluteEpisode ?? 1,
       reason: "resume",
     },
-  };
-}
-
-export function releaseProgressToContinueHistoryRelease(
-  projection: ReleaseProgressProjection | undefined,
-): ContinueHistoryRelease | null {
-  if (!projection) return null;
-  if (projection.status === "new-episodes" && projection.newEpisodeCount > 0) {
-    return {
-      status: "released",
-      releaseAt: projection.latestKnownReleaseAt ?? null,
-      season: projection.anchorSeason ?? projection.latestAiredSeason,
-      episode: projection.anchorEpisode + 1,
-    };
-  }
-  return {
-    status:
-      projection.status === "upcoming"
-        ? "upcoming"
-        : projection.status === "caught-up"
-          ? "caught-up"
-          : "unknown",
-    releaseAt: projection.nextAiringAt ?? null,
-    season: projection.nextAiringSeason,
-    episode: projection.nextAiringEpisode,
   };
 }

@@ -13,6 +13,7 @@ import { describe, expect, it } from "bun:test";
 import { join } from "node:path";
 
 import { measureColumns } from "@/app-shell/shell-text";
+import type { Container } from "@/container";
 import type { JsonObject } from "@kunai/types";
 
 import { createAgentSession, type AgentSession } from "./agent-driver";
@@ -357,6 +358,71 @@ describe("agent wiring · anime episode picker", () => {
             .history()
             .some((row) => row.title_id === "anilist:smoke-anime-1" && row.media_kind === "anime"),
         "history_progress records the anime episode",
+      );
+    });
+  }, 45_000);
+});
+
+describe("agent wiring · next up on the home row", () => {
+  it("a finished episode with a later aired one offers it, and Enter plays it", async () => {
+    // Episode 1 finished; the release cache knows episode 6 aired long ago,
+    // so reconciliation calls the title caught-up (nothing aired since the
+    // last watch). The home row must still offer episode 2.
+    const finishedAt = "2026-11-20T10:00:00.000Z";
+    const seedNextUp = (container: Container) => {
+      container.historyRepository.upsertProgress({
+        title: { id: "tmdb:smoke-series-1", kind: "series", title: "Smoke Series" },
+        episode: { season: 1, episode: 1 },
+        positionSeconds: 1400,
+        durationSeconds: 1400,
+        completed: true,
+        // The fixture provider stands in for videasy; real rows always carry
+        // the provider they played on.
+        providerId: "videasy",
+        updatedAt: finishedAt,
+      });
+      container.releaseProgressCache.upsert({
+        titleId: "tmdb:smoke-series-1",
+        mediaKind: "series",
+        source: "tmdb",
+        title: "Smoke Series",
+        anchorSeason: 1,
+        anchorEpisode: 1,
+        latestAiredSeason: 1,
+        latestAiredEpisode: 6,
+        newEpisodeCount: 0,
+        status: "caught-up",
+        checkedAt: finishedAt,
+        nextCheckAt: "2999-01-01T00:00:00.000Z",
+        staleAfterAt: "2999-01-01T00:00:00.000Z",
+        sourceFingerprint: "wiring:next-up",
+        errorCount: 0,
+      });
+    };
+
+    await withSession("wiring-next-up", { mpv: "fake", beforeMount: seedNextUp }, async (s) => {
+      await s.waitForFrame(
+        (f) => f.includes("Smoke Series") && f.includes("next · S01E02"),
+        "next-up continue row",
+      );
+      await s.waitSettled();
+
+      // ↓ leaves the search box for "For you now", as the footer says.
+      s.press(K.down);
+      await s.waitForFrame((f) => f.includes("↵ play next"), "focused next-up row");
+      await s.waitSettled();
+      s.press(K.enter);
+      await s.waitForFrame((f) => f.includes("Post-play"), "post-play surface", 30_000);
+
+      await s.waitForBackend(
+        (i) =>
+          i
+            .history()
+            .some(
+              (row) =>
+                row.title_id === "tmdb:smoke-series-1" && row.season === 1 && row.episode === 2,
+            ),
+        "history_progress records episode 2, the next-up target",
       );
     });
   }, 45_000);

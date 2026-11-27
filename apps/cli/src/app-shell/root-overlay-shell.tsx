@@ -38,6 +38,7 @@ import {
   isFinished,
   readLatestHistoryByTitle,
 } from "@/services/continuation/history-progress";
+import { continueReleaseFromProjection } from "@/services/continuation/release-next-episode";
 import { buildUiDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
 import { readCatalogBoundsForHistoryEntries } from "@/services/history-metadata/history-catalog-seed";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
@@ -179,10 +180,7 @@ import { createQueuePosterResolver } from "./queue-poster-resolver";
 import { QueueShell } from "./queue-shell";
 import type { QueueViewRow } from "./queue-view";
 import { buildQueueView } from "./queue-view";
-import {
-  releaseProgressToContinueHistoryRelease,
-  type RootHistorySelection,
-} from "./root-history-bridge";
+import { type RootHistorySelection } from "./root-history-bridge";
 import {
   hasPendingNotificationSelection,
   openDiagnosticsOverlay,
@@ -336,8 +334,8 @@ function readCachedHistoryNextReleases(
   >,
 ): NonNullable<HistoryPickerOptionsContext["nextReleases"]> {
   const releases = new Map<string, ContinueHistoryRelease>();
-  for (const [titleId] of entries) {
-    const release = releaseProgressToContinueHistoryRelease(cachedProgress.get(titleId));
+  for (const [titleId, entry] of entries) {
+    const release = continueReleaseFromProjection(cachedProgress.get(titleId), entry);
     if (release) releases.set(titleId, release);
   }
   return releases;
@@ -405,7 +403,7 @@ function readCachedHistoryProjections(
   const projections = new Map();
   for (const [titleId, entry] of entries) {
     const releaseProgress = cachedProgress.get(titleId);
-    const nextRelease = releaseProgressToContinueHistoryRelease(releaseProgress);
+    const nextRelease = continueReleaseFromProjection(releaseProgress, entry);
     const policy = policies.get(titleId);
     const offline =
       policy || nextReadyByTitle.has(titleId)

@@ -66,6 +66,32 @@ describe("browse idle actions", () => {
     expect(model?.hasSelectableRows).toBe(true);
   });
 
+  test("a next-up continue row reads as the next episode, not a paused one", () => {
+    const model = buildBrowseIdleReturnLoopModel(
+      {
+        continueWatching: {
+          title: "Binge Show",
+          ep: "S01E04",
+          titleId: "tmdb:show",
+          mediaKind: "series",
+          nextUp: true,
+        },
+      },
+      { idleFocused: true, selectedIndex: 0 },
+    );
+    expect(model?.rows[0]).toMatchObject({
+      id: "continue",
+      glyph: "▶",
+      meta: "next · S01E04",
+      hint: "↵ play next · m menu",
+    });
+    expect(
+      resolveIdleRowAction("continue", {
+        continueWatching: { title: "Binge Show", titleId: "tmdb:show", nextUp: true },
+      }),
+    ).toBe("resume-continue-watching");
+  });
+
   test("resolveIdleRowAction maps row ids to shell actions", () => {
     const context = {
       continueWatching: { title: "A", titleId: "tmdb:1", mediaKind: "series" as const },

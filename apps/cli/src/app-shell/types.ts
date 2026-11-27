@@ -323,6 +323,8 @@ export type BrowseIdleContext = {
     remainingLabel?: string;
     titleId?: string;
     mediaKind?: "movie" | "series" | "video";
+    /** The last episode is finished and `ep` is the next one, not a resume. */
+    nextUp?: boolean;
   };
   offlineReadyNext?: {
     title: string;

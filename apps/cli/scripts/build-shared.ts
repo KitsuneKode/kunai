@@ -523,22 +523,22 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // Mid-stream failover (stream-unrecoverable escalation, recovery start intent)
 // and the provider-defaults revision 8 history module on top measured
 // 3,323,126 bytes; 3247 KiB leaves 1,802.
+// Main after #845 measured 3,324,798 bytes. Next up on the home row (one
+// release-backed next-episode rule for the row, `--continue`, History and
+// Calendar, plus the successor auto-launch) measured 3,325,627 bytes, +829.
 // Shell-v4 narrow browse/palette/playback layout on top measured 3,327,248
-// bytes, 2,320 over. Extracting the browse opener, browse display context, and
-// shared screen/timestamp helpers first shrank the large shell files rather
-// than copying them; the remaining growth is narrow footer density, palette row
-// accounting, and playback/browse chrome policy. 3250 KiB is the smallest
-// whole-KiB raise over the measured tree and leaves 752 bytes; public launcher
-// budgets are unchanged.
-// Tracks panel recovery grammar (wide values, pane cue, narrow section tabs,
-// compact failure causes, and singleton facts) measured 3,330,345 bytes,
-// 2,345 over. The shared row renderer and footer helper keep the implementation
-// deduplicated; the remaining growth is explicit state copy and bounded layout
-// policy. The clean details-sheet overlay (framed poster fallback, explicit
-// recovery footer, and artifact-clearing transition) measured 3,331,426 bytes,
-// 354 over. 3254 KiB is the smallest whole-KiB raise over that measurement and
-// leaves 670 bytes; public launcher budgets are unchanged.
-export const NPM_BUNDLE_BUDGET_KB = 3_254;
+// bytes. Extracting the browse opener, browse display context, and shared
+// screen/timestamp helpers first shrank the large shell files rather than
+// copying them; the remaining growth is narrow footer density, palette row
+// accounting, and playback/browse chrome policy. Tracks panel recovery grammar
+// (wide values, pane cue, narrow section tabs, compact failure causes, and
+// singleton facts) measured 3,330,345 bytes. The clean details-sheet overlay
+// (framed poster fallback, explicit recovery footer, and artifact-clearing
+// transition) measured 3,331,426 bytes.
+// Merged with next-up, the combined tree measured 3,332,234 bytes. 3255 KiB
+// is the smallest whole-KiB raise over that measurement and leaves 886 bytes;
+// public launcher budgets are unchanged.
+export const NPM_BUNDLE_BUDGET_KB = 3_255;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
