@@ -56,8 +56,6 @@ export {
   getEffectiveAllMangaBootstrapUrl,
   getEffectiveAllMangaContentLane,
   getEffectiveAllMangaCryptoProfile,
-  getEffectiveAllMangaEpochGraceMs,
-  getEffectiveAllMangaEpochMs,
   getEffectiveAllMangaQueryHash,
   getLastAllMangaRotationSignal,
   hashBuildId,
