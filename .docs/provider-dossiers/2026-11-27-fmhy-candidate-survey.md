@@ -38,19 +38,20 @@ lastReviewed: "2026-11-27"
 
 Adding these 6 independent backends to Kunai's active Movie/TV roster (`vidlink`, `vidrock`, `rivestream`, plus `movy` when unblocked) yields **9–10 independent backends**, replacing the permanently shut-down `videasy`.
 
-| Rank | Candidate (FMHY Frontends) | Addressing | Real Backend / CDN | Servers | Audio / Dubs | Max Quality | Subtitles | Container | Anti-Bot | Difficulty | Browser? |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| **1** | **VidBolt** (`vidbolt.pro` — powers ⭐ Ghostflix, 🌟 SweetFox) | TMDB ID | `vidbolt.pro/api/resolve` → `rousav.tech`, `vidbolt.xyz` | **4** (`orion`, `callisto`, `luna`, `vega`) | Multi-audio in HLS: **en, de, es, it** (live-verified) | 1080p (4K tagged in player) | Inline HLS VTT (ar/de/en/es) + `thesubtitledb.org` | HLS + MP4 | None on API (frame-buster in HTML only) | **S** | No |
-| **2** | **Atlantic / VidOra** (`atlantic.bz`, `vidora.ac` — FMHY 🌟 Superstar, `fprime.at`, `Atlas`) | TMDB ID | `hls.lol` ecosystem (`api.atlantic.bz`, `cdn.hls.lol`, `natsuki.hls.lol`) | Multi-server | Multi-audio: **en, hi, es, fr, de, it, ja, ko** | **4K (2160p)** | `natsuki.hls.lol/subs` (`.srt`) + `sub.vdrk.site` (`.vtt`) | HLS | None (HTTP 200 plain curl); minified Vite JS | **M** | No |
-| **3** | **VidFast** (`vidfast.vc` / `vidfast.pro` — Multi-Server staple) | TMDB ID | `vidfast.vc` aggregator (~10–15 named lanes) | **10+** | Multi-language on localized lanes | **4K (2160p)** | External VTT/SRT | HLS + MP4 | None (HTTP 200 plain curl); JS/AES `en` payload encryption | **M** | No |
-| **4** | **PunkFlix / VidGold Family** (`player.cinezo.live`, `player.vidgold.net`, `player.vidqueen.st` — powers 🌟 ArrowTV/Cinezo/FlikHub, 🌟 SweetFox) | TMDB ID | `punkflix.net` / `*.vidgold.vip` / `proxy3.flikhub.net` | Multi-server | **11 languages**: en, **hi, es, it, fr, de, pt, ar, ja, ko, ru** | **4K (2160p)** | External OpenSubtitles + provider tracks | HLS + DASH | `curl_cffi` 200 on embed; obfuscated bootstrap JS; Turnstile refs in bundle (verify API gate) | **M–L** | No (verify Turnstile gate) |
-| **5** | **Chillflix** (`chillflix.pw` — powers ⭐ Chillflix, Toflix, Vuflix) | TMDB ID | `chillflix.pw` (`/player-api`, `/api/movie/{id}`) | Multi-server | Multi-audio: **en, es, fr, de, it, pt** | **4K (2160p)** | External soft subs | HLS | None (HTTP 200 plain curl); Next.js RSC/API | **M** | No |
-| **6** | **VidUp** (`vidup.to` — used by 🌟 SweetFox & Multi-Server sites) | TMDB ID | `vidup.to` standalone multi-server embed | Multi-server | Multi-language on alt lanes | **4K (2160p)** | External soft subs | HLS | None (HTTP 200 plain curl); AES client crypto | **M** | No |
-| **7** *(Alt #6)* | **MovieBox / Aoneroom** (`movieboxonline.net`, `h5.aoneroom.com` — Dedicated-Server) | Own search (`subjectId` + `detailPath`; title+year bridge) | `aoneroom.com` / `wefeed-h5-bff` (`istio-envoy`) | Single dedicated CDN (`pbcdn.aoneroom.com`) | Huge dub catalog (**en, hi, es, regional**) | 1080p | Rich multi-lang soft subs | MP4 + HLS | Zero Cloudflare; ISP-sinkholed locally (needs DoH); web search needs app headers/host RE | **M** | No |
+| Rank             | Candidate (FMHY Frontends)                                                                                                                       | Addressing                                                 | Real Backend / CDN                                                        | Servers                                     | Audio / Dubs                                                     | Max Quality                 | Subtitles                                                  | Container  | Anti-Bot                                                                                      | Difficulty | Browser?                   |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------- | ---------------------------------------------------------------- | --------------------------- | ---------------------------------------------------------- | ---------- | --------------------------------------------------------------------------------------------- | ---------- | -------------------------- |
+| **1**            | **VidBolt** (`vidbolt.pro` — powers ⭐ Ghostflix, 🌟 SweetFox)                                                                                   | TMDB ID                                                    | `vidbolt.pro/api/resolve` → `rousav.tech`, `vidbolt.xyz`                  | **4** (`orion`, `callisto`, `luna`, `vega`) | Multi-audio in HLS: **en, de, es, it** (live-verified)           | 1080p (4K tagged in player) | Inline HLS VTT (ar/de/en/es) + `thesubtitledb.org`         | HLS + MP4  | None on API (frame-buster in HTML only)                                                       | **S**      | No                         |
+| **2**            | **Atlantic / VidOra** (`atlantic.bz`, `vidora.ac` — FMHY 🌟 Superstar, `fprime.at`, `Atlas`)                                                     | TMDB ID                                                    | `hls.lol` ecosystem (`api.atlantic.bz`, `cdn.hls.lol`, `natsuki.hls.lol`) | Multi-server                                | Multi-audio: **en, hi, es, fr, de, it, ja, ko**                  | **4K (2160p)**              | `natsuki.hls.lol/subs` (`.srt`) + `sub.vdrk.site` (`.vtt`) | HLS        | None (HTTP 200 plain curl); minified Vite JS                                                  | **M**      | No                         |
+| **3**            | **VidFast** (`vidfast.vc` / `vidfast.pro` — Multi-Server staple)                                                                                 | TMDB ID                                                    | `vidfast.vc` aggregator (~10–15 named lanes)                              | **10+**                                     | Multi-language on localized lanes                                | **4K (2160p)**              | External VTT/SRT                                           | HLS + MP4  | None (HTTP 200 plain curl); JS/AES `en` payload encryption                                    | **M**      | No                         |
+| **4**            | **PunkFlix / VidGold Family** (`player.cinezo.live`, `player.vidgold.net`, `player.vidqueen.st` — powers 🌟 ArrowTV/Cinezo/FlikHub, 🌟 SweetFox) | TMDB ID                                                    | `punkflix.net` / `*.vidgold.vip` / `proxy3.flikhub.net`                   | Multi-server                                | **11 languages**: en, **hi, es, it, fr, de, pt, ar, ja, ko, ru** | **4K (2160p)**              | External OpenSubtitles + provider tracks                   | HLS + DASH | `curl_cffi` 200 on embed; obfuscated bootstrap JS; Turnstile refs in bundle (verify API gate) | **M–L**    | No (verify Turnstile gate) |
+| **5**            | **Chillflix** (`chillflix.pw` — powers ⭐ Chillflix, Toflix, Vuflix)                                                                             | TMDB ID                                                    | `chillflix.pw` (`/player-api`, `/api/movie/{id}`)                         | Multi-server                                | Multi-audio: **en, es, fr, de, it, pt**                          | **4K (2160p)**              | External soft subs                                         | HLS        | None (HTTP 200 plain curl); Next.js RSC/API                                                   | **M**      | No                         |
+| **6**            | **VidUp** (`vidup.to` — used by 🌟 SweetFox & Multi-Server sites)                                                                                | TMDB ID                                                    | `vidup.to` standalone multi-server embed                                  | Multi-server                                | Multi-language on alt lanes                                      | **4K (2160p)**              | External soft subs                                         | HLS        | None (HTTP 200 plain curl); AES client crypto                                                 | **M**      | No                         |
+| **7** _(Alt #6)_ | **MovieBox / Aoneroom** (`movieboxonline.net`, `h5.aoneroom.com` — Dedicated-Server)                                                             | Own search (`subjectId` + `detailPath`; title+year bridge) | `aoneroom.com` / `wefeed-h5-bff` (`istio-envoy`)                          | Single dedicated CDN (`pbcdn.aoneroom.com`) | Huge dub catalog (**en, hi, es, regional**)                      | 1080p                       | Rich multi-lang soft subs                                  | MP4 + HLS  | Zero Cloudflare; ISP-sinkholed locally (needs DoH); web search needs app headers/host RE      | **M**      | No                         |
 
 ### Detailed Notes — Movie / TV Shortlist
 
 #### 1. VidBolt (`vidbolt.pro` / `vidbolt.st`) — Recommended First Build
+
 - **Live evidence (2026-11-27):**
   - `GET https://vidbolt.pro/api/resolve?type=movie&id=550` (with `Referer: https://vidbolt.pro/embed/movie/550`) returned HTTP 200 unencrypted JSON.
   - Iterating `?exclude=<seen>` enumerated **4 live servers** on Fight Club (TMDB `550`):
@@ -63,6 +64,7 @@ Adding these 6 independent backends to Kunai's active Movie/TV roster (`vidlink`
 - **Stability & maintenance:** Low rotation surface (also mirrored at `vidbolt.st` used by Ghostflix). Because `/api/resolve` accepts `?only=<server>` and `?exclude=<csv>`, it maps directly onto Kunai's `runProviderCycle` + `preferredSourceId` contract with zero cryptography.
 
 #### 2. Atlantic / VidOra (`atlantic.bz` / `atlantic.st` / `vidora.ac` / `hls.lol`)
+
 - **Live evidence (2026-11-27):**
   - FMHY 🌟 Superstar (`18/18` grading: 4K, Dual Audio, External Subs). Also powers `fprime.at` and the `Atlas` desktop app (`atlasapp.hls.lol`).
   - `atlantic.bz`, `api.atlantic.bz` (`200 {"message":"Backend is working as expected (v0.1.0)"}`), `vidora.ac/movie/550` (`200`), and `natsuki.hls.lol/subs?tmdbId=550` (`200` JSON with 4K-synced `.srt` URLs) all answer without Cloudflare challenges or Turnstile.
@@ -70,12 +72,14 @@ Adding these 6 independent backends to Kunai's active Movie/TV roster (`vidlink`
 - **Stability & maintenance:** Active operator with dedicated mirrors (`atlantic.bz` / `atlantic.st` / `fprime.at`) and desktop client. Requires one focused reverse-engineering pass on the minified `vidora.ac` / `atlantic.bz` bundle to capture the exact stream-fetch call before implementation.
 
 #### 3. VidFast (`vidfast.vc`, redirected from `vidfast.pro`)
+
 - **Live evidence (2026-11-27):**
   - `GET https://vidfast.pro/movie/550` cleanly 301-redirects to `https://vidfast.vc/movie/550` → HTTP 200 (216 KB Next.js SSR HTML, zero Cloudflare challenge, zero Turnstile).
   - Page embeds the encrypted `"en"` bootstrap blob used to request its multi-server list and stream endpoints.
 - **Stability & maintenance:** One of the most widely embedded independent TMDB backends across FMHY's Multi-Server section, with multi-year uptime and clean TLD rotation. Implementation follows the same pattern as `packages/providers/src/vidrock/` (pure HTTP + ported static decryptor + rotation canary test + hotfix-manifest crypto override).
 
 #### 4. PunkFlix / VidGold Family (`player.cinezo.live`, `player.vidgold.net`, `player.vidqueen.st`, `player.vidmario.net`)
+
 - **Live evidence (2026-11-27):**
   - Bundle fingerprinting proved that **six** FMHY entries share one operator family: `VidQueen` (`q.vidgold.vip`), `VidGold` (`g.vidgold.vip`), `VidMario` (`m.vidgold.vip`), and `ArrowTV` / `Cinezo` / `FlikHub` (`player.cinezo.live` / `proxy3.flikhub.net`), all referencing `punkflix.net` and serving the identical 505,798 B HLS bundle on the VidGold trio.
   - All four embed URLs returned HTTP 200 via `curl_cffi chrome131` (note: `www.cinezo.st` 403'd plain curl but cleared `curl_cffi`).
@@ -83,17 +87,20 @@ Adding these 6 independent backends to Kunai's active Movie/TV roster (`vidlink`
 - **Risk / prerequisite:** Player HTML/JS contains Turnstile/Cap references and rotating obfuscated loader filenames (`*-obq1.js`); `api.vidqueen.st/` returned `410` to an unauthenticated bare GET. Confirm during intake RE that the stream endpoint works without interactive Turnstile before coding; build **one** adapter for the family, never multiple.
 
 #### 5. Chillflix (`www.chillflix.pw` — powers ⭐ Chillflix / Toflix / Vuflix)
+
 - **Live evidence (2026-11-27):**
   - `https://www.chillflix.pw/embed/movie/550` returned HTTP 200 (186 KB, no CF, no Turnstile) advertising **4K** and **French, German, Italian, Portuguese, Spanish, English**.
   - Next.js chunks expose `/api/movie/{id}` (live-verified HTTP 200 JSON) and `https://chillflix.pw/player-api`.
 - **Stability & maintenance:** Powers three FMHY Star frontends with a unified embed host (`chillflix.pw`). Medium effort to trace the `/player-api` call chain in its Next.js chunks.
 
 #### 6. VidUp (`vidup.to`)
+
 - **Live evidence (2026-11-27):**
   - `https://vidup.to/movie/550` returned HTTP 200 (150 KB Next.js SSR, no CF, no Turnstile), 4K-capable, AES-encrypted API exchange, distinct from VidLink/VidRock/VidFast/VidBolt.
 - **Stability & maintenance:** Used as a standalone embed lane on SweetFox and Multi-Server sites. Medium effort (same AES-port + canary pattern as VidRock/VidFast).
 
 #### 7. Watchlist / Alternative #6: MovieBox / Aoneroom (`movieboxonline.net` / `h5.aoneroom.com`) & VixSrc (`vixsrc.to`)
+
 - **MovieBox (`aoneroom.com`):** Completely non-Western mobile-app infrastructure (`istio-envoy`, zero Cloudflare, massive Hindi/Spanish/English dub + soft-sub library). Locally ISP-sinkholed (`movieboxonline.net` required DoH → `206.52.20.227`), and `POST /wefeed-h5-bff/web/subject/search` answered HTTP 200 `{"code":0,"message":"ok"}` with empty `items: []` on `h5.aoneroom.com` and `fmoviesunblocked.net` — indicating region/header/signature gating on the web BFF. High strategic value if a short APK/web-header capture unlocks search+play.
 - **VixSrc (`vixsrc.to` / `vixcloud.cc` — powers `StreamingUnity`):** Cleanest dedicated Italian+English dual-audio 1080p/4K HLS embed in the scene, **but** currently returned Cloudflare managed challenge (`403` + `_cf_chl_opt`) even to `curl_cffi chrome124` from this IP. Re-test with `curl_chrome150` or residential egress before investing.
 
@@ -103,20 +110,21 @@ Adding these 6 independent backends to Kunai's active Movie/TV roster (`vidlink`
 
 Adding these 6 independent backends to Kunai's existing Anime roster (`hianime`, `animegg`, `kickassanime`, `miruro`, `allmanga`) yields **10–11 providers** with genuine CDN and catalog diversity, eliminating single-host SPOFs (`zokoanime.video` on HiAnime) and Cloudflare-only failure modes (`miruro`, `kickassanime`).
 
-| Rank | Candidate (FMHY Tier) | Addressing | Real Backend / CDN | Servers | Audio / Dubs | Max Quality | Subtitles | Container | Anti-Bot | Difficulty | Browser? |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| **1** | **AniLight** (`anilight.live` — FMHY ⭐ Star) | **Direct AniList ID** (`/api/anime/check-exists?anilistId=`) + own search | `api.anilight.live` + `media.satella.buzz` + `subtl.satella.buzz` | **2** (primary + `backup=true`) | **Sub + Dub** (both live-verified 200) | 1080p | Multi-lang soft VTT (`tracks[]`: en, ar, …) | HLS | None (stateless `POST /api/sources/session` + light URL decode) | **S** | No |
-| **2** | **Anidap** (`anidap.lol` — FMHY ⭐ Star; shares proxy w/ ⭐ AnimeX) | GraphQL/REST catalog (`anilistId`/`malId` → slug-5char ID) | `chad.anidap.lol/rest/api/*` (10 servers; **4 new upstreams**: `shiro`/`kem.clvd.xyz`, `vee`/`anizone.to`, `neko`/`zaza.animex.one`, `beep`/`24stream.xyz`) | **Up to 10** (`yuki`, `sora`, `shiro`, `vee`, `uwu`, `kiwi`, `miku`, `neko`, `mochi`, `beep`) | **Sub + Dub** (`subProviders` + `dubProviders`, live-verified) | 1080p | Multi-lang soft VTT (live-verified) | HLS + MP4 + DASH | None (HTTP 200 plain JSON on GraphQL & REST) | **S** | No |
-| **3** | **AnimeParadise** (`animeparadise.moe`) | Own JSON search (`/search?q=`, title+year bridge) | `api.animeparadise.moe` (self-hosted catalog/episode API + Next.js watch) | Dedicated | **Sub + Dub** | 1080p | Soft subs | HLS | None (HTTP 200 plain JSON on `/search`, `/anime`, `/episode`) | **S–M** | No |
-| **4** | **AniZone** (`anizone.to`) | Own Livewire search (`/anime?search=`, title+year bridge) | Self-hosted direct HLS CDN (Vidstack; upstream source scraped by Anidap/NekoWatch) | Dedicated (origin host) | **Sub only** (Japanese) | 1080p | Multi-lang soft subs (VTT/ASS) | HLS | None (HTTP 200 plain curl; Laravel Livewire HTML) | **S–M** | No |
-| **5** | **AnimeOnsen** (`animeonsen.xyz`) | Own JSON search (`/v4/search/{q}`, live-verified 200) | `api.animeonsen.xyz/v4/` + `cdn.animeonsen.xyz` (original encoder/host) | Dedicated (origin host) | **Sub only** (Japanese) | **720p** | **Native ASS/SSA** (`subtitles-octopus`) | **MPEG-DASH** | None (HTTP 200; guest `Bearer` token required for `/video/{ep}`) | **M** | No |
-| **6** | **WCO / WatchCartoonOnline** (`wco.tv` — FMHY ⭐ Star) | Slug search + `/dubbed-anime-list` & `/subbed-anime-list` HTML | Self-hosted `wco.tv` CDN (`inc/embed` / `getvidlink`) | Dedicated (origin host, 10+ yr uptime) | **Massive English Dub** + Sub + Cartoons | 720p–1080p | Hardsub (sub lane) / clean dub | MP4 + HLS | Zero CF on `wco.tv` w/ DoH (ISP-sinkholed locally); static JS embed decode | **M** | No |
-| **7** *(Watch)* | **AniXo** (`anixo.live` / `anixo.buzz` — FMHY ⭐ Star) | **Direct AniList ID** (`/embed/ani/{id}/{ep}/{sub\|dub}`) | `anixo.buzz` + `anivexaapi-aniko2.hf.space` (`Sora Edge`) | Multi-server | **Sub + Dub** (both live-verified 200) | 1080p | **9 languages** soft VTT (en, es, es-419, fr, de, it, pt-BR, ru, ar) | HLS | Embed 200; stream proxy returns `403 Anixo Enterprise Edge Defense` (needs `/api/stream/resolve` or `?t=` decode RE) | **M** | No |
-| **8** *(Watch)* | **AnimePahe Direct** (`animepahe.pw` — FMHY 🌟 Superstar) | Own JSON `/api?m=search&q=` | Direct `animepahe.pw` → `kwik.cx` / `owocdn.top` | Dedicated (origin host) | **Sub (hardsub) + Dub** | 1080p | Hardsub only | HLS | CF managed challenge (`403` + `_cf_chl_opt`) even w/ `curl_cffi chrome124` from this IP | **M** | No (if TLS/CF clears) |
+| Rank            | Candidate (FMHY Tier)                                               | Addressing                                                                | Real Backend / CDN                                                                                                                                          | Servers                                                                                       | Audio / Dubs                                                   | Max Quality | Subtitles                                                            | Container        | Anti-Bot                                                                                                             | Difficulty | Browser?              |
+| --------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | ----------- | -------------------------------------------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------- | ---------- | --------------------- |
+| **1**           | **AniLight** (`anilight.live` — FMHY ⭐ Star)                       | **Direct AniList ID** (`/api/anime/check-exists?anilistId=`) + own search | `api.anilight.live` + `media.satella.buzz` + `subtl.satella.buzz`                                                                                           | **2** (primary + `backup=true`)                                                               | **Sub + Dub** (both live-verified 200)                         | 1080p       | Multi-lang soft VTT (`tracks[]`: en, ar, …)                          | HLS              | None (stateless `POST /api/sources/session` + light URL decode)                                                      | **S**      | No                    |
+| **2**           | **Anidap** (`anidap.lol` — FMHY ⭐ Star; shares proxy w/ ⭐ AnimeX) | GraphQL/REST catalog (`anilistId`/`malId` → slug-5char ID)                | `chad.anidap.lol/rest/api/*` (10 servers; **4 new upstreams**: `shiro`/`kem.clvd.xyz`, `vee`/`anizone.to`, `neko`/`zaza.animex.one`, `beep`/`24stream.xyz`) | **Up to 10** (`yuki`, `sora`, `shiro`, `vee`, `uwu`, `kiwi`, `miku`, `neko`, `mochi`, `beep`) | **Sub + Dub** (`subProviders` + `dubProviders`, live-verified) | 1080p       | Multi-lang soft VTT (live-verified)                                  | HLS + MP4 + DASH | None (HTTP 200 plain JSON on GraphQL & REST)                                                                         | **S**      | No                    |
+| **3**           | **AnimeParadise** (`animeparadise.moe`)                             | Own JSON search (`/search?q=`, title+year bridge)                         | `api.animeparadise.moe` (self-hosted catalog/episode API + Next.js watch)                                                                                   | Dedicated                                                                                     | **Sub + Dub**                                                  | 1080p       | Soft subs                                                            | HLS              | None (HTTP 200 plain JSON on `/search`, `/anime`, `/episode`)                                                        | **S–M**    | No                    |
+| **4**           | **AniZone** (`anizone.to`)                                          | Own Livewire search (`/anime?search=`, title+year bridge)                 | Self-hosted direct HLS CDN (Vidstack; upstream source scraped by Anidap/NekoWatch)                                                                          | Dedicated (origin host)                                                                       | **Sub only** (Japanese)                                        | 1080p       | Multi-lang soft subs (VTT/ASS)                                       | HLS              | None (HTTP 200 plain curl; Laravel Livewire HTML)                                                                    | **S–M**    | No                    |
+| **5**           | **AnimeOnsen** (`animeonsen.xyz`)                                   | Own JSON search (`/v4/search/{q}`, live-verified 200)                     | `api.animeonsen.xyz/v4/` + `cdn.animeonsen.xyz` (original encoder/host)                                                                                     | Dedicated (origin host)                                                                       | **Sub only** (Japanese)                                        | **720p**    | **Native ASS/SSA** (`subtitles-octopus`)                             | **MPEG-DASH**    | None (HTTP 200; guest `Bearer` token required for `/video/{ep}`)                                                     | **M**      | No                    |
+| **6**           | **WCO / WatchCartoonOnline** (`wco.tv` — FMHY ⭐ Star)              | Slug search + `/dubbed-anime-list` & `/subbed-anime-list` HTML            | Self-hosted `wco.tv` CDN (`inc/embed` / `getvidlink`)                                                                                                       | Dedicated (origin host, 10+ yr uptime)                                                        | **Massive English Dub** + Sub + Cartoons                       | 720p–1080p  | Hardsub (sub lane) / clean dub                                       | MP4 + HLS        | Zero CF on `wco.tv` w/ DoH (ISP-sinkholed locally); static JS embed decode                                           | **M**      | No                    |
+| **7** _(Watch)_ | **AniXo** (`anixo.live` / `anixo.buzz` — FMHY ⭐ Star)              | **Direct AniList ID** (`/embed/ani/{id}/{ep}/{sub\|dub}`)                 | `anixo.buzz` + `anivexaapi-aniko2.hf.space` (`Sora Edge`)                                                                                                   | Multi-server                                                                                  | **Sub + Dub** (both live-verified 200)                         | 1080p       | **9 languages** soft VTT (en, es, es-419, fr, de, it, pt-BR, ru, ar) | HLS              | Embed 200; stream proxy returns `403 Anixo Enterprise Edge Defense` (needs `/api/stream/resolve` or `?t=` decode RE) | **M**      | No                    |
+| **8** _(Watch)_ | **AnimePahe Direct** (`animepahe.pw` — FMHY 🌟 Superstar)           | Own JSON `/api?m=search&q=`                                               | Direct `animepahe.pw` → `kwik.cx` / `owocdn.top`                                                                                                            | Dedicated (origin host)                                                                       | **Sub (hardsub) + Dub**                                        | 1080p       | Hardsub only                                                         | HLS              | CF managed challenge (`403` + `_cf_chl_opt`) even w/ `curl_cffi chrome124` from this IP                              | **M**      | No (if TLS/CF clears) |
 
 ### Detailed Notes — Anime Shortlist
 
 #### 1. AniLight (`anilight.live` → `api.anilight.live` + `satella.buzz`) — Recommended First Build
+
 - **Live evidence (2026-11-27):**
   - `GET https://api.anilight.live/api/anime/check-exists?anilistId=154587` → `200 {"exists":true,"slug":"sousou-no-frieren"}`.
   - `GET https://api.anilight.live/api/anime/sousou-no-frieren` → `200` JSON carrying `id`, `slug`, `anilistId`, `idMal`, `tmdb`, `episodes`, `subEpisodes`, `dubEpisodes`.
@@ -125,6 +133,7 @@ Adding these 6 independent backends to Kunai's existing Anime roster (`hianime`,
 - **Why #1:** Native AniList ID addressing (no fuzzy title matching), zero Cloudflare/Turnstile, both sub & dub with multi-language soft subtitles, dedicated CDN completely independent of all 5 existing Kunai providers, and small implementation effort.
 
 #### 2. Anidap (`anidap.lol` → `chad.anidap.lol` + `graphql.anidap.lol`) — Recommended Second Build
+
 - **Live evidence (2026-11-27):**
   - `GET https://graphql.anidap.lol/api/recent?page=1` and `POST https://graphql.anidap.lol/graphql` (`anime`, `searchAnime`, `catalogAnime`) return HTTP 200 JSON with `id` (slug + 5-char suffix), `anilistId`, and `malId`.
   - `GET https://chad.anidap.lol/rest/api/servers?id=<slug>&epNum=1` → `200` JSON listing `subProviders` and `dubProviders`.
@@ -135,6 +144,7 @@ Adding these 6 independent backends to Kunai's existing Anime roster (`hianime`,
 - **Deduplication note:** `AnimeX (animex.one)` shares the exact proxy hosts (`zaza.animex.one`, `prox.animex.one`); implementing Anidap covers this ecosystem cleanly with a documented REST API.
 
 #### 3. AnimeParadise (`animeparadise.moe` → `api.animeparadise.moe`)
+
 - **Live evidence (2026-11-27):**
   - `GET https://api.animeparadise.moe/search?q=frieren` → `200` JSON (`_id`, `title`, `link`, `episodes`, `genres`).
   - `GET https://api.animeparadise.moe/anime/sousou-no-frieren-season-2` → `200` JSON.
@@ -142,22 +152,26 @@ Adding these 6 independent backends to Kunai's existing Anime roster (`hianime`,
   - Zero Cloudflare, zero Turnstile; only the final `/watch/{uid}?origin={_id}` stream fetch needs a brief Next.js bundle trace.
 
 #### 4. AniZone (`anizone.to`)
+
 - **Live evidence (2026-11-27):**
   - Plain `curl` and `curl_cffi` both returned HTTP 200 on `/` (68 KB) and `/anime` (73 KB) with zero Cloudflare challenge and zero Turnstile.
   - Self-hosted Laravel + Livewire + Vidstack origin server — an actual upstream host (Anidap's `vee` server and NekoWatch pull from it) rather than a skin. Strong for clean 1080p soft-subbed releases; sub-only (no dubs).
 
 #### 5. AnimeOnsen (`www.animeonsen.xyz` → `api.animeonsen.xyz/v4/`)
+
 - **Live evidence (2026-11-27):**
   - `GET https://api.animeonsen.xyz/v4/search/frieren` returned HTTP 200 pure JSON (`content_id: "LQf5VCVYgecMGZob"`, `content_title`, `content_title_en`).
   - Watch page uses `dash.js` (MPEG-DASH) + `subtitles-octopus` (native ASS/SSA subtitles) against `/v4/content/{id}/video/{ep}` with an `Authorization: Bearer <token>` header (`/details`, `/episodes`, `/video/1` return `401 Unauthorized` without it).
 - **Trade-offs:** Among the oldest and most stable independent anime hosts on FMHY, and native ASS subs are ideal for `mpv`, but capped at **720p** and **sub-only**. Best slotted as a high-reliability independent fallback rather than primary.
 
 #### 6. WCO / WatchCartoonOnline (`www.wco.tv`)
+
 - **Live evidence (2026-11-27):**
   - `www.wco.tv` is ISP-sinkholed on this network but returned **HTTP 200** (65 KB) via DoH (`cloudflare-dns.com`) with zero Cloudflare challenge (`wcostream.tv` returned CF 403, so `wco.tv` should be the primary mirror).
   - Decades-old independent host with unmatched **English Dub + classic anime + cartoon** depth. Free TV episodes use the classic static JS decode to `/inc/embed/getvidlink.php` (some movies/OVAs are paywalled behind `wcopremium.tv`, which the adapter should classify cleanly as `blocked` or `not-found`).
 
 #### 7–8. Watchlist: AniXo (`anixo.buzz`), AnimePahe Direct (`animepahe.pw`), and Anitaku (`anitaku.io`)
+
 - **AniXo (`anixo.buzz`):** Live-verified HTTP 200 embed by AniList ID (`/embed/ani/154587/1/sub` and `/dub`) exposing **9 subtitle languages** (including Spanish, Latin American Spanish, French, German, Italian, Brazilian Portuguese, Russian, Arabic, English). However, direct GET to `anixo.buzz/api/stream/m3u8?t=...` returned `403 Forbidden · Anixo Enterprise Edge Defense` even with Referer, Origin, and `Sec-Fetch-*` headers. Promote to shortlist if a quick RE of `/api/stream/resolve` or `?t=` decoding clears the proxy cleanly.
 - **AnimePahe Direct (`animepahe.pw`):** FMHY 🌟 Superstar and the canonical `kwik.cx`/`owocdn.top` origin (decoupling Kunai from Miruro's `kiwi` proxy), but returned CF managed challenge (`403` + `_cf_chl_opt`) even with `curl_cffi chrome124` from this IP. Re-test with `curl_chrome150` before building.
 - **Anitaku (`anitaku.io`):** Already scoped in `.plans/2026-11-25-anitaku-provider.md`. Live check confirmed `anitaku.io/browse/` returns HTTP 200 (115 KB), but `/?s=frieren` returned the unfiltered browse page — confirming the plan's note that search RE, rotating gogocdn AES keys, and heavy DMCA domain churn make it lower ROI than AniLight, Anidap, AnimeParadise, AniZone, AnimeOnsen, and WCO.
@@ -170,39 +184,39 @@ Each row below is a **distinct upstream streaming backend / CDN ecosystem**. Imp
 
 ### Movie / TV Lane
 
-| Backend Ecosystem | Upstream Hosts / CDNs | Kunai Status | FMHY Frontends Sharing This Backend |
-| --- | --- | --- | --- |
-| **VidLink** | `vidlink.pro`, `enc-dec.app`, `*.hakunaymatata.com` | **Existing (active)** | SweetFox (lane), Multi-Server sites |
-| **VidRock** | `vidrock.net`, `cdn*.ngcorp.dad`, `sub.vdrk.site` | **Existing (active)** | Multi-Server sites |
-| **Rivestream** | `rivestream.app`/`.ru`/`.win`, `proxy.valhallastream.com` | **Existing (active)** | ⭐ Rive, CorsFlix |
-| **Movy** | `movy.sx`, `api.wecollege.net` (stillhaven/vidzy/idlix/kinoger) | **Existing (CF-403 on hosted sweep)** | 🌟 Movy |
-| **Videasy / VidKing** | `api.speedracelight.com`, `player.videasy.to` | **Existing (DEAD — shut down Sep 2026)** | Cineby, BitCine, Cineplay, old HDToday |
-| **VidBolt** | `vidbolt.pro`/`.st`, `rousav.tech`, `vidbolt.xyz`, `thesubtitledb.org` | **Candidate #1 (S)** | ⭐ Ghostflix, 🌟 SweetFox, LE MOVIE (`/api/bolt-self`) |
-| **Atlantic / VidOra (`hls.lol`)** | `api.atlantic.bz`/`.st`, `vidora.ac`, `cdn.hls.lol`, `natsuki.hls.lol` | **Candidate #2 (M)** | 🌟 Atlantic, fprime, Atlas, 🌟 SweetFox (lane) |
-| **VidFast** | `vidfast.vc` (ex-`.pro`) | **Candidate #3 (M)** | Multi-Server sites (Vidbox, 1Shows, etc.) |
-| **PunkFlix / VidGold** | `punkflix.net`, `*.vidgold.vip`, `player.cinezo.live`, `proxy3.flikhub.net` | **Candidate #4 (M–L)** | 🌟 ArrowTV, Cinezo, FlikHub, 🌟 SweetFox (`VidQueen`/`VidGold`/`VidMario`) |
-| **Chillflix** | `chillflix.pw` (`/player-api`) | **Candidate #5 (M)** | ⭐ Chillflix, Toflix, Vuflix |
-| **VidUp** | `vidup.to` | **Candidate #6 (M)** | 🌟 SweetFox (lane), Multi-Server sites |
-| **MovieBox / Aoneroom** | `aoneroom.com`, `wefeed-h5-bff`, `pbcdn.aoneroom.com` | **Candidate #7 / Watch (M)** | MovieBox, 123moviesfree, netnaija.film, fmoviesunblocked |
-| **VixSrc / VixCloud** | `vixsrc.to`, `vixcloud.cc` | **Watchlist (CF-gated locally)** | StreamingUnity (Italian + English dual audio) |
+| Backend Ecosystem                 | Upstream Hosts / CDNs                                                       | Kunai Status                             | FMHY Frontends Sharing This Backend                                        |
+| --------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------- | -------------------------------------------------------------------------- |
+| **VidLink**                       | `vidlink.pro`, `enc-dec.app`, `*.hakunaymatata.com`                         | **Existing (active)**                    | SweetFox (lane), Multi-Server sites                                        |
+| **VidRock**                       | `vidrock.net`, `cdn*.ngcorp.dad`, `sub.vdrk.site`                           | **Existing (active)**                    | Multi-Server sites                                                         |
+| **Rivestream**                    | `rivestream.app`/`.ru`/`.win`, `proxy.valhallastream.com`                   | **Existing (active)**                    | ⭐ Rive, CorsFlix                                                          |
+| **Movy**                          | `movy.sx`, `api.wecollege.net` (stillhaven/vidzy/idlix/kinoger)             | **Existing (CF-403 on hosted sweep)**    | 🌟 Movy                                                                    |
+| **Videasy / VidKing**             | `api.speedracelight.com`, `player.videasy.to`                               | **Existing (DEAD — shut down Sep 2026)** | Cineby, BitCine, Cineplay, old HDToday                                     |
+| **VidBolt**                       | `vidbolt.pro`/`.st`, `rousav.tech`, `vidbolt.xyz`, `thesubtitledb.org`      | **Candidate #1 (S)**                     | ⭐ Ghostflix, 🌟 SweetFox, LE MOVIE (`/api/bolt-self`)                     |
+| **Atlantic / VidOra (`hls.lol`)** | `api.atlantic.bz`/`.st`, `vidora.ac`, `cdn.hls.lol`, `natsuki.hls.lol`      | **Candidate #2 (M)**                     | 🌟 Atlantic, fprime, Atlas, 🌟 SweetFox (lane)                             |
+| **VidFast**                       | `vidfast.vc` (ex-`.pro`)                                                    | **Candidate #3 (M)**                     | Multi-Server sites (Vidbox, 1Shows, etc.)                                  |
+| **PunkFlix / VidGold**            | `punkflix.net`, `*.vidgold.vip`, `player.cinezo.live`, `proxy3.flikhub.net` | **Candidate #4 (M–L)**                   | 🌟 ArrowTV, Cinezo, FlikHub, 🌟 SweetFox (`VidQueen`/`VidGold`/`VidMario`) |
+| **Chillflix**                     | `chillflix.pw` (`/player-api`)                                              | **Candidate #5 (M)**                     | ⭐ Chillflix, Toflix, Vuflix                                               |
+| **VidUp**                         | `vidup.to`                                                                  | **Candidate #6 (M)**                     | 🌟 SweetFox (lane), Multi-Server sites                                     |
+| **MovieBox / Aoneroom**           | `aoneroom.com`, `wefeed-h5-bff`, `pbcdn.aoneroom.com`                       | **Candidate #7 / Watch (M)**             | MovieBox, 123moviesfree, netnaija.film, fmoviesunblocked                   |
+| **VixSrc / VixCloud**             | `vixsrc.to`, `vixcloud.cc`                                                  | **Watchlist (CF-gated locally)**         | StreamingUnity (Italian + English dual audio)                              |
 
 ### Anime Lane
 
-| Backend Ecosystem | Upstream Hosts / CDNs | Kunai Status | FMHY Frontends Sharing This Backend |
-| --- | --- | --- | --- |
-| **HiAnime (ZokoAnime)** | `hianime.at` → `zokoanime.video` → `hls*.aniwatchtv.uk` | **Existing (active; single-server SPOF)** | JustAnime (partial), ani-cli v5 |
-| **AnimeGG** | `animegg.org` → `vidcache.net:8161` | **Existing (active; direct MP4)** | Miruro (`moo`), JustAnime, NekoWatch |
-| **KickAssAnime** | `kaa.lt` → `krussdomi.com` → `hls.krussdomi.com` | **Existing (CF-403 on hosted sweep)** | Anidap (`sora`), NekoWatch |
-| **Miruro** | `miruro.bz`/`.ru`/`.cx` → `/api/secure/pipe` (aggregator) | **Existing (CF-403 on hosted sweep)** | 🌟 Miruro, AniVault, NekoWatch |
-| **AllManga / AllAnime** | `api.mkissa.net`, `allanime.day` | **Existing (stale crypto build 189)** | ⭐ MKissa, AllManga, Anidap (`miku`), JustAnime |
-| **AniLight (`satella.buzz`)** | `api.anilight.live`, `media.satella.buzz`, `subtl.satella.buzz` | **Candidate #1 (S)** | ⭐ AniLight |
-| **Anidap / AnimeX** | `chad.anidap.lol`, `graphql.anidap.lol`, `zaza.animex.one`, `kem.clvd.xyz`, `24stream.xyz` | **Candidate #2 (S)** | ⭐ Anidap, ⭐ AnimeX |
-| **AnimeParadise** | `api.animeparadise.moe` | **Candidate #3 (S–M)** | AnimeParadise |
-| **AniZone** | `anizone.to` (self-hosted HLS origin) | **Candidate #4 (S–M)** | AniZone, Anidap (`vee`), NekoWatch |
-| **AnimeOnsen** | `api.animeonsen.xyz/v4/`, `cdn.animeonsen.xyz` | **Candidate #5 (M)** | AnimeOnsen, NekoWatch |
-| **WCO** | `wco.tv`, `wcostream.tv` (self-hosted MP4/HLS origin) | **Candidate #6 (M)** | ⭐ WCO, WCOStream, WCOForever, WCOFlix |
-| **AniXo (`anixo.buzz`)** | `anixo.buzz`, `anivexaapi-aniko2.hf.space` | **Watchlist #7 (proxy 403)** | ⭐ AniXo |
-| **AnimePahe Direct** | `animepahe.pw` → `kwik.cx` / `owocdn.top` | **Watchlist #8 (CF-gated locally)** | 🌟 animepahe, Miruro (`kiwi`), Anidap (`uwu`) |
+| Backend Ecosystem             | Upstream Hosts / CDNs                                                                      | Kunai Status                              | FMHY Frontends Sharing This Backend             |
+| ----------------------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------- | ----------------------------------------------- |
+| **HiAnime (ZokoAnime)**       | `hianime.at` → `zokoanime.video` → `hls*.aniwatchtv.uk`                                    | **Existing (active; single-server SPOF)** | JustAnime (partial), ani-cli v5                 |
+| **AnimeGG**                   | `animegg.org` → `vidcache.net:8161`                                                        | **Existing (active; direct MP4)**         | Miruro (`moo`), JustAnime, NekoWatch            |
+| **KickAssAnime**              | `kaa.lt` → `krussdomi.com` → `hls.krussdomi.com`                                           | **Existing (CF-403 on hosted sweep)**     | Anidap (`sora`), NekoWatch                      |
+| **Miruro**                    | `miruro.bz`/`.ru`/`.cx` → `/api/secure/pipe` (aggregator)                                  | **Existing (CF-403 on hosted sweep)**     | 🌟 Miruro, AniVault, NekoWatch                  |
+| **AllManga / AllAnime**       | `api.mkissa.net`, `allanime.day`                                                           | **Existing (stale crypto build 189)**     | ⭐ MKissa, AllManga, Anidap (`miku`), JustAnime |
+| **AniLight (`satella.buzz`)** | `api.anilight.live`, `media.satella.buzz`, `subtl.satella.buzz`                            | **Candidate #1 (S)**                      | ⭐ AniLight                                     |
+| **Anidap / AnimeX**           | `chad.anidap.lol`, `graphql.anidap.lol`, `zaza.animex.one`, `kem.clvd.xyz`, `24stream.xyz` | **Candidate #2 (S)**                      | ⭐ Anidap, ⭐ AnimeX                            |
+| **AnimeParadise**             | `api.animeparadise.moe`                                                                    | **Candidate #3 (S–M)**                    | AnimeParadise                                   |
+| **AniZone**                   | `anizone.to` (self-hosted HLS origin)                                                      | **Candidate #4 (S–M)**                    | AniZone, Anidap (`vee`), NekoWatch              |
+| **AnimeOnsen**                | `api.animeonsen.xyz/v4/`, `cdn.animeonsen.xyz`                                             | **Candidate #5 (M)**                      | AnimeOnsen, NekoWatch                           |
+| **WCO**                       | `wco.tv`, `wcostream.tv` (self-hosted MP4/HLS origin)                                      | **Candidate #6 (M)**                      | ⭐ WCO, WCOStream, WCOForever, WCOFlix          |
+| **AniXo (`anixo.buzz`)**      | `anixo.buzz`, `anivexaapi-aniko2.hf.space`                                                 | **Watchlist #7 (proxy 403)**              | ⭐ AniXo                                        |
+| **AnimePahe Direct**          | `animepahe.pw` → `kwik.cx` / `owocdn.top`                                                  | **Watchlist #8 (CF-gated locally)**       | 🌟 animepahe, Miruro (`kiwi`), Anidap (`uwu`)   |
 
 ---
 
