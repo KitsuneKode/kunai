@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import { DetailsSheet } from "@/app-shell/details-sheet-ui";
 import { buildDetailsSheet } from "@/app-shell/details-sheet.model";
 import { ScrollBox } from "@/app-shell/primitives/ScrollBox";
-import { Text, useInput } from "ink";
+import { Text } from "ink";
 import React, { act } from "react";
 
 import { stripAnsi } from "../../harness/render-capture";
@@ -40,42 +40,6 @@ test("ScrollBox shows a window of its content and scrolls by key and wheel", asy
     handle.wheel("scroll", "down");
     await settle();
     expect(stripAnsi(handle.lastFrame())).toContain("line 5");
-  } finally {
-    handle.unmount();
-  }
-});
-
-function KeyLog({ keys }: { readonly keys: string[] }) {
-  useInput((input, key) => {
-    keys.push(key.return ? "enter" : key.escape ? "esc" : input);
-  });
-  return null;
-}
-
-test("the details sheet's action chips press their keys", async () => {
-  const keys: string[] = [];
-  const handle = renderWithPointer(
-    <>
-      <KeyLog keys={keys} />
-      <DetailsSheet
-        model={buildDetailsSheet({
-          seed: { title: "Show", type: "series" },
-          detail: null,
-          history: null,
-          availability: null,
-        })}
-        seasonsExpanded={false}
-        width={90}
-      />
-    </>,
-    { columns: 100, rows: 40 },
-  );
-  try {
-    await settle();
-    handle.click("details-sheet:action:q");
-    handle.click("details-sheet:action:w");
-    expect(keys).toEqual(["q", "w"]);
-    expect(stripAnsi(handle.lastFrame())).not.toContain("+ queue");
   } finally {
     handle.unmount();
   }

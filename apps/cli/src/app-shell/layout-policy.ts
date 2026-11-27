@@ -309,6 +309,19 @@ export function getOverlayListMaxVisible(input: {
   return Math.max(1, Math.min(18, viewport.contentRows - panelChrome));
 }
 
+/**
+ * Rows available to the browse-local details sheet. Unlike a root overlay, the
+ * sheet still lives inside Browse: AppHeader, one transient row, the context
+ * strip, the overlay margin, the ShellFooter, Ink's erase buffer, and one
+ * scroll affordance all consume height before the sheet begins. Keeping this
+ * budget explicit is what lets a 40×22 terminal retain both the sheet and the
+ * footer recovery keys instead of pushing the footer off-screen.
+ */
+export function getBrowseDetailsOverlayMaxLines(terminalRows: number): number {
+  const reservedRows = 14;
+  return Math.max(4, Math.min(18, terminalRows - reservedRows));
+}
+
 const BROWSE_BASE_CHROME_ROWS = 10;
 const BROWSE_DENSE_BASE_CHROME_ROWS = 5;
 const BROWSE_FOOTER_ROWS = 5;

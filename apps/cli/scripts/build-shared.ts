@@ -534,9 +534,11 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // compact failure causes, and singleton facts) measured 3,330,345 bytes,
 // 2,345 over. The shared row renderer and footer helper keep the implementation
 // deduplicated; the remaining growth is explicit state copy and bounded layout
-// policy. 3253 KiB is the smallest whole-KiB raise over that measurement and
-// leaves 727 bytes; public launcher budgets are unchanged.
-export const NPM_BUNDLE_BUDGET_KB = 3_253;
+// policy. The clean details-sheet overlay (framed poster fallback, explicit
+// recovery footer, and artifact-clearing transition) measured 3,331,426 bytes,
+// 354 over. 3254 KiB is the smallest whole-KiB raise over that measurement and
+// leaves 670 bytes; public launcher budgets are unchanged.
+export const NPM_BUNDLE_BUDGET_KB = 3_254;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

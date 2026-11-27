@@ -264,9 +264,9 @@ describe("release build shared options", () => {
     // Pinned on purpose: raising the ratchet has to be a deliberate edit with a
     // documented measurement in build-shared.ts, not a number that drifts up
     // whenever a bundle grows.
-    expect(NPM_BUNDLE_BUDGET_KB).toBe(3_253);
-    expect(() => assertNpmBundleBudget(3_331_072)).not.toThrow();
-    expect(() => assertNpmBundleBudget(3_331_073)).toThrow("budget 3253 KiB");
+    expect(NPM_BUNDLE_BUDGET_KB).toBe(3_254);
+    expect(() => assertNpmBundleBudget(3_332_096)).not.toThrow();
+    expect(() => assertNpmBundleBudget(3_332_097)).toThrow("budget 3254 KiB");
   });
 
   test("enforces per-target compiled binary size budget and supports bytecode opt-in", () => {

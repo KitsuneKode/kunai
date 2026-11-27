@@ -504,6 +504,36 @@ describe("agent wiring · notifications inbox", () => {
   }, 60_000);
 });
 
+describe("agent wiring · details sheet", () => {
+  it("opens as a clean framed overlay with one footer and closes back to the row", async () => {
+    await withSession("wiring-details", { columns: 120, rows: 32 }, async (s) => {
+      await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+      s.press("movie", K.enter);
+      await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
+
+      s.press("i");
+      await s.waitForFrame(
+        (f) => f.includes("Details · Smoke Movie") && !f.includes("Search title"),
+        "clean details sheet",
+      );
+      const detailsFrame = s.frame();
+      expect(detailsFrame).not.toContain("Smoke Movieer");
+      expect(detailsFrame).not.toContain("[i] details");
+      expect(detailsFrame).not.toContain("↵ play · q queue");
+      expect(detailsFrame).toContain("╭──────────────╮");
+      expect(detailsFrame).toContain("[enter] play");
+      expect(detailsFrame).toContain("[esc] close");
+
+      s.press(K.esc);
+      await s.waitForFrame(
+        (f) => f.includes("Search title") && f.includes("Smoke Movie") && !f.includes("Details ·"),
+        "details closes back to the highlighted result",
+      );
+      expect(s.frame()).not.toContain("Smoke Movieer");
+    });
+  }, 30_000);
+});
+
 describe("agent wiring · offline mode", () => {
   it("offline mode parks on the library instead of starving the session loop", async () => {
     // Regression for the livelock: offlineMode + empty query used to return a

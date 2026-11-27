@@ -4,6 +4,7 @@ import {
   getBrowseChromeRows,
   getBrowseListMaxVisible,
   getBrowseCommandPaletteMaxVisible,
+  getBrowseDetailsOverlayMaxLines,
   getCommandPaletteVisibleCommandCount,
   getFooterReservedRows,
   getOverlayContentViewport,
@@ -239,6 +240,12 @@ describe("getShellViewportPolicy", () => {
     expect(withTransientReserved).toBeLessThan(
       getBrowseListMaxVisible(30, chromeRows, ROOT_CHROME_ROWS, 0),
     );
+  });
+
+  test("browse details sheet height leaves the footer visible at 40×22", () => {
+    expect(getBrowseDetailsOverlayMaxLines(22)).toBe(8);
+    expect(getBrowseDetailsOverlayMaxLines(32)).toBe(18);
+    expect(getBrowseDetailsOverlayMaxLines(16)).toBe(4);
   });
 
   test("overlay content viewport subtracts root chrome, transient row, and overlay host chrome", () => {

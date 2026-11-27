@@ -224,7 +224,7 @@ export function OverlayPanel({
 
   return (
     <Box marginTop={insideOverlay ? 0 : 1} flexDirection="column" paddingX={insideOverlay ? 0 : 1}>
-      {insideOverlay ? null : (
+      {insideOverlay || overlay.type === "details" ? null : (
         <>
           <Text color={palette.text} bold>
             {sanitizeTerminalText(overlay.title)}
@@ -406,7 +406,7 @@ export function OverlayPanel({
         <LoadingState message="Loading panel…" framed />
       ) : overlay.type === "details" && overlay.sheet ? (
         <Box marginTop={1} flexDirection="column">
-          <ScrollBox id="details-sheet:scroll" height={Math.max(10, maxLinesOverride ?? 18)}>
+          <ScrollBox id="details-sheet:scroll" height={Math.max(4, maxLinesOverride ?? 18)}>
             <DetailsSheet
               model={overlay.sheet}
               seasonsExpanded={overlay.seasonsExpanded ?? false}

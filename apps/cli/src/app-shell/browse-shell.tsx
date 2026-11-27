@@ -66,6 +66,7 @@ import {
   type BrowseFocusZoneContext,
   type BrowseFocusZoneEvent,
 } from "./browse-focus-zone";
+import { buildBrowseFooterModel } from "./browse-footer-actions";
 import { buildBrowseIdleReturnLoopModel, resolveIdleRowAction } from "./browse-idle-actions";
 import { setBrowseIdleRefreshListener } from "./browse-idle-context";
 import {
@@ -131,10 +132,10 @@ import {
 import { useCalendarState } from "./hooks/use-calendar-state";
 import { resolveSuggestionDebounceMs, useSearchSuggestions } from "./hooks/use-search-suggestions";
 import { resolveBrowseBindingEffect, resolveKeybinding } from "./keybinding-runtime";
-import { buildFooterActionsFromBindings } from "./keybindings";
 import {
   getBrowseChromeRows,
   getBrowseCommandPaletteMaxVisible,
+  getBrowseDetailsOverlayMaxLines,
   getBrowseListMaxVisible,
   ROOT_CHROME_ROWS,
   TRANSIENT_ROW_SLOTS,
@@ -169,15 +170,17 @@ import {
   resolveHighlightedPaletteRow,
 } from "./shell-command-model";
 import { CommandPalette } from "./shell-command-ui";
-import { getCommandLabel, InputField } from "./shell-frame";
-import { ContextStrip, ResizeBlocker, ShellFooter, selectFooterActions } from "./shell-primitives";
-import { clearShellScreenArtifacts as clearShellScreen } from "./shell-screen-clear";
+import { InputField } from "./shell-frame";
+import { ContextStrip, ResizeBlocker, ShellFooter } from "./shell-primitives";
+import {
+  clearRootContentTransitionFrame,
+  clearShellScreenArtifacts as clearShellScreen,
+} from "./shell-screen-clear";
 import { getWindowStart, measureColumns, sanitizeTerminalText } from "./shell-text";
 import { palette } from "./shell-theme";
 import { getSuggestionBandRowCount, SearchSuggestionBand } from "./suggestion-band-ui";
 import {
   toShellAction,
-  type FooterAction,
   type BrowseIdleContextLoader,
   type BrowseShellOption,
   type BrowseShellSearchResponse,
@@ -852,6 +855,7 @@ export function BrowseShell<T>({
 
   const closeOverlay = () => {
     detailRequestGateRef.current.invalidate();
+    clearRootContentTransitionFrame();
     setActiveOverlay(null);
     const restore = focusZoneBeforeOverlayRef.current;
     focusZoneBeforeOverlayRef.current = null;
@@ -931,10 +935,11 @@ export function BrowseShell<T>({
       const cached = titleId ? (peekTitleDetail(titleId, seed.type) ?? null) : null;
       const local = (titleId && detailsContextFor?.(titleId)) || NO_LOCAL_DETAILS;
 
+      clearRootContentTransitionFrame();
       setActiveOverlay({
         type: "details",
-        title: panel.title,
-        subtitle: panel.subtitle,
+        title: `Details · ${sanitizeTerminalText(panel.subtitle)}`,
+        subtitle: sanitizeTerminalText(panel.subtitle),
         lines: [],
         sheet: buildDetailsSheet({ seed, detail: cached, ...local }),
         seasonsExpanded: false,
@@ -2064,13 +2069,52 @@ export function BrowseShell<T>({
     }
   });
 
+  const footerModel = buildBrowseFooterModel({
+    detailsOpen: activeOverlay?.type === "details",
+    detailsCapabilities: {
+      play: Boolean(selectedOption && searchState === "ready"),
+      queue: Boolean(selectedOption && onQueueSelected),
+      watchlist: Boolean(selectedOption && onWatchlistSelected),
+      download: Boolean(selectedOption && searchState === "ready"),
+    },
+    calendarError: calendarRouteKind === "error",
+    listFocused,
+    idleFocused,
+    idleRowCanOpenMenu:
+      idleReturnLoopModel?.rows[idleSelectedIndex]?.id === "continue" ||
+      idleReturnLoopModel?.rows[idleSelectedIndex]?.id === "playlist-next",
+    canFocusIdleRows,
+    optionCount: options.length,
+    queryDirty,
+    searchState,
+    commands,
+    hasDiscovery: Boolean(onLoadDiscovery),
+    hasQueueHandler: Boolean(onQueueSelected),
+    hasWatchlistHandler: Boolean(onWatchlistSelected),
+    hasFavoriteHandler: Boolean(onFavoriteSelected),
+    hasFollowHandler: Boolean(onFollowSelected),
+    isCalendarView,
+    query,
+    resultSubtitle,
+    emptyMessage,
+    mouseHint: Boolean(
+      mouseEnabled && pointerActive && !isCalendarView && displayOptions.length > 0,
+    ),
+    mode: effectiveFooterMode,
+    terminalWidth: viewport.columns,
+    maxVisible: viewport.breakpoint === "narrow" ? 3 : 5,
+  });
+
   return (
     <Box flexDirection="column" flexGrow={1}>
       <Box flexDirection="column" flexGrow={1}>
         {/* Brand · destination · provider · mode · size live in the single
             AppHeader above — it also owns the global "searching" activity
             indicator, so no duplicate spinner is rendered here. */}
-        {!ultraCompact && !denseInput && (resultStatus.primary || resultStatus.secondary) ? (
+        {!activeOverlay &&
+        !ultraCompact &&
+        !denseInput &&
+        (resultStatus.primary || resultStatus.secondary) ? (
           <Box justifyContent="space-between">
             {resultStatus.primary ? (
               <Text color={palette.muted}>{resultStatus.primary}</Text>
@@ -2148,7 +2192,7 @@ export function BrowseShell<T>({
                 : "  ·  ← → day  ·  ⇥ type  ·  ↵ open  ·  / commands"}
             </Text>
           </Box>
-        ) : (
+        ) : activeOverlay ? null : (
           <>
             {structuredFilterChips.length > 0 && !ultraCompact ? (
               <Box marginTop={1} flexWrap="wrap">
@@ -2287,7 +2331,15 @@ export function BrowseShell<T>({
             message="Resize terminal to browse results"
           />
         ) : activeOverlay ? (
-          <OverlayPanel overlay={activeOverlay} width={innerWidth} />
+          <OverlayPanel
+            overlay={activeOverlay}
+            width={innerWidth}
+            maxLinesOverride={
+              activeOverlay.type === "details"
+                ? getBrowseDetailsOverlayMaxLines(viewport.rows)
+                : undefined
+            }
+          />
         ) : calendarRoutePending ? (
           <Box marginTop={2} flexGrow={1} flexDirection="column">
             <SakuraLoader
@@ -2655,138 +2707,15 @@ export function BrowseShell<T>({
         <Text color={palette.dim}>/ recommendation · based on your history</Text>
       )}
       {actionFeedback ? <Text color={palette.ok}>{`✓ ${actionFeedback}`}</Text> : null}
-      {(() => {
-        const browseBindingIds: string[] = [
-          ...(listFocused && searchState === "ready" ? ["browse-details"] : []),
-          // Ctrl+O works from the search box without stealing typing — advertise
-          // it when results exist and query still owns focus.
-          ...(options.length > 0 &&
-          !queryDirty &&
-          searchState === "ready" &&
-          !listFocused &&
-          !idleFocused
-            ? ["browse-details-ctrl"]
-            : []),
-          ...(listFocused && searchState === "ready" ? ["browse-title-control-menu"] : []),
-          ...(idleFocused &&
-          (idleReturnLoopModel?.rows[idleSelectedIndex]?.id === "continue" ||
-            idleReturnLoopModel?.rows[idleSelectedIndex]?.id === "playlist-next")
-            ? ["browse-title-control-menu"]
-            : []),
-          ...(listFocused && options.length > 0 && !queryDirty && searchState === "ready"
-            ? ["browse-filter"]
-            : []),
-          "browse-mode",
-          ...(onLoadDiscovery ? ["browse-trending"] : []),
-          ...(listFocused && options.length > 0 && !queryDirty
-            ? [
-                "browse-download",
-                ...(onQueueSelected ? ["browse-queue"] : []),
-                ...(onWatchlistSelected ? ["browse-watchlist"] : []),
-                ...(onFavoriteSelected ? ["browse-favorite"] : []),
-                ...(onFollowSelected ? ["browse-follow"] : []),
-              ]
-            : []),
-        ];
-        if (calendarRouteKind === "error") {
-          const calendarErrorActions = selectFooterActions(
-            [
-              { key: "r", label: "retry", primary: true },
-              { key: "esc", label: "back", action: "quit" },
-              { key: "/", label: "commands", action: "command-mode" },
-            ],
-            effectiveFooterMode,
-            viewport.columns,
-            viewport.breakpoint === "narrow" ? 3 : 5,
-          );
-          return (
-            <ShellFooter
-              taskLabel="Calendar · issue"
-              mode={effectiveFooterMode}
-              commandMode={commandMode}
-              actions={calendarErrorActions}
-              terminalWidth={viewport.columns}
-              maxVisible={viewport.breakpoint === "narrow" ? 3 : 5}
-              companionHint
-            />
-          );
-        }
-        const allBrowseFooterActions: readonly FooterAction[] = [
-          {
-            key: "enter",
-            label: idleFocused ? "act" : listFocused ? "play" : "search",
-            action: "search",
-            primary: true,
-          },
-          {
-            key: "↑↓",
-            label: listFocused
-              ? "navigate · ↑↓ ends → search"
-              : idleFocused
-                ? "navigate · ↑↓ ends → search"
-                : canFocusIdleRows || options.length > 0
-                  ? "navigate · ↓ leave search"
-                  : "navigate",
-            action: "search",
-          },
-          ...buildFooterActionsFromBindings("browse", {
-            ids: browseBindingIds,
-            tail: false,
-            actions: {
-              "browse-details": "details",
-              "browse-details-ctrl": "details",
-              "browse-title-control-menu": "menu",
-              "browse-filter": "narrow-results",
-              "browse-mode": "toggle-mode",
-              "browse-trending": "trending",
-              "browse-download": "download",
-              "browse-queue": "up-next",
-              "browse-watchlist": "bookmark",
-              "browse-follow": "follow",
-            },
-            overrides: {
-              "browse-mode": {
-                label: getCommandLabel(commands, "toggle-mode", "switch mode"),
-              },
-            },
-          }),
-          { key: "/", label: "commands", action: "command-mode" },
-          {
-            key: "esc",
-            label: listFocused || idleFocused ? "→ search" : "clear/back",
-            action: "quit",
-          },
-        ];
-        const visibleBrowseFooterActions = selectFooterActions(
-          allBrowseFooterActions,
-          effectiveFooterMode,
-          viewport.columns,
-          viewport.breakpoint === "narrow" ? 3 : 5,
-        );
-        const browseTaskLabel = resolveBrowseDestinationLabel({
-          isCalendar: isCalendarView,
-          query,
-          resultSubtitle,
-          emptyMessage,
-          hasResults: options.length > 0,
-          searchState,
-        });
-        return (
-          <ShellFooter
-            taskLabel={
-              mouseEnabled && pointerActive && !isCalendarView && displayOptions.length > 0
-                ? "Click to select · click selection to open"
-                : browseTaskLabel
-            }
-            mode={effectiveFooterMode}
-            commandMode={commandMode}
-            actions={visibleBrowseFooterActions}
-            terminalWidth={viewport.columns}
-            maxVisible={viewport.breakpoint === "narrow" ? 3 : 5}
-            companionHint
-          />
-        );
-      })()}
+      <ShellFooter
+        taskLabel={footerModel.taskLabel}
+        mode={effectiveFooterMode}
+        commandMode={commandMode}
+        actions={footerModel.actions}
+        terminalWidth={viewport.columns}
+        maxVisible={viewport.breakpoint === "narrow" ? 3 : 5}
+        companionHint
+      />
     </Box>
   );
 }
