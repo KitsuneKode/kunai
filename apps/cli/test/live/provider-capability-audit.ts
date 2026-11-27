@@ -178,7 +178,12 @@ type StreamSummary = {
   readonly deferred: boolean;
   readonly headerKeys: readonly string[];
   readonly metadataKeys: readonly string[];
-  readonly metadataScalars?: Readonly<Record<string, string | number | boolean>>;
+  readonly metadataScalars?: readonly MetadataScalar[];
+};
+
+type MetadataScalar = {
+  readonly key: string;
+  readonly value: string;
 };
 
 type ResolveAudit = {
@@ -273,16 +278,13 @@ const { createContainer, disposeContainer } = await import("@/container");
 const auditContainer = await createContainer({ debug: true });
 
 const requested = new Set(directSmokeArgs().map((arg) => arg.toLowerCase()));
-const providerIds = (
+const providerIds: readonly ProviderId[] =
   requested.size === 0
     ? ALL_PROVIDER_IDS
-    : ALL_PROVIDER_IDS.filter((id) => requested.has(id) || requested.has(providerLane(id)))
-) as readonly ProviderId[];
-const decodeEnabled = process.env.KUNAI_AUDIT_DECODE !== "0";
+    : ALL_PROVIDER_IDS.filter((id) => requested.has(id) || requested.has(providerLane(id)));
+const decodeEnabled = auditDecodeEnabled();
 const decodedProviders = new Set<string>();
-const framesRoot =
-  process.env.KUNAI_AUDIT_FRAMES_DIR?.trim() ||
-  mkdtempSync(join(tmpdir(), "kunai-provider-audit-frames-"));
+const framesRoot = auditFramesRoot();
 mkdirSync(framesRoot, { recursive: true });
 
 if (providerIds.length === 0) {
@@ -320,18 +322,41 @@ const report = {
   },
   providers,
 };
-const json = `${JSON.stringify(redactForReport(report), null, 2)}\n`;
+const json = `${redactText(JSON.stringify(report, null, 2))}\n`;
 console.log(json.trimEnd());
-const artifactPath = process.env.KUNAI_AUDIT_ARTIFACT?.trim();
+const artifactPath = auditArtifactPath();
 if (artifactPath) {
   await Bun.write(resolvePath(artifactPath), json);
 }
 await disposeContainer(auditContainer);
 
+function auditDecodeEnabled(): boolean {
+  return process.env.KUNAI_AUDIT_DECODE !== "0";
+}
+
+function auditFramesRoot(): string {
+  return (
+    process.env.KUNAI_AUDIT_FRAMES_DIR?.trim() ||
+    mkdtempSync(join(tmpdir(), "kunai-provider-audit-frames-"))
+  );
+}
+
+function auditArtifactPath(): string | undefined {
+  return process.env.KUNAI_AUDIT_ARTIFACT?.trim();
+}
+
 function providerLane(providerId: ProviderId): "movie/series" | "anime" | "youtube" {
-  if ((MOVIE_PROVIDER_IDS as readonly string[]).includes(providerId)) return "movie/series";
-  if ((ANIME_PROVIDER_IDS as readonly string[]).includes(providerId)) return "anime";
+  if (MOVIE_PROVIDER_IDS.some((id) => id === providerId)) return "movie/series";
+  if (ANIME_PROVIDER_IDS.some((id) => id === providerId)) return "anime";
   return "youtube";
+}
+
+function isMovieProviderId(providerId: ProviderId): providerId is MovieProviderId {
+  return MOVIE_PROVIDER_IDS.some((id) => id === providerId);
+}
+
+function isAnimeProviderId(providerId: ProviderId): providerId is AnimeProviderId {
+  return ANIME_PROVIDER_IDS.some((id) => id === providerId);
 }
 
 async function auditProvider(
@@ -342,23 +367,21 @@ async function auditProvider(
   const cases: CaseAudit[] = [];
   const manifest = container.providerRegistry.getManifest(providerId);
 
-  if (lane === "movie/series") {
-    const movieProviderId = providerId as MovieProviderId;
+  if (isMovieProviderId(providerId)) {
     for (const fixture of MOVIE_FIXTURES) {
-      cases.push(await auditMovieLikeCase(container, movieProviderId, fixture, "movie"));
+      cases.push(await auditMovieLikeCase(container, providerId, fixture, "movie"));
     }
     for (const fixture of SERIES_FIXTURES) {
-      cases.push(await auditMovieLikeCase(container, movieProviderId, fixture, "series"));
+      cases.push(await auditMovieLikeCase(container, providerId, fixture, "series"));
     }
-  } else if (lane === "anime") {
-    const animeProviderId = providerId as AnimeProviderId;
+  } else if (isAnimeProviderId(providerId)) {
     for (const fixture of ANIME_FIXTURES) {
-      const searched = await searchAnimeFixture(container, animeProviderId, fixture);
+      const searched = await searchAnimeFixture(container, providerId, fixture);
       for (const audio of ["sub", "dub"] as const) {
         cases.push(
           await auditAnimeCase(
             container,
-            animeProviderId,
+            providerId,
             fixture,
             audio,
             searched.title,
@@ -368,9 +391,7 @@ async function auditProvider(
       }
     }
   } else {
-    cases.push(
-      await auditYoutubeCase(container, providerId as (typeof YOUTUBE_PROVIDER_IDS)[number]),
-    );
+    cases.push(await auditYoutubeCase(container, providerId));
   }
 
   const successfulResolves = cases
@@ -380,6 +401,26 @@ async function auditProvider(
     .map((item) => item.resolveDurationMs ?? 0)
     .sort((left, right) => left - right);
   const decode = cases.map((item) => item.resolve.decode).find((item) => item?.ok);
+  const aggregate: ProviderAudit["aggregate"] = {
+    resolved: cases.filter((item) => item.resolve.ok).length,
+    exhausted: cases.filter((item) => item.resolve.status === "exhausted").length,
+    errors: cases.filter((item) => item.resolve.status === "error").length,
+    probesReachable: cases.filter((item) => item.resolve.probe?.outcome === "reachable").length,
+    probesRefused: cases.filter((item) => item.resolve.probe?.outcome === "unreachable").length,
+    decodeOk: Boolean(decode),
+    maxQualityRank: Math.max(0, ...cases.map((item) => item.resolve.maxQualityRank)),
+    servers: uniqueStrings(cases.flatMap((item) => item.resolve.servers)),
+    streamHosts: uniqueStrings(cases.flatMap((item) => item.resolve.streamHosts)),
+    audioLanguages: uniqueStrings(cases.flatMap((item) => item.resolve.audioLanguages)),
+    subtitleLanguages: uniqueStrings(cases.flatMap((item) => item.resolve.subtitleLanguages)),
+  };
+  if (decode?.pngPath) Object.assign(aggregate, { decodePngPath: decode.pngPath });
+  if (latencies.length > 0) {
+    Object.assign(aggregate, {
+      fastestResolveMs: latencies[0],
+      medianResolveMs: latencies[Math.floor((latencies.length - 1) / 2)],
+    });
+  }
   return {
     provider: providerId,
     lane,
@@ -391,26 +432,7 @@ async function auditProvider(
       relaySafe: manifest?.relaySafe === true,
     },
     cases,
-    aggregate: {
-      resolved: cases.filter((item) => item.resolve.ok).length,
-      exhausted: cases.filter((item) => item.resolve.status === "exhausted").length,
-      errors: cases.filter((item) => item.resolve.status === "error").length,
-      probesReachable: cases.filter((item) => item.resolve.probe?.outcome === "reachable").length,
-      probesRefused: cases.filter((item) => item.resolve.probe?.outcome === "unreachable").length,
-      decodeOk: Boolean(decode),
-      ...(decode?.pngPath ? { decodePngPath: decode.pngPath } : {}),
-      ...(latencies.length > 0
-        ? {
-            fastestResolveMs: latencies[0],
-            medianResolveMs: latencies[Math.floor((latencies.length - 1) / 2)],
-          }
-        : {}),
-      maxQualityRank: Math.max(0, ...cases.map((item) => item.resolve.maxQualityRank)),
-      servers: uniqueStrings(cases.flatMap((item) => item.resolve.servers)),
-      streamHosts: uniqueStrings(cases.flatMap((item) => item.resolve.streamHosts)),
-      audioLanguages: uniqueStrings(cases.flatMap((item) => item.resolve.audioLanguages)),
-      subtitleLanguages: uniqueStrings(cases.flatMap((item) => item.resolve.subtitleLanguages)),
-    },
+    aggregate,
   };
 }
 
@@ -427,17 +449,18 @@ async function auditMovieLikeCase(
       ? container.config.movieLanguageProfile
       : container.config.seriesLanguageProfile;
   const key = fixture.key;
+  const request: Parameters<typeof resolveProviderSmokeStream>[0]["request"] = {
+    title: fixture.title,
+    audioPreference: languageProfile.audio,
+    subtitlePreference: languageProfile.subtitle,
+    qualityPreference: languageProfile.quality,
+  };
+  if (episode) Object.assign(request, { episode });
   const resolution = await resolveAndMeasure({
     container,
     providerId,
     mode: "series",
-    request: {
-      title: fixture.title,
-      ...(episode ? { episode } : {}),
-      audioPreference: languageProfile.audio,
-      subtitlePreference: languageProfile.subtitle,
-      qualityPreference: languageProfile.quality,
-    },
+    request,
     decodeKey: `${providerId}-${key}`,
     decodeEnabled,
     framesRoot,
@@ -548,16 +571,17 @@ async function auditAnimeCase(
     decodeEnabled,
     framesRoot,
   });
-  return {
+  const audit: CaseAudit = {
     key: `${fixture.key}-${audio}`,
     lane: "anime",
     fixture: `${fixture.query} E${fixture.episode}`,
     expectation: fixture.expectation,
     audio,
     search,
-    ...(episodeList ? { episodeList } : {}),
     resolve: resolution,
   };
+  if (episodeList) Object.assign(audit, { episodeList });
+  return audit;
 }
 
 async function auditEpisodeList(
@@ -619,15 +643,20 @@ async function auditYoutubeCase(
             result.externalIds?.youtubeId === YOUTUBE_FIXTURE.expectedId ||
             result.id === `youtube:${YOUTUBE_FIXTURE.expectedId}`,
         ) ?? results?.[0];
-      search = {
+      const searchAudit: SearchAudit = {
         support: "provider-search",
         status: results === null ? "transport-error" : results.length === 0 ? "empty" : "ok",
         durationMs: Date.now() - started,
         resultCount: results?.length ?? 0,
-        ...(selected
-          ? { selectedTitle: selected.title, selectedId: selected.id, selectedYear: selected.year }
-          : {}),
       };
+      if (selected) {
+        Object.assign(searchAudit, {
+          selectedTitle: selected.title,
+          selectedId: selected.id,
+          selectedYear: selected.year,
+        });
+      }
+      search = searchAudit;
       if (selected) title = titleInfoFromSearchResult(selected, selected.title);
     } catch (error) {
       search = {
@@ -674,7 +703,8 @@ async function resolveAndMeasure(input: {
   let result: ProviderResolveResult | null = null;
   let stream: StreamInfo | null = null;
   let resolveDurationMs: number | null = null;
-  let resolveError: unknown = null;
+  let resolveError: unknown;
+  let resolveThrew = false;
   try {
     const resolved = await resolveProviderSmokeStream({
       container: input.container,
@@ -686,10 +716,11 @@ async function resolveAndMeasure(input: {
     stream = resolved.stream;
     resolveDurationMs = resolved.resolveDurationMs;
   } catch (error) {
+    resolveThrew = true;
     resolveError = error;
   }
 
-  const structuredError = resolveError ? providerSmokeError(resolveError) : null;
+  const structuredError = resolveThrew ? providerSmokeError(resolveError) : null;
   const streams = result?.streams ?? [];
   const streamSummaries = streams.slice(0, 24).map(summarizeStream);
   const selected = stream ? summarizeSelectedStream(stream, result) : undefined;
@@ -718,11 +749,9 @@ async function resolveAndMeasure(input: {
   const servers = uniqueStrings(
     streams.map((item) => item.serverName).filter((value): value is string => Boolean(value)),
   );
-  const dynamicRanges = uniqueStrings(
-    streams.map((item) => item.dynamicRange as string | undefined),
-  );
+  const dynamicRanges = uniqueStrings(streams.map((item) => item.dynamicRange));
 
-  return {
+  const audit: ResolveAudit = {
     ok: Boolean(stream && (stream.url || stream.deferredLocator)),
     status: result?.status ?? "error",
     resolveDurationMs,
@@ -732,7 +761,6 @@ async function resolveAndMeasure(input: {
       structuredError?.failureMessages ??
       result?.failures.map((failure) => redactText(failure.message)) ??
       [],
-    ...(structuredError?.error ? { error: redactText(structuredError.error) } : {}),
     streamCount: streams.length,
     sourceCount: result?.sources?.length ?? 0,
     variantCount: result?.variants?.length ?? 0,
@@ -744,11 +772,8 @@ async function resolveAndMeasure(input: {
     dynamicRanges,
     servers,
     streamHosts: uniqueStrings(
-      streams
-        .map((item) => streamHost(item))
-        .filter((value): value is string => typeof value === "string"),
+      streams.map((item) => streamHost(item)).filter((value): value is string => value !== null),
     ),
-    ...(selected ? { selectedStream: selected } : {}),
     streams: streamSummaries,
     sourceLabels: uniqueStrings(
       (result?.sources ?? [])
@@ -764,6 +789,9 @@ async function resolveAndMeasure(input: {
       sourceAttempts: traceSummary.sourceAttempts,
     },
   };
+  if (structuredError?.error) Object.assign(audit, { error: redactText(structuredError.error) });
+  if (selected) Object.assign(audit, { selectedStream: selected });
+  return audit;
 }
 
 async function probeSelectedStream(stream: StreamInfo | null): Promise<ResolveAudit["probe"]> {
@@ -785,14 +813,15 @@ async function probeSelectedStream(stream: StreamInfo | null): Promise<ResolveAu
       timeoutMs: 5_000,
     });
     const outcome = smokeStreamReachable(probe);
-    return {
+    const audit: NonNullable<ResolveAudit["probe"]> = {
       outcome: outcome === true ? "reachable" : outcome === false ? "unreachable" : "inconclusive",
       durationMs: Date.now() - started,
-      ...(probe.status === "unreachable" ? { reason: redactText(probe.reason) } : {}),
-      ...(probe.status === "reachable" && probe.contentType
-        ? { contentType: probe.contentType }
-        : {}),
     };
+    if (probe.status === "unreachable") Object.assign(audit, { reason: redactText(probe.reason) });
+    if (probe.status === "reachable" && probe.contentType) {
+      Object.assign(audit, { contentType: probe.contentType });
+    }
+    return audit;
   } catch (error) {
     return {
       outcome: "inconclusive",
@@ -937,7 +966,7 @@ function summarizeSelectedStream(
     result?.streams.find((item) => (item.url ?? item.deferredLocator) === stream.url) ??
     result?.streams.find((item) => item.id === result.selectedStreamId);
   if (selected) return summarizeStream(selected);
-  return {
+  const summary: StreamSummary = {
     id: result?.selectedStreamId ?? "selected",
     host: hostnameOf(stream.url) || null,
     protocol: stream.requiresYtdl ? "youtube" : "unknown",
@@ -949,38 +978,42 @@ function summarizeSelectedStream(
     deferred: Boolean(stream.deferredLocator),
     headerKeys: Object.keys(stream.headers),
     metadataKeys: [],
-    ...(stream.hardSubLanguage ? { hardSubLanguage: stream.hardSubLanguage } : {}),
   };
+  if (stream.hardSubLanguage) Object.assign(summary, { hardSubLanguage: stream.hardSubLanguage });
+  return summary;
 }
 
 function summarizeStream(stream: StreamCandidate): StreamSummary {
-  return {
+  const summary: StreamSummary = {
     id: stream.id,
     host: streamHost(stream),
     protocol: stream.protocol,
-    ...(stream.container ? { container: stream.container } : {}),
-    ...(stream.serverName ? { serverName: stream.serverName } : {}),
-    ...(stream.qualityLabel ? { qualityLabel: stream.qualityLabel } : {}),
-    ...(stream.qualityRank !== undefined ? { qualityRank: stream.qualityRank } : {}),
-    ...(stream.dynamicRange ? { dynamicRange: stream.dynamicRange } : {}),
     audioLanguages: stream.audioLanguages ?? [],
-    ...(stream.presentation ? { presentation: stream.presentation } : {}),
-    ...(stream.hardSubLanguage ? { hardSubLanguage: stream.hardSubLanguage } : {}),
-    ...(stream.subtitleDelivery ? { subtitleDelivery: stream.subtitleDelivery } : {}),
     subtitleLanguages: stream.subtitleLanguages ?? [],
-    ...(stream.flavorArchetype ? { flavorArchetype: stream.flavorArchetype } : {}),
-    ...(stream.flavorLabel ? { flavorLabel: stream.flavorLabel } : {}),
-    ...(stream.requiresYtdl ? { requiresYtdl: stream.requiresYtdl } : {}),
     deferred: Boolean(stream.deferredLocator),
     headerKeys: Object.keys(stream.headers ?? {}),
     metadataKeys: Object.keys(stream.metadata ?? {}),
-    ...(stream.metadata ? { metadataScalars: safeMetadataScalars(stream.metadata) } : {}),
   };
+  if (stream.container) Object.assign(summary, { container: stream.container });
+  if (stream.serverName) Object.assign(summary, { serverName: stream.serverName });
+  if (stream.qualityLabel) Object.assign(summary, { qualityLabel: stream.qualityLabel });
+  if (stream.qualityRank !== undefined) Object.assign(summary, { qualityRank: stream.qualityRank });
+  if (stream.dynamicRange) Object.assign(summary, { dynamicRange: stream.dynamicRange });
+  if (stream.presentation) Object.assign(summary, { presentation: stream.presentation });
+  if (stream.hardSubLanguage) Object.assign(summary, { hardSubLanguage: stream.hardSubLanguage });
+  if (stream.subtitleDelivery)
+    Object.assign(summary, { subtitleDelivery: stream.subtitleDelivery });
+  if (stream.flavorArchetype) Object.assign(summary, { flavorArchetype: stream.flavorArchetype });
+  if (stream.flavorLabel) Object.assign(summary, { flavorLabel: stream.flavorLabel });
+  if (stream.requiresYtdl) Object.assign(summary, { requiresYtdl: stream.requiresYtdl });
+  if (stream.metadata)
+    Object.assign(summary, { metadataScalars: safeMetadataScalars(stream.metadata) });
+  return summary;
 }
 
 function safeMetadataScalars(
-  metadata: Readonly<Record<string, unknown>>,
-): Record<string, string | number | boolean> {
+  metadata: NonNullable<StreamCandidate["metadata"]>,
+): readonly MetadataScalar[] {
   const allowed = new Set([
     "backend",
     "server",
@@ -1004,12 +1037,12 @@ function safeMetadataScalars(
     "embedHost",
     "lane",
   ]);
-  const out: Record<string, string | number | boolean> = {};
+  const out: MetadataScalar[] = [];
   for (const [key, value] of Object.entries(metadata)) {
     if (!allowed.has(key)) continue;
-    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-      out[key] = typeof value === "string" ? redactText(value).slice(0, 160) : value;
-    }
+    const serialized = JSON.stringify(value);
+    if (serialized === undefined) continue;
+    out.push({ key, value: redactText(serialized).slice(0, 160) });
   }
   return out;
 }
@@ -1050,25 +1083,14 @@ function uniqueStrings(values: readonly (string | undefined)[]): string[] {
   return [...new Set(values.filter((value): value is string => Boolean(value)))].sort();
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 function redactText(value: string): string {
   return value
     .replace(/https?:\/\/[^\s"')]+/gi, (url) => `https://${hostnameOf(url) || "REDACTED"}`)
     .replace(/\/home\/[^\s"')]+/gi, "/home/REDACTED");
-}
-
-function redactForReport<T>(value: T): T {
-  if (typeof value === "string") return redactText(value) as T;
-  if (Array.isArray(value)) return value.map((item) => redactForReport(item)) as T;
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, redactForReport(item)]),
-    ) as T;
-  }
-  return value;
 }
 
 function cleanMpvArg(value: string): string {
