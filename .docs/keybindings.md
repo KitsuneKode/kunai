@@ -60,7 +60,7 @@ visibly different.
 | `/filters` | Open guided search facets                                                         |
 | `Esc`      | Clear/back depending on focused state                                             |
 
-Use `/provider` from browse or playback command surfaces to change provider. Provider switching should stay explicit; opening the provider picker does not change provider until a row is confirmed.
+Use `/provider` from browse or playback command surfaces to change provider. Provider switching should stay explicit; opening the provider picker does not change provider until a row is confirmed. Its footer is the whole key reference — `[↑↓] select`, `[enter] switch`, `[esc] close` (`show all` while a filter is typed), `[/] commands` — and a chip a narrow terminal drops is named in the footer's text line instead.
 
 ## Mouse in browse results
 

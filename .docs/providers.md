@@ -770,15 +770,16 @@ on for other hosts or change the existing one-shot exception. A native mpv 0.41 
 test observes effective options at `file-loaded` with local transport substituted:
 it proves option lifetime, not a live certificate attack or other platform behavior.
 
-| Field                   | Meaning                                                                                                  |
-| ----------------------- | -------------------------------------------------------------------------------------------------------- |
-| `mediaKinds: ["anime"]` | Puts the provider on the anime lane — `isAnimeProvider` is derived from this                             |
-| `mediaKinds: ["video"]` | Puts the provider on the YouTube lane                                                                    |
-| `relayProfile`          | Declares the provider relayable; must also be registered in `apps/relay-server/src/provider-registry.ts` |
-| `capabilities`          | Provider capabilities the shell may reason about                                                         |
-| `runtimePorts`          | Runtime ports the module requests (relay fetch, auth, …)                                                 |
-| `recommended`           | Surfaces the provider in recommended lists                                                               |
-| `aliases`               | Legacy ids still accepted in config and cache keys                                                       |
+| Field                   | Meaning                                                                                                                                                                                                                                                                            |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mediaKinds: ["anime"]` | Puts the provider on the anime lane — `isAnimeProvider` is derived from this                                                                                                                                                                                                       |
+| `mediaKinds: ["video"]` | Puts the provider on the YouTube lane                                                                                                                                                                                                                                              |
+| `relayProfile`          | Declares the provider relayable; must also be registered in `apps/relay-server/src/provider-registry.ts`                                                                                                                                                                           |
+| `capabilities`          | Provider capabilities the shell may reason about                                                                                                                                                                                                                                   |
+| `runtimePorts`          | Runtime ports the module requests (relay fetch, auth, …)                                                                                                                                                                                                                           |
+| `recommended`           | Surfaces the provider in recommended lists                                                                                                                                                                                                                                         |
+| `aliases`               | Other names users know the site by, rendered as "Known as". Never the shared engine family: a name two providers share identifies neither (roster test: `provider-manifest-identity.test.ts`). Legacy **ids** are a separate mechanism, `packages/core/src/provider-id-aliases.ts` |
+| `knownIssue`            | `{ since, summary }` — a dated fault from a maintainer audit. The provider picker shows it until this device records a successful resolve ([title-provider-health-and-cache-reset.md](./title-provider-health-and-cache-reset.md)). Remove it the day a probed stream decodes      |
 
 ## Active Beta Providers
 

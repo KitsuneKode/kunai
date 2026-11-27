@@ -47,6 +47,13 @@ KickAssAnime) plus one partial independent fallback (AnimeGG). YouTube works.
 VidRock, Videasy, Miruro, and AllManga remain registered but must not count
 toward working-provider capacity until a probed stream and decode frame exist.
 
+Videasy and VidRock carry this audit's finding as `knownIssue` in their
+manifests, so the provider picker says so before anyone tries them. Miruro
+(reset from this network, not proven dead) and AllManga (a CAPTCHA wall, which
+varies by network) do not: a fault that depends on where you are is what the
+local health stores are for. Delete a `knownIssue` in the same change that
+records a probed, decoded stream for that provider here.
+
 ## Feature Matrix
 
 | Provider       | Mode         | Search | Catalog | Sources     | Quality | Audio          | Soft Subs | Hardsub | Downloads | Notes                                                                                                         |
