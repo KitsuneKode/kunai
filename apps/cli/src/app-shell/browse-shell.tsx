@@ -2892,5 +2892,5 @@ function BrowseCompanion({
   readonly ultraCompact: boolean;
 }) {
   const cue = momentForBrowseEmpty({ kind, hasArtwork, ultraCompact, mode: companionMode() });
-  return <CompanionHost moment={cue} rows={3} marginTop={1} />;
+  return <CompanionHost cue={cue} rows={3} marginTop={1} />;
 }

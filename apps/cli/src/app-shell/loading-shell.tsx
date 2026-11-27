@@ -873,7 +873,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                 ) : null}
 
                 {/* The longest wait in the product; her picture yields to a poster. */}
-                <CompanionHost moment={companionCue} rows={3} marginTop={1} />
+                <CompanionHost cue={companionCue} rows={3} marginTop={1} />
 
                 {/* Failure / recovery surface takes priority over the bare issue
                   line: it names what failed and offers recover/fallback/sources/

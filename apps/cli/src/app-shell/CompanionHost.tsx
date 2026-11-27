@@ -43,7 +43,8 @@ import { palette } from "./shell-theme";
  * That is the common case and it is deliberately the easy one to write.
  */
 export function CompanionHost({
-  moment: reported,
+  moment: named = null,
+  cue,
   picture: allowed = true,
   rows = 4,
   pick,
@@ -51,8 +52,10 @@ export function CompanionHost({
   marginBottom,
   marginRight,
 }: {
-  /** A moment, or a cue that also says whether the picture may be drawn. */
-  readonly moment: CompanionMoment | CompanionCue | null;
+  /** What is happening. `null` draws nothing. */
+  readonly moment?: CompanionMoment | null;
+  /** A decided moment and picture together, as the moment deciders return it. Wins over `moment`. */
+  readonly cue?: CompanionCue | null;
   /** Whether her picture may be drawn here, for a bare moment. The line is decided by the moment. */
   readonly picture?: boolean;
   /** Height in terminal rows. Width is derived so the slot is square on screen. */
@@ -68,8 +71,8 @@ export function CompanionHost({
   // the line out from under the reader.
   const [rolled] = useState(() => Math.floor(Math.random() * 997));
   const mode = companionMode();
-  const moment = typeof reported === "string" ? reported : (reported?.moment ?? null);
-  const picture = typeof reported === "string" ? allowed : (reported?.picture ?? false);
+  const moment = cue === undefined ? named : (cue?.moment ?? null);
+  const picture = cue === undefined ? allowed : (cue?.picture ?? false);
   if (moment === null || mode === "off") return null;
 
   const voice = voiceForMoment(moment);
