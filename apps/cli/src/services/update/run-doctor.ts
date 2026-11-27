@@ -1,3 +1,5 @@
+import type { PlayerChoice } from "@/domain/playback/player-choice";
+
 import type { InstallManifestInspection } from "./install-manifest";
 import {
   buildDoctorReport,
@@ -20,7 +22,60 @@ export type RunDoctorOptions = {
   readonly fileExists?: (path: string) => boolean;
   readonly inspectManifest?: () => Promise<InstallManifestInspection>;
   readonly probeCapabilities?: BuildDoctorReportInput["probeCapabilities"];
+  /** Effective player choice; auto when the caller does not compose config/flags. */
+  readonly playerChoice?: PlayerChoice;
+  readonly installedPlayers?: BuildDoctorReportInput["installedPlayers"];
+  readonly playerMode?: BuildDoctorReportInput["playerMode"];
+  /** Raw maintenance argv, used only to honor a `--player` override before saved config. */
+  readonly argv?: readonly string[];
 };
+
+type MutableBuildDoctorReportInput = {
+  -readonly [K in keyof BuildDoctorReportInput]?: BuildDoctorReportInput[K];
+};
+
+export async function readConfiguredPlayerChoice(): Promise<PlayerChoice> {
+  try {
+    const { getKunaiPaths } = await import("@kunai/storage");
+    // SAFETY: config.json is user-owned JSON; the player field is validated by the literal check below.
+    const raw = (await Bun.file(getKunaiPaths().configPath).json()) as { player?: unknown };
+    return raw.player === "mpv" || raw.player === "vlc" ? raw.player : "auto";
+  } catch {
+    return "auto";
+  }
+}
+
+async function resolvePlayerChoiceForDoctor(
+  opts: Pick<RunDoctorOptions, "argv" | "playerChoice">,
+): Promise<
+  | { readonly ok: true; readonly value: PlayerChoice }
+  | { readonly ok: false; readonly message: string }
+> {
+  if (opts.playerChoice) return { ok: true, value: opts.playerChoice };
+  // Embedded callers/tests get deterministic auto unless they explicitly compose
+  // argv or config; only the real maintenance fast path supplies argv.
+  if (opts.argv === undefined) return { ok: true, value: "auto" };
+  const argv = opts.argv;
+  const inline = argv.find((arg) => arg.startsWith("--player="));
+  const flagIndex = argv.indexOf("--player");
+  const value = inline
+    ? inline.slice("--player=".length)
+    : flagIndex >= 0
+      ? argv[flagIndex + 1]
+      : undefined;
+  // A bare trailing `--player` has no operand; it must not fall through to the
+  // saved choice as if the flag were absent.
+  if (inline !== undefined || flagIndex >= 0) {
+    if (!value || value.startsWith("--")) {
+      return { ok: false, message: "--player expects auto, mpv, or vlc" };
+    }
+    if (value === "auto" || value === "mpv" || value === "vlc") {
+      return { ok: true, value };
+    }
+    return { ok: false, message: `Invalid --player value "${value}"; expected auto, mpv, or vlc.` };
+  }
+  return { ok: true, value: await readConfiguredPlayerChoice() };
+}
 
 /**
  * Exit code for a doctor report.
@@ -50,7 +105,12 @@ function doctorExitCode(report: DoctorReport, strict: boolean): number {
  * finding at all under `--strict`.
  */
 export async function runDoctor(opts: RunDoctorOptions = {}): Promise<number> {
-  const input: BuildDoctorReportInput = {
+  const playerChoice = await resolvePlayerChoiceForDoctor(opts);
+  if (!playerChoice.ok) {
+    console.error(`kunai: ${playerChoice.message}`);
+    return 2;
+  }
+  const input: MutableBuildDoctorReportInput = {
     ...(opts.layout ? { layout: opts.layout } : {}),
     ...(opts.now ? { now: opts.now } : {}),
     ...(opts.runningExecutable ? { runningExecutable: opts.runningExecutable } : {}),
@@ -60,7 +120,10 @@ export async function runDoctor(opts: RunDoctorOptions = {}): Promise<number> {
     ...(opts.fileExists ? { fileExists: opts.fileExists } : {}),
     ...(opts.inspectManifest ? { inspectManifest: opts.inspectManifest } : {}),
     ...(opts.probeCapabilities ? { probeCapabilities: opts.probeCapabilities } : {}),
+    playerChoice: playerChoice.value,
   };
+  if (opts.installedPlayers !== undefined) input.installedPlayers = opts.installedPlayers;
+  if (opts.playerMode !== undefined) input.playerMode = opts.playerMode;
 
   const report = await buildDoctorReport(input);
   if (opts.json) {

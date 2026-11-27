@@ -34,21 +34,29 @@ export type DependencyScope = "always" | "downloads" | "youtube" | "anime";
 
 export type ScopedDependencyRow = DependencyRow & { readonly scope: DependencyScope };
 
-function fixFor(install: PlatformInstall, which?: InstallProbe): string | null {
-  return resolveInstallCommand(install, which ? { which } : {});
+/** The probes behind "the one command for this machine", stubbable together. */
+export type InstallTarget = {
+  readonly which?: InstallProbe;
+  readonly platform?: NodeJS.Platform;
+};
+
+function fixFor(install: PlatformInstall, target: InstallTarget): string | null {
+  return resolveInstallCommand(install, target);
 }
 
 /**
  * Build the row model from a probe result.
  *
- * `which` is threaded through only so the Linux package-manager probe can be
- * stubbed; everything else already comes from the snapshot.
+ * `which` and `platform` are threaded through only so the install-command
+ * choice can be stubbed — a test that pins one package manager must pin the OS
+ * too, or macOS and Windows answer with their own command. Everything else
+ * already comes from the snapshot.
  */
 export function buildDependencyRows(
   snapshot: CapabilitySnapshot,
-  options: { readonly which?: InstallProbe; readonly dataDir?: string } = {},
+  options: InstallTarget & { readonly dataDir?: string } = {},
 ): readonly ScopedDependencyRow[] {
-  const { which } = options;
+  const target: InstallTarget = options;
   const issue = (id: string) => snapshot.issues.find((candidate) => candidate.id === id);
 
   const rows: ScopedDependencyRow[] = [];
@@ -68,8 +76,23 @@ export function buildDependencyRows(
       : mpvRequired
         ? "not found"
         : "not required by selected player",
-    fix: mpvIssue ? fixFor(mpvIssue.install, which) : null,
+    fix: mpvIssue ? fixFor(mpvIssue.install, target) : null,
     ...(mpvRequired && !snapshot.mpv
+      ? { consequence: "Nothing can play until this is installed." }
+      : null),
+  });
+
+  const vlcIssue = issue("vlc-missing");
+  const vlcRequired = snapshot.vlcRequired;
+  rows.push({
+    id: "vlc",
+    name: "VLC",
+    scope: "always",
+    state: vlcRequired && !snapshot.vlc ? "degraded" : "ok",
+    role: "playback",
+    detail: snapshot.vlc ? "found" : vlcRequired ? "not found" : "not required by selected player",
+    fix: vlcIssue ? fixFor(vlcIssue.install, target) : null,
+    ...(vlcRequired && !snapshot.vlc
       ? { consequence: "Nothing can play until this is installed." }
       : null),
   });
@@ -82,7 +105,7 @@ export function buildDependencyRows(
     state: snapshot.ytDlp ? "ok" : "degraded",
     role: "youtube · downloads",
     detail: snapshot.ytDlp ? "found on PATH" : "not found",
-    fix: ytDlpIssue ? fixFor(ytDlpIssue.install, which) : null,
+    fix: ytDlpIssue ? fixFor(ytDlpIssue.install, target) : null,
     ...(snapshot.ytDlp ? null : { consequence: "YouTube playback and downloads need it." }),
   });
 
@@ -96,7 +119,7 @@ export function buildDependencyRows(
     state: snapshot.ffprobe ? "ok" : "degraded",
     role: "quality · downloads",
     detail: snapshot.ffprobe ? "found on PATH" : "not found",
-    fix: ffmpegIssue ? fixFor(ffmpegIssue.install, which) : null,
+    fix: ffmpegIssue ? fixFor(ffmpegIssue.install, target) : null,
     ...(snapshot.ffprobe
       ? null
       : {
@@ -120,7 +143,7 @@ export function buildDependencyRows(
         : snapshot.curl.present
           ? "only plain curl"
           : "no curl at all",
-    fix: curlIssue ? fixFor(curlIssue.install, which) : null,
+    fix: curlIssue ? fixFor(curlIssue.install, target) : null,
     ...(snapshot.curl.impersonates && !curlBroken
       ? null
       : {

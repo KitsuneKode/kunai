@@ -13,6 +13,7 @@ export type PlatformOs = "linux" | "android" | "darwin" | "windows";
 export type PlatformArch = "x64" | "arm64";
 export type PlatformLibc = "gnu" | "musl" | "bionic";
 export type ReleaseArchiveFormat = "tar.gz" | "tar.zst" | "zip";
+export type ReleaseSupportTier = "supported" | "beta" | "experimental";
 
 const MAX_RELEASE_BINARY_BYTES = 128 * 1024 * 1024;
 const MAX_RELEASE_ARCHIVE_BYTES = 64 * 1024 * 1024;
@@ -24,6 +25,8 @@ export type ReleaseBinaryTarget = {
   readonly os: PlatformOs;
   readonly arch: PlatformArch;
   readonly libc?: PlatformLibc;
+  /** User-facing support posture generated into the docs platform matrix. */
+  readonly supportTier: ReleaseSupportTier;
   /** The compatibility archive every installer can read: `.tar.gz`, or `.zip` on Windows. */
   readonly archiveName: string;
   readonly archiveFormat: ReleaseArchiveFormat;
@@ -73,6 +76,7 @@ export const RELEASE_BINARY_TARGETS: readonly ReleaseBinaryTarget[] = [
     out: "kunai-linux-x64",
     os: "linux",
     arch: "x64",
+    supportTier: "supported",
   }),
   releaseBinaryTarget({
     id: "linux-x64-musl",
@@ -81,6 +85,7 @@ export const RELEASE_BINARY_TARGETS: readonly ReleaseBinaryTarget[] = [
     os: "linux",
     arch: "x64",
     libc: "musl",
+    supportTier: "supported",
   }),
   releaseBinaryTarget({
     id: "linux-arm64",
@@ -88,6 +93,7 @@ export const RELEASE_BINARY_TARGETS: readonly ReleaseBinaryTarget[] = [
     out: "kunai-linux-arm64",
     os: "linux",
     arch: "arm64",
+    supportTier: "supported",
   }),
   releaseBinaryTarget({
     id: "linux-arm64-musl",
@@ -96,6 +102,7 @@ export const RELEASE_BINARY_TARGETS: readonly ReleaseBinaryTarget[] = [
     os: "linux",
     arch: "arm64",
     libc: "musl",
+    supportTier: "supported",
   }),
   releaseBinaryTarget({
     id: "android-arm64",
@@ -104,6 +111,7 @@ export const RELEASE_BINARY_TARGETS: readonly ReleaseBinaryTarget[] = [
     os: "android",
     arch: "arm64",
     libc: "bionic",
+    supportTier: "experimental",
   }),
   releaseBinaryTarget({
     id: "android-x64",
@@ -112,6 +120,7 @@ export const RELEASE_BINARY_TARGETS: readonly ReleaseBinaryTarget[] = [
     os: "android",
     arch: "x64",
     libc: "bionic",
+    supportTier: "experimental",
   }),
   releaseBinaryTarget({
     id: "darwin-x64",
@@ -119,6 +128,7 @@ export const RELEASE_BINARY_TARGETS: readonly ReleaseBinaryTarget[] = [
     out: "kunai-darwin-x64",
     os: "darwin",
     arch: "x64",
+    supportTier: "beta",
   }),
   releaseBinaryTarget({
     id: "darwin-arm64",
@@ -126,6 +136,7 @@ export const RELEASE_BINARY_TARGETS: readonly ReleaseBinaryTarget[] = [
     out: "kunai-darwin-arm64",
     os: "darwin",
     arch: "arm64",
+    supportTier: "beta",
   }),
   releaseBinaryTarget({
     id: "windows-x64",
@@ -133,6 +144,7 @@ export const RELEASE_BINARY_TARGETS: readonly ReleaseBinaryTarget[] = [
     out: "kunai-windows-x64.exe",
     os: "windows",
     arch: "x64",
+    supportTier: "beta",
   }),
   releaseBinaryTarget({
     id: "windows-arm64",
@@ -140,6 +152,7 @@ export const RELEASE_BINARY_TARGETS: readonly ReleaseBinaryTarget[] = [
     out: "kunai-windows-arm64.exe",
     os: "windows",
     arch: "arm64",
+    supportTier: "experimental",
   }),
 ];
 

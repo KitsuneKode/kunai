@@ -44,6 +44,7 @@ import {
 import { selectReadyStream } from "../shared/startup-selection";
 import { inferSubtitleFormat, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { trimTrailingSlashes } from "../shared/trim-trailing-slashes";
+import { CHROME_124_USER_AGENT } from "../shared/user-agent";
 import { kickassanimeManifest, KICKASSANIME_PROVIDER_ID } from "./manifest";
 import {
   kaaEpisodeNumbers,
@@ -63,8 +64,7 @@ const PRIMARY_BASE = "https://kaa.lt";
 /** Still redirects to whatever the current domain is; asked only when kaa.lt fails. */
 const REDIRECTING_ALIAS = "https://kickass-anime.ro/";
 const KAA_FETCH_TIMEOUT_MS = 12_000;
-const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+const USER_AGENT = CHROME_124_USER_AGENT;
 
 /** The only server whose stream played end to end; see the manifest notes. */
 const PLAYABLE_SERVERS = new Set(["VidStreaming", "CatStream"]);

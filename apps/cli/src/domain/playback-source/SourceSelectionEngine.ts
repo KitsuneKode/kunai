@@ -69,7 +69,7 @@ export function createSourceSelectionEngine(): SourceSelectionEngine {
       if (
         input.entrypoint === "continue" &&
         localStatus === "ready" &&
-        preference !== "prefer-online"
+        (preference === "prefer-local" || (preference === "ask" && !input.networkAvailable))
       ) {
         return localDecision("local-continuation", localStatus, input.networkAvailable);
       }

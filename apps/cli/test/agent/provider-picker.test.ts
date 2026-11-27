@@ -85,7 +85,7 @@ async function withPicker(
     columns,
     providers: "production",
     seed: { ...onboardedConfig(), provider: "movy" },
-    beforeMount: seedObservedHealth,
+    beforeMount: ({ container }) => seedObservedHealth(container),
   });
   try {
     await openProviderPicker(session);
@@ -116,7 +116,9 @@ describe("agent wiring · provider picker", () => {
       expect(rowOf(frame, "Movy")).toContain("Known as movy.sx");
 
       // One count, one footer: the text line plus the chip row.
-      expect(frame.match(/\d+ (options|items)\b/g)).toEqual(["5 options"]);
+      // Movies/series on main: VidLink, Movy, Rivestream, VidRock, Videasy, VidBolt.
+      expect(frame.match(/\d+ (options|items)\b/g)).toEqual(["6 options"]);
+      expect(rowOf(frame, "VidBolt")).toContain("not checked yet");
       expect(frame).not.toContain("Type to filter");
       expect(frame).not.toContain("Enter select");
       expect(frame).toContain("Movy  ·  current · not checked yet");
@@ -155,16 +157,21 @@ describe("agent wiring · provider picker", () => {
 
   it("typing narrows, Esc is advertised as clearing first, and then it closes", async () => {
     await withPicker("provider-picker-filter", 140, async (s) => {
+      const total = s.frame().match(/(\d+) options\b/)?.[1];
+      expect(total).toBeDefined();
       s.press("vid");
       await s.waitForFrame((f) => f.includes("Filter: vid"), "filter applied");
       await s.waitSettled();
       const filtered = s.frame();
-      expect(filtered).not.toContain("5 options");
+      expect(filtered).not.toContain(`${total} options`);
       expect(filtered).not.toContain("Rivestream");
       expect(filtered).toContain("[esc] show all");
 
       s.press(K.esc);
-      await s.waitForFrame((f) => f.includes("5 options"), "filter cleared, picker still open");
+      await s.waitForFrame(
+        (f) => f.includes(`${total} options`),
+        "filter cleared, picker still open",
+      );
       expect(s.frame()).toContain("[esc] close");
       await s.waitSettled();
       s.press(K.esc);

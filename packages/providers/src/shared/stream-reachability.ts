@@ -13,6 +13,7 @@ import {
   isHlsPlaylistUrl,
   parseFirstHlsMediaSegmentPath,
   parseFirstHlsVariantPath,
+  resolveHlsPlaylistUrl,
   resolveHlsSegmentUrl,
 } from "./hls-manifest";
 import { isDefinitiveHttpStatus, isDefinitiveNetworkError } from "./refusal-classification";
@@ -200,9 +201,7 @@ export async function probeStreamReachability(
 
 /** Provider resolve gates allow slow CDNs through as unverified; only definitive failures block. */
 export function isStreamReachableForResolve(probe: StreamReachabilityProbeResult): boolean {
-  if (probe.status === "reachable" || probe.status === "timeout") {
-    return true;
-  }
+  if (probe.status === "reachable" || probe.status === "timeout") return true;
   return probe.status === "unreachable" && !probe.definitive;
 }
 
@@ -268,7 +267,7 @@ async function probeHlsManifest(
     // fetchPlaylistText is what keeps it pointing somewhere public.
     // Relative variant URIs resolve against the redirected master URL, not the
     // initial URL before redirects.
-    mediaPlaylistUrl = resolveHlsSegmentUrl(master.finalUrl, variantPath);
+    mediaPlaylistUrl = resolveHlsPlaylistUrl(master.finalUrl, variantPath);
     if (parentSignal?.aborted || remaining() <= 0) {
       return { status: "timeout" };
     }

@@ -39,6 +39,37 @@ export function manifestUsesHostRootSegmentPaths(manifestText: string): boolean 
   return false;
 }
 
+/**
+ * Resolve a nested playlist reference, propagating an `api_key` query to a
+ * same-origin child playlist that omits it. VidBolt-style CDNs sign every
+ * playlist this way while still serving unsigned media segments; ordinary
+ * segment references intentionally keep RFC resolution.
+ */
+export function resolveHlsPlaylistUrl(manifestUrl: string, playlistPath: string): string {
+  const resolved = resolveHlsSegmentUrl(manifestUrl, playlistPath);
+  try {
+    const parent = new URL(manifestUrl);
+    const child = new URL(resolved);
+    const apiKey = parent.searchParams.get("api_key");
+    if (
+      apiKey &&
+      child.origin === parent.origin &&
+      !child.searchParams.has("api_key") &&
+      isHlsPlaylistUrl(child.toString())
+    ) {
+      child.searchParams.set("api_key", apiKey);
+      return child.toString();
+    }
+  } catch {
+    // Invalid input already had the standard-resolution fallback above.
+  }
+  return resolved;
+}
+
+function isPlaylistReference(reference: string): boolean {
+  return /\.m3u8(?:[?#]|$)/i.test(reference);
+}
+
 export function isHlsMasterPlaylist(manifestText: string): boolean {
   if (/#EXT-X-STREAM-INF/i.test(manifestText)) return true;
   for (const line of manifestText.split(/\r?\n/)) {
@@ -121,13 +152,10 @@ export function parseFirstHlsMediaSegmentPath(manifestText: string): string | nu
  * be the URL the playlist was finally served from, after redirects.
  */
 export function absolutizeHlsManifest(manifestText: string, manifestUrl: string): string {
-  const absolute = (reference: string): string => {
-    try {
-      return new URL(reference, manifestUrl).toString();
-    } catch {
-      return reference;
-    }
-  };
+  const absolute = (reference: string): string =>
+    isPlaylistReference(reference)
+      ? resolveHlsPlaylistUrl(manifestUrl, reference)
+      : resolveHlsSegmentUrl(manifestUrl, reference);
   return manifestText
     .split(/\r?\n/)
     .map((line) => {
@@ -146,6 +174,16 @@ export function absolutizeHlsManifest(manifestText: string, manifestUrl: string)
 
 export function shouldMaterializeHlsManifest(manifestUrl: string, manifestText: string): boolean {
   if (!isHlsPlaylistUrl(manifestUrl)) return false;
+  try {
+    if (new URL(manifestUrl).searchParams.has("api_key") && isHlsMasterPlaylist(manifestText)) {
+      // The child playlists need the credential copied onto their own URLs;
+      // ffmpeg/mpv otherwise drop it during RFC relative resolution.
+      return true;
+    }
+  } catch {
+    // Invalid URLs cannot be HLS playback input here; fall through to the
+    // ordinary host-root heuristic.
+  }
   if (!manifestUsesHostRootSegmentPaths(manifestText)) return false;
   return manifestText.length > FFMPEG_HLS_PARTIAL_READ_BYTES || isKnownHostRootHlsCdn(manifestUrl);
 }

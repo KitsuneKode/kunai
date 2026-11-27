@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import path from "node:path";
 
+import { codeMetadata } from "../lib/code-metadata";
 import {
   BUN_GLOBAL_INSTALL,
   CANONICAL_INSTALL,
@@ -119,16 +120,23 @@ describe("0.3.0 public truth contract", () => {
     expect(platforms).toMatch(/Linux-only|Linux only|protocol[\s\S]{0,80}Linux/i);
   });
 
-  test("platform support matrix: Linux supported; macOS/Windows beta; Windows ARM64 experimental", () => {
+  test("platform support matrix is generated from release target support tiers", () => {
     const support = readSurface("docs/users/supported-and-unsupported.mdx");
     const installDoc = readSurface("docs/users/install-and-update.mdx");
     const platforms = readSurface("docs/users/platforms.mdx");
-    const joined = [support, installDoc, platforms].join("\n");
 
-    expect(joined).toMatch(/Linux[^\n]{0,80}(supported|Supported)/);
-    expect(joined).toMatch(/macOS[^\n]{0,80}\bbeta\b/i);
-    expect(joined).toMatch(/Windows[^\n]{0,80}\bbeta\b/i);
-    expect(joined).toMatch(/Windows ARM64[^\n]{0,80}experimental|ARM64[^\n]{0,40}experimental/i);
+    for (const surface of [support, installDoc, platforms]) {
+      expect(surface).toContain("<PlatformSupportTable />");
+    }
+
+    const tier = (id: string) =>
+      codeMetadata.releaseTargets.find((target) => target.id === id)?.supportTier;
+    expect(tier("linux-x64")).toBe("supported");
+    expect(tier("linux-arm64")).toBe("supported");
+    expect(tier("darwin-x64")).toBe("beta");
+    expect(tier("darwin-arm64")).toBe("beta");
+    expect(tier("windows-x64")).toBe("beta");
+    expect(tier("windows-arm64")).toBe("experimental");
 
     // Stale "fully supported" claims for macOS/Windows binaries must not remain.
     expect(installDoc).not.toMatch(

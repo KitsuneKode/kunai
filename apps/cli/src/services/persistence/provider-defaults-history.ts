@@ -100,6 +100,13 @@ const INHERITED_ANIME_DEFAULTS: readonly {
     animeProvider: "hianime",
     priorities: [["animegg", "kickassanime", "miruro", "allanime"]],
   },
+  // Revision 8 led the rest with KickAssAnime. Revision 9 only appends the new
+  // tail fallbacks, so this exact list is still treated as inherited.
+  {
+    revision: 8,
+    animeProvider: "hianime",
+    priorities: [["kickassanime", "animegg", "miruro", "allanime"]],
+  },
 ];
 
 export function shouldMigrateInheritedAnimeDefaults(loaded: Partial<KitsuneConfig>): boolean {
@@ -170,6 +177,12 @@ const INHERITED_SERIES_DEFAULTS: readonly {
     provider: "vidlink",
     priorities: [["rivestream", "vidrock", "movy", "videasy"]],
   })),
+  // Revision 8 led the rest with Movy. Revision 9 appends VidBolt at the tail.
+  {
+    revision: 8,
+    provider: "vidlink",
+    priorities: [["movy", "rivestream", "vidrock", "videasy"]],
+  },
 ];
 
 /**

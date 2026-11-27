@@ -52,6 +52,7 @@ import {
 import { selectReadyStream } from "../shared/startup-selection";
 import { looksLikeHiSubtitle, normalizeIsoLanguageCode } from "../shared/subtitle-helpers";
 import { combineAbortSignals, createTimeoutSignal, sleepAbortable } from "../shared/timeout-signal";
+import { CHROME_124_USER_AGENT } from "../shared/user-agent";
 // Embedded so `bun build --compile` single-file binaries carry the WASM (resolves
 // to a real path in dev/npm-bundle, a `/$bunfs/` path in a compiled binary —
 // `Bun.file()` reads both). See .archive/superpowers/archive/plans/2026-06-13-*.
@@ -181,8 +182,7 @@ export type VideasyClientProfile = {
   readonly streamReferer: string;
 };
 
-const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+const USER_AGENT = CHROME_124_USER_AGENT;
 /** Default Videasy client id — Cineplay/Bitcine (bc-frontend). Override to vidking for vidking.net embeds. */
 const VIDEASY_APP_ID = "bc-frontend";
 

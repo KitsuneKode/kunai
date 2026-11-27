@@ -535,12 +535,31 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // Recording the failing redirect hop on probe errors (so refusal evidence
 // names the host that failed) measured 3,329,213 bytes: +495. No dependency
 // or asset. 3252 KiB leaves 835 bytes.
-// The provider picker stating each provider's state (health, quarantine and
-// title-failure readers, the manifest known-issue field, one footer) measured
-// 3,333,457 bytes, then 3,332,842 after dropping a status field and a badge
-// option nothing read: +3,629, about half of it the sentences the picker now
-// says. No dependency or asset. 3255 KiB leaves 278 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_255;
+// The pre-release player-capability rule (one mpv/VLC requirement across
+// startup, setup and doctor), credential-aware TMDB routing and the
+// browse-focus copy (#853) measured 3,332,573 bytes: +3,360. No dependency or
+// asset. 3255 KiB leaves 547 bytes.
+// Promptless-player resume, the Continue source `ask` choice, YouTube session
+// overrides and the Discover startup route (#852) on top measured 3,336,807
+// bytes: +4,234. No dependency or asset; the Continue picker stays lazy.
+// 3259 KiB leaves 409 bytes.
+// Onboarding v4 (the two-screen quick setup, its machine verdict and consent
+// screen, the launch gate that skips setup for a named destination, the live
+// first Browse and the failure panel's Next row; #854) on top measured
+// 3,348,464 bytes: +11,657, all screen code and copy. No dependency or asset;
+// `splitting: false` means lazy loading cannot recover it. 3271 KiB leaves
+// 1,040 bytes.
+// Provider batch 1 (#862: the VidBolt, AniLight and Anidap adapters, their
+// registration and defaults, signed-HLS playlist handling, Malay subtitle
+// normalization and the local relay's handling of obfuscated media segments)
+// on top measured 3,378,230 bytes: +29,766, after sharing the provider JSON
+// transport, episode identity parsing and language-list normalization. No
+// dependency or asset. 3300 KiB leaves 970 bytes.
+// The honest provider picker (#859: per-row status from the health,
+// quarantine and per-title failure stores, the manifest's known issues, and
+// one footer for the keys) on top measured 3,381,740 bytes: +3,510. No
+// dependency or asset. 3303 KiB leaves 532 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_303;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

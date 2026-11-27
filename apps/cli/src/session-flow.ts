@@ -29,6 +29,12 @@ export type EpisodeSelection = {
   episode: number;
   startAt?: number;
   suppressResumePrompt?: boolean;
+  /**
+   * "Restart this episode": start at 0. `startAt` still carries the saved
+   * position so persistent mpv can offer Resume in its overlay; a player that
+   * cannot show that overlay must not treat the offer as the start.
+   */
+  restart?: boolean;
 };
 
 /**
@@ -108,6 +114,7 @@ export function resolveStartingEpisodeChoice(args: {
     return {
       ...historyEpisode,
       startAt: args.history.positionSeconds,
+      restart: true,
     };
   }
   if (args.choice === "next") {
