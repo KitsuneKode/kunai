@@ -127,7 +127,7 @@ See [Media selection](/docs/users/media-selection) for how profiles flow into re
 | `skipIntro`, `skipRecap`, `skipPreview`, `skipCredits` | Auto-skip segments when timing metadata exists |
 | `recoveryMode` | `guided`, `fallback-first`, or `manual` |
 | `player` | Player when `--player` is not given: `auto` (default), `mpv`, or `vlc` (Android). Set it from Settings → Playback; applies on the next start |
-| `resumeStartChoicePrompt` | Resume vs start-over overlay when resuming mid-episode |
+| `resumeStartChoicePrompt` | Resume vs start-over overlay in persistent mpv; VLC and one-shot mpv use the same setting to honor a saved-position offer |
 | `quitNearEndBehavior` | What happens when you quit mpv near the natural end |
 | `quitNearEndThresholdMode` | When "near the end" starts: `credits-or-90-percent` (default), or a fixed percentage |
 | `continueSourcePreference` | Where Continue Watching resumes from: `auto` (default), `local`, `stream`, or `ask` |

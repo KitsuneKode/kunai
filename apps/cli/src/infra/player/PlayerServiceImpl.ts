@@ -61,7 +61,7 @@ import type {
   PlayerPlaybackEventEnvelope,
   PlayerService,
 } from "./PlayerService";
-
+import { promptlessResumeStartAt } from "./promptless-resume-start";
 type PlaybackTargets = Pick<PlayerCycleOptions, "urlKind" | "subtitleUrlKind" | "subtitleMedia">;
 
 export class PlayerServiceImpl implements PlayerService {
@@ -720,7 +720,7 @@ export class PlayerServiceImpl implements PlayerService {
         subtitlePreference: options.subtitlePreference,
         subtitleTracks: stream.subtitleList,
         displayTitle: options.displayTitle,
-        startAt: stream.isLive ? undefined : options.startAt,
+        startAt: stream.isLive ? undefined : promptlessResumeStartAt(options),
         requiresYtdl: stream.requiresYtdl,
         resolveGate: stream,
         ytdlFormat: stream.ytdlFormat,
