@@ -77,8 +77,8 @@ export function renderErrorRootContent(
   // The same row model setup and the startup strip read, so the command a
   // failure names is the one this machine was already told about.
   const snapshot = container.capabilitySnapshot;
-  const fixFor = (id: string) =>
-    snapshot ? (buildDependencyRows(snapshot).find((row) => row.id === id)?.fix ?? null) : null;
+  const rows = snapshot ? buildDependencyRows(snapshot) : [];
+  const fixFor = (id: string) => rows.find((row) => row.id === id)?.fix ?? null;
   const canRetry = true;
   const canPickProvider = Boolean(state.currentTitle);
 
@@ -92,7 +92,7 @@ export function renderErrorRootContent(
         canRetry,
         canPickProvider,
         commands: {
-          player: fixFor("mpv"),
+          player: fixFor(state.playbackProblem?.cause === "vlc-missing" ? "vlc" : "mpv"),
           ytDlp: fixFor("yt-dlp"),
           curlImpersonate: fixFor("curl-impersonate"),
         },

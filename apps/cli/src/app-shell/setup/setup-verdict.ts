@@ -51,33 +51,41 @@ function missingPlayer(snapshot: CapabilitySnapshot): "mpv" | "vlc" | null {
   return null;
 }
 
-// `auto` only resolves to mpv when neither player exists, so a missing mpv
-// means no player at all. A missing VLC means VLC was asked for by name.
 const BLOCKED_TITLE = {
-  mpv: {
+  "no-player": {
     wide: "No video player found — nothing can play yet",
     narrow: "No video player found",
     tiny: "No video player found",
+  },
+  mpv: {
+    wide: "mpv not found — the selected player is unavailable",
+    narrow: "mpv not found",
+    tiny: "mpv not found",
   },
   vlc: {
     wide: "VLC not found — nothing can play yet",
     narrow: "VLC not found",
     tiny: "VLC not found",
   },
-} satisfies Record<"mpv" | "vlc", Record<SetupDensity, string>>;
+} satisfies Record<string, Record<SetupDensity, string>>;
 
 const BLOCKED_HINT = {
-  mpv: {
+  "no-player": {
     wide: "Run it in another terminal, then press r. VLC works too.",
     narrow: "Install it, then press r. VLC works too.",
     tiny: "then press r · VLC works too",
+  },
+  mpv: {
+    wide: "Install mpv, then press r — or start Kunai with --player vlc.",
+    narrow: "Install mpv, then press r.",
+    tiny: "then press r",
   },
   vlc: {
     wide: "Install it, then press r — or start Kunai with --player mpv.",
     narrow: "Install it, then press r.",
     tiny: "then press r",
   },
-} satisfies Record<"mpv" | "vlc", Record<SetupDensity, string>>;
+} satisfies Record<keyof typeof BLOCKED_TITLE, Record<SetupDensity, string>>;
 
 /** The dependency a lane leans on beyond a player, by row id. */
 const LANE_DEPENDENCY = {
@@ -122,10 +130,11 @@ export function buildSetupVerdict(input: {
       (snapshot.vlcRequired ? "VLC" : snapshot.mpv ? "mpv" : "your video player");
     lines.push({ kind: "ok", text: `Ready to play in ${name}` });
   } else {
-    lines.push({ kind: "blocked", text: BLOCKED_TITLE[missing][density] });
+    const message = missing === "mpv" && !snapshot.vlc ? "no-player" : missing;
+    lines.push({ kind: "blocked", text: BLOCKED_TITLE[message][density] });
     const fix = rows.find((row) => row.id === missing)?.fix;
     if (fix) lines.push({ kind: "command", text: fix });
-    lines.push({ kind: "hint", text: BLOCKED_HINT[missing][density] });
+    lines.push({ kind: "hint", text: BLOCKED_HINT[message][density] });
   }
 
   const dependencyId = LANE_DEPENDENCY[lane];

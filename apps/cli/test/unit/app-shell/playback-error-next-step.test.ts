@@ -61,12 +61,13 @@ describe("the next step a failed playback names", () => {
     expect(next.extra).toEqual([]);
   });
 
-  test("no player names the one command", () => {
-    for (const cause of ["mpv-missing", "vlc-missing"]) {
-      const next = buildErrorNextStep({ problem: problem(cause), ...KEYS, commands: COMMANDS });
-      expect(next.text).toBe("install a player, then press r");
-      expect(next.extra).toEqual([{ kind: "command", text: "sudo pacman -S mpv" }]);
-    }
+  test.each([
+    ["mpv-missing", "mpv", "sudo pacman -S mpv"],
+    ["vlc-missing", "VLC", "sudo pacman -S vlc vlc-plugin-ffmpeg"],
+  ])("%s names the selected player and its command", (cause, name, player) => {
+    const next = buildErrorNextStep({ problem: problem(cause), ...KEYS, commands: { player } });
+    expect(next.text).toBe(`install ${name}, then press r`);
+    expect(next.extra).toEqual([{ kind: "command", text: player }]);
   });
 
   test("an expired stream is a retry, not a new source", () => {

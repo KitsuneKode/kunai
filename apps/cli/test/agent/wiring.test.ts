@@ -10,9 +10,12 @@
  */
 import { Database } from "bun:sqlite";
 import { describe, expect, it } from "bun:test";
+import { chmodSync } from "node:fs";
 import { join } from "node:path";
 
+import { gatePlaybackDependencies } from "@/app/playback/playback-dependency-gate";
 import type { Container } from "@/container";
+import { probeCapabilities } from "@/ui";
 import { RecommendationCacheRepository } from "@kunai/storage";
 import type { JsonObject } from "@kunai/types";
 
@@ -615,6 +618,56 @@ describe("agent wiring · offline mode", () => {
 });
 
 describe("agent wiring · playback failure", () => {
+  it.skipIf(process.platform !== "linux")(
+    "the VLC failure panel gives the Arch VLC command",
+    async () => {
+      let showFailure: (() => void) | undefined;
+      await withSession(
+        "wiring-vlc-install",
+        {
+          extraEnv: { PATH: process.env.PATH ?? "" },
+          async beforeMount({ container, profile }) {
+            const pacman = join(profile.rootDir, "pacman");
+            await Bun.write(pacman, "#!/bin/sh\nexit 0\n");
+            chmodSync(pacman, 0o755);
+            process.env.PATH = `${profile.rootDir}:${process.env.PATH}`;
+            const playerMode = { kind: "managed-vlc" } as const;
+            const capabilitySnapshot = await probeCapabilities({
+              playerMode,
+              which: () => null,
+              listPathEntries: () => [],
+              exists: () => false,
+            });
+            Object.assign(container, { capabilitySnapshot });
+            const gate = await gatePlaybackDependencies({
+              player: { isAvailable: async () => false },
+              playerMode,
+            });
+            if (gate.ok) throw new Error("VLC should be missing in this fixture");
+            showFailure = () => {
+              container.stateManager.dispatch({
+                type: "SET_PLAYBACK_PROBLEM",
+                problem: gate.problem,
+              });
+              container.stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "error" });
+            };
+          },
+        },
+        async (s) => {
+          await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+          showFailure?.();
+          await s.waitForFrame((f) => f.includes("Playback failed"), "VLC failure");
+          const panel = s.frame().split("Playback failed")[1];
+          expect(panel).toMatch(
+            /Next\s+install VLC, then press r[^\n]*\n[^\n]*sudo pacman -S vlc vlc-plugin-ffmpeg/u,
+          );
+          expect(panel).not.toContain("apt install");
+          expect(s.inspect().history()).toEqual([]);
+        },
+      );
+    },
+  );
+
   it("an exhausted startup failover still lets the session shut down", async () => {
     // Regression for the abort-blind error wait: showPlaybackError parked on a
     // stateManager.subscribe predicate that only a user dismissal could

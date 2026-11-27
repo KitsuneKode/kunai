@@ -75,6 +75,17 @@ describe("setup verdict", () => {
     expect(v.playerReady).toBe(true);
   });
 
+  test("forced mpv on a VLC-only machine explains which player the session needs", () => {
+    const snap = snapshot({ mpv: false, vlc: true, issues: [issue("mpv-missing", MPV_INSTALL)] });
+    const v = verdict(snap, "series");
+    expect(texts(v)).toEqual([
+      "mpv not found — the selected player is unavailable",
+      "sudo pacman -S mpv",
+      "Install mpv, then press r — or start Kunai with --player vlc.",
+    ]);
+    expect(v.playerReady).toBe(false);
+  });
+
   test("a hand-off session is ready in the player the caller names", () => {
     // Android hands playback to another app: neither managed player is required.
     const handoff = snapshot({ mpv: false, mpvRequired: false });

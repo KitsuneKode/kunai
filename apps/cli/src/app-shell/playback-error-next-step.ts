@@ -59,8 +59,9 @@ export function buildErrorNextStep(input: ErrorNextStepInput): ErrorNextStep {
   const afterInstall = input.canRetry ? "then press r" : "then try again";
   switch (input.problem?.cause) {
     case "mpv-missing":
+      return step(`install mpv, ${afterInstall}`, command(input.commands?.player));
     case "vlc-missing":
-      return step(`install a player, ${afterInstall}`, command(input.commands?.player));
+      return step(`install VLC, ${afterInstall}`, command(input.commands?.player));
     case "android-intent-launcher-missing":
       return step(`run pkg install termux-am, ${afterInstall}`);
     case "yt-dlp-missing":
