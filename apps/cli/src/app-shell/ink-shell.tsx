@@ -203,15 +203,8 @@ stdinManager.setup();
 let rootShellInk: ReturnType<typeof render> | null = null;
 let rootShellExitPromise: Promise<unknown> | null = null;
 
-/**
- * Clears terminal image artifacts. With alternateScreen: true, Ink owns the
- * screen buffer so we only need to clean up Kitty/Ghostty image placements.
- * The raw ANSI clear (\x1b[2J\x1b[H) is intentionally omitted to avoid
- * flicker — Ink's reconciler handles repaint.
- */
-export function clearShellScreen() {
-  clearShellScreenArtifacts();
-}
+/** Hot-path terminal image cleanup; Ink's reconciler owns the frame repaint. */
+export const clearShellScreen = clearShellScreenArtifacts;
 
 export async function openPlaybackStreamSelectionPicker(
   container: Container,
@@ -1978,7 +1971,7 @@ function ListShell<T>({
   );
 }
 
-export { openBrowseShell } from "./browse-shell";
+export { openBrowseShell } from "./open-browse-shell";
 
 // ─── StatsShell ─────────────────────────────────────────────────────────────
 

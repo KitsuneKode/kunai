@@ -277,6 +277,63 @@ describe("agent wiring · calendar error state", () => {
   }, 45_000);
 });
 
+describe("agent wiring · shell v4 narrow layout", () => {
+  it("keeps 40-column search rows below the scroll affordance", async () => {
+    await withSession("wiring-browse-narrow", { columns: 40, rows: 22 }, async (s) => {
+      await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+      s.press("smoke", K.enter);
+      await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
+
+      const frame = s.frame();
+      expect(frame).not.toContain("▼ ...e Movie");
+      expect(frame).toContain("Smoke Movie");
+      expect(frame).toContain("Smoke Series");
+      expect(frame).toContain("[/]");
+      for (const line of frame.split("\n")) {
+        expect(measureColumns(line.trimEnd())).toBeLessThanOrEqual(40);
+      }
+    });
+  }, 45_000);
+
+  it("shows a useful command palette window at 120 columns", async () => {
+    await withSession("wiring-palette-wide", { columns: 120, rows: 32 }, async (s) => {
+      await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+      s.press("/");
+      await s.waitForFrame((f) => f.includes("GLOBAL"), "browse command palette");
+
+      const commandRows = s
+        .frame()
+        .split("\n")
+        .filter((line) => /^\s+▌? \/[a-z]/u.test(line));
+      expect(commandRows.length).toBeGreaterThanOrEqual(6);
+    });
+  }, 45_000);
+
+  it("keeps the 40-column playback header intact and pins stop plus commands", async () => {
+    await withSession(
+      "wiring-playback-narrow",
+      { mpv: "fake", fakeMpvMode: "hold", columns: 40, rows: 20 },
+      async (s) => {
+        await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+        s.press("smoke", K.enter);
+        await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
+        s.press(K.enter);
+        await s.waitForFrame((f) => f.includes("SRC"), "playback live", 30_000);
+
+        const frame = s.frame();
+        const header = frame.split("\n")[0] ?? "";
+        expect(measureColumns(header.trimEnd())).toBeLessThanOrEqual(40);
+        expect(header).toContain("🦊");
+        expect(header).toContain("Playing");
+        expect(header).not.toContain("Now Playin●");
+        expect(frame).toContain("[q] stop");
+        expect(frame).toContain("[/]");
+        expect(frame).not.toContain("Playbackin mpv");
+      },
+    );
+  }, 45_000);
+});
+
 describe("agent wiring · anime episode picker", () => {
   it("opens with the cursor on an episode, so one Enter plays it", async () => {
     // The picker used to open on nothing when the current episode was not in

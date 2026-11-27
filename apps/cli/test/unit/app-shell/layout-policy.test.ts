@@ -87,8 +87,8 @@ describe("getShellViewportPolicy", () => {
 
   test("browse command palette budget stays bounded on common terminal heights", () => {
     expect(getBrowseCommandPaletteMaxVisible(24, false, false)).toBeGreaterThanOrEqual(1);
-    expect(getBrowseCommandPaletteMaxVisible(30, false, false)).toBeLessThanOrEqual(8);
-    expect(getBrowseCommandPaletteMaxVisible(30, true, true)).toBeLessThanOrEqual(5);
+    expect(getBrowseCommandPaletteMaxVisible(30, false, false)).toBeLessThanOrEqual(9);
+    expect(getBrowseCommandPaletteMaxVisible(30, true, true)).toBeLessThanOrEqual(6);
     expect(getBrowseCommandPaletteMaxVisible(48, false, false)).toBe(18);
     expect(getBrowseCommandPaletteMaxVisible(48, false, false)).toBeGreaterThanOrEqual(12);
   });

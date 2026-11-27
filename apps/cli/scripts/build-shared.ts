@@ -523,7 +523,14 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // Mid-stream failover (stream-unrecoverable escalation, recovery start intent)
 // and the provider-defaults revision 8 history module on top measured
 // 3,323,126 bytes; 3247 KiB leaves 1,802.
-export const NPM_BUNDLE_BUDGET_KB = 3_247;
+// Shell-v4 narrow browse/palette/playback layout on top measured 3,327,248
+// bytes, 2,320 over. Extracting the browse opener, browse display context, and
+// shared screen/timestamp helpers first shrank the large shell files rather
+// than copying them; the remaining growth is narrow footer density, palette row
+// accounting, and playback/browse chrome policy. 3250 KiB is the smallest
+// whole-KiB raise over the measured tree and leaves 752 bytes; public launcher
+// budgets are unchanged.
+export const NPM_BUNDLE_BUDGET_KB = 3_250;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

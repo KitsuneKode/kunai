@@ -130,18 +130,18 @@ import {
 } from "./hooks/use-calendar-route";
 import { useCalendarState } from "./hooks/use-calendar-state";
 import { resolveSuggestionDebounceMs, useSearchSuggestions } from "./hooks/use-search-suggestions";
-import { undisplayPlacementsKeepCache } from "./image-pane";
 import { resolveBrowseBindingEffect, resolveKeybinding } from "./keybinding-runtime";
 import { buildFooterActionsFromBindings } from "./keybindings";
 import {
   getBrowseChromeRows,
   getBrowseCommandPaletteMaxVisible,
   getBrowseListMaxVisible,
+  ROOT_CHROME_ROWS,
+  TRANSIENT_ROW_SLOTS,
 } from "./layout-policy";
 import { MouseTarget, useMouseEnabled, useMouseRegion } from "./mouse/MouseRegions";
 import type { BrowseOverlay } from "./overlay-panel";
 import { OverlayPanel } from "./overlay-panel";
-import { takePaletteTitleLaunch } from "./palette-title-launch";
 import { plainModeEnabled, selectionPrefix } from "./plain-mode";
 import { prefetchPosterSources } from "./poster-source-cache";
 import { suppressPosterWhileNavigating } from "./poster-types";
@@ -155,7 +155,6 @@ import {
 import { PreviewRail } from "./primitives/PreviewRail";
 import { shouldRenderPreviewRail } from "./primitives/PreviewRail.model";
 import { StateBlock } from "./primitives/StateBlock";
-import { mountRootContent } from "./root-content-state";
 import {
   getNotificationDetailsPending,
   subscribeNotificationDetails,
@@ -172,6 +171,7 @@ import {
 import { CommandPalette } from "./shell-command-ui";
 import { getCommandLabel, InputField } from "./shell-frame";
 import { ContextStrip, ResizeBlocker, ShellFooter, selectFooterActions } from "./shell-primitives";
+import { clearShellScreenArtifacts as clearShellScreen } from "./shell-screen-clear";
 import { getWindowStart, measureColumns, sanitizeTerminalText } from "./shell-text";
 import { palette } from "./shell-theme";
 import { getSuggestionBandRowCount, SearchSuggestionBand } from "./suggestion-band-ui";
@@ -180,21 +180,11 @@ import {
   type FooterAction,
   type BrowseIdleContextLoader,
   type BrowseShellOption,
-  type BrowseShellResult,
   type BrowseShellSearchResponse,
   type ShellAction,
 } from "./types";
 import { usePosterPreview } from "./use-poster-preview";
 import { useDebouncedViewportPolicy } from "./use-viewport-policy";
-
-function clearShellScreen() {
-  if (process.stdout.isTTY) {
-    // Placements must go (the frame is cleared), but source bytes stay warm:
-    // wiping the 48MB+32MB byte caches here refetches + redecodes every poster
-    // the moment the user returns. Full wipe is for session shutdown only.
-    undisplayPlacementsKeepCache();
-  }
-}
 
 function browseIdleHint(mode: ShellMode): string {
   if (mode === "youtube") return "Search for a channel or video — or try /trending";
@@ -216,7 +206,7 @@ function browseFilterPlaceholder(mode: ShellMode): string {
   return "type title, year, movie, series, downloaded…";
 }
 
-type BrowseQueryDraft = { value: string; mode: ShellMode };
+export type BrowseQueryDraft = { value: string; mode: ShellMode };
 
 const EMPTY_TITLE_ENTRIES: readonly LocalTitleEntry[] = [];
 
@@ -1315,6 +1305,7 @@ export function BrowseShell<T>({
   // Short terminals: collapse schedule chrome margins so the list keeps its rows.
   const denseChrome = viewport.rows < 28;
   const browseBreakpoint = viewport.breakpoint;
+  const denseInput = browseBreakpoint === "narrow";
   const wideBrowse = browseBreakpoint === "wide";
   const mediumBrowse = browseBreakpoint === "medium";
   const showCompanionLayout = wideBrowse || mediumBrowse;
@@ -1406,7 +1397,8 @@ export function BrowseShell<T>({
     calendarTypeTab === "All" ? "calendar" : calendarTypeTab.toLowerCase();
   const suggestionMaxRows = Math.max(7, Math.min(12, viewport.rows - 20));
   const browseChromeRows = getBrowseChromeRows({
-    hasResultSubtitle: !ultraCompact && Boolean(resultStatus.primary || resultStatus.secondary),
+    hasResultSubtitle:
+      !ultraCompact && !denseInput && Boolean(resultStatus.primary || resultStatus.secondary),
     hasFilterBar: showResultFilterBar,
     hasFilterBadges: activeFilterBadges.length > 0 && !ultraCompact,
     hasCalendarChrome:
@@ -1421,8 +1413,15 @@ export function BrowseShell<T>({
       suggestionBandVisible && suggestionBandModel.rows.length > 0
         ? getSuggestionBandRowCount(suggestionBandModel, boundedSuggestionIndex, suggestionMaxRows)
         : 0,
+    denseInput,
   });
-  const maxVisible = getBrowseListMaxVisible(viewport.rows, browseChromeRows);
+  const maxVisible = getBrowseListMaxVisible(
+    viewport.rows,
+    browseChromeRows,
+    ROOT_CHROME_ROWS,
+    TRANSIENT_ROW_SLOTS,
+    denseInput ? "dense" : "normal",
+  );
   // The card follows the selected row at once; enriched details arrive when the
   // selection settles. Rendering only the settled data flashed "No selection"
   // over a row that was plainly selected.
@@ -2078,7 +2077,7 @@ export function BrowseShell<T>({
         {/* Brand · destination · provider · mode · size live in the single
             AppHeader above — it also owns the global "searching" activity
             indicator, so no duplicate spinner is rendered here. */}
-        {!ultraCompact && (resultStatus.primary || resultStatus.secondary) ? (
+        {!ultraCompact && !denseInput && (resultStatus.primary || resultStatus.secondary) ? (
           <Box justifyContent="space-between">
             {resultStatus.primary ? (
               <Text color={palette.muted}>{resultStatus.primary}</Text>
@@ -2204,6 +2203,7 @@ export function BrowseShell<T>({
                 }
                 maxWidth={innerWidth}
                 onRedraw={clearShellScreen}
+                dense={denseInput}
                 ignoreInput={(input, key) => {
                   if (
                     /^[1-9]$/.test(input) &&
@@ -2261,12 +2261,6 @@ export function BrowseShell<T>({
         !isCalendarView ? (
           <Text color={palette.dim}>Query changed · Press Enter to refresh results</Text>
         ) : null}
-
-        <Box marginTop={1}>
-          <Text color={palette.dim} dimColor>
-            {"─".repeat(innerWidth)}
-          </Text>
-        </Box>
 
         {isCalendarView &&
         calendarRouteKind !== "error" &&
@@ -2657,7 +2651,7 @@ export function BrowseShell<T>({
           titleMatches={titleMatches}
           maxVisible={getBrowseCommandPaletteMaxVisible(
             viewport.rows,
-            Boolean(resultSubtitle && !viewport.ultraCompact),
+            Boolean(resultSubtitle && !viewport.ultraCompact && !denseInput),
             Boolean(activeFilterBadges.length > 0 && !viewport.ultraCompact),
           )}
           width={innerWidth}
@@ -2802,168 +2796,4 @@ export function BrowseShell<T>({
       })()}
     </Box>
   );
-}
-
-export function openBrowseShell<T>({
-  mode,
-  provider,
-  initialQuery,
-  queryDraft: sharedQueryDraft,
-  initialResults,
-  initialResultSubtitle,
-  initialErrorMessage,
-  initialEmptyMessage,
-  initialWarnings,
-  initialSelectedIndex,
-  initialCalendarTypeTab,
-  initialCalendarRoute,
-  placeholder,
-  commands,
-  onSearch,
-  onLoadCalendar,
-  onCalendarAccepted,
-  onCalendarStatus,
-  onLoadDiscovery,
-  onLoadRecommendations,
-  settings,
-  onQueueSelected,
-  onWatchlistSelected,
-  onFavoriteSelected,
-  isFavorite,
-  onFollowSelected,
-  onPlayTrailer,
-  onOpenLink,
-  onPrefetchOption,
-  onUndo,
-  onPaletteCommand,
-  idleContext,
-  loadIdleContext,
-  onSuggest,
-  loadLocalSuggestions,
-  detailsContextFor,
-  suggestionDebounceMs,
-  localTitles,
-  onTitlePick,
-}: {
-  mode: ShellMode;
-  provider: string;
-  initialQuery?: string;
-  queryDraft?: BrowseQueryDraft;
-  initialResults?: readonly BrowseShellOption<T>[];
-  initialResultSubtitle?: string;
-  initialErrorMessage?: string;
-  /** The cause-named empty copy from a bootstrap search that found nothing. */
-  initialEmptyMessage?: string;
-  initialWarnings?: readonly string[];
-  initialSelectedIndex?: number;
-  initialCalendarTypeTab?: CalendarTypeTab;
-  initialCalendarRoute?: CalendarRouteRequest;
-  placeholder: string;
-  commands: readonly ResolvedAppCommand[];
-  onSearch: (query: string) => Promise<BrowseShellSearchResponse<T>>;
-  onLoadCalendar?: (signal: AbortSignal) => Promise<BrowseShellSearchResponse<T>>;
-  onCalendarAccepted?: (
-    request: CalendarRouteRequest,
-    response: BrowseShellSearchResponse<T>,
-  ) => void;
-  /** Session status implied by non-success calendar route transitions. */
-  onCalendarStatus?: (status: CalendarSessionStatus) => void;
-  onLoadDiscovery?: () => Promise<BrowseShellSearchResponse<T>>;
-  onLoadRecommendations?: () => Promise<BrowseShellSearchResponse<T>>;
-  settings?: KitsuneConfig;
-  onQueueSelected?: (value: T) => Promise<void> | void;
-  onWatchlistSelected?: (value: T) => Promise<void> | void;
-  /** Resolves to the message to flash, so add and remove can read differently. */
-  onFavoriteSelected?: (value: T) => Promise<string | void> | string | void;
-  /** Live lookup, re-read on every render so a toggle shows immediately. */
-  isFavorite?: (value: T) => boolean;
-  onFollowSelected?: (value: T) => Promise<void> | void;
-  onPlayTrailer?: (url: string) => void;
-  onOpenLink?: (url: string) => void;
-  onPrefetchOption?: (value: T, signal: AbortSignal) => void;
-  onUndo?: () => void;
-  /** Fires when a command is picked from this shell's `/` palette. */
-  onPaletteCommand?: (commandId: AppCommandId) => void;
-  idleContext?: import("./types").BrowseIdleContext;
-  loadIdleContext?: BrowseIdleContextLoader;
-  onSuggest?: (query: string, signal: AbortSignal) => Promise<readonly SearchSuggestion<T>[]>;
-  loadLocalSuggestions?: () => readonly SearchSuggestion<T>[];
-  detailsContextFor?: (titleId: string) => DetailsSheetLocalContext;
-  suggestionDebounceMs?: number;
-  /** Local title source — consulted once per palette open for the JUMP TO section. */
-  localTitles?: () => readonly LocalTitleEntry[];
-  /** Enter landed on a JUMP TO title row. */
-  onTitlePick?: (entry: LocalTitleEntry) => void;
-}): Promise<BrowseShellResult<T>> {
-  // A title picked from another surface (picker, loading) parks its launch
-  // here; the next browse mount resolves it instead of rendering.
-  const stagedLaunch = takePaletteTitleLaunch();
-  if (stagedLaunch) {
-    return Promise.resolve({ type: "launch-playback", launch: stagedLaunch });
-  }
-  const queryDraft = sharedQueryDraft ?? { value: initialQuery ?? "", mode };
-  if (queryDraft.mode !== mode) {
-    queryDraft.value = initialQuery ?? "";
-    queryDraft.mode = mode;
-  }
-  const session = mountRootContent<BrowseShellResult<T>>({
-    kind: "browse",
-    renderContent: (finish) => (
-      <BrowseShell
-        mode={mode}
-        provider={provider}
-        initialQuery={initialQuery}
-        queryDraft={queryDraft}
-        initialResults={initialResults}
-        initialResultSubtitle={initialResultSubtitle}
-        initialErrorMessage={initialErrorMessage}
-        initialEmptyMessage={initialEmptyMessage}
-        initialWarnings={initialWarnings}
-        initialSelectedIndex={initialSelectedIndex}
-        initialCalendarTypeTab={initialCalendarTypeTab}
-        initialCalendarRoute={initialCalendarRoute}
-        placeholder={placeholder}
-        commands={commands}
-        onSearch={onSearch}
-        onLoadCalendar={onLoadCalendar}
-        onCalendarAccepted={onCalendarAccepted}
-        onCalendarStatus={onCalendarStatus}
-        onLoadDiscovery={onLoadDiscovery}
-        onLoadRecommendations={onLoadRecommendations}
-        settings={settings}
-        onQueueSelected={onQueueSelected}
-        onWatchlistSelected={onWatchlistSelected}
-        onFavoriteSelected={onFavoriteSelected}
-        isFavorite={isFavorite}
-        onFollowSelected={onFollowSelected}
-        onPlayTrailer={onPlayTrailer}
-        onOpenLink={onOpenLink}
-        onPrefetchOption={onPrefetchOption}
-        onUndo={onUndo}
-        onPaletteCommand={onPaletteCommand}
-        idleContext={idleContext}
-        loadIdleContext={loadIdleContext}
-        onSuggest={onSuggest}
-        loadLocalSuggestions={loadLocalSuggestions}
-        detailsContextFor={detailsContextFor}
-        suggestionDebounceMs={suggestionDebounceMs}
-        localTitles={localTitles}
-        onTitlePick={onTitlePick}
-        onResolve={(action, value) =>
-          finish(
-            value !== undefined ? { type: "action", action, value } : { type: "action", action },
-          )
-        }
-        onSubmit={(value) => finish({ type: "selected", value })}
-        onCancel={() => finish({ type: "cancelled" })}
-      />
-    ),
-    fallbackValue: { type: "cancelled" },
-    // A picker a detached overlay workflow mounts over browse resolves the
-    // mount as displaced, so SearchPhase remounts instead of reporting a
-    // cancel the user never made.
-    displacedValue: { type: "cancelled", displaced: true },
-  });
-
-  return session.result;
 }
