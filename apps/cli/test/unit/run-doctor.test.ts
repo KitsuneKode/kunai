@@ -296,7 +296,7 @@ describe("runDoctor", () => {
     };
     try {
       const code = await runDoctor({
-        mpvHwdecMode: "off",
+        readMpvHwdecMode: async () => "off",
         json: true,
         layout,
         now: () => FIXED_DATE,

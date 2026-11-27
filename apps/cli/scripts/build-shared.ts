@@ -566,8 +566,8 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // onto provider batch 2 measured 3,410,109 bytes: +17,226. No dependency or
 // asset; the probe sample is embedded source data. 3331 KiB leaves 835 bytes.
 // Review fixes for setup/doctor reporting, probe-process termination, and
-// A/V-sync evidence guards measured 3,410,416 bytes: +307. No dependency or
-// asset. 3331 KiB leaves 528 bytes.
+// A/V-sync evidence guards measured 3,410,448 bytes: +339. No dependency or
+// asset. 3331 KiB leaves 496 bytes.
 export const NPM_BUNDLE_BUDGET_KB = 3_331;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
