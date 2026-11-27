@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { buildDependencyRows } from "@/app-shell/setup/dependency-rows";
 import { buildSetupVerdict, setupDensity } from "@/app-shell/setup/setup-verdict";
 import { CURL_IMPERSONATE_INSTALL, MPV_INSTALL, YT_DLP_INSTALL } from "@/infra/os/install-commands";
+import { emptyMpvHardwareAccelProbe } from "@/infra/player/mpv-hwaccel-probe";
 import type { CapabilityIssue, CapabilitySnapshot } from "@/ui";
 
 const issue = (
@@ -32,6 +33,7 @@ function snapshot(overrides: Partial<CapabilitySnapshot> = {}): CapabilitySnapsh
       available: false,
       reason: "test fixture",
     },
+    mpvHardwareAccel: emptyMpvHardwareAccelProbe("not-probed"),
     issues: [],
     ...overrides,
   };

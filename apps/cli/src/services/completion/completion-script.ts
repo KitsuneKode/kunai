@@ -1,5 +1,5 @@
 import { ADDONS_SUBCOMMANDS, CLI_SUBCOMMANDS, KNOWN_FLAGS, VALUE_FLAGS } from "@/cli-args";
-import { HDR_MODES } from "@kunai/config";
+import { HDR_MODES, MPV_HWDEC_MODES } from "@kunai/config";
 
 /**
  * Shell completion scripts for `kunai`.
@@ -25,6 +25,8 @@ const SPECIALISED_VALUE_FLAGS = new Set([
   "--sub",
   "--player",
   "--hdr",
+  "--mpv-hwdec",
+  "--mpv-avsync-recovery",
   "--format",
   "--download-path",
   "--mpv-log-file",
@@ -50,6 +52,8 @@ const AUDIO_VALUES = ["original", "en", "ja", "hi", "pt", "es", "fr", "de", "dub
 const SUB_VALUES = ["en", "interactive", "none", "hi", "pt", "ar", "de", "es", "fr", "ja"] as const;
 const PLAYER_VALUES = ["auto", "mpv", "vlc"] as const;
 const HDR_VALUES = HDR_MODES;
+const MPV_HWDEC_VALUES = MPV_HWDEC_MODES;
+const MPV_AVSYNC_RECOVERY_VALUES = ["on", "off"] as const;
 const FORMAT_VALUES = ["pretty", "jsonl", "markdown"] as const;
 const PROVIDERS_SUBCOMMANDS = ["status", "update", "verify", "rollback", "reset"] as const;
 
@@ -76,6 +80,10 @@ _kunai_complete() {
       COMPREPLY=( $(compgen -W "${PLAYER_VALUES.join(" ")}" -- "$cur") ); return ;;
     --hdr)
       COMPREPLY=( $(compgen -W "${HDR_VALUES.join(" ")}" -- "$cur") ); return ;;
+    --mpv-hwdec)
+      COMPREPLY=( $(compgen -W "${MPV_HWDEC_VALUES.join(" ")}" -- "$cur") ); return ;;
+    --mpv-avsync-recovery)
+      COMPREPLY=( $(compgen -W "${MPV_AVSYNC_RECOVERY_VALUES.join(" ")}" -- "$cur") ); return ;;
     --format)
       COMPREPLY=( $(compgen -W "${FORMAT_VALUES.join(" ")}" -- "$cur") ); return ;;
     --download-path|--mpv-log-file)
@@ -107,7 +115,7 @@ function zshScript(): string {
 # or append to ~/.zshrc:
 #   eval "$(kunai completion zsh)"
 _kunai() {
-  local -a subcommands flags shells providers_subs addons_subs types qualities audios subs players hdrs formats
+  local -a subcommands flags shells providers_subs addons_subs types qualities audios subs players hdrs hwdecs avsyncs formats
   subcommands=(${CLI_SUBCOMMANDS.map((c) => `'${c}'`).join(" ")})
   flags=(${allFlags()
     .map((f) => `'${f}'`)
@@ -121,6 +129,8 @@ _kunai() {
   subs=(${SUB_VALUES.map((s) => `'${s}'`).join(" ")})
   players=(${PLAYER_VALUES.map((p) => `'${p}'`).join(" ")})
   hdrs=(${HDR_VALUES.map((h) => `'${h}'`).join(" ")})
+  hwdecs=(${MPV_HWDEC_VALUES.map((h) => `'${h}'`).join(" ")})
+  avsyncs=(${MPV_AVSYNC_RECOVERY_VALUES.map((v) => `'${v}'`).join(" ")})
   formats=(${FORMAT_VALUES.map((f) => `'${f}'`).join(" ")})
 
   case "\${words[CURRENT-1]}" in
@@ -130,6 +140,8 @@ _kunai() {
     --sub) _describe 'subtitle' subs; return ;;
     --player) _describe 'player' players; return ;;
     --hdr) _describe 'hdr mode' hdrs; return ;;
+    --mpv-hwdec) _describe 'hardware decode' hwdecs; return ;;
+    --mpv-avsync-recovery) _describe 'av sync recovery' avsyncs; return ;;
     --format) _describe 'format' formats; return ;;
     --download-path|--mpv-log-file) _files -/; return ;;
     completion) _describe 'shell' shells; return ;;
@@ -165,6 +177,8 @@ function fishScript(): string {
     `complete -c kunai -l sub -x -a "${SUB_VALUES.join(" ")}"`,
     `complete -c kunai -l player -x -a "${PLAYER_VALUES.join(" ")}"`,
     `complete -c kunai -l hdr -x -a "${HDR_VALUES.join(" ")}"`,
+    `complete -c kunai -l mpv-hwdec -x -a "${MPV_HWDEC_VALUES.join(" ")}"`,
+    `complete -c kunai -l mpv-avsync-recovery -x -a "${MPV_AVSYNC_RECOVERY_VALUES.join(" ")}"`,
     `complete -c kunai -l format -x -a "${FORMAT_VALUES.join(" ")}"`,
     `complete -c kunai -l download-path -r -F`,
     `complete -c kunai -l mpv-log-file -r -F`,
@@ -199,6 +213,8 @@ Register-ArgumentCompleter -Native -CommandName kunai -ScriptBlock {
   $subs = @(${SUB_VALUES.map((s) => `'${s}'`).join(", ")})
   $players = @(${PLAYER_VALUES.map((p) => `'${p}'`).join(", ")})
   $hdrs = @(${HDR_VALUES.map((h) => `'${h}'`).join(", ")})
+  $hwdecs = @(${MPV_HWDEC_VALUES.map((h) => `'${h}'`).join(", ")})
+  $avsyncs = @(${MPV_AVSYNC_RECOVERY_VALUES.map((v) => `'${v}'`).join(", ")})
   $formats = @(${FORMAT_VALUES.map((f) => `'${f}'`).join(", ")})
 
   $elements = $commandAst.CommandElements
@@ -212,6 +228,8 @@ Register-ArgumentCompleter -Native -CommandName kunai -ScriptBlock {
     '--sub' { $subs }
     '--player' { $players }
     '--hdr' { $hdrs }
+    '--mpv-hwdec' { $hwdecs }
+    '--mpv-avsync-recovery' { $avsyncs }
     '--format' { $formats }
     'completion' { $shells }
     'providers' { $providersSubs }

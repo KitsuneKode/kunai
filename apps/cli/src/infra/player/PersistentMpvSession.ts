@@ -9,10 +9,8 @@ import { emitPlayerKeyRequest } from "@/domain/playback/player-key-requests";
 import type {
   PlaybackResult,
   PlaybackTimingMetadata,
-  ShellMode,
   StreamInfo,
   SubtitleTrack,
-  TitleInfo,
 } from "@/domain/types";
 import { scrubbedChildEnv } from "@/infra/os/child-env";
 import { registerMpvProcess, terminateMpvProcess } from "@/infra/player/mpv-process-registry";
@@ -20,7 +18,6 @@ import { isSubtitleIpcCommand } from "@/infra/player/mpv-subtitle-tracks";
 import {
   SubtitleFiles,
   prepareLaunchSubtitles,
-  type SubtitleMediaRequest,
   resolvePlayerSubtitle,
 } from "@/infra/player/subtitle-files";
 import { copyShareLinkForContext } from "@/infra/share/copy-share-link";
@@ -43,6 +40,7 @@ import {
   parseSkipPromptDurationMs,
   resolveKunaiMpvBridgeScriptPath,
 } from "./kunai-mpv-bridge";
+import { MpvAvsyncController } from "./mpv-avsync-controller";
 import { discoverMpvInvocation } from "./mpv-discovery";
 import { probeMpvHdrCapability } from "./mpv-hdr";
 import {
@@ -53,7 +51,12 @@ import {
   watchdogReconnectTrigger,
   type InProcessReconnectTrigger,
 } from "./mpv-in-process-reconnect";
-import { openMpvIpcSession, waitForMpvIpcEndpoint, type MpvIpcSession } from "./mpv-ipc";
+import {
+  MPV_PERSISTENT_OBSERVED_PROPERTIES,
+  openMpvIpcSession,
+  waitForMpvIpcEndpoint,
+  type MpvIpcSession,
+} from "./mpv-ipc";
 import {
   createMpvIpcEndpoint,
   ipcServerCliArg,
@@ -73,11 +76,11 @@ import {
   noteStreamStall,
   noteTrustedSeek,
   recordPlayerExit,
-  type PlayerStatsState,
 } from "./mpv-stats";
 import { buildPersistentLoadfileCommand } from "./mpv-stream-http-headers";
 import { PersistentMpvPropertyRouter } from "./persistent-mpv-property-router";
 import type { PersistentMpvSessionRuntime } from "./persistent-mpv-runtime";
+import type { PlayerCycleOptions, PlayerCycleState } from "./persistent-player-cycle";
 import { PersistentReadyWorkExecutor } from "./persistent-ready-work-executor";
 import {
   resolveNearEofPrefetchTriggerSeconds,
@@ -85,11 +88,7 @@ import {
   type PersistentResumeStartChoice,
 } from "./persistent-ready-work-policy";
 import { PersistentSubtitleManager } from "./persistent-subtitle-manager";
-import {
-  createPlaybackOutputDriver,
-  readMpvVideoOutput,
-  type PlaybackOutputDriver,
-} from "./playback-output-gate";
+import { createPlaybackOutputDriver, readMpvVideoOutput } from "./playback-output-gate";
 import {
   type ActivePlaybackSkip,
   findActivePlaybackSkip,
@@ -102,7 +101,7 @@ import {
 } from "./playback-skip";
 import { createPlaybackWatchdog, type PlaybackWatchdog } from "./playback-watchdog";
 import { buildPlaybackStatsSnapshot } from "./PlaybackStatsSnapshot";
-import type { ActivePlayerControl, MpvRequestedAction } from "./PlayerControlService";
+import type { ActivePlayerControl } from "./PlayerControlService";
 import type { LateSubtitleAttachment, PlayerPlaybackEvent } from "./PlayerService";
 import { extractExternalSubtitleIds } from "./subtitle-track-cache";
 
@@ -115,7 +114,6 @@ export {
 
 const IN_PROCESS_RECONNECT_BASE_BACKOFF_MS = 1_800;
 const IN_PROCESS_RECONNECT_MAX_BACKOFF_MS = 16_000;
-
 /**
  * Upper bound on a reconnect budget handed to `create` in a raw config object.
  * Well above the persisted cap (`MPV_IN_PROCESS_RECONNECT_MAX_ATTEMPTS`) so the
@@ -131,61 +129,6 @@ const defaultPersistentMpvSessionRuntime: PersistentMpvSessionRuntime = {
   spawn: (command, options) => Bun.spawn(command, options),
   waitForIpcEndpoint: waitForMpvIpcEndpoint,
   openIpcSession: openMpvIpcSession,
-};
-
-export type PlayerCycleOptions = {
-  displayTitle: string;
-  urlKind?: MpvUrlKind;
-  subtitleUrlKind?: MpvUrlKind;
-  subtitleMedia?: SubtitleMediaRequest;
-  audioPreference?: string;
-  subtitlePreference?: string;
-  primarySubtitle: string | null;
-  subtitleTracks?: readonly SubtitleTrack[];
-  startAt?: number;
-  /** Optional resume offer shown in mpv without automatically seeking. */
-  resumePromptAt?: number;
-  /** When true, mpv shows resume vs start-over before a manual resume seek. */
-  offerResumeStartChoice?: boolean;
-  /** Human-readable offset for the prompt (e.g. "12:34"). */
-  resumeChoiceTimeLabel?: string;
-  timing?: PlaybackTimingMetadata | null;
-  autoSkipEnabled?: boolean;
-  skipRecap?: boolean;
-  skipIntro?: boolean;
-  skipPreview?: boolean;
-  skipCredits?: boolean;
-  autoNextEnabled?: boolean;
-  onPlayerReady?: () => void;
-  onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;
-  /** Aborts addon preflight waits before the file is handed to mpv. */
-  abortSignal?: AbortSignal;
-  /** Called when the user presses N or P inside the mpv window. The mpv process
-   *  handles the stop itself; the app only needs to record the intent. */
-  onMpvActionRequest?: (action: MpvRequestedAction) => void;
-  /** Called once when playback reaches the credits prefetch window or the final ~30 s fallback. */
-  onNearEof?: () => void;
-  shareLinkContext?: {
-    readonly mode: ShellMode;
-    readonly title: Pick<TitleInfo, "id" | "type" | "name" | "externalIds" | "isAnime">;
-    readonly episode?: { readonly season: number; readonly episode: number };
-    readonly providerId?: string;
-    readonly onCopied?: (result: { readonly url: string; readonly copied: boolean } | null) => void;
-  };
-};
-
-type PlayerCycleState = {
-  stats: PlayerStatsState;
-  resolve: (result: PlaybackResult) => void;
-  promise: Promise<PlaybackResult>;
-  playerReadyNotified: boolean;
-  output: PlaybackOutputDriver;
-  lastPlaybackProgressEventAtMs: number;
-  lastPlaybackProgressPositionSeconds: number;
-  lastPlaybackProgressDurationSeconds: number;
-  acceptPlaybackProperties: boolean;
-  onPlayerReady?: () => void;
-  onPlaybackEvent?: (event: PlayerPlaybackEvent) => void;
 };
 
 export class PersistentMpvSession {
@@ -327,6 +270,7 @@ export class PersistentMpvSession {
   private reconnectTryCount = 0;
   private reconnectBackoffUntilMs = 0;
   private reconnectInFlight = false;
+  private readonly avsyncController: MpvAvsyncController;
   private pendingInProcessReconnect: {
     seekSeconds: number;
     shouldSeek: boolean;
@@ -340,6 +284,18 @@ export class PersistentMpvSession {
     private readonly onControlReady: (control: ActivePlayerControl | null) => void,
     private readonly runtime: PersistentMpvSessionRuntime,
   ) {
+    this.avsyncController = new MpvAvsyncController({
+      now: () => (this.runtime.now ?? Date.now)(),
+      enabled: () => this.currentCycleOptions().avsyncRecovery !== false,
+      live: () => this.playbackStream.isLive === true,
+      reconnecting: () => this.reconnectInFlight,
+      resumeSeekPending: () => this.resumeSeekPending,
+      outputStarted: () => this.activeCycle?.output.started === true,
+      retired: () => this.retired,
+      ipcSession: () => this.ipcSession,
+      positionSeconds: () => this.currentPositionSeconds,
+      emit: (event) => this.currentCycleOptions().onPlaybackEvent?.(event),
+    });
     this.playbackStream = initialStream;
     this.currentOptions = initialOptions;
     this.currentControl = {
@@ -909,9 +865,12 @@ export class PersistentMpvSession {
       try {
         openedIpcSession = await this.runtime.openIpcSession({
           endpoint: this.ipcEndpoint,
-          onPropertyUpdate: ({ name, value, observedAt }) => {
-            this.propertyRouter.handlePropertyUpdate({ name, value, observedAt });
+          observedProperties: MPV_PERSISTENT_OBSERVED_PROPERTIES,
+          onPropertyUpdate: (update) => {
+            this.avsyncController.observeProperty(update);
+            this.propertyRouter.handlePropertyUpdate(update);
           },
+          onPlaybackRestart: () => this.avsyncController.notePlaybackRestart(),
           onEndFile: ({ reason, fileError, observedAt }) => {
             void this.handlePlaybackEnded(reason, observedAt, fileError);
           },
@@ -1077,6 +1036,8 @@ export class PersistentMpvSession {
     this.reconnectTryCount = 0;
     this.reconnectBackoffUntilMs = 0;
     this.reconnectInFlight = false;
+    // Pause/seeking are mpv-owned; only a fresh property report may change them.
+    this.avsyncController.restartEpisode();
     this.pendingInProcessReconnect = null;
     this.currentPositionSeconds = 0;
     this.skippedSegments = new Set<string>();
@@ -1449,7 +1410,7 @@ export class PersistentMpvSession {
     }
     if (!activeSkip || !this.ipcSession || this.skippedSegments.has(activeSkip.key)) return false;
     this.skippedSegments.add(activeSkip.key);
-    await this.ipcSession.send(["seek", activeSkip.endSeconds, "absolute"], 1_000);
+    await this.avsyncController.sendKunaiSeek(this.ipcSession, activeSkip.endSeconds, 1_000);
     options.onPlaybackEvent?.({ type: "segment-skipped", kind: activeSkip.kind, automatic: true });
     return true;
   }
@@ -1461,7 +1422,11 @@ export class PersistentMpvSession {
   ): Promise<boolean> {
     if (!this.ipcSession || this.skippedSegments.has(segment.key)) return false;
     this.clearSkipPromptState();
-    const seekResult = await this.ipcSession.send(["seek", segment.endSeconds, "absolute"], 1_000);
+    const seekResult = await this.avsyncController.sendKunaiSeek(
+      this.ipcSession,
+      segment.endSeconds,
+      1_000,
+    );
     if (!seekResult.ok) return false;
     this.skippedSegments.add(segment.key);
     options.onPlaybackEvent?.({ type: "segment-skipped", kind: segment.kind, automatic });
@@ -1485,7 +1450,7 @@ export class PersistentMpvSession {
     const target = this.currentOptions.resumePromptAt;
     if (!target || target <= 0 || !this.ipcSession || !this.activeCycle) return;
 
-    const seekResult = await this.ipcSession.send(["seek", target, "absolute"], 2_000);
+    const seekResult = await this.avsyncController.sendKunaiSeek(this.ipcSession, target, 2_000);
     if (seekResult.ok) {
       this.currentPositionSeconds = target;
       noteTrustedSeek(this.activeCycle.stats, target);
@@ -1995,8 +1960,9 @@ export class PersistentMpvSession {
     const opts = this.currentCycleOptions();
     try {
       if (spec.shouldSeek && this.ipcSession) {
-        const seekResult = await this.ipcSession.send(
-          ["seek", spec.seekSeconds, "absolute"],
+        const seekResult = await this.avsyncController.sendKunaiSeek(
+          this.ipcSession,
+          spec.seekSeconds,
           3_000,
         );
         if (!isCurrent()) return;

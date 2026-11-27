@@ -1,12 +1,15 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { CURL_INSTALL, MPV_INSTALL, YT_DLP_INSTALL } from "@/infra/os/install-commands";
+import { emptyMpvHardwareAccelProbe } from "@/infra/player/mpv-hwaccel-probe";
 import { getInstallLayoutPaths } from "@/services/update/native-installer/install-layout";
 import { runDoctor, type RunDoctorOptions } from "@/services/update/run-doctor";
 import type { CapabilitySnapshot } from "@/ui";
+
+const realStorageModule = { ...(await import("@kunai/storage")) };
 
 const FIXED_DATE = "2026-07-21T10:00:00.000Z";
 const made: string[] = [];
@@ -33,10 +36,18 @@ function emptyCapabilities(overrides: Partial<CapabilitySnapshot> = {}): Capabil
       available: false,
       reason: "test",
     },
+    mpvHardwareAccel: emptyMpvHardwareAccelProbe("not-probed"),
     issues: [],
     ...overrides,
   };
 }
+
+const noProfileMpvHwdecRead = {
+  mpvHwdecMode: "mpv-default" as const,
+  readMpvHwdecMode: async () => {
+    throw new Error("runDoctor test touched the profile mpv hardware config");
+  },
+};
 
 async function makeLayout() {
   const root = await mkdtemp(join(tmpdir(), "kunai-run-doctor-"));
@@ -64,6 +75,7 @@ describe("runDoctor", () => {
 
     try {
       const code = await runDoctor({
+        ...noProfileMpvHwdecRead,
         json: true,
         layout,
         now: () => FIXED_DATE,
@@ -110,6 +122,7 @@ describe("runDoctor", () => {
     console.log = () => {};
     try {
       const code = await runDoctor({
+        ...noProfileMpvHwdecRead,
         json: false,
         layout,
         now: () => FIXED_DATE,
@@ -131,6 +144,7 @@ describe("runDoctor", () => {
     console.log = () => {};
     try {
       const code = await runDoctor({
+        ...noProfileMpvHwdecRead,
         json: false,
         layout,
         now: () => FIXED_DATE,
@@ -164,6 +178,7 @@ describe("runDoctor", () => {
     console.log = () => {};
     try {
       const code = await runDoctor({
+        ...noProfileMpvHwdecRead,
         json: false,
         layout,
         now: () => FIXED_DATE,
@@ -211,6 +226,7 @@ describe("runDoctor", () => {
     const originalLog = console.log;
     console.log = () => {};
     const laneDepsOnly: RunDoctorOptions = {
+      ...noProfileMpvHwdecRead,
       json: false,
       layout,
       now: () => FIXED_DATE,
@@ -242,6 +258,66 @@ describe("runDoctor", () => {
     }
   });
 
+  test("an injected mpv hardware mode never touches the profile config path", async () => {
+    const { root, layout } = await makeLayout();
+    const trackedPaths = {
+      configDir: layout.configDir,
+      dataDir: join(root, "data"),
+      cacheDir: join(root, "cache"),
+      tempDir: join(root, "temp"),
+      configPath: join(layout.configDir, "config.json"),
+      mpvBridgePath: join(layout.configDir, "mpv", "kunai-bridge.lua"),
+      dataDbPath: join(root, "data", "kunai-data.sqlite"),
+      cacheDbPath: join(root, "cache", "kunai-cache.sqlite"),
+      logPath: join(root, "data", "logs.txt"),
+    };
+    let configPathAccesses = 0;
+    Object.defineProperty(trackedPaths, "configPath", {
+      configurable: true,
+      enumerable: true,
+      get: () => {
+        configPathAccesses += 1;
+        return join(layout.configDir, "config.json");
+      },
+    });
+    mock.module("@kunai/storage", () => ({
+      ...realStorageModule,
+      getKunaiPaths: () => trackedPaths,
+    }));
+    const mockedStorage = await import("@kunai/storage");
+    void mockedStorage.getKunaiPaths().configPath;
+    expect(configPathAccesses).toBe(1);
+    configPathAccesses = 0;
+
+    const lines: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => {
+      lines.push(args.map(String).join(" "));
+    };
+    try {
+      const code = await runDoctor({
+        readMpvHwdecMode: async () => "off",
+        json: true,
+        layout,
+        now: () => FIXED_DATE,
+        runningExecutable: { path: "/tmp/kunai", version: "0.3.0" },
+        pathValue: "",
+        platform: "linux",
+        fileExists: () => false,
+        probeCapabilities: async () => emptyCapabilities(),
+      });
+
+      expect(code).toBe(0);
+      const parsed = JSON.parse(lines[0]!);
+      expect(parsed.playback).toMatchObject({ mpvHwdec: "off", mpvHwdecEmitted: "no" });
+      expect(configPathAccesses).toBe(0);
+      expect(lines).toHaveLength(1);
+    } finally {
+      console.log = originalLog;
+      mock.module("@kunai/storage", () => realStorageModule);
+    }
+  });
+
   test("strict mode accepts a VLC-only desktop when auto selected VLC", async () => {
     const { layout } = await makeLayout();
     const originalLog = console.log;
@@ -249,6 +325,7 @@ describe("runDoctor", () => {
     try {
       expect(
         await runDoctor({
+          ...noProfileMpvHwdecRead,
           json: false,
           strict: true,
           layout,
@@ -282,6 +359,7 @@ describe("runDoctor", () => {
     try {
       expect(
         await runDoctor({
+          ...noProfileMpvHwdecRead,
           json: false,
           strict: true,
           layout,
@@ -305,6 +383,7 @@ describe("runDoctor", () => {
     try {
       expect(
         await runDoctor({
+          ...noProfileMpvHwdecRead,
           argv: ["doctor", "--player", "vlc"],
           json: false,
           strict: true,
@@ -332,6 +411,7 @@ describe("runDoctor", () => {
     try {
       expect(
         await runDoctor({
+          ...noProfileMpvHwdecRead,
           argv: ["doctor", "--player", "potato"],
           layout,
           probeCapabilities: async () => {
@@ -351,6 +431,7 @@ describe("runDoctor", () => {
     try {
       expect(
         await runDoctor({
+          ...noProfileMpvHwdecRead,
           argv: ["doctor", "--strict", "--json", "--player"],
           layout,
           probeCapabilities: async () => {
@@ -372,6 +453,7 @@ describe("runDoctor", () => {
     };
     try {
       const code = await runDoctor({
+        ...noProfileMpvHwdecRead,
         json: false,
         layout,
         now: () => FIXED_DATE,

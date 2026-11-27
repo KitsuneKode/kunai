@@ -1,4 +1,5 @@
 import type { PlayerChoice } from "@/domain/playback/player-choice";
+import { isMpvHwdecMode, type MpvHwdecMode } from "@kunai/config";
 
 import type { InstallManifestInspection } from "./install-manifest";
 import {
@@ -28,6 +29,10 @@ export type RunDoctorOptions = {
   readonly playerMode?: BuildDoctorReportInput["playerMode"];
   /** Raw maintenance argv, used only to honor a `--player` override before saved config. */
   readonly argv?: readonly string[];
+  /** Configured mpv hardware decode policy seam; normally read from config.json. */
+  readonly mpvHwdecMode?: MpvHwdecMode;
+  /** Test/embedding seam for the config read used when no explicit mode was composed. */
+  readonly readMpvHwdecMode?: () => Promise<MpvHwdecMode>;
 };
 
 type MutableBuildDoctorReportInput = {
@@ -42,6 +47,17 @@ export async function readConfiguredPlayerChoice(): Promise<PlayerChoice> {
     return raw.player === "mpv" || raw.player === "vlc" ? raw.player : "auto";
   } catch {
     return "auto";
+  }
+}
+
+export async function readConfiguredMpvHwdec(): Promise<MpvHwdecMode> {
+  try {
+    const { getKunaiPaths } = await import("@kunai/storage");
+    // SAFETY: config.json is user-owned JSON; the mode is validated by the closed union guard.
+    const raw = (await Bun.file(getKunaiPaths().configPath).json()) as { mpvHwdec?: unknown };
+    return isMpvHwdecMode(raw.mpvHwdec) ? raw.mpvHwdec : "mpv-default";
+  } catch {
+    return "mpv-default";
   }
 }
 
@@ -121,6 +137,7 @@ export async function runDoctor(opts: RunDoctorOptions = {}): Promise<number> {
     ...(opts.inspectManifest ? { inspectManifest: opts.inspectManifest } : {}),
     ...(opts.probeCapabilities ? { probeCapabilities: opts.probeCapabilities } : {}),
     playerChoice: playerChoice.value,
+    mpvHwdecMode: opts.mpvHwdecMode ?? (await (opts.readMpvHwdecMode ?? readConfiguredMpvHwdec)()),
   };
   if (opts.installedPlayers !== undefined) input.installedPlayers = opts.installedPlayers;
   if (opts.playerMode !== undefined) input.playerMode = opts.playerMode;

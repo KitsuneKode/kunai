@@ -8,6 +8,7 @@
                               Here's what's on this machine.
 
                               ▌ ✓ mpv               found on PATH                         playback
+                                ✓ mpv hwdec         not probed · unused by mpv-hwdec=mpv… playback · GPU deco…
                                 ✓ VLC               found                                 playback
                                 ✓ yt-dlp            found on PATH                         youtube · downloads
                                 ✓ ffmpeg            found on PATH                         quality · downloads

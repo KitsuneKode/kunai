@@ -46,6 +46,9 @@ function fakeContainer(overrides: Partial<Parameters<typeof runSetupWizard>[0]["
   const notes: string[] = [];
   const container = {
     config: {
+      get mpvHwdec() {
+        return config.mpvHwdec;
+      },
       getRaw: () => ({ ...config }),
       update: async (patch: Partial<typeof config>) => {
         Object.assign(config, patch);
@@ -128,6 +131,15 @@ test("setup probes the selected player mode on first paint and on dependency rec
     ffprobe: true,
     ytDlp: true,
     curl: { present: true, impersonates: true, profile: "chrome150" },
+    mpvHardwareAccel: {
+      probed: false,
+      drivers: [],
+      autoSafeOk: false,
+      autoSafeDriver: "",
+      status: "mpv-not-found",
+      probedAt: null,
+      fromCache: false,
+    },
     image: {
       terminal: "unknown",
       protocol: "none",
@@ -169,6 +181,62 @@ test("setup probes the selected player mode on first paint and on dependency rec
     { kind: "managed-vlc" },
     { kind: "managed-vlc" },
   ]);
+});
+
+test("setup overlays the current decoder mode onto a reused startup snapshot", async () => {
+  const reusedSnapshot = {
+    mpv: true,
+    mpvRequired: true,
+    vlc: true,
+    vlcRequired: false,
+    ffprobe: true,
+    ytDlp: true,
+    curl: { present: true, impersonates: true, profile: "chrome150" },
+    mpvHardwareAccel: {
+      probed: true,
+      drivers: ["vaapi", "nvdec"],
+      autoSafeOk: true,
+      autoSafeDriver: "nvdec-copy",
+      status: "hardware",
+      probedAt: 123,
+      fromCache: true,
+    },
+    mpvHwdecMode: "mpv-default",
+    image: {
+      terminal: "unknown",
+      protocol: "none",
+      renderer: "none",
+      available: false,
+      reason: "test fixture",
+    },
+    issues: [],
+  } as const;
+  const { container, config } = fakeContainer({ capabilitySnapshot: reusedSnapshot });
+  config.mpvHwdec = "auto";
+  let flowSnapshot: CapabilitySnapshot | undefined;
+
+  const outcome = await runSetupWizard({
+    container,
+    force: true,
+    probeCapabilities: async () => {
+      throw new Error("a reused startup snapshot must not probe again on setup paint");
+    },
+    runSetupFlow: (snapshot, options) => {
+      flowSnapshot = snapshot;
+      return {
+        result: Promise.resolve({
+          flow: options.flow ?? "full",
+          outcome: "aborted",
+          prefs: { ...UNTOUCHED_PREFS, analyticsChoice: "unchanged" },
+          answeredScreens: 0,
+        }),
+      };
+    },
+  });
+
+  expect(outcome).toBe("cancelled");
+  expect(flowSnapshot?.mpvHwdecMode).toBe("auto");
+  expect(flowSnapshot?.mpvHardwareAccel).toEqual(reusedSnapshot.mpvHardwareAccel);
 });
 
 test("aborting a forced setup rerun preserves an existing analytics opt-in", async () => {

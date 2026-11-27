@@ -7,6 +7,7 @@ import {
 import { parsePlayerChoice, type PlayerChoice } from "@/domain/playback/player-choice";
 import type { MpvRuntimeOptions } from "@/infra/player/mpv-runtime-options";
 import { HDR_MODES, isHdrMode, type HdrMode } from "@kunai/config";
+import { isMpvHwdecMode, MPV_HWDEC_MODES, type MpvHwdecMode } from "@kunai/config";
 
 /**
  * A malformed invocation — unknown flag, missing value, mistyped subcommand,
@@ -45,6 +46,8 @@ export type CliArgs = {
   audio?: string;
   subtitle?: string;
   hdr?: HdrMode;
+  mpvHwdec?: MpvHwdecMode;
+  mpvAvsyncRecovery?: boolean;
   setup: boolean;
   offline: boolean;
   history: boolean;
@@ -106,6 +109,9 @@ PLAYBACK PICKS (this run only — config.json untouched)
       --sub <lang>         Subtitles: en | interactive | none | hi | pt | ar | de | es | fr | ja
       --dub                Shortcut for --audio dub
       --hdr <mode>         HDR mode: auto | passthrough | tone-map | sdr-only
+      --mpv-hwdec <mode>   Hardware decode: mpv-default | auto | auto-safe | auto-copy | off | backend
+      --mpv-avsync-recovery <on|off>
+                           Correct sustained mpv audio/video drift
 
 PLAYER
       --player <mode>        Player backend: desktop <auto|mpv|vlc>; Android/Termux <auto|mpv|vlc>
@@ -245,6 +251,8 @@ export const KNOWN_FLAGS: ReadonlySet<string> = new Set([
   "--mpv-log-file",
   "--player",
   "--hdr",
+  "--mpv-hwdec",
+  "--mpv-avsync-recovery",
   "-h",
   "--help",
   "-v",
@@ -283,6 +291,8 @@ export const VALUE_FLAGS: ReadonlySet<string> = new Set([
   "--mpv-log-file",
   "--player",
   "--hdr",
+  "--mpv-hwdec",
+  "--mpv-avsync-recovery",
   "--format",
   "--limit",
   "--url",
@@ -307,6 +317,8 @@ type CliFlagOptions = {
   readonly sub?: string;
   readonly dub?: boolean;
   readonly hdr?: string;
+  readonly mpvHwdec?: string;
+  readonly mpvAvsyncRecovery?: string;
   readonly debug?: boolean;
   readonly debugJson?: boolean;
   readonly debugSession?: boolean;
@@ -405,6 +417,8 @@ const LAUNCH_FLAGS: ReadonlySet<string> = new Set([
   "--mpv-log-file",
   "--player",
   "--hdr",
+  "--mpv-hwdec",
+  "--mpv-avsync-recovery",
   "--help",
   "--version",
 ]);
@@ -687,6 +701,25 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
       throw new CliUsageError(`invalid --hdr "${options.hdr}" — one of: ${HDR_MODES.join(", ")}`);
     }
     args.hdr = hdr;
+  }
+
+  if (options.mpvHwdec !== undefined) {
+    const mode = options.mpvHwdec.toLowerCase();
+    if (!isMpvHwdecMode(mode)) {
+      throw new CliUsageError(
+        `invalid --mpv-hwdec "${options.mpvHwdec}" — one of: ${MPV_HWDEC_MODES.join(", ")}`,
+      );
+    }
+    args.mpvHwdec = mode;
+  }
+  if (options.mpvAvsyncRecovery !== undefined) {
+    const value = options.mpvAvsyncRecovery.toLowerCase();
+    if (value !== "on" && value !== "off") {
+      throw new CliUsageError(
+        `invalid --mpv-avsync-recovery "${options.mpvAvsyncRecovery}" — one of: on, off`,
+      );
+    }
+    args.mpvAvsyncRecovery = value === "on";
   }
 
   args.debug = Boolean(options.debug || options.debugJson || options.debugSession);

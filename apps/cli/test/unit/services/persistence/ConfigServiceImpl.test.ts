@@ -140,6 +140,31 @@ describe("ConfigServiceImpl", () => {
     expect((await store.load()).startupPriority).toBe("fast");
   });
 
+  test("loads, normalizes, and persists mpv playback quality preferences", async () => {
+    const store = new MemoryConfigStore({
+      mpvHwdec: "videotoolbox",
+      mpvAvsyncRecovery: false,
+    });
+    const service = await ConfigServiceImpl.load(store);
+
+    expect(service.mpvHwdec).toBe("videotoolbox");
+    expect(service.mpvAvsyncRecovery).toBe(false);
+
+    await service.update({ mpvHwdec: "auto-safe", mpvAvsyncRecovery: true });
+    await service.save();
+    expect((await store.load()).mpvHwdec).toBe("auto-safe");
+    expect((await store.load()).mpvAvsyncRecovery).toBe(true);
+
+    const malformed = await ConfigServiceImpl.load(
+      new MemoryConfigStore({
+        // SAFETY: deliberately malformed persisted JSON verifies normalization
+        // of a value the typed writer cannot produce.
+        mpvHwdec: "cuda" as never,
+      }),
+    );
+    expect(malformed.mpvHwdec).toBe("mpv-default");
+  });
+
   test("normalizes provider priority lists on load and update", async () => {
     const store = new MemoryConfigStore({
       providerPriority: [" vidking ", "rivestream", "vidking", ""],

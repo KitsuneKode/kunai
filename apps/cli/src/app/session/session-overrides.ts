@@ -1,4 +1,4 @@
-import type { HdrMode, MediaLanguageProfile } from "@kunai/config";
+import type { HdrMode, MediaLanguageProfile, MpvHwdecMode } from "@kunai/config";
 
 /**
  * Pure resolution of transient, in-memory config overrides a launch flag should
@@ -17,6 +17,8 @@ export interface SessionOverrideArgs {
   readonly audio?: string;
   readonly subtitle?: string;
   readonly hdr?: HdrMode;
+  readonly mpvHwdec?: MpvHwdecMode;
+  readonly mpvAvsyncRecovery?: boolean;
 }
 
 export interface SessionLayoutConfig {
@@ -25,6 +27,8 @@ export interface SessionLayoutConfig {
   readonly plainMode?: boolean;
   readonly offlineMode?: boolean;
   readonly hdrMode?: HdrMode;
+  readonly mpvHwdec?: MpvHwdecMode;
+  readonly mpvAvsyncRecovery?: boolean;
   readonly animeLanguageProfile: MediaLanguageProfile;
   readonly seriesLanguageProfile: MediaLanguageProfile;
   readonly movieLanguageProfile: MediaLanguageProfile;
@@ -37,6 +41,8 @@ export type SessionConfigOverrides = Partial<{
   plainMode: boolean;
   offlineMode: boolean;
   hdrMode: HdrMode;
+  mpvHwdec: MpvHwdecMode;
+  mpvAvsyncRecovery: boolean;
   animeLanguageProfile: MediaLanguageProfile;
   seriesLanguageProfile: MediaLanguageProfile;
   movieLanguageProfile: MediaLanguageProfile;
@@ -73,6 +79,12 @@ export function resolveSessionConfigOverrides(
   if (args.plain && !config.plainMode) overrides.plainMode = true;
   if (args.offline && !config.offlineMode) overrides.offlineMode = true;
   if (args.hdr !== undefined && args.hdr !== config.hdrMode) overrides.hdrMode = args.hdr;
+  if (args.mpvHwdec !== undefined && args.mpvHwdec !== config.mpvHwdec) {
+    overrides.mpvHwdec = args.mpvHwdec;
+  }
+  if (args.mpvAvsyncRecovery !== undefined && args.mpvAvsyncRecovery !== config.mpvAvsyncRecovery) {
+    overrides.mpvAvsyncRecovery = args.mpvAvsyncRecovery;
+  }
 
   if (args.quality !== undefined || args.audio !== undefined || args.subtitle !== undefined) {
     for (const lane of LANGUAGE_LANES) {

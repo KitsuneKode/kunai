@@ -82,6 +82,56 @@ export function buildDependencyRows(
       : null),
   });
 
+  const hw = snapshot.mpvHardwareAccel;
+  const hwMode = snapshot.mpvHwdecMode ?? "mpv-default";
+  // Probe evidence gates playback only for Kunai's opt-in `auto`. In every
+  // other mode the row is informational: mpv.conf, an explicit backend, or
+  // mpv's own automatic policy decides without waiting for this probe.
+  const hwProbeGuidesPlayback = hwMode === "auto";
+  const hwUnavailable = !snapshot.mpv || hw.status === "mpv-not-found";
+  const hwDegraded = hw.status === "no-hardware" || hw.status === "probe-failed";
+  rows.push({
+    id: "mpv-hwaccel",
+    name: "mpv hwdec",
+    scope: "always",
+    state: hwUnavailable
+      ? snapshot.mpvRequired
+        ? "degraded"
+        : "ok"
+      : hw.status === "hardware" || hw.status === "not-probed"
+        ? "ok"
+        : hwDegraded && hwProbeGuidesPlayback
+          ? "degraded"
+          : "ok",
+    role: "playback · GPU decode",
+    detail: !snapshot.mpvRequired
+      ? "not used by the selected player"
+      : hwUnavailable
+        ? "skipped — mpv not found"
+        : hw.status === "hardware"
+          ? `auto-safe ok (${hw.autoSafeDriver})${hw.fromCache ? " · cached" : ""}`
+          : hw.status === "no-hardware"
+            ? hwProbeGuidesPlayback
+              ? hw.drivers.length
+                ? `no usable auto-safe path · help lists ${hw.drivers.join(", ")}`
+                : "no usable auto-safe path"
+              : `no auto-safe hardware evidence · unused by mpv-hwdec=${hwMode}`
+            : hw.status === "probe-failed"
+              ? hwProbeGuidesPlayback
+                ? "probe failed or timed out · playback uses mpv default"
+                : `probe incomplete · unused by mpv-hwdec=${hwMode}`
+              : hwProbeGuidesPlayback
+                ? "not probed yet · [r] recheck probes"
+                : `not probed · unused by mpv-hwdec=${hwMode}`,
+    fix: null,
+    ...(hwProbeGuidesPlayback && (hw.status === "no-hardware" || hw.status === "probe-failed")
+      ? {
+          consequence:
+            "Hardware decoding is optional; playback falls back to mpv's software/default decode path.",
+        }
+      : null),
+  });
+
   const vlcIssue = issue("vlc-missing");
   const vlcRequired = snapshot.vlcRequired;
   rows.push({

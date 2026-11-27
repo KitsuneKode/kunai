@@ -175,6 +175,8 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   startupPriority: DEFAULT_STARTUP_PRIORITY,
   providerDns: "doh",
   hdrMode: "auto",
+  mpvHwdec: "mpv-default",
+  mpvAvsyncRecovery: true,
   player: "auto",
   offlineArtworkCacheEnabled: true,
   offlineFreeSpaceReserveBytes: DEFAULT_OFFLINE_FREE_SPACE_RESERVE_BYTES,

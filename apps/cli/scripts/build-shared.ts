@@ -562,7 +562,13 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // Provider batch 2 (#863: the FileSuN movies/series and AnimeParadise anime
 // adapters with their registration and defaults) on top measured 3,392,883
 // bytes: +11,143. No dependency or asset. 3314 KiB leaves 653 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_314;
+// The mpv hardware-decode probe and persistent A/V-sync recovery slice merged
+// onto provider batch 2 measured 3,410,109 bytes: +17,226. No dependency or
+// asset; the probe sample is embedded source data. 3331 KiB leaves 835 bytes.
+// Review fixes for setup/doctor reporting, probe-process termination, and
+// A/V-sync evidence guards measured 3,410,448 bytes: +339. No dependency or
+// asset. 3331 KiB leaves 496 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_331;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
