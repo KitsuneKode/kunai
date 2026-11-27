@@ -32,6 +32,7 @@ import { copyToClipboard } from "@/infra/clipboard";
 import { peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import { listReadyEpisodes } from "@/services/offline/offline-episode-index";
 import { presenceStatusDetail } from "@/services/presence/presence-status-line";
+import type { SeasonSummary } from "@/tmdb";
 import { providerEpisodeIdentitiesEqual } from "@kunai/types";
 import { Box, Text, render, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -381,6 +382,8 @@ export async function openPlaybackStreamSelectionPicker(
 export type ActivePlaybackEpisodePickerDeps = {
   readonly buildOptions: typeof buildPlaybackEpisodePickerOptions;
   readonly openPicker: typeof openSessionPicker;
+  /** Injectable season-catalog seam; production lazily imports TMDB to preserve startup cost. */
+  readonly loadSeasons?: (titleId: string) => Promise<SeasonSummary[] | null>;
 };
 
 export async function openActivePlaybackEpisodePicker(
@@ -433,9 +436,18 @@ export async function openActivePlaybackEpisodePicker(
     if (picked === EPISODE_PICKER_SWITCH_SEASON) {
       // `s` mid-playback: hop seasons without leaving the episode picker flow.
       if (isAnime || local) continue;
-      const { fetchSeasonSummaries } = await import("@/tmdb");
       const { chooseSeasonFromOptions } = await import("./pickers");
-      const seasons = (await fetchSeasonSummaries(title.id)) ?? [];
+      const loadSeasons =
+        deps.loadSeasons ??
+        (async (titleId: string) => (await import("@/tmdb")).fetchSeasonSummaries(titleId));
+      const seasons = (await loadSeasons(title.id).catch(() => null)) ?? [];
+      if (seasons.length === 0) {
+        container.stateManager.dispatch({
+          type: "SET_PLAYBACK_FEEDBACK",
+          note: "Could not load seasons — check the connection and retry",
+        });
+        return;
+      }
       const nextSeason = await chooseSeasonFromOptions(
         seasons,
         pickerEpisode.season,

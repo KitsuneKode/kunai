@@ -164,6 +164,22 @@ describe("buildPlaybackEpisodePickerOptions", () => {
     expect(result.initialIndex).toBe(0);
   });
 
+  test("a failed season fetch leaves visible retry copy instead of rejecting the picker", async () => {
+    const result = await buildPlaybackEpisodePickerOptions({
+      title: seriesTitle,
+      currentEpisode: { season: 2, episode: 5 },
+      isAnime: false,
+      loadEpisodes: async () => {
+        throw new Error("offline");
+      },
+    });
+
+    expect(result.options).toEqual([]);
+    expect(result.subtitle).toContain("S02");
+    expect(result.subtitle).toContain("episode list unavailable");
+    expect(result.subtitle).toContain("retry");
+  });
+
   test("anime path prefers animeEpisodes labels over numbered stubs", async () => {
     const options = await buildPlaybackEpisodePickerOptions({
       title: seriesTitle,

@@ -91,9 +91,10 @@ export function getShellViewportPolicy(
   const wideBrowse = !blocked && kind === "browse" && wide;
   const mediumBrowse = !blocked && kind === "browse" && medium;
   const previewRail =
-    // Policy gate (140+): browse shell may still show PreviewRail at 124+ when the
-    // component's own threshold is met — see PreviewRail.model.ts and browse-shell.
-    wideBrowse && terminalProfile === "local" && columns >= 140 && rows >= GLOBAL_BLOCKED_MIN_ROWS;
+    // Policy gate (120+): the wide breakpoint itself is 120, and the component
+    // threshold in PreviewRail.model.ts must agree so Search does not fall back
+    // to the raw details dump on exactly the width the design targets.
+    wideBrowse && terminalProfile === "local" && columns >= 120 && rows >= GLOBAL_BLOCKED_MIN_ROWS;
 
   const { minColumns, minRows } = KIND_MINIMUMS[kind];
   const tooSmall = blocked || columns < minColumns || rows < minRows;

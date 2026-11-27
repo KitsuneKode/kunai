@@ -149,6 +149,13 @@ const EpisodePreviewRail = React.memo(function EpisodePreviewRail({
   );
 });
 
+export function overlayPickerBusyMessage(type: BrowseOverlay["type"]): string {
+  if (type === "provider") return "Updating provider…";
+  if (type === "history-picker") return "Loading history…";
+  if (type === "episode-picker") return "Loading episodes…";
+  return "Saving settings…";
+}
+
 export function OverlayPanel({
   overlay,
   width,
@@ -189,12 +196,7 @@ export function OverlayPanel({
     ? overlay.options.slice(optionWindowStart, optionWindowEnd)
     : [];
   const pickerAccent = palette.accent;
-  const pickerBusyMessage =
-    overlay.type === "provider"
-      ? "Updating provider…"
-      : overlay.type === "history-picker"
-        ? "Loading history…"
-        : "Saving settings…";
+  const pickerBusyMessage = overlayPickerBusyMessage(overlay.type);
   const pickerPreviewImageUrl = getOverlayPickerPreviewImageUrl(overlay);
   // Gate the poster pipeline on the settled selection so holding ↑/↓ through the
   // episode list never spawns a chafa/Kitty subprocess mid-navigation.

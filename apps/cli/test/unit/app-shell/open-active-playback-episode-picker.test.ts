@@ -4,6 +4,7 @@ import {
   type ActivePlaybackEpisodePickerDeps,
   openActivePlaybackEpisodePicker,
 } from "@/app-shell/ink-shell";
+import { EPISODE_PICKER_SWITCH_SEASON } from "@/app-shell/session-picker";
 import { buildPlaybackEpisodePickerOptions } from "@/app/playback/playback-episode-picker";
 import type { Container } from "@/container";
 import { SessionStateManagerImpl } from "@/domain/session/SessionStateManager";
@@ -153,6 +154,25 @@ describe("openActivePlaybackEpisodePicker", () => {
       expect.objectContaining({
         animeEpisodes: undefined,
       }),
+    );
+  });
+
+  test("a failed season catalog fetch leaves visible playback feedback", async () => {
+    const stateManager = createStateManager();
+    stateManager.dispatch({ type: "SELECT_TITLE", title: { ...seriesTitle, isAnime: false } });
+    stateManager.dispatch({ type: "SELECT_EPISODE", episode: { season: 1, episode: 2 } });
+    const container = createContainer(stateManager);
+
+    await openActivePlaybackEpisodePicker(container, "test-season-fetch", {
+      buildOptions: buildPlaybackEpisodePickerOptionsMock,
+      openPicker: async () => EPISODE_PICKER_SWITCH_SEASON,
+      loadSeasons: async () => {
+        throw new Error("offline");
+      },
+    });
+
+    expect(stateManager.getState().playbackNote).toBe(
+      "Could not load seasons — check the connection and retry",
     );
   });
 

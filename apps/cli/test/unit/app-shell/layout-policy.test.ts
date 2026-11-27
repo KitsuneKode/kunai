@@ -139,7 +139,8 @@ describe("getShellViewportPolicy", () => {
 
   test("preview rail appears after the wide breakpoint so the list keeps priority", () => {
     expect(getShellViewportPolicy("browse", 128, 30).wideBrowse).toBe(true);
-    expect(getShellViewportPolicy("browse", 128, 30).previewRail).toBe(false);
+    expect(getShellViewportPolicy("browse", 119, 30).previewRail).toBe(false);
+    expect(getShellViewportPolicy("browse", 120, 30).previewRail).toBe(true);
     expect(getShellViewportPolicy("browse", 144, 30).previewRail).toBe(true);
   });
 

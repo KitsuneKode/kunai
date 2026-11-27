@@ -43,6 +43,21 @@ describe("buildDetailsSheet", () => {
     expect(sheet.synopsis.text).toContain("from the seed");
   });
 
+  it("settles loading sections and exposes a visible detail error", () => {
+    const sheet = buildDetailsSheet({
+      seed,
+      detail: null,
+      history: null,
+      availability: null,
+      detailError: "Could not load season and episode details",
+    });
+
+    expect(sheet.detailError).toContain("season and episode details");
+    expect(sheet.facts.loading).toBe(false);
+    expect(sheet.cast.loading).toBe(false);
+    expect(sheet.seasons.loading).toBe(false);
+  });
+
   it("fills gap sections from the fetched detail", () => {
     const detail = {
       id: "1",

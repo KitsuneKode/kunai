@@ -80,3 +80,28 @@ test("the details sheet's action chips press their keys", async () => {
     handle.unmount();
   }
 });
+
+test("the details sheet drops its poster and shows fetch failure copy at 40 columns", async () => {
+  const handle = renderWithPointer(
+    <DetailsSheet
+      model={buildDetailsSheet({
+        seed: { title: "Show", type: "series" },
+        detail: null,
+        history: null,
+        availability: null,
+        detailError: "Could not load season and episode details",
+      })}
+      seasonsExpanded={false}
+      width={36}
+    />,
+    { columns: 40, rows: 30 },
+  );
+  try {
+    await settle();
+    const frame = stripAnsi(handle.lastFrame());
+    expect(frame.replaceAll(/\s+/g, " ")).toContain("Could not load season and episode details");
+    expect(frame.split("\n").some((line) => /^\s{7}S\s*$/.test(line))).toBe(false);
+  } finally {
+    handle.unmount();
+  }
+});

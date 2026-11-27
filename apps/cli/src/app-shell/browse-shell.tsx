@@ -976,7 +976,23 @@ export function BrowseShell<T>({
                 : current,
             );
           } catch {
-            // best-effort; the seeded header/synopsis stay, skeletons resolve to "—"
+            setActiveOverlay((current) =>
+              detailRequestGateRef.current.isCurrent(detailRequestId) &&
+              current &&
+              current.type === "details" &&
+              current.sheet
+                ? {
+                    ...current,
+                    sheet: buildDetailsSheet({
+                      seed,
+                      detail: null,
+                      ...local,
+                      detailError:
+                        "Could not load season and episode details — check the connection, then reopen Details",
+                    }),
+                  }
+                : current,
+            );
           }
         })();
       }
