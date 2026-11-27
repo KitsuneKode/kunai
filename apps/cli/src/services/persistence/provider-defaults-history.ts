@@ -107,6 +107,13 @@ const INHERITED_ANIME_DEFAULTS: readonly {
     animeProvider: "hianime",
     priorities: [["kickassanime", "animegg", "miruro", "allanime"]],
   },
+  // Revision 9 kept the same order plus the AniLight and Anidap tails.
+  // Revision 10 touches only the series lane, so this pair still migrates.
+  {
+    revision: 9,
+    animeProvider: "hianime",
+    priorities: [["kickassanime", "animegg", "miruro", "allanime", "anilight", "anidap"]],
+  },
 ];
 
 export function shouldMigrateInheritedAnimeDefaults(loaded: Partial<KitsuneConfig>): boolean {
@@ -182,6 +189,13 @@ const INHERITED_SERIES_DEFAULTS: readonly {
     revision: 8,
     provider: "vidlink",
     priorities: [["movy", "rivestream", "vidrock", "videasy"]],
+  },
+  // Revision 9 kept the same order plus the VidBolt tail. Revision 10 appends
+  // FileSuN behind it.
+  {
+    revision: 9,
+    provider: "vidlink",
+    priorities: [["movy", "rivestream", "vidrock", "videasy", "vidbolt"]],
   },
 ];
 

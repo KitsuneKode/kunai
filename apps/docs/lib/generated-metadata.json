@@ -9,6 +9,7 @@
     "rivestream",
     "movy",
     "vidbolt",
+    "filesun",
     "allanime",
     "hianime",
     "miruro",
@@ -110,6 +111,21 @@
         "Browserless TMDB-addressed API: /api/resolve?type=movie&id= or type=tv&id=&season=&episode=, then server iteration through the public exclude parameter.",
         "Embedded HLS master text is parsed locally for rendition languages, subtitle playlists, and variant inventory; media remains direct.",
         "No Cloudflare/Turnstile bypass: a challenge response is classified as blocked and the lane falls through."
+      ]
+    },
+    {
+      "id": "filesun",
+      "displayName": "FileSuN",
+      "description": "Movies and series through Atlantic's public embed lookup, FileSuN slot",
+      "domain": "embedsun.cc",
+      "recommended": false,
+      "mediaKinds": ["movie", "series"],
+      "capabilities": ["source-resolve", "subtitle-resolve", "quality-ranked"],
+      "notes": [
+        "Browserless: pal.hls.lol/fs/embed answers {found, embeds} by title, year and type (plus 1-based seasonId/episodeId for TV); the FileSuN row is an embedsun.cc JW Player page whose sources array names a direct HLS master on *.vmpx.online.",
+        "One verified server only: the VOE and Doodstream embed rows exist upstream but were not verified in the 2026-11-27 intake and are not resolved here.",
+        "Subtitles come from the page's baseTracks captions on srt.vidmoly.me plus any SUBTITLES renditions in the fetched master; no multiaudio inventory was measured.",
+        "All-HTTP local integration: no credentials, JS execution, browser session, or media relay — metadata stays direct, so relaySafe is off."
       ]
     },
     {

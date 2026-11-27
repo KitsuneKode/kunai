@@ -31,6 +31,7 @@ import { allmangaProviderModule } from "../src/allmanga/direct";
 import { anidapProviderModule } from "../src/anidap/direct";
 import { anilightProviderModule } from "../src/anilight/direct";
 import { animeggProviderModule } from "../src/animegg/direct";
+import { filesunProviderModule } from "../src/filesun/direct";
 import { hianimeProviderModule } from "../src/hianime/direct";
 import { kickassanimeProviderModule } from "../src/kickassanime/direct";
 import { miruroProviderModule } from "../src/miruro/direct";
@@ -181,6 +182,14 @@ export const PROBES: readonly ProbeSpec[] = [
     module: vidboltProviderModule,
     frontDoor: "https://vidbolt.pro",
     input: MOVIE_INPUT,
+  },
+  {
+    // FileSuN's Atlantic lookup is title+year addressed, so the shared movie
+    // fixture gains the year the intake verified (Fight Club, 1999).
+    id: "filesun",
+    module: filesunProviderModule,
+    frontDoor: "https://pal.hls.lol",
+    input: { ...MOVIE_INPUT, title: { ...MOVIE_INPUT.title, year: 1999 } },
   },
   {
     // The provider id is "allanime" (AllAnime upstream); "allmanga" is the

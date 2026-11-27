@@ -21,6 +21,10 @@ const config = {
     mode: "series" as const,
     title: { id: "550", type: "movie" as const, name: "Fight Club" },
   },
+  filesun: {
+    mode: "series" as const,
+    title: { id: "550", type: "movie" as const, name: "Fight Club", year: "1999" },
+  },
   anilight: {
     mode: "anime" as const,
     title: {
@@ -43,7 +47,11 @@ const config = {
 
 if (!config) {
   console.error(
-    JSON.stringify({ ok: false, stage: "argv", reason: "expected vidbolt|anilight|anidap" }),
+    JSON.stringify({
+      ok: false,
+      stage: "argv",
+      reason: "expected vidbolt|filesun|anilight|anidap",
+    }),
   );
   process.exit(1);
 }

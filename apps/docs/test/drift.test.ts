@@ -20,11 +20,15 @@ const MODULE_TO_ID: Record<string, string> = {
   rivestreamProviderModule: "rivestream",
   movyProviderModule: "movy",
   vidrockProviderModule: "vidrock",
+  vidboltProviderModule: "vidbolt",
+  filesunProviderModule: "filesun",
   allmangaProviderModule: "allanime",
   hianimeProviderModule: "hianime",
   animeggProviderModule: "animegg",
   kickassanimeProviderModule: "kickassanime",
   miruroProviderModule: "miruro",
+  anilightProviderModule: "anilight",
+  anidapProviderModule: "anidap",
   youtubeProviderModule: "youtube",
 };
 
