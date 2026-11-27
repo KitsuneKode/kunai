@@ -10,6 +10,7 @@
 import { describe, expect, it } from "bun:test";
 
 import type { Container } from "@/container";
+import { DEFAULT_CONFIG } from "@kunai/config";
 
 import { createAgentSession, type AgentSession } from "./agent-driver";
 import { K } from "./keys";
@@ -116,8 +117,9 @@ describe("agent wiring · provider picker", () => {
       expect(rowOf(frame, "Movy")).toContain("Known as movy.sx");
 
       // One count, one footer: the text line plus the chip row.
-      // Movies/series on main: VidLink, Movy, Rivestream, VidRock, Videasy, VidBolt.
-      expect(frame.match(/\d+ (options|items)\b/g)).toEqual(["6 options"]);
+      // Every shipped movies/series provider: the lane lead plus its fallbacks.
+      const shipped = new Set([DEFAULT_CONFIG.provider, ...DEFAULT_CONFIG.providerPriority]);
+      expect(frame.match(/\d+ (options|items)\b/g)).toEqual([`${shipped.size} options`]);
       expect(rowOf(frame, "VidBolt")).toContain("not checked yet");
       expect(frame).not.toContain("Type to filter");
       expect(frame).not.toContain("Enter select");

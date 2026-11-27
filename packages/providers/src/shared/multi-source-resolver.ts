@@ -87,6 +87,13 @@ export interface MultiSourceResolverOptions {
   readonly supportedMediaKinds: readonly ProviderResolveInput["mediaKind"][];
   readonly unsupportedMessage: string;
   readonly fetchPayload: () => Promise<MultiSourceResolvePayload | null>;
+  /**
+   * Strict opt-in for new adapters: only a positively verified probe accepts a
+   * candidate — inconclusive answers (timeout, skipped, non-definitive
+   * refusals) reject instead of passing as unverified. Established callers
+   * stay on the default lenient gate.
+   */
+  readonly requireVerifiedStream?: boolean;
   /** Maximum candidates the shared gate may probe, after selection ordering. */
   readonly maxGateProbes?: number;
   readonly resolveGateTimeoutMs?: number;
@@ -365,6 +372,7 @@ export async function resolveMultiSourceProvider(
       streams: gateOrder,
       context,
       signal: context.signal,
+      requireVerifiedStream: options.requireVerifiedStream,
       ...(options.resolveGateTimeoutMs === undefined
         ? null
         : { timeoutMs: options.resolveGateTimeoutMs }),

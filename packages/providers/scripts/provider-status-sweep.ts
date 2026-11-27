@@ -31,6 +31,8 @@ import { allmangaProviderModule } from "../src/allmanga/direct";
 import { anidapProviderModule } from "../src/anidap/direct";
 import { anilightProviderModule } from "../src/anilight/direct";
 import { animeggProviderModule } from "../src/animegg/direct";
+import { animeparadiseProviderModule } from "../src/animeparadise/direct";
+import { filesunProviderModule } from "../src/filesun/direct";
 import { hianimeProviderModule } from "../src/hianime/direct";
 import { kickassanimeProviderModule } from "../src/kickassanime/direct";
 import { miruroProviderModule } from "../src/miruro/direct";
@@ -123,6 +125,21 @@ const ALLMANGA_ONE_PIECE: ProviderResolveInput = {
   episode: { season: 1, episode: 1 },
 };
 
+const FRIEREN_ANILIST: ProviderResolveInput = {
+  allowedRuntimes: ["direct-http"],
+  intent: "play",
+  mediaKind: "anime",
+  title: {
+    id: "anilist:154587",
+    kind: "anime",
+    title: "Frieren: Beyond Journey's End",
+    year: 2023,
+    anilistId: "154587",
+    aliases: ["Sousou no Frieren"],
+  },
+  episode: { season: 1, episode: 1 },
+};
+
 const YOUTUBE_INPUT: ProviderResolveInput = {
   allowedRuntimes: ["direct-http"],
   intent: "play",
@@ -183,6 +200,14 @@ export const PROBES: readonly ProbeSpec[] = [
     input: MOVIE_INPUT,
   },
   {
+    // FileSuN's Atlantic lookup is title+year addressed, so the shared movie
+    // fixture gains the year the intake verified (Fight Club, 1999).
+    id: "filesun",
+    module: filesunProviderModule,
+    frontDoor: "https://pal.hls.lol",
+    input: { ...MOVIE_INPUT, title: { ...MOVIE_INPUT.title, year: 1999 } },
+  },
+  {
     // The provider id is "allanime" (AllAnime upstream); "allmanga" is the
     // module's internal directory name, not the id rows carry.
     id: "allanime",
@@ -213,6 +238,14 @@ export const PROBES: readonly ProbeSpec[] = [
     module: anidapProviderModule,
     frontDoor: "https://anidap.lol",
     input: ONE_PIECE_ANILIST,
+  },
+  {
+    // Frieren is the title the 2026-11-27 intake verified end to end; the
+    // sequel row in the same catalog is what makes the year/aliases load-bearing.
+    id: "animeparadise",
+    module: animeparadiseProviderModule,
+    frontDoor: "https://api.animeparadise.moe",
+    input: FRIEREN_ANILIST,
   },
   {
     id: "animegg",

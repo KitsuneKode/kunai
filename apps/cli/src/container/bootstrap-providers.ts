@@ -71,6 +71,7 @@ export async function loadProductionProviderModules(
     { rivestreamProviderModule },
     { movyProviderModule },
     { vidboltProviderModule },
+    { filesunProviderModule },
     { allmangaProviderModule },
     { hianimeProviderModule },
     { animeggProviderModule },
@@ -78,6 +79,7 @@ export async function loadProductionProviderModules(
     { miruroProviderModule },
     { anilightProviderModule },
     { anidapProviderModule },
+    { animeparadiseProviderModule },
     { youtubeProviderModule },
   ] = await Promise.all([
     import("@kunai/providers/videasy"),
@@ -86,6 +88,7 @@ export async function loadProductionProviderModules(
     import("@kunai/providers/rivestream"),
     import("@kunai/providers/movy"),
     import("@kunai/providers/vidbolt"),
+    import("@kunai/providers/filesun"),
     import("@kunai/providers/allmanga"),
     import("@kunai/providers/hianime"),
     import("@kunai/providers/animegg"),
@@ -93,6 +96,7 @@ export async function loadProductionProviderModules(
     import("@kunai/providers/miruro"),
     import("@kunai/providers/anilight"),
     import("@kunai/providers/anidap"),
+    import("@kunai/providers/animeparadise"),
     import("@kunai/providers/youtube"),
   ]);
 
@@ -104,6 +108,7 @@ export async function loadProductionProviderModules(
       rivestreamProviderModule,
       movyProviderModule,
       vidboltProviderModule,
+      filesunProviderModule,
       allmangaProviderModule,
       hianimeProviderModule,
       miruroProviderModule,
@@ -111,6 +116,7 @@ export async function loadProductionProviderModules(
       kickassanimeProviderModule,
       anilightProviderModule,
       anidapProviderModule,
+      animeparadiseProviderModule,
       youtubeProviderModule,
       // After the bundled providers: an addon the user has not placed in their
       // provider order is a fallback, never the default.

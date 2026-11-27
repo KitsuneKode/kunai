@@ -159,6 +159,26 @@ depends on the server and some subtitles are burned into the video.
 
 </ProviderDocSection>
 
+<ProviderDocSection id="filesun" title="FileSuN">
+
+**Adapter role:** final movies/series fallback. FileSuN looks the title and year up through Atlantic's public embed index and resolves the FileSuN slot's direct HLS.
+
+**Config id:** `filesun`.
+
+**Caveats:** one verified server; other advertised embed slots are observed but not resolved. Availability depends on an exact title and year, so a title whose release year disagrees with your catalog's may miss. Subtitles are per title and not guaranteed; no multiaudio inventory was measured.
+
+</ProviderDocSection>
+
+<ProviderDocSection id="animeparadise" title="AnimeParadise">
+
+**Adapter role:** final anime fallback. AnimeParadise has its own AniList-mapped catalog, search, and episode list, and serves direct HLS from its media host.
+
+**Config id:** `animeparadise`.
+
+**Caveats:** sub only; no dub was verified. A title only resolves when the catalog confirms the same AniList/MAL mapping you selected, so a sequel or a different cut can miss rather than play the wrong show. Subtitle languages vary by episode.
+
+</ProviderDocSection>
+
 <ProviderDocSection id="anilight" title="AniLight">
 
 **Adapter role:** anime fallback after AllManga. AniLight uses its own AniList-backed catalogue and separate sub/dub source queries.

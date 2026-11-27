@@ -12,6 +12,8 @@
     "./anilight": "./src/anilight/direct.ts",
     "./hianime": "./src/hianime/direct.ts",
     "./animegg": "./src/animegg/direct.ts",
+    "./animeparadise": "./src/animeparadise/direct.ts",
+    "./filesun": "./src/filesun/direct.ts",
     "./kickassanime": "./src/kickassanime/direct.ts",
     "./miruro": "./src/miruro/direct.ts",
     "./rivestream": "./src/rivestream/direct.ts",
