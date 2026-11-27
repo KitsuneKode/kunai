@@ -1,6 +1,6 @@
 # Kunai — Roadmap
 
-Last updated: 2026-11-26
+Last updated: 2026-11-27
 
 This is the **only index of active work** in `.plans/`. Everything indexed here
 is unfinished. Landed, superseded, and one-shot plans live in
@@ -29,11 +29,9 @@ so it is not re-derived — not because it is scheduled.
 
 ## Active tracks
 
-Current execution: [watching release candidate](./2026-10-22-watching-release-candidate.md)
+Current execution: [v0.4.0 launch sequence and a reason to come back](./2026-11-27-launch-and-retention.md).
 
 Quality push: [road to 9.5 — every reviewed dimension, competitors, workstreams W1–W6](./2026-11-24-road-to-9-5.md).
-
-Launch and retention: [v0.4.0 launch sequence and a reason to come back](./2026-11-27-launch-and-retention.md).
 
 Players and mobile order: [VLC and IINA beside mpv, and the mobile sequence](./2026-11-24-players-vlc-iina-and-mobile-order.md).
 
@@ -41,15 +39,37 @@ Watching UX follow-up: [first-run, playback, Tracks and shell coherence](./2026-
 Watching capability recovery: [provider inventories, playback truth and discoverable controls](./2026-10-24-watching-capability-recovery.md).
 Integration and test safety: [analytics isolation, review reconciliation and checkout recovery](./2026-10-25-integration-and-test-safety.md).
 
-The watching candidate ships as **v0.4.0**. Its implementation is on main: the
-2026-11-26 merge train landed the open fixes, desktop VLC, decoded-frame
-readiness and failover, provider order, provider DNS-over-HTTPS, touch and
-key-hint clicks, opt-in release markers, the Android launcher environment and
-bounds, and the pinned release and provider-manifest signing keys. What remains
-before the tag is qualification, not code: the uncached release gate, a real
-desktop install → search → play → resume journey, the AUR deploy key on the
-maintainer's AUR account, and the physical-phone pass. Earlier evidence:
-[candidate evidence and remaining gates](../.release/watching-candidate-2026-10-22.md).
+### v0.4.0 release gates
+
+The watching candidate ships as **v0.4.0**. Its implementation is on main
+(the [archived candidate plan](../.archive/plans/2026-10-22-watching-release-candidate.md)
+and the 2026-11-26 merge train, #841–#845 last). No code is open for the tag.
+What remains is qualification, all maintainer-run:
+
+1. **A fresh `release-signoff` run** (Actions → Provider matrix). The last
+   passing run predates #841, which changed the default provider order, and
+   the Release workflow requires a signoff artifact for the current defaults.
+2. **The uncached release gate** — `--force`, so no turbo replay counts.
+3. **A real desktop journey on the built candidate:** install → search → play
+   → resume, then the candidate Windows binary before approving publish.
+4. **Release workflow with `0.4.0` and the signoff id.** Merge the release
+   metadata PR before announcing `brew` or `scoop`; until it merges
+   `Formula/kunai.rb` and `bucket/kunai.json` still install v0.3.0.
+5. **npm publishing readiness:** confirm owner bootstrap and trusted
+   publishing for the full package set (the October record found both Android
+   package names unregistered).
+6. **Physical-phone pass** (#631), or ship desktop and keep Termux labelled a
+   preview — the launch plan forbids showing Termux before a device pass.
+
+Not gates, but decide before announcing: AllManga's crypto canary has failed
+since 2026-11-23 (#724, build id rotated); it is the last anime fallback, so
+either recover it or name the demotion in the notes. The catalog still falls
+back to a borrowed TMDB key (`apps/cli/src/services/catalog/tmdb-proxy.ts`);
+`release.yml` already reads a `KUNAI_TMDB_BUILD_KEY` secret, but the repo
+does not set one yet. The `AUR_SSH_PRIVATE_KEY` secret is set (2026-11-26);
+its public half on the AUR account only gates announcing AUR. Earlier evidence:
+[candidate evidence](../.release/watching-candidate-2026-10-22.md) — its
+"Remaining release gates" section is from October and superseded by this list.
 
 Every row has real remaining work. When a plan's core lands, move it to the
 archive and put only the residue here.
@@ -73,7 +93,7 @@ archive and put only the residue here.
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Mobile terminal runtime      | Node/a-Shell host proofs and the Termux binary + player handoff (#287) implemented; physical qualification, catalog/providers, installers, and publishing remain                                                           | [runtime](../.docs/mobile-terminal-runtime.md) · [device lab](../.docs/mobile-device-lab.md) · [mobile app design](./mobile-app-runtime.md) · [terminal handoff](./mobile-terminal-handoff.md) · [handoff implementation](./mobile-terminal-handoff-implementation.md) · [mobile parity and phone web](./2026-10-11-mobile-parity-and-phone-web.md) |
 | Queue and phone follow-up    | Truthful queue state; qualify real phone request profiles, offline durability, and no-store touch direction                                                                                                                | [decisions and evidence](2026-10-03-queue-mobile-followup.md)                                                                                                                                                                                                                                                                                       |
-| Provider playback resilience | Miruro gate budget, scheduled crypto freshness check                                                                                                                                                                       | [provider-playback-resilience.md](./provider-playback-resilience.md)                                                                                                                                                                                                                                                                                |
+| Provider playback resilience | Miruro gate budget. The AllManga crypto canary is scheduled (#721) and red since 2026-11-23 (#724)                                                                                                                         | [provider-playback-resilience.md](./provider-playback-resilience.md)                                                                                                                                                                                                                                                                                |
 | Provider resolve hardening   | Health recovery, latency ordering, and measured hedge-delay calibration                                                                                                                                                    | [provider-resolve-hardening-handoff.md](./provider-resolve-hardening-handoff.md)                                                                                                                                                                                                                                                                    |
 | Provider hardening           | Research and scraper capability roadmap                                                                                                                                                                                    | [provider-hardening.md](./provider-hardening.md)                                                                                                                                                                                                                                                                                                    |
 | Provider result contract     | Contract work before broad `@kunai/core` extraction                                                                                                                                                                        | [provider-result-contract.md](./provider-result-contract.md)                                                                                                                                                                                                                                                                                        |
@@ -113,16 +133,16 @@ archive and put only the residue here.
 
 ### Growth and distribution
 
-| Track                      | Remaining                                                                   | Plan                                                                   |
-| -------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| Install channels           | Homebrew tap, AUR `kunai-bin`, Scoop bucket on top of the release pipeline  | [competitive-parity-and-growth.md](./competitive-parity-and-growth.md) |
-| Localization and community | Localized READMEs, community surface, topics + comparison-table positioning | [competitive-parity-and-growth.md](./competitive-parity-and-growth.md) |
+| Track                      | Remaining                                                                                                             | Plan                                                                   |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Install channels           | Tap, Scoop bucket and AUR `kunai-bin` are built by `package-channels.yml`; first publish rides the v0.4.0 metadata PR | [competitive-parity-and-growth.md](./competitive-parity-and-growth.md) |
+| Localization and community | Localized READMEs, community surface, topics + comparison-table positioning                                           | [competitive-parity-and-growth.md](./competitive-parity-and-growth.md) |
 
 ### Security review
 
-| Track                           | Remaining                                                                                                                  | Plan                                                                                          |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Security and improvement review | Close the remote subtitle and media handoff gaps, qualify release signing, and address analytics admission and CI findings | [2026-11-25 security and improvement review](./2026-11-25-security-and-improvement-review.md) |
+| Track                           | Remaining                                                                                                                                                                                | Plan                                                                                          |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Security and improvement review | M1, M4, M5, L2 and the signing pin are fixed (#781, #779, #778, #835). Open: Stremio probe/player connection split (M2), analytics admission cost (M3), first media URL on mpv argv (L1) | [2026-11-25 security and improvement review](./2026-11-25-security-and-improvement-review.md) |
 
 ### Verification and CI
 
@@ -193,9 +213,8 @@ in number order unless a row says otherwise.
 | [066](../.archive/plans/066-analytics-cross-links-and-staleness.md)   | —     | none — release links, `#day-by-day` anchor, and the 48h stale badge all landed                                            | LANDED                             |
 | [067](../.archive/plans/067-chart-table-highlight-sync.md)            | —     | none — chart hover reveals and scrolls the matching table row                                                             | LANDED                             |
 
-048–058 are implemented on `advisor/NNN-*` worktree branches (see each plan's
-"Implementation" note); rows stay until the branch lands. Review residue that
-did not fit a row above:
+048–058 have landed on main; a PARTIAL row carries only the residue it names.
+Review residue that did not fit a row above:
 
 - **054 follow-ups** — live AniList `relations` fetch into `TitleIdentity` and
   the AniDB adapter consuming `resolveSeasonEntryId`. The landed branch is the
