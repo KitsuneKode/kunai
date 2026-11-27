@@ -3,7 +3,11 @@ import { isMultiplexed } from "@/image/capability";
 
 import { plainModeEnabled } from "./plain-mode";
 
-export type CompanionPose = "idle" | "watch" | "go" | "wait" | "oops" | "nap";
+/**
+ * Every pose she can be drawn in. Each one is embedded in the binary, so each
+ * one has a moment that draws it — `companion-moment.test.ts` holds that.
+ */
+export type CompanionPose = "idle" | "wait" | "seek" | "go" | "watch" | "oops" | "nap" | "peek";
 
 /**
  * What the companion is allowed to be on this run.
@@ -86,12 +90,18 @@ export function companionMode(
   // survives — this disables the picture, not the companion.
   if (OFF_VALUES.has(env.KUNAI_POSTER?.toLowerCase() ?? "")) return "glyph";
 
-  // Multiplexers rewrite the escape stream, so a placement here lands in the
-  // wrong pane or never arrives.
-  if (isMultiplexed(env)) return "glyph";
-
   const capability = detectImageCapability(env);
   if (!capability.available) return "glyph";
+
+  // Multiplexers rewrite the escape stream, so a placement positioned by the
+  // cursor lands in the wrong pane or never arrives. The one exception is tmux
+  // with passthrough to a Kitty terminal: there she is ordinary placeholder
+  // text in the pane, which tmux moves, scrolls and clips like any other cell.
+  if (isMultiplexed(env)) {
+    return capability.renderer === "kitty-native" && capability.kittyPassthrough === "tmux"
+      ? "graphics"
+      : "glyph";
+  }
 
   return capability.renderer === "kitty-native" ||
     capability.renderer === "kitty-direct" ||

@@ -173,6 +173,15 @@ async function uploadViaTempFile(encoded: EncodedPayload, control: string): Prom
 }
 
 /**
+ * Hand the terminal `body` as a temp file under any control prefix — a transmit
+ * or an animation frame. `control` ends with a comma; false means the file
+ * could not be written and the caller should send chunks instead.
+ */
+export function transmitKittyTempFile(control: string, body: Uint8Array): Promise<boolean> {
+  return uploadViaTempFile({ format: "", body }, control);
+}
+
+/**
  * The terminal is supposed to delete the file itself. A terminal that ignored
  * `t=t` never will, and `q=2` means we are never told — so a long session would
  * quietly strand a multi-megabyte file per poster. Unlink well after any real
@@ -186,6 +195,25 @@ function scheduleTempFileSweep(path: string): void {
     });
   }, TEMP_FILE_SWEEP_MS);
   timer.unref?.();
+}
+
+let streamTail: Promise<void> = Promise.resolve();
+
+/**
+ * Run one chunked upload at a time.
+ *
+ * Continuation chunks carry no image id — the terminal attributes them to
+ * whichever transmit is open — and a chunked upload yields to the event loop
+ * between groups. Two uploaders that both write during those gaps splice their
+ * chunks into each other's image, so everything that streams chunks queues here.
+ */
+export function withKittyStream<T>(task: () => Promise<T>): Promise<T> {
+  const run = streamTail.then(task, task);
+  streamTail = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
 }
 
 /** Only the first chunk carries controls. Every non-final chunk is divisible by four. */
@@ -245,7 +273,9 @@ export async function uploadKittyPayload(
 
   const encoded = encodePayload(payload, true);
   if (encoded.body.byteLength === 0) return { sent: false, transmission: "direct" };
-  await uploadViaDirectChunks(encoded, buildControlKeys(encoded, options), options);
+  await withKittyStream(() =>
+    uploadViaDirectChunks(encoded, buildControlKeys(encoded, options), options),
+  );
   return { sent: true, transmission: "direct" };
 }
 

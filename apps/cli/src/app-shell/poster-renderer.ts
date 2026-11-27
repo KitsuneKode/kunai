@@ -52,6 +52,29 @@ function allocSharedKittyId(): number {
   return id;
 }
 
+/**
+ * An image id no poster holds. Ids are a terminal-wide namespace, so anything
+ * else that uploads — the companion's sprites — has to draw from this counter
+ * rather than keep one of its own.
+ */
+export function allocKittyImageId(shared: boolean): number {
+  return shared ? allocSharedKittyId() : allocId();
+}
+
+const wipeListeners = new Set<() => void>();
+
+/**
+ * Hear about a global wipe. `d=A` frees every image in the terminal, including
+ * ones the placement registry never knew about; an owner that keeps its own
+ * ids has to forget them here or it will go on printing cells for a dead image.
+ */
+export function onTerminalImagesWiped(listener: () => void): () => void {
+  wipeListeners.add(listener);
+  return () => {
+    wipeListeners.delete(listener);
+  };
+}
+
 export function deleteKittyImage(imageId: number): void {
   if (tmuxImages.delete(imageId)) {
     process.stdout.write(wrapTmuxPassthrough(`\x1b_Ga=d,d=I,i=${imageId},q=2;\x1b\\`));
@@ -71,6 +94,7 @@ export function deleteAllTerminalImages(): void {
     process.stdout.write("\x1b_Ga=d,d=A;\x1b\\");
   }
   clearKittyPlacementRegistry();
+  for (const listener of wipeListeners) listener();
 }
 
 const DIACRITICS: readonly number[] = [
@@ -104,7 +128,7 @@ function encodeByte(b: number): string {
   return String.fromCodePoint(cp);
 }
 
-function buildPlaceholder(imageId: number, rows: number, cols: number): string {
+export function buildPlaceholder(imageId: number, rows: number, cols: number): string {
   const cell = "\u{10EEEE}";
   const color = `\x1b[38;2;${(imageId >> 16) & 0xff};${(imageId >> 8) & 0xff};${imageId & 0xff}m`;
   const highIdByte = imageId > 0xffffff ? encodeByte((imageId >> 24) & 0xff) : "";
@@ -131,6 +155,18 @@ function supportsKittyPlaceholders(terminal: TerminalId): boolean {
   if (terminal === "kitty" || terminal === "ghostty") return true;
   if (terminal === "unknown") return getProbedGraphicsSupport()?.kittyGraphics === true;
   return false;
+}
+
+/**
+ * The tmux passthrough to wrap uploads in, `null` for a direct session, or
+ * `undefined` when this terminal cannot draw an image through placeholder
+ * cells at all — the one path where an image survives Ink's repaint for free.
+ */
+export function kittyPlaceholderPassthrough(): "tmux" | null | undefined {
+  const capability = runtime.detectImageCapability();
+  if (!capability.available || capability.renderer !== "kitty-native") return undefined;
+  if (capability.kittyPassthrough) return capability.kittyPassthrough;
+  return supportsKittyPlaceholders(capability.terminal) ? null : undefined;
 }
 
 // ── Prepared-poster pipeline ────────────────────────────────────────────────
