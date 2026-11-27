@@ -8,6 +8,7 @@ import React from "react";
 import { extractErrorDebugExcerpt } from "./error-debug-excerpt";
 import { MouseTarget } from "./mouse/MouseRegions";
 import { plainModeEnabled } from "./plain-mode";
+import type { ErrorNextStep } from "./playback-error-next-step";
 import { buildErrorRows, type ErrorRow, type ErrorRowTone } from "./playback-error-rows";
 import type { PlaybackFailureWaterfallModel } from "./playback-failure-waterfall";
 import { SakuraLoader } from "./SakuraLoader";
@@ -163,6 +164,7 @@ function ErrorRowLine({
 export function ErrorShell({
   message,
   scenario,
+  nextStep,
   waterfall,
   debugEnabled = false,
   debugError,
@@ -172,6 +174,7 @@ export function ErrorShell({
 }: {
   message: string;
   scenario?: ErrorScenario;
+  nextStep?: ErrorNextStep;
   waterfall?: PlaybackFailureWaterfallModel | null;
   debugEnabled?: boolean;
   debugError?: unknown;
@@ -206,12 +209,13 @@ export function ErrorShell({
       buildErrorRows({
         message,
         scenario,
+        nextStep,
         waterfall,
         debugExcerpt,
         canRetry: Boolean(onRetry),
         textWidth: width - TEXT_COLUMN,
       }),
-    [message, scenario, waterfall, debugExcerpt, onRetry, width],
+    [message, scenario, nextStep, waterfall, debugExcerpt, onRetry, width],
   );
 
   const plain = plainModeEnabled();

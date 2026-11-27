@@ -1,0 +1,84 @@
+{
+  "capturedFrom": "Anidap One Piece episode 1 GraphQL/REST responses (media tokens redacted)",
+  "anime": {
+    "id": "one-piece-p8k27",
+    "anilistId": 21,
+    "malId": 21,
+    "titleRomaji": "ONE PIECE",
+    "titleEnglish": "ONE PIECE",
+    "episodeCount": null,
+    "seasonYear": 1999,
+    "format": "TV",
+    "type": "ANIME",
+    "description": "Redacted synopsis",
+    "popularity": 250000,
+    "averageScore": 88
+  },
+  "episodes": [
+    {
+      "number": 1,
+      "titles": { "en": "I'm Luffy! The Man Who's Gonna Be King of the Pirates!" },
+      "img": "https://art.example/redacted.jpg",
+      "description": "Redacted episode synopsis",
+      "airDateUtc": "1999-10-20T14:15:00Z",
+      "hasDub": true,
+      "hasSub": true
+    }
+  ],
+  "servers": {
+    "subProviders": [
+      { "id": "nero", "default": true, "tip": "Sub and dub, Fastest, High quality" },
+      { "id": "yuki", "default": false, "tip": "Soft sub, Good, Multi quality" }
+    ],
+    "dubProviders": [{ "id": "nero", "default": true, "tip": "Sub and dub, Fastest, High quality" }]
+  },
+  "sources": {
+    "sub-nero": {
+      "sources": [
+        {
+          "url": "https://media.example/anidap/redacted/sub/master.m3u8",
+          "quality": "auto",
+          "type": "application/vnd.apple.mpegurl"
+        }
+      ],
+      "tracks": [
+        {
+          "id": "captions-1",
+          "url": "https://subs.example/anidap/redacted/english.vtt",
+          "lang": "en",
+          "label": "English",
+          "kind": "captions",
+          "default": true
+        }
+      ],
+      "audio": null,
+      "chapters": [
+        { "title": "Intro", "start": 31, "end": 111 },
+        { "title": "Outro", "start": 1376, "end": 1447 }
+      ],
+      "headers": { "Referer": "https://animex.one/" }
+    },
+    "sub-yuki": {
+      "sources": [
+        {
+          "url": "https://media.example/anidap/redacted/yuki/master.m3u8",
+          "quality": "auto",
+          "type": "video/mpegurl"
+        }
+      ],
+      "tracks": [
+        {
+          "id": "captions-1",
+          "url": "https://subs.example/anidap/redacted/yuki-english.vtt",
+          "lang": "english",
+          "label": "English",
+          "kind": "captions",
+          "default": true
+        }
+      ],
+      "audio": null,
+      "chapters": [],
+      "headers": { "Origin": "https://megaplay.buzz", "Referer": "https://megaplay.buzz/" }
+    }
+  }
+}

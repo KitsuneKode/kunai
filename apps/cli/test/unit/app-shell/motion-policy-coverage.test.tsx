@@ -30,6 +30,8 @@ const AUDITED_ANIMATED_FILES: ReadonlyMap<
   ["apps/cli/src/app-shell/SakuraLoader.tsx", { gate: "reducedMotionEnabled" }],
   ["apps/cli/src/app-shell/setup-shell.tsx", { gate: "useFrameTick" }],
   ["apps/cli/src/app-shell/setup/SetupScreens.tsx", { gate: "reducedMotionEnabled" }],
+  ["apps/cli/src/app-shell/setup/StartScreen.tsx", { gate: "reducedMotionEnabled" }],
+  ["apps/cli/src/app-shell/browse-first-run-ui.tsx", { gate: "reducedMotionEnabled" }],
   ["apps/cli/src/app-shell/exit-shell.tsx", { gate: "reducedMotionEnabled" }],
   ["apps/cli/src/app-shell/loading-shell-runtime.ts", { gate: "reducedMotionEnabled" }],
 ]);

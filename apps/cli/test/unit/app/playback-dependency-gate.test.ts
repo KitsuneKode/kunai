@@ -10,10 +10,15 @@ import { QueueService } from "@/domain/queue/QueueService";
 import { openKunaiDatabase, QueueRepository, runMigrations } from "@kunai/storage";
 
 describe("buildMpvRemediation", () => {
-  test("linux guidance prefers apt", () => {
-    const remediation = buildMpvRemediation("linux");
+  test.each([
+    ["pacman", "sudo pacman -S mpv"],
+    ["apt", "sudo apt install mpv"],
+    ["dnf", "sudo dnf install mpv"],
+    ["zypper", "sudo zypper install mpv"],
+  ])("Linux guidance uses %s when available", (manager, command) => {
+    const remediation = buildMpvRemediation("linux", (tool) => (tool === manager ? tool : null));
     expect(remediation.platform).toBe("linux");
-    expect(remediation.commands.some((command) => command.includes("apt install mpv"))).toBe(true);
+    expect(remediation.commands).toEqual([command]);
   });
 
   test("macOS guidance uses brew", () => {
@@ -53,12 +58,14 @@ describe("gatePlaybackDependencies", () => {
       player: { isAvailable: async () => false },
       playerMode: { kind: "managed-vlc" },
       platform: "linux",
+      which: (tool) => (tool === "pacman" ? tool : null),
     });
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected blocked playback");
     expect(result.dependency).toBe("vlc");
     expect(result.problem.cause).toBe("vlc-missing");
     expect(result.problem.userMessage).toContain("--player mpv");
+    expect(result.problem.userMessage).toContain("sudo pacman -S vlc vlc-plugin-ffmpeg");
     expect(result.remediation.commands).toContain("sudo pacman -S vlc vlc-plugin-ffmpeg");
     expect(result.problem.userMessage).not.toContain("apt install mpv");
   });
@@ -67,6 +74,7 @@ describe("gatePlaybackDependencies", () => {
     const result = await gatePlaybackDependencies({
       player: { isAvailable: async () => false },
       platform: "linux",
+      which: (tool) => (tool === "apt" ? tool : null),
     });
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected blocked playback");

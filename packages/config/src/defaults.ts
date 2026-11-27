@@ -67,8 +67,9 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // not removed.
   // Revision 8 (2026-11-26 live runs, two each): Movy resolved and streamed;
   // Rivestream timed out and VidRock's streams answered 502 every time, so Movy
-  // now follows VidLink and the failing pair sits behind it.
-  providerPriority: ["movy", "rivestream", "vidrock", "videasy"],
+  // now follows VidLink and the failing pair sits behind it. Revision 9 appends
+  // VidBolt at the end until future live sweeps earn promotion.
+  providerPriority: ["movy", "rivestream", "vidrock", "videasy", "vidbolt"],
   // Ordering, not an allowlist: every registered anime module stays reachable.
   // `createProviderPrioritySnapshot` prepends `animeProvider`, so this array
   // holds the *rest* of the order and must not repeat the lane default.
@@ -77,7 +78,9 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // runner's requests, and AllManga's stream bootstrap was stale.
   // Revision 8: KickAssAnime resolved and streamed on every 2026-11-26 run and
   // AnimeGG on one of two; Miruro (404) and AllManga (#724) stay behind them.
-  animeProviderPriority: ["kickassanime", "animegg", "miruro", "allanime"],
+  // Revision 9 appends AniLight and Anidap at the end until future live sweeps
+  // earn promotion.
+  animeProviderPriority: ["kickassanime", "animegg", "miruro", "allanime", "anilight", "anidap"],
   // Bump alongside any lane-default change above; see `providerDefaultsRevision`.
   // Revision 3 leads with VidLink + HiAnime and covers both lanes.
   // Revision 4 reorders dead/degraded tails: Movy is named before Videasy in
@@ -86,7 +89,8 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // Revision 6 retires AniDB from production and drops it from shipped defaults.
   // Revision 7 moves AnimeGG ahead of blocked fallbacks and puts AllManga last.
   // Revision 8 puts the fallbacks that work first: Movy, then KickAssAnime.
-  providerDefaultsRevision: 8,
+  // Revision 9 appends VidBolt, AniLight, and Anidap as tail fallbacks.
+  providerDefaultsRevision: 9,
   disabledProviders: [],
   stremioAddons: [],
   experimentalStremioAddons: false,

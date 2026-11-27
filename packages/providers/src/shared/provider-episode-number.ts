@@ -1,4 +1,4 @@
-import type { EpisodeIdentity } from "@kunai/types";
+import type { EpisodeIdentity, ProviderId } from "@kunai/types";
 
 /**
  * Provider requests follow the proven season-relative identity when it exists.
@@ -12,4 +12,14 @@ import type { EpisodeIdentity } from "@kunai/types";
  */
 export function selectProviderEpisodeNumber(episode: EpisodeIdentity | undefined): number {
   return episode?.episode ?? episode?.absoluteEpisode ?? 1;
+}
+
+export function episodeNumberFromProviderIdentity(
+  episode: EpisodeIdentity | undefined,
+  providerId: ProviderId,
+): number | undefined {
+  const identity = episode?.providerEpisodeIdentity;
+  if (identity?.providerId !== providerId) return undefined;
+  const match = /^ep:(\d+)$/.exec(identity.value);
+  return match?.[1] ? Number.parseInt(match[1], 10) : undefined;
 }

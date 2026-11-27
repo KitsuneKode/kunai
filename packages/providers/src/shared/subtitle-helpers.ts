@@ -78,6 +78,7 @@ const ISO_639_1_MAP: Record<string, string> = {
   srp: "sr",
   serbian: "sr",
   msa: "ms",
+  may: "ms",
   malay: "ms",
   tgl: "tl",
   fil: "tl",
@@ -188,6 +189,16 @@ export function normalizeIsoLanguageCode(value: string | undefined): string | un
   const normalized = normalizeSubtitleLanguage(value);
   if (!normalized) return undefined;
   return /^[a-z]{2}$/.test(normalized) ? normalized : undefined;
+}
+
+export function normalizeIsoLanguageList(values: readonly (string | undefined)[]): string[] {
+  return [
+    ...new Set(
+      values
+        .map((language) => normalizeIsoLanguageCode(language) ?? language?.trim())
+        .filter((language): language is string => Boolean(language)),
+    ),
+  ];
 }
 
 export function subtitleLanguageDisplayName(code: string | undefined): string | undefined {

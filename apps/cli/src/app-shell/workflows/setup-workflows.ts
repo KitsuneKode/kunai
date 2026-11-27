@@ -16,6 +16,7 @@ import { getKunaiPaths } from "@/services/storage/storage-read-models";
 import { probeCapabilities } from "@/ui";
 import type { KitsuneConfig } from "@kunai/config";
 
+import { announceShellLine } from "../contextual-tips";
 import { runSetupFlow as runSetupFlowShell, type SetupInitialState } from "../setup-shell";
 import { openTrackerConnectShell, type TrackerConnectOutcome } from "../tracker-connect-shell";
 import { turnOnTrackerSync } from "./tracker-connect";
@@ -83,9 +84,21 @@ export function wizardInitialStateFromConfig(
   };
 }
 
+/** The player the verdict line names, when this session does not drive mpv. */
+export function setupPlayerName(mode: Container["playerMode"] | undefined): string | undefined {
+  if (!mode) return undefined;
+  if (mode.kind === "managed-vlc") return "VLC";
+  if (mode.kind === "android-handoff") {
+    return mode.target === "vlc" ? "VLC" : mode.target === "mpv" ? "mpv" : "your video player";
+  }
+  return undefined;
+}
+
 function note(container: Container, message: string): void {
   container.stateManager.dispatch({ type: "SET_PLAYBACK_FEEDBACK", note: message });
 }
+
+export const SETUP_SAVED_LINE = "Setup saved · /setup for language and more";
 
 export async function confirmProtocolHandoff(handoff: KunaiHandoffLaunch): Promise<boolean> {
   const choice = await chooseFromListShell({
@@ -149,6 +162,7 @@ export async function runSetupWizard({
   const snapshot = container.capabilitySnapshot ?? (await probeForSelectedPlayer());
 
   const defaultDownloadPath = join(dirname(getKunaiPaths().dataDbPath), "downloads");
+  const playerName = setupPlayerName(container.playerMode);
   const { result } = runFlow(snapshot, {
     downloadPath: current.downloadPath || defaultDownloadPath,
     // `[r]` re-probes rather than making the user quit and relaunch after
@@ -163,8 +177,11 @@ export async function runSetupWizard({
     // wizard rewrites only what the screens showed (#228).
     initial: wizardInitialStateFromConfig(current, snapshot.ytDlp),
     analyticsPayload: container.usageAnalytics.describePayload(),
+    // A first launch asks two things; asking for setup gets all six screens.
+    flow: force ? "full" : "quick",
+    playerName,
   });
-  const { outcome, prefs, answeredScreens } = await result;
+  const { outcome, prefs, answeredScreens, flow } = await result;
   // One writer: the service owns what a consent choice means in config, and
   // `consentPatch` is pure so it folds into the single batched update below.
   //
@@ -193,64 +210,65 @@ export async function runSetupWizard({
     }
     note(container, "Setup exited early — run /setup any time.");
   } else {
-    // `completed` and `defaults` write the same shape. That is the point:
-    // skipping used to build prefs and discard them here, leaving the install
-    // unconfigured while telling the user setup was done.
-    const downloadsEnabled = prefs.downloadsEnabled;
-    const downloadPath = downloadsEnabled
-      ? current.downloadPath || defaultDownloadPath
-      : current.downloadPath;
-
-    const patch = {
+    const patch: Partial<KitsuneConfig> = {
       onboardingVersion: ONBOARDING_VERSION,
       downloadOnboardingDismissed: true,
-      downloadsEnabled,
-      downloadPath,
       defaultMode: prefs.mode,
-      defaultDownloadQuality: prefs.downloadQuality,
-      autoNext: prefs.autoNext,
-      skipIntro: prefs.skipIntro,
-      skipCredits: prefs.skipCredits,
-      // Presence is a local IPC connection, so it can be switched on here.
-      // AniList and TMDB are not: both need a browser round-trip, which runs
-      // after this commit so a failed handoff never costs the whole wizard.
-      // The toggle hydrates from config, so unticked means off: writing the
-      // current value back made turning Discord off here impossible.
-      presenceProvider: prefs.presenceDiscord ? "discord" : "off",
-      // An explicit turn-off commits here. Turning one ON does NOT commit
-      // `enabled: true` up front — that flag is a standing decision, and
-      // committing it before OAuth succeeds leaves config claiming a link it
-      // does not have (#232). The post-connect step below flips it on success.
-      sync: {
-        ...current.sync,
-        anilist: { ...current.sync.anilist, ...(prefs.connectAniList ? null : { enabled: false }) },
-        tmdb: { ...current.sync.tmdb, ...(prefs.connectTmdb ? null : { enabled: false }) },
-      },
       ...analyticsPatch,
-      // Every lane is written from its own answer. Two earlier shapes were both
-      // wrong: writing anime only left films and shows on original audio for a
-      // user who picked English, and skipped YouTube entirely (#229); writing
-      // one answer to all four then flattened per-lane choices that Settings
-      // lets you set independently, so rerunning setup silently discarded them.
-      // The `...current` spread keeps each profile's other fields — `quality`
-      // among them — which this screen does not ask about.
-      animeLanguageProfile: {
-        ...current.animeLanguageProfile,
-        ...prefs.languageProfiles.anime,
-      },
-      seriesLanguageProfile: {
-        ...current.seriesLanguageProfile,
-        ...prefs.languageProfiles.series,
-      },
-      movieLanguageProfile: {
-        ...current.movieLanguageProfile,
-        ...prefs.languageProfiles.movie,
-      },
-      youtubeLanguageProfile: {
-        ...current.youtubeLanguageProfile,
-        ...prefs.languageProfiles.youtube,
-      },
-    } satisfies Partial<KitsuneConfig>;
+    };
+    if (flow === "full") {
+      Object.assign(patch, {
+        downloadsEnabled: prefs.downloadsEnabled,
+        downloadPath: prefs.downloadsEnabled
+          ? current.downloadPath || defaultDownloadPath
+          : current.downloadPath,
+        defaultDownloadQuality: prefs.downloadQuality,
+        autoNext: prefs.autoNext,
+        skipIntro: prefs.skipIntro,
+        skipCredits: prefs.skipCredits,
+        // Presence is a local IPC connection, so it can be switched on here.
+        // AniList and TMDB are not: both need a browser round-trip, which runs
+        // after this commit so a failed handoff never costs the whole wizard.
+        // The toggle hydrates from config, so unticked means off: writing the
+        // current value back made turning Discord off here impossible.
+        presenceProvider: prefs.presenceDiscord ? "discord" : "off",
+        // An explicit turn-off commits here. Turning one ON does NOT commit
+        // `enabled: true` up front — that flag is a standing decision, and
+        // committing it before OAuth succeeds leaves config claiming a link it
+        // does not have (#232). The post-connect step below flips it on success.
+        sync: {
+          ...current.sync,
+          anilist: {
+            ...current.sync.anilist,
+            ...(prefs.connectAniList ? null : { enabled: false }),
+          },
+          tmdb: { ...current.sync.tmdb, ...(prefs.connectTmdb ? null : { enabled: false }) },
+        },
+        // Every lane is written from its own answer. Two earlier shapes were both
+        // wrong: writing anime only left films and shows on original audio for a
+        // user who picked English, and skipped YouTube entirely (#229); writing
+        // one answer to all four then flattened per-lane choices that Settings
+        // lets you set independently, so rerunning setup silently discarded them.
+        // The `...current` spread keeps each profile's other fields — `quality`
+        // among them — which this screen does not ask about.
+        animeLanguageProfile: {
+          ...current.animeLanguageProfile,
+          ...prefs.languageProfiles.anime,
+        },
+        seriesLanguageProfile: {
+          ...current.seriesLanguageProfile,
+          ...prefs.languageProfiles.series,
+        },
+        movieLanguageProfile: {
+          ...current.movieLanguageProfile,
+          ...prefs.languageProfiles.movie,
+        },
+        youtubeLanguageProfile: {
+          ...current.youtubeLanguageProfile,
+          ...prefs.languageProfiles.youtube,
+        },
+      } satisfies Partial<KitsuneConfig>);
+    }
 
     // One restore point, and only when this run actually changes something the
     // user would miss. Best effort throughout: a snapshot that cannot be
@@ -278,6 +296,8 @@ export async function runSetupWizard({
     if (snapshotted) {
       note(container, "Your previous settings were saved — restore them from /settings.");
     }
+    // The quick flow has no review screen, so Browse says it once instead.
+    if (flow === "quick") announceShellLine(SETUP_SAVED_LINE);
   }
 
   // The wizard IS the disclosure for this user. Clear the pending flag the
@@ -293,7 +313,7 @@ export async function runSetupWizard({
   // with no token behind it is the silent lie this ordering exists to prevent
   // (#232). A fresh link turns it on inside `connectNamedTracker`; an account
   // that was already linked is turned on here, because the tick asked for it.
-  if (outcome !== "aborted") {
+  if (outcome !== "aborted" && flow === "full") {
     for (const [tracker, wanted] of [
       ["anilist", prefs.connectAniList],
       ["tmdb", prefs.connectTmdb],

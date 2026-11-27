@@ -5,6 +5,13 @@ import {
   type PlaybackProblem,
 } from "@/domain/playback/playback-problem";
 import type { PlayerMode } from "@/domain/playback/player-choice";
+import {
+  MPV_INSTALL,
+  resolveInstallCommand,
+  type InstallProbe,
+  VLC_INSTALL,
+} from "@/infra/os/install-commands";
+import { whichLive } from "@/infra/os/which";
 
 export interface DependencyRemediation {
   readonly platform: "android" | "linux" | "darwin" | "win32" | "other";
@@ -29,35 +36,27 @@ function normalizePlatform(
   return "other";
 }
 
-export function buildMpvRemediation(platform?: NodeJS.Platform): DependencyRemediation {
-  const normalized = normalizePlatform(platform);
-  switch (normalized) {
-    case "linux":
-      return {
-        platform: "linux",
-        summary: "Install mpv with your distro package manager, then retry playback.",
-        commands: ["sudo apt install mpv", "sudo pacman -S mpv", "sudo dnf install mpv"],
-      };
-    case "darwin":
-      return {
-        platform: "darwin",
-        summary: "Install mpv with Homebrew, then retry playback.",
-        commands: ["brew install mpv"],
-      };
-    case "win32":
-      return {
-        platform: "win32",
-        summary: "Install mpv with winget, then retry playback.",
-        commands: ["winget install --id mpv-player.mpv-CI.MSVC -e", "scoop install mpv"],
-      };
-    default:
-      return {
-        platform: "other",
-        summary: "Install mpv for your platform and ensure it is on PATH.",
-        commands: ["Install mpv from https://mpv.io/installation/"],
-        helpUrl: "https://mpv.io/installation/",
-      };
-  }
+function buildDesktopRemediation(
+  player: "mpv" | "VLC",
+  platform = process.platform,
+  which: InstallProbe = whichLive,
+): DependencyRemediation {
+  const install = player === "mpv" ? MPV_INSTALL : VLC_INSTALL;
+  const command = resolveInstallCommand(install, { platform, which });
+  const tool = player === "mpv" ? "mpv" : "VLC with its ffmpeg decoder plugin";
+  return {
+    platform: normalizePlatform(platform),
+    summary: `Install ${tool}, then retry playback.`,
+    commands: command ? [command] : [],
+    ...(command && command === install.fallback && { helpUrl: command }),
+  };
+}
+
+export function buildMpvRemediation(
+  platform?: NodeJS.Platform,
+  which?: InstallProbe,
+): DependencyRemediation {
+  return buildDesktopRemediation("mpv", platform, which);
 }
 
 export function buildAndroidPlayerRemediation(
@@ -73,52 +72,18 @@ export function buildAndroidPlayerRemediation(
   };
 }
 
-export function buildVlcRemediation(platform?: NodeJS.Platform): DependencyRemediation {
-  switch (normalizePlatform(platform)) {
-    case "linux":
-      return {
-        platform: "linux",
-        summary:
-          "Install VLC with its ffmpeg decoder plugin (some distros ship it separately), then retry.",
-        commands: [
-          "sudo apt install vlc",
-          "sudo pacman -S vlc vlc-plugin-ffmpeg",
-          "sudo dnf install vlc",
-        ],
-      };
-    case "darwin":
-      return {
-        platform: "darwin",
-        summary: "Install VLC into /Applications, then retry playback.",
-        commands: ["brew install --cask vlc"],
-      };
-    case "win32":
-      return {
-        platform: "win32",
-        summary: "Install VLC with winget, then retry playback.",
-        commands: ["winget install --id VideoLAN.VLC -e"],
-      };
-    default:
-      return {
-        platform: "other",
-        summary: "Install VLC for your platform, or use --player mpv.",
-        commands: ["Install VLC from https://www.videolan.org/vlc/"],
-        helpUrl: "https://www.videolan.org/vlc/",
-      };
-  }
-}
-
 export async function gatePlaybackDependencies(input: {
   readonly player: { isAvailable(): Promise<boolean> };
   readonly playerMode?: PlayerMode;
   readonly platform?: NodeJS.Platform;
+  readonly which?: InstallProbe;
 }): Promise<PlaybackDependencyGateResult> {
   if (await input.player.isAvailable()) {
     return { ok: true };
   }
 
   if (input.playerMode?.kind === "managed-vlc") {
-    const remediation = buildVlcRemediation(input.platform);
+    const remediation = buildDesktopRemediation("VLC", input.platform, input.which);
     return {
       ok: false,
       dependency: "vlc",
@@ -143,7 +108,7 @@ export async function gatePlaybackDependencies(input: {
     };
   }
 
-  const remediation = buildMpvRemediation(input.platform);
+  const remediation = buildMpvRemediation(input.platform, input.which);
   return {
     ok: false,
     dependency: "mpv",

@@ -162,6 +162,7 @@ test("setup probes the selected player mode on first paint and on dependency rec
       recheck = options.onRecheck;
       return {
         result: Promise.resolve({
+          flow: options.flow ?? "full",
           outcome: "aborted",
           prefs: { ...UNTOUCHED_PREFS, analyticsChoice: "unchanged" },
           answeredScreens: 0,
@@ -184,6 +185,7 @@ test("aborting a forced setup rerun preserves an existing analytics opt-in", asy
 
   const pending = runSetupWizard({ container, force: true });
   const payload: SetupFlowPayload = {
+    flow: "full",
     outcome: "aborted",
     prefs: { ...UNTOUCHED_PREFS, analyticsChoice: "unchanged" },
     answeredScreens: 0,
@@ -203,6 +205,7 @@ test("accepting recommended defaults without reaching consent leaves an opt-in a
 
   const pending = runSetupWizard({ container, force: true });
   const payload: SetupFlowPayload = {
+    flow: "full",
     outcome: "defaults",
     prefs: { ...UNTOUCHED_PREFS, downloadsEnabled: true, analyticsChoice: "unchanged" },
     answeredScreens: 0,
@@ -240,6 +243,7 @@ test("a fresh install that never reaches consent stays unset, with no install id
   const pending = runSetupWizard({ container, force: true });
   expect(
     forceCloseRootContent({
+      flow: "full",
       outcome: "defaults",
       prefs: { ...UNTOUCHED_PREFS, analyticsChoice: "unchanged" },
       answeredScreens: 0,

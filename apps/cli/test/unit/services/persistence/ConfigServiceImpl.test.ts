@@ -620,13 +620,10 @@ describe("ConfigServiceImpl", () => {
         providerDefaultsRevision: 6,
       });
       const service = await ConfigServiceImpl.load(inherited);
-      expect(service.animeProviderPriority).toEqual([
-        "kickassanime",
-        "animegg",
-        "miruro",
-        "allanime",
-      ]);
-      expect((await inherited.load()).providerDefaultsRevision).toBe(8);
+      expect(service.animeProviderPriority).toEqual([...DEFAULT_CONFIG.animeProviderPriority]);
+      expect((await inherited.load()).providerDefaultsRevision).toBe(
+        DEFAULT_CONFIG.providerDefaultsRevision,
+      );
 
       const customOrder = ["miruro", "kickassanime", "animegg", "allanime"];
       const custom = new MemoryConfigStore({
@@ -645,7 +642,7 @@ describe("ConfigServiceImpl", () => {
       );
     });
 
-    test("revision 8 moves an untouched revision-7 order in both lanes, and only that", async () => {
+    test("revision 9 moves an untouched revision-7 order in both lanes, and only that", async () => {
       const untouched = new MemoryConfigStore({
         provider: "vidlink",
         providerPriority: ["rivestream", "vidrock", "movy", "videasy"],
@@ -654,14 +651,11 @@ describe("ConfigServiceImpl", () => {
         providerDefaultsRevision: 7,
       });
       const migrated = await ConfigServiceImpl.load(untouched);
-      expect(migrated.providerPriority).toEqual(["movy", "rivestream", "vidrock", "videasy"]);
-      expect(migrated.animeProviderPriority).toEqual([
-        "kickassanime",
-        "animegg",
-        "miruro",
-        "allanime",
-      ]);
-      expect((await untouched.load()).providerDefaultsRevision).toBe(8);
+      expect(migrated.providerPriority).toEqual([...DEFAULT_CONFIG.providerPriority]);
+      expect(migrated.animeProviderPriority).toEqual([...DEFAULT_CONFIG.animeProviderPriority]);
+      expect((await untouched.load()).providerDefaultsRevision).toBe(
+        DEFAULT_CONFIG.providerDefaultsRevision,
+      );
 
       // A reordered list is a choice, even when it holds the same providers.
       const chosen = ["vidrock", "rivestream", "movy", "videasy"];
