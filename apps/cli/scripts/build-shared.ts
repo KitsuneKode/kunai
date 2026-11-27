@@ -543,7 +543,10 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // overrides and the Discover startup route (#852) on top measured 3,336,807
 // bytes: +4,234. No dependency or asset; the Continue picker stays lazy.
 // 3259 KiB leaves 409 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_259;
+// The dedicated desktop profile override, ownership checks, and scoped
+// maintenance on top of #853 and #852 measured 3,343,511 bytes with Bun 1.4.5:
+// +6,704 bytes, no dependency or asset. 3266 KiB leaves 873 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_266;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

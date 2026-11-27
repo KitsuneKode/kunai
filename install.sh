@@ -239,15 +239,13 @@ fi
 # verified and the .kunai-profile marker is validated. Exits 0 for an owned or
 # empty/absent root, 1 for anything else.
 profile_marker_ok() {
-	[[ -f "$PROFILE_DIR/.kunai-profile" && ! -L "$PROFILE_DIR/.kunai-profile" ]] || return 1
-	# Pure-Bash exact check (no `cmp` dependency — profile validation must run
-	# on a bare PATH): the marker is the single line `kunai-profile-v1\n`.
-	local first rest=""
-	{
-		IFS= read -r first || return 1
-		IFS= read -r rest
-	} < "$PROFILE_DIR/.kunai-profile"
-	[[ "$first" == "kunai-profile-v1" && -z "$rest" ]]
+	local marker="$PROFILE_DIR/.kunai-profile" bytes=''
+	[[ -f "$marker" && ! -L "$marker" ]] || return 1
+	# Pure-Bash exact-byte check (no `cmp` dependency — profile validation must
+	# run on a bare PATH). `read -d ''` succeeds only on an embedded NUL and
+	# strips it, so a "success" means the file could never have matched.
+	if IFS= read -r -d '' bytes < "$marker"; then return 1; fi
+	[[ "$bytes" == $'kunai-profile-v1\n' ]]
 }
 
 check_profile_filesystem() {

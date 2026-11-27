@@ -2772,6 +2772,22 @@ describe("install.sh dedicated profile contract", () => {
     }
   });
 
+  test("a marker whose bytes differ by an embedded NUL is not ownership", () => {
+    const sandbox = createInstallerSandbox("install-sh-profile-nul", { freshProfile: true });
+    try {
+      mkdirSync(sandbox.profileDir, { recursive: true });
+      writeFileSync(
+        join(sandbox.profileDir, ".kunai-profile"),
+        Buffer.from("kunai-profile-v1\0\n"),
+      );
+      const result = runInstallSh(dryRun, profileOnlyInstallerEnv(sandbox.env));
+      expect(result.status).not.toBe(0);
+      expect(`${result.stdout}${result.stderr}`).toContain(".kunai-profile");
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
   test("a nonempty root without a marker is refused and never adopted", () => {
     const sandbox = createInstallerSandbox("install-sh-profile-unmarked", { freshProfile: true });
     try {

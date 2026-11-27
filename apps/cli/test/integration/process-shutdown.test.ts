@@ -68,6 +68,11 @@ function createShadowProfile(): {
   mkdirSync(paths.configDir, { recursive: true });
   mkdirSync(paths.dataDir, { recursive: true });
   mkdirSync(paths.cacheDir, { recursive: true });
+  // Own the profile before any other fixture file lands in it: the CLI gate
+  // refuses a nonempty root that lacks the exact marker.
+  if (paths.profileDir !== undefined) {
+    writeFileSync(join(paths.profileDir, ".kunai-profile"), "kunai-profile-v1\n");
+  }
   writeFileSync(
     paths.configPath,
     `${JSON.stringify({ onboardingVersion: 2, downloadOnboardingDismissed: true })}\n`,

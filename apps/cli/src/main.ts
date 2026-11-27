@@ -42,6 +42,7 @@ import type { createContainer } from "@/container";
 import type { KunaiShareAction, PlaybackTargetRef } from "@/domain/share/playback-target-ref";
 import type { EpisodeInfo, SearchResult, TitleInfo } from "@/domain/types";
 import { isProcessEntrypoint } from "@/infra/build/entrypoint";
+import { prepareCliProfile } from "@/infra/storage/desktop-profile-startup";
 import type { HistoryProgress } from "@kunai/storage";
 
 import packageJson from "../package.json" with { type: "json" };
@@ -1557,40 +1558,9 @@ function isFastPathInvocation(argv: readonly string[]): boolean {
 }
 
 export async function startCli(argv = process.argv.slice(2)): Promise<void> {
-  if (process.env.KUNAI_CONFIG_DIR !== undefined) {
-    const { checkDesktopProfile, DesktopProfileError, getKunaiPaths } =
-      await import("@kunai/storage");
-    try {
-      // Uninstall and protocol-handler registration run their own ownership or
-      // policy check; here only the lexical resolution has to succeed. Flag
-      // sniffing only applies to real subcommands — a bare `--dry-run` or
-      // `--install-protocol-handler` with no command stays the fast path.
-      const command = argv[0] ?? "";
-      if (
-        command === "uninstall" ||
-        (!FAST_PATH_SUBCOMMANDS.has(command) && argv.includes("--install-protocol-handler"))
-      ) {
-        getKunaiPaths();
-      } else {
-        const readOnly =
-          ["doctor", "capabilities", "completion", "diagnostics"].includes(command) ||
-          (command === "rollback" && (argv.includes("--list") || argv.includes("--dry-run"))) ||
-          (command === "upgrade" && argv.includes("--check")) ||
-          (!FAST_PATH_SUBCOMMANDS.has(command) &&
-            (isFastPathInvocation(argv) || argv.includes("--dry-run")));
-        checkDesktopProfile(readOnly ? "inspect" : "prepare");
-      }
-    } catch (error) {
-      if (!(error instanceof DesktopProfileError)) throw error;
-      process.stderr.write(`${error.message}\n`);
-      process.exitCode = 2;
-      return;
-    }
-  }
-  if (isFastPathInvocation(argv)) {
-    await runCli(argv);
-    return;
-  }
+  const fastPath = isFastPathInvocation(argv);
+  if (!(await prepareCliProfile(argv, FAST_PATH_SUBCOMMANDS, fastPath))) return;
+  if (fastPath) return runCli(argv);
   setupSignalHandlers();
   // Always-on memory safety net: a separate-thread watchdog that SIGKILLs a
   // runaway even when the main event loop is jammed (the closed-terminal case).

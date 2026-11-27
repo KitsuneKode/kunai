@@ -263,8 +263,8 @@ function defaultBaseDirs(
   }
 
   if (platform === "win32") {
-    const roaming = firstNonEmpty(env.APPDATA) ?? join(home, "AppData", "Roaming");
-    const local = firstNonEmpty(env.LOCALAPPDATA) ?? join(home, "AppData", "Local");
+    const roaming = env.APPDATA || join(home, "AppData", "Roaming");
+    const local = env.LOCALAPPDATA || join(home, "AppData", "Local");
     return {
       configDir: join(roaming, "kunai"),
       dataDir: join(local, "kunai"),
@@ -274,9 +274,9 @@ function defaultBaseDirs(
   }
 
   return {
-    configDir: join(firstNonEmpty(env.XDG_CONFIG_HOME) ?? join(home, ".config"), "kunai"),
-    dataDir: join(firstNonEmpty(env.XDG_DATA_HOME) ?? join(home, ".local", "share"), "kunai"),
-    cacheDir: join(firstNonEmpty(env.XDG_CACHE_HOME) ?? join(home, ".cache"), "kunai"),
+    configDir: join(env.XDG_CONFIG_HOME || join(home, ".config"), "kunai"),
+    dataDir: join(env.XDG_DATA_HOME || join(home, ".local", "share"), "kunai"),
+    cacheDir: join(env.XDG_CACHE_HOME || join(home, ".cache"), "kunai"),
     tempDir: join(env.TMPDIR ?? tmpdir(), "kunai"),
   };
 }
