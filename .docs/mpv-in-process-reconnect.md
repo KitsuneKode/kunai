@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T05:07:13Z"
+lastReviewed: "2026-11-27T17:34:15Z"
 ---
 
 # mpv in-process stream reconnect (persistent session)
