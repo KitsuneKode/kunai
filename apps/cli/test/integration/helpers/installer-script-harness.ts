@@ -67,27 +67,28 @@ export function createInstallerSandbox(name: string) {
   const dataDir = join(root, "data");
   const configDir = join(root, "config");
   const cacheDir = join(root, "cache");
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    ...windowsShellEnvDefaults(root),
+    KUNAI_BIN_DIR: binDir,
+    KUNAI_DATA_DIR: dataDir,
+    // The profile root derives root/config, root/data and root/cache —
+    // the same literals the fields above name — while the explicit
+    // installer-only data/cache knobs stay aligned with it.
+    KUNAI_CONFIG_DIR: root,
+    KUNAI_CACHE_DIR: cacheDir,
+    // Redirecting filesystem roots does not redirect HKCU\Environment. Every
+    // successful binary fixture used to append this temporary bin directory
+    // to the developer's real User PATH and then delete it during cleanup.
+    KUNAI_SKIP_PATH_UPDATE: "1",
+  };
   return {
     root,
     binDir,
     dataDir,
     configDir,
     cacheDir,
-    env: {
-      ...process.env,
-      ...windowsShellEnvDefaults(root),
-      KUNAI_BIN_DIR: binDir,
-      KUNAI_DATA_DIR: dataDir,
-      // The profile root derives root/config, root/data and root/cache —
-      // the same literals the fields above name — while the explicit
-      // installer-only data/cache knobs stay aligned with it.
-      KUNAI_CONFIG_DIR: root,
-      KUNAI_CACHE_DIR: cacheDir,
-      // Redirecting filesystem roots does not redirect HKCU\Environment. Every
-      // successful binary fixture used to append this temporary bin directory
-      // to the developer's real User PATH and then delete it during cleanup.
-      KUNAI_SKIP_PATH_UPDATE: "1",
-    } as NodeJS.ProcessEnv,
+    env,
     cleanup: () => removeTempDir(root),
   };
 }
