@@ -17,10 +17,12 @@ afterEach(async () => {
   }
 });
 
-function emptyCapabilities(): CapabilitySnapshot {
+function emptyCapabilities(overrides: Partial<CapabilitySnapshot> = {}): CapabilitySnapshot {
   return {
     mpv: true,
     mpvRequired: true,
+    vlc: true,
+    vlcRequired: false,
     ffprobe: true,
     ytDlp: true,
     curl: { present: true, impersonates: true, profile: "chrome150" },
@@ -32,6 +34,7 @@ function emptyCapabilities(): CapabilitySnapshot {
       reason: "test",
     },
     issues: [],
+    ...overrides,
   };
 }
 
@@ -239,6 +242,39 @@ describe("runDoctor", () => {
     }
   });
 
+  test("strict mode accepts a VLC-only desktop when auto selected VLC", async () => {
+    const { layout } = await makeLayout();
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      expect(
+        await runDoctor({
+          json: false,
+          strict: true,
+          layout,
+          now: () => FIXED_DATE,
+          runningExecutable: { path: layout.launcherPath, version: "1.2.3" },
+          pathValue: "",
+          platform: "linux",
+          fileExists: () => false,
+          playerChoice: "auto",
+          installedPlayers: { mpv: false, vlc: true },
+          probeCapabilities: async (options) => {
+            expect(options.playerMode).toEqual({ kind: "managed-vlc" });
+            return emptyCapabilities({
+              mpv: false,
+              vlc: true,
+              mpvRequired: false,
+              vlcRequired: true,
+            });
+          },
+        }),
+      ).toBe(0);
+    } finally {
+      console.log = originalLog;
+    }
+  });
+
   test("strict mode still exits 0 when there is nothing to report", async () => {
     const { layout } = await makeLayout();
     const originalLog = console.log;
@@ -259,6 +295,52 @@ describe("runDoctor", () => {
       ).toBe(0);
     } finally {
       console.log = originalLog;
+    }
+  });
+
+  test("--player vlc is honored by the maintenance fast path instead of ignored", async () => {
+    const { layout } = await makeLayout();
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      expect(
+        await runDoctor({
+          argv: ["doctor", "--player", "vlc"],
+          json: false,
+          strict: true,
+          layout,
+          now: () => FIXED_DATE,
+          runningExecutable: { path: layout.launcherPath, version: "1.2.3" },
+          pathValue: "",
+          platform: "linux",
+          fileExists: () => false,
+          probeCapabilities: async (options) => {
+            expect(options.playerMode).toEqual({ kind: "managed-vlc" });
+            return emptyCapabilities();
+          },
+        }),
+      ).toBe(0);
+    } finally {
+      console.log = originalLog;
+    }
+  });
+
+  test("an invalid doctor --player value exits as usage rather than probing the wrong player", async () => {
+    const { layout } = await makeLayout();
+    const originalError = console.error;
+    console.error = () => {};
+    try {
+      expect(
+        await runDoctor({
+          argv: ["doctor", "--player", "potato"],
+          layout,
+          probeCapabilities: async () => {
+            throw new Error("probe must not run");
+          },
+        }),
+      ).toBe(2);
+    } finally {
+      console.error = originalError;
     }
   });
 

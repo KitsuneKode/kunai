@@ -16,7 +16,7 @@ import { getKunaiPaths } from "@/services/storage/storage-read-models";
 import { probeCapabilities } from "@/ui";
 import type { KitsuneConfig } from "@kunai/config";
 
-import { runSetupFlow, type SetupInitialState } from "../setup-shell";
+import { runSetupFlow as runSetupFlowShell, type SetupInitialState } from "../setup-shell";
 import { openTrackerConnectShell, type TrackerConnectOutcome } from "../tracker-connect-shell";
 import { turnOnTrackerSync } from "./tracker-connect";
 
@@ -111,9 +111,15 @@ export async function confirmProtocolHandoff(handoff: KunaiHandoffLaunch): Promi
 export async function runSetupWizard({
   container,
   force = false,
+  probeCapabilities: probe = probeCapabilities,
+  runSetupFlow: runFlow = runSetupFlowShell,
 }: {
   container: Container;
   force?: boolean;
+  /** Test seam; production uses the real machine probe. */
+  probeCapabilities?: typeof probeCapabilities;
+  /** Test seam; production mounts the real wizard. */
+  runSetupFlow?: typeof runSetupFlowShell;
 }): Promise<SetupWizardResult> {
   const current = container.config.getRaw();
   if (
@@ -134,14 +140,19 @@ export async function runSetupWizard({
   // widened the type instead of checking the literal. Probing is also the only
   // option now — app-shell may not import the provider package, so it cannot ask
   // AniDB which curl builds it can drive.
-  const snapshot = container.capabilitySnapshot ?? (await probeCapabilities());
+  // The container's mode is the same one playback will use for this session.
+  // Recheck deliberately reuses it rather than rediscovering a different auto
+  // answer halfway through setup: installing mpv in another pane must not make
+  // the deps screen contradict the VLC service this session already selected.
+  const probeForSelectedPlayer = () => probe({ playerMode: container.playerMode });
+  const snapshot = container.capabilitySnapshot ?? (await probeForSelectedPlayer());
 
   const defaultDownloadPath = join(dirname(getKunaiPaths().dataDbPath), "downloads");
-  const { result } = runSetupFlow(snapshot, {
+  const { result } = runFlow(snapshot, {
     downloadPath: current.downloadPath || defaultDownloadPath,
     // `[r]` re-probes rather than making the user quit and relaunch after
     // installing something in another pane.
-    onRecheck: () => probeCapabilities(),
+    onRecheck: probeForSelectedPlayer,
     // The controls start from what is actually configured, so completing the
     // wizard rewrites only what the screens showed (#228).
     initial: wizardInitialStateFromConfig(current, snapshot.ytDlp),

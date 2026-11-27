@@ -22,6 +22,8 @@ export const SETUP_ROWS = 34;
 const READY: CapabilitySnapshot = {
   mpv: true,
   mpvRequired: true,
+  vlc: true,
+  vlcRequired: false,
   ffprobe: true,
   ytDlp: true,
   curl: { present: true, impersonates: true, profile: "chrome150" },
