@@ -556,8 +556,8 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // transport, episode identity parsing and language-list normalization. No
 // dependency or asset. 3300 KiB leaves 970 bytes.
 // The mpv hardware-decode probe and persistent A/V-sync recovery slice merged
-// onto provider batch 1 measured 3,395,326 bytes: +17,096. No dependency or
-// asset; the probe sample is embedded source data. 3316 KiB leaves 258 bytes.
+// onto provider batch 1 measured 3,395,449 bytes: +17,219. No dependency or
+// asset; the probe sample is embedded source data. 3316 KiB leaves 135 bytes.
 export const NPM_BUNDLE_BUDGET_KB = 3_316;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
