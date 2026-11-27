@@ -324,6 +324,8 @@ async function fetchPlaylistText(
   }
 
   const deadline = createDeadlineSignal(parentSignal, remaining());
+  // The hop a body-read failure belongs to: a redirect has already moved it.
+  let failedHop = url;
 
   try {
     const outcome = await fetchProbeTarget({
@@ -343,6 +345,7 @@ async function fetchPlaylistText(
         result: hostUnreachable(`blocked stream target: ${outcome.reason}`, true, outcome.url),
       };
     }
+    failedHop = outcome.finalUrl;
     const response = outcome.response;
     if (response.status < 200 || response.status >= 300) {
       await response.body?.cancel().catch(() => undefined);
@@ -369,7 +372,7 @@ async function fetchPlaylistText(
       return { status: "fail", result: { status: "timeout" } };
     }
     const message = error instanceof Error ? error.message : String(error);
-    const failed = error instanceof Error ? (probeFailureTarget(error) ?? url) : url;
+    const failed = error instanceof Error ? (probeFailureTarget(error) ?? failedHop) : failedHop;
     return {
       status: "fail",
       result: hostUnreachable(message, isDefinitiveNetworkError(message), failed),
@@ -392,6 +395,7 @@ async function probeHlsMediaSegment(
   }
 
   const deadline = createDeadlineSignal(parentSignal, remaining());
+  let failedHop = url;
 
   try {
     const outcome = await fetchProbeTarget({
@@ -410,6 +414,7 @@ async function probeHlsMediaSegment(
     if (outcome.kind === "blocked") {
       return hostUnreachable(`HLS segment blocked: ${outcome.reason}`, true, outcome.url);
     }
+    failedHop = outcome.finalUrl;
     const response = outcome.response;
     const healthyStatus = (status: number) => (status >= 200 && status < 300) || status === 206;
     if (!healthyStatus(response.status)) {
@@ -477,7 +482,7 @@ async function probeHlsMediaSegment(
     return hostUnreachable(
       `HLS segment unreachable: ${message}`,
       isDefinitiveNetworkError(message),
-      (error instanceof Error ? probeFailureTarget(error) : undefined) ?? url,
+      (error instanceof Error ? probeFailureTarget(error) : undefined) ?? failedHop,
     );
   } finally {
     deadline.release();

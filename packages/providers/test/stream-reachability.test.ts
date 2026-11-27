@@ -235,6 +235,29 @@ describe("stream reachability", () => {
     expect(probe).toMatchObject({ refusalScope: "host", refusalHost: "cdn.example" });
   });
 
+  test("a body that fails after a redirect blames the host that served it", async () => {
+    const fetchImpl = async (url: string) => {
+      if (url.startsWith("https://front.example/")) {
+        return response(302, "", { location: "https://cdn.example/live/index.m3u8" });
+      }
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          controller.error(new TypeError("socket closed mid-body"));
+        },
+      });
+      return new Response(body, { status: 200 });
+    };
+
+    const probe = await probeStreamReachability({
+      url: "https://front.example/live/index.m3u8",
+      fetchImpl,
+      timeoutMs: 500,
+    });
+
+    expect(probe.status).toBe("unreachable");
+    expect(probe).toMatchObject({ refusalScope: "host", refusalHost: "cdn.example" });
+  });
+
   test("HLS segment probe fails when first segment is unreachable", async () => {
     const probe = await probeStreamReachability({
       url: "https://cdn.example/stream.m3u8",

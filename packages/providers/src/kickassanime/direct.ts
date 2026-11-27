@@ -50,6 +50,7 @@ import {
   kaaPageForEpisode,
   parseKaaEpisodePage,
   parseKaaPlayerPage,
+  isKaaSearchResponse,
   parseKaaSearchResults,
   parseKaaServers,
   type KaaSearchResult,
@@ -373,10 +374,14 @@ export const kickassanimeProviderModule: CoreProviderModule = {
   async search(input, context) {
     const query = input.query.trim();
     if (!query) return null;
-    const results = parseKaaSearchResults(
-      await fetchJson(context, "/api/fsearch", { method: "POST", body: { query, page: 1 } }),
-    );
-    // A successful search with no rows is `[]`; `null` means the request failed.
+    const body = await fetchJson(context, "/api/fsearch", {
+      method: "POST",
+      body: { query, page: 1 },
+    });
+    // `{ result: [] }` is a search with no rows; any other shape is a failed
+    // response, and `null` is how a failed search reads to the router.
+    if (!isKaaSearchResponse(body)) return null;
+    const results = parseKaaSearchResults(body);
     if (results.length === 0) return [];
 
     return results.map((result): ProviderSearchResult => {

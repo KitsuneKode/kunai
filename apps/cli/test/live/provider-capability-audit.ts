@@ -1175,7 +1175,7 @@ function redactText(value: string): string {
     value
       .replace(/https?:\/\/[^\s"')]+/gi, (url) => `https://${hostnameOf(url) || "REDACTED"}`)
       // yt-dlp extractor args can carry a PO token (`po_token=web+TOKEN`).
-      .replace(/(po_token=)[^;\s"')]+/gi, "$1REDACTED")
+      .replace(/(po_token=)(?:\\?["'])?[^;\s"'\\)]+/gi, "$1REDACTED")
       .replace(/\/home\/[^\s"')]+/gi, "/home/REDACTED")
       .replace(/\/Users\/[^\s"')]+/g, "/Users/REDACTED")
       .replace(/[A-Z]:\\Users\\[^\s"')]+/gi, "C:\\Users\\REDACTED")

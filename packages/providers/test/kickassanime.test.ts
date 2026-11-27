@@ -561,6 +561,15 @@ describe("kickassanimeProviderModule", () => {
     ).toEqual([]);
   });
 
+  test("a 200 search body without a result list is a failed request, not an empty search", async () => {
+    expect(
+      await kickassanimeProviderModule.search?.(
+        { query: "no such show" },
+        contextWith(() => json({})),
+      ),
+    ).toBeNull();
+  });
+
   test("an empty query asks nothing", async () => {
     const requests: string[] = [];
     expect(
