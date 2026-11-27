@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-27T07:38:17Z"
+lastReviewed: "2026-11-27T20:05:20Z"
 ---
 
 # Kunai — Provider Guide
@@ -385,11 +385,15 @@ Provider priority is user-configurable:
 - `provider` / `animeProvider` remain the default provider for a new session mode.
 - `providerPriority` controls movie/series fallback and picker order.
   The shipped default is `["movy", "rivestream", "vidrock", "videasy"]` behind the
-  `vidlink` lane lead. Movy leads after the 2026-11-26 live runs resolved and
-  streamed there; Rivestream follows (eleven-service local cycle behind the
-  shared resolve gate), then VidRock (multi-lane AES-GCM payloads behind the
-  direct-stream gate). Videasy is last and still loaded (session/turnstile-gated
-  with a rotted `videasy.to` domain — a working fallback, not a removal).
+  `vidlink` lane lead (`packages/config/src/defaults.ts`, provider-defaults
+  revision 8): Movy first (lane-local recovery; the one fallback that resolved
+  and streamed on the 2026-11-26 runs), then Rivestream (eleven-service local
+  cycle behind the shared resolve gate), VidRock (multi-lane AES-GCM payloads
+  behind the direct-stream gate), and Videasy last and still loaded
+  (session/turnstile-gated with a rotted `videasy.to` domain — registered, not
+  removed). The picker shows this same order and never re-sorts it by health;
+  what each row says about its provider is in
+  [title-provider-health-and-cache-reset.md](./title-provider-health-and-cache-reset.md).
   Other unlisted providers stay reachable after configured entries unless
   explicitly switched off.
 - `animeProviderPriority` controls anime fallback and picker order.
@@ -771,15 +775,16 @@ on for other hosts or change the existing one-shot exception. A native mpv 0.41 
 test observes effective options at `file-loaded` with local transport substituted:
 it proves option lifetime, not a live certificate attack or other platform behavior.
 
-| Field                   | Meaning                                                                                                  |
-| ----------------------- | -------------------------------------------------------------------------------------------------------- |
-| `mediaKinds: ["anime"]` | Puts the provider on the anime lane — `isAnimeProvider` is derived from this                             |
-| `mediaKinds: ["video"]` | Puts the provider on the YouTube lane                                                                    |
-| `relayProfile`          | Declares the provider relayable; must also be registered in `apps/relay-server/src/provider-registry.ts` |
-| `capabilities`          | Provider capabilities the shell may reason about                                                         |
-| `runtimePorts`          | Runtime ports the module requests (relay fetch, auth, …)                                                 |
-| `recommended`           | Surfaces the provider in recommended lists                                                               |
-| `aliases`               | Legacy ids still accepted in config and cache keys                                                       |
+| Field                   | Meaning                                                                                                                                                                                                                                                                            |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mediaKinds: ["anime"]` | Puts the provider on the anime lane — `isAnimeProvider` is derived from this                                                                                                                                                                                                       |
+| `mediaKinds: ["video"]` | Puts the provider on the YouTube lane                                                                                                                                                                                                                                              |
+| `relayProfile`          | Declares the provider relayable; must also be registered in `apps/relay-server/src/provider-registry.ts`                                                                                                                                                                           |
+| `capabilities`          | Provider capabilities the shell may reason about                                                                                                                                                                                                                                   |
+| `runtimePorts`          | Runtime ports the module requests (relay fetch, auth, …)                                                                                                                                                                                                                           |
+| `recommended`           | Surfaces the provider in recommended lists                                                                                                                                                                                                                                         |
+| `aliases`               | Other names users know the site by, rendered as "Known as". Never the shared engine family: a name two providers share identifies neither (roster test: `provider-manifest-identity.test.ts`). Legacy **ids** are a separate mechanism, `packages/core/src/provider-id-aliases.ts` |
+| `knownIssue`            | `{ since, summary }` — a dated fault from a maintainer audit. The provider picker shows it until this device records a successful resolve ([title-provider-health-and-cache-reset.md](./title-provider-health-and-cache-reset.md)). Remove it the day a probed stream decodes      |
 
 ## Active Beta Providers
 
@@ -812,7 +817,8 @@ it live, and release signoff derives its cases from that list plus the configure
 
 `hianime` is the **default** anime provider (`animeProvider: "hianime"`,
 `animeProviderPriority: ["kickassanime", "animegg", "miruro", "allanime"]`,
-provider-defaults revision 8). The lead moved off AniDB when anidb.app stopped
+provider-defaults revision 8, which put KickAssAnime ahead of AnimeGG after it
+resolved and streamed on every 2026-11-26 run). The lead moved off AniDB when anidb.app stopped
 serving the old origin (HTTP 302 to an unrelated site, 2026-10-24), matching
 ani-cli's earlier move to HiAnime (c99221d). The AniDB provider module was
 removed; the MAL lookup for AniSkip still handles historic catalog IDs.
@@ -917,7 +923,7 @@ default to the table — a bump alone stamps configs without changing them.
 | `vidrock`      | movie, series | direct-http | `packages/providers/src/vidrock/direct.ts`      |
 | `animegg`      | anime         | direct-http | `packages/providers/src/animegg/direct.ts`      |
 | `kickassanime` | anime         | direct-http | `packages/providers/src/kickassanime/direct.ts` |
-| `allanime`     | anime, series | direct-http | `packages/providers/src/allmanga/direct.ts`     |
+| `allanime`     | anime         | direct-http | `packages/providers/src/allmanga/direct.ts`     |
 | `hianime`      | anime         | direct-http | `packages/providers/src/hianime/direct.ts`      |
 | `miruro`       | anime         | direct-http | `packages/providers/src/miruro/direct.ts`       |
 | `youtube`      | video         | direct-http | `packages/providers/src/youtube/direct.ts`      |

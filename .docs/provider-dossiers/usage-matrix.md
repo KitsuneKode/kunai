@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-27T20:19:12Z"
+lastReviewed: "2026-11-27T20:25:30Z"
 ---
 
 # Provider Usage Matrix
@@ -72,6 +72,13 @@ rules as the prior audit. Each new provider adds one distinct measured media
 host family. AnimeParadise is sub-only, neither new backend showed 4K, and
 Anidap's existing overlap still applies. Chillflix returned a decoded ad, not
 title playback, so it adds no capacity and is not registered.
+
+Videasy and VidRock carry this audit's finding as `knownIssue` in their
+manifests, so the provider picker says so before anyone tries them. Miruro
+(reset from this network, not proven dead) and AllManga (a CAPTCHA wall, which
+varies by network) do not: a fault that depends on where you are is what the
+local health stores are for. Delete a `knownIssue` in the same change that
+records a probed, decoded stream for that provider here.
 
 ## Feature Matrix
 

@@ -155,6 +155,21 @@ export class ProviderEndpointHealthService implements EndpointHealthPort {
     return !this.shouldTry(providerId, endpoint);
   }
 
+  /**
+   * How many endpoints per provider are quarantined right now, from observed
+   * failures only. Curated dead seeds are retired routes, not evidence about
+   * the provider, and transient cooldowns last a minute — neither is counted.
+   */
+  countQuarantinedByProvider(): ReadonlyMap<ProviderId, number> {
+    const nowMs = this.now().getTime();
+    const counts = new Map<ProviderId, number>();
+    for (const record of this.repository.list()) {
+      if (!record.quarantinedUntil || Date.parse(record.quarantinedUntil) <= nowMs) continue;
+      counts.set(record.providerId, (counts.get(record.providerId) ?? 0) + 1);
+    }
+    return counts;
+  }
+
   private key(providerId: ProviderId, endpoint: string): string {
     return `${providerId}:${endpoint}`;
   }

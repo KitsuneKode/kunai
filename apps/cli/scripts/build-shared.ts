@@ -555,10 +555,14 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // on top measured 3,378,230 bytes: +29,766, after sharing the provider JSON
 // transport, episode identity parsing and language-list normalization. No
 // dependency or asset. 3300 KiB leaves 970 bytes.
+// The honest provider picker (#859: per-row status from the health,
+// quarantine and per-title failure stores, the manifest's known issues, and
+// one footer for the keys) on top measured 3,381,740 bytes: +3,510. No
+// dependency or asset. 3303 KiB leaves 532 bytes.
 // Provider batch 2 (#863: the FileSuN movies/series and AnimeParadise anime
-// adapters with their registration and defaults) on top measured 3,389,375
-// bytes: +11,145. No dependency or asset. 3311 KiB leaves 1,089 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_311;
+// adapters with their registration and defaults) on top measured 3,392,883
+// bytes: +11,143. No dependency or asset. 3314 KiB leaves 653 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_314;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
