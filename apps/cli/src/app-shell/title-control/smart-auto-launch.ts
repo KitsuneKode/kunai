@@ -53,6 +53,19 @@ function historyMatchesSelectedEpisode(ctx: PlaybackEpisodeEntryContext): boolea
   );
 }
 
+/** The pick is the episode right after the history row: E+1, or E1 of the next season. */
+function selectsSuccessorOfHistory(ctx: PlaybackEpisodeEntryContext): boolean {
+  const picked = ctx.preselectedEpisode;
+  const watched = ctx.history?.episode ?? ctx.history?.absoluteEpisode;
+  if (!picked || watched === undefined) return false;
+  const season = selectedSeason(ctx);
+  const watchedSeason = ctx.isAnime ? 1 : (ctx.history?.season ?? 1);
+  return (
+    (season === watchedSeason && picked.episode === watched + 1) ||
+    (season === watchedSeason + 1 && picked.episode === 1)
+  );
+}
+
 function isPlaybackFinished(history: PlaybackHistorySnapshot): boolean {
   if (history.completed) return true;
   const duration = history.durationSeconds ?? 0;
@@ -88,6 +101,11 @@ export function shouldAutoLaunchPlayback(ctx: PlaybackEpisodeEntryContext): bool
     if (!history) return false;
     if (history.positionSeconds > 0 && !isPlaybackFinished(history)) return true;
     return isPlaybackFinished(history) && ctx.nextEpisode !== undefined;
+  }
+  // A finished last episode whose successor the caller already picked (the
+  // home row's next up, History's Play next) is the "known next" case above.
+  if (ctx.history && isPlaybackFinished(ctx.history) && selectsSuccessorOfHistory(ctx)) {
+    return true;
   }
   if (!ctx.history || !historyMatchesSelectedEpisode(ctx)) return false;
 

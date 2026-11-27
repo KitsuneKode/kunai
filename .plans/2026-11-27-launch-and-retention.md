@@ -45,13 +45,11 @@ brings them back the next day.
 
 ## Retention work (code, in order)
 
-1. **Home row that survives a finished episode.** When the newest history
-   row is completed, show the next episode ("next up") instead of nothing.
-   Use the same unfinished anchor `--continue` already picks
-   (`apps/cli/src/services/continuation/ContinueWatchingService.ts`), and
-   the history persist floor (10 s) instead of the 30 s engage floor
-   (`apps/cli/src/app-shell/browse-idle-context.ts`,
-   `apps/cli/src/domain/playback/progress-engage-policy.ts`).
+1. ~~**Home row that survives a finished episode.**~~ Landed: one
+   release-backed next-episode rule
+   (`apps/cli/src/services/continuation/release-next-episode.ts`) feeds the
+   home row, `--continue`, History and Calendar; the row shows `▶ next ·
+   S01E04` and Enter plays it; the resume floor is the 10 s persist floor.
 2. **Follow on the first real watch.** On the first history write past 30 s,
    follow the title unless it is muted, and stamp `lastCalendarVisitAt` if it
    is still 0, so "new episodes since you left" can appear without a calendar

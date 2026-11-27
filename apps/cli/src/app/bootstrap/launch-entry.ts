@@ -5,7 +5,7 @@ import { isAnimeContent } from "@/domain/media/content-kind";
 import { createSourceSelectionEngine } from "@/domain/playback-source/SourceSelectionEngine";
 import { providerLaneToShellMode, providerMetadataMatchesLane } from "@/domain/provider-lane";
 import type { EpisodeInfo, TitleInfo } from "@/domain/types";
-import type { ContinuationViewDecision } from "@/services/continuation/ContinueWatchingService";
+import type { HistoryLaunchSelection } from "@/services/continuation/continuation-launch-selection";
 import {
   correctedHistoryMediaKind,
   historyContentType,
@@ -15,16 +15,6 @@ import {
 } from "@/services/continuation/history-progress";
 import type { OfflineLibraryEntry } from "@/services/offline/offline-library";
 import type { HistoryProgress } from "@kunai/storage";
-
-export type HistoryLaunchSelection = {
-  readonly titleId: string;
-  readonly entry: HistoryProgress;
-  readonly targetEpisode?: {
-    readonly season: number;
-    readonly episode: number;
-    readonly reason: "resume" | "new-episode" | "offline-ready";
-  };
-};
 
 export function selectContinueHistoryEntry(
   entries: Record<string, HistoryProgress>,
@@ -36,32 +26,6 @@ export function selectContinueHistoryEntryFromRecent(
   entries: readonly [string, HistoryProgress][],
 ): HistoryLaunchSelection | null {
   return selectNewestUnfinishedAnchor(entries);
-}
-
-export function historyLaunchSelectionFromContinuation(
-  decision: ContinuationViewDecision,
-): HistoryLaunchSelection {
-  if (!decision.target) throw new Error("Cannot launch an empty continuation decision");
-  return {
-    titleId: decision.target.titleId,
-    entry: decision.target.sourceEntry,
-    targetEpisode:
-      decision.target.mediaKind === "series" || decision.target.mediaKind === "video"
-        ? {
-            season: decision.target.season ?? 1,
-            episode: decision.target.episode ?? 1,
-            reason: continuationTargetReason(decision),
-          }
-        : undefined,
-  };
-}
-
-function continuationTargetReason(
-  decision: ContinuationViewDecision,
-): NonNullable<HistoryLaunchSelection["targetEpisode"]>["reason"] {
-  if (decision.primaryAction?.kind === "play-local") return "offline-ready";
-  if (decision.primaryAction?.kind === "select-online") return "new-episode";
-  return "resume";
 }
 
 function selectNewestUnfinishedAnchor(
