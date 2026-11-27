@@ -4,7 +4,6 @@ import {
   buildRootHistorySelection,
   describeHistoryReturnLoopDetail,
   formatNewSinceEpisodeLabel,
-  releaseProgressToContinueHistoryRelease,
 } from "@/app-shell/root-history-bridge";
 import type { ContinuationProjection } from "@/services/continuation/continuation-policy";
 import type { HistoryProgress } from "@kunai/storage";
@@ -152,27 +151,5 @@ describe("root history bridge return loop", () => {
     );
 
     expect(selection.sourceOverride).toBe("stream");
-  });
-
-  test("release projections target the first unwatched aired episode without altering history", () => {
-    const release = releaseProgressToContinueHistoryRelease({
-      titleId: "anilist:1",
-      mediaKind: "anime",
-      source: "anilist",
-      title: "Test Anime",
-      anchorSeason: 1,
-      anchorEpisode: 5,
-      latestAiredSeason: 1,
-      latestAiredEpisode: 8,
-      newEpisodeCount: 3,
-      status: "new-episodes",
-      checkedAt: "2026-05-23T10:00:00.000Z",
-      nextCheckAt: "2026-05-24T10:00:00.000Z",
-      staleAfterAt: "2026-05-24T10:00:00.000Z",
-      sourceFingerprint: "anime:8",
-      errorCount: 0,
-    });
-
-    expect(release).toMatchObject({ status: "released", season: 1, episode: 6 });
   });
 });

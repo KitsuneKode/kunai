@@ -1,5 +1,10 @@
 # Watching release candidate implementation plan
 
+> **Archived 2026-11-27.** Every task in this plan landed on `main`, most of it in the
+> 2026-11-26 merge train. What is left before the v0.4.0 tag is
+> qualification, listed under "v0.4.0 release gates" in
+> [the roadmap](../../.plans/roadmap.md). This file is history, not authority.
+
 Status: READY FOR LOCAL MANUAL TESTING; release integration and external qualification pending.
 Base: `8a86bf9dc`. This orders the authorized watching
 work from the existing release-readiness and shell/provider plans; it does
@@ -18,7 +23,7 @@ existing release-readiness plan, and the owning current feature docs.
 
 Local source candidate: `cf83c5405`, including review and packaging corrections.
 Verification and remaining gates are in
-[the candidate record](../.release/watching-candidate-2026-10-22.md). Tasks 1–4
+[the candidate record](../../.release/watching-candidate-2026-10-22.md). Tasks 1–4
 are implemented locally. Task 5 has a completed independent review with its cancellation finding fixed.
 Upstream/host/device qualification and release integration remain open; no remote PR has been merged.
 

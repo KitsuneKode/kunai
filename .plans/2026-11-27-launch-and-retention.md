@@ -8,9 +8,10 @@ lastReviewed: "2026-11-27"
 
 ## Status
 
-- **Status:** IN PROGRESS. The pre-release code fixes are in PRs (#843
-  hardening, #844 `--player auto` falls back to VLC). This plan holds what
-  is left.
+- **Status:** IN PROGRESS. The pre-release code fixes merged on 2026-11-26
+  (#843 hardening, #844 `--player auto` falls back to VLC, #845 this README
+  pass), so launch step 1 is done. The tag-time checklist is "v0.4.0 release
+  gates" in the [roadmap](./roadmap.md). Retention item 1 is in progress.
 - **Inputs:** three independent reviews on 2026-11-27: Gemini 4 Neon
   (engineering), GPT-6.2 Sol and Grok 4.7 (growth and retention). Every item
   below was checked against the code before being listed. Findings the
@@ -28,7 +29,7 @@ brings them back the next day.
 
 ## Launch sequence (maintainer-owned steps marked)
 
-1. **Merge the in-flight PRs** (#843, #844, this README pass) before the tag.
+1. ~~Merge the in-flight PRs~~ — done: #843, #844 and #845 merged 2026-11-26.
 2. **Tag v0.4.0, then wait for the release metadata PR** (maintainer). Until
    it merges, `Formula/kunai.rb` and `bucket/kunai.json` still install
    v0.3.0, so nothing may announce `brew` or `scoop` before then.
@@ -45,13 +46,11 @@ brings them back the next day.
 
 ## Retention work (code, in order)
 
-1. **Home row that survives a finished episode.** When the newest history
-   row is completed, show the next episode ("next up") instead of nothing.
-   Use the same unfinished anchor `--continue` already picks
-   (`apps/cli/src/services/continuation/ContinueWatchingService.ts`), and
-   the history persist floor (10 s) instead of the 30 s engage floor
-   (`apps/cli/src/app-shell/browse-idle-context.ts`,
-   `apps/cli/src/domain/playback/progress-engage-policy.ts`).
+1. ~~**Home row that survives a finished episode.**~~ Landed: one
+   release-backed next-episode rule
+   (`apps/cli/src/services/continuation/release-next-episode.ts`) feeds the
+   home row, `--continue`, History and Calendar; the row shows `▶ next ·
+   S01E04` and Enter plays it; the resume floor is the 10 s persist floor.
 2. **Follow on the first real watch.** On the first history write past 30 s,
    follow the title unless it is muted, and stamp `lastCalendarVisitAt` if it
    is still 0, so "new episodes since you left" can appear without a calendar

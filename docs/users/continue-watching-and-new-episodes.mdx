@@ -9,6 +9,8 @@ does not overwrite completed history just because a new episode appears.
 ## Continue Watching
 
 If an episode is unfinished, Continue Watching should resume that episode.
+Anything past ten seconds counts; a start that never got that far is not a
+resume point, so the row moves on to the next title with something to play.
 
 Example:
 
@@ -24,7 +26,12 @@ least surprising continue target.
 When the latest watched episode is complete, Kunai can use cached release data
 to explain what comes next:
 
-- if the next episode is released, it can be shown as a new episode candidate.
+- if the next episode has aired, the home screen's continue row becomes
+  **next up** (`▶ next · S01E04`) and Enter starts it. `kunai --continue`
+  picks the same episode. This covers a backlog too: finishing episode 3 of a
+  season that aired years ago offers episode 4.
+- if the next episode is released since you last watched, it is also a new
+  episode candidate.
 - if the next episode is scheduled but unreleased, Kunai should say it is
   upcoming instead of pretending it is playable.
 - if release data is unavailable, Kunai should stay calm and keep the completed

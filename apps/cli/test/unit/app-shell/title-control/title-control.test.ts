@@ -360,6 +360,46 @@ describe("smart auto-launch — plain Enter (no preselected episode)", () => {
     }
   });
 
+  test("a picked successor of a finished episode plays straight through (home next up, History Play next)", () => {
+    const finished = {
+      positionSeconds: 1400,
+      durationSeconds: 1400,
+      completed: true,
+      season: 1,
+      episode: 8,
+    };
+    const ctx = enterCtx({
+      launchSource: "continue",
+      history: finished,
+      preselectedEpisode: { season: 1, episode: 9 },
+    });
+    expect(shouldAutoLaunchPlayback(ctx)).toBe(true);
+    const entry = resolvePlaybackEpisodeEntry(ctx);
+    expect(entry).toEqual({ kind: "auto", selection: { season: 1, episode: 9 } });
+
+    // The next season's first episode is a successor too.
+    expect(
+      shouldAutoLaunchPlayback(
+        enterCtx({ history: finished, preselectedEpisode: { season: 2, episode: 1 } }),
+      ),
+    ).toBe(true);
+    // A jump further ahead is not: that is a pick for the menu to confirm.
+    expect(
+      shouldAutoLaunchPlayback(
+        enterCtx({ history: finished, preselectedEpisode: { season: 1, episode: 11 } }),
+      ),
+    ).toBe(false);
+    // An unfinished episode is never skipped past by a stale pick.
+    expect(
+      shouldAutoLaunchPlayback(
+        enterCtx({
+          history: { ...finished, completed: false, positionSeconds: 300 },
+          preselectedEpisode: { season: 1, episode: 9 },
+        }),
+      ),
+    ).toBe(false);
+  });
+
   test("finished history without a known next episode still shows the menu", () => {
     const ctx = enterCtx({
       history: {

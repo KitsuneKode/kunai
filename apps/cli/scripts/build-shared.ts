@@ -523,11 +523,18 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // Mid-stream failover (stream-unrecoverable escalation, recovery start intent)
 // and the provider-defaults revision 8 history module on top measured
 // 3,323,126 bytes; 3247 KiB leaves 1,802.
-// The four-finding playback/startup correctness sweep measured 3,328,686 bytes.
-// No dependency or asset; the interactive Continue source picker is loaded only
-// when a prompt can be shown. 3251 KiB leaves 338 bytes.
-// With the Restart start-position fix from the #852 review on top it measured
-// 3,329,033 bytes; 3252 KiB leaves 1,015. No dependency or asset.
+// Main after #845 measured 3,324,798 bytes. Next up on the home row (one
+// release-backed next-episode rule for the row, `--continue`, History and
+// Calendar, plus the successor auto-launch) measured 3,325,627 bytes, +829;
+// 3249 KiB leaves 1,349. No dependency or asset.
+// The 2026-11-27 provider live-audit repair (Rivestream wrapper unwrapping,
+// HLS inventory expansion and backend demotion, plus the AllManga rotation
+// profile) measured 3,328,718 bytes after merging next-up and scoped stream
+// refusal evidence: +3,091 over that merged tree. No dependency or asset.
+// 3251 KiB leaves 306 bytes; public launcher budgets are unchanged.
+// Recording the failing redirect hop on probe errors (so refusal evidence
+// names the host that failed) measured 3,329,213 bytes: +495. No dependency
+// or asset. 3252 KiB leaves 835 bytes.
 export const NPM_BUNDLE_BUDGET_KB = 3_252;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */

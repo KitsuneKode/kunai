@@ -1,6 +1,5 @@
 import {
   buildRootHistorySelection,
-  releaseProgressToContinueHistoryRelease,
   type RootHistorySelection,
 } from "@/app-shell/root-history-bridge";
 import {
@@ -23,6 +22,7 @@ import {
   historyContentType,
   readLatestHistoryByTitle,
 } from "@/services/continuation/history-progress";
+import { continueReleaseFromProjection } from "@/services/continuation/release-next-episode";
 import type { HistoryProgress, ReleaseProgressProjection } from "@kunai/storage";
 
 export type CalendarContinueLaunchResult = {
@@ -129,7 +129,7 @@ export function resolveCalendarContinueSelection(
   if (!decision.target || !decision.primaryAction) return null;
 
   const projection = projectionFromViewDecision(decision);
-  const nextRelease = releaseProgressToContinueHistoryRelease(progress);
+  const nextRelease = continueReleaseFromProjection(progress, entry);
   const preference = container.config.continueSourcePreference ?? "auto";
   const selection = buildRootHistorySelection(
     { titleId: continuation.targetTitleId, entry },

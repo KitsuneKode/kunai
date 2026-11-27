@@ -1,11 +1,28 @@
 ---
 status: current
-lastReviewed: "2026-10-27"
+lastReviewed: "2026-11-27"
 ---
 
 # Provider: VidLink (`vidlink`)
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
+
+## Live capability audit (2026-11-27)
+
+**Status: working for movies and series.** VidLink is resolver-only, so search
+and episode catalog identity still come from TMDB rather than the provider.
+
+- Fixture coverage: Inception, Fight Club, Breaking Bad S01E01, Dutton Ranch
+  S01E01.
+- Result: 4/4 resolves succeeded, 4/4 independently probed selected streams
+  were reachable, and Inception produced a real 1920x1080 decode frame.
+- Inventory: one VidLink source and one auto DASH stream per case; 9-16
+  subtitle tracks per case in `en`, `id`, `ms`, and `tl`; no audio-language or
+  HDR metadata exposed.
+- Maximum measured quality: 1080p (the `auto` DASH ladder). Resolve latency
+  was 1.57-1.87 s.
+- Actual media dependency: `sacdn.hakunaymatata.com`, with the metadata/seed
+  path still dependent on `vidlink.pro` and `enc-dec.app`.
 
 ## Summary
 

@@ -1,5 +1,5 @@
 ---
-lastReviewed: "2026-11-25"
+lastReviewed: "2026-11-27"
 ---
 
 # Kunai security and improvement review
@@ -7,6 +7,25 @@ lastReviewed: "2026-11-25"
 Reviewed `origin/main` at `879b668f44cb4b6352d974703d047c4c8478293a` on 2026-11-25. The review covered the production provider registry and representative network-to-sink paths, Stremio, desktop mpv, the native installers and update path, CI and package channels, credential stores and tracker authorization, analytics, the hosted relay adapter, both mobile runtime adapters, and the docs site.
 
 Verification used the pinned source, existing automated tests and harmless local fixtures. The baseline suites ran on `0c889e352`. The two subsequent main commits changed VHS fixtures, documentation and a type comment. The affected consent and VHS suites ran again on the reviewed revision, with 44 passing and no failures. Runtime checks used a disposable home, unset XDG and APPDATA overrides, and `DO_NOT_TRACK=1`. The review did not use production analytics or relay services. Hosted enforcement and deployment, native Windows ACLs and named-pipe access, macOS Keychain, and physical handoff remain unverified.
+
+## Status on 2026-11-27
+
+Fixed on `main` since this review; the finding text below is kept as written:
+
+| Finding                          | Fixed by | What changed                                                                                            |
+| -------------------------------- | -------- | ------------------------------------------------------------------------------------------------------- |
+| M1 provider subtitles            | #781     | Remote subtitles from every provider go through the guarded fetch                                       |
+| M4 stale upgrade activation      | #779     | Install intent reaches the activation lock; a stale upgrade never overwrites a newer one                |
+| M5 unpinned yt-dlp in CI         | #778     | CI installs a presence stub (`.github/scripts/yt-dlp-ci-stub.sh`) that tests never invoke               |
+| L2 provider-matrix shell input   | #778     | The provider selection passes through the environment and is validated before use                       |
+| M3 analytics admission (SQL)     | #797     | A repeat ping spends no budget; once the ceiling is reached nothing is written, not even the budget row |
+| Release enrollment (signing pin) | #835     | `apps/cli/src/services/update/release-key.json` carries the release key                                 |
+
+Still open: **M2** (Stremio probe and player use separate connections; stays
+behind the experimental gate), the **M3** rate control in front of the function
+(a hosting firewall rule, owned by the analytics redesign plan), **L1** (the
+first remote media URL and referrer are on mpv's argv), top-10 item 1 (the public
+installer transition is not qualified until the v0.4.0 tag-day check), and items 4–10.
 
 ## Security findings
 

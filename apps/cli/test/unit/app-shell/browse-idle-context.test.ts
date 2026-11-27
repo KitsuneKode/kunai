@@ -121,7 +121,7 @@ describe("buildBrowseIdleContext", () => {
     expect(idleContext?.playlistNext?.ep).toBeUndefined();
   });
 
-  test("Continue hero requires engage gate (>30s) and ignores DNS-short rows", async () => {
+  test("Continue hero uses the resume floor (>10s), the same as --continue, and skips did-not-start rows", async () => {
     const container = {
       queueService: {
         peekNext: () => null,
@@ -150,7 +150,7 @@ describe("buildBrowseIdleContext", () => {
           title: "Too Short",
           season: 1,
           episode: 1,
-          positionSeconds: 30,
+          positionSeconds: 10,
           durationSeconds: 1200,
           completed: false,
           createdAt: "2026-07-21T09:00:00.000Z",
@@ -163,7 +163,7 @@ describe("buildBrowseIdleContext", () => {
           title: "Engaged Title",
           season: 1,
           episode: 2,
-          positionSeconds: 31,
+          positionSeconds: 11,
           durationSeconds: 1200,
           completed: false,
           createdAt: "2026-07-21T09:00:00.000Z",
@@ -173,6 +173,125 @@ describe("buildBrowseIdleContext", () => {
       },
     });
     expect(idleContext?.continueWatching?.title).toBe("Engaged Title");
+  });
+
+  describe("next up after a finished episode", () => {
+    function containerWith(input: {
+      readonly releases?: ReadonlyMap<string, unknown>;
+      readonly readyNext?: readonly unknown[];
+    }) {
+      return {
+        queueService: { peekNext: () => null },
+        releaseProgressCache: {
+          summarizeActive: () => ({ titleCount: 0, episodeCount: 0 }),
+          getByTitleIds: () => input.releases ?? new Map(),
+        },
+        offlineAssetService: { listNextReadyByTitleCursors: () => input.readyNext ?? [] },
+        historyRepository: { listLatestByTitle: () => [] },
+        listService: { getWatchlist: () => [] },
+        config: { lastCalendarVisitAt: 0 },
+        followedTitleRepository: { listByPreference: () => [] },
+      };
+    }
+
+    const finishedEp3 = {
+      key: "tmdb:show:1:3",
+      titleId: "tmdb:show",
+      title: "Binge Show",
+      season: 1,
+      episode: 3,
+      positionSeconds: 1380,
+      durationSeconds: 1400,
+      completed: true,
+      createdAt: "2026-11-20T09:00:00.000Z",
+      updatedAt: "2026-11-20T10:00:00.000Z",
+      mediaKind: "series" as const,
+    };
+    const olderUnfinished = {
+      key: "tmdb:older:1:1",
+      titleId: "tmdb:older",
+      title: "Older Unfinished",
+      season: 1,
+      episode: 1,
+      positionSeconds: 300,
+      durationSeconds: 1400,
+      completed: false,
+      createdAt: "2026-11-10T09:00:00.000Z",
+      updatedAt: "2026-11-10T10:00:00.000Z",
+      mediaKind: "series" as const,
+    };
+    // An old backlog: reconciliation calls it caught-up because nothing aired
+    // since the last watch, but episodes 4–10 exist.
+    const backlog = {
+      titleId: "tmdb:show",
+      mediaKind: "series",
+      source: "tmdb",
+      title: "Binge Show",
+      anchorSeason: 1,
+      anchorEpisode: 3,
+      latestAiredSeason: 1,
+      latestAiredEpisode: 10,
+      newEpisodeCount: 0,
+      status: "caught-up",
+      checkedAt: "2026-11-20T11:00:00.000Z",
+      nextCheckAt: "2026-11-21T11:00:00.000Z",
+      staleAfterAt: "2999-01-01T00:00:00.000Z",
+      sourceFingerprint: "series:10",
+      errorCount: 0,
+    };
+
+    test("the row offers the next aired episode, and Enter starts it", async () => {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+      const { idleContext, continueWatchingSelection } = await buildBrowseIdleContext(
+        containerWith({ releases: new Map([["tmdb:show", backlog]]) }) as never,
+        { preloadedHistory: { "tmdb:show": finishedEp3, "tmdb:older": olderUnfinished } },
+      );
+
+      expect(idleContext?.continueWatching).toMatchObject({
+        title: "Binge Show",
+        ep: "S01E04",
+        nextUp: true,
+        titleId: "tmdb:show",
+      });
+      expect(idleContext?.continueWatching?.remainingLabel).toBeUndefined();
+      expect(continueWatchingSelection?.targetEpisode).toEqual({
+        season: 1,
+        episode: 4,
+        reason: "new-episode",
+      });
+      expect(continueWatchingSelection?.entry).toBe(finishedEp3);
+    });
+
+    test("without release evidence it never guesses an episode; the next title continues", async () => {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+      const { idleContext } = await buildBrowseIdleContext(containerWith({}) as never, {
+        preloadedHistory: { "tmdb:show": finishedEp3, "tmdb:older": olderUnfinished },
+      });
+
+      expect(idleContext?.continueWatching).toMatchObject({
+        title: "Older Unfinished",
+        ep: "S01E01",
+      });
+      expect(idleContext?.continueWatching?.nextUp).toBeFalsy();
+    });
+
+    test("a downloaded next episode stays on the offline row, not the streaming one", async () => {
+      // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+      const { idleContext } = await buildBrowseIdleContext(
+        containerWith({
+          releases: new Map([["tmdb:show", backlog]]),
+          readyNext: [{ titleId: "tmdb:show", season: 1, episode: 4, originJobId: "job-4" }],
+        }) as never,
+        { preloadedHistory: { "tmdb:show": finishedEp3, "tmdb:older": olderUnfinished } },
+      );
+
+      expect(idleContext?.offlineReadyNext).toMatchObject({
+        title: "Binge Show",
+        ep: "S01E04",
+        offlineJobId: "job-4",
+      });
+      expect(idleContext?.continueWatching?.title).toBe("Older Unfinished");
+    });
   });
 
   test("airing today counts by local date, and never a muted title", async () => {

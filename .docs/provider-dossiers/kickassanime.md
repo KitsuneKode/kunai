@@ -1,11 +1,31 @@
 ---
 status: current
-lastReviewed: "2026-11-25T05:20:56Z"
+lastReviewed: "2026-11-27"
 ---
 
 # Provider: KickAssAnime
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
+
+## Live capability audit (2026-11-27)
+
+**Status: mostly working, with one measured dub gap.**
+
+- Fixture coverage: One Piece episode 1 and Dandadan episode 1, each in sub
+  and dub.
+- Search/catalog: provider search selected `One Piece` (`one-piece-0948`,
+  1180 episodes) and `Dandadan` (`dandadan-da3b`, 12 episodes).
+- Result: 3/4 resolves succeeded and all three selected streams probed
+  reachable. One Piece episode 1 sub produced a real 1920x1080 decode frame.
+  One Piece episode 1 dub failed with `KickAssAnime offered no playable server
+  for one-piece-0948 1`; Dandadan dub did resolve.
+- Inventory: one 1080p HLS stream per successful case. One Piece sub carried
+  `en`, `id`, `th`, and `vi` subtitles; Dandadan carried 17 subtitle languages
+  including `ar`, `de`, `en`, `es`, `fr`, `ja`, `ko`, `pt`, `zh`, and others.
+  Audio metadata split `ja`/`en` correctly. No HDR metadata exposed.
+- Resolve latency was 4.83-7.24 s.
+- Actual media dependencies: `bl.krussdomi.com` (`CatStream`) and
+  `hls.krussdomi.com` (`VidStreaming`).
 
 ## Production status (2026-11-24)
 
