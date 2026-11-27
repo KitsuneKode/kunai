@@ -147,7 +147,11 @@ function assertDedicatedRoot(
 
 function physicalPath(path: string): string {
   const native = process.platform === "win32" ? win32Path : posixPath;
-  if (lstatSync(path, { throwIfNoEntry: false })) return realpathSync(path);
+  if (lstatSync(path, { throwIfNoEntry: false })) {
+    // Bun's realpathSync() keeps an 8.3 alias on Windows; .native() expands it
+    // so an alias-spelled override cannot compare short to long.
+    return process.platform === "win32" ? realpathSync.native(path) : realpathSync(path);
+  }
   const parent = native.dirname(path);
   return parent === path ? path : native.join(physicalPath(parent), native.basename(path));
 }

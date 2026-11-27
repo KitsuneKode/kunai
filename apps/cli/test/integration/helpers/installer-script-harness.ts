@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 
@@ -65,7 +65,9 @@ export function createInstallerSandbox(
   name: string,
   options?: { readonly freshProfile?: boolean },
 ) {
-  const root = mkdtempSync(join(tmpdir(), `kunai-${name}-`));
+  // Windows TEMP can use an 8.3 alias; PowerShell reports the long spelling.
+  const tempRoot = process.platform === "win32" ? realpathSync.native(tmpdir()) : tmpdir();
+  const root = mkdtempSync(join(tempRoot, `kunai-${name}-`));
   // The profile root is a child of the fixture home (`HOME` is `root`), the
   // topology storageRootEnv installs — config/data/cache/bin live under it.
   const profileDir = join(root, "profile");

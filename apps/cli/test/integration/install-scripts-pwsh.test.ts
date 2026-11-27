@@ -15,7 +15,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, delimiter, dirname, join, resolve } from "node:path";
+import { basename, delimiter, dirname, join } from "node:path";
 
 import type { InstallManifest } from "@/services/update/install-manifest";
 import { verifyStoredVersion } from "@/services/update/native-installer/version-metadata";
@@ -3050,6 +3050,12 @@ describePwsh("install.ps1 download progress", () => {
 
 describePwsh("install.ps1 dedicated profile contract", () => {
   const dryRun = ["-DryRun", "-Yes", "-SkipDeps", "-Version", "9.8.7"];
+  // A hosted Windows runner's TEMP is commonly an 8.3 short name — the exact
+  // mixed spelling this describe's guards must handle.
+  const shortTemp =
+    process.platform === "win32" && /(?:^|\\)[^\\]*~\d+(?:\\|$)/.test(tmpdir())
+      ? tmpdir()
+      : undefined;
 
   test("a profile-only dry run reports the derived layout and writes nothing", () => {
     const sandbox = createInstallerSandbox("install-ps1-profile-dry", { freshProfile: true });
@@ -3163,6 +3169,53 @@ describePwsh("install.ps1 dedicated profile contract", () => {
     }
   });
 
+  // 8.3 short names must not bypass the hazardous-root checks: both the
+  // PowerShell guard and the CLI guard compare the canonical spelling.
+  test.skipIf(shortTemp === undefined)(
+    "an 8.3-aliased profile root is refused by the PowerShell installer and the CLI",
+    () => {
+      const sandbox = createInstallerSandbox("install-ps1-profile-shortname", {
+        freshProfile: true,
+      });
+      try {
+        const shortRoot = join(shortTemp!, basename(sandbox.root));
+        expect(shortRoot.toLowerCase()).not.toBe(sandbox.root.toLowerCase());
+        expect(realpathSync.native(shortRoot)).toBe(sandbox.root);
+        mkdirSync(join(sandbox.root, "userprofile"), { recursive: true });
+        mkdirSync(join(sandbox.root, "appdata", "kunai"), { recursive: true });
+        for (const [root, diagnostic] of [
+          [join(shortRoot, "userprofile"), "ancestor of home"],
+          [
+            join(shortRoot, "appdata", "kunai", "future-profile"),
+            "overlaps a platform-default Kunai directory",
+          ],
+        ] as const) {
+          const env = { ...profileOnlyInstallerEnv(sandbox.env), KUNAI_CONFIG_DIR: root };
+          const result = runInstallPs1(dryRun, env);
+          expect(result.status).not.toBe(0);
+          const installerOut = `${result.stdout}${result.stderr}`;
+          expect(installerOut).toContain(root);
+          expect(installerOut).toContain(diagnostic);
+
+          const proc = spawnSync(
+            process.execPath,
+            [join(REPO_ROOT, "apps/cli/src/main.ts"), "--version"],
+            { encoding: "utf8", env },
+          );
+          expect(proc.status).toBe(2);
+          const cliOut = `${proc.stdout}${proc.stderr}`;
+          expect(cliOut).toContain(root);
+          expect(cliOut).toContain(diagnostic);
+
+          expect(existsSync(join(root, ".kunai-profile"))).toBe(false);
+        }
+        expect(existsSync(join(sandbox.root, "appdata", "kunai", "future-profile"))).toBe(false);
+      } finally {
+        sandbox.cleanup();
+      }
+    },
+  );
+
   test("an absent child under an aliased parent is accepted and stays absent", () => {
     const sandbox = createInstallerSandbox("install-ps1-profile-alias-ok", {
       freshProfile: true,
@@ -3267,7 +3320,7 @@ describePwsh("install.ps1 dedicated profile contract", () => {
       const sumsFor = (body: string) =>
         `${createHash("sha256").update(body).digest("hex")}  ${asset}\n`;
 
-      const sandbox = createInstallerSandbox("install-ps1-profile-lifecycle", {
+      const sandbox = createInstallerSandbox("install-ps1-profile (lifecycle)", {
         freshProfile: true,
       });
       const defaultSentinels = [
@@ -3311,11 +3364,66 @@ describePwsh("install.ps1 dedicated profile contract", () => {
               KUNAI_DL_BASE: baseUrl,
               KUNAI_RELEASES_API: `${baseUrl}/latest`,
             };
+            // Prove the wrapper binds its own profile without KUNAI_CONFIG_DIR
+            // in the invoking shell: temporarily put a runnable binary in the
+            // version store (the fixture ships MZ placeholder bytes) and run a
+            // JS probe through it. The probe lives outside the profile.
+            const probe = join(sandbox.root, "profile probe.js");
+            writeFileSync(
+              probe,
+              "console.log(JSON.stringify({profile: process.env.KUNAI_CONFIG_DIR, args: process.argv.slice(2)})); process.exitCode = 37;\n",
+            );
+            const assertProfileLauncher = async (
+              version: string,
+              originalBody: string,
+              launcherEnv: NodeJS.ProcessEnv,
+            ) => {
+              const versionedPath = join(
+                sandbox.profileDir,
+                "data",
+                "versions",
+                version,
+                "kunai.exe",
+              );
+              copyFileSync(process.execPath, versionedPath);
+              try {
+                const wrapperEnv: NodeJS.ProcessEnv = {
+                  ...launcherEnv,
+                  KUNAI_TEST_PROFILE_LAUNCHER: launcher,
+                  KUNAI_TEST_PROFILE_PROBE: probe,
+                };
+                delete wrapperEnv.KUNAI_CONFIG_DIR;
+                const wrapped = Bun.spawn(
+                  [
+                    PWSH_PATH,
+                    "-NoProfile",
+                    "-Command",
+                    "& $env:KUNAI_TEST_PROFILE_LAUNCHER run $env:KUNAI_TEST_PROFILE_PROBE 'plain(parentheses)' 'quoted argument' ; exit $LASTEXITCODE",
+                  ],
+                  { env: wrapperEnv, stdout: "pipe", stderr: "pipe" },
+                );
+                const [wrappedStdout, wrappedStderr, wrappedStatus] = await Promise.all([
+                  new Response(wrapped.stdout).text(),
+                  new Response(wrapped.stderr).text(),
+                  wrapped.exited,
+                ]);
+                expect(wrappedStatus, `stdout: ${wrappedStdout}\nstderr: ${wrappedStderr}`).toBe(
+                  37,
+                );
+                expect(JSON.parse(wrappedStdout)).toEqual({
+                  profile: sandbox.profileDir,
+                  args: ["plain(parentheses)", "quoted argument"],
+                });
+              } finally {
+                writeFileSync(versionedPath, originalBody);
+              }
+            };
+
             const install = await runInstallPs1Async(
               ["-Yes", "-SkipDeps", "-Version", "9.8.7"],
               env,
             );
-            expect(install.status).toBe(0);
+            expect(install.status, `${install.stdout}--ERR--${install.stderr}`).toBe(0);
             expect(`${install.stdout}${install.stderr}`).toContain("PATH was not changed");
             expect(readFileSync(markerPath, "utf8")).toBe("kunai-profile-v1\n");
             expect(existsSync(launcher)).toBe(true);
@@ -3323,44 +3431,7 @@ describePwsh("install.ps1 dedicated profile contract", () => {
             // competing .exe in the profile bin.
             expect(existsSync(join(sandbox.profileDir, "bin", "kunai.exe"))).toBe(false);
 
-            // Prove the wrapper binds its own profile without KUNAI_CONFIG_DIR
-            // in the invoking shell: temporarily put a runnable binary in the
-            // version store (the fixture ships MZ placeholder bytes).
-            const versionedPath = join(
-              sandbox.profileDir,
-              "data",
-              "versions",
-              "9.8.7",
-              "kunai.exe",
-            );
-            copyFileSync(process.execPath, versionedPath);
-            try {
-              const wrapperEnv: NodeJS.ProcessEnv = {
-                ...env,
-                KUNAI_TEST_PROFILE_LAUNCHER: launcher,
-              };
-              delete wrapperEnv.KUNAI_CONFIG_DIR;
-              const wrapped = Bun.spawn(
-                [
-                  PWSH_PATH,
-                  "-NoProfile",
-                  "-Command",
-                  "& $env:KUNAI_TEST_PROFILE_LAUNCHER -e 'console.log(process.env.KUNAI_CONFIG_DIR)' ; exit $LASTEXITCODE",
-                ],
-                { env: wrapperEnv, stdout: "pipe", stderr: "pipe" },
-              );
-              const [wrappedStdout, , wrappedStatus] = await Promise.all([
-                new Response(wrapped.stdout).text(),
-                new Response(wrapped.stderr).text(),
-                wrapped.exited,
-              ]);
-              expect(wrappedStatus).toBe(0);
-              expect(realpathSync(resolve(wrappedStdout.trim()))).toBe(
-                realpathSync(sandbox.profileDir),
-              );
-            } finally {
-              writeFileSync(versionedPath, v1Body);
-            }
+            await assertProfileLauncher("9.8.7", v1Body, env);
 
             const sibling = join(sandbox.profileDir, "keep-me.txt");
             writeFileSync(sibling, "unrelated\n");
@@ -3369,12 +3440,14 @@ describePwsh("install.ps1 dedicated profile contract", () => {
             writeFileSync(join(sandbox.profileDir, "tmp", "scratch"), "tmp\n");
 
             const upgrade = await runKunai(["upgrade"], env);
-            expect(upgrade.status).toBe(0);
+            expect(upgrade.status, `${upgrade.stdout}--ERR--${upgrade.stderr}`).toBe(0);
             const manifest = readInstallerManifest(sandbox.configDir);
             expect(manifest.activeVersion).toBe("9.8.8");
 
+            await assertProfileLauncher("9.8.8", v2Body, env);
+
             const uninstall = await runKunai(["uninstall", "--purge"], env);
-            expect(uninstall.status).toBe(0);
+            expect(uninstall.status, `${uninstall.stdout}--ERR--${uninstall.stderr}`).toBe(0);
             expect(existsSync(launcher)).toBe(false);
             expect(existsSync(join(sandbox.profileDir, "data"))).toBe(false);
             expect(existsSync(join(sandbox.profileDir, "cache"))).toBe(false);

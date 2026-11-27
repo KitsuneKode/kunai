@@ -1735,11 +1735,8 @@ function Update-Launcher([string]$VersionPath, [string]$LauncherPath, [string]$V
       $lines = @(
         '@echo off',
         'setlocal DisableDelayedExpansion',
-        '(',
-        '  set "KUNAI_CONFIG_DIR=%~dp0.."',
-        ('  "%~dp0..\data\versions\{0}\kunai.exe" %*' -f $Ver),
-        '  exit /b',
-        ')',
+        'for %%I in ("%~dp0..") do set "KUNAI_CONFIG_DIR=%%~fI"',
+        ('"%KUNAI_CONFIG_DIR%\data\versions\{0}\kunai.exe" %* & exit /b' -f $Ver),
         ''
       )
       Write-Utf8File $candidate ($lines -join "`r`n")
