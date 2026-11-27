@@ -4,7 +4,7 @@ description: How Kunai chooses among third-party adapters, retries, recovers, an
 status: shipped
 ---
 
-Kunai resolves playable streams through direct HTTP provider adapters. You pick a title; Kunai asks registered providers for stream inventory; playback goes to `mpv`.
+Kunai resolves playable streams through direct HTTP provider adapters. You pick a title; Kunai asks registered providers for stream inventory; playback goes to mpv or VLC.
 
 This page explains **user-visible provider behavior**. It does not document scraper internals, crypto constants, or site-specific extraction logic.
 
@@ -16,10 +16,10 @@ Live registry synced from the CLI when docs are generated. Click a provider name
 
 <ProviderTable />
 
-Mode defaults at a glance:
+Default provider order is generated from the shipped config defaults:
 
-- **Movies / series** start with VidLink, then try Movy, Rivestream, VidRock, Videasy, and VidBolt.
-- **Anime** starts with HiAnime, then tries KickAssAnime, AnimeGG, Miruro, AllManga, AniLight, and Anidap. AniDB has been retired.
+<ProviderOrderTable />
+
 - In the guided and fallback-first recovery modes, a provider that is down is tried last and the provider that last worked for a title starts first. If you reordered providers yourself, an update never changes your order.
 - **YouTube** has a dedicated video mode with Invidious search and yt-dlp playback.
 
@@ -27,7 +27,7 @@ Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only
 
 <ProviderDocSection id="videasy" title="Videasy">
 
-**Adapter role:** registered movies/series adapter, last in the automatic lane. The operator announced a shutdown, and the latest sweep could not resolve a stream. A separate catalog mirror can still supply title metadata.
+**Adapter role:** registered movies/series adapter. The operator announced a shutdown, and the latest sweep could not resolve a stream. A separate catalog mirror can still supply title metadata.
 
 **Config id:** `videasy` (legacy alias `vidking` still accepted).
 
@@ -47,7 +47,7 @@ Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only
 
 <ProviderDocSection id="rivestream" title="Rivestream">
 
-**Adapter role:** mirror-aggregator for movies/series. Third in the automatic series lane, after VidLink and Movy.
+**Adapter role:** mirror-aggregator for movies/series.
 
 **Config id:** `rivestream`.
 
@@ -57,7 +57,7 @@ Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only
 
 <ProviderDocSection id="vidrock" title="VidRock">
 
-**Adapter role:** fourth in the movies/series order. Offers multiple audio and quality options where the source provides them.
+**Adapter role:** registered movies/series adapter. Offers multiple audio and quality options where the source provides them.
 
 **Config id:** `vidrock`.
 
@@ -67,7 +67,7 @@ Legacy id `vidking` maps to Videasy in config and cache. Cineby is research-only
 
 <ProviderDocSection id="kickassanime" title="KickAssAnime">
 
-**Adapter role:** first anime fallback after HiAnime. It matches titles against its own catalogue by name and year.
+**Adapter role:** registered anime fallback. It matches titles against its own catalogue by name and year.
 
 **Config id:** `kickassanime`.
 
@@ -79,7 +79,7 @@ has no English audio, Kunai reports the fallback to subbed playback in the trace
 
 <ProviderDocSection id="animegg" title="AnimeGG">
 
-**Adapter role:** third in the anime order, after HiAnime and KickAssAnime. AnimeGG matches titles against its own
+**Adapter role:** registered anime fallback. AnimeGG matches titles against its own
 catalogue and serves sub and dub from separate episode tabs.
 
 **Config id:** `animegg`.
@@ -97,7 +97,7 @@ when more than one of its shows could be the one you picked, it steps aside rath
 
 <ProviderDocSection id="movy" title="Movy">
 
-**Adapter role:** first movies/series fallback after VidLink. Each upstream lane is a separate source that
+**Adapter role:** registered movies/series fallback. Each upstream lane is a separate source that
 you can select with `/source`.
 
 **Config id:** `movy`.
@@ -109,7 +109,7 @@ before any source could be fetched.
 
 <ProviderDocSection id="allanime" title="AllManga">
 
-**Adapter role:** last in the default anime order.
+**Adapter role:** registered anime fallback.
 
 **Config id:** `allanime`.
 
@@ -121,7 +121,7 @@ stream authorization is out of date.
 
 <ProviderDocSection id="hianime" title="HiAnime">
 
-**Adapter role:** the default anime provider, first in the order. HiAnime has its own catalogue and
+**Adapter role:** the default anime provider. HiAnime has its own catalogue and
 search. It resolves the ZokoAnime
 server for each episode, the same one ani-cli uses, and hands the HLS ladder and subtitle tracks
 to the player.
@@ -138,7 +138,7 @@ networks where Kunai's own HTTP client meets Cloudflare, it falls back to `curl`
 
 <ProviderDocSection id="miruro" title="Miruro">
 
-**Adapter role:** fourth in the anime order. Miruro can try multiple streaming backends for an
+**Adapter role:** registered anime fallback. Miruro can try multiple streaming backends for an
 AniList title and also provides its own anime search.
 
 **Config id:** `miruro`.
@@ -181,7 +181,7 @@ depends on the server and some subtitles are burned into the video.
 
 <ProviderDocSection id="youtube" title="YouTube">
 
-**Adapter role:** YouTube mode: Invidious search, yt-dlp stream handoff to mpv. This is not a TMDB movie/series adapter.
+**Adapter role:** YouTube mode: Invidious search, yt-dlp stream handoff to the selected player. This is not a TMDB movie/series adapter.
 
 **Config id:** `youtube`. Switch with `/youtube-mode` or `Tab` to cycle catalog mode.
 
@@ -278,7 +278,7 @@ If the active provider is exhausted, skipped, or unhealthy for this request, Kun
 <Step>
 ### Stream handoff
 
-The winning stream becomes mpv input with required headers and subtitle attachments. Inventory is cached for faster re-selection.
+The winning stream becomes input for the selected player with required headers and subtitle attachments. Inventory is cached for faster re-selection.
 
 </Step>
 </Steps>
@@ -292,9 +292,9 @@ Configure order in `/settings` or `~/.config/kunai/config.json`:
 ```json
 {
   "provider": "vidlink",
-  "providerPriority": ["rivestream", "vidrock", "movy", "videasy"],
+  "providerPriority": ["movy", "rivestream", "vidrock", "videasy"],
   "animeProvider": "hianime",
-  "animeProviderPriority": ["animegg", "kickassanime", "miruro", "allanime"]
+  "animeProviderPriority": ["kickassanime", "animegg", "miruro", "allanime"]
 }
 ```
 

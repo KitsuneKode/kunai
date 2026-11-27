@@ -230,20 +230,15 @@ async function maybeOpenStartupHistory(
     return { title: launch.title, episode: launch.episode };
   }
 
-  const {
-    applyHistorySelectionProvider,
-    episodeFromHistorySelection,
-    prepareReplayTitleForProvider,
-    titleFromHistorySelection,
-  } = await import("@/app/bootstrap/launch-entry");
-  applyHistorySelectionProvider(container, selection);
+  const [{ resolveHistorySelectionLaunch }, { prepareReplayTitleForProvider }] = await Promise.all([
+    import("@/app-shell/history-selection-launch"),
+    import("@/app/bootstrap/launch-entry"),
+  ]);
+  const launch = await resolveHistorySelectionLaunch(container, selection, "history");
+  if (!launch) return null;
   return {
-    title: await prepareReplayTitleForProvider(
-      container,
-      titleFromHistorySelection(selection),
-      selection.entry,
-    ),
-    episode: episodeFromHistorySelection(selection),
+    title: await prepareReplayTitleForProvider(container, launch.title, selection.entry),
+    ...(launch.episode ? { episode: launch.episode } : null),
   };
 }
 
@@ -297,7 +292,7 @@ async function maybeResolveContinueTitle(
       episodeFromHistorySelection,
       prepareReplayTitleForProvider,
       recordLocalHistorySourceDecision,
-      titleFromHistorySelection,
+      continueTitleFromHistorySelection,
     },
     { recordContinuationProjectDecision, recordContinuationSourceResolution },
     { historyLaunchSelectionFromContinuation },
@@ -328,7 +323,7 @@ async function maybeResolveContinueTitle(
   return {
     title: await prepareReplayTitleForProvider(
       container,
-      titleFromHistorySelection(selection),
+      continueTitleFromHistorySelection(selection),
       selection.entry,
     ),
     episode: episodeFromHistorySelection(selection),
@@ -558,6 +553,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     const { runDoctor } = await import("./services/update/run-doctor");
     process.exit(
       await runDoctor({
+        argv,
         json: argv.includes("--json"),
         strict: argv.includes("--strict"),
         runningExecutable: { path: process.execPath, version: KUNAI_VERSION },
@@ -772,20 +768,8 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   // no database, no terminal probe, no dependency check. That is what
   // "without changing state" has to mean.
   if (args.dryRun) {
-    const {
-      formatBootstrapPlan,
-      resolveBootstrapIntent,
-      resolveLaunchMode,
-      resolveLaunchSurfaceName,
-    } = await import("@/app/bootstrap/bootstrap-intent");
-    const plan = formatBootstrapPlan({
-      intent: resolveBootstrapIntent(args),
-      mode: resolveLaunchMode(args) ?? "movie/series",
-      route: resolveLaunchSurfaceName(args),
-      shareAction: pendingShareLaunch?.action,
-      download: args.download,
-      setup: args.setup,
-    });
+    const { formatLaunchDryRunPlan } = await import("@/app/bootstrap/dry-run-plan");
+    const plan = await formatLaunchDryRunPlan(args, pendingShareLaunch);
     process.stdout.write(`${plan.join("\n")}\n`);
     return;
   }
@@ -903,13 +887,19 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   // check slide shows the same information visually inside the TUI.
   const [
     { getKunaiPaths },
-    { isBelowOnboardedFloor, maybeRunStartupSetup, shouldRunSetupWizard },
+    { isBelowOnboardedFloor, launchHasDestination, maybeRunStartupSetup, shouldRunSetupWizard },
     { effectivePlayerChoice },
     { resolveMachinePlayerMode },
     { checkDeps },
     { createContainer, disposeContainer },
     { resolveSessionConfigOverrides },
-    { resolveBootstrapIntent, resolveLaunchMode },
+    {
+      hasExplicitStartupTarget,
+      resolveBootstrapIntent,
+      resolveLaunchMode,
+      resolveStartupInitialRoute,
+    },
+    { recordStartupPlayerDiagnostic },
   ] = await Promise.all([
     import("@kunai/storage"),
     import("@/app/bootstrap/startup-setup"),
@@ -919,6 +909,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     import("@/container"),
     import("@/app/session/session-overrides"),
     import("@/app/bootstrap/bootstrap-intent"),
+    import("@/app/bootstrap/startup-player-diagnostic"),
   ]);
   type ConfigPeek = {
     onboardingVersion?: number;
@@ -935,20 +926,19 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   })();
   // Interactivity is part of the question: this decides whether `checkDeps`
   // stays silent because the wizard will show the same information visually.
-  // (Piped launches were already rejected above, so only TTY sessions get here.)
+  const hasDestination = launchHasDestination(args);
   const onboardingWillRun = shouldRunSetupWizard({
     force: args.setup,
     interactive: setupIsInteractive,
+    hasDestination,
     config: {
       onboardingVersion: configJson.onboardingVersion ?? 0,
       downloadOnboardingDismissed: configJson.downloadOnboardingDismissed ?? false,
     },
   });
-  // A never-onboarded install lands on the discover tray instead of an empty
-  // search box — the first screen should be something to watch, not a form.
-  // Captured before the wizard runs so a completed setup still gets the
-  // content-first landing on its first launch. Explicit routes (-S, -i,
-  // --history, --offline, --discover, share links) always win.
+  // A never-onboarded install lands on the discover tray, not an empty search
+  // box. Captured before the wizard runs so a completed setup still gets that
+  // landing on its first launch. Explicit routes (-S, -i, --history) win.
   const freshInstall = isBelowOnboardedFloor(configJson.onboardingVersion ?? 0);
   // Must precede checkDeps: that snapshot records the chosen image protocol, and
   // it is what diagnostics and `/report-issue` carry into a bug report. Probing
@@ -959,7 +949,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   const startupPlayerMode = resolveMachinePlayerMode(args.player);
   const capabilitySnapshot = await checkDeps(KUNAI_VERSION, {
     silent: onboardingWillRun,
-    requireMpv: startupPlayerMode.kind === "managed-mpv",
+    playerMode: startupPlayerMode,
     requireYtDlp: launchNeedsYtDlp(args, configJson.defaultMode, pendingShareLaunch?.ref.kind),
   });
 
@@ -977,6 +967,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     debugSession: args.debugSession,
     mpv: args.mpv,
     playerChoice: args.player,
+    playerMode: startupPlayerMode,
     shellChrome: args.shellChrome,
     capabilitySnapshot,
     appVersion: KUNAI_VERSION,
@@ -1261,9 +1252,9 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       const isInteractive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
       const outcome = await container.usageAnalytics.onSessionStart({ isInteractive });
       // The setup wizard carries its own consent slide, so raising the banner
-      // here too would disclose twice. The banner only records that the
-      // recommendation was shown; it never answers the setup choice.
-      if (outcome.kind === "needs-disclosure" && !onboardingWillRun) {
+      // too would disclose twice — also true of a fresh launch that deferred
+      // setup. The banner only records that it was shown; it never answers.
+      if (outcome.kind === "needs-disclosure" && !onboardingWillRun && !freshInstall) {
         container.analyticsDisclosurePending = true;
       }
     } catch {
@@ -1309,20 +1300,11 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     }
   }
 
-  // Missing mpv no longer aborts startup — setup and non-playback surfaces stay
-  // usable. PlaybackPhase gates dynamically before provider/history work.
-  if (startupPlayerMode.kind === "managed-mpv" && !capabilitySnapshot.mpv) {
-    container.diagnosticsService.record({
-      category: "session",
-      operation: "startup.capability.mpv-missing",
-      message: "mpv missing at startup — shell will mount; playback remains gated",
-      context: {
-        issues: capabilitySnapshot.issues
-          .filter((issue) => issue.id === "mpv-missing")
-          .map((issue) => issue.message),
-      },
-    });
-  }
+  recordStartupPlayerDiagnostic({
+    diagnostics: container.diagnosticsService,
+    playerMode: startupPlayerMode,
+    capabilitySnapshot,
+  });
 
   const shellLoadStartedAt = args.debug ? performance.now() : 0;
   const [
@@ -1444,6 +1426,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       downloadOnboardingDismissed: config.downloadOnboardingDismissed,
     },
     container,
+    hasDestination,
     loadSetupWorkflow: () => import("./app-shell/workflows/setup-workflows"),
   });
   openOfflineLibrary(args, container);
@@ -1479,11 +1462,19 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
         args.episode !== undefined
           ? { season: args.season ?? 1, episode: args.episode }
           : shareRequestedEpisode,
-      initialRoute:
-        args.initialRoute ??
-        (freshInstall && !bootstrapTitle && !bootstrapQuery && !args.offline
-          ? "recommendation"
-          : undefined),
+      initialRoute: resolveStartupInitialRoute({
+        explicitRoute: args.initialRoute,
+        discoverShowOnStartup: config.discoverShowOnStartup,
+        freshInstall,
+        hasExplicitTarget: hasExplicitStartupTarget({
+          hasBootstrapTarget: Boolean(bootstrapTitle || bootstrapQuery),
+          offline: args.offline,
+          history: args.history,
+          continuePlayback: args.continuePlayback,
+          download: args.download,
+          shareLaunch: pendingShareLaunch !== null,
+        }),
+      }),
       autoPickSearchResultIndex: autoPick,
     });
 

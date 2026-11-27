@@ -9,6 +9,20 @@ export type PlayerMode =
   | { readonly kind: "managed-vlc" }
   | { readonly kind: "android-handoff"; readonly target: DetachedPlayerTarget };
 
+export type ManagedPlayerKind = "mpv" | "vlc";
+
+/**
+ * The managed desktop binary the selected mode must have, or null when playback
+ * is handed to Android. Startup, setup, and doctor all read this instead of
+ * re-deriving an mpv boolean, so an auto-VLC machine cannot be healthy in one
+ * surface and broken in another.
+ */
+export function requiredManagedPlayer(mode: PlayerMode): ManagedPlayerKind | null {
+  if (mode.kind === "managed-mpv") return "mpv";
+  if (mode.kind === "managed-vlc") return "vlc";
+  return null;
+}
+
 export function parsePlayerChoice(value: string | undefined): PlayerChoice {
   if (value === undefined || value === "auto") return "auto";
   if (value === "mpv" || value === "vlc") return value;
@@ -57,11 +71,13 @@ export function detectPlayerPlatform(
 /** Desktop players found on this machine; `--player auto` reads it. */
 export type InstalledPlayers = { readonly mpv: boolean; readonly vlc: boolean };
 
-export function resolvePlayerMode(input: {
+export type ResolvePlayerModeInput = {
   readonly choice: PlayerChoice;
   readonly platform: SupportedPlayerPlatform;
   readonly installed?: InstalledPlayers;
-}): PlayerMode {
+};
+
+export function resolvePlayerMode(input: ResolvePlayerModeInput): PlayerMode {
   if (input.platform === "android") {
     return {
       kind: "android-handoff",

@@ -140,7 +140,8 @@ export function bootstrapServices(input: {
   } = persistence;
 
   const stateManager = new SessionStateManagerImpl({ logger });
-  const playerMode = resolveMachinePlayerMode(options?.playerChoice ?? "auto");
+  const playerMode =
+    options?.playerMode ?? resolveMachinePlayerMode(options?.playerChoice ?? "auto");
   const playerControl = new PlayerControlServiceImpl({ logger, diagnostics: diagnosticsService });
   const workControl = new WorkControlServiceImpl({ logger, diagnostics: diagnosticsService });
   const playerPresentation: PlayerPresentationPort = {

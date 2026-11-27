@@ -207,7 +207,7 @@ function payload(
   } = {},
 ): SetupFlowPayload {
   const { outcome = "completed", answeredScreens = 6, prefs = {} } = overrides;
-  return { outcome, answeredScreens, prefs: { ...BASE_PREFS, ...prefs } };
+  return { flow: "full", outcome, answeredScreens, prefs: { ...BASE_PREFS, ...prefs } };
 }
 
 test("the language choice reaches all four lanes, including YouTube (#229)", async () => {

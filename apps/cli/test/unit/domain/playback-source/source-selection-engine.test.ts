@@ -29,12 +29,37 @@ describe("SourceSelectionEngine", () => {
     expect(result.actions.map((action) => action.kind)).toEqual(["repair-local", "browse-offline"]);
   });
 
-  test("prefers ready local media for continuation without provider resolve", () => {
+  test("ask falls back to online when no interactive source choice is possible", () => {
     const result = createSourceSelectionEngine().decide({
       entrypoint: "continue",
       local: { status: "ready", jobId: "job-1" },
       networkAvailable: true,
       preference: "ask",
+    });
+
+    expect(result.source).toBe("online");
+    expect(result.shouldResolveOnline).toBe(true);
+    expect(result.actions.map((action) => action.kind)).toEqual(["watch-online", "play-local"]);
+  });
+
+  test("ask still uses a ready local copy when offline playback is the only playable route", () => {
+    const result = createSourceSelectionEngine().decide({
+      entrypoint: "continue",
+      local: { status: "ready", jobId: "job-1" },
+      networkAvailable: false,
+      preference: "ask",
+    });
+
+    expect(result.source).toBe("local");
+    expect(result.shouldResolveOnline).toBe(false);
+  });
+
+  test("prefer-local keeps ready continuation media local without provider resolve", () => {
+    const result = createSourceSelectionEngine().decide({
+      entrypoint: "continue",
+      local: { status: "ready", jobId: "job-1" },
+      networkAvailable: true,
+      preference: "prefer-local",
     });
 
     expect(result.source).toBe("local");

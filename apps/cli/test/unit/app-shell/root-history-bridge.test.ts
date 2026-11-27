@@ -141,4 +141,15 @@ describe("root history bridge return loop", () => {
       reason: "new-episode",
     });
   });
+
+  test("buildRootHistorySelection preserves the explicit local/stream answer", () => {
+    const selection = buildRootHistorySelection(
+      { titleId: "anilist:1", entry: seriesEntry() },
+      undefined,
+      undefined,
+      { sourceOverride: "stream" },
+    );
+
+    expect(selection.sourceOverride).toBe("stream");
+  });
 });
