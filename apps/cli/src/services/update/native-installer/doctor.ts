@@ -32,6 +32,7 @@ import {
   versionBinaryPath,
   type InstallLayoutPaths,
 } from "./install-layout";
+import { isProcessAlive } from "./lock-owner-identity";
 import { describeMpvHwaccel, mpvHwdecPlaybackReport } from "./mpv-hwdec-report";
 import { isMuslEnvironmentSync } from "./musl";
 import { listInstallTransactions, type InstallTransactionRecord } from "./transaction";
@@ -244,16 +245,6 @@ async function inspectLauncher(
     return { path: launcherPath, exists: true, kind: "symlink", target };
   } catch {
     return { path: launcherPath, exists: true, kind: "file", target: null };
-  }
-}
-
-function isProcessAlive(pid: number): boolean {
-  if (pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
   }
 }
 
