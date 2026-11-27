@@ -178,6 +178,44 @@ describe("lifetime", () => {
     release();
   });
 
+  test("a wipe that lands mid-upload is recovered from, not handed on", async () => {
+    // The wipe took the image the upload was building. Whoever is waiting still
+    // wants her: they get a live id, the dead one is deleted by name, and there
+    // is exactly one upload in the end — never two racing for one surface.
+    const release = holdKannaSprites();
+    let wiped = false;
+    const write = runtime.write;
+    runtime.write = (text) => {
+      write(text);
+      if (!wiped && text.includes("a=a,") && text.includes("s=3")) {
+        wiped = true;
+        deleteAllTerminalImages();
+      }
+    };
+    const sprite = await acquireKannaSprite("seek", kannaSlot(4), true);
+    const transmits = commands().filter((keys) => keys.startsWith("a=t,"));
+    expect(transmits).toHaveLength(2);
+    const dead = /i=(\d+)/u.exec(transmits[0] ?? "")?.[1];
+    expect(Number(dead)).not.toBe(sprite?.imageId);
+    expect(commands()).toContain(`a=d,d=I,i=${dead},q=2`);
+    expect(commands()).not.toContain(`a=d,d=I,i=${sprite?.imageId},q=2`);
+    expect(__testing.sprites.size).toBe(1);
+    release();
+  });
+
+  test("two surfaces asking at once share one upload", async () => {
+    const first = holdKannaSprites();
+    const second = holdKannaSprites();
+    const [a, b] = await Promise.all([
+      acquireKannaSprite("idle", kannaSlot(4), true),
+      acquireKannaSprite("idle", kannaSlot(4), true),
+    ]);
+    expect(a).toBe(b);
+    expect(count("a=t,")).toBe(1);
+    first();
+    second();
+  });
+
   test("exit deletes whatever is still held, synchronously", async () => {
     const release = holdKannaSprites();
     const sprite = await acquireKannaSprite("wait", kannaSlot(4), true);

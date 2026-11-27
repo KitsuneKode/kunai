@@ -133,6 +133,13 @@ export type CompanionCue = {
  */
 const STALL_THRESHOLD_SECONDS = 20;
 
+/**
+ * The shortest terminal the loading surface can give her four rows on. Below
+ * it the stage rail and the footer already fill the screen, and a picture
+ * pushes something that matters off the top.
+ */
+const LOADING_PICTURE_MIN_ROWS = 30;
+
 /** Providers are being tried: the wait she leans into. */
 const RACE_STAGES: ReadonlySet<string> = new Set(["finding-stream", "preparing-provider"]);
 
@@ -153,6 +160,7 @@ export function momentForLoading({
   operation,
   stage,
   hasPoster,
+  rows = LOADING_PICTURE_MIN_ROWS,
   failed,
   issue,
   elapsed = 0,
@@ -160,6 +168,8 @@ export function momentForLoading({
   readonly operation: "resolving" | "playing" | "loading";
   readonly stage?: string;
   readonly hasPoster: boolean;
+  /** Terminal height. A short one keeps the line and gives up the picture. */
+  readonly rows?: number;
   readonly failed: boolean;
   /** The structured problem the shell is reporting, if any — never advisory prose. */
   readonly issue?: string | null;
@@ -168,8 +178,9 @@ export function momentForLoading({
 }): CompanionCue | null {
   // Failure leads. It is the one moment worth crowding a poster for — the
   // surface is telling someone something went wrong, and that outranks artwork.
-  if (failed) return { moment: "stuck", picture: true };
-  const picture = !hasPoster;
+  const roomy = rows >= LOADING_PICTURE_MIN_ROWS;
+  if (failed) return { moment: "stuck", picture: roomy };
+  const picture = !hasPoster && roomy;
   // Someone is watching, and it worked. Neither is a moment for her.
   if (operation === "playing") return null;
   // The stage is what says where a bootstrap is, not the operation: the shell
@@ -199,22 +210,25 @@ export function momentForLoading({
  * - Glyph terminals already hear her here: the `StateBlock` voice line carries
  *   a 🦊 of its own. A second lone glyph beside it reads as a stray emoji, so
  *   only the real illustration earns the frame.
- * - Ultra-compact viewports have no spare rows for her; the voice line still
- *   reaches them.
+ * - A cramped viewport has no spare rows for her. On the default 80x24 the
+ *   search box, the rules and the footer already use the screen, and four more
+ *   rows push the very message she is peeking over off the top. The voice line
+ *   still reaches it.
  */
 export function momentForBrowseEmpty({
   kind,
   hasArtwork,
-  ultraCompact,
+  cramped,
   mode,
 }: {
   /** `no-results` is a search that found nothing; `empty` is nothing asked yet. */
   readonly kind: "empty" | "no-results" | "error";
   readonly hasArtwork: boolean;
-  readonly ultraCompact: boolean;
+  /** The viewport is too short to spare her rows. */
+  readonly cramped: boolean;
   readonly mode: CompanionMode;
 }): CompanionMoment | null {
-  if (mode !== "graphics" || ultraCompact) return null;
+  if (mode !== "graphics" || cramped) return null;
   // Failure leads, same as loading: an error surface is telling someone
   // something went wrong, and that outranks an empty frame.
   if (kind === "error") return "trouble";

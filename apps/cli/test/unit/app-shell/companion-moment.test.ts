@@ -99,6 +99,21 @@ describe("momentForLoading", () => {
     });
   });
 
+  test("a short terminal keeps the line and gives up the picture", () => {
+    expect(momentForLoading({ ...base, operation: "resolving", rows: 24 })).toEqual({
+      moment: "seeking",
+      picture: false,
+    });
+    expect(momentForLoading({ ...base, operation: "resolving", rows: 30 })?.picture).toBe(true);
+    // Failure is worth crowding a poster for; it is not worth pushing the
+    // recovery actions off a screen that has no room.
+    expect(momentForLoading({ ...base, operation: "resolving", failed: true, rows: 24 })).toEqual({
+      moment: "stuck",
+      picture: false,
+    });
+    expect(read("loading-shell.tsx")).toContain("rows: loadingViewport.rows,");
+  });
+
   test("she leans in while providers race", () => {
     expect(momentForLoading({ ...base, operation: "resolving" })).toEqual({
       moment: "seeking",
@@ -187,7 +202,7 @@ describe("momentForLoading", () => {
 });
 
 describe("momentForBrowseEmpty", () => {
-  const base = { kind: "empty", hasArtwork: false, ultraCompact: false } as const;
+  const base = { kind: "empty", hasArtwork: false, cramped: false } as const;
 
   test("she is asleep on a frame nothing has been asked of", () => {
     expect(momentForBrowseEmpty({ ...base, mode: "graphics" })).toBe("empty");
@@ -215,8 +230,11 @@ describe("momentForBrowseEmpty", () => {
     }
   });
 
-  test("ultra-compact has no spare rows — the voice line still reaches it", () => {
-    expect(momentForBrowseEmpty({ ...base, ultraCompact: true, mode: "graphics" })).toBeNull();
+  test("a cramped viewport has no spare rows — the voice line still reaches it", () => {
+    // At 80x24 four rows of fox pushed the "No results" title she was peeking
+    // over off the top of the frame.
+    expect(momentForBrowseEmpty({ ...base, cramped: true, mode: "graphics" })).toBeNull();
+    expect(read("browse-shell.tsx")).toContain("cramped: denseChrome,");
   });
 });
 

@@ -192,6 +192,9 @@ function hookExit(): void {
   process.once("exit", releaseAllKannaSprites);
 }
 
+/** A wipe can land mid-upload more than once only if surfaces are thrashing. */
+const UPLOAD_ATTEMPTS = 3;
+
 async function uploadSprite(
   pose: CompanionPose,
   slot: KannaSlot,
@@ -199,42 +202,49 @@ async function uploadSprite(
 ): Promise<KannaSprite | null> {
   const passthrough = runtime.passthrough();
   if (passthrough === undefined) return null;
-  const startedAt = epoch;
 
   const drawings = await loadDrawings(pose, slot.pixels, animated);
   const first = drawings?.frames[drawings.loop[0]?.frame ?? 0];
   if (!drawings || !first) return null;
-
-  const imageId = allocKittyImageId(passthrough === "tmux");
   hookExit();
-  const commands = [
-    transmitCommand(imageId, first),
-    virtualPlacementCommand(imageId, slot.cols, slot.rows),
-    ...animationCommands(imageId, drawings.frames, drawings.loop),
-  ];
-  const ptyBytes = await sendCommands(commands, {
-    passthrough: passthrough ?? undefined,
-    env: runtime.env(),
-    write: runtime.write,
-  });
-  const sprite: KannaSprite = {
-    imageId,
-    placeholder: buildPlaceholder(imageId, slot.rows, slot.cols),
-    rows: slot.rows,
-    cols: slot.cols,
-    pixels: slot.pixels,
-    animated: drawings.loop.length > 1,
-  };
-  debugImage(
-    `kanna ${pose} ${slot.pixels}px: ${drawings.frames.length} drawing(s), ${commands.length} command(s), ${ptyBytes} bytes on the pty`,
-  );
-  // Wiped, or let go of by every surface, while the upload was in flight: the
-  // id would never be printed, so it must not be left behind.
-  if (startedAt !== epoch || holders === 0) {
+
+  for (let attempt = 0; attempt < UPLOAD_ATTEMPTS; attempt++) {
+    const startedAt = epoch;
+    const imageId = allocKittyImageId(passthrough === "tmux");
+    const commands = [
+      transmitCommand(imageId, first),
+      virtualPlacementCommand(imageId, slot.cols, slot.rows),
+      ...animationCommands(imageId, drawings.frames, drawings.loop),
+    ];
+    const ptyBytes = await sendCommands(commands, {
+      passthrough: passthrough ?? undefined,
+      env: runtime.env(),
+      write: runtime.write,
+    });
+    const sprite: KannaSprite = {
+      imageId,
+      placeholder: buildPlaceholder(imageId, slot.rows, slot.cols),
+      rows: slot.rows,
+      cols: slot.cols,
+      pixels: slot.pixels,
+      animated: drawings.loop.length > 1,
+    };
+    debugImage(
+      `kanna ${pose} ${slot.pixels}px: ${drawings.frames.length} drawing(s), ${commands.length} command(s), ${ptyBytes} bytes on the pty`,
+    );
+    // Let go of by every surface while the upload was in flight: the id would
+    // never be printed, so it must not be left behind.
+    if (holders === 0) {
+      deleteSprite(sprite);
+      return null;
+    }
+    if (startedAt === epoch) return sprite;
+    // A global wipe landed mid-upload and took this image with it. Everyone
+    // waiting on this upload still wants her, so it is sent again here rather
+    // than handing them a dead id — or a null that leaves them on the glyph.
     deleteSprite(sprite);
-    return null;
   }
-  return sprite;
+  return null;
 }
 
 /**
@@ -247,15 +257,14 @@ export function acquireKannaSprite(
   pose: CompanionPose,
   slot: KannaSlot,
   animated: boolean,
-  /** The epoch the caller rendered under; a stale one starts a fresh upload. */
-  seenEpoch: number = epoch,
 ): Promise<KannaSprite | null> {
   const key = spriteKey(pose, slot, animated);
   const ready = sprites.get(key);
   if (ready) return Promise.resolve(ready);
-  // The epoch is part of the join key: an upload begun before a wipe will
-  // throw its result away, and nobody asking afterwards should wait on it.
-  return uploads.join(`${seenEpoch}:${key}`, async () => {
+  // One upload per pose and size, whatever happens around it. A wipe that
+  // lands mid-flight is the upload's own problem to recover from; a second
+  // upload racing the first would leave one of the two ids owned by nobody.
+  return uploads.join(key, async () => {
     try {
       const sprite = await uploadSprite(pose, slot, animated);
       if (sprite) sprites.set(key, sprite);

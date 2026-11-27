@@ -2475,7 +2475,7 @@ export function BrowseShell<T>({
               moment={momentForBrowseEmpty({
                 kind: "no-results",
                 hasArtwork: false,
-                ultraCompact,
+                cramped: denseChrome,
                 mode: companionMode(),
               })}
               rows={4}
@@ -2510,7 +2510,7 @@ export function BrowseShell<T>({
               moment={momentForBrowseEmpty({
                 kind: "error",
                 hasArtwork: false,
-                ultraCompact,
+                cramped: denseChrome,
                 mode: companionMode(),
               })}
               rows={3}
@@ -2533,11 +2533,11 @@ export function BrowseShell<T>({
             <CompanionHost
               moment={momentForBrowseEmpty({
                 kind: "empty",
-                // The launch rows below (jump back in, surprises) already fill
-                // this frame — where they are, the surface is not bare and she
-                // does not crowd it.
-                hasArtwork: Boolean(idleReturnLoopModel && idleReturnLoopModel.rows.length > 0),
-                ultraCompact,
+                // The launch rows below (jump back in, surprises) fill this frame;
+                // while they are loading it is not yet known to be bare.
+                hasArtwork:
+                  idleContextStatus === "loading" || Boolean(idleReturnLoopModel?.rows.length),
+                cramped: denseChrome,
                 mode: companionMode(),
               })}
               rows={4}

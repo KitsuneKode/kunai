@@ -87,6 +87,8 @@ export type KittyUploadOptions = {
   readonly yieldEveryChunks?: number;
 };
 
+let tempFileSequence = 0;
+
 /** Long enough that no real terminal is still reading; short enough to bound the leak. */
 const TEMP_FILE_SWEEP_MS = 30_000;
 
@@ -157,7 +159,16 @@ function buildControlKeys(encoded: EncodedPayload, options: KittyUploadOptions):
  */
 async function uploadViaTempFile(encoded: EncodedPayload, control: string): Promise<boolean> {
   const hash = createHash("sha256").update(encoded.body).digest("hex").slice(0, 16);
-  const path = join(runtime.tmpdir(), `kunai-tty-graphics-protocol-${process.pid}-${hash}.bin`);
+  // The name is unique per upload, not per content. The terminal deletes the
+  // file once it has read it, so two uploads of the same bytes sharing one path
+  // race: the second write lands, the terminal reads and deletes for the first
+  // escape, and the second escape names a file that is gone. Sent with `q=2`,
+  // that failure is silent — an image id with no pixels behind it.
+  tempFileSequence += 1;
+  const path = join(
+    runtime.tmpdir(),
+    `kunai-tty-graphics-protocol-${process.pid}-${hash}-${tempFileSequence}.bin`,
+  );
   try {
     await runtime.writeFile(path, encoded.body);
   } catch (error) {

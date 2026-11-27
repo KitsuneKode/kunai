@@ -84,6 +84,18 @@ const SITE_FILL = 0.88;
 const CLI_FILL = 0.96;
 /** Edge of every CLI still and of every frame in a strip. */
 const CLI_SIZE = 256;
+/**
+ * Deflate at the top level behind a row filter. The filter is what pays: this
+ * art is flat fields with soft edges, and predicting each pixel from its
+ * neighbour turns the fields into runs of zeros — about a tenth off every file
+ * against no filter, for nothing but export time.
+ */
+const PNG_PACKING = [
+  "-define",
+  "png:compression-level=9",
+  "-define",
+  "png:compression-filter=1",
+] as const;
 /** The vector is rendered this wide before trimming, so every resize is a downscale. */
 const RENDER_WIDTH = 1392;
 
@@ -183,7 +195,7 @@ async function fitInto(source: string, box: string, dest: string, fit: Fit): Pro
       ? ["-quality", WEBP_QUALITY, "-define", "webp:alpha-quality=100", dest]
       : // PNG32, never PNG8 — see the header. Colour type 6 is what keeps
         // per-pixel alpha instead of collapsing it to a 1-bit mask.
-        ["-define", "png:compression-level=9", `PNG32:${dest}`]),
+        [...PNG_PACKING, `PNG32:${dest}`]),
   ]);
 }
 
@@ -236,8 +248,7 @@ for (const [pose, motion] of Object.entries(MOTION)) {
     ...frames,
     "+append",
     "-strip",
-    "-define",
-    "png:compression-level=9",
+    ...PNG_PACKING,
     `PNG32:${strip}`,
   ]);
   manifest[pose] = {

@@ -542,13 +542,13 @@ export const LoadingShell = React.memo(function LoadingShell({
   // a bare title never renders a lonely panel.
   const hasPanelContent = Boolean(state.posterUrl || state.titleDetail || state.videoMeta);
   const showSidePanel = isWide && (isPlaying || hasPanelContent);
-  // "The poster wins", so this asks for a poster — not for the side panel, which
-  // also opens for a title detail or video metadata with no artwork. Reusing
-  // `showSidePanel` silenced her on a resolve with text and nothing to look at.
+  // "The poster wins" asks for a poster, not the side panel: that also opens for
+  // metadata with no artwork, which silenced her on exactly the bare resolve.
   const companionMoment = momentForLoading({
     operation: state.operation,
     stage: state.stage,
     hasPoster: isWide && Boolean(state.posterUrl),
+    rows: loadingViewport.rows,
     failed: recoveryView !== null,
     issue: state.problem?.cause,
     elapsed,

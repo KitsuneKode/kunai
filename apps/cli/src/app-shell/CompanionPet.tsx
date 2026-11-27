@@ -77,7 +77,7 @@ function SpritePet({ pose, rows }: { readonly pose: CompanionPose; readonly rows
     const load = async (): Promise<void> => {
       // The slot is rebuilt here rather than captured: it is a fresh object on
       // every render, and `rows` and `cell` are what it is actually made of.
-      const next = await acquireKannaSprite(pose, kannaSlot(rows, cell), animated, epoch);
+      const next = await acquireKannaSprite(pose, kannaSlot(rows, cell), animated);
       if (current) setSprite(next);
     };
     void load();
@@ -85,6 +85,9 @@ function SpritePet({ pose, rows }: { readonly pose: CompanionPose; readonly rows
       current = false;
       release();
     };
+    // `epoch` is not read here: it changes when every id died at once, which is
+    // exactly when this has to run again.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps, react/exhaustive-effect-dependencies
   }, [pose, rows, animated, cell, epoch]);
 
   // The picture could not be prepared here, so she is the glyph — the same
