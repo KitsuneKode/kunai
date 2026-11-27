@@ -39,7 +39,14 @@ const READY: CapabilitySnapshot = {
 
 export const SETUP_SCREENS = ["deps", "mode", "language", "library", "analytics", "done"] as const;
 
-export function setupFrameAt(step: number, columns: number): string {
+/** The first-launch flow: two screens instead of six. */
+export const QUICK_SETUP_SCREENS = ["start", "analytics"] as const;
+
+export function setupFrameAt(
+  step: number,
+  columns: number,
+  flow: "full" | "quick" = "full",
+): string {
   // The analytics consent screen prints this machine's `process.platform` and
   // `process.arch` into the payload preview — true at runtime, but it makes a
   // committed capture host-dependent. Pin a canonical pair for the render so a
@@ -56,14 +63,16 @@ export function setupFrameAt(step: number, columns: number): string {
           snapshot={READY}
           finish={() => {}}
           downloadPath="~/.local/share/kunai"
+          flow={flow}
         />
       </Box>,
       { columns, rows: SETUP_ROWS },
     );
     // Enter waits on the consent screen until a row is chosen, so it is
     // answered with its own key ("don't share") to reach the review.
+    const screens = flow === "quick" ? QUICK_SETUP_SCREENS : SETUP_SCREENS;
     for (let i = 0; i < step; i += 1) {
-      handle.stdin.enqueue(SETUP_SCREENS[i] === "analytics" ? "s" : "\r");
+      handle.stdin.enqueue(screens[i] === "analytics" ? "s" : "\r");
     }
     const frame = stripAnsi(handle.lastFrame()).replace(/\s+$/, "");
     handle.unmount();
@@ -89,6 +98,21 @@ if (import.meta.main) {
     }
   }
 
-  console.log(`captured ${SETUP_SCREENS.length} setup screens at 3 widths`);
+  for (const [index, name] of QUICK_SETUP_SCREENS.entries()) {
+    for (const width of Object.keys(CAPTURE_WIDTHS) as CaptureWidth[]) {
+      const columns = CAPTURE_WIDTHS[width];
+      const surface = `setup-quick-${index + 1}-${name}`;
+      const header = `# ${surface} · ${width} (${columns}×${SETUP_ROWS})\n`;
+      await writeFile(
+        path.join(CAPTURE_DIR, `${surface}.${width}.txt`),
+        `${header}${setupFrameAt(index, columns, "quick")}\n`,
+        "utf8",
+      );
+    }
+  }
+
+  console.log(
+    `captured ${SETUP_SCREENS.length + QUICK_SETUP_SCREENS.length} setup screens at 3 widths`,
+  );
   process.exit(0);
 }

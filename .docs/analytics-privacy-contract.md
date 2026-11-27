@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-26T16:26:00Z"
+lastReviewed: "2026-11-27T08:10:05Z"
 ---
 
 # Analytics Privacy Contract
@@ -32,6 +32,17 @@ Read this before touching `apps/cli/src/services/analytics/`,
 - Existing installs may see a one-time, non-blocking recommendation. It lists
   the payload and points to Settings, but does not grant consent, enable
   analytics, create an id, or send a request.
+- A first launch walks two setup screens instead of six, and the consent screen
+  is one of the two. Shortening setup removed screens around it and nothing from
+  it: it is still its own screen, still neutral, and still the only place a
+  first run can say `enabled`.
+- A never-onboarded launch that names its destination (`kunai -S "Dune"`, a
+  share link) skips setup for that launch. It stays `unset`, mints no id, sends
+  nothing, and is not shown the recommendation banner either: the setup wizard
+  on the next bare launch is its disclosure, and it is told once.
+- At the terminal size floor the consent screen shows the payload's field names
+  rather than the whole body, read from the same `describePayload()` object, and
+  `p` opens the values. While that view is open no key reaches the answers.
 - An `enabled` value written before this opt-in contract is migrated to `unset`
   and its legacy id is cleared before startup; it is not treated as consent.
 - `/settings` exposes the enable/disable option. Disabling clears `installId`,

@@ -10,9 +10,12 @@
  */
 import { Database } from "bun:sqlite";
 import { describe, expect, it } from "bun:test";
+import { chmodSync } from "node:fs";
 import { join } from "node:path";
 
+import { gatePlaybackDependencies } from "@/app/playback/playback-dependency-gate";
 import type { Container } from "@/container";
+import { probeCapabilities } from "@/ui";
 import { RecommendationCacheRepository } from "@kunai/storage";
 import type { JsonObject } from "@kunai/types";
 
@@ -22,8 +25,66 @@ import { onboardedConfig } from "./seed";
 
 const SETTINGS_KEY = "/";
 
+describe("agent wiring · recommendation refresh", () => {
+  it("keeps the highlighted search result as the download target after late picks arrive", async () => {
+    const picksRequested = Promise.withResolvers<void>();
+    const releasePicks = Promise.withResolvers<void>();
+    const picksMapped = Promise.withResolvers<void>();
+    let readResults: (() => readonly string[]) | undefined;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async (url: Parameters<typeof fetch>[0]) => {
+        if (!String(url).includes("/trending/all/week")) throw new Error("fixture request only");
+        picksRequested.resolve();
+        await releasePicks.promise;
+        return Response.json({
+          results: [{ id: 854, media_type: "movie", title: "Late Recommendation" }],
+        });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    try {
+      await withSession(
+        "wiring-late-picks",
+        {
+          bootstrap: { initialRoute: "recommendation" },
+          beforeMount({ container }) {
+            readResults = () => container.stateManager.getState().searchResults.map((r) => r.title);
+            container.downloadService.getEnqueueEligibility = () => ({ allowed: true });
+            const service = container.resultEnrichmentService;
+            const enrich = service.enrichResults.bind(service);
+            service.enrichResults = async (results, options) => {
+              const enriched = await enrich(results, options);
+              if (options?.preloadedHistory && results[0]?.title === "Late Recommendation") {
+                setImmediate(picksMapped.resolve);
+              }
+              return enriched;
+            };
+          },
+        },
+        async (s) => {
+          await s.waitForFrame((f) => f.includes("Finding something to watch"), "cold picks");
+          await picksRequested.promise;
+          s.press("smoke", K.enter);
+          await s.waitForFrame((f) => f.includes("▌ Smoke Movie"), "search results");
+          releasePicks.resolve();
+          await picksMapped.promise;
+          expect(s.frame()).toContain("▌ Smoke Movie");
+          s.press("d");
+          await s.waitForFrame((f) => /Download .+\?/u.test(f), "download confirmation");
+          expect(s.frame()).toContain("Download Smoke Movie?");
+          expect(readResults?.()).toEqual(["Smoke Movie", "Smoke Series"]);
+        },
+      );
+    } finally {
+      releasePicks.resolve();
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 describe("agent wiring · first-run browse focus", () => {
-  it("makes recommendation-list keyboard ownership explicit before typed input", async () => {
+  it("takes typed input on arrival and moves to picks only after Down", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = Object.assign(
       () => Promise.reject(new Error("network disabled for deterministic first-run focus test")),
@@ -66,18 +127,26 @@ describe("agent wiring · first-run browse focus", () => {
             20_000,
           );
 
-          expect(s.frame()).toContain("results own keys · Esc search");
-
-          s.press("series");
-          await s.waitSettled();
-          expect(s.frame()).not.toContain("⌕ series");
+          expect(s.frame()).toContain("Type a title, then enter · ↓ picks");
+          s.press("x");
+          await s.waitForFrame((f) => /⌕\s+x/u.test(f), "typed into the initial query field");
+          s.press(K.backspace);
+          await s.waitForFrame((f) => f.includes("↓ picks"), "query cleared");
+          s.press(K.down);
+          await s.waitForFrame(
+            (f) => f.includes("results own keys · Esc search") && f.includes("▌ Smoke Movie"),
+            "Down puts focus on the recommendation",
+          );
 
           s.press(K.esc);
-          await s.waitForFrame((f) => f.includes("⌕"), "search field focused");
+          await s.waitForFrame((f) => f.includes("↓ picks"), "Escape returns to search");
           s.press("series");
-          await s.waitForFrame((f) => f.includes("series"), "query draft visible");
+          await s.waitForFrame((f) => f.includes("Query changed"), "query draft accepted");
           s.press(K.enter);
-          await s.waitForFrame((f) => f.includes("Smoke Series"), "typed query searched");
+          await s.waitForFrame(
+            (f) => f.includes("1 result · Smoke TMDB") && f.includes("▌ Smoke Series"),
+            "typed query searched",
+          );
         },
       );
     } finally {
@@ -549,6 +618,56 @@ describe("agent wiring · offline mode", () => {
 });
 
 describe("agent wiring · playback failure", () => {
+  it.skipIf(process.platform !== "linux")(
+    "the VLC failure panel gives the Arch VLC command",
+    async () => {
+      let showFailure: (() => void) | undefined;
+      await withSession(
+        "wiring-vlc-install",
+        {
+          extraEnv: { PATH: process.env.PATH ?? "" },
+          async beforeMount({ container, profile }) {
+            const pacman = join(profile.rootDir, "pacman");
+            await Bun.write(pacman, "#!/bin/sh\nexit 0\n");
+            chmodSync(pacman, 0o755);
+            process.env.PATH = `${profile.rootDir}:${process.env.PATH}`;
+            const playerMode = { kind: "managed-vlc" } as const;
+            const capabilitySnapshot = await probeCapabilities({
+              playerMode,
+              which: () => null,
+              listPathEntries: () => [],
+              exists: () => false,
+            });
+            Object.assign(container, { capabilitySnapshot });
+            const gate = await gatePlaybackDependencies({
+              player: { isAvailable: async () => false },
+              playerMode,
+            });
+            if (gate.ok) throw new Error("VLC should be missing in this fixture");
+            showFailure = () => {
+              container.stateManager.dispatch({
+                type: "SET_PLAYBACK_PROBLEM",
+                problem: gate.problem,
+              });
+              container.stateManager.dispatch({ type: "SET_PLAYBACK_STATUS", status: "error" });
+            };
+          },
+        },
+        async (s) => {
+          await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+          showFailure?.();
+          await s.waitForFrame((f) => f.includes("Playback failed"), "VLC failure");
+          const panel = s.frame().split("Playback failed")[1];
+          expect(panel).toMatch(
+            /Next\s+install VLC, then press r[^\n]*\n[^\n]*sudo pacman -S vlc vlc-plugin-ffmpeg/u,
+          );
+          expect(panel).not.toContain("apt install");
+          expect(s.inspect().history()).toEqual([]);
+        },
+      );
+    },
+  );
+
   it("an exhausted startup failover still lets the session shut down", async () => {
     // Regression for the abort-blind error wait: showPlaybackError parked on a
     // stateManager.subscribe predicate that only a user dismissal could
@@ -575,6 +694,105 @@ describe("agent wiring · playback failure", () => {
           "diagnostic_events records failover exhaustion",
           30_000,
         );
+      },
+    );
+  }, 45_000);
+});
+
+describe("agent wiring · first-run Browse", () => {
+  it("shows every cold-start shortcut at 40×16", async () => {
+    const refresh = Promise.withResolvers<void>();
+    await withSession(
+      "wiring-cold-start-floor",
+      {
+        columns: 40,
+        rows: 16,
+        bootstrap: { initialRoute: "recommendation" },
+        beforeMount({ container }) {
+          container.recommendationService.clearCache = () => refresh.promise;
+        },
+      },
+      async (s) => {
+        try {
+          await s.waitForFrame((f) => f.includes("Refreshing recommendation picks"), "cold cache");
+          expect(s.frame()).toContain("/trending · /calendar · /random");
+          expect(s.frame()).toContain("[enter] search");
+        } finally {
+          refresh.reject(new Error("fixture refresh ended"));
+        }
+      },
+    );
+  });
+
+  it("the field is live before the picks land, and a typed query searches", async () => {
+    // The landing a never-onboarded install gets. Picks used to be awaited
+    // before Browse mounted (no typing until the catalog answered) and then
+    // took focus when they arrived, so "type a title, press Enter" opened a
+    // recommendation. Whether the picks land before, during or after the
+    // typing below is exactly the race this must survive, so the scenario
+    // does not wait for them.
+    await withSession(
+      "wiring-first-browse",
+      { seed: "fresh", bootstrap: { initialRoute: "recommendation" }, mpv: "fake" },
+      async (s) => {
+        await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+        // Something to do is on screen with the field, not instead of it.
+        expect(s.frames().some((f) => f.includes("Or start here"))).toBe(true);
+
+        s.press("smoke", K.enter);
+        await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
+        expect(s.frame()).toContain("2 results");
+        // Backend witness: Enter searched. Nothing was resolved or played.
+        expect(s.inspect().history()).toEqual([]);
+
+        // The reverse case: Enter on the result list is what plays.
+        s.press(K.enter);
+        await s.waitForBackend(
+          (i) => i.history().length > 0,
+          "history records the title the user chose",
+          30_000,
+        );
+        expect(s.inspect().history()[0]?.title_id).toBe("tmdb:smoke-movie-1");
+      },
+    );
+  }, 60_000);
+});
+
+describe("agent wiring · setup owns the machine verdict", () => {
+  it("/setup hides the shell's capability strip at 100×30, and Browse shows it again", async () => {
+    // On a machine missing mpv and ffmpeg the shell strip sat above setup,
+    // which already reports this machine, and pushed the frame past 30 rows:
+    // the terminal scrolled and the setup rows rendered one line off.
+    await withSession(
+      "wiring-setup-strip",
+      {
+        columns: 100,
+        rows: 30,
+        async beforeMount({ container }) {
+          const capabilitySnapshot = await probeCapabilities({
+            playerMode: { kind: "managed-mpv" },
+            which: () => null,
+            listPathEntries: () => [],
+            exists: () => false,
+          });
+          Object.assign(container, { capabilitySnapshot });
+        },
+      },
+      async (s) => {
+        const strip = "Everything else still works";
+        await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+        await s.waitForFrame((f) => f.includes(strip), "capability strip in Browse");
+
+        s.press("/");
+        await s.waitForFrame((f) => f.includes("command"), "command palette");
+        s.press("setup", K.enter);
+        await s.waitForFrame((f) => /setup \d⁄\d/u.test(f), "setup mounted");
+        expect(s.frame()).not.toContain(strip);
+        expect(s.frame().split("\n").length).toBeLessThanOrEqual(30);
+
+        s.press(K.esc);
+        await s.waitForFrame((f) => f.includes("Search title"), "back in browse");
+        await s.waitForFrame((f) => f.includes(strip), "strip returns outside setup");
       },
     );
   }, 45_000);

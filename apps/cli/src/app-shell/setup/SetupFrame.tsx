@@ -120,6 +120,7 @@ export function SetupFrame({
   footer,
   children,
   companion = "setup",
+  dense = false,
 }: {
   readonly width: number;
   readonly context: string;
@@ -134,6 +135,8 @@ export function SetupFrame({
    * the wizard's `wait` rather than sit beneath it.
    */
   readonly companion?: CompanionMoment | null;
+  /** Drop the breathing row above the body, for terminals near the size floor. */
+  readonly dense?: boolean;
 }) {
   const gutter = setupGutter(width);
 
@@ -163,7 +166,13 @@ export function SetupFrame({
       {/* flexGrow, never a fixed height — see the note on SetupFrame. Content
           sits a little above centre: dead-centre in a tall terminal leaves the
           top half looking abandoned, and the eye starts high. */}
-      <Box flexDirection="column" width={width} flexGrow={1} paddingX={gutter} paddingTop={1}>
+      <Box
+        flexDirection="column"
+        width={width}
+        flexGrow={1}
+        paddingX={gutter}
+        paddingTop={dense ? 0 : 1}
+      >
         {/* One pose for the whole wizard. Flipping it on the last step meant a
             fresh placement upload on a step transition, which is the one moment
             the pane is already re-laying out.
@@ -179,7 +188,9 @@ export function SetupFrame({
         top={false}
         width={width}
         left={<FooterKeys parts={footer} />}
-        right={<Text color={palette.dim}>Setup</Text>}
+        // The surface label yields first: at the size floor it collides with
+        // the last key hint, and the header already names the surface.
+        right={dense ? null : <Text color={palette.dim}>Setup</Text>}
       />
     </Box>
   );
@@ -205,11 +216,14 @@ export function ChoiceRow({
   detail,
   selected,
   badge,
+  hideDetail = false,
 }: {
   readonly label: string;
   readonly detail: string;
   readonly selected: boolean;
   readonly badge?: string;
+  /** Label only — for the phone-width floor, where the decision outranks its gloss. */
+  readonly hideDetail?: boolean;
 }) {
   const plain = plainModeEnabled();
   return (
@@ -228,10 +242,12 @@ export function ChoiceRow({
             </Text>
           ) : null}
         </Text>
-        <Text color={selected ? palette.muted : palette.dim} dimColor={!selected && !plain}>
-          {"  "}
-          {detail}
-        </Text>
+        {hideDetail ? null : (
+          <Text color={selected ? palette.muted : palette.dim} dimColor={!selected && !plain}>
+            {"  "}
+            {detail}
+          </Text>
+        )}
       </Box>
     </Box>
   );

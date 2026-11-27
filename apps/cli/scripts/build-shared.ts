@@ -543,7 +543,13 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // overrides and the Discover startup route (#852) on top measured 3,336,807
 // bytes: +4,234. No dependency or asset; the Continue picker stays lazy.
 // 3259 KiB leaves 409 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_259;
+// Onboarding v4 (the two-screen quick setup, its machine verdict and consent
+// screen, the launch gate that skips setup for a named destination, the live
+// first Browse and the failure panel's Next row; #854) on top measured
+// 3,348,464 bytes: +11,657, all screen code and copy. No dependency or asset;
+// `splitting: false` means lazy loading cannot recover it. 3271 KiB leaves
+// 1,040 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_271;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

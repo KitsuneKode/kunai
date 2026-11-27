@@ -3,6 +3,7 @@
 // Every screen asks something or pays something off. The old flow spent three
 // of seven slides asking nothing, which is why it read as a slideshow.
 
+import { PROVIDER_QUALITY_PREFERENCE_OPTIONS } from "@/domain/media/media-preferences";
 import { Box, Text } from "ink";
 import React from "react";
 
@@ -18,6 +19,7 @@ import { BLOOM_FRAMES, STATIC_PETAL } from "../primitives/SakuraPetal";
 import { truncateLine } from "../shell-text";
 import { palette } from "../shell-theme";
 import type { ScopedDependencyRow } from "./dependency-rows";
+import { DOWNLOAD_QUALITY_RECOMMENDED } from "./setup-model";
 import { ChoiceRow, ScreenTitle, ToggleRow, type FooterKey } from "./SetupFrame";
 import { SetupTarget } from "./SetupPointer";
 
@@ -31,7 +33,17 @@ export const MODE_OPTIONS = [
   { value: "youtube" as const, label: "YouTube", detail: "Search and play from YouTube" },
 ];
 
-export const DOWNLOAD_QUALITIES = ["1080p", "best", "720p", "480p"] as const;
+/**
+ * The full quality vocabulary, recommended value first. A shorter local list
+ * meant a config already set to 2160p or 1440p hydrated to index 0 and was
+ * written back as 1080p by a `/setup` that never touched the row.
+ */
+export const DOWNLOAD_QUALITIES: readonly string[] = [
+  DOWNLOAD_QUALITY_RECOMMENDED,
+  ...PROVIDER_QUALITY_PREFERENCE_OPTIONS.map((option) => option.value).filter(
+    (value) => value !== DOWNLOAD_QUALITY_RECOMMENDED,
+  ),
+];
 
 function stateGlyph(state: ScopedDependencyRow["state"]): string {
   if (state === "ok") return "✓";
@@ -61,6 +73,8 @@ export function DependencyScreen({
   tick,
   showFix,
   contentWidth = 84,
+  heading = "Let's get you watching",
+  intro,
 }: {
   readonly rows: readonly ScopedDependencyRow[];
   readonly selected: number;
@@ -69,6 +83,10 @@ export function DependencyScreen({
   readonly showFix: boolean;
   /** Columns available inside the frame, from `setupContentWidth`. */
   readonly contentWidth?: number;
+  /** "This machine" when opened with `d` from the quick first screen. */
+  readonly heading?: string;
+  /** Replaces the two welcome lines when this is a view, not the first screen. */
+  readonly intro?: string;
 }) {
   // Budget the columns against the box, not the terminal. Overflowing rows do
   // not truncate in Ink — they wrap, which breaks alignment and inserts blank
@@ -99,7 +117,7 @@ export function DependencyScreen({
       <Box marginBottom={1}>
         {plain ? (
           <Text color={palette.text} bold>
-            Let's get you watching
+            {heading}
           </Text>
         ) : (
           <>
@@ -107,17 +125,21 @@ export function DependencyScreen({
               {petal}
             </Text>
             <Text color={palette.text} bold>
-              {"  Let's get you watching"}
+              {`  ${heading}`}
             </Text>
           </>
         )}
       </Box>
       <Box marginBottom={1} flexDirection="column">
+        {intro ? null : (
+          <Text color={palette.muted}>
+            Kunai finds playable streams and hands them to mpv or VLC.
+          </Text>
+        )}
         <Text color={palette.muted}>
-          Kunai finds playable streams and hands them to mpv or VLC.
-        </Text>
-        <Text color={palette.muted}>
-          {rechecking ? "Checking this machine again…" : "Here's what's on this machine."}
+          {rechecking
+            ? "Checking this machine again…"
+            : (intro ?? "Here's what's on this machine.")}
         </Text>
       </Box>
 

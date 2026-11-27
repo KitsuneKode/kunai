@@ -106,7 +106,7 @@ export const MPV_INSTALL: PlatformInstall = {
 };
 
 export const VLC_INSTALL: PlatformInstall = {
-  arch: "sudo pacman -S vlc",
+  arch: "sudo pacman -S vlc vlc-plugin-ffmpeg",
   debian: "sudo apt install vlc",
   fedora: "sudo dnf install vlc",
   suse: "sudo zypper install vlc",

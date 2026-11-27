@@ -44,6 +44,15 @@ export function setContextualTipListener(listener: ContextualTipListener | null)
 }
 
 /**
+ * One transient line on the root shell's lowest-priority row — for a fact the
+ * user should see once and that owns no surface of its own. A no-op until the
+ * shell has mounted its sink.
+ */
+export function announceShellLine(line: string): void {
+  tipListener?.(line);
+}
+
+/**
  * Called when the user picks a command out of the `/` palette — the exact
  * "did it the long way" moment. Bound per surface with its tip surface so the
  * shortcut being taught is one that actually works there.

@@ -8,6 +8,7 @@
 import type { ErrorScenario } from "@/domain/playback/playback-problem";
 
 import type { ErrorDebugExcerpt } from "./error-debug-excerpt";
+import type { ErrorNextStep } from "./playback-error-next-step";
 import type { PlaybackFailureWaterfallModel } from "./playback-failure-waterfall";
 import { sanitizeTerminalText, truncateLine, wrapText } from "./shell-text";
 
@@ -32,16 +33,15 @@ export function rowText(input: ErrorRow): string {
 function scenarioRows(scenario: ErrorScenario): readonly ErrorRow[] {
   switch (scenario.kind) {
     case "provider-timeout":
+      // What to press is the `Next` row's job; these rows say what happened.
       return [
         row(`✗  timed out after ${scenario.elapsedSec}s`, "danger"),
         row(scenario.providerName, "dim"),
-        row("r retry · /fallback for another provider", "dim"),
       ];
     case "stream-broken":
       return [
         row("✗  stream interrupted", "danger"),
         row(`attempt ${scenario.attempt} of ${scenario.maxAttempts}`, "dim"),
-        row("r retry · /recover to refresh the stream", "dim"),
       ];
     case "network-offline":
       return [row("○  offline", "dim"), row("/library for downloaded titles", "accent")];
@@ -98,6 +98,34 @@ function textRows(
   return wrapText(text, textWidth, maxLines).map((line) => row(line, tone));
 }
 
+const NEXT_LABEL = "Next  ";
+const NEXT_MAX_LINES = 3;
+
+/**
+ * The single next step, on its own row so it is the thing the eye lands on
+ * after the cause. Install commands follow it, indented under the instruction.
+ */
+function nextStepRows(next: ErrorNextStep, textWidth: number | undefined): readonly ErrorRow[] {
+  const indent = " ".repeat(NEXT_LABEL.length);
+  const room = textWidth === undefined ? undefined : textWidth - NEXT_LABEL.length;
+  const lines =
+    room === undefined || room <= 0 ? [next.text] : wrapText(next.text, room, NEXT_MAX_LINES);
+  const rows: ErrorRow[] = lines.map((line, index) => ({
+    segments: [
+      { text: index === 0 ? NEXT_LABEL : indent, tone: "accent" },
+      { text: sanitizeTerminalText(line), tone: "text" },
+    ],
+  }));
+  for (const extra of next.extra) {
+    const wrapped =
+      room === undefined || room <= 0 ? [extra.text] : wrapText(extra.text, room, NEXT_MAX_LINES);
+    for (const line of wrapped) {
+      rows.push(row(`${indent}${line}`, extra.kind === "command" ? "accent" : "muted"));
+    }
+  }
+  return [BLANK, ...rows];
+}
+
 const MESSAGE_MAX_LINES = 3;
 const DEBUG_MAX_LINES = 2;
 
@@ -117,6 +145,8 @@ export function buildErrorRows(input: {
   readonly waterfall?: PlaybackFailureWaterfallModel | null;
   readonly debugExcerpt?: ErrorDebugExcerpt | null;
   readonly canRetry: boolean;
+  /** The one thing to do now. Absent only for callers that have no problem model. */
+  readonly nextStep?: ErrorNextStep | undefined;
   /** Panel text width in columns; free-text rows wrap to it instead of clipping. */
   readonly textWidth?: number;
 }): readonly ErrorRow[] {
@@ -127,6 +157,7 @@ export function buildErrorRows(input: {
       ? scenarioRows(input.scenario)
       : textRows(input.message, "text", input.textWidth, MESSAGE_MAX_LINES)),
   );
+  if (input.nextStep) rows.push(...nextStepRows(input.nextStep, input.textWidth));
   if (input.waterfall) rows.push(...waterfallRows(input.waterfall));
   if (input.debugExcerpt) rows.push(...debugRows(input.debugExcerpt, input.textWidth));
 

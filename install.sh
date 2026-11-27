@@ -135,14 +135,6 @@ info() { printf '→ %s\n' "$*"; }
 warn() { printf '! \033[33m%s\033[0m\n' "$*"; }
 err() { printf '✗ %s\n' "$*" >&2; }
 have() { command -v "$1" >/dev/null 2>&1; }
-# The same places `discoverVlcBinary` (apps/cli/src/infra/player/vlc/vlc-launch.ts)
-# looks: PATH, then the macOS app bundle. Flatpak VLC is deliberately not used.
-have_vlc() {
-	have vlc && return 0
-	[[ "$HOST_OS" == "darwin" ]] || return 1
-	[[ -x /Applications/VLC.app/Contents/MacOS/VLC ]] && return 0
-	[[ -x "${HOME:-}/Applications/VLC.app/Contents/MacOS/VLC" ]]
-}
 
 # Prompt the user via the controlling terminal, so it still works under
 # `curl … | bash` (where stdin is the script pipe, not the keyboard).
@@ -2279,6 +2271,18 @@ print_android_player_guidance() {
 	fi
 }
 
+# VLC is a player too: `--player auto` plays there when mpv is absent, so a
+# VLC-only machine must not be told that nothing can play. The app-bundle paths
+# mirror the CLI's own discovery; a drag-installed VLC.app is not on PATH.
+have_vlc() {
+	have vlc && return 0
+	# Only macOS discovers the app bundle; elsewhere a shared home's VLC.app
+	# is not a player the CLI can launch.
+	[[ "${HOST_OS:-}" == "darwin" ]] || return 1
+	[[ -x /Applications/VLC.app/Contents/MacOS/VLC ]] ||
+		[[ -x "${HOME:-}/Applications/VLC.app/Contents/MacOS/VLC" ]]
+}
+
 # Which of the optional dependencies this machine is actually missing.
 #
 # Checked before anything is offered: the previous flow prompted — and
@@ -2333,9 +2337,9 @@ install_optional_deps() {
 	printf '\n'
 	if [[ " ${missing[*]} " == *" mpv "* ]]; then
 		if have_vlc; then
-			info "mpv is not installed. With the default player setting (auto), Kunai plays in VLC; mpv is recommended for seamless episode chaining and live track switching."
+			info "mpv is not installed — with the default player setting (auto), Kunai will play in VLC. mpv is optional."
 		else
-			warn "Neither mpv nor VLC is installed — Kunai needs one of them to play anything. mpv is recommended."
+			warn "No video player found — Kunai needs mpv or VLC to play anything."
 		fi
 	fi
 	if [[ " ${missing[*]} " == *" yt-dlp "* ]]; then
@@ -2486,11 +2490,13 @@ main() {
 	print_android_player_guidance
 	install_optional_deps
 
+	# The last lines are the first instruction a new user reads, so the first
+	# one plays something. `-q` takes the top result; a bare `kunai` browses.
 	bold "Done."
 	cat <<EOF
-Try:
-  kunai -S "Frieren" -a
-  kunai --setup
+Watch something:
+  kunai -q -S "Dune"     search and play in one step
+  kunai                  browse, with a two-question setup
 
 Update any time:  kunai upgrade
 Remove:           kunai uninstall

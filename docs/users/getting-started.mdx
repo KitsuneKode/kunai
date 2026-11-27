@@ -1,9 +1,9 @@
 ---
 title: Getting Started
-description: Install Kunai, put it on your PATH, install mpv, run setup, and complete a first playback session end to end, with the exact commands for your platform.
+description: Install Kunai, play something with one command, and learn what the two-question first run asks, with the exact commands for your platform.
 ---
 
-Kunai is a terminal-first media shell. You search for a title, pick what to watch, Kunai resolves a direct-provider stream on your machine, and hands playback to `mpv`. The shell stays alive so you can recover, continue, or pick something else without restarting.
+Kunai is a terminal-first media shell. You search for a title, pick what to watch, Kunai resolves a direct-provider stream on your machine, and hands playback to `mpv`, or to VLC when VLC is installed and `mpv` is not. The shell stays alive so you can recover, continue, or pick something else without restarting.
 
 **Who this is for:** anyone installing Kunai for the first time.
 
@@ -25,7 +25,26 @@ kunai -S "Dune"
 
 If `kunai: command not found` after install, the binary is not on `PATH`. On Linux/macOS add `~/.local/bin` (the installer prints the exact `export`). On Windows add `%LOCALAPPDATA%\kunai\bin`. Then `kunai doctor`.
 
-`-S` opens search results. Select a title, pick an episode when prompted, wait for provider resolution, then confirm the committed `mpv` startup. If `mpv` is missing, setup and browsing stay available; only playback handoff is blocked.
+The shortest path is one command:
+
+```sh
+kunai -q -S "Dune"
+```
+
+`-q` plays the top result. Without it, `-S` opens search results: select a title, pick an episode when prompted, and wait for the stream to resolve. A launch that names what to open (`-S`, `-i`, `--continue`, `--history`, a share link) goes straight there and does not stop for setup, so `kunai --setup` in the block above is optional.
+
+## What the first run asks
+
+A bare `kunai` on a new machine shows two screens, then Browse.
+
+1. **What do you watch most?** Shows & movies, anime, or YouTube. It sets where Kunai starts; `Tab` switches lanes any time. Under the choices, one line says whether this machine can play: `✓ Ready to play in mpv`, or what is missing with the one command that installs it. Install it in another terminal and press `r` to check again. `d` shows everything Kunai looked for.
+2. **Share anonymous usage?** Neither answer is pre-selected and Enter does nothing until you pick one with `↑` `↓`. `s` is "don't share". Nothing is sent unless you choose to share, and you can change it in `/settings`. See [Reliability and privacy](/docs/users/reliability-and-privacy).
+
+Quick setup saves your mode and usage choice. Press `m` on the first screen to join the full setup at Language, screen 3 of 6. Run `/setup` or `kunai --setup` to start at Dependencies and see all six screens. If you leave the first screen with `esc`, Kunai offers setup again the next time you launch it.
+
+Browse opens with the cursor in the search field. Type a title and press Enter. Picks load underneath while you type and never take the keyboard; `↓` steps into them.
+
+If no video player is installed, setup and browsing still work; only playback is blocked, and the failure says which command installs one.
 
 ## Other install methods
 
@@ -82,7 +101,9 @@ Press `/` for the command palette. Surfaces that matter:
 
 ## When playback fails
 
-Stay in the shell. `/recover` refreshes the current provider. `/fallback` or `⇧F` walks the priority chain. `/diagnostics` shows evidence; `/export-diagnostics` writes a redacted bundle.
+Stay in the shell. The failure panel says what failed and, on its `Next` line, the one thing to do: `r` retries, `p` picks another source, and when the fix is an install it shows the command for your machine. `/recover` refreshes the current provider. `/fallback` or `⇧F` walks the priority chain. `/diagnostics` shows evidence; `/export-diagnostics` writes a redacted bundle.
+
+A search that finds nothing names the lane it searched. An anime title searched in shows & movies is the usual cause: press `Tab` and search again.
 
 Anime episodes that will not play, or an anime search that reports a provider unreachable rather than coming back empty, often mean **curl is missing**: the anime providers sit behind Cloudflare and the plain-fetch fallback gets challenged. `kunai doctor` reports curl. See [Troubleshooting](/docs/users/troubleshooting).
 
