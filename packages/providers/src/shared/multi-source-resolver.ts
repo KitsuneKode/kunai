@@ -402,7 +402,7 @@ export async function resolveMultiSourceProvider(
       );
     }
 
-    const shippedStreams = dropRefusedStreams(streams, gated.refusedHosts);
+    const shippedStreams = dropRefusedStreams(streams, gated.refusals);
     const sourceRows = finalizeCycleSourceInventory({
       sources: sourceCandidates(shippedStreams, payload, providerId, cachePolicy),
       attempts: [],
