@@ -143,6 +143,17 @@ describe("root history bridge return loop", () => {
     });
   });
 
+  test("buildRootHistorySelection preserves the explicit local/stream answer", () => {
+    const selection = buildRootHistorySelection(
+      { titleId: "anilist:1", entry: seriesEntry() },
+      undefined,
+      undefined,
+      { sourceOverride: "stream" },
+    );
+
+    expect(selection.sourceOverride).toBe("stream");
+  });
+
   test("release projections target the first unwatched aired episode without altering history", () => {
     const release = releaseProgressToContinueHistoryRelease({
       titleId: "anilist:1",

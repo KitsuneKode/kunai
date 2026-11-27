@@ -15,6 +15,7 @@ export type RootHistorySelection = {
   titleId: string;
   entry: HistoryProgress;
   localJobId?: string;
+  sourceOverride?: "local" | "stream";
   targetEpisode?: {
     season: number;
     episode: number;
@@ -124,6 +125,9 @@ export function buildRootHistorySelection(
     readonly sourceOverride?: "local" | "stream";
   },
 ): RootHistorySelection {
+  const base: RootHistorySelection = options?.sourceOverride
+    ? { ...selection, sourceOverride: options.sourceOverride }
+    : selection;
   const projection = projections?.get(selection.titleId);
   const action = resolveContinueSourceAction(
     projection,
@@ -132,7 +136,7 @@ export function buildRootHistorySelection(
   );
   if (action?.kind === "play-local") {
     return {
-      ...selection,
+      ...base,
       targetEpisode: {
         season: action.season,
         episode: action.episode,
@@ -143,7 +147,7 @@ export function buildRootHistorySelection(
   }
   if (action?.kind === "select-online" || action?.kind === "resume") {
     return {
-      ...selection,
+      ...base,
       targetEpisode: {
         season: action.season,
         episode: action.episode,
@@ -151,7 +155,7 @@ export function buildRootHistorySelection(
       },
     };
   }
-  if (historyContentType(selection.entry) !== "series") return selection;
+  if (historyContentType(selection.entry) !== "series") return base;
   const next = nextReleases?.get(selection.titleId) ?? null;
   const surface = projectContinuationSurface({
     titleId: selection.titleId,
@@ -171,7 +175,7 @@ export function buildRootHistorySelection(
     typeof surface.target?.episode === "number"
   ) {
     return {
-      ...selection,
+      ...base,
       targetEpisode: {
         season: surface.target.season ?? selection.entry.season ?? 1,
         episode: surface.target.episode,
@@ -180,7 +184,7 @@ export function buildRootHistorySelection(
     };
   }
   return {
-    ...selection,
+    ...base,
     targetEpisode: {
       season: selection.entry.season ?? 1,
       episode: selection.entry.episode ?? selection.entry.absoluteEpisode ?? 1,

@@ -7,7 +7,7 @@ import {
   applyHistorySelectionProvider,
   episodeFromHistorySelection,
   prepareReplayTitleForProvider,
-  titleFromHistorySelection,
+  continueTitleFromHistorySelection,
 } from "@/app/bootstrap/launch-entry";
 import { prepareOfflinePlaybackLaunch } from "@/app/offline/offline-playback-launch";
 import type { Container } from "@/container";
@@ -194,7 +194,7 @@ async function prepareCalendarContinue(
   const episode = episodeFromHistorySelection(selection);
   const title = await prepareReplayTitleForProvider(
     container,
-    titleFromHistorySelection(selection),
+    continueTitleFromHistorySelection(selection),
     selection.entry,
   );
   return calendarLaunch(selection, title, episode ?? undefined);

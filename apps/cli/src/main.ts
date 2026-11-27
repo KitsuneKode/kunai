@@ -230,20 +230,15 @@ async function maybeOpenStartupHistory(
     return { title: launch.title, episode: launch.episode };
   }
 
-  const {
-    applyHistorySelectionProvider,
-    episodeFromHistorySelection,
-    prepareReplayTitleForProvider,
-    titleFromHistorySelection,
-  } = await import("@/app/bootstrap/launch-entry");
-  applyHistorySelectionProvider(container, selection);
+  const [{ resolveHistorySelectionLaunch }, { prepareReplayTitleForProvider }] = await Promise.all([
+    import("@/app-shell/history-selection-launch"),
+    import("@/app/bootstrap/launch-entry"),
+  ]);
+  const launch = await resolveHistorySelectionLaunch(container, selection, "history");
+  if (!launch) return null;
   return {
-    title: await prepareReplayTitleForProvider(
-      container,
-      titleFromHistorySelection(selection),
-      selection.entry,
-    ),
-    episode: episodeFromHistorySelection(selection),
+    title: await prepareReplayTitleForProvider(container, launch.title, selection.entry),
+    ...(launch.episode ? { episode: launch.episode } : null),
   };
 }
 
@@ -293,7 +288,7 @@ async function maybeResolveContinueTitle(
       historyLaunchSelectionFromContinuation,
       prepareReplayTitleForProvider,
       recordLocalHistorySourceDecision,
-      titleFromHistorySelection,
+      continueTitleFromHistorySelection,
     },
     { recordContinuationProjectDecision, recordContinuationSourceResolution },
   ] = await Promise.all([
@@ -322,7 +317,7 @@ async function maybeResolveContinueTitle(
   return {
     title: await prepareReplayTitleForProvider(
       container,
-      titleFromHistorySelection(selection),
+      continueTitleFromHistorySelection(selection),
       selection.entry,
     ),
     episode: episodeFromHistorySelection(selection),

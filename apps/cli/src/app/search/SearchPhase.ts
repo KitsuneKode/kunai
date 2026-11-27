@@ -24,7 +24,7 @@ import {
   applyHistorySelectionProvider,
   episodeFromHistorySelection,
   prepareReplayTitleForProvider,
-  titleFromHistorySelection,
+  continueTitleFromHistorySelection,
 } from "@/app/bootstrap/launch-entry";
 import { titleInfoFromSearchResult, videoMetaFromSearchResult } from "@/app/bootstrap/title-info";
 import { mapAnimeDiscoveryResultToProviderNative } from "@/app/discover/anime-provider-mapping";
@@ -1217,7 +1217,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
                 applyHistorySelectionProvider(container, continueWatchingSelection);
                 const title = await prepareReplayTitleForProvider(
                   container,
-                  titleFromHistorySelection(continueWatchingSelection),
+                  continueTitleFromHistorySelection(continueWatchingSelection),
                   continueWatchingSelection.entry,
                 );
                 stateManager.dispatch({
@@ -1277,7 +1277,7 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             applyHistorySelectionProvider(container, continueWatchingSelection);
             const title = await prepareReplayTitleForProvider(
               container,
-              titleFromHistorySelection(continueWatchingSelection),
+              continueTitleFromHistorySelection(continueWatchingSelection),
               continueWatchingSelection.entry,
             );
             stateManager.dispatch({ type: "SELECT_TITLE", title });

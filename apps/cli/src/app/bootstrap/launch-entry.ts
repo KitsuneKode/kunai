@@ -117,6 +117,10 @@ function isAnimeHistoryEntry(entry: HistoryProgress): boolean {
   return correctedHistoryMediaKind(entry) === "anime";
 }
 
+export function continueTitleFromHistorySelection(selection: HistoryLaunchSelection): TitleInfo {
+  return { ...titleFromHistorySelection(selection), launchSource: "continue" };
+}
+
 export async function prepareReplayTitleForProvider(
   container: Pick<Container, "config" | "providerRegistry" | "stateManager" | "historyRepository">,
   title: TitleInfo,
@@ -131,7 +135,14 @@ export async function prepareReplayTitleForProvider(
         provider: state.defaultProviders.youtube,
       });
     }
-    return titleFromHistorySelection({ titleId: entry.titleId, entry });
+    const canonical = titleFromHistorySelection({ titleId: entry.titleId, entry });
+    return {
+      ...canonical,
+      launchSource: title.launchSource ?? canonical.launchSource,
+      ...(title.playbackSourceOverride
+        ? { playbackSourceOverride: title.playbackSourceOverride }
+        : null),
+    };
   }
 
   const animeReplay = isAnimeContent(title) || (entry ? isAnimeHistoryEntry(entry) : false);
@@ -183,6 +194,9 @@ export async function prepareReplayTitleForProvider(
   const replayTitle = {
     ...titleInfoFromSearchResult(mapped, title.name),
     launchSource: title.launchSource ?? "history",
+    ...(title.playbackSourceOverride
+      ? { playbackSourceOverride: title.playbackSourceOverride }
+      : null),
   };
   if (mapped.id !== discovery.id && mapped.id !== title.id) {
     persistProviderNativeMapping(
