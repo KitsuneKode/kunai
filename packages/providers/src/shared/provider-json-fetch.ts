@@ -14,6 +14,38 @@ export type ProviderJsonFetchInit = Omit<RequestInit, "headers"> & {
   readonly headers?: ProviderJsonRequestHeaders;
 };
 
+export function createDirectProviderResponseFetch(
+  providerId: ProviderId,
+  label: string,
+  timeoutMs: number,
+) {
+  return async (
+    context: ProviderRuntimeContext,
+    url: string,
+    stage: string,
+    init?: RequestInit,
+  ): Promise<Response> => {
+    const response = await providerFetch(context, url, {
+      ...init,
+      signal: directStreamFetchSignal(context.signal, timeoutMs),
+      redirect: "error",
+    });
+    if (!response.ok) {
+      const status = response.status;
+      await response.body?.cancel().catch(() => undefined);
+      throw new ProviderHttpError({
+        providerId,
+        stage,
+        status,
+        message: `${label} ${stage} returned HTTP ${status}`,
+        code: httpStatusToResolveErrorCode(status),
+        retryable: httpStatusIsRetryable(status),
+      });
+    }
+    return response;
+  };
+}
+
 export function createProviderJsonFetch(options: {
   readonly providerId: ProviderId;
   readonly label: string;

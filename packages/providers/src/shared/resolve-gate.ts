@@ -145,11 +145,20 @@ export async function selectVerifiedStream<
   context,
   signal,
   timeoutMs,
+  requireVerifiedStream,
 }: {
   readonly streams: readonly TStream[];
   readonly context: ProviderRuntimeContext;
   readonly signal?: AbortSignal;
   readonly timeoutMs?: number;
+  /**
+   * Strict opt-in: only a positively verified probe accepts — an accepted but
+   * unverified verdict (timeout, skipped, non-definitive refusal) rejects.
+   * This is deliberately not `requireDirectMedia`: that mode's URL denylist
+   * refuses HLS playlists outright, while this gate keeps the standard HLS
+   * probe, which already answers `reachable` only on positive segment evidence.
+   */
+  readonly requireVerifiedStream?: boolean;
 }): Promise<VerifiedStreamSelection<TStream>> {
   let firstReason: string | undefined;
   const refusals = new Set<string>();
@@ -164,7 +173,13 @@ export async function selectVerifiedStream<
       ...(timeoutMs === undefined ? null : { timeoutMs }),
     });
     if (verdict.accepted) {
-      return { accepted: true, stream, verified: verdict.verified, refusals };
+      if (!requireVerifiedStream || verdict.verified) {
+        return { accepted: true, stream, verified: verdict.verified, refusals };
+      }
+      // Inconclusive is not a refusal — it indicts no host or URL, it just
+      // cannot stand in as proof under the strict gate.
+      firstReason ??= "stream probe inconclusive";
+      continue;
     }
 
     firstReason ??= verdict.reason;

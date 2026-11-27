@@ -40,6 +40,7 @@ const ANIME_ONLY_PROVIDER_IDS: ReadonlySet<string> = new Set([
   "anidap",
   "anilight",
   "animegg",
+  "animeparadise",
   "hianime",
   "kickassanime",
   "miruro",

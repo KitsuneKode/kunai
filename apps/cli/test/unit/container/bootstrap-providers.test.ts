@@ -111,6 +111,8 @@ describe("production provider defaults", () => {
       "anidap",
       "anilight",
       "animegg",
+      "animeparadise",
+      "filesun",
       "hianime",
       "kickassanime",
       "miruro",

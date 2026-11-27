@@ -9,6 +9,7 @@
     "rivestream",
     "movy",
     "vidbolt",
+    "filesun",
     "allanime",
     "hianime",
     "miruro",
@@ -16,6 +17,7 @@
     "kickassanime",
     "anilight",
     "anidap",
+    "animeparadise",
     "youtube"
   ],
   "providers": [
@@ -110,6 +112,20 @@
         "Browserless TMDB-addressed API: /api/resolve?type=movie&id= or type=tv&id=&season=&episode=, then server iteration through the public exclude parameter.",
         "Embedded HLS master text is parsed locally for rendition languages, subtitle playlists, and variant inventory; media remains direct.",
         "No Cloudflare/Turnstile bypass: a challenge response is classified as blocked and the lane falls through."
+      ]
+    },
+    {
+      "id": "filesun",
+      "displayName": "FileSuN",
+      "description": "Movies and series through Atlantic's public embed lookup, FileSuN slot",
+      "domain": "embedsun.cc",
+      "recommended": false,
+      "mediaKinds": ["movie", "series"],
+      "capabilities": ["source-resolve", "subtitle-resolve", "quality-ranked"],
+      "notes": [
+        "Atlantic title/year lookup; TV coordinates are 1-based.",
+        "Only the FileSuN embed is verified and resolved; direct HLS with captions.",
+        "Local HTTP only: no browser, credentials, or relay."
       ]
     },
     {
@@ -263,6 +279,20 @@
         "Browserless catalog path: GraphQL anime/searchAnime resolves AniList or title identity to the provider slug; chad.anidap.lol carries episodes, server slots, and source payloads.",
         "Sub and dub provider slots stay separate. Provider-supplied media headers ride the exact stream candidate into the shared resolve gate.",
         "Some Anidap slots share AnimeX/aniwatch infrastructure; backend independence is documented in the dossier rather than overstated."
+      ]
+    },
+    {
+      "id": "animeparadise",
+      "displayName": "AnimeParadise",
+      "description": "Anime through AnimeParadise's own AniList-mapped catalog and direct HLS",
+      "domain": "animeparadise.moe",
+      "recommended": false,
+      "mediaKinds": ["anime"],
+      "capabilities": ["search", "episode-list", "source-resolve", "subtitle-resolve", "quality-ranked"],
+      "notes": [
+        "AniList/MAL identity is checked before episode lookup.",
+        "Reads the watch page's rotating Flight action without executing scripts.",
+        "Direct, local-only HLS with sub audio and ASS/VTT tracks; no relay."
       ]
     },
     {
@@ -1535,16 +1565,16 @@
     }
   ],
   "providerDefaults": {
-    "revision": 9,
+    "revision": 11,
     "series": {
       "defaultProvider": "vidlink",
-      "fallbackPriority": ["movy", "rivestream", "vidrock", "videasy", "vidbolt"],
-      "order": ["vidlink", "movy", "rivestream", "vidrock", "videasy", "vidbolt"]
+      "fallbackPriority": ["movy", "rivestream", "vidrock", "videasy", "vidbolt", "filesun"],
+      "order": ["vidlink", "movy", "rivestream", "vidrock", "videasy", "vidbolt", "filesun"]
     },
     "anime": {
       "defaultProvider": "hianime",
-      "fallbackPriority": ["kickassanime", "animegg", "miruro", "allanime", "anilight", "anidap"],
-      "order": ["hianime", "kickassanime", "animegg", "miruro", "allanime", "anilight", "anidap"]
+      "fallbackPriority": ["kickassanime", "animegg", "miruro", "allanime", "anilight", "anidap", "animeparadise"],
+      "order": ["hianime", "kickassanime", "animegg", "miruro", "allanime", "anilight", "anidap", "animeparadise"]
     },
     "youtube": {
       "defaultProvider": "youtube",

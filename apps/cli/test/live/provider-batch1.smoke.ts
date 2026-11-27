@@ -21,6 +21,10 @@ const config = {
     mode: "series" as const,
     title: { id: "550", type: "movie" as const, name: "Fight Club" },
   },
+  filesun: {
+    mode: "series" as const,
+    title: { id: "550", type: "movie" as const, name: "Fight Club", year: "1999" },
+  },
   anilight: {
     mode: "anime" as const,
     title: {
@@ -39,11 +43,25 @@ const config = {
       externalIds: { anilistId: "21" },
     },
   },
+  animeparadise: {
+    mode: "anime" as const,
+    title: {
+      id: "anilist:154587",
+      type: "series" as const,
+      name: "Frieren: Beyond Journey’s End",
+      year: "2023",
+      externalIds: { anilistId: "154587" },
+    },
+  },
 }[providerId];
 
 if (!config) {
   console.error(
-    JSON.stringify({ ok: false, stage: "argv", reason: "expected vidbolt|anilight|anidap" }),
+    JSON.stringify({
+      ok: false,
+      stage: "argv",
+      reason: "expected vidbolt|filesun|anilight|anidap|animeparadise",
+    }),
   );
   process.exit(1);
 }
