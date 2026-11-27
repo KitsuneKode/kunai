@@ -529,7 +529,7 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // 3249 KiB leaves 1,349. No dependency or asset.
 // The pre-release player-capability rule (VLC parity across startup, setup,
 // and doctor), TMDB credential routing, and browse-focus copy on top measured
-// MEASURED_PLACEHOLDER
+// 3,328,807 bytes together; 3251 KiB leaves 217.
 export const NPM_BUNDLE_BUDGET_KB = 3_251;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
