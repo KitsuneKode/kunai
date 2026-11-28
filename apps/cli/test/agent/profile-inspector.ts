@@ -15,6 +15,8 @@
 import { Database } from "bun:sqlite";
 import { existsSync, readFileSync } from "node:fs";
 
+import { isJsonObject, type LooseJsonValue } from "@kunai/types";
+
 export type ProfileStoragePaths = {
   readonly dataDbPath: string;
   readonly cacheDbPath: string;
@@ -37,26 +39,24 @@ export type QueueRow = {
   last_failure_json: string | null;
 };
 
-function isPlainJsonObject(value: unknown): value is Record<string, unknown> {
-  if (!(value instanceof Object) || Array.isArray(value)) return false;
-  const prototype = Object.getPrototypeOf(value) as unknown;
-  return prototype === Object.prototype || prototype === null;
-}
-
 /** Canonicalize objects recursively; array order remains meaningful. */
-function canonicalJson(value: unknown): unknown {
+function canonicalJson(value: LooseJsonValue): LooseJsonValue {
   if (Array.isArray(value)) return value.map(canonicalJson);
-  if (!isPlainJsonObject(value)) return value;
-  return Object.fromEntries(
-    Object.keys(value)
-      .sort()
-      .map((key) => [key, canonicalJson(value[key])]),
-  );
+  if (!isJsonObject(value)) return value;
+  const sorted: Record<string, LooseJsonValue> = {};
+  for (const key of Object.keys(value).sort()) {
+    const entry = value[key];
+    if (entry === undefined) continue;
+    sorted[key] = canonicalJson(entry);
+  }
+  return sorted;
 }
 
 /** Canonical JSON for one row — recursively sorted keys so equal rows serialize equal. */
 function canonicalRow(row: unknown): string {
-  return JSON.stringify(canonicalJson(row));
+  // SAFETY: canonicalRow only accepts JSON.parse output and bun:sqlite row
+  // values, both of which serialize through the loose persisted-JSON shape.
+  return JSON.stringify(canonicalJson(row as LooseJsonValue));
 }
 
 /**
