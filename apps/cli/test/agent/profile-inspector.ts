@@ -37,10 +37,26 @@ export type QueueRow = {
   last_failure_json: string | null;
 };
 
-/** Canonical JSON for one row — sorted keys so equal rows serialize equal. */
+function isPlainJsonObject(value: unknown): value is Record<string, unknown> {
+  if (!(value instanceof Object) || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value) as unknown;
+  return prototype === Object.prototype || prototype === null;
+}
+
+/** Canonicalize objects recursively; array order remains meaningful. */
+function canonicalJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (!isPlainJsonObject(value)) return value;
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .map((key) => [key, canonicalJson(value[key])]),
+  );
+}
+
+/** Canonical JSON for one row — recursively sorted keys so equal rows serialize equal. */
 function canonicalRow(row: unknown): string {
-  // SAFETY: bun:sqlite .all() yields row objects — Object.keys needs the record shape.
-  return JSON.stringify(row, Object.keys(row as Record<string, unknown>).sort());
+  return JSON.stringify(canonicalJson(row));
 }
 
 /**
@@ -132,9 +148,21 @@ function parseConfigObject(text: string): ConfigObject {
   }
 }
 
+function readConfigObject(configPath: string): ConfigObject {
+  if (!existsSync(configPath)) return {};
+  try {
+    return parseConfigObject(readFileSync(configPath, "utf8"));
+  } catch {
+    // EISDIR, EPERM and similar read failures are profile findings, not
+    // inspector crashes; represent them in the same contract as corrupt JSON.
+    // eslint-disable-next-line anti-slop/no-known-value-widening -- unreadable config is reported through the same open persisted-JSON contract.
+    return { __unreadable: true } satisfies ConfigObject;
+  }
+}
+
 function configSnapshotRow(paths: ProfileStoragePaths): string {
   if (!existsSync(paths.configPath)) return "{}";
-  return canonicalRow(parseConfigObject(readFileSync(paths.configPath, "utf8")));
+  return canonicalRow(readConfigObject(paths.configPath));
 }
 
 export function snapshotProfile(paths: ProfileStoragePaths): ProfileSnapshot {
@@ -197,8 +225,7 @@ export function createProfileInspector(paths: ProfileStoragePaths): ProfileInspe
       }
     },
     config() {
-      if (!existsSync(paths.configPath)) return {};
-      return parseConfigObject(readFileSync(paths.configPath, "utf8"));
+      return readConfigObject(paths.configPath);
     },
     tables() {
       const snap = snapshotProfile(paths);
