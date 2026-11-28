@@ -587,12 +587,14 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // browse/palette/playback layout 3,327,248 bytes, tracks panel recovery
 // grammar 3,330,345 bytes, clean details-sheet overlay 3,331,426 bytes,
 // and the pre-#852 merged tree 3,332,234 bytes. The merged main+shell tree
-// measured 3,428,892 bytes with Bun 1.4.5: +7,431 over the profile/hwdec
-// main-line measurement, all shell/onboarding surface code and copy plus the
-// doctor text-module split. No dependency or asset. 3349 KiB is the smallest
-// whole-KiB budget over that measurement and leaves 484 bytes; public
+// measured 3,431,894 bytes with Bun 1.4.5 after the shell-v4 compact picker /
+// palette-ranking split: +3,002 over the prior shell/onboarding measurement.
+// The picker was extracted and dead palette title chrome removed first; the
+// remaining growth is the pure ranking model, unified row renderer, and
+// catalog-fallback path. No dependency or asset. 3352 KiB is the smallest
+// whole-KiB budget over that measurement and leaves 554 bytes; public
 // launcher budgets are unchanged.
-export const NPM_BUNDLE_BUDGET_KB = 3_349;
+export const NPM_BUNDLE_BUDGET_KB = 3_352;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

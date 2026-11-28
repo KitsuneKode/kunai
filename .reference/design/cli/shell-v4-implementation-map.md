@@ -147,6 +147,7 @@ Scores use a 1–5 scale (`Impact` 5 = fixes broken trust/usability on daily pat
 - **Dependencies:** Rank 5 (`ShellFooter` in Settings).
 
 ### Rank 16 · Compact "Where to start?" Action Dialog & Palette Prefix-Over-Fuzzy + Search Fallback
+- **Status:** Done.
 - **Impact / Effort:** 3.5 / 2 (**Ratio: 1.75**)
 - **Why:** "Where to start?" currently uses a full `chooseFromListShell` with a `Filter` text box for 3–4 fixed actions; Command Palette `/sm` matched `/history` above `JUMP TO: Smoke Movie` and dead-ends when a user types `/frieren` expecting search.
 - **Files touched:** `apps/cli/src/app-shell/title-control/title-control-menu.ts`, `apps/cli/src/app-shell/ink-shell.tsx` (suppress filter input when `options.length <= 6 && !forceFilter`), `apps/cli/src/app-shell/shell-command-model.ts`, `apps/cli/src/app-shell/shell-command-ui.tsx`.
