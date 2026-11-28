@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import {
   chmod,
   mkdir,
@@ -21,7 +21,10 @@ import {
   writeInstallManifestUnderActivation,
 } from "@/services/update/install-manifest";
 import { tryAcquireActivationLock } from "@/services/update/native-installer/activation-lock";
-import { installLatest } from "@/services/update/native-installer/install-latest";
+import {
+  drainInstallRetentionCleanups,
+  installLatest,
+} from "@/services/update/native-installer/install-latest";
 import {
   activationLockPath,
   getInstallLayoutPaths,
@@ -52,9 +55,13 @@ import { waitUntil } from "../../../../support/wait-until";
 
 const made: string[] = [];
 
+// Retention runs after installLatest returns and can recreate a lock directory
+// inside a layout this hook already removed. Wait for it, then remove
+// synchronously: `fs.promises.rm` has resolved while the directory was still there.
 afterEach(async () => {
+  await drainInstallRetentionCleanups();
   for (const dir of made.splice(0)) {
-    await rm(dir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
