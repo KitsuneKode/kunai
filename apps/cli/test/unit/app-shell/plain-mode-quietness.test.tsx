@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import { BrowseShell } from "@/app-shell/browse-shell";
 import { LoadingShell } from "@/app-shell/loading-shell";
@@ -64,7 +64,11 @@ function auditPlainTimers(sources: ReadonlyMap<string, string>): string[] {
   return violations;
 }
 
-const savedPlain = process.env.KUNAI_PLAIN;
+let savedPlain: string | undefined;
+
+beforeEach(() => {
+  savedPlain = process.env.KUNAI_PLAIN;
+});
 
 afterEach(() => {
   setPlainModePreferenceSource(() => false);
