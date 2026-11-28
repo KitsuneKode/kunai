@@ -641,7 +641,13 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // measured 3,449,390 bytes with Bun 1.4.5: +3,013 over 3,446,377. No
 // dependency or asset. 3369 KiB is the smallest whole-KiB budget over that
 // measurement and leaves 466 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_369;
+// The settings effect-timing audit merged onto that tree measured 3,453,822
+// bytes with Bun 1.4.5: +4,432 over 3,449,390. The dead Discord open-url row
+// and summary helper were trimmed first; the remaining growth is required
+// per-row timing/config-key metadata, the fitted-row renderer, and env-lock
+// copy. No dependency or asset. 3373 KiB is the smallest whole-KiB budget
+// over that measurement and leaves 130 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_373;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
