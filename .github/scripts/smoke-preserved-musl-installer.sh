@@ -68,6 +68,8 @@ docker run --rm --network none \
 		# A KUNAI_CONFIG_DIR profile owns its bin, data and cache (#860): the
 		# installers refuse per-dir overrides that disagree with it.
 		export KUNAI_CONFIG_DIR="$profile/profile"
+		# The container runs as root; install.sh refuses root without this.
+		export KUNAI_INSTALL_ALLOW_ROOT=1
 		launcher="$KUNAI_CONFIG_DIR/bin/kunai"
 		export KUNAI_DL_BASE=file:///release
 		export KUNAI_SKIP_PATH_UPDATE=1
