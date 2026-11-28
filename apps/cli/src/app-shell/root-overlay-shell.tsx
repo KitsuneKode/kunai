@@ -732,6 +732,7 @@ export function RootOverlayShell({
   // Armed destructive queue action, owned by the shared ConfirmStrip machine.
   const queueConfirm = useConfirmStripController();
   const transitionQueueConfirm = queueConfirm.transition;
+  const downloadConfirm = useConfirmStripController();
   const queuePosterResolver = useMemo(() => {
     const map = new Map<string, string>();
     for (const { titleId, entry } of historySelections) {
@@ -2184,6 +2185,7 @@ export function RootOverlayShell({
           <DownloadManagerContent
             container={container}
             onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
+            confirmController={downloadConfirm}
           />
         </RootContentSuspension>
         {commandMode ? (
@@ -2195,8 +2197,16 @@ export function RootOverlayShell({
           />
         ) : null}
         <ShellFooter
-          taskLabel="x cancel/remove · r retry · Esc closes"
-          actions={footerActions}
+          taskLabel={
+            downloadConfirm.state.kind !== "idle"
+              ? "Confirm download action"
+              : "x cancel/remove · r retry · Esc closes"
+          }
+          actions={
+            confirmStripOwnsInput(downloadConfirm.state)
+              ? confirmStripFooterActions(downloadConfirm.state)
+              : footerActions
+          }
           mode="detailed"
           commandMode={commandMode}
           companionHint

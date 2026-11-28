@@ -518,8 +518,16 @@ describe("library input ownership", () => {
     try {
       await waitForFrame(handle, "Dune");
       handle.stdin.enqueue("x");
-      await waitForFrame(handle, "Press x again");
-      handle.stdin.enqueue("x");
+      await waitForFrame(handle, "Delete Dune and all local files?");
+      handle.stdin.enqueue("y");
+      await waitUntil(() => deletes.length === 1, {
+        label: "movie partition deletion",
+        tick: (ms) =>
+          act(async () => {
+            // sleep-allow: Ink input debounce; the component clock is not injected
+            await new Promise((r) => setTimeout(r, ms));
+          }),
+      });
       expect(deletes).toEqual(["movie"]);
     } finally {
       handle.unmount();
@@ -826,7 +834,7 @@ test("Library keeps retained entries visible after partial title removal", async
       handle.stdin.enqueue("x");
     });
     await act(async () => {
-      handle.stdin.enqueue("x");
+      handle.stdin.enqueue("y");
     });
     expect(notes).toContain("Removed 1; kept 1. File is in use.");
     expect(stripAnsi(handle.lastFrame() ?? "")).toContain("Dune");

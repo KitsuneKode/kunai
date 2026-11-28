@@ -18,6 +18,11 @@ import {
 } from "@/app-shell/overlay-footer-actions";
 import { plainModeEnabled } from "@/app-shell/plain-mode";
 import { ClaudeTabRow } from "@/app-shell/primitives/ClaudeTabRow";
+import { ConfirmStrip } from "@/app-shell/primitives/ConfirmStrip";
+import {
+  confirmStripFooterActions,
+  confirmStripOwnsInput,
+} from "@/app-shell/primitives/ConfirmStrip.model";
 import {
   buildMediaListRowColumns,
   computeMediaListRowLayout,
@@ -32,6 +37,10 @@ import {
 import { ResumeCard } from "@/app-shell/primitives/ResumeCard";
 import { SectionGroup } from "@/app-shell/primitives/SectionGroup";
 import { StateBlock } from "@/app-shell/primitives/StateBlock";
+import {
+  useConfirmStripController,
+  type ConfirmStripController,
+} from "@/app-shell/primitives/use-confirm-strip";
 import { ResizeBlocker, ShellFooter, selectFooterActions } from "@/app-shell/shell-primitives";
 import { getWindowStart, truncateLine } from "@/app-shell/shell-text";
 import { palette } from "@/app-shell/shell-theme";
@@ -79,6 +88,9 @@ export function LibraryShell({
   initialView?: TabId;
 }) {
   const [tab, setTab] = useState<TabId>(initialView);
+  const libraryConfirm = useConfirmStripController();
+  const downloadConfirm = useConfirmStripController();
+  const activeConfirm = tab === "library" ? libraryConfirm : downloadConfirm;
   const [downloadJobCount, setDownloadJobCount] = useState(0);
   const [libraryRowCount, setLibraryRowCount] = useState(0);
   const downloadsEnabled = container.config.downloadsEnabled;
@@ -130,6 +142,7 @@ export function LibraryShell({
             onClose={onClose}
             onNavigateToLibrary={() => setTab("library")}
             showSelectionHints={false}
+            confirmController={downloadConfirm}
           />
         ) : (
           <LibraryTab
@@ -137,6 +150,7 @@ export function LibraryShell({
             onClose={onClose}
             onNavigateToQueue={() => setTab("queue")}
             onRowCountChange={setLibraryRowCount}
+            confirmController={libraryConfirm}
           />
         )}
       </Box>
@@ -144,13 +158,17 @@ export function LibraryShell({
         <ShellFooter
           taskLabel={tab === "library" ? "Library" : downloadJobCount > 0 ? "Downloads" : "Queue"}
           mode="minimal"
-          actions={selectFooterActions(
-            tab === "library"
-              ? libraryFooterActions({ hasRows: libraryRowCount > 0 })
-              : downloadQueueFooterActions({ hasJobs: downloadJobCount > 0 }),
-            "minimal",
-            viewport.columns,
-          )}
+          actions={
+            confirmStripOwnsInput(activeConfirm.state)
+              ? confirmStripFooterActions(activeConfirm.state)
+              : selectFooterActions(
+                  tab === "library"
+                    ? libraryFooterActions({ hasRows: libraryRowCount > 0 })
+                    : downloadQueueFooterActions({ hasJobs: downloadJobCount > 0 }),
+                  "minimal",
+                  viewport.columns,
+                )
+          }
           terminalWidth={viewport.columns}
           companionHint
         />
@@ -180,12 +198,15 @@ function LibraryTab({
   onClose,
   onNavigateToQueue,
   onRowCountChange,
+  confirmController,
 }: {
   container: Container;
   onClose: () => void;
   onNavigateToQueue: () => void;
   onRowCountChange: (count: number) => void;
+  confirmController: ConfirmStripController;
 }) {
+  const confirm = confirmController;
   const suspended = useRootContentSuspended();
   const [libraryView, setLibraryView] = useState<LibraryView>("titles");
   const [detailGroup, setDetailGroup] = useState<OfflineLibraryShelfGroup | null>(null);
@@ -195,7 +216,6 @@ function LibraryTab({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null);
   const [historyMap, setHistoryMap] = useState<Record<string, HistoryProgress>>({});
   const [filterQuery, setFilterQuery] = useState("");
   const [filterFocused, setFilterFocused] = useState(false);
@@ -270,6 +290,13 @@ function LibraryTab({
   const selectedRow = totalRows > 0 ? flatRows[safeIndex] : null;
   const selectedOfflineGroup = selectedRow?.group ?? null;
 
+  useEffect(() => {
+    confirm.transition({
+      type: "reconcile",
+      visibleIds: flatRows.map((row) => row.group.key),
+    });
+  }, [confirm, flatRows]);
+
   const detailEntries = useMemo(() => {
     if (!detailGroup || !entries) return [];
     return selectOfflineGroupEntries(detailGroup, entries);
@@ -287,13 +314,13 @@ function LibraryTab({
   };
 
   const openTitle = (group: OfflineLibraryShelfGroup) => {
-    setConfirmDeleteKey(null);
+    confirm.transition({ type: "cancel" });
     setDetailGroup(group);
     setLibraryView("title-detail");
   };
   const scrollTitles = (direction: "up" | "down") => {
     priorPointerKey.current = null;
-    setConfirmDeleteKey(null);
+    confirm.transition({ type: "cancel" });
     setSelectedIndex((current) =>
       Math.max(0, Math.min(totalRows - 1, current + (direction === "up" ? -1 : 1))),
     );
@@ -306,8 +333,8 @@ function LibraryTab({
       // pending state before leaving the surface). Only when nothing is armed does
       // esc close the Library overlay.
       if (key.escape) {
-        if (confirmDeleteKey) {
-          setConfirmDeleteKey(null);
+        if (confirm.state.kind !== "idle") {
+          confirm.transition({ type: "cancel" });
           return;
         }
         // Then leave the filter, then the surface.
@@ -317,6 +344,36 @@ function LibraryTab({
           return;
         }
         onClose();
+        return;
+      }
+      if (confirm.state.kind === "executing") return;
+      if (confirm.state.kind !== "idle") {
+        if (confirm.state.kind === "armed" && input.toLowerCase() === "y") {
+          const confirmation = confirm.transition({ type: "confirm" });
+          const effect = confirmation.effect;
+          const group = flatRows.find((row) => row.group.key === effect?.targetId)?.group;
+          if (!effect || !group) {
+            confirm.transition({ type: "fail", message: "Library row is no longer visible" });
+            return;
+          }
+          const groupEntryIds = group.entries.map((entry) => entry.jobId);
+          void deleteDownloads(container.downloadService, groupEntryIds, true).then((summary) => {
+            const removed = new Set(summary.removedJobIds);
+            setEntries((prev) =>
+              prev ? prev.filter((entry) => !removed.has(entry.job.id)) : null,
+            );
+            container.stateManager.dispatch({
+              type: "SET_PLAYBACK_FEEDBACK",
+              note: formatDownloadRemovalFeedback(summary),
+            });
+            const retained = summary.retained[0];
+            if (retained) confirm.transition({ type: "fail", message: retained.reason });
+            else confirm.transition({ type: "succeed" });
+            return undefined;
+          });
+          return;
+        }
+        if (key.upArrow || key.downArrow) confirm.transition({ type: "cancel" });
         return;
       }
       const filterRoute = routeListFilterKey(input, key, {
@@ -346,33 +403,25 @@ function LibraryTab({
       }
       if (totalRows === 0) return;
       if (key.upArrow) {
-        setConfirmDeleteKey(null);
+        confirm.transition({ type: "cancel" });
         setSelectedIndex((prev) => Math.max(0, prev - 1));
         return;
       }
       if (key.downArrow) {
-        setConfirmDeleteKey(null);
+        confirm.transition({ type: "cancel" });
         setSelectedIndex((prev) => Math.min(totalRows - 1, prev + 1));
         return;
       }
       if (input === "x" || key.delete) {
         if (!selectedOfflineGroup) return;
-        if (confirmDeleteKey === selectedOfflineGroup.key) {
-          setConfirmDeleteKey(null);
-          const groupEntryIds = selectedOfflineGroup.entries.map((entry) => entry.jobId);
-          void deleteDownloads(container.downloadService, groupEntryIds, true).then((summary) => {
-            const removed = new Set(summary.removedJobIds);
-            setEntries((prev) =>
-              prev ? prev.filter((entry) => !removed.has(entry.job.id)) : null,
-            );
-            return container.stateManager.dispatch({
-              type: "SET_PLAYBACK_FEEDBACK",
-              note: formatDownloadRemovalFeedback(summary),
-            });
-          });
-        } else {
-          setConfirmDeleteKey(selectedOfflineGroup.key);
-        }
+        confirm.transition({
+          type: "arm",
+          targetId: selectedOfflineGroup.key,
+          label: `${selectedOfflineGroup.titleName} and all local files`,
+          verb: "delete",
+          executingLabel: `Deleting local files for ${selectedOfflineGroup.titleName}`,
+          visibleIds: flatRows.map((row) => row.group.key),
+        });
         return;
       }
       if (input === "p" || input === "P") {
@@ -401,9 +450,6 @@ function LibraryTab({
         if (!selectedOfflineGroup) return;
         openTitle(selectedOfflineGroup);
         return;
-      }
-      if (confirmDeleteKey !== null) {
-        setConfirmDeleteKey(null);
       }
     },
     { isActive: titlesActive && !suspended },
@@ -533,7 +579,7 @@ function LibraryTab({
             id={`library:row:${row.group.key}`}
             onWheel={scrollTitles}
             onClick={() => {
-              setConfirmDeleteKey(null);
+              confirm.transition({ type: "cancel" });
               if (item.flatIndex !== safeIndex || priorPointerKey.current !== row.group.key) {
                 priorPointerKey.current = row.group.key;
                 setSelectedIndex(item.flatIndex);
@@ -562,15 +608,8 @@ function LibraryTab({
       {showScrollDown ? (
         <Text color={palette.dim}>{plainModeEnabled() ? "more below" : " ▼ ..."}</Text>
       ) : null}
-      {selectedOfflineGroup && confirmDeleteKey === selectedOfflineGroup.key ? (
-        <Box marginTop={1}>
-          <Text color={palette.accentDeep}>
-            {plainModeEnabled() ? "Warning: " : "⚠ "}Press x again to delete{" "}
-            {selectedOfflineGroup.titleName} and all local files
-          </Text>
-        </Box>
-      ) : null}
-      {selectedOfflineGroup && confirmDeleteKey !== selectedOfflineGroup.key ? (
+      <ConfirmStrip state={confirm.state} width={rowWidth} />
+      {selectedOfflineGroup && !confirmStripOwnsInput(confirm.state) ? (
         <ResumeCard
           {...libraryResumeCardCopy(selectedOfflineGroup)}
           width={Math.min(rowWidth, 56)}

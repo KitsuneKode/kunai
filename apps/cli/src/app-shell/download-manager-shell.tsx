@@ -14,10 +14,16 @@ import { MouseTarget } from "@/app-shell/mouse/MouseRegions";
 import { useRowTap } from "@/app-shell/mouse/row-tap";
 import { useOverlayOrTerminalSize } from "@/app-shell/overlay-layout-context";
 import { prefetchPosterSources } from "@/app-shell/poster-source-cache";
+import { ConfirmStrip } from "@/app-shell/primitives/ConfirmStrip";
+import { confirmStripOwnsInput } from "@/app-shell/primitives/ConfirmStrip.model";
 import { computeQueueRowLayout } from "@/app-shell/primitives/list-row-layout";
 import { MediaListShell } from "@/app-shell/primitives/MediaListShell";
 import { ProgressBar } from "@/app-shell/primitives/ProgressBar";
 import { StateBlock } from "@/app-shell/primitives/StateBlock";
+import {
+  useConfirmStripController,
+  type ConfirmStripController,
+} from "@/app-shell/primitives/use-confirm-strip";
 import { resolveRootLibraryPlaybackLaunch } from "@/app-shell/root-library-playback-bridge";
 import { ResizeBlocker } from "@/app-shell/shell-primitives";
 import { truncateLine } from "@/app-shell/shell-text";
@@ -191,13 +197,18 @@ export function DownloadManagerContent({
   onClose,
   onNavigateToLibrary,
   showSelectionHints = true,
+  confirmController,
 }: {
   container: Container;
   onClose: () => void;
   onNavigateToLibrary?: () => void;
   /** When false, omit per-selection hint row (parent shell owns the footer). */
   showSelectionHints?: boolean;
+  /** Optional parent-owned confirmation state so the parent footer can collapse to y/Esc. */
+  confirmController?: ConfirmStripController;
 }) {
+  const internalConfirmController = useConfirmStripController();
+  const confirm = confirmController ?? internalConfirmController;
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
   // Inside a root-owned overlay the provider's content box is the width budget;
   // the raw terminal is wider because the frame already spent the difference.
@@ -207,10 +218,6 @@ export function DownloadManagerContent({
   const [completedJobs, setCompletedJobs] = useState<readonly DownloadJobRecord[]>([]);
   const [failedJobs, setFailedJobs] = useState<readonly DownloadJobRecord[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [confirmingDeletion, setConfirmingDeletion] = useState<{
-    jobId: string;
-    deleteArtifact: boolean;
-  } | null>(null);
   const [repairSweepStatus, setRepairSweepStatus] = useState<string | null>(null);
   const [repairSweepRunning, setRepairSweepRunning] = useState(false);
 
@@ -278,17 +285,6 @@ export function DownloadManagerContent({
   // selection to settle, so holding an arrow key never spawns a poster render
   // per row.
   const selectedJob = allJobs[selectedIndex];
-  const confirmingSelectedJob = Boolean(
-    selectedJob && confirmingDeletion?.jobId === selectedJob.id,
-  );
-  const confirmationPrompt = confirmingDeletion?.deleteArtifact
-    ? "Press x again to delete files · any other key cancels"
-    : selectedJob &&
-        (selectedJob.status === "completed" ||
-          selectedJob.status === "completed-with-notes" ||
-          selectedJob.status === "repairable")
-      ? "Press X again to remove record · local files kept"
-      : "Press x or X again to remove record · local files kept";
   const settledPosterUrl = useSettledValue(selectedJob?.posterUrl);
   // Neighbor prefetch so ↑/↓ across the queue lands on cached poster bytes.
   useEffect(() => {
@@ -337,6 +333,10 @@ export function DownloadManagerContent({
     }
   }, [allJobs, selectedIndex]);
 
+  useEffect(() => {
+    confirm.transition({ type: "reconcile", visibleIds: allJobs.map((job) => job.id) });
+  }, [allJobs, confirm]);
+
   // Enter, `r`, and a confirming tap: play a finished download (Enter and tap
   // only) or retry a failed, aborted, or repairable one.
   const runJobAction = (job: DownloadJobRecord, play: boolean) => {
@@ -376,13 +376,59 @@ export function DownloadManagerContent({
   useInput(
     (input, key) => {
       if (key.escape) {
-        // Esc backs out of an armed delete first, like every other key that
-        // is not the confirming one; it closed the whole manager before.
-        if (confirmingDeletion !== null) {
-          setConfirmingDeletion(null);
+        if (confirm.state.kind !== "idle") {
+          confirm.transition({ type: "cancel" });
           return;
         }
         onClose();
+        return;
+      }
+      if (confirm.state.kind === "executing") return;
+      if (confirm.state.kind !== "idle") {
+        if (confirm.state.kind === "armed" && input.toLowerCase() === "y") {
+          const confirmation = confirm.transition({ type: "confirm" });
+          const effect = confirmation.effect;
+          if (effect) {
+            const job = allJobs.find((candidate) => candidate.id === effect.targetId);
+            if (!job) {
+              confirm.transition({ type: "fail", message: "Download row is no longer visible" });
+            } else if (effect.verb === "abort") {
+              void container.downloadService
+                .abort(job.id)
+                .then(() => {
+                  confirm.transition({ type: "succeed" });
+                  refresh();
+                  return undefined;
+                })
+                .catch((error: unknown) => {
+                  confirm.transition({
+                    type: "fail",
+                    message: error instanceof Error ? error.message : "Unable to abort download",
+                  });
+                });
+            } else {
+              const deleteArtifact = effect.verb === "delete files";
+              void deleteDownloads(container.downloadService, [job.id], deleteArtifact).then(
+                (summary) => {
+                  refresh();
+                  container.stateManager.dispatch({
+                    type: "SET_PLAYBACK_FEEDBACK",
+                    note: formatDownloadRemovalFeedback(summary),
+                  });
+                  const retained = summary.retained[0];
+                  if (retained) {
+                    confirm.transition({ type: "fail", message: retained.reason });
+                  } else {
+                    confirm.transition({ type: "succeed" });
+                  }
+                  return undefined;
+                },
+              );
+            }
+          }
+          return;
+        }
+        if (key.upArrow || key.downArrow) confirm.transition({ type: "cancel" });
         return;
       }
       if ((key.tab || input === "1" || input === "l") && onNavigateToLibrary) {
@@ -419,49 +465,40 @@ export function DownloadManagerContent({
       }
       if (key.upArrow) {
         if (allJobs.length === 0) return;
-        setConfirmingDeletion(null);
+        confirm.transition({ type: "cancel" });
         setSelectedIndex((current) => (current - 1 + allJobs.length) % allJobs.length);
         return;
       }
       if (key.downArrow) {
         if (allJobs.length === 0) return;
-        setConfirmingDeletion(null);
+        confirm.transition({ type: "cancel" });
         setSelectedIndex((current) => (current + 1) % allJobs.length);
         return;
       }
       if (input === "x" || input === "X" || key.delete) {
         const job = allJobs[selectedIndex];
         if (!job) return;
-        if (job.status === "running") {
-          void container.downloadService.abort(job.id);
-          return;
-        }
         const deleteArtifact =
           input !== "X" &&
           (job.status === "repairable" ||
             job.status === "completed" ||
             job.status === "completed-with-notes");
-        if (
-          confirmingDeletion?.jobId === job.id &&
-          confirmingDeletion.deleteArtifact === deleteArtifact
-        ) {
-          setConfirmingDeletion(null);
-          void deleteDownloads(container.downloadService, [job.id], deleteArtifact).then(
-            (summary) => {
-              refresh();
-              return container.stateManager.dispatch({
-                type: "SET_PLAYBACK_FEEDBACK",
-                note: formatDownloadRemovalFeedback(summary),
-              });
-            },
-          );
-          return;
-        }
-        setConfirmingDeletion({ jobId: job.id, deleteArtifact });
+        const verb =
+          job.status === "running" ? "abort" : deleteArtifact ? "delete files" : "remove record";
+        confirm.transition({
+          type: "arm",
+          targetId: job.id,
+          label: job.titleName,
+          verb,
+          executingLabel:
+            verb === "abort"
+              ? `Aborting ${job.titleName}`
+              : verb === "delete files"
+                ? `Deleting local files for ${job.titleName}`
+                : `Removing ${job.titleName} from Downloads`,
+          visibleIds: allJobs.map((candidate) => candidate.id),
+        });
         return;
-      }
-      if (confirmingDeletion !== null) {
-        setConfirmingDeletion(null);
       }
       if (input === "r" || key.return) {
         const job = allJobs[selectedIndex];
@@ -522,12 +559,12 @@ export function DownloadManagerContent({
         flexDirection="column"
         active={!suspended}
         onClick={() => {
-          setConfirmingDeletion(null);
+          confirm.transition({ type: "cancel" });
           if (tapJob(job.id, isSelected) === "activate") runJobAction(job, true);
           else setSelectedIndex(index);
         }}
         onWheel={(direction) => {
-          setConfirmingDeletion(null);
+          confirm.transition({ type: "cancel" });
           setSelectedIndex((current) =>
             Math.max(0, Math.min(allJobs.length - 1, current + (direction === "up" ? -1 : 1))),
           );
@@ -599,7 +636,9 @@ export function DownloadManagerContent({
   const hasSummaryHeader =
     activeJobs.length > 0 || queuedJobs.length > 0 || failedAttentionCount > 0;
   const hintRows =
-    (confirmingSelectedJob ? 1 : 0) + (repairSweepStatus ? 1 : 0) + (allJobs.length > 0 ? 1 : 0);
+    (confirmStripOwnsInput(confirm.state) ? 1 : 0) +
+    (repairSweepStatus ? 1 : 0) +
+    (allJobs.length > 0 ? 1 : 0);
   const chromeRows = getPickerChromeRows({
     hasSubtitle: false,
     commandMode: false,
@@ -654,13 +693,8 @@ export function DownloadManagerContent({
           ) : null}
         </Box>
       )}
-      {confirmingSelectedJob ? (
-        <Box marginTop={1}>
-          <Text color={palette.accentDeep}>
-            {plainModeEnabled() ? "Warning: " : "⚠ "}
-            {confirmationPrompt}
-          </Text>
-        </Box>
+      {confirmStripOwnsInput(confirm.state) ? (
+        <ConfirmStrip state={confirm.state} width={shellWidth} />
       ) : showSelectionHints ? (
         (() => {
           const selected = allJobs[selectedIndex];
