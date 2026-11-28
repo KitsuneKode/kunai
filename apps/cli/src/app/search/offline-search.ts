@@ -1,4 +1,3 @@
-import type { BrowseShellSearchResponse } from "@/app-shell/types";
 import {
   loadBrowseDisplayContext,
   mapBrowseResultOption,
@@ -89,7 +88,7 @@ export async function resolveOfflineSearchResponse({
   readonly container: PhaseContext["container"];
   readonly query: string;
   readonly stateManager: SessionStateManager;
-}): Promise<BrowseShellSearchResponse<SearchResult>> {
+}) {
   const results = [...searchOfflineLibrary(container, query)];
   stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results });
   stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "ready" });
