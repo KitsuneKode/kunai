@@ -18,6 +18,8 @@ export function languageSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "enum",
       id: "animeAudio",
+      effectTiming: "next-playback",
+      configKeys: ["animeLanguageProfile"],
       label: "Anime audio",
       detail: "Preferred anime audio track language",
       options: AUDIO_SETTINGS_OPTIONS,
@@ -31,6 +33,8 @@ export function languageSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "enum",
       id: "animeSubtitle",
+      effectTiming: "next-playback",
+      configKeys: ["animeLanguageProfile"],
       label: "Anime subtitles",
       detail: "Preferred anime subtitle behavior",
       options: SUBTITLE_SETTINGS_OPTIONS,
@@ -44,6 +48,8 @@ export function languageSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "enum",
       id: "animeQuality",
+      effectTiming: "next-playback",
+      configKeys: ["animeLanguageProfile"],
       label: "Anime quality",
       detail: "Preferred stream resolution when an anime source offers choices",
       options: PROVIDER_QUALITY_SETTINGS_OPTIONS,
@@ -62,6 +68,8 @@ export function languageSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "enum",
       id: "seriesAudio",
+      effectTiming: "next-playback",
+      configKeys: ["seriesLanguageProfile"],
       label: "Series audio",
       detail: "Preferred series audio track language",
       options: AUDIO_SETTINGS_OPTIONS,
@@ -75,6 +83,8 @@ export function languageSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "enum",
       id: "seriesSubtitle",
+      effectTiming: "next-playback",
+      configKeys: ["seriesLanguageProfile"],
       label: "Series subtitles",
       detail: "Preferred series subtitle behavior",
       options: SUBTITLE_SETTINGS_OPTIONS,
@@ -88,6 +98,8 @@ export function languageSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "enum",
       id: "seriesQuality",
+      effectTiming: "next-playback",
+      configKeys: ["seriesLanguageProfile"],
       label: "Series quality",
       detail: "Preferred stream resolution when a series source offers choices",
       options: PROVIDER_QUALITY_SETTINGS_OPTIONS,
@@ -106,6 +118,8 @@ export function languageSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "enum",
       id: "movieAudio",
+      effectTiming: "next-playback",
+      configKeys: ["movieLanguageProfile"],
       label: "Movie audio",
       detail: "Preferred movie audio track language",
       options: AUDIO_SETTINGS_OPTIONS,
@@ -119,6 +133,8 @@ export function languageSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "enum",
       id: "movieSubtitle",
+      effectTiming: "next-playback",
+      configKeys: ["movieLanguageProfile"],
       label: "Movie subtitles",
       detail: "Preferred movie subtitle behavior",
       options: SUBTITLE_SETTINGS_OPTIONS,
@@ -132,6 +148,8 @@ export function languageSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "enum",
       id: "movieQuality",
+      effectTiming: "next-playback",
+      configKeys: ["movieLanguageProfile"],
       label: "Movie quality",
       detail: "Preferred stream resolution when a movie source offers choices",
       options: PROVIDER_QUALITY_SETTINGS_OPTIONS,
@@ -150,6 +168,8 @@ export function languageSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "enum",
       id: "youtubeAudio",
+      effectTiming: "next-playback",
+      configKeys: ["youtubeLanguageProfile"],
       label: "YouTube audio",
       detail: "Preferred YouTube audio track language",
       options: AUDIO_SETTINGS_OPTIONS,
@@ -163,6 +183,8 @@ export function languageSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "enum",
       id: "youtubeSubtitle",
+      effectTiming: "next-playback",
+      configKeys: ["youtubeLanguageProfile"],
       label: "YouTube subtitles",
       detail: "Preferred YouTube subtitle behavior",
       options: SUBTITLE_SETTINGS_OPTIONS,
@@ -176,6 +198,8 @@ export function languageSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "enum",
       id: "youtubeQuality",
+      effectTiming: "next-playback",
+      configKeys: ["youtubeLanguageProfile"],
       label: "YouTube quality",
       detail: "Playback and download ceiling for YouTube (mpv ytdl-format / yt-dlp -f)",
       options: YOUTUBE_QUALITY_SETTINGS_OPTIONS,
@@ -192,6 +216,8 @@ export function languageSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "text",
       id: "wyzieApiKey",
+      effectTiming: "next-playback",
+      configKeys: ["wyzieApiKey"],
       label: "Subtitle search key",
       // Kunai ships no key here on purpose: the free tier is per-key rate
       // limited, so one shared credential would throttle every user at once.
@@ -209,6 +235,8 @@ export function languageSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "enum",
       id: "animeTitlePreference",
+      effectTiming: "immediate",
+      configKeys: ["animeTitlePreference"],
       label: "Anime title names",
       detail: "Choose English, Romaji, native, or provider titles in anime search",
       options: ANIME_TITLE_SETTINGS_OPTIONS,

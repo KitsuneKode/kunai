@@ -67,6 +67,8 @@ export function privacySettingsRows(ctx: SettingsRegistryContext): SettingRowDef
     {
       kind: "boolean",
       id: "usageAnalytics",
+      effectTiming: "immediate",
+      configKeys: ["analytics"],
       label: "Usage analytics",
       detail: analyticsSettingDetail(ctx.config),
       read: (config) => config.analytics === "enabled",
@@ -100,6 +102,8 @@ export function privacySettingsRows(ctx: SettingsRegistryContext): SettingRowDef
     {
       kind: "boolean",
       id: "showMemory",
+      effectTiming: "immediate",
+      configKeys: ["showMemory"],
       label: "Memory panel",
       detail:
         "Hidden by default. Use /memory during playback for app, mpv, total, heap, and swap usage",

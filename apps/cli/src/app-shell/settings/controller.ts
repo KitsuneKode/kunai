@@ -134,7 +134,7 @@ function toggleBoolean(
   if (def.envOverride && process.env[def.envOverride]?.trim()) {
     return {
       handled: true,
-      state: { ...state, error: `Unset ${def.envOverride} to change this.` },
+      state: { ...state, error: `Set by ${def.envOverride}; unset it to change here` },
     };
   }
   const next = def.write(state.draft, !def.read(state.draft));
@@ -166,7 +166,7 @@ function openRow(state: SettingsUiState, def: SettingRowDef, rowIndex: number): 
     if (isTextEnvLocked(def)) {
       return {
         handled: true,
-        state: { ...state, error: `Unset ${def.envOverride} to edit this value in config.` },
+        state: { ...state, error: `Set by ${def.envOverride}; unset it to change here` },
       };
     }
     const seed = def.read(state.draft);

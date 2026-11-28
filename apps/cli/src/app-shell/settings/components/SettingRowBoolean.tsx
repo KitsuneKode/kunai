@@ -1,10 +1,10 @@
 import { Box, Text } from "ink";
 import React from "react";
 
-import { plainModeEnabled, selectionPrefix } from "../../plain-mode";
-import { BooleanSwitch } from "../../primitives/Switch";
+import { plainModeEnabled, plainSwitchText, selectionPrefix } from "../../plain-mode";
 import { palette } from "../../shell-theme";
 import type { BuiltSettingsRow } from "../types";
+import { fitSettingsRowText } from "./row-layout";
 
 export const SettingRowBoolean = React.memo(function SettingRowBoolean({
   row,
@@ -17,16 +17,24 @@ export const SettingRowBoolean = React.memo(function SettingRowBoolean({
 }) {
   const plain = plainModeEnabled();
   const isOn = row.valueSummary === "on";
+  const prefix = selectionPrefix(selected, plain);
+  const fitted = fitSettingsRowText({
+    width: rowWidth,
+    prefix,
+    label: row.def.label,
+    value: plainSwitchText(isOn, plain),
+    plain,
+  });
 
   return (
     <Box width={rowWidth} backgroundColor={selected && !plain ? palette.accentFill : undefined}>
       <Text color={selected ? palette.accent : palette.dim}>
-        {selectionPrefix(selected, plain)}
+        {prefix}
       </Text>
-      <BooleanSwitch on={isOn} />
       <Text bold={selected} color={selected ? palette.text : palette.textDim}>
-        {row.def.label}
+        {fitted.label}
       </Text>
+      <Text color={palette.dim}>{fitted.separator}{fitted.value}</Text>
       {row.envBadge ? <Text color={palette.dim}> {"(env)"}</Text> : null}
     </Box>
   );

@@ -27,6 +27,8 @@ export function generalSettingsRows(ctx: SettingsRegistryContext): SettingRowDef
     {
       kind: "enum",
       id: "defaultMode",
+      effectTiming: "next-launch",
+      configKeys: ["defaultMode"],
       label: "Default startup mode",
       detail: "First catalog after launch: series, anime, or YouTube",
       options: DEFAULT_MODE_OPTIONS,
@@ -42,6 +44,8 @@ export function generalSettingsRows(ctx: SettingsRegistryContext): SettingRowDef
     {
       kind: "enum",
       id: "footerHints",
+      effectTiming: "immediate",
+      configKeys: ["footerHints"],
       label: "Footer hints",
       detail: "Detailed = footer shows key legend; minimal = task line only during playback",
       options: FOOTER_HINT_OPTIONS,
@@ -56,6 +60,8 @@ export function generalSettingsRows(ctx: SettingsRegistryContext): SettingRowDef
     {
       kind: "boolean",
       id: "companionPet",
+      effectTiming: "immediate",
+      configKeys: ["companionPet"],
       label: "Mascot & tips",
       detail: "Show Kanna on empty and error screens — off hides her until /pet or this setting",
       read: (config) => config.companionPet !== "off",
@@ -64,6 +70,8 @@ export function generalSettingsRows(ctx: SettingsRegistryContext): SettingRowDef
     {
       kind: "boolean",
       id: "tipsEnabled",
+      effectTiming: "immediate",
+      configKeys: ["tipsEnabled"],
       label: "Shortcut tips",
       detail:
         "One-line hints that teach the direct key after you reach something through the palette — each shows once, ever",

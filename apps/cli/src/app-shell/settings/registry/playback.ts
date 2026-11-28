@@ -32,6 +32,8 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "enum",
       id: "recoveryMode",
+      effectTiming: "next-playback",
+      configKeys: ["recoveryMode"],
       label: "Recovery mode",
       detail: "Choose how aggressively Kunai retries and switches providers",
       options: RECOVERY_MODE_OPTIONS,
@@ -42,6 +44,8 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "enum",
       id: "startupPriority",
+      effectTiming: "next-playback",
+      configKeys: ["startupPriority"],
       label: "Startup priority",
       detail: "Choose how long provider startup waits for richer stream choices",
       options: STARTUP_PRIORITY_OPTIONS,
@@ -55,6 +59,8 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "enum",
       id: "player",
+      effectTiming: "next-launch",
+      configKeys: ["player"],
       label: "Player",
       detail: "Used when --player is not given · takes effect the next time Kunai starts",
       options: playerOptions(),
@@ -68,6 +74,8 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "enum",
       id: "hdrMode",
+      effectTiming: "next-playback",
+      configKeys: ["hdrMode"],
       label: "HDR playback",
       detail: "How mpv handles HDR10, HLG, and Dolby Vision streams",
       options: HDR_MODE_OPTIONS,
@@ -82,6 +90,8 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "enum",
       id: "mpvHwdec",
+      effectTiming: "next-playback",
+      configKeys: ["mpvHwdec"],
       label: "Hardware decoding",
       detail:
         "Probe-select hardware decoding, use an mpv automatic mode/backend, or force software",
@@ -97,6 +107,8 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "boolean",
       id: "mpvAvsyncRecovery",
+      effectTiming: "next-playback",
+      configKeys: ["mpvAvsyncRecovery"],
       label: "A/V sync recovery",
       detail:
         "When mpv reports sustained audio/video drift, seek once to the current position to resync",
@@ -106,6 +118,8 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "enum",
       id: "prePlayConfirm",
+      effectTiming: "next-playback",
+      configKeys: ["prePlayConfirm"],
       label: "Confirm before play",
       detail: "Show the Tracks sheet (source · quality · audio · subs) before mpv launches",
       options: PRE_PLAY_CONFIRM_SETTINGS_OPTIONS,
@@ -121,6 +135,8 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "boolean",
       id: "resumeStartChoicePrompt",
+      effectTiming: "next-playback",
+      configKeys: ["resumeStartChoicePrompt"],
       label: "Resume vs start-over prompt",
       detail: "When autoplay resumes mid-episode, show mpv overlay (R/O) before seeking",
       read: (config) => config.resumeStartChoicePrompt,
@@ -134,6 +150,8 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "boolean",
       id: "autoNext",
+      effectTiming: "next-playback",
+      configKeys: ["autoNext"],
       label: "Autoplay next",
       detail: "Close mpv on EOF and continue through the next available released episode",
       read: (config) => config.autoNext,
@@ -142,6 +160,8 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "enum",
       id: "quitNearEndBehavior",
+      effectTiming: "next-playback",
+      configKeys: ["quitNearEndBehavior"],
       label: "Quit near end",
       detail: "Whether quitting mpv near the natural end can still trigger auto-next",
       options: QUIT_NEAR_END_BEHAVIOR_OPTIONS,
@@ -155,6 +175,8 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "enum",
       id: "quitNearEndThresholdMode",
+      effectTiming: "next-playback",
+      configKeys: ["quitNearEndThresholdMode"],
       label: "Near-end detection",
       detail: "How Kunai decides you were close enough to the end for quit + completion",
       options: QUIT_THRESHOLD_MODE_OPTIONS,
@@ -168,6 +190,8 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "boolean",
       id: "skipRecap",
+      effectTiming: "next-playback",
+      configKeys: ["skipRecap"],
       label: "Skip recaps",
       detail: "Auto-skip recap segments when IntroDB timing exists",
       read: (config) => config.skipRecap,
@@ -176,6 +200,8 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "boolean",
       id: "skipIntro",
+      effectTiming: "next-playback",
+      configKeys: ["skipIntro"],
       label: "Skip intros",
       detail: "Auto-skip intro segments when IntroDB timing exists",
       read: (config) => config.skipIntro,
@@ -184,6 +210,8 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "boolean",
       id: "skipCredits",
+      effectTiming: "next-playback",
+      configKeys: ["skipCredits"],
       label: "Skip credits",
       detail: "Auto-skip credits segments when IntroDB or AniSkip timing exists",
       read: (config) => config.skipCredits,
@@ -198,6 +226,8 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "boolean",
       id: "downloadsEnabled",
+      effectTiming: "immediate",
+      configKeys: ["downloadsEnabled"],
       label: "Offline downloads",
       detail: "Enable local completed downloads and the offline library surface",
       read: (config) => config.downloadsEnabled,
@@ -206,6 +236,8 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "boolean",
       id: "offlineMode",
+      effectTiming: "immediate",
+      configKeys: ["offlineMode"],
       label: "Offline mode",
       detail: "Stay local-only: open the library surface and skip online provider/search work",
       read: (config) => config.offlineMode,
@@ -214,6 +246,8 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "enum",
       id: "defaultDownloadQuality",
+      effectTiming: "immediate",
+      configKeys: ["defaultDownloadQuality"],
       label: "Default download quality",
       detail: "Quality ceiling used when queuing downloads (independent of playback profile)",
       options: PROVIDER_QUALITY_SETTINGS_OPTIONS,
@@ -224,6 +258,8 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "boolean",
       id: "powerSaverMode",
+      effectTiming: "immediate",
+      configKeys: ["powerSaverMode"],
       label: "Power Saver",
       detail: "Pause speculative prefetch, passive refresh, artwork warming, and runway refills",
       read: (config) => config.powerSaverMode,
@@ -232,6 +268,8 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "boolean",
       id: "autoCleanupWatched",
+      effectTiming: "next-launch",
+      configKeys: ["autoCleanupWatched"],
       label: "Auto-cleanup",
       detail: "Flag watched completed downloads for explicit cleanup after the grace period",
       read: (config) => config.autoCleanupWatched,
@@ -240,6 +278,8 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "enum",
       id: "autoCleanupGraceDays",
+      effectTiming: "next-launch",
+      configKeys: ["autoCleanupGraceDays"],
       label: "Cleanup grace",
       detail: "How long watched downloads stay before they appear as cleanup candidates",
       options: AUTO_CLEANUP_GRACE_DAY_OPTIONS,
@@ -253,6 +293,8 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "text",
       id: "downloadPath",
+      effectTiming: "immediate",
+      configKeys: ["downloadPath"],
       label: "Download path",
       detail: "Absolute path override for completed download files",
       placeholder: "Type an absolute download path, then press Enter",
@@ -266,6 +308,8 @@ export function playbackSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "enum",
       id: "continueSourcePreference",
+      effectTiming: "next-playback",
+      configKeys: ["continueSourcePreference"],
       label: "Continue source",
       detail:
         "Local copy or stream when you continue (Home, History, Calendar, --continue). Ask streams when nobody can answer",

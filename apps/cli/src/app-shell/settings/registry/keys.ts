@@ -19,6 +19,8 @@ export function keySettingsRows(_ctx: SettingsRegistryContext): SettingRowDef[] 
     {
       kind: "text",
       id: "tmdbApiKey",
+      effectTiming: "immediate",
+      configKeys: ["tmdbApiKey"],
       label: "TMDB key",
       detail:
         "Free at themoviedb.org/settings/api — paste the API Key or the API Read Access Token. Search, trending and episode lists then go to TMDB directly.",

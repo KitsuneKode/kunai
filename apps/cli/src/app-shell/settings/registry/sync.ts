@@ -110,6 +110,8 @@ function trackerRows(ctx: SettingsRegistryContext, adapter: SyncAdapter): Settin
     {
       kind: "boolean",
       id: `sync:${tracker}:enabled`,
+      effectTiming: "immediate",
+      configKeys: ["sync"],
       label: `${adapter.displayName} sync`,
       detail: "Off means never. To stop delivery for a while, use Pause sync instead.",
       read: (config) => config.sync[tracker].enabled,
@@ -121,6 +123,8 @@ function trackerRows(ctx: SettingsRegistryContext, adapter: SyncAdapter): Settin
     {
       kind: "boolean",
       id: `sync:${tracker}:trackWatched`,
+      effectTiming: "immediate",
+      configKeys: ["sync"],
       label: "Send episode progress",
       detail: adapter.capabilities.episodeProgress
         ? "Push what you have watched as you watch it"
@@ -137,6 +141,8 @@ function trackerRows(ctx: SettingsRegistryContext, adapter: SyncAdapter): Settin
     {
       kind: "boolean",
       id: `sync:${tracker}:syncList`,
+      effectTiming: "immediate",
+      configKeys: ["sync"],
       label: "Send watchlist and favourites",
       detail: `Mirror w (watchlist) and f (favourite) to ${adapter.displayName}`,
       gate: {
@@ -200,6 +206,8 @@ export function syncSettingsRows(ctx: SettingsRegistryContext): SettingRowDef[] 
     {
       kind: "submenu",
       id: "sync:pause",
+      effectTiming: "immediate",
+      configKeys: ["sync"],
       label: "Pause sync",
       detail: "Hold delivery for a while. Changes keep queueing and go out on resume.",
       summarize: (config) =>

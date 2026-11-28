@@ -13,6 +13,7 @@ export function appearanceSettingsRows(_ctx?: SettingsRegistryContext): SettingR
     {
       kind: "enum",
       id: "theme",
+      effectTiming: "immediate",
       configKeys: ["theme"],
       label: "Theme",
       detail: "Shell color palette — applies immediately, saved for next launch",
@@ -31,6 +32,7 @@ export function appearanceSettingsRows(_ctx?: SettingsRegistryContext): SettingR
     {
       kind: "boolean",
       id: "plainMode",
+      effectTiming: "next-launch",
       configKeys: ["plainMode"],
       label: "Plain / screen-reader mode",
       detail:

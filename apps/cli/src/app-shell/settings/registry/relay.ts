@@ -23,6 +23,8 @@ export function relaySettingsRows(ctx: SettingsRegistryContext): SettingRowDef[]
     {
       kind: "boolean",
       id: "providerRelayEnabled",
+      effectTiming: "next-playback",
+      configKeys: ["providerRelay"],
       label: "Relay enabled",
       detail:
         "Master switch — off uses direct provider fetches even when a relay URL is configured",
@@ -35,6 +37,8 @@ export function relaySettingsRows(ctx: SettingsRegistryContext): SettingRowDef[]
     {
       kind: "text",
       id: "providerRelayBaseUrl",
+      effectTiming: "next-playback",
+      configKeys: ["providerRelay"],
       label: "Relay server URL",
       detail: "https:// user-owned relay endpoint, or local http://127.0.0.1 for dev",
       placeholder: "Type your relay server URL, then press Enter",
@@ -56,6 +60,8 @@ export function relaySettingsRows(ctx: SettingsRegistryContext): SettingRowDef[]
     {
       kind: "text",
       id: "providerRelayToken",
+      effectTiming: "next-playback",
+      configKeys: ["providerRelay"],
       label: "Relay token",
       detail: "Bearer token when your relay requires authentication",
       placeholder: "Type your relay bearer token, then press Enter",
@@ -74,6 +80,8 @@ export function relaySettingsRows(ctx: SettingsRegistryContext): SettingRowDef[]
     {
       kind: "boolean",
       id: "providerRelayFallbackToDirect",
+      effectTiming: "next-playback",
+      configKeys: ["providerRelay"],
       label: "Relay fallback",
       detail: "On: retry direct fetch when relay RPC fails. Off: fail the resolve instead",
       read: (config) => config.providerRelay.fallbackToDirect !== false,
@@ -85,6 +93,8 @@ export function relaySettingsRows(ctx: SettingsRegistryContext): SettingRowDef[]
     {
       kind: "submenu",
       id: "providerRelayProviders",
+      effectTiming: "next-playback",
+      configKeys: ["providerRelay"],
       label: "Relay providers",
       detail: "Choose which relay-capable providers route metadata through your relay",
       summarize: (config) => describeProviderRelayProviders(config),
@@ -131,6 +141,8 @@ export function providerDnsSettingsRows(): SettingRowDef[] {
     {
       kind: "boolean",
       id: "providerDns",
+      effectTiming: "next-launch",
+      configKeys: ["providerDns"],
       label: "DNS-over-HTTPS",
       detail:
         "On: provider site names are looked up through Cloudflare (1.1.1.1), falling back to your system DNS. Off: system DNS only. Video always uses system DNS",
