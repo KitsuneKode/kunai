@@ -43,6 +43,8 @@ const first: SettingRowDef = {
   kind: "boolean",
   id: "alpha",
   label: "Alpha",
+  effectTiming: "immediate",
+  configKeys: ["theme"],
   read: () => true,
   write: (config) => config,
 };
@@ -51,6 +53,8 @@ const second: SettingRowDef = {
   kind: "boolean",
   id: "beta",
   label: "Beta",
+  effectTiming: "immediate",
+  configKeys: ["theme"],
   read: () => false,
   write: (config) => config,
 };

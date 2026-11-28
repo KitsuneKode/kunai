@@ -94,7 +94,7 @@ test("KUNAI_PLAIN shows the effective plain-mode switch and refuses the toggle",
       expect(result.handled).toBe(true);
       expect(result.state.draft.plainMode).toBe(stored);
       expect(result.persist).toBeUndefined();
-      expect(result.state.error).toBe("Unset KUNAI_PLAIN to change this.");
+      expect(result.state.error).toBe("Set by KUNAI_PLAIN; unset it to change here");
     }
   } finally {
     if (saved === undefined) delete process.env.KUNAI_PLAIN;

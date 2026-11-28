@@ -34,6 +34,8 @@ export function youtubeSettingsRows(_ctx: SettingsRegistryContext): SettingRowDe
     {
       kind: "text",
       id: "youtubeMetadataInstanceUrl",
+      effectTiming: "next-playback",
+      configKeys: ["youtubeMetadata"],
       label: "Invidious instance",
       detail:
         "Custom Invidious base URL for search/browse metadata (leave empty for auto rotation)",
@@ -45,6 +47,8 @@ export function youtubeSettingsRows(_ctx: SettingsRegistryContext): SettingRowDe
     {
       kind: "text",
       id: "youtubeMetadataPipedApiUrl",
+      effectTiming: "next-playback",
+      configKeys: ["youtubeMetadata"],
       label: "Piped API URL",
       detail: "Fallback metadata API when Invidious is unavailable",
       placeholder: "https://pipedapi.kavin.rocks",
@@ -55,6 +59,8 @@ export function youtubeSettingsRows(_ctx: SettingsRegistryContext): SettingRowDe
     {
       kind: "text",
       id: "youtubeMetadataCookiesFromBrowser",
+      effectTiming: "next-playback",
+      configKeys: ["youtubeMetadata"],
       label: "Cookies from browser",
       detail: "Browser profile for yt-dlp cookies (e.g. chrome, firefox) — age-restricted videos",
       placeholder: "chrome",
@@ -66,6 +72,8 @@ export function youtubeSettingsRows(_ctx: SettingsRegistryContext): SettingRowDe
     {
       kind: "text",
       id: "youtubeMetadataCookiesFile",
+      effectTiming: "next-playback",
+      configKeys: ["youtubeMetadata"],
       label: "Cookies file",
       detail: "Netscape cookies.txt path for yt-dlp",
       placeholder: "/path/to/cookies.txt",
@@ -77,6 +85,8 @@ export function youtubeSettingsRows(_ctx: SettingsRegistryContext): SettingRowDe
     {
       kind: "text",
       id: "youtubeMetadataExtractorArgs",
+      effectTiming: "next-playback",
+      configKeys: ["youtubeMetadata"],
       label: "Extractor args",
       detail: "Extra yt-dlp --extractor-args value for YouTube",
       placeholder: "youtube:player_client=android",
@@ -87,6 +97,8 @@ export function youtubeSettingsRows(_ctx: SettingsRegistryContext): SettingRowDe
     {
       kind: "text",
       id: "youtubeMetadataPoToken",
+      effectTiming: "next-playback",
+      configKeys: ["youtubeMetadata"],
       label: "PO token",
       detail: "Proof of Origin token as CLIENT.CONTEXT+TOKEN, e.g. visionos.gvs+MnRt...",
       placeholder: "visionos.gvs+MnRt...",
@@ -98,6 +110,8 @@ export function youtubeSettingsRows(_ctx: SettingsRegistryContext): SettingRowDe
     {
       kind: "text",
       id: "youtubeMetadataSponsorblockRemove",
+      effectTiming: "next-playback",
+      configKeys: ["youtubeMetadata"],
       label: "SponsorBlock remove",
       detail: "Comma-separated categories to skip on play/download (e.g. sponsor,intro,outro)",
       placeholder: "sponsor,intro,outro",

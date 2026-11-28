@@ -48,6 +48,9 @@ export function addonSettingsRows(ctx: SettingsRegistryContext): SettingRowDef[]
     {
       kind: "submenu",
       id: "experimentalStremioAddons",
+      // The tag describes what the next change would do: turning addons off is
+      // read at the next resolve, turning them on needs a restart to load them.
+      effectTiming: globallyOff ? "next-launch" : "next-playback",
       label: "Experimental: Stremio addons",
       detail:
         "Third-party addon servers you choose. Off by default; turning it off stops addons at the next resolve.",
@@ -95,6 +98,8 @@ export function addonSettingsRows(ctx: SettingsRegistryContext): SettingRowDef[]
     {
       kind: "text",
       id: "stremioAddonAdd",
+      effectTiming: "next-launch",
+      configKeys: ["stremioAddons"],
       label: "Add an addon",
       detail:
         "Paste the addon's https manifest.json URL. It joins the end of your movies and series order the next time Kunai starts.",
@@ -126,6 +131,14 @@ export function addonSettingsRows(ctx: SettingsRegistryContext): SettingRowDef[]
     ...addons.map((addon): SettingRowDef => ({
       kind: "boolean",
       id: `stremioAddon:${addon.providerId}`,
+      effectTiming: "next-launch",
+      configKeys: [
+        "stremioAddons",
+        "provider",
+        "providerPriority",
+        "disabledProviders",
+        "titleProviderPreferences",
+      ],
       label: `Keep ${addon.displayName}`,
       detail: `${addon.host}: ${globallyOff ? `${STREMIO_ADDONS_DISABLED}. ` : ""}turn off to remove this addon and its place in your order. To pause it instead, use its provider switch.`,
       read: (config) => isStremioAddonInstalled(config.stremioAddons, addon.providerId),

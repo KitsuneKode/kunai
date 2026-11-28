@@ -84,6 +84,23 @@ describe("Stremio addon settings", () => {
     expect(row(rows, "stremioAddonAdd", "text").summarize?.(DEFAULT_CONFIG)).toBe("none installed");
   });
 
+  test("the addons toggle tags the timing of the change it would make", () => {
+    // Off → on needs a restart to load addon modules; on → off is read at the next resolve.
+    const off = row(
+      addonSettingsRows(ctxFor(DEFAULT_CONFIG)),
+      "experimentalStremioAddons",
+      "submenu",
+    );
+    const on = row(
+      addonSettingsRows(ctxFor(ENABLED_CONFIG)),
+      "experimentalStremioAddons",
+      "submenu",
+    );
+
+    expect(off.effectTiming).toBe("next-launch");
+    expect(on.effectTiming).toBe("next-playback");
+  });
+
   test("the add row stores a valid URL and holds no value of its own", () => {
     const add = row(addonSettingsRows(ctxFor(ENABLED_CONFIG)), "stremioAddonAdd", "text");
 
@@ -94,6 +111,19 @@ describe("Stremio addon settings", () => {
     expect(add.read(next)).toBe("");
     expect(add.sensitive).toBe(true);
     expect(add.summarize?.(next)).toBe("1 installed");
+  });
+
+  test("an installed addon removal declares every provider reference it clears", () => {
+    const config = { ...ENABLED_CONFIG, stremioAddons: [{ url: A, name: "Alpha" }] };
+    const removal = row(addonSettingsRows(ctxFor(config)), `stremioAddon:${idOf(A)}`, "boolean");
+
+    expect(removal.configKeys).toEqual([
+      "stremioAddons",
+      "provider",
+      "providerPriority",
+      "disabledProviders",
+      "titleProviderPreferences",
+    ]);
   });
 
   test("an empty entry, as sent when the input is cancelled, changes nothing", () => {

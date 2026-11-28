@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T10:55:19Z"
+lastReviewed: "2026-11-28T15:51:12Z"
 ---
 
 # Kunai — Presence Integrations
@@ -105,9 +105,6 @@ The Settings panel is the user-facing onboarding surface. Open it with `/presenc
 - `Presence privacy` chooses full title/episode detail or generic private activity.
 - `Discord client ID` lets the user type a numeric Discord application client id, clear the
   configured id, or rely on `KUNAI_DISCORD_CLIENT_ID`.
-- `Discord open URL` lets the user set or clear a reserved safe `https://` or `kunai://` handoff
-  URL for future Discord buttons. The current activity payload ignores it and builds catalog
-  buttons from title ids instead.
 - `Connect Discord now` saves pending settings and verifies local IPC without requiring playback.
 - `Disconnect Discord` clears the current activity and closes the local IPC client.
 
@@ -150,8 +147,8 @@ exposed as `playable_ref` in url-fields.
 Play-in-Kunai handoffs use the shared `PlaybackTargetRef` codec (see `.docs/share-links.md`). Both
 the `kunai://` text ref and the https play button are derived from the live activity via
 `buildShareRefForActivity` in `discord-activity-links.ts`, so they stay episode-accurate.
-`presenceDiscordOpenUrl` remains in settings for future use but is not wired into the default
-activity payload.
+`presenceDiscordOpenUrl` remains readable in config for compatibility, but it is not exposed in
+settings because no activity payload consumes it; catalog buttons are built from title ids instead.
 
 Full privacy cards are laid out like music-player presence (Cider-style): show title on
 `details`, `S# E# · episode name` on `state`, playback progress via Discord timestamps, and the

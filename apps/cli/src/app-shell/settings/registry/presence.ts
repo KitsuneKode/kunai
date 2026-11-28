@@ -5,7 +5,6 @@ import { settingsDraftPatch } from "../persist";
 import type { SettingRowDef, SettingsRegistryContext } from "../types";
 import {
   describeDiscordClientId,
-  describeDiscordOpenUrl,
   PRESENCE_PRIVACY_OPTIONS,
   PRESENCE_PROVIDER_OPTIONS,
 } from "./shared";
@@ -53,6 +52,8 @@ export function presenceSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
     {
       kind: "enum",
       id: "presenceProvider",
+      effectTiming: "immediate",
+      configKeys: ["presenceProvider"],
       label: "Presence",
       detail: "Optional local social presence integration. Off by default.",
       options: PRESENCE_PROVIDER_OPTIONS,
@@ -66,6 +67,8 @@ export function presenceSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
     {
       kind: "enum",
       id: "presencePrivacy",
+      effectTiming: "immediate",
+      configKeys: ["presencePrivacy"],
       label: "Presence privacy",
       detail: "Controls how much title detail presence integrations may expose",
       options: PRESENCE_PRIVACY_OPTIONS,
@@ -95,6 +98,8 @@ export function presenceSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
     {
       kind: "text",
       id: "presenceDiscordClientId",
+      effectTiming: "immediate",
+      configKeys: ["presenceDiscordClientId"],
       label: "Discord client ID",
       detail: "Type a Discord application client id, or use KUNAI_DISCORD_CLIENT_ID",
       placeholder: "Type your Discord application client id, then press Enter",
@@ -105,27 +110,6 @@ export function presenceSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
         !value.trim() || /^\d{12,32}$/.test(value.trim())
           ? null
           : "Type a numeric Discord application client id, or clear to unset.",
-    },
-    {
-      kind: "text",
-      id: "presenceDiscordOpenUrl",
-      label: "Discord open URL",
-      detail: "Reserved for future handoffs; catalog buttons are auto-built from title ids",
-      placeholder: "Type an https:// or kunai:// URL, then press Enter",
-      read: (config) => config.presenceDiscordOpenUrl,
-      apply: (config, value) => ({ ...config, presenceDiscordOpenUrl: value.trim() }),
-      validate: (value) => {
-        const trimmed = value.trim();
-        if (!trimmed) return null;
-        try {
-          const parsed = new URL(trimmed);
-          return parsed.protocol === "https:" || parsed.protocol === "kunai:"
-            ? null
-            : "Type a safe https:// or kunai:// URL.";
-        } catch {
-          return "Type a safe https:// or kunai:// URL.";
-        }
-      },
     },
     {
       kind: "action",
@@ -162,13 +146,6 @@ export function presenceSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
       label: "Discord client ID source",
       detail: describeDiscordClientId(ctx.config),
       tone: describeDiscordClientId(ctx.config) === "bundled default" ? "info" : "success",
-    },
-    {
-      kind: "status",
-      id: "presenceOpenUrlStatus",
-      label: "Discord open URL source",
-      detail: describeDiscordOpenUrl(ctx.config),
-      tone: describeDiscordOpenUrl(ctx.config) === "off" ? "info" : "success",
     },
   ];
 }

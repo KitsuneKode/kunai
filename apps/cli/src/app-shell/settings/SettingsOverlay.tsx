@@ -27,6 +27,16 @@ import { selectableSettingsRows, windowStart } from "./navigation";
 import type { SettingsPointerEvent } from "./pointer";
 import type { BuiltSettingsPage, SettingsRegistryContext, SettingsUiState } from "./types";
 
+function effectTimingTag(row: BuiltSettingsPage["rows"][number]): string | null {
+  return "effectTiming" in row.def
+    ? row.def.effectTiming === "immediate"
+      ? "applies now"
+      : row.def.effectTiming === "next-playback"
+        ? "next playback"
+        : "next launch"
+    : null;
+}
+
 function renderMainRow(
   row: BuiltSettingsPage["rows"][number],
   selected: boolean,
@@ -267,8 +277,13 @@ export const SettingsOverlay = React.memo(function SettingsOverlay({
               >
                 <Box flexDirection="column">
                   {renderMainRow(row, selected, rowWidth)}
-                  {selected && row.detail ? (
-                    <Text color={palette.dim}>{`  ${row.detail}`}</Text>
+                  {selected ? (
+                    <Text color={palette.dim}>
+                      {truncateLine(
+                        `  ${[effectTimingTag(row), row.detail].filter(Boolean).join(" · ")}`,
+                        rowWidth,
+                      )}
+                    </Text>
                   ) : null}
                 </Box>
               </MouseTarget>

@@ -410,7 +410,7 @@ describe("plain / screen-reader rendering across every shell surface", () => {
 
     expect(frame).not.toMatch(DECORATIVE_NOISE);
     expect(frame).toContain("Search (focused): theme");
-    expect(frame).toContain("[selected] [on] Plain / screen-reader mode");
+    expect(frame).toContain("[selected] Plain / screen-reader mode: [on]");
     expect(frame).toContain("Theme: Paper Sakura (Light)");
   });
 

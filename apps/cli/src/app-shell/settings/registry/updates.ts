@@ -11,6 +11,8 @@ export function updateSettingsRows(_ctx: SettingsRegistryContext): SettingRowDef
     {
       kind: "boolean",
       id: "updateChecksEnabled",
+      effectTiming: "next-launch",
+      configKeys: ["updateChecksEnabled"],
       label: "Update checks",
       detail: "Check for new Kunai releases during startup when the network is available",
       read: (config) => config.updateChecksEnabled,
@@ -19,6 +21,8 @@ export function updateSettingsRows(_ctx: SettingsRegistryContext): SettingRowDef
     {
       kind: "boolean",
       id: "autoApplyBinaryUpdates",
+      effectTiming: "next-launch",
+      configKeys: ["autoApplyBinaryUpdates"],
       label: "Auto-install updates",
       detail:
         "Install new releases in the background on native installs; takes effect after a restart. Other install methods only notify.",

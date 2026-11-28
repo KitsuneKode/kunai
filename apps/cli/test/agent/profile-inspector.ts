@@ -15,6 +15,8 @@
 import { Database } from "bun:sqlite";
 import { existsSync, readFileSync } from "node:fs";
 
+import { isJsonObject, type LooseJsonValue } from "@kunai/types";
+
 export type ProfileStoragePaths = {
   readonly dataDbPath: string;
   readonly cacheDbPath: string;
@@ -37,10 +39,27 @@ export type QueueRow = {
   last_failure_json: string | null;
 };
 
-/** Canonical JSON for one row — sorted keys so equal rows serialize equal. */
+/** Canonicalize objects recursively; array order remains meaningful. */
+function canonicalJson(value: LooseJsonValue): LooseJsonValue {
+  if (Array.isArray(value)) return value.map(canonicalJson);
+  if (!isJsonObject(value)) return value;
+  // Object.fromEntries defines own properties, so a "__proto__" key from the
+  // config file stays data instead of hitting the inherited prototype setter.
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .flatMap((key) => {
+        const entry = value[key];
+        return entry === undefined ? [] : [[key, canonicalJson(entry)] as const];
+      }),
+  );
+}
+
+/** Canonical JSON for one row — recursively sorted keys so equal rows serialize equal. */
 function canonicalRow(row: unknown): string {
-  // SAFETY: bun:sqlite .all() yields row objects — Object.keys needs the record shape.
-  return JSON.stringify(row, Object.keys(row as Record<string, unknown>).sort());
+  // SAFETY: canonicalRow only accepts JSON.parse output and bun:sqlite row
+  // values, both of which serialize through the loose persisted-JSON shape.
+  return JSON.stringify(canonicalJson(row as LooseJsonValue));
 }
 
 /**
@@ -54,7 +73,11 @@ export type DbFileSnapshot = {
   readonly truncated: readonly string[];
 };
 
-/** Snapshots of both databases, keyed `"data.<table>"` / `"cache.<table>"`. */
+/**
+ * Snapshots of both databases, keyed `"data.<table>"` / `"cache.<table>"`,
+ * plus `config.json` as one canonical row so diffSnapshots can prove that a
+ * control did or did not persist. `tables()` filters the pseudo-entry out.
+ */
 export type ProfileSnapshot = Map<string, string[]>;
 
 export type TableDelta = {
@@ -65,11 +88,13 @@ export type TableDelta = {
 /** `table -> {added, removed}` for tables whose contents differ. */
 export type ProfileDelta = Map<string, TableDelta>;
 
+type ConfigObject = Record<string, unknown>;
+
 export interface ProfileInspector {
   history(): HistoryRow[];
   queue(): QueueRow[];
   /** Parsed config.json; `{}` when absent (fresh profile). */
-  config(): Record<string, unknown>;
+  config(): ConfigObject;
   /** `table -> row count` across both databases. */
   tables(): Record<string, number>;
   /** Raw rows of one table (canonical JSON strings), `"data.x"`/`"cache.x"` keyed. */
@@ -110,8 +135,41 @@ function snapshotFile(dbPath: string): DbFileSnapshot {
   return { tables, truncated };
 }
 
+function parseConfigObject(text: string): ConfigObject {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (!(parsed instanceof Object) || Array.isArray(parsed)) {
+      // eslint-disable-next-line anti-slop/no-known-value-widening -- the inspector intentionally exposes config.json as open persisted JSON.
+      return { __unreadable: true } satisfies ConfigObject;
+    }
+    // SAFETY: object-narrowed above — the top level of a config file is a record.
+    return parsed as ConfigObject;
+  } catch {
+    // A torn write is a finding, not a crash — report what we could see.
+    // eslint-disable-next-line anti-slop/no-known-value-widening -- corrupt config is reported through the same open persisted-JSON contract.
+    return { __unreadable: true } satisfies ConfigObject;
+  }
+}
+
+function readConfigObject(configPath: string): ConfigObject {
+  if (!existsSync(configPath)) return {};
+  try {
+    return parseConfigObject(readFileSync(configPath, "utf8"));
+  } catch {
+    // EISDIR, EPERM and similar read failures are profile findings, not
+    // inspector crashes; represent them in the same contract as corrupt JSON.
+    // eslint-disable-next-line anti-slop/no-known-value-widening -- unreadable config is reported through the same open persisted-JSON contract.
+    return { __unreadable: true } satisfies ConfigObject;
+  }
+}
+
+function configSnapshotRow(paths: ProfileStoragePaths): string {
+  if (!existsSync(paths.configPath)) return "{}";
+  return canonicalRow(readConfigObject(paths.configPath));
+}
+
 export function snapshotProfile(paths: ProfileStoragePaths): ProfileSnapshot {
-  const out: ProfileSnapshot = new Map();
+  const out: ProfileSnapshot = new Map([["config.json", [configSnapshotRow(paths)]]]);
   for (const [prefix, dbPath] of [
     ["data", paths.dataDbPath],
     ["cache", paths.cacheDbPath],
@@ -170,24 +228,14 @@ export function createProfileInspector(paths: ProfileStoragePaths): ProfileInspe
       }
     },
     config() {
-      if (!existsSync(paths.configPath)) return {};
-      try {
-        const parsed: unknown = JSON.parse(readFileSync(paths.configPath, "utf8"));
-        // config.json is always an object; a scalar/array would be corruption.
-        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-          return { __unreadable: true };
-        }
-        // SAFETY: object-narrowed above — the top level of a config file is a record.
-        return parsed as Record<string, unknown>;
-      } catch {
-        // A torn write is a finding, not a crash — report what we could see.
-        return { __unreadable: true };
-      }
+      return readConfigObject(paths.configPath);
     },
     tables() {
       const snap = snapshotProfile(paths);
       const out: Record<string, number> = {};
-      for (const [table, rows] of snap) out[table] = rows.length;
+      for (const [table, rows] of snap) {
+        if (table !== "config.json") out[table] = rows.length;
+      }
       return out;
     },
     tableRows(table) {

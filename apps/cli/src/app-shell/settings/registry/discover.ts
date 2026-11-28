@@ -12,6 +12,8 @@ export function discoverSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "boolean",
       id: "discoverShowOnStartup",
+      effectTiming: "next-launch",
+      configKeys: ["discoverShowOnStartup"],
       label: "Show discover on startup",
       detail: "Open recommendations first instead of the empty search home",
       read: (config) => config.discoverShowOnStartup,
@@ -20,6 +22,8 @@ export function discoverSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "enum",
       id: "discoverMode",
+      effectTiming: "immediate",
+      configKeys: ["discoverMode"],
       label: "Discover mode",
       detail: "Choose whether discover follows mode, mixes catalogs, or stays focused",
       options: DISCOVER_MODE_OPTIONS,
@@ -30,6 +34,8 @@ export function discoverSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "enum",
       id: "discoverItemLimit",
+      effectTiming: "immediate",
+      configKeys: ["discoverItemLimit"],
       label: "Discover tray size",
       detail: "How many results /discover, /random, and /surprise should stage",
       options: DISCOVER_ITEM_LIMIT_OPTIONS,
@@ -43,6 +49,8 @@ export function discoverSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "boolean",
       id: "recommendationRailEnabled",
+      effectTiming: "next-playback",
+      configKeys: ["recommendationRailEnabled"],
       label: "Post-playback recommendations",
       detail: "Show a compact recommendation rail after finishing playback",
       read: (config) => config.recommendationRailEnabled,
@@ -51,6 +59,8 @@ export function discoverSettingsRows(_ctx: SettingsRegistryContext): SettingRowD
     {
       kind: "boolean",
       id: "showWatchTimeStats",
+      effectTiming: "immediate",
+      configKeys: ["showWatchTimeStats"],
       label: "Watch-time stats",
       detail: "Show compact watch-time totals in recommendation and history surfaces",
       read: (config) => config.showWatchTimeStats,

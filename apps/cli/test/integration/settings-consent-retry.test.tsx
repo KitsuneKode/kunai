@@ -277,7 +277,7 @@ test("action refresh rebases passive edits after same-process withdrawal", async
   try {
     await p.container.usageAnalytics.setConsent("disabled");
     await act(async () => {
-      await keys(handle, down, down, down, down, enter);
+      await keys(handle, down, down, down, enter);
       await completed.promise;
     });
     const sibling = await p.sibling();
@@ -289,7 +289,7 @@ test("action refresh rebases passive edits after same-process withdrawal", async
     // Presence privacy is an unrelated passive edit after the action refresh.
     const saved = p.nextSave();
     await act(async () => {
-      await keys(handle, up, up, up, enter, down, enter);
+      await keys(handle, up, up, enter, down, enter);
       await saved;
     });
     const disk = await p.disk();

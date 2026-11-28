@@ -39,6 +39,8 @@ function providerToggleRows(
   return options.map((option): SettingRowDef => ({
     kind: "boolean",
     id: `provider:enabled:${option.value}`,
+    effectTiming: "next-playback",
+    configKeys: ["disabledProviders"],
     label: `Enable ${stripCurrentLabel(option.label)}`,
     detail:
       kind === "series"
@@ -72,6 +74,8 @@ export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
     {
       kind: "enum",
       id: "provider",
+      effectTiming: "next-playback",
+      configKeys: ["provider"],
       label: "Movies and series provider",
       detail: "Movies and series: used on new searches until you pick another provider",
       options: providerEnumOptions(ctx, "series"),
@@ -82,6 +86,8 @@ export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
     {
       kind: "enum",
       id: "animeProvider",
+      effectTiming: "next-playback",
+      configKeys: ["animeProvider"],
       label: "Anime provider",
       detail: "Anime mode default: used on new anime searches until changed in-session",
       options: providerEnumOptions(ctx, "anime"),
@@ -92,6 +98,8 @@ export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
     {
       kind: "enum",
       id: "youtubeProvider",
+      effectTiming: "next-playback",
+      configKeys: ["youtubeProvider"],
       gate: { predicate: () => ctx.youtubeProviderOptions.length > 1 },
       label: "YouTube provider",
       detail: "YouTube mode default: used on new YouTube searches until changed in-session",
@@ -103,6 +111,8 @@ export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
     {
       kind: "reorder",
       id: "providerPriority",
+      effectTiming: "next-playback",
+      configKeys: ["provider", "providerPriority"],
       label: configLabel("providerPriority"),
       detail: "Try order for movies and series — first entry is default, rest are fallbacks",
       resolveOrder: resolveSeriesProviderOrder,
@@ -112,6 +122,8 @@ export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
     {
       kind: "reorder",
       id: "animeProviderPriority",
+      effectTiming: "next-playback",
+      configKeys: ["animeProvider", "animeProviderPriority"],
       label: configLabel("animeProviderPriority"),
       detail:
         "Your configured anime fallback order; the provider picker offers every available provider",
@@ -122,6 +134,8 @@ export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
     {
       kind: "reorder",
       id: "youtubeProviderPriority",
+      effectTiming: "next-playback",
+      configKeys: ["youtubeProvider", "youtubeProviderPriority"],
       gate: { predicate: () => ctx.youtubeProviderOptions.length > 1 },
       label: configLabel("youtubeProviderPriority"),
       detail: "Try order for YouTube — first entry is default, rest are fallbacks",
@@ -142,6 +156,8 @@ export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
     {
       kind: "text",
       id: "videasySessionToken",
+      effectTiming: "next-playback",
+      configKeys: ["videasySessionToken"],
       label: configLabel("videasySessionToken"),
       detail:
         "Optional — only if Videasy blocks resolves. Mint once on cineplay.to; resolution stays direct HTTP (no browser at playback)",
@@ -158,6 +174,8 @@ export function providerSettingsRows(ctx: SettingsRegistryContext): SettingRowDe
     {
       kind: "enum",
       id: "videasyAppId",
+      effectTiming: "next-playback",
+      configKeys: ["videasyAppId"],
       label: "Videasy session source",
       detail: "Match the site where you created the optional session token",
       options: [

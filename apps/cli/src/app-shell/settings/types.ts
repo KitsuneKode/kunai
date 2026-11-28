@@ -46,8 +46,17 @@ export type SettingActionOptions = {
   readonly onStatus: (message: string | null) => void;
 };
 
+export type SettingEffectTiming = "immediate" | "next-playback" | "next-launch";
+
 type SettingRowMetadata = {
   readonly configKeys?: readonly (keyof KitsuneConfig)[];
+};
+
+type PersistedSettingRowMetadata = {
+  /** When a committed change becomes visible in the behavior that reads it. */
+  readonly effectTiming: SettingEffectTiming;
+  /** Top-level persisted config keys this row writes, including nested-object owners. */
+  readonly configKeys: readonly (keyof KitsuneConfig)[];
 };
 
 export type SettingRowDef = SettingRowMetadata &
@@ -69,7 +78,7 @@ export type SettingRowDef = SettingRowMetadata &
         readonly tone?: "danger";
         readonly gate?: SettingGate;
       }
-    | {
+    | (PersistedSettingRowMetadata & {
         readonly kind: "boolean";
         readonly id: string;
         readonly label: string;
@@ -78,8 +87,8 @@ export type SettingRowDef = SettingRowMetadata &
         readonly write: (config: KitsuneConfig, value: boolean) => KitsuneConfig;
         readonly envOverride?: string;
         readonly gate?: SettingGate;
-      }
-    | {
+      })
+    | (PersistedSettingRowMetadata & {
         readonly kind: "enum";
         readonly id: string;
         readonly label: string;
@@ -89,8 +98,8 @@ export type SettingRowDef = SettingRowMetadata &
         readonly write: (config: KitsuneConfig, value: string) => KitsuneConfig;
         readonly presentation?: "segment" | "submenu";
         readonly gate?: SettingGate;
-      }
-    | {
+      })
+    | (PersistedSettingRowMetadata & {
         readonly kind: "text";
         readonly id: string;
         readonly label: string;
@@ -107,8 +116,8 @@ export type SettingRowDef = SettingRowMetadata &
         readonly validate: (value: string) => string | null;
         readonly envOverride?: string;
         readonly gate?: SettingGate;
-      }
-    | {
+      })
+    | (PersistedSettingRowMetadata & {
         readonly kind: "submenu";
         readonly id: string;
         readonly label: string;
@@ -129,8 +138,8 @@ export type SettingRowDef = SettingRowMetadata &
           ctx: SettingsRegistryContext,
         ) => KitsuneConfig | { readonly next: KitsuneConfig; readonly stay: true };
         readonly gate?: SettingGate;
-      }
-    | {
+      })
+    | (PersistedSettingRowMetadata & {
         readonly kind: "reorder";
         readonly id: string;
         readonly label: string;
@@ -141,7 +150,7 @@ export type SettingRowDef = SettingRowMetadata &
           ctx: SettingsRegistryContext,
         ) => readonly ShellPickerOption<string>[];
         readonly gate?: SettingGate;
-      }
+      })
     | {
         readonly kind: "action";
         readonly id: string;

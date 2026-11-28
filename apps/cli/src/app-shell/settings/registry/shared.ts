@@ -330,10 +330,6 @@ export function describeDiscordClientId(config: KitsuneConfig): string {
   return "bundled default";
 }
 
-export function describeDiscordOpenUrl(config: KitsuneConfig): string {
-  return config.presenceDiscordOpenUrl?.trim() ? "configured" : "off";
-}
-
 export function describeVideasySessionToken(config: KitsuneConfig): string {
   if (process.env.KUNAI_VIDEASY_SESSION_TOKEN?.trim()) return "env";
   return config.videasySessionToken?.trim() ? "configured" : "missing";

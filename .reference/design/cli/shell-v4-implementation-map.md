@@ -140,11 +140,12 @@ Scores use a 1–5 scale (`Impact` 5 = fixes broken trust/usability on daily pat
 - **Dependencies:** Rank 2 (Calendar route), Rank 5 (empty/offline footers).
 
 ### Rank 15 · Settings Effect-Timing Tags, Env-Lock Reasons, No-Op Setting Audit & Compact 40-Col Rows
+- **Status:** **Done**
 - **Impact / Effort:** 3.5 / 2 (**Ratio: 1.75**)
 - **Why:** Reviewers flagged *"some settings do nothing"*, live 40×20 capture showed `▌▸Default startup · Series` / `mode  mode` collision, double glyph `▌ ▸`, and missing effect-timing labels (`applies immediately` / `next playback` / `next launch`).
 - **Files touched:** `apps/cli/src/app-shell/settings/SettingsOverlay.tsx`, `apps/cli/src/app-shell/settings/components/SettingRow*.tsx`, `apps/cli/src/app-shell/settings/registry/*.ts`.
 - **Component boundary:** Fits existing `settings/` registry + row components; add `effectTiming` field to setting definition contract (`settings/types.ts`) and a contract-conformance test ensuring every registered setting has a live reader.
-- **Proof test (L2 + L1):** Drive `/settings` at 40×20 and 120×32 → assert zero column wrap collision, single `▌` glyph, visible effect-timing tag on focused row, and inline env-var message when pressing Space on an `(env)` row; `contract-conformance.test.ts` asserts 0 unwired settings.
+- **Proof test (L2 + L1):** Drive `/settings` at 40×20 and 120×32 → assert zero column wrap collision, single `▌` glyph, visible effect-timing tag on focused row, and inline env-var message when pressing Space on an `(env)` row; `settings-live-readers.test.ts` asserts 0 unwired settings.
 - **Dependencies:** Rank 5 (`ShellFooter` in Settings).
 
 ### Rank 16 · Compact "Where to start?" Action Dialog & Palette Prefix-Over-Fuzzy + Search Fallback
