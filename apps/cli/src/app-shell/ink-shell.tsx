@@ -21,6 +21,7 @@ import {
 import { setSessionLane, switchSessionMode } from "@/app/session/mode-switch";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
 import type { Container } from "@/container";
+import { deriveOfflineMode } from "@/domain/session/offline-mode";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import { isKittyCompatible } from "@/image";
 import { copyToClipboard } from "@/infra/clipboard";
@@ -58,6 +59,7 @@ import {
   tickNotificationQueue,
   type NotificationPriority,
 } from "./notification-queue";
+import { OfflineModeProvider } from "./offline-mode-context";
 import { plainModeEnabled } from "./plain-mode";
 import {
   buildPlaybackSubtitleLine,
@@ -814,6 +816,11 @@ export function AppRoot({ container }: { container: Container }) {
   );
   const playbackIsLocal = isLocalPlaybackStream(state.stream);
   const networkAvailable = useConnectivityOnline(container.connectivity);
+  const explicitOffline = container.config.offlineMode;
+  const offlineMode = useMemo(
+    () => deriveOfflineMode({ explicitOffline, networkAvailable }),
+    [explicitOffline, networkAvailable],
+  );
   const rootStatusSummaryInput = useMemo(
     () => ({
       currentViewLabel,
@@ -824,7 +831,7 @@ export function AppRoot({ container }: { container: Container }) {
       playlistCount,
       notificationCount: unreadNotificationCount,
       newEpisodeNotificationCount,
-      offlineMode: container.config.offlineMode,
+      offlineMode: offlineMode.active,
       networkAvailable,
       playbackIsLocal,
       playbackProblem: state.playbackProblem,
@@ -845,7 +852,7 @@ export function AppRoot({ container }: { container: Container }) {
       playlistCount,
       unreadNotificationCount,
       newEpisodeNotificationCount,
-      container.config.offlineMode,
+      offlineMode.active,
       networkAvailable,
       playbackIsLocal,
       state.playbackProblem,
@@ -871,7 +878,7 @@ export function AppRoot({ container }: { container: Container }) {
       playlistCount,
       notificationCount: unreadNotificationCount,
       newEpisodeNotificationCount,
-      offlineMode: container.config.offlineMode,
+      offlineMode: offlineMode.active,
       networkAvailable,
       playbackIsLocal,
       providerRegistry: container.providerRegistry,
@@ -1220,80 +1227,82 @@ export function AppRoot({ container }: { container: Container }) {
 
   const plain = plainModeEnabled();
   return (
-    <Box
-      flexDirection="column"
-      width={shellWidth}
-      height={plain ? undefined : shellHeight}
-      backgroundColor={plain ? undefined : palette.bg}
-      paddingX={plain ? 0 : ROOT_HORIZONTAL_PADDING}
-      paddingY={0}
-    >
-      {/* Single canonical header: brand · destination pill · crumb · status · size */}
-      <AppHeader
-        destination={headerDestination}
-        context={rootStatusSummary.crumb}
-        status={
-          container.config.minimalMode && currentViewLabel === "browse"
-            ? undefined
-            : headerStatusForRoot(rootStatus, rootStatusSummary.header).label
-        }
-        statusColor={statusColor(headerStatusForRoot(rootStatus, rootStatusSummary.header).tone)}
-        // Terminal size is noise at a comfortable size — only surface it when the
-        // terminal is cramped enough to actually affect the layout (then it reads
-        // as a useful "resize me" hint rather than permanent header clutter).
-        size={shellWidth < 100 || shellHeight < 30 ? `${shellWidth}×${shellHeight}` : undefined}
-        width={Math.max(0, shellWidth - 2)}
-      />
-      <TransientRowSlot width={Math.max(36, shellWidth - 8)}>
-        {(() => {
-          const transient = selectTransientRow({
-            alert: rootStatusSummary.alert ?? null,
-            notificationToast,
-            notificationToastPriority,
-            undoLine,
-            streakMilestoneAlert,
-            presenceBootLine: visiblePresenceBootLine,
-            streakAtRiskAlert,
-            weeklyDigestLine,
-            tipLine,
-          });
-          if (!transient) return null;
-          return (
-            <Text
-              dimColor={transient.dim}
-              bold={transient.accent}
-              color={transient.accent ? palette.accent : statusColor(transient.tone)}
-            >
-              {truncateLine(transient.text, Math.max(36, shellWidth - 8))}
-            </Text>
-          );
-        })()}
-      </TransientRowSlot>
-      {showAnalyticsNotice ? (
-        <AnalyticsDisclosureBanner width={Math.max(36, shellWidth - 2)} />
-      ) : null}
-      {container.capabilitySnapshot && !rootContent?.ownsMachineVerdict ? (
-        <CapabilityIssueStrip
-          snapshot={container.capabilitySnapshot}
-          mode={state.mode}
-          downloadsEnabled={container.config.downloadsEnabled}
-          width={Math.max(36, shellWidth - 2)}
+    <OfflineModeProvider value={offlineMode}>
+      <Box
+        flexDirection="column"
+        width={shellWidth}
+        height={plain ? undefined : shellHeight}
+        backgroundColor={plain ? undefined : palette.bg}
+        paddingX={plain ? 0 : ROOT_HORIZONTAL_PADDING}
+        paddingY={0}
+      >
+        {/* Single canonical header: brand · destination pill · crumb · status · size */}
+        <AppHeader
+          destination={headerDestination}
+          context={rootStatusSummary.crumb}
+          status={
+            container.config.minimalMode && currentViewLabel === "browse"
+              ? undefined
+              : headerStatusForRoot(rootStatus, rootStatusSummary.header).label
+          }
+          statusColor={statusColor(headerStatusForRoot(rootStatus, rootStatusSummary.header).tone)}
+          // Terminal size is noise at a comfortable size — only surface it when the
+          // terminal is cramped enough to actually affect the layout (then it reads
+          // as a useful "resize me" hint rather than permanent header clutter).
+          size={shellWidth < 100 || shellHeight < 30 ? `${shellWidth}×${shellHeight}` : undefined}
+          width={Math.max(0, shellWidth - 2)}
         />
-      ) : null}
-      <Box marginTop={1} flexDirection="column" flexGrow={1}>
-        <RootContentBody
-          resolved={resolvedRootContent}
-          ctx={{
-            container,
-            state,
-            stateManager,
-            rootOverlay,
-            playbackRootInput,
-            clearShellScreen,
-          }}
-        />
+        <TransientRowSlot width={Math.max(36, shellWidth - 8)}>
+          {(() => {
+            const transient = selectTransientRow({
+              alert: rootStatusSummary.alert ?? null,
+              notificationToast,
+              notificationToastPriority,
+              undoLine,
+              streakMilestoneAlert,
+              presenceBootLine: visiblePresenceBootLine,
+              streakAtRiskAlert,
+              weeklyDigestLine,
+              tipLine,
+            });
+            if (!transient) return null;
+            return (
+              <Text
+                dimColor={transient.dim}
+                bold={transient.accent}
+                color={transient.accent ? palette.accent : statusColor(transient.tone)}
+              >
+                {truncateLine(transient.text, Math.max(36, shellWidth - 8))}
+              </Text>
+            );
+          })()}
+        </TransientRowSlot>
+        {showAnalyticsNotice ? (
+          <AnalyticsDisclosureBanner width={Math.max(36, shellWidth - 2)} />
+        ) : null}
+        {container.capabilitySnapshot && !rootContent?.ownsMachineVerdict ? (
+          <CapabilityIssueStrip
+            snapshot={container.capabilitySnapshot}
+            mode={state.mode}
+            downloadsEnabled={container.config.downloadsEnabled}
+            width={Math.max(36, shellWidth - 2)}
+          />
+        ) : null}
+        <Box marginTop={1} flexDirection="column" flexGrow={1}>
+          <RootContentBody
+            resolved={resolvedRootContent}
+            ctx={{
+              container,
+              state,
+              stateManager,
+              rootOverlay,
+              playbackRootInput,
+              clearShellScreen,
+            }}
+          />
+        </Box>
       </Box>
-    </Box>
+    </OfflineModeProvider>
   );
 }
 

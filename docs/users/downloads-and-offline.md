@@ -97,7 +97,9 @@ stolen. Completed files in `/library` are unaffected.
 
 ## Persistent offline mode
 
-`offlineMode` in config keeps the shell in a local-only posture until you turn it off. This is separate from the `--offline` launch flag. Network status appears in the shell header; mode changes are never silent.
+`offlineMode` in config keeps the shell in a local-only posture until you turn it off. This is separate from the `--offline` launch flag. Network status appears in the shell header as `● offline`; mode changes are never silent.
+
+While offline, Browse promotes downloaded titles and local history instead of online discovery rows. Search matches the local library and history and labels catalog search as needing a connection. Online-only palette commands such as `/trending` remain visible but disabled with `needs a connection`. Calendar replays the newest cached schedule when one exists, or explains that no cached schedule is available. Failed downloads wait for reconnection instead of offering a retry that cannot succeed; when connectivity returns, normal retry and queue processing resume.
 
 Use `/watch-online` when you want to return from offline posture to online shell flows.
 

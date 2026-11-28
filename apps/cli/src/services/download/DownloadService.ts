@@ -422,6 +422,9 @@ export class DownloadService {
       readonly repo: DownloadJobsRepository;
       readonly titleAliases: Pick<HistoryTitleAliasRepository, "upsertAliases">;
       readonly config: ConfigService;
+      /** Connectivity truth owned by the container. Queue workers pause while
+       * offline instead of burning provider/yt-dlp attempts that cannot succeed. */
+      readonly isOnline?: () => boolean;
       readonly logger: Logger;
       readonly ytDlpAvailable: boolean;
       readonly resolveDownloadStream?: (
@@ -783,6 +786,7 @@ export class DownloadService {
     queueContext?: DownloadQueueWorkerContext,
   ): Promise<DownloadJobRecord | null> {
     if (this.shutdownRequested) return null;
+    if (this.deps.isOnline && !this.deps.isOnline()) return null;
     const eligibility = this.getEnqueueEligibility();
     if (!eligibility.allowed) {
       return null;

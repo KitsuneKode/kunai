@@ -17,7 +17,7 @@ import { measureColumns } from "@/app-shell/shell-text";
 import { gatePlaybackDependencies } from "@/app/playback/playback-dependency-gate";
 import type { Container } from "@/container";
 import { probeCapabilities } from "@/ui";
-import { RecommendationCacheRepository } from "@kunai/storage";
+import { DownloadJobsRepository, RecommendationCacheRepository } from "@kunai/storage";
 import type { JsonObject } from "@kunai/types";
 
 import { createAgentSession, type AgentSession } from "./agent-driver";
@@ -1298,4 +1298,132 @@ describe("agent wiring · relaunch", () => {
       await session.dispose();
     }
   }, 60_000);
+});
+
+describe("agent wiring · offline-first shell", () => {
+  it("serves local search and guarded surfaces offline, then recovers online in-session", async () => {
+    let connectivity: Container["connectivity"] | undefined;
+    const seedOfflineLibrary = ({ container }: { readonly container: Container }) => {
+      connectivity = container.connectivity;
+      const now = new Date().toISOString();
+      const home = process.env.HOME;
+      if (!home) throw new Error("isolated HOME is required");
+      const outputPath = join(home, "offline-smoke.mp4");
+      void Bun.write(outputPath, "offline fixture");
+      const jobs = new DownloadJobsRepository(container.dataDb);
+      jobs.enqueue({
+        id: "offline-smoke-job",
+        titleId: "tmdb:smoke-movie-1",
+        titleName: "Smoke Movie",
+        mediaKind: "movie",
+        contentType: "movie",
+        providerId: "videasy",
+        streamUrl: "https://example.invalid/offline-smoke.mp4",
+        headers: {},
+        outputPath,
+        tempPath: `${outputPath}.tmp`,
+        createdAt: now,
+        updatedAt: now,
+      });
+      jobs.markRunning("offline-smoke-job", now);
+      jobs.complete("offline-smoke-job", now);
+      jobs.markArtifactValidated("offline-smoke-job", "ready", now);
+      const completed = jobs.get("offline-smoke-job");
+      if (!completed) throw new Error("completed offline seed missing");
+      container.offlineAssetService.adoptCompletedJob(completed);
+      container.historyRepository.upsertProgress({
+        title: { id: "tmdb:smoke-movie-1", kind: "movie", title: "Smoke Movie" },
+        positionSeconds: 20,
+        durationSeconds: 120,
+        completed: false,
+        providerId: "videasy",
+        updatedAt: now,
+      });
+      jobs.enqueue({
+        id: "offline-failed-job",
+        titleId: "tmdb:smoke-movie-2",
+        titleName: "Smoke Movie 2",
+        mediaKind: "movie",
+        contentType: "movie",
+        providerId: "videasy",
+        streamUrl: "https://example.invalid/offline-failed.mp4",
+        headers: {},
+        outputPath: join(home, "offline-failed.mp4"),
+        tempPath: join(home, "offline-failed.mp4.tmp"),
+        createdAt: now,
+        updatedAt: now,
+      });
+      jobs.markRunning("offline-failed-job", now);
+      jobs.fail("offline-failed-job", "network unreachable", false, now, "network");
+      connectivity.recordFailure("ENETUNREACH network is unreachable", "manual-refresh");
+    };
+
+    await withSession(
+      "wiring-offline-first",
+      { columns: 120, rows: 32, beforeMount: seedOfflineLibrary },
+      async (s) => {
+        await s.waitForFrame(
+          (f) => f.includes("⬇ offline") && !f.includes("Trending this week"),
+          "offline home shelves the downloaded row",
+        );
+        expect(s.frame()).toContain("offline");
+
+        s.press("/");
+        await s.waitForFrame((f) => f.includes("command"), "offline palette");
+        s.press("trending");
+        await s.waitForFrame((f) => f.includes("needs a connection"), "trending disabled offline");
+        s.press(
+          K.backspace,
+          K.backspace,
+          K.backspace,
+          K.backspace,
+          K.backspace,
+          K.backspace,
+          K.backspace,
+          K.backspace,
+        );
+        await s.waitSettled();
+        s.press("calendar", K.enter);
+        await s.waitForFrame(
+          (f) => f.includes("No cached schedule offline") || f.includes("cached"),
+          "calendar offline state",
+        );
+
+        s.press("/");
+        await s.waitForFrame((f) => f.includes("command"), "palette for downloads");
+        s.press("downloads", K.enter);
+        await s.waitForFrame((f) => f.includes("◌ waiting"), "download row paused offline");
+        expect(s.frame()).toContain("◌ waiting");
+
+        connectivity?.recordSuccess("manual-refresh");
+        await s.waitForFrame(
+          (f) => f.includes("[r] retry") && !f.includes("waiting for connection"),
+          "download retry returns online",
+        );
+        s.press(K.esc);
+        await s.waitSettled();
+        s.press(K.esc);
+        await s.waitSettled();
+
+        s.press(K.up, K.up);
+        await s.waitSettled();
+        connectivity?.recordFailure("ENETUNREACH network is unreachable", "manual-refresh");
+        s.press("smoke", K.enter);
+        await s.waitForFrame(
+          (f) => f.includes("Smoke Movie") && f.includes("catalog search needs a connection"),
+          "offline search local result",
+        );
+        expect(s.frame()).toContain("⬇ offline");
+
+        connectivity?.recordSuccess("manual-refresh");
+        s.press("/");
+        await s.waitForFrame((f) => f.includes("command"), "online palette");
+        s.press("trending");
+        await s.waitForFrame((f) => {
+          const paletteStart = f.indexOf("Tab autocomplete");
+          return paletteStart >= 0 && !f.slice(paletteStart).includes("needs a connection");
+        }, "trending command returns online");
+      },
+    );
+  }, 45_000);
 });

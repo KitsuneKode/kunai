@@ -19,6 +19,7 @@ import {
   type ScoredSuggestion,
   type SearchSuggestion,
 } from "@/domain/search/suggestion-engine";
+import { applyOfflineCommandAvailability } from "@/domain/session/command-registry";
 import type { SearchResult, ShellMode } from "@/domain/types";
 import { fetchTitleDetail, peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import {
@@ -134,6 +135,7 @@ import {
   TRANSIENT_ROW_SLOTS,
 } from "./layout-policy";
 import { MouseTarget, useMouseEnabled, useMouseRegion } from "./mouse/MouseRegions";
+import { useOfflineMode } from "./offline-mode-context";
 import type { BrowseOverlay } from "./overlay-panel";
 import { OverlayPanel } from "./overlay-panel";
 import { plainModeEnabled, selectionPrefix } from "./plain-mode";
@@ -216,7 +218,7 @@ export function BrowseShell<T>({
   initialCalendarRoute,
   startupPicks,
   placeholder,
-  commands,
+  commands: baseCommands,
   onSearch,
   onLoadCalendar,
   onCalendarAccepted,
@@ -247,6 +249,12 @@ export function BrowseShell<T>({
   localTitles,
 }: BrowseShellProps<T>) {
   recordRender("browse");
+  const offlineMode = useOfflineMode();
+  const commands = useMemo(
+    () =>
+      baseCommands.map((command) => applyOfflineCommandAvailability(command, offlineMode.active)),
+    [baseCommands, offlineMode.active],
+  );
   const viewport = useDebouncedViewportPolicy("browse", {
     zen: settings?.zenMode,
   });
@@ -1054,6 +1062,7 @@ export function BrowseShell<T>({
     idleFocused,
     selectedIndex: idleSelectedIndex,
     showDiscoveryRowWhenEmpty: idleContextStatus === "ready",
+    offline: offlineMode.active,
   });
   const canFocusIdleRows =
     options.length === 0 &&

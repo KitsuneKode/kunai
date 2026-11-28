@@ -43,6 +43,7 @@ import { isCalendarSearchResult, loadCalendarResults } from "@/app/search/calend
 import { detailsSheetContextFor } from "@/app/search/details-sheet-context";
 import { playTrailer } from "@/app/search/details-trailer";
 import { enrichSelectedTitleIdentity } from "@/app/search/enrich-selected-title";
+import { searchOfflineLibrary } from "@/app/search/offline-search";
 import { prefetchBrowseEntrySelection } from "@/app/search/prefetch-browse-entry";
 import { buildSearchEmptyMessage } from "@/app/search/search-empty-message";
 import {
@@ -667,7 +668,9 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           startupPicks: openedStartupPicks,
           initialErrorMessage: initialSearchError,
           onLoadCalendar: async (signal) => {
-            const bundle = await loadCalendarResults(container, signal);
+            const bundle = await loadCalendarResults(container, signal, {
+              offline: !container.connectivity.isOnline(),
+            });
             signal.throwIfAborted();
             const results = [...bundle.results];
             const display = await loadBrowseDisplayContext(container, results, { signal });
@@ -907,6 +910,30 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "loading" });
 
             const searchMode = stateManager.getState().mode;
+            if (!container.connectivity.isOnline()) {
+              const results = [...searchOfflineLibrary(container, query)];
+              addSearchQuery(query, searchMode);
+              stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results });
+              stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "ready" });
+              const freshBrowseContext = await loadBrowseDisplayContext(container, results);
+              const offlineReadyIds = new Set(
+                container.offlineAssetService
+                  .listAllAssets()
+                  .filter((asset) => asset.state === "ready")
+                  .map((asset) => asset.titleId),
+              );
+              return {
+                options: results.map((result) => {
+                  const option = mapBrowseResultOption(container, freshBrowseContext, result);
+                  return offlineReadyIds.has(result.id)
+                    ? { ...option, detail: `⬇ offline · ${option.detail}` }
+                    : option;
+                }),
+                subtitle: `${countLabel(results.length, "local result")} · catalog search needs a connection`,
+                emptyMessage:
+                  "No local matches. Catalog search needs a connection; downloaded titles and history are searchable offline.",
+              };
+            }
             let search: Awaited<ReturnType<typeof searchTitles>>;
             const searchAbort = createBrowseSearchAbort(context.signal);
             try {

@@ -103,6 +103,35 @@ export type ResolvedAppCommand = AppCommand & {
   readonly reason?: string;
 };
 
+export const OFFLINE_CONNECTION_REASON = "needs a connection";
+
+const ONLINE_ONLY_COMMANDS: ReadonlySet<AppCommandId> = new Set([
+  "trending",
+  "recommendation",
+  "random",
+  "surprise",
+  "update",
+  "sync",
+  "sync-connect-anilist",
+  "sync-connect-tmdb",
+  "sync-disconnect",
+  "watch-online",
+]);
+
+/** Offline policy is presentation-independent: disable, never hide, so the
+ * palette teaches why an online command is unavailable. */
+export function applyOfflineCommandAvailability<T extends ResolvedAppCommand>(
+  command: T,
+  offline: boolean,
+): T {
+  if (!offline || !ONLINE_ONLY_COMMANDS.has(command.id)) return command;
+  return {
+    ...command,
+    enabled: false,
+    reason: command.enabled ? OFFLINE_CONNECTION_REASON : command.reason,
+  };
+}
+
 export const COMMAND_CONTEXTS = {
   rootOverlay: [
     "continue",
@@ -958,7 +987,10 @@ export function suggestCommands(
 export function resolveCommands(
   state: SessionState,
   allowed: readonly AppCommandId[] = COMMANDS.map((command) => command.id),
-  options?: { readonly excludeGroups?: readonly AppCommandGroup[] },
+  options?: {
+    readonly excludeGroups?: readonly AppCommandGroup[];
+    readonly offline?: boolean;
+  },
 ): readonly ResolvedAppCommand[] {
   const excluded = new Set(options?.excludeGroups ?? []);
   const filtered = excluded.size
@@ -966,22 +998,21 @@ export function resolveCommands(
     : allowed;
   return filtered.flatMap((id) => {
     const command = COMMANDS.find((candidate) => candidate.id === id);
-    return command
-      ? [
-          {
-            ...resolveCommandPresentation(command, state),
-            ...resolveCommandState(command.id, state),
-          },
-        ]
-      : [];
+    if (!command) return [];
+    const resolved = {
+      ...resolveCommandPresentation(command, state),
+      ...resolveCommandState(command.id, state),
+    };
+    return [applyOfflineCommandAvailability(resolved, options?.offline ?? false)];
   });
 }
 
 export function resolveCommandContext(
   state: SessionState,
   context: CommandContextId,
+  options?: { readonly offline?: boolean },
 ): readonly ResolvedAppCommand[] {
-  return resolveCommands(state, COMMAND_CONTEXTS[context]);
+  return resolveCommands(state, COMMAND_CONTEXTS[context], options);
 }
 
 function resolveCommandPresentation(command: AppCommand, state: SessionState): AppCommand {

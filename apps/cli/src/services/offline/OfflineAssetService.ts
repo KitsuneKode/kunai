@@ -17,7 +17,9 @@ export type OfflineAssetRepositoryPort = Pick<
   | "markValidation"
   | "deleteOrphaned"
   | "upsertPlayable"
->;
+> & {
+  readonly listDistinctTitleIds?: () => readonly string[];
+};
 
 export type RecordedOfflineStatus = {
   readonly titleId: string;
@@ -40,6 +42,12 @@ export class OfflineAssetService {
 
   listByTitleIds(titleIds: readonly string[]): readonly OfflineAssetRecord[] {
     return this.assets.listByTitleIds(titleIds);
+  }
+
+  /** Whole-library enumeration for offline-first search. The repository keeps
+   * the distinct-id scan cheap; hydration remains one bounded follow-up read. */
+  listAllAssets(): readonly OfflineAssetRecord[] {
+    return this.assets.listByTitleIds(this.assets.listDistinctTitleIds?.() ?? []);
   }
 
   listNextReadyByTitleCursors(

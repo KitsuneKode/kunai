@@ -25,6 +25,8 @@ export function resolveIdleRowAction(
       return resolveIdleContinueAction(idleContext);
     case "offline-ready":
       return idleContext.offlineReadyNext?.offlineJobId ? "play-offline-ready" : null;
+    case "offline-library":
+      return "library";
     case "playlist-next":
       return idleContext.playlistNext?.titleId ? "play-queue-next" : null;
     case "saved":
@@ -103,14 +105,18 @@ export function buildBrowseIdleReturnLoopModel(
     readonly showDiscoveryRowWhenEmpty?: boolean;
     /** Injectable clock for the since-label — tests never read the wall clock. */
     readonly nowMs?: number;
+    /** Offline home shelves local copies first and suppresses rows that can
+     * only resolve a remote stream. */
+    readonly offline?: boolean;
   },
 ): BrowseIdleReturnLoopModel | null {
   const selectedIndex = Math.max(0, options.selectedIndex ?? 0);
+  const offline = options.offline === true;
   const rows: BrowseIdleReturnLoopRow[] = [];
 
   // "New since you left" leads the strip: it answers the question users open
   // the home screen with, and it sits above Continue Watching by design.
-  if (idleContext?.newSinceVisit && idleContext.newSinceVisit.episodeCount > 0) {
+  if (!offline && idleContext?.newSinceVisit && idleContext.newSinceVisit.episodeCount > 0) {
     const rowIndex = rows.length;
     rows.push({
       id: "new-since-visit",
@@ -127,7 +133,7 @@ export function buildBrowseIdleReturnLoopModel(
     });
   }
 
-  if (idleContext?.continueWatching) {
+  if (!offline && idleContext?.continueWatching) {
     const cw = idleContext.continueWatching;
     const meta = (cw.nextUp ? ["next", cw.ep] : [cw.ep, cw.remainingLabel])
       .filter((part): part is string => Boolean(part))
@@ -149,22 +155,32 @@ export function buildBrowseIdleReturnLoopModel(
     });
   }
 
-  if (idleContext?.offlineReadyNext) {
-    const offline = idleContext.offlineReadyNext;
+  const offlineReadyIsDuplicateContinue =
+    !offline &&
+    idleContext?.offlineReadyNext?.titleId !== undefined &&
+    idleContext.offlineReadyNext.titleId === idleContext.continueWatching?.titleId;
+  if (idleContext?.offlineReadyNext && !offlineReadyIsDuplicateContinue) {
+    const offlineNext = idleContext.offlineReadyNext;
     const rowIndex = rows.length;
     rows.push({
       id: "offline-ready",
       glyph: "⬇",
       glyphColor: palette.ok,
-      title: sanitizeTerminalText(offline.title),
-      meta: offline.ep ? `${sanitizeTerminalText(offline.ep)} · ready offline` : "ready offline",
+      title: sanitizeTerminalText(offlineNext.title),
+      meta: offline
+        ? offlineNext.ep
+          ? `${sanitizeTerminalText(offlineNext.ep)} · ⬇ offline`
+          : "⬇ offline"
+        : offlineNext.ep
+          ? `${sanitizeTerminalText(offlineNext.ep)} · ready offline`
+          : "ready offline",
       hint: idleRowHint("offline-ready", options.idleFocused && selectedIndex === rowIndex),
       focused: options.idleFocused && selectedIndex === rowIndex,
-      actionable: Boolean(offline.offlineJobId),
+      actionable: Boolean(offlineNext.offlineJobId),
     });
   }
 
-  if (idleContext?.playlistNext) {
+  if (!offline && idleContext?.playlistNext) {
     const next = idleContext.playlistNext;
     const rowIndex = rows.length;
     rows.push({
@@ -195,7 +211,7 @@ export function buildBrowseIdleReturnLoopModel(
   }
 
   const readyCount = idleContext?.todayReleaseCount ?? 0;
-  if (readyCount > 0) {
+  if (!offline && readyCount > 0) {
     const titleCount = idleContext?.todayReleaseTitleCount ?? 0;
     const rowIndex = rows.length;
     rows.push({
@@ -214,7 +230,7 @@ export function buildBrowseIdleReturnLoopModel(
   }
 
   const airingToday = idleContext?.calendarNudge?.airingTodayCount ?? 0;
-  if (airingToday > 0) {
+  if (!offline && airingToday > 0) {
     const rowIndex = rows.length;
     rows.push({
       id: "calendar-nudge",
@@ -223,6 +239,20 @@ export function buildBrowseIdleReturnLoopModel(
       title: "On your schedule today",
       meta: airingToday === 1 ? "1 tracked title airing" : `${airingToday} tracked titles airing`,
       hint: idleRowHint("calendar-nudge", options.idleFocused && selectedIndex === rowIndex),
+      focused: options.idleFocused && selectedIndex === rowIndex,
+      actionable: true,
+    });
+  }
+
+  if (offline) {
+    const rowIndex = rows.length;
+    rows.push({
+      id: "offline-library",
+      glyph: "⬇",
+      glyphColor: palette.ok,
+      title: "Offline library",
+      meta: idleContext?.offlineReadyNext ? "downloaded titles" : "local copies",
+      hint: options.idleFocused && selectedIndex === rowIndex ? "↵ open library" : undefined,
       focused: options.idleFocused && selectedIndex === rowIndex,
       actionable: true,
     });
@@ -248,7 +278,7 @@ export function buildBrowseIdleReturnLoopModel(
   return {
     heading: RETURN_LOOP_FOR_YOU_NOW_HEADING,
     rows,
-    hasSelectableContinue: Boolean(idleContext?.continueWatching?.titleId),
+    hasSelectableContinue: !offline && Boolean(idleContext?.continueWatching?.titleId),
     hasSelectableRows: rows.some((row) => row.actionable),
   };
 }
