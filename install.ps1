@@ -1861,7 +1861,9 @@ function Complete-PackagePath([string]$Launcher) {
   $entries = @($env:Path -split [IO.Path]::PathSeparator | ForEach-Object { $_.Trim().Trim('"').TrimEnd('\', '/') })
   if ($entries -contains $dir.TrimEnd('\', '/')) { return }
   Add-UserPath $dir
-  Write-Info "For this terminal, run '$Launcher' directly. Ensure $dir is in your User PATH for new terminals."
+  # `& '...'` runs the path; a bare quoted path only echoes the string in PowerShell.
+  $quoted = $Launcher.Replace("'", "''")
+  Write-Info "For this terminal, run: & '$quoted'. Ensure $dir is in your User PATH for new terminals."
 }
 
 function Get-KunaiPathCandidates {
