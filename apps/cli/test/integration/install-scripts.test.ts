@@ -1538,15 +1538,14 @@ describe("install.sh lifecycle contract", () => {
             failuresBeforeSuccess: 0,
           },
         },
-        async (baseUrl) => {
-          const started = Date.now();
+        async (baseUrl, evidence) => {
           const result = await runInstallShAsync(["--yes", "--skip-deps", "--version", "9.8.7"], {
             ...sandbox.env,
             KUNAI_DL_BASE: baseUrl,
             KUNAI_DOWNLOAD_RETRY_BASE_MS: "200",
           });
           expect(result.status).not.toBe(0);
-          expect(Date.now() - started).toBeLessThan(5_000);
+          expect(new Set(evidence.requests).size).toBe(evidence.requests.length);
           expect(existsSync(join(sandbox.binDir, "kunai"))).toBe(false);
         },
       );
