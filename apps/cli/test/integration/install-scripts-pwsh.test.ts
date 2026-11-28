@@ -3098,14 +3098,14 @@ describePwsh("install.ps1 dedicated profile contract", () => {
     }
   });
 
-  test.each(["rel/p", "", " /profile"])(
+  test.each(["rel/p", "", " /profile", "/bad\fprofile"])(
     "a malformed KUNAI_CONFIG_DIR (%j) is refused before any write",
     (value) => {
       const sandbox = createInstallerSandbox("install-ps1-profile-bad", { freshProfile: true });
       try {
         const env = { ...profileOnlyInstallerEnv(sandbox.env), KUNAI_CONFIG_DIR: value };
         const result = runInstallPs1(dryRun, env);
-        expect(result.status).not.toBe(0);
+        expect(result.status).toBe(2);
         expect(`${result.stdout}${result.stderr}`).toContain("absolute path");
         expect(existsSync(join(sandbox.profileDir, ".kunai-profile"))).toBe(false);
       } finally {
@@ -3141,7 +3141,7 @@ describePwsh("install.ps1 dedicated profile contract", () => {
       const sentinel = join(sandbox.profileDir, "unrelated.txt");
       writeFileSync(sentinel, "not kunai\n");
       const result = runInstallPs1(dryRun, profileOnlyInstallerEnv(sandbox.env));
-      expect(result.status).not.toBe(0);
+      expect(result.status).toBe(2);
       expect(`${result.stdout}${result.stderr}`).toContain(".kunai-profile");
       expect(readFileSync(sentinel, "utf8")).toBe("not kunai\n");
       expect(existsSync(join(sandbox.profileDir, ".kunai-profile"))).toBe(false);
@@ -3163,7 +3163,7 @@ describePwsh("install.ps1 dedicated profile contract", () => {
     try {
       const env = { ...profileOnlyInstallerEnv(sandbox.env), KUNAI_CONFIG_DIR: pick(sandbox) };
       const result = runInstallPs1(dryRun, env);
-      expect(result.status).not.toBe(0);
+      expect(result.status).toBe(2);
       expect(`${result.stdout}${result.stderr}`).toContain("KUNAI_CONFIG_DIR");
     } finally {
       sandbox.cleanup();
@@ -3380,11 +3380,30 @@ describePwsh("install.ps1 dedicated profile contract", () => {
                 "process.exit(37);",
               ].join("\n") + "\n",
             );
+            // A CALL through a calling batch must also survive the rename: the
+            // caller continues only if the launcher returns the payload status
+            // without popping the caller's own batch context.
+            const caller = join(sandbox.root, "profile caller.cmd");
+            writeFileSync(
+              caller,
+              [
+                "@echo off",
+                "setlocal EnableExtensions DisableDelayedExpansion",
+                'call "%KUNAI_TEST_PROFILE_LAUNCHER%" %*',
+                "if not errorlevel 37 exit /b 90",
+                "if errorlevel 38 exit /b 91",
+                "if defined KUNAI_CONFIG_DIR exit /b 92",
+                "echo caller continued",
+                "exit /b 37",
+                "",
+              ].join("\r\n"),
+            );
             const assertProfileLauncher = async (
               version: string,
               originalBody: string,
               launcherEnv: NodeJS.ProcessEnv,
               replaceLauncher = false,
+              fromBatch = false,
             ) => {
               const versionedPath = join(
                 sandbox.profileDir,
@@ -3400,6 +3419,7 @@ describePwsh("install.ps1 dedicated profile contract", () => {
                   ...launcherEnv,
                   KUNAI_TEST_PROFILE_LAUNCHER: launcher,
                   KUNAI_TEST_PROFILE_PROBE: probe,
+                  KUNAI_TEST_PROFILE_ENTRYPOINT: fromBatch ? caller : launcher,
                   KUNAI_TEST_MOVED_LAUNCHER: replaceLauncher ? movedLauncher : "",
                   ERRORLEVEL: "123",
                 };
@@ -3409,7 +3429,7 @@ describePwsh("install.ps1 dedicated profile contract", () => {
                     PWSH_PATH,
                     "-NoProfile",
                     "-Command",
-                    "& $env:KUNAI_TEST_PROFILE_LAUNCHER run $env:KUNAI_TEST_PROFILE_PROBE 'plain(parentheses)' 'quoted & argument' 'literal!KUNAI_CONFIG_DIR!' ; exit $LASTEXITCODE",
+                    "& $env:KUNAI_TEST_PROFILE_ENTRYPOINT run $env:KUNAI_TEST_PROFILE_PROBE 'plain(parentheses)' 'quoted & argument' 'literal!KUNAI_CONFIG_DIR!' ; exit $LASTEXITCODE",
                   ],
                   { env: wrapperEnv, stdout: "pipe", stderr: "pipe" },
                 );
@@ -3421,7 +3441,9 @@ describePwsh("install.ps1 dedicated profile contract", () => {
                 expect(wrappedStatus, `stdout: ${wrappedStdout}\nstderr: ${wrappedStderr}`).toBe(
                   37,
                 );
-                expect(JSON.parse(wrappedStdout)).toEqual({
+                const [json, ...continuation] = wrappedStdout.trim().split(/\r?\n/);
+                expect(continuation).toEqual(fromBatch ? ["caller continued"] : []);
+                expect(JSON.parse(json ?? "")).toEqual({
                   profile: sandbox.profileDir,
                   args: ["plain(parentheses)", "quoted & argument", "literal!KUNAI_CONFIG_DIR!"],
                 });
@@ -3459,6 +3481,7 @@ describePwsh("install.ps1 dedicated profile contract", () => {
             expect(manifest.activeVersion).toBe("9.8.8");
 
             await assertProfileLauncher("9.8.8", v2Body, env, true);
+            await assertProfileLauncher("9.8.8", v2Body, env, true, true);
 
             const uninstall = await runKunai(["uninstall", "--purge"], env);
             expect(uninstall.status, `${uninstall.stdout}--ERR--${uninstall.stderr}`).toBe(0);

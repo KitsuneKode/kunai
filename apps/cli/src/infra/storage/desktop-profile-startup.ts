@@ -26,11 +26,15 @@ export async function prepareCliProfile(
     if (command === "uninstall" || (!maintenance && argv.includes("--install-protocol-handler"))) {
       getKunaiPaths();
     } else {
+      // `diagnostics recent` migrates and writes its cache, so it is not one
+      // of the read-only commands that may only inspect a profile.
+      const writesDiagnostics = command === "diagnostics" && argv[1] === "recent";
       const readOnly =
-        ["doctor", "capabilities", "completion", "diagnostics"].includes(command) ||
-        (command === "rollback" && (argv.includes("--list") || argv.includes("--dry-run"))) ||
-        (command === "upgrade" && argv.includes("--check")) ||
-        (!maintenance && (fastPath || argv.includes("--dry-run")));
+        !writesDiagnostics &&
+        (["doctor", "capabilities", "completion", "diagnostics"].includes(command) ||
+          (command === "rollback" && (argv.includes("--list") || argv.includes("--dry-run"))) ||
+          (command === "upgrade" && argv.includes("--check")) ||
+          (!maintenance && (fastPath || argv.includes("--dry-run"))));
       checkDesktopProfile(readOnly ? "inspect" : "prepare");
     }
     return true;

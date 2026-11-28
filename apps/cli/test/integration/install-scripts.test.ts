@@ -2829,12 +2829,13 @@ describe("install.sh dedicated profile contract", () => {
     ["", ""],
     [" /profile", " /profile"],
     ["/bad\\name\nprofile", "/bad\\name?profile"],
+    ["/bad\fprofile", "/bad?profile"],
   ])("a malformed KUNAI_CONFIG_DIR (%j) is refused before any write", (value, display) => {
     const sandbox = createInstallerSandbox("install-sh-profile-bad", { freshProfile: true });
     try {
       const env = { ...profileOnlyInstallerEnv(sandbox.env), KUNAI_CONFIG_DIR: value };
       const result = runInstallSh(dryRun, env);
-      expect(result.status).not.toBe(0);
+      expect(result.status).toBe(2);
       expect(`${result.stdout}${result.stderr}`).toContain("absolute path");
       expect(result.stderr).toContain(`KUNAI_CONFIG_DIR=${display} must be an absolute path`);
       expect(existsSync(join(sandbox.profileDir, ".kunai-profile"))).toBe(false);
@@ -2918,7 +2919,7 @@ describe("install.sh dedicated profile contract", () => {
       const sentinel = join(sandbox.profileDir, "unrelated.txt");
       writeFileSync(sentinel, "not kunai\n");
       const result = runInstallSh(dryRun, profileOnlyInstallerEnv(sandbox.env));
-      expect(result.status).not.toBe(0);
+      expect(result.status).toBe(2);
       expect(`${result.stdout}${result.stderr}`).toContain(".kunai-profile");
       expect(readFileSync(sentinel, "utf8")).toBe("not kunai\n");
       expect(existsSync(join(sandbox.profileDir, ".kunai-profile"))).toBe(false);
@@ -2926,6 +2927,40 @@ describe("install.sh dedicated profile contract", () => {
       sandbox.cleanup();
     }
   });
+
+  test("hidden files and dangling links count as nonempty unmarked roots", () => {
+    const sandbox = createInstallerSandbox("install-sh-profile-hidden", { freshProfile: true });
+    try {
+      // A dotfile the old `*` glob could miss is still foreign content.
+      mkdirSync(sandbox.profileDir, { recursive: true });
+      writeFileSync(join(sandbox.profileDir, ".hidden"), "not kunai\n");
+      const result = runInstallSh(dryRun, profileOnlyInstallerEnv(sandbox.env));
+      expect(result.status).toBe(2);
+      expect(`${result.stdout}${result.stderr}`).toContain(".kunai-profile");
+      expect(existsSync(join(sandbox.profileDir, ".kunai-profile"))).toBe(false);
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test.skipIf(process.platform === "win32")(
+    "a dangling symlink in an unmarked root is refused, not treated as empty",
+    () => {
+      const sandbox = createInstallerSandbox("install-sh-profile-dangling", {
+        freshProfile: true,
+      });
+      try {
+        mkdirSync(sandbox.profileDir, { recursive: true });
+        symlinkSync(join(sandbox.profileDir, "gone"), join(sandbox.profileDir, "dangling"));
+        const result = runInstallSh(dryRun, profileOnlyInstallerEnv(sandbox.env));
+        expect(result.status).toBe(2);
+        expect(`${result.stdout}${result.stderr}`).toContain(".kunai-profile");
+        expect(existsSync(join(sandbox.profileDir, ".kunai-profile"))).toBe(false);
+      } finally {
+        sandbox.cleanup();
+      }
+    },
+  );
 
   test.each([
     ["the home directory", (s: ReturnType<typeof createInstallerSandbox>) => s.root],
@@ -2939,7 +2974,7 @@ describe("install.sh dedicated profile contract", () => {
     try {
       const env = { ...profileOnlyInstallerEnv(sandbox.env), KUNAI_CONFIG_DIR: pick(sandbox) };
       const result = runInstallSh(dryRun, env);
-      expect(result.status).not.toBe(0);
+      expect(result.status).toBe(2);
       expect(`${result.stdout}${result.stderr}`).toContain("KUNAI_CONFIG_DIR");
     } finally {
       sandbox.cleanup();

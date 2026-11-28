@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, posix, win32 } from "node:path";
 
 import {
   getInstallLayoutPaths,
@@ -93,6 +93,7 @@ describe("install layout paths", () => {
       dataDir: "/data/kunai",
       cacheDir: "/cache/kunai",
       configDir: "/config/kunai",
+      launcherPath: "/fixture/bin/kunai",
       platform: "linux",
     });
     const execPath = join(layout.versionsDir, "2.0.1", "kunai");
@@ -105,6 +106,7 @@ describe("install layout paths", () => {
       dataDir: "/data/kunai",
       cacheDir: "/cache/kunai",
       configDir: "/config/kunai",
+      launcherPath: "/fixture/bin/kunai",
       platform: "linux",
     });
     expect(() => versionBinaryPath(layout, "../1.2.3")).toThrow(/Invalid install version/);
@@ -192,14 +194,33 @@ describe("install layout paths", () => {
       expect(alias.configDir).toBe(testCase.configDir);
       expect(alias.profileDir).toBe(testCase.profileDir);
 
-      // A genuinely different configDir is not the profile layout.
-      const foreign = getInstallLayoutPaths({
+      // A genuinely different configDir under a configured profile is a
+      // detached layout — it must never silently reach the real default
+      // launcher, so it requires an explicit launcherPath.
+      const foreignEnv = {
+        ...testCase.env,
+        KUNAI_BIN_DIR: (testCase.platform === "win32" ? win32 : posix).dirname(
+          testCase.launcherPath,
+        ),
+      };
+      expect(() =>
+        getInstallLayoutPaths({
+          platform: testCase.platform,
+          env: foreignEnv,
+          configDir: `${testCase.configDir}-other`,
+        }),
+      ).toThrow("requires an explicit launcherPath");
+
+      // An explicit launcher override selects the detached layout's launcher.
+      const explicit = getInstallLayoutPaths({
         platform: testCase.platform,
-        env: testCase.env,
+        env: foreignEnv,
         configDir: `${testCase.configDir}-other`,
+        launcherPath: join("/explicit", "kunai"),
       });
-      expect(foreign.configDir).toBe(`${testCase.configDir}-other`);
-      expect(foreign.profileDir).toBeUndefined();
+      expect(explicit.launcherPath).toBe(join("/explicit", "kunai"));
+      expect(explicit.configDir).toBe(`${testCase.configDir}-other`);
+      expect(explicit.profileDir).toBeUndefined();
     }
   });
 

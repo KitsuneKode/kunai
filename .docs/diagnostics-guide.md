@@ -84,6 +84,9 @@ strings past 160 characters — and states how much it left out, because a singl
 
 The command reads the same redacted cache-DB events used by `/diagnostics` and
 support bundles. JSONL is an export/readout format, not the canonical store.
+Although its output is read-only, `diagnostics recent` opens (and migrates)
+the cache database — under `KUNAI_CONFIG_DIR` it claims and prepares the
+profile like any writing command rather than only inspecting it.
 
 For long local debugging sessions, use structured JSONL traces:
 

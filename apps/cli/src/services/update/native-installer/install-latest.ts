@@ -347,21 +347,26 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
           artifactSizeBytes = downloaded.sizeBytes;
         }
 
-        await mkdir(dirname(versionPath), { recursive: true });
-        await atomicInstallBinaryFromFile(stagedBinary, versionPath);
-
-        await writeInstalledVersionMetadata(layout, {
-          schemaVersion: 1,
-          version: resolved,
-          target: releaseTarget?.id ?? `${os}-${arch}`,
-          artifactName: assetName,
-          artifactSha256,
-          sizeBytes: artifactSizeBytes,
-          sourceUrl: downloadUrl,
-          ...archiveProvenance,
-          verification: "release-checksum",
-          installedAt: new Date().toISOString(),
-        });
+        const publishVersion = async () => {
+          await mkdir(dirname(versionPath), { recursive: true });
+          await atomicInstallBinaryFromFile(stagedBinary, versionPath);
+          await writeInstalledVersionMetadata(layout, {
+            schemaVersion: 1,
+            version: resolved,
+            target: releaseTarget?.id ?? `${os}-${arch}`,
+            artifactName: assetName,
+            artifactSha256,
+            sizeBytes: artifactSizeBytes,
+            sourceUrl: downloadUrl,
+            ...archiveProvenance,
+            verification: "release-checksum",
+            installedAt: new Date().toISOString(),
+          });
+        };
+        // Inside a profile, publication waits until the activation lock has
+        // verified the manifest's launcher — a foreign profile must not gain
+        // a payload it will refuse.
+        if (layout.profileDir === undefined) await publishVersion();
 
         const activated = await withActivationLock(layout, resolved, async () => {
           // Another version may have activated while this version downloaded.
@@ -396,6 +401,7 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
               `install.json launcher ${activeManifest.launcherPath} disagrees with the profile's configured launcher ${layout.launcherPath}`,
             );
           }
+          if (layout.profileDir !== undefined) await publishVersion();
           const launcherPath =
             layout.profileDir !== undefined
               ? layout.launcherPath

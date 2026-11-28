@@ -227,6 +227,39 @@ describe("installLatest", () => {
     expect(await readFile(layout.launcherPath, "utf8")).toBe("repaired binary");
   });
 
+  test("a profile install refuses a foreign manifest launcher before publishing", async () => {
+    const { root, layout } = await makeLayout();
+    expect(await installLatest(releaseFixture(layout, "2.0.0", "explicit"))).toMatchObject({
+      status: "installed",
+    });
+    const manifestPath = join(layout.configDir, "install.json");
+    const manifest = await readFile(manifestPath, "utf8");
+    const versionPath = versionBinaryPath(layout, "2.0.0");
+    const metadataPath = versionMetadataPath(layout, "2.0.0");
+    const oldPayload = await readFile(versionPath);
+    const oldMetadata = await readFile(metadataPath);
+
+    // Same root as a profile, but a configured launcher the manifest never
+    // named — publication must refuse before rewriting the payload it would
+    // have claimed.
+    const profileLayout = {
+      ...layout,
+      profileDir: root,
+      launcherPath: join(root, "bin", "different-launcher"),
+    };
+    const result = await installLatest(
+      releaseFixture(profileLayout, "2.0.0", "explicit", "distinct binary"),
+    );
+    expect(result).toMatchObject({ status: "failed" });
+    if (result.status === "failed") {
+      expect(result.error).toContain("disagrees with the profile's configured launcher");
+    }
+    expect(await readFile(versionPath)).toEqual(oldPayload);
+    expect(await readFile(metadataPath)).toEqual(oldMetadata);
+    expect(await readFile(manifestPath, "utf8")).toBe(manifest);
+    await expectLauncherPointsTo(layout.launcherPath, versionPath);
+  });
+
   test("rollback can restore the verified version replaced by an upgrade", async () => {
     const { layout } = await makeLayout();
     expect(await installLatest(releaseFixture(layout, "1.0.0", "explicit"))).toMatchObject({

@@ -140,7 +140,7 @@ path_contains() (
 fail_profile() {
 	local display="${KUNAI_CONFIG_DIR:-}"
 	printf 'KUNAI_CONFIG_DIR=%s %s\n' "${display//[[:cntrl:]]/?}" "$1" >&2
-	exit 1
+	exit 2
 }
 
 PROFILE_DIR=""
@@ -151,7 +151,7 @@ PROFILE_DIR=""
 # layout and ignores the override entirely.
 if [[ "$HOST_OS" != android && ${KUNAI_CONFIG_DIR+x} ]]; then
 	[[ -n "$KUNAI_CONFIG_DIR" && "$KUNAI_CONFIG_DIR" == /* &&
-		"$KUNAI_CONFIG_DIR" != *$'\n'* && "$KUNAI_CONFIG_DIR" != *$'\r'* ]] ||
+		"$KUNAI_CONFIG_DIR" != *[[:cntrl:]]* ]] ||
 		fail_profile 'must be an absolute path to a Kunai profile directory'
 	PROFILE_DIR="$(normalize_profile_path "$KUNAI_CONFIG_DIR")"
 
@@ -297,14 +297,12 @@ check_profile_filesystem() {
 	if [[ -d "$PROFILE_DIR" ]]; then
 		[[ -r "$PROFILE_DIR" && -x "$PROFILE_DIR" ]] ||
 			fail_profile 'could not inspect its contents'
-		local nonempty
-		nonempty="$(
-			shopt -s nullglob dotglob
-			_entries=("$PROFILE_DIR"/*)
-			if ((${#_entries[@]} > 0)); then printf '%s\n' "${_entries[0]}"; fi
-		)"
-		[[ -n "$nonempty" ]] &&
-			fail_profile 'has no valid .kunai-profile ownership marker'
+		local entry
+		for entry in "$PROFILE_DIR"/* "$PROFILE_DIR"/.[!.]* "$PROFILE_DIR"/..?*; do
+			if [[ -e "$entry" || -L "$entry" ]]; then
+				fail_profile 'has no valid .kunai-profile ownership marker'
+			fi
+		done
 	fi
 	return 0
 }

@@ -100,4 +100,26 @@ describe("KUNAI_CONFIG_DIR profile root", () => {
       expect(readFileSync(file)).toEqual(bytes);
     }
   });
+
+  test("diagnostics recent claims a fresh profile before opening its cache", () => {
+    const profileRoot = join(root, "profile");
+    const child = Bun.spawnSync(
+      [
+        process.execPath,
+        join(import.meta.dirname, "../../src/main.ts"),
+        "diagnostics",
+        "recent",
+        "--format",
+        "jsonl",
+      ],
+      {
+        env: { ...process.env, KUNAI_CONFIG_DIR: profileRoot },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    expect(child.exitCode, child.stderr.toString()).toBe(0);
+    expect(readFileSync(join(profileRoot, ".kunai-profile"), "utf8")).toBe("kunai-profile-v1\n");
+    expect(existsSync(join(profileRoot, "cache", "kunai-cache.sqlite"))).toBe(true);
+  });
 });

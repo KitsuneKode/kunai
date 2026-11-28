@@ -29,7 +29,8 @@ function profileLauncherScript(version: string, platform: NodeJS.Platform): stri
   if (!parseCanonicalVersion(version)) throw new Error("Invalid profile launcher version");
   if (platform === "win32") {
     // Capture arguments before enabling delayed expansion, preserving literal bangs.
-    // Launch and exit on one parsed line; CALL can reopen the replaced batch file.
+    // Leave the batch context before the payload can rename this file.
+    // A nested cmd returns the status without exiting a calling batch file.
     return [
       "@echo off",
       "setlocal EnableExtensions DisableDelayedExpansion",
@@ -37,7 +38,7 @@ function profileLauncherScript(version: string, platform: NodeJS.Platform): stri
       'set "ERRORLEVEL="',
       "set __KUNAI_LAUNCHER_ARGS=%*",
       "setlocal EnableDelayedExpansion",
-      `"!KUNAI_CONFIG_DIR!\\data\\versions\\${version}\\kunai.exe" !__KUNAI_LAUNCHER_ARGS! & exit /b !ERRORLEVEL!`,
+      `(goto) 2>nul & "!KUNAI_CONFIG_DIR!\\data\\versions\\${version}\\kunai.exe" !__KUNAI_LAUNCHER_ARGS! & "%ComSpec%" /d /c exit !ERRORLEVEL!`,
       "",
     ].join("\r\n");
   }
@@ -312,8 +313,6 @@ export async function inspectLauncherOwnership(input: {
   readonly platform?: NodeJS.Platform;
   readonly profileVersion?: string;
 }): Promise<LauncherOwnership> {
-  if (!existsSync(input.launcherPath)) return "missing";
-
   const platform = input.platform ?? process.platform;
   const versions = input.versionsDir.replaceAll("\\", "/");
 
@@ -321,14 +320,20 @@ export async function inspectLauncherOwnership(input: {
   // a tampered or foreign script is never adopted or removed.
   if (input.profileVersion !== undefined) {
     try {
+      const stat = await lstat(input.launcherPath).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return undefined;
+        throw error;
+      });
+      if (stat === undefined) return "missing";
       const expected = profileLauncherScript(input.profileVersion, platform);
-      const stat = await lstat(input.launcherPath);
       if (!stat.isFile() || stat.size !== Buffer.byteLength(expected)) return "unmanaged";
       return (await readFile(input.launcherPath, "utf8")) === expected ? "managed" : "unmanaged";
     } catch {
       return "unmanaged";
     }
   }
+
+  if (!existsSync(input.launcherPath)) return "missing";
 
   if (platform === "win32") {
     const expected = input.expectedSha256?.toLowerCase();

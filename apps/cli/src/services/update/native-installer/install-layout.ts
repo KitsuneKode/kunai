@@ -113,6 +113,13 @@ export function getInstallLayoutPaths(
   const dataDir = isProfileLayout ? kunai.dataDir : (overrides.dataDir ?? kunai.dataDir);
   const cacheDir = isProfileLayout ? kunai.cacheDir : (overrides.cacheDir ?? kunai.cacheDir);
   const configDir = isProfileLayout ? kunai.configDir : (overrides.configDir ?? kunai.configDir);
+  // A detached override injection while a profile is configured must never
+  // silently target the real default launcher — callers must name one.
+  if (kunai.profileDir !== undefined && !isProfileLayout && overrides.launcherPath === undefined) {
+    throw new Error(
+      "A detached install layout requires an explicit launcherPath while KUNAI_CONFIG_DIR is set",
+    );
+  }
 
   const base: Omit<InstallLayoutPaths, "profileDir"> = {
     dataDir,
@@ -126,15 +133,15 @@ export function getInstallLayoutPaths(
     // outside the config/data/cache siblings, which uninstall may remove.
     launcherPath:
       overrides.launcherPath ??
-      (kunai.profileDir === undefined
-        ? defaultLauncherPath(platform, env, kunai.dataDir)
-        : joinFor(
+      (kunai.profileDir !== undefined && isProfileLayout
+        ? joinFor(
             kunai.profileDir,
             "bin",
             // A Windows profile launcher is the .cmd wrapper — the .exe
             // exists only inside the version store, never in bin.
             platform === "win32" ? "kunai.cmd" : binaryFileName(platform),
-          )),
+          )
+        : defaultLauncherPath(platform, env, kunai.dataDir)),
     binaryFileName: binaryFileName(platform),
   };
   return kunai.profileDir !== undefined && isProfileLayout

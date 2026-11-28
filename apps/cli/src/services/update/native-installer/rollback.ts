@@ -21,6 +21,7 @@ import {
   discardLauncherSnapshot,
   restoreLauncherSnapshot,
   updateLauncher,
+  type LauncherSnapshot,
 } from "./launcher";
 import { beginInstallTransaction, finishInstallTransaction } from "./transaction";
 import { inspectVersionLock, withVersionLock } from "./version-lock";
@@ -88,6 +89,46 @@ export type RollbackOptions = {
   /** Test/embedding seam fired when rollback starts activation acquisition. */
   readonly onActivationAcquireAttempt?: () => void;
 };
+
+type RollbackRefusal = Extract<RollbackExecuteResult, { readonly status: "refused" }>;
+
+/**
+ * Inside a profile the configured launcher is authoritative — a manifest that
+ * names a different launcher is never trusted as a rollback publication.
+ */
+function profileLauncherRefusal(
+  layout: InstallLayoutPaths,
+  manifest: InstallManifest,
+): RollbackRefusal | undefined {
+  if (
+    layout.profileDir === undefined ||
+    sameInstallLauncherPath(manifest.launcherPath, layout.launcherPath)
+  ) {
+    return undefined;
+  }
+  return {
+    status: "refused",
+    code: "ownership-changed",
+    reason: `install.json launcher ${manifest.launcherPath} disagrees with the profile's configured launcher ${layout.launcherPath}`,
+  };
+}
+
+/**
+ * Both halves of a profile rollback failed: publication threw and the launcher
+ * snapshot could not be restored. Surface both errors; when the snapshot is a
+ * file backup, name where it was retained.
+ */
+export function rollbackLauncherRecoveryError(
+  snapshot: LauncherSnapshot,
+  errors: { readonly publicationError: unknown; readonly restoreError: unknown },
+): AggregateError {
+  return new AggregateError(
+    [errors.publicationError, errors.restoreError],
+    `Rollback publication failed: ${String(errors.publicationError)}; launcher restoration failed: ${String(errors.restoreError)}.${
+      snapshot.kind === "file" ? ` Backup retained at ${snapshot.backupPath}.` : ""
+    }`,
+  );
+}
 
 async function listInstalledVersions(
   layout: Pick<InstallLayoutPaths, "versionsDir" | "binaryFileName">,
@@ -229,6 +270,8 @@ export async function planRollback(
       reason: `Rollback is only supported for native binary installs (found ${manifest.method})`,
     };
   }
+  const launcherRefusal = profileLauncherRefusal(layout, manifest);
+  if (launcherRefusal) return launcherRefusal;
 
   let targetVersion: string;
   if (options.to !== undefined) {
@@ -355,16 +398,8 @@ export async function executeRollback(
               }
               // Inside a profile the configured launcher is authoritative;
               // a manifest pointing elsewhere is refused, not trusted.
-              if (
-                layout.profileDir !== undefined &&
-                !sameInstallLauncherPath(manifest.launcherPath, layout.launcherPath)
-              ) {
-                return {
-                  status: "refused" as const,
-                  code: "ownership-changed" as const,
-                  reason: `install.json launcher ${manifest.launcherPath} disagrees with the profile's configured launcher ${layout.launcherPath}`,
-                };
-              }
+              const launcherRefusal = profileLauncherRefusal(layout, manifest);
+              if (launcherRefusal) return launcherRefusal;
               const launcherPath =
                 layout.profileDir !== undefined ? layout.launcherPath : manifest.launcherPath;
               if (manifest.activeVersion === candidate.version) {
@@ -429,7 +464,10 @@ export async function executeRollback(
                     await restoreLauncherSnapshot(profileSnapshot);
                   } catch (restoreError) {
                     preserveProfileSnapshot = true;
-                    throw restoreError;
+                    throw rollbackLauncherRecoveryError(profileSnapshot, {
+                      publicationError: error,
+                      restoreError,
+                    });
                   }
                 } else {
                   await restoreLauncher(launcherPath, previousLauncherTarget, process.platform);
@@ -478,6 +516,11 @@ export async function executeRollback(
     return locked;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    // A recovery AggregateError carries two real failures; classifying either
+    // as locked/missing/corrupt would misreport what actually happened.
+    if (error instanceof AggregateError) {
+      return { status: "failed", error: message };
+    }
     if (/locked|(?:Install|Activation) lock held/i.test(message)) {
       return {
         status: "refused",

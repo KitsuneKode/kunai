@@ -11,6 +11,7 @@ import {
   readlink,
   rename,
   rm,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -446,6 +447,28 @@ describe("launcher", () => {
 
     await rm(launcherPath, { force: true });
     expect(await inspectLauncherOwnership(owned)).toBe("missing");
+
+    // A dangling symlink exists per lstat but follows to nothing — it is an
+    // unmanaged foreign entry, never "missing" and never removed.
+    if (process.platform !== "win32") {
+      const danglingTarget = join(root, "versions", "gone", "kunai");
+      await symlink(danglingTarget, launcherPath);
+      expect(await inspectLauncherOwnership(owned)).toBe("unmanaged");
+      expect(await removeLauncherIfVersioned(owned)).toBe(false);
+      expect(await readlink(launcherPath)).toBe(danglingTarget);
+      await rm(launcherPath, { force: true });
+
+      // A non-directory ancestor fails lstat with ENOTDIR — an error path
+      // is unmanaged too, never "missing".
+      const nonDirectoryParent = join(root, "plain-file");
+      await writeFile(nonDirectoryParent, "not a directory");
+      expect(
+        await inspectLauncherOwnership({
+          ...owned,
+          launcherPath: join(nonDirectoryParent, "kunai"),
+        }),
+      ).toBe("unmanaged");
+    }
 
     // Non-canonical versions can never name a payload path.
     expect(() => __testing.profileLauncherScript("../x", "linux")).toThrow(
