@@ -23,7 +23,7 @@ export function relaySettingsRows(ctx: SettingsRegistryContext): SettingRowDef[]
     {
       kind: "boolean",
       id: "providerRelayEnabled",
-      effectTiming: "next-playback",
+      effectTiming: "next-launch",
       configKeys: ["providerRelay"],
       label: "Relay enabled",
       detail:
@@ -37,7 +37,7 @@ export function relaySettingsRows(ctx: SettingsRegistryContext): SettingRowDef[]
     {
       kind: "text",
       id: "providerRelayBaseUrl",
-      effectTiming: "next-playback",
+      effectTiming: "next-launch",
       configKeys: ["providerRelay"],
       label: "Relay server URL",
       detail: "https:// user-owned relay endpoint, or local http://127.0.0.1 for dev",
@@ -60,7 +60,7 @@ export function relaySettingsRows(ctx: SettingsRegistryContext): SettingRowDef[]
     {
       kind: "text",
       id: "providerRelayToken",
-      effectTiming: "next-playback",
+      effectTiming: "next-launch",
       configKeys: ["providerRelay"],
       label: "Relay token",
       detail: "Bearer token when your relay requires authentication",
@@ -80,7 +80,7 @@ export function relaySettingsRows(ctx: SettingsRegistryContext): SettingRowDef[]
     {
       kind: "boolean",
       id: "providerRelayFallbackToDirect",
-      effectTiming: "next-playback",
+      effectTiming: "next-launch",
       configKeys: ["providerRelay"],
       label: "Relay fallback",
       detail: "On: retry direct fetch when relay RPC fails. Off: fail the resolve instead",
@@ -93,7 +93,7 @@ export function relaySettingsRows(ctx: SettingsRegistryContext): SettingRowDef[]
     {
       kind: "submenu",
       id: "providerRelayProviders",
-      effectTiming: "next-playback",
+      effectTiming: "next-launch",
       configKeys: ["providerRelay"],
       label: "Relay providers",
       detail: "Choose which relay-capable providers route metadata through your relay",
