@@ -10,7 +10,6 @@ import {
   formatBootstrapInventorySummary,
   latestPlaybackStartupStage,
 } from "@/app/playback/playback-bootstrap-presenter";
-import { buildPlaybackEpisodePickerOptions } from "@/app/playback/playback-episode-picker";
 import {
   isProviderIdFallbackEligible,
   pickCompatibleFallbackProvider,
@@ -25,17 +24,15 @@ import { setSessionLane, switchSessionMode } from "@/app/session/mode-switch";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
 import type { Container } from "@/container";
 import { matchLocalTitles, type LocalTitleEntry } from "@/domain/palette/local-title-index";
-import { decodeEpisodeSelectionValue } from "@/domain/playback/episode-selection";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import { isKittyCompatible } from "@/image";
 import { copyToClipboard } from "@/infra/clipboard";
 import { peekTitleDetail } from "@/services/catalog/TitleDetailService";
-import { listReadyEpisodes } from "@/services/offline/offline-episode-index";
 import { presenceStatusDetail } from "@/services/presence/presence-status-line";
-import { providerEpisodeIdentitiesEqual } from "@kunai/types";
 import { Box, Text, render, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { openActivePlaybackEpisodePicker } from "./active-playback-episode-picker";
 import {
   AnalyticsDisclosureBanner,
   ANALYTICS_NOTICE_VISIBLE_MS,
@@ -92,7 +89,6 @@ import {
 } from "./root-content-state";
 import { getRootOwnedOverlay, resolveRootShellSurface } from "./root-shell-state";
 import { buildRootStatusSummary, type SyncHealth } from "./root-status-summary";
-import { EPISODE_PICKER_SWITCH_SEASON, openSessionPicker } from "./session-picker";
 import {
   getCommandAutocompleteTarget,
   getCommandMatches,
@@ -204,15 +200,8 @@ stdinManager.setup();
 let rootShellInk: ReturnType<typeof render> | null = null;
 let rootShellExitPromise: Promise<unknown> | null = null;
 
-/**
- * Clears terminal image artifacts. With alternateScreen: true, Ink owns the
- * screen buffer so we only need to clean up Kitty/Ghostty image placements.
- * The raw ANSI clear (\x1b[2J\x1b[H) is intentionally omitted to avoid
- * flicker — Ink's reconciler handles repaint.
- */
-export function clearShellScreen() {
-  clearShellScreenArtifacts();
-}
+/** Hot-path terminal image cleanup; Ink's reconciler owns the frame repaint. */
+export const clearShellScreen = clearShellScreenArtifacts;
 
 export async function openPlaybackStreamSelectionPicker(
   container: Container,
@@ -378,101 +367,6 @@ export async function openPlaybackStreamSelectionPicker(
   const active = await container.playerControl.waitForActivePlayer({ timeoutMs: 12_000 });
   if (active) {
     await applySelection();
-  }
-}
-
-/**
- * Collaborators of {@link openActivePlaybackEpisodePicker}. Injectable so tests
- * exercise the wiring without `mock.module`, which swaps the picker builder
- * process-wide and silently breaks whichever suites load afterwards.
- */
-export type ActivePlaybackEpisodePickerDeps = {
-  readonly buildOptions: typeof buildPlaybackEpisodePickerOptions;
-  readonly openPicker: typeof openSessionPicker;
-};
-
-export async function openActivePlaybackEpisodePicker(
-  container: Container,
-  reason: string,
-  deps: ActivePlaybackEpisodePickerDeps = {
-    buildOptions: buildPlaybackEpisodePickerOptions,
-    openPicker: openSessionPicker,
-  },
-): Promise<void> {
-  const state = container.stateManager.getState();
-  const title = state.currentTitle;
-  const currentEpisode = state.currentEpisode;
-  if (!title || title.type !== "series" || !currentEpisode) return;
-
-  const watchedEntries = container.historyRepository.listByTitle(title.id);
-  const isAnime = state.mode === "anime";
-  const animeEpisodes = state.currentAnimeEpisodes ?? undefined;
-  const local =
-    state.stream?.playbackSourceKind === "local" || title.launchSource === "offline-library";
-  const localEpisodes = local
-    ? listReadyEpisodes(
-        container.offlineAssetService,
-        container.offlineTitleIdentity.resolveForTitle(title, state.mode),
-      )
-    : undefined;
-  let pickerEpisode = currentEpisode;
-
-  while (true) {
-    const picker = await deps.buildOptions({
-      title,
-      currentEpisode: pickerEpisode,
-      isAnime,
-      animeEpisodeCount: title.episodeCount,
-      animeEpisodes,
-      watchedEntries,
-      networkAllowed: !local,
-      localEpisodes,
-    });
-    if (picker.options.length === 0) return;
-
-    const picked = await deps.openPicker(container.stateManager, {
-      type: "episode_picker",
-      season: pickerEpisode.season,
-      initialIndex: picker.initialIndex,
-      options: picker.options,
-    });
-    if (!picked) return;
-
-    if (picked === EPISODE_PICKER_SWITCH_SEASON) {
-      // `s` mid-playback: hop seasons without leaving the episode picker flow.
-      if (isAnime || local) continue;
-      const { fetchSeasonSummaries } = await import("@/tmdb");
-      const { chooseSeasonFromOptions } = await import("./pickers");
-      const seasons = (await fetchSeasonSummaries(title.id)) ?? [];
-      const nextSeason = await chooseSeasonFromOptions(
-        seasons,
-        pickerEpisode.season,
-        undefined,
-        container,
-      );
-      if (nextSeason === null) return;
-      pickerEpisode =
-        nextSeason === currentEpisode.season
-          ? currentEpisode
-          : { ...pickerEpisode, season: nextSeason, episode: 1 };
-      continue;
-    }
-
-    const selection = decodeEpisodeSelectionValue(picked);
-    if (!selection) return;
-    if (
-      selection.season === currentEpisode.season &&
-      selection.episode === currentEpisode.episode &&
-      providerEpisodeIdentitiesEqual(
-        selection.providerEpisodeIdentity,
-        currentEpisode.providerEpisodeIdentity,
-      )
-    ) {
-      return;
-    }
-
-    await container.playerControl.selectCurrentPlaybackEpisode(selection, reason);
-    return;
   }
 }
 
@@ -921,9 +815,11 @@ export function AppRoot({ container }: { container: Container }) {
       ? "loading"
       : state.searchState === "loading"
         ? "searching"
-        : state.playbackStatus === "error"
-          ? "error"
-          : "ready";
+        : state.searchState === "error"
+          ? "issue"
+          : state.playbackStatus === "error"
+            ? "error"
+            : "ready";
   const playbackSubtitle = buildPlaybackSubtitleLine(state);
   const playbackSubtitleStatus = buildPlaybackSubtitleStatusLine(state);
   const visiblePresenceBootLine = presenceProvider === "discord" ? presenceBootLine : null;
@@ -1975,7 +1871,12 @@ function ListShell<T>({
   );
 }
 
-export { openBrowseShell } from "./browse-shell";
+export {
+  type ActivePlaybackEpisodePickerDeps,
+  openActivePlaybackEpisodePicker,
+} from "./active-playback-episode-picker";
+
+export { openBrowseShell } from "./open-browse-shell";
 
 // ─── StatsShell ─────────────────────────────────────────────────────────────
 

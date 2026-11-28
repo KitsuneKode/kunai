@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { PostPlayShell } from "@/app-shell/post-play-shell";
+import { measureColumns } from "@/app-shell/shell-text";
 import React from "react";
 
 import { captureFrame } from "../../harness/render-capture";
@@ -9,6 +10,14 @@ const recs = [
   { id: "r1", title: "Frieren", type: "series" as const, posterPath: "/a.jpg", year: "2023" },
   { id: "r2", title: "Dandadan", type: "series" as const, posterPath: "/b.jpg", year: "2024" },
 ];
+
+function widestLineColumns(frame: string): number {
+  return Math.max(...frame.split("\n").map((line) => measureColumns(line.trimEnd())));
+}
+
+function occurrences(frame: string, needle: string): number {
+  return frame.split(needle).length - 1;
+}
 
 describe("PostPlayShell discovery posters", () => {
   it("renders pick titles in the wide layout", () => {
@@ -41,26 +50,23 @@ describe("PostPlayShell Next-Up hero", () => {
     expect(frame).toContain("Challengers of Science");
   });
 
-  it("advertises the manual resume/play accelerator, never a live countdown", () => {
+  it("advertises the manual play accelerator, never a live countdown", () => {
     const frame = captureFrame(
       <PostPlayShell
         title="My Show"
         episodeLabel="S01 E01"
         nextEpisodeLabel="S01 E02 — Next One"
         postPlayState={{ kind: "mid-series" }}
-        resumeLabel="Resume S01 E02"
       />,
       { columns: 130 },
     );
     // The countdown ticks on the mpv overlay and is cleared before this menu
     // mounts; the hero must not imply a self-advancing timer.
     expect(frame).not.toContain("Playing in");
-    expect(frame).toContain("↵ resume");
+    expect(frame).toContain("↵ play");
   });
 
-  it("calls a resume a resume, not something coming up next", () => {
-    // A resume is the same title at the same position. Announcing it as "UP
-    // NEXT" claimed the opposite of what pressing Enter would do.
+  it("keeps stopped-early resume in one action row instead of duplicating the hero", () => {
     const frame = captureFrame(
       <PostPlayShell
         title="Fight Club"
@@ -70,7 +76,9 @@ describe("PostPlayShell Next-Up hero", () => {
       />,
       { columns: 130 },
     );
-    expect(frame).toContain("▶ RESUME");
+    expect(frame).toContain("↵ Resume");
+    expect(occurrences(frame, "Resume")).toBe(1);
+    expect(frame).not.toContain("▶ RESUME");
     expect(frame).not.toContain("▶ UP NEXT");
   });
 
@@ -93,29 +101,28 @@ describe("PostPlayShell Next-Up hero", () => {
     expect(frame).not.toContain("3 / 10 · 30%");
   });
 
-  it("does not offer an episode list for a movie", () => {
-    // No episode/season signals => resolvedContentKind infers "movie", so the
-    // "e episodes" accelerator would point at nothing.
+  it("does not offer an episode-list accelerator on a movie queue hero", () => {
     const frame = captureFrame(
       <PostPlayShell
         title="Fight Club"
         episodeLabel=""
-        postPlayState={{ kind: "mid-series" }}
-        resumeLabel="resume 1:59"
+        postPlayState={{ kind: "series-complete" }}
+        queueNextLabel="Another Movie"
+        queueNextEntryId="queue-1"
       />,
       { columns: 130 },
     );
-    expect(frame).toContain("↵ resume");
+    expect(frame).toContain("▶ FROM QUEUE");
     expect(frame).not.toContain("e episodes");
   });
 
-  it("still offers the episode list for a series", () => {
+  it("offers the episode list on a series next-up hero", () => {
     const frame = captureFrame(
       <PostPlayShell
         title="My Show"
         episodeLabel="S01 E01"
+        nextEpisodeLabel="S01 E02 — Next One"
         postPlayState={{ kind: "mid-series" }}
-        resumeLabel="resume 12:30"
       />,
       { columns: 130 },
     );
@@ -142,8 +149,8 @@ describe("PostPlayShell series-complete celebration", () => {
   });
 });
 
-describe("PostPlayShell keys footer", () => {
-  it("renders a legible keys footer", () => {
+describe("PostPlayShell key hints", () => {
+  it("leaves key discovery to ShellFooter instead of printing a phantom cancel legend", () => {
     const frame = captureFrame(
       <PostPlayShell
         title="My Show"
@@ -154,8 +161,9 @@ describe("PostPlayShell keys footer", () => {
       />,
       { columns: 130 },
     );
-    expect(frame).toContain("↑↓ move");
-    expect(frame).toContain("1·2·3 picks");
+    expect(frame).not.toContain("x cancel");
+    expect(frame).not.toContain("↑↓ move");
+    expect(frame).not.toContain("1·2·3 picks");
   });
 });
 
@@ -179,6 +187,30 @@ describe("PostPlayShell responsive", () => {
   it("narrow degrades to compact picks, no posters wall", () => {
     const frame = captureFrame(<PostPlayShell {...base} />, { columns: 72 });
     expect(frame).toContain("My Show");
+  });
+  it("keeps every line inside 54 columns and compacts the hero below the box threshold", () => {
+    const frame = captureFrame(<PostPlayShell {...base} />, { columns: 54, rows: 25 });
+    expect(frame).toContain("▶ UP NEXT");
+    expect(frame).not.toContain("╭");
+    expect(widestLineColumns(frame)).toBeLessThanOrEqual(54);
+  });
+  it("keeps stopped-early inside 40 columns without a duplicate resume card", () => {
+    const frame = captureFrame(
+      <PostPlayShell
+        title="Smoke Movie"
+        episodeLabel=""
+        postPlayState={{ kind: "series-complete" }}
+        resumeLabel="resume 0:12"
+        resumePositionSeconds={12}
+        episodeDurationSeconds={600}
+      />,
+      { columns: 40, rows: 20 },
+    );
+    expect(frame).toContain("↵ Resume");
+    expect(frame).not.toContain("▶ RESUME");
+    expect(frame).not.toContain("x cancel");
+    expect(frame).not.toContain("╭");
+    expect(widestLineColumns(frame)).toBeLessThanOrEqual(40);
   });
   it("blocks below the usable minimum with a resize hint", () => {
     const frame = captureFrame(<PostPlayShell {...base} />, { columns: 36 });

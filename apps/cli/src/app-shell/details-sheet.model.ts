@@ -67,6 +67,8 @@ export type DetailsSheetModel = {
   };
   readonly links: { readonly items: readonly TitleLink[] };
   readonly trailerUrl?: string;
+  /** User-visible catalog/season gap-fill failure; absence means the fetch is pending or succeeded. */
+  readonly detailError?: string;
 };
 
 function statusLabel(status: TitleDetail["status"] | undefined): string | undefined {
@@ -96,8 +98,10 @@ export function buildDetailsSheet(input: {
   readonly history: DetailsSheetHistory | null;
   readonly availability: DetailsSheetAvailability | null;
   readonly seasonsExpanded?: boolean;
+  readonly detailError?: string;
 }): DetailsSheetModel {
-  const { seed, detail, history, availability } = input;
+  const { seed, detail, history, availability, detailError } = input;
+  const detailSettled = detail !== null || detailError !== undefined;
   const score = detail?.score ?? seed.score;
   const genres = detail?.genres ?? seed.genres ?? [];
   const status = statusLabel(detail?.status);
@@ -138,11 +142,11 @@ export function buildDetailsSheet(input: {
       statusLabel: status,
     },
     synopsis: {
-      loading: detail === null && !seed.synopsis,
+      loading: !detailSettled && !seed.synopsis,
       text: sanitizeTerminalText(synopsisText),
     },
     facts: {
-      loading: detail === null,
+      loading: !detailSettled,
       studio: detail?.studios?.slice(0, 2).map(sanitizeTerminalText).join(" · ") || undefined,
       episodes,
       runtime: detail?.runtimeMinutes ? `${detail.runtimeMinutes} min` : undefined,
@@ -155,11 +159,11 @@ export function buildDetailsSheet(input: {
       subs: (availability?.subs ?? []).map(sanitizeTerminalText),
     },
     cast: {
-      loading: detail === null,
+      loading: !detailSettled,
       names: (detail?.cast ?? []).slice(0, 8).map((member) => sanitizeTerminalText(member.name)),
     },
     seasons: {
-      loading: detail === null,
+      loading: !detailSettled,
       items: (detail?.seasons ?? []).map((season) => ({
         season: season.season,
         label: sanitizeTerminalText(season.name ?? `Season ${season.season}`),
@@ -174,5 +178,19 @@ export function buildDetailsSheet(input: {
       })),
     },
     trailerUrl: detail?.trailerUrl,
+    detailError,
   };
+}
+
+export function buildDetailsFetchErrorSheet(input: {
+  readonly seed: DetailsSheetSeed;
+  readonly history: DetailsSheetHistory | null;
+  readonly availability: DetailsSheetAvailability | null;
+}): DetailsSheetModel {
+  return buildDetailsSheet({
+    ...input,
+    detail: null,
+    detailError:
+      "Could not load season and episode details — check the connection, then reopen Details",
+  });
 }

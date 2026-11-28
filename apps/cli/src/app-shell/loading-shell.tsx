@@ -3,6 +3,7 @@ import {
   playbackSubtitleStatusTone,
 } from "@/app/playback/subtitle-status";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
+import { formatTimestamp } from "@/services/continuation/history-progress";
 import { getRuntimeMemoryLine } from "@/services/diagnostics/runtime-memory";
 import { Box, Text, useInput } from "ink";
 import React from "react";
@@ -85,16 +86,6 @@ function formatElapsed(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
   return m > 0 ? `${m}:${String(s).padStart(2, "0")}` : `${String(s)}s`;
-}
-
-function formatTimestamp(seconds: number): string {
-  // SAFETY: same guard as formatElapsed — avoids "NaNs"/"NaN:NaN" rows.
-  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
 function useRuntimeMemoryLine(refreshMs: number | null): string {
@@ -535,6 +526,7 @@ export const LoadingShell = React.memo(function LoadingShell({
     handlers: playbackInputHandlers,
   };
   const isWide = loadingViewport.breakpoint === "wide";
+  const narrowPlayback = loadingViewport.breakpoint === "narrow";
   const isWidePlaying = isPlaying && isWide;
   // Show the metadata panel during bootstrap too — not only once mpv starts — so
   // the right side is populated (poster, facts, synopsis stream in reactively)
@@ -559,7 +551,7 @@ export const LoadingShell = React.memo(function LoadingShell({
     : 0;
   const infoWidth = showSidePanel
     ? Math.max(28, totalPlayingWidth - sidePanelWidth - 4)
-    : Math.max(40, terminalColumns - 4);
+    : Math.max(24, terminalColumns - 4);
   const playingPanelModel = React.useMemo(() => {
     // Read so the dependency is honest: its only job is to rebuild this after a
     // toggle, which is when `isFavorite` may return something new.
@@ -906,7 +898,11 @@ export const LoadingShell = React.memo(function LoadingShell({
 
           {/* ── Playing ───────────────────────────────────────────────────── */}
           {isPlaying && (
-            <Box marginTop={1} flexDirection={plainModeEnabled() ? "column" : "row"} flexGrow={1}>
+            <Box
+              marginTop={narrowPlayback ? 0 : 1}
+              flexDirection={plainModeEnabled() ? "column" : "row"}
+              flexGrow={1}
+            >
               <Box flexDirection="column" flexGrow={1}>
                 {/* Control deck (.prototypes/playback-postplay): progress leads,
                   then a single NOW facts line + GO key-hints, then the mpv hint.
@@ -921,7 +917,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                 {state.currentPosition !== undefined &&
                 state.duration !== undefined &&
                 state.duration > 0 ? (
-                  <Box marginTop={1} flexDirection="row">
+                  <Box marginTop={narrowPlayback ? 0 : 1} flexDirection="row">
                     <Text color={palette.accent} bold>
                       {formatTimestamp(state.currentPosition)}
                     </Text>
@@ -937,7 +933,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                     ) : null}
                   </Box>
                 ) : (
-                  <Box marginTop={1} flexDirection="column">
+                  <Box marginTop={narrowPlayback ? 0 : 1} flexDirection="column">
                     <Text color={palette.text} bold>
                       Starting mpv session
                     </Text>
@@ -948,7 +944,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                 )}
 
                 {state.playbackSourceLine ? (
-                  <Box marginTop={2}>
+                  <Box marginTop={narrowPlayback ? 1 : 2}>
                     <Text color={palette.dim}>{"SRC  "}</Text>
                     <Text color={palette.text}>
                       {truncateLine(state.playbackSourceLine, infoWidth - 6)}
@@ -957,7 +953,7 @@ export const LoadingShell = React.memo(function LoadingShell({
                 ) : null}
 
                 {state.sourceToggleHint ? (
-                  <Box marginTop={state.playbackSourceLine ? 1 : 2}>
+                  <Box marginTop={narrowPlayback ? 1 : state.playbackSourceLine ? 1 : 2}>
                     <Text color={palette.dim}>{"ALT  "}</Text>
                     <Text color={palette.accentDeep}>
                       {truncateLine(state.sourceToggleHint, infoWidth - 6)}
@@ -982,11 +978,13 @@ export const LoadingShell = React.memo(function LoadingShell({
                   </Text>
                 </Box>
 
-                <Box marginTop={1}>
-                  <Text color={palette.muted}>
-                    Tracks and subtitles can also be changed in mpv · ? for all keys
-                  </Text>
-                </Box>
+                {narrowPlayback ? null : (
+                  <Box marginTop={1}>
+                    <Text color={palette.muted}>
+                      Tracks and subtitles can also be changed in mpv · ? for all keys
+                    </Text>
+                  </Box>
+                )}
 
                 {/* Health/trouble only surfaces when there is something to act on. */}
                 {playbackTrouble ? (

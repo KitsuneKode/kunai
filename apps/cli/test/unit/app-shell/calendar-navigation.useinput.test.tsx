@@ -30,7 +30,7 @@ function calendarOption(
         releaseAt,
         releasePrecision: "timestamp",
         releaseStatus: "upcoming",
-        providerConfirmed: false,
+        providerConfirmed: true,
         reason: "upcoming-episode",
         dayKey,
         display: {
@@ -49,7 +49,7 @@ function calendarOption(
       releaseAt,
       releasePrecision: "timestamp",
       releaseStatus: "upcoming",
-      providerConfirmed: false,
+      providerConfirmed: true,
       reason: "upcoming-episode",
       dayKey,
       display: {

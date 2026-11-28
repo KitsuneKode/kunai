@@ -91,9 +91,10 @@ export function getShellViewportPolicy(
   const wideBrowse = !blocked && kind === "browse" && wide;
   const mediumBrowse = !blocked && kind === "browse" && medium;
   const previewRail =
-    // Policy gate (140+): browse shell may still show PreviewRail at 124+ when the
-    // component's own threshold is met — see PreviewRail.model.ts and browse-shell.
-    wideBrowse && terminalProfile === "local" && columns >= 140 && rows >= GLOBAL_BLOCKED_MIN_ROWS;
+    // Policy gate (120+): the wide breakpoint itself is 120, and the component
+    // threshold in PreviewRail.model.ts must agree so Search does not fall back
+    // to the raw details dump on exactly the width the design targets.
+    wideBrowse && terminalProfile === "local" && columns >= 120 && rows >= GLOBAL_BLOCKED_MIN_ROWS;
 
   const { minColumns, minRows } = KIND_MINIMUMS[kind];
   const tooSmall = blocked || columns < minColumns || rows < minRows;
@@ -155,14 +156,14 @@ export function getBrowseCommandPaletteMaxVisible(
 ): number {
   // Row accounting for commandMode=true in BrowseShell:
   // AppRoot/header safety(4), browse chrome(10-13), command input chrome(4),
-  // command footer(5), and a small resize/Ink buffer(3). Keep the list bounded
-  // on small terminals, but let tall terminals show enough commands to feel
-  // useful instead of turning the palette into a tiny peephole. The extra
-  // buffer row absorbs transient root banners, such as streak or presence
-  // notices, which can otherwise make Ink reconcile the bottom "more" row over
-  // the last visible command for a frame.
+  // and a small resize/Ink buffer(3). Keep the list bounded on small terminals,
+  // but do not reserve the normal browse footer here: the palette replaces that
+  // footer, so charging it twice turns a 32-row terminal into a one-row
+  // peephole. The extra buffer row absorbs transient root banners, such as
+  // streak or presence notices, which can otherwise make Ink reconcile the
+  // bottom "more" row over the last visible command for a frame.
   const browseChromeRows = 1 + (hasSubtitle ? 1 : 0) + (hasFilters ? 2 : 0) + 9;
-  const availableRows = rows - 4 - browseChromeRows - 4 - 5 - 3;
+  const availableRows = rows - 4 - browseChromeRows - 4 - 3;
   return Math.max(1, Math.min(18, availableRows));
 }
 
@@ -308,8 +309,25 @@ export function getOverlayListMaxVisible(input: {
   return Math.max(1, Math.min(18, viewport.contentRows - panelChrome));
 }
 
+/**
+ * Rows available to the browse-local details sheet. Unlike a root overlay, the
+ * sheet still lives inside Browse: AppHeader, one transient row, the context
+ * strip, the overlay margin, the ShellFooter, Ink's erase buffer, and one
+ * scroll affordance all consume height before the sheet begins. Keeping this
+ * budget explicit is what lets a 40×22 terminal retain both the sheet and the
+ * footer recovery keys instead of pushing the footer off-screen.
+ */
+export function getBrowseDetailsOverlayMaxLines(terminalRows: number): number {
+  const reservedRows = 14;
+  return Math.max(4, Math.min(18, terminalRows - reservedRows));
+}
+
 const BROWSE_BASE_CHROME_ROWS = 10;
+const BROWSE_DENSE_BASE_CHROME_ROWS = 5;
 const BROWSE_FOOTER_ROWS = 5;
+const BROWSE_DENSE_FOOTER_ROWS = 3;
+const BROWSE_DENSE_INK_BUFFER_ROWS = 1;
+const BROWSE_DENSE_ROOT_CHROME_ROWS = 3;
 
 export function getBrowseChromeRows(flags: {
   readonly hasResultSubtitle: boolean;
@@ -319,10 +337,12 @@ export function getBrowseChromeRows(flags: {
   readonly hasContextStrip: boolean;
   readonly hasQueryDirtyHint: boolean;
   readonly commandMode: boolean;
+  /** Narrow terminals use the one-line input treatment and no separate divider. */
+  readonly denseInput?: boolean;
   /** Rendered rows of the type-ahead suggestion band (headers + items + skeletons). */
   readonly suggestionBandRows?: number;
 }): number {
-  let rows = BROWSE_BASE_CHROME_ROWS;
+  let rows = flags.denseInput ? BROWSE_DENSE_BASE_CHROME_ROWS : BROWSE_BASE_CHROME_ROWS;
   if (flags.hasResultSubtitle) rows += 1;
   if (flags.hasFilterBar) rows += 3;
   if (flags.hasFilterBadges) rows += 1;
@@ -339,14 +359,16 @@ export function getBrowseListMaxVisible(
   chromeRows: number,
   rootHeaderRows: number = ROOT_CHROME_ROWS,
   transientRows: number = TRANSIENT_ROW_SLOTS,
+  density: "normal" | "dense" = "normal",
 ): number {
+  const dense = density === "dense";
   const available =
     rows -
-    rootHeaderRows -
+    (dense ? BROWSE_DENSE_ROOT_CHROME_ROWS : rootHeaderRows) -
     transientRows -
     chromeRows -
-    BROWSE_FOOTER_ROWS -
-    BROWSE_INK_BUFFER_ROWS -
+    (dense ? BROWSE_DENSE_FOOTER_ROWS : BROWSE_FOOTER_ROWS) -
+    (dense ? BROWSE_DENSE_INK_BUFFER_ROWS : BROWSE_INK_BUFFER_ROWS) -
     SCROLL_AFFORDANCE_ROWS;
   return Math.max(1, Math.min(18, available));
 }

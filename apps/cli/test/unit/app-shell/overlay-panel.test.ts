@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 
 import { getOverlayHostChromeRows, getOverlayListMaxVisible } from "@/app-shell/layout-policy";
 import {
+  overlayPickerBusyMessage,
   formatPickerDisplayRow,
   formatPickerOptionRow,
   getOverlayPickerPreviewImageUrl,
@@ -57,6 +58,11 @@ test("formatPickerDisplayRow reserves prefix width before truncating episode row
 
   expect(row.prefix).toBe("▌ ");
   expect(row.prefix.length + row.text.length + row.badgeSuffix.length).toBeLessThanOrEqual(64);
+});
+
+test("episode picker busy copy names episodes rather than settings", () => {
+  expect(overlayPickerBusyMessage("episode-picker")).toBe("Loading episodes…");
+  expect(overlayPickerBusyMessage("provider")).toBe("Updating provider…");
 });
 
 test("episode picker overlay resolves selected preview artwork", () => {

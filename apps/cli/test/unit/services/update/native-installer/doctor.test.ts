@@ -243,6 +243,30 @@ describe("buildDoctorReport", () => {
     expect(text).toContain("Remediation");
   });
 
+  test("text findings print errors before warnings and info metadata", async () => {
+    const { root, layout } = await makeRoot();
+    const report = await buildDoctorReport({
+      layout,
+      now: () => FIXED_DATE,
+      runningExecutable: { path: layout.launcherPath, version: "1.0.0" },
+      pathValue: join(root, "bin"),
+      platform: "linux",
+      fileExists: existsSync,
+      probeCapabilities: async () => emptyCapabilities(),
+    });
+    const ordered = formatDoctorReportText({
+      ...report,
+      findings: [
+        { severity: "info", code: "metadata", message: "metadata", remediation: [] },
+        { severity: "warning", code: "warning", message: "warning", remediation: [] },
+        { severity: "error", code: "fatal", message: "fatal", remediation: [] },
+      ],
+    });
+
+    expect(ordered.indexOf("[error] fatal")).toBeLessThan(ordered.indexOf("[warning] warning"));
+    expect(ordered.indexOf("[warning] warning")).toBeLessThan(ordered.indexOf("[info] metadata"));
+  });
+
   test("missing-mpv text names the gap once and keeps remediation labels unglued", async () => {
     // KIT-82: a dedicated console.error plus the finding used to print
     // "mpv not found" twice, and padEnd(8) glued "openSUSE" onto "sudo zypper".

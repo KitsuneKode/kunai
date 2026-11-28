@@ -118,7 +118,7 @@ describe("provider picker footer", () => {
       expect(frame).toContain("Esc close");
       expect(frame).toContain("[↑↓] select");
       expect(frame).toContain("[enter] switch");
-      expect(frame).toContain("[/] commands");
+      expect(frame).toContain(columns < 48 ? "[/] cmds" : "[/] commands");
     }
   });
 

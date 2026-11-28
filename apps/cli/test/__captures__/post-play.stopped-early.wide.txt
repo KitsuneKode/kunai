@@ -4,30 +4,22 @@
                                                                                                    │
  ⏸ stopped early                                                                                   │
                                                                                                    │
- ╭────────────────────────────────────────────────────────────────────────────────────────────────╮│
- │ ▶ RESUME                                                                                       ││                  ❀
- │                                                                                                ││
- │                   resume S04E07  ·  18:49                                                      ││
- │                   same stream · same position                                                  ││
- │        DS         ↵ resume · e episodes                                                        ││
- │                                                                                                ││
- │                                                                                                ││
- │                                                                                                ││
- ╰────────────────────────────────────────────────────────────────────────────────────────────────╯│  ❀ series
-                                                                                                   │  DR. STONE
  ▌ ↵ Resume          same stream · same position [↵]                                               │
-   Episodes          open season list [e]                                                          │  ── up next ──────────────────────
+   Episodes          open season list [e]                                                          │                  ❀
    Replay            rewatch from the start [r]                                                    │
-                                                                                                   │               E32 · Challengers…
- ────────────────────────────────────── you might also like ───────────────────────────────────────│               autoplay
-                                                                                                   │       ❀
+                                                                                                   │
+ ────────────────────────────────────── you might also like ───────────────────────────────────────│
+                                                                                                   │
  ┌─────────────────────────────┐  ┌─────────────────────────────┐  ┌─────────────────────────────┐ │
  │                             │  │                             │  │                             │ │
  │              F              │  │             VS              │  │             HD              │ │
- │                             │  │                             │  │                             │ │
- │ 1                           │  │ 2                           │  │ 3                           │ │
+ │                             │  │                             │  │                             │ │  ❀ series
+ │ 1                           │  │ 2                           │  │ 3                           │ │  DR. STONE
  │ Frieren                     │  │ Vinland Saga                │  │ Heavenly Delusion           │ │
- │ Slow-burn fantasy           │  │ 2019                        │  │ 2023                        │ │
+ │ Slow-burn fantasy           │  │ 2019                        │  │ 2023                        │ │  ── up next ──────────────────────
  └─────────────────────────────┘  └─────────────────────────────┘  └─────────────────────────────┘ │
+                                                                                                   │               E32 · Challengers…
+                                                                                                   │               autoplay
+                                                                                                   │       ❀
                                                                                                    │
- ↑↓ move   ·   ↵ select   ·   1·2·3 picks   ·   x cancel                                           │
+                                                                                                   │

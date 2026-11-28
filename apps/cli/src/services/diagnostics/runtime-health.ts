@@ -372,6 +372,7 @@ export function buildRuntimeHealthSnapshot(input: {
   readonly memorySnapshot?: RuntimeMemorySnapshot;
   readonly memorySamples?: readonly RuntimeMemorySample[];
   readonly persistedProviderHealth?: ProviderHealth;
+  readonly networkAvailable?: boolean;
 }): RuntimeHealthSnapshot {
   const eventProvider = summarizeProviderHealth(input.recentEvents, input.currentProvider);
   const effective = resolveEffectiveProviderHealth(input.persistedProviderHealth);
@@ -397,7 +398,14 @@ export function buildRuntimeHealthSnapshot(input: {
     : eventProvider;
 
   return {
-    network: summarizePlaybackNetworkHealth(input.recentEvents),
+    network:
+      input.networkAvailable === false
+        ? {
+            label: "Network",
+            detail: "offline — streaming and metadata requests are unreachable",
+            tone: "error",
+          }
+        : summarizePlaybackNetworkHealth(input.recentEvents),
     provider,
     memory: summarizeRuntimeMemoryHealth(input.memorySnapshot),
     memoryTrend: summarizeRuntimeMemoryTrendHealth(input.memorySamples),

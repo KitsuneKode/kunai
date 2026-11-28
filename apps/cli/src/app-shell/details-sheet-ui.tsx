@@ -3,7 +3,6 @@ import React from "react";
 
 import type { DetailsSheetModel } from "./details-sheet.model";
 import { wrapSynopsis } from "./details-view";
-import { PressRow } from "./mouse/PickRow";
 import { plainModeEnabled } from "./plain-mode";
 import { PosterInitialBlock } from "./poster-initial-block";
 import { palette } from "./shell-theme";
@@ -65,14 +64,18 @@ export function DetailsSheet({
   readonly width: number;
 }) {
   const plain = plainModeEnabled();
-  const textWidth = Math.max(20, width - (plain ? 0 : POSTER_COLS + 4));
+  // Below roughly fifty columns a side-by-side poster leaves the title and
+  // metadata only a dozen readable cells and the sheet frame corrupts. The
+  // narrow grammar keeps the words intact and drops decorative media first.
+  const showPoster = !plain && width >= 52;
+  const textWidth = Math.max(20, width - (showPoster ? POSTER_COLS + 4 : 0));
   const synopsisLines = wrapSynopsis(model.synopsis.text, Math.max(20, width - 2), 6);
 
   return (
     <Box flexDirection="column" width={width}>
       {/* Header: poster + title/meta/genres */}
-      <Box flexDirection={plain ? "column" : "row"}>
-        {plain ? null : (
+      <Box flexDirection={showPoster ? "row" : "column"}>
+        {!showPoster ? null : (
           <Box width={POSTER_COLS} marginRight={2}>
             <SheetPoster url={model.header.posterUrl} title={model.header.title} />
           </Box>
@@ -104,6 +107,12 @@ export function DetailsSheet({
           <Text color={palette.dim}>No synopsis available.</Text>
         )}
       </Box>
+
+      {model.detailError ? (
+        <Box marginTop={1}>
+          <Text color={palette.dangerText}>{model.detailError}</Text>
+        </Box>
+      ) : null}
 
       {/* Facts */}
       <Box flexDirection="column" marginTop={1}>
@@ -177,35 +186,6 @@ export function DetailsSheet({
           ) : null}
         </Box>
       ) : null}
-
-      {/* Actions footer: exactly the keys the browse sheet handler binds, each
-          a chip a click presses (it once advertised `+`, `e` and "w follow",
-          none of which existed). */}
-      <Box marginTop={1} flexWrap="wrap">
-        {sheetActions(model).map(([key, label], index) => (
-          <PressRow key={key} id={`details-sheet:action:${key}`} keyHint={key}>
-            <Text color={palette.dim}>
-              {plain
-                ? `${index === 0 ? "Actions: " : ", "}${key} ${label}`
-                : `${index === 0 ? "" : " · "}${key === "enter" ? "↵" : key} ${label}`}
-            </Text>
-          </PressRow>
-        ))}
-      </Box>
     </Box>
   );
-}
-
-/** The sheet's actions as [key, label], only those that apply to this title. */
-function sheetActions(model: DetailsSheetModel): readonly (readonly [string, string])[] {
-  return [
-    ["enter", "play"],
-    ["q", "queue"],
-    ["w", "watchlist"],
-    ["d", "download"],
-    ...(model.seasons.items.length > 0 ? [["s", "seasons"] as const] : []),
-    ...(model.trailerUrl ? [["t", "trailer"] as const] : []),
-    ...(model.links.items.length > 0 ? [["l", "links"] as const] : []),
-    ["esc", "close"],
-  ];
 }

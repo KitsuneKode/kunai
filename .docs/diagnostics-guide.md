@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-28"
+lastReviewed: "2026-11-28T11:04:26Z"
 ---
 
 # Kunai — Diagnostics Guide
@@ -34,15 +34,15 @@ rg "scraper|provider|subtitle|wyzie|m3u8|playback|cache" debug.log
 
 Open the in-app diagnostics panel with `/diagnostics` to see the current session snapshot and recent runtime events without leaving the shell.
 
-The diagnostics panel is organized into five sections:
+The diagnostics panel leads with the actionable truth, then organizes evidence into five sections. When playback is blocked or recoverable before transport starts, the first row is **Why it didn't start** with the likely cause; a healthy verdict does not manufacture a retry action.
 
 1. **Verdict** — plain-language session health, likely cause, and one recommended next action.
-2. **Health** — Playback, Provider, Network, Cache, Subtitles, Downloads, Discord, Release sync, and Memory rows using `OK`, `Needs attention`, `Failed`, or `Unknown`.
+2. **Health** — Playback, Provider, Network, Cache, Subtitles, Downloads, Discord, Release sync, and Memory rows using `OK`, `Needs attention`, `Failed`, or `Unknown`, grouped so faults and recovery actions appear before informational or unmeasured rows.
 3. **Current Playback Evidence** — title, episode, provider, playback state, cache/source state, subtitle outcome, recover status, and slowest startup stage.
 4. **Developer Evidence** — correlation IDs, provider timeline/attempts, playback startup, source inventory warnings, mpv/network samples, and recent events.
 5. **Export And Report** — `/export-diagnostics`, `/report-issue`, and `kunai diagnostics recent`.
 
-Each health row uses the grammar `OK`, `Needs attention`, `Failed`, or `Unknown`, then a short reason and one practical next step when degraded. Example: `Provider  Needs attention · VidKing timed out · Try fallback provider`.
+Each health row uses the grammar `OK`, `Needs attention`, `Failed`, or `Unknown`, then a short reason and one practical next step when degraded. Example: `Provider  Needs attention · VidKing timed out · Try fallback provider`. Connectivity is machine truth first: when the machine is offline, the network row says so even if an old playback sample looked healthy.
 
 Diagnostics are first-party and local. Always-on summary events are written to
 an in-memory buffer immediately, then best-effort persisted to the local cache

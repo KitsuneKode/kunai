@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { openBrowseShell } from "@/app-shell/browse-shell";
+import type { openBrowseShell } from "@/app-shell/open-browse-shell";
 import { SearchPhase } from "@/app/search/SearchPhase";
 import type { Container } from "@/container";
 import { SessionStateManagerImpl } from "@/domain/session/SessionStateManager";
