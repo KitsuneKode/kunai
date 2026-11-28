@@ -3,6 +3,7 @@ import { getDesignThemeName, setDesignTheme } from "@kunai/design";
 import { useInput } from "ink";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { plainTimerAllowed, shouldSuppressRedraw } from "../plain-mode";
 import { buildSettingsPage, resolveSettingsInitialLocation } from "./build-page";
 import { buildSettingsSubmenuView } from "./build-submenu";
 import { SettingsFooter } from "./components/SettingsFooter";
@@ -192,6 +193,7 @@ export function SettingsShell({
 
   useEffect(() => {
     if (settingsEqual(state.draft, container.config.getRaw())) return;
+    if (!plainTimerAllowed("functional")) return;
     const next = state.draft;
     const timer = setTimeout(() => {
       void saveDraft(next, "editing");
@@ -239,7 +241,7 @@ export function SettingsShell({
     if (result.runActionId) {
       void runAction(result.runActionId);
     }
-    onRedraw();
+    if (!shouldSuppressRedraw()) onRedraw();
   };
 
   useInput(
@@ -255,7 +257,7 @@ export function SettingsShell({
         ) {
           activeActionRef.current?.controller.abort();
           onStatus("Cancelling…");
-          onRedraw();
+          if (!shouldSuppressRedraw()) onRedraw();
         }
         return;
       }

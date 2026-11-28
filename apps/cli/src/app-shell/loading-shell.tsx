@@ -32,7 +32,7 @@ import type { StageRailItem } from "./loading-shell-runtime";
 import { buildMediaPanel } from "./media-panel-model";
 import { MediaPanel } from "./MediaPanel";
 import { MouseTarget } from "./mouse/MouseRegions";
-import { plainModeEnabled, plainStageStatus } from "./plain-mode";
+import { plainModeEnabled, plainStageStatus, plainTimerAllowed } from "./plain-mode";
 import { buildPlaybackRecoveryViewModel } from "./playback-recovery-view-model";
 import {
   applyPlaybackShellInputEffect,
@@ -73,7 +73,7 @@ function PlaybackShareControl({ onShare }: { readonly onShare: () => void }) {
 function useElapsed(active = true): number {
   const [elapsed, setElapsed] = React.useState(0);
   React.useEffect(() => {
-    if (!active) return undefined;
+    if (!active || !plainTimerAllowed("decorative")) return undefined;
     const start = Date.now();
     const timer = setInterval(() => {
       setElapsed(Math.floor((Date.now() - start) / 1000));
@@ -97,7 +97,7 @@ function useRuntimeMemoryLine(refreshMs: number | null): string {
   );
 
   React.useEffect(() => {
-    if (refreshMs === null) {
+    if (refreshMs === null || !plainTimerAllowed("functional")) {
       setMemoryLine("");
       return undefined;
     }
@@ -130,7 +130,7 @@ function useRuntimeHealthLine(
   );
 
   React.useEffect(() => {
-    if (refreshMs === null) {
+    if (refreshMs === null || !plainTimerAllowed("functional")) {
       setHealthLine(undefined);
       return undefined;
     }
@@ -337,7 +337,7 @@ export const LoadingShell = React.memo(function LoadingShell({
   const terminalColumns = loadingViewport.columns;
   const barWidth = Math.min(48, Math.max(12, Math.floor(terminalColumns * 0.45)));
   React.useEffect(() => {
-    if (memoryPanelPinned) return undefined;
+    if (memoryPanelPinned || !plainTimerAllowed("decorative")) return undefined;
     if (!memoryPanelVisible) return undefined;
     const timer = setTimeout(() => {
       setMemoryPanelVisible(false);

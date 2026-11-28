@@ -1,3 +1,5 @@
+import { plainTimerAllowed } from "./plain-mode";
+
 export type DismissTimerOperations = {
   readonly setTimeout: (callback: () => void, delayMs: number) => unknown;
   readonly clearTimeout: (handle: unknown) => void;
@@ -30,6 +32,7 @@ export function createDismissTimerRegistry(
 
   return {
     schedule(callback, delayMs) {
+      if (!plainTimerAllowed("decorative")) return;
       let handle: unknown;
       handle = timers.setTimeout(() => {
         active.delete(handle);

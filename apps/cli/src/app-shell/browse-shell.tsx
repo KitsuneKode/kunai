@@ -137,6 +137,7 @@ import { MouseTarget, useMouseEnabled, useMouseRegion } from "./mouse/MouseRegio
 import type { BrowseOverlay } from "./overlay-panel";
 import { OverlayPanel } from "./overlay-panel";
 import { plainModeEnabled, selectionPrefix } from "./plain-mode";
+import { armDecorativeTimer, plainPlaceholder, plainTimerAllowed } from "./plain-mode";
 import { prefetchPosterSources } from "./poster-source-cache";
 import { suppressPosterWhileNavigating } from "./poster-types";
 import { computeMediaListRowLayout } from "./primitives/list-row-layout";
@@ -270,14 +271,13 @@ export function BrowseShell<T>({
     () => matchLocalTitles(titleEntries, commandInput),
     [titleEntries, commandInput],
   );
-  // Transient confirmation for row actions (follow / queue / download) — without it,
-  // following a title looked like a no-op even though it persisted.
+  // Row actions flash a confirmation; plain mode leaves it up instead of clearing it.
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const actionFeedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flashActionFeedback = useCallback((message: string) => {
     setActionFeedback(sanitizeTerminalText(message));
     if (actionFeedbackTimer.current) clearTimeout(actionFeedbackTimer.current);
-    actionFeedbackTimer.current = setTimeout(() => setActionFeedback(null), 2500);
+    armDecorativeTimer(actionFeedbackTimer, () => setActionFeedback(null), 2500);
   }, []);
   useEffect(
     () => () => {
@@ -423,7 +423,7 @@ export function BrowseShell<T>({
     let active = true;
     setIdleContextStatus("loading");
     const timer = setTimeout(() => {
-      if (active) setShowIdleLoadingHint(true);
+      if (active && plainTimerAllowed("functional")) setShowIdleLoadingHint(true);
     }, 150);
 
     void (async () => {
@@ -2168,7 +2168,7 @@ export function BrowseShell<T>({
                 value={query}
                 onChange={updateQuery}
                 onSubmit={handleQuerySubmit}
-                placeholder={placeholder}
+                placeholder={plainPlaceholder(placeholder)}
                 focus={!commandMode && !resultFilterFocused && !listFocused && !idleFocused}
                 ghostSuffix={suggestionGhost?.suffix}
                 cursorRef={queryCursorRef}

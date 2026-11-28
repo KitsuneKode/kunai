@@ -26,6 +26,7 @@ import {
 } from "./download-confirmation-profile";
 import { buildDownloadManagerLayout } from "./download-manager-view";
 import { useOverlayOrTerminalSize } from "./overlay-layout-context";
+import { plainModeEnabled, selectionPrefix } from "./plain-mode";
 import { PreviewRail } from "./primitives/PreviewRail";
 import type { PreviewRailModel } from "./primitives/PreviewRail.model";
 import { mountRootContent } from "./root-content-state";
@@ -326,10 +327,7 @@ export function DownloadConfirmationContent({
               >
                 <Box flexDirection="column">
                   <Text color={selected ? palette.accent : palette.text} bold={selected}>
-                    {truncateLine(
-                      `${selected ? "\u258c " : "  "}${action.label}`,
-                      layout.listWidth,
-                    )}
+                    {truncateLine(`${selectionPrefix(selected)}${action.label}`, layout.listWidth)}
                   </Text>
                   {selected ? (
                     <Text color={palette.muted} wrap="truncate">
@@ -342,7 +340,7 @@ export function DownloadConfirmationContent({
           })}
         </Box>
       </Box>
-      {layout.showRail ? (
+      {layout.showRail && !plainModeEnabled() ? (
         <Box marginLeft={2}>
           <PreviewRail model={railModel} width={layout.railWidth} poster={poster} />
         </Box>

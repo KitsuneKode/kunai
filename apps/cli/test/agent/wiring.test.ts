@@ -1299,3 +1299,27 @@ describe("agent wiring · relaunch", () => {
     }
   }, 60_000);
 });
+
+describe("agent wiring · plain quiet", () => {
+  it("keeps the idle browse field from looking typed at 120, 54, and 40 columns", async () => {
+    for (const [columns, rows] of [
+      [120, 32],
+      [54, 25],
+      [40, 20],
+    ] as const) {
+      await withSession(
+        `wiring-plain-quiet-browse-${columns}x${rows}`,
+        { columns, rows, extraEnv: { KUNAI_PLAIN: "1" } },
+        async (session) => {
+          await session.waitForFrame((frame) => frame.includes("Search title"), "plain browse");
+          const frame = session.frame();
+          expect(frame).toContain("(empty, e.g.");
+          expect(frame).toContain("Breaking Bad");
+          expect(frame).not.toMatch(/Search title \(focused\): Breaking Bad/);
+          expect(frame).not.toContain("❀");
+          expect(frame).not.toContain("╭");
+        },
+      );
+    }
+  }, 45_000);
+});

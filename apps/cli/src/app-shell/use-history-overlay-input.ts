@@ -3,6 +3,7 @@ import type { HistoryTypeFilter } from "@/app-shell/history-view";
 import type { LineEditorKey } from "@/app-shell/line-editor";
 import { routeListFilterKey } from "@/app-shell/list-filter-keys";
 import type { HistoryPickerOptionsContext } from "@/app-shell/panel-data";
+import { shouldSuppressRedraw } from "@/app-shell/plain-mode";
 import {
   buildRootHistorySelection,
   type RootHistorySelection,
@@ -148,12 +149,12 @@ function runHistoryRowAction(
     .run({ actionId: action.actionId, item: action.item, source: "history" })
     .then((result) => {
       ctx.setOverlayStatus(result.status === "unsupported" ? result.reason : action.status);
-      ctx.onRedraw();
+      if (!shouldSuppressRedraw()) ctx.onRedraw();
       return undefined;
     })
     .catch((error: unknown) => {
       ctx.setOverlayStatus(error instanceof Error ? error.message : action.failure);
-      ctx.onRedraw();
+      if (!shouldSuppressRedraw()) ctx.onRedraw();
       return undefined;
     });
 }
@@ -176,7 +177,7 @@ async function openHistoryTitleControlMenu(
     canResume: entry.positionSeconds > 0 && !isFinished(entry),
   });
   if (!shellAction) {
-    ctx.onRedraw();
+    if (!shouldSuppressRedraw()) ctx.onRedraw();
     return;
   }
 
@@ -205,7 +206,7 @@ async function openHistoryTitleControlMenu(
           : undefined,
       providerId: entry.providerId,
     });
-    ctx.onRedraw();
+    if (!shouldSuppressRedraw()) ctx.onRedraw();
     return;
   }
   if (intent.kind === "media-action") {
@@ -220,7 +221,7 @@ async function openHistoryTitleControlMenu(
 
   const { handleShellAction } = await import("@/app-shell/workflows");
   await handleShellAction({ action: shellAction, container: ctx.container });
-  ctx.onRedraw();
+  if (!shouldSuppressRedraw()) ctx.onRedraw();
 }
 
 /** History overlay key map extracted from root-overlay-shell (Phase 9). */
@@ -448,14 +449,14 @@ export function handleHistoryOverlayInput(
           ctx.setOverlayStatus(
             result.status === "unsupported" ? result.reason : "Queued from history",
           );
-          ctx.onRedraw();
+          if (!shouldSuppressRedraw()) ctx.onRedraw();
           return undefined;
         })
         .catch((error: unknown) => {
           ctx.setOverlayStatus(
             error instanceof Error ? error.message : "Unable to queue from history",
           );
-          ctx.onRedraw();
+          if (!shouldSuppressRedraw()) ctx.onRedraw();
           return undefined;
         });
     }

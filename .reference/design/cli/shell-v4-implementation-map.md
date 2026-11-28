@@ -92,6 +92,7 @@ Scores use a 1–5 scale (`Impact` 5 = fixes broken trust/usability on daily pat
 - **Dependencies:** None.
 
 ### Rank 9 · Eliminate Screen-Reader Redraw Chatter (`PlainQuietPolicy`) & Fix Plain-Mode Leaks
+- **Status:** Done.
 - **Impact / Effort:** 4.5 / 2 (**Ratio: 2.25**)
 - **Why:** Reviewers flagged *"Screen-reader redraw chatter."* Live `--plain` captures and code audit found: 1s `useElapsed` / polling timers firing repaints in `loading-shell.tsx`, `onRedraw()` (`clearShellScreen`) called on every keypress in `use-history-overlay-input.ts` and `SettingsShell.tsx`, 92-char `────` rule in Browse plain mode, `⏸` emoji in Post-play plain mode, `Breaking Bad` placeholder indistinguishable from typed text, and `DownloadConfirmationContent` completely ignoring `plainModeEnabled()`.
 - **Files touched:** `apps/cli/src/app-shell/plain-mode.ts` (**NEW** `shouldSuppressRedraw()`, `plainPlaceholder()`), `apps/cli/src/app-shell/loading-shell.tsx`, `apps/cli/src/app-shell/use-history-overlay-input.ts`, `apps/cli/src/app-shell/settings/SettingsShell.tsx`, `apps/cli/src/app-shell/browse-shell.tsx`, `apps/cli/src/app-shell/post-play-shell.tsx`, `apps/cli/src/app-shell/download-confirmation-shell.tsx`, `apps/cli/src/app-shell/shell-frame.tsx`.
