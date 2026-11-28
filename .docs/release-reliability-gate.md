@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-28T06:22:13Z"
+lastReviewed: "2026-11-28T18:00:28Z"
 ---
 
 # Kunai Release Reliability Gate
@@ -45,6 +45,16 @@ Expected result:
 Dispatch version input is passed through the step environment, never interpolated
 into generated Bash source. Exact comparison with the package version rejects
 hostile strings as data before candidate construction.
+
+Pull requests that touch the release-only surface (`.github/workflows/release.yml`,
+`scripts/publish-npm-release.ts`, `scripts/release-gate-evidence.ts`,
+`scripts/packaging/**`, or `.github/scripts/**`) run the CI `Release script PR
+smoke` job. The job uses the release Node pin, shell-checks `.github/scripts`,
+runs the evidence/publication parser contracts, packs a lightweight local
+candidate, and executes `scripts/publish-npm-release.ts --dry-run` against those
+preserved tarballs without publishing. This keeps release-only script drift on
+PR CI instead of discovering it during the frozen release train.
+
 
 The release workflow additionally opens the exact preserved
 `.release-candidate/kunai-npm.tgz` after `release:pack`, both before candidate

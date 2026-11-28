@@ -35,6 +35,7 @@ jobs:
       doc-coverage: ${{ steps.filter.outputs.doc-coverage }}
       installer: ${{ steps.filter.outputs.installer }}
       installer-matrix: ${{ steps.installer-matrix.outputs.cells }}
+      release-scripts: ${{ steps.filter.outputs.release-scripts }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
 
@@ -107,6 +108,12 @@ jobs:
               - '.docs/**'
               - 'scripts/verify-doc-coverage.ts'
               - 'scripts/verify-doc-paths.ts'
+            release-scripts:
+              - '.github/workflows/release.yml'
+              - 'scripts/publish-npm-release.ts'
+              - 'scripts/release-gate-evidence.ts'
+              - 'scripts/packaging/**'
+              - '.github/scripts/**'
             installer:
               - 'apps/cli/scripts/build*.ts'
               - 'apps/cli/src/services/update/**'
@@ -976,6 +983,55 @@ jobs:
       - name: Run hermetic installer scenarios
         run: bun run test:installer:scenarios
 
+
+  release-scripts:
+    name: Release script PR smoke
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.release-scripts == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      RELEASE_NODE_VERSION: "22.18.0"
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
+        with:
+          filter: blob:none
+      - uses: ./.github/actions/setup-bun-monorepo
+        with:
+          turbo-cache-prefix: release-scripts
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # actions/setup-node@v6
+        with:
+          node-version: ${{ env.RELEASE_NODE_VERSION }}
+
+      - name: Shell syntax and lint for release scripts
+        run: |
+          bash -n .github/scripts/*.sh
+          shellcheck .github/scripts/*.sh
+
+      - name: Release evidence and publication parser contracts
+        run: >-
+          bun run --cwd apps/cli test:file --
+          test/unit/scripts/release-gate-evidence.test.ts
+          test/unit/scripts/publish-npm-release.test.ts
+
+      - name: Build launcher package metadata
+        run: bun run --cwd apps/cli build
+
+      - name: Prepare a lightweight local publication candidate
+        run: |
+          node -e 'const fs=require("fs"); const p="apps/cli/package.json"; const pkg=JSON.parse(fs.readFileSync(p,"utf8")); pkg.version="0.0.0-release-ci"; fs.writeFileSync(p,JSON.stringify(pkg,null,2)+"\n")'
+          mkdir -p apps/cli/dist/bin
+          for bin in kunai-linux-x64 kunai-linux-x64-musl kunai-linux-arm64 kunai-linux-arm64-musl kunai-android-arm64 kunai-android-x64 kunai-darwin-x64 kunai-darwin-arm64 kunai-windows-x64.exe kunai-windows-arm64.exe; do
+            printf '#!/bin/sh\nexit 0\n' > "apps/cli/dist/bin/$bin"
+            chmod 755 "apps/cli/dist/bin/$bin"
+          done
+          bun run --cwd apps/cli build:npm-platform
+          bun run release:prepare
+          bun run release:pack
+
+      - name: Dry-run publication reconciliation against the packed candidate
+        run: bun run scripts/publish-npm-release.ts --dry-run
+
   ci-ready:
     name: CI ready
     # Evaluate failures on active runs; a superseded workflow cannot certify readiness.
@@ -1000,6 +1056,7 @@ jobs:
         build-binaries,
         installer-docker,
         installer-scenarios,
+        release-scripts,
       ]
     runs-on: ubuntu-latest
     timeout-minutes: 2
