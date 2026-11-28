@@ -4,16 +4,18 @@
  *
  * Env:
  * - KUNAI_FAKE_MPV_EVIDENCE: absolute JSONL path
- * - KUNAI_FAKE_MPV_MODE: normal | fail-pre-loaded | hold
+ * - KUNAI_FAKE_MPV_MODE: normal | fail-pre-loaded | hold | die-mid-stream
  */
 import { appendFileSync, mkdirSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
 
-type Mode = "normal" | "fail-pre-loaded" | "hold";
+type Mode = "normal" | "fail-pre-loaded" | "hold" | "die-mid-stream";
+
+let playbackLoadCount = 0;
 
 function modeFromEnv(): Mode {
   const raw = process.env.KUNAI_FAKE_MPV_MODE?.trim();
-  if (raw === "fail-pre-loaded" || raw === "hold") return raw;
+  if (raw === "fail-pre-loaded" || raw === "hold" || raw === "die-mid-stream") return raw;
   return "normal";
 }
 
@@ -71,6 +73,34 @@ async function runPlaybackLifecycle(
   await Bun.sleep(20);
   emit(sock, { event: "file-loaded" });
   appendEvidence({ type: "file-loaded", url });
+  if (mode === "die-mid-stream") {
+    if (!url) {
+      appendEvidence({ type: "hold", reason: "idle-before-loadfile" });
+      return "continue";
+    }
+    playbackLoadCount += 1;
+    appendEvidence({ type: "mid-stream-load", url, count: playbackLoadCount });
+    const recoveryLoad = playbackLoadCount > 1;
+    if (recoveryLoad) {
+      // Leave the failover banner on screen long enough for the shell to paint
+      // it; the replacement confirms playback only after this direct proof.
+      await Bun.sleep(500);
+    }
+    emit(sock, { event: "property-change", name: "duration", data: 1200 });
+    emit(sock, { event: "property-change", name: "time-pos", data: 754 });
+    appendEvidence({ type: "playback-properties", duration: 1200, timePos: 754 });
+    if (!recoveryLoad) {
+      await Bun.sleep(20);
+      emit(sock, {
+        event: "end-file",
+        reason: "error",
+        file_error: "loading failed",
+      });
+      appendEvidence({ type: "end-file", reason: "error", count: playbackLoadCount });
+    }
+    return "continue";
+  }
+
   emit(sock, { event: "property-change", name: "duration", data: 600 });
   emit(sock, { event: "property-change", name: "time-pos", data: 12 });
   appendEvidence({ type: "playback-properties", duration: 600, timePos: 12 });

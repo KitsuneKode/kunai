@@ -15,7 +15,7 @@ import type { StreamCandidate } from "@kunai/types";
 
 import { COMPILED_SMOKE_FIXTURES } from "./scenarios";
 
-function resolvedResult(providerId: "videasy" | "allanime", url: string, titleId: string) {
+function resolvedResult(providerId: string, url: string, titleId: string) {
   const startedAt = new Date().toISOString();
   const cachePolicy = createProviderCachePolicy({
     providerId,
@@ -279,10 +279,54 @@ export const allanimeSmokeProviderModule: CoreProviderModule = {
   },
 };
 
+function cloneSmokeManifest(
+  base: typeof videasyManifest,
+  providerId: string,
+  displayName: string,
+): typeof videasyManifest {
+  return { ...base, id: providerId, displayName };
+}
+
+/** Fallback-only smoke providers. They resolve the same fixture title so a real recovery hop stays hermetic. */
+export const smokeSeriesFallbackProviderModule: CoreProviderModule = {
+  providerId: "smoke-series-fallback",
+  manifest: cloneSmokeManifest(videasyManifest, "smoke-series-fallback", "Smoke Series Fallback"),
+  async resolve(input) {
+    return resolvedResult(
+      "smoke-series-fallback",
+      pickUrl(input).replace(".mp4", "-series-fallback.mp4"),
+      input.title.id,
+    );
+  },
+};
+
+export const smokeAnimeFallbackProviderModule: CoreProviderModule = {
+  providerId: "smoke-anime-fallback",
+  manifest: {
+    ...cloneSmokeManifest(allanimeManifest, "smoke-anime-fallback", "Smoke Anime Fallback"),
+  },
+  async listEpisodes() {
+    return [{ index: 7, label: "Episode 7", totalEpisodeCount: 12 }];
+  },
+  async resolve(input) {
+    return resolvedResult(
+      "smoke-anime-fallback",
+      pickUrl(input).replace(".mp4", "-anime-fallback.mp4"),
+      input.title.id,
+    );
+  },
+};
+
 /** Bundled smoke providers — activated only when both smoke env gates pass. */
 export const providerModules: readonly CoreProviderModule[] = [
   videasySmokeProviderModule,
   allanimeSmokeProviderModule,
+];
+
+/** Optional same-lane hop targets, opt-in so ordinary fixture sessions keep one provider per lane. */
+export const failoverProviderModules: readonly CoreProviderModule[] = [
+  smokeSeriesFallbackProviderModule,
+  smokeAnimeFallbackProviderModule,
 ];
 
 // ---------------------------------------------------------------------------

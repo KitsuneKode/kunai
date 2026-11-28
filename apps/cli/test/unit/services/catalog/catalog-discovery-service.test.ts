@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 
 import type { SearchResult } from "@/domain/types";
 import {
@@ -11,6 +12,14 @@ const originalFetch = globalThis.fetch;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+});
+
+test("CatalogDiscoveryService uses the shared cache generation gate", () => {
+  const source = readFileSync("src/services/catalog/CatalogDiscoveryService.ts", "utf8");
+
+  expect(source).toContain("createCacheGenerationGate");
+  expect(source).not.toContain("private generation =");
+  expect(source).not.toContain("generation !== this.generation");
 });
 
 test("CatalogDiscoveryService reuses cached trending results until ttl expires", async () => {

@@ -336,6 +336,27 @@ describe("npm registry error classification", () => {
     expect(await registry.queryIntegrity(candidate)).toBeNull();
   });
 
+  test("accepts npm 10's no-match wording for a missing exact version", async () => {
+    const candidate = candidates()[0]!;
+    const packageSpec = `${candidate.name}@${candidate.version}`;
+    const registry = createNpmRegistryPort(async () => ({
+      exitCode: 1,
+      stdout: JSON.stringify({
+        error: {
+          code: "E404",
+          summary: `No match found for version ${candidate.version}`,
+          detail:
+            `'${packageSpec}' is not in this registry.\n\n` +
+            "Note that you can also install from a\n" +
+            "tarball, folder, http url, or git url.",
+        },
+      }),
+      stderr: `npm error 404 No match found for version ${candidate.version}`,
+    }));
+
+    expect(await registry.queryIntegrity(candidate)).toBeNull();
+  });
+
   test("accepts npm 11's scoped-package E404 wording for an absent package", async () => {
     const candidate = candidates()[0]!;
     const packageSpec = `${candidate.name}@${candidate.version}`;
@@ -726,6 +747,112 @@ describe("resumable npm publication orchestration", () => {
 
     expect(result.every((decision) => decision.action === "publish")).toBe(true);
     expect(attempts).toBe(2);
+  });
+
+  test("a 409 previously staged conflict throws the staged recovery error without waiting", async () => {
+    const localCandidates = candidates();
+    let publishes = 0;
+    let reads = 0;
+    let waits = 0;
+
+    await expect(
+      reconcileNpmPublication({
+        candidates: localCandidates,
+        confirmed: true,
+        command: async () => {
+          publishes += 1;
+          return {
+            exitCode: 1,
+            stdout: "",
+            stderr:
+              "npm error code E409\n" +
+              "npm error 409 Conflict - PUT https://registry.npmjs.org/@kitsunekode%2fkunai-linux-x64\n" +
+              'npm error Cannot publish over previously staged version "1.2.3".',
+          };
+        },
+        registry: {
+          queryIntegrity: async () => null,
+          queryMetadata: async (candidate) => {
+            reads += 1;
+            return metadata(candidate);
+          },
+        },
+        wait: async () => {
+          waits += 1;
+        },
+      }),
+    ).rejects.toThrow(
+      "[publish] npm STAGED @kitsunekode/kunai-linux-x64@1.2.3 instead of publishing it. " +
+        "Approve with `npm stage list @kitsunekode/kunai-linux-x64` then `npm stage approve <id>`, " +
+        'or tick "Allow npm publish" on the package\'s trusted publisher; then rerun the failed job.',
+    );
+
+    expect(publishes).toBe(1);
+    expect(reads).toBe(0);
+    expect(waits).toBe(0);
+  });
+
+  test("successful npm output that says the package was staged throws instead of waiting", async () => {
+    const localCandidates = candidates();
+    let publishes = 0;
+    let reads = 0;
+
+    await expect(
+      reconcileNpmPublication({
+        candidates: localCandidates,
+        confirmed: true,
+        command: async () => {
+          publishes += 1;
+          return {
+            exitCode: 0,
+            stdout:
+              "+ @kitsunekode/kunai-linux-x64@1.2.3 (staged with id 71d2f1f0-ed70-4f62-a984-b94c7b1d31aa)\n",
+            stderr:
+              "npm notice package @kitsunekode/kunai-linux-x64@1.2.3 has been staged with tag latest\n",
+          };
+        },
+        registry: {
+          queryIntegrity: async () => null,
+          queryMetadata: async (candidate) => {
+            reads += 1;
+            return metadata(candidate);
+          },
+        },
+        wait: async () => {},
+      }),
+    ).rejects.toThrow(/npm STAGED @kitsunekode\/kunai-linux-x64@1\.2\.3 instead of publishing it/);
+
+    expect(publishes).toBe(1);
+    expect(reads).toBe(0);
+  });
+
+  test("npm refusing to overwrite a previously published version still counts as published", async () => {
+    const localCandidates = candidates();
+    let attempts = 0;
+
+    const result = await reconcileNpmPublication({
+      candidates: localCandidates,
+      confirmed: true,
+      command: async (request) => {
+        if (request.args[1] !== localCandidates[0]!.tarballPath) {
+          return { exitCode: 0, stdout: "", stderr: "" };
+        }
+        attempts += 1;
+        return {
+          exitCode: 1,
+          stdout: "",
+          stderr: "npm error 403 You cannot publish over the previously published version 1.2.3.",
+        };
+      },
+      registry: {
+        queryIntegrity: async () => null,
+        queryMetadata: async (candidate) => metadata(candidate),
+      },
+      wait: async () => {},
+    });
+
+    expect(result.every((decision) => decision.action === "publish")).toBe(true);
+    expect(attempts).toBe(1);
   });
 
   test("a genuine publish failure still throws instead of being reissued", async () => {

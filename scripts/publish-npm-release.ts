@@ -412,10 +412,11 @@ function npmNotFound(result: CommandResult, candidate: LocalPackageCandidate): b
       ));
   const missingVersion =
     summary === `No match found for version ${candidate.version}` &&
-    hasExactDetailLine(
+    (hasExactDetailLine(
       detail,
       `The requested resource '${packageSpec}' could not be found or you do not have permission to access it.`,
-    );
+    ) ||
+      hasExactDetailLine(detail, `'${packageSpec}' is not in this registry.`));
   return missingPackage || missingVersion;
 }
 
@@ -511,10 +512,39 @@ function describeSpecs(candidates: readonly LocalPackageCandidate[]): string {
   return candidates.map((candidate) => `${candidate.name}@${candidate.version}`).join(", ");
 }
 
-/** npm's refusal to overwrite a version, which here means the write did land. */
+function commandOutputText(result: CommandResult): string {
+  return `${result.stdout}\n${result.stderr}`;
+}
+
+/**
+ * npm staged the bytes instead of publishing them. Trusted-publisher package
+ * settings can allow `npm stage publish` while leaving direct `npm publish`
+ * opt-in; npm 11 prints "(staged)" for a staged write and answers a repeated
+ * write with a 409 "previously staged" conflict. Neither is registry visibility.
+ */
+export function isStagedNotPublished(result: CommandResult): boolean {
+  const output = commandOutputText(result);
+  return (
+    /previously staged version/i.test(output) ||
+    /\(\s*staged(?:\s+with\s+id\s+[0-9a-f-]+)?\s*\)/i.test(output) ||
+    /\bhas been staged\b/i.test(output) ||
+    /["']stageId["']\s*:\s*["'][^"']+["']/i.test(output)
+  );
+}
+
+function stagedPublicationError(candidate: LocalPackageCandidate): Error {
+  return new Error(
+    `[publish] npm STAGED ${candidate.name}@${candidate.version} instead of publishing it. ` +
+      `Approve with \`npm stage list ${candidate.name}\` then \`npm stage approve <id>\`, ` +
+      'or tick "Allow npm publish" on the package\'s trusted publisher; then rerun the failed job.',
+  );
+}
+
+/** npm's refusal to overwrite a published version, which here means the write did land. */
 function isAlreadyPublished(result: CommandResult): boolean {
+  if (isStagedNotPublished(result)) return false;
   return /cannot publish over|previously published version|EPUBLISHCONFLICT/i.test(
-    `${result.stdout}\n${result.stderr}`,
+    commandOutputText(result),
   );
 }
 
@@ -546,6 +576,11 @@ async function publishOnce(
     options.log?.(`[publish] npm output for ${candidate.name}@${candidate.version}:\n${output}`);
   }
 
+  // Staged bytes never become visible through `npm view`, so the visibility
+  // loop must not wait ten minutes or reissue the write. This check precedes
+  // both success and overwrite handling: npm's staged 409 text overlaps the
+  // ordinary "cannot publish over" refusal but means the opposite.
+  if (isStagedNotPublished(result)) throw stagedPublicationError(candidate);
   if (result.exitCode === 0) return;
   if (!isAlreadyPublished(result)) throw commandError("npm publish", request, result);
   options.log?.(
