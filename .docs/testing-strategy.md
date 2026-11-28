@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-28T12:34:09Z"
+lastReviewed: "2026-11-28T12:45:30Z"
 ---
 
 # Kunai — Testing Strategy
@@ -92,7 +92,10 @@ contents of this process's scratch, not a diff of the shared temp directory.
 Each test still removes the directories it creates (`finally` / `afterEach`);
 the scratch is the backstop, including when `fs.promises.rm` resolves while
 the directory is still there. Bun's own `node-compile-cache` directory is the
-runtime, not a fixture, and is not reported.
+runtime, not a fixture, and is not reported. An empty `kunai-ipc` is not
+reported either: it is the owner-only mpv socket directory production keeps
+under the temp root when `XDG_RUNTIME_DIR` is unset (macOS), but a socket left
+inside it is, as `kunai-ipc/<name>`.
 Standalone harnesses (launchers, shells, non-`bun test` entrypoints) get the same
 environment from `storageRootEnv()` in `test/helpers/storage-env.ts`, re-exported
 through `apps/cli/test/helpers/storage-env.ts`; `applyStorageRootEnv()` applies

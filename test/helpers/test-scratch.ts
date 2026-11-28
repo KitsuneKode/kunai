@@ -30,8 +30,29 @@ export const MAX_LISTED_LEFTOVERS = 20;
  */
 const RUNTIME_SCRATCH_ENTRIES: ReadonlySet<string> = new Set(["node-compile-cache"]);
 
-export function testScratchLeftovers(names: readonly string[]): readonly string[] {
-  return names.filter((name) => !RUNTIME_SCRATCH_ENTRIES.has(name));
+/**
+ * Directories production deliberately keeps under the temp root across runs.
+ * `kunai-ipc` is the owner-only mpv socket directory used when
+ * XDG_RUNTIME_DIR is unset (macOS, some Linux); see mpvIpcSocketDirCandidates.
+ * The empty directory is expected. Anything left inside it, such as a socket
+ * a test never closed, is still a leak and is reported as `kunai-ipc/<name>`.
+ */
+const PERSISTENT_RUNTIME_DIRECTORIES: ReadonlySet<string> = new Set(["kunai-ipc"]);
+
+export function testScratchLeftovers(
+  names: readonly string[],
+  listChild: (name: string) => readonly string[] = () => [],
+): readonly string[] {
+  const leftovers: string[] = [];
+  for (const name of names) {
+    if (RUNTIME_SCRATCH_ENTRIES.has(name)) continue;
+    if (!PERSISTENT_RUNTIME_DIRECTORIES.has(name)) {
+      leftovers.push(name);
+      continue;
+    }
+    for (const child of listChild(name)) leftovers.push(`${name}/${child}`);
+  }
+  return leftovers;
 }
 
 export type TempEnvSnapshot = {
@@ -200,7 +221,14 @@ export function disposeTestScratch(
   io: ScratchDirectoryIo,
   report: ScratchLeakReport,
 ): void {
-  const names = testScratchLeftovers(io.list(directory));
+  const names = testScratchLeftovers(io.list(directory), (name) => {
+    try {
+      return io.list(joinFor(process.platform)(directory, name));
+    } catch {
+      // Not a directory (or unreadable): the entry itself is the leftover.
+      return ["(not a directory)"];
+    }
+  });
   restoreTempEnv(env, previous);
   io.remove(directory);
   if (names.length === 0) return;

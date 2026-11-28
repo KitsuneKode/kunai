@@ -10,6 +10,7 @@ import {
   disposeTestScratch,
   hostTempDirectory,
   leftoverMessage,
+  testScratchLeftovers,
   scratchKeepsMpvSocket,
   selectScratchParent,
   snapshotTempEnv,
@@ -68,6 +69,16 @@ describe("test scratch guard", () => {
     expect(removed).toEqual(["/scratch/kt-1-abcd"]);
     expect(env.TMPDIR).toBe("/tmp");
     expect(session.failure?.message).toContain("kunai-left");
+  });
+
+  test("an empty kunai-ipc socket directory is expected, a socket left inside it is not", () => {
+    // macOS has no XDG_RUNTIME_DIR, so mpv sockets live in $TMPDIR/kunai-ipc,
+    // a directory production keeps on purpose.
+    expect(testScratchLeftovers(["kunai-ipc"], () => [])).toEqual([]);
+    expect(testScratchLeftovers(["kunai-ipc", "kunai-x"], () => ["kunai-mpv-0123.sock"])).toEqual([
+      "kunai-ipc/kunai-mpv-0123.sock",
+      "kunai-x",
+    ]);
   });
 
   test("CI throws after the scratch is removed and the previous temp env is back", () => {
