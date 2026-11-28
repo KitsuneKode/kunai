@@ -33,6 +33,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { debugGridElements, rawPoseHeight } from "./kanna-debug-grid.mjs";
 import { BOX, CREAM, EARS, FUR, PLATE, POSES, POSE_NAMES, composePose } from "./kanna-rig.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -259,14 +260,8 @@ ${groups.join("\n")}
     mkdirSync(debugDir, { recursive: true });
     const { poseSvg } = await import("./kanna-rig.mjs");
     for (const name of POSE_NAMES) {
-      const grid = [];
-      for (let v = 0; v <= BOX; v += 100) {
-        grid.push(
-          `<path d="M${v} 0V${BOX}M0 ${v}H${BOX}" stroke="#38f" stroke-width="${v % 500 === 0 ? 2.5 : 1}"/>`,
-          `<text x="${v + 3}" y="14" font-size="16" fill="#fff">${v}</text>`,
-          `<text x="3" y="${v + 16}" font-size="16" fill="#fff">${v}</text>`,
-        );
-      }
+      const height = rawPoseHeight(poseSvg(svg, name, { raw: true }), BOX);
+      const grid = debugGridElements(BOX, height);
       const ear = EARS[name];
       if (ear) {
         grid.push(
