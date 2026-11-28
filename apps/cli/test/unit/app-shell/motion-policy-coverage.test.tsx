@@ -65,6 +65,10 @@ const NON_ANIMATION_INTERVAL_FILES: ReadonlyMap<string, string> = new Map([
     "apps/cli/src/app-shell/pickers/list-shell.tsx",
     "confirm delay before submit, not a frame animation",
   ],
+  [
+    "apps/cli/src/app-shell/plain-mode.ts",
+    "decorative dismiss timer gated by plainTimerAllowed, not a glyph frame loop",
+  ],
   ["apps/cli/src/app-shell/browse-shell.tsx", "action-feedback and search debounce timers"],
   [
     "apps/cli/src/app-shell/mouse/mouse-stdin.ts",

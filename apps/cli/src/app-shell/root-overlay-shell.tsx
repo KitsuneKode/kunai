@@ -177,6 +177,7 @@ import {
   type HistoryPickerOptionsContext,
   sortProvidersByConfigPriority,
 } from "./panel-data";
+import { plainTimerAllowed } from "./plain-mode";
 import { createQueuePosterResolver } from "./queue-poster-resolver";
 import { QueueShell } from "./queue-shell";
 import type { QueueViewRow } from "./queue-view";
@@ -1107,9 +1108,8 @@ export function RootOverlayShell({
       cancelled = true;
     };
   }, [container, overlay.type, reloadHistoryOverlay]);
-
   useEffect(() => {
-    if (!overlayStatus) return undefined;
+    if (!overlayStatus || !plainTimerAllowed("decorative")) return undefined;
     const timer = setTimeout(() => setOverlayStatus(null), 2500);
     return () => clearTimeout(timer);
   }, [overlayStatus, setOverlayStatus]);

@@ -140,6 +140,44 @@ export function plainRuleHeader(label: string, plain: boolean = plainModeEnabled
   return label.slice(VISUAL_SECTION_RULE.length);
 }
 
+export type PlainTimerKind = "decorative" | "functional";
+
+/**
+ * Plain / screen-reader mode must not repaint for decoration. Search input,
+ * resize, and draft persistence are functional and keep their timers.
+ */
+export function plainTimerAllowed(
+  kind: PlainTimerKind,
+  plain: boolean = plainModeEnabled(),
+): boolean {
+  return kind === "functional" || !plain;
+}
+
+/** Skip Kitty cleanup and other forced redraws while plain mode owns the frame. */
+export function shouldSuppressRedraw(plain: boolean = plainModeEnabled()): boolean {
+  return plain;
+}
+
+/** Start a dismiss timer only when plain mode is not keeping the frame still. */
+export function armDecorativeTimer(
+  slot: { current: ReturnType<typeof setTimeout> | null },
+  fire: () => void,
+  delayMs: number,
+): void {
+  if (!plainTimerAllowed("decorative")) return;
+  slot.current = setTimeout(fire, delayMs);
+}
+
+/**
+ * A visual placeholder can be a real title ("Breaking Bad"). Plain mode says
+ * the field is empty and keeps the example in parentheses.
+ */
+export function plainPlaceholder(example: string, plain: boolean = plainModeEnabled()): string {
+  const trimmed = example.trim();
+  if (!plain || trimmed.length === 0 || trimmed.startsWith("(empty")) return example;
+  return `(empty, e.g. ${trimmed})`;
+}
+
 /** Explicit text status for playback bootstrap stages. */
 export function plainStageStatus(
   tone: "neutral" | "info" | "success" | "warning" | "error",

@@ -1,6 +1,6 @@
 import { undisplayPlacementsKeepCache } from "@/app-shell/image-pane";
 
-import { plainModeEnabled } from "./plain-mode";
+import { plainModeEnabled, shouldSuppressRedraw } from "./plain-mode";
 
 /**
  * Whether the mounted Ink root entered the alternate screen.
@@ -31,9 +31,8 @@ function rootTransitionUsesAlternateScreen(): boolean {
  * transition does not cold-start the whole poster pipeline.
  */
 export function clearShellScreenArtifacts(): void {
-  if (process.stdout.isTTY) {
-    undisplayPlacementsKeepCache();
-  }
+  if (shouldSuppressRedraw() || !process.stdout.isTTY) return;
+  undisplayPlacementsKeepCache();
 }
 
 /**

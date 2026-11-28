@@ -362,7 +362,10 @@ const NEXT_UP_HERO_HEADINGS: Record<PostPlayNextUpHero["kind"], string> = {
 
 function plainHeroLabel(label: string): string {
   if (!plainModeEnabled()) return label;
-  return label.replace(/^✓\s*/u, "[done] ");
+  return label
+    .replace(/^⏸\s*/u, "Paused: ")
+    .replace(/^✓\s*/u, "[done] ")
+    .replace(/^[◉✦▢↗]\s*/u, "");
 }
 
 const NEXT_UP_HERO_PLAIN_HEADINGS = {
