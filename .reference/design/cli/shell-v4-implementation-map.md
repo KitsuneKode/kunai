@@ -51,6 +51,7 @@ Scores use a 1–5 scale (`Impact` 5 = fixes broken trust/usability on daily pat
 - **Dependencies:** None.
 
 ### Rank 4 · Unify Destructive Confirmations (`ConfirmStrip`) & Global `Esc` Stack (`resolveEscStack`)
+- **Status:** Done — [#877](https://github.com/KitsuneKode/kunai/pull/877).
 - **Impact / Effort:** 5 / 2 (**Ratio: 2.5**)
 - **Why:** Four incompatible confirm patterns exist today (`y/Esc` printed 3× in History with dead footer chips; double-press `x` in Library; double-press `x`/`X` in Downloads; double-press `x`/`c`/`C` in Up Next where **Esc closes the overlay instead of cancelling confirm** because `queueConfirm` was omitted at `root-overlay-shell.tsx:1783-1789`; full-screen modal in Playlists).
 - **Files touched:** **NEW** `apps/cli/src/app-shell/primitives/ConfirmStrip.tsx`, **NEW** `apps/cli/src/app-shell/esc-stack.ts`, `apps/cli/src/app-shell/root-overlay-shell.tsx`, `apps/cli/src/app-shell/library-shell.tsx`, `apps/cli/src/app-shell/download-manager-shell.tsx`, `apps/cli/src/app-shell/workflows/shell-workflows.ts`.
