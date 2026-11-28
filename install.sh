@@ -961,7 +961,9 @@ sum_tar_bytes() {
 	local byte sum=0
 	local -a bytes
 	while read -r -a bytes; do
-		for byte in "${bytes[@]}"; do
+		# bash 3.2 (macOS /bin/bash) with `set -u` treats an empty array
+		# expansion as unbound: a blank line from od would abort the install.
+		for byte in ${bytes[@]+"${bytes[@]}"}; do
 			sum=$((sum + byte))
 		done
 	done
