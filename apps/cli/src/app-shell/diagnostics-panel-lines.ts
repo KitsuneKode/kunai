@@ -1,3 +1,4 @@
+import { isPlaybackTransportStarted } from "@/domain/session/SessionState";
 import type { DiagnosticEvent } from "@/services/diagnostics/diagnostic-event";
 import {
   formatHealthRowDetail,
@@ -76,14 +77,35 @@ export function buildDiagnosticsPanelLinesFromInsight({
   const healthLines = healthSections.flatMap((section) =>
     section.rows.map((row) => healthRowToPanelLine(row)),
   );
-  const verdictLines: readonly ShellPanelLine[] = shouldRenderVerdictRow(
+  const verdictRow: readonly ShellPanelLine[] = shouldRenderVerdictRow(
     verdictDetail,
     healthLines.map((line) => line.detail ?? ""),
   )
-    ? [sectionHeader("Verdict"), { label: "Verdict", detail: verdictDetail, tone: verdictTone }]
+    ? [{ label: "Verdict", detail: verdictDetail, tone: verdictTone }]
     : [];
 
+  const startupFailure =
+    (insight.sessionVerdict.severity === "blocked" ||
+      insight.sessionVerdict.severity === "recoverable") &&
+    !isPlaybackTransportStarted(insight.currentPlaybackEvidence.playbackStatus);
+  const startupFailureLead: readonly ShellPanelLine[] = startupFailure
+    ? [
+        {
+          label: "Why it didn't start",
+          detail: insight.likelyCause,
+          tone: verdictTone,
+        },
+      ]
+    : [];
+  const verdictLines: readonly ShellPanelLine[] =
+    startupFailureLead.length > 0
+      ? verdictRow
+      : verdictRow.length > 0
+        ? [sectionHeader("Verdict"), ...verdictRow]
+        : [];
+
   return [
+    ...startupFailureLead,
     ...verdictLines,
     ...healthSections.flatMap((section) => [
       sectionHeader(section.title),

@@ -167,7 +167,16 @@ export async function buildPlaybackEpisodePickerOptions({
     };
   }
 
-  const episodes = (await loadEpisodes(title.id, currentEpisode.season)) ?? [];
+  const episodes = await loadEpisodes(title.id, currentEpisode.season)
+    .then((entries) => entries ?? [])
+    .catch(() => null);
+  if (episodes === null) {
+    return {
+      options: [],
+      subtitle: `${title.name}  ·  S${String(currentEpisode.season).padStart(2, "0")}  ·  episode list unavailable — check the connection and retry`,
+      initialIndex: 0,
+    };
+  }
   const options = episodes.map((entry) =>
     buildEpisodePickerOption({
       season: currentEpisode.season,

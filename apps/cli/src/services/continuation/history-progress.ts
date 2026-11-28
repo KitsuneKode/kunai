@@ -124,7 +124,7 @@ export function isFinished(progress: HistoryProgress): boolean {
 }
 
 export function formatTimestamp(seconds: number): string {
-  const safe = Math.max(0, Math.floor(seconds));
+  const safe = Number.isFinite(seconds) ? Math.max(0, Math.floor(seconds)) : 0;
   const hrs = Math.floor(safe / 3600);
   const mins = Math.floor((safe % 3600) / 60);
   const secs = Math.floor(safe % 60);

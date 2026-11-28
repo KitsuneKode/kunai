@@ -208,6 +208,8 @@ export function InputField({
   ignoreInput,
   ghostSuffix,
   cursorRef,
+  dense = false,
+  showHintWhenDense = false,
 }: {
   label: string;
   value: string;
@@ -225,6 +227,10 @@ export function InputField({
   ghostSuffix?: string;
   /** Latest editor cursor written here so the parent can test end-of-line. */
   cursorRef?: { current: number };
+  /** Compact narrow-terminal chrome: field icon, input row, and underline only. */
+  dense?: boolean;
+  /** Dense chrome normally spends its rows on the field; critical onboarding guidance may keep one. */
+  showHintWhenDense?: boolean;
 }) {
   const { cols } = useShellDimensions();
   const fieldWidth = Math.max(20, maxWidth ?? (terminalWidthProp ?? cols) - 8);
@@ -267,6 +273,36 @@ export function InputField({
           {`${label}${focus ? " (focused)" : ""}: ${value || placeholder || ""}`}
         </Text>
         {renderedHint ? <Text color={palette.muted}>{renderedHint}</Text> : null}
+      </Box>
+    );
+  }
+
+  if (dense) {
+    return (
+      <Box marginTop={1} flexDirection="column">
+        <Box paddingX={1}>
+          <Text color={focus ? palette.accent : palette.dim}>{focus ? "⌕ " : "› "}</Text>
+          <LineEditorText
+            value={value}
+            cursor={editor.cursor}
+            focused={focus}
+            placeholder={`${label}…`}
+            maxWidth={textWidth}
+            ghostSuffix={ghostSuffix}
+          />
+        </Box>
+        <Box>
+          <Text color={focus ? palette.accent : palette.dim} dimColor>
+            {"─".repeat(Math.max(4, fieldWidth))}
+          </Text>
+        </Box>
+        {showHintWhenDense && renderedHint ? (
+          <Box marginTop={1}>
+            <Text color={palette.dim} dimColor>
+              {renderedHint}
+            </Text>
+          </Box>
+        ) : null}
       </Box>
     );
   }

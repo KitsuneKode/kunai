@@ -355,7 +355,6 @@ function initialsOf(title: string): string {
  * queue head looked like the next episode of what just played.
  */
 const NEXT_UP_HERO_HEADINGS: Record<PostPlayNextUpHero["kind"], string> = {
-  resume: "▶ RESUME",
   "next-episode": "▶ UP NEXT",
   "next-season": "▶ NEXT SEASON",
   queue: "▶ FROM QUEUE",
@@ -367,7 +366,6 @@ function plainHeroLabel(label: string): string {
 }
 
 const NEXT_UP_HERO_PLAIN_HEADINGS = {
-  resume: "RESUME",
   "next-episode": "UP NEXT",
   "next-season": "NEXT SEASON",
   queue: "FROM QUEUE",
@@ -397,7 +395,7 @@ function NextUpHeroCard({
   const { poster, spinner } = usePosterPreview(artworkUrl, {
     rows: posterRows,
     cols: posterCols,
-    enabled: !plain && Boolean(artworkUrl),
+    enabled: !plain && width >= 64 && Boolean(artworkUrl),
     variant: "preview",
     allowKitty: true,
     allowSixel: true,
@@ -410,15 +408,21 @@ function NextUpHeroCard({
   // "e episodes" is only offered when there are episodes to open: a movie has
   // no episode list, so advertising the key pointed at nothing.
   const countdownLine = [
-    hero.kind === "resume"
-      ? plain
-        ? "Enter resume"
-        : "↵ resume"
-      : plain
-        ? "Enter play"
-        : "↵ play",
+    plain ? "Enter play" : "↵ play",
     ...(contentKindHasEpisodes(contentKind, titleType) ? ["e episodes"] : []),
   ].join(plain ? ", " : " · ");
+  if (!plain && width < 64) {
+    return (
+      <Box flexDirection="column" marginTop={1} width={width}>
+        <Text color={palette.accent} bold wrap="truncate-end">
+          {truncateLine(`${NEXT_UP_HERO_HEADINGS[hero.kind]} · ${hero.label}`, width)}
+        </Text>
+        <Text color={palette.muted} wrap="truncate-end">
+          {truncateLine([hero.meta, countdownLine].filter(Boolean).join(" · "), width)}
+        </Text>
+      </Box>
+    );
+  }
   if (plain) {
     return (
       <Box flexDirection="column" marginTop={1}>
@@ -506,12 +510,14 @@ export const PostPlayShell = React.memo(function PostPlayShell({
   const showRail = isWide;
   const showDiscovery = !viewport.ultraCompact && (isWide || isMedium);
 
-  // Rail occupies a fixed slice of wide columns; body gets the rest.
-  const totalWidth = Math.max(60, viewport.columns - 2);
+  // Rail occupies a fixed slice of wide columns; body gets the rest. Narrow
+  // terminals are a hard ceiling, never a floor — clamping to 60 columns here
+  // used to draw a 58-column card inside a 40-column terminal.
+  const totalWidth = Math.max(36, viewport.columns - 2);
   const railWidth = isWide ? Math.min(36, Math.max(28, Math.floor(totalWidth * 0.27))) : 0;
   const bodyWidth = isWide
     ? Math.max(28, totalWidth - railWidth - 4)
-    : Math.min(76, Math.max(28, totalWidth - 2));
+    : Math.min(76, Math.max(34, totalWidth - 2));
 
   const view = buildPostPlayView({
     title,
@@ -536,7 +542,7 @@ export const PostPlayShell = React.memo(function PostPlayShell({
   });
 
   const hColor = heroColor(view.heroColor);
-  const barWidth = Math.min(36, bodyWidth - 4);
+  const barWidth = Math.min(36, Math.max(10, bodyWidth - 18));
 
   // The rail renders the SAME MediaPanel as Now Playing (surface: post-play), so
   // the two surfaces share one composition. The body keeps Resume as the "what
@@ -691,33 +697,9 @@ export const PostPlayShell = React.memo(function PostPlayShell({
             </Box>
           ) : null}
 
-          {/* Row-level keys only. Shell actions (`s` search, `/` commands) live in
-              the shell footer; repeating them here once labelled `/` "search"
-              directly above a footer calling it "commands". */}
-          <Box marginTop={1}>
-            <Text color={palette.dim}>
-              {plainModeEnabled()
-                ? [
-                    "Up/Down move",
-                    "Enter select",
-                    recommendations.length > 0 ? "1-3 picks" : null,
-                    view.nextUpHero ? "x cancel" : null,
-                  ]
-                    .filter(Boolean)
-                    .join(", ")
-                : truncateLine(
-                    [
-                      "↑↓ move",
-                      "↵ select",
-                      recommendations.length > 0 ? "1·2·3 picks" : null,
-                      view.nextUpHero ? "x cancel" : null,
-                    ]
-                      .filter(Boolean)
-                      .join("   ·   "),
-                    bodyWidth,
-                  )}
-            </Text>
-          </Box>
+          {/* Shell actions live in ShellFooter. A second inline key legend here
+              drifted from the real bindings and advertised `x cancel` after the
+              countdown that owned it had already been cleared. */}
         </Box>
 
         {/* ── Right rail (wide only) ─────────────────────────────────────── */}

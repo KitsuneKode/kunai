@@ -13,6 +13,7 @@ import { describe, expect, it } from "bun:test";
 import { chmodSync } from "node:fs";
 import { join } from "node:path";
 
+import { measureColumns } from "@/app-shell/shell-text";
 import { gatePlaybackDependencies } from "@/app/playback/playback-dependency-gate";
 import type { Container } from "@/container";
 import { probeCapabilities } from "@/ui";
@@ -24,6 +25,10 @@ import { K } from "./keys";
 import { onboardedConfig } from "./seed";
 
 const SETTINGS_KEY = "/";
+
+function occurrences(frame: string, needle: string): number {
+  return frame.split(needle).length - 1;
+}
 
 describe("agent wiring · recommendation refresh", () => {
   it("keeps the highlighted search result as the download target after late picks arrive", async () => {
@@ -47,6 +52,7 @@ describe("agent wiring · recommendation refresh", () => {
       await withSession(
         "wiring-late-picks",
         {
+          network: "live",
           bootstrap: { initialRoute: "recommendation" },
           beforeMount({ container }) {
             readResults = () => container.stateManager.getState().searchResults.map((r) => r.title);
@@ -96,6 +102,7 @@ describe("agent wiring · first-run browse focus", () => {
         {
           columns: 54,
           rows: 25,
+          network: "live",
           bootstrap: { initialRoute: "recommendation" },
           beforeMount({ container }) {
             const now = Date.now();
@@ -355,6 +362,115 @@ describe("agent wiring · post-play history", () => {
   }, 45_000);
 });
 
+describe("agent wiring · post-play shell v4 state", () => {
+  it("keeps stopped-early honest and inside a 40-column terminal", async () => {
+    await withSession(
+      "wiring-post-play-narrow",
+      { mpv: "fake", columns: 40, rows: 20 },
+      async (s) => {
+        await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+        s.press("movie", K.enter);
+        await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
+        s.press(K.enter);
+        await s.waitForFrame((f) => f.includes("Post-play"), "post-play surface", 30_000);
+
+        const frame = s.frame();
+        expect(frame).toContain("Post-play");
+        expect(frame).not.toContain("Up Next");
+        expect(frame).toContain("[enter] resume");
+        expect(frame).not.toContain("x cancel");
+        expect(frame).not.toContain("▶ RESUME");
+        expect(occurrences(frame, "Resume")).toBeLessThanOrEqual(1);
+        for (const line of frame.split("\n")) {
+          expect(measureColumns(line.trimEnd())).toBeLessThanOrEqual(40);
+        }
+      },
+    );
+  }, 45_000);
+});
+
+describe("agent wiring · calendar error state", () => {
+  it("shows an issue header and dedicated retry footer without dead day chrome", async () => {
+    await withSession(
+      "wiring-calendar-error",
+      { providers: "none", columns: 120, rows: 32 },
+      async (s) => {
+        await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+        s.press("/", "calendar", K.enter);
+        await s.waitForFrame(
+          (f) => f.includes("Could not reach the release schedule") && f.includes("● issue"),
+          "settled calendar issue",
+        );
+        const frame = s.frame();
+        expect(frame).toContain("● issue");
+        expect(frame).not.toContain("● ready");
+        expect(frame).toContain("[r] retry");
+        expect(frame).toContain("[esc] back");
+        expect(frame).not.toContain("anime mode");
+        expect(frame).not.toContain("← → day");
+        expect(s.sessionState().searchState).toBe("error");
+      },
+    );
+  }, 45_000);
+});
+
+describe("agent wiring · shell v4 narrow layout", () => {
+  it("keeps 40-column search rows below the scroll affordance", async () => {
+    await withSession("wiring-browse-narrow", { columns: 40, rows: 22 }, async (s) => {
+      await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+      s.press("smoke", K.enter);
+      await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
+
+      const frame = s.frame();
+      expect(frame).not.toContain("▼ ...e Movie");
+      expect(frame).toContain("Smoke Movie");
+      expect(frame).toContain("Smoke Series");
+      expect(frame).toContain("[/]");
+      for (const line of frame.split("\n")) {
+        expect(measureColumns(line.trimEnd())).toBeLessThanOrEqual(40);
+      }
+    });
+  }, 45_000);
+
+  it("shows a useful command palette window at 120 columns", async () => {
+    await withSession("wiring-palette-wide", { columns: 120, rows: 32 }, async (s) => {
+      await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+      s.press("/");
+      await s.waitForFrame((f) => f.includes("GLOBAL"), "browse command palette");
+
+      const commandRows = s
+        .frame()
+        .split("\n")
+        .filter((line) => /^\s+▌? \/[a-z]/u.test(line));
+      expect(commandRows.length).toBeGreaterThanOrEqual(6);
+    });
+  }, 45_000);
+
+  it("keeps the 40-column playback header intact and pins stop plus commands", async () => {
+    await withSession(
+      "wiring-playback-narrow",
+      { mpv: "fake", fakeMpvMode: "hold", columns: 40, rows: 20 },
+      async (s) => {
+        await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+        s.press("smoke", K.enter);
+        await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
+        s.press(K.enter);
+        await s.waitForFrame((f) => f.includes("SRC"), "playback live", 30_000);
+
+        const frame = s.frame();
+        const header = frame.split("\n")[0] ?? "";
+        expect(measureColumns(header.trimEnd())).toBeLessThanOrEqual(40);
+        expect(header).toContain("🦊");
+        expect(header).toContain("Playing");
+        expect(header).not.toContain("Now Playin●");
+        expect(frame).toContain("[q] stop");
+        expect(frame).toContain("[/]");
+        expect(frame).not.toContain("Playbackin mpv");
+      },
+    );
+  }, 45_000);
+});
+
 describe("agent wiring · anime episode picker", () => {
   it("opens with the cursor on an episode, so one Enter plays it", async () => {
     // The picker used to open on nothing when the current episode was not in
@@ -588,6 +704,36 @@ describe("agent wiring · notifications inbox", () => {
       },
     );
   }, 60_000);
+});
+
+describe("agent wiring · details sheet", () => {
+  it("opens as a clean framed overlay with one footer and closes back to the row", async () => {
+    await withSession("wiring-details", { columns: 120, rows: 32 }, async (s) => {
+      await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+      s.press("movie", K.enter);
+      await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
+
+      s.press("i");
+      await s.waitForFrame(
+        (f) => f.includes("Details · Smoke Movie") && !f.includes("Search title"),
+        "clean details sheet",
+      );
+      const detailsFrame = s.frame();
+      expect(detailsFrame).not.toContain("Smoke Movieer");
+      expect(detailsFrame).not.toContain("[i] details");
+      expect(detailsFrame).not.toContain("↵ play · q queue");
+      expect(detailsFrame).toContain("╭──────────────╮");
+      expect(detailsFrame).toContain("[enter] play");
+      expect(detailsFrame).toContain("[esc] close");
+
+      s.press(K.esc);
+      await s.waitForFrame(
+        (f) => f.includes("Search title") && f.includes("Smoke Movie") && !f.includes("Details ·"),
+        "details closes back to the highlighted result",
+      );
+      expect(s.frame()).not.toContain("Smoke Movieer");
+    });
+  }, 30_000);
 });
 
 describe("agent wiring · offline mode", () => {

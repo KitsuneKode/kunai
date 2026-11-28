@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T16:00:00Z"
+lastReviewed: "2026-11-27T13:02:09Z"
 ---
 
 # Kunai Debugging Map
@@ -230,7 +230,9 @@ launch used to `console.error` the mpv line and then print the same
 Findings; remediation labels are `padEnd` of the longest platform name plus one
 space (`buildRemediationLines` in `infra/os/install-commands.ts`). PATH
 candidates list PATH, not HOME: the winner is the first `kunai` on `PATH`, even
-when `HOME` points at a shadow install.
+when `HOME` points at a shadow install. Text output prints error findings before
+warnings and informational metadata, so the first line is the thing most likely
+to block playback.
 
 **Tests fail in teardown after passing.** `rmSync` on a directory holding an open
 SQLite handle raises EBUSY on Windows — POSIX unlinks open files, Windows does

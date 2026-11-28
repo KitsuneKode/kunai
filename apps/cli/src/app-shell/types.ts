@@ -131,6 +131,10 @@ export type FooterAction = {
   reason?: string;
   /** Mark as the single primary action — renders key in amber instead of dim. */
   primary?: boolean;
+  /** Needs a selected row/job/notification; hidden by emptySafeFooterActions on empty lists. */
+  requiresSelection?: boolean;
+  /** Navigation or safety chrome that keeps its narrow slot before primary-styled actions. */
+  narrowEssential?: boolean;
 };
 
 export type PlaybackShellState = {

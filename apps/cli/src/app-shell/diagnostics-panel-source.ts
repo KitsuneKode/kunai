@@ -41,6 +41,7 @@ export function buildDiagnosticsPanelInput(
     releaseSummary: container.releaseProgressCache.summarizeActive(),
     releaseDiagnostics: container.releaseProgressCache.summarizeDiagnostics(),
     presenceSnapshot: container.presence.getSnapshot(),
+    networkAvailable: container.connectivity.isOnline(),
     providers: container.providerRegistry.getAllRegistered().map((provider) => provider.metadata),
     getProviderHealth: (providerId) => container.providerHealth.get(providerId),
     expandedSpanIds: options.expandedSpanIds,

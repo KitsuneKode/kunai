@@ -19,7 +19,7 @@ import { openBrowseShell } from "@/app-shell/ink-shell";
 import { pickPaletteTitle } from "@/app-shell/palette-title-launch";
 import { chooseFromListShell } from "@/app-shell/pickers";
 import { getRootContentSession, waitForRootContentSlot } from "@/app-shell/root-content-state";
-import type { BrowseIdleContext, BrowseShellOption, ShellAction } from "@/app-shell/types";
+import type { BrowseIdleContext, ShellAction } from "@/app-shell/types";
 import {
   applyHistorySelectionProvider,
   episodeFromHistorySelection,
@@ -36,7 +36,6 @@ import { browseLibraryFilterAvailability } from "@/app/search/browse-local-filte
 import {
   chooseSearchResultTitle,
   describeSearchResultAvailability,
-  toBrowseResultOption,
 } from "@/app/search/browse-option-mappers";
 import { createBrowseSearchAbort } from "@/app/search/browse-search-abort";
 import { launchCalendarContinue } from "@/app/search/calendar-continue-launch";
@@ -51,6 +50,11 @@ import {
   shouldRunBootstrapSearch,
 } from "@/app/search/search-failure-policy";
 import { buildSearchFilterChipOptions } from "@/app/search/search-filter-chips";
+import {
+  loadBrowseDisplayContext,
+  mapBrowseResultOption,
+} from "@/app/search/search-phase-browse-context";
+import { appendSearchFilterChip } from "@/app/search/search-phase-copy";
 import {
   adoptHistoryEntry,
   applySearchSelectionSessionRouting,
@@ -77,10 +81,7 @@ import { discoverMpvInvocation } from "@/infra/player/mpv-discovery";
 import { isAllowedMpvUrl } from "@/infra/player/mpv-playback-url";
 import { registerMpvProcess, type MpvChildProcess } from "@/infra/player/mpv-process-registry";
 import { openExternalUrl } from "@/infra/shell/open-external-url";
-import {
-  resultEnrichmentKey,
-  type ResultEnrichment,
-} from "@/services/catalog/ResultEnrichmentService";
+import { type ResultEnrichment } from "@/services/catalog/ResultEnrichmentService";
 import { readLatestHistoryByTitle } from "@/services/continuation/history-progress";
 import { recordCliStartupMilestone } from "@/services/diagnostics/cli-startup-milestone";
 import { buildSearchDiagnosticEvent } from "@/services/diagnostics/diagnostic-event-helpers";
@@ -677,6 +678,11 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
               emptyMessage: bundle.emptyMessage,
             };
           },
+          // Every non-success end of a calendar load reaches the session here,
+          // so the header's "Searching…" cannot outlive the request.
+          onCalendarStatus: (status) => {
+            stateManager.dispatch({ type: "SET_SEARCH_STATE", state: status });
+          },
           // The single acceptance commit point: the hook calls this only after
           // mounted / current / not-aborted checks, so no superseded or cancelled
           // schedule response can write global state, diagnostics, or the subtitle.
@@ -1077,6 +1083,11 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
         });
         recordCliStartupMilestone(diagnosticsService, "browse-mounted");
         const outcome = await outcomePromise;
+        // An unmount aborts any calendar load still in flight and reports
+        // nothing, so a "loading" left behind belongs to no request.
+        if (stateManager.getState().searchState === "loading") {
+          stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "idle" });
+        }
 
         // Leaving the calendar surface — stamp the visit so the next open marks
         // only releases that aired since now as "new". Done at this close event
@@ -1539,78 +1550,4 @@ async function chooseSearchFilterChip(
     options,
   });
   return picked ?? null;
-}
-
-function appendSearchFilterChip(query: string, chip: string): string {
-  const trimmed = query.trim();
-  if (!trimmed) return chip;
-  if (trimmed.split(/\s+/).includes(chip)) return trimmed;
-  return `${trimmed} ${chip}`;
-}
-
-type BrowseDisplayContext = {
-  readonly historyMap: Record<string, HistoryProgress>;
-  readonly enrichments: ReadonlyMap<string, ResultEnrichment>;
-  readonly queueTitleIds: ReadonlySet<string>;
-  readonly followPreferenceByTitleId: ReadonlyMap<string, FollowedTitlePreference>;
-};
-
-async function loadBrowseDisplayContext(
-  container: PhaseContext["container"],
-  results: readonly SearchResult[],
-  options?: {
-    readonly preloadedHistory?: Record<string, HistoryProgress>;
-    readonly signal?: AbortSignal;
-  },
-): Promise<BrowseDisplayContext> {
-  const historyMap =
-    options?.preloadedHistory ??
-    (() => {
-      try {
-        return readLatestHistoryByTitle(container.historyRepository);
-      } catch {
-        return {};
-      }
-    })();
-  const enrichments = await container.resultEnrichmentService
-    .enrichResults(results, { preloadedHistory: historyMap, signal: options?.signal })
-    .catch((error: unknown) => {
-      // A cancelled route must stay cancelled; only real enrichment failures
-      // degrade to "no badges".
-      if (error instanceof Error && error.name === "AbortError") throw error;
-      return new Map<string, ResultEnrichment>();
-    });
-  const queueTitleIds = new Set(
-    container.queueService
-      .getAll()
-      .filter((item) => !item.playedAt)
-      .map((item) => item.titleId),
-  );
-  const followPreferenceByTitleId = new Map<string, FollowedTitlePreference>();
-  for (const result of results) {
-    const preference = container.followedTitleRepository.get(result.id)?.preference;
-    if (preference && preference !== "implicit") {
-      followPreferenceByTitleId.set(result.id, preference);
-    }
-  }
-
-  return { historyMap, enrichments, queueTitleIds, followPreferenceByTitleId };
-}
-
-function mapBrowseResultOption(
-  container: PhaseContext["container"],
-  context: BrowseDisplayContext,
-  result: SearchResult,
-): BrowseShellOption<SearchResult> {
-  return toBrowseResultOption(
-    result,
-    context.historyMap[result.id] ?? null,
-    container.config.animeTitlePreference,
-    context.enrichments.get(resultEnrichmentKey(result)) ?? null,
-    container.listService,
-    {
-      followPreference: context.followPreferenceByTitleId.get(result.id),
-      inUpNextQueue: context.queueTitleIds.has(result.id),
-    },
-  );
 }

@@ -726,3 +726,11 @@ export function windowCalendarRowsByLines<T>(
   }
   return { start, end };
 }
+
+export function shouldOpenCalendarDetailsInsteadOfPlay<T>(
+  option: BrowseShellOption<T>,
+  now: number,
+): boolean {
+  const state = deriveCalendarReleaseState(option, now);
+  return state === "resolving" || state === "countdown" || state === "missed";
+}

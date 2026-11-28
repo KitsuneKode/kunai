@@ -22,8 +22,8 @@ test("settings footer describes immediate apply instead of staged draft changes"
 test("provider reorder footer only advertises working reorder controls", () => {
   const state = { ...createSettingsUiState(DEFAULT_CONFIG), submenuId: "animeProviderPriority" };
   const frame = captureFrame(<SettingsFooter state={state} mode="reorder" />, { columns: 120 });
-  expect(frame).toContain("↑↓ select");
-  expect(frame).toContain("[ ] move");
-  expect(frame).toContain("Esc back");
-  expect(frame).not.toContain("Enter pick");
+  expect(frame).toContain("[↑↓] select");
+  expect(frame).toContain("[[ / ]] move");
+  expect(frame).toContain("[esc] back");
+  expect(frame).not.toContain("[enter] pick");
 });
