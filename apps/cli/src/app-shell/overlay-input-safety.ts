@@ -30,6 +30,28 @@ export function shouldHistoryOverlayAcceptFilterInput(input: {
   return true;
 }
 
+/** Escape while the palette is open cancels an armed or failed strip and leaves the palette up. */
+export function cancelOverlayConfirmationOnEscape(
+  overlayType: string,
+  history: {
+    readonly getState: () => { readonly kind: string };
+    readonly transition: (action: { readonly type: "cancel" }) => void;
+  },
+  queue: {
+    readonly getState: () => { readonly kind: string };
+    readonly transition: (action: { readonly type: "cancel" }) => void;
+  },
+): boolean {
+  let confirm: typeof history | null = null;
+  if (overlayType === "history") confirm = history;
+  else if (overlayType === "queue") confirm = queue;
+  if (!confirm) return false;
+  const kind = confirm.getState().kind;
+  if (kind !== "armed" && kind !== "failed") return false;
+  confirm.transition({ type: "cancel" });
+  return true;
+}
+
 export function shouldHandleOverlayEscape(input: {
   readonly overlay: RootOwnedOverlay;
   readonly pickerFilterQuery: string;

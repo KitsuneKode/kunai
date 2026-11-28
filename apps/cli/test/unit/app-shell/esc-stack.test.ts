@@ -43,6 +43,12 @@ describe("resolveEscStack", () => {
     );
   });
 
+  test("an empty focused filter clears focus instead of closing the surface", () => {
+    expect(
+      resolveEscStack([{ kind: "filter", query: "", focused: true }, { kind: "overlay" }]),
+    ).toBe("clear-filter");
+  });
+
   test("cancelActive=false still clears the owning editor's typed filter", () => {
     expect(
       resolveEscStack([{ kind: "filter", query: "abc" }, { kind: "overlay" }], {

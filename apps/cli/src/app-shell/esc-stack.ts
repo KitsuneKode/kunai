@@ -11,7 +11,7 @@ export type EscLayer =
   | { readonly kind: "prompt" }
   | { readonly kind: "picker" }
   | { readonly kind: "nested-pane" }
-  | { readonly kind: "filter"; readonly query: string }
+  | { readonly kind: "filter"; readonly query: string; readonly focused?: boolean }
   | { readonly kind: "surface-owned" }
   | { readonly kind: "overlay" }
   | { readonly kind: "route" };
@@ -50,8 +50,10 @@ const ESC_ACTION_BY_KIND = {
 } as const satisfies Record<EscLayer["kind"], EscAction>;
 
 function layerIsActive(layer: EscLayer): boolean {
-  // An empty filter query is not an Escape layer; there is nothing to clear.
-  return layer.kind !== "filter" || layer.query.length > 0;
+  // An empty, unfocused filter is not an Escape layer. Focus with an empty
+  // query still is: Escape must leave the field without closing the surface.
+  if (layer.kind !== "filter") return true;
+  return layer.query.length > 0 || layer.focused === true;
 }
 
 /**

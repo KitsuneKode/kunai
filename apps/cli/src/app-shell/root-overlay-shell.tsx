@@ -160,6 +160,7 @@ import {
   tracksFooterActions,
 } from "./overlay-footer-actions";
 import {
+  cancelOverlayConfirmationOnEscape as cancelConfirmOnEscape,
   isOverlayCancelActive,
   shouldHandleOverlayEscape,
   shouldHistoryOverlayAcceptFilterInput,
@@ -244,6 +245,7 @@ import { toShellAction } from "./types";
 import {
   activateSelectedHistoryRow,
   handleHistoryOverlayInput,
+  historyConfirmationTargetIds,
   type HistoryOverlayInputContext,
 } from "./use-history-overlay-input";
 import {
@@ -882,8 +884,8 @@ export function RootOverlayShell({
     localTitles: () => collectLocalTitleEntries(container),
     onTitlePick: (entry) => pickPaletteTitle(container, entry),
     onResolve: resolveOverlayPaletteAction,
+    onEscapeWhileOpen: () => cancelConfirmOnEscape(overlay.type, historyConfirm, queueConfirm),
   });
-
   const wrapWithLayout = (node: ReactNode) =>
     wrapOverlayLayout(
       overlayLayout,
@@ -972,13 +974,7 @@ export function RootOverlayShell({
     ],
   );
   const historyConfirmationVisibleIds = useMemo(
-    () =>
-      historyView.flatRows.flatMap((row) => {
-        const selection = historySelections.find((candidate) => candidate.titleId === row.titleId);
-        return selection
-          ? [`title:${row.titleId}`, `episode:${selection.entry.key}`]
-          : [`title:${row.titleId}`];
-      }),
+    () => historyConfirmationTargetIds(historyView.flatRows, historySelections),
     [historySelections, historyView.flatRows],
   );
 
@@ -1636,7 +1632,11 @@ export function RootOverlayShell({
       const escapeFilterQuery = isRootMediaPickerOverlay(overlay)
         ? (overlay.filterQuery ?? "")
         : filterQuery;
-      escLayers.push({ kind: "filter", query: escapeFilterQuery });
+      escLayers.push({
+        kind: "filter",
+        query: escapeFilterQuery,
+        focused: overlay.type === "history" && historyFilterFocused,
+      });
       if (overlay.type === "notifications" && notificationActionDedupKey) {
         escLayers.push({ kind: "picker" });
       } else if (isRootMediaPickerOverlay(overlay)) {

@@ -4,6 +4,7 @@ import type { LineEditorKey } from "@/app-shell/line-editor";
 import { routeListFilterKey } from "@/app-shell/list-filter-keys";
 import type { HistoryPickerOptionsContext } from "@/app-shell/panel-data";
 import {
+  confirmStripKeyDecision,
   type ConfirmStripAction,
   type ConfirmStripState,
   type ConfirmStripTransition,
@@ -135,6 +136,35 @@ export function historyRowIntentForShellAction(action: string): HistoryRowIntent
 function historyDeleteLabel(entry: RootHistorySelection["entry"]): string {
   const episode = historyEpisodeLabel(entry);
   return episode ? `${entry.title} · ${episode}` : entry.title;
+}
+
+function historyRemovalStatus(
+  effect: { readonly targetId: string; readonly label: string },
+  undoUnavailable: boolean,
+): string {
+  const base = effect.targetId.startsWith("episode:")
+    ? `Removed episode progress for ${effect.label}`
+    : `Removed ${effect.label}`;
+  return undoUnavailable ? `${base}. Undo is unavailable` : base;
+}
+
+/** Index selections by title id once, instead of scanning them for every visible row. */
+export function historyConfirmationTargetIds(
+  rows: readonly { readonly titleId: string }[],
+  selections: readonly { readonly titleId: string; readonly entry: { readonly key: string } }[],
+): readonly string[] {
+  const episodeKeyByTitle = new Map<string, string>();
+  for (const selection of selections) {
+    if (!episodeKeyByTitle.has(selection.titleId)) {
+      episodeKeyByTitle.set(selection.titleId, selection.entry.key);
+    }
+  }
+  return rows.flatMap((row) => {
+    const episodeKey = episodeKeyByTitle.get(row.titleId);
+    return episodeKey === undefined
+      ? [`title:${row.titleId}`]
+      : [`title:${row.titleId}`, `episode:${episodeKey}`];
+  });
 }
 
 /** Run a row-scoped action through the router and report the outcome inline. */
@@ -299,12 +329,14 @@ export function handleHistoryOverlayInput(
       ctx.setOverlayStatus(null);
       return "handled";
     }
-    if (ctx.confirmState.kind === "armed" && input.toLowerCase() === "y") {
+    const decision = confirmStripKeyDecision(ctx.confirmState.kind, input, key);
+    if (decision === "execute") {
       const confirmation = ctx.transitionConfirm({ type: "confirm" });
       if (!confirmation.effect) return "handled";
       const effect = confirmation.effect;
-      const undoBefore = ctx.container.sessionUndo?.captureHistory();
+      let deleted = false;
       try {
+        const undoBefore = ctx.container.sessionUndo?.captureHistory();
         if (effect.targetId.startsWith("episode:")) {
           ctx.container.historyRepository.deleteProgressByKey(
             effect.targetId.slice("episode:".length),
@@ -312,6 +344,7 @@ export function handleHistoryOverlayInput(
         } else {
           ctx.container.historyRepository.deleteTitle(effect.targetId.slice("title:".length));
         }
+        deleted = true;
         if (undoBefore) {
           ctx.container.sessionUndo?.recordHistoryChange(
             effect.targetId.startsWith("episode:")
@@ -322,25 +355,25 @@ export function handleHistoryOverlayInput(
           );
         }
         ctx.transitionConfirm({ type: "succeed" });
-        ctx.setOverlayStatus(
-          effect.targetId.startsWith("episode:")
-            ? `Removed episode progress for ${effect.label}`
-            : `Removed all history for ${effect.label}`,
-        );
+        ctx.setOverlayStatus(historyRemovalStatus(effect, false));
         ctx.onHistoryMutated();
       } catch (error) {
-        ctx.transitionConfirm({
-          type: "fail",
-          message: error instanceof Error ? error.message : "Unable to delete history",
-        });
+        if (deleted) {
+          ctx.transitionConfirm({ type: "succeed" });
+          ctx.setOverlayStatus(historyRemovalStatus(effect, true));
+          ctx.onHistoryMutated();
+        } else {
+          ctx.transitionConfirm({
+            type: "fail",
+            message: error instanceof Error ? error.message : "Unable to delete history",
+          });
+        }
       }
       return "handled";
     }
-    // Confirmation focus owns input. Arrow keys disarm rather than retargeting
-    // another row; they do not also navigate in the same keypress.
-    if (key.upArrow || key.downArrow || key.leftArrow || key.rightArrow || key.tab) {
+    // Arrows disarm an armed strip without moving. A failed strip stays until Escape.
+    if (decision === "cancel" || decision === "cancel-and-continue") {
       ctx.transitionConfirm({ type: "cancel" });
-      return "handled";
     }
     return "handled";
   }

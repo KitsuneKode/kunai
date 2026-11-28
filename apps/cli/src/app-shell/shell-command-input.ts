@@ -29,8 +29,14 @@ export function useShellInput({
   onTitlePick,
   onPaletteCommand,
   onFooterAction,
+  onEscapeWhileOpen,
 }: {
   onFooterAction?: (action: FooterAction) => void;
+  /**
+   * Palette is open and a surface confirmation also owns Escape. Return true
+   * to cancel that confirmation and leave the palette open.
+   */
+  onEscapeWhileOpen?: () => boolean;
   footerActions: readonly FooterAction[];
   commands: readonly ResolvedAppCommand[];
   disabled?: boolean;
@@ -142,6 +148,7 @@ export function useShellInput({
 
     if (key.escape) {
       if (commandMode) {
+        if (onEscapeWhileOpen?.()) return;
         setCommandMode(false);
         setHighlightedIndex(0);
         return;
