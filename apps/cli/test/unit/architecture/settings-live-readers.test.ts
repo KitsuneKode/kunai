@@ -97,6 +97,16 @@ function stripCommentOnlyLines(text: string): string {
  */
 const DYNAMIC_READER_ALLOWLIST: Readonly<Record<string, readonly string[]>> = {};
 
+// Generic English names need a config-shaped access pattern; a bare word scan
+// for `player`, `provider`, `sync`, or `theme` would pass on unrelated runtime
+// objects even after the real setting reader disappeared.
+const READER_PATTERNS: Readonly<Record<string, RegExp>> = {
+  player: /\b(?:config|rawConfig)\.player\b|\bplayerChoice\b/u,
+  provider: /\b(?:config|rawConfig)\.provider\b|\bproviderForLane\(/u,
+  sync: /\bconfig\.sync\b/u,
+  theme: /\b(?:config|rawConfig|next|before)\.theme\b/u,
+};
+
 function productionSources(): readonly { file: string; text: string }[] {
   return collectSourceFiles("apps/cli/src")
     .filter((file) => {
@@ -136,7 +146,7 @@ describe("settings live-reader audit", () => {
 
     const sources = productionSources();
     const missing = [...rowsByKey.entries()].flatMap(([key, rowIds]) => {
-      const pattern = new RegExp(`\\b${key}\\b`, "u");
+      const pattern = READER_PATTERNS[key] ?? new RegExp(`\\b${key}\\b`, "u");
       const readers = sources.filter(({ text }) => pattern.test(text)).map(({ file }) => file);
       if (readers.length > 0) return [];
       const allowlisted = DYNAMIC_READER_ALLOWLIST[key] ?? [];
