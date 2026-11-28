@@ -395,12 +395,13 @@ canonical_path() {
 
 	[[ "$path" == /* ]] || path="$PWD/$path"
 	while [[ ! -d "$path" ]]; do
-		suffix=("$(basename "$path")" "${suffix[@]}")
+		# ${arr[@]+...}: bash 3.2 (macOS) with `set -u` rejects an empty array.
+		suffix=("$(basename "$path")" ${suffix[@]+"${suffix[@]}"})
 		path="$(dirname "$path")"
 	done
 	path="$(cd -P "$path" && pwd -P)" || return 1
 
-	for component in "${suffix[@]}"; do
+	for component in ${suffix[@]+"${suffix[@]}"}; do
 		case "$component" in
 		"" | .) ;;
 		..) path="$(dirname "$path")" ;;
@@ -492,11 +493,10 @@ resolve_owned_package_launcher() {
 		[[ -n "$prefix" ]] || return 1
 		printf '%s\n' "$prefix/bin/kunai"
 		;;
-	bun)
+	bun | source)
 		bin_dir="${BUN_INSTALL_BIN:-${BUN_INSTALL:-$HOME/.bun}/bin}"
 		printf '%s\n' "$bin_dir/kunai"
 		;;
-	source) command -v kunai || return 1 ;;
 	*) return 1 ;;
 	esac
 }
@@ -610,11 +610,13 @@ download_failed_hint() {
 }
 
 sha256_of() {
+	local result
 	if have sha256sum; then
-		sha256sum "$1" | awk '{print $1}'
+		result="$(sha256sum <"$1")" || return 1
 	else
-		shasum -a 256 "$1" | awk '{print $1}'
+		result="$(shasum -a 256 <"$1")" || return 1
 	fi
+	printf '%s\n' "${result%% *}"
 }
 
 is_retryable_http_status() {
@@ -622,9 +624,7 @@ is_retryable_http_status() {
 	[[ "$status" == 408 || "$status" == 429 || "$status" -ge 500 ]]
 }
 
-# Render a byte count the way a person reads it. Integer-only: `awk` is the one
-# tool guaranteed present that does float formatting, and shelling out to it
-# five times a second for a progress line is not worth it.
+# Render a byte count using integer arithmetic for the progress line.
 human_bytes() {
 	local bytes="$1" whole frac
 	if [[ "$bytes" -ge 1048576 ]]; then
@@ -645,16 +645,20 @@ human_bytes() {
 # a mirror that rejects HEAD, a proxy that strips Content-Length — progress
 # still renders, just without a bar. Never fatal: this is decoration.
 probe_content_length() {
-	local url="$1" length
-	length="$(
+	local url="$1" headers name value length=""
+	headers="$(
 		curl -sIL \
 			--connect-timeout "$DOWNLOAD_CONNECT_TIMEOUT" \
 			--max-time 15 \
 			-A "kunai-installer" \
-			"$url" 2>/dev/null |
-			tr -d '\r' |
-			awk 'tolower($1) == "content-length:" { value = $2 } END { if (value) print value }'
+			"$url" 2>/dev/null | tr -d '\r'
 	)" || return 0
+	while read -r name value; do
+		case "$name" in
+		[Hh][Tt][Tt][Pp]/*) length="" ;;
+		[Cc][Oo][Nn][Tt][Ee][Nn][Tt]-[Ll][Ee][Nn][Gg][Tt][Hh]:) length="$value" ;;
+		esac
+	done <<<"$headers"
 	[[ "$length" =~ ^[0-9]+$ ]] && printf '%s' "$length"
 }
 
@@ -944,25 +948,34 @@ verify_manifest_signature() {
 }
 
 checksum_for_asset() {
-	local manifest="$1" asset="$2"
-	awk -v asset="$asset" '
-		$2 == asset {
-			found++
-			if (NF != 2 || length($1) != 64 || $1 !~ /^[0-9A-Fa-f]+$/) invalid = 1
-			digest = tolower($1)
-		}
-		END {
-			if (found != 1 || invalid) exit 1
-			print digest
-		}
-	' "$manifest"
+	local manifest="$1" asset="$2" hash name extra digest=""
+	while read -r hash name extra || [[ -n "$hash" ]]; do
+		[[ "$name" == "$asset" ]] || continue
+		[[ -z "$digest" && -z "$extra" && "$hash" =~ ^[0-9A-Fa-f]{64}$ ]] || return 1
+		digest="$hash"
+	done <"$manifest"
+	[[ -n "$digest" ]] || return 1
+	printf '%s\n' "$digest" | tr '[:upper:]' '[:lower:]'
+}
+
+sum_tar_bytes() {
+	local byte sum=0
+	local -a bytes
+	while read -r -a bytes; do
+		# bash 3.2 (macOS /bin/bash) with `set -u` treats an empty array
+		# expansion as unbound: a blank line from od would abort the install.
+		for byte in ${bytes[@]+"${bytes[@]}"}; do
+			sum=$((sum + byte))
+		done
+	done
+	printf '%s\n' "$sum"
 }
 
 # extract_release_tar <archive> <tar-scratch> <member> <output> <gzip|zstd>
 extract_release_tar() {
 	local archive="$1" tar_path="$2" expected="$3" output="$4" decompressor="$5"
 	local tar_budget read_blocks decompress_status dd_status tar_size name prefix type size_field size
-	local checksum_field stored_checksum header_sum checksum_sum actual_checksum expected_tar_size
+	local checksum_field stored_checksum header_sum checksum_sum actual_checksum expected_tar_size padding
 	local -a pipeline_status
 
 	require "$decompressor"
@@ -1028,8 +1041,8 @@ extract_release_tar() {
 		return 1
 	fi
 	stored_checksum=$((8#$checksum_field))
-	header_sum="$(od -An -tu1 -N 512 "$tar_path" | awk '{ for (i = 1; i <= NF; i++) sum += $i } END { print sum + 0 }')"
-	checksum_sum="$(od -An -tu1 -j 148 -N 8 "$tar_path" | awk '{ for (i = 1; i <= NF; i++) sum += $i } END { print sum + 0 }')"
+	header_sum="$(od -An -v -tu1 -N 512 "$tar_path" | sum_tar_bytes)" || return 1
+	checksum_sum="$(od -An -v -tu1 -j 148 -N 8 "$tar_path" | sum_tar_bytes)" || return 1
 	actual_checksum=$((header_sum - checksum_sum + 256))
 	if [[ "$stored_checksum" -ne "$actual_checksum" ]]; then
 		err "Archive has an invalid tar header checksum."
@@ -1041,8 +1054,8 @@ extract_release_tar() {
 		err "Release archive must contain exactly one regular file."
 		return 1
 	fi
-	if od -An -v -tu1 -j "$((512 + size))" "$tar_path" |
-		awk '{ for (i = 1; i <= NF; i++) if ($i != 0) found = 1 } END { exit found ? 0 : 1 }'; then
+	padding="$(od -An -v -tu1 -j "$((512 + size))" "$tar_path")" || return 1
+	if [[ "$padding" == *[1-9]* ]]; then
 		err "Archive contains non-zero padding, extra entries, or trailing data."
 		return 1
 	fi
@@ -1273,7 +1286,7 @@ release_version_lock() {
 
 activation_lock_sleep() {
 	local milliseconds="$1" seconds
-	seconds="$(awk -v ms="$milliseconds" 'BEGIN { printf "%.3f", ms / 1000 }')"
+	printf -v seconds '%d.%03d' "$((milliseconds / 1000))" "$((milliseconds % 1000))"
 	sleep "$seconds"
 }
 
@@ -1306,7 +1319,7 @@ activation_lock_poll_until() {
 activation_lock_hostname() {
 	local value
 	value="$(hostname 2>/dev/null || uname -n 2>/dev/null || true)"
-	printf '%s' "$value" | awk '{$1=$1; print}' | tr '[:upper:]' '[:lower:]'
+	printf '%s' "$value" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s/[[:space:]][[:space:]]*/ /g'
 }
 
 activation_lock_process_start_id() {
@@ -1324,7 +1337,7 @@ activation_lock_process_start_id() {
 		return
 	fi
 	if [[ "$HOST_OS" == darwin ]]; then
-		value="$(ps -o lstart= -p "$pid" 2>/dev/null | awk '{$1=$1; print}' || true)"
+		value="$(ps -o lstart= -p "$pid" 2>/dev/null | sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s/[[:space:]][[:space:]]*/ /g' || true)"
 		[[ -n "$value" ]] && printf 'darwin-ps:%s' "$value"
 	fi
 }
@@ -1829,18 +1842,20 @@ path_rc_files() {
 # is what rustup, bun, and Homebrew all do, and it is what makes this one-click.
 # Skipped entirely under --skip-path-update / KUNAI_SKIP_PATH_UPDATE.
 persist_path() {
-	local dir="$1" line rc_file wrote=0 activate=""
+	local dir="$1" line rc_file wrote=0 activate="" escaped
 
 	if [[ "$(basename "${SHELL:-sh}")" == "fish" ]]; then
-		line="fish_add_path $dir"
+		escaped="${dir//\\/\\\\}"
+		line="fish_add_path -- '${escaped//\'/\\\'}'"
 	else
-		line="export PATH=\"$dir:\$PATH\""
+		escaped="${dir//\'/\'\\\'\'}"
+		line="export PATH='$escaped':\"\$PATH\""
 	fi
 
 	while IFS= read -r rc_file; do
 		[[ -n "$rc_file" ]] || continue
 
-		if [[ -f "$rc_file" ]] && grep -Fq "$KUNAI_PATH_BLOCK_BEGIN" "$rc_file"; then
+		if [[ -f "$rc_file" ]] && { grep -Fxq "$line" "$rc_file" || grep -Fxq "export PATH=\"$dir:\$PATH\"" "$rc_file" || grep -Fxq "fish_add_path $dir" "$rc_file"; }; then
 			info "PATH already persisted in $rc_file."
 			wrote=1
 			[[ -n "$activate" ]] || activate="$rc_file"
@@ -1881,7 +1896,7 @@ persist_path() {
 }
 
 path_hint() {
-	local dir="$1" rc_file
+	local dir="$1"
 	if [[ -n "$PROFILE_DIR" ]]; then
 		# A profile install never edits shell rc files: the profile-local
 		# wrapper binds its own profile, so only PATH convenience is needed.
@@ -1898,8 +1913,10 @@ path_hint() {
 		# different kunai wins reads as a contradiction and buries the warning.
 		# The conflict block has already said everything true about this case.
 		[[ "$PATH_CONFLICT_REPORTED" == 1 ]] && return 0
-		info "kunai is on PATH ($dir)."
-		return 0
+		if [[ "$DRY" == 1 || "$SKIP_PATH_UPDATE" == 1 ]] || default_bash_path_is_ready "$dir"; then
+			info "kunai is on PATH ($dir)."
+			return 0
+		fi
 		;;
 	esac
 
@@ -1915,6 +1932,52 @@ path_hint() {
 	# Make the just-installed binary usable for the rest of THIS script too
 	# (verification steps, `kunai --version`), not only in the next shell.
 	export PATH="$dir:$PATH"
+}
+
+run_bounded_startup_check() {
+	local child watchdog sleeper status=0
+	"$@" </dev/null &
+	child=$!
+	(
+		sleep 10 &
+		sleeper=$!
+		trap 'kill "$sleeper" 2>/dev/null || true; exit 0' TERM
+		wait "$sleeper" || exit 0
+		kill -KILL "$child" 2>/dev/null || true
+	) &
+	watchdog=$!
+	wait "$child" 2>/dev/null || status=$?
+	kill "$watchdog" 2>/dev/null || true
+	wait "$watchdog" 2>/dev/null || true
+	return "$status"
+}
+
+default_bash_path_is_ready() {
+	local dir="$1" remaining=":$PATH:" shell="${SHELL:-sh}" mode
+	[[ "$HOST_OS" == linux && "$dir" == "$HOME/.local/bin" && "${shell##*/}" == bash ]] || return 0
+	# A login profile can add ~/.local/bin without an interactive rc doing the
+	# same. Remove the inherited entry before testing each startup mode.
+	while [[ "$remaining" == *":$dir:"* ]]; do
+		remaining="${remaining//":$dir:"/:}"
+	done
+	remaining="${remaining#:}"
+	remaining="${remaining%:}"
+	for mode in -lc -ic; do
+		PATH="$remaining" run_bounded_startup_check "$BASH" "$mode" \
+			"[[ \":\$PATH:\" == *\":\$1:\"* ]]" bash "$dir" >/dev/null 2>&1 || return 1
+	done
+}
+
+smoke_native_binary() {
+	local executable="$1" output="$2" status
+	if DO_NOT_TRACK=1 CI=1 run_bounded_startup_check "$executable" --version >"$output" 2>&1; then
+		return 0
+	else
+		status=$?
+		cat "$output" >&2
+		err "Kunai startup check failed (exit $status, 10-second limit)."
+		return 1
+	fi
 }
 
 read_previous_active_version() {
@@ -1991,15 +2054,12 @@ install_binary() {
 		info "[dry-run] verify archive, safely extract $asset, then verify against $sums"
 		info "[dry-run] raw compatibility fallback is allowed only for archive HTTP 404/410"
 		write_manifest binary "$resolved_version" "$BIN_DIR/kunai" "$version_path" "$target"
-		info "Installed kunai → $BIN_DIR/kunai (v$resolved_version at $version_path)"
+		info "[dry-run] would install kunai → $BIN_DIR/kunai (v$resolved_version at $version_path)"
 		path_hint "$BIN_DIR"
 		return
 	fi
 
 	require curl
-	# These run unconditionally below: awk shapes the checksum and progress
-	# output, sed parses the release tag, and `install` lands the binary.
-	require awk
 	require sed
 	require install
 
@@ -2199,6 +2259,18 @@ install_binary() {
 	fi
 	INSTALL_LAUNCHER_ACTIVATED=1
 
+	if ! smoke_native_binary "$version_path" "$staging/version-check.log"; then
+		if [[ "$target" == *-musl ]]; then
+			if have apk; then
+				err "On Alpine, run: sudo apk add libstdc++ libgcc"
+			else
+				err "Install your distribution's libstdc++ and libgcc runtime libraries."
+			fi
+		fi
+		err "Versioned files remain at $version_path. Re-run the installer with --version $resolved_version after fixing the startup error."
+		exit 1
+	fi
+
 	local prev_arg=""
 	if [[ -n "$activation_previous" && "$activation_previous" != "$resolved_version" ]]; then
 		prev_arg="$activation_previous"
@@ -2350,7 +2422,7 @@ ensure_bun() {
 }
 
 install_npm() {
-	local resolved launcher publication_lock="$DATA_DIR/locks/activation.lock" publication_owner publication_version
+	local resolved launcher npm_root dir publication_lock="$DATA_DIR/locks/activation.lock" publication_owner publication_version
 	require node
 	require npm
 	if [[ "$VERSION" != latest ]]; then
@@ -2362,6 +2434,18 @@ install_npm() {
 		resolved="latest"
 	fi
 	if [[ "$DRY" == 0 ]]; then
+		launcher="$(resolve_owned_package_launcher npm)" && npm_root="$(npm root -g 2>/dev/null)" && [[ -n "$npm_root" ]] || {
+			err "Could not resolve npm's global installation directories."
+			exit 1
+		}
+		for dir in "$(dirname "$launcher")" "$npm_root" "$(dirname "$npm_root/$KUNAI_PACKAGE")" "$npm_root/$KUNAI_PACKAGE"; do
+			while [[ ! -e "$dir" && ! -L "$dir" ]]; do dir="$(dirname "$dir")"; done
+			if [[ ! -d "$dir" || ! -w "$dir" || ! -x "$dir" ]]; then
+				err "npm's global installation directory is not writable: $dir"
+				err 'Run npm config set prefix ~/.local and retry, or use --method binary.'
+				exit 1
+			fi
+		done
 		publication_version="$resolved"
 		[[ "$publication_version" == latest ]] && publication_version="0.0.0"
 		mkdir -p "$DATA_DIR/locks" || exit 1
@@ -2376,7 +2460,7 @@ install_npm() {
 		run npm install -g "${KUNAI_PACKAGE}@${resolved}"
 	fi
 	resolved="$(finalize_package_active_version npm "$resolved")" || exit 1
-	if [[ "$DRY" == 1 ]]; then launcher="kunai"; else launcher="$(resolve_owned_package_launcher npm)" || exit 1; fi
+	if [[ "$DRY" == 1 ]]; then launcher="kunai"; fi
 	write_manifest npm-global "${resolved}" "$launcher"
 	[[ "$DRY" == 1 ]] || release_activation_lock "$publication_lock" "$publication_owner"
 	[[ "$DRY" == 1 ]] || trap - EXIT
@@ -2417,7 +2501,7 @@ install_bun() {
 }
 
 install_source() {
-	local source_path data_path config_path cache_path resolved publication_lock="$DATA_DIR/locks/activation.lock" publication_owner publication_version
+	local source_path data_path config_path cache_path resolved launcher publication_lock="$DATA_DIR/locks/activation.lock" publication_owner publication_version
 	if [[ "$VERSION" != latest ]]; then
 		resolved="$(normalize_requested_version "$VERSION")" || {
 			err "Invalid version: $VERSION (expected exact major.minor.patch)."
@@ -2465,9 +2549,11 @@ install_source() {
 		(cd "$SOURCE_DIR" && bun install && bun run build && bun run link:global)
 	fi
 	resolved="$(finalize_package_active_version source "$resolved")" || exit 1
-	write_manifest source "$resolved" "$(command -v kunai || echo kunai)"
+	if [[ "$DRY" == 1 ]]; then launcher="kunai"; else launcher="$(resolve_owned_package_launcher source)" || exit 1; fi
+	write_manifest source "$resolved" "$launcher"
 	[[ "$DRY" == 1 ]] || release_activation_lock "$publication_lock" "$publication_owner"
 	[[ "$DRY" == 1 ]] || trap - EXIT
+	[[ "$DRY" == 1 ]] || path_hint "$(dirname "$launcher")"
 }
 
 # The exact command that installs the named packages on this machine.
@@ -2529,6 +2615,11 @@ missing_dependencies() {
 	printf '%s\n' "${missing[@]}"
 }
 
+needs_alpine_runtime() {
+	[[ "$METHOD" == binary ]] && have apk && detect_musl || return 1
+	! apk info -e libstdc++ >/dev/null 2>&1 || ! apk info -e libgcc >/dev/null 2>&1
+}
+
 # Offer the missing dependencies, and never escalate without a deliberate yes.
 #
 # This used to run `sudo pacman -S --noconfirm` / `sudo apt-get install -y` off a
@@ -2556,7 +2647,7 @@ install_optional_deps() {
 	# `local -a missing=()` is the bash 3.2 + `set -u` form: a bare
 	# `local -a missing` stays unbound, so `${#missing[@]}` aborts when
 	# nothing is missing — the already-installed path macOS would hit next.
-	local -a missing=()
+	local -a missing=("$@")
 	# `mapfile` is bash 4+; macOS ships 3.2 as /bin/bash. Read line-by-line.
 	while IFS= read -r line || [[ -n "$line" ]]; do
 		[[ -n "$line" ]] && missing+=("$line")
@@ -2567,6 +2658,9 @@ install_optional_deps() {
 	fi
 
 	printf '\n'
+	if [[ " ${missing[*]} " == *" libstdc++ "* || " ${missing[*]} " == *" libgcc "* ]]; then
+		warn "The Alpine native binary needs the libstdc++ and libgcc runtime packages."
+	fi
 	if [[ " ${missing[*]} " == *" mpv "* ]]; then
 		if have_vlc; then
 			info "mpv is not installed — with the default player setting (auto), Kunai will play in VLC. mpv is optional."
@@ -2722,6 +2816,11 @@ main() {
 	bold "Kunai installer"
 	[[ "$DRY" == 1 ]] && info "Dry run: no install commands will be executed."
 
+	local deps_offered=0
+	if [[ "$SKIP_DEPS" != 1 ]] && needs_alpine_runtime; then
+		install_optional_deps libstdc++ libgcc
+		deps_offered=1
+	fi
 	case "$METHOD" in
 	binary) install_binary ;;
 	npm) install_npm ;;
@@ -2734,7 +2833,11 @@ main() {
 	esac
 
 	print_android_player_guidance
-	install_optional_deps
+	if [[ "$deps_offered" == 0 ]]; then install_optional_deps; fi
+	if [[ "$DRY" == 1 ]]; then
+		bold "Dry run complete."
+		return
+	fi
 
 	# The last lines are the first instruction a new user reads, so the first
 	# one plays something. `-q` takes the top result; a bare `kunai` browses.

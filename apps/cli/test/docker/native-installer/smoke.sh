@@ -202,6 +202,7 @@ scenario_clean_install() {
   install_pinned 1.0.0
   assert_version_layout 1.0.0
   assert_schema2_manifest 1.0.0
+  "$KUNAI_DATA_DIR/versions/1.0.0/kunai" --version | grep -qi '^kunai ' || fail "versioned binary must run on $VARIANT"
   "$KUNAI_BIN_DIR/kunai" --version >/tmp/kunai-version.txt
   grep -qi '^kunai ' /tmp/kunai-version.txt || fail "kunai --version must print kunai semver"
   assert_no_operational_residue

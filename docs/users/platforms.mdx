@@ -71,7 +71,7 @@ Recommended optional tools:
 Alpine and other musl hosts use the `kunai-linux-*-musl` release assets. `install.sh` selects musl automatically when the host libc is musl.
 
 ```sh
-apk add mpv yt-dlp ffmpeg
+apk add libstdc++ libgcc mpv yt-dlp ffmpeg
 curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
 kunai --version
 kunai --setup

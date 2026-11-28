@@ -37,12 +37,12 @@ afterEach(async () => {
   }
 });
 
-async function makeRoot(platform: "linux" | "win32" = "linux") {
+async function makeRoot(platform: "linux" | "win32" = "linux", sharedCache = false) {
   const root = await mkdtemp(join(tmpdir(), "kunai-uninstall-"));
   made.push(root);
   const layout = getInstallLayoutPaths({
     dataDir: join(root, "data"),
-    cacheDir: join(root, "cache"),
+    cacheDir: join(root, sharedCache ? "data" : "cache"),
     configDir: join(root, "config"),
     launcherPath: join(root, "bin", platform === "win32" ? "kunai.exe" : "kunai"),
     // Join for the *host*, deliberately, because this helper then materialises
@@ -219,6 +219,21 @@ describe("nativeUninstall residue and preservation", () => {
     expect(result.removed).toContain(join(layout.configDir, "install.json"));
     expect(result.failed).toEqual([]);
     expect(abandoned.id).toBeTruthy();
+  });
+
+  test("default uninstall preserves user files in a shared data and cache root", async () => {
+    const { root, layout } = await makeRoot("linux", true);
+    await seedManagedUnixInstall(layout);
+    const user = await seedUserData(layout, root);
+    await writeFile(join(layout.stagingRoot, "partial.bin"), "partial");
+
+    const result = await nativeUninstall({ layout, platform: "linux" });
+
+    expect(result.status).toBe("removed");
+    expect(existsSync(layout.stagingRoot)).toBe(false);
+    expect(await readFile(user.historyDb, "utf8")).toBe("history");
+    expect(await readFile(user.cacheDb, "utf8")).toBe("cache");
+    expect(await readFile(user.downloads, "utf8")).toBe("offline");
   });
 
   test("--purge reports each user root and preserves external download directories", async () => {

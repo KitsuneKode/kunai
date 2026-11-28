@@ -17,6 +17,7 @@ import {
   hostInstallShAsset,
   withCommandPath,
   withReleaseFixture,
+  withSyntheticWindowsPayload,
 } from "./helpers/installer-script-harness";
 
 function installerShell(name: string) {
@@ -66,8 +67,9 @@ for (const name of ["install.sh", "install.ps1"] as const) {
       try {
         const { privateKey, spki } = releaseSigningKeys();
         const script = join(sandbox.root, name);
-        writeFileSync(script, renderInstaller(name, spki));
         const windows = name === "install.ps1";
+        const source = renderInstaller(name, spki);
+        writeFileSync(script, windows ? withSyntheticWindowsPayload(source) : source);
         const asset = windows
           ? `kunai-windows-${process.arch === "arm64" ? "arm64" : "x64"}.exe`
           : hostInstallShAsset();
