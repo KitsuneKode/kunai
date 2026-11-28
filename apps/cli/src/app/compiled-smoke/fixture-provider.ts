@@ -292,7 +292,11 @@ export const smokeSeriesFallbackProviderModule: CoreProviderModule = {
   providerId: "smoke-series-fallback",
   manifest: cloneSmokeManifest(videasyManifest, "smoke-series-fallback", "Smoke Series Fallback"),
   async resolve(input) {
-    return resolvedResult("smoke-series-fallback", pickUrl(input).replace(".mp4", "-series-fallback.mp4"), input.title.id);
+    return resolvedResult(
+      "smoke-series-fallback",
+      pickUrl(input).replace(".mp4", "-series-fallback.mp4"),
+      input.title.id,
+    );
   },
 };
 
@@ -305,7 +309,11 @@ export const smokeAnimeFallbackProviderModule: CoreProviderModule = {
     return [{ index: 7, label: "Episode 7", totalEpisodeCount: 12 }];
   },
   async resolve(input) {
-    return resolvedResult("smoke-anime-fallback", pickUrl(input).replace(".mp4", "-anime-fallback.mp4"), input.title.id);
+    return resolvedResult(
+      "smoke-anime-fallback",
+      pickUrl(input).replace(".mp4", "-anime-fallback.mp4"),
+      input.title.id,
+    );
   },
 };
 

@@ -1,7 +1,10 @@
 import { stripHtml } from "@/domain/catalog/strip-html";
 import { anilistCatalogStructure } from "@/domain/media/anilist-format";
 import type { SearchResult, ShellMode, TitleAlias } from "@/domain/types";
-import { createCacheGenerationGate, type CacheGenerationToken } from "@/infra/concurrency/cache-generation";
+import {
+  createCacheGenerationGate,
+  type CacheGenerationToken,
+} from "@/infra/concurrency/cache-generation";
 import { createKeyedJoiner } from "@/infra/concurrency/keyed-joiner";
 import { AniListRequestError, postAniListGraphql } from "@/services/catalog/anilist-client";
 import { evictOverflowedEntries } from "@/services/catalog/bounded-cache";

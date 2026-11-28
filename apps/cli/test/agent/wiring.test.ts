@@ -1257,12 +1257,13 @@ describe("agent wiring · failover banner and startup failure", () => {
           const evidence = readFileSync(evidencePath, "utf8");
           expect(occurrences(evidence, '"type":"end-file","reason":"error"')).toBe(1);
           expect(occurrences(evidence, '"type":"mid-stream-load"')).toBe(2);
-          expect(evidence).toContain(`${lane.to === "Smoke Series Fallback" ? "-series-fallback" : "-anime-fallback"}.mp4`);
+          expect(evidence).toContain(
+            `${lane.to === "Smoke Series Fallback" ? "-series-fallback" : "-anime-fallback"}.mp4`,
+          );
         },
       );
     }, 70_000);
   }
-
 });
 
 describe("agent wiring · relaunch", () => {

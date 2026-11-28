@@ -55,7 +55,6 @@ candidate, and executes `scripts/publish-npm-release.ts --dry-run` against those
 preserved tarballs without publishing. This keeps release-only script drift on
 PR CI instead of discovering it during the frozen release train.
 
-
 The release workflow additionally opens the exact preserved
 `.release-candidate/kunai-npm.tgz` after `release:pack`, both before candidate
 upload and after protected-job download. It must contain only `package.json`,

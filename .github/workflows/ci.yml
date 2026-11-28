@@ -983,7 +983,6 @@ jobs:
       - name: Run hermetic installer scenarios
         run: bun run test:installer:scenarios
 
-
   release-scripts:
     name: Release script PR smoke
     needs: changes
