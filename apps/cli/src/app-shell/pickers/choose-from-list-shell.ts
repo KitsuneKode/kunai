@@ -1,4 +1,8 @@
-import type { ListShellActionContext, ShellOption } from "@/app-shell/pickers/list-shell-types";
+import type {
+  ListShellActionContext,
+  ListShellFilterPreference,
+  ShellOption,
+} from "@/app-shell/pickers/list-shell-types";
 
 export async function chooseFromListShell<T>({
   title,
@@ -6,6 +10,7 @@ export async function chooseFromListShell<T>({
   options,
   actionContext,
   initialSelectedIndex,
+  filter = "auto",
 }: {
   title: string;
   subtitle: string;
@@ -13,7 +18,8 @@ export async function chooseFromListShell<T>({
   actionContext?: ListShellActionContext;
   /** Re-open a list on the row the user was working on, not the top. */
   initialSelectedIndex?: number;
+  filter?: ListShellFilterPreference;
 }): Promise<T | null> {
   const { openListShell } = await import("@/app-shell/ink-shell");
-  return openListShell({ title, subtitle, options, actionContext, initialSelectedIndex });
+  return openListShell({ title, subtitle, options, actionContext, initialSelectedIndex, filter });
 }

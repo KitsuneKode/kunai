@@ -491,6 +491,7 @@ export async function chooseStartingEpisode(opts: SelectionOpts): Promise<Episod
           value: "pick" as const,
           label: opts.isAnime ? "☰ Pick episode…" : "☰ Pick season & episode…",
           detail: "Choose manually from metadata",
+          shortcut: "e",
         },
         ...(opts.container
           ? [
@@ -512,6 +513,9 @@ export async function chooseStartingEpisode(opts: SelectionOpts): Promise<Episod
             ]
           : []),
       ].map((option) => ({ ...option, previewImageUrl: history.posterUrl })),
+      // Fixed playback actions stay compact even when maintenance rows push
+      // the dialog past the generic six-row auto threshold.
+      filter: "never",
     });
 
     if (!picked) {
