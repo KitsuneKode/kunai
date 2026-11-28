@@ -77,9 +77,15 @@ subtitle controls, and safer persistence, downloads and native installation.
   KickAssAnime, AnimeGG, Miruro, AllManga. Profiles that kept the previous
   defaults move to this order; a reordered list is left alone. On the
   2026-11-26 live runs Rivestream timed out, VidRock's streams answered 502,
-  Videasy and Miruro resolved nothing and AllManga's stream authorization is
+  Videasy and Miruro resolved nothing and AllManga's stream authorization was
   out of date, so they sit behind the providers that played. Availability
   remains dependent on each upstream service and the user's network.
+- AllManga stays registered and moves to the end of the default anime order.
+  On 2026-11-28 its pinned build-193 crypto still bootstrapped, and a Solo
+  Leveling catalog still loaded in sub and dub, but the one stream resolve
+  stopped at a CAPTCHA before any URL or decoded frame. Profiles that still
+  have the previous default anime order pick up the new one; a custom order
+  is left alone.
 - Retire AniDB from the production roster. Migrate retired selections and remove
   its priority/pin entries without deleting history, offline files or unrelated
   provider preferences. Keep Videasy and AllAnime registered.

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-27T20:05:20Z"
+lastReviewed: "2026-11-28T06:30:00Z"
 ---
 
 # Kunai — Provider Guide
@@ -816,9 +816,9 @@ Active providers are registered in `apps/cli/src/container/bootstrap-providers.t
 it live, and release signoff derives its cases from that list plus the configured lane defaults.
 
 `hianime` is the **default** anime provider (`animeProvider: "hianime"`,
-`animeProviderPriority: ["kickassanime", "animegg", "miruro", "allanime"]`,
-provider-defaults revision 8, which put KickAssAnime ahead of AnimeGG after it
-resolved and streamed on every 2026-11-26 run). The lead moved off AniDB when anidb.app stopped
+`animeProviderPriority: ["kickassanime", "animegg", "miruro", "anilight", "anidap", "animeparadise", "allanime"]`,
+provider-defaults revision 12). Revision 8 put KickAssAnime ahead of AnimeGG after it
+resolved and streamed on every 2026-11-26 run. The lead moved off AniDB when anidb.app stopped
 serving the old origin (HTTP 302 to an unrelated site, 2026-10-24), matching
 ani-cli's earlier move to HiAnime (c99221d). The AniDB provider module was
 removed; the MAL lookup for AniSkip still handles historic catalog IDs.
@@ -827,9 +827,11 @@ removed; the MAL lookup for AniSkip still handles historic catalog IDs.
 lists, and drops title pins that still name it (without aliasing history ids).
 Revision 8 migrates inherited revision-7 priorities and keeps deliberate
 provider selections. Movy leads the series fallbacks and KickAssAnime leads the
-anime fallbacks because the 2026-11-26 live runs resolved and streamed there;
-AllAnime is last because the upstream retired the build used for stream
-authorization.
+anime fallbacks because the 2026-11-26 live runs resolved and streamed there.
+Revision 12 moves an inherited AllManga slot to the end of the anime fallback
+order: on 2026-11-28 the pinned build-193 profile still bootstrapped and the
+catalog still loaded, but stream resolution stopped at a CAPTCHA before any
+probed stream. A custom anime order is left alone.
 
 Miruro's search goes through its own pipe (`search`, `q` + `type: "ANIME"`),
 which relays AniList's catalog: results carry AniList and MAL ids exactly as the

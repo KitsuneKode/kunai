@@ -86,14 +86,17 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // Revision 11 appends AnimeParadise (verified on the 2026-11-27 intake:
   // direct stream.animeparadise.moe HLS behind its own AniList-mapped catalog)
   // as another tail fallback until future live sweeps earn promotion.
+  // Revision 12 moves AllManga last. On 2026-11-28 the pinned build-193
+  // profile still bootstrapped, and the catalog still loaded, but stream
+  // resolution stopped at a CAPTCHA before any probed stream.
   animeProviderPriority: [
     "kickassanime",
     "animegg",
     "miruro",
-    "allanime",
     "anilight",
     "anidap",
     "animeparadise",
+    "allanime",
   ],
   // Bump alongside any lane-default change above; see `providerDefaultsRevision`.
   // Revision 3 leads with VidLink + HiAnime and covers both lanes.
@@ -106,7 +109,8 @@ export const DEFAULT_CONFIG: KitsuneConfig = {
   // Revision 9 appends VidBolt, AniLight, and Anidap as tail fallbacks.
   // Revision 10 appends FileSuN to the series tail; the anime lane is unchanged.
   // Revision 11 appends AnimeParadise to the anime tail; the series lane is unchanged.
-  providerDefaultsRevision: 11,
+  // Revision 12 moves AllManga to the end of the anime fallback order.
+  providerDefaultsRevision: 12,
   disabledProviders: [],
   stremioAddons: [],
   experimentalStremioAddons: false,

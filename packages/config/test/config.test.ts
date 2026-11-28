@@ -122,11 +122,12 @@ describe("@kunai/config parse boundary", () => {
       "kickassanime",
       "animegg",
       "miruro",
-      "allanime",
       "anilight",
       "anidap",
       "animeparadise",
+      "allanime",
     ]);
+    expect(DEFAULT_CONFIG.animeProviderPriority.at(-1)).toBe("allanime");
     expect(DEFAULT_CONFIG.animeProviderPriority).not.toContain(DEFAULT_CONFIG.animeProvider);
   });
 
@@ -134,7 +135,7 @@ describe("@kunai/config parse boundary", () => {
     // Load migrates an inherited old default only when the on-disk revision is
     // behind this one. Changing a default without bumping it strands every user
     // who saved a setting on the previous default.
-    expect(DEFAULT_CONFIG.providerDefaultsRevision).toBe(11);
+    expect(DEFAULT_CONFIG.providerDefaultsRevision).toBe(12);
   });
 
   test("no providers are disabled by default", () => {
