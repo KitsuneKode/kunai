@@ -260,7 +260,7 @@ describe("agent wiring · destructive confirmations", () => {
     [120, 32],
     [54, 25],
     [40, 20],
-  ] as const) {
+  ]) {
     it(`History and Up Next arm, cancel, keep filters, and disarm on movement at ${columns}x${rows}`, async () => {
       await withSession(
         `wiring-confirm-strip-${columns}x${rows}`,

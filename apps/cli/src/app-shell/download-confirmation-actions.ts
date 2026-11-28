@@ -27,7 +27,7 @@ export function executeDownloadConfirmation(input: {
         input.refresh();
         return undefined;
       })
-      .catch((error: unknown) => {
+      .catch((error: Error) => {
         input.confirm.transition({
           type: "fail",
           message: error instanceof Error ? error.message : "Unable to abort download",

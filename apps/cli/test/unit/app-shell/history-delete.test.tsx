@@ -29,6 +29,8 @@ function history(overrides: Partial<HistoryProgress> = {}): HistoryProgress {
   };
 }
 
+// SAFETY: this test double is intentionally narrowed to the exact contract exercised here.
+// oxlint-disable-next-line anti-slop(require-safety-comment-for-type-assertion) -- justified partial test fixture
 const visibleIds = ["title:tmdb:1", "episode:tmdb:1:1:2"] as const;
 
 function baseCtx(
@@ -41,12 +43,17 @@ function baseCtx(
         deleteProgressByKey: () => {},
         deleteTitle: () => {},
       },
+      // SAFETY: this test double is intentionally narrowed to the exact contract exercised here.
+      // SAFETY: deliberately partial test fixture narrowed to the contract exercised here.
+      // oxlint-disable-next-line anti-slop(require-safety-comment-for-type-assertion) -- justified partial test fixture
     } as never,
     historyView: { flatRows: [{ titleId: "tmdb:1", dualSourceAvailable: false }] },
     historySelections: [{ titleId: "tmdb:1", entry: history() }],
     historyPickerContext: {},
     selectedIndex: 0,
     sourceChoiceTitleId: null,
+    // SAFETY: this test double is intentionally narrowed to the exact contract exercised here.
+    // oxlint-disable-next-line anti-slop(require-safety-comment-for-type-assertion) -- justified partial test fixture
     sourcePreference: "auto" as const,
     setSourceChoiceTitleId: () => {},
     setHistoryTypeFilter: () => {},
@@ -105,6 +112,9 @@ describe("history delete UX", () => {
             deleteProgressByKey: (key: string) => calls.push(`episode:${key}`),
             deleteTitle: (titleId: string) => calls.push(`title:${titleId}`),
           },
+          // SAFETY: this test double is intentionally narrowed to the exact contract exercised here.
+          // SAFETY: deliberately partial test fixture narrowed to the contract exercised here.
+          // oxlint-disable-next-line anti-slop(require-safety-comment-for-type-assertion) -- justified partial test fixture
         } as never,
         onHistoryMutated: () => calls.push("mutated"),
       }),
@@ -127,6 +137,9 @@ describe("history delete UX", () => {
             deleteProgressByKey: () => calls.push("episode"),
             deleteTitle: () => calls.push("title"),
           },
+          // SAFETY: this test double is intentionally narrowed to the exact contract exercised here.
+          // SAFETY: deliberately partial test fixture narrowed to the contract exercised here.
+          // oxlint-disable-next-line anti-slop(require-safety-comment-for-type-assertion) -- justified partial test fixture
         } as never,
       }),
     );
@@ -148,6 +161,9 @@ describe("history delete UX", () => {
             deleteProgressByKey: () => calls.push("episode"),
             deleteTitle: () => calls.push("title"),
           },
+          // SAFETY: this test double is intentionally narrowed to the exact contract exercised here.
+          // SAFETY: deliberately partial test fixture narrowed to the contract exercised here.
+          // oxlint-disable-next-line anti-slop(require-safety-comment-for-type-assertion) -- justified partial test fixture
         } as never,
         onHistoryMutated: () => calls.push("mutated"),
       }),

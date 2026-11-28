@@ -42,6 +42,7 @@ function baseCtx(overrides: Partial<Parameters<typeof handleHistoryOverlayInput>
   return {
     ctx: {
       // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+      // SAFETY: the input router never reads the container in these pure key-routing tests.
       container: {} as never,
       historyView: { flatRows: [{ titleId: "tmdb:1", dualSourceAvailable: true }] },
       historySelections: [{ titleId: "tmdb:1", entry: history() }],
@@ -104,6 +105,7 @@ describe("handleHistoryOverlayInput", () => {
         confirmState: createConfirmStripHarness().state,
         transitionConfirm: createConfirmStripHarness().transition,
         confirmationVisibleIds: ["title:tmdb:1", "episode:tmdb:1:1:2"],
+        // SAFETY: the partial test double is intentionally narrowed to the input context contract.
         container: container as never,
         historyView: { flatRows: [{ titleId: "tmdb:1", dualSourceAvailable: false }] },
         historySelections: [{ titleId: "tmdb:1", entry: history() }],

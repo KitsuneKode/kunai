@@ -67,6 +67,8 @@ describe("browse focus isolation", () => {
             deleteProgressByKey: (key: string) => filterMutations.push(`episode:${key}`),
             deleteTitle: () => filterMutations.push("title"),
           },
+          // SAFETY: deliberately partial test fixture narrowed to the contract exercised here.
+          // oxlint-disable-next-line anti-slop(require-safety-comment-for-type-assertion) -- justified partial test fixture
         } as never,
         historyView: { flatRows: [{ titleId: "tmdb:1", dualSourceAvailable: false }] },
         historySelections: [

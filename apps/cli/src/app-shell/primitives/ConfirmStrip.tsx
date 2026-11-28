@@ -7,13 +7,10 @@ import { palette } from "../shell-theme";
 import type { ConfirmStripState } from "./ConfirmStrip.model";
 
 function capitalize(value: string): string {
-  return value.length === 0 ? value : value[0]!.toUpperCase() + value.slice(1);
+  return value.length === 0 ? value : value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-function stripLine(state: Exclude<ConfirmStripState, { kind: "idle" }>): {
-  readonly text: string;
-  readonly color: string;
-} {
+function stripLine(state: Exclude<ConfirmStripState, { kind: "idle" }>) {
   const label = sanitizeTerminalText(state.label);
   if (state.kind === "armed") {
     return {
