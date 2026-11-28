@@ -41,8 +41,8 @@ function executeQueueConfirmation(
   ctx: QueueOverlayInputContext,
   effect: { readonly targetId: string; readonly label: string },
 ): void {
-  const undoBefore = ctx.container.sessionUndo?.captureQueue();
   try {
+    const undoBefore = ctx.container.sessionUndo?.captureQueue();
     if (effect.targetId.startsWith("remove:")) {
       const id = effect.targetId.slice("remove:".length);
       if (!ctx.container.queueService.getAll().some((entry) => entry.id === id)) {

@@ -71,5 +71,18 @@ describe("overlay input safety", () => {
     expect(cancelOverlayConfirmationOnEscape("queue", historyStrip, queueStrip)).toBe(false);
     queue.kind = "executing";
     expect(cancelOverlayConfirmationOnEscape("queue", historyStrip, queueStrip)).toBe(false);
+    const downloads = { kind: "armed", cancelled: 0 };
+    const downloadsStrip = {
+      getState: () => ({ kind: downloads.kind }),
+      transition: () => {
+        downloads.cancelled += 1;
+        downloads.kind = "idle";
+      },
+    };
+    expect(
+      cancelOverlayConfirmationOnEscape("downloads", historyStrip, queueStrip, downloadsStrip),
+    ).toBe(true);
+    expect(downloads.cancelled).toBe(1);
+    expect(cancelOverlayConfirmationOnEscape("downloads", historyStrip, queueStrip)).toBe(false);
   });
 });

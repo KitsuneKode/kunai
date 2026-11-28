@@ -41,10 +41,15 @@ export function cancelOverlayConfirmationOnEscape(
     readonly getState: () => { readonly kind: string };
     readonly transition: (action: { readonly type: "cancel" }) => void;
   },
+  downloads?: {
+    readonly getState: () => { readonly kind: string };
+    readonly transition: (action: { readonly type: "cancel" }) => void;
+  },
 ): boolean {
   let confirm: typeof history | null = null;
   if (overlayType === "history") confirm = history;
   else if (overlayType === "queue") confirm = queue;
+  else if (overlayType === "downloads") confirm = downloads ?? null;
   if (!confirm) return false;
   const kind = confirm.getState().kind;
   if (kind !== "armed" && kind !== "failed") return false;

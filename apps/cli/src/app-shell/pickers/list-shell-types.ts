@@ -24,7 +24,10 @@ export type ListShellFilterPreference = "auto" | "always" | "never";
 
 export type ShellOption<T> = {
   readonly value: T;
-  /** Stable row identity for destructive confirmation; labels are the fallback. */
+  /**
+   * Stable row identity. Required, nonblank, and unique when `destructive` is
+   * set. A blank id is not a key. Labels are the fallback only for ordinary rows.
+   */
   readonly id?: string;
   readonly label: string;
   /** Compact-mode accelerator. Digits 1-9 also select rows positionally. */
@@ -37,7 +40,7 @@ export type ShellOption<T> = {
    * rather than only after it.
    */
   readonly disabled?: boolean;
-  /** Discards data or resets state; rendered in a warning tone and confirmed inline. */
+  /** Discards data or resets state. Needs a unique `id`, then confirmation. */
   readonly destructive?: boolean;
   /** Imperative footer verb while armed (for example "remove" or "delete"). */
   readonly confirmVerb?: string;

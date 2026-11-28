@@ -34,6 +34,7 @@ import { plainModeEnabled } from "@/app-shell/plain-mode";
 import { ClaudeTabRow } from "@/app-shell/primitives/ClaudeTabRow";
 import { ConfirmStrip } from "@/app-shell/primitives/ConfirmStrip";
 import {
+  confirmStripBlocksPointer,
   confirmStripFooterActions,
   confirmStripKeyDecision,
   confirmStripOwnsInput,
@@ -552,8 +553,12 @@ function LibraryTab({
           <MouseTarget
             key={row.group.key}
             id={`library:row:${row.group.key}`}
-            onWheel={scrollTitles}
+            onWheel={(direction) => {
+              if (confirmStripBlocksPointer(confirm.getState().kind)) return;
+              scrollTitles(direction);
+            }}
             onClick={() => {
+              if (confirmStripBlocksPointer(confirm.getState().kind)) return;
               confirm.transition({ type: "cancel" });
               if (item.flatIndex !== safeIndex || priorPointerKey.current !== row.group.key) {
                 priorPointerKey.current = row.group.key;

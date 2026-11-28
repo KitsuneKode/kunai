@@ -289,7 +289,9 @@ export function ListShell<T>({
       return;
     }
 
-    const confirmDecision = confirmStripKeyDecision(confirmState.kind, input, key);
+    const confirmDecision = confirmStripKeyDecision(confirmState.kind, input, key, {
+      continueOnVerticalArrows: true,
+    });
     if (confirmDecision === "execute") {
       const confirmation = confirm.transition({ type: "confirm" });
       const resolved = resolveArmedListOption(filteredOptions, confirmation.effect?.targetId);
@@ -307,10 +309,11 @@ export function ListShell<T>({
       }
       return;
     }
-    if (confirmDecision === "cancel" || confirmDecision === "cancel-and-continue") {
+    if (confirmDecision === "cancel") {
       confirm.transition({ type: "cancel" });
       return;
     }
+    if (confirmDecision === "cancel-and-continue") confirm.transition({ type: "cancel" });
     if (confirmDecision === "hold") return;
 
     if (commandMode) {
@@ -362,8 +365,23 @@ export function ListShell<T>({
       const shortcutOption = shortcutIndex === null ? undefined : filteredOptions[shortcutIndex];
       if (shortcutIndex !== null && shortcutOption && !confirmed) {
         setIndex(shortcutIndex);
-        setConfirmed(true);
-        setTimeout(() => onSubmit(shortcutOption.value), 150);
+        if (shortcutOption.destructive) {
+          const targetId = listShellOptionKey(shortcutOption);
+          const armed = targetId ? resolveArmedListOption(filteredOptions, targetId) : null;
+          if (targetId && armed?.kind === "one") {
+            confirm.transition({
+              type: "arm",
+              targetId,
+              label: shortcutOption.label,
+              verb: shortcutOption.confirmVerb ?? "confirm",
+              executingLabel: `Applying ${shortcutOption.label}`,
+              visibleIds: visibleConfirmationIds,
+            });
+          }
+        } else {
+          setConfirmed(true);
+          setTimeout(() => onSubmit(shortcutOption.value), 150);
+        }
       }
       return;
     }

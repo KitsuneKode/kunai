@@ -875,16 +875,16 @@ export function RootOverlayShell({
   } = useShellInput({
     footerActions,
     commands,
-    // The settings surface owns `/` itself — its footer advertises it as
-    // search. Without disabling here, one keystroke opened the palette AND
-    // armed the settings filter (both handlers see commandMode=false on the
-    // same event), and closing the palette left a phantom focused search.
+    // Settings owns `/` as search. Leaving it enabled opened the palette and
+    // the settings filter on the same keystroke. Closing the palette then
+    // left a phantom search.
     disabled: overlay.type === "settings",
     escapeAction: null,
     localTitles: () => collectLocalTitleEntries(container),
     onTitlePick: (entry) => pickPaletteTitle(container, entry),
     onResolve: resolveOverlayPaletteAction,
-    onEscapeWhileOpen: () => cancelConfirmOnEscape(overlay.type, historyConfirm, queueConfirm),
+    onEscapeWhileOpen: () =>
+      cancelConfirmOnEscape(overlay.type, historyConfirm, queueConfirm, downloadConfirm),
   });
   const wrapWithLayout = (node: ReactNode) =>
     wrapOverlayLayout(

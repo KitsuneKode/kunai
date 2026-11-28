@@ -22,6 +22,7 @@ import { ConfirmStrip } from "@/app-shell/primitives/ConfirmStrip";
 import {
   confirmStripBlocksPointer,
   confirmStripOwnsInput,
+  isPlainConfirmKey,
 } from "@/app-shell/primitives/ConfirmStrip.model";
 import { computeQueueRowLayout } from "@/app-shell/primitives/list-row-layout";
 import { MediaListShell } from "@/app-shell/primitives/MediaListShell";
@@ -394,7 +395,7 @@ export function DownloadManagerContent({
       }
       if (confirmState.kind === "executing") return;
       if (confirmState.kind !== "idle") {
-        if (confirmState.kind === "armed" && input.toLowerCase() === "y") {
+        if (confirmState.kind === "armed" && isPlainConfirmKey(input, key)) {
           const confirmation = confirm.transition({ type: "confirm" });
           const effect = confirmation.effect;
           if (effect) {
