@@ -135,6 +135,12 @@ export type FooterAction = {
   requiresSelection?: boolean;
   /** Navigation or safety chrome that keeps its narrow slot before primary-styled actions. */
   narrowEssential?: boolean;
+  /**
+   * Explicit opt-in for mouse activation of a destructive-labeled chip. Used only
+   * by the armed ConfirmStrip, where the click has the same two-step semantics
+   * as pressing its key. Ordinary delete/remove/cancel chips stay keyboard-only.
+   */
+  allowMouseDestructive?: boolean;
 };
 
 export type PlaybackShellState = {
