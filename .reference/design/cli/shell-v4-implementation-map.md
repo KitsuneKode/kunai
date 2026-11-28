@@ -139,6 +139,7 @@ Scores use a 1–5 scale (`Impact` 5 = fixes broken trust/usability on daily pat
 - **Dependencies:** Rank 2 (Calendar route), Rank 5 (empty/offline footers).
 
 ### Rank 15 · Settings Effect-Timing Tags, Env-Lock Reasons, No-Op Setting Audit & Compact 40-Col Rows
+- **Status:** **Done**
 - **Impact / Effort:** 3.5 / 2 (**Ratio: 1.75**)
 - **Why:** Reviewers flagged *"some settings do nothing"*, live 40×20 capture showed `▌▸Default startup · Series` / `mode  mode` collision, double glyph `▌ ▸`, and missing effect-timing labels (`applies immediately` / `next playback` / `next launch`).
 - **Files touched:** `apps/cli/src/app-shell/settings/SettingsOverlay.tsx`, `apps/cli/src/app-shell/settings/components/SettingRow*.tsx`, `apps/cli/src/app-shell/settings/registry/*.ts`.

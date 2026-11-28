@@ -89,8 +89,9 @@ the vault automatically. A token is optional only for the local development
 server when it is bound to numeric loopback (`127.0.0.1` or `::1`).
 
 `KUNAI_RELAY_BASE_URL` and `KUNAI_RELAY_TOKEN` override local config for smoke
-tests and temporary sessions. The relay is metadata-only. Stream URLs always
-stay direct, and unknown legacy video-relay keys are ignored.
+tests and temporary sessions. Relay settings are read while providers are
+constructed, so changes apply on the next launch. The relay is metadata-only.
+Stream URLs always stay direct, and unknown legacy video-relay keys are ignored.
 
 ### Language and media profiles
 
@@ -314,7 +315,7 @@ More: [Diagnostics and reporting](/docs/users/diagnostics-and-reporting).
 <Tabs items={["In-shell", "Manual edit"]}>
 <Tab value="In-shell">
 
-Use `/settings` or `/setup` for guided changes. Settings persist immediately to `config.json`.
+Use `/settings` or `/setup` for guided changes. Settings persist immediately to `config.json`; the focused row says whether the behavior applies now, on the next playback, or on the next launch. Environment-pinned rows show `(env)` and explain which variable must be unset instead of pretending the in-app edit worked.
 
 </Tab>
 <Tab value="Manual edit">

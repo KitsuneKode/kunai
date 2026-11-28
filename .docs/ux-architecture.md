@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-25T11:41:06Z"
+lastReviewed: "2026-11-28T15:51:12Z"
 ---
 
 # Kunai — UX Architecture
@@ -194,7 +194,14 @@ Search query and command input remain valid uses of text fields.
 Settings secret and URL fields use a dedicated `inputMode` buffer in
 `apps/cli/src/app-shell/settings/` — never the shared picker `filterQuery`.
 Enter on a text row opens edit mode; a second Enter commits; Esc cancels.
-Rows overridden by env vars show an `(env)` badge and cannot be edited in-app.
+Every configurable registry row declares its persisted config keys and an
+effect-timing contract (`immediate`, `next-playback`, or `next-launch`) based
+on the real consumer. The focused row shows the short tag (`applies now`,
+`next playback`, or `next launch`). Rows are fitted to one terminal line at
+narrow widths: one focus glyph, the label truncates before the value, and the
+value never wraps. Rows overridden by env vars show an `(env)` badge and
+cannot be edited in-app; Space/Enter leaves config unchanged and explains the
+lock inline as `Set by KUNAI_…; unset it to change here`.
 
 ## Panels And Overlays
 
