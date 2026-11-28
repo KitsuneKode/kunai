@@ -49,7 +49,6 @@ import {
 } from "@/services/notifications/NotificationActionRouter";
 import { collectLocalTitleEntries } from "@/services/palette/collect-local-titles";
 import { enqueueReleaseReconciliation } from "@/services/release-reconciliation/enqueue-release-reconciliation";
-import type { InstallMethodKind } from "@/services/update/install-method";
 import { resolveNotificationUpdateAction } from "@/services/update/notification-update-action";
 import { appReleasePageUrl } from "@/services/update/release-url";
 import { Box, Text, useInput } from "ink";
@@ -66,7 +65,9 @@ import { requestBrowseIdleContextRefresh } from "./browse-idle-context";
 import { cancelAllRootOverlays, cancelRootOverlay } from "./cancel-root-overlay";
 import { resolveCommandContext, resolveCommands } from "./commands";
 import { diagnosticsVisibleRows } from "./diagnostics-dashboard-model";
+import { useOfflineMode } from "./offline-mode-context";
 import { sanitizeTerminalText } from "./shell-text";
+import { describeUnmanagedUpdate } from "./update-notification-copy";
 
 /** The ContextStrip line drawn above the panel, inside the content area. */
 const DIAGNOSTICS_CONTEXT_STRIP_ROWS = 1;
@@ -271,27 +272,6 @@ const HELP_SCOPE_LABELS = {
   history: "history",
   notifications: "notifications",
 } satisfies Record<KeyScope, string>;
-
-/**
- * What to tell someone whose install cannot update itself.
- *
- * Reuses the notification's own routing so the manual action and the inbox
- * never disagree about how this channel upgrades.
- */
-function describeUnmanagedUpdate(
-  channel: InstallMethodKind,
-  currentVersion: string,
-  latestVersion: string | null,
-): string {
-  const action = resolveNotificationUpdateAction({
-    channel,
-    currentVersion,
-    latestVersion,
-  });
-  if (action.kind === "run-command") return action.message;
-  if (action.kind === "open-release-page") return action.message;
-  return "This install is managed elsewhere — update through the tool that installed Kunai.";
-}
 
 function wrapOverlayLayout(
   layout: OverlayLayoutValue,
@@ -664,7 +644,8 @@ export function RootOverlayShell({
     requestBrowseIdleContextRefresh();
   }, [onRedraw, reloadHistoryOverlay]);
   const trackGroups = overlay.type === "tracks_panel" ? overlay.groups : [];
-  const commands = resolveCommandContext(state, "rootOverlay");
+  const offlineMode = useOfflineMode();
+  const commands = resolveCommandContext(state, "rootOverlay", { offline: offlineMode.active });
   const historyPickerContext: HistoryPickerOptionsContext = {
     nextReleases: historyNextReleases,
     projections: historyProjections,

@@ -57,9 +57,9 @@ import {
   NOTIFICATION_TOAST_TTL_MS,
   syncNotificationQueueFromActive,
   tickNotificationQueue,
+  notificationSnapshotSig,
   type NotificationPriority,
 } from "./notification-queue";
-import { OfflineModeProvider } from "./offline-mode-context";
 import { plainModeEnabled } from "./plain-mode";
 import {
   buildPlaybackSubtitleLine,
@@ -352,17 +352,6 @@ export async function openPlaybackStreamSelectionPicker(
  */
 export function useSessionState(stateManager: SessionStateManager) {
   return useSessionSelector(stateManager, (state) => state);
-}
-
-/**
- * Cheap identity for a notification snapshot: length plus per-row
- * (dedupKey, readAt). The bell only needs count/unread/kind, and rebuilding
- * this string is far cheaper than a repo scan per render.
- */
-function notificationSnapshotSig(
-  active: readonly { dedupKey: string; readAt?: string | null }[],
-): string {
-  return `${active.length}|${active.map((n) => `${n.dedupKey}@${n.readAt ?? ""}`).join(",")}`;
 }
 
 /**
@@ -816,11 +805,10 @@ export function AppRoot({ container }: { container: Container }) {
   );
   const playbackIsLocal = isLocalPlaybackStream(state.stream);
   const networkAvailable = useConnectivityOnline(container.connectivity);
-  const explicitOffline = container.config.offlineMode;
-  const offlineMode = useMemo(
-    () => deriveOfflineMode({ explicitOffline, networkAvailable }),
-    [explicitOffline, networkAvailable],
-  );
+  const offlineMode = deriveOfflineMode({
+    explicitOffline: container.config.offlineMode,
+    networkAvailable,
+  });
   const rootStatusSummaryInput = useMemo(
     () => ({
       currentViewLabel,
@@ -1227,82 +1215,81 @@ export function AppRoot({ container }: { container: Container }) {
 
   const plain = plainModeEnabled();
   return (
-    <OfflineModeProvider value={offlineMode}>
-      <Box
-        flexDirection="column"
-        width={shellWidth}
-        height={plain ? undefined : shellHeight}
-        backgroundColor={plain ? undefined : palette.bg}
-        paddingX={plain ? 0 : ROOT_HORIZONTAL_PADDING}
-        paddingY={0}
-      >
-        {/* Single canonical header: brand · destination pill · crumb · status · size */}
-        <AppHeader
-          destination={headerDestination}
-          context={rootStatusSummary.crumb}
-          status={
-            container.config.minimalMode && currentViewLabel === "browse"
-              ? undefined
-              : headerStatusForRoot(rootStatus, rootStatusSummary.header).label
-          }
-          statusColor={statusColor(headerStatusForRoot(rootStatus, rootStatusSummary.header).tone)}
-          // Terminal size is noise at a comfortable size — only surface it when the
-          // terminal is cramped enough to actually affect the layout (then it reads
-          // as a useful "resize me" hint rather than permanent header clutter).
-          size={shellWidth < 100 || shellHeight < 30 ? `${shellWidth}×${shellHeight}` : undefined}
-          width={Math.max(0, shellWidth - 2)}
+    <Box
+      flexDirection="column"
+      width={shellWidth}
+      height={plain ? undefined : shellHeight}
+      backgroundColor={plain ? undefined : palette.bg}
+      paddingX={plain ? 0 : ROOT_HORIZONTAL_PADDING}
+      paddingY={0}
+    >
+      {/* Single canonical header: brand · destination pill · crumb · status · size */}
+      <AppHeader
+        destination={headerDestination}
+        context={rootStatusSummary.crumb}
+        status={
+          container.config.minimalMode && currentViewLabel === "browse"
+            ? undefined
+            : headerStatusForRoot(rootStatus, rootStatusSummary.header).label
+        }
+        statusColor={statusColor(headerStatusForRoot(rootStatus, rootStatusSummary.header).tone)}
+        // Terminal size is noise at a comfortable size — only surface it when the
+        // terminal is cramped enough to actually affect the layout (then it reads
+        // as a useful "resize me" hint rather than permanent header clutter).
+        size={shellWidth < 100 || shellHeight < 30 ? `${shellWidth}×${shellHeight}` : undefined}
+        width={Math.max(0, shellWidth - 2)}
+      />
+      <TransientRowSlot width={Math.max(36, shellWidth - 8)}>
+        {(() => {
+          const transient = selectTransientRow({
+            alert: rootStatusSummary.alert ?? null,
+            notificationToast,
+            notificationToastPriority,
+            undoLine,
+            streakMilestoneAlert,
+            presenceBootLine: visiblePresenceBootLine,
+            streakAtRiskAlert,
+            weeklyDigestLine,
+            tipLine,
+          });
+          if (!transient) return null;
+          return (
+            <Text
+              dimColor={transient.dim}
+              bold={transient.accent}
+              color={transient.accent ? palette.accent : statusColor(transient.tone)}
+            >
+              {truncateLine(transient.text, Math.max(36, shellWidth - 8))}
+            </Text>
+          );
+        })()}
+      </TransientRowSlot>
+      {showAnalyticsNotice ? (
+        <AnalyticsDisclosureBanner width={Math.max(36, shellWidth - 2)} />
+      ) : null}
+      {container.capabilitySnapshot && !rootContent?.ownsMachineVerdict ? (
+        <CapabilityIssueStrip
+          snapshot={container.capabilitySnapshot}
+          mode={state.mode}
+          downloadsEnabled={container.config.downloadsEnabled}
+          width={Math.max(36, shellWidth - 2)}
         />
-        <TransientRowSlot width={Math.max(36, shellWidth - 8)}>
-          {(() => {
-            const transient = selectTransientRow({
-              alert: rootStatusSummary.alert ?? null,
-              notificationToast,
-              notificationToastPriority,
-              undoLine,
-              streakMilestoneAlert,
-              presenceBootLine: visiblePresenceBootLine,
-              streakAtRiskAlert,
-              weeklyDigestLine,
-              tipLine,
-            });
-            if (!transient) return null;
-            return (
-              <Text
-                dimColor={transient.dim}
-                bold={transient.accent}
-                color={transient.accent ? palette.accent : statusColor(transient.tone)}
-              >
-                {truncateLine(transient.text, Math.max(36, shellWidth - 8))}
-              </Text>
-            );
-          })()}
-        </TransientRowSlot>
-        {showAnalyticsNotice ? (
-          <AnalyticsDisclosureBanner width={Math.max(36, shellWidth - 2)} />
-        ) : null}
-        {container.capabilitySnapshot && !rootContent?.ownsMachineVerdict ? (
-          <CapabilityIssueStrip
-            snapshot={container.capabilitySnapshot}
-            mode={state.mode}
-            downloadsEnabled={container.config.downloadsEnabled}
-            width={Math.max(36, shellWidth - 2)}
-          />
-        ) : null}
-        <Box marginTop={1} flexDirection="column" flexGrow={1}>
-          <RootContentBody
-            resolved={resolvedRootContent}
-            ctx={{
-              container,
-              state,
-              stateManager,
-              rootOverlay,
-              playbackRootInput,
-              clearShellScreen,
-            }}
-          />
-        </Box>
+      ) : null}
+      <Box marginTop={1} flexDirection="column" flexGrow={1}>
+        <RootContentBody
+          resolved={resolvedRootContent}
+          ctx={{
+            container,
+            state,
+            stateManager,
+            rootOverlay,
+            playbackRootInput,
+            clearShellScreen,
+            offlineMode,
+          }}
+        />
       </Box>
-    </OfflineModeProvider>
+    </Box>
   );
 }
 

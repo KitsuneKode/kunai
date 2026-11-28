@@ -33,7 +33,6 @@ import {
 } from "@/services/offline/offline-artwork-cache";
 import type { ConfigService } from "@/services/persistence/ConfigService";
 import { fetchRemoteSubtitle } from "@/services/playback/remote-subtitle-download";
-import { looksLikeOpaqueProviderNativeId } from "@kunai/core";
 import { isStremioAddonProviderId } from "@kunai/providers";
 import {
   buildYoutubeYtdlProfile,
@@ -42,19 +41,20 @@ import {
 } from "@kunai/providers/youtube";
 import {
   DownloadJobAdmissionConflictError,
-  externalIdsToAliases,
   getKunaiPaths,
   type DownloadArtifactStatus,
   type DownloadJobRecord,
   type DownloadClaimRef,
   type DownloadJobsRepository,
-  type HistoryTitleAliasInput,
   type HistoryTitleAliasRepository,
 } from "@kunai/storage";
-import type { MediaKind, ProviderExternalIds } from "@kunai/types";
+import type { MediaKind } from "@kunai/types";
 
 import { whichLive } from "../../infra/os/which";
+import { downloadJobExternalIds, downloadTitleAliases } from "./download-identity";
 import { downloadJobShellMode } from "./download-job-mode";
+
+export { downloadJobExternalIds, downloadTitleAliases } from "./download-identity";
 import { persistLanguageHintsFromEnqueueInput } from "./download-language-hints";
 import { resolveDownloadOutputPath } from "./download-path-naming";
 import {
@@ -2842,48 +2842,6 @@ export class DownloadService {
  */
 function resolveEnqueueMediaKind(input: EnqueueDownloadInput): MediaKind {
   return resolveContentKind(input.title, input.mode ?? "series", { providerId: input.providerId });
-}
-
-/**
- * The external ids for a job: the persisted bag, else only what a prefixed
- * legacy title id genuinely encodes.
- *
- * The predecessor guessed. Any bare numeric id on an anime job became an
- * AniList id, so a MAL-only title was re-resolved against the wrong catalog
- * entirely. Rows written before `external_ids_json` existed still deserve the
- * ids their prefix really carries — but nothing beyond that is knowable there,
- * and inventing one is worse than answering undefined.
- */
-/**
- * The alias rows a download registers so its title stays findable under every
- * id it arrived with.
- *
- * History has indexed its own titles this way since the catalog-identity-parity
- * work. Downloads never participated, so a title that was only ever downloaded
- * — never watched online — had no alias row at all, and its assets could be
- * found only under the exact id they happened to be filed under.
- */
-export function downloadTitleAliases(
-  title: Pick<TitleInfo, "id" | "externalIds">,
-  providerId: string,
-): readonly HistoryTitleAliasInput[] {
-  const aliases = [...externalIdsToAliases(title.externalIds)];
-  if (looksLikeOpaqueProviderNativeId(title.id, title.externalIds)) {
-    const nativeId = title.id.replace(/^allanime:/, "").trim();
-    if (nativeId) aliases.push({ ns: `provider:${providerId}`, id: nativeId });
-  }
-  return aliases;
-}
-
-export function downloadJobExternalIds(
-  job: Pick<DownloadJobRecord, "titleId" | "externalIds">,
-): ProviderExternalIds | undefined {
-  if (job.externalIds) return job.externalIds;
-  const titleId = job.titleId.trim();
-  if (titleId.startsWith("tmdb:")) return { tmdbId: titleId.slice("tmdb:".length) };
-  if (titleId.startsWith("anilist:")) return { anilistId: titleId.slice("anilist:".length) };
-  if (titleId.startsWith("youtube:")) return { youtubeId: titleId.slice("youtube:".length) };
-  return undefined;
 }
 
 function normalizeYear(value: string | undefined): string | null {

@@ -131,9 +131,14 @@ export async function buildBrowseIdleContext(
     // download attached to recent history; otherwise fall back to the newest
     // ready asset so a library with no history is still visible.
     if (!offlineReadyNext) {
-      const wholeLibraryAssets = container.offlineAssetService
-        .listAllAssets()
-        .filter((asset) => asset.state === "ready");
+      let wholeLibraryAssets: ReturnType<Container["offlineAssetService"]["listAllAssets"]> = [];
+      try {
+        wholeLibraryAssets = container.offlineAssetService
+          .listAllAssets()
+          .filter((asset) => asset.state === "ready");
+      } catch {
+        // The whole-library row is additive; calendar/watchlist reads below still matter.
+      }
       const byTitle = new Map(wholeLibraryAssets.map((asset) => [asset.titleId, asset]));
       let selected: (typeof wholeLibraryAssets)[number] | undefined;
       let selectedTitle: string | undefined;

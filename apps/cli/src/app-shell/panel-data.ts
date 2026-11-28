@@ -46,7 +46,7 @@ import type { CapabilitySnapshot } from "@/ui";
 import type { ProviderHealth, ProviderId } from "@kunai/types";
 
 import packageJson from "../../package.json" with { type: "json" };
-import { buildHelpPanelCommandLines } from "../domain/session/command-registry";
+import { buildHelpPanelCommandLines } from "../domain/session/command-help-panel";
 import { buildDiagnosticsPanelLinesFromInsight } from "./diagnostics-panel-lines";
 import { helpSections } from "./keybindings";
 import { providerPickerStatusFor, type ProviderPickerSources } from "./provider-picker-status";

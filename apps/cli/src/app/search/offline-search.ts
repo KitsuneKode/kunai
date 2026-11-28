@@ -1,4 +1,11 @@
+import type { BrowseShellSearchResponse } from "@/app-shell/types";
+import {
+  loadBrowseDisplayContext,
+  mapBrowseResultOption,
+} from "@/app/search/search-phase-browse-context";
 import type { PhaseContext } from "@/app/session/Phase";
+import type { SessionStateManager } from "@/domain/session/SessionStateManager";
+import { countLabel } from "@/domain/text-display";
 import type { SearchResult } from "@/domain/types";
 import type { OfflineAssetRecord } from "@kunai/storage";
 
@@ -69,4 +76,39 @@ export function searchOfflineLibrary(
   return [...byTitle.values()]
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .map(({ updatedAt: _updatedAt, ...result }) => result);
+}
+
+/** Complete interactive offline search response: records the query, commits the
+ * local result set, and marks playable downloads explicitly. Kept out of
+ * SearchPhase so the phase remains an orchestrator rather than another view-model. */
+export async function resolveOfflineSearchResponse({
+  container,
+  query,
+  stateManager,
+}: {
+  readonly container: PhaseContext["container"];
+  readonly query: string;
+  readonly stateManager: SessionStateManager;
+}): Promise<BrowseShellSearchResponse<SearchResult>> {
+  const results = [...searchOfflineLibrary(container, query)];
+  stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results });
+  stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "ready" });
+  const display = await loadBrowseDisplayContext(container, results);
+  const offlineReadyIds = new Set(
+    container.offlineAssetService
+      .listAllAssets()
+      .filter((asset) => asset.state === "ready")
+      .map((asset) => asset.titleId),
+  );
+  return {
+    options: results.map((result) => {
+      const option = mapBrowseResultOption(container, display, result);
+      return offlineReadyIds.has(result.id)
+        ? { ...option, detail: `⬇ offline · ${option.detail}` }
+        : option;
+    }),
+    subtitle: `${countLabel(results.length, "local result")} · catalog search needs a connection`,
+    emptyMessage:
+      "No local matches. Catalog search needs a connection; downloaded titles and history are searchable offline.",
+  };
 }

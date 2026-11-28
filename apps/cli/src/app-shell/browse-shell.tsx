@@ -19,8 +19,8 @@ import {
   type ScoredSuggestion,
   type SearchSuggestion,
 } from "@/domain/search/suggestion-engine";
-import { applyOfflineCommandAvailability } from "@/domain/session/command-registry";
-import type { SearchResult, ShellMode } from "@/domain/types";
+import { applyOfflineCommandAvailability } from "@/domain/session/offline-command-availability";
+import type { SearchResult } from "@/domain/types";
 import { fetchTitleDetail, peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import {
   addSearchQuery,
@@ -71,6 +71,7 @@ import {
 import { buildBrowseFooterModel } from "./browse-footer-actions";
 import { buildBrowseIdleReturnLoopModel, resolveIdleRowAction } from "./browse-idle-actions";
 import { setBrowseIdleRefreshListener } from "./browse-idle-context";
+import { browseFilterPlaceholder, browseIdleHint } from "./browse-placeholder-copy";
 import {
   browseResultStatusLine,
   buildPreviewRailModelFromBrowseOption,
@@ -82,6 +83,7 @@ import {
   normalizeBrowseCommandInput,
   resolveDetailsOverlaySubmitValue,
 } from "./browse-search-state";
+import type { BrowseShellProps, DetailsSheetLocalContext } from "./browse-shell-props";
 import {
   buildBrowseDetailsSheetSeed,
   formatBrowseShellError,
@@ -182,20 +184,6 @@ import {
 } from "./types";
 import { usePosterPreview } from "./use-poster-preview";
 import { useDebouncedViewportPolicy } from "./use-viewport-policy";
-
-function browseIdleHint(mode: ShellMode): string {
-  if (mode === "youtube") return "Search for a channel or video — or try /trending";
-  if (mode === "anime") return "Search for an anime — or try /trending";
-  return "Search for a title — or try /trending to see what's popular";
-}
-
-function browseFilterPlaceholder(mode: ShellMode): string {
-  if (mode === "youtube") return "type channel, playlist, video, downloaded…";
-  if (mode === "anime") return "type title, year, anime, downloaded…";
-  return "type title, year, movie, series, downloaded…";
-}
-
-import type { BrowseShellProps, DetailsSheetLocalContext } from "./browse-shell-props";
 
 export type { BrowseQueryDraft, DetailsSheetLocalContext } from "./browse-shell-props";
 

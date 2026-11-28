@@ -1,5 +1,6 @@
 import { isLocalPlaybackStream } from "@/domain/playback/local-playback-stream";
 import { getModeSwitchTarget } from "@/domain/session/mode-target";
+import { applyOfflineCommandAvailability } from "@/domain/session/offline-command-availability";
 
 import { rankFuzzyMatches } from "./fuzzy-match";
 import { isPlaybackSessionActive, type SessionState } from "./SessionState";
@@ -102,35 +103,6 @@ export type ResolvedAppCommand = AppCommand & {
   readonly enabled: boolean;
   readonly reason?: string;
 };
-
-export const OFFLINE_CONNECTION_REASON = "needs a connection";
-
-const ONLINE_ONLY_COMMANDS: ReadonlySet<AppCommandId> = new Set([
-  "trending",
-  "recommendation",
-  "random",
-  "surprise",
-  "update",
-  "sync",
-  "sync-connect-anilist",
-  "sync-connect-tmdb",
-  "sync-disconnect",
-  "watch-online",
-]);
-
-/** Offline policy is presentation-independent: disable, never hide, so the
- * palette teaches why an online command is unavailable. */
-export function applyOfflineCommandAvailability<T extends ResolvedAppCommand>(
-  command: T,
-  offline: boolean,
-): T {
-  if (!offline || !ONLINE_ONLY_COMMANDS.has(command.id)) return command;
-  return {
-    ...command,
-    enabled: false,
-    reason: command.enabled ? OFFLINE_CONNECTION_REASON : command.reason,
-  };
-}
 
 export const COMMAND_CONTEXTS = {
   rootOverlay: [
@@ -861,43 +833,6 @@ export const COMMANDS: readonly AppCommand[] = [
     description: "Remove linked sync accounts",
   },
 ] as const;
-
-/** Slash commands surfaced in the `?` help overlay (panels & commands section). */
-export const HELP_PANEL_COMMAND_IDS = [
-  "history",
-  "watchlist",
-  "playlists",
-  "up-next",
-  "stats",
-  "notifications",
-  "diagnostics",
-  "downloads",
-  "library",
-  "settings",
-  "setup",
-  "theme",
-  "presence",
-  "analytics",
-  "follow",
-  "unfollow",
-  "mute",
-  "export-diagnostics",
-  "report-issue",
-] as const satisfies readonly AppCommandId[];
-
-export type HelpPanelCommandLine = {
-  readonly label: string;
-  readonly detail: string;
-};
-
-export function buildHelpPanelCommandLines(): readonly HelpPanelCommandLine[] {
-  return HELP_PANEL_COMMAND_IDS.flatMap((id) => {
-    const command = COMMANDS.find((candidate) => candidate.id === id);
-    if (!command) return [];
-    const slashAlias = command.aliases[0] ?? command.id;
-    return [{ label: `/${slashAlias}`, detail: command.description }];
-  });
-}
 
 export function commandGroupFor(id: AppCommandId): AppCommandGroup {
   switch (id) {

@@ -80,15 +80,16 @@ function isMediaPickerOverlay(type: string): boolean {
 export function resolveCommandContext(
   state: SessionState,
   context: CommandContextId,
+  options?: { readonly offline?: boolean },
 ): readonly ResolvedAppCommand[] {
   if (context === "postPlayback") {
-    return resolveCommands(state, POST_PLAYBACK_SURFACE_COMMANDS);
+    return resolveCommands(state, POST_PLAYBACK_SURFACE_COMMANDS, options);
   }
 
   const topOverlay = state.activeModals.at(-1);
   if (context === "rootOverlay" && topOverlay && isMediaPickerOverlay(topOverlay.type)) {
-    return resolveCommands(state, MEDIA_PICKER_SURFACE_COMMANDS);
+    return resolveCommands(state, MEDIA_PICKER_SURFACE_COMMANDS, options);
   }
 
-  return resolveRegisteredCommandContext(state, context);
+  return resolveRegisteredCommandContext(state, context, options);
 }

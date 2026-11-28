@@ -43,7 +43,7 @@ import { isCalendarSearchResult, loadCalendarResults } from "@/app/search/calend
 import { detailsSheetContextFor } from "@/app/search/details-sheet-context";
 import { playTrailer } from "@/app/search/details-trailer";
 import { enrichSelectedTitleIdentity } from "@/app/search/enrich-selected-title";
-import { searchOfflineLibrary } from "@/app/search/offline-search";
+import { resolveOfflineSearchResponse } from "@/app/search/offline-search";
 import { prefetchBrowseEntrySelection } from "@/app/search/prefetch-browse-entry";
 import { buildSearchEmptyMessage } from "@/app/search/search-empty-message";
 import {
@@ -67,6 +67,7 @@ import {
   type SearchStartupRoute,
 } from "@/app/search/search-startup-policy";
 import { loadLocalSuggestionCorpus, toCatalogSuggestions } from "@/app/search/search-suggestions";
+import { spawnTrailerMpv } from "@/app/search/trailer-mpv";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/session/Phase";
 import { kitsuneErrorFromUnknown } from "@/domain/kitsune-error-mapping";
 import {
@@ -80,7 +81,6 @@ import { countLabel } from "@/domain/text-display";
 import type { SearchResult, ShellMode, TitleInfo } from "@/domain/types";
 import { discoverMpvInvocation } from "@/infra/player/mpv-discovery";
 import { isAllowedMpvUrl } from "@/infra/player/mpv-playback-url";
-import { registerMpvProcess, type MpvChildProcess } from "@/infra/player/mpv-process-registry";
 import { openExternalUrl } from "@/infra/shell/open-external-url";
 import { type ResultEnrichment } from "@/services/catalog/ResultEnrichmentService";
 import { readLatestHistoryByTitle } from "@/services/continuation/history-progress";
@@ -114,33 +114,6 @@ const SEEDED_CALENDAR_TYPE_TABS: Partial<Record<ShellAction, CalendarTypeTab>> =
   "series-calendar": "TV",
   "tracked-calendar": "Tracked",
 };
-
-/**
- * The trailer window is detached mpv — no IPC socket, no session — so it lives
- * in the process registry instead: quit-time teardown kills it like the main
- * player, and a re-press replaces the running one rather than stacking
- * windows on a key mash.
- */
-let liveTrailerProcess: MpvChildProcess | null = null;
-
-function spawnTrailerMpv(argv: readonly string[], target: string): boolean {
-  if (liveTrailerProcess && liveTrailerProcess.exitCode === null) {
-    try {
-      liveTrailerProcess.kill("SIGTERM");
-    } catch {
-      // Already gone between the liveness check and the kill.
-    }
-  }
-  const proc = Bun.spawn([...argv, "--", target], {
-    stdout: "ignore",
-    stderr: "ignore",
-    stdin: "ignore",
-  });
-  liveTrailerProcess = proc;
-  const unregister = registerMpvProcess(proc);
-  void proc.exited.then(unregister, unregister);
-  return true;
-}
 
 export type SearchPhaseInput = {
   initialQuery?: string;
@@ -911,28 +884,8 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
 
             const searchMode = stateManager.getState().mode;
             if (!container.connectivity.isOnline()) {
-              const results = [...searchOfflineLibrary(container, query)];
               addSearchQuery(query, searchMode);
-              stateManager.dispatch({ type: "SET_SEARCH_RESULTS", results });
-              stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "ready" });
-              const freshBrowseContext = await loadBrowseDisplayContext(container, results);
-              const offlineReadyIds = new Set(
-                container.offlineAssetService
-                  .listAllAssets()
-                  .filter((asset) => asset.state === "ready")
-                  .map((asset) => asset.titleId),
-              );
-              return {
-                options: results.map((result) => {
-                  const option = mapBrowseResultOption(container, freshBrowseContext, result);
-                  return offlineReadyIds.has(result.id)
-                    ? { ...option, detail: `⬇ offline · ${option.detail}` }
-                    : option;
-                }),
-                subtitle: `${countLabel(results.length, "local result")} · catalog search needs a connection`,
-                emptyMessage:
-                  "No local matches. Catalog search needs a connection; downloaded titles and history are searchable offline.",
-              };
+              return resolveOfflineSearchResponse({ container, query, stateManager });
             }
             let search: Awaited<ReturnType<typeof searchTitles>>;
             const searchAbort = createBrowseSearchAbort(context.signal);

@@ -12,7 +12,7 @@ import {
 import {
   buildHelpPanelCommandLines,
   HELP_PANEL_COMMAND_IDS,
-} from "@/domain/session/command-registry";
+} from "@/domain/session/command-help-panel";
 import { createInitialState } from "@/domain/session/SessionState";
 import { DEFAULT_CONFIG } from "@/services/persistence/ConfigStore";
 import type { HistoryProgress } from "@kunai/storage";

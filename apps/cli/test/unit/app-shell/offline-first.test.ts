@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { applyOfflineCommandAvailability } from "@/domain/session/command-registry";
+import { applyOfflineCommandAvailability } from "@/domain/session/offline-command-availability";
 import { deriveOfflineMode } from "@/domain/session/offline-mode";
 
 describe("offline-first shell policy", () => {
