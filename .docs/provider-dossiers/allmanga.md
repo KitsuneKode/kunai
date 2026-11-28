@@ -1,11 +1,31 @@
 ---
 status: current
-lastReviewed: "2026-11-27"
+lastReviewed: "2026-11-28"
 ---
 
 # Provider: AllManga / AllAnime
 
 > Agent-facing (L3). Never linked from published docs. Users: see `docs/users/`.
+
+## Live check (2026-11-28)
+
+**Status: crypto current; catalog loads; stream playback still CAPTCHA-blocked.**
+No constant changed. AllManga stays registered and moves to the end of the
+default anime order (provider-defaults revision 12).
+
+- Crypto: `bun run test:live:allmanga-crypto` returned `diagnosis: "current"`,
+  HTTP 200, `pinnedBuildId: "193"`, `pinnedEpoch: 5`, `liveEpoch: 5`,
+  `epochsBehind: 0`. The site answered, so this is not a DNS or transport
+  outage.
+- Catalog: production `listEpisodes` for show `B6AMhLy6EQHDgYgBF` (the May
+  2026 Solo Leveling S1 id, AniList `151807`) returned 13 sub rows and 12 dub
+  rows. The first sub label was `Episode 1 · Episode 25 - On to the Next
+  Target`. That is a catalog response, not a decoded frame.
+- Stream: one sub resolve of episode 1 returned `blocked` /
+  `AllMangaCaptchaError` in about 3 seconds. No stream URL, probe, or PNG.
+  Dub rows existed; the dub stream resolve was not sent after the captcha.
+- Disposition: demote AllManga to the end of `animeProviderPriority`. Do not
+  claim playback until a probed stream decodes a title frame.
 
 ## Live capability audit (2026-11-27)
 
@@ -26,23 +46,24 @@ the crypto rotation but did not restore stream resolution from this network.
 - Stream result: all four sub/dub cases stopped at `AllMangaCaptchaError`:
   `AllAnime requires a captcha for stream sources from this network`. No
   stream URL, probe, or decode success is claimed.
-- Disposition: keep AllManga registered and last in the anime fallback order.
-  The repair proves the authorization profile is current; CAPTCHA egress is
-  now the blocker, not stale crypto.
+- Disposition: keep AllManga registered. The repair proved the authorization
+  profile was current; CAPTCHA egress was the blocker, not stale crypto.
+  The 2026-11-28 check is the one that moves it last in the default order.
 
 ## Summary
 
 - **Runtime class:** Direct HTTP GraphQL + decoded source APIs. No browser should be needed on the hot path.
 - **Reference implementation:** Local ani-cli checkout at `~/Projects/osc/ani-cli` — historical only: ani-cli v5 (2026-08-01) moved to anidb.app and deleted its AllAnime code, so the live mkissa JS chunk is the sole source of truth now.
 - **Production module:** `packages/providers/src/allmanga/*`.
-- **Current status (2026-11-27):** The build-189 rotation behind
-  [canary issue #724](https://github.com/KitsuneKode/kunai/issues/724) is
-  repaired: build 193 is pinned as a complete profile and the live freshness
-  canary returns HTTP 200, `diagnosis: "current"`, epoch 5, and zero epochs
-  behind. Search and episode catalogs still load. Stream source resolution is
-  nevertheless CAPTCHA-blocked from the audited network, so Kunai keeps
-  AllManga registered at the end of the anime fallback order and must not
-  claim playback until a probed stream exists.
+- **Current status (2026-11-28):** Build 193 is still the live profile. The
+  freshness check returns HTTP 200, `diagnosis: "current"`, epoch 5, and zero
+  epochs behind, so
+  [canary issue #724](https://github.com/KitsuneKode/kunai/issues/724) is no
+  longer a stale-constant failure. The Solo Leveling catalog still loads in
+  sub and dub. Stream source resolution is CAPTCHA-blocked from this network,
+  so AllManga stays registered and last in the default anime order
+  (provider-defaults revision 12) and must not claim playback until a probed
+  stream exists.
 
 ## Current Evidence
 

@@ -95,12 +95,12 @@ persistence, downloads and native installation.
   replies become no-source results rather than internal errors.
 - New profiles use VidLink for movies/series and HiAnime for anime. The remaining
   movie/series order is Movy, Rivestream, VidRock, Videasy, VidBolt, FileSuN;
-  the anime order is KickAssAnime, AnimeGG, Miruro, AllManga, AniLight, Anidap,
-  AnimeParadise. Profiles that kept the previous defaults move to this order; a
+  the anime order is KickAssAnime, AnimeGG, Miruro, AniLight, Anidap,
+  AnimeParadise, AllManga. Profiles that kept the previous defaults move to this order; a
   reordered list is left alone. On the 2026-11-26 live runs Rivestream timed
   out, VidRock's streams answered 502, Videasy and Miruro resolved nothing and
-  AllManga's stream authorization is out of date, so they sit behind the
-  providers that played; see Known issues. Availability remains dependent on
+  AllManga stopped at a CAPTCHA, so they sit behind the providers that played;
+  see Known issues. Availability remains dependent on
   each upstream service and the user's network.
 - The five new providers each played a checked video frame on 2026-11-27 and
   start at the end of their order. VidBolt (movies/series) offers several
@@ -140,6 +140,12 @@ persistence, downloads and native installation.
 - The provider order and platform support tables in the docs are generated
   from the shipped code, so they no longer list a provider that is not
   registered.
+- AllManga stays registered and moves to the end of the default anime order.
+  On 2026-11-28 its pinned build-193 crypto still bootstrapped, and a Solo
+  Leveling catalog still loaded in sub and dub, but the one stream resolve
+  stopped at a CAPTCHA before any URL or decoded frame. Profiles that still
+  have the previous default anime order pick up the new one; a custom order
+  is left alone.
 - Retire AniDB from the production roster. Migrate retired selections and remove
   its priority/pin entries without deleting history, offline files or unrelated
   provider preferences. Keep Videasy and AllAnime registered.
@@ -308,11 +314,11 @@ persistence, downloads and native installation.
 
 ### Known issues
 
-- AllManga may not resolve streams. The site changed the values its stream
-  authorization depends on, and the scheduled check has failed since
-  2026-11-23 ([#724](https://github.com/KitsuneKode/kunai/issues/724)). It
-  stays registered, and Kunai moves on to the next anime provider when it
-  fails.
+- AllManga stops at a CAPTCHA before returning a stream on the networks
+  tested, as of 2026-11-28 ([#724](https://github.com/KitsuneKode/kunai/issues/724)).
+  Its catalog still loads and its stream authorization is current, so it stays
+  registered at the end of the anime order, and Kunai moves on to the next
+  provider when it fails.
 - VidRock's streams answer HTTP 502 and Videasy's resolves time out on the
   networks tested, as of 2026-11-27. Both stay in the movie/series order
   behind the providers that played, and the provider picker marks each

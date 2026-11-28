@@ -642,6 +642,47 @@ describe("ConfigServiceImpl", () => {
       );
     });
 
+    test("revision 12 moves an untouched revision-11 anime order and leaves a custom one", async () => {
+      const untouched = new MemoryConfigStore({
+        provider: "vidlink",
+        providerPriority: ["movy", "rivestream", "vidrock", "videasy", "vidbolt", "filesun"],
+        animeProvider: "hianime",
+        animeProviderPriority: [
+          "kickassanime",
+          "animegg",
+          "miruro",
+          "allanime",
+          "anilight",
+          "anidap",
+          "animeparadise",
+        ],
+        providerDefaultsRevision: 11,
+      });
+      const migrated = await ConfigServiceImpl.load(untouched);
+      expect(migrated.providerPriority).toEqual([...DEFAULT_CONFIG.providerPriority]);
+      expect(migrated.animeProviderPriority).toEqual([...DEFAULT_CONFIG.animeProviderPriority]);
+      expect(migrated.animeProviderPriority.at(-1)).toBe("allanime");
+      expect((await untouched.load()).providerDefaultsRevision).toBe(
+        DEFAULT_CONFIG.providerDefaultsRevision,
+      );
+
+      const customOrder = [
+        "allanime",
+        "kickassanime",
+        "animegg",
+        "miruro",
+        "anilight",
+        "anidap",
+        "animeparadise",
+      ];
+      const custom = new MemoryConfigStore({
+        animeProvider: "hianime",
+        animeProviderPriority: customOrder,
+        providerDefaultsRevision: 11,
+      });
+      expect((await ConfigServiceImpl.load(custom)).animeProviderPriority).toEqual(customOrder);
+    });
+
     test("revision 9 moves an untouched revision-7 order in both lanes, and only that", async () => {
       const untouched = new MemoryConfigStore({
         provider: "vidlink",

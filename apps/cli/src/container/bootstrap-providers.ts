@@ -109,7 +109,6 @@ export async function loadProductionProviderModules(
       movyProviderModule,
       vidboltProviderModule,
       filesunProviderModule,
-      allmangaProviderModule,
       hianimeProviderModule,
       miruroProviderModule,
       animeggProviderModule,
@@ -117,6 +116,9 @@ export async function loadProductionProviderModules(
       anilightProviderModule,
       anidapProviderModule,
       animeparadiseProviderModule,
+      // Registered, and last in the default anime order (revision 12). Stream
+      // resolution is CAPTCHA-blocked; the priority list is what places it.
+      allmangaProviderModule,
       youtubeProviderModule,
       // After the bundled providers: an addon the user has not placed in their
       // provider order is a fallback, never the default.
