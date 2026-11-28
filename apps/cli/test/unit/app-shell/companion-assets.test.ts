@@ -64,6 +64,7 @@ describe("companion assets", () => {
       expect(motion.loop[0]?.[0], pose).toBe(0);
       const used = new Set<number>();
       for (const [frame, gapMs] of motion.loop) {
+        expect(frame, pose).toBeGreaterThanOrEqual(0);
         expect(frame, pose).toBeLessThan(motion.frames);
         expect(gapMs, pose).toBeGreaterThan(0);
         used.add(frame);

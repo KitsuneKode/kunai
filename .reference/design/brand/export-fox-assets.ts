@@ -56,6 +56,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { publishStagedCliAssets } from "./cli-pet-publish.mjs";
 import { MOTION, frameOptions, poseSvg, restingExpression } from "./kanna-rig.mjs";
 
 /**
@@ -207,7 +208,8 @@ async function exportStill(pose: string, dest: string, fit: Fit): Promise<number
 }
 
 mkdirSync(DOCS_STILLS, { recursive: true });
-mkdirSync(CLI_PETS, { recursive: true });
+const CLI_STAGE = path.join(SCRATCH, "pets");
+mkdirSync(CLI_STAGE, { recursive: true });
 
 for (const pose of DOCS_POSES) {
   const dest = path.join(DOCS_STILLS, `${pose}.webp`);
@@ -241,8 +243,8 @@ for (const [pose, motion] of Object.entries(MOTION)) {
 
   const [rest] = frames;
   if (!rest) throw new Error(`pose "${pose}" has no frames`);
-  const still = path.join(CLI_PETS, `${pose}.png`);
-  const strip = path.join(CLI_PETS, `${pose}.strip.png`);
+  const still = path.join(CLI_STAGE, `${pose}.png`);
+  const strip = path.join(CLI_STAGE, `${pose}.strip.png`);
   await Bun.write(still, Bun.file(rest));
   await run("magick", [
     ...frames,
@@ -253,18 +255,23 @@ for (const [pose, motion] of Object.entries(MOTION)) {
   ]);
   manifest[pose] = {
     frames: names.length,
-    loop: motion.loop.map(({ frame, ms }) => [names.indexOf(frame), ms]),
+    loop: motion.loop.map(({ frame, ms }) => {
+      const index = names.indexOf(frame);
+      if (index < 0) throw new Error(`pose "${pose}" names unknown drawing "${frame}"`);
+      return [index, ms];
+    }),
   };
   console.log(
     `cli  ${pose}.png ${Bun.file(still).size} bytes · ${pose}.strip.png ${Bun.file(strip).size} bytes (${names.join(", ")})`,
   );
 }
-const manifestPath = path.join(CLI_PETS, "motion.json");
+const manifestPath = path.join(CLI_STAGE, "motion.json");
 await Bun.write(manifestPath, `${JSON.stringify({ size: CLI_SIZE, poses: manifest }, null, 2)}\n`);
 // Committed, so it has to satisfy `fmt:check` like a hand-written file — and a
 // re-run that changes no art should leave the tree clean.
 const oxfmt = path.join(ROOT, "node_modules/.bin/oxfmt");
 if (await Bun.file(oxfmt).exists()) await run(oxfmt, ["--write", manifestPath]);
+publishStagedCliAssets(CLI_STAGE, CLI_PETS, manifest, CLI_SIZE);
 
 // Inlined as base64 into two OG route bundles, so this one is sized to its
 // ~40 KB budget rather than to the 360px the card draws it at. A social card is
