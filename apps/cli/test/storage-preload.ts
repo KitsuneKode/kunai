@@ -1,8 +1,20 @@
-import { installTestStorageIsolation } from "../../../test/helpers/install-test-storage";
+import {
+  installTestStorageIsolation,
+  mountTestStorageIsolation,
+} from "../../../test/helpers/install-test-storage";
+import { beginTestScratch, finishTestScratch } from "../../../test/helpers/test-scratch";
 import { installProfileGuard } from "./helpers/profile-guard";
 
-// Order matters: the guard snapshots the developer's real profile (and any
-// valid inherited KUNAI_CONFIG_DIR profile) *before* storage isolation moves
-// HOME/XDG/APPDATA/KUNAI_CONFIG_DIR to the throwaway root.
+// Scratch removal is registered first. Bun runs preload afterAll hooks in
+// registration order and skips the rest when one throws, so a profile-guard
+// failure must not skip temp cleanup. The guard still snapshots the real
+// profile before storage isolation rewrites HOME: beginTestScratch only
+// redirects TMPDIR/TMP/TEMP.
+const scratch = beginTestScratch();
 installProfileGuard();
-installTestStorageIsolation();
+if (scratch) {
+  scratch.profileCleanup = mountTestStorageIsolation();
+  finishTestScratch(scratch);
+} else {
+  installTestStorageIsolation();
+}
