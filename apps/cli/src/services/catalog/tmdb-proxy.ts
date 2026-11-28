@@ -1,4 +1,8 @@
-import { withTimeoutSignal } from "@/infra/abort/timeout-signal";
+import { createDeadlineSignal, type TimeoutTimers } from "@/infra/abort/timeout-signal";
+import {
+  createCacheGenerationGate,
+  type CacheGenerationToken,
+} from "@/infra/concurrency/cache-generation";
 import { createKeyedJoiner } from "@/infra/concurrency/keyed-joiner";
 import {
   recordFallbackCatalogAnswer,
@@ -8,6 +12,13 @@ import { observeOnlineIfBound } from "@/services/network/network-observation";
 import { classifyNetworkFailure } from "@/services/network/NetworkStatus";
 import { VIDEASY_DB_BASE, VIDEASY_DB_BASES } from "@kunai/providers";
 import { isJsonObject, type JsonValue } from "@kunai/types";
+
+import {
+  classifyTmdbHostError,
+  DEFAULT_TMDB_MIRROR_BUDGET,
+  type TmdbHost,
+  type TmdbMirrorBudgetPolicy,
+} from "./tmdb-host-failure";
 
 export { VIDEASY_DB_BASE as TMDB_PROXY_BASE };
 
@@ -142,12 +153,6 @@ type SessionCacheEntry = {
 
 const SESSION_CACHE_MAX = 500;
 
-type TmdbHost = {
-  readonly base: string;
-  /** Direct TMDB hosts need the api_key query param; the videasy proxy does not. */
-  readonly needsApiKey: boolean;
-};
-
 /**
  * Walk order matters: the proxy mirrors are free of the API key and
  * historically primary; the two direct hosts are the same upstream on
@@ -191,6 +196,7 @@ export class TmdbHttpError extends Error {
   constructor(
     readonly status: number,
     url: string,
+    readonly contentType?: string,
   ) {
     // Never the raw URL: direct hosts carry `api_key` in the query, and this
     // message reaches the browse error panel and diagnostics.
@@ -219,9 +225,26 @@ const inflightRequests = createKeyedJoiner<JsonValue>({ whenAbandoned: "finish" 
 /**
  * Bumped by {@link clearTmdbSessionCache}. A request started under an older
  * generation still answers the callers already waiting on it, but is never
- * joined by a later caller and never writes either cache.
+ * joined by a later caller and never writes either cache. Episode and season
+ * memory caches in `tmdb.ts` commit through the same gate.
  */
-let sessionGeneration = 0;
+const sessionGate = createCacheGenerationGate();
+
+export function captureTmdbSessionGeneration(): CacheGenerationToken {
+  return sessionGate.capture();
+}
+
+export function isTmdbSessionCurrent(token: CacheGenerationToken): boolean {
+  return sessionGate.isCurrent(token);
+}
+
+export function commitTmdbSessionIfFresh(
+  token: CacheGenerationToken,
+  options: { readonly signal?: AbortSignal; readonly complete?: boolean },
+  commit: () => void,
+): boolean {
+  return sessionGate.commitIfFresh(token, options, commit);
+}
 /** Epoch ms until which each host is skipped; absent/0 means eligible. */
 const hostRetryAfter = new Map<string, number>();
 /**
@@ -239,6 +262,12 @@ let halfOpenProbeInFlight = false;
  */
 const HALF_OPEN_PROBE_INTERVAL_MS = 30 * 1000;
 let nextHalfOpenProbeAt = 0;
+/**
+ * The previous half-open probe chose a direct host and that host failed.
+ * The next probe then uses earliest-window order so a recovered mirror can
+ * be tried while direct is still down. A successful probe clears it.
+ */
+let lastHalfOpenDirectProbeFailed = false;
 
 function sessionCacheWrite(key: string, entry: SessionCacheEntry): void {
   // Writes land after async fetches, so insertion order is not age order —
@@ -297,20 +326,23 @@ export function isDurableTmdbPath(path: string): boolean {
  */
 export function clearTmdbSessionCache(): void {
   sessionCache.clear();
-  sessionGeneration += 1;
+  sessionGate.invalidate();
   hostRetryAfter.clear();
   rateLimitedUntil.clear();
   halfOpenProbeInFlight = false;
   nextHalfOpenProbeAt = 0;
+  lastHalfOpenDirectProbeFailed = false;
 }
 
 /** How long a host that answered 429 is rested (shorter than an outage breaker). */
 const RATE_LIMITED_RETRY_AFTER_MS = 30 * 1000;
 
-/** A 4xx other than 429: TMDB's real answer, identical on every host. */
-/** A 4xx is TMDB's answer to the request. A 3xx (a keyed request never follows one) is not. */
-function isDefinitiveTmdbStatus(status: number): boolean {
-  return status >= 400 && status < 500 && status !== 429;
+/** Errors the walk rethrew as TMDB's own answer. A mirror 403 is not in here. */
+const definitiveUpstreamErrors = new WeakSet<Error>();
+
+/** True when the walk rethrew this error as TMDB's own answer, not a dead mirror. */
+export function isDefinitiveTmdbAnswer(error: Error): error is TmdbHttpError {
+  return error instanceof TmdbHttpError && definitiveUpstreamErrors.has(error);
 }
 
 /** The shape a show or season answer must have before it may be kept as last-known-good. */
@@ -341,9 +373,9 @@ export async function fetchTmdbJsonCached(
   // A caller that already left must not start a request nobody will read.
   if (signal?.aborted) throw abortReasonOf(signal);
 
-  const generation = sessionGeneration;
+  const generation = sessionGate.capture();
   return inflightRequests.join(
-    `${generation}:${normalized}`,
+    `${generation.value}:${normalized}`,
     async (upstream) => {
       const durable = isDurableTmdbPath(normalized) ? durableTmdbCache : null;
       let value: JsonValue;
@@ -352,7 +384,7 @@ export async function fetchTmdbJsonCached(
       } catch (error) {
         // Every host is unreachable: serve the last good answer for this exact
         // request. A definitive 4xx is TMDB's real answer and is never masked.
-        const isDefinitive = error instanceof TmdbHttpError && isDefinitiveTmdbStatus(error.status);
+        const isDefinitive = error instanceof Error && isDefinitiveTmdbAnswer(error);
         const saved = !isDefinitive ? durable?.read(normalized) : null;
         if (saved) {
           if (isSeasonPath(normalized)) recordEpisodesAnswer(true);
@@ -362,13 +394,18 @@ export async function fetchTmdbJsonCached(
       }
       // A request cleared mid-flight still answers its waiters, but must not
       // repopulate either cache: the refresh asked for answers fetched after it.
-      if (generation !== sessionGeneration) return value;
-      sessionCacheWrite(normalized, { expiresAt: now + SESSION_CACHE_MS, value });
-      // Only a well-formed answer may replace the last good copy.
-      if (durable && isUsableDurableAnswer(normalized, value)) {
-        durable.write(normalized, Date.now(), value);
-        if (isSeasonPath(normalized)) recordEpisodesAnswer(false);
-      }
+      sessionGate.commitIfFresh(generation, {}, () => {
+        // A season answer without an episodes array is a broken 200, not data:
+        // keeping it would serve it again after TMDB recovers.
+        if (!isSeasonPath(normalized) || isUsableDurableAnswer(normalized, value)) {
+          sessionCacheWrite(normalized, { expiresAt: now + SESSION_CACHE_MS, value });
+        }
+        // Only a well-formed answer may replace the last good copy.
+        if (durable && isUsableDurableAnswer(normalized, value)) {
+          durable.write(normalized, Date.now(), value);
+          if (isSeasonPath(normalized)) recordEpisodesAnswer(false);
+        }
+      });
       return value;
     },
     { signal },
@@ -405,12 +442,20 @@ function recordEpisodesAnswer(fromSaved: boolean): void {
   });
 }
 
+/** Injectable clock and timers so a cold-mirror budget can be tested without sleeping. */
+export interface TmdbFetchDependencies {
+  readonly now?: () => number;
+  readonly timers?: TimeoutTimers<number>;
+  readonly budget?: TmdbMirrorBudgetPolicy;
+}
+
 async function fetchTmdbHostJson(
   host: TmdbHost,
   normalizedPath: string,
   signal: AbortSignal | undefined,
   timeoutMs: number,
   resolveCredential: () => TmdbApiKeyResolution,
+  timers: TimeoutTimers<number> | undefined,
 ): Promise<JsonValue> {
   const credential = host.needsApiKey ? resolveCredential() : null;
   const joiner = normalizedPath.includes("?") ? "&" : "?";
@@ -421,48 +466,78 @@ async function fetchTmdbHostJson(
   const headers: Record<string, string> =
     credential?.kind === "bearer" ? { authorization: `Bearer ${credential.key}` } : {};
   return observeOnlineIfBound("search-error", async () => {
-    // A keyed request never follows a redirect: the v3 key rides in this URL,
-    // and fetch would carry it to whatever origin the redirect names. A 3xx
-    // here fails this host, and the caller's fallback moves on.
-    const res = await fetch(url, {
-      headers,
-      redirect: credential ? "manual" : "follow",
-      signal: withTimeoutSignal(signal, timeoutMs),
-    });
-    if (res.status === 401 && credential) {
-      await res.body?.cancel().catch(() => undefined);
-      throw new TmdbCredentialRejectedError(credential);
+    // Never follow a redirect. A keyed request would carry api_key or
+    // Authorization to the Location origin (#853). A keyless 3xx is this
+    // mirror failing, not a document to chase.
+    const deadline = createDeadlineSignal(signal, timeoutMs, { timers });
+    try {
+      const res = await fetch(url, {
+        headers,
+        redirect: "manual",
+        signal: deadline.signal,
+      });
+      if (!res.ok) {
+        const contentType = res.headers.get("content-type") ?? undefined;
+        await res.body?.cancel().catch(() => undefined);
+        if (res.status === 401 && credential) throw new TmdbCredentialRejectedError(credential);
+        throw new TmdbHttpError(res.status, url, contentType);
+      }
+      const value: JsonValue = JSON.parse(await res.text());
+      // Some mirrors answer HTTP 200 with TMDB's error envelope
+      // (`{ success: false, status_code, status_message }`). That is this host
+      // failing, not TMDB's data: treat it like a 5xx and try the next host.
+      if (isJsonObject(value) && value.success === false) {
+        throw new Error(`TMDB host returned an error payload (${credentialFreeUrl(url)})`);
+      }
+      return value;
+    } finally {
+      deadline.release();
     }
-    if (!res.ok) throw new TmdbHttpError(res.status, url);
-    const value: JsonValue = JSON.parse(await res.text());
-    // Some mirrors answer HTTP 200 with TMDB's error envelope
-    // (`{ success: false, status_code, status_message }`). That is this host
-    // failing, not TMDB's data: treat it like a 5xx and try the next host.
-    if (isJsonObject(value) && value.success === false) {
-      throw new Error(`TMDB host returned an error payload (${credentialFreeUrl(url)})`);
-    }
-    return value;
   });
+}
+
+function probeHost(
+  probeable: readonly TmdbHost[],
+  credentialKey: string,
+  preferDirect: boolean,
+): TmdbHost | undefined {
+  const byWindow = [...probeable].sort(
+    (left, right) => (hostRetryAfter.get(left.base) ?? 0) - (hostRetryAfter.get(right.base) ?? 0),
+  );
+  if (preferDirect && credentialKey !== "") {
+    const direct = byWindow.find((host) => host.needsApiKey);
+    if (direct) return direct;
+  }
+  return byWindow[0];
 }
 
 /**
  * Walks the TMDB host chain. Every host serves the same upstream data, so the
  * only answers worth failing over on are availability failures:
  *
- * - transport error or 5xx → the host is unreachable or broken; mark its
- *   breaker and try the next host.
+ * - transport error, 5xx, or a keyless mirror's 401/403/HTML 4xx → that host
+ *   is broken; mark its breaker and try the next host.
  * - caller abort → not a host failure; rethrow without marking anything.
- * - 4xx → a definitive upstream answer identical on every host; rethrow so
- *   callers see the real status instead of paying every host for one 404.
+ * - a keyed 4xx, or a keyless JSON 400/404 → TMDB's own answer; rethrow.
+ *
+ * Keyless mirrors share a cold-start budget counted only while a mirror
+ * attempt is in flight. Direct time does not spend it. Once it is spent the
+ * walk skips the remaining mirrors and uses the caller's remaining deadline.
  */
 export async function fetchTmdbJsonWithFallback(
   path: string,
   signal?: AbortSignal,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   resolveCredential: () => TmdbApiKeyResolution = resolveTmdbApiKey,
+  deps: TmdbFetchDependencies = {},
 ): Promise<JsonValue> {
   const normalized = normalizePath(path);
-  const now = Date.now();
+  const readNow = deps.now ?? Date.now;
+  const budget = deps.budget ?? DEFAULT_TMDB_MIRROR_BUDGET;
+  const startedAt = readNow();
+  const callerDeadline = startedAt + timeoutMs;
+  const now = startedAt;
+  let mirrorWaitMs = 0;
   let lastError: Error | null = null;
 
   const hosts = tmdbHostOrder(resolveCredential).filter(
@@ -476,21 +551,31 @@ export async function fetchTmdbJsonWithFallback(
   let candidates = eligible;
   if (eligible.length === 0) {
     // Half-open: every host is inside its breaker window. One request probes
-    // the host whose window ends first; concurrent requests fail fast instead
-    // of each sending their own probe (20 distinct paths = 20 probes before).
-    // Only an outage is probed early; a rate-limited host keeps its rest.
+    // a host; concurrent requests fail fast instead of each sending their own
+    // probe. A credential prefers the direct host, unless the previous probe
+    // was a direct host that failed; then the earliest window is used so a
+    // recovered mirror can answer. A rate-limited host keeps its rest.
     const probeable = hosts.filter((host) => !resting(host));
     if (probeable.length === 0) throw new Error("TMDB hosts rate limited");
     if (halfOpenProbeInFlight) throw new Error("TMDB hosts unavailable (recovery probe in flight)");
     if (now < nextHalfOpenProbeAt)
       throw new Error("TMDB hosts unavailable (next recovery probe pending)");
+    const chosen = probeHost(probeable, resolveCredential().key, !lastHalfOpenDirectProbeFailed);
+    if (!chosen) throw new Error("no TMDB hosts available");
     probing = true;
-    nextHalfOpenProbeAt = now + HALF_OPEN_PROBE_INTERVAL_MS;
+    nextHalfOpenProbeAt = readNow() + HALF_OPEN_PROBE_INTERVAL_MS;
     halfOpenProbeInFlight = true;
-    candidates = [...probeable]
-      .sort((a, b) => (hostRetryAfter.get(a.base) ?? 0) - (hostRetryAfter.get(b.base) ?? 0))
-      .slice(0, 1);
+    candidates = [chosen];
   }
+
+  /** Milliseconds this attempt may wait, or null when a mirror's budget is spent. */
+  const attemptTimeout = (host: TmdbHost): number | null => {
+    const callerLeft = Math.max(0, callerDeadline - readNow());
+    if (host.needsApiKey) return callerLeft;
+    const mirrorBudgetLeft = budget.maxTotalMirrorWaitMs - mirrorWaitMs;
+    if (mirrorBudgetLeft <= 0) return null;
+    return Math.min(budget.perMirrorTimeoutMs, mirrorBudgetLeft, callerLeft);
+  };
 
   /** A credential TMDB refused in this walk; another keyed host would refuse it too. */
   let refusedKey: string | null = null;
@@ -503,20 +588,36 @@ export async function fetchTmdbJsonWithFallback(
       if (host.needsApiKey && refusedKey !== null && resolveCredential().key === refusedKey) {
         continue;
       }
+      const timeout = attemptTimeout(host);
+      if (timeout === null) continue;
+      const countMirrorWait = !host.needsApiKey;
+      const mirrorStarted = countMirrorWait ? readNow() : 0;
       try {
         const value = await fetchTmdbHostJson(
           host,
           normalized,
           signal,
-          timeoutMs,
+          timeout,
           resolveCredential,
+          deps.timers,
         );
+        if (countMirrorWait) mirrorWaitMs += readNow() - mirrorStarted;
         hostRetryAfter.delete(host.base);
         nextHalfOpenProbeAt = 0;
+        lastHalfOpenDirectProbeFailed = false;
         return value;
       } catch (error) {
-        if (signal?.aborted === true) throw error;
-        if (error instanceof TmdbCredentialRejectedError) {
+        if (countMirrorWait) mirrorWaitMs += readNow() - mirrorStarted;
+        const normalizedError = error instanceof Error ? error : new Error(String(error));
+        const kind = classifyTmdbHostError({
+          host,
+          status: error instanceof TmdbHttpError ? error.status : undefined,
+          error: normalizedError,
+          signalAborted: signal?.aborted === true,
+          contentType: error instanceof TmdbHttpError ? error.contentType : undefined,
+        });
+        if (kind === "caller-abort") throw normalizedError;
+        if (kind === "credential-rejected" && error instanceof TmdbCredentialRejectedError) {
           // The host answered, so its breaker closes. A bad key is not the
           // request's answer: keyless mirrors can still serve it, and a user
           // key is set aside so the shipped key serves until it is fixed.
@@ -525,28 +626,30 @@ export async function fetchTmdbJsonWithFallback(
           refusedKey = error.credential.key;
           if (error.credential.source === "user") {
             userKeyRejectedValue = error.credential.key;
-            userKeyRejectedUntil = Date.now() + USER_KEY_REJECTED_RETRY_MS;
+            userKeyRejectedUntil = readNow() + USER_KEY_REJECTED_RETRY_MS;
           }
           lastError = error;
           continue;
         }
-        if (error instanceof TmdbHttpError && error.status === 429) {
+        if (kind === "rate-limited") {
           // Rate limited: a temporary refusal by this host, not TMDB's answer
           // to the request. Rest it briefly and let the next host (or, once
           // every host is out, the saved copy) answer.
-          rateLimitedUntil.set(host.base, Date.now() + RATE_LIMITED_RETRY_AFTER_MS);
-          lastError = error;
+          rateLimitedUntil.set(host.base, readNow() + RATE_LIMITED_RETRY_AFTER_MS);
+          lastError = normalizedError;
           continue;
         }
-        if (error instanceof TmdbHttpError && isDefinitiveTmdbStatus(error.status)) {
+        if (kind === "definitive-upstream-4xx") {
           // The host answered: it is reachable, so close its breaker even
           // though this path's answer is a 4xx the caller must see.
           hostRetryAfter.delete(host.base);
           nextHalfOpenProbeAt = 0;
-          throw error;
+          definitiveUpstreamErrors.add(normalizedError);
+          throw normalizedError;
         }
-        hostRetryAfter.set(host.base, Date.now() + HOST_RETRY_AFTER_MS);
-        lastError = error instanceof Error ? error : new Error(String(error));
+        hostRetryAfter.set(host.base, readNow() + HOST_RETRY_AFTER_MS);
+        if (probing) lastHalfOpenDirectProbeFailed = host.needsApiKey;
+        lastError = normalizedError;
       }
     }
   } finally {

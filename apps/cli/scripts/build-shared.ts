@@ -600,7 +600,29 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // classifier onto that shell tree measured 3,436,246 bytes with Bun 1.4.5:
 // +7,354, no dependency or asset. 3356 KiB is the smallest whole-KiB budget
 // over the merged measurement and leaves 298 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_356;
+// Catalog mirror fallback and cache generations (#746, #742, #743: host
+// classification, the cold-mirror wait, and generation-gated cache writes)
+// on top measured 3,425,214 bytes: +3,753. No dependency or asset.
+// 3345 KiB leaves 66 bytes.
+// The review fix (a per-process writer id beside the recommendation
+// generation, and isDefinitiveTmdbAnswer for the Stremio IMDb lookup) on
+// top measured 3,425,415 bytes: +201. No dependency or asset.
+// 3346 KiB leaves 889 bytes.
+// This branch merged with #857. Bun 1.4.5 measured dist/kunai.js at
+// 3,432,355 bytes: +3,463 over the #857 merged-tree measurement of
+// 3,428,892. No dependency or asset. 3352 KiB is the smallest whole-KiB
+// budget over that measurement and leaves 93 bytes.
+// Review round 2 (mirror wait counted only inside mirror attempts, a failed
+// direct half-open probe yielding to the earliest window, a season body
+// without an episodes array treated as a failed fetch, and a rejected
+// history genre lookup left uncached) measured 3,432,520 bytes: +165 over
+// 3,432,355. No dependency or asset. 3353 KiB is the smallest whole-KiB
+// budget over that measurement and leaves 952 bytes.
+// The catalog branch merged onto #864 (with its own malformed-season and
+// malformed-discover fixes) measured 3,440,023 bytes with Bun 1.4.5: +3,777
+// over the #864 merged tree. No dependency or asset. 3360 KiB is the smallest
+// whole-KiB budget over that measurement and leaves 617 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_360;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

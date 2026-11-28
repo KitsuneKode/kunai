@@ -28,16 +28,21 @@ export interface RecommendationService {
   /** Clears persisted recommendation cache so the next request fetches fresh catalog data. */
   clearCache(): Promise<void>;
   /** TMDB /recommendations for a specific title. Cached 24 h. */
-  getForTitle(tmdbId: string, type: ContentType): Promise<RecommendationSection>;
+  getForTitle(
+    tmdbId: string,
+    type: ContentType,
+    signal?: AbortSignal,
+  ): Promise<RecommendationSection>;
   /** TMDB /trending/all/week. Cached 6 h. */
-  getTrending(): Promise<RecommendationSection>;
+  getTrending(signal?: AbortSignal): Promise<RecommendationSection>;
   /**
    * History-driven recommendations via TMDB discover + weighted genre profile.
    * Returns an empty section when history is insufficient or upstream calls fail.
    */
   getPersonalizedByHistory(
     historyEntries: readonly RecommendationHistorySeed[],
+    signal?: AbortSignal,
   ): Promise<RecommendationSection>;
   /** Top-rated titles in the user's most-watched genres. Cached 24 h. */
-  getGenreAffinity(topGenreIds: number[]): Promise<RecommendationSection>;
+  getGenreAffinity(topGenreIds: number[], signal?: AbortSignal): Promise<RecommendationSection>;
 }

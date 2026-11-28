@@ -3,6 +3,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   clearTmdbSessionCache,
   fetchTmdbJsonCached,
+  fetchTmdbJsonWithFallback,
+  setTmdbUserKeySource,
   formatTmdbSearchError,
   isTmdbNetworkError,
   LEGACY_PUBLIC_TMDB_API_KEY,
@@ -346,6 +348,302 @@ describe("fetchTmdbJsonCached", () => {
     await expect(suggest).rejects.toThrow();
     await expect(submitted).resolves.toEqual({ ok: true });
     expect(fetchCount).toBe(1);
+  });
+});
+
+describe("mirror host failures fall through to direct TMDB", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    setTmdbUserKeySource(null);
+    clearTmdbSessionCache();
+  });
+
+  function isDirectHost(url: string): boolean {
+    return isTmdbApiUrl(url) || isTmdbAltUrl(url);
+  }
+
+  function install(
+    respond: (url: string, init: RequestInit | undefined) => Response,
+  ): { url: string; authorization: string | null }[] {
+    const seen: { url: string; authorization: string | null }[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        seen.push({ url, authorization: new Headers(init?.headers).get("authorization") });
+        return respond(url, init);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    return seen;
+  }
+
+  test("a mirror 401 opens that mirror's breaker, falls through to direct TMDB, and sends no credentials", async () => {
+    const seen = install((url) =>
+      isDirectHost(url)
+        ? Response.json({ via: "direct" })
+        : new Response("denied", { status: 401, headers: { "content-type": "text/plain" } }),
+    );
+    await expect(fetchTmdbJsonCached("/movie/401")).resolves.toEqual({ via: "direct" });
+    const mirrors = seen.filter((request) => !isDirectHost(request.url));
+    expect(mirrors.length).toBeGreaterThan(0);
+    for (const request of mirrors) {
+      expect(request.url).not.toContain("api_key=");
+      expect(request.authorization).toBeNull();
+    }
+    expect(seen.some((request) => isTmdbApiUrl(request.url))).toBe(true);
+
+    seen.length = 0;
+    await expect(fetchTmdbJsonCached("/movie/401-next")).resolves.toEqual({ via: "direct" });
+    expect(seen.every((request) => isDirectHost(request.url))).toBe(true);
+  });
+
+  test("a mirror 403 opens that mirror's breaker, falls through to direct TMDB, and sends no credentials", async () => {
+    const seen = install((url) =>
+      isDirectHost(url)
+        ? Response.json({ via: "direct" })
+        : new Response("<html>forbidden</html>", {
+            status: 403,
+            headers: { "content-type": "text/html" },
+          }),
+    );
+    await expect(fetchTmdbJsonCached("/movie/403")).resolves.toEqual({ via: "direct" });
+    for (const request of seen.filter((entry) => !isDirectHost(entry.url))) {
+      expect(request.url).not.toContain("api_key=");
+      expect(request.authorization).toBeNull();
+    }
+    expect(seen.some((request) => isDirectHost(request.url))).toBe(true);
+
+    seen.length = 0;
+    await expect(fetchTmdbJsonCached("/movie/403-next")).resolves.toEqual({ via: "direct" });
+    expect(seen.every((request) => isDirectHost(request.url))).toBe(true);
+  });
+
+  test("a mirror HTML 404 falls through while a direct JSON 404 is definitive", async () => {
+    const urls: string[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request) => {
+        const url = String(input);
+        urls.push(url);
+        if (!isDirectHost(url)) {
+          return new Response("<html>missing</html>", {
+            status: 404,
+            headers: { "content-type": "text/html" },
+          });
+        }
+        if (isTmdbApiUrl(url)) {
+          return new Response(JSON.stringify({ status_code: 34 }), {
+            status: 404,
+            headers: { "content-type": "application/json" },
+          });
+        }
+        return Response.json({ via: "alt" });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+
+    await expect(fetchTmdbJsonCached("/movie/html-404")).rejects.toThrow("404");
+    expect(urls.some((url) => !isDirectHost(url))).toBe(true);
+    expect(urls.filter((url) => isTmdbApiUrl(url))).toHaveLength(1);
+    expect(urls.filter((url) => isTmdbAltUrl(url))).toHaveLength(0);
+  });
+
+  test("a non-ok mirror body is cancelled before the walk moves on", async () => {
+    let cancelled = 0;
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request) => {
+        const url = String(input);
+        if (!isDirectHost(url)) {
+          const body = new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode("<html>forbidden</html>"));
+            },
+            cancel() {
+              cancelled += 1;
+            },
+          });
+          return new Response(body, { status: 403, headers: { "content-type": "text/html" } });
+        }
+        return Response.json({ via: "direct" });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+
+    await expect(fetchTmdbJsonCached("/movie/cancel-body")).resolves.toEqual({ via: "direct" });
+    expect(cancelled).toBeGreaterThan(0);
+  });
+
+  test("two hanging mirrors reach direct TMDB within the mirror budget", async () => {
+    let clock = 0;
+    let nextId = 1;
+    const pending = new Map<number, { readonly callback: () => void; readonly ms: number }>();
+    const timers = {
+      setTimeout(callback: () => void, ms: number) {
+        const id = nextId;
+        nextId += 1;
+        pending.set(id, { callback, ms });
+        return id;
+      },
+      clearTimeout(id: number) {
+        pending.delete(id);
+      },
+    };
+    const urls: string[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        urls.push(url);
+        if (isDirectHost(url)) return Response.json({ via: "direct" });
+        return new Promise<Response>((_resolve, reject) => {
+          const abort = () => reject(new DOMException("The operation was aborted.", "AbortError"));
+          if (init?.signal?.aborted === true) {
+            abort();
+            return;
+          }
+          init?.signal?.addEventListener("abort", abort, { once: true });
+        });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+
+    const result = fetchTmdbJsonWithFallback("/movie/hang", undefined, 6_000, undefined, {
+      now: () => clock,
+      timers,
+      budget: { maxTotalMirrorWaitMs: 2_500, perMirrorTimeoutMs: 1_500 },
+    });
+    const flush = async () => {
+      for (let step = 0; step < 8; step += 1) await Promise.resolve();
+    };
+    const fireNext = async () => {
+      await flush();
+      const next = pending.entries().next().value;
+      if (!next) throw new Error("expected a scheduled mirror timeout");
+      const [id, entry] = next;
+      pending.delete(id);
+      clock += entry.ms;
+      entry.callback();
+      await flush();
+      return entry.ms;
+    };
+
+    await flush();
+    expect(pending.size).toBe(1);
+    expect([...pending.values()][0]?.ms).toBe(1_500);
+    await fireNext();
+    expect([...pending.values()][0]?.ms).toBe(1_000);
+    await fireNext();
+    await expect(result).resolves.toEqual({ via: "direct" });
+    expect(clock).toBeLessThanOrEqual(2_500);
+    expect(urls.some((url) => isDirectHost(url))).toBe(true);
+    expect(pending.size).toBe(0);
+  });
+
+  test("a slow keyed direct failure does not spend the mirror budget", async () => {
+    setTmdbUserKeySource(() => "0123456789abcdef0123456789abcdef");
+    let clock = 0;
+    const gate = Promise.withResolvers<void>();
+    const seen: string[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request) => {
+        const url = String(input);
+        seen.push(url);
+        if (url.startsWith("https://api.themoviedb.org/")) {
+          await gate.promise;
+          throw new Error("direct slow");
+        }
+        if (isDirectHost(url)) throw new Error("direct down");
+        return Response.json({ via: "mirror" });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const timers = {
+      setTimeout(_callback: () => void, _ms: number) {
+        return 1;
+      },
+      clearTimeout(_id: number) {},
+    };
+    const pending = fetchTmdbJsonWithFallback("/movie/slow-direct", undefined, 6_000, undefined, {
+      now: () => clock,
+      timers,
+      budget: { maxTotalMirrorWaitMs: 2_500, perMirrorTimeoutMs: 1_500 },
+    });
+    for (let step = 0; step < 8; step += 1) await Promise.resolve();
+    clock = 3_000;
+    gate.resolve();
+    await expect(pending).resolves.toEqual({ via: "mirror" });
+    expect(seen.some((url) => !isDirectHost(url))).toBe(true);
+  });
+
+  test("after a failed direct half-open probe, the next probe can use a mirror", async () => {
+    let clock = 1_000_000;
+    const seen: string[] = [];
+    let phase: "trip" | "probe" = "trip";
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request) => {
+        const url = String(input);
+        seen.push(url);
+        if (phase === "trip") {
+          clock += 1_000;
+          throw new Error("down");
+        }
+        if (isDirectHost(url)) throw new Error("direct still down");
+        return Response.json({ via: "mirror" });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const timers = {
+      setTimeout(_callback: () => void, _ms: number) {
+        return 1;
+      },
+      clearTimeout(_id: number) {},
+    };
+    const deps = {
+      now: () => clock,
+      timers,
+      budget: { maxTotalMirrorWaitMs: 2_500, perMirrorTimeoutMs: 1_500 },
+    };
+    await expect(
+      fetchTmdbJsonWithFallback("/movie/breakers", undefined, 6_000, undefined, deps),
+    ).rejects.toThrow();
+
+    setTmdbUserKeySource(() => "0123456789abcdef0123456789abcdef");
+    phase = "probe";
+    seen.length = 0;
+    await expect(
+      fetchTmdbJsonWithFallback("/movie/probe-direct", undefined, 6_000, undefined, deps),
+    ).rejects.toThrow();
+    expect(seen).toHaveLength(1);
+    expect(isDirectHost(seen[0] ?? "")).toBe(true);
+
+    clock += 30_000;
+    seen.length = 0;
+    await expect(
+      fetchTmdbJsonWithFallback("/movie/probe-mirror", undefined, 6_000, undefined, deps),
+    ).resolves.toEqual({ via: "mirror" });
+    expect(seen).toHaveLength(1);
+    expect(isDirectHost(seen[0] ?? "")).toBe(false);
+  });
+
+  test("half-open recovery prefers the direct host when a credential exists", async () => {
+    let up = false;
+    const urls: string[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request) => {
+        const url = String(input);
+        urls.push(url);
+        if (!up) throw new Error("getaddrinfo ENOTFOUND");
+        return Response.json({ ok: true });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+
+    await expect(fetchTmdbJsonCached("/movie/down")).rejects.toThrow();
+    up = true;
+    urls.length = 0;
+    await expect(fetchTmdbJsonCached("/movie/probe")).resolves.toEqual({ ok: true });
+    expect(urls).toHaveLength(1);
+    expect(isDirectHost(urls[0] ?? "")).toBe(true);
   });
 });
 
