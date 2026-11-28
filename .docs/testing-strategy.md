@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-27T17:25:14Z"
+lastReviewed: "2026-11-28T12:45:00Z"
 ---
 
 # Kunai — Testing Strategy
@@ -641,12 +641,17 @@ storage-root env, fixture providers + fixture search, optional fake-mpv shim,
 `ProfileInspector` reading SQLite/config directly):
 
 - **L2 `bun run agent:drive`** — stateless replay against the real `AppRoot`
-  - `SessionController` in-process. `--keys` replays literal text, named keys
-    (`<enter>`, `<esc>`, …), `<wait:TEXT>` for human-paced surface waits, and
-    `<wait-config:key=value>` for debounced config writes. `--show` prints
-    frame/keys/history/queue/config/tables/delta/journal; `--evidence` writes
-    the bundle; `--verify-citation` re-checks a quoted claim against captured
-    artifacts.
+  and `SessionController` in-process. `session.relaunch()` is an in-process
+  restart, not a second loop on the container just shut down: it quits,
+  releases that container (player, IPC, databases), and boots a new container
+  on the same profile directory. `beforeMount` runs only on the first boot —
+  a real restart would not re-seed — so a row written into the profile stays
+  visible because the directory is the same one. `--keys` replays literal text, named keys
+  (`<enter>`, `<esc>`, …), `<wait:TEXT>` for human-paced surface waits, and
+  `<wait-config:key=value>` for debounced config writes. `--show` prints
+  frame/keys/history/queue/config/tables/delta/journal; `--evidence` writes
+  the bundle; `--verify-citation` re-checks a quoted claim against captured
+  artifacts.
 - **L3 `bun run agent:session`** — a held tmux session running real
   `src/main.ts` under a real PTY. `start` / `see` / `do` / `wait-for` /
   `inspect` / `report` / `relaunch` / `stop` / `keys`. `see` is
