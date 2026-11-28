@@ -5,6 +5,13 @@ import { delimiter, join } from "node:path";
 import { storageRootEnv } from "../../helpers/storage-env";
 import { removeTempDir } from "../../support/remove-temp-dir";
 
+/** Keep installer mechanics tests usable with deliberately synthetic PE bytes. */
+export function withSyntheticWindowsPayload(source: string): string {
+  const check = "function Test-NativeBinaryStartup([string]$Path) {";
+  if (!source.includes(check)) throw new Error("Could not isolate the Windows startup check");
+  return source.replace(check, `${check}\n  return`);
+}
+
 /**
  * Sandbox the installer defaults and any CLI subprocess's storage/analytics.
  *

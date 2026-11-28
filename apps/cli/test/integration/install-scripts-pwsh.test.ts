@@ -32,6 +32,7 @@ import {
   windowsShellEnvDefaults,
   withCommandPath,
   withReleaseFixture,
+  withSyntheticWindowsPayload,
   type ReleaseFixtureRoute,
 } from "./helpers/installer-script-harness";
 
@@ -173,19 +174,32 @@ async function runInstallPs1Async(
   args: string[],
   env: NodeJS.ProcessEnv = DEFAULT_SHELL_ENV,
   cwd?: string,
+  startupCheck: "synthetic" | "native" = "synthetic",
 ): Promise<{ status: number; stdout: string; stderr: string }> {
-  const proc = Bun.spawn(["pwsh", "-NoProfile", "-File", INSTALL_PS1, ...args], {
-    cwd,
-    env: { ...BOUNDED_DOWNLOAD_ENV, ...env },
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const [stdout, stderr, status] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  return { status, stdout, stderr };
+  const fixtureDir =
+    process.platform === "win32" && startupCheck === "synthetic"
+      ? mkdtempSync(join(tmpdir(), "kunai-synthetic-installer-"))
+      : undefined;
+  const installer = fixtureDir ? join(fixtureDir, "install.ps1") : INSTALL_PS1;
+  try {
+    if (fixtureDir) {
+      writeFileSync(installer, withSyntheticWindowsPayload(readFileSync(INSTALL_PS1, "utf8")));
+    }
+    const proc = Bun.spawn(["pwsh", "-NoProfile", "-File", installer, ...args], {
+      cwd,
+      env: { ...BOUNDED_DOWNLOAD_ENV, ...env },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr, status] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    return { status, stdout, stderr };
+  } finally {
+    if (fixtureDir) rmSync(fixtureDir, { recursive: true, force: true });
+  }
 }
 
 function hostWindowsAsset(): string {
@@ -1925,6 +1939,39 @@ describeWindows("install.ps1 PATH diagnostics", () => {
           expect(result.stdout).toContain(`Planned native path: ${nativePath}`);
           expect(result.stdout).toContain("Another kunai comes earlier on your PATH");
           expect(result.stdout).toContain("npm uninstall -g @kitsunekode/kunai");
+        },
+      );
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+});
+
+describeWindows("install.ps1 native startup", () => {
+  test("rejects a checksummed payload the Windows loader cannot run", async () => {
+    const asset = hostWindowsAsset();
+    const body = "MZ-invalid-executable";
+    const digest = createHash("sha256").update(body).digest("hex");
+    const sandbox = createInstallerSandbox("install-ps1-loader-rejection");
+    try {
+      await withReleaseFixture(
+        {
+          [`/download/v9.8.7/${asset}`]: { body },
+          "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
+        },
+        async (baseUrl) => {
+          const result = await runInstallPs1Async(
+            ["-Yes", "-SkipDeps", "-Version", "9.8.7"],
+            { ...sandbox.env, KUNAI_DL_BASE: baseUrl },
+            undefined,
+            "native",
+          );
+          expect(result.status).not.toBe(0);
+          expect(result.stderr).toContain("Kunai startup check failed");
+          expect(result.stdout).not.toContain("Installed kunai");
+          expect(existsSync(join(sandbox.binDir, "kunai.cmd"))).toBe(false);
+          expect(existsSync(join(sandbox.configDir, "install.json"))).toBe(false);
+          expect(existsSync(join(sandbox.dataDir, "versions", "9.8.7", "kunai.exe"))).toBe(true);
         },
       );
     } finally {

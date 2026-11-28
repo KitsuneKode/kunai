@@ -24,6 +24,37 @@ import { nativeUninstall } from "./native-installer/native-uninstall";
 import { tryAcquireLifecycleLock } from "./native-installer/version-lock";
 
 const PKG = "@kitsunekode/kunai";
+const PRESERVED_USER_DATA =
+  "Kept your config, history, cache, and downloaded videos. Re-run with --purge to delete them.";
+
+export async function runUninstallCommand(purge: boolean): Promise<number> {
+  if (purge && !(await confirmUninstallPurge())) {
+    console.error("Uninstall cancelled.");
+    return 0;
+  }
+  return runUninstall({ purge });
+}
+
+async function confirmUninstallPurge(): Promise<boolean> {
+  const { dataDir } = getInstallLayoutPaths();
+  const downloads = join(dataDir, "downloads");
+  console.error(
+    `This deletes your Kunai config, data, cache, and downloaded videos in ${downloads}.`,
+  );
+  if (!process.stdin.isTTY || !process.stderr.isTTY) return true;
+
+  const { createInterface } = await import("node:readline");
+  const input = createInterface({ input: process.stdin, output: process.stderr });
+  process.stderr.write("Permanently delete them? [y/N] ");
+  try {
+    for await (const answer of input) {
+      return /^y(es)?$/i.test(answer.trim());
+    }
+    return false;
+  } finally {
+    input.close();
+  }
+}
 
 export type UninstallPlan =
   | { kind: "exec"; command: string[] }
@@ -168,7 +199,7 @@ export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
   if (plan.kind === "manual") {
     if (!opts.purge) {
       console.log(plan.message);
-      console.log("Left your config/history/cache in place. Re-run with --purge to remove them.");
+      console.log(PRESERVED_USER_DATA);
       return 0;
     }
     const purged = await withPurgeSafeUninstallOwnership(layout, opts.force, async () => {
@@ -225,7 +256,7 @@ export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
     }
     if (removed.status === "purge-failed") return 1;
     if (!opts.purge) {
-      console.log("Left your config/history/cache in place. Re-run with --purge to remove them.");
+      console.log(PRESERVED_USER_DATA);
     }
     return 0;
   } else if (plan.kind === "native") {
@@ -261,7 +292,7 @@ export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
       return 1;
     }
     if (!opts.purge) {
-      console.log("Left your config/history/cache in place. Re-run with --purge to remove them.");
+      console.log(PRESERVED_USER_DATA);
     }
     return 0;
   } else {
@@ -291,7 +322,7 @@ export async function runUninstall(opts: RunUninstallOptions): Promise<number> {
   }
 
   if (!opts.purge) {
-    console.log("Left your config/history/cache in place. Re-run with --purge to remove them.");
+    console.log(PRESERVED_USER_DATA);
   }
   return 0;
 }

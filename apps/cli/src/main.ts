@@ -637,8 +637,8 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     process.exit(await runUpgrade({ checkOnly, currentVersion: KUNAI_VERSION }));
   }
   if (argv[0] === "uninstall") {
-    const { runUninstall } = await import("./services/update/run-uninstall");
-    process.exit(await runUninstall({ purge: argv.includes("--purge") }));
+    const { runUninstallCommand } = await import("./services/update/run-uninstall");
+    process.exit(await runUninstallCommand(argv.includes("--purge")));
   }
   if (argv[0] === "install") {
     const { runInstall } = await import("./services/update/run-install");

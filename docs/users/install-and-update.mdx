@@ -3,7 +3,7 @@ title: Install and Update
 description: Install Kunai on Android, Linux, macOS, or Windows via the native binary or npm, then keep it current, with upgrade, rollback, and uninstall behaviour explained.
 ---
 
-Kunai supports **zero-prerequisite compiled binaries** (default), global package installs, installer scripts, and source checkouts. Packaged binaries embed the Bun runtime, so you do not need Bun installed to run them. The npm channel is a Node launcher that spawns a platform binary (no Bun). `bun install -g` and source checkouts still need Bun.
+Kunai supports **compiled binaries** (default), global package installs, installer scripts, and source checkouts. Packaged binaries embed the Bun runtime, so you do not need Bun installed to run them. The npm channel is a Node launcher that spawns a platform binary (no Bun). `bun install -g` and source checkouts still need Bun.
 
 <KunaiFoxBanner pose="wait" eyebrow="Install" title="One command, then keep it current.">
   Native binaries are the default. npm is a launcher around the same platform binary.
@@ -132,6 +132,10 @@ rule applies. On a terminal the download shows one updating progress line
 
 Installs to `%LOCALAPPDATA%\kunai\bin\kunai.exe`, prepends that directory to your **User** PATH so the native binary wins over an older npm/Bun shim, and records the install channel in `%APPDATA%\kunai\install.json`. After the binary is in place it also drops portable `yt-dlp` and (on x64) curl-impersonate into `%LOCALAPPDATA%\kunai\deps\`; see [Optional dependencies](#optional-dependencies). `mpv` remains a package-manager prompt.
 
+Windows stores both data and cache in `%LOCALAPPDATA%\kunai`. The installer
+cleans up its own staging files, and `kunai uninstall` preserves history,
+cache, and downloaded videos in that shared directory.
+
 Open a new terminal after installation if `kunai` is not visible yet. The
 installer prints the PATH winner. If another `kunai` is still earlier (npm,
 Bun, pnpm, Yarn, Scoop, Chocolatey, or WinGet), it lists each competing path
@@ -210,6 +214,11 @@ kunai --setup
 
 Diagnose PATH shadows with `kunai doctor`. `kunai upgrade` / `kunai uninstall` follow install ownership when a manifest exists.
 
+If your global npm prefix is system-owned on Linux or macOS, run
+`npm config set prefix ~/.local` and retry the install, or use the native
+binary installer. The installer scripts check the selected manager's launcher
+directory and help put it on PATH.
+
 </Tab>
 <Tab value="Source">
 
@@ -247,8 +256,8 @@ bash gets two files because `~/.bashrc` is read by interactive non-login shells
 and a login shell reads only the login file; writing exactly one of the login
 files keeps the line from being applied twice.
 
-The block is delimited and written once, so re-running the installer will not
-stack duplicates:
+The installer writes one delimited block per added directory. Re-running the
+same install does not duplicate its block:
 
 ```sh
 # >>> kunai installer >>>
@@ -404,7 +413,10 @@ kunai uninstall            # ownership-aware removal
 kunai uninstall --purge    # also delete config, data, cache, and default downloads
 ```
 
-**`--purge` deletes downloaded videos in the default download directory:**
+**`--purge` deletes downloaded videos in the default download directory.**
+Kunai shows the directory before deleting and asks for confirmation in an
+interactive terminal. Scripts that pass `--purge` authorize deletion.
+The default directory is
 Linux `~/.local/share/kunai/downloads` (or `$XDG_DATA_HOME/kunai/downloads`),
 macOS `~/Library/Application Support/kunai/downloads`, and Windows
 `%LOCALAPPDATA%\kunai\downloads`. Custom/external download directories outside
@@ -492,11 +504,15 @@ You can snooze automatic checks for seven days or disable them from the update p
 ### Alpine / musl quick start
 
 ```sh
-apk add mpv yt-dlp ffmpeg
+apk add libstdc++ libgcc mpv yt-dlp ffmpeg
 curl -fsSL https://kunai.kitsunekode.in/install.sh | bash
 kunai --version
 kunai --setup
 ```
+
+The native binary needs `libstdc++` and `libgcc` even if you use another player.
+If the installer reports a loader error, run `sudo apk add libstdc++ libgcc`
+on Alpine and rerun the installer as your regular user.
 
 ### Windows-native vs WSL
 
