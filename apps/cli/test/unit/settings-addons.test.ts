@@ -98,11 +98,7 @@ describe("Stremio addon settings", () => {
 
   test("an installed addon removal declares every provider reference it clears", () => {
     const config = { ...ENABLED_CONFIG, stremioAddons: [{ url: A, name: "Alpha" }] };
-    const removal = row(
-      addonSettingsRows(ctxFor(config)),
-      `stremioAddon:${idOf(A)}`,
-      "boolean",
-    );
+    const removal = row(addonSettingsRows(ctxFor(config)), `stremioAddon:${idOf(A)}`, "boolean");
 
     expect(removal.configKeys).toEqual([
       "stremioAddons",
