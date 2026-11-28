@@ -1,6 +1,8 @@
 import { useLineEditor } from "@/app-shell/line-editor";
 import { defaultPaletteSelectionIndex } from "@/app-shell/palette-ranking";
 import {
+  listShellOptionKey,
+  resolveArmedListOption,
   resolveCompactListShortcut,
   shouldShowListFilter,
 } from "@/app-shell/pickers/list-shell-filter";
@@ -20,7 +22,11 @@ import { getPickerChromeRows, getPickerLayout, getPickerListMaxVisible } from ".
 import { plainModeEnabled, selectionPrefix } from "../plain-mode";
 import { suppressPosterWhileNavigating } from "../poster-types";
 import { ConfirmStrip } from "../primitives/ConfirmStrip";
-import { confirmStripFooterActions, confirmStripOwnsInput } from "../primitives/ConfirmStrip.model";
+import {
+  confirmStripFooterActions,
+  confirmStripKeyDecision,
+  confirmStripOwnsInput,
+} from "../primitives/ConfirmStrip.model";
 import { SakuraPetal } from "../primitives/SakuraPetal";
 import { useConfirmStripController } from "../primitives/use-confirm-strip";
 import { mountRootContent } from "../root-content-state";
@@ -62,10 +68,6 @@ export type ListShellSubmitResult<T> =
   | ListShellActionResult;
 
 const EMPTY_TITLE_ENTRIES: readonly LocalTitleEntry[] = [];
-
-function listShellOptionKey<T>(option: ShellOption<T>): string {
-  return option.id ?? option.label;
-}
 
 function normalizeReservedCommandInput(nextValue: string) {
   if (!nextValue.includes("/")) {
@@ -125,7 +127,11 @@ export function ListShell<T>({
   }, [options, normalizedFilter]);
 
   const visibleConfirmationIds = useMemo(
-    () => filteredOptions.map((option) => listShellOptionKey(option)),
+    () =>
+      filteredOptions.flatMap((option) => {
+        const key = listShellOptionKey(option);
+        return key === null ? [] : [key];
+      }),
     [filteredOptions],
   );
 
@@ -283,23 +289,29 @@ export function ListShell<T>({
       return;
     }
 
-    if (confirmState.kind !== "idle") {
-      if (confirmState.kind === "executing") return;
-      if (confirmState.kind === "armed" && input.toLowerCase() === "y") {
-        const confirmation = confirm.transition({ type: "confirm" });
-        const targetId = confirmation.effect?.targetId;
-        const selected = filteredOptions.find((option) => listShellOptionKey(option) === targetId);
-        if (selected) {
-          setConfirmed(true);
-          setTimeout(() => onSubmit(selected.value), 150);
-        } else {
-          confirm.transition({ type: "fail", message: "That row is no longer visible" });
-        }
-        return;
+    const confirmDecision = confirmStripKeyDecision(confirmState.kind, input, key);
+    if (confirmDecision === "execute") {
+      const confirmation = confirm.transition({ type: "confirm" });
+      const resolved = resolveArmedListOption(filteredOptions, confirmation.effect?.targetId);
+      if (resolved.kind === "one") {
+        setConfirmed(true);
+        setTimeout(() => onSubmit(resolved.option.value), 150);
+      } else {
+        confirm.transition({
+          type: "fail",
+          message:
+            resolved.kind === "ambiguous"
+              ? "That confirmation matches more than one row"
+              : "That row is no longer visible",
+        });
       }
-      if (key.upArrow || key.downArrow) confirm.transition({ type: "cancel" });
       return;
     }
+    if (confirmDecision === "cancel" || confirmDecision === "cancel-and-continue") {
+      confirm.transition({ type: "cancel" });
+      return;
+    }
+    if (confirmDecision === "hold") return;
 
     if (commandMode) {
       const matches = getCommandMatches(commandInput, actionContext?.commands ?? []);
@@ -360,9 +372,12 @@ export function ListShell<T>({
       const selected = filteredOptions[index];
       if (selected && !confirmed) {
         if (selected.destructive) {
+          const targetId = listShellOptionKey(selected);
+          const armed = targetId ? resolveArmedListOption(filteredOptions, targetId) : null;
+          if (!targetId || armed?.kind !== "one") return;
           confirm.transition({
             type: "arm",
-            targetId: listShellOptionKey(selected),
+            targetId,
             label: selected.label,
             verb: selected.confirmVerb ?? "confirm",
             executingLabel: `Applying ${selected.label}`,
@@ -400,6 +415,7 @@ export function ListShell<T>({
             onChange={updateFilterQuery}
             placeholder="Type to narrow this list"
             focus={!commandMode}
+            ignoreInput={() => confirmStripOwnsInput(confirm.getState())}
             hint={actionContext ? "Type to filter · / opens commands" : undefined}
             onRedraw={clearShellScreenArtifacts}
           />

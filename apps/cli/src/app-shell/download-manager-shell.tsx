@@ -19,7 +19,10 @@ import { useRowTap } from "@/app-shell/mouse/row-tap";
 import { useOverlayOrTerminalSize } from "@/app-shell/overlay-layout-context";
 import { prefetchPosterSources } from "@/app-shell/poster-source-cache";
 import { ConfirmStrip } from "@/app-shell/primitives/ConfirmStrip";
-import { confirmStripOwnsInput } from "@/app-shell/primitives/ConfirmStrip.model";
+import {
+  confirmStripBlocksPointer,
+  confirmStripOwnsInput,
+} from "@/app-shell/primitives/ConfirmStrip.model";
 import { computeQueueRowLayout } from "@/app-shell/primitives/list-row-layout";
 import { MediaListShell } from "@/app-shell/primitives/MediaListShell";
 import { ProgressBar } from "@/app-shell/primitives/ProgressBar";
@@ -522,11 +525,13 @@ export function DownloadManagerContent({
         flexDirection="column"
         active={!suspended}
         onClick={() => {
+          if (confirmStripBlocksPointer(confirm.getState().kind)) return;
           confirm.transition({ type: "cancel" });
           if (tapJob(job.id, isSelected) === "activate") runJobAction(job, true);
           else setSelectedIndex(index);
         }}
         onWheel={(direction) => {
+          if (confirmStripBlocksPointer(confirm.getState().kind)) return;
           confirm.transition({ type: "cancel" });
           setSelectedIndex((current) =>
             Math.max(0, Math.min(allJobs.length - 1, current + (direction === "up" ? -1 : 1))),

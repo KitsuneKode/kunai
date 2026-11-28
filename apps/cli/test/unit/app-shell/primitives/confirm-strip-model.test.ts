@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  confirmStripBlocksPointer,
   confirmStripFooterActions,
+  confirmStripKeyDecision,
   idleConfirmStripState,
+  isPlainConfirmKey,
   transitionConfirmStrip,
 } from "@/app-shell/primitives/ConfirmStrip.model";
 
@@ -44,8 +47,12 @@ describe("ConfirmStrip model", () => {
 
   test("executing ignores confirm and cancel input", () => {
     const executing = transitionConfirmStrip(arm(), { type: "confirm" }).state;
-    expect(transitionConfirmStrip(executing, { type: "confirm" }).state).toBe(executing);
-    expect(transitionConfirmStrip(executing, { type: "cancel" }).state).toBe(executing);
+    const confirmed = transitionConfirmStrip(executing, { type: "confirm" });
+    const cancelled = transitionConfirmStrip(executing, { type: "cancel" });
+    expect(confirmed.state).toBe(executing);
+    expect(cancelled.state).toBe(executing);
+    expect(confirmed.effect).toBeUndefined();
+    expect(cancelled.effect).toBeUndefined();
   });
 
   test("succeed returns to idle only from executing", () => {
@@ -92,6 +99,31 @@ describe("ConfirmStrip model", () => {
       expect.objectContaining({ key: "y", label: "delete files", allowMouseDestructive: true }),
       expect.objectContaining({ key: "esc", label: "cancel", allowMouseDestructive: true }),
     ]);
+  });
+
+  test("modified y is not a confirmation", () => {
+    expect(isPlainConfirmKey("y", {})).toBe(true);
+    expect(isPlainConfirmKey("Y", {})).toBe(true);
+    expect(isPlainConfirmKey("y", { ctrl: true })).toBe(false);
+    expect(isPlainConfirmKey("y", { meta: true })).toBe(false);
+    expect(isPlainConfirmKey("y", { shift: true })).toBe(false);
+  });
+
+  test("vertical arrows cancel and continue; a failure holds until Escape", () => {
+    expect(confirmStripKeyDecision("armed", "y", { ctrl: true })).toBe("hold");
+    expect(
+      confirmStripKeyDecision("armed", "", { downArrow: true }, { continueOnVerticalArrows: true }),
+    ).toBe("cancel-and-continue");
+    expect(confirmStripKeyDecision("armed", "", { downArrow: true })).toBe("cancel");
+    expect(confirmStripKeyDecision("failed", "", { downArrow: true })).toBe("hold");
+    expect(confirmStripKeyDecision("executing", "", { downArrow: true })).toBe("hold");
+  });
+
+  test("pointer actions are blocked only while executing", () => {
+    expect(confirmStripBlocksPointer("executing")).toBe(true);
+    expect(confirmStripBlocksPointer("armed")).toBe(false);
+    expect(confirmStripBlocksPointer("failed")).toBe(false);
+    expect(confirmStripBlocksPointer("idle")).toBe(false);
   });
 
   test("failed footer exposes only escape dismiss", () => {

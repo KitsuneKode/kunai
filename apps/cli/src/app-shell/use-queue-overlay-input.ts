@@ -1,4 +1,5 @@
 import type { LineEditorKey } from "@/app-shell/line-editor";
+import { confirmStripKeyDecision } from "@/app-shell/primitives/ConfirmStrip.model";
 import type { ConfirmStripController } from "@/app-shell/primitives/use-confirm-strip";
 import { buildQueueRestoreDeps, buildQueueRestoreStatus } from "@/app-shell/queue-restore";
 import type { QueueViewRow } from "@/app-shell/queue-view";
@@ -97,18 +98,23 @@ export function handleQueueOverlayInput(
   const row = sel >= 0 ? rows[sel] : undefined;
 
   const confirmState = ctx.confirm.getState();
-  if (confirmState.kind !== "idle") {
-    if (confirmState.kind === "executing") return "handled";
-    if (confirmState.kind === "armed" && input.toLowerCase() === "y") {
-      const confirmation = ctx.confirm.transition({ type: "confirm" });
-      if (confirmation.effect) executeQueueConfirmation(ctx, confirmation.effect);
-      return "handled";
-    }
-    if (key.upArrow || key.downArrow || key.leftArrow || key.rightArrow || key.tab) {
-      ctx.confirm.transition({ type: "cancel" });
-    }
+  const confirmDecision = confirmStripKeyDecision(confirmState.kind, input, key, {
+    continueOnVerticalArrows: true,
+  });
+  if (confirmDecision === "execute") {
+    const confirmation = ctx.confirm.transition({ type: "confirm" });
+    if (confirmation.effect) executeQueueConfirmation(ctx, confirmation.effect);
     return "handled";
   }
+  if (confirmDecision === "cancel") {
+    ctx.confirm.transition({ type: "cancel" });
+    return "handled";
+  }
+  if (confirmDecision === "cancel-and-continue") {
+    ctx.confirm.transition({ type: "cancel" });
+    return "not-handled";
+  }
+  if (confirmDecision === "hold") return "handled";
 
   if (key.return && row) {
     ctx.activateRow(row);

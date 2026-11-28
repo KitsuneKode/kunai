@@ -35,6 +35,7 @@ import { ClaudeTabRow } from "@/app-shell/primitives/ClaudeTabRow";
 import { ConfirmStrip } from "@/app-shell/primitives/ConfirmStrip";
 import {
   confirmStripFooterActions,
+  confirmStripKeyDecision,
   confirmStripOwnsInput,
 } from "@/app-shell/primitives/ConfirmStrip.model";
 import {
@@ -348,24 +349,28 @@ function LibraryTab({
         if (action === "close-overlay") onClose();
         return;
       }
-      if (confirmState.kind === "executing") return;
-      if (confirmState.kind !== "idle") {
-        if (confirmState.kind === "armed" && input.toLowerCase() === "y") {
-          const confirmation = confirm.transition({ type: "confirm" });
-          const effect = confirmation.effect;
-          if (!effect) return;
-          executeLibraryDeletion({
-            container,
-            effect,
-            groups: flatRows,
-            confirm,
-            setEntries,
-          });
-          return;
-        }
-        if (key.upArrow || key.downArrow) confirm.transition({ type: "cancel" });
+      const confirmDecision = confirmStripKeyDecision(confirmState.kind, input, key, {
+        continueOnVerticalArrows: true,
+      });
+      if (confirmDecision === "hold") return;
+      if (confirmDecision === "execute") {
+        const confirmation = confirm.transition({ type: "confirm" });
+        const effect = confirmation.effect;
+        if (!effect) return;
+        executeLibraryDeletion({
+          container,
+          effect,
+          groups: flatRows,
+          confirm,
+          setEntries,
+        });
         return;
       }
+      if (confirmDecision === "cancel") {
+        confirm.transition({ type: "cancel" });
+        return;
+      }
+      if (confirmDecision === "cancel-and-continue") confirm.transition({ type: "cancel" });
       const filterRoute = routeListFilterKey(input, key, {
         focused: filterFocused,
         query: filterQuery,

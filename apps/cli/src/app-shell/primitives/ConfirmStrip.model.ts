@@ -154,6 +154,61 @@ export function confirmStripOwnsInput(state: ConfirmStripState): boolean {
   return state.kind !== "idle";
 }
 
+/**
+ * Plain `y` only. Ink reports Ctrl+Y as `"y"` with `ctrl` set, and that chord
+ * is the line editor's yank — it must not confirm a destructive action.
+ */
+export function isPlainConfirmKey(
+  input: string,
+  key: { readonly ctrl?: boolean; readonly meta?: boolean; readonly shift?: boolean },
+): boolean {
+  if (key.ctrl === true || key.meta === true || key.shift === true) return false;
+  return input === "y" || input === "Y";
+}
+
+export type ConfirmStripKeyDecision =
+  | "idle"
+  | "hold"
+  | "execute"
+  | "cancel"
+  | "cancel-and-continue";
+
+/**
+ * What an armed confirmation does with one keypress.
+ * `cancel-and-continue` disarms and lets the same press move the selection.
+ * A failed strip holds until Escape; arrows must not dismiss the error.
+ */
+export function confirmStripKeyDecision(
+  kind: ConfirmStripState["kind"],
+  input: string,
+  key: {
+    readonly ctrl?: boolean;
+    readonly meta?: boolean;
+    readonly shift?: boolean;
+    readonly upArrow?: boolean;
+    readonly downArrow?: boolean;
+    readonly leftArrow?: boolean;
+    readonly rightArrow?: boolean;
+    readonly tab?: boolean;
+  },
+  options?: { readonly continueOnVerticalArrows?: boolean },
+): ConfirmStripKeyDecision {
+  if (kind === "idle") return "idle";
+  if (kind === "executing" || kind === "failed") return "hold";
+  if (isPlainConfirmKey(input, key)) return "execute";
+  const vertical = key.upArrow === true || key.downArrow === true;
+  if (vertical && options?.continueOnVerticalArrows === true) return "cancel-and-continue";
+  if (vertical || key.leftArrow === true || key.rightArrow === true || key.tab === true) {
+    return "cancel";
+  }
+  return "hold";
+}
+
+/** Pointer row actions wait until a destructive execute finishes. */
+export function confirmStripBlocksPointer(kind: ConfirmStripState["kind"]): boolean {
+  return kind === "executing";
+}
+
 /** Whether a human-readable destructive action is currently awaiting y/Esc. */
 export function confirmStripArmed(state: ConfirmStripState): boolean {
   return state.kind === "armed";
