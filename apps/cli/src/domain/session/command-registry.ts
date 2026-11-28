@@ -1,5 +1,6 @@
 import { isLocalPlaybackStream } from "@/domain/playback/local-playback-stream";
 import { getModeSwitchTarget } from "@/domain/session/mode-target";
+import { applyOfflineCommandAvailability } from "@/domain/session/offline-command-availability";
 
 import { rankFuzzyMatches } from "./fuzzy-match";
 import { isPlaybackSessionActive, type SessionState } from "./SessionState";
@@ -833,43 +834,6 @@ export const COMMANDS: readonly AppCommand[] = [
   },
 ] as const;
 
-/** Slash commands surfaced in the `?` help overlay (panels & commands section). */
-export const HELP_PANEL_COMMAND_IDS = [
-  "history",
-  "watchlist",
-  "playlists",
-  "up-next",
-  "stats",
-  "notifications",
-  "diagnostics",
-  "downloads",
-  "library",
-  "settings",
-  "setup",
-  "theme",
-  "presence",
-  "analytics",
-  "follow",
-  "unfollow",
-  "mute",
-  "export-diagnostics",
-  "report-issue",
-] as const satisfies readonly AppCommandId[];
-
-export type HelpPanelCommandLine = {
-  readonly label: string;
-  readonly detail: string;
-};
-
-export function buildHelpPanelCommandLines(): readonly HelpPanelCommandLine[] {
-  return HELP_PANEL_COMMAND_IDS.flatMap((id) => {
-    const command = COMMANDS.find((candidate) => candidate.id === id);
-    if (!command) return [];
-    const slashAlias = command.aliases[0] ?? command.id;
-    return [{ label: `/${slashAlias}`, detail: command.description }];
-  });
-}
-
 export function commandGroupFor(id: AppCommandId): AppCommandGroup {
   switch (id) {
     case "search":
@@ -958,7 +922,10 @@ export function suggestCommands(
 export function resolveCommands(
   state: SessionState,
   allowed: readonly AppCommandId[] = COMMANDS.map((command) => command.id),
-  options?: { readonly excludeGroups?: readonly AppCommandGroup[] },
+  options?: {
+    readonly excludeGroups?: readonly AppCommandGroup[];
+    readonly offline?: boolean;
+  },
 ): readonly ResolvedAppCommand[] {
   const excluded = new Set(options?.excludeGroups ?? []);
   const filtered = excluded.size
@@ -966,22 +933,21 @@ export function resolveCommands(
     : allowed;
   return filtered.flatMap((id) => {
     const command = COMMANDS.find((candidate) => candidate.id === id);
-    return command
-      ? [
-          {
-            ...resolveCommandPresentation(command, state),
-            ...resolveCommandState(command.id, state),
-          },
-        ]
-      : [];
+    if (!command) return [];
+    const resolved = {
+      ...resolveCommandPresentation(command, state),
+      ...resolveCommandState(command.id, state),
+    };
+    return [applyOfflineCommandAvailability(resolved, options?.offline ?? false)];
   });
 }
 
 export function resolveCommandContext(
   state: SessionState,
   context: CommandContextId,
+  options?: { readonly offline?: boolean },
 ): readonly ResolvedAppCommand[] {
-  return resolveCommands(state, COMMAND_CONTEXTS[context]);
+  return resolveCommands(state, COMMAND_CONTEXTS[context], options);
 }
 
 function resolveCommandPresentation(command: AppCommand, state: SessionState): AppCommand {

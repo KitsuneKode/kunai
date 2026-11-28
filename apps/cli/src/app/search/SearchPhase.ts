@@ -43,6 +43,7 @@ import { isCalendarSearchResult, loadCalendarResults } from "@/app/search/calend
 import { detailsSheetContextFor } from "@/app/search/details-sheet-context";
 import { playTrailer } from "@/app/search/details-trailer";
 import { enrichSelectedTitleIdentity } from "@/app/search/enrich-selected-title";
+import { resolveOfflineSearchResponse } from "@/app/search/offline-search";
 import { prefetchBrowseEntrySelection } from "@/app/search/prefetch-browse-entry";
 import { buildSearchEmptyMessage } from "@/app/search/search-empty-message";
 import {
@@ -66,6 +67,7 @@ import {
   type SearchStartupRoute,
 } from "@/app/search/search-startup-policy";
 import { loadLocalSuggestionCorpus, toCatalogSuggestions } from "@/app/search/search-suggestions";
+import { spawnTrailerMpv } from "@/app/search/trailer-mpv";
 import type { Phase, PhaseResult, PhaseContext } from "@/app/session/Phase";
 import { kitsuneErrorFromUnknown } from "@/domain/kitsune-error-mapping";
 import {
@@ -79,7 +81,6 @@ import { countLabel } from "@/domain/text-display";
 import type { SearchResult, ShellMode, TitleInfo } from "@/domain/types";
 import { discoverMpvInvocation } from "@/infra/player/mpv-discovery";
 import { isAllowedMpvUrl } from "@/infra/player/mpv-playback-url";
-import { registerMpvProcess, type MpvChildProcess } from "@/infra/player/mpv-process-registry";
 import { openExternalUrl } from "@/infra/shell/open-external-url";
 import { type ResultEnrichment } from "@/services/catalog/ResultEnrichmentService";
 import { readLatestHistoryByTitle } from "@/services/continuation/history-progress";
@@ -113,33 +114,6 @@ const SEEDED_CALENDAR_TYPE_TABS: Partial<Record<ShellAction, CalendarTypeTab>> =
   "series-calendar": "TV",
   "tracked-calendar": "Tracked",
 };
-
-/**
- * The trailer window is detached mpv — no IPC socket, no session — so it lives
- * in the process registry instead: quit-time teardown kills it like the main
- * player, and a re-press replaces the running one rather than stacking
- * windows on a key mash.
- */
-let liveTrailerProcess: MpvChildProcess | null = null;
-
-function spawnTrailerMpv(argv: readonly string[], target: string): boolean {
-  if (liveTrailerProcess && liveTrailerProcess.exitCode === null) {
-    try {
-      liveTrailerProcess.kill("SIGTERM");
-    } catch {
-      // Already gone between the liveness check and the kill.
-    }
-  }
-  const proc = Bun.spawn([...argv, "--", target], {
-    stdout: "ignore",
-    stderr: "ignore",
-    stdin: "ignore",
-  });
-  liveTrailerProcess = proc;
-  const unregister = registerMpvProcess(proc);
-  void proc.exited.then(unregister, unregister);
-  return true;
-}
 
 export type SearchPhaseInput = {
   initialQuery?: string;
@@ -667,7 +641,9 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
           startupPicks: openedStartupPicks,
           initialErrorMessage: initialSearchError,
           onLoadCalendar: async (signal) => {
-            const bundle = await loadCalendarResults(container, signal);
+            const bundle = await loadCalendarResults(container, signal, {
+              offline: !container.connectivity.isOnline(),
+            });
             signal.throwIfAborted();
             const results = [...bundle.results];
             const display = await loadBrowseDisplayContext(container, results, { signal });
@@ -907,6 +883,10 @@ export class SearchPhase implements Phase<SearchPhaseInput | void, TitleInfo> {
             stateManager.dispatch({ type: "SET_SEARCH_STATE", state: "loading" });
 
             const searchMode = stateManager.getState().mode;
+            if (!container.connectivity.isOnline()) {
+              addSearchQuery(query, searchMode);
+              return resolveOfflineSearchResponse({ container, query, stateManager });
+            }
             let search: Awaited<ReturnType<typeof searchTitles>>;
             const searchAbort = createBrowseSearchAbort(context.signal);
             try {

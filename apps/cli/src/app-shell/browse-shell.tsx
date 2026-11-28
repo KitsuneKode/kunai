@@ -19,7 +19,7 @@ import {
   type ScoredSuggestion,
   type SearchSuggestion,
 } from "@/domain/search/suggestion-engine";
-import type { SearchResult, ShellMode } from "@/domain/types";
+import type { SearchResult } from "@/domain/types";
 import { fetchTitleDetail, peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import {
   addSearchQuery,
@@ -70,6 +70,7 @@ import {
 import { buildBrowseFooterModel } from "./browse-footer-actions";
 import { buildBrowseIdleReturnLoopModel, resolveIdleRowAction } from "./browse-idle-actions";
 import { setBrowseIdleRefreshListener } from "./browse-idle-context";
+import { browseFilterPlaceholder, browseIdleHint } from "./browse-placeholder-copy";
 import {
   browseResultStatusLine,
   buildPreviewRailModelFromBrowseOption,
@@ -81,6 +82,7 @@ import {
   normalizeBrowseCommandInput,
   resolveDetailsOverlaySubmitValue,
 } from "./browse-search-state";
+import type { BrowseShellProps, DetailsSheetLocalContext } from "./browse-shell-props";
 import {
   buildBrowseDetailsSheetSeed,
   formatBrowseShellError,
@@ -134,6 +136,7 @@ import {
   TRANSIENT_ROW_SLOTS,
 } from "./layout-policy";
 import { MouseTarget, useMouseEnabled, useMouseRegion } from "./mouse/MouseRegions";
+import { useOfflineBrowseCommands } from "./offline-mode-context";
 import type { BrowseOverlay } from "./overlay-panel";
 import { OverlayPanel } from "./overlay-panel";
 import { plainModeEnabled, selectionPrefix } from "./plain-mode";
@@ -181,24 +184,9 @@ import {
 import { usePosterPreview } from "./use-poster-preview";
 import { useDebouncedViewportPolicy } from "./use-viewport-policy";
 
-function browseIdleHint(mode: ShellMode): string {
-  if (mode === "youtube") return "Search for a channel or video — or try /trending";
-  if (mode === "anime") return "Search for an anime — or try /trending";
-  return "Search for a title — or try /trending to see what's popular";
-}
-
-function browseFilterPlaceholder(mode: ShellMode): string {
-  if (mode === "youtube") return "type channel, playlist, video, downloaded…";
-  if (mode === "anime") return "type title, year, anime, downloaded…";
-  return "type title, year, movie, series, downloaded…";
-}
-
-import type { BrowseShellProps, DetailsSheetLocalContext } from "./browse-shell-props";
-
 export type { BrowseQueryDraft, DetailsSheetLocalContext } from "./browse-shell-props";
 
 const EMPTY_TITLE_ENTRIES: readonly LocalTitleEntry[] = [];
-
 const NO_LOCAL_DETAILS: DetailsSheetLocalContext = { history: null, availability: null };
 
 export function BrowseShell<T>({
@@ -216,7 +204,7 @@ export function BrowseShell<T>({
   initialCalendarRoute,
   startupPicks,
   placeholder,
-  commands,
+  commands: baseCommands,
   onSearch,
   onLoadCalendar,
   onCalendarAccepted,
@@ -247,6 +235,7 @@ export function BrowseShell<T>({
   localTitles,
 }: BrowseShellProps<T>) {
   recordRender("browse");
+  const { commands, catalogSearchOptions, offlineMode } = useOfflineBrowseCommands(baseCommands);
   const viewport = useDebouncedViewportPolicy("browse", {
     zen: settings?.zenMode,
   });
@@ -294,7 +283,7 @@ export function BrowseShell<T>({
           nextValue,
           commands,
           matchLocalTitles(titleEntries, nextValue),
-          { catalogSearch: true },
+          catalogSearchOptions,
         ),
       );
     },
@@ -558,12 +547,10 @@ export function BrowseShell<T>({
         commandInput,
         commands,
         matchLocalTitles(entries, commandInput),
-        {
-          catalogSearch: true,
-        },
+        catalogSearchOptions,
       ),
     );
-  }, [commandInput, commands, localTitles]);
+  }, [catalogSearchOptions, commandInput, commands, localTitles]);
 
   const updateQuery = useCallback(
     (nextValue: string) => {
@@ -1054,6 +1041,7 @@ export function BrowseShell<T>({
     idleFocused,
     selectedIndex: idleSelectedIndex,
     showDiscoveryRowWhenEmpty: idleContextStatus === "ready",
+    offline: offlineMode.active,
   });
   const canFocusIdleRows =
     options.length === 0 &&
@@ -1423,9 +1411,13 @@ export function BrowseShell<T>({
       submittedInput === commandInput
         ? titleMatches
         : matchLocalTitles(titleEntries, submittedInput);
-    const row = resolveHighlightedPaletteRow(submittedInput, commands, submittedTitles, index, {
-      catalogSearch: true,
-    });
+    const row = resolveHighlightedPaletteRow(
+      submittedInput,
+      commands,
+      submittedTitles,
+      index,
+      catalogSearchOptions,
+    );
     if (row?.kind === "command" && row.command.enabled) {
       setCommandMode(false);
       onPaletteCommand?.(row.command.id);
@@ -1441,7 +1433,7 @@ export function BrowseShell<T>({
       setHighlightedCommandIndex(0);
       onTitlePick?.(row.match.entry);
     }
-    if (row?.kind === "search") {
+    if (row?.kind === "search" && !row.disabledReason) {
       setCommandMode(false);
       setCommandInput("");
       setHighlightedCommandIndex(0);
@@ -1568,9 +1560,12 @@ export function BrowseShell<T>({
         }
         return;
       }
-      const selectable = paletteSelectableCount(commandInput, commands, titleMatches, {
-        catalogSearch: true,
-      });
+      const selectable = paletteSelectableCount(
+        commandInput,
+        commands,
+        titleMatches,
+        catalogSearchOptions,
+      );
       if (key.upArrow) {
         setHighlightedCommandIndex((current) => movePaletteSelection(selectable, current, -1));
         return;
@@ -2629,6 +2624,7 @@ export function BrowseShell<T>({
           commands={commands}
           highlightedIndex={highlightedCommandIndex}
           catalogSearch
+          catalogSearchOffline={offlineMode.active}
           titleMatches={titleMatches}
           maxVisible={getBrowseCommandPaletteMaxVisible(
             viewport.rows,

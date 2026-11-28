@@ -641,7 +641,12 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // measured 3,449,390 bytes with Bun 1.4.5: +3,013 over 3,446,377. No
 // dependency or asset. 3369 KiB is the smallest whole-KiB budget over that
 // measurement and leaves 466 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_369;
+// The shell-v4 offline-first branch measured 3,455,211 bytes with Bun 1.4.5:
+// +5,821 over 3,449,390. No dependency or asset; oversized shell files were
+// split during the change, so the increase is the offline policy and local
+// fallback behavior itself. 3375 KiB is the smallest whole-KiB budget over
+// that measurement and leaves 789 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_375;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

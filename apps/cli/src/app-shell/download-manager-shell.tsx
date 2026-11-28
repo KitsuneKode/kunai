@@ -34,6 +34,7 @@ import type { DownloadJobRecord } from "@/services/storage/storage-read-models";
 import { Box, Text, useInput } from "ink";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useOfflineMode } from "./offline-mode-context";
 import { plainModeEnabled, selectionPrefix } from "./plain-mode";
 import { useRootContentSuspended } from "./RootContentSuspension";
 
@@ -198,6 +199,7 @@ export function DownloadManagerContent({
   /** When false, omit per-selection hint row (parent shell owns the footer). */
   showSelectionHints?: boolean;
 }) {
+  const offlineMode = useOfflineMode();
   const viewport = useDebouncedViewportPolicy("picker", { zen: container.config.zenMode });
   // Inside a root-owned overlay the provider's content box is the width budget;
   // the raw terminal is wider because the frame already spent the difference.
@@ -355,6 +357,10 @@ export function DownloadManagerContent({
       return;
     }
     if (job.status === "failed" || job.status === "repairable" || job.status === "aborted") {
+      if (offlineMode.active) {
+        setRepairSweepStatus("waiting for connection · reconnect to resume downloads");
+        return;
+      }
       void container.downloadService
         .retry(job.id)
         .then(() => {
@@ -496,7 +502,16 @@ export function DownloadManagerContent({
   const renderJob = (job: DownloadJobRecord, index: number) => {
     const isSelected = index === selectedIndex;
     const state = queueStatePresentation(job);
+    const waitingOffline =
+      offlineMode.active &&
+      (job.status === "failed" || job.status === "repairable" || job.status === "aborted");
+    const displayState = waitingOffline
+      ? { label: plainModeEnabled() ? "[waiting]" : "◌ waiting", color: palette.dim }
+      : state;
     const meta = queueMetaLine(job, liveStats.get(job.id));
+    const displayMeta = waitingOffline
+      ? { primary: "waiting", secondary: "for connection", tone: palette.dim }
+      : meta;
     const { positionLabel, kindLabel } = presentMedia({
       title: job.titleName,
       mediaKind: job.mediaKind,
@@ -552,8 +567,8 @@ export function DownloadManagerContent({
               </Text>
             </Box>
             <Box width={queueLayout.stateWidth} overflow="hidden">
-              <Text wrap="truncate" color={state.color}>
-                {truncateLine(state.label, queueLayout.stateWidth - 1)}
+              <Text wrap="truncate" color={displayState.color}>
+                {truncateLine(displayState.label, queueLayout.stateWidth - 1)}
               </Text>
             </Box>
             <Box width={queueLayout.progressWidth}>
@@ -576,13 +591,13 @@ export function DownloadManagerContent({
               justifyContent="flex-end"
               overflow="hidden"
             >
-              <Text wrap="truncate" color={meta.tone} bold={job.status === "running"}>
-                {truncateLine(meta.primary, queueLayout.metaWidth - 1)}
+              <Text wrap="truncate" color={displayMeta.tone} bold={job.status === "running"}>
+                {truncateLine(displayMeta.primary, queueLayout.metaWidth - 1)}
               </Text>
-              {meta.secondary ? (
+              {displayMeta.secondary ? (
                 <Text color={palette.dim} dimColor wrap="truncate">
                   {" "}
-                  {truncateLine(meta.secondary, Math.max(4, queueLayout.metaWidth - 4))}
+                  {truncateLine(displayMeta.secondary, Math.max(4, queueLayout.metaWidth - 4))}
                 </Text>
               ) : null}
             </Box>
@@ -671,7 +686,9 @@ export function DownloadManagerContent({
               : selected.status === "repairable"
                 ? "r repair sidecars  ·  x delete files  ·  X remove record"
                 : selected.status === "failed" || selected.status === "aborted"
-                  ? "r to retry  ·  x remove record"
+                  ? offlineMode.active
+                    ? "waiting for connection  ·  x remove record"
+                    : "r to retry  ·  x remove record"
                   : selected.status === "completed" || selected.status === "completed-with-notes"
                     ? "enter play local file  ·  x delete files  ·  X remove record"
                     : selected.status === "queued"

@@ -152,7 +152,8 @@ export function buildRootStatusSummary({
     rootStatus === "seeking" ||
     rootStatus === "paused";
 
-  const headerLabel = humanReadableRootStatus(rootStatus);
+  const shellOffline = offlineMode || !networkAvailable;
+  const headerLabel = shellOffline ? "offline" : humanReadableRootStatus(rootStatus);
 
   // Crumb: show the provider actually serving the active stream when it differs from the
   // session selection (for example after recovery fallback or stale shell state).
@@ -280,7 +281,7 @@ export function buildRootStatusSummary({
   return {
     header: {
       label: headerLabel,
-      tone: headerTone(rootStatus),
+      tone: shellOffline ? "warning" : headerTone(rootStatus),
     },
     crumb,
     alert,

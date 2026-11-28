@@ -203,6 +203,7 @@ export function bootstrapServices(input: {
     titleAliases: historyTitleAliases,
     config,
     logger,
+    isOnline: () => connectivity.isOnline(),
     ytDlpAvailable: options?.capabilitySnapshot?.ytDlp ?? false,
     ffprobeAvailable: Boolean(whichLive("ffprobe")),
     diagnostics: diagnosticsService,
@@ -288,6 +289,13 @@ export function bootstrapServices(input: {
       }
     },
   });
+  let downloadsWereOnline = connectivity.isOnline();
+  connectivity.subscribe(() => {
+    const online = connectivity.isOnline();
+    if (online && !downloadsWereOnline) downloadService.kickQueue("online-resume");
+    downloadsWereOnline = online;
+  });
+
   const offlineLibraryService = new OfflineLibraryService({
     downloadService,
     historyRepository,

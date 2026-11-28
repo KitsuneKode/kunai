@@ -132,6 +132,7 @@ Scores use a 1–5 scale (`Impact` 5 = fixes broken trust/usability on daily pat
 - **Dependencies:** Ranks 4 & 5 (`ConfirmStrip` + `emptySafeFooterActions`).
 
 ### Rank 14 · Offline-First Search Fallback, Offline Calendar Cache & Offline Downloads Guard
+- **Status:** Done.
 - **Impact / Effort:** 4 / 2.5 (**Ratio: 1.6**)
 - **Why:** Offline mode currently shows dead online rows (`Trending this week`, online `Continue`, online Calendar error without cached fallback, enabled `/trending` in Palette, retryable failed downloads). Users with downloaded libraries expect Kunai to behave like a true local-first media shelf offline.
 - **Files touched:** `apps/cli/src/app/search/SearchPhase.ts`, `apps/cli/src/app-shell/browse-idle-actions.ts`, `apps/cli/src/app-shell/calendar-ui.model.ts`, `apps/cli/src/domain/session/command-registry.ts`, `apps/cli/src/app-shell/download-manager-shell.tsx`, `apps/cli/src/app-shell/post-play-view.ts`.

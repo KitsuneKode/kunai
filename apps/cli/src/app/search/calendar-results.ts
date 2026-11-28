@@ -43,24 +43,41 @@ type CalendarContainer = Pick<Container, "stateManager" | "timelineService" | "l
   readonly releaseProgressWriter?: Pick<ReleaseProgressWriter, "upsertOptimistic">;
   readonly calendarArchive?: Pick<
     CalendarArchiveRepository,
-    "archive" | "listInWindow" | "pruneBefore"
+    "archive" | "listInWindow" | "listEntriesInWindow" | "pruneBefore"
   >;
 };
 
 export async function loadCalendarResults(
   container: CalendarContainer,
   signal?: AbortSignal,
+  options?: { readonly offline?: boolean },
 ): Promise<CalendarResultBundle> {
   // Keep every calendar fact in this load on one local-day boundary. A series of
   // independent Date.now() calls can straddle midnight and make row labels, the
   // selected day, and subtitle counts disagree for the same response.
   const nowMs = Date.now();
   const days = 7;
-  const { items: forwardItems, unavailable } = await loadUnifiedCalendarWindow(
-    container.timelineService,
-    days,
-    signal,
-  );
+  let forwardItems: readonly CatalogScheduleItem[];
+  let unavailable: readonly ("anime" | "series" | "movie")[] = [];
+  let cachedAtMs: number | undefined;
+  try {
+    const loaded = await loadUnifiedCalendarWindow(container.timelineService, days, signal);
+    forwardItems = loaded.items;
+    unavailable = [...loaded.unavailable];
+  } catch (error) {
+    if (!options?.offline) throw error;
+    const cached = readArchivedScheduleWindow(container, nowMs);
+    if (!cached) {
+      return {
+        results: [],
+        subtitle: "offline · no cached schedule",
+        emptyMessage:
+          "No cached schedule offline. Reconnect to refresh the calendar; your downloads and history remain available.",
+      };
+    }
+    forwardItems = cached.items;
+    cachedAtMs = cached.cachedAtMs;
+  }
   const items = mergeArchivedPastWindow(container, forwardItems, nowMs);
   // Collapse duplicate schedule entries for the same (titleId, releaseAt) slot so a
   // title cannot appear twice for one airing (sources occasionally emit dupes, and
@@ -175,7 +192,7 @@ export async function loadCalendarResults(
     results,
     subtitle:
       results.length > 0
-        ? `${results.length} this week · ${airingTodayCount} airing today · ${releasedCount} released${newEpisodeSuffix}${forYouSuffix}${sourceSuffix}`
+        ? `${results.length} this week · ${airingTodayCount} airing today · ${releasedCount} released${newEpisodeSuffix}${forYouSuffix}${cachedAtMs ? ` · cached ${formatCacheAge(nowMs - cachedAtMs)}` : ""}${sourceSuffix}`
         : `No releases found for the next week${sourceSuffix}`,
     emptyMessage:
       unavailable.length > 0
@@ -303,6 +320,33 @@ function formatCalendarOverview(calendar: CalendarItem): string {
     calendar.inHistory && !calendar.inWatchlist ? "from history" : null,
   ].filter((value): value is string => Boolean(value));
   return parts.join(" · ");
+}
+
+function formatCacheAge(ageMs: number): string {
+  const minutes = Math.max(0, Math.floor(ageMs / 60_000));
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+function readArchivedScheduleWindow(
+  container: CalendarContainer,
+  nowMs: number,
+): { readonly items: readonly CatalogScheduleItem[]; readonly cachedAtMs: number } | null {
+  const archive = container.calendarArchive;
+  if (!archive) return null;
+  const start = new Date(nowMs - CALENDAR_PAST_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const end = new Date(nowMs + (CALENDAR_PAST_WINDOW_DAYS + 1) * 24 * 60 * 60 * 1000).toISOString();
+  const entries = archive.listEntriesInWindow(start, end);
+  const items = entries.flatMap((entry) => {
+    const parsed = parseArchivedCalendarItem(entry.payloadJson);
+    return parsed ? [parsed] : [];
+  });
+  if (items.length === 0) return null;
+  const newest = entries.reduce((max, entry) => Math.max(max, Date.parse(entry.archivedAt)), 0);
+  return { items, cachedAtMs: newest };
 }
 
 /**

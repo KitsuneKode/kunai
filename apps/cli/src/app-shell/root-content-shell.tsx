@@ -1,10 +1,12 @@
 import type { Container } from "@/container";
 import { toErrorScenario } from "@/domain/playback/playback-problem";
+import type { OfflineMode } from "@/domain/session/offline-mode";
 import type { SessionState } from "@/domain/session/SessionState";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import { Box } from "ink";
 import React from "react";
 
+import { OfflineModeProvider } from "./offline-mode-context";
 import { buildErrorNextStep, UNEXPLAINED_FAILURE_MESSAGE } from "./playback-error-next-step";
 import { buildPlaybackFailureWaterfall } from "./playback-failure-waterfall";
 import { PlaybackRootContent, type PlaybackRootContentInput } from "./playback-mount-shell";
@@ -25,6 +27,7 @@ export type RootContentRendererContext = {
   readonly rootOverlay: RootOwnedOverlay | null;
   readonly playbackRootInput: PlaybackRootContentInput;
   readonly clearShellScreen: () => void;
+  readonly offlineMode: OfflineMode;
 };
 
 /**
@@ -166,6 +169,17 @@ export function RootContentBody({
   readonly resolved: ResolvedRootContent;
   readonly ctx: RootContentRendererContext;
 }): React.ReactElement | null {
+  return (
+    <OfflineModeProvider value={ctx.offlineMode}>
+      {renderRootContentBody(resolved, ctx)}
+    </OfflineModeProvider>
+  );
+}
+
+function renderRootContentBody(
+  resolved: ResolvedRootContent,
+  ctx: RootContentRendererContext,
+): React.ReactElement | null {
   switch (resolved.kind) {
     case "error":
       return renderErrorRootContent(ctx);

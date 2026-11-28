@@ -21,6 +21,7 @@ import {
 import { setSessionLane, switchSessionMode } from "@/app/session/mode-switch";
 import { requestAppShutdown } from "@/app/session/shutdown-request";
 import type { Container } from "@/container";
+import { deriveOfflineMode } from "@/domain/session/offline-mode";
 import type { SessionStateManager } from "@/domain/session/SessionStateManager";
 import { isKittyCompatible } from "@/image";
 import { copyToClipboard } from "@/infra/clipboard";
@@ -56,6 +57,7 @@ import {
   NOTIFICATION_TOAST_TTL_MS,
   syncNotificationQueueFromActive,
   tickNotificationQueue,
+  notificationSnapshotSig,
   type NotificationPriority,
 } from "./notification-queue";
 import { plainModeEnabled } from "./plain-mode";
@@ -350,17 +352,6 @@ export async function openPlaybackStreamSelectionPicker(
  */
 export function useSessionState(stateManager: SessionStateManager) {
   return useSessionSelector(stateManager, (state) => state);
-}
-
-/**
- * Cheap identity for a notification snapshot: length plus per-row
- * (dedupKey, readAt). The bell only needs count/unread/kind, and rebuilding
- * this string is far cheaper than a repo scan per render.
- */
-function notificationSnapshotSig(
-  active: readonly { dedupKey: string; readAt?: string | null }[],
-): string {
-  return `${active.length}|${active.map((n) => `${n.dedupKey}@${n.readAt ?? ""}`).join(",")}`;
 }
 
 /**
@@ -814,6 +805,10 @@ export function AppRoot({ container }: { container: Container }) {
   );
   const playbackIsLocal = isLocalPlaybackStream(state.stream);
   const networkAvailable = useConnectivityOnline(container.connectivity);
+  const offlineMode = deriveOfflineMode({
+    explicitOffline: container.config.offlineMode,
+    networkAvailable,
+  });
   const rootStatusSummaryInput = useMemo(
     () => ({
       currentViewLabel,
@@ -824,7 +819,7 @@ export function AppRoot({ container }: { container: Container }) {
       playlistCount,
       notificationCount: unreadNotificationCount,
       newEpisodeNotificationCount,
-      offlineMode: container.config.offlineMode,
+      offlineMode: offlineMode.active,
       networkAvailable,
       playbackIsLocal,
       playbackProblem: state.playbackProblem,
@@ -845,7 +840,7 @@ export function AppRoot({ container }: { container: Container }) {
       playlistCount,
       unreadNotificationCount,
       newEpisodeNotificationCount,
-      container.config.offlineMode,
+      offlineMode.active,
       networkAvailable,
       playbackIsLocal,
       state.playbackProblem,
@@ -871,7 +866,7 @@ export function AppRoot({ container }: { container: Container }) {
       playlistCount,
       notificationCount: unreadNotificationCount,
       newEpisodeNotificationCount,
-      offlineMode: container.config.offlineMode,
+      offlineMode: offlineMode.active,
       networkAvailable,
       playbackIsLocal,
       providerRegistry: container.providerRegistry,
@@ -1290,6 +1285,7 @@ export function AppRoot({ container }: { container: Container }) {
             rootOverlay,
             playbackRootInput,
             clearShellScreen,
+            offlineMode,
           }}
         />
       </Box>

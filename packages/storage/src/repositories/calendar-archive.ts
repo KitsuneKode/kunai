@@ -17,6 +17,11 @@ interface CalendarArchiveRow {
   readonly payload_json: string;
 }
 
+export interface CalendarArchiveEntry {
+  readonly payloadJson: string;
+  readonly archivedAt: string;
+}
+
 export class CalendarArchiveRepository {
   constructor(private readonly db: KunaiDatabase) {}
 
@@ -52,6 +57,20 @@ export class CalendarArchiveRepository {
       )
       .all(startIso, endIso)
       .map((row) => row.payload_json);
+  }
+
+  /** Payloads plus cache provenance for offline replay of the last schedule. */
+  listEntriesInWindow(startIso: string, endIso: string): readonly CalendarArchiveEntry[] {
+    return this.db
+      .query<{ payload_json: string; archived_at: string }, [string, string]>(
+        `
+          SELECT payload_json, archived_at FROM calendar_archive
+          WHERE release_at >= ? AND release_at <= ?
+          ORDER BY release_at ASC
+        `,
+      )
+      .all(startIso, endIso)
+      .map((row) => ({ payloadJson: row.payload_json, archivedAt: row.archived_at }));
   }
 
   /** Incidental cleanup — drop entries older than the retention window. Returns rows removed. */

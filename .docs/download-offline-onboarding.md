@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-27T10:29:38Z"
+lastReviewed: "2026-11-28T16:16:33Z"
 ---
 
 # Kunai — Download, Offline Library, And Onboarding
@@ -478,3 +478,7 @@ and saved job state intact. A probe waiting for stat or a transcode slot may not
 start after shutdown. Helper processes receive the existing scrubbed child
 environment. Container disposal stops presence and pauses download work before
 closing the databases.
+
+## Shell offline-first behavior
+
+The interactive shell derives one offline value from container connectivity (which already includes explicit offline intent) and passes it through the root shell context. Browse idle shelves ready local assets and hides online-only discovery/continue rows; offline search reads downloads plus history without a catalog error panel; palette discovery commands stay visible but disabled with `needs a connection`; calendar falls back to the archived schedule with cache provenance or a specific no-cache offline empty state; download queue workers do not start jobs while offline and reconnect kicks the queue through `online-resume`.

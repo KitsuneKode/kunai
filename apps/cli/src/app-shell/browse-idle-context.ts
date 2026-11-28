@@ -117,7 +117,6 @@ export async function buildBrowseIdleContext(
     for (const [titleId, entry] of sortedByRecency) {
       const asset = readyByTitle.get(titleId);
       if (asset?.season === undefined || asset.episode === undefined) continue;
-      if (continueWatching?.titleId === titleId) continue;
       offlineReadyNext = {
         title: entry.title,
         ep: `S${String(asset.season).padStart(2, "0")}E${String(asset.episode).padStart(2, "0")}`,
@@ -125,6 +124,46 @@ export async function buildBrowseIdleContext(
         offlineJobId: asset.originJobId,
       };
       break;
+    }
+
+    // Movies and one-off videos have no next-episode cursor, but offline they
+    // are exactly the local shelf the home surface must promote. Prefer a
+    // download attached to recent history; otherwise fall back to the newest
+    // ready asset so a library with no history is still visible.
+    if (!offlineReadyNext) {
+      let wholeLibraryAssets: ReturnType<Container["offlineAssetService"]["listAllAssets"]> = [];
+      try {
+        wholeLibraryAssets = container.offlineAssetService
+          .listAllAssets()
+          .filter((asset) => asset.state === "ready");
+      } catch {
+        // The whole-library row is additive; calendar/watchlist reads below still matter.
+      }
+      const byTitle = new Map(wholeLibraryAssets.map((asset) => [asset.titleId, asset]));
+      let selected: (typeof wholeLibraryAssets)[number] | undefined;
+      let selectedTitle: string | undefined;
+      for (const [titleId, entry] of sortedByRecency) {
+        selected = byTitle.get(titleId);
+        if (selected) {
+          selectedTitle = entry.title;
+          break;
+        }
+      }
+      if (!selected) {
+        selected = wholeLibraryAssets[0];
+        selectedTitle = selected?.titleName;
+      }
+      if (selected) {
+        offlineReadyNext = {
+          title: selectedTitle ?? selected.titleName,
+          ep:
+            selected.season !== undefined && selected.episode !== undefined
+              ? `S${String(selected.season).padStart(2, "0")}E${String(selected.episode).padStart(2, "0")}`
+              : undefined,
+          titleId: selected.titleId,
+          offlineJobId: selected.originJobId,
+        };
+      }
     }
 
     // Local dates on both sides, as the calendar this nudge opens uses: the

@@ -249,3 +249,12 @@ export function syncNotificationQueueFromActive(
     currentPriority: state.current?.priority ?? null,
   };
 }
+
+/** Cheap identity for a notification snapshot: length plus per-row
+ * (dedupKey, readAt). The bell only needs count/unread/kind, and rebuilding
+ * this string is far cheaper than a repo scan per render. */
+export function notificationSnapshotSig(
+  active: readonly { dedupKey: string; readAt?: string | null }[],
+): string {
+  return `${active.length}|${active.map((n) => `${n.dedupKey}@${n.readAt ?? ""}`).join(",")}`;
+}
