@@ -1,4 +1,31 @@
 /**
+ * True only for the global version fast path. install.ps1 smoke-runs a fresh
+ * versioned payload as `--version` before install.json exists; version output
+ * never writes storage, so it must not demand profile or install evidence.
+ */
+export function versionRequestSkipsWindowsProfileInference(
+  argv: readonly string[],
+  maintenanceCommands: ReadonlySet<string>,
+): boolean {
+  const command = argv[0] ?? "";
+  return !maintenanceCommands.has(command) && (argv.includes("--version") || argv.includes("-v"));
+}
+
+type StorageModule = typeof import("@kunai/storage");
+
+export type PrepareCliProfileDeps = {
+  readonly platform?: NodeJS.Platform;
+  readonly env?: NodeJS.ProcessEnv;
+  readonly storage?: Pick<
+    StorageModule,
+    | "checkDesktopProfile"
+    | "DesktopProfileError"
+    | "getKunaiPaths"
+    | "inferWindowsProfileFromExecutable"
+  >;
+};
+
+/**
  * Startup validation for a dedicated desktop profile (`KUNAI_CONFIG_DIR`).
  *
  * Runs before every other `startCli` branch so a malformed or unowned profile
@@ -16,21 +43,27 @@ export async function prepareCliProfile(
   argv: readonly string[],
   maintenanceCommands: ReadonlySet<string>,
   fastPath: boolean,
+  deps: PrepareCliProfileDeps = {},
 ): Promise<boolean> {
-  if (process.env.KUNAI_CONFIG_DIR === undefined && process.platform !== "win32") return true;
+  const platform = deps.platform ?? process.platform;
+  const env = deps.env ?? process.env;
+  if (env.KUNAI_CONFIG_DIR === undefined && platform !== "win32") return true;
+  const storage = deps.storage ?? (await import("@kunai/storage"));
   const {
     checkDesktopProfile,
     DesktopProfileError,
     getKunaiPaths,
     inferWindowsProfileFromExecutable,
-  } = await import("@kunai/storage");
+  } = storage;
   try {
     // A payload running from an owned profile's version store inherits that
     // profile even when the invoking shell carried no override. Anything the
     // shell did set — including an empty value — keeps its existing meaning.
-    const inferredRoot = inferWindowsProfileFromExecutable();
-    if (inferredRoot !== undefined) process.env.KUNAI_CONFIG_DIR = inferredRoot;
-    if (process.env.KUNAI_CONFIG_DIR === undefined) return true;
+    const inferredRoot = versionRequestSkipsWindowsProfileInference(argv, maintenanceCommands)
+      ? undefined
+      : inferWindowsProfileFromExecutable(undefined, env);
+    if (inferredRoot !== undefined) env.KUNAI_CONFIG_DIR = inferredRoot;
+    if (env.KUNAI_CONFIG_DIR === undefined) return true;
     const command = argv[0] ?? "";
     const maintenance = maintenanceCommands.has(command);
     if (command === "uninstall" || (!maintenance && argv.includes("--install-protocol-handler"))) {
