@@ -68,7 +68,10 @@ describe("overlay footer actions", () => {
   });
 
   test("empty overlay lists keep only actions that do not need a selection", () => {
+    // Restore brings back the last queue, so it is the one useful key on an
+    // empty Up Next and must survive the empty-list filter.
     expect(queueFooterActions({ hasRows: false }).map((action) => action.label)).toEqual([
+      "restore",
       "commands",
       "close",
     ]);

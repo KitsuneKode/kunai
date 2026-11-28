@@ -39,8 +39,10 @@ export function queueFooterActions(input?: EmptyableFooterInput): readonly Foote
       "queue-play": { primary: true },
     },
   });
+  // Restore is not row-scoped: it brings back the last queue, which is the one
+  // useful key on an empty Up Next.
   return emptySafeFooterActions(
-    withSelectionRequired(actions, ["play", "reorder", "remove", "clear", "restore"]),
+    withSelectionRequired(actions, ["play", "reorder", "remove", "clear"]),
     rowsPresent(input),
   );
 }
