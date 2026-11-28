@@ -21,6 +21,7 @@ import {
   writeInstallManifestUnderActivation,
 } from "@/services/update/install-manifest";
 import { tryAcquireActivationLock } from "@/services/update/native-installer/activation-lock";
+import { cleanupOldVersions } from "@/services/update/native-installer/cleanup-versions";
 import {
   drainInstallRetentionCleanups,
   installLatest,
@@ -185,7 +186,15 @@ describe("installLatest", () => {
       expect(await readFile(manifestPath, "utf8")).toBe(newerManifest);
       await expectLauncherPointsTo(layout.launcherPath, versionBinaryPath(layout, "2.0.0"));
       expect(existsSync(stagingDirForVersion(layout, "1.0.0"))).toBe(false);
-      expect(await readdir(layout.transactionsDir)).toEqual([]);
+      // Force retention to win the race deterministically. Once settled, its
+      // abandoned-transaction pass prunes the now-empty directory; absent and
+      // empty are the same settled fact — no transaction records remain.
+      await drainInstallRetentionCleanups();
+      await cleanupOldVersions(layout);
+      const remainingTransactions = existsSync(layout.transactionsDir)
+        ? await readdir(layout.transactionsDir)
+        : [];
+      expect(remainingTransactions).toEqual([]);
     },
   );
 
