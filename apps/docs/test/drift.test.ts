@@ -192,9 +192,9 @@ describe("docs codegen drift", () => {
     expect(activeEnd).toBeGreaterThan(activeStart);
     expect(activeSection).not.toContain("| AniDB");
     expect(content).toContain(
-      '`animeProviderPriority: ["kickassanime", "animegg", "miruro", "allanime"]`',
+      '`animeProviderPriority: ["kickassanime", "animegg", "miruro", "anilight", "anidap", "animeparadise", "allanime"]`',
     );
-    expect(content).toContain("provider-defaults revision 8");
+    expect(content).toContain("provider-defaults revision 12");
   });
 
   test("command count matches registry parse", () => {

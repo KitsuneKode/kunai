@@ -10,7 +10,6 @@
     "movy",
     "vidbolt",
     "filesun",
-    "allanime",
     "hianime",
     "miruro",
     "animegg",
@@ -18,6 +17,7 @@
     "anilight",
     "anidap",
     "animeparadise",
+    "allanime",
     "youtube"
   ],
   "providers": [
@@ -126,21 +126,6 @@
         "Atlantic title/year lookup; TV coordinates are 1-based.",
         "Only the FileSuN embed is verified and resolved; direct HLS with captions.",
         "Local HTTP only: no browser, credentials, or relay."
-      ]
-    },
-    {
-      "id": "allanime",
-      "displayName": "AllManga",
-      "description": "Anime episodes in sub and dub — the ani-cli parity source",
-      "domain": "mkissa.to",
-      "recommended": false,
-      "mediaKinds": ["anime"],
-      "capabilities": ["search", "episode-list", "source-resolve", "subtitle-resolve", "multi-source"],
-      "notes": [
-        "AllManga-compatible client uses local fetch/decode logic for search, catalog, and source resolution.",
-        "The active CLI path is browserless; unsupported extracted embeds should return deterministic failure.",
-        "Source inventory: Default, Yt-mp4, S-mp4, Mp4 (mp4upload scrape), Luf-Mp4, Ak. Filemoon is gone.",
-        "2026-10: mkissa crypto rotates buildId + every derivation constant together (81 → 119 → 140 → 171 → 177 → 181 → 189; 177 moved the boot payload to group/lane/host/buildId/epoch and added an env-gated mask XOR; 181 moved it to buildId:group:host:epoch:lane; 189 moved it to epoch|lane|group|host|buildId). GET persisted queries miss on 189, so episode resolve POSTs the desktop document once. Pinning the buildId alone is rejected invalid_boot_token. ani-cli v5 moved primary to anidb.app."
       ]
     },
     {
@@ -293,6 +278,21 @@
         "AniList/MAL identity is checked before episode lookup.",
         "Reads the watch page's rotating Flight action without executing scripts.",
         "Direct, local-only HLS with sub audio and ASS/VTT tracks; no relay."
+      ]
+    },
+    {
+      "id": "allanime",
+      "displayName": "AllManga",
+      "description": "Anime episodes in sub and dub — the ani-cli parity source",
+      "domain": "mkissa.to",
+      "recommended": false,
+      "mediaKinds": ["anime"],
+      "capabilities": ["search", "episode-list", "source-resolve", "subtitle-resolve", "multi-source"],
+      "notes": [
+        "AllManga-compatible client uses local fetch/decode logic for search, catalog, and source resolution.",
+        "The active CLI path is browserless; unsupported extracted embeds should return deterministic failure.",
+        "Source inventory: Default, Yt-mp4, S-mp4, Mp4 (mp4upload scrape), Luf-Mp4, Ak. Filemoon is gone.",
+        "2026-10: mkissa crypto rotates buildId + every derivation constant together (81 → 119 → 140 → 171 → 177 → 181 → 189; 177 moved the boot payload to group/lane/host/buildId/epoch and added an env-gated mask XOR; 181 moved it to buildId:group:host:epoch:lane; 189 moved it to epoch|lane|group|host|buildId). GET persisted queries miss on 189, so episode resolve POSTs the desktop document once. Pinning the buildId alone is rejected invalid_boot_token. ani-cli v5 moved primary to anidb.app."
       ]
     },
     {
@@ -1570,7 +1570,7 @@
     }
   ],
   "providerDefaults": {
-    "revision": 11,
+    "revision": 12,
     "series": {
       "defaultProvider": "vidlink",
       "fallbackPriority": ["movy", "rivestream", "vidrock", "videasy", "vidbolt", "filesun"],
@@ -1578,8 +1578,8 @@
     },
     "anime": {
       "defaultProvider": "hianime",
-      "fallbackPriority": ["kickassanime", "animegg", "miruro", "allanime", "anilight", "anidap", "animeparadise"],
-      "order": ["hianime", "kickassanime", "animegg", "miruro", "allanime", "anilight", "anidap", "animeparadise"]
+      "fallbackPriority": ["kickassanime", "animegg", "miruro", "anilight", "anidap", "animeparadise", "allanime"],
+      "order": ["hianime", "kickassanime", "animegg", "miruro", "anilight", "anidap", "animeparadise", "allanime"]
     },
     "youtube": {
       "defaultProvider": "youtube",

@@ -121,6 +121,16 @@ const INHERITED_ANIME_DEFAULTS: readonly {
     animeProvider: "hianime",
     priorities: [["kickassanime", "animegg", "miruro", "allanime", "anilight", "anidap"]],
   },
+  // Revision 11 appended AnimeParadise and still tried AllManga before those
+  // tails. Revision 12 moves AllManga last: bootstrap is current, stream
+  // resolution is CAPTCHA-blocked.
+  {
+    revision: 11,
+    animeProvider: "hianime",
+    priorities: [
+      ["kickassanime", "animegg", "miruro", "allanime", "anilight", "anidap", "animeparadise"],
+    ],
+  },
 ];
 
 export function shouldMigrateInheritedAnimeDefaults(loaded: Partial<KitsuneConfig>): boolean {
