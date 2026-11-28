@@ -38,6 +38,7 @@ function baseCtx(
 ): Parameters<typeof handleHistoryOverlayInput>[2] {
   const confirm = createConfirmStripHarness();
   return {
+    // SAFETY: deliberately partial test fixture narrowed to the contract exercised here.
     container: {
       historyRepository: {
         deleteProgressByKey: () => {},
@@ -107,6 +108,7 @@ describe("history delete UX", () => {
       baseCtx({
         confirmState: confirm.state,
         transitionConfirm: confirm.transition,
+        // SAFETY: deliberately partial test fixture narrowed to the contract exercised here.
         container: {
           historyRepository: {
             deleteProgressByKey: (key: string) => calls.push(`episode:${key}`),
@@ -132,6 +134,7 @@ describe("history delete UX", () => {
       baseCtx({
         confirmState: confirm.state,
         transitionConfirm: confirm.transition,
+        // SAFETY: deliberately partial test fixture narrowed to the contract exercised here.
         container: {
           historyRepository: {
             deleteProgressByKey: () => calls.push("episode"),
@@ -156,6 +159,7 @@ describe("history delete UX", () => {
       baseCtx({
         confirmState: confirm.state,
         transitionConfirm: confirm.transition,
+        // SAFETY: deliberately partial test fixture narrowed to the contract exercised here.
         container: {
           historyRepository: {
             deleteProgressByKey: () => calls.push("episode"),
