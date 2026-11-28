@@ -55,6 +55,7 @@ import {
 } from "@/app/playback/policies/auto-advance-policy";
 import { streamSelectionFromTrackPick } from "@/app/playback/source-quality";
 import type { StreamSelectionIntent } from "@/app/playback/source-quality";
+import { settleStartupFailurePanel } from "@/app/playback/startup-failure-menu";
 import { describePlaybackSubtitleStatus } from "@/app/playback/subtitle-status";
 import { buildTrackPickTransitionContext } from "@/app/playback/tracks-panel-pick";
 import { runAutoplayAdvanceCountdown } from "@/app/post-play/autoplay-advance-countdown";
@@ -293,46 +294,22 @@ export async function runPostPlaybackMenu(
     });
     if (iteration.openRecoverySourcePanelOnPostPlay) {
       iteration.openRecoverySourcePanelOnPostPlay = false;
-      const hasStreams = Boolean(preparedStream.providerResolveResult?.streams.length);
-      if (!hasStreams) {
-        run.pendingRecomputeSources = true;
-        run.pendingSourceRefreshAction = "recover";
-        continue postPlayback;
-      }
-      const picked = await deps.openTracksPanel(
+      const settled = await settleStartupFailurePanel({
+        run,
+        iteration,
+        deps,
+        result,
         preparedStream,
-        {
-          initialSection: "source",
-          failedCurrentReason: result.suspectedDeadStream
-            ? "Playback failed on this stream."
-            : "Playback did not start on this stream.",
-        },
         container,
-      );
-      const selection = picked ? streamSelectionFromTrackPick(picked) : null;
-      if (picked && (selection || picked.section === "subtitle")) {
-        const trackStart = await deps.completeSourceTrackPick(
-          currentEpisode,
-          picked,
-          selection,
-          resumeSeconds,
-          "post-playback-tracks",
-        );
-        if (!trackStart) continue postPlayback;
-        run.pendingStart = trackStart;
-        run.playbackSession = deps.transitionPlaybackSession(
-          run.playbackSession,
-          "recovery-started",
-          {
-            titleId: title.id,
-            season: currentEpisode.season,
-            episode: currentEpisode.episode,
-            provider: resolvedProviderId,
-            action: "recover",
-          },
-        );
-        break postPlayback;
-      }
+        signal,
+        currentEpisode,
+        resolvedProviderId,
+        resumeSeconds,
+        title,
+      });
+      if (settled === "recompute") continue postPlayback;
+      if (settled === "restart") break postPlayback;
+      return { kind: "exit", result: { status: "success", value: "back_to_search" } };
     }
     const mode = deps.getMode();
     // Snapshot the queue head once per menu pass for identity + label. Play queued

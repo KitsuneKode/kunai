@@ -18,6 +18,7 @@ import {
   showsEpisodeLabel,
 } from "@/domain/media/content-kind";
 import type { MediaItemIdentity } from "@/domain/media/media-item-identity";
+import { isPlaybackFailureClass } from "@/domain/playback/playback-failure-class";
 import {
   describePlaybackStatsSnapshot,
   type PlaybackStatsSnapshot,
@@ -181,6 +182,11 @@ export function buildPlaybackRootLoadingShellState(
     // and substring-matching it lit "Trying another source" over successful
     // resolves. Alarm state comes from `problem` below, which is structured.
     problem: state.playbackProblem,
+    failureClass: (() => {
+      const cause = state.playbackProblem?.cause;
+      return cause && isPlaybackFailureClass(cause) ? cause : null;
+    })(),
+    failover: state.playbackFailover,
     currentPosition: activePlaybackStatsSnapshot?.positionSeconds,
     duration: activePlaybackStatsSnapshot?.durationSeconds,
     bufferHealth:
