@@ -54,7 +54,11 @@ export type DbFileSnapshot = {
   readonly truncated: readonly string[];
 };
 
-/** Snapshots of both databases, keyed `"data.<table>"` / `"cache.<table>"`. */
+/**
+ * Snapshots of both databases, keyed `"data.<table>"` / `"cache.<table>"`,
+ * plus `config.json` as one canonical row so diffSnapshots can prove that a
+ * control did or did not persist. `tables()` filters the pseudo-entry out.
+ */
 export type ProfileSnapshot = Map<string, string[]>;
 
 export type TableDelta = {
@@ -110,8 +114,21 @@ function snapshotFile(dbPath: string): DbFileSnapshot {
   return { tables, truncated };
 }
 
+function configSnapshotRow(paths: ProfileStoragePaths): string {
+  if (!existsSync(paths.configPath)) return "{}";
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(paths.configPath, "utf8"));
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return "{\"__unreadable\":true}";
+    }
+    return canonicalRow(parsed);
+  } catch {
+    return "{\"__unreadable\":true}";
+  }
+}
+
 export function snapshotProfile(paths: ProfileStoragePaths): ProfileSnapshot {
-  const out: ProfileSnapshot = new Map();
+  const out: ProfileSnapshot = new Map([["config.json", [configSnapshotRow(paths)]]]);
   for (const [prefix, dbPath] of [
     ["data", paths.dataDbPath],
     ["cache", paths.cacheDbPath],
@@ -187,7 +204,9 @@ export function createProfileInspector(paths: ProfileStoragePaths): ProfileInspe
     tables() {
       const snap = snapshotProfile(paths);
       const out: Record<string, number> = {};
-      for (const [table, rows] of snap) out[table] = rows.length;
+      for (const [table, rows] of snap) {
+        if (table !== "config.json") out[table] = rows.length;
+      }
       return out;
     },
     tableRows(table) {

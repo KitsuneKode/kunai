@@ -18,7 +18,13 @@ export const SettingRowText = React.memo(function SettingRowText({
   const plain = plainModeEnabled();
   const summary = row.disabledReason ? "env locked" : row.valueSummary;
   const prefix = selectionPrefix(selected, plain);
-  const fitted = fitSettingsRowText({ width: rowWidth, prefix, label: row.def.label, value: summary, plain });
+  const fitted = fitSettingsRowText({
+    width: rowWidth,
+    prefix,
+    label: row.def.label,
+    value: `${summary}${row.envBadge ? " (env)" : ""}`,
+    plain,
+  });
 
   return (
     <Box width={rowWidth} backgroundColor={selected && !plain ? palette.accentFill : undefined}>
@@ -29,7 +35,6 @@ export const SettingRowText = React.memo(function SettingRowText({
         {fitted.label}
       </Text>
       <Text color={palette.dim}>{fitted.separator}{fitted.value}</Text>
-      {row.envBadge ? <Text color={palette.ok}> {"(env)"}</Text> : null}
     </Box>
   );
 });

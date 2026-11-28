@@ -176,6 +176,83 @@ async function withSession(
   }
 }
 
+async function openSettingsPanel(s: AgentSession): Promise<void> {
+  await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+  s.press(SETTINGS_KEY);
+  await s.waitForFrame((f) => f.includes("command"), "command palette");
+  s.press("settings", K.enter);
+  await s.waitForFrame(
+    (f) => f.includes("Settings") && f.includes("next launch"),
+    "settings panel with focused-row timing",
+  );
+  await s.waitSettled();
+}
+
+function expectFrameWithinWidth(frame: string, columns: number): void {
+  for (const line of frame.split("\n")) {
+    expect(measureColumns(line.trimEnd())).toBeLessThanOrEqual(columns);
+  }
+}
+
+describe("agent wiring · settings effect timing and narrow rows", () => {
+  it("keeps one focus glyph, uncollapsed rows, and a timing tag at 40x20", async () => {
+    await withSession("wiring-settings-40", { columns: 40, rows: 20 }, async (s) => {
+      await openSettingsPanel(s);
+      const frame = s.frame();
+      expectFrameWithinWidth(frame, 40);
+      expect(occurrences(frame, "▌")).toBe(1);
+      expect(frame).not.toContain("▌▸");
+      expect(frame).not.toContain("▌ ▸");
+      expect(frame).not.toContain("mode  mode");
+      expect(frame).toContain("next launch");
+    });
+  }, 30_000);
+
+  it("keeps one focus glyph, uncollapsed rows, and a timing tag at 120x32", async () => {
+    await withSession("wiring-settings-120", { columns: 120, rows: 32 }, async (s) => {
+      await openSettingsPanel(s);
+      const frame = s.frame();
+      expectFrameWithinWidth(frame, 120);
+      expect(occurrences(frame, "▌")).toBe(1);
+      expect(frame).not.toContain("▌▸");
+      expect(frame).not.toContain("▌ ▸");
+      expect(frame).not.toContain("mode  mode");
+      expect(frame).toContain("next launch");
+    });
+  }, 30_000);
+
+  it("plain mode fits 54x25 and an env-locked row explains itself without persisting", async () => {
+    await withSession(
+      "wiring-settings-env-lock",
+      { columns: 54, rows: 25, extraEnv: { KUNAI_PLAIN: "1" } },
+      async (s) => {
+        await openSettingsPanel(s);
+        expectFrameWithinWidth(s.frame(), 54);
+        expect(s.frame()).toContain("[selected]");
+        expect(s.frame()).toContain("next launch");
+
+        s.press(K.down, K.down, K.down);
+        await s.waitForFrame(
+          (f) => f.includes("[selected] Plain /") && f.includes("(env)"),
+          "env-locked plain-mode row focused",
+        );
+        await s.waitSettled();
+        const before = s.snapshot();
+        s.press(K.space);
+        await s.waitForFrame(
+          (f) => f.includes("Set by KUNAI_PLAIN; unset it to change here"),
+          "env-lock reason",
+        );
+
+        const delta = s.diffSince(before);
+        expect(delta.has("config.json")).toBe(false);
+        expect(s.inspect().config().plainMode).toBe(false);
+        expectFrameWithinWidth(s.frame(), 54);
+      },
+    );
+  }, 30_000);
+});
+
 describe("agent wiring · settings toggle", () => {
   it("footer hints: Minimal persists to config.json and back", async () => {
     await withSession("wiring-settings", {}, async (s) => {

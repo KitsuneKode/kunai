@@ -141,7 +141,7 @@ export function providerDnsSettingsRows(): SettingRowDef[] {
     {
       kind: "boolean",
       id: "providerDns",
-      effectTiming: "next-launch",
+      effectTiming: "immediate",
       configKeys: ["providerDns"],
       label: "DNS-over-HTTPS",
       detail:

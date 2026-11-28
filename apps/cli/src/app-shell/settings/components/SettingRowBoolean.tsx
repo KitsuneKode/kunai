@@ -22,7 +22,7 @@ export const SettingRowBoolean = React.memo(function SettingRowBoolean({
     width: rowWidth,
     prefix,
     label: row.def.label,
-    value: plainSwitchText(isOn, plain),
+    value: `${plainSwitchText(isOn, plain)}${row.envBadge ? " (env)" : ""}`,
     plain,
   });
 
@@ -35,7 +35,6 @@ export const SettingRowBoolean = React.memo(function SettingRowBoolean({
         {fitted.label}
       </Text>
       <Text color={palette.dim}>{fitted.separator}{fitted.value}</Text>
-      {row.envBadge ? <Text color={palette.dim}> {"(env)"}</Text> : null}
     </Box>
   );
 });

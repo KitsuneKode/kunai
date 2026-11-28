@@ -155,7 +155,9 @@ describe("settings live-reader audit", () => {
       const match = /^(apps\/cli\/src\/.+):(\d+)$/.exec(location);
       expect(match, `${key}: allowlist location must be file:line`).not.toBeNull();
       if (!match) continue;
-      const [, file, lineText] = match;
+      const file = match[1];
+      const lineText = match[2];
+      if (!file || !lineText) continue;
       const line = readRepoFile(file).split("\n")[Number(lineText) - 1] ?? "";
       expect(line, `${key}: ${location} must contain the dynamic key`).toContain(key);
     }
