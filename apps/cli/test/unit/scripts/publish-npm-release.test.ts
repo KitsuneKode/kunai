@@ -336,6 +336,27 @@ describe("npm registry error classification", () => {
     expect(await registry.queryIntegrity(candidate)).toBeNull();
   });
 
+  test("accepts npm 10's no-match wording for a missing exact version", async () => {
+    const candidate = candidates()[0]!;
+    const packageSpec = `${candidate.name}@${candidate.version}`;
+    const registry = createNpmRegistryPort(async () => ({
+      exitCode: 1,
+      stdout: JSON.stringify({
+        error: {
+          code: "E404",
+          summary: `No match found for version ${candidate.version}`,
+          detail:
+            `'${packageSpec}' is not in this registry.\n\n` +
+            "Note that you can also install from a\n" +
+            "tarball, folder, http url, or git url.",
+        },
+      }),
+      stderr: `npm error 404 No match found for version ${candidate.version}`,
+    }));
+
+    expect(await registry.queryIntegrity(candidate)).toBeNull();
+  });
+
   test("accepts npm 11's scoped-package E404 wording for an absent package", async () => {
     const candidate = candidates()[0]!;
     const packageSpec = `${candidate.name}@${candidate.version}`;

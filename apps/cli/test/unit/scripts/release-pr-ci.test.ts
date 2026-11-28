@@ -17,7 +17,9 @@ test("release-only script changes run a fast PR smoke job", () => {
 
   expect(workflow).toContain("name: Release script PR smoke");
   expect(workflow).toContain('RELEASE_NODE_VERSION: "22.18.0"');
+  expect(workflow).toContain('RELEASE_NPM_VERSION: "11.5.1"');
   expect(workflow).toContain("node-version: ${{ env.RELEASE_NODE_VERSION }}");
+  expect(workflow).toContain('npm install -g "npm@${RELEASE_NPM_VERSION}"');
   expect(workflow).toContain("bash -n .github/scripts/*.sh");
   expect(workflow).toContain("shellcheck .github/scripts/*.sh");
   expect(workflow).toContain("test/unit/scripts/release-gate-evidence.test.ts");

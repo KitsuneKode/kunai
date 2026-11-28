@@ -991,6 +991,7 @@ jobs:
     timeout-minutes: 10
     env:
       RELEASE_NODE_VERSION: "22.18.0"
+      RELEASE_NPM_VERSION: "11.5.1"
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # actions/checkout@v5
         with:
@@ -1001,6 +1002,12 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # actions/setup-node@v6
         with:
           node-version: ${{ env.RELEASE_NODE_VERSION }}
+
+      - name: Pin and report release npm runtime
+        run: |
+          npm install -g "npm@${RELEASE_NPM_VERSION}"
+          node --version
+          npm --version
 
       - name: Shell syntax and lint for release scripts
         run: |

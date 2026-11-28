@@ -49,7 +49,7 @@ hostile strings as data before candidate construction.
 Pull requests that touch the release-only surface (`.github/workflows/release.yml`,
 `scripts/publish-npm-release.ts`, `scripts/release-gate-evidence.ts`,
 `scripts/packaging/**`, or `.github/scripts/**`) run the CI `Release script PR
-smoke` job. The job uses the release Node pin, shell-checks `.github/scripts`,
+smoke` job. The job uses the release Node and npm pins, shell-checks `.github/scripts`,
 runs the evidence/publication parser contracts, packs a lightweight local
 candidate in release order (the fixture version is written before launcher
 metadata is built, and `release:pack` precedes `release:prepare` because

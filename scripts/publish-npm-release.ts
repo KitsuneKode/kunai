@@ -412,10 +412,11 @@ function npmNotFound(result: CommandResult, candidate: LocalPackageCandidate): b
       ));
   const missingVersion =
     summary === `No match found for version ${candidate.version}` &&
-    hasExactDetailLine(
+    (hasExactDetailLine(
       detail,
       `The requested resource '${packageSpec}' could not be found or you do not have permission to access it.`,
-    );
+    ) ||
+      hasExactDetailLine(detail, `'${packageSpec}' is not in this registry.`));
   return missingPackage || missingVersion;
 }
 
