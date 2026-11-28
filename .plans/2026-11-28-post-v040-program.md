@@ -1,6 +1,6 @@
 ---
 status: active
-lastReviewed: "2026-11-28T16:30:33Z"
+lastReviewed: "2026-11-28T17:39:26Z"
 ---
 
 # Post-v0.4.0 program and verification checklist
@@ -122,7 +122,29 @@ crosswalk, a vaulted full Stremio add-on client, and a shared loopback stream
 gateway. See `.plans/2026-11-28-stremio-like-client.md` and
 `.plans/2026-11-23-provider-platform.md`.
 
-## 7. Delegation notes
+## 7. Maintainer decisions (2026-11-28)
+
+Order: finish the v0.4.0 publish and the section 2 merges first. Then, in
+this order:
+
+1. **Hygiene PR** is the next piece of work (section 6).
+2. **Review follow-ups** (section 5) all get done, then **v0.4.1** as a small
+   patch release through the normal changeset → version PR → signoff →
+   dispatch flow in `RELEASING.md`.
+3. **Shell v4 items 9, 13, 18 plus a UI taste pass.** Do not just tick the map.
+   Review the live shell against `.reference/design/cli/kunai-shell-v4.html`
+   and the state inventory at 120×32, 54×25 and 40×20, then fix what reads
+   badly: spacing, copy, hierarchy, consistency across surfaces, colour and
+   motion restraint. Each fix needs a before/after capture.
+4. **Website: best of both #760 and #716.** Keep the Sumi & Sakura redesign
+   from #760 and the SEO/GEO work from #716 (llms.txt tables, JSON-LD,
+   indexing headers), rewrite the copy for the add-on direction, and improve
+   the README to match. One combined PR, or #760 rebased onto #716's SEO layer,
+   whichever leaves less conflict. Check every layer: content, metadata,
+   structured data, performance, accessibility, and how the docs site renders
+   the generated tables.
+
+## 8. Delegation notes
 
 - Grok capacity: Cursor-2 is out until about 2026-12-05; the direct Grok and
   Grok-2 providers are out of credit; Cursor-1 works.
