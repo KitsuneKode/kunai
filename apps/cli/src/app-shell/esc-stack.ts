@@ -58,9 +58,10 @@ function layerIsActive(layer: EscLayer): boolean {
  * Resolve one Escape press against the declared layers.
  *
  * `cancelActive: false` means a line editor currently owns broad cancellation.
- * Even then, an armed destructive confirmation stays cancellable: leaving it
- * armed while Escape is swallowed is the unsafe case this stack exists to
- * prevent. All lower layers defer to the editor.
+ * Even then, an armed destructive confirmation and the editor's own typed
+ * filter stay cancellable: leaving either stuck while Escape is swallowed is
+ * the unsafe case this stack exists to prevent. Broader layers defer to the
+ * editor.
  */
 export function resolveEscStack(
   layers: readonly EscLayer[],
@@ -70,7 +71,9 @@ export function resolveEscStack(
   for (const kind of ESC_LAYER_PRIORITY) {
     const layer = activeLayers.find((candidate) => candidate.kind === kind);
     if (!layer) continue;
-    if (options?.cancelActive === false && kind !== "confirm") return "no-op";
+    if (options?.cancelActive === false && kind !== "confirm" && kind !== "filter") {
+      return "no-op";
+    }
     return ESC_ACTION_BY_KIND[kind];
   }
   return "no-op";

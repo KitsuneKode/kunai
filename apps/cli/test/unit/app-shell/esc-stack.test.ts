@@ -43,12 +43,16 @@ describe("resolveEscStack", () => {
     );
   });
 
-  test("cancelActive=false defers lower layers to the owning editor", () => {
+  test("cancelActive=false still clears the owning editor's typed filter", () => {
     expect(
       resolveEscStack([{ kind: "filter", query: "abc" }, { kind: "overlay" }], {
         cancelActive: false,
       }),
-    ).toBe("no-op");
+    ).toBe("clear-filter");
+  });
+
+  test("cancelActive=false defers broader layers to the owning editor", () => {
+    expect(resolveEscStack([{ kind: "overlay" }], { cancelActive: false })).toBe("no-op");
   });
 
   test("cancelActive=false never leaves an armed confirmation stuck", () => {
