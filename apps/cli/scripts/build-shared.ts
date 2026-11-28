@@ -656,7 +656,11 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // history deletion, and focused-filter Escape) measured 3,461,043 bytes with
 // Bun 1.4.5: +1,593 over 3,459,450. No dependency or asset. 3380 KiB is the
 // smallest whole-KiB budget over that measurement and leaves 77 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_380;
+// The second confirmation review (modified-key download confirm, compact
+// destructive shortcuts, and Downloads Escape) measured 3,461,429 bytes with
+// Bun 1.4.5: +386 over 3,461,043. No dependency or asset. 3381 KiB is the
+// smallest whole-KiB budget over that measurement and leaves 715 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_381;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
