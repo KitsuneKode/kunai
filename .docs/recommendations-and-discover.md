@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-28T11:10:00Z"
+lastReviewed: "2026-11-28T12:30:00Z"
 ---
 
 # Kunai — Recommendations And Discover
@@ -72,11 +72,14 @@ Trending walks a chain of sources per lane and remembers the last good answer:
   "Trending this week · updated 3h ago", and retries the live chain after a
   minute instead of on every render.
 - **Recommendations** use the same idea. A row's `expires_at` is the 14-day
-  retention window and freshness is the cache generation in the payload
-  (`createCacheGenerationGate` in `RecommendationServiceImpl`), not a
-  `cachedAt` compared with `Date.now()` — a same-millisecond refresh and a
-  fetch that started before the refresh both used to look fresh. The
-  repository deletes a row on read once `expires_at` passes, so tying row expiry
+  retention window. Freshness inside one process is a generation captured
+  before the fetch (`createCacheGenerationGate`), not `cachedAt` compared with
+  `Date.now()`. The number is stored only beside that process's id. Until this
+  process has refreshed, a TTL-valid row is fresh, including rows from another
+  process or an older build. After a refresh, a row is fresh only when this
+  process wrote it at the current generation — a counter alone would match a
+  row written before that refresh in a different process. The repository
+  deletes a row on read once `expires_at` passes, so tying row expiry
   to the freshness TTL had made the stale fallback unreachable. A refresh whose
   every upstream request failed never overwrites the last good answer. A
   discover call that loses either the movie half or the tv half is returned

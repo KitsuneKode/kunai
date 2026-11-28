@@ -12,7 +12,7 @@ import {
 } from "@/services/catalog/catalog-source-ledger";
 import { clearTmdbSessionCache, fetchTmdbJsonCached } from "@/services/catalog/tmdb-proxy";
 import { RecommendationCacheRepository } from "@kunai/storage";
-import { isJsonNumber, isJsonObject, type JsonValue } from "@kunai/types";
+import { isJsonNumber, isJsonObject, isJsonString, type JsonValue } from "@kunai/types";
 
 import type {
   RecommendationHistorySeed,
@@ -57,7 +57,11 @@ async function tmdbFetch(path: string, signal?: AbortSignal): Promise<unknown> {
 type CacheValue = {
   cachedAt: number;
   items: readonly SearchResult[];
-  /** Session generation that wrote the row. Missing rows predate the gate and count as 0. */
+  /**
+   * Process that wrote the row, paired with `generation`. Absent on rows
+   * written before this field existed. Not a freshness clock by itself.
+   */
+  writer?: string;
   generation: number;
 };
 
@@ -90,8 +94,17 @@ function toSearchResult(
 // ── Implementation ────────────────────────────────────────────────────────────
 
 export class RecommendationServiceImpl implements RecommendationService {
-  /** Bumped by refresh. A fetch captures it and may commit only while it still matches. */
+  /**
+   * Bumped by refresh. A fetch captures it and may commit only while it still
+   * matches. The number is process-local: it is stored only next to
+   * {@link instanceId}, and a reader ignores both until this instance has
+   * refreshed.
+   */
   private readonly writes = createCacheGenerationGate();
+  /** Distinguishes this process's refresh from a row another process wrote. */
+  private readonly instanceId = crypto.randomUUID();
+  /** Set on the first refresh. Before that, freshness is the TTL alone. */
+  private refreshed = false;
 
   constructor(private readonly cacheRepository: RecommendationCacheRepository) {}
 
@@ -102,14 +115,23 @@ export class RecommendationServiceImpl implements RecommendationService {
    * outage would need them.
    */
   async clearCache(): Promise<void> {
+    this.refreshed = true;
     this.writes.invalidate();
     clearTmdbSessionCache();
   }
 
   private readCacheEntry(key: string, ttlMs: number): CacheValue | null {
     const parsed = this.readAnyCacheEntry(key);
-    if (!parsed || !this.writes.isCurrent({ value: parsed.generation })) return null;
-    if (isCacheExpired(parsed.cachedAt, ttlMs)) return null;
+    if (!parsed || isCacheExpired(parsed.cachedAt, ttlMs)) return null;
+    // Until this process refreshes, a TTL-valid row is the current answer,
+    // including rows written by an older build or another process. After a
+    // refresh, only a row this process wrote at the current generation is fresh.
+    if (
+      this.refreshed &&
+      (parsed.writer !== this.instanceId || !this.writes.isCurrent({ value: parsed.generation }))
+    ) {
+      return null;
+    }
     // A fresh entry is a recent live TMDB answer, so it counts as primary.
     recordRecommendationsAnswer(false);
     return parsed;
@@ -123,7 +145,8 @@ export class RecommendationServiceImpl implements RecommendationService {
       if (!isJsonObject(parsed) || !isJsonNumber(parsed.cachedAt)) return null;
       const items = parseCachedSearchResults(parsed.items);
       const generation = isJsonNumber(parsed.generation) ? parsed.generation : 0;
-      return items ? { cachedAt: parsed.cachedAt, items, generation } : null;
+      const writer = isJsonString(parsed.writer) ? parsed.writer : undefined;
+      return items ? { cachedAt: parsed.cachedAt, items, writer, generation } : null;
     } catch {
       return null;
     }
@@ -136,7 +159,12 @@ export class RecommendationServiceImpl implements RecommendationService {
     options: { readonly signal?: AbortSignal; readonly complete?: boolean },
   ): void {
     this.writes.commitIfFresh(token, options, () => {
-      this.writeCacheEntry(key, { cachedAt: Date.now(), items, generation: token.value });
+      this.writeCacheEntry(key, {
+        cachedAt: Date.now(),
+        items,
+        writer: this.instanceId,
+        generation: token.value,
+      });
     });
   }
 

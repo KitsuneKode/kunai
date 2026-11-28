@@ -333,8 +333,9 @@ const RATE_LIMITED_RETRY_AFTER_MS = 30 * 1000;
 /** Errors the walk rethrew as TMDB's own answer. A mirror 403 is not in here. */
 const definitiveUpstreamErrors = new WeakSet<Error>();
 
-function isDefinitiveUpstreamError(error: TmdbHttpError): boolean {
-  return definitiveUpstreamErrors.has(error);
+/** True when the walk rethrew this error as TMDB's own answer, not a dead mirror. */
+export function isDefinitiveTmdbAnswer(error: Error): error is TmdbHttpError {
+  return error instanceof TmdbHttpError && definitiveUpstreamErrors.has(error);
 }
 
 /** The shape a show or season answer must have before it may be kept as last-known-good. */
@@ -376,7 +377,7 @@ export async function fetchTmdbJsonCached(
       } catch (error) {
         // Every host is unreachable: serve the last good answer for this exact
         // request. A definitive 4xx is TMDB's real answer and is never masked.
-        const isDefinitive = error instanceof TmdbHttpError && isDefinitiveUpstreamError(error);
+        const isDefinitive = error instanceof Error && isDefinitiveTmdbAnswer(error);
         const saved = !isDefinitive ? durable?.read(normalized) : null;
         if (saved) {
           if (isSeasonPath(normalized)) recordEpisodesAnswer(true);

@@ -587,7 +587,11 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // classification, the cold-mirror wait, and generation-gated cache writes)
 // on top measured 3,425,214 bytes: +3,753. No dependency or asset.
 // 3345 KiB leaves 66 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_345;
+// The review fix (a per-process writer id beside the recommendation
+// generation, and isDefinitiveTmdbAnswer for the Stremio IMDb lookup) on
+// top measured 3,425,415 bytes: +201. No dependency or asset.
+// 3346 KiB leaves 889 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_346;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

@@ -595,6 +595,87 @@ describe("a late recommendation write cannot undo a refresh", () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  test("another process's refresh does not treat a row written before that refresh as fresh", async () => {
+    const originalFetch = globalThis.fetch;
+    setSystemTime(new Date(frozen));
+    const store = repository();
+    const serviceA = new RecommendationServiceImpl(store);
+    const serviceB = new RecommendationServiceImpl(store);
+    globalThis.fetch = createFetchDouble(async () =>
+      Response.json({ results: [titled("Old", 1)] }),
+    );
+    try {
+      await serviceA.clearCache();
+      expect((await serviceA.getTrending()).items[0]?.title).toBe("Old");
+      clearTmdbSessionCache();
+      await serviceB.clearCache();
+      let calls = 0;
+      globalThis.fetch = createFetchDouble(async () => {
+        calls += 1;
+        return Response.json({ results: [titled("Fresh", 2)] });
+      });
+      const loaded = await serviceB.getTrending();
+      expect(loaded.items[0]?.title).toBe("Fresh");
+      expect(calls).toBeGreaterThan(0);
+      const stored = store.get(buildRecommendCacheKey("trending", "trending"));
+      expect(JSON.parse(stored?.payloadJson ?? "{}")).toMatchObject({
+        items: [expect.objectContaining({ title: "Fresh" })],
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("a process that has not refreshed still serves a TTL-valid row without fetching", async () => {
+    const originalFetch = globalThis.fetch;
+    setSystemTime(new Date(frozen));
+    const store = repository();
+    const serviceA = new RecommendationServiceImpl(store);
+    globalThis.fetch = createFetchDouble(async () =>
+      Response.json({ results: [titled("Cached", 1)] }),
+    );
+    try {
+      await serviceA.clearCache();
+      expect((await serviceA.getTrending()).items[0]?.title).toBe("Cached");
+      clearTmdbSessionCache();
+      let calls = 0;
+      globalThis.fetch = createFetchDouble(async () => {
+        calls += 1;
+        return new Response("{}", { status: 503 });
+      });
+      const serviceB = new RecommendationServiceImpl(store);
+      const loaded = await serviceB.getTrending();
+      expect(loaded.items[0]?.title).toBe("Cached");
+      expect(loaded.staleSince).toBeUndefined();
+      expect(calls).toBe(0);
+
+      store.set(
+        buildRecommendCacheKey("trending", "trending"),
+        JSON.stringify({
+          cachedAt: frozen,
+          items: [
+            {
+              id: "3",
+              type: "movie",
+              title: "Legacy",
+              year: "2020",
+              overview: "",
+              posterPath: null,
+            },
+          ],
+        }),
+        new Date(frozen + RECOMMENDATION_STALE_RETENTION_MS).toISOString(),
+        new Date(frozen).toISOString(),
+      );
+      clearTmdbSessionCache();
+      const legacy = await new RecommendationServiceImpl(store).getTrending();
+      expect(legacy.items[0]?.title).toBe("Legacy");
+      expect(calls).toBe(0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
 
 type FetchHandler = (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>;
