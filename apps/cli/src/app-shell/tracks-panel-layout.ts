@@ -30,8 +30,8 @@ export function tracksCountsHeader(counts: TrackSectionCounts, provider?: string
 
 /** Width below which the two-pane layout collapses to the stacked single column. */
 export const TRACKS_TWO_PANE_MIN_WIDTH = 56;
-/** Fixed width of the left section column in the two-pane layout. */
-export const TRACKS_SECTION_COL_WIDTH = 22;
+/** Width of the left section column in the two-pane layout. */
+export const TRACKS_SECTION_COL_WIDTH = 26;
 
 /**
  * Width the options pane actually gets for a given panel width. Shared so the
@@ -150,4 +150,41 @@ export function subtitleGridWindow(input: {
     totalRows - visibleRows,
   );
   return { startRow: start, endRow: start + visibleRows, totalRows };
+}
+
+/** Compact section labels for the narrow tab strip. */
+export function tracksSectionTabLabel(title: string): string {
+  switch (title.toLowerCase()) {
+    case "provider":
+      return "Prov";
+    case "source":
+      return "Src";
+    case "quality":
+      return "Qual";
+    case "audio":
+      return "Aud";
+    case "subtitles":
+    case "subtitle":
+      return "Subs";
+    case "hardsub":
+      return "Hard";
+    default:
+      return title.slice(0, 4) || title;
+  }
+}
+
+/**
+ * Two-word recovery summary for a failed candidate. Raw reasons are often a
+ * full sentence plus remediation; the row already owns Retry, so it needs the
+ * cause class, not another paragraph.
+ */
+export function compactTrackFailureReason(reason: string | undefined): string {
+  const normalized = (reason ?? "").toLowerCase();
+  if (/timeout|timed out/.test(normalized)) return "resolve timeout";
+  if (/offline|network/.test(normalized)) return "network offline";
+  if (/403|forbidden|unauthorized|401/.test(normalized)) return "access denied";
+  if (/404|not found/.test(normalized)) return "not found";
+  if (/deprecated|endpoint/.test(normalized)) return "endpoint down";
+  if (/no playable|no stream|exposed/.test(normalized)) return "no stream";
+  return "resolve failed";
 }

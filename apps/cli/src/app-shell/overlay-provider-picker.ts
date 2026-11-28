@@ -2,7 +2,7 @@ import type { Container } from "@/container";
 
 import { companionMode, companionToggleable } from "./companion-policy";
 import type { ProviderPickerSources } from "./provider-picker-status";
-import { selectFooterActions } from "./shell-primitives";
+import { emptySafeFooterActions, selectFooterActions } from "./shell-primitives";
 import type { FooterAction, ShellPickerOption } from "./types";
 
 /** Below this width the row state shrinks to its one- or two-word form. */
@@ -51,16 +51,21 @@ function providerPickerFooterActions(
   filtering: boolean,
   hasRows: boolean,
 ): readonly FooterAction[] {
-  return [
-    ...(hasRows
-      ? ([
-          { key: "↑↓", label: "select", action: "details" },
-          { key: "enter", label: "switch", action: "details", primary: true },
-        ] satisfies readonly FooterAction[])
-      : []),
-    { key: "/", label: "commands", action: "command-mode" },
-    { key: "esc", label: filtering ? "show all" : "close", action: "quit" },
-  ];
+  return emptySafeFooterActions(
+    [
+      {
+        key: "↑↓",
+        label: "select",
+        action: "details",
+        requiresSelection: true,
+        narrowEssential: true,
+      },
+      { key: "enter", label: "switch", action: "details", primary: true, requiresSelection: true },
+      { key: "/", label: "commands", action: "command-mode" },
+      { key: "esc", label: filtering ? "show all" : "close", action: "quit" },
+    ],
+    hasRows,
+  );
 }
 
 /** How a chip's key reads once it is a word in a sentence instead of a chip. */

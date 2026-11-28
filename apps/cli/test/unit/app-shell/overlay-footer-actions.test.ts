@@ -4,6 +4,7 @@ import {
   historyFooterActions,
   notificationsFooterActions,
   queueFooterActions,
+  tracksFooterActions,
 } from "@/app-shell/overlay-footer-actions";
 import { selectFooterActions } from "@/app-shell/shell-primitives";
 
@@ -64,6 +65,39 @@ describe("overlay footer actions", () => {
       (action) => action.label !== "commands" && action.label !== "close",
     );
     expect(hintRows.every((action) => action.action === undefined)).toBe(true);
+  });
+
+  test("empty overlay lists keep only actions that do not need a selection", () => {
+    // Restore brings back the last queue, so it is the one useful key on an
+    // empty Up Next and must survive the empty-list filter.
+    expect(queueFooterActions({ hasRows: false }).map((action) => action.label)).toEqual([
+      "restore",
+      "commands",
+      "close",
+    ]);
+    expect(historyFooterActions({ hasRows: false }).map((action) => action.label)).toEqual([
+      "tabs",
+      "commands",
+      "close",
+    ]);
+    expect(
+      notificationsFooterActions({ tab: "active", paginated: false }, false).map(
+        (action) => action.label,
+      ),
+    ).toEqual(["sort", "archive", "commands", "close"]);
+  });
+
+  test("tracks footer always exposes pane movement and gates switch on real alternatives", () => {
+    expect(
+      tracksFooterActions({ hasSwitchable: true, sourceSectionActive: true }).map(
+        (action) => `${action.key}:${action.label}`,
+      ),
+    ).toEqual(["↑↓:choose", "←→:pane", "enter:switch", "f:favorite", "/:commands", "esc:back"]);
+    expect(
+      tracksFooterActions({ hasSwitchable: false, sourceSectionActive: false }).map(
+        (action) => action.label,
+      ),
+    ).toEqual(["choose", "pane", "commands", "back"]);
   });
 
   test("narrow widths keep the footer to a couple hints plus the command tail", () => {

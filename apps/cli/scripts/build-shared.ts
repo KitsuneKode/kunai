@@ -583,6 +583,15 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // With the dedicated profile checks, launchers, and review fixes (#860),
 // Bun 1.4.5 measured 3,421,461 bytes: +11,013 over #861.
 // 3342 KiB leaves 747 bytes.
+// Shell-v4 quick wins were measured on their pre-merge branch: narrow
+// browse/palette/playback layout 3,327,248 bytes, tracks panel recovery
+// grammar 3,330,345 bytes, clean details-sheet overlay 3,331,426 bytes,
+// and the pre-#852 merged tree 3,332,234 bytes. The merged main+shell tree
+// measured 3,428,892 bytes with Bun 1.4.5: +7,431 over the profile/hwdec
+// main-line measurement, all shell/onboarding surface code and copy plus the
+// doctor text-module split. No dependency or asset. 3349 KiB is the smallest
+// whole-KiB budget over that measurement and leaves 484 bytes; public
+// launcher budgets are unchanged.
 // Catalog mirror fallback and cache generations (#746, #742, #743: host
 // classification, the cold-mirror wait, and generation-gated cache writes)
 // on top measured 3,425,214 bytes: +3,753. No dependency or asset.
@@ -591,7 +600,11 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // generation, and isDefinitiveTmdbAnswer for the Stremio IMDb lookup) on
 // top measured 3,425,415 bytes: +201. No dependency or asset.
 // 3346 KiB leaves 889 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_346;
+// This branch merged with #857. Bun 1.4.5 measured dist/kunai.js at
+// 3,432,355 bytes: +3,463 over the #857 merged-tree measurement of
+// 3,428,892. No dependency or asset. 3352 KiB is the smallest whole-KiB
+// budget over that measurement and leaves 93 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_352;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

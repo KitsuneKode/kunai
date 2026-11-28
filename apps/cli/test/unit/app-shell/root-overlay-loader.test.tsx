@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 
-import { openBrowseShell } from "@/app-shell/browse-shell";
+import { openBrowseShell } from "@/app-shell/open-browse-shell";
 import {
   forceSettleAllRootContent,
   mountRootContent,

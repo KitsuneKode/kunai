@@ -68,6 +68,52 @@ describe("buildDiagnosticsInsight", () => {
     );
   });
 
+  test("subtitles disabled by preference do not manufacture a retry action", () => {
+    const state = {
+      ...baseState(),
+      seriesLanguageProfile: { audio: "original" as const, subtitle: "none" as const },
+    };
+    const insight = buildDiagnosticsInsight({
+      state,
+      memorySnapshot: quietMemory,
+      recentEvents: [],
+    });
+
+    const subtitleRow = insight.healthRows.find((row) => row.subsystem === "subtitles");
+    expect(subtitleRow?.reason).toBe("disabled by preference");
+    expect(subtitleRow?.recommendedAction).toBe("none");
+    expect(insight.sessionVerdict.primaryAction).toBe("none");
+    expect(formatHealthRowDetail(subtitleRow!)).not.toContain("Retry");
+  });
+
+  test("offline connectivity overrides optimistic playback network samples", () => {
+    const state = {
+      ...baseState(),
+      playbackStatus: "playing" as const,
+      stream: { url: "https://cdn.example/stream.m3u8", headers: {}, timestamp: 0 },
+    };
+    const insight = buildDiagnosticsInsight({
+      state,
+      networkAvailable: false,
+      memorySnapshot: quietMemory,
+      recentEvents: [
+        {
+          timestamp: 1,
+          level: "info",
+          category: "playback",
+          operation: "playback",
+          message: "MPV runtime event",
+          context: { event: "network-sample", cacheSpeed: 1024 * 1024 },
+        },
+      ],
+    });
+
+    const networkRow = insight.healthRows.find((row) => row.subsystem === "network");
+    expect(networkRow?.severity).toBe("blocked");
+    expect(networkRow?.reason).toContain("offline");
+    expect(networkRow?.reason).not.toContain("HLS active");
+  });
+
   test("an injected memory snapshot drives the memory row", () => {
     const insight = buildDiagnosticsInsight({
       state: baseState(),

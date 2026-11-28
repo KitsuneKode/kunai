@@ -1,6 +1,5 @@
 import { isFavoriteSource, sortByFavorites } from "@/domain/playback/source-name";
 import {
-  buildTrackPanelRows,
   type TrackCapability,
   type TrackCapabilityGroup,
   type TrackCapabilityRisk,
@@ -17,10 +16,12 @@ import { getWindowStart, measureColumns, truncateLine } from "./shell-text";
 import { palette } from "./shell-theme";
 import {
   chunkSubtitleGrid,
+  compactTrackFailureReason,
   disambiguateSubtitleLabels,
   SUBTITLE_CELL_MIN_WIDTH,
-  TRACKS_SECTION_COL_WIDTH as SECTION_COL_WIDTH,
   TRACKS_TWO_PANE_MIN_WIDTH as TWO_PANE_MIN_WIDTH,
+  TRACKS_SECTION_COL_WIDTH as SECTION_COL_WIDTH,
+  tracksSectionTabLabel,
   subtitleGridColumns,
   subtitleGridWindow,
   tracksPaneVisibleRows,
@@ -242,13 +243,14 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
     );
   }
 
+  const sectionPaneWidth = SECTION_COL_WIDTH;
   const rightWidth = tracksOptionsPaneWidth(width);
 
   return (
     <Box flexDirection="column" paddingX={1}>
       {header}
       <Box flexDirection="row">
-        <Box flexDirection="column" width={SECTION_COL_WIDTH} marginRight={2}>
+        <Box flexDirection="column" width={sectionPaneWidth} marginRight={2}>
           {groups.map((group, index) => {
             const focused = state.focusedPane === "sections" && index === state.sectionIndex;
             const active = index === state.sectionIndex;
@@ -274,7 +276,7 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
                     </Text>
                   </Box>
                   <Text color={palette.dim} wrap="truncate">
-                    {truncateLine(currentValue(group), SECTION_COL_WIDTH - 13)}
+                    {truncateLine(currentValue(group), sectionPaneWidth - 13)}
                   </Text>
                 </Box>
               </MouseTarget>
@@ -298,6 +300,67 @@ export const TracksPanelShell = React.memo(function TracksPanelShell({
     </Box>
   );
 });
+
+function TrackListRow({
+  capability,
+  favorite,
+  highlighted,
+  width,
+  pointer,
+}: {
+  readonly capability: TrackCapability;
+  readonly favorite: boolean;
+  readonly highlighted: boolean;
+  readonly width: number;
+  readonly pointer?: TracksPointerActions;
+}) {
+  const tag = rowTag(capability);
+  const statusGlyph = rowStatusGlyph(capability);
+  const detail = [
+    tag,
+    capability.risk === "failed" ? compactTrackFailureReason(capability.reason) : null,
+    compactTrackDetail(capability.detail),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const prefixWidth = 2 + (favorite ? 2 : 0) + (statusGlyph ? 2 : 0);
+  const detailWidth =
+    detail && width >= 34 ? Math.min(measureColumns(detail), Math.floor(width * 0.42)) : 0;
+  const labelWidth = Math.max(1, width - prefixWidth - (detailWidth ? detailWidth + 2 : 0));
+
+  return (
+    <TrackOptionTarget capability={capability} pointer={pointer}>
+      <Box
+        flexDirection="row"
+        width={width}
+        backgroundColor={highlighted ? palette.accentFill : undefined}
+      >
+        <Text color={highlighted ? palette.accent : palette.dim}>
+          {highlighted ? "▌ " : capability.selected ? "› " : "  "}
+        </Text>
+        {favorite ? <Text color={palette.accent}>♥ </Text> : null}
+        {statusGlyph ? (
+          <Text color={statusGlyph.color} bold={capability.risk === "failed"}>
+            {statusGlyph.glyph}
+          </Text>
+        ) : null}
+        <Text
+          color={rowColor(capability, highlighted)}
+          bold={highlighted || capability.selected}
+          wrap="truncate"
+        >
+          {truncateLine(sanitizeTerminalText(capability.label), labelWidth)}
+        </Text>
+        {detailWidth > 0 ? (
+          <Text color={highlighted ? palette.accentSoft : palette.dim}>
+            {"  "}
+            {truncateLine(detail, detailWidth)}
+          </Text>
+        ) : null}
+      </Box>
+    </TrackOptionTarget>
+  );
+}
 
 function OptionsPane({
   group,
@@ -418,47 +481,15 @@ function OptionsPane({
         const index = windowStart + offset;
         const highlighted = optionsFocused && index === state.optionIndex;
         const fav = group.section === "source" && isFavoriteSource(favorites, capability.label);
-        const tag = rowTag(capability);
-        const statusGlyph = rowStatusGlyph(capability);
-        const detail = [tag, compactTrackDetail(capability.detail)].filter(Boolean).join(" · ");
-        const prefixWidth = 2 + (fav ? 2 : 0) + (statusGlyph ? 2 : 0);
-        const detailWidth = detail ? Math.min(measureColumns(detail), Math.floor(width * 0.42)) : 0;
-        const labelWidth = Math.max(1, width - prefixWidth - (detailWidth ? detailWidth + 2 : 0));
         return (
-          <TrackOptionTarget
+          <TrackListRow
             key={`opt-${capability.value}`}
             capability={capability}
+            favorite={fav}
+            highlighted={highlighted}
+            width={width}
             pointer={pointer}
-          >
-            <Box
-              flexDirection="row"
-              width={width}
-              backgroundColor={highlighted ? palette.accentFill : undefined}
-            >
-              <Text color={highlighted ? palette.accent : palette.dim}>
-                {highlighted ? "▌ " : capability.selected ? "› " : "  "}
-              </Text>
-              {fav ? <Text color={palette.accent}>♥ </Text> : null}
-              {statusGlyph ? (
-                <Text color={statusGlyph.color} bold={capability.risk === "failed"}>
-                  {statusGlyph.glyph}
-                </Text>
-              ) : null}
-              <Text
-                color={rowColor(capability, highlighted)}
-                bold={highlighted || capability.selected}
-                wrap="truncate"
-              >
-                {truncateLine(sanitizeTerminalText(capability.label), labelWidth)}
-              </Text>
-              {detailWidth > 0 ? (
-                <Text color={highlighted ? palette.accentSoft : palette.dim}>
-                  {"  "}
-                  {truncateLine(detail, detailWidth)}
-                </Text>
-              ) : null}
-            </Box>
-          </TrackOptionTarget>
+          />
         );
       })}
       {hiddenBelow > 0 ? <Text color={palette.dim}>{`↓ ${hiddenBelow} more`}</Text> : null}
@@ -466,7 +497,7 @@ function OptionsPane({
   );
 }
 
-/** Narrow fallback: sections stacked with their rows, honoring the focused option. */
+/** Narrow fallback: a compact section tab strip plus the focused section's rows. */
 function StackedView({
   groups,
   favorites,
@@ -483,70 +514,63 @@ function StackedView({
   pointer?: TracksPointerActions;
 }) {
   const orderedGroups = groups.map((group) => ({ ...group, rows: displayRows(group, favorites) }));
-  const allRows = buildTrackPanelRows(orderedGroups);
-  const group = orderedGroups[nav.sectionIndex];
-  const focused = group?.rows[nav.optionIndex];
+  const group = orderedGroups[Math.min(nav.sectionIndex, orderedGroups.length - 1)];
+  if (!group) return null;
+
+  const rows = group.rows;
+  const focused = nav.focusedPane === "options" ? group.rows[nav.optionIndex] : undefined;
   const focusedIndex = Math.max(
     0,
-    allRows.findIndex(
-      (row) =>
-        row.group.section === group?.section &&
-        (nav.focusedPane === "sections"
-          ? row.kind === "header"
-          : row.kind === "row" && row.capability.value === focused?.value),
-    ),
+    rows.findIndex((row) => row.value === focused?.value),
   );
   const budget = tracksPaneVisibleRows(height);
-  const start = getWindowStart(focusedIndex, allRows.length, budget);
-  const rows = allRows.slice(start, start + budget);
+  const start = getWindowStart(focusedIndex, rows.length, budget);
+  const visible = rows.slice(start, start + budget);
   const plain = plainModeEnabled();
-  const hiddenRows = allRows.length - start - rows.length;
+  const hiddenRows = rows.length - start - visible.length;
+
   return (
     <Box flexDirection="column">
-      {start > 0 ? <Text color={palette.dim}>{plain ? "More above" : "↑ more"}</Text> : null}
-      {rows.map((row) => {
-        if (row.kind === "header") {
+      <Box flexDirection="row" width={Math.max(1, width - 2)} marginBottom={1}>
+        {orderedGroups.map((entry, index) => {
+          const active = entry.section === group.section;
+          const label = tracksSectionTabLabel(entry.title);
           return (
             <MouseTarget
-              key={`h-${row.group.section}`}
-              id={`tracks:section:${row.group.section}`}
+              key={`tab-${entry.section}`}
+              id={`tracks:section:${entry.section}`}
               active={Boolean(pointer)}
-              onClick={() => pointer?.section(row.group.section)}
+              onClick={() => pointer?.section(entry.section)}
             >
-              <Box marginTop={1}>
-                <Text color={palette.textDim} bold>
-                  {row.group.title}
-                </Text>
-              </Box>
+              <Text color={active ? palette.accent : palette.dim} bold={active}>
+                {active ? `[${label}]` : ` ${label} `}
+                {index < orderedGroups.length - 1 ? " " : ""}
+              </Text>
             </MouseTarget>
           );
-        }
-        if (row.kind === "empty") {
-          return (
-            <Box key={`e-${row.group.section}`} paddingLeft={2}>
-              <Text color={palette.dim}>{truncateLine(row.reason, width - 4)}</Text>
-            </Box>
-          );
-        }
-        const { capability } = row;
-        const highlighted =
-          nav.focusedPane === "options" &&
-          row.group.section === group?.section &&
-          capability.value === focused?.value;
+        })}
+      </Box>
+      {rows.length === 0 ? (
+        <Text color={palette.dim}>
+          {truncateLine(group.emptyReason ?? "Nothing to switch.", width - 4)}
+        </Text>
+      ) : null}
+      {start > 0 ? <Text color={palette.dim}>{plain ? "More above" : "↑ more"}</Text> : null}
+      {visible.map((capability) => {
+        const highlighted = nav.focusedPane === "options" && capability.value === focused?.value;
         const fav =
           capability.section === "source" && isFavoriteSource(favorites, capability.label);
-        const statusGlyph = rowStatusGlyph(capability);
         if (plain) {
           const tags = [
             capability.selected ? "[active]" : "",
             fav ? "[favorite]" : "",
-            capability.risk === "failed" ? "[failed]" : "",
+            capability.risk === "failed" ? `[${compactTrackFailureReason(capability.reason)}]` : "",
           ]
             .filter(Boolean)
             .join(" ");
           return (
             <Text
-              key={`r-${row.group.section}-${capability.value}`}
+              key={`r-${group.section}-${capability.value}`}
               color={rowColor(capability, highlighted)}
               bold={highlighted || capability.selected}
             >
@@ -555,34 +579,14 @@ function StackedView({
           );
         }
         return (
-          <TrackOptionTarget
-            key={`r-${row.group.section}-${capability.value}`}
+          <TrackListRow
+            key={`r-${group.section}-${capability.value}`}
             capability={capability}
+            favorite={fav}
+            highlighted={highlighted}
+            width={Math.max(1, width - 2)}
             pointer={pointer}
-          >
-            <Box
-              flexDirection="row"
-              width={Math.max(1, width - 2)}
-              backgroundColor={highlighted ? palette.accentFill : undefined}
-            >
-              <Text color={highlighted ? palette.accent : palette.dim}>
-                {highlighted ? "▌ " : capability.selected ? "› " : "  "}
-              </Text>
-              {fav ? <Text color={palette.accent}>♥ </Text> : null}
-              {statusGlyph ? (
-                <Text color={statusGlyph.color} bold={capability.risk === "failed"}>
-                  {statusGlyph.glyph}
-                </Text>
-              ) : null}
-              <Text
-                color={rowColor(capability, highlighted)}
-                bold={highlighted || capability.selected}
-                wrap="truncate"
-              >
-                {truncateLine(capability.label, width - 6 - (statusGlyph ? 2 : 0))}
-              </Text>
-            </Box>
-          </TrackOptionTarget>
+          />
         );
       })}
       {hiddenRows > 0 ? (

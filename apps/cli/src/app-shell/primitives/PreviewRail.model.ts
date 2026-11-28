@@ -44,5 +44,5 @@ export function shouldRenderPreviewRail(input: {
   readonly columns: number;
   readonly hasModel: boolean;
 }): boolean {
-  return input.hasModel && input.columns >= 124;
+  return input.hasModel && input.columns >= 120;
 }

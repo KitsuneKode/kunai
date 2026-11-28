@@ -50,10 +50,93 @@ const FOOTER_GLYPHS: Record<string, string> = {};
  */
 const PET_RESTORE_ACTION = { key: "/pet", label: "kanna", action: "pet" } as const;
 
+const NARROW_FOOTER_WIDTH = 64;
+const NARROW_FOOTER_ACTION_LIMIT = 3;
+
+export function footerDisplayLabel(action: FooterAction, terminalWidth?: number): string {
+  if (!terminalWidth || terminalWidth >= NARROW_FOOTER_WIDTH) return action.label;
+  const compactLabel = action.label.split(" · ")[0] ?? action.label;
+  if (terminalWidth < 48 && action.action === "command-mode" && compactLabel === "commands") {
+    return "cmds";
+  }
+  return compactLabel;
+}
+
+function footerActionColumns(action: FooterAction, terminalWidth: number): number {
+  return (
+    measureColumns(hotkeyLabel(action.key)) +
+    1 +
+    measureColumns(footerDisplayLabel(action, terminalWidth))
+  );
+}
+
+function criticalStopAction(action: FooterAction): boolean {
+  return action.action === "quit" && action.key.trim().toLowerCase() === "q";
+}
+
+function narrowFooterActions(
+  pool: readonly FooterAction[],
+  terminalWidth: number,
+  poolLimit: number,
+): readonly FooterAction[] {
+  const commandAction = pool.find((action) => action.action === "command-mode");
+  const nonCommandActions = pool.filter((action) => action.action !== "command-mode");
+  const criticalStop = nonCommandActions.find(criticalStopAction);
+  const candidates: FooterAction[] = [];
+  const addCandidate = (action: FooterAction | undefined) => {
+    if (action && !candidates.includes(action)) candidates.push(action);
+  };
+  // Surface order is the fallback. Narrow chrome has three explicit priority
+  // classes before it: destructive stop is safety chrome, narrow-essential
+  // navigation must not disappear, and the primary action is the next-best
+  // recovery path when even those do not fit.
+  addCandidate(criticalStop);
+  for (const action of nonCommandActions) {
+    if (action.narrowEssential) addCandidate(action);
+  }
+  addCandidate(nonCommandActions.find((action) => action.primary));
+  for (const action of nonCommandActions) addCandidate(action);
+
+  const nonCommandLimit = Math.max(0, poolLimit - (commandAction ? 1 : 0));
+  const widthBudget = Math.max(18, terminalWidth - 2);
+  const commandColumns = commandAction ? footerActionColumns(commandAction, terminalWidth) : 0;
+  const selected: FooterAction[] = [];
+  let selectedColumns = 0;
+  for (const candidate of candidates) {
+    if (selected.length >= nonCommandLimit) break;
+    const candidateColumns = footerActionColumns(candidate, terminalWidth);
+    const count = selected.length + 1 + (commandAction ? 1 : 0);
+    const totalColumns =
+      selectedColumns + candidateColumns + commandColumns + Math.max(0, count - 1) * 2;
+    if (totalColumns > widthBudget) continue;
+    selected.push(candidate);
+    selectedColumns += candidateColumns;
+  }
+  const firstCandidate = candidates[0];
+  if (selected.length === 0 && firstCandidate && nonCommandLimit > 0) {
+    selected.push(firstCandidate);
+  }
+  return commandAction ? [...selected, commandAction] : selected;
+}
+
 export type ContextStripItem = {
   label: string;
   tone?: InlineBadgeTone;
 };
+
+/**
+ * Empty-list footer grammar. Row-scoped hints (`requiresSelection`) vanish when
+ * there is no row they can act on; navigation, palette, and close affordances
+ * stay because they still work. Callers mark scope at the binding/footer model
+ * instead of every surface re-learning which keys are dead.
+ */
+export function emptySafeFooterActions(
+  actions: readonly FooterAction[],
+  hasRows: boolean,
+): readonly FooterAction[] {
+  if (hasRows) return actions;
+  return actions.filter((action) => action.requiresSelection !== true);
+}
 
 export function selectFooterActions(
   actions: readonly FooterAction[],
@@ -74,6 +157,11 @@ export function selectFooterActions(
   const pool = enabledActions.filter((action) => action.action !== "pet");
   const pinnedCount = pinnedRestore.length;
   const withPinned = (list: readonly FooterAction[]) => [...list, ...pinnedRestore];
+
+  if (terminalWidth && terminalWidth > 0 && terminalWidth < NARROW_FOOTER_WIDTH) {
+    const poolLimit = Math.max(1, Math.min(NARROW_FOOTER_ACTION_LIMIT, hardLimit) - pinnedCount);
+    return withPinned(narrowFooterActions(pool, terminalWidth, poolLimit));
+  }
 
   if (mode === "minimal") {
     const limit = Math.min(MINIMAL_FOOTER_ACTION_LIMIT, hardLimit);
@@ -180,7 +268,7 @@ export function Footer({
       selectFooterActions(
         kannaHidden ? [...actions, PET_RESTORE_ACTION] : actions,
         mode,
-        mode === "detailed" ? terminalWidth : undefined,
+        terminalWidth,
         maxVisible,
       ),
     [actions, kannaHidden, mode, terminalWidth, maxVisible],
@@ -201,11 +289,13 @@ export function Footer({
     );
   }
 
+  const narrowFooter = terminalWidth < NARROW_FOOTER_WIDTH;
+
   return (
     <Box flexDirection="column" marginTop={1}>
       <Text color={palette.text}>{truncateLine(taskLabel, taskWidth)}</Text>
       {visibleActions.length > 0 ? (
-        <Box flexWrap="wrap" marginTop={1}>
+        <Box flexWrap={narrowFooter ? "nowrap" : "wrap"} marginTop={narrowFooter ? 0 : 1}>
           {visibleActions.map((action, index) => {
             const glyph = FOOTER_GLYPHS[action.key] ?? "";
             const keyDisplay = glyph ? `${glyph}§${action.key}` : action.key;
@@ -233,11 +323,17 @@ export function Footer({
                 feedback={Boolean(activateFooter(action, role))}
                 key={`${action.key}-${action.label}`}
               >
-                <Box marginRight={index === visibleActions.length - 1 ? 0 : 2} marginBottom={1}>
+                <Box
+                  marginRight={index === visibleActions.length - 1 ? 0 : 2}
+                  marginBottom={narrowFooter ? 0 : 1}
+                >
                   <Text bold={role === "primary"} color={keyColor}>
                     {hotkeyLabel(keyDisplay)}
                   </Text>
-                  <Text color={labelColor}> {truncateLine(action.label, 28)}</Text>
+                  <Text color={labelColor}>
+                    {" "}
+                    {truncateLine(footerDisplayLabel(action, terminalWidth), 28)}
+                  </Text>
                 </Box>
               </MouseTarget>
             );

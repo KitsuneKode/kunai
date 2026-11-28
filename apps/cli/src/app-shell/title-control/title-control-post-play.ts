@@ -57,6 +57,8 @@ type PostPlayFooterSpec = {
   readonly label?: string;
   readonly primary?: boolean;
   readonly bindingId?: PostPlayBindingId;
+  /** Display key when the surface owns a non-letter accelerator (Enter on post-play). */
+  readonly key?: string;
 };
 
 export type PostPlayFooterBuildOptions = {
@@ -98,6 +100,18 @@ function resolvePostPlayFooterSpecs(
   options: PostPlayFooterBuildOptions,
 ): readonly PostPlayFooterSpec[] {
   const { canResume } = options;
+
+  if (canResume) {
+    // Stopped-early is a resumable state regardless of the completion classifier
+    // (a movie can be both "complete enough to celebrate" and paused at 0:12).
+    // Enter is the honest primary key because the post-play action list owns it;
+    // `n` remains a live accelerator but is not the advertised verb.
+    return [
+      { actionId: "resume", label: "resume", primary: true, key: "enter" },
+      { actionId: "restart", label: "replay" },
+      { actionId: "search" },
+    ];
+  }
 
   switch (postPlayState.kind) {
     case "did-not-start":
@@ -188,13 +202,12 @@ export function buildPostPlayFooterActionsFromTitleControl(
     const bindingId = spec.bindingId ?? TITLE_CONTROL_POST_PLAY_BINDING_ID[spec.actionId];
     if (!bindingId) return [];
 
-    return [
-      actionFromBinding(bindingId, shellAction, {
-        bindings,
-        ...(spec.label ? { label: spec.label } : {}),
-        primary: spec.primary,
-      }),
-    ];
+    const footerAction = actionFromBinding(bindingId, shellAction, {
+      bindings,
+      ...(spec.label ? { label: spec.label } : {}),
+      primary: spec.primary,
+    });
+    return [spec.key ? { ...footerAction, key: spec.key } : footerAction];
   });
 
   const trailing = postPlayState.kind === "mid-series" ? [] : [quitAction(bindings)];

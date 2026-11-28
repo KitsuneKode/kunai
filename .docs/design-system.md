@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-24T09:50:19Z"
+lastReviewed: "2026-11-27T13:02:09Z"
 ---
 
 # Kunai — Terminal Design System (Sakura)
@@ -95,7 +95,8 @@ Keep these composable; screen-specific policy lives in the caller.
 ### Shared shell components (Sakura rollout)
 
 - **`ClaudeTabRow`** (`apps/cli/src/app-shell/primitives/ClaudeTabRow.tsx`) — tier-1 tabs with `accentFill` active pill; used on History, Calendar type filters, and Stats. Prefer over ad-hoc tab text.
-- **`MediaListShell`** — list + `PreviewRail` two-pane layout; collapses rail on narrow terminals. Browse, Calendar, History, Discover, and Library queue rows should compose through it.
+- **`MediaListShell`** — list + `PreviewRail` two-pane layout; collapses rail on narrow terminals. Browse, Calendar, History, Discover, and Library queue rows should compose through it. The rail threshold is 120 terminal columns; below that the list owns the width.
+- **`ShellFooter` / `ContextStrip`** (`apps/cli/src/app-shell/shell-primitives.tsx`) — shared state and footer grammar. Footer callers pass only live actions; selection-dependent actions go through `emptySafeFooterActions` so empty queue, history, inbox, and tracks surfaces keep navigation/recovery keys but never advertise dead row actions.
 - **`ListRow` / `SectionGroup` / `ResumeCard`** — History makeover list rhythm (title · ep · status · recency) with resume card under selection.
 - **Calendar (locked)** — visual authority: [`.reference/design/cli/kunai-sakura-calendar-locked.html`](../.reference/design/cli/kunai-sakura-calendar-locked.html). Shipped shape: `ClaudeTabRow` type tabs + horizontal day strip + unified schedule rows (`calendar-ui.tsx`). Calendar is always scoped to one selected date (today or the first available date); it is not an all-days or week view.
 - **Discover** — hybrid list + preview rail per [`.reference/design/cli/surfaces/recommendations-viewer.md`](../.reference/design/cli/surfaces/recommendations-viewer.md); section header + **emphasized reason line** (`discover-reason.ts`) in the list, reason echoed in the rail note.
@@ -127,6 +128,7 @@ would miss wrapped dividers in the real app. Inside a root overlay
 difference. Narrow list surfaces stay full-width and actionable and drop their companion rail
 first; a wide surface adds one constrained rail driven by the settled selection, never by the raw
 cursor. Truncated cells always keep a one-column gutter before the next column.
+Details is a framed overlay rather than a second search screen: while it is open the browse query chrome is hidden, the sheet owns scrolling content, and browse owns one shared footer. Below the poster threshold the sheet drops decorative media before truncating title or synopsis. Tracks uses the same recovery grammar: current values stay readable, failed alternatives carry a concise reason, and narrow terminals collapse the section pane into a tab strip instead of overwriting rows.
 
 ### Failure motion
 
