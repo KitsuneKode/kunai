@@ -17,6 +17,11 @@ import {
 import { playbackDeadStreamScopeKey } from "@/app/playback/playback-dead-stream-ledger";
 import type { EpisodeAttempt } from "@/app/playback/playback-episode-attempt";
 import {
+  buildPlaybackFailoverNotice,
+  playbackSourceDisplayLabel,
+  providerDisplayName,
+} from "@/app/playback/playback-failover-copy";
+import {
   updatePlaybackFeedback,
   transitionPlaybackSession,
 } from "@/app/playback/playback-phase-feedback";
@@ -407,11 +412,32 @@ export async function recoverAfterPlayback(
             episode: currentEpisode.episode,
           },
         });
-        void playerControl
-          .getActive()
-          ?.setEpisodeTransitionLoading?.(
-            `Kunai · Server unreachable, switching to backup server (${failoverPlan.sourceId})…`,
-          );
+        const failoverNotice = buildPlaybackFailoverNotice({
+          phase: result.suspectedDeadStream === true ? "mid-stream" : "startup",
+          fromLabel: playbackSourceDisplayLabel({
+            sourceId: currentSourceId,
+            inventory: preparedStream.providerResolveResult,
+            providerName: providerDisplayName(
+              providerRegistry.get(attempt.resolvedProviderId)?.metadata.name,
+            ),
+          }),
+          toLabel: playbackSourceDisplayLabel({
+            sourceId: failoverPlan.sourceId,
+            inventory: preparedStream.providerResolveResult,
+            providerName: providerDisplayName(
+              providerRegistry.get(attempt.resolvedProviderId)?.metadata.name,
+            ),
+          }),
+          preservedSeconds:
+            result.suspectedDeadStream === true
+              ? (result.lastNonZeroPositionSeconds ?? result.watchedSeconds)
+              : null,
+        });
+        stateManager.dispatch({ type: "SET_PLAYBACK_FAILOVER", failover: failoverNotice });
+        const failoverLine = failoverNotice.toLabel
+          ? `Kunai · Switching from ${failoverNotice.fromLabel} to ${failoverNotice.toLabel}…`
+          : `Kunai · Switching from ${failoverNotice.fromLabel}…`;
+        void playerControl.getActive()?.setEpisodeTransitionLoading?.(failoverLine);
       } else if (failoverPlan.kind === "fallback-provider") {
         shouldAutoFallbackProvider = true;
         skipRefreshContinue = true;
@@ -536,6 +562,18 @@ export async function recoverAfterPlayback(
         invalidateRecentEpisodeStream,
       });
       attempt.resolvedProviderId = switched.providerId;
+      const providerNotice = buildPlaybackFailoverNotice({
+        phase: result.suspectedDeadStream === true ? "mid-stream" : "startup",
+        fromLabel: providerDisplayName(
+          providerRegistry.get(switched.fromProviderId)?.metadata.name,
+        ),
+        toLabel: providerDisplayName(fallback.metadata.name),
+        preservedSeconds:
+          result.suspectedDeadStream === true
+            ? (result.lastNonZeroPositionSeconds ?? result.watchedSeconds)
+            : null,
+      });
+      stateManager.dispatch({ type: "SET_PLAYBACK_FAILOVER", failover: providerNotice });
       run.pendingSourceRefreshAction = "recover";
       run.pendingRecomputeSources = false;
       run.startupProviderHopUsed = true;

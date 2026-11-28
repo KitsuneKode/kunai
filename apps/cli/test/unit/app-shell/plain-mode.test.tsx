@@ -479,7 +479,7 @@ describe("plain / screen-reader rendering across every shell surface", () => {
 
     expect(frame).not.toMatch(DECORATIVE_NOISE);
     expect(frame).toContain("[done] Resolving");
-    expect(frame).toContain("[in progress] Providers");
+    expect(frame).toContain("[in progress] Checking VidLink");
     expect(frame).toContain("[pending] Buffering");
     expect(frame).toContain("[40%]");
     expect(frame).toContain("[selected] VidLink Primary [active]");

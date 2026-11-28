@@ -44,6 +44,12 @@ describe("loading shell 4-stage mapping", () => {
     expect(rail[3]!.tone).toBe("neutral"); // starting-playback is future
   });
 
+  test("the active rail row uses the same headline as the title line", () => {
+    const rail = renderStageRail("preparing-provider", null, "Launching player");
+    expect(rail[1]!.label).toBe("Launching player");
+    expect(rail[1]!.label).not.toBe("Providers");
+  });
+
   test("preparing-provider is visible as the active stage in the rail", () => {
     const rail = renderStageRail("preparing-provider", null);
     expect(rail).toHaveLength(4);

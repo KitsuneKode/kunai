@@ -31,6 +31,45 @@ export type RootStatusSummary = {
 
 export type SyncHealth = "ok" | "warn" | "error" | "disconnected" | "paused";
 
+export function resolveShellRootStatus(
+  state: Pick<SessionState, "playbackStatus" | "searchState" | "view" | "currentTitle">,
+): string {
+  if (state.playbackStatus === "error") return "issue";
+  if (
+    state.playbackStatus === "paused" ||
+    state.playbackStatus === "buffering" ||
+    state.playbackStatus === "seeking" ||
+    state.playbackStatus === "stalled" ||
+    state.playbackStatus === "playing"
+  ) {
+    return state.playbackStatus;
+  }
+  if (
+    state.playbackStatus === "loading" ||
+    state.playbackStatus === "ready" ||
+    (state.playbackStatus === "idle" && state.view === "details" && state.currentTitle !== null)
+  ) {
+    return "resolving";
+  }
+  if (state.searchState === "loading") return "searching";
+  if (state.searchState === "error") return "issue";
+  return "ready";
+}
+
+export type RootHeaderStatus = {
+  readonly label: string;
+  readonly tone: ShellStatusTone;
+};
+
+export function headerStatusForRoot(
+  rootStatus: string,
+  debounced: RootHeaderStatus,
+): RootHeaderStatus {
+  if (rootStatus === "issue") return { label: "issue", tone: "error" };
+  if (rootStatus === "resolving") return { label: "Resolving…", tone: "warning" };
+  return debounced;
+}
+
 function humanReadableRootStatus(raw: string): string {
   switch (raw) {
     case "playing":
