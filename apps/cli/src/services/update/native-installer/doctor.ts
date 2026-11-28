@@ -15,6 +15,7 @@ import type { AndroidIntentRuntime } from "@/infra/player/android-intent-launche
 import { detectInstalledPlayers } from "@/infra/player/installed-players";
 import type { CapabilitySnapshot, CurlCapability } from "@/ui";
 import type { MpvHwdecMode } from "@kunai/config";
+import { joinerForNodePlatform } from "@kunai/storage";
 
 import {
   inspectInstallManifest,
@@ -31,6 +32,7 @@ import {
   versionBinaryPath,
   type InstallLayoutPaths,
 } from "./install-layout";
+import { isProcessAlive } from "./lock-owner-identity";
 import { describeMpvHwaccel, mpvHwdecPlaybackReport } from "./mpv-hwdec-report";
 import { isMuslEnvironmentSync } from "./musl";
 import { listInstallTransactions, type InstallTransactionRecord } from "./transaction";
@@ -246,22 +248,17 @@ async function inspectLauncher(
   }
 }
 
-function isProcessAlive(pid: number): boolean {
-  if (pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function collectFindings(input: {
   readonly report: Omit<DoctorReport, "findings">;
   readonly detectedKind: string;
+  readonly configDir: string;
 }): DoctorFinding[] {
   const findings: DoctorFinding[] = [];
-  const { report, detectedKind } = input;
+  const { report, detectedKind, configDir } = input;
+  // `report.platform.os` is the release target spelling ("windows", "linux",
+  // "darwin", "android"); joinerForNodePlatform only branches on "win32", and
+  // every other reported OS uses POSIX separators.
+  const joinFor = joinerForNodePlatform(report.platform.os === "windows" ? "win32" : "linux");
   const manifest = report.manifest.status === "loaded" ? report.manifest.manifest : null;
 
   const winner = report.pathCandidates.find((c) => c.winner);
@@ -301,7 +298,7 @@ function collectFindings(input: {
       code: "invalid-manifest",
       message: `install.json is invalid (${report.manifest.reason}).`,
       remediation: [
-        "Back up ~/.config/kunai/install.json.",
+        `Back up ${joinFor(configDir, "install.json")}.`,
         "Reinstall with `kunai install` to rewrite a valid ownership record.",
       ],
     });
@@ -655,7 +652,11 @@ export async function buildDoctorReport(input: BuildDoctorReportInput = {}): Pro
     storage: await (input.probeStorage ?? (() => probeStorageWritability(layout)))(),
   };
 
-  const findings = collectFindings({ report: base, detectedKind: detectedMethod.kind });
+  const findings = collectFindings({
+    report: base,
+    detectedKind: detectedMethod.kind,
+    configDir: layout.configDir,
+  });
   if (android) findings.push(androidPlayerHandoffFinding(input.androidIntentRuntime));
   return { ...base, findings };
 }

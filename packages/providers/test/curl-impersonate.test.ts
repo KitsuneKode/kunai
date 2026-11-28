@@ -264,7 +264,9 @@ describe("resolveCurlCandidate Kunai-managed helpers", () => {
     });
   });
 
-  test("a PATH build still wins over the managed one", () => {
+  test("the managed build is validated before anything on PATH", () => {
+    // The installer owns the managed copy; a PATH wrapper could be anything
+    // the caller's shell happens to resolve, so it is only a fallback.
     const pathBinary = "C:\\tools\\curl_chrome160.exe";
     const candidate = resolveCurlCandidate({
       platform: "win32",
@@ -272,6 +274,22 @@ describe("resolveCurlCandidate Kunai-managed helpers", () => {
       which: (command) => (command === "curl_chrome160.exe" ? pathBinary : null),
       managedWrapperDirs: () => [{ dir: managedDir, entries: ["curl_chrome150.bat"] }],
       fileExists: (path) => path === managedBackend,
+      readTextFile: () => forwarder,
+    });
+
+    expect(candidate?.path).toBe(managedBackend);
+    expect(candidate?.profile).toBe("chrome150");
+  });
+
+  test("a managed miss still falls back to a PATH build", () => {
+    const pathBinary = "C:\\tools\\curl_chrome160.exe";
+    const candidate = resolveCurlCandidate({
+      platform: "win32",
+      listPathEntries: () => ["curl_chrome160.exe"],
+      which: (command) => (command === "curl_chrome160.exe" ? pathBinary : null),
+      // Managed dir scanned but its backend exe is absent — nothing usable.
+      managedWrapperDirs: () => [{ dir: managedDir, entries: ["curl_chrome150.bat"] }],
+      fileExists: () => false,
       readTextFile: () => forwarder,
     });
 

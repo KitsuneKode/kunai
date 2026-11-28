@@ -408,6 +408,28 @@ describe("buildDoctorReport", () => {
     expect(finding?.severity).toBe("error");
   });
 
+  test("an invalid manifest remediates at the configured config dir, not a hardcoded default", async () => {
+    const { layout } = await makeRoot();
+    const report = await buildDoctorReport({
+      layout,
+      now: () => FIXED_DATE,
+      runningExecutable: { path: "/tmp/kunai", version: "9.9.9" },
+      pathValue: "",
+      platform: process.platform,
+      fileExists: () => false,
+      probeCapabilities: async () => emptyCapabilities(),
+      inspectManifest: async () => ({
+        status: "invalid",
+        reason: "invalid-json",
+      }),
+    });
+    const finding = report.findings.find((f) => f.code === "invalid-manifest");
+    expect(finding?.severity).toBe("error");
+    // Under a profile the manifest lives at <profile>/config — the remediation
+    // must name that path, never the platform default.
+    expect(finding?.remediation[0]).toContain(join(layout.configDir, "install.json"));
+  });
+
   test("text formatting includes remediations for error findings", async () => {
     const { layout } = await makeRoot();
     const report = await buildDoctorReport({

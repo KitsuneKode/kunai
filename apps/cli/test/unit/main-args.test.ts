@@ -489,8 +489,11 @@ test("`kunai addons` rejects an unsupported flag with exit 2 and never touches c
   const root = mkdtempSync(join(tmpdir(), "kunai-addons-flag-"));
   try {
     const env = { ...process.env, ...storageRootEnv(root) };
-    const { configDir, configPath } = getKunaiPaths({ env });
+    const { configDir, configPath, profileDir } = getKunaiPaths({ env });
     mkdirSync(configDir, { recursive: true });
+    // Seeding config first makes the root nonempty: the profile gate only
+    // accepts it once the fixture claims ownership.
+    writeFileSync(join(profileDir!, ".kunai-profile"), "kunai-profile-v1\n");
     const seeded = JSON.stringify({
       stremioAddons: [{ url: "https://a.example.com/SECRETTOKEN/manifest.json", name: "Alpha" }],
     });

@@ -151,11 +151,12 @@ Proof is two witnesses: mpv's own IPC `time-pos` advancing **and** Kunai's
 
 ## Rules — each one has been broken before
 
-1. **Never touch the real profile.** No `KUNAI_CONFIG_DIR`, no real
-   `~/.config/kunai`. The drivers isolate HOME/XDG/APPDATA **and** force the
-   file credential backend — OS vaults are account-wide, so a new HOME does
-   not isolate them. The L3 launcher refuses overrides of either. Need extra
-   env? Pass `--set-env`; never export globals.
+1. **Never touch the real profile.** The harnesses own `KUNAI_CONFIG_DIR` and
+   the other storage roots — the drivers point them all at a throwaway profile
+   **and** force the file credential backend (OS vaults are account-wide, so a
+   new HOME does not isolate them). Do not change any of them; the L3 launcher
+   refuses overrides of either. Need extra env? Pass `--set-env`; never export
+   globals.
 2. **Analytics stays off.** Seeded profiles decline it, and `dispose()` fails
    the run if an `installId` appears. A key plan that toggles the analytics
    row is caught by that check — that is the intended outcome.

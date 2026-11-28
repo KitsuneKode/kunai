@@ -1,7 +1,16 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  readlink,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -364,6 +373,51 @@ describe("nativeUninstall refusal", () => {
     expect(await readFile(layout.launcherPath, "utf8")).toContain("foreign");
     expect(existsSync(path)).toBe(true);
     expect(existsSync(join(layout.configDir, "install.json"))).toBe(true);
+  });
+
+  test("a dangling profile launcher blocks purge without touching sentinels", async () => {
+    const { root, layout } = await makeRoot();
+    const profileLayout = { ...layout, profileDir: root };
+    await writeFile(join(root, ".kunai-profile"), "kunai-profile-v1\n");
+    const { path, sha256 } = await seedVerifiedVersion(profileLayout, "1.2.3", "kunai-bin");
+    await writeInstallManifest(
+      {
+        method: "binary",
+        activeVersion: "1.2.3",
+        launcherPath: profileLayout.launcherPath,
+        versionedPath: path,
+        downloadBaseUrl: "https://example.test/releases",
+        artifactSha256: sha256,
+      },
+      profileLayout,
+    );
+    // A dangling symlink follows to nothing: it is unmanaged foreign state,
+    // never "missing", so purge must refuse rather than adopt the profile.
+    const danglingTarget = join(profileLayout.versionsDir, "gone", "kunai");
+    await symlink(danglingTarget, profileLayout.launcherPath);
+    await writeFile(join(profileLayout.configDir, "config.json"), '{"theme":"sakura"}\n');
+    await writeFile(join(profileLayout.dataDir, "kunai-data.sqlite"), "history");
+
+    // nativeUninstall verifies the profile against the resolved env root —
+    // point it at this fixture so the ownership gate, not the root match, is
+    // what blocks.
+    const previous = process.env.KUNAI_CONFIG_DIR;
+    process.env.KUNAI_CONFIG_DIR = root;
+    try {
+      const result = await nativeUninstall({ layout: profileLayout, platform: "linux" });
+      expect(result.status).toBe("blocked");
+    } finally {
+      if (previous === undefined) delete process.env.KUNAI_CONFIG_DIR;
+      else process.env.KUNAI_CONFIG_DIR = previous;
+    }
+    expect(await readlink(profileLayout.launcherPath)).toBe(danglingTarget);
+    expect(await readFile(join(root, ".kunai-profile"), "utf8")).toBe("kunai-profile-v1\n");
+    expect(await readFile(join(profileLayout.configDir, "config.json"), "utf8")).toBe(
+      '{"theme":"sakura"}\n',
+    );
+    expect(await readFile(join(profileLayout.dataDir, "kunai-data.sqlite"), "utf8")).toBe(
+      "history",
+    );
   });
 
   test("Windows launcher ownership requires checksum match", async () => {

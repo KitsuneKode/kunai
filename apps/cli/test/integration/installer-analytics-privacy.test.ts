@@ -52,7 +52,13 @@ for (const platform of ["linux", "darwin", "win32"] as const) {
   test(`${platform}: installer fixture contains CLI config, data and cache roots`, () => {
     const fixture = createInstallerSandbox("analytics-roots");
     try {
-      const paths = getKunaiPaths({ platform, env: fixture.env });
+      // A cross-family target cannot interpret the host fixture's absolute override.
+      // Use its injected default roots for the containment assertion instead.
+      const env = { ...fixture.env };
+      if ((platform === "win32") !== (process.platform === "win32")) {
+        delete env.KUNAI_CONFIG_DIR;
+      }
+      const paths = getKunaiPaths({ platform, env });
       const targetPath = platform === "win32" ? win32 : posix;
       for (const path of [paths.configDir, paths.dataDir, paths.cacheDir]) {
         expect(isWithinFixture(targetPath, fixture.root, path)).toBe(true);

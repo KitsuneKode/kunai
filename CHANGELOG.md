@@ -133,6 +133,16 @@ subtitle controls, and safer persistence, downloads and native installation.
 
 ### State safety and privacy
 
+- `KUNAI_CONFIG_DIR` selects a dedicated profile root (`config`, `data`,
+  `cache`, `tmp` and the installer launcher under it) instead of the
+  platform-default layout. The root must be absolute, dedicated, and marked
+  with a `.kunai-profile` ownership file; an empty value aborts the CLI and
+  both installers, a nonempty unmarked directory is never adopted, and
+  uninstall purges the managed directories only. Android ignores the variable
+  and keeps its app-owned home layout. Profile credentials always use the
+  file vault, protocol-handler registration stays a default-profile
+  operation, and under a profile the installers support only the binary
+  method and never persist PATH.
 - Serialize configuration changes and preserve concurrent profile, credential
   and preference updates. Refuse an unlocked save after contention rather than
   overwriting another instance's changes.

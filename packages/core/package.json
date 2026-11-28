@@ -5,7 +5,8 @@
   "description": "Kunai provider manifests, resolver contracts, cache policy, and compatibility adapters.",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./desktop-profile": "./src/desktop-profile.ts"
   },
   "scripts": {
     "typecheck": "bun tsc --noEmit",

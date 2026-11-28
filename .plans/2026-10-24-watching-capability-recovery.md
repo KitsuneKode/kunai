@@ -54,7 +54,7 @@ stale rows and deferred failures. Prove declaration-to-reader, reverse states,
 browse/palette/player/post-play entrypoints and anime/TMDB/YouTube identity decisions.
 
 All runtime work uses isolated HOME/USERPROFILE/XDG/APPDATA/LOCALAPPDATA with file
-credentials. No live SQLite, KUNAI_CONFIG_DIR, implicit analytics or OS registration.
+credentials. No live SQLite, implicit analytics or OS registration.
 Preserve other worktrees, especially active provider rewrites. No unprobed stream,
 expanded timeout, malicious fetched script execution or exposed signed URLs.
 No remote merges or release publication. Chromecast/cloud/full torrent/debrid

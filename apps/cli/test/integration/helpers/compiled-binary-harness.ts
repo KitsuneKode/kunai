@@ -8,7 +8,13 @@ import {
   type CompiledSmokeScenarioId,
 } from "@/app/compiled-smoke/scenarios";
 import { DEFAULT_CONFIG } from "@kunai/config";
-import { getKunaiPaths, type KunaiPaths, type StoragePlatform } from "@kunai/storage";
+import {
+  getKunaiPaths,
+  PROFILE_MARKER,
+  PROFILE_MARKER_CONTENT,
+  type KunaiPaths,
+  type StoragePlatform,
+} from "@kunai/storage";
 
 import { storageRootEnv } from "../../helpers/storage-env";
 import { removeTempDir } from "../../support/remove-temp-dir";
@@ -64,6 +70,13 @@ export function createCompiledSmokeProfile(): CompiledSmokeProfile {
   });
   const binDir = join(root, "bin");
   const shimDir = join(root, "shim");
+  // The CLI profile gate refuses a nonempty unmarked root, so the ownership
+  // marker must exist before the config seed below writes into the profile.
+  if (paths.profileDir === undefined) {
+    throw new Error("compiled smoke profile env did not resolve a profile dir");
+  }
+  mkdirSync(paths.profileDir, { recursive: true });
+  writeFileSync(join(paths.profileDir, PROFILE_MARKER), PROFILE_MARKER_CONTENT);
   mkdirSync(paths.configDir, { recursive: true });
   mkdirSync(paths.dataDir, { recursive: true });
   mkdirSync(paths.cacheDir, { recursive: true });

@@ -4,3 +4,6 @@
 # node_modules/.bun entries into it — worktrees share one physical copy.
 linker = "isolated"
 globalStore = true
+
+[test]
+preload = ["./test/helpers/storage-preload.ts"]

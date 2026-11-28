@@ -44,10 +44,10 @@ reviews:
         Must stay compatible with Windows PowerShell 5.1 (not just pwsh 7).
     - path: "apps/cli/test/**"
       instructions: >-
-        Tests isolate storage with HOME, XDG, APPDATA, and LOCALAPPDATA via
-        storageRootEnv. KUNAI_CONFIG_DIR is not a runtime override. Flag live
-        profile access on any OS; prefer injected clocks and event gates over
-        real sleeps or raised timeouts.
+        Tests isolate storage through a bunfig preload that installs a
+        throwaway KUNAI_CONFIG_DIR profile; standalone harnesses use
+        storageRootEnv. Flag live profile access on any OS; prefer injected
+        clocks and event gates over real sleeps or raised timeouts.
   abort_on_close: true
   auto_review:
     enabled: true

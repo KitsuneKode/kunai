@@ -289,6 +289,13 @@ async function probeBackend(
 export async function createCredentialVault(
   deps: CredentialVaultDeps,
 ): Promise<CredentialVaultPort> {
+  // A `KUNAI_CONFIG_DIR` profile is self-contained: the OS vaults are
+  // account-wide, not profile-isolated, so even an explicit native-backend
+  // env override must not let a profile-directed run reach the global vault.
+  if (deps.paths.profileDir !== undefined) {
+    deps.onFallback?.("file", "dedicated profile root");
+    return fileVault(deps.paths);
+  }
   const env = deps.env ?? process.env;
   const forced = env["KUNAI_CREDENTIAL_BACKEND"];
   if (forced === "file") return fileVault(deps.paths);
@@ -320,9 +327,11 @@ export const FILE_FALLBACK_NOTICE_MARKER = ".credential-file-fallback-noticed";
 export function noticeFileFallbackOnce(input: {
   readonly configDir: string;
   readonly platform?: NodeJS.Platform;
+  /** Set when the file lane was chosen because the run is inside a profile root. */
+  readonly profileRoot?: boolean;
   readonly write: (line: string) => void;
 }): void {
-  if ((input.platform ?? process.platform) !== "win32") return;
+  if (!input.profileRoot && (input.platform ?? process.platform) !== "win32") return;
   try {
     mkdirSync(input.configDir, { recursive: true });
     writeFileSync(join(input.configDir, FILE_FALLBACK_NOTICE_MARKER), "", { flag: "wx" });
@@ -330,6 +339,8 @@ export function noticeFileFallbackOnce(input: {
     if (error instanceof Error && "code" in error && error.code === "EEXIST") return;
   }
   input.write(
-    "Windows credential vault unavailable. Kunai will store credentials in user-profile files.\n",
+    input.profileRoot
+      ? "Dedicated Kunai profile: credentials are stored in plaintext secrets.json in this profile.\n"
+      : "Windows credential vault unavailable. Kunai will store credentials in user-profile files.\n",
   );
 }

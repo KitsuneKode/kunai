@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, posix, win32 } from "node:path";
 
 import {
+  canActivateProfileVersion,
   getInstallLayoutPaths,
   isInsideStagingRoot,
   lockFilePath,
@@ -93,6 +94,7 @@ describe("install layout paths", () => {
       dataDir: "/data/kunai",
       cacheDir: "/cache/kunai",
       configDir: "/config/kunai",
+      launcherPath: "/fixture/bin/kunai",
       platform: "linux",
     });
     const execPath = join(layout.versionsDir, "2.0.1", "kunai");
@@ -105,6 +107,7 @@ describe("install layout paths", () => {
       dataDir: "/data/kunai",
       cacheDir: "/cache/kunai",
       configDir: "/config/kunai",
+      launcherPath: "/fixture/bin/kunai",
       platform: "linux",
     });
     expect(() => versionBinaryPath(layout, "../1.2.3")).toThrow(/Invalid install version/);
@@ -141,4 +144,184 @@ describe("install layout paths", () => {
 
     expect(await readdir(external)).toEqual(["keep.txt"]);
   });
+
+  test("a cross-family target never interprets the host's inherited profile override", () => {
+    // On a Windows CI host process.env.KUNAI_CONFIG_DIR is a drive path a
+    // POSIX target cannot read (and vice versa): the target must resolve its
+    // own defaults instead of throwing or adopting the alien root.
+    const opposite = process.platform === "win32" ? "linux" : "win32";
+    const layout = getInstallLayoutPaths({ platform: opposite });
+    expect(layout.dataDir).toBeTruthy();
+    expect(layout.launcherPath).toBeTruthy();
+  });
+
+  test("an injected env with a valid profile produces a matching config and launcher", () => {
+    // Same contract the shell installers derive: profile-rooted config dir
+    // and a launcher under <profile>/bin — per path family, in-memory only.
+    const cases = [
+      {
+        platform: "win32" as const,
+        env: {
+          USERPROFILE: "C:\\Users\\T",
+          APPDATA: "C:\\Users\\T\\AppData\\Roaming",
+          LOCALAPPDATA: "C:\\Users\\T\\AppData\\Local",
+          KUNAI_CONFIG_DIR: "C:\\profile",
+        },
+        configDir: "C:\\profile\\config",
+        launcherPath: "C:\\profile\\bin\\kunai.cmd",
+        profileDir: "C:\\profile",
+      },
+      {
+        platform: "linux" as const,
+        env: { HOME: "/home/t", KUNAI_CONFIG_DIR: "/srv/profile" },
+        configDir: "/srv/profile/config",
+        launcherPath: "/srv/profile/bin/kunai",
+        profileDir: "/srv/profile",
+      },
+    ];
+    for (const testCase of cases) {
+      const layout = getInstallLayoutPaths({ platform: testCase.platform, env: testCase.env });
+      expect(layout.configDir).toBe(testCase.configDir);
+      expect(layout.launcherPath).toBe(testCase.launcherPath);
+      expect(layout.profileDir).toBe(testCase.profileDir);
+
+      // An override that only spells the canonical dir differently still
+      // resolves to the canonical dir and keeps the profile attachment.
+      const alias = getInstallLayoutPaths({
+        platform: testCase.platform,
+        env: testCase.env,
+        configDir: testCase.configDir + (testCase.platform === "win32" ? "\\." : "/."),
+      });
+      expect(alias.configDir).toBe(testCase.configDir);
+      expect(alias.profileDir).toBe(testCase.profileDir);
+
+      // A genuinely different configDir under a configured profile is a
+      // detached layout — it must never silently reach the real default
+      // launcher, so it requires an explicit launcherPath.
+      const foreignEnv = {
+        ...testCase.env,
+        KUNAI_BIN_DIR: (testCase.platform === "win32" ? win32 : posix).dirname(
+          testCase.launcherPath,
+        ),
+      };
+      expect(() =>
+        getInstallLayoutPaths({
+          platform: testCase.platform,
+          env: foreignEnv,
+          configDir: `${testCase.configDir}-other`,
+        }),
+      ).toThrow("requires an explicit launcherPath");
+
+      // An explicit launcher override selects the detached layout's launcher.
+      const explicit = getInstallLayoutPaths({
+        platform: testCase.platform,
+        env: foreignEnv,
+        configDir: `${testCase.configDir}-other`,
+        launcherPath: join("/explicit", "kunai"),
+      });
+      expect(explicit.launcherPath).toBe(join("/explicit", "kunai"));
+      expect(explicit.configDir).toBe(`${testCase.configDir}-other`);
+      expect(explicit.profileDir).toBeUndefined();
+    }
+  });
+
+  test("canActivateProfileVersion gates only Windows profile payloads", () => {
+    const win32Profile = getInstallLayoutPaths({
+      platform: "win32",
+      env: {
+        USERPROFILE: "C:\\Users\\T",
+        APPDATA: "C:\\Users\\T\\AppData\\Roaming",
+        LOCALAPPDATA: "C:\\Users\\T\\AppData\\Local",
+        KUNAI_CONFIG_DIR: "C:\\profile",
+      },
+    });
+    // Windows profiles need a payload that infers its own profile — 0.4.0+.
+    expect(canActivateProfileVersion(win32Profile, "0.3.9")).toBe(false);
+    expect(canActivateProfileVersion(win32Profile, "0.4.0")).toBe(true);
+    expect(canActivateProfileVersion(win32Profile, "1.0.0")).toBe(true);
+
+    const posixProfile = getInstallLayoutPaths({
+      platform: "linux",
+      env: { HOME: "/home/t", KUNAI_CONFIG_DIR: "/srv/profile" },
+    });
+    expect(canActivateProfileVersion(posixProfile, "0.3.9")).toBe(true);
+
+    // Detached and default layouts carry no profile to misattribute.
+    const detached = getInstallLayoutPaths({
+      platform: "win32",
+      env: {
+        USERPROFILE: "C:\\Users\\T",
+        APPDATA: "C:\\Users\\T\\AppData\\Roaming",
+        LOCALAPPDATA: "C:\\Users\\T\\AppData\\Local",
+        KUNAI_CONFIG_DIR: "C:\\profile",
+      },
+      configDir: "C:\\elsewhere\\config",
+      launcherPath: "C:\\elsewhere\\bin\\kunai.exe",
+    });
+    expect(detached.profileDir).toBeUndefined();
+    expect(canActivateProfileVersion(detached, "0.3.9")).toBe(true);
+  });
+
+  test("default layouts keep an absolute platform launcher and no profile", () => {
+    const cases = [
+      {
+        platform: "linux" as const,
+        env: { HOME: "/home/t" },
+        launcherPath: "/home/t/.local/bin/kunai",
+      },
+      {
+        platform: "darwin" as const,
+        env: { HOME: "/Users/t" },
+        launcherPath: "/Users/t/.local/bin/kunai",
+      },
+      {
+        platform: "win32" as const,
+        env: {
+          USERPROFILE: "C:\\Users\\T",
+          APPDATA: "C:\\Users\\T\\AppData\\Roaming",
+          LOCALAPPDATA: "C:\\Users\\T\\AppData\\Local",
+        },
+        launcherPath: "C:\\Users\\T\\AppData\\Local\\kunai\\bin\\kunai.exe",
+      },
+    ];
+    for (const testCase of cases) {
+      const layout = getInstallLayoutPaths({
+        platform: testCase.platform,
+        env: testCase.env,
+      });
+      expect(layout.profileDir).toBeUndefined();
+      expect(layout.launcherPath).toBe(testCase.launcherPath);
+    }
+  });
+
+  test.each([
+    {
+      platform: "linux" as const,
+      env: { HOME: "/home/t", KUNAI_CONFIG_DIR: "/srv/profile" },
+      bin: "/srv/profile/bin",
+      platformDefaultBin: "/home/t/.local/bin",
+    },
+    {
+      platform: "win32" as const,
+      env: {
+        USERPROFILE: "C:\\Users\\T",
+        APPDATA: "C:\\Users\\T\\AppData\\Roaming",
+        LOCALAPPDATA: "C:\\Users\\T\\AppData\\Local",
+        KUNAI_CONFIG_DIR: "C:\\profile",
+      },
+      bin: "C:\\profile\\bin",
+      platformDefaultBin: "C:\\Users\\T\\AppData\\Local\\kunai\\bin",
+    },
+  ])(
+    "a profile accepts KUNAI_BIN_DIR only when it names the derived bin ($platform)",
+    ({ platform, env, bin, platformDefaultBin }) => {
+      const ok = getInstallLayoutPaths({ platform, env: { ...env, KUNAI_BIN_DIR: bin } });
+      expect(ok.profileDir).toBe(env.KUNAI_CONFIG_DIR);
+      for (const bad of ["", join(bin, "..", "other"), platformDefaultBin]) {
+        expect(() =>
+          getInstallLayoutPaths({ platform, env: { ...env, KUNAI_BIN_DIR: bad } }),
+        ).toThrow("KUNAI_BIN_DIR");
+      }
+    },
+  );
 });

@@ -23,7 +23,13 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { getKunaiPaths, type KunaiPaths, type StoragePlatform } from "@kunai/storage";
+import {
+  getKunaiPaths,
+  PROFILE_MARKER,
+  PROFILE_MARKER_CONTENT,
+  type KunaiPaths,
+  type StoragePlatform,
+} from "@kunai/storage";
 
 import { buildPtyCommand } from "../../helpers/pty-command";
 import { storageRootEnv } from "../../helpers/storage-env";
@@ -180,9 +186,17 @@ export function createIsolatedReadmeProfile(label = "readme"): IsolatedReadmePro
     homeDir: home,
     env,
   });
-  // install.sh defaults BIN_DIR to $HOME/.local/bin on every platform.
-  const binDir = join(home, ".local", "bin");
   const shimDir = join(root, "shims");
+  // The real CLI spawned by this harness refuses a nonempty unmarked profile
+  // root, so seed the ownership marker before any other file lands under it.
+  if (paths.profileDir === undefined) {
+    throw new Error("readme profile env did not resolve a profile dir");
+  }
+  // The profile launcher lives under the profile's own bin dir — an external
+  // KUNAI_BIN_DIR is invalid while KUNAI_CONFIG_DIR is set.
+  const binDir = join(paths.profileDir, "bin");
+  mkdirSync(paths.profileDir, { recursive: true });
+  writeFileSync(join(paths.profileDir, PROFILE_MARKER), PROFILE_MARKER_CONTENT);
   for (const dir of [home, binDir, shimDir, paths.configDir, paths.dataDir, paths.cacheDir]) {
     mkdirSync(dir, { recursive: true });
   }
@@ -289,16 +303,19 @@ function profileEnv(
   extras: NodeJS.ProcessEnv = {},
 ): NodeJS.ProcessEnv {
   const pathParts = [profile.binDir, profile.shimDir, "/usr/bin", "/bin"];
+  // A leaked KUNAI_DATA_DIR/KUNAI_CACHE_DIR from the outer env would redirect
+  // storage away from this profile's dedicated root — strip them before
+  // spreading. Storage derives from the profile's KUNAI_CONFIG_DIR, not from
+  // HOME/XDG, so no other KUNAI_*_DIR overrides are needed to keep the
+  // installer and the CLI aligned.
+  const inherited = { ...process.env };
+  delete inherited.KUNAI_DATA_DIR;
+  delete inherited.KUNAI_CACHE_DIR;
+  delete inherited.KUNAI_BIN_DIR;
   return {
-    ...process.env,
+    ...inherited,
     ...profile.env,
     ...extras,
-    KUNAI_BIN_DIR: profile.binDir,
-    // Keep installer overrides aligned with getKunaiPaths so install.sh and the
-    // CLI agree under the shadow HOME on darwin (Library) and linux (XDG).
-    KUNAI_CONFIG_DIR: profile.configDir,
-    KUNAI_DATA_DIR: profile.dataDir,
-    KUNAI_CACHE_DIR: profile.cacheDir,
     PATH: pathParts.join(":"),
     CI: "1",
     DO_NOT_TRACK: "1",

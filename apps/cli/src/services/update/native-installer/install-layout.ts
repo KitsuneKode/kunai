@@ -1,6 +1,6 @@
 import { rm, rmdir } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, posix, win32 } from "node:path";
+import { dirname, posix, win32 } from "node:path";
 
 import { getKunaiPaths, joinerForNodePlatform, type StoragePlatform } from "@kunai/storage";
 
@@ -15,6 +15,8 @@ export type InstallLayoutPaths = {
   readonly dataDir: string;
   readonly cacheDir: string;
   readonly configDir: string;
+  /** Present only when this layout resolves inside a dedicated profile root. */
+  readonly profileDir?: string;
   readonly versionsDir: string;
   readonly locksDir: string;
   readonly transactionsDir: string;
@@ -36,13 +38,16 @@ function storagePlatformFor(platform: NodeJS.Platform): StoragePlatform {
   return platform === "darwin" || platform === "win32" ? platform : "linux";
 }
 
-function defaultLauncherPath(platform: NodeJS.Platform = process.platform): string {
-  if (platform === "win32") {
-    const local = process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local");
-    return join(local, "kunai", "bin", "kunai.exe");
-  }
-  const binDir = process.env.KUNAI_BIN_DIR ?? join(homedir(), ".local", "bin");
-  return join(binDir, "kunai");
+function defaultLauncherPath(
+  platform: NodeJS.Platform,
+  env: NodeJS.ProcessEnv,
+  defaultDataDir: string,
+): string {
+  const joinFor = joinerForNodePlatform(platform);
+  if (platform === "win32") return joinFor(defaultDataDir, "bin", "kunai.exe");
+  const home = env.HOME?.trim() || env.USERPROFILE?.trim() || homedir();
+  const binDir = env.KUNAI_BIN_DIR || joinFor(home, ".local", "bin");
+  return joinFor(binDir, "kunai");
 }
 
 /**
@@ -68,6 +73,7 @@ export function getInstallLayoutPaths(
     readonly configDir?: string;
     readonly launcherPath?: string;
     readonly platform?: NodeJS.Platform;
+    readonly env?: NodeJS.ProcessEnv;
   } = {},
 ): InstallLayoutPaths {
   const platform = overrides.platform ?? process.platform;
@@ -75,17 +81,47 @@ export function getInstallLayoutPaths(
   // name. Calling getKunaiPaths() bare made `platform: "win32"` on Linux return a
   // Windows launcher beside Linux XDG dirs -- a layout no real machine has, so
   // installer tests could agree with each other and disagree with production.
-  const kunai = getKunaiPaths({ platform: storagePlatformFor(platform) });
-  const dataDir = overrides.dataDir ?? kunai.dataDir;
-  const cacheDir = overrides.cacheDir ?? kunai.cacheDir;
-  const configDir = overrides.configDir ?? kunai.configDir;
+  // A cross-family target cannot interpret the host's absolute profile
+  // override — drop it so the target resolves its own injected defaults.
+  const crossPathFamily = (platform === "win32") !== (process.platform === "win32");
+  const env =
+    overrides.env ??
+    (crossPathFamily ? { ...process.env, KUNAI_CONFIG_DIR: undefined } : process.env);
+  const kunai = getKunaiPaths({ platform: storagePlatformFor(platform), env });
   // Join for `platform`, not for the host. `node:path` always follows the host,
   // so asking for a Linux layout from Windows returned `\data\kunai\versions` —
   // the storage dirs above were already resolved for the target platform, and
   // the separators then contradicted them.
   const joinFor = joinerForNodePlatform(platform);
+  // Attach profileDir only for a true profile-based layout: an injected
+  // configDir/dataDir/cacheDir triple under the same env would otherwise be
+  // mislabeled as profile-owned and wrongly gate uninstall ownership checks.
+  // Overrides that merely spell the canonical dir differently (`…/.`, case on
+  // Windows) count as matches, but the canonical env-derived dir is what the
+  // layout keeps.
+  const directoryIdentity = (dir: string) => {
+    const normalized = joinFor(dir, ".");
+    return platform === "win32" ? normalized.toLowerCase() : normalized;
+  };
+  const sameDirectory = (override: string | undefined, expected: string) =>
+    override === undefined || directoryIdentity(override) === directoryIdentity(expected);
+  const isProfileLayout =
+    kunai.profileDir !== undefined &&
+    sameDirectory(overrides.dataDir, kunai.dataDir) &&
+    sameDirectory(overrides.cacheDir, kunai.cacheDir) &&
+    sameDirectory(overrides.configDir, kunai.configDir);
+  const dataDir = isProfileLayout ? kunai.dataDir : (overrides.dataDir ?? kunai.dataDir);
+  const cacheDir = isProfileLayout ? kunai.cacheDir : (overrides.cacheDir ?? kunai.cacheDir);
+  const configDir = isProfileLayout ? kunai.configDir : (overrides.configDir ?? kunai.configDir);
+  // A detached override injection while a profile is configured must never
+  // silently target the real default launcher — callers must name one.
+  if (kunai.profileDir !== undefined && !isProfileLayout && overrides.launcherPath === undefined) {
+    throw new Error(
+      "A detached install layout requires an explicit launcherPath while KUNAI_CONFIG_DIR is set",
+    );
+  }
 
-  return {
+  const base: Omit<InstallLayoutPaths, "profileDir"> = {
     dataDir,
     cacheDir,
     configDir,
@@ -93,9 +129,24 @@ export function getInstallLayoutPaths(
     locksDir: joinFor(dataDir, "locks"),
     transactionsDir: joinFor(dataDir, "transactions"),
     stagingRoot: joinFor(cacheDir, "staging"),
-    launcherPath: overrides.launcherPath ?? defaultLauncherPath(platform),
+    // A profile root gets a profile-local launcher under `<profile>/bin` —
+    // outside the config/data/cache siblings, which uninstall may remove.
+    launcherPath:
+      overrides.launcherPath ??
+      (kunai.profileDir !== undefined && isProfileLayout
+        ? joinFor(
+            kunai.profileDir,
+            "bin",
+            // A Windows profile launcher is the .cmd wrapper — the .exe
+            // exists only inside the version store, never in bin.
+            platform === "win32" ? "kunai.cmd" : binaryFileName(platform),
+          )
+        : defaultLauncherPath(platform, env, kunai.dataDir)),
     binaryFileName: binaryFileName(platform),
   };
+  return kunai.profileDir !== undefined && isProfileLayout
+    ? { ...base, profileDir: kunai.profileDir }
+    : base;
 }
 
 /**
@@ -110,6 +161,38 @@ export function getInstallLayoutPaths(
 function joinerForLayoutPath(anyLayoutDir: string): (...segments: string[]) => string {
   const isWindowsLayout = /^[A-Za-z]:[\\/]/.test(anyLayoutDir) || anyLayoutDir.startsWith("\\\\");
   return joinerForNodePlatform(isWindowsLayout ? "win32" : "linux");
+}
+
+/**
+ * Launcher-path equality for the layout the paths describe — a drive/UNC
+ * launcher is a Windows layout and compares case-insensitively even when the
+ * host is POSIX. A profile must never act on a manifest launcher that
+ * disagrees with its configured one.
+ */
+export function sameInstallLauncherPath(manifestPath: string, configuredPath: string): boolean {
+  if (/^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/])/.test(configuredPath)) {
+    return (
+      win32.normalize(manifestPath).toLowerCase() === win32.normalize(configuredPath).toLowerCase()
+    );
+  }
+  return posix.normalize(manifestPath) === posix.normalize(configuredPath);
+}
+
+/**
+ * Roots an uninstall `--purge` removes, ordered so `dataDir` goes last (it owns
+ * the lifecycle/activation serialization). Under a profile the `tmp` sibling is
+ * also managed; the profile root itself and its ownership marker never are.
+ */
+export function uninstallStorageRoots(
+  layout: Pick<InstallLayoutPaths, "profileDir" | "configDir" | "dataDir" | "cacheDir">,
+): readonly string[] {
+  const joinFor = joinerForLayoutPath(layout.configDir);
+  return [
+    layout.configDir,
+    layout.cacheDir,
+    ...(layout.profileDir ? [joinFor(layout.profileDir, "tmp")] : []),
+    layout.dataDir,
+  ];
 }
 
 /** Absolute path for a versioned binary: `{dataDir}/versions/{semver}/kunai`. */
@@ -249,4 +332,18 @@ export function parseVersionFromExecPath(
   const rest = normalized.slice(idx + versions.length + 1);
   const segment = rest.split("/")[0];
   return segment ? parseCanonicalVersion(segment) : null;
+}
+
+/**
+ * Whether a resolved version may be activated into this layout's profile.
+ * Windows profile launchers carry no environment — the versioned executable
+ * must infer its profile from its own location, which only Kunai 0.4.0+
+ * supports; older payloads could silently fall back to the default profile.
+ */
+export function canActivateProfileVersion(layout: InstallLayoutPaths, version: string): boolean {
+  return (
+    layout.profileDir === undefined ||
+    layout.binaryFileName !== "kunai.exe" ||
+    !/^0\.[0-3]\./.test(version)
+  );
 }

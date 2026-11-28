@@ -3,12 +3,15 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -23,6 +26,7 @@ import { createReleaseArchive } from "../../scripts/build-release-archives";
 import {
   createInstallerSandbox,
   installCommandShim,
+  profileOnlyInstallerEnv,
   seedActivationLock,
   seedLifecycleLock,
   windowsShellEnvDefaults,
@@ -116,10 +120,17 @@ function runActivationProtocolProbe(body: string): {
   try {
     return spawnSync("pwsh", ["-NoProfile", "-File", probePath], {
       encoding: "utf8",
-      env: {
-        ...DEFAULT_SHELL_ENV,
-        KUNAI_DATA_DIR: join(root, "data"),
-      },
+      env: (() => {
+        const env: NodeJS.ProcessEnv = {
+          ...DEFAULT_SHELL_ENV,
+          // The probe overrides KUNAI_DATA_DIR to a throwaway path, which a
+          // dedicated profile only accepts when it names the derived dir —
+          // these protocol probes pin the account-wide layout instead.
+          KUNAI_DATA_DIR: join(root, "data"),
+        };
+        delete env.KUNAI_CONFIG_DIR;
+        return env;
+      })(),
     });
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -594,7 +605,7 @@ describePwsh("install.ps1 release asset failures", () => {
           expect(result.status).not.toBe(0);
           if (kind === "crc") expect(result.stderr).toMatch(/CRC/i);
           expect(evidence.requests).not.toContain(`/download/v9.8.7/${target.out}`);
-          expect(existsSync(join(sandbox.binDir, "kunai.exe"))).toBe(false);
+          expect(existsSync(join(sandbox.binDir, "kunai.cmd"))).toBe(false);
           expect(existsSync(join(sandbox.configDir, "install.json"))).toBe(false);
           expect(existsSync(join(sandbox.cacheDir, "staging", "9.8.7"))).toBe(false);
         },
@@ -630,7 +641,7 @@ describePwsh("install.ps1 release asset failures", () => {
 
           expect(result.status).not.toBe(0);
           expect(evidence.requests).not.toContain(`/download/v9.8.7/${target.out}`);
-          expect(existsSync(join(sandbox.binDir, "kunai.exe"))).toBe(false);
+          expect(existsSync(join(sandbox.binDir, "kunai.cmd"))).toBe(false);
           expect(existsSync(join(sandbox.configDir, "install.json"))).toBe(false);
         },
       );
@@ -698,7 +709,7 @@ describePwsh("install.ps1 release asset failures", () => {
             `Checksum mismatch for extracted ${target.out}`,
           );
           expect(evidence.requests).not.toContain(`/download/v9.8.7/${target.out}`);
-          expect(existsSync(join(sandbox.binDir, "kunai.exe"))).toBe(false);
+          expect(existsSync(join(sandbox.binDir, "kunai.cmd"))).toBe(false);
           expect(existsSync(join(sandbox.configDir, "install.json"))).toBe(false);
           expect(existsSync(join(sandbox.cacheDir, "staging", "9.8.7"))).toBe(false);
         },
@@ -864,11 +875,15 @@ describePwsh("install.ps1 release asset failures", () => {
           "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
         },
         async (baseUrl, evidence) => {
-          const result = await runInstallPs1Async(["-Yes", "-SkipDeps"], {
+          const env: NodeJS.ProcessEnv = {
             ...sandbox.env,
             KUNAI_DL_BASE: baseUrl,
             KUNAI_RELEASES_API: `${baseUrl}/releases/latest`,
-          });
+          };
+          // The PATH-activation diagnostic this test pins belongs to the
+          // account-wide layout; a profile prints its own hint instead.
+          delete env.KUNAI_CONFIG_DIR;
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps"], env);
 
           expect(result.status).toBe(0);
           expect(result.stdout).toContain(`Downloading ${asset} (v9.8.7)`);
@@ -910,7 +925,7 @@ describePwsh("install.ps1 release asset failures", () => {
           expect(`${result.stderr}${result.stdout}`).toContain(
             `Downloaded asset ${asset} is empty`,
           );
-          expect(existsSync(join(sandbox.binDir, "kunai.exe"))).toBe(false);
+          expect(existsSync(join(sandbox.binDir, "kunai.cmd"))).toBe(false);
         },
       );
     } finally {
@@ -939,7 +954,7 @@ describePwsh("install.ps1 release asset failures", () => {
           expect(`${result.stderr}${result.stdout}`).toContain(
             `SHA256SUMS has no entry for ${asset}`,
           );
-          expect(existsSync(join(sandbox.binDir, "kunai.exe"))).toBe(false);
+          expect(existsSync(join(sandbox.binDir, "kunai.cmd"))).toBe(false);
         },
       );
     } finally {
@@ -964,7 +979,7 @@ describePwsh("install.ps1 release asset failures", () => {
         expect(combined).toMatch(/-Method bun/i);
         expect(combined).toMatch(/-Method source/i);
         expect(combined).toMatch(/-Version/i);
-        expect(existsSync(join(sandbox.binDir, "kunai.exe"))).toBe(false);
+        expect(existsSync(join(sandbox.binDir, "kunai.cmd"))).toBe(false);
       });
     } finally {
       sandbox.cleanup();
@@ -996,14 +1011,14 @@ describePwsh("install.ps1 release asset failures", () => {
             "/download/v9.8.7/SHA256SUMS",
             `/download/v9.8.7/${asset}`,
           ]);
-          expect(existsSync(join(sandbox.binDir, "kunai.exe"))).toBe(true);
+          expect(existsSync(join(sandbox.binDir, "kunai.cmd"))).toBe(true);
 
           const manifest = readInstallerManifest(sandbox.configDir);
           expect(manifest.schemaVersion).toBe(2);
           expect(manifest.method).toBe("binary");
           expect(manifest.activeVersion).toBe("9.8.7");
           expect(manifest.preferredChannel).toBe("stable");
-          expect(manifest.launcherPath).toBe(join(sandbox.binDir, "kunai.exe"));
+          expect(manifest.launcherPath).toBe(join(sandbox.binDir, "kunai.cmd"));
           expect(manifest.versionedPath).toBe(
             join(sandbox.dataDir, "versions", "9.8.7", "kunai.exe"),
           );
@@ -1297,7 +1312,7 @@ describePwsh("install.ps1 lifecycle contract", () => {
             KUNAI_DL_BASE: baseUrl,
           });
           expect(result.status).toBe(0);
-          expect(existsSync(join(sandbox.binDir, "kunai.exe"))).toBe(true);
+          expect(existsSync(join(sandbox.binDir, "kunai.cmd"))).toBe(true);
         },
       );
     } finally {
@@ -1325,7 +1340,7 @@ describePwsh("install.ps1 lifecycle contract", () => {
           });
           expect(result.status).not.toBe(0);
           expect(Date.now() - started).toBeLessThan(5_000);
-          expect(existsSync(join(sandbox.binDir, "kunai.exe"))).toBe(false);
+          expect(existsSync(join(sandbox.binDir, "kunai.cmd"))).toBe(false);
         },
       );
     } finally {
@@ -1355,7 +1370,7 @@ describePwsh("install.ps1 lifecycle contract", () => {
           });
           expect(result.status).not.toBe(0);
           expect(`${result.stderr}${result.stdout}`).toMatch(/size|too large|max|Download failed/i);
-          expect(existsSync(join(sandbox.binDir, "kunai.exe"))).toBe(false);
+          expect(existsSync(join(sandbox.binDir, "kunai.cmd"))).toBe(false);
         },
       );
     } finally {
@@ -1387,7 +1402,7 @@ describePwsh("install.ps1 lifecycle contract", () => {
             KUNAI_DOWNLOAD_MAX_ATTEMPTS: "1",
           });
           expect(result.status).not.toBe(0);
-          expect(existsSync(join(sandbox.binDir, "kunai.exe"))).toBe(false);
+          expect(existsSync(join(sandbox.binDir, "kunai.cmd"))).toBe(false);
         },
       );
     } finally {
@@ -1402,7 +1417,7 @@ describePwsh("install.ps1 lifecycle contract", () => {
     mkdirSync(sandbox.configDir, { recursive: true });
     mkdirSync(join(sandbox.dataDir, "versions", "1.0.0"), { recursive: true });
     const oldBinary = join(sandbox.dataDir, "versions", "1.0.0", "kunai.exe");
-    const launcher = join(sandbox.binDir, "kunai.exe");
+    const launcher = join(sandbox.binDir, "kunai.cmd");
     writeFileSync(oldBinary, "MZ-old-binary");
     writeFileSync(launcher, "MZ-old-launcher");
     const oldManifest = {
@@ -1484,7 +1499,7 @@ describePwsh("install.ps1 lifecycle contract", () => {
         await waitForPaths(
           versions.map((version) => join(sandbox.dataDir, "versions", version, "version.json")),
         );
-        const launcherBeforeRelease = existsSync(join(sandbox.binDir, "kunai.exe"));
+        const launcherBeforeRelease = existsSync(join(sandbox.binDir, "kunai.cmd"));
         const manifestBeforeRelease = existsSync(join(sandbox.configDir, "install.json"));
         rmSync(activationPath, { force: true });
 
@@ -1499,8 +1514,13 @@ describePwsh("install.ps1 lifecycle contract", () => {
         expect(manifest.versionedPath).toBe(
           join(sandbox.dataDir, "versions", manifest.activeVersion, "kunai.exe"),
         );
-        expect(readFileSync(join(sandbox.binDir, "kunai.exe"))).toEqual(
-          readFileSync(manifest.versionedPath),
+        // The launcher is the ownership-bound wrapper, not a payload copy —
+        // it names the active version inside the version store.
+        expect(readFileSync(join(sandbox.binDir, "kunai.cmd"), "utf8")).toContain(
+          `\\data\\versions\\${manifest.activeVersion}\\kunai.exe`,
+        );
+        expect(readFileSync(manifest.versionedPath)).toEqual(
+          readFileSync(join(sandbox.dataDir, "versions", manifest.activeVersion, "kunai.exe")),
         );
         expect(existsSync(activationPath)).toBe(false);
       });
@@ -1549,13 +1569,17 @@ describePwsh("install.ps1 lifecycle contract", () => {
           "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
         },
         async (baseUrl) => {
+          const env: NodeJS.ProcessEnv = {
+            ...sandbox.env,
+            KUNAI_DATA_DIR: basename(sandbox.dataDir),
+            KUNAI_DL_BASE: baseUrl,
+          };
+          // The lexical-alias scenario needs a relative data dir, which a
+          // dedicated profile only accepts when it names the derived dir.
+          delete env.KUNAI_CONFIG_DIR;
           const result = await runInstallPs1Async(
             ["-Yes", "-SkipDeps", "-Version", "9.8.7"],
-            {
-              ...sandbox.env,
-              KUNAI_DATA_DIR: basename(sandbox.dataDir),
-              KUNAI_DL_BASE: baseUrl,
-            },
+            env,
             sandboxRoot,
           );
           expect(result.status).toBe(0);
@@ -1758,7 +1782,7 @@ describePwsh("install.ps1 lifecycle contract", () => {
           expect(`${result.stderr}${result.stdout}`).toContain("Activation lock held");
           expect(readFileSync(activationPath, "utf8")).toBe(originalLock);
           expect(existsSync(join(sandbox.dataDir, "versions", "9.8.7", "version.json"))).toBe(true);
-          expect(existsSync(join(sandbox.binDir, "kunai.exe"))).toBe(false);
+          expect(existsSync(join(sandbox.binDir, "kunai.cmd"))).toBe(false);
           expect(existsSync(join(sandbox.configDir, "install.json"))).toBe(false);
         },
       );
@@ -1773,7 +1797,10 @@ describePwsh("install.ps1 lifecycle contract", () => {
     const digest = createHash("sha256").update(body).digest("hex");
     const sandbox = createInstallerSandbox("install-ps1-activation-failure");
     const activationPath = seedActivationLock(sandbox.dataDir, { pid: 2_147_483_646 });
-    writeFileSync(sandbox.configDir, "not-a-directory");
+    // The account-wide layout resolves config under $APPDATA — that is where
+    // the manifest commit must fail, so the file goes there.
+    mkdirSync(join(sandbox.root, "appdata"), { recursive: true });
+    writeFileSync(join(sandbox.root, "appdata", "kunai"), "not-a-directory");
     try {
       await withReleaseFixture(
         {
@@ -1781,10 +1808,11 @@ describePwsh("install.ps1 lifecycle contract", () => {
           "/download/v9.8.7/SHA256SUMS": { body: `${digest}  ${asset}\n` },
         },
         async (baseUrl) => {
-          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], {
-            ...sandbox.env,
-            KUNAI_DL_BASE: baseUrl,
-          });
+          const env: NodeJS.ProcessEnv = { ...sandbox.env, KUNAI_DL_BASE: baseUrl };
+          // The publication failure relies on configDir being a plain file,
+          // which profile validation refuses before the lock even exists.
+          delete env.KUNAI_CONFIG_DIR;
+          const result = await runInstallPs1Async(["-Yes", "-SkipDeps", "-Version", "9.8.7"], env);
           expect(result.status).not.toBe(0);
           expect(existsSync(activationPath)).toBe(false);
         },
@@ -1811,7 +1839,7 @@ describePwsh("install.ps1 lifecycle contract", () => {
       mkdirSync(sandbox.binDir, { recursive: true });
       mkdirSync(sandbox.configDir, { recursive: true });
       const previousPath = join(sandbox.dataDir, "versions", "1.0.0", "kunai.exe");
-      const launcher = join(sandbox.binDir, "kunai.exe");
+      const launcher = join(sandbox.binDir, "kunai.cmd");
       writeFileSync(previousPath, "MZ-previous");
       writeFileSync(launcher, "MZ-previous");
       const manifestPath = join(sandbox.configDir, "install.json");
@@ -1868,7 +1896,7 @@ describeWindows("install.ps1 PATH diagnostics", () => {
     const sandbox = createInstallerSandbox("install-ps1-stale-npm");
     const npmBinDir = join(sandbox.root, "npm");
     const npmShimPath = join(npmBinDir, "kunai.cmd");
-    const nativePath = join(sandbox.binDir, "kunai.exe");
+    const nativePath = join(sandbox.binDir, "kunai.cmd");
     mkdirSync(npmBinDir);
     installCommandShim(npmBinDir, "kunai");
 
@@ -1917,15 +1945,16 @@ describePwsh("install.ps1 package activeVersion", () => {
         windows: "@echo off\r\nexit /b 17\r\n",
       });
 
-      const result = runInstallPs1(
-        ["-Method", "npm", "-Yes", "-Version", "4.5.6"],
-        withCommandPath(sandbox.env, shimDir),
-      );
+      const env = withCommandPath(sandbox.env, shimDir);
+      // npm/bun install account-wide and are refused under a dedicated
+      // profile; these fixtures pin the account-wide layout.
+      delete env.KUNAI_CONFIG_DIR;
+      const result = runInstallPs1(["-Method", "npm", "-Yes", "-Version", "4.5.6"], env);
 
       expect(result.status).not.toBe(0);
       expect(`${result.stderr}${result.stdout}`).toContain("exit code 17");
       expect(result.stdout).not.toMatch(/^Done\.$/m);
-      expect(existsSync(join(sandbox.configDir, "install.json"))).toBe(false);
+      expect(existsSync(join(sandbox.root, "appdata", "kunai", "install.json"))).toBe(false);
       expect(existsSync(join(sandbox.dataDir, "locks", "activation.lock"))).toBe(false);
     } finally {
       sandbox.cleanup();
@@ -1962,10 +1991,11 @@ describePwsh("install.ps1 package activeVersion", () => {
       const env = withCommandPath(sandbox.env, shimDir);
       env.KUNAI_NPM_ROOT = npmRoot;
       env.KUNAI_NPM_PREFIX = npmPrefix;
+      delete env.KUNAI_CONFIG_DIR;
 
       const result = runInstallPs1(["-Method", "npm", "-Yes"], env);
       expect(result.status).toBe(0);
-      const manifest = readInstallerManifest(sandbox.configDir);
+      const manifest = readInstallerManifest(join(sandbox.root, "appdata", "kunai"));
       expect(manifest.method).toBe("npm-global");
       expect(manifest.activeVersion).toBe("4.5.6");
       expect(manifest.activeVersion).not.toBe("latest");
@@ -2043,10 +2073,11 @@ describePwsh("install.ps1 package activeVersion", () => {
           shimDir,
         );
 
+        delete env.KUNAI_CONFIG_DIR;
         const result = runInstallPs1(["-Method", method, "-Yes", "-Version", "4.5.6"], env);
         expect(result.status).toBe(0);
         expect(readFileSync(argvLog, "utf8").trim()).toBe(`install -g @kitsunekode/kunai@4.5.6`);
-        const manifest = readInstallerManifest(sandbox.configDir);
+        const manifest = readInstallerManifest(join(sandbox.root, "appdata", "kunai"));
         expect(manifest.activeVersion).toBe("4.5.6");
         // Each channel records its own owner's absolute launcher, not "kunai".
         expect(manifest.launcherPath).toBe(
@@ -3010,4 +3041,526 @@ describePwsh("install.ps1 download progress", () => {
     // Final frame only on a finished payload, matching install.sh after #322.
     expect(fn!).toMatch(/Write-DownloadProgress[\s\S]*Write-DownloadProgress/);
   });
+});
+
+// ---------------------------------------------------------------------------
+// Dedicated profile contract (KUNAI_CONFIG_DIR) — same guarantees as the
+// install.sh suite, plus a real install→upgrade→uninstall lifecycle that only
+// executes on Windows (the POSIX lifecycle lives in install-scripts.test.ts).
+// ---------------------------------------------------------------------------
+
+describePwsh("install.ps1 dedicated profile contract", () => {
+  const dryRun = ["-DryRun", "-Yes", "-SkipDeps", "-Version", "9.8.7"];
+  // A hosted Windows runner's TEMP is commonly an 8.3 short name — the exact
+  // mixed spelling this describe's guards must handle.
+  const shortTemp =
+    process.platform === "win32" && /(?:^|\\)[^\\]*~\d+(?:\\|$)/.test(tmpdir())
+      ? tmpdir()
+      : undefined;
+
+  test("a profile-only dry run reports the derived layout and writes nothing", () => {
+    const sandbox = createInstallerSandbox("install-ps1-profile-dry", { freshProfile: true });
+    try {
+      const result = runInstallPs1(dryRun, profileOnlyInstallerEnv(sandbox.env));
+      expect(result.status).toBe(0);
+      const out = `${result.stdout}${result.stderr}`;
+      // Derived version/launcher paths under the profile root, the schema-2
+      // manifest write, and manual activation guidance — never an rc write.
+      expect(out).toContain(join(sandbox.profileDir, "config", "install.json"));
+      expect(out).toContain(join(sandbox.profileDir, "data", "versions"));
+      expect(out).toContain("kunai.cmd");
+      // Direct wrapper invocation guidance — the wrapper binds its own
+      // profile, so no env var is needed.
+      expect(out).toContain("Invoke its profile launcher directly");
+      expect(existsSync(sandbox.profileDir)).toBe(false);
+      expect(existsSync(join(sandbox.root, ".bashrc"))).toBe(false);
+      expect(existsSync(join(sandbox.root, ".profile"))).toBe(false);
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("a profile dry run for a pre-0.4.0 payload is refused with exit 2", () => {
+    const sandbox = createInstallerSandbox("install-ps1-profile-old", { freshProfile: true });
+    try {
+      const result = runInstallPs1(
+        ["-DryRun", "-Yes", "-SkipDeps", "-Version", "0.3.9"],
+        profileOnlyInstallerEnv(sandbox.env),
+      );
+      expect(result.status).toBe(2);
+      expect(`${result.stdout}${result.stderr}`).toContain(
+        "Windows profile installs require Kunai 0.4.0 or later.",
+      );
+      expect(existsSync(join(sandbox.profileDir, ".kunai-profile"))).toBe(false);
+      expect(existsSync(join(sandbox.profileDir, "config", "install.json"))).toBe(false);
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("a KUNAI_BIN_DIR outside the profile is refused before any write", () => {
+    const sandbox = createInstallerSandbox("install-ps1-profile-extbin", {
+      freshProfile: true,
+    });
+    try {
+      const env = {
+        ...profileOnlyInstallerEnv(sandbox.env),
+        KUNAI_BIN_DIR: join(sandbox.root, "localappdata", "kunai", "bin"),
+      };
+      const result = runInstallPs1(dryRun, env);
+      expect(result.status).not.toBe(0);
+      expect(`${result.stdout}${result.stderr}`).toContain("KUNAI_BIN_DIR");
+      expect(existsSync(sandbox.profileDir)).toBe(false);
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test.each(["rel/p", "", " /profile", "/bad\fprofile"])(
+    "a malformed KUNAI_CONFIG_DIR (%j) is refused before any write",
+    (value) => {
+      const sandbox = createInstallerSandbox("install-ps1-profile-bad", { freshProfile: true });
+      try {
+        const env = { ...profileOnlyInstallerEnv(sandbox.env), KUNAI_CONFIG_DIR: value };
+        const result = runInstallPs1(dryRun, env);
+        expect(result.status).toBe(2);
+        expect(`${result.stdout}${result.stderr}`).toContain("absolute path");
+        expect(existsSync(join(sandbox.profileDir, ".kunai-profile"))).toBe(false);
+      } finally {
+        sandbox.cleanup();
+      }
+    },
+  );
+
+  test.each([
+    ["KUNAI_DATA_DIR", "data"],
+    ["KUNAI_DATA_DIR", ""],
+    ["KUNAI_CACHE_DIR", "cache"],
+    ["KUNAI_CACHE_DIR", ""],
+  ])("a %s override that names no derived dir (%j) is refused", (key, value) => {
+    const sandbox = createInstallerSandbox("install-ps1-profile-split", { freshProfile: true });
+    try {
+      const env = {
+        ...profileOnlyInstallerEnv(sandbox.env),
+        [key]: value === "" ? "" : join(sandbox.root, value),
+      };
+      const result = runInstallPs1(dryRun, env);
+      expect(result.status).not.toBe(0);
+      expect(`${result.stdout}${result.stderr}`).toContain("KUNAI_");
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("a nonempty root without a marker is refused and never adopted", () => {
+    const sandbox = createInstallerSandbox("install-ps1-profile-unmarked", { freshProfile: true });
+    try {
+      mkdirSync(sandbox.profileDir, { recursive: true });
+      const sentinel = join(sandbox.profileDir, "unrelated.txt");
+      writeFileSync(sentinel, "not kunai\n");
+      const result = runInstallPs1(dryRun, profileOnlyInstallerEnv(sandbox.env));
+      expect(result.status).toBe(2);
+      expect(`${result.stdout}${result.stderr}`).toContain(".kunai-profile");
+      expect(readFileSync(sentinel, "utf8")).toBe("not kunai\n");
+      expect(existsSync(join(sandbox.profileDir, ".kunai-profile"))).toBe(false);
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test.each([
+    ["the home directory", (s: ReturnType<typeof createInstallerSandbox>) => s.root],
+    ["an ancestor of home", (s: ReturnType<typeof createInstallerSandbox>) => dirname(s.root)],
+    [
+      "a platform-default Kunai directory",
+      // install.ps1's config default is APPDATA/kunai → <root>/appdata/kunai.
+      (s: ReturnType<typeof createInstallerSandbox>) => join(s.root, "appdata", "kunai"),
+    ],
+  ])("a hazardous profile root (%s) is refused", (_label, pick) => {
+    const sandbox = createInstallerSandbox("install-ps1-profile-hazard", { freshProfile: true });
+    try {
+      const env = { ...profileOnlyInstallerEnv(sandbox.env), KUNAI_CONFIG_DIR: pick(sandbox) };
+      const result = runInstallPs1(dryRun, env);
+      expect(result.status).toBe(2);
+      expect(`${result.stdout}${result.stderr}`).toContain("KUNAI_CONFIG_DIR");
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  // 8.3 short names must not bypass the hazardous-root checks: both the
+  // PowerShell guard and the CLI guard compare the canonical spelling.
+  test.skipIf(shortTemp === undefined)(
+    "an 8.3-aliased profile root is refused by the PowerShell installer and the CLI",
+    () => {
+      const sandbox = createInstallerSandbox("install-ps1-profile-shortname", {
+        freshProfile: true,
+      });
+      try {
+        const shortRoot = join(shortTemp!, basename(sandbox.root));
+        expect(shortRoot.toLowerCase()).not.toBe(sandbox.root.toLowerCase());
+        expect(realpathSync.native(shortRoot)).toBe(sandbox.root);
+        mkdirSync(join(sandbox.root, "userprofile"), { recursive: true });
+        mkdirSync(join(sandbox.root, "appdata", "kunai"), { recursive: true });
+        for (const [root, diagnostic] of [
+          [join(shortRoot, "userprofile"), "ancestor of home"],
+          [
+            join(shortRoot, "appdata", "kunai", "future-profile"),
+            "overlaps a platform-default Kunai directory",
+          ],
+        ] as const) {
+          const env = { ...profileOnlyInstallerEnv(sandbox.env), KUNAI_CONFIG_DIR: root };
+          const result = runInstallPs1(dryRun, env);
+          expect(result.status).not.toBe(0);
+          const installerOut = `${result.stdout}${result.stderr}`;
+          expect(installerOut).toContain(root);
+          expect(installerOut).toContain(diagnostic);
+
+          const proc = spawnSync(
+            process.execPath,
+            [join(REPO_ROOT, "apps/cli/src/main.ts"), "--version"],
+            { encoding: "utf8", env },
+          );
+          expect(proc.status).toBe(2);
+          const cliOut = `${proc.stdout}${proc.stderr}`;
+          expect(cliOut).toContain(root);
+          expect(cliOut).toContain(diagnostic);
+
+          expect(existsSync(join(root, ".kunai-profile"))).toBe(false);
+        }
+        expect(existsSync(join(sandbox.root, "appdata", "kunai", "future-profile"))).toBe(false);
+      } finally {
+        sandbox.cleanup();
+      }
+    },
+  );
+
+  test("an absent child under an aliased parent is accepted and stays absent", () => {
+    const sandbox = createInstallerSandbox("install-ps1-profile-alias-ok", {
+      freshProfile: true,
+    });
+    try {
+      // Lexically the root sits under `alias`, physically under `real` — both
+      // legitimate, the ancestor link is followed rather than refused.
+      const real = join(sandbox.root, "real");
+      const alias = join(sandbox.root, "alias");
+      mkdirSync(real, { recursive: true });
+      symlinkSync(real, alias, process.platform === "win32" ? "junction" : "dir");
+      const root = join(alias, "profile");
+
+      const env = { ...profileOnlyInstallerEnv(sandbox.env), KUNAI_CONFIG_DIR: root };
+      const result = runInstallPs1(dryRun, env);
+      expect(result.status, `${result.stdout}--ERR--${result.stderr}`).toBe(0);
+      expect(existsSync(join(real, "profile"))).toBe(false);
+      expect(existsSync(root)).toBe(false);
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("a profile root that is itself a symlink is refused", () => {
+    const sandbox = createInstallerSandbox("install-ps1-profile-alias-root", {
+      freshProfile: true,
+    });
+    try {
+      const real = join(sandbox.root, "real");
+      const alias = join(sandbox.root, "alias");
+      mkdirSync(real, { recursive: true });
+      symlinkSync(real, alias, process.platform === "win32" ? "junction" : "dir");
+
+      const env = { ...profileOnlyInstallerEnv(sandbox.env), KUNAI_CONFIG_DIR: alias };
+      const result = runInstallPs1(dryRun, env);
+      expect(result.status).not.toBe(0);
+      expect(`${result.stdout}${result.stderr}`).toContain("KUNAI_CONFIG_DIR");
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("an aliased child that resolves onto a default dir is refused", () => {
+    const sandbox = createInstallerSandbox("install-ps1-profile-alias-default", {
+      freshProfile: true,
+    });
+    try {
+      // Lexically `alias/kunai` and `appdata/kunai` are disjoint paths — only
+      // the physical comparison reveals they are the same directory.
+      const alias = join(sandbox.root, "alias");
+      // The junction target must exist on Windows before the link is created.
+      mkdirSync(join(sandbox.root, "appdata"), { recursive: true });
+      symlinkSync(
+        join(sandbox.root, "appdata"),
+        alias,
+        process.platform === "win32" ? "junction" : "dir",
+      );
+      const env = {
+        ...profileOnlyInstallerEnv(sandbox.env),
+        KUNAI_CONFIG_DIR: join(alias, "kunai"),
+      };
+      const result = runInstallPs1(dryRun, env);
+      expect(result.status).not.toBe(0);
+      expect(`${result.stdout}${result.stderr}`).toMatch(/overlaps|platform-default/);
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  test("a Windows default-layout dry run plans APPDATA/LOCALAPPDATA and writes nothing", () => {
+    const sandbox = createInstallerSandbox("install-ps1-default-dry");
+    try {
+      const env = { ...profileOnlyInstallerEnv(sandbox.env) };
+      delete env.KUNAI_CONFIG_DIR;
+      delete env.KUNAI_DATA_DIR;
+      delete env.KUNAI_CACHE_DIR;
+      delete env.KUNAI_BIN_DIR;
+      const result = runInstallPs1(dryRun, env);
+      expect(result.status, `${result.stdout}--ERR--${result.stderr}`).toBe(0);
+      const out = `${result.stdout}${result.stderr}`;
+      // APPDATA carries config + manifest; LOCALAPPDATA carries data/versions
+      // and the launcher.
+      expect(out).toContain(join(sandbox.root, "appdata", "kunai", "install.json"));
+      expect(out).toContain(join(sandbox.root, "localappdata", "kunai", "versions"));
+      expect(out).toContain(join(sandbox.root, "localappdata", "kunai", "bin", "kunai.exe"));
+      expect(existsSync(join(sandbox.root, "appdata", "kunai"))).toBe(false);
+      expect(existsSync(join(sandbox.root, "localappdata", "kunai"))).toBe(false);
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  // The activation path copies a synthetic asset (never executes it), and the
+  // CLI child runs real `upgrade`/`uninstall --purge` against the fixture
+  // server. Skipped everywhere but Windows.
+  test.skipIf(process.platform !== "win32")(
+    "installs, upgrades and purges a real profile without touching account-wide state",
+    async () => {
+      const asset = hostWindowsAsset();
+      const v1Body = "MZ-synthetic-9.8.7";
+      const v2Body = "MZ-synthetic-9.8.8";
+      const sumsFor = (body: string) =>
+        `${createHash("sha256").update(body).digest("hex")}  ${asset}\n`;
+
+      const sandbox = createInstallerSandbox("install-ps1-profile (lifecycle)!", {
+        freshProfile: true,
+      });
+      const defaultSentinels = [
+        join(sandbox.root, "appdata", "kunai", "sentinel.txt"),
+        join(sandbox.root, "localappdata", "kunai", "sentinel.txt"),
+      ];
+      for (const sentinel of defaultSentinels) {
+        mkdirSync(dirname(sentinel), { recursive: true });
+        writeFileSync(sentinel, "default profile\n");
+      }
+      const markerPath = join(sandbox.profileDir, ".kunai-profile");
+      const launcher = join(sandbox.profileDir, "bin", "kunai.cmd");
+
+      const runKunai = async (args: string[], env: NodeJS.ProcessEnv) => {
+        const proc = Bun.spawn(
+          [process.execPath, join(REPO_ROOT, "apps/cli/src/main.ts"), ...args],
+          { env, stdout: "pipe", stderr: "pipe" },
+        );
+        const [stdout, stderr, status] = await Promise.all([
+          new Response(proc.stdout).text(),
+          new Response(proc.stderr).text(),
+          proc.exited,
+        ]);
+        return { status, stdout, stderr };
+      };
+
+      try {
+        await withReleaseFixture(
+          {
+            [`/download/v9.8.7/${asset}`]: { body: v1Body },
+            "/download/v9.8.7/SHA256SUMS": { body: sumsFor(v1Body) },
+            [`/download/v9.8.8/${asset}`]: { body: v2Body },
+            "/download/v9.8.8/SHA256SUMS": { body: sumsFor(v2Body) },
+            "/latest": { body: JSON.stringify({ tag_name: "v9.8.8" }) },
+          },
+          async (baseUrl) => {
+            // No KUNAI_SKIP_PATH_UPDATE: the profile branch itself must prove
+            // User PATH is never written.
+            const env = {
+              ...profileOnlyInstallerEnv(sandbox.env),
+              KUNAI_DL_BASE: baseUrl,
+              KUNAI_RELEASES_API: `${baseUrl}/latest`,
+            };
+            // Prove the wrapper binds its own profile without KUNAI_CONFIG_DIR
+            // in the invoking shell: the version store payload is the compiled
+            // probe fixture, which exercises prepareCliProfile's own inference.
+            const probe = join(sandbox.root, "profile-probe.exe");
+            const compiled = Bun.spawnSync(
+              [
+                process.execPath,
+                "build",
+                join(
+                  REPO_ROOT,
+                  "apps/cli/test/integration/fixtures/windows-profile-launcher-probe.ts",
+                ),
+                "--compile",
+                "--outfile",
+                probe,
+              ],
+              { env, stdout: "pipe", stderr: "pipe" },
+            );
+            expect(compiled.exitCode, compiled.stderr.toString()).toBe(0);
+            // A CALL through a calling batch must also survive the rename: the
+            // caller continues only if the launcher returns the payload status
+            // without popping the caller's own batch context.
+            const caller = join(sandbox.root, "profile caller.cmd");
+            writeFileSync(
+              caller,
+              [
+                "@echo off",
+                "setlocal EnableExtensions DisableDelayedExpansion",
+                'call "%KUNAI_TEST_PROFILE_LAUNCHER%" %*',
+                "if not errorlevel 37 exit /b 90",
+                "if errorlevel 38 exit /b 91",
+                "if defined KUNAI_CONFIG_DIR exit /b 92",
+                "echo caller continued",
+                "exit /b 37",
+                "",
+              ].join("\r\n"),
+            );
+            const assertProfileLauncher = async (
+              version: string,
+              originalBody: string,
+              launcherEnv: NodeJS.ProcessEnv,
+              options: {
+                rename?: boolean;
+                fromBatch?: boolean;
+                status?: number;
+                explicitProfile?: string;
+              } = {},
+            ) => {
+              const { rename = false, fromBatch = false, status = 37, explicitProfile } = options;
+              const versionedPath = join(
+                sandbox.profileDir,
+                "data",
+                "versions",
+                version,
+                "kunai.exe",
+              );
+              const movedLauncher = `${launcher}.probe-renamed`;
+              copyFileSync(probe, versionedPath);
+              try {
+                const wrapperEnv: NodeJS.ProcessEnv = {
+                  ...launcherEnv,
+                  KUNAI_TEST_PROFILE_LAUNCHER: launcher,
+                  KUNAI_TEST_PROFILE_ENTRYPOINT: fromBatch ? caller : launcher,
+                  KUNAI_TEST_MOVED_LAUNCHER: rename ? movedLauncher : "",
+                  KUNAI_TEST_PROFILE_STATUS: String(status),
+                  ERRORLEVEL: "123",
+                };
+                if (explicitProfile === undefined) delete wrapperEnv.KUNAI_CONFIG_DIR;
+                else wrapperEnv.KUNAI_CONFIG_DIR = explicitProfile;
+                const wrapped = Bun.spawn(
+                  [
+                    PWSH_PATH,
+                    "-NoProfile",
+                    "-Command",
+                    "& $env:KUNAI_TEST_PROFILE_ENTRYPOINT 'plain(parentheses)' 'quoted & argument' 'literal!KUNAI_CONFIG_DIR!' ; exit $LASTEXITCODE",
+                  ],
+                  { env: wrapperEnv, stdout: "pipe", stderr: "pipe" },
+                );
+                const [wrappedStdout, wrappedStderr, wrappedStatus] = await Promise.all([
+                  new Response(wrapped.stdout).text(),
+                  new Response(wrapped.stderr).text(),
+                  wrapped.exited,
+                ]);
+                expect(wrappedStatus, `stdout: ${wrappedStdout}\nstderr: ${wrappedStderr}`).toBe(
+                  status,
+                );
+                const [json, ...continuation] = wrappedStdout.trim().split(/\r?\n/);
+                expect(continuation).toEqual(fromBatch ? ["caller continued"] : []);
+                expect(JSON.parse(json ?? "")).toEqual({
+                  profile: explicitProfile ?? sandbox.profileDir,
+                  args: ["plain(parentheses)", "quoted & argument", "literal!KUNAI_CONFIG_DIR!"],
+                });
+                expect(wrappedStderr).toBe("");
+                expect(existsSync(movedLauncher)).toBe(rename);
+              } finally {
+                if (existsSync(movedLauncher)) renameSync(movedLauncher, launcher);
+                writeFileSync(versionedPath, originalBody);
+              }
+            };
+
+            const install = await runInstallPs1Async(
+              ["-Yes", "-SkipDeps", "-Version", "9.8.7"],
+              env,
+            );
+            expect(install.status, `${install.stdout}--ERR--${install.stderr}`).toBe(0);
+            expect(`${install.stdout}${install.stderr}`).toContain("PATH was not changed");
+            expect(readFileSync(markerPath, "utf8")).toBe("kunai-profile-v1\n");
+            expect(existsSync(launcher)).toBe(true);
+            // The Windows payload lives in the version store only — never a
+            // competing .exe in the profile bin.
+            expect(existsSync(join(sandbox.profileDir, "bin", "kunai.exe"))).toBe(false);
+
+            await assertProfileLauncher("9.8.7", v1Body, env, { status: 0 });
+
+            const sibling = join(sandbox.profileDir, "keep-me.txt");
+            writeFileSync(sibling, "unrelated\n");
+            writeFileSync(join(sandbox.profileDir, "data", "kunai-data.sqlite"), "sqlite\n");
+            mkdirSync(join(sandbox.profileDir, "tmp"), { recursive: true });
+            writeFileSync(join(sandbox.profileDir, "tmp", "scratch"), "tmp\n");
+
+            const upgrade = await runKunai(["upgrade"], env);
+            expect(upgrade.status, `${upgrade.stdout}--ERR--${upgrade.stderr}`).toBe(0);
+            const manifest = readInstallerManifest(sandbox.configDir);
+            expect(manifest.activeVersion).toBe("9.8.8");
+
+            await assertProfileLauncher("9.8.8", v2Body, env, { rename: true });
+            await assertProfileLauncher("9.8.8", v2Body, env, { rename: true, fromBatch: true });
+
+            // An explicit KUNAI_CONFIG_DIR still takes precedence over the
+            // payload's inferred profile.
+            const explicitProfile = join(sandbox.root, "explicit-profile");
+            mkdirSync(explicitProfile);
+            writeFileSync(join(explicitProfile, ".kunai-profile"), "kunai-profile-v1\n");
+            await assertProfileLauncher("9.8.8", v2Body, env, { explicitProfile });
+
+            // A launcher whose payload is gone must fail nonzero and silent —
+            // never fall back to the default profile.
+            const activePath = join(sandbox.profileDir, "data", "versions", "9.8.8", "kunai.exe");
+            const savedPath = `${activePath}.probe-saved`;
+            renameSync(activePath, savedPath);
+            try {
+              const missingEnv: NodeJS.ProcessEnv = {
+                ...env,
+                KUNAI_TEST_PROFILE_ENTRYPOINT: launcher,
+              };
+              delete missingEnv.KUNAI_CONFIG_DIR;
+              const missing = Bun.spawnSync(
+                [
+                  PWSH_PATH,
+                  "-NoProfile",
+                  "-Command",
+                  "& $env:KUNAI_TEST_PROFILE_ENTRYPOINT; exit $LASTEXITCODE",
+                ],
+                { env: missingEnv, stdout: "pipe", stderr: "pipe" },
+              );
+              expect(missing.exitCode, missing.stderr.toString()).not.toBe(0);
+              expect(missing.stdout.toString().trim()).toBe("");
+            } finally {
+              renameSync(savedPath, activePath);
+            }
+
+            const uninstall = await runKunai(["uninstall", "--purge"], env);
+            expect(uninstall.status, `${uninstall.stdout}--ERR--${uninstall.stderr}`).toBe(0);
+            expect(existsSync(launcher)).toBe(false);
+            expect(existsSync(join(sandbox.profileDir, "data"))).toBe(false);
+            expect(existsSync(join(sandbox.profileDir, "cache"))).toBe(false);
+            expect(existsSync(join(sandbox.profileDir, "config"))).toBe(false);
+            expect(existsSync(join(sandbox.profileDir, "tmp"))).toBe(false);
+            expect(readFileSync(markerPath, "utf8")).toBe("kunai-profile-v1\n");
+            expect(readFileSync(sibling, "utf8")).toBe("unrelated\n");
+            for (const sentinel of defaultSentinels) {
+              expect(readFileSync(sentinel, "utf8")).toBe("default profile\n");
+            }
+          },
+        );
+      } finally {
+        sandbox.cleanup();
+      }
+    },
+  );
 });

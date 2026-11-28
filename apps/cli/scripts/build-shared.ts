@@ -543,32 +543,47 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // overrides and the Discover startup route (#852) on top measured 3,336,807
 // bytes: +4,234. No dependency or asset; the Continue picker stays lazy.
 // 3259 KiB leaves 409 bytes.
-// Onboarding v4 (the two-screen quick setup, its machine verdict and consent
+// The dedicated desktop profile override, ownership checks, and scoped
+// maintenance on top of #853 and #852 measured 3,343,511 bytes with Bun 1.4.5:
+// +6,704 bytes, no dependency or asset. 3266 KiB leaves 873 bytes.
+// Separately, onboarding v4 (the two-screen quick setup, its machine verdict and consent
 // screen, the launch gate that skips setup for a named destination, the live
 // first Browse and the failure panel's Next row; #854) on top measured
 // 3,348,464 bytes: +11,657, all screen code and copy. No dependency or asset;
 // `splitting: false` means lazy loading cannot recover it. 3271 KiB leaves
 // 1,040 bytes.
-// Provider batch 1 (#862: the VidBolt, AniLight and Anidap adapters, their
+// The profile checks merged with onboarding v4 measured 3,355,286 bytes
+// with Bun 1.4.5: +6,822 over #854 alone. 3277 KiB leaves 362 bytes.
+// Separately, provider batch 1 (#862: the VidBolt, AniLight and Anidap adapters, their
 // registration and defaults, signed-HLS playlist handling, Malay subtitle
 // normalization and the local relay's handling of obfuscated media segments)
 // on top measured 3,378,230 bytes: +29,766, after sharing the provider JSON
 // transport, episode identity parsing and language-list normalization. No
 // dependency or asset. 3300 KiB leaves 970 bytes.
-// The honest provider picker (#859: per-row status from the health,
+// With #862 and the profile checks (including canonical layout comparisons),
+// Bun 1.4.5 measured 3,385,214 bytes: +6,984 over #862 alone.
+// 3306 KiB leaves 130 bytes.
+// Separately, the provider picker (#859: per-row status from the health,
 // quarantine and per-title failure stores, the manifest's known issues, and
 // one footer for the keys) on top measured 3,381,740 bytes: +3,510. No
 // dependency or asset. 3303 KiB leaves 532 bytes.
+// With #859 and the profile checks, Bun 1.4.5 measured 3,388,722 bytes:
+// +6,982 over #859 alone. 3310 KiB leaves 718 bytes.
 // Provider batch 2 (#863: the FileSuN movies/series and AnimeParadise anime
 // adapters with their registration and defaults) on top measured 3,392,883
 // bytes: +11,143. No dependency or asset. 3314 KiB leaves 653 bytes.
+// On #863 with the profile checks and bound launchers, Bun 1.4.5 measured
+// 3,402,019 bytes: +9,136 over #863 alone. 3323 KiB leaves 733 bytes.
 // The mpv hardware-decode probe and persistent A/V-sync recovery slice merged
 // onto provider batch 2 measured 3,410,109 bytes: +17,226. No dependency or
 // asset; the probe sample is embedded source data. 3331 KiB leaves 835 bytes.
 // Review fixes for setup/doctor reporting, probe-process termination, and
 // A/V-sync evidence guards measured 3,410,448 bytes: +339. No dependency or
 // asset. 3331 KiB leaves 496 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_331;
+// With the dedicated profile checks, launchers, and review fixes (#860),
+// Bun 1.4.5 measured 3,421,461 bytes: +11,013 over #861.
+// 3342 KiB leaves 747 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_342;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

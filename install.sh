@@ -15,6 +15,10 @@
 # root is refused unless KUNAI_INSTALL_ALLOW_ROOT=1 — a sudo install lands in
 # /root and the user never gets kunai on PATH.
 #
+# KUNAI_CONFIG_DIR selects a dedicated profile root (absolute only): config,
+# data, cache and bin resolve as <root>/config, <root>/data, <root>/cache and
+# <root>/bin, matching the CLI's own layout under the same variable.
+#
 # Installs Kunai only. After install, use `kunai upgrade` and `kunai uninstall`
 # for lifecycle — the install script does not remove or update an install.
 #
@@ -90,7 +94,128 @@ Linux)
 *) HOST_OS="unknown" ;;
 esac
 
-if [[ -n "${KUNAI_BIN_DIR:-}" ]]; then
+# Lexically normalize an absolute path: resolve `.` and `..`, collapse empty
+# components and trailing separators. Pure string work — never touches the
+# filesystem — and bash 3.2 safe (no array expansion of empty arrays).
+normalize_profile_path() {
+	local in="$1" out="" part
+	while [[ "$in" == */* ]]; do
+		part="${in%%/*}"
+		in="${in#*/}"
+		case "$part" in
+		'' | .) ;;
+		..) out="${out%/*}" ;;
+		*) out="$out/$part" ;;
+		esac
+	done
+	case "$in" in
+	'' | .) ;;
+	..) out="${out%/*}" ;;
+	*) out="$out/$in" ;;
+	esac
+	printf '%s' "${out:-/}"
+}
+
+# Resolve symlinks through the nearest existing ancestor, then re-append the
+# remainder — the path a real filesystem write would land on. Re-normalizes the
+# concatenation so a `..` suffix cannot escape the resolved ancestor.
+physical_profile_path() {
+	local target="$1" probe="$1" parent
+	while [[ ! -d "$probe" && "$probe" != / ]]; do
+		probe="${probe%/*}"
+		[[ -z "$probe" ]] && probe=/
+	done
+	[[ -d "$probe" ]] || return 1
+	parent="$(cd -P -- "$probe" && pwd -P)" || return 1
+	normalize_profile_path "${parent%/}${target#"$probe"}"
+}
+
+# `path_contains parent child`: child equals parent or sits under it. macOS
+# defaults to a case-insensitive volume, so comparisons are conservative there.
+path_contains() (
+	[[ "$HOST_OS" != darwin ]] || shopt -s nocasematch
+	[[ "$2" == "${1%/}" || "$2" == "${1%/}/"* ]]
+)
+
+fail_profile() {
+	local display="${KUNAI_CONFIG_DIR:-}"
+	printf 'KUNAI_CONFIG_DIR=%s %s\n' "${display//[[:cntrl:]]/?}" "$1" >&2
+	exit 2
+}
+
+PROFILE_DIR=""
+# KUNAI_CONFIG_DIR selects a dedicated profile root on desktop hosts. The
+# checks below mirror checkDesktopProfile in packages/storage/src/paths.ts:
+# lexical containment first (before any side effect), physical containment and
+# ownership once the install actually runs. Android keeps its app-owned HOME
+# layout and ignores the override entirely.
+if [[ "$HOST_OS" != android && ${KUNAI_CONFIG_DIR+x} ]]; then
+	[[ -n "$KUNAI_CONFIG_DIR" && "$KUNAI_CONFIG_DIR" == /* &&
+		"$KUNAI_CONFIG_DIR" != *[[:cntrl:]]* ]] ||
+		fail_profile 'must be an absolute path to a Kunai profile directory'
+	PROFILE_DIR="$(normalize_profile_path "$KUNAI_CONFIG_DIR")"
+
+	# A profile root at the filesystem root, at HOME, or above HOME would own
+	# more than a Kunai profile.
+	[[ "$PROFILE_DIR" == / ]] && fail_profile 'must not be the filesystem root'
+	[[ -n "${HOME:-}" && "$HOME" == /* ]] && {
+		_norm_home="$(normalize_profile_path "$HOME")"
+		path_contains "$PROFILE_DIR" "$_norm_home" &&
+			fail_profile 'must not be a home directory or an ancestor of home'
+	}
+
+	# Platform defaults are derived independently of the installer-only
+	# KUNAI_DATA_DIR/KUNAI_CACHE_DIR overrides — a profile may not equal,
+	# contain, or sit inside any of them.
+	if [[ "$HOST_OS" == darwin ]]; then
+		_default_roots=(
+			"$HOME/Library/Application Support/kunai"
+			"$HOME/Library/Caches/kunai"
+		)
+	else
+		_default_roots=(
+			"${XDG_CONFIG_HOME:-$HOME/.config}/kunai"
+			"${XDG_DATA_HOME:-$HOME/.local/share}/kunai"
+			"${XDG_CACHE_HOME:-$HOME/.cache}/kunai"
+		)
+	fi
+	_default_roots+=("${TMPDIR:-/tmp}/kunai")
+	for _d in "${_default_roots[@]}"; do
+		_nd="$(normalize_profile_path "$_d")"
+		if path_contains "$_nd" "$PROFILE_DIR" || path_contains "$PROFILE_DIR" "$_nd"; then
+			fail_profile 'overlaps a platform-default Kunai directory'
+		fi
+	done
+
+	CONFIG_DIR="$PROFILE_DIR/config"
+	DATA_DIR="$PROFILE_DIR/data"
+	CACHE_DIR="$PROFILE_DIR/cache"
+	# Explicit data/cache overrides are still accepted, but only when they name
+	# exactly the derived profile directories — a differing one would split the
+	# layout the CLI resolves from the same variable.
+	if [[ ${KUNAI_DATA_DIR+x} ]] &&
+		{ [[ "$KUNAI_DATA_DIR" != /* ]] ||
+			[[ "$(normalize_profile_path "$KUNAI_DATA_DIR")" != "$DATA_DIR" ]]; }; then
+		fail_profile 'KUNAI_DATA_DIR must equal the profile data directory'
+	fi
+	if [[ ${KUNAI_CACHE_DIR+x} ]] &&
+		{ [[ "$KUNAI_CACHE_DIR" != /* ]] ||
+			[[ "$(normalize_profile_path "$KUNAI_CACHE_DIR")" != "$CACHE_DIR" ]]; }; then
+		fail_profile 'KUNAI_CACHE_DIR must equal the profile cache directory'
+	fi
+fi
+
+if [[ -n "$PROFILE_DIR" ]]; then
+	# A profile owns its launcher directory outright — an explicit bin override
+	# that names anything else would split the layout the CLI resolves from the
+	# same variable.
+	BIN_DIR="$PROFILE_DIR/bin"
+	if [[ ${KUNAI_BIN_DIR+x} ]] &&
+		{ [[ "$KUNAI_BIN_DIR" != /* ]] ||
+			[[ "$(normalize_profile_path "$KUNAI_BIN_DIR")" != "$BIN_DIR" ]]; }; then
+		fail_profile 'KUNAI_BIN_DIR must equal the profile bin directory'
+	fi
+elif [[ -n "${KUNAI_BIN_DIR:-}" ]]; then
 	BIN_DIR="$KUNAI_BIN_DIR"
 elif [[ "$HOST_OS" == android && -n "${PREFIX:-}" ]]; then
 	BIN_DIR="$PREFIX/bin"
@@ -103,15 +228,98 @@ fi
 [[ "$ACTIVATION_LOCK_CORRUPT_GRACE_MS" =~ ^[0-9]+$ ]] || ACTIVATION_LOCK_CORRUPT_GRACE_MS=250
 ((ACTIVATION_LOCK_POLL_MS > 0)) || ACTIVATION_LOCK_POLL_MS=1
 
-if [[ "$HOST_OS" == "darwin" ]]; then
-	CONFIG_DIR="${KUNAI_CONFIG_DIR:-$HOME/Library/Application Support/kunai}"
+# The profile branch above already set CONFIG_DIR/DATA_DIR/CACHE_DIR; without
+# a profile, KUNAI_DATA_DIR / KUNAI_CACHE_DIR remain installer-only overrides —
+# the CLI itself always derives data and cache from the platform defaults.
+if [[ -n "$PROFILE_DIR" ]]; then
+	:
+elif [[ "$HOST_OS" == "darwin" ]]; then
+	CONFIG_DIR="$HOME/Library/Application Support/kunai"
 	DATA_DIR="${KUNAI_DATA_DIR:-$HOME/Library/Application Support/kunai}"
 	CACHE_DIR="${KUNAI_CACHE_DIR:-$HOME/Library/Caches/kunai}"
 else
-	CONFIG_DIR="${KUNAI_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kunai}"
+	CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/kunai"
 	DATA_DIR="${KUNAI_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/kunai}"
 	CACHE_DIR="${KUNAI_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/kunai}"
 fi
+
+# Read-only ownership probe shared by dry-run and real installs: lexical
+# checks already ran above; here the *physical* root and its children are
+# verified and the .kunai-profile marker is validated. Exits 0 for an owned or
+# empty/absent root, 1 for anything else.
+profile_marker_ok() {
+	local marker="$PROFILE_DIR/.kunai-profile" bytes=''
+	[[ -f "$marker" && ! -L "$marker" ]] || return 1
+	# Pure-Bash exact-byte check (no `cmp` dependency — profile validation must
+	# run on a bare PATH). `read -d ''` succeeds only on an embedded NUL and
+	# strips it, so a "success" means the file could never have matched.
+	if IFS= read -r -d '' bytes <"$marker"; then return 1; fi
+	[[ "$bytes" == $'kunai-profile-v1\n' ]]
+}
+
+check_profile_filesystem() {
+	[[ -n "$PROFILE_DIR" ]] || return 0
+
+	# Re-check containment on the physical path so an aliased ancestor cannot
+	# smuggle the profile inside home or a default dir. Fail closed.
+	local phys phys_home
+	phys="$(physical_profile_path "$PROFILE_DIR")" ||
+		fail_profile 'could not resolve its on-disk location'
+	[[ "$phys" == / ]] && fail_profile 'must not resolve to the filesystem root'
+	if [[ -n "${HOME:-}" && "$HOME" == /* ]]; then
+		phys_home="$(physical_profile_path "$(normalize_profile_path "$HOME")")" ||
+			fail_profile 'could not resolve the home directory'
+		path_contains "$phys" "$phys_home" &&
+			fail_profile 'must not be a home directory or an ancestor of home'
+	fi
+	for _d in "${_default_roots[@]}"; do
+		_nd="$(physical_profile_path "$(normalize_profile_path "$_d")")" ||
+			fail_profile 'could not resolve a platform-default Kunai directory'
+		if path_contains "$_nd" "$phys" || path_contains "$phys" "$_nd"; then
+			fail_profile 'overlaps a platform-default Kunai directory'
+		fi
+	done
+
+	[[ -L "$PROFILE_DIR" ]] && fail_profile 'must not be a symlink'
+	[[ -e "$PROFILE_DIR" && ! -d "$PROFILE_DIR" ]] &&
+		fail_profile 'is not a regular directory'
+	for _c in config data cache tmp bin; do
+		if [[ -L "$PROFILE_DIR/$_c" || (-e "$PROFILE_DIR/$_c" && ! -d "$PROFILE_DIR/$_c") ]]; then
+			fail_profile "has a non-directory or symlink at $_c"
+		fi
+	done
+
+	if profile_marker_ok; then return 0; fi
+	# An absent or empty root may be claimed on install; a nonempty unmarked
+	# root belongs to something else and is refused even on dry-run. A glob
+	# keeps this free of external `find` portability; an unreadable root is a
+	# failure, never an "empty" root.
+	if [[ -d "$PROFILE_DIR" ]]; then
+		[[ -r "$PROFILE_DIR" && -x "$PROFILE_DIR" ]] ||
+			fail_profile 'could not inspect its contents'
+		local entry
+		for entry in "$PROFILE_DIR"/* "$PROFILE_DIR"/.[!.]* "$PROFILE_DIR"/..?*; do
+			if [[ -e "$entry" || -L "$entry" ]]; then
+				fail_profile 'has no valid .kunai-profile ownership marker'
+			fi
+		done
+	fi
+	return 0
+}
+
+# Claim an empty/absent profile root for a real install. Dry-run never writes.
+claim_profile_root() {
+	[[ -n "$PROFILE_DIR" ]] || return 0
+	check_profile_filesystem
+	profile_marker_ok && return 0
+	mkdir -p -- "$PROFILE_DIR" || fail_profile 'could not be created'
+	(
+		umask 077
+		set -o noclobber
+		printf '%s\n' kunai-profile-v1 >"$PROFILE_DIR/.kunai-profile"
+	) 2>/dev/null || profile_marker_ok ||
+		fail_profile 'has no valid .kunai-profile ownership marker'
+}
 
 # Flag values fall back to the environment the way install.ps1's parameters do —
 # `irm | iex` and containers cannot pass switches, so both installers honor the
@@ -1507,12 +1715,26 @@ cleanup_abandoned_transactions() {
 }
 
 activate_launcher() {
-	local version_path="$1" launcher="$2"
+	local version_path="$1" launcher="$2" version="$3"
 	local tmp_link
 	mkdir -p "$(dirname "$launcher")"
 	tmp_link="${launcher}.tmp.$$"
 	rm -f "$tmp_link"
-	ln -sfn "$version_path" "$tmp_link"
+	if [[ -n "$PROFILE_DIR" ]]; then
+		# The profile launcher is a wrapper that binds its own profile and execs
+		# the active versioned payload — byte-identical to the one the native
+		# installer writes so uninstall ownership checks recognize it.
+		cat >"$tmp_link" <<-EOF || return 1
+			#!/bin/sh
+			case \$0 in */*) launcher_dir=\${0%/*} ;; *) launcher_dir=. ;; esac
+			profile=\$(CDPATH= cd -L -- "\$launcher_dir/.." && pwd -L) || exit 2
+			export KUNAI_CONFIG_DIR="\$profile"
+			exec "\$profile/data/versions/${version}/kunai" "\$@"
+		EOF
+		chmod +x "$tmp_link" || return 1
+	else
+		ln -sfn "$version_path" "$tmp_link" || return 1
+	fi
 	mv -f "$tmp_link" "$launcher"
 }
 
@@ -1660,6 +1882,16 @@ persist_path() {
 
 path_hint() {
 	local dir="$1" rc_file
+	if [[ -n "$PROFILE_DIR" ]]; then
+		# A profile install never edits shell rc files: the profile-local
+		# wrapper binds its own profile, so only PATH convenience is needed.
+		local quoted
+		printf -v quoted '%q' "$dir"
+		info "Profile install: PATH was not changed. In this Bash session run:"
+		info "  export PATH=$quoted:\"\$PATH\""
+		info "  $quoted/kunai upgrade"
+		return 0
+	fi
 	case ":$PATH:" in
 	*":$dir:"*)
 		# The directory is on PATH, but saying so right after reporting that a
@@ -1961,7 +2193,7 @@ install_binary() {
 		err "Could not snapshot the current launcher before activation."
 		exit 1
 	fi
-	if ! activate_launcher "$version_path" "$BIN_DIR/kunai"; then
+	if ! activate_launcher "$version_path" "$BIN_DIR/kunai" "$resolved_version"; then
 		err "Could not activate the launcher for version $resolved_version."
 		exit 1
 	fi
@@ -2473,6 +2705,20 @@ main() {
 		esac
 	fi
 
+	# A dedicated profile only supports the binary method: npm/bun install
+	# account-wide and source builds outside the profile layout.
+	if [[ -n "$PROFILE_DIR" && "$METHOD" != binary ]]; then
+		fail_profile "only supports --method binary; unset KUNAI_CONFIG_DIR for --method $METHOD"
+	fi
+
+	# Filesystem protection runs before any install side effect; a real
+	# install also claims the profile root.
+	if [[ "$DRY" == 1 ]]; then
+		check_profile_filesystem
+	else
+		claim_profile_root
+	fi
+
 	bold "Kunai installer"
 	[[ "$DRY" == 1 ]] && info "Dry run: no install commands will be executed."
 
@@ -2493,6 +2739,15 @@ main() {
 	# The last lines are the first instruction a new user reads, so the first
 	# one plays something. `-q` takes the top result; a bare `kunai` browses.
 	bold "Done."
+	if [[ -n "$PROFILE_DIR" ]]; then
+		local _q
+		printf -v _q '%q' "$BIN_DIR/kunai"
+		printf 'This install belongs to the profile at %s.\nInvoke its profile launcher directly, e.g.:\n' "$PROFILE_DIR"
+		printf '  %s -S "Frieren" -a\n\n' "$_q"
+		printf 'Update any time:  %s upgrade\n' "$_q"
+		printf 'Remove:           %s uninstall\n' "$_q"
+		return
+	fi
 	cat <<EOF
 Watch something:
   kunai -q -S "Dune"     search and play in one step

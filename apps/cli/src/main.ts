@@ -42,6 +42,7 @@ import type { createContainer } from "@/container";
 import type { KunaiShareAction, PlaybackTargetRef } from "@/domain/share/playback-target-ref";
 import type { EpisodeInfo, SearchResult, TitleInfo } from "@/domain/types";
 import { isProcessEntrypoint } from "@/infra/build/entrypoint";
+import { prepareCliProfile } from "@/infra/storage/desktop-profile-startup";
 import type { HistoryProgress } from "@kunai/storage";
 
 import packageJson from "../package.json" with { type: "json" };
@@ -1546,10 +1547,9 @@ function isFastPathInvocation(argv: readonly string[]): boolean {
 }
 
 export async function startCli(argv = process.argv.slice(2)): Promise<void> {
-  if (isFastPathInvocation(argv)) {
-    await runCli(argv);
-    return;
-  }
+  const fastPath = isFastPathInvocation(argv);
+  if (!(await prepareCliProfile(argv, FAST_PATH_SUBCOMMANDS, fastPath))) return;
+  if (fastPath) return runCli(argv);
   setupSignalHandlers();
   // Always-on memory safety net: a separate-thread watchdog that SIGKILLs a
   // runaway even when the main event loop is jammed (the closed-terminal case).

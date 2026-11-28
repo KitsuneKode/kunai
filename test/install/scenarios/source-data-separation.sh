@@ -34,7 +34,11 @@ export XDG_DATA_HOME="$HOME/.local/share"
 export XDG_CONFIG_HOME="$HOME/.config"
 export XDG_CACHE_HOME="$HOME/.cache"
 export KUNAI_SOURCE_DIR="$HOME/.local/src/kunai"
-export KUNAI_CONFIG_DIR="$XDG_CONFIG_HOME/kunai"
+# Default layout on purpose: the runtime profile override stays unset and the
+# installer derives config from XDG_CONFIG_HOME; a local name only for the
+# manifest path.
+unset KUNAI_CONFIG_DIR 2>/dev/null || true
+CONFIG_DIR="$XDG_CONFIG_HOME/kunai"
 
 data_dir="$XDG_DATA_HOME/kunai"
 cache_dir="$XDG_CACHE_HOME/kunai"
@@ -70,7 +74,7 @@ if /harness/install.sh --method source --version 0.3.0 --yes --skip-deps --skip-
 else
   fail "source monorepo installation failed"
 fi
-if node -e 'const m = require(process.argv[1]); process.exit(m.method === "source" && m.activeVersion === "0.3.0" ? 0 : 1)' "$KUNAI_CONFIG_DIR/install.json"; then
+if node -e 'const m = require(process.argv[1]); process.exit(m.method === "source" && m.activeVersion === "0.3.0" ? 0 : 1)' "$CONFIG_DIR/install.json"; then
   pass "source manifest records CLI workspace version"
 else
   fail "source manifest did not record CLI workspace version"

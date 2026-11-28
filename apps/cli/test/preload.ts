@@ -1,19 +1,16 @@
+// Storage isolation and the real-profile guard run first so module-scope code
+// below (and every later import) resolves storage inside the sandbox.
+// oxlint-disable-next-line no-unassigned-import -- preload side effect: installs storage isolation
+import "./storage-preload";
 import { afterEach } from "bun:test";
 
 import { resetAniListClientForTest } from "@/services/catalog/anilist-client";
 import { resetCatalogSourceBreakersForTest } from "@/services/catalog/catalog-source";
 import { resetCatalogSourceLedgerForTest } from "@/services/catalog/catalog-source-ledger";
 
-import { installProfileGuard } from "./helpers/profile-guard";
-
 function configureTestEnvironment(): void {
   /** Block xdg-open / browser spawns during `bun test` unless a test opts out explicitly. */
   process.env.KUNAI_DISABLE_EXTERNAL_URL ??= "1";
-
-  // Local test runners need the same privacy guarantee as CI, even in a TTY
-  // with CI=0 or an inherited DO_NOT_TRACK=0. Consent/ingest unit fixtures may
-  // inject env: {} only alongside isolated config and mocked/local delivery.
-  process.env.DO_NOT_TRACK = "1";
 
   // Bun 1.4+ `--parallel` injects FORCE_COLOR=1 into worker processes under a PTY,
   // which overrides NO_COLOR inside supports-color/chalk and breaks Ink frame
@@ -62,10 +59,3 @@ try {
 } catch {
   // Not under `bun test`.
 }
-
-/**
- * Fail the run if a test changed the developer's real Kunai profile. Registered
- * here, before any test file runs, so the snapshot sees the real HOME/XDG/APPDATA
- * rather than a test's sandbox. See helpers/profile-guard.ts.
- */
-installProfileGuard();

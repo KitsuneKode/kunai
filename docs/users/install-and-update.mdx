@@ -313,7 +313,7 @@ too.
 On a TTY it offers to run that command:
 
 ```
-! No video player found — Kunai needs mpv or VLC to play anything.
+! No video player found; Kunai needs mpv or VLC to play anything.
 
   This will run:
     sudo pacman -S --needed mpv yt-dlp
@@ -411,6 +411,35 @@ macOS `~/Library/Application Support/kunai/downloads`, and Windows
 Kunai's config, data, and cache directories are preserved.
 
 Install scripts (`install.sh`, `install.ps1`) only install. They do not upgrade or uninstall; lifecycle logic stays inside the binary.
+
+## Custom profile root
+
+`KUNAI_CONFIG_DIR` selects a dedicated Kunai **profile root** for the CLI and both installer scripts. Kunai builds the whole layout underneath it:
+
+```text
+<root>/config/config.json          # config + install.json manifest
+<root>/config/mpv/kunai-bridge.lua # mpv bridge script
+<root>/data/kunai-data.sqlite      # watch history and metadata
+<root>/cache/kunai-cache.sqlite    # stream cache
+<root>/tmp                         # scratch
+<root>/bin                         # installer launcher (install.sh/install.ps1)
+```
+
+Rules that apply:
+
+- **The value must be absolute.** An empty or relative value, including a Windows drive-root-relative path such as `\kunai`, is a startup error, not a fallback to defaults; both the CLI and the installer scripts abort.
+- **The root must be a dedicated directory.** It cannot be the filesystem root, your home directory, an ancestor of home, or overlap any platform-default Kunai directory (including through symlinks). On Windows, 8.3 short names do not bypass those checks. On Android/Termux the variable is ignored; the app-owned HOME layout is used instead.
+- **Ownership is marked.** The first real write creates `<root>/.kunai-profile` (`kunai-profile-v1`). An empty or missing directory is claimed; a _nonempty_ directory without that marker is never adopted; the CLI and both installers refuse rather than risk touching something else's files. The CLI and both installers exit with status 2 when they refuse a profile.
+- **Credentials stay inside the profile.** Under a profile root Kunai always uses file-based credential storage; the account-wide OS vaults (Keychain, libsecret, Windows PasswordVault) are never reachable, even with `KUNAI_CREDENTIAL_BACKEND` set.
+- **Unset it to go back.** Removing the variable returns Kunai to the platform-default layout. Kunai does not copy or migrate data between profiles.
+- Uninstall's profile purge removes the `config`, `data`, `cache` and `tmp` directories and the managed launcher. It never removes the profile root, the `.kunai-profile` marker, or unrelated files beside them.
+- Debug logs still go to `./logs.txt` with `--debug`. A custom download directory can live outside the profile root.
+
+Under `KUNAI_CONFIG_DIR` the installers accept `KUNAI_DATA_DIR`, `KUNAI_CACHE_DIR`, and `KUNAI_BIN_DIR` only when they name exactly `<root>/data`, `<root>/cache`, and `<root>/bin`; leave them unset so the installers and the CLI agree on the layout.
+
+The launcher in `<root>/bin` is a small wrapper (`kunai` on Linux/macOS, `kunai.cmd` on Windows) that binds the profile from its own directory and runs the active versioned payload (on Windows the `kunai.exe` binary lives only inside `<root>/data/versions/<version>/`). Profile installs never persist PATH; the installers print a session-local PATH command and a direct wrapper invocation instead. Subsequent calls need no environment variable, for example `<root>/bin/kunai upgrade` or `<root>/bin/kunai uninstall`. Under a profile the installers also refuse the account-wide methods; only the binary method is supported. On Windows, the versioned executable validates the profile from its real on-disk location; an explicit `KUNAI_CONFIG_DIR` still takes precedence. Windows profile installs require Kunai 0.4.0 or later.
+
+If you exported `KUNAI_CONFIG_DIR` before but want to keep using your existing runtime profile, unset it. The platform-default layout is unchanged. To move the installation itself into the new layout, reinstall with `kunai install` or the installer script rather than copying the old `install.json`, which records absolute paths.
 
 `kunai --version` prints `kunai <version> (<channel>)`. `install.json` is
 authoritative when present; otherwise Kunai detects the channel from the

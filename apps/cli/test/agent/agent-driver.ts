@@ -23,7 +23,8 @@
  * Isolation contract (enforced, not conventional):
  *  - exactly one live session per process — a second createAgentSession throws;
  *  - env mutations are undone in LIFO order on dispose (storage root, KUNAI_*,
- *    PATH) — never `KUNAI_CONFIG_DIR`, never the developer's real profile;
+ *    PATH) — the session profile is a throwaway root, never the developer's
+ *    real profile;
  *  - dispose order is fixed: settle session loop → unmount Ink → clear
  *    root-content globals → close DBs → undo env → delete profile.
  */

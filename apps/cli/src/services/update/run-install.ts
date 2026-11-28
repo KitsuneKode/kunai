@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { joinerForNodePlatform } from "@kunai/storage";
+import { getKunaiPaths, joinerForNodePlatform } from "@kunai/storage";
 
 import {
   withInstallManifestPublication,
@@ -172,6 +172,15 @@ export async function runInstall(
   const methodIdx = argv.indexOf("--method");
   const method = methodIdx >= 0 ? argv[methodIdx + 1] : "binary";
   const positional = argv.find((a) => !a.startsWith("-") && a !== method);
+
+  // A package-manager method installs globally; it cannot honor a dedicated
+  // profile root, so only the binary method may run under KUNAI_CONFIG_DIR.
+  if (ports === defaultPorts && method !== "binary" && getKunaiPaths().profileDir !== undefined) {
+    console.error(
+      `kunai install --method ${method} installs globally, outside the KUNAI_CONFIG_DIR profile. Use the default binary method or unset the profile override.`,
+    );
+    return 1;
+  }
 
   if (method === "binary") {
     const version = positional ?? "latest";

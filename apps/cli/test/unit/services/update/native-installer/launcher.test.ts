@@ -7,9 +7,11 @@ import {
   mkdir,
   mkdtemp,
   readdir,
+  readFile,
   readlink,
   rename,
   rm,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -405,6 +407,73 @@ describe("launcher", () => {
     });
     expect(removed).toBe(false);
     expect(existsSync(launcherPath)).toBe(true);
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("profile ownership binds the exact wrapper bytes and refuses tampered launchers", async () => {
+    const root = await mkdtemp(join(tmpdir(), "kunai-launcher-profile-"));
+    const versionsDir = join(root, "versions");
+    const launcherPath = join(root, "bin", "kunai");
+    await mkdir(join(root, "bin"), { recursive: true });
+    await mkdir(versionsDir, { recursive: true });
+
+    // updateLauncher writes the wrapper itself — the same bytes a shell
+    // installer produces for the same version.
+    await updateLauncher({
+      launcherPath,
+      versionPath: join(versionsDir, "1.0.0", "kunai"),
+      platform: "linux",
+      profileVersion: "1.0.0",
+    });
+    const script = await readFile(launcherPath, "utf8");
+    expect(script).toContain("/data/versions/1.0.0/kunai");
+
+    const owned = {
+      launcherPath,
+      versionsDir,
+      platform: "linux" as const,
+      profileVersion: "1.0.0",
+    };
+    expect(await inspectLauncherOwnership(owned)).toBe("managed");
+    // A different active version means a different wrapper — not ours.
+    expect(await inspectLauncherOwnership({ ...owned, profileVersion: "1.0.1" })).toBe("unmanaged");
+
+    // A tampered wrapper — or a symlink — is unmanaged, and removal refuses it.
+    await writeFile(launcherPath, script.replace("1.0.0", "9.9.9"));
+    expect(await inspectLauncherOwnership(owned)).toBe("unmanaged");
+    expect(await removeLauncherIfVersioned(owned)).toBe(false);
+    expect(existsSync(launcherPath)).toBe(true);
+
+    await rm(launcherPath, { force: true });
+    expect(await inspectLauncherOwnership(owned)).toBe("missing");
+
+    // A dangling symlink exists per lstat but follows to nothing — it is an
+    // unmanaged foreign entry, never "missing" and never removed.
+    if (process.platform !== "win32") {
+      const danglingTarget = join(root, "versions", "gone", "kunai");
+      await symlink(danglingTarget, launcherPath);
+      expect(await inspectLauncherOwnership(owned)).toBe("unmanaged");
+      expect(await removeLauncherIfVersioned(owned)).toBe(false);
+      expect(await readlink(launcherPath)).toBe(danglingTarget);
+      await rm(launcherPath, { force: true });
+
+      // A non-directory ancestor fails lstat with ENOTDIR — an error path
+      // is unmanaged too, never "missing".
+      const nonDirectoryParent = join(root, "plain-file");
+      await writeFile(nonDirectoryParent, "not a directory");
+      expect(
+        await inspectLauncherOwnership({
+          ...owned,
+          launcherPath: join(nonDirectoryParent, "kunai"),
+        }),
+      ).toBe("unmanaged");
+    }
+
+    // Non-canonical versions can never name a payload path.
+    expect(() => __testing.profileLauncherScript("../x", "linux")).toThrow(
+      "Invalid profile launcher version",
+    );
 
     await rm(root, { recursive: true, force: true });
   });
