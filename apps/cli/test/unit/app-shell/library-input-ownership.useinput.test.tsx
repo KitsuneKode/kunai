@@ -114,6 +114,9 @@ function fixture(options: FixtureOptions = {}): Container {
       isOnline: () => true,
       subscribe: () => () => undefined,
     },
+    // SAFETY: this test double is intentionally narrowed to the exact contract exercised here.
+    // SAFETY: deliberately partial test fixture narrowed to the contract exercised here.
+    // oxlint-disable-next-line anti-slop(require-safety-comment-for-type-assertion) -- justified partial test fixture
   } as unknown as Container;
 }
 
@@ -297,6 +300,8 @@ describe("library input ownership", () => {
   /**
    * The library shelf used to read season identity back out of a formatted
    * label with a regex, so a movie stored with a synthetic season 1/episode 1
+   // SAFETY: this test double is intentionally narrowed to the exact contract exercised here.
+   // oxlint-disable-next-line anti-slop(require-safety-comment-for-type-assertion) -- justified partial test fixture
    * rendered as a season the user does not have.
    */
   test("a legacy synthetic movie title never renders S01E01 or a season code", async () => {
@@ -518,8 +523,16 @@ describe("library input ownership", () => {
     try {
       await waitForFrame(handle, "Dune");
       handle.stdin.enqueue("x");
-      await waitForFrame(handle, "Press x again");
-      handle.stdin.enqueue("x");
+      await waitForFrame(handle, "Delete Dune and all local files?");
+      handle.stdin.enqueue("y");
+      await waitUntil(() => deletes.length === 1, {
+        label: "movie partition deletion",
+        tick: (ms) =>
+          act(async () => {
+            // sleep-allow: Ink input debounce; the component clock is not injected
+            await new Promise((r) => setTimeout(r, ms));
+          }),
+      });
       expect(deletes).toEqual(["movie"]);
     } finally {
       handle.unmount();
@@ -771,6 +784,8 @@ describe("library pointer ownership", () => {
 });
 
 test("covered Library and Downloads release both pointer and keyboard ownership", async () => {
+  // SAFETY: this test double is intentionally narrowed to the exact contract exercised here.
+  // oxlint-disable-next-line anti-slop(require-safety-comment-for-type-assertion) -- justified partial test fixture
   for (const initialView of ["library", "queue"] as const) {
     let closed = 0;
     const handle = renderWithPointer(
@@ -826,7 +841,7 @@ test("Library keeps retained entries visible after partial title removal", async
       handle.stdin.enqueue("x");
     });
     await act(async () => {
-      handle.stdin.enqueue("x");
+      handle.stdin.enqueue("y");
     });
     expect(notes).toContain("Removed 1; kept 1. File is in use.");
     expect(stripAnsi(handle.lastFrame() ?? "")).toContain("Dune");

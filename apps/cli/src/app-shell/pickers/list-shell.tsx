@@ -1,6 +1,8 @@
 import { useLineEditor } from "@/app-shell/line-editor";
 import { defaultPaletteSelectionIndex } from "@/app-shell/palette-ranking";
 import {
+  listShellOptionKey,
+  resolveArmedListOption,
   resolveCompactListShortcut,
   shouldShowListFilter,
 } from "@/app-shell/pickers/list-shell-filter";
@@ -14,11 +16,19 @@ import { matchLocalTitles, type LocalTitleEntry } from "@/domain/palette/local-t
 import { Box, Text, useInput } from "ink";
 import { useEffect, useMemo, useState } from "react";
 
+import { resolveEscStack, type EscLayer } from "../esc-stack";
 import { useSettledValue } from "../hooks/use-settled-value";
 import { getPickerChromeRows, getPickerLayout, getPickerListMaxVisible } from "../layout-policy";
 import { plainModeEnabled, selectionPrefix } from "../plain-mode";
 import { suppressPosterWhileNavigating } from "../poster-types";
+import { ConfirmStrip } from "../primitives/ConfirmStrip";
+import {
+  confirmStripFooterActions,
+  confirmStripKeyDecision,
+  confirmStripOwnsInput,
+} from "../primitives/ConfirmStrip.model";
 import { SakuraPetal } from "../primitives/SakuraPetal";
+import { useConfirmStripController } from "../primitives/use-confirm-strip";
 import { mountRootContent } from "../root-content-state";
 import {
   getCommandAutocompleteTarget,
@@ -32,7 +42,7 @@ import {
 import { CommandPalette } from "../shell-command-ui";
 import { InputField } from "../shell-frame";
 import { LocalSection, ResizeBlocker, ShellFooter } from "../shell-primitives";
-import { clearShellScreenArtifacts as clearShellScreen } from "../shell-screen-clear";
+import { clearShellScreenArtifacts } from "../shell-screen-clear";
 import { getWindowStart, padColumnsEnd, truncateLine, wrapText } from "../shell-text";
 import { palette } from "../shell-theme";
 import { PosterOutput } from "../SixelPosterPane";
@@ -45,14 +55,14 @@ const LIST_SHELL_FOOTER_ACTIONS: readonly FooterAction[] = [
   { key: "esc", label: "back", action: "quit" },
 ];
 
-type ListShellActionResult = {
+export type ListShellActionResult = {
   type: "action";
   action: ShellAction;
   filterQuery: string;
   selectedIndex: number;
 };
 
-type ListShellSubmitResult<T> =
+export type ListShellSubmitResult<T> =
   | { type: "selected"; value: T }
   | { type: "cancelled" }
   | ListShellActionResult;
@@ -70,7 +80,7 @@ function normalizeReservedCommandInput(nextValue: string) {
   };
 }
 
-function ListShell<T>({
+export function ListShell<T>({
   title,
   subtitle,
   options,
@@ -95,6 +105,7 @@ function ListShell<T>({
 }) {
   const [index, setIndex] = useState(initialSelectedIndex ?? 0);
   const [confirmed, setConfirmed] = useState(false);
+  const confirm = useConfirmStripController();
   const [filterQuery, setFilterQuery] = useState(initialFilter ?? "");
   const [commandMode, setCommandMode] = useState(false);
   const [commandInput, setCommandInput] = useState("");
@@ -114,6 +125,19 @@ function ListShell<T>({
       return haystack.includes(normalizedFilter);
     });
   }, [options, normalizedFilter]);
+
+  const visibleConfirmationIds = useMemo(
+    () =>
+      filteredOptions.flatMap((option) => {
+        const key = listShellOptionKey(option);
+        return key === null ? [] : [key];
+      }),
+    [filteredOptions],
+  );
+
+  useEffect(() => {
+    confirm.transition({ type: "reconcile", visibleIds: visibleConfirmationIds });
+  }, [confirm, visibleConfirmationIds]);
 
   useEffect(() => {
     if (filteredOptions.length === 0) {
@@ -181,7 +205,9 @@ function ListShell<T>({
   // List/picker shells use the minimal footer: the surface is a focused filter +
   // select, and the command palette ("/") plus Esc-back are the only chrome.
   const effectiveFooterMode: ShellFooterMode = "minimal";
-  const footerActions = LIST_SHELL_FOOTER_ACTIONS;
+  const footerActions = confirmStripOwnsInput(confirm.state)
+    ? confirmStripFooterActions(confirm.state)
+    : LIST_SHELL_FOOTER_ACTIONS;
 
   // Snapshot title entries once per open — the matcher is a pure in-memory
   // index against this list, so a keystroke never hits storage.
@@ -239,19 +265,60 @@ function ListShell<T>({
   }
 
   useInput((input, key) => {
+    const confirmState = confirm.getState();
     if ((input === "c" && key.ctrl) || input === "\x03") {
       requestAppShutdown({ reason: "SIGINT", exitCode: 130 });
     }
 
-    if (commandMode) {
-      const matches = getCommandMatches(commandInput, actionContext?.commands ?? []);
-
-      if (key.escape) {
+    if (key.escape) {
+      const layers: EscLayer[] = [
+        ...(confirmState.kind !== "idle" ? [{ kind: "confirm" } as const] : []),
+        ...(commandMode
+          ? [{ kind: "prompt" } as const]
+          : [{ kind: "filter", query: filterQuery } as const, { kind: "picker" } as const]),
+      ];
+      const action = resolveEscStack(layers);
+      if (action === "cancel-confirmation") confirm.transition({ type: "cancel" });
+      if (action === "cancel-prompt") {
         // Close only — the draft survives so a `/` reopen resumes the query.
         setCommandMode(false);
         setHighlightedCommandIndex(0);
-        return;
       }
+      if (action === "clear-filter") setFilterQuery("");
+      if (action === "cancel-picker") onCancel();
+      return;
+    }
+
+    const confirmDecision = confirmStripKeyDecision(confirmState.kind, input, key, {
+      continueOnVerticalArrows: true,
+    });
+    if (confirmDecision === "execute") {
+      const confirmation = confirm.transition({ type: "confirm" });
+      const resolved = resolveArmedListOption(filteredOptions, confirmation.effect?.targetId);
+      if (resolved.kind === "one") {
+        setConfirmed(true);
+        setTimeout(() => onSubmit(resolved.option.value), 150);
+      } else {
+        confirm.transition({
+          type: "fail",
+          message:
+            resolved.kind === "ambiguous"
+              ? "That confirmation matches more than one row"
+              : "That row is no longer visible",
+        });
+      }
+      return;
+    }
+    if (confirmDecision === "cancel") {
+      confirm.transition({ type: "cancel" });
+      return;
+    }
+    if (confirmDecision === "cancel-and-continue") confirm.transition({ type: "cancel" });
+    if (confirmDecision === "hold") return;
+
+    if (commandMode) {
+      const matches = getCommandMatches(commandInput, actionContext?.commands ?? []);
+
       if (key.return) {
         activateListPalette(highlightedCommandIndex);
         return;
@@ -298,23 +365,44 @@ function ListShell<T>({
       const shortcutOption = shortcutIndex === null ? undefined : filteredOptions[shortcutIndex];
       if (shortcutIndex !== null && shortcutOption && !confirmed) {
         setIndex(shortcutIndex);
-        setConfirmed(true);
-        setTimeout(() => onSubmit(shortcutOption.value), 150);
+        if (shortcutOption.destructive) {
+          const targetId = listShellOptionKey(shortcutOption);
+          const armed = targetId ? resolveArmedListOption(filteredOptions, targetId) : null;
+          if (targetId && armed?.kind === "one") {
+            confirm.transition({
+              type: "arm",
+              targetId,
+              label: shortcutOption.label,
+              verb: shortcutOption.confirmVerb ?? "confirm",
+              executingLabel: `Applying ${shortcutOption.label}`,
+              visibleIds: visibleConfirmationIds,
+            });
+          }
+        } else {
+          setConfirmed(true);
+          setTimeout(() => onSubmit(shortcutOption.value), 150);
+        }
       }
       return;
     }
 
-    if (key.escape) {
-      if (filterQuery.length > 0) {
-        setFilterQuery("");
-        return;
-      }
-      onCancel();
-      return;
-    }
     if (key.return) {
       const selected = filteredOptions[index];
       if (selected && !confirmed) {
+        if (selected.destructive) {
+          const targetId = listShellOptionKey(selected);
+          const armed = targetId ? resolveArmedListOption(filteredOptions, targetId) : null;
+          if (!targetId || armed?.kind !== "one") return;
+          confirm.transition({
+            type: "arm",
+            targetId,
+            label: selected.label,
+            verb: selected.confirmVerb ?? "confirm",
+            executingLabel: `Applying ${selected.label}`,
+            visibleIds: visibleConfirmationIds,
+          });
+          return;
+        }
         setConfirmed(true);
         setTimeout(() => onSubmit(selected.value), 150);
       }
@@ -345,8 +433,9 @@ function ListShell<T>({
             onChange={updateFilterQuery}
             placeholder="Type to narrow this list"
             focus={!commandMode}
+            ignoreInput={() => confirmStripOwnsInput(confirm.getState())}
             hint={actionContext ? "Type to filter · / opens commands" : undefined}
-            onRedraw={clearShellScreen}
+            onRedraw={clearShellScreenArtifacts}
           />
         ) : null}
         {tooSmall ? (
@@ -505,6 +594,7 @@ function ListShell<T>({
           width={innerWidth}
         />
       ) : null}
+      <ConfirmStrip state={confirm.state} width={innerWidth} />
       <ShellFooter
         taskLabel={`${footerTask}  ·  ${subtitle}`}
         actions={footerActions}

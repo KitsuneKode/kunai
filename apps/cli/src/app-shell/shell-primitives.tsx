@@ -251,7 +251,10 @@ export function Footer({
   ): (() => void) | undefined => {
     if (action.disabled) return undefined;
     if (onActivate && action.action) return () => onActivate(action);
-    const keys = pressKey && role !== "destructive" ? footerKeySequence(action.key) : null;
+    const keys =
+      pressKey && (role !== "destructive" || action.allowMouseDestructive === true)
+        ? footerKeySequence(action.key)
+        : null;
     return keys && pressKey ? () => pressKey(keys) : undefined;
   };
   const { cols } = useShellDimensions();

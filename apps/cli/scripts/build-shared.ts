@@ -641,7 +641,26 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // measured 3,449,390 bytes with Bun 1.4.5: +3,013 over 3,446,377. No
 // dependency or asset. 3369 KiB is the smallest whole-KiB budget over that
 // measurement and leaves 466 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_369;
+// Shell-v4 destructive confirmations (ConfirmStrip, the pure Esc stack, the
+// History/Up Next/Library/Downloads migrations, and the playlist inline
+// confirm) merged onto that catalog tree measured 3,450,020 bytes with Bun
+// 1.4.5: +9,997 over 3,440,023, all shared confirmation/input surface code.
+// No dependency or asset. 3370 KiB is the smallest whole-KiB budget over that
+// measurement and leaves 860 bytes; public launcher budgets are unchanged.
+// Merging the destructive-confirmation branch onto the compact-picker tree
+// (#878), with the two extracted list pickers unified into one
+// pickers/list-shell.tsx, measured 3,459,450 bytes with Bun 1.4.5: +10,060
+// over 3,449,390. No dependency or asset. 3379 KiB is the smallest whole-KiB
+// budget over that measurement and leaves 646 bytes.
+// The Esc-stack review fixes (plain confirm key, unique armed-row submit,
+// history deletion, and focused-filter Escape) measured 3,461,043 bytes with
+// Bun 1.4.5: +1,593 over 3,459,450. No dependency or asset. 3380 KiB is the
+// smallest whole-KiB budget over that measurement and leaves 77 bytes.
+// The second confirmation review (modified-key download confirm, compact
+// destructive shortcuts, and Downloads Escape) measured 3,461,429 bytes with
+// Bun 1.4.5: +386 over 3,461,043. No dependency or asset. 3381 KiB is the
+// smallest whole-KiB budget over that measurement and leaves 715 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_381;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

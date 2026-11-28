@@ -12,6 +12,8 @@ import { render, stripAnsi } from "../../harness/render-capture";
 type DownloadEvent = { readonly type: string };
 
 function queuedJob(overrides: Partial<DownloadJobRecord> = {}): DownloadJobRecord {
+  // SAFETY: these shell tests read only the job display/state fields initialized
+  // below; storage metadata omitted from the record is never dereferenced.
   return {
     id: "job-1",
     titleId: "title-1",
@@ -38,6 +40,8 @@ function createContainerFixture() {
   let completedJobs: DownloadJobRecord[] = [];
   let failedJobs: DownloadJobRecord[] = [];
 
+  // SAFETY: the download-manager input tests invoke only the state, config, and
+  // downloadService members defined on this fixture.
   const container = {
     stateManager: { dispatch: () => undefined },
     config: {
@@ -319,7 +323,7 @@ test("delete confirmation cannot transfer to a replacement row after refresh", a
     await act(async () => {
       handle.stdin.enqueue("x");
     });
-    expect(stripAnsi(handle.lastFrame() ?? "")).toContain("Press x or X again");
+    expect(stripAnsi(handle.lastFrame() ?? "")).toContain("Remove record Old selection?");
     fixture.setActiveJobs([queuedJob({ id: "replacement", titleName: "Replacement selection" })]);
     fixture.emit({ type: "enqueued" });
     await act(async () => {
@@ -328,6 +332,10 @@ test("delete confirmation cannot transfer to a replacement row after refresh", a
     expect(fixture.removed).toEqual([]);
     await act(async () => {
       handle.stdin.enqueue("x");
+    });
+    expect(fixture.removed).toEqual([]);
+    await act(async () => {
+      handle.stdin.enqueue("y");
     });
     expect(fixture.removed).toEqual(["replacement"]);
   } finally {
@@ -355,21 +363,16 @@ test.each([
         handle.stdin.enqueue("X");
       });
       const frame = stripAnsi(handle.lastFrame() ?? "");
-      // Once: the row used to repeat the footer prompt.
-      expect(frame.match(/Press X again to remove record/g)).toHaveLength(1);
+      expect(frame).toContain("Remove record");
+      expect(frame).not.toContain("Press X again");
       expect(frame).not.toContain("Press x or X again");
-      expect(frame).not.toContain("Press x again to remove this download");
       await act(async () => {
         handle.stdin.enqueue("x");
       });
       expect(fixture.removed).toEqual([]);
-      expect(stripAnsi(handle.lastFrame() ?? "")).toContain("Press x again to delete files");
+      expect(stripAnsi(handle.lastFrame() ?? "")).toContain("Remove record");
       await act(async () => {
-        handle.stdin.enqueue("X");
-      });
-      expect(fixture.removed).toEqual([]);
-      await act(async () => {
-        handle.stdin.enqueue("X");
+        handle.stdin.enqueue("y");
       });
       expect(fixture.removalOptions).toEqual([{ deleteArtifact: false }]);
     } finally {
@@ -397,11 +400,11 @@ test("Esc backs out of an armed delete without closing Downloads, and the prompt
       handle.stdin.enqueue("x");
     });
     const armed = stripAnsi(handle.lastFrame() ?? "");
-    expect(armed.split("Press x or X again").length - 1).toBe(1);
+    expect(armed).toContain("Remove record");
 
     await pressEscape(handle);
     expect(closed).toBe(0);
-    expect(stripAnsi(handle.lastFrame() ?? "")).not.toContain("Press x or X again");
+    expect(stripAnsi(handle.lastFrame() ?? "")).not.toContain("Remove record");
     expect(fixture.removed).toEqual([]);
 
     await pressEscape(handle);

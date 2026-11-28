@@ -1,7 +1,7 @@
 import { noteForExternalOpenFailure } from "@/app-shell/external-open-fallback";
 import { confirmHistoryOverlaySelection } from "@/app-shell/history-selection-launch";
 import { useLineEditor } from "@/app-shell/line-editor";
-import { buildQueueRestoreDeps, buildQueueRestoreStatus } from "@/app-shell/queue-restore";
+import { buildQueueRestoreDeps } from "@/app-shell/queue-restore";
 import { forceCloseRootContent, getRootContentSession } from "@/app-shell/root-content-state";
 import {
   applyMediaItemSessionRouting,
@@ -114,6 +114,7 @@ import {
 } from "./diagnostics-panel.model";
 import { PALETTE_WORKFLOW_ACTIONS } from "./dispatch-palette-command";
 import { DownloadManagerContent } from "./download-manager-shell";
+import { resolveEscStack, type EscLayer } from "./esc-stack";
 import {
   buildGuideRows,
   GUIDE_COMMAND_IDS,
@@ -152,7 +153,6 @@ import {
 import { deliverNotificationPlayback } from "./notification-playback-delivery";
 import { NotificationsShell } from "./notifications-shell";
 import { buildNotificationsView, nearestNotificationDedupKey } from "./notifications-view";
-import { resolveOverlayBackStack } from "./overlay-back-stack";
 import {
   historyFooterActions,
   notificationsFooterActions,
@@ -160,6 +160,7 @@ import {
   tracksFooterActions,
 } from "./overlay-footer-actions";
 import {
+  cancelOverlayConfirmationOnEscape as cancelConfirmOnEscape,
   isOverlayCancelActive,
   shouldHandleOverlayEscape,
   shouldHistoryOverlayAcceptFilterInput,
@@ -177,6 +178,9 @@ import {
   type HistoryPickerOptionsContext,
   sortProvidersByConfigPriority,
 } from "./panel-data";
+import { ConfirmStrip } from "./primitives/ConfirmStrip";
+import { confirmStripFooterActions, confirmStripOwnsInput } from "./primitives/ConfirmStrip.model";
+import { useConfirmStripController } from "./primitives/use-confirm-strip";
 import { createQueuePosterResolver } from "./queue-poster-resolver";
 import { QueueShell } from "./queue-shell";
 import type { QueueViewRow } from "./queue-view";
@@ -241,7 +245,7 @@ import { toShellAction } from "./types";
 import {
   activateSelectedHistoryRow,
   handleHistoryOverlayInput,
-  type HistoryDeletePending,
+  historyConfirmationTargetIds,
   type HistoryOverlayInputContext,
 } from "./use-history-overlay-input";
 import {
@@ -249,6 +253,7 @@ import {
   handleNotificationsOverlayInput,
   type NotificationsOverlayState,
 } from "./use-notifications-overlay-input";
+import { handleQueueOverlayInput } from "./use-queue-overlay-input";
 import { useShellDimensions } from "./use-viewport-policy";
 
 export { buildHelpTabRows, HELP_TABS, helpTabRows, HelpShell } from "./help-shell";
@@ -568,9 +573,8 @@ export function RootOverlayShell({
   // Keyed to this overlay instance, so a fresh History open starts unfocused.
   const [historyFilterOwner, setHistoryFilterOwner] = useState<object | null>(null);
   const historyFilterFocused = historyFilterOwner === overlay;
-  const [historyPendingDelete, setHistoryPendingDelete] = useState<HistoryDeletePending | null>(
-    null,
-  );
+  const historyConfirm = useConfirmStripController();
+  const transitionHistoryConfirm = historyConfirm.transition;
   const [notificationsState, setNotificationsState] = useState<NotificationsOverlayState>(
     createNotificationsOverlayState,
   );
@@ -728,12 +732,10 @@ export function RootOverlayShell({
   // Up Next queue: bumping the tick after a mutation (reorder/remove/clear/restore)
   // recomputes the view from the service's fresh getAll().
   const [queueTick, setQueueTick] = useState(0);
-  // Armed destructive queue action. First press arms and the prompt stays
-  // visible in the footer until the second press mutates (or something
-  // disarms it) — unlike overlayStatus, which self-clears after 2.5s while an
-  // arm would silently survive. Keyed by row id for removes so a resort
-  // between presses cannot retarget the confirm (library-shell convention).
-  const [queueConfirm, setQueueConfirm] = useState<{ key: string; prompt: string } | null>(null);
+  // Armed destructive queue action, owned by the shared ConfirmStrip machine.
+  const queueConfirm = useConfirmStripController();
+  const transitionQueueConfirm = queueConfirm.transition;
+  const downloadConfirm = useConfirmStripController();
   const queuePosterResolver = useMemo(() => {
     const map = new Map<string, string>();
     for (const { titleId, entry } of historySelections) {
@@ -754,6 +756,15 @@ export function RootOverlayShell({
     // oxlint-disable-next-line react/memo-dependencies, react-hooks/exhaustive-deps -- queueTick forces a fresh service read after mutations
     [overlay.type, queueTick, queuePosterResolver, container.queueService],
   );
+  const queueConfirmationVisibleIds = useMemo(
+    () => [...queueView.rows.map((row) => `remove:${row.id}`), "clear-played", "clear-all"],
+    [queueView.rows],
+  );
+
+  useEffect(() => {
+    if (overlay.type !== "queue") return;
+    transitionQueueConfirm({ type: "reconcile", visibleIds: queueConfirmationVisibleIds });
+  }, [overlay.type, transitionQueueConfirm, queueConfirmationVisibleIds]);
   const title = getRootOverlayTitle(overlay, state);
   const subtitle = getRootOverlaySubtitle({
     overlay,
@@ -864,17 +875,17 @@ export function RootOverlayShell({
   } = useShellInput({
     footerActions,
     commands,
-    // The settings surface owns `/` itself — its footer advertises it as
-    // search. Without disabling here, one keystroke opened the palette AND
-    // armed the settings filter (both handlers see commandMode=false on the
-    // same event), and closing the palette left a phantom focused search.
+    // Settings owns `/` as search. Leaving it enabled opened the palette and
+    // the settings filter on the same keystroke. Closing the palette then
+    // left a phantom search.
     disabled: overlay.type === "settings",
     escapeAction: null,
     localTitles: () => collectLocalTitleEntries(container),
     onTitlePick: (entry) => pickPaletteTitle(container, entry),
     onResolve: resolveOverlayPaletteAction,
+    onEscapeWhileOpen: () =>
+      cancelConfirmOnEscape(overlay.type, historyConfirm, queueConfirm, downloadConfirm),
   });
-
   const wrapWithLayout = (node: ReactNode) =>
     wrapOverlayLayout(
       overlayLayout,
@@ -962,6 +973,16 @@ export function RootOverlayShell({
       selectedIndex,
     ],
   );
+  const historyConfirmationVisibleIds = useMemo(
+    () => historyConfirmationTargetIds(historyView.flatRows, historySelections),
+    [historySelections, historyView.flatRows],
+  );
+
+  useEffect(() => {
+    if (overlay.type !== "history") return;
+    transitionHistoryConfirm({ type: "reconcile", visibleIds: historyConfirmationVisibleIds });
+  }, [transitionHistoryConfirm, historyConfirmationVisibleIds, overlay.type]);
+
   // Service revision changes invalidate the durable snapshot; selection-only renders
   // reuse it so synchronous SQLite reads stay out of the keyboard-navigation hot path.
   const notificationRecordsAll = useMemo(() => {
@@ -1056,16 +1077,16 @@ export function RootOverlayShell({
   useEffect(() => {
     if (overlay.type !== "history") return;
     setSelectedIndex(0);
-    setHistoryPendingDelete(null);
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- a new history tab or overlay starts from the first row
-  }, [historyTab, overlay.type]);
+    transitionHistoryConfirm({ type: "cancel" });
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- changing tab is the deliberate reset trigger
+  }, [historyTab, overlay.type, transitionHistoryConfirm]);
 
   // An armed queue destroy must not survive leaving the queue: without this,
   // returning later and pressing the same key once would mutate.
   useEffect(() => {
-    setQueueConfirm(null);
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- leaving the queue overlay must disarm a pending destroy
-  }, [overlay.type]);
+    transitionQueueConfirm({ type: "cancel" });
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- leaving the queue is the deliberate reset trigger
+  }, [overlay.type, transitionQueueConfirm]);
 
   // Discard any play-now intent left staged by an earlier inbox session.
   // Only the palette route consumes the intent (it reads after close), so an
@@ -1351,7 +1372,7 @@ export function RootOverlayShell({
   };
 
   const activateQueueRow = (row: QueueViewRow) => {
-    setQueueConfirm(null);
+    queueConfirm.transition({ type: "cancel" });
     if (row.state === "played" || row.state === "starting") {
       setOverlayStatus(
         row.state === "starting"
@@ -1407,7 +1428,7 @@ export function RootOverlayShell({
     }
   };
 
-  const historyTapsLive = !commandMode && historyPendingDelete === null;
+  const historyTapsLive = !commandMode && historyConfirm.state.kind === "idle";
   const activateHistoryRowAt = (index: number) =>
     activateSelectedHistoryRow({ ...buildHistoryInputContext(), selectedIndex: index });
   const activateNotificationSubPicker = createNotificationSubPickerActivation({
@@ -1455,8 +1476,9 @@ export function RootOverlayShell({
     setSelectedIndex,
     setOverlayStatus: (status) => setOverlayStatus(status),
     onRedraw,
-    pendingDelete: historyPendingDelete,
-    setPendingDelete: setHistoryPendingDelete,
+    confirmState: historyConfirm.getState(),
+    transitionConfirm: historyConfirm.transition,
+    confirmationVisibleIds: historyConfirmationVisibleIds,
     filterQuery,
     filterFocused: historyFilterFocused,
     setFilterFocused: (focused) => setHistoryFilterOwner(focused ? overlay : null),
@@ -1475,7 +1497,7 @@ export function RootOverlayShell({
     const cancelActive = isOverlayCancelActive({
       overlay,
       pickerFilterQuery,
-      historyPendingDelete,
+      historyConfirmationActive: historyConfirm.getState().kind !== "idle",
     });
 
     if ((input === "c" && key.ctrl) || input === "\x03") {
@@ -1519,10 +1541,10 @@ export function RootOverlayShell({
       const inSubtitleGrid = tracksNav.focusedPane === "options" && navCtx.gridColumns > 1;
 
       if (key.escape) {
-        const backAction = resolveOverlayBackStack({
-          nestedPaneActive: tracksNav.focusedPane === "options",
-          pickerOverlay: true,
-        });
+        const backAction = resolveEscStack([
+          ...(tracksNav.focusedPane === "options" ? [{ kind: "nested-pane" } as const] : []),
+          { kind: "picker" },
+        ]);
         if (backAction === "exit-pane") {
           setTracksNav((nav) => tracksPanelNavReducer(nav, { type: "exit-section" }, navCtx));
         } else if (backAction === "cancel-picker") {
@@ -1593,21 +1615,43 @@ export function RootOverlayShell({
       }
       return;
     }
-    if (key.escape && historyFilterFocused && !filterQuery) return setHistoryFilterOwner(null);
     if (key.escape) {
-      const backAction = resolveOverlayBackStack({
+      const escLayers: EscLayer[] = [];
+      if (overlay.type === "history" && historyConfirm.getState().kind !== "idle") {
+        escLayers.push({ kind: "confirm" });
+      }
+      if (overlay.type === "queue" && queueConfirm.getState().kind !== "idle") {
+        escLayers.push({ kind: "confirm" });
+      }
+      if (overlay.type === "notifications" && notificationPlayConfirm) {
+        escLayers.push({ kind: "confirm" });
+      }
+      if (overlay.type === "history" && historySourceChoiceTitleId !== null) {
+        escLayers.push({ kind: "prompt" });
+      }
+      const escapeFilterQuery = isRootMediaPickerOverlay(overlay)
+        ? (overlay.filterQuery ?? "")
+        : filterQuery;
+      escLayers.push({
+        kind: "filter",
+        query: escapeFilterQuery,
+        focused: overlay.type === "history" && historyFilterFocused,
+      });
+      if (overlay.type === "notifications" && notificationActionDedupKey) {
+        escLayers.push({ kind: "picker" });
+      } else if (isRootMediaPickerOverlay(overlay)) {
+        escLayers.push({ kind: "picker" });
+      }
+      escLayers.push(
+        overlay.type === "library" || overlay.type === "downloads"
+          ? { kind: "surface-owned" }
+          : { kind: "overlay" },
+      );
+      const backAction = resolveEscStack(escLayers, {
         cancelActive: shouldHandleOverlayEscape({
           overlay,
           pickerFilterQuery,
         }),
-        filterQuery: isRootMediaPickerOverlay(overlay) ? (overlay.filterQuery ?? "") : filterQuery,
-        confirmationActive:
-          (overlay.type === "notifications" &&
-            Boolean(notificationPlayConfirm || notificationActionDedupKey)) ||
-          (overlay.type === "history" &&
-            (historySourceChoiceTitleId !== null || historyPendingDelete !== null)),
-        pickerOverlay: isRootMediaPickerOverlay(overlay),
-        surfaceOwnsEscape: overlay.type === "library" || overlay.type === "downloads",
       });
 
       if (backAction === "clear-filter") {
@@ -1626,27 +1670,37 @@ export function RootOverlayShell({
       }
 
       if (backAction === "cancel-confirmation") {
-        if (overlay.type === "history" && historySourceChoiceTitleId !== null) {
-          setHistorySourceChoiceTitleId(null);
+        if (overlay.type === "history") {
+          historyConfirm.transition({ type: "cancel" });
           setOverlayStatus(null);
         }
-        if (overlay.type === "history" && historyPendingDelete !== null) {
-          setHistoryPendingDelete(null);
-          setOverlayStatus(null);
+        if (overlay.type === "queue") {
+          queueConfirm.transition({ type: "cancel" });
         }
         if (overlay.type === "notifications" && notificationPlayConfirm) {
           setNotificationPlayConfirm(null);
         }
-        if (overlay.type === "notifications" && notificationActionDedupKey) {
-          setNotificationActionDedupKey(null);
-        }
-        setSelectedIndex(0);
         return;
       }
 
-      if (backAction === "cancel-picker" && isRootMediaPickerOverlay(overlay) && overlay.id) {
-        container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
+      if (backAction === "cancel-prompt") {
+        if (overlay.type === "history" && historySourceChoiceTitleId !== null) {
+          setHistorySourceChoiceTitleId(null);
+          setOverlayStatus(null);
+        }
         return;
+      }
+
+      if (backAction === "cancel-picker") {
+        if (overlay.type === "notifications" && notificationActionDedupKey) {
+          setNotificationActionDedupKey(null);
+          setSelectedIndex(0);
+          return;
+        }
+        if (isRootMediaPickerOverlay(overlay) && overlay.id) {
+          container.stateManager.dispatch({ type: "CANCEL_PICKER", id: overlay.id });
+          return;
+        }
       }
 
       if (backAction === "defer-to-surface" || backAction === "no-op") return;
@@ -1660,173 +1714,21 @@ export function RootOverlayShell({
       }
     }
     if (overlay.type === "queue") {
-      // Handle queue management keys; let arrows / filtering fall through to the
-      // generic choice handlers below (queue is in the optionCount switch).
-      const queueRows = queueView.rows;
-      const refresh = () => setQueueTick((tick) => tick + 1);
-      const sel = queueRows.length === 0 ? -1 : Math.min(selectedIndex, queueRows.length - 1);
-      const row = sel >= 0 ? queueRows[sel] : undefined;
-      if (key.return && row) {
-        activateQueueRow(row);
+      if (
+        handleQueueOverlayInput(input, key, {
+          container,
+          rows: queueView.rows,
+          selectedIndex,
+          setSelectedIndex,
+          setOverlayStatus,
+          refresh: () => setQueueTick((tick) => tick + 1),
+          confirm: queueConfirm,
+          confirmationVisibleIds: queueConfirmationVisibleIds,
+          activateRow: activateQueueRow,
+        }) === "handled"
+      ) {
         return;
       }
-      if (input === "J" && row) {
-        const undoBefore = container.sessionUndo?.captureQueue();
-        setQueueConfirm(null);
-        if (container.queueService.moveDown(row.id))
-          setSelectedIndex((c) => Math.min(c + 1, queueRows.length - 1));
-        container.sessionUndo?.recordQueueChange(
-          "reordered queue",
-          "queue reorder",
-          undoBefore ?? [],
-        );
-        refresh();
-        return;
-      }
-      if (input === "K" && row) {
-        const undoBefore = container.sessionUndo?.captureQueue();
-        setQueueConfirm(null);
-        if (container.queueService.moveUp(row.id)) setSelectedIndex((c) => Math.max(c - 1, 0));
-        container.sessionUndo?.recordQueueChange(
-          "reordered queue",
-          "queue reorder",
-          undoBefore ?? [],
-        );
-        refresh();
-        return;
-      }
-      if (input === "g" && row) {
-        const undoBefore = container.sessionUndo?.captureQueue();
-        setQueueConfirm(null);
-        container.queueService.moveToTop(row.id);
-        container.sessionUndo?.recordQueueChange(
-          "reordered queue",
-          "queue reorder",
-          undoBefore ?? [],
-        );
-        refresh();
-        return;
-      }
-      if (input === "G" && row) {
-        const undoBefore = container.sessionUndo?.captureQueue();
-        setQueueConfirm(null);
-        container.queueService.moveToBottom(row.id);
-        container.sessionUndo?.recordQueueChange(
-          "reordered queue",
-          "queue reorder",
-          undoBefore ?? [],
-        );
-        refresh();
-        return;
-      }
-      if (input.toLowerCase() === "x" && row) {
-        // Destructive, adjacent to Ctrl+C, and one press away from an
-        // accident: arm on first press, remove on the second. Keyed by row id
-        // so a resort between presses cannot retarget the confirm —
-        // same convention as library-shell.
-        const confirmKey = `remove:${row.id}`;
-        if (queueConfirm?.key === confirmKey) {
-          setQueueConfirm(null);
-          const undoBefore = container.sessionUndo?.captureQueue();
-          container.queueService.remove(row.id);
-          container.sessionUndo?.recordQueueChange(
-            "removed from queue",
-            "queue remove",
-            undoBefore ?? [],
-          );
-          setSelectedIndex((c) => Math.max(0, Math.min(c, queueRows.length - 2)));
-          setOverlayStatus(`Removed ${row.title} from Up Next`);
-          refresh();
-        } else {
-          setQueueConfirm({ key: confirmKey, prompt: `Press x again to remove ${row.title}` });
-        }
-        return;
-      }
-      if (input === "C") {
-        const playedCount = queueRows.filter((candidate) => candidate.state === "played").length;
-        if (playedCount === 0) {
-          setQueueConfirm(null);
-          setOverlayStatus("No played items to clear");
-          return;
-        }
-        if (queueConfirm?.key === "clear-played") {
-          setQueueConfirm(null);
-          const undoBefore = container.sessionUndo?.captureQueue();
-          container.queueService.clearPlayed();
-          container.sessionUndo?.recordQueueChange(
-            "cleared played items",
-            "played clear",
-            undoBefore ?? [],
-          );
-          setSelectedIndex(0);
-          setOverlayStatus(`Cleared ${playedCount} played ${playedCount === 1 ? "item" : "items"}`);
-          refresh();
-        } else {
-          setQueueConfirm({
-            key: "clear-played",
-            prompt: `Press C again to clear ${playedCount} played ${playedCount === 1 ? "item" : "items"}`,
-          });
-        }
-        return;
-      }
-      if (input === "c" && !key.ctrl) {
-        if (queueRows.length === 0) {
-          setQueueConfirm(null);
-          setOverlayStatus("Up Next is already empty");
-          return;
-        }
-        if (queueConfirm?.key === "clear-all") {
-          const cleared = queueRows.length;
-          setQueueConfirm(null);
-          const undoBefore = container.sessionUndo?.captureQueue();
-          container.queueService.clear();
-          container.sessionUndo?.recordQueueChange(
-            "cleared queue",
-            "queue clear",
-            undoBefore ?? [],
-          );
-          setSelectedIndex(0);
-          setOverlayStatus(`Cleared ${cleared} ${cleared === 1 ? "item" : "items"} from Up Next`);
-          refresh();
-        } else {
-          setQueueConfirm({
-            key: "clear-all",
-            prompt: `Press c again to clear all ${queueRows.length} ${queueRows.length === 1 ? "item" : "items"}`,
-          });
-        }
-        return;
-      }
-      // `z` undoes the latest journal entry while one is live; with nothing to
-      // undo it falls through to the choice-overlay filter like any letter.
-      if (input === "z" && container.sessionUndo?.hasLiveUndo()) {
-        container.sessionUndo?.undoLatest();
-        refresh();
-        return;
-      }
-      if (input.toLowerCase() === "r") {
-        setQueueConfirm(null);
-        const sessions = container.queueService.listRecoverableSessions();
-        // Sessions come back most-recent-first; naming the target in the status
-        // line is what makes this restore explicit rather than a silent guess.
-        const session = sessions[0];
-        if (!session) {
-          setOverlayStatus("No recoverable queue to restore");
-          return;
-        }
-        const restored = restoreQueueSessionWithResume(
-          buildQueueRestoreDeps(container),
-          session.id,
-        );
-        setOverlayStatus(buildQueueRestoreStatus(restored, sessions.length));
-        refresh();
-        return;
-      }
-      // Arrows + filtering fall through to the generic handlers below. An
-      // armed confirm names one row: moving the selection must disarm it, or
-      // a later press on the original row would delete with no prompt visible
-      // (the status line self-clears after 2.5s while the arm would survive).
-      if ((key.upArrow || key.downArrow) && queueConfirm) setQueueConfirm(null);
-      // No early return — arrows + filtering fall through.
     }
     if (
       overlay.type === "notifications" &&
@@ -2021,7 +1923,7 @@ export function RootOverlayShell({
       if (
         shouldHistoryOverlayAcceptFilterInput({
           overlayType: overlay.type,
-          pendingDelete: historyPendingDelete,
+          confirmationActive: historyConfirm.state.kind !== "idle",
           sourceChoiceTitleId: historySourceChoiceTitleId,
         }) &&
         filterEditor.handleInput(input, key)
@@ -2106,6 +2008,7 @@ export function RootOverlayShell({
           <DownloadManagerContent
             container={container}
             onClose={() => container.stateManager.dispatch({ type: "CLOSE_TOP_OVERLAY" })}
+            confirmController={downloadConfirm}
           />
         </RootContentSuspension>
         {commandMode ? (
@@ -2117,8 +2020,16 @@ export function RootOverlayShell({
           />
         ) : null}
         <ShellFooter
-          taskLabel="x cancel/remove · r retry · Esc closes"
-          actions={footerActions}
+          taskLabel={
+            downloadConfirm.state.kind !== "idle"
+              ? "Confirm download action"
+              : "x cancel/remove · r retry · Esc closes"
+          }
+          actions={
+            confirmStripOwnsInput(downloadConfirm.state)
+              ? confirmStripFooterActions(downloadConfirm.state)
+              : footerActions
+          }
           mode="detailed"
           commandMode={commandMode}
           companionHint
@@ -2262,7 +2173,7 @@ export function RootOverlayShell({
             commandMode
               ? undefined
               : (id, activate) => {
-                  setQueueConfirm(null);
+                  queueConfirm.transition({ type: "cancel" });
                   const index = queueView.rows.findIndex((row) => row.id === id);
                   const row = queueView.rows[index];
                   if (!row) return;
@@ -2274,7 +2185,7 @@ export function RootOverlayShell({
             commandMode
               ? undefined
               : (direction) => {
-                  setQueueConfirm(null);
+                  queueConfirm.transition({ type: "cancel" });
                   setSelectedIndex((current) =>
                     Math.max(
                       0,
@@ -2295,12 +2206,18 @@ export function RootOverlayShell({
             highlightedIndex={highlightedIndex}
           />
         ) : null}
+        <ConfirmStrip state={queueConfirm.state} width={overlayLayout.contentColumns} />
         <ShellFooter
-          // An armed confirm prompt lives here (not only in overlayStatus,
-          // which self-clears after 2.5s) so it stays visible until the second
-          // press or a disarm — notifications-footer pattern.
-          taskLabel={queueConfirm?.prompt ?? overlayStatus ?? "Up Next"}
-          actions={queueFooterActions({ hasRows: queueView.rows.length > 0 })}
+          taskLabel={
+            queueConfirm.state.kind !== "idle"
+              ? "Confirm queue action"
+              : (overlayStatus ?? "Up Next")
+          }
+          actions={
+            confirmStripOwnsInput(queueConfirm.state)
+              ? confirmStripFooterActions(queueConfirm.state)
+              : queueFooterActions({ hasRows: queueView.rows.length > 0 })
+          }
           mode="detailed"
           commandMode={commandMode}
           terminalWidth={cols}
@@ -2336,10 +2253,11 @@ export function RootOverlayShell({
           columns={overlayLayout.contentColumns}
           listWidth={listWidth}
           rowWidth={rowWidth}
-          pendingDelete={historyPendingDelete}
+          confirmationActive={historyConfirm.state.kind !== "idle"}
           onRowSelect={historyTapsLive ? setSelectedIndex : undefined}
           onRowActivate={historyTapsLive ? activateHistoryRowAt : undefined}
         />
+        <ConfirmStrip state={historyConfirm.state} width={overlayLayout.contentColumns} />
         {commandMode ? (
           <CommandPalette
             input={commandInput}
@@ -2350,15 +2268,17 @@ export function RootOverlayShell({
         ) : null}
         <ShellFooter
           taskLabel={
-            historyPendingDelete
-              ? historyPendingDelete.kind === "episode"
-                ? `Delete episode progress for ${sanitizeTerminalText(historyPendingDelete.label)}? y confirm · Esc cancel`
-                : `Delete all history for ${sanitizeTerminalText(historyPendingDelete.label)}? y confirm · Esc cancel`
+            historyConfirm.state.kind !== "idle"
+              ? "Confirm deletion"
               : historySourceChoiceTitleId
                 ? "History · l local, s stream, Esc cancel"
                 : "History"
           }
-          actions={historyFooterActions({ hasRows: historyView.flatRows.length > 0 })}
+          actions={
+            confirmStripOwnsInput(historyConfirm.state)
+              ? confirmStripFooterActions(historyConfirm.state)
+              : historyFooterActions({ hasRows: historyView.flatRows.length > 0 })
+          }
           mode="detailed"
           commandMode={commandMode}
           terminalWidth={cols}

@@ -55,6 +55,8 @@ export function buildTitleControlMenuModel(ctx: TitleControlContext): TitleContr
 
 export type TitleControlMenuOption<T> = {
   readonly value: T;
+  /** Stable row identity consumed by destructive confirmation in ListShell. */
+  readonly id?: string;
   readonly label: string;
   readonly detail?: string;
   readonly shortcut?: string;
@@ -103,6 +105,7 @@ export function titleControlMenuOptions(
     for (const action of group.actions) {
       options.push({
         value: action.id,
+        id: action.id,
         // A leading glyph makes the row scannable before it is read. Disabled
         // rows lose theirs: an unavailable action should not carry the same
         // visual weight as one you can actually pick.

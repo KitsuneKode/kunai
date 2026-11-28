@@ -22,6 +22,8 @@ const PROFILE: DownloadConfirmationProfile = {
 };
 
 function container(): Container {
+  // SAFETY: the confirmation form reads only these two config values; the rest
+  // of Container is never dereferenced by this component.
   return {
     config: { downloadPath: "/dl", autoCleanupGraceDays: 7 },
   } as unknown as Container;

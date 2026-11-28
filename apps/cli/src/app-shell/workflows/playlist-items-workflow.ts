@@ -76,9 +76,11 @@ export async function editPlaylistItems(
         },
         {
           value: "remove" as const,
+          id: `remove:${item.id}`,
           label: "Remove from playlist",
           detail: "Only this playlist changes; history and Up Next are untouched",
           destructive: true,
+          confirmVerb: "remove",
         },
         { value: "back" as const, label: "Back" },
       ],
@@ -86,16 +88,6 @@ export async function editPlaylistItems(
     if (action === "up" || action === "down") {
       service.moveItem(playlist.id, item.id, action === "up" ? -1 : 1);
     } else if (action === "remove") {
-      const confirmed = await chooseFromListShell({
-        title: `Remove ${playlistItemLabel(item)}?`,
-        subtitle: `From "${playlist.name}" only`,
-        actionContext,
-        options: [
-          { value: true, label: "Remove", destructive: true },
-          { value: false, label: "Keep" },
-        ],
-      });
-      if (!confirmed) continue;
       service.removeItem(item.id);
       focusId = items[index + 1]?.id ?? items[index - 1]?.id;
       container.stateManager.dispatch({

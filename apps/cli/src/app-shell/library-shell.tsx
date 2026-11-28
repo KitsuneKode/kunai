@@ -2,6 +2,12 @@ import { DownloadManagerContent } from "@/app-shell/download-manager-shell";
 import { useConnectivityOnline } from "@/app-shell/hooks/use-connectivity-online";
 import { useRailPoster } from "@/app-shell/hooks/use-rail-poster";
 import { getPickerChromeRows, getPickerListMaxVisible } from "@/app-shell/layout-policy";
+import {
+  armLibraryDeletion,
+  executeLibraryDeletion,
+  refreshLibraryEntries,
+  toggleLibraryCleanupProtection,
+} from "@/app-shell/library-offline-actions";
 import { libraryResumeCardCopy } from "@/app-shell/library-resume-card-copy";
 import {
   buildLibraryFlatRows,
@@ -11,6 +17,14 @@ import {
   type LibraryShelfSection,
 } from "@/app-shell/library-shelf-model";
 import { LibraryTitleDetail } from "@/app-shell/library-title-detail";
+import {
+  buildLibraryPreviewRailModel,
+  formatLibrarySeasonCode,
+  formatLibraryStatus,
+  formatLibraryTitle,
+  isLibraryGroupProtected,
+  selectOfflineGroupEntries,
+} from "@/app-shell/library-view-model";
 import { MouseTarget } from "@/app-shell/mouse/MouseRegions";
 import {
   libraryFooterActions,
@@ -18,41 +32,40 @@ import {
 } from "@/app-shell/overlay-footer-actions";
 import { plainModeEnabled } from "@/app-shell/plain-mode";
 import { ClaudeTabRow } from "@/app-shell/primitives/ClaudeTabRow";
+import { ConfirmStrip } from "@/app-shell/primitives/ConfirmStrip";
+import {
+  confirmStripBlocksPointer,
+  confirmStripFooterActions,
+  confirmStripKeyDecision,
+  confirmStripOwnsInput,
+} from "@/app-shell/primitives/ConfirmStrip.model";
 import {
   buildMediaListRowColumns,
   computeMediaListRowLayout,
 } from "@/app-shell/primitives/list-row-layout";
 import { ListRow } from "@/app-shell/primitives/ListRow";
 import { MediaListShell } from "@/app-shell/primitives/MediaListShell";
-import {
-  shouldRenderPreviewRail,
-  type PreviewFact,
-  type PreviewRailModel,
-} from "@/app-shell/primitives/PreviewRail.model";
+import { shouldRenderPreviewRail } from "@/app-shell/primitives/PreviewRail.model";
 import { ResumeCard } from "@/app-shell/primitives/ResumeCard";
 import { SectionGroup } from "@/app-shell/primitives/SectionGroup";
 import { StateBlock } from "@/app-shell/primitives/StateBlock";
+import {
+  useConfirmStripController,
+  type ConfirmStripController,
+} from "@/app-shell/primitives/use-confirm-strip";
 import { ResizeBlocker, ShellFooter, selectFooterActions } from "@/app-shell/shell-primitives";
-import { getWindowStart, truncateLine } from "@/app-shell/shell-text";
+import { getWindowStart } from "@/app-shell/shell-text";
 import { palette } from "@/app-shell/shell-theme";
 import { useDebouncedViewportPolicy } from "@/app-shell/use-viewport-policy";
 import type { Container } from "@/container";
-import { formatMediaItemCount, presentMedia } from "@/domain/media/media-presentation";
 import type { OfflineLibraryShelfGroup } from "@/domain/offline/OfflineLibraryEngine";
 import { createOfflineLibraryEngine } from "@/domain/offline/OfflineLibraryEngine";
-import {
-  historyContentType,
-  isFinished,
-  readLatestHistoryByTitle,
-} from "@/services/continuation/history-progress";
-import {
-  deleteDownloads,
-  formatDownloadRemovalFeedback,
-} from "@/services/download/download-removal";
+import { readLatestHistoryByTitle } from "@/services/continuation/history-progress";
 import type { HistoryProgress } from "@/services/storage/storage-read-models";
 import { Box, Text, useInput } from "ink";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
+import { resolveEscStack, type EscLayer } from "./esc-stack";
 import { routeListFilterKey } from "./list-filter-keys";
 import { useRootContentSuspended } from "./RootContentSuspension";
 
@@ -79,6 +92,9 @@ export function LibraryShell({
   initialView?: TabId;
 }) {
   const [tab, setTab] = useState<TabId>(initialView);
+  const libraryConfirm = useConfirmStripController();
+  const downloadConfirm = useConfirmStripController();
+  const activeConfirm = tab === "library" ? libraryConfirm : downloadConfirm;
   const [downloadJobCount, setDownloadJobCount] = useState(0);
   const [libraryRowCount, setLibraryRowCount] = useState(0);
   const downloadsEnabled = container.config.downloadsEnabled;
@@ -130,6 +146,7 @@ export function LibraryShell({
             onClose={onClose}
             onNavigateToLibrary={() => setTab("library")}
             showSelectionHints={false}
+            confirmController={downloadConfirm}
           />
         ) : (
           <LibraryTab
@@ -137,6 +154,7 @@ export function LibraryShell({
             onClose={onClose}
             onNavigateToQueue={() => setTab("queue")}
             onRowCountChange={setLibraryRowCount}
+            confirmController={libraryConfirm}
           />
         )}
       </Box>
@@ -144,13 +162,17 @@ export function LibraryShell({
         <ShellFooter
           taskLabel={tab === "library" ? "Library" : downloadJobCount > 0 ? "Downloads" : "Queue"}
           mode="minimal"
-          actions={selectFooterActions(
-            tab === "library"
-              ? libraryFooterActions({ hasRows: libraryRowCount > 0 })
-              : downloadQueueFooterActions({ hasJobs: downloadJobCount > 0 }),
-            "minimal",
-            viewport.columns,
-          )}
+          actions={
+            confirmStripOwnsInput(activeConfirm.state)
+              ? confirmStripFooterActions(activeConfirm.state)
+              : selectFooterActions(
+                  tab === "library"
+                    ? libraryFooterActions({ hasRows: libraryRowCount > 0 })
+                    : downloadQueueFooterActions({ hasJobs: downloadJobCount > 0 }),
+                  "minimal",
+                  viewport.columns,
+                )
+          }
           terminalWidth={viewport.columns}
           companionHint
         />
@@ -180,12 +202,15 @@ function LibraryTab({
   onClose,
   onNavigateToQueue,
   onRowCountChange,
+  confirmController,
 }: {
   container: Container;
   onClose: () => void;
   onNavigateToQueue: () => void;
   onRowCountChange: (count: number) => void;
+  confirmController: ConfirmStripController;
 }) {
+  const confirm = confirmController;
   const suspended = useRootContentSuspended();
   const [libraryView, setLibraryView] = useState<LibraryView>("titles");
   const [detailGroup, setDetailGroup] = useState<OfflineLibraryShelfGroup | null>(null);
@@ -195,7 +220,6 @@ function LibraryTab({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null);
   const [historyMap, setHistoryMap] = useState<Record<string, HistoryProgress>>({});
   const [filterQuery, setFilterQuery] = useState("");
   const [filterFocused, setFilterFocused] = useState(false);
@@ -270,30 +294,36 @@ function LibraryTab({
   const selectedRow = totalRows > 0 ? flatRows[safeIndex] : null;
   const selectedOfflineGroup = selectedRow?.group ?? null;
 
+  useEffect(() => {
+    confirm.transition({
+      type: "reconcile",
+      visibleIds: flatRows.map((row) => row.group.key),
+    });
+  }, [confirm, flatRows]);
+
   const detailEntries = useMemo(() => {
     if (!detailGroup || !entries) return [];
     return selectOfflineGroupEntries(detailGroup, entries);
   }, [detailGroup, entries]);
 
-  const refreshEntries = () => {
-    void (async () => {
-      const result = await container.offlineLibraryService.listCompletedEntries(200);
-      setEntries(result);
-      if (detailGroup && selectOfflineGroupEntries(detailGroup, result).length === 0) {
-        setLibraryView("titles");
-        setDetailGroup(null);
-      }
-    })();
-  };
+  const refreshEntries = () =>
+    refreshLibraryEntries({
+      container,
+      detailGroup,
+      setEntries,
+      setLibraryView,
+      setDetailGroup,
+      countEntries: (group, nextEntries) => selectOfflineGroupEntries(group, nextEntries).length,
+    });
 
   const openTitle = (group: OfflineLibraryShelfGroup) => {
-    setConfirmDeleteKey(null);
+    confirm.transition({ type: "cancel" });
     setDetailGroup(group);
     setLibraryView("title-detail");
   };
   const scrollTitles = (direction: "up" | "down") => {
     priorPointerKey.current = null;
-    setConfirmDeleteKey(null);
+    confirm.transition({ type: "cancel" });
     setSelectedIndex((current) =>
       Math.max(0, Math.min(totalRows - 1, current + (direction === "up" ? -1 : 1))),
     );
@@ -301,24 +331,47 @@ function LibraryTab({
 
   useInput(
     (input, key) => {
+      const confirmState = confirm.getState();
       priorPointerKey.current = null;
-      // Esc cancels an armed delete-confirm first (web-routing back: undo the
-      // pending state before leaving the surface). Only when nothing is armed does
-      // esc close the Library overlay.
+      // Esc is resolved in one place: an armed destructive action outranks a
+      // non-empty filter, and an empty filter focus is not a layer at all.
       if (key.escape) {
-        if (confirmDeleteKey) {
-          setConfirmDeleteKey(null);
-          return;
-        }
-        // Then leave the filter, then the surface.
-        if (filterFocused || filterQuery) {
+        const layers: EscLayer[] = [
+          ...(confirmState.kind !== "idle" ? [{ kind: "confirm" } as const] : []),
+          { kind: "filter", query: filterQuery },
+          { kind: "overlay" },
+        ];
+        const action = resolveEscStack(layers);
+        if (action === "cancel-confirmation") confirm.transition({ type: "cancel" });
+        if (action === "clear-filter") {
           setFilterFocused(false);
           setFilterQuery("");
-          return;
         }
-        onClose();
+        if (action === "close-overlay") onClose();
         return;
       }
+      const confirmDecision = confirmStripKeyDecision(confirmState.kind, input, key, {
+        continueOnVerticalArrows: true,
+      });
+      if (confirmDecision === "hold") return;
+      if (confirmDecision === "execute") {
+        const confirmation = confirm.transition({ type: "confirm" });
+        const effect = confirmation.effect;
+        if (!effect) return;
+        executeLibraryDeletion({
+          container,
+          effect,
+          groups: flatRows,
+          confirm,
+          setEntries,
+        });
+        return;
+      }
+      if (confirmDecision === "cancel") {
+        confirm.transition({ type: "cancel" });
+        return;
+      }
+      if (confirmDecision === "cancel-and-continue") confirm.transition({ type: "cancel" });
       const filterRoute = routeListFilterKey(input, key, {
         focused: filterFocused,
         query: filterQuery,
@@ -346,64 +399,33 @@ function LibraryTab({
       }
       if (totalRows === 0) return;
       if (key.upArrow) {
-        setConfirmDeleteKey(null);
+        confirm.transition({ type: "cancel" });
         setSelectedIndex((prev) => Math.max(0, prev - 1));
         return;
       }
       if (key.downArrow) {
-        setConfirmDeleteKey(null);
+        confirm.transition({ type: "cancel" });
         setSelectedIndex((prev) => Math.min(totalRows - 1, prev + 1));
         return;
       }
       if (input === "x" || key.delete) {
         if (!selectedOfflineGroup) return;
-        if (confirmDeleteKey === selectedOfflineGroup.key) {
-          setConfirmDeleteKey(null);
-          const groupEntryIds = selectedOfflineGroup.entries.map((entry) => entry.jobId);
-          void deleteDownloads(container.downloadService, groupEntryIds, true).then((summary) => {
-            const removed = new Set(summary.removedJobIds);
-            setEntries((prev) =>
-              prev ? prev.filter((entry) => !removed.has(entry.job.id)) : null,
-            );
-            return container.stateManager.dispatch({
-              type: "SET_PLAYBACK_FEEDBACK",
-              note: formatDownloadRemovalFeedback(summary),
-            });
-          });
-        } else {
-          setConfirmDeleteKey(selectedOfflineGroup.key);
-        }
+        armLibraryDeletion({
+          group: selectedOfflineGroup,
+          visibleIds: flatRows.map((row) => row.group.key),
+          confirm,
+        });
         return;
       }
       if (input === "p" || input === "P") {
         if (!selectedOfflineGroup) return;
-        const groupEntryIds = selectedOfflineGroup.entries.map((entry) => entry.jobId);
-        const protectedSet = new Set(container.config.protectedDownloadJobIds);
-        const allProtected = groupEntryIds.every((id) => protectedSet.has(id));
-        void (async () => {
-          const updated = new Set(container.config.protectedDownloadJobIds);
-          for (const jobId of groupEntryIds) {
-            if (allProtected) updated.delete(jobId);
-            else updated.add(jobId);
-          }
-          await container.config.update({ protectedDownloadJobIds: [...updated] });
-          await container.config.save();
-        })();
-        container.stateManager.dispatch({
-          type: "SET_PLAYBACK_FEEDBACK",
-          note: allProtected
-            ? `Removed cleanup protection: ${selectedOfflineGroup.titleName}`
-            : `Protected from cleanup: ${selectedOfflineGroup.titleName}`,
-        });
+        toggleLibraryCleanupProtection({ container, group: selectedOfflineGroup });
         return;
       }
       if (key.return) {
         if (!selectedOfflineGroup) return;
         openTitle(selectedOfflineGroup);
         return;
-      }
-      if (confirmDeleteKey !== null) {
-        setConfirmDeleteKey(null);
       }
     },
     { isActive: titlesActive && !suspended },
@@ -531,9 +553,13 @@ function LibraryTab({
           <MouseTarget
             key={row.group.key}
             id={`library:row:${row.group.key}`}
-            onWheel={scrollTitles}
+            onWheel={(direction) => {
+              if (confirmStripBlocksPointer(confirm.getState().kind)) return;
+              scrollTitles(direction);
+            }}
             onClick={() => {
-              setConfirmDeleteKey(null);
+              if (confirmStripBlocksPointer(confirm.getState().kind)) return;
+              confirm.transition({ type: "cancel" });
               if (item.flatIndex !== safeIndex || priorPointerKey.current !== row.group.key) {
                 priorPointerKey.current = row.group.key;
                 setSelectedIndex(item.flatIndex);
@@ -562,15 +588,8 @@ function LibraryTab({
       {showScrollDown ? (
         <Text color={palette.dim}>{plainModeEnabled() ? "more below" : " ▼ ..."}</Text>
       ) : null}
-      {selectedOfflineGroup && confirmDeleteKey === selectedOfflineGroup.key ? (
-        <Box marginTop={1}>
-          <Text color={palette.accentDeep}>
-            {plainModeEnabled() ? "Warning: " : "⚠ "}Press x again to delete{" "}
-            {selectedOfflineGroup.titleName} and all local files
-          </Text>
-        </Box>
-      ) : null}
-      {selectedOfflineGroup && confirmDeleteKey !== selectedOfflineGroup.key ? (
+      <ConfirmStrip state={confirm.state} width={rowWidth} />
+      {selectedOfflineGroup && !confirmStripOwnsInput(confirm.state) ? (
         <ResumeCard
           {...libraryResumeCardCopy(selectedOfflineGroup)}
           width={Math.min(rowWidth, 56)}
@@ -624,163 +643,4 @@ function buildVisibleLibraryItems(
     }
   }
   return items;
-}
-
-function isLibraryGroupProtected(
-  group: OfflineLibraryShelfGroup,
-  protectedIds: ReadonlySet<string>,
-): boolean {
-  return group.entries.some((entry) => protectedIds.has(entry.jobId));
-}
-
-function offlineGroupJobIdSet(group: OfflineLibraryShelfGroup): ReadonlySet<string> {
-  return new Set(group.entries.map((entry) => entry.jobId));
-}
-
-function selectOfflineGroupEntries(
-  group: OfflineLibraryShelfGroup,
-  entries: readonly import("@/services/offline/offline-library").OfflineLibraryEntry[],
-): readonly import("@/services/offline/offline-library").OfflineLibraryEntry[] {
-  const jobIds = offlineGroupJobIdSet(group);
-  return entries.filter((entry) => jobIds.has(entry.job.id));
-}
-
-function formatLibraryTitle(group: OfflineLibraryShelfGroup, protectedTitle: boolean): string {
-  const plain = plainModeEnabled();
-  const shield = protectedTitle ? (plain ? " [protected]" : " ⚲") : "";
-  const downloaded =
-    group.readyCount > 0 && group.entries.length > 0
-      ? plain
-        ? ` ${group.readyCount}/${group.entries.length} ready`
-        : ` ↓ ${group.readyCount}/${group.entries.length}`
-      : "";
-  return `${group.titleName}${downloaded}${shield}`;
-}
-
-/**
- * The compact position column for a shelf row.
- *
- * Season facts come from the canonical position each entry already carries.
- * They used to be recovered by running a regex over the entry's display label,
- * which quietly reported a season for any movie stored with a legacy synthetic
- * season 1 slot.
- */
-function formatLibrarySeasonCode(group: OfflineLibraryShelfGroup): string {
-  const seasons = new Set(
-    group.entries.flatMap((entry) =>
-      entry.presentation.position.kind === "episode" &&
-      entry.presentation.position.seasonIsMeaningful &&
-      entry.presentation.position.season !== undefined
-        ? [entry.presentation.position.season]
-        : [],
-    ),
-  );
-  if (seasons.size === 1) {
-    const season = [...seasons][0];
-    return season === undefined ? "—" : `S${String(season).padStart(2, "0")}`;
-  }
-  const only = group.entries.length === 1 ? group.entries[0]?.presentation : undefined;
-  if (only) return only.positionLabel ?? only.kindLabel;
-  return "—";
-}
-
-function formatLibraryStatus(row: LibraryShelfRow, historyMap: Record<string, HistoryProgress>) {
-  const { group } = row;
-  const plain = plainModeEnabled();
-  const hist = historyMap[group.titleId];
-  if (hist && !isFinished(hist) && (hist.durationSeconds ?? 0) > 0) {
-    const pct = Math.round((hist.positionSeconds / (hist.durationSeconds ?? 0)) * 100);
-    if (pct > 0 && pct < 95) {
-      return { label: plain ? `${pct}%` : `▸ ${pct}%`, color: palette.accent, dim: false };
-    }
-  }
-  if (group.readyCount > 0) {
-    const count = formatMediaItemCount({
-      mediaKind: group.mediaKind,
-      contentType: group.contentType,
-      count: group.readyCount,
-    });
-    return {
-      label: plain ? count : `↓ ${count}`,
-      color: palette.ok,
-      dim: false,
-    };
-  }
-  if (group.issueCount > 0) {
-    const issues = group.issueCount === 1 ? "1 issue" : `${group.issueCount} issues`;
-    return {
-      label: plain ? issues : `${group.issueCount}⚠`,
-      color: palette.accentDeep,
-      dim: false,
-    };
-  }
-  return { label: "needs attention", color: palette.dim, dim: true };
-}
-
-function buildLibraryPreviewRailModel(
-  group: OfflineLibraryShelfGroup,
-  historyMap: Record<string, HistoryProgress>,
-  entries: readonly import("@/services/offline/offline-library").OfflineLibraryEntry[],
-  protectedIds: ReadonlySet<string>,
-): PreviewRailModel {
-  const hist = historyMap[group.titleId];
-  const protectedTitle = isLibraryGroupProtected(group, protectedIds);
-  const sizeBytes = selectOfflineGroupEntries(group, entries).reduce(
-    (sum, entry) => sum + (entry.job.fileSize ?? 0),
-    0,
-  );
-  const sizeLabel =
-    sizeBytes >= 1_073_741_824
-      ? `${(sizeBytes / 1_073_741_824).toFixed(1)} GB`
-      : sizeBytes > 0
-        ? `${(sizeBytes / 1_048_576).toFixed(1)} MB`
-        : "—";
-
-  const facts: PreviewFact[] = [
-    {
-      label: "offline",
-      value: `${group.readyCount} of ${formatMediaItemCount({
-        mediaKind: group.mediaKind,
-        contentType: group.contentType,
-        count: group.entries.length,
-      })}`,
-      tone: group.readyCount > 0 ? "success" : "warning",
-    },
-    {
-      label: "size",
-      value: sizeLabel,
-      tone: "muted",
-    },
-  ];
-
-  if (hist && !isFinished(hist) && (hist.durationSeconds ?? 0) > 0) {
-    const pct = Math.round((hist.positionSeconds / (hist.durationSeconds ?? 0)) * 100);
-    const histPresentation = presentMedia({
-      title: group.titleName,
-      mediaKind: historyContentType(hist),
-      season: hist.season,
-      episode: hist.episode ?? hist.absoluteEpisode,
-    });
-    const ep = histPresentation.positionLabel ?? histPresentation.kindLabel;
-    facts.push({
-      label: "progress",
-      value: `${ep} · ${pct}%`.trim(),
-      tone: "warning",
-    });
-  }
-
-  facts.push({
-    label: "protected",
-    value: protectedTitle ? "yes" : "no",
-    tone: protectedTitle ? "success" : "muted",
-  });
-
-  return {
-    title: group.titleName,
-    subtitle: truncateLine(group.artifactSummary, 40),
-    overview: group.detail,
-    posterState: group.previewImageUrl ? "ready" : "none",
-    posterUrl: group.previewImageUrl,
-    facts,
-  };
 }

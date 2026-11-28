@@ -49,7 +49,17 @@ test("injected keys reach Ink's reader as typed bytes", () => {
 
 function KeyLog({ keys }: { readonly keys: string[] }) {
   useInput((input, key) => {
-    keys.push(key.return ? "enter" : key.upArrow ? "up" : key.downArrow ? "down" : input);
+    keys.push(
+      key.return
+        ? "enter"
+        : key.escape
+          ? "esc"
+          : key.upArrow
+            ? "up"
+            : key.downArrow
+              ? "down"
+              : input,
+    );
   });
   return null;
 }
@@ -83,6 +93,42 @@ test("clicking a footer hint presses its key; destructive hints stay keyboard-on
     const deleteId = chip("delete");
     if (deleteId) handle.click(deleteId);
     expect(keys).toEqual(["r", "enter"]);
+  } finally {
+    handle.unmount();
+  }
+});
+
+test("clicking explicitly confirmed destructive footer chips injects y and Escape bytes", async () => {
+  const keys: string[] = [];
+  const handle = renderWithPointer(
+    <>
+      <KeyLog keys={keys} />
+      <ShellFooter
+        taskLabel="Confirm"
+        actions={[
+          { key: "y", label: "delete", allowMouseDestructive: true },
+          { key: "esc", label: "cancel", allowMouseDestructive: true },
+        ]}
+      />
+    </>,
+    { columns: 100, rows: 20 },
+  );
+  try {
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const injected: string[] = [];
+    const pressKey = handle.dispatcher.pressKey;
+    handle.dispatcher.pressKey = (keysToInject) => {
+      injected.push(keysToInject);
+      pressKey?.(keysToInject);
+    };
+    const ids = handle.dispatcher.debugRegions().map((region) => region.id);
+    const chip = (label: string) => ids.find((id) => id.endsWith(`:${label}`));
+    handle.click(chip("delete") ?? "missing");
+    handle.click(chip("cancel") ?? "missing");
+    expect(injected).toEqual(["y", "\x1b"]);
+    expect(keys).toEqual(["y"]);
   } finally {
     handle.unmount();
   }
