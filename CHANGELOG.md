@@ -44,10 +44,6 @@ persistence, downloads and native installation.
   Downloads, the guide, the checklist, the Schedule and a title's details. A
   click on any key hint presses that key. Portrait phone terminals get a
   single-column layout instead of a resize prompt.
-- Use one inline destructive confirmation strip across History, Up Next, Library,
-  Downloads, and list pickers. `y` confirms and `Esc` cancels before filters or
-  overlay close; moving or refreshing rows disarms instead of transferring the
-  action, and playlist removals no longer open a full-screen modal.
 
 ### Catalog and settings
 
