@@ -208,6 +208,7 @@ export function CommandPalette({
   maxVisible: maxVisibleProp,
   width,
   catalogSearch = false,
+  catalogSearchOffline = false,
 }: {
   input: string;
   pointer?: PalettePointerActions;
@@ -220,6 +221,8 @@ export function CommandPalette({
   width?: number;
   /** Append the catalog-search escape hatch when no prefix match exists. */
   catalogSearch?: boolean;
+  /** Show the escape hatch but explain that catalog search is offline-disabled. */
+  catalogSearchOffline?: boolean;
 }) {
   const pointerContext = React.useContext(PalettePointerContext);
   const pointer = pointerProp ?? pointerContext;
@@ -228,7 +231,10 @@ export function CommandPalette({
   const { cols: shellColumns, rows: terminalRows } = useShellDimensions();
   const shellWidth = Math.max(28, width ?? shellColumns);
   const maxVisible = maxVisibleProp ?? getPlaybackCommandPaletteMaxVisible(terminalRows);
-  const rows = buildPaletteRows(input, commands, titleMatches, { catalogSearch });
+  const rows = buildPaletteRows(input, commands, titleMatches, {
+    catalogSearch,
+    offline: catalogSearchOffline,
+  });
   const showGrouped = input.trim().length === 0 && rows.length > 0;
   const selectedRow = rows[highlightedIndex];
   const selectedTitle = selectedRow?.kind === "title" ? selectedRow.match.entry : undefined;
@@ -349,7 +355,11 @@ export function CommandPalette({
     );
   };
 
-  const renderSearch = (query: string, absoluteIndex: number) => {
+  const renderSearch = (
+    row: Extract<PaletteRankedRow, { kind: "search" }>,
+    absoluteIndex: number,
+  ) => {
+    const query = row.query;
     const selected = absoluteIndex === highlightedIndex;
     const label = `Search catalog for "${query}"`;
     if (plain) {
@@ -359,7 +369,7 @@ export function CommandPalette({
           color={selected ? palette.text : palette.textDim}
           bold={selected}
         >
-          {`${selectionPrefix(selected, true)}${label}`}
+          {`${selectionPrefix(selected, true)}${label}${row.disabledReason && selected ? ` — ${row.disabledReason}` : ""}`}
         </Text>
       );
     }
@@ -378,7 +388,10 @@ export function CommandPalette({
           <Text color={selected ? palette.accent : palette.text} bold={selected} wrap="truncate">
             {truncateLine(label, contentWidth - 2)}
           </Text>
-          <Text color={palette.dim}> enter</Text>
+          <Text color={palette.dim}>
+            {" "}
+            {selected && row.disabledReason ? row.disabledReason : "enter"}
+          </Text>
         </Box>
       </MouseTarget>
     );
@@ -387,7 +400,7 @@ export function CommandPalette({
   const renderRow = (row: PaletteRankedRow, absoluteIndex: number) => {
     if (row.kind === "command") return renderCommand(row.command, absoluteIndex);
     if (row.kind === "title") return renderTitle(row.match, absoluteIndex);
-    return renderSearch(row.query, absoluteIndex);
+    return renderSearch(row, absoluteIndex);
   };
 
   const renderedRows: React.ReactNode[] = [];

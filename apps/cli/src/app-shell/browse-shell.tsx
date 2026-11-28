@@ -19,7 +19,6 @@ import {
   type ScoredSuggestion,
   type SearchSuggestion,
 } from "@/domain/search/suggestion-engine";
-import { applyOfflineCommandAvailability } from "@/domain/session/offline-command-availability";
 import type { SearchResult } from "@/domain/types";
 import { fetchTitleDetail, peekTitleDetail } from "@/services/catalog/TitleDetailService";
 import {
@@ -137,7 +136,7 @@ import {
   TRANSIENT_ROW_SLOTS,
 } from "./layout-policy";
 import { MouseTarget, useMouseEnabled, useMouseRegion } from "./mouse/MouseRegions";
-import { useOfflineMode } from "./offline-mode-context";
+import { useOfflineBrowseCommands } from "./offline-mode-context";
 import type { BrowseOverlay } from "./overlay-panel";
 import { OverlayPanel } from "./overlay-panel";
 import { plainModeEnabled, selectionPrefix } from "./plain-mode";
@@ -188,7 +187,6 @@ import { useDebouncedViewportPolicy } from "./use-viewport-policy";
 export type { BrowseQueryDraft, DetailsSheetLocalContext } from "./browse-shell-props";
 
 const EMPTY_TITLE_ENTRIES: readonly LocalTitleEntry[] = [];
-
 const NO_LOCAL_DETAILS: DetailsSheetLocalContext = { history: null, availability: null };
 
 export function BrowseShell<T>({
@@ -237,12 +235,7 @@ export function BrowseShell<T>({
   localTitles,
 }: BrowseShellProps<T>) {
   recordRender("browse");
-  const offlineMode = useOfflineMode();
-  const commands = useMemo(
-    () =>
-      baseCommands.map((command) => applyOfflineCommandAvailability(command, offlineMode.active)),
-    [baseCommands, offlineMode.active],
-  );
+  const { commands, catalogSearchOptions, offlineMode } = useOfflineBrowseCommands(baseCommands);
   const viewport = useDebouncedViewportPolicy("browse", {
     zen: settings?.zenMode,
   });
@@ -290,7 +283,7 @@ export function BrowseShell<T>({
           nextValue,
           commands,
           matchLocalTitles(titleEntries, nextValue),
-          { catalogSearch: true },
+          catalogSearchOptions,
         ),
       );
     },
@@ -554,12 +547,10 @@ export function BrowseShell<T>({
         commandInput,
         commands,
         matchLocalTitles(entries, commandInput),
-        {
-          catalogSearch: true,
-        },
+        catalogSearchOptions,
       ),
     );
-  }, [commandInput, commands, localTitles]);
+  }, [catalogSearchOptions, commandInput, commands, localTitles]);
 
   const updateQuery = useCallback(
     (nextValue: string) => {
@@ -1420,9 +1411,13 @@ export function BrowseShell<T>({
       submittedInput === commandInput
         ? titleMatches
         : matchLocalTitles(titleEntries, submittedInput);
-    const row = resolveHighlightedPaletteRow(submittedInput, commands, submittedTitles, index, {
-      catalogSearch: true,
-    });
+    const row = resolveHighlightedPaletteRow(
+      submittedInput,
+      commands,
+      submittedTitles,
+      index,
+      catalogSearchOptions,
+    );
     if (row?.kind === "command" && row.command.enabled) {
       setCommandMode(false);
       onPaletteCommand?.(row.command.id);
@@ -1438,7 +1433,7 @@ export function BrowseShell<T>({
       setHighlightedCommandIndex(0);
       onTitlePick?.(row.match.entry);
     }
-    if (row?.kind === "search") {
+    if (row?.kind === "search" && !row.disabledReason) {
       setCommandMode(false);
       setCommandInput("");
       setHighlightedCommandIndex(0);
@@ -1565,9 +1560,12 @@ export function BrowseShell<T>({
         }
         return;
       }
-      const selectable = paletteSelectableCount(commandInput, commands, titleMatches, {
-        catalogSearch: true,
-      });
+      const selectable = paletteSelectableCount(
+        commandInput,
+        commands,
+        titleMatches,
+        catalogSearchOptions,
+      );
       if (key.upArrow) {
         setHighlightedCommandIndex((current) => movePaletteSelection(selectable, current, -1));
         return;
@@ -2626,6 +2624,7 @@ export function BrowseShell<T>({
           commands={commands}
           highlightedIndex={highlightedCommandIndex}
           catalogSearch
+          catalogSearchOffline={offlineMode.active}
           titleMatches={titleMatches}
           maxVisible={getBrowseCommandPaletteMaxVisible(
             viewport.rows,

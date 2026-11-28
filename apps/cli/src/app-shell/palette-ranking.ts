@@ -1,5 +1,6 @@
 import type { LocalTitleMatch } from "@/domain/palette/local-title-index";
 import { fuzzyMatchScore } from "@/domain/session/fuzzy-match";
+import { OFFLINE_CONNECTION_REASON } from "@/domain/session/offline-command-availability";
 
 import type { AppCommandId, ResolvedAppCommand } from "./commands";
 
@@ -32,7 +33,7 @@ type PaletteCommandTierBuckets = {
 export type PaletteRankedRow =
   | { readonly kind: "command"; readonly command: ResolvedAppCommand }
   | { readonly kind: "title"; readonly match: LocalTitleMatch }
-  | { readonly kind: "search"; readonly query: string };
+  | { readonly kind: "search"; readonly query: string; readonly disabledReason?: string };
 
 export function normalizePaletteQuery(input: string): string {
   return input.trim().replace(/^\/+/, "").toLowerCase();
@@ -107,7 +108,7 @@ export function buildPaletteRows(
   input: string,
   commands: readonly ResolvedAppCommand[],
   titleMatches: readonly LocalTitleMatch[],
-  options: { readonly catalogSearch?: boolean } = {},
+  options: { readonly catalogSearch?: boolean; readonly offline?: boolean } = {},
 ): readonly PaletteRankedRow[] {
   const query = normalizePaletteQuery(input);
   if (!query) {
@@ -145,7 +146,11 @@ export function buildPaletteRows(
 
   const hasPrefixMatch = exactCommands.length + prefixCommands.length + prefixTitles.length > 0;
   if (options.catalogSearch && query.length >= 2 && !hasPrefixMatch) {
-    rows.push({ kind: "search", query });
+    rows.push({
+      kind: "search",
+      query,
+      disabledReason: options.offline ? OFFLINE_CONNECTION_REASON : undefined,
+    });
   }
   return rows;
 }
@@ -159,7 +164,7 @@ export function defaultPaletteSelectionIndex(
   input: string,
   commands: readonly ResolvedAppCommand[],
   titleMatches: readonly LocalTitleMatch[],
-  options: { readonly catalogSearch?: boolean } = {},
+  options: { readonly catalogSearch?: boolean; readonly offline?: boolean } = {},
 ): number {
   const rows = buildPaletteRows(input, commands, titleMatches, options);
   const fallbackIndex = rows.findIndex((row) => row.kind === "search");

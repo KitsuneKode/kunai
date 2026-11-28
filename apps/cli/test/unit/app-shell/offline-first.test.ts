@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { buildPaletteRows } from "@/app-shell/palette-ranking";
 import { applyOfflineCommandAvailability } from "@/domain/session/offline-command-availability";
 import { deriveOfflineMode } from "@/domain/session/offline-mode";
 
@@ -30,5 +31,14 @@ describe("offline-first shell policy", () => {
       reason: "needs a connection",
     });
     expect(applyOfflineCommandAvailability(command, false).enabled).toBe(true);
+  });
+
+  test("catalog fallback stays visible offline but carries its connection reason", () => {
+    const rows = buildPaletteRows("smoke", [], [], { catalogSearch: true, offline: true });
+    expect(rows.at(-1)).toMatchObject({
+      kind: "search",
+      query: "smoke",
+      disabledReason: "needs a connection",
+    });
   });
 });
