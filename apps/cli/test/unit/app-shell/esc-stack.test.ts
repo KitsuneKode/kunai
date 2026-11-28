@@ -3,8 +3,18 @@ import { describe, expect, test } from "bun:test";
 import { resolveEscStack, type EscLayer } from "@/app-shell/esc-stack";
 
 function layer(kind: EscLayer["kind"]): EscLayer {
-  // SAFETY: every non-filter kind in this union has no extra fields.
-  return kind === "filter" ? { kind, query: "frieren" } : ({ kind } as EscLayer);
+  switch (kind) {
+    case "filter":
+      return { kind, query: "frieren" };
+    case "confirm":
+    case "prompt":
+    case "picker":
+    case "nested-pane":
+    case "surface-owned":
+    case "overlay":
+    case "route":
+      return { kind };
+  }
 }
 
 describe("resolveEscStack", () => {

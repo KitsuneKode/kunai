@@ -29,32 +29,35 @@ function history(overrides: Partial<HistoryProgress> = {}): HistoryProgress {
   };
 }
 
-// SAFETY: this test double is intentionally narrowed to the exact contract exercised here.
-// oxlint-disable-next-line anti-slop(require-safety-comment-for-type-assertion) -- justified partial test fixture
 const visibleIds = ["title:tmdb:1", "episode:tmdb:1:1:2"] as const;
+
+function historyContainer(
+  repository: {
+    deleteProgressByKey?: (key: string) => void;
+    deleteTitle?: (titleId: string) => void;
+  } = {},
+) {
+  // SAFETY: these input-routing tests only read the two historyRepository delete
+  // methods supplied here; the rest of Container is never dereferenced.
+  return {
+    historyRepository: {
+      deleteProgressByKey: repository.deleteProgressByKey ?? (() => {}),
+      deleteTitle: repository.deleteTitle ?? (() => {}),
+    },
+  } as never;
+}
 
 function baseCtx(
   overrides: Partial<Parameters<typeof handleHistoryOverlayInput>[2]> = {},
 ): Parameters<typeof handleHistoryOverlayInput>[2] {
   const confirm = createConfirmStripHarness();
   return {
-    // SAFETY: deliberately partial test fixture narrowed to the contract exercised here.
-    container: {
-      historyRepository: {
-        deleteProgressByKey: () => {},
-        deleteTitle: () => {},
-      },
-      // SAFETY: this test double is intentionally narrowed to the exact contract exercised here.
-      // SAFETY: deliberately partial test fixture narrowed to the contract exercised here.
-      // oxlint-disable-next-line anti-slop(require-safety-comment-for-type-assertion) -- justified partial test fixture
-    } as never,
+    container: historyContainer(),
     historyView: { flatRows: [{ titleId: "tmdb:1", dualSourceAvailable: false }] },
     historySelections: [{ titleId: "tmdb:1", entry: history() }],
     historyPickerContext: {},
     selectedIndex: 0,
     sourceChoiceTitleId: null,
-    // SAFETY: this test double is intentionally narrowed to the exact contract exercised here.
-    // oxlint-disable-next-line anti-slop(require-safety-comment-for-type-assertion) -- justified partial test fixture
     sourcePreference: "auto" as const,
     setSourceChoiceTitleId: () => {},
     setHistoryTypeFilter: () => {},
@@ -108,16 +111,10 @@ describe("history delete UX", () => {
       baseCtx({
         confirmState: confirm.state,
         transitionConfirm: confirm.transition,
-        // SAFETY: deliberately partial test fixture narrowed to the contract exercised here.
-        container: {
-          historyRepository: {
-            deleteProgressByKey: (key: string) => calls.push(`episode:${key}`),
-            deleteTitle: (titleId: string) => calls.push(`title:${titleId}`),
-          },
-          // SAFETY: this test double is intentionally narrowed to the exact contract exercised here.
-          // SAFETY: deliberately partial test fixture narrowed to the contract exercised here.
-          // oxlint-disable-next-line anti-slop(require-safety-comment-for-type-assertion) -- justified partial test fixture
-        } as never,
+        container: historyContainer({
+          deleteProgressByKey: (key) => calls.push(`episode:${key}`),
+          deleteTitle: (titleId) => calls.push(`title:${titleId}`),
+        }),
         onHistoryMutated: () => calls.push("mutated"),
       }),
     );
@@ -134,16 +131,10 @@ describe("history delete UX", () => {
       baseCtx({
         confirmState: confirm.state,
         transitionConfirm: confirm.transition,
-        // SAFETY: deliberately partial test fixture narrowed to the contract exercised here.
-        container: {
-          historyRepository: {
-            deleteProgressByKey: () => calls.push("episode"),
-            deleteTitle: () => calls.push("title"),
-          },
-          // SAFETY: this test double is intentionally narrowed to the exact contract exercised here.
-          // SAFETY: deliberately partial test fixture narrowed to the contract exercised here.
-          // oxlint-disable-next-line anti-slop(require-safety-comment-for-type-assertion) -- justified partial test fixture
-        } as never,
+        container: historyContainer({
+          deleteProgressByKey: () => calls.push("episode"),
+          deleteTitle: () => calls.push("title"),
+        }),
       }),
     );
     expect(calls).toEqual([]);
@@ -159,16 +150,10 @@ describe("history delete UX", () => {
       baseCtx({
         confirmState: confirm.state,
         transitionConfirm: confirm.transition,
-        // SAFETY: deliberately partial test fixture narrowed to the contract exercised here.
-        container: {
-          historyRepository: {
-            deleteProgressByKey: () => calls.push("episode"),
-            deleteTitle: () => calls.push("title"),
-          },
-          // SAFETY: this test double is intentionally narrowed to the exact contract exercised here.
-          // SAFETY: deliberately partial test fixture narrowed to the contract exercised here.
-          // oxlint-disable-next-line anti-slop(require-safety-comment-for-type-assertion) -- justified partial test fixture
-        } as never,
+        container: historyContainer({
+          deleteProgressByKey: () => calls.push("episode"),
+          deleteTitle: () => calls.push("title"),
+        }),
         onHistoryMutated: () => calls.push("mutated"),
       }),
     );

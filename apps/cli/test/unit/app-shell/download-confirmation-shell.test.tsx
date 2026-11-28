@@ -22,15 +22,15 @@ const PROFILE: DownloadConfirmationProfile = {
 };
 
 function container(): Container {
+  // SAFETY: the confirmation form reads only these two config values; the rest
+  // of Container is never dereferenced by this component.
   return {
     config: { downloadPath: "/dl", autoCleanupGraceDays: 7 },
-    // SAFETY: this test double is intentionally narrowed to the exact contract exercised here.
   } as unknown as Container;
 }
 
 /**
  * Selecting the action whose label starts with `prefix`, by walking the cursor
- // SAFETY: this test double is intentionally narrowed to the exact contract exercised here.
  * down from the top. Labels change as the draft changes, so the walk is
  * re-evaluated from the rendered frame each time.
  */
@@ -55,7 +55,6 @@ async function activate(
 }
 
 describe("DownloadConfirmationContent", () => {
-  // SAFETY: this test double is intentionally narrowed to the exact contract exercised here.
   test("a movie reads as one movie with a quiet kind label and no S01E01", () => {
     const handle = render(
       <DownloadConfirmationContent

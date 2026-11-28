@@ -42,7 +42,6 @@ function baseCtx(overrides: Partial<Parameters<typeof handleHistoryOverlayInput>
   return {
     ctx: {
       // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
-      // SAFETY: the input router never reads the container in these pure key-routing tests.
       container: {} as never,
       historyView: { flatRows: [{ titleId: "tmdb:1", dualSourceAvailable: true }] },
       historySelections: [{ titleId: "tmdb:1", entry: history() }],

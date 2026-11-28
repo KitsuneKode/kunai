@@ -12,6 +12,8 @@ import { render, stripAnsi } from "../../harness/render-capture";
 type DownloadEvent = { readonly type: string };
 
 function queuedJob(overrides: Partial<DownloadJobRecord> = {}): DownloadJobRecord {
+  // SAFETY: these shell tests read only the job display/state fields initialized
+  // below; storage metadata omitted from the record is never dereferenced.
   return {
     id: "job-1",
     titleId: "title-1",
@@ -27,9 +29,6 @@ function queuedJob(overrides: Partial<DownloadJobRecord> = {}): DownloadJobRecor
     progressPercent: 0,
     outputPath: "/tmp/frieren-s01e03.mp4",
     ...overrides,
-    // SAFETY: the fixture supplies every job field the shell reads; absent service fields are irrelevant.
-    // SAFETY: deliberately partial test fixture narrowed to the contract exercised here.
-    // oxlint-disable-next-line anti-slop(require-safety-comment-for-type-assertion) -- justified partial test fixture
   } as DownloadJobRecord;
 }
 
@@ -41,6 +40,8 @@ function createContainerFixture() {
   let completedJobs: DownloadJobRecord[] = [];
   let failedJobs: DownloadJobRecord[] = [];
 
+  // SAFETY: the download-manager input tests invoke only the state, config, and
+  // downloadService members defined on this fixture.
   const container = {
     stateManager: { dispatch: () => undefined },
     config: {
@@ -72,9 +73,6 @@ function createContainerFixture() {
       retry: async () => undefined,
       kickQueue: () => undefined,
     },
-    // SAFETY: the test double implements the exact container members this surface invokes.
-    // SAFETY: deliberately partial test fixture narrowed to the contract exercised here.
-    // oxlint-disable-next-line anti-slop(require-safety-comment-for-type-assertion) -- justified partial test fixture
   } as unknown as Container;
 
   return {
@@ -280,8 +278,6 @@ test("burst navigation moves the selection immediately", async () => {
 
 /**
  * A title that exactly fills its column used to butt straight against the state
- // SAFETY: this test double is intentionally narrowed to the exact contract exercised here.
- // oxlint-disable-next-line anti-slop(require-safety-comment-for-type-assertion) -- justified partial test fixture
  * chip ("…○ queued"), which reads as one corrupted word at 72 columns.
  */
 test("a truncated title keeps a gutter before the state column", () => {
