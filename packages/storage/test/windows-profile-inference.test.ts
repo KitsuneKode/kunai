@@ -250,6 +250,14 @@ describe("classifyWindowsExecutableProfile", () => {
     expect(classify(executable, fs)).toEqual({ kind: "profile", profileDir: root });
   });
 
+  test("classifies marker evidence without applying later startup root policy", () => {
+    const fs = new VirtualWindowsFs();
+    const executable = addVersionedExecutable(fs, "C:\\");
+    fs.addFile(win32Path.join("C:\\", PROFILE_MARKER), PROFILE_MARKER_CONTENT);
+
+    expect(classify(executable, fs)).toEqual({ kind: "profile", profileDir: "C:\\" });
+  });
+
   test("classifies the issue #864 data-leaf install as normal-install from an exact manifest match", () => {
     const fs = new VirtualWindowsFs();
     const root = "C:\\tools\\kunai";

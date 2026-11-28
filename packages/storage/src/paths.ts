@@ -13,6 +13,7 @@ import { homedir, tmpdir } from "node:os";
 import { posix as posixPath, win32 as win32Path } from "node:path";
 
 import { DesktopProfileError, resolveDesktopProfileDirs } from "@kunai/core/desktop-profile";
+import { isJsonObject, isJsonString } from "@kunai/types";
 
 export { DesktopProfileError };
 
@@ -174,55 +175,6 @@ function physicalPath(path: string): string {
   return parent === path ? path : native.join(physicalPath(parent), native.basename(path));
 }
 
-type ProfileOwnershipFs = {
-  readonly lstat: WindowsProfileFs["lstat"];
-  readonly physicalPath: (path: string) => string;
-};
-
-const nodeProfileOwnershipFs: ProfileOwnershipFs = {
-  lstat: (path) => lstatSync(path, { throwIfNoEntry: false }),
-  physicalPath,
-};
-
-/** Validate the root shape shared by explicit desktop profiles and inferred Windows ones. */
-function assertDedicatedProfileRoot(
-  root: string,
-  displayRoot: string,
-  platform: StoragePlatform,
-  env: Readonly<Record<string, string | undefined>>,
-  fs: ProfileOwnershipFs,
-): ReturnType<WindowsProfileFs["lstat"]> {
-  const join = joinerFor(platform);
-  const home = profileHome(platform, env);
-  const defaults = defaultBaseDirs(platform, env, home);
-  const rootStat = fs.lstat(root);
-  if (rootStat?.isSymbolicLink()) {
-    throw new DesktopProfileError(displayRoot, "must not be a symlink");
-  }
-  if (rootStat && !rootStat.isDirectory()) {
-    throw new DesktopProfileError(displayRoot, "is not a regular directory");
-  }
-  assertDedicatedRoot(
-    platform,
-    fs.physicalPath(root),
-    fs.physicalPath(home),
-    {
-      configDir: fs.physicalPath(defaults.configDir),
-      dataDir: fs.physicalPath(defaults.dataDir),
-      cacheDir: fs.physicalPath(defaults.cacheDir),
-      tempDir: fs.physicalPath(defaults.tempDir),
-    },
-    displayRoot,
-  );
-  for (const child of ["config", "data", "cache", "tmp", "bin"]) {
-    const stat = fs.lstat(join(root, child));
-    if (stat && !stat.isDirectory()) {
-      throw new DesktopProfileError(displayRoot, `has a non-directory or symlink at ${child}`);
-    }
-  }
-  return rootStat;
-}
-
 /** Check on-disk ownership before using or purging a desktop override. */
 export function checkDesktopProfile(
   mode: "prepare" | "inspect" | "require",
@@ -253,17 +205,37 @@ function checkProfileOwnership(
   env: NodeJS.ProcessEnv,
 ): void {
   const join = joinerFor(platform);
+  const home = profileHome(platform, env);
   // Diagnostics name the spelling the user actually configured, not the
   // normalized path their shell resolved it to.
   const displayRoot = env.KUNAI_CONFIG_DIR ?? root;
   try {
-    const rootStat = assertDedicatedProfileRoot(
-      root,
-      env.KUNAI_CONFIG_DIR ?? displayRoot,
+    const defaults = defaultBaseDirs(platform, env, home);
+    const rootStat = lstatSync(root, { throwIfNoEntry: false });
+    if (rootStat?.isSymbolicLink()) {
+      throw new DesktopProfileError(displayRoot, "must not be a symlink");
+    }
+    if (rootStat && !rootStat.isDirectory()) {
+      throw new DesktopProfileError(displayRoot, "is not a regular directory");
+    }
+    assertDedicatedRoot(
       platform,
-      env,
-      nodeProfileOwnershipFs,
+      physicalPath(root),
+      physicalPath(home),
+      {
+        configDir: physicalPath(defaults.configDir),
+        dataDir: physicalPath(defaults.dataDir),
+        cacheDir: physicalPath(defaults.cacheDir),
+        tempDir: physicalPath(defaults.tempDir),
+      },
+      env.KUNAI_CONFIG_DIR,
     );
+    for (const child of ["config", "data", "cache", "tmp", "bin"]) {
+      const stat = lstatSync(join(root, child), { throwIfNoEntry: false });
+      if (stat && !stat.isDirectory()) {
+        throw new DesktopProfileError(displayRoot, `has a non-directory or symlink at ${child}`);
+      }
+    }
     const marker = join(root, PROFILE_MARKER);
     const ownsRoot = () =>
       lstatSync(marker, { throwIfNoEntry: false })?.isFile() &&
@@ -363,30 +335,7 @@ function windowsProfileAmbiguous(root: string, reason: string): DesktopProfileEr
 }
 
 function physicalWindowsPath(fs: WindowsProfileFs, path: string): string {
-  const normalized = normalizeWindowsPath(path);
-  if (fs.lstat(normalized)) return normalizeWindowsPath(fs.realpathNative(normalized));
-  const parent = win32Path.dirname(normalized);
-  return parent === normalized
-    ? normalized
-    : win32Path.join(physicalWindowsPath(fs, parent), win32Path.basename(normalized));
-}
-
-function requireValidWindowsProfileRoot(
-  root: string,
-  env: Readonly<Record<string, string | undefined>>,
-  fs: WindowsProfileFs,
-): string {
-  const resolved = resolveDesktopProfileDirs("win32", root);
-  if (!resolved) throw new DesktopProfileError(root, "is not a dedicated profile root");
-  const profileDir = resolved.profileDir;
-  const rootStat = assertDedicatedProfileRoot(profileDir, root, "win32", env, {
-    lstat: (path) => fs.lstat(path),
-    physicalPath: (path) => physicalWindowsPath(fs, path),
-  });
-  if (!rootStat?.isDirectory()) {
-    throw new DesktopProfileError(root, "is not a regular directory");
-  }
-  return profileDir;
+  return normalizeWindowsPath(fs.realpathNative(normalizeWindowsPath(path)));
 }
 
 function realVersionedExecutableExists(
@@ -429,11 +378,9 @@ function windowsMarkerState(
 
 function classifyOwnedWindowsProfile(
   layout: WindowsVersionedExecutableLayout,
-  env: Readonly<Record<string, string | undefined>>,
   fs: WindowsProfileFs,
 ): WindowsProfileInference {
-  const profileDir = requireValidWindowsProfileRoot(layout.root, env, fs);
-  const physicalRoot = physicalWindowsPath(fs, profileDir);
+  const physicalRoot = physicalWindowsPath(fs, layout.root);
   const physicalExecutable = physicalWindowsPath(fs, layout.executablePath);
   const expected = win32Path.join(physicalRoot, "data", "versions", layout.version, "kunai.exe");
   if (!sameWindowsPath(expected, physicalExecutable)) {
@@ -446,25 +393,6 @@ function classifyOwnedWindowsProfile(
     };
   }
   return { kind: "profile", profileDir: physicalRoot };
-}
-
-type WindowsInstallManifestEvidence = {
-  readonly method?: unknown;
-  readonly channel?: unknown;
-  readonly versionedPath?: unknown;
-  readonly versionPath?: unknown;
-};
-
-function isObjectLike<T>(value: T): value is T & object {
-  return value !== null && !Array.isArray(value) && value instanceof Object;
-}
-
-function isStringValue<T>(value: T): value is T & string {
-  return Object.prototype.toString.call(value) === "[object String]";
-}
-
-function isNonEmptyString<T>(value: T): value is T & string {
-  return isStringValue(value) && value.length > 0;
 }
 
 function classifyDefaultWindowsInstall(
@@ -501,18 +429,17 @@ function classifyDefaultWindowsInstall(
   } catch {
     return ambiguous("is not valid JSON");
   }
-  if (!isObjectLike(parsed)) {
+  if (!isJsonObject(parsed)) {
     return ambiguous("is not a JSON object");
   }
-  // SAFETY: parsed is a JSON object; every evidence field is decoded before use.
-  const record = parsed as WindowsInstallManifestEvidence;
-  const method = isStringValue(record.method) ? record.method : record.channel;
+  const method = isJsonString(parsed.method) ? parsed.method : parsed.channel;
   if (method !== "binary") return ambiguous("does not describe a binary install");
-  const versionedPath = isNonEmptyString(record.versionedPath)
-    ? record.versionedPath
-    : isNonEmptyString(record.versionPath)
-      ? record.versionPath
-      : undefined;
+  const versionedPath =
+    isJsonString(parsed.versionedPath) && parsed.versionedPath
+      ? parsed.versionedPath
+      : isJsonString(parsed.versionPath) && parsed.versionPath
+        ? parsed.versionPath
+        : undefined;
   if (!versionedPath) return ambiguous("has no versionedPath or schema-1 versionPath");
 
   const physicalExecutable = normalizeWindowsPath(fs.realpathNative(layout.executablePath));
@@ -576,7 +503,7 @@ export function classifyWindowsExecutableProfile(input: {
         ),
       };
     }
-    if (marker === "valid") return classifyOwnedWindowsProfile(layout, env, fs);
+    if (marker === "valid") return classifyOwnedWindowsProfile(layout, fs);
     return classifyDefaultWindowsInstall(layout, env, fs);
   } catch (error) {
     if (error instanceof DesktopProfileError) return { kind: "ambiguous", error };
