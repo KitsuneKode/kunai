@@ -12,6 +12,7 @@ import {
 } from "@/app-shell/kanna-sprite";
 import { deleteAllTerminalImages } from "@/app-shell/poster-renderer";
 import { setTerminalCellPixels } from "@/image/cell-size";
+import { __testing as transportTesting, uploadKittyPayload } from "@/image/kitty-transport";
 
 const ESC = "\x1b";
 const { runtime } = __testing;
@@ -29,6 +30,9 @@ function commands(): string[] {
 
 const count = (prefix: string) => commands().filter((keys) => keys.startsWith(prefix)).length;
 const tick = () => new Promise<void>((resolve) => queueMicrotask(resolve));
+const ticks = async (microtasks: number) => {
+  for (let index = 0; index < microtasks; index++) await tick();
+};
 
 beforeEach(() => {
   written = [];
@@ -135,7 +139,7 @@ describe("lifetime", () => {
     expect(count("a=d,")).toBe(0);
 
     release();
-    await tick();
+    await ticks(4);
     expect(commands()).toContain(`a=d,d=I,i=${seek?.imageId},q=2`);
     expect(commands()).toContain(`a=d,d=I,i=${oops?.imageId},q=2`);
     expect(__testing.sprites.size).toBe(0);
@@ -171,6 +175,7 @@ describe("lifetime", () => {
     const before = kannaEpoch();
     deleteAllTerminalImages();
     expect(kannaEpoch()).toBe(before + 1);
+    await ticks(2);
     // Deleted by name as well: whether `d=A` reaches a virtual placement is the
     // terminal's call, and deleting a dead id is free.
     expect(commands()).toContain(`a=d,d=I,i=${sprite?.imageId},q=2`);
@@ -203,6 +208,76 @@ describe("lifetime", () => {
     release();
   });
 
+  test("a wipe queued before the upload continuation never leaves a dead sprite cached", async () => {
+    const release = holdKannaSprites();
+    let queued = false;
+    const write = runtime.write;
+    runtime.write = (text) => {
+      write(text);
+      if (!queued && text.includes("a=a,") && text.includes("s=3")) {
+        queued = true;
+        queueMicrotask(() => deleteAllTerminalImages());
+      }
+    };
+
+    const sprite = await acquireKannaSprite("seek", kannaSlot(4), true);
+    const transmits = commands().filter((keys) => keys.startsWith("a=t,"));
+    expect(sprite).not.toBeNull();
+    expect(transmits).toHaveLength(2);
+    const dead = /i=(\d+)/u.exec(transmits[0] ?? "")?.[1];
+    expect(Number(dead)).not.toBe(sprite?.imageId);
+    expect(__testing.sprites.size).toBe(1);
+    release();
+  });
+
+  test("runtime deletion queues behind an interrupted chunked poster upload", async () => {
+    const release = holdKannaSprites();
+    const sprite = await acquireKannaSprite("wait", kannaSlot(4), false);
+    expect(sprite).not.toBeNull();
+
+    const noisy = new Uint8Array(128 * 128 * 4);
+    let seed = 0x2545f491;
+    for (let at = 0; at < noisy.length; at++) {
+      seed ^= seed << 13;
+      seed ^= seed >>> 17;
+      seed ^= seed << 5;
+      noisy[at] = seed & 0xff;
+    }
+    const originalTransportWrite = transportTesting.runtime.write;
+    const originalYield = transportTesting.runtime.yieldToEventLoop;
+    transportTesting.runtime.write = runtime.write;
+    let openGate!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      openGate = resolve;
+    });
+    transportTesting.runtime.yieldToEventLoop = () => gate;
+    try {
+      const upload = uploadKittyPayload(
+        { kind: "rgba", data: noisy, width: 128, height: 128 },
+        { env: { SSH_CONNECTION: "1" }, yieldEveryChunks: 2 },
+      );
+      await tick();
+      await tick();
+      expect(written.join("")).toContain("m=1;");
+      expect(commands().some((keys) => keys.startsWith("a=d,"))).toBe(false);
+
+      release();
+      await tick();
+      // The upload is still mid-chunk. Kitty forbids any other graphics command
+      // here, so her delete must wait for the stream rather than splice into it.
+      expect(commands().some((keys) => keys.startsWith("a=d,"))).toBe(false);
+
+      openGate();
+      await upload;
+      await tick();
+      const all = written.join("");
+      expect(all.indexOf("m=0;")).toBeLessThan(all.indexOf(`a=d,d=I,i=${sprite?.imageId},q=2`));
+    } finally {
+      transportTesting.runtime.write = originalTransportWrite;
+      transportTesting.runtime.yieldToEventLoop = originalYield;
+    }
+  });
+
   test("two surfaces asking at once share one upload", async () => {
     const first = holdKannaSprites();
     const second = holdKannaSprites();
@@ -219,7 +294,7 @@ describe("lifetime", () => {
   test("exit deletes whatever is still held, synchronously", async () => {
     const release = holdKannaSprites();
     const sprite = await acquireKannaSprite("wait", kannaSlot(4), true);
-    releaseAllKannaSprites();
+    releaseAllKannaSprites({ synchronous: true });
     expect(commands().at(-1)).toBe(`a=d,d=I,i=${sprite?.imageId},q=2`);
     release();
   });

@@ -30,6 +30,7 @@ import {
   type AnimationStep,
   type RgbaFrame,
 } from "@/image/kitty-animation";
+import { withKittyStream } from "@/image/kitty-transport";
 import { preparePoster } from "@/image/native-image";
 import { CELL_ASPECT } from "@/image/renderers/sixel";
 import { createKeyedJoiner } from "@/infra/concurrency/keyed-joiner";
@@ -161,14 +162,26 @@ async function loadDrawings(
   };
 }
 
-function deleteSprite(sprite: KannaSprite): void {
+function writeDeleteSprite(sprite: KannaSprite): void {
   const passthrough = runtime.passthrough() ?? undefined;
   runtime.write(encodeCommand(deleteImageCommand(sprite.imageId), passthrough));
 }
 
-/** Delete every sprite from the terminal. Synchronous, so it is safe on exit. */
-export function releaseAllKannaSprites(): void {
-  for (const sprite of sprites.values()) deleteSprite(sprite);
+function deleteSprite(sprite: KannaSprite, options: { readonly synchronous?: boolean } = {}): void {
+  if (options.synchronous) {
+    writeDeleteSprite(sprite);
+    return;
+  }
+  // A delete is still a graphics command. Runtime cleanup queues behind any
+  // chunked upload already on the stream; only process exit writes synchronously.
+  void withKittyStream(async () => {
+    writeDeleteSprite(sprite);
+  });
+}
+
+/** Delete every sprite from the terminal. Pass `synchronous` only on exit. */
+export function releaseAllKannaSprites(options: { readonly synchronous?: boolean } = {}): void {
+  for (const sprite of sprites.values()) deleteSprite(sprite, options);
   sprites.clear();
 }
 
@@ -189,13 +202,14 @@ function hookExit(): void {
   // The shutdown path wipes the terminal, but a crash or a lost race with the
   // force-exit timer skips it. `exit` always runs and a TTY write is
   // synchronous, so this is the one place that cannot be skipped.
-  process.once("exit", releaseAllKannaSprites);
+  process.once("exit", () => releaseAllKannaSprites({ synchronous: true }));
 }
 
 /** A wipe can land mid-upload more than once only if surfaces are thrashing. */
 const UPLOAD_ATTEMPTS = 3;
 
 async function uploadSprite(
+  key: string,
   pose: CompanionPose,
   slot: KannaSlot,
   animated: boolean,
@@ -238,7 +252,12 @@ async function uploadSprite(
       deleteSprite(sprite);
       return null;
     }
-    if (startedAt === epoch) return sprite;
+    if (startedAt === epoch) {
+      // Cache in the same synchronous critical section as the epoch check. A
+      // wipe cannot run between the two here, so no dead id can enter the map.
+      sprites.set(key, sprite);
+      return sprite;
+    }
     // A global wipe landed mid-upload and took this image with it. Everyone
     // waiting on this upload still wants her, so it is sent again here rather
     // than handing them a dead id — or a null that leaves them on the glyph.
@@ -266,9 +285,7 @@ export function acquireKannaSprite(
   // upload racing the first would leave one of the two ids owned by nobody.
   return uploads.join(key, async () => {
     try {
-      const sprite = await uploadSprite(pose, slot, animated);
-      if (sprite) sprites.set(key, sprite);
-      return sprite;
+      return uploadSprite(key, pose, slot, animated);
     } catch (error) {
       debugImage(`kanna sprite failed: ${error instanceof Error ? error.message : String(error)}`);
       return null;
