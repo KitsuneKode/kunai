@@ -592,7 +592,11 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // doctor text-module split. No dependency or asset. 3349 KiB is the smallest
 // whole-KiB budget over that measurement and leaves 484 bytes; public
 // launcher budgets are unchanged.
-export const NPM_BUNDLE_BUDGET_KB = 3_349;
+// The shell-v4 failover banner, domain failure-class move, and playback-issue
+// panel measured 3,435,029 bytes with Bun 1.4.5: +6,137 over 3,428,892.
+// No dependency or asset. 3355 KiB is the smallest whole-KiB budget over that
+// measurement and leaves 491 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_355;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;

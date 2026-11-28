@@ -943,3 +943,118 @@ describe("agent wiring · setup owns the machine verdict", () => {
     );
   }, 45_000);
 });
+
+describe("agent wiring · failover banner and startup failure", () => {
+  const viewports = [
+    { columns: 120, rows: 32, plain: false },
+    { columns: 54, rows: 25, plain: false },
+    { columns: 40, rows: 20, plain: false },
+    { columns: 80, rows: 24, plain: true },
+  ];
+
+  for (const viewport of viewports) {
+    const label = `${viewport.columns}x${viewport.rows}${viewport.plain ? " plain" : ""}`;
+
+    it(`startup failure stays on Playback issue at ${label}`, async () => {
+      await withSession(
+        `wiring-startup-failure-${viewport.columns}x${viewport.rows}${viewport.plain ? "-plain" : ""}`,
+        {
+          mpv: "fake",
+          fakeMpvMode: "fail-pre-loaded",
+          columns: viewport.columns,
+          rows: viewport.rows,
+          extraEnv: viewport.plain ? { KUNAI_PLAIN: "1" } : undefined,
+        },
+        async (s) => {
+          await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+          s.press("smoke", K.enter);
+          await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
+          s.press(K.enter);
+          await s.waitForFrame(
+            (f) =>
+              f.includes("Playback issue") &&
+              f.includes("not marked watched") &&
+              f.includes("[r] recover") &&
+              (viewport.plain ? f.includes("Status: issue") : f.includes("● issue")),
+            "playback issue panel",
+            45_000,
+          );
+          const frame = s.frame();
+          expect(frame).not.toContain("Tracks");
+          expect(frame).not.toContain("● ready");
+        },
+      );
+    }, 70_000);
+
+    it(`resolving does not claim ready before launch at ${label}`, async () => {
+      await withSession(
+        `wiring-resolving-${viewport.columns}x${viewport.rows}${viewport.plain ? "-plain" : ""}`,
+        {
+          mpv: "fake",
+          fakeMpvMode: "hold",
+          columns: viewport.columns,
+          rows: viewport.rows,
+          extraEnv: viewport.plain ? { KUNAI_PLAIN: "1" } : undefined,
+        },
+        async (s) => {
+          await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+          s.press("smoke", K.enter);
+          await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
+          s.press(K.enter);
+          await s.waitForFrame(
+            (f) => f.includes("Resolving") && !f.includes("● ready") && !f.includes("Now Playing"),
+            "resolving header",
+            30_000,
+          );
+          const resolvingFrames = s.frames().filter((frame) => frame.includes("Resolving"));
+          expect(resolvingFrames.length).toBeGreaterThan(0);
+          for (const frame of resolvingFrames) {
+            expect(frame).not.toContain("● ready");
+          }
+        },
+      );
+    }, 45_000);
+  }
+
+  it("mid-stream failover banner names both providers and the preserved timestamp", async () => {
+    let showFailover: (() => void) | undefined;
+    await withSession(
+      "wiring-midstream-failover",
+      {
+        mpv: "fake",
+        fakeMpvMode: "hold",
+        columns: 120,
+        rows: 32,
+        beforeMount({ container }) {
+          showFailover = () => {
+            container.stateManager.dispatch({
+              type: "SET_PLAYBACK_FAILOVER",
+              failover: {
+                phase: "mid-stream",
+                fromLabel: "VidKing",
+                toLabel: "Rivestream",
+                preservedSeconds: 14 * 60 + 22,
+                tone: "warn",
+              },
+            });
+          };
+        },
+      },
+      async (s) => {
+        await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+        s.press("smoke", K.enter);
+        await s.waitForFrame((f) => f.includes("Smoke Movie"), "fixture results");
+        s.press(K.enter);
+        await s.waitForFrame((f) => f.includes("Now Playing"), "playback live", 30_000);
+        showFailover?.();
+        await s.waitForFrame(
+          (f) => f.includes("Switching from VidKing to Rivestream") && f.includes("14:22"),
+          "failover banner",
+        );
+        expect(s.frame()).toContain("Holding position at 14:22");
+        expect(s.sessionState().playbackFailover?.tone).toBe("warn");
+        expect(s.frame()).not.toContain("sourceId");
+      },
+    );
+  }, 45_000);
+});

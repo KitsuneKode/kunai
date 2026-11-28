@@ -149,6 +149,11 @@ export function buildErrorRows(input: {
   readonly nextStep?: ErrorNextStep | undefined;
   /** Panel text width in columns; free-text rows wrap to it instead of clipping. */
   readonly textWidth?: number;
+  /**
+   * Startup/stream failure. Names the preserved-progress fact and the recover
+   * key. Missing-player panels leave this off and keep the install next-step.
+   */
+  readonly recoveryAffordance?: boolean;
 }): readonly ErrorRow[] {
   const rows: ErrorRow[] = [row("Playback failed", "danger-strong")];
 
@@ -157,13 +162,21 @@ export function buildErrorRows(input: {
       ? scenarioRows(input.scenario)
       : textRows(input.message, "text", input.textWidth, MESSAGE_MAX_LINES)),
   );
+  if (input.recoveryAffordance) rows.push(row("not marked watched", "ok"));
   if (input.nextStep) rows.push(...nextStepRows(input.nextStep, input.textWidth));
   if (input.waterfall) rows.push(...waterfallRows(input.waterfall));
   if (input.debugExcerpt) rows.push(...debugRows(input.debugExcerpt, input.textWidth));
 
   rows.push(
     BLANK,
-    row(input.canRetry ? "r retry  ·  Enter / Esc dismiss" : "Enter / Esc to continue", "dim"),
+    row(
+      input.recoveryAffordance
+        ? "[r] recover  ·  [o] tracks  ·  Enter / Esc dismiss"
+        : input.canRetry
+          ? "r retry  ·  Enter / Esc dismiss"
+          : "Enter / Esc to continue",
+      "dim",
+    ),
   );
 
   return rows;

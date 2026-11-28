@@ -83,6 +83,7 @@ Scores use a 1–5 scale (`Impact` 5 = fixes broken trust/usability on daily pat
 - **Dependencies:** Rank 4 (`resolveEscStack` so `Esc` disarms `ContinueSourcePrompt`).
 
 ### Rank 8 · Mid-Stream Provider-Failover Banner (`FailoverBanner`) & Stop Silent Dump to `Tracks` on Failure
+- **Status:** done
 - **Impact / Effort:** 5 / 2.5 (**Ratio: 2.0**)
 - **Why:** Live L2 capture proved that total startup failure dumps the user straight into `Tracks` showing `● ready` with 5 `× Retry` rows and zero explanation; mid-stream failover shows raw `sourceId` strings (`playback-recovery.ts:413`) without showing preserved timestamp or from→to clarity; `loading-shell.tsx` also renders `Now Playing` + `● ready` while still resolving and shows an out-of-sync stage rail (`◓ Providers` under `Launching player`).
 - **Files touched:** **NEW** `apps/cli/src/app-shell/primitives/FailoverBanner.tsx`, `apps/cli/src/app-shell/loading-shell.tsx`, `apps/cli/src/app-shell/loading-shell-runtime.ts`, `apps/cli/src/app-shell/playback-recovery-view-model.ts`, `apps/cli/src/app/playback/playback-recovery.ts` (structured failover state), `apps/cli/src/app/playback/playback-episode-iteration.ts`.
