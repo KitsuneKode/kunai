@@ -1,7 +1,6 @@
 // One generation counter for "a refresh happened while this fetch was in flight".
 //
-// CatalogDiscoveryService still keeps its own copy of this pattern. New cache
-// writers should use this gate: capture before the fetch, invalidate on
+// Cache writers use this gate: capture before the fetch, invalidate on
 // refresh, and commit only when that capture is still current.
 
 export interface CacheGenerationToken {

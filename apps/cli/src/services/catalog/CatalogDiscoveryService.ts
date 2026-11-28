@@ -1,6 +1,7 @@
 import { stripHtml } from "@/domain/catalog/strip-html";
 import { anilistCatalogStructure } from "@/domain/media/anilist-format";
 import type { SearchResult, ShellMode, TitleAlias } from "@/domain/types";
+import { createCacheGenerationGate, type CacheGenerationToken } from "@/infra/concurrency/cache-generation";
 import { createKeyedJoiner } from "@/infra/concurrency/keyed-joiner";
 import { AniListRequestError, postAniListGraphql } from "@/services/catalog/anilist-client";
 import { evictOverflowedEntries } from "@/services/catalog/bounded-cache";
@@ -200,7 +201,7 @@ export class CatalogDiscoveryService {
   /** Fallback source id → epoch ms until which it is skipped after failing. */
   private readonly fallbackBrokenUntil = new Map<string, number>();
   /** Bumped by `clearTrendingCache`; a walk started earlier may not commit. */
-  private generation = 0;
+  private readonly generation = createCacheGenerationGate();
   /** One surprise load per lane and time bucket, aborted once nobody waits. */
   private readonly surpriseLoads = createKeyedJoiner<readonly SearchResult[]>();
 
@@ -222,7 +223,7 @@ export class CatalogDiscoveryService {
     // A cleared walk could never commit (the generation moves on), so stop
     // its requests instead of letting them run to completion for nothing.
     this.sectionWalks.clear();
-    this.generation += 1;
+    this.generation.invalidate();
   }
 
   async loadTrending(mode: ShellMode, signal?: AbortSignal): Promise<SearchResult[]> {
@@ -271,7 +272,7 @@ export class CatalogDiscoveryService {
     signal: AbortSignal | undefined,
     stale: { readonly cachedAt: number; readonly results: readonly SearchResult[] } | null,
   ): Promise<CatalogTrendingSection> {
-    const generation = this.generation;
+    const generation = this.generation.capture();
     // This caller's place in the walk. It follows the caller's signal until a
     // hedge answers the caller; from then on it holds the walk open, so the
     // walk keeps running for the cache even with no caller waiting.
@@ -325,20 +326,21 @@ export class CatalogDiscoveryService {
   /** Commit a section only if no refresh happened since the walk started. */
   private commitSection(
     key: string,
-    generation: number,
+    generation: CacheGenerationToken,
     section: CatalogTrendingSection,
     ttlMs: number,
-  ): void {
-    if (generation !== this.generation) return;
-    this.cache.set(key, { expiresAt: this.now() + ttlMs, results: section.results });
-    this.sections.set(key, section);
-    evictOverflowedEntries(this.cache, MAX_DISCOVERY_CACHE_ENTRIES, this.now());
+  ): boolean {
+    return this.generation.commitIfFresh(generation, {}, () => {
+      this.cache.set(key, { expiresAt: this.now() + ttlMs, results: section.results });
+      this.sections.set(key, section);
+      evictOverflowedEntries(this.cache, MAX_DISCOVERY_CACHE_ENTRIES, this.now());
+    });
   }
 
   private async walkTrendingChain(
     mode: ShellMode,
     signal: AbortSignal,
-    generation: number,
+    generation: CacheGenerationToken,
   ): Promise<CatalogTrendingSection> {
     const key = mode;
     const primary: CatalogTrendingSource = {
@@ -397,18 +399,17 @@ export class CatalogDiscoveryService {
       if (signal.aborted) throw abortReason(signal);
       if (results.length === 0) continue;
       const section: CatalogTrendingSection = { results, sourceId: source.id };
-      if (generation === this.generation) {
-        // A fallback answer is reused only briefly so the primary is retried
-        // soon; one primary timeout must not pin a stand-in for the full
-        // trending TTL.
-        this.commitSection(
-          key,
-          generation,
-          section,
-          isPrimary ? DISCOVERY_CACHE_TTL_MS : STALE_RETRY_AFTER_MS,
-        );
-        durable?.write(durableKey, this.now(), results, source.id);
-      }
+      // A fallback answer is reused only briefly so the primary is retried
+      // soon; one primary timeout must not pin a stand-in for the full
+      // trending TTL. The durable row is the same commit generation as memory:
+      // a refresh while the source was in flight must not leak either write.
+      const committed = this.commitSection(
+        key,
+        generation,
+        section,
+        isPrimary ? DISCOVERY_CACHE_TTL_MS : STALE_RETRY_AFTER_MS,
+      );
+      if (committed) durable?.write(durableKey, this.now(), results, source.id);
       if (!isPrimary) this.fallbackBrokenUntil.delete(source.id);
       return section;
     }
