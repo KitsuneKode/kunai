@@ -13,6 +13,7 @@ import {
 } from "@/app-shell/image-pane";
 import { setPosterDiskCacheDir } from "@/app-shell/poster-disk-cache";
 import { __testing as posterRendererTesting } from "@/app-shell/poster-renderer";
+import { flushPosterDiskWrites } from "@/app-shell/poster-source-cache";
 import { isKittyCompatible } from "@/image";
 import type { ImageCapability } from "@/image";
 
@@ -103,8 +104,13 @@ function cap(renderer: ImageCapability["renderer"]): ImageCapability {
   };
 }
 
-afterEach(() => {
+afterEach(async () => {
   globalThis.fetch = originalFetch;
+  // Disk persists are queued behind the render path. Finish them while the
+  // override still points at this temp dir, then remove it. Clearing the
+  // override first lets a late mkdir recreate the directory or touch the
+  // real profile cache.
+  await flushPosterDiskWrites();
   setPosterDiskCacheDir(null);
   paneTesting.runtime.detectImageCapability = originalPaneDetect;
   posterRendererTesting.runtime.detectImageCapability = originalRendererDetect;

@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-28T12:45:00Z"
+lastReviewed: "2026-11-28T13:19:34Z"
 ---
 
 # Kunai — Testing Strategy
@@ -67,7 +67,36 @@ rooted at `<root>/profile` (a child of, never equal to, the fake home) with
 the `.kunai-profile` ownership marker seeded up front, while HOME/USERPROFILE,
 the XDG trio, APPDATA/LOCALAPPDATA all point at `<root>` itself, plus the file
 credential backend and `DO_NOT_TRACK=1`.
-TMPDIR/TMP/TEMP are left alone so unrelated `os.tmpdir()` fixtures keep working.
+`storageRootEnv()` still does not set TMPDIR/TMP/TEMP. `os.tmpdir()` follows
+those variables, so a helper that points them at a directory and then deletes
+it makes every later `mkdtemp` fail, and mpv's Unix socket has to stay under
+100 bytes (`resolveUnixSocketPath` skips a candidate at `>= 100`; macOS
+`TMPDIR` is already ~50 characters). The preload adds a second layer: one
+short directory per process, `kt-<pid>-<4 hex>`, and assigns TMPDIR, TMP, and
+TEMP to it before any test module loads. The full path must stay within 64
+characters on POSIX. A real temp directory that cannot host that name and
+still leave room for `kunai-ipc/kunai-mpv-<16>.sock` (the macOS
+`/var/folders/…/T` path the socket tests pin) uses `/tmp` instead. Windows
+resolves the parent from TEMP, then TMP. The scratch's `afterAll` is
+registered around the profile cleanup so it runs after that cleanup: Bun
+invokes preload hooks in registration order and never delivers `exit` or
+`beforeExit` to a preload. The hook lists leftover entries, restores the
+original TMPDIR/TMP/TEMP, then `rmSync`s the scratch (`maxRetries: 5`). Under
+`CI=true` the run fails, naming at most 20 relative entries; the scratch hook
+only records the leak and a hook registered last throws it, because Bun skips
+every later preload `afterAll` once one throws and the profile guard must still
+run; locally it prints
+one warning and still removes the directory. Turbo runs package test
+processes in parallel against one machine temp directory, so the check is the
+contents of this process's scratch, not a diff of the shared temp directory.
+Each test still removes the directories it creates (`finally` / `afterEach`);
+the scratch is the backstop, including when `fs.promises.rm` resolves while
+the directory is still there. Runtime caches are not fixtures and are not
+reported: Bun's `node-compile-cache`, and `.dotnet` from the .NET runtime behind
+`pwsh` in the installer integration tests. An empty `kunai-ipc` is not
+reported either: it is the owner-only mpv socket directory production keeps
+under the temp root when `XDG_RUNTIME_DIR` is unset (macOS), but a socket left
+inside it is, as `kunai-ipc/<name>`.
 Standalone harnesses (launchers, shells, non-`bun test` entrypoints) get the same
 environment from `storageRootEnv()` in `test/helpers/storage-env.ts`, re-exported
 through `apps/cli/test/helpers/storage-env.ts`; `applyStorageRootEnv()` applies

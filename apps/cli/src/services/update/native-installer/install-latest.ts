@@ -63,6 +63,13 @@ import {
 import { withVersionLock } from "./version-lock";
 import { writeInstalledVersionMetadata } from "./version-metadata";
 
+const retentionCleanups = new Set<Promise<void>>();
+
+/** Retention passes {@link installLatest} has already started and not yet settled. */
+export function drainInstallRetentionCleanups(): Promise<void> {
+  return Promise.all(retentionCleanups).then(() => undefined);
+}
+
 export type InstallLatestResult =
   | { readonly status: "up-to-date"; readonly version: string }
   | {
@@ -468,7 +475,13 @@ async function installLatestImpl(options: InstallLatestOptions): Promise<Install
 
         // Fire-and-forget must never reject: a cleanup failure surfacing as an
         // unhandled rejection would turn a completed install into a crash.
-        void cleanupOldVersions(layout).catch(() => {});
+        // The promise stays reachable so a test can delete the layout only
+        // after retention has finished creating lock directories.
+        const retentionCleanup = cleanupOldVersions(layout).catch(() => {});
+        retentionCleanups.add(retentionCleanup);
+        void retentionCleanup.finally(() => {
+          retentionCleanups.delete(retentionCleanup);
+        });
 
         // Started, not awaited: the update is already complete and verified,
         // and the marker can neither delay nor fail it.
