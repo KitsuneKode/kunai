@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 
 import { getKunaiPaths, type StoragePlatform } from "@kunai/storage";
 
+import { stripAnsi } from "../harness/render-capture";
 import { describePosixOnly as describe } from "../helpers/platform-gates";
 import { buildPtyCommand } from "../helpers/pty-command";
 import { storageRootEnv } from "../helpers/storage-env";
@@ -279,10 +280,14 @@ describe("kanna on a kitty terminal", () => {
 
       // Clear the query, search for something the fixture has, and pick it.
       for (const key of ["\x7f", "\x7f", "\x7f", "\x7f"]) session.type(key);
-      await session.waitFor(
-        (text) => !text.slice(empty.length).includes("zzzz"),
-        "a cleared query",
-      );
+      await session.waitFor((text) => {
+        // The no-results body keeps quoting the submitted search, so the
+        // acknowledgement has to be the freshly redrawn input line itself.
+        const inputLine = stripAnsi(text.slice(empty.length))
+          .split(/\r?\n/u)
+          .find((line) => /⌕/u.test(line));
+        return inputLine !== undefined && !/zzzz/u.test(inputLine);
+      }, "a newly rendered empty query");
       const cleared = session.read().length;
       session.type("smoke");
       await session.waitFor((text) => text.slice(cleared).includes("smoke"), "the second query");
