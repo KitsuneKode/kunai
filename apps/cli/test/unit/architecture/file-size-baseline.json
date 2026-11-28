@@ -1,6 +1,6 @@
 {
-  "apps/cli/src/app-shell/browse-shell.tsx": 2710,
-  "apps/cli/src/app-shell/ink-shell.tsx": 2432,
+  "apps/cli/src/app-shell/browse-shell.tsx": 2654,
+  "apps/cli/src/app-shell/ink-shell.tsx": 1903,
   "apps/cli/src/app-shell/keybindings.ts": 1265,
   "apps/cli/src/app-shell/loading-shell.tsx": 955,
   "apps/cli/src/app-shell/panel-data.ts": 836,

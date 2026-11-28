@@ -55,6 +55,8 @@ export type TitleControlAction = {
   readonly shellAction?: ShellAction;
   /** Leading glyph, so a row is identifiable before it is read. */
   readonly icon?: string;
+  /** Compact-dialog accelerator shown on the row. */
+  readonly shortcut?: string;
   /** Discards data or resets state. Rendered so it cannot be picked by accident. */
   readonly destructive?: boolean;
 };
@@ -161,6 +163,7 @@ export type TitleControlContext = {
 
 type ActionSpec = {
   readonly id: TitleControlActionId;
+  readonly shortcut?: string;
   readonly label: string;
   readonly detail?: string;
   readonly group: TitleControlActionGroup;
@@ -264,6 +267,7 @@ const ACTION_SPECS: readonly ActionSpec[] = [
   },
   {
     id: "pick-episode",
+    shortcut: "e",
     label: "Pick episode",
     detail: "Choose season and episode manually",
     group: "primary",

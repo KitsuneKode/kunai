@@ -4,13 +4,12 @@ import { Box, Text } from "ink";
 import React from "react";
 
 import type { ResolvedAppCommand } from "./commands";
-import { getCommandPaletteVisibleCommandCount } from "./layout-policy";
 import { MouseTarget } from "./mouse/MouseRegions";
+import { buildPaletteRows, type PaletteRankedRow } from "./palette-ranking";
 import { plainModeEnabled, selectionPrefix } from "./plain-mode";
 import {
   COMMAND_GROUP_LABELS,
   CONTEXT_COMMAND_IDS,
-  buildCommandPickerModel,
   getPlaybackCommandPaletteMaxVisible,
   resolveCommandPaletteWidth,
 } from "./shell-command-model";
@@ -169,13 +168,8 @@ function paletteTitleSummary(entry: LocalTitleEntry): string {
   return `${kind} · ${entry.providerId ?? entry.source}`;
 }
 
-function paletteTitleSectionLabel(entry: LocalTitleEntry | undefined, expanded: boolean): string {
-  if (!entry || expanded) return TITLE_SECTION_LABEL;
-  return `${TITLE_SECTION_LABEL} · ${paletteTitleSummary(entry)}`;
-}
-
 function paletteTitlePreviewRows(titleCount: number, terminalRows: number): number {
-  return titleCount > 0 && terminalRows >= 48 ? 3 : 0;
+  return titleCount > 0 && terminalRows >= 30 ? 3 : 0;
 }
 
 function PaletteTitlePreview({
@@ -204,77 +198,6 @@ function PaletteTitlePreview({
   );
 }
 
-function PaletteLocalTitles({
-  matches,
-  commandCount,
-  highlightedIndex,
-  expanded,
-  width,
-  pointer,
-}: {
-  readonly matches: readonly LocalTitleMatch[];
-  readonly commandCount: number;
-  readonly highlightedIndex: number;
-  readonly expanded: boolean;
-  readonly width: number;
-  readonly pointer?: PalettePointerActions | null;
-}) {
-  if (matches.length === 0) return null;
-  const plain = plainModeEnabled();
-  const selectedTitle = matches[highlightedIndex - commandCount]?.entry;
-  return (
-    <Box flexDirection="column" marginTop={1}>
-      <Text color={palette.dim} dimColor={!plain}>
-        {truncateLine(paletteTitleSectionLabel(selectedTitle, expanded), width)}
-      </Text>
-      {matches.map((match, index) => {
-        const absoluteIndex = commandCount + index;
-        const selected = absoluteIndex === highlightedIndex;
-        if (plain) {
-          return (
-            <Text
-              key={`title:${match.entry.source}:${match.entry.titleId}`}
-              color={selected ? palette.text : palette.textDim}
-              bold={selected}
-            >
-              {`${selectionPrefix(selected, true)}${match.entry.title} — ${match.entry.detail}`}
-            </Text>
-          );
-        }
-        const aliasWidth = Math.min(20, Math.max(10, Math.floor(width * 0.28)));
-        const titleWidth = Math.max(12, width - aliasWidth - 7);
-        const detail = padColumnsEnd(truncateLine(match.entry.detail, aliasWidth), aliasWidth);
-        return (
-          <MouseTarget
-            key={`title:${match.entry.source}:${match.entry.titleId}`}
-            id={`palette:title:${match.entry.source}:${match.entry.titleId}`}
-            active={Boolean(pointer)}
-            onHover={() => pointer?.select(absoluteIndex)}
-            onClick={() =>
-              selected ? pointer?.activate(absoluteIndex) : pointer?.select(absoluteIndex)
-            }
-          >
-            <Box width={width + 4} backgroundColor={selected ? palette.accentFill : undefined}>
-              <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
-              <Box width={titleWidth}>
-                <AccentTitleLabel
-                  title={match.entry.title}
-                  ranges={match.ranges}
-                  width={titleWidth}
-                />
-              </Box>
-              <Text color={palette.dim}> </Text>
-              <Text wrap="truncate" color={selected ? palette.text : palette.muted}>
-                {detail}
-              </Text>
-            </Box>
-          </MouseTarget>
-        );
-      })}
-    </Box>
-  );
-}
-
 export function CommandPalette({
   input,
   pointer: pointerProp,
@@ -284,16 +207,19 @@ export function CommandPalette({
   highlightedIndex,
   maxVisible: maxVisibleProp,
   width,
+  catalogSearch = false,
 }: {
   input: string;
   pointer?: PalettePointerActions;
   cursor?: number;
   commands: readonly ResolvedAppCommand[];
-  /** Local title matches — rendered as a capped JUMP TO section under commands. */
+  /** Local title matches — ranked with commands as JUMP TO rows. */
   titleMatches?: readonly LocalTitleMatch[];
   highlightedIndex: number;
   maxVisible?: number;
   width?: number;
+  /** Append the catalog-search escape hatch when no prefix match exists. */
+  catalogSearch?: boolean;
 }) {
   const pointerContext = React.useContext(PalettePointerContext);
   const pointer = pointerProp ?? pointerContext;
@@ -302,28 +228,20 @@ export function CommandPalette({
   const { cols: shellColumns, rows: terminalRows } = useShellDimensions();
   const shellWidth = Math.max(28, width ?? shellColumns);
   const maxVisible = maxVisibleProp ?? getPlaybackCommandPaletteMaxVisible(terminalRows);
-  const model = buildCommandPickerModel(input, commands, highlightedIndex);
-  const matches = model.options
-    .map((option) => commands.find((command) => command.id === option.value))
-    .filter((command): command is ResolvedAppCommand => Boolean(command));
-  const showGrouped = input.trim().length === 0 && matches.length > 0;
-  const selectedTitle = titleMatches[highlightedIndex - matches.length]?.entry;
+  const rows = buildPaletteRows(input, commands, titleMatches, { catalogSearch });
+  const showGrouped = input.trim().length === 0 && rows.length > 0;
+  const selectedRow = rows[highlightedIndex];
+  const selectedTitle = selectedRow?.kind === "title" ? selectedRow.match.entry : undefined;
   const previewRows = paletteTitlePreviewRows(titleMatches.length, terminalRows);
   const reserveTitlePreview = previewRows > 0;
-  const visibleCount = getCommandPaletteVisibleCommandCount({
-    maxRows: Math.max(1, maxVisible - previewRows),
-    totalMatches: matches.length,
-    grouped: showGrouped,
-  });
-  const windowStart = getWindowStart(model.selectedIndex, matches.length, visibleCount);
-  const windowEnd = Math.min(windowStart + visibleCount, matches.length);
-  const visibleMatches = matches.slice(windowStart, windowEnd);
+  const visibleCount = Math.max(1, maxVisible - previewRows);
+  const windowStart = getWindowStart(highlightedIndex, rows.length, visibleCount);
+  const windowEnd = Math.min(windowStart + visibleCount, rows.length);
+  const visibleRows = rows.slice(windowStart, windowEnd);
   const contentWidth = resolveCommandPaletteWidth(Math.min(shellWidth, shellColumns));
 
   const plain = plainModeEnabled();
   const renderCommand = (command: ResolvedAppCommand, absoluteIndex: number) => {
-    // Compare against the raw highlighted index — model.selectedIndex is clamped
-    // to command rows, so a highlighted title row must deselect every command.
     const selected = absoluteIndex === highlightedIndex;
     const alias = `/${command.aliases[0]}`;
     if (plain) {
@@ -355,10 +273,7 @@ export function CommandPalette({
           pointer?.select(
             Math.max(
               0,
-              Math.min(
-                matches.length + titleMatches.length - 1,
-                highlightedIndex + (direction === "up" ? -1 : 1),
-              ),
+              Math.min(rows.length - 1, highlightedIndex + (direction === "up" ? -1 : 1)),
             ),
           )
         }
@@ -394,6 +309,130 @@ export function CommandPalette({
     );
   };
 
+  const renderTitle = (match: LocalTitleMatch, absoluteIndex: number) => {
+    const selected = absoluteIndex === highlightedIndex;
+    if (plain) {
+      return (
+        <Text
+          key={`title:${match.entry.source}:${match.entry.titleId}`}
+          color={selected ? palette.text : palette.textDim}
+          bold={selected}
+        >
+          {`${selectionPrefix(selected, true)}${match.entry.title} — ${match.entry.detail}`}
+        </Text>
+      );
+    }
+    const aliasWidth = Math.min(20, Math.max(10, Math.floor(contentWidth * 0.28)));
+    const titleWidth = Math.max(12, contentWidth - aliasWidth - 7);
+    const detail = padColumnsEnd(truncateLine(match.entry.detail, aliasWidth), aliasWidth);
+    return (
+      <MouseTarget
+        key={`title:${match.entry.source}:${match.entry.titleId}`}
+        id={`palette:title:${match.entry.source}:${match.entry.titleId}`}
+        active={Boolean(pointer)}
+        onHover={() => pointer?.select(absoluteIndex)}
+        onClick={() =>
+          selected ? pointer?.activate(absoluteIndex) : pointer?.select(absoluteIndex)
+        }
+      >
+        <Box width={contentWidth + 4} backgroundColor={selected ? palette.accentFill : undefined}>
+          <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
+          <Box width={titleWidth}>
+            <AccentTitleLabel title={match.entry.title} ranges={match.ranges} width={titleWidth} />
+          </Box>
+          <Text color={palette.dim}> </Text>
+          <Text wrap="truncate" color={selected ? palette.text : palette.muted}>
+            {detail}
+          </Text>
+        </Box>
+      </MouseTarget>
+    );
+  };
+
+  const renderSearch = (query: string, absoluteIndex: number) => {
+    const selected = absoluteIndex === highlightedIndex;
+    const label = `Search catalog for "${query}"`;
+    if (plain) {
+      return (
+        <Text
+          key={`search:${query}`}
+          color={selected ? palette.text : palette.textDim}
+          bold={selected}
+        >
+          {`${selectionPrefix(selected, true)}${label}`}
+        </Text>
+      );
+    }
+    return (
+      <MouseTarget
+        key={`search:${query}`}
+        id="palette:search-catalog"
+        active={Boolean(pointer)}
+        onHover={() => pointer?.select(absoluteIndex)}
+        onClick={() =>
+          selected ? pointer?.activate(absoluteIndex) : pointer?.select(absoluteIndex)
+        }
+      >
+        <Box width={contentWidth + 4} backgroundColor={selected ? palette.accentFill : undefined}>
+          <Text color={selected ? palette.accent : palette.dim}>{selected ? "▌ " : "  "}</Text>
+          <Text color={selected ? palette.accent : palette.text} bold={selected} wrap="truncate">
+            {truncateLine(label, contentWidth - 2)}
+          </Text>
+          <Text color={palette.dim}> enter</Text>
+        </Box>
+      </MouseTarget>
+    );
+  };
+
+  const renderRow = (row: PaletteRankedRow, absoluteIndex: number) => {
+    if (row.kind === "command") return renderCommand(row.command, absoluteIndex);
+    if (row.kind === "title") return renderTitle(row.match, absoluteIndex);
+    return renderSearch(row.query, absoluteIndex);
+  };
+
+  const renderedRows: React.ReactNode[] = [];
+  let previousGroup: "context" | "global" | null = null;
+  let wroteTitleSection = false;
+  let wroteCommandSectionAfterTitles = false;
+  for (const [index, row] of visibleRows.entries()) {
+    const absoluteIndex = windowStart + index;
+    if (showGrouped && row.kind === "command") {
+      const group = CONTEXT_COMMAND_IDS.has(row.command.id) ? "context" : "global";
+      if (group !== previousGroup) {
+        renderedRows.push(
+          <Box key={`group:${group}:${absoluteIndex}`} marginTop={index > 0 ? 1 : 0}>
+            <Text color={palette.dim} dimColor>
+              {COMMAND_GROUP_LABELS[group].toUpperCase()}
+            </Text>
+          </Box>,
+        );
+        previousGroup = group;
+      }
+    }
+    if (!showGrouped && row.kind === "title" && !wroteTitleSection) {
+      renderedRows.push(
+        <Text key="jump-to-header" color={palette.dim} dimColor>
+          {TITLE_SECTION_LABEL}
+        </Text>,
+      );
+      wroteTitleSection = true;
+    }
+    if (
+      !showGrouped &&
+      row.kind === "command" &&
+      wroteTitleSection &&
+      !wroteCommandSectionAfterTitles
+    ) {
+      renderedRows.push(
+        <Text key="commands-after-titles-header" color={palette.dim} dimColor>
+          COMMANDS
+        </Text>,
+      );
+      wroteCommandSectionAfterTitles = true;
+    }
+    renderedRows.push(renderRow(row, absoluteIndex));
+  }
+
   return (
     <Box flexDirection="column" marginTop={1} width={shellWidth} flexShrink={0}>
       {pointer ? (
@@ -423,67 +462,27 @@ export function CommandPalette({
       </Box>
       <Text color={palette.dim} dimColor={!plain}>
         {plain
-          ? `Tab autocomplete, Up/Down choose, Enter run, Esc close${matches.length > visibleMatches.length ? ` (${matches.length} commands)` : ""}`
-          : `Tab autocomplete · ↑↓ choose · Enter run${matches.length > visibleMatches.length ? ` · ${matches.length} commands` : ""}`}
+          ? `Tab autocomplete, Up/Down choose, Enter run, Esc close${rows.length > visibleCount ? ` (${rows.length} rows)` : ""}`
+          : `Tab autocomplete · ↑↓ choose · Enter run${rows.length > visibleCount ? ` · ${rows.length} rows` : ""}`}
       </Text>
       {reserveTitlePreview ? (
         <PaletteTitlePreview entry={selectedTitle} width={contentWidth} />
       ) : null}
       <Box flexDirection="column">
-        {matches.length > 0 ? (
+        {rows.length > 0 ? (
           <>
-            {/* Scroll affordance only when there is actually more above — no empty
-                placeholder line, so the palette stays tight. */}
             {windowStart > 0 ? (
-              <Text color={palette.dim}>{plain ? "More commands above" : " ▲ more"}</Text>
+              <Text color={palette.dim}>{plain ? "More rows above" : " ▲ more"}</Text>
             ) : null}
-            {showGrouped ? (
-              <>
-                {(() => {
-                  const rows: React.ReactNode[] = [];
-                  let previousGroup: "context" | "global" | null = null;
-                  for (const [index, command] of visibleMatches.entries()) {
-                    const group = CONTEXT_COMMAND_IDS.has(command.id) ? "context" : "global";
-                    if (group !== previousGroup) {
-                      rows.push(
-                        <Box
-                          key={`group:${group}:${windowStart + index}`}
-                          marginTop={index > 0 ? 1 : 0}
-                        >
-                          <Text color={palette.dim} dimColor>
-                            {COMMAND_GROUP_LABELS[group].toUpperCase()}
-                          </Text>
-                        </Box>,
-                      );
-                      previousGroup = group;
-                    }
-                    rows.push(renderCommand(command, windowStart + index));
-                  }
-                  return <>{rows}</>;
-                })()}
-              </>
-            ) : (
-              visibleMatches.map((command, index) => {
-                const absoluteIndex = windowStart + index;
-                return renderCommand(command, absoluteIndex);
-              })
-            )}
-            {windowEnd < matches.length ? (
-              <Text color={palette.dim}>{plain ? "More commands below" : " ▼ more"}</Text>
+            {renderedRows}
+            {windowEnd < rows.length ? (
+              <Text color={palette.dim}>{plain ? "More rows below" : " ▼ more"}</Text>
             ) : null}
           </>
         ) : (
           <Text color={palette.dim}>No matching commands</Text>
         )}
       </Box>
-      <PaletteLocalTitles
-        matches={titleMatches}
-        commandCount={matches.length}
-        highlightedIndex={highlightedIndex}
-        expanded={reserveTitlePreview}
-        width={contentWidth}
-        pointer={pointer}
-      />
     </Box>
   );
 }

@@ -632,7 +632,16 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // measured 3,446,377 bytes with Bun 1.4.5: +6,354 over 3,440,023. No
 // dependency or asset. 3366 KiB is the smallest whole-KiB budget over that
 // measurement and leaves 407 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_366;
+// The shell-v4 compact picker / palette-ranking branch merged onto that catalog
+// tree measured 3,443,038 bytes with Bun 1.4.5: +3,015. No dependency or asset;
+// dead palette title chrome and the oversized shell files were trimmed first.
+// 3363 KiB is the smallest whole-KiB budget over that measurement and leaves
+// 674 bytes; public launcher budgets are unchanged.
+// Merging the compact-picker branch onto the failover-banner tree (#876)
+// measured 3,449,390 bytes with Bun 1.4.5: +3,013 over 3,446,377. No
+// dependency or asset. 3369 KiB is the smallest whole-KiB budget over that
+// measurement and leaves 466 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_369;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
