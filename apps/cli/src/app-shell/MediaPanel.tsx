@@ -5,9 +5,10 @@
 //          → ── synopsis ── → ── prev/up next ── mini-cards → progress
 //
 // Named Kitty/Sixel slots for the primary poster plus prev/next mini-cards on
-// post-play (and up-next during Now Playing). Empty poster/thumb slots show the
-// ❀ petal placeholder rather than initials or blank space. Sections use light
-// rose-dim ── label ── rules instead of one long left border.
+// post-play (and up-next during Now Playing). An empty poster is the framed
+// initial tile from the details sheet, at a fixed height, never a petal
+// floating in blank rail space. Sections use light rose-dim ── label ── rules
+// instead of one long left border.
 
 import { Box, Text } from "ink";
 import React from "react";
@@ -15,6 +16,7 @@ import React from "react";
 import type { KittyPlacementSlot } from "./kitty-placement-registry";
 import type { MediaPanelFact, MediaPanelMiniCard, MediaPanelModel } from "./media-panel-model";
 import { plainBorderStyle, plainModeEnabled } from "./plain-mode";
+import { PosterInitialBlock } from "./poster-initial-block";
 import { MiniPosterTile } from "./primitives/MiniPosterTile";
 import { ProgressBar } from "./primitives/ProgressBar";
 import { SakuraPetal } from "./primitives/SakuraPetal";
@@ -22,9 +24,14 @@ import { measureColumns, padColumnsEnd, truncateLine, wrapText } from "./shell-t
 import { palette, statusColor } from "./shell-theme";
 import { PosterOutput } from "./SixelPosterPane";
 import { usePosterPreview } from "./use-poster-preview";
+import { useShellDimensions } from "./use-viewport-policy";
 
 const SYNOPSIS_MAX_LINES = 3;
 const FACT_LABEL_WIDTH = 8;
+/** Fixed poster tile. Below this terminal width the tile drops so text keeps the row. */
+const POSTER_TILE_ROWS = 8;
+const POSTER_TILE_COLS = 14;
+const POSTER_TILE_MIN_COLUMNS = 48;
 /** Episode stills: wide enough for Kitty/Sixel detail without crowding the rail text. */
 const MINI_CARD_THUMB_COLS = 12;
 const MINI_CARD_THUMB_ROWS = 5;
@@ -72,30 +79,31 @@ function SectionLabel({ label, width }: { readonly label: string; readonly width
 // ── Poster slot (the single Kitty image budget) ────────────────────────────
 
 function PosterSlot({
+  title,
   url,
   width,
-  active,
   placementSlot,
   allowKitty = true,
   allowSixel = true,
 }: {
+  readonly title: string;
   readonly url?: string;
   readonly width: number;
-  readonly active: boolean;
   readonly placementSlot: import("./kitty-placement-registry").KittyPlacementSlot;
   /** When false, render text inside Ink so a sibling owns the Kitty budget. */
   readonly allowKitty?: boolean;
   /** Allow the measured Sixel overlay; unchanged frames are deduplicated by its manager. */
   readonly allowSixel?: boolean;
 }) {
-  const innerCols = Math.max(10, width - 2);
+  const { cols } = useShellDimensions();
+  const tileCols = Math.min(POSTER_TILE_COLS, Math.max(8, width));
   const useKitty = allowKitty;
   // When Kitty is denied for this panel, still bind the slot so disable/cleanup
   // releases any prior Kitty placement instead of ghosting under chafa.
   const { poster } = usePosterPreview(url, {
-    rows: 12,
-    cols: innerCols,
-    enabled: Boolean(url),
+    rows: POSTER_TILE_ROWS,
+    cols: tileCols,
+    enabled: Boolean(url) && cols >= POSTER_TILE_MIN_COLUMNS,
     variant: "detail",
     debounceMs: 120,
     allowKitty: useKitty,
@@ -104,9 +112,10 @@ function PosterSlot({
     preserveTerminalImages: false,
     placementSlot,
   });
-  return (
-    <Box width={width} minHeight={13} justifyContent="center" alignItems="center">
-      {poster.kind !== "none" ? (
+  if (cols < POSTER_TILE_MIN_COLUMNS) return null;
+  if (poster.kind !== "none") {
+    return (
+      <Box width={width} height={POSTER_TILE_ROWS} justifyContent="center" alignItems="center">
         <PosterOutput
           poster={poster}
           // Playback stats render every second. The pane itself still
@@ -114,9 +123,12 @@ function PosterSlot({
           // a large Sixel payload and make Windows Terminal blink.
           repaintAfterInkRender={placementSlot !== "playing-rail"}
         />
-      ) : (
-        <SakuraPetal mode="placeholder" active={active} />
-      )}
+      </Box>
+    );
+  }
+  return (
+    <Box width={width} flexDirection="row" justifyContent="center">
+      <PosterInitialBlock title={title} width={tileCols} height={POSTER_TILE_ROWS} />
     </Box>
   );
 }
@@ -284,9 +296,9 @@ export const MediaPanel = React.memo(function MediaPanel({
     >
       {plain ? null : (
         <PosterSlot
+          title={model.title}
           url={model.posterUrl}
           width={innerWidth}
-          active={active}
           placementSlot={placementSlot}
           allowKitty={allowKitty}
           allowSixel={allowSixel}

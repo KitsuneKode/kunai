@@ -3,8 +3,11 @@ import React from "react";
 
 import { composeHeader } from "../format/header";
 import { plainBrandLabel, plainModeEnabled } from "../plain-mode";
+import { plainHeaderStatusLabel } from "../root-status-summary";
 import { measureColumns, truncateLine } from "../shell-text";
 import { APP_LABEL, palette } from "../shell-theme";
+
+const STATUS_GLYPH = /^[▸⏸◌]/u;
 
 /**
  * The single canonical header. Owns brand · destination pill · context · status
@@ -38,7 +41,7 @@ export const AppHeader = React.memo(function AppHeader({
       brand === APP_LABEL ? plainBrandLabel(true) : brand.replace(/^🦊\s*/u, ""),
       destination,
       context?.trim() || undefined,
-      status ? `Status: ${status}` : undefined,
+      status ? `Status: ${plainHeaderStatusLabel(status)}` : undefined,
       size ? `Terminal: ${size}` : undefined,
     ].filter((part): part is string => Boolean(part));
     const line = parts.join(" | ");
@@ -65,8 +68,10 @@ export const AppHeader = React.memo(function AppHeader({
   const LEAD = 2;
   const RIGHT_GAP = 2;
   const fixedCols = measureColumns(h.brand) + SEP + measureColumns(h.pill);
+  const ownGlyph = Boolean(status && STATUS_GLYPH.test(status));
+  const bulletCols = status && !ownGlyph ? 2 : 0;
   const measuredRightCols = (right: string) =>
-    right ? (status ? 2 : 0) + measureColumns(right) + RIGHT_GAP : 0;
+    right ? bulletCols + measureColumns(right) + RIGHT_GAP : 0;
 
   let right = h.right;
   if (width !== undefined && fixedCols + measuredRightCols(right) > width && status && size) {
@@ -101,10 +106,23 @@ export const AppHeader = React.memo(function AppHeader({
       </Box>
       {right ? (
         <Box flexShrink={0}>
-          {status ? <Text color={statusColor}>{"● "}</Text> : null}
-          <Text color={palette.muted} wrap="truncate-end">
-            {right}
-          </Text>
+          {status && !ownGlyph ? <Text color={statusColor}>{"● "}</Text> : null}
+          {ownGlyph && status && right.startsWith(status) ? (
+            <>
+              <Text color={statusColor} wrap="truncate-end">
+                {status}
+              </Text>
+              {right.length > status.length ? (
+                <Text color={palette.muted} wrap="truncate-end">
+                  {right.slice(status.length)}
+                </Text>
+              ) : null}
+            </>
+          ) : (
+            <Text color={palette.muted} wrap="truncate-end">
+              {right}
+            </Text>
+          )}
         </Box>
       ) : null}
     </Box>

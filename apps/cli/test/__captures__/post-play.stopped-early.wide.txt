@@ -1,25 +1,20 @@
 # post-play.stopped-early · wide (140×45)
- DR. STONE                                                                                         │
- S04E07                                                                                            │
+ DR. STONE                                                                                         │            ╭────────────╮
+ S04E07                                                                                            │            │            │
+                                                                                                   │            │            │
+ ⏸ stopped early                                                                                   │            │     D      │
+                                                                                                   │            │            │
+ ▌ ↵ Resume          same stream · same position [↵]                                               │            │            │
+   Episodes          open season list [e]                                                          │            │            │
+   Replay            rewatch from the start [r]                                                    │            ╰────────────╯
                                                                                                    │
- ⏸ stopped early                                                                                   │
-                                                                                                   │
- ▌ ↵ Resume          same stream · same position [↵]                                               │
-   Episodes          open season list [e]                                                          │                  ❀
-   Replay            rewatch from the start [r]                                                    │
-                                                                                                   │
- ────────────────────────────────────── you might also like ───────────────────────────────────────│
-                                                                                                   │
+ ────────────────────────────────────── you might also like ───────────────────────────────────────│  ❀ series
+                                                                                                   │  DR. STONE
  ┌─────────────────────────────┐  ┌─────────────────────────────┐  ┌─────────────────────────────┐ │
- │                             │  │                             │  │                             │ │
+ │                             │  │                             │  │                             │ │  ── up next ──────────────────────
  │              F              │  │             VS              │  │             HD              │ │
- │                             │  │                             │  │                             │ │  ❀ series
- │ 1                           │  │ 2                           │  │ 3                           │ │  DR. STONE
- │ Frieren                     │  │ Vinland Saga                │  │ Heavenly Delusion           │ │
- │ Slow-burn fantasy           │  │ 2019                        │  │ 2023                        │ │  ── up next ──────────────────────
+ │                             │  │                             │  │                             │ │               E32 · Challengers…
+ │ 1                           │  │ 2                           │  │ 3                           │ │               autoplay
+ │ Frieren                     │  │ Vinland Saga                │  │ Heavenly Delusion           │ │       ❀
+ │ Slow-burn fantasy           │  │ 2019                        │  │ 2023                        │ │
  └─────────────────────────────┘  └─────────────────────────────┘  └─────────────────────────────┘ │
-                                                                                                   │               E32 · Challengers…
-                                                                                                   │               autoplay
-                                                                                                   │       ❀
-                                                                                                   │
-                                                                                                   │

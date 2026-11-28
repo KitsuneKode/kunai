@@ -16,6 +16,7 @@ import { join } from "node:path";
 import { measureColumns } from "@/app-shell/shell-text";
 import { gatePlaybackDependencies } from "@/app/playback/playback-dependency-gate";
 import type { Container } from "@/container";
+import { VLC_CAPABILITIES } from "@/domain/playback/player-capabilities";
 import { probeCapabilities } from "@/ui";
 import { RecommendationCacheRepository } from "@kunai/storage";
 import type { JsonObject } from "@kunai/types";
@@ -637,7 +638,7 @@ describe("agent wiring · shell v4 narrow layout", () => {
         const header = frame.split("\n")[0] ?? "";
         expect(measureColumns(header.trimEnd())).toBeLessThanOrEqual(40);
         expect(header).toContain("🦊");
-        expect(header).toContain("Playing");
+        expect(header).toContain("playing");
         expect(header).not.toContain("Now Playin●");
         expect(frame).toContain("[q] stop");
         expect(frame).toContain("[/]");
@@ -1298,4 +1299,214 @@ describe("agent wiring · relaunch", () => {
       await session.dispose();
     }
   }, 60_000);
+});
+
+function seedSeriesResume(container: Container): void {
+  container.historyRepository.upsertProgress({
+    title: { id: "tmdb:smoke-series-1", kind: "series", title: "Smoke Series" },
+    episode: { season: 1, episode: 2 },
+    positionSeconds: 100,
+    durationSeconds: 1400,
+    completed: false,
+    providerId: "videasy",
+    updatedAt: "2026-11-20T10:00:00.000Z",
+  });
+}
+
+function goStripLine(frame: string): string {
+  return frame.split("\n").find((line) => line.includes("GO  ")) ?? "";
+}
+
+function hasFloatingPetal(frame: string): boolean {
+  return frame.split("\n").some((line) => line.trim() === "❀" || line.trim() === "✿");
+}
+
+describe("agent wiring · now playing deck", () => {
+  async function openNowPlaying(s: AgentSession, query: string, title: string): Promise<void> {
+    await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+    s.press(query, K.enter);
+    await s.waitForFrame((f) => f.includes(title), "fixture results");
+    s.press(K.enter);
+    await s.waitForFrame(
+      (f) => f.includes("Now Playing") || f.includes("Where to start?") || f.includes("▌ Episode"),
+      "playback entry",
+      30_000,
+    );
+    if (s.frame().includes("Where to start?")) {
+      s.press("1");
+    } else if (s.frame().includes("▌ Episode") && !s.frame().includes("Now Playing")) {
+      await s.waitSettled();
+      s.press(K.enter);
+    }
+    await s.waitForFrame(
+      (f) =>
+        f.includes("Now Playing") && (f.includes("▸ playing") || f.includes("Status: playing")),
+      "now playing",
+      30_000,
+    );
+  }
+
+  it("shows a playing header, framed poster, and series GO strip at 120x32", async () => {
+    await withSession(
+      "wiring-now-playing-series",
+      {
+        mpv: "fake",
+        fakeMpvMode: "hold",
+        columns: 120,
+        rows: 32,
+        beforeMount({ container }) {
+          seedSeriesResume(container);
+        },
+      },
+      async (s) => {
+        await openNowPlaying(s, "series", "Smoke Series");
+        const frame = s.frame();
+        expect(frame).toContain("▸ playing");
+        expect(frame).not.toContain("● ready");
+        expect(hasFloatingPetal(frame)).toBe(false);
+        expect(frame).toContain("╭");
+        const strip = goStripLine(frame);
+        expect(strip).toContain("e episodes");
+        expect(strip).toContain("o tracks");
+        expect(measureColumns(strip.trimEnd())).toBeLessThanOrEqual(120);
+      },
+    );
+  }, 45_000);
+
+  it("a movie GO strip has no episode shortcuts", async () => {
+    await withSession(
+      "wiring-now-playing-movie",
+      { mpv: "fake", fakeMpvMode: "hold", columns: 120, rows: 32 },
+      async (s) => {
+        await openNowPlaying(s, "smoke", "Smoke Movie");
+        const strip = goStripLine(s.frame());
+        expect(strip).toContain("o tracks");
+        expect(strip).not.toContain("n next");
+        expect(strip).not.toContain("p prev");
+        expect(strip).not.toContain("e episodes");
+        expect(s.frame()).toContain("╭");
+        expect(hasFloatingPetal(s.frame())).toBe(false);
+      },
+    );
+  }, 45_000);
+
+  it("anime playback keeps the episode shortcut", async () => {
+    await withSession(
+      "wiring-now-playing-anime",
+      { mpv: "fake", fakeMpvMode: "hold", columns: 120, rows: 32 },
+      async (s) => {
+        await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
+        s.press(K.tab);
+        await s.waitForFrame((f) => f.includes("anime"), "anime mode");
+        s.press("smoke", K.enter);
+        await s.waitForFrame((f) => f.includes("Smoke Anime"), "anime fixture");
+        s.press(K.enter);
+        await s.waitForFrame((f) => f.includes("▌ Episode 7"), "episode picker");
+        await s.waitSettled();
+        s.press(K.enter);
+        await s.waitForFrame(
+          (f) => f.includes("Now Playing") && f.includes("▸ playing"),
+          "now playing",
+          30_000,
+        );
+        expect(goStripLine(s.frame())).toContain("e episodes");
+      },
+    );
+  }, 45_000);
+
+  it("fits the GO strip on one line and drops the poster tile at 40x20", async () => {
+    await withSession(
+      "wiring-now-playing-narrow",
+      {
+        mpv: "fake",
+        fakeMpvMode: "hold",
+        columns: 40,
+        rows: 20,
+        beforeMount({ container }) {
+          seedSeriesResume(container);
+        },
+      },
+      async (s) => {
+        await openNowPlaying(s, "series", "Smoke Series");
+        const frame = s.frame();
+        const strip = goStripLine(frame);
+        expect(strip.length).toBeGreaterThan(0);
+        expect(measureColumns(strip.trimEnd())).toBeLessThanOrEqual(40);
+        expect(frame).not.toContain("╭");
+        expect(hasFloatingPetal(frame)).toBe(false);
+      },
+    );
+  }, 45_000);
+
+  it("keeps the playing header and a one-line GO strip at 54x25", async () => {
+    await withSession(
+      "wiring-now-playing-54",
+      {
+        mpv: "fake",
+        fakeMpvMode: "hold",
+        columns: 54,
+        rows: 25,
+        beforeMount({ container }) {
+          seedSeriesResume(container);
+        },
+      },
+      async (s) => {
+        await openNowPlaying(s, "series", "Smoke Series");
+        const frame = s.frame();
+        const strip = goStripLine(frame);
+        expect(frame).toContain("▸ playing");
+        expect(measureColumns(strip.trimEnd())).toBeLessThanOrEqual(54);
+        expect(strip).toContain("e episodes");
+        expect(hasFloatingPetal(frame)).toBe(false);
+      },
+    );
+  }, 45_000);
+
+  it("keeps the GO strip readable in plain mode", async () => {
+    await withSession(
+      "wiring-now-playing-plain",
+      {
+        mpv: "fake",
+        fakeMpvMode: "hold",
+        columns: 80,
+        rows: 24,
+        extraEnv: { KUNAI_PLAIN: "1" },
+        beforeMount({ container }) {
+          seedSeriesResume(container);
+        },
+      },
+      async (s) => {
+        await openNowPlaying(s, "series", "Smoke Series");
+        const frame = s.frame();
+        expect(frame).toContain("Status: playing");
+        const strip = goStripLine(frame);
+        expect(strip).toContain("e episodes");
+        expect(strip).not.toContain("▸");
+      },
+    );
+  }, 45_000);
+
+  it("VLC capabilities replace track shortcuts with one line", async () => {
+    await withSession(
+      "wiring-now-playing-vlc",
+      {
+        mpv: "fake",
+        fakeMpvMode: "hold",
+        columns: 120,
+        rows: 32,
+        beforeMount({ container }) {
+          seedSeriesResume(container);
+          Object.assign(container.player, { capabilities: VLC_CAPABILITIES });
+        },
+      },
+      async (s) => {
+        await openNowPlaying(s, "series", "Smoke Series");
+        const frame = s.frame();
+        expect(frame).toContain("▸ playing");
+        expect(frame).toContain("Track switches need mpv");
+        expect(goStripLine(frame)).not.toContain("o tracks");
+        expect(goStripLine(frame)).toContain("e episodes");
+      },
+    );
+  }, 45_000);
 });

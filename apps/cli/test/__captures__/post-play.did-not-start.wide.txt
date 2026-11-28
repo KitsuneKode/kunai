@@ -1,27 +1,22 @@
 # post-play.did-not-start · wide (140×45)
- DR. STONE                                                                                         │
- S04E07                                                                                            │
-                                                                                                   │
- ▢ playback didn't start                                                                           │
- nothing was recorded for this title                                                               │
-                                                                                                   │
- ▌ Try again         retry the same episode [r]                                                    │                  ❀
-   Fallback          try another provider [⇧F]                                                     │
+ DR. STONE                                                                                         │            ╭────────────╮
+ S04E07                                                                                            │            │            │
+                                                                                                   │            │            │
+ ▢ playback didn't start                                                                           │            │     D      │
+ nothing was recorded for this title                                                               │            │            │
+                                                                                                   │            │            │
+ ▌ Try again         retry the same episode [r]                                                    │            │            │
+   Fallback          try another provider [⇧F]                                                     │            ╰────────────╯
    Sources           choose another stream [o]                                                     │
-   Search            find another title [s]                                                        │
-                                                                                                   │
+   Search            find another title [s]                                                        │  ❀ series
+                                                                                                   │  DR. STONE
  ────────────────────────────────────── you might also like ───────────────────────────────────────│
-                                                                                                   │
+                                                                                                   │  ── up next ──────────────────────
  ┌─────────────────────────────┐  ┌─────────────────────────────┐  ┌─────────────────────────────┐ │
- │                             │  │                             │  │                             │ │  ❀ series
- │              F              │  │             VS              │  │             HD              │ │  DR. STONE
- │                             │  │                             │  │                             │ │
- │ 1                           │  │ 2                           │  │ 3                           │ │  ── up next ──────────────────────
+ │                             │  │                             │  │                             │ │               E32 · Challengers…
+ │              F              │  │             VS              │  │             HD              │ │               autoplay
+ │                             │  │                             │  │                             │ │       ❀
+ │ 1                           │  │ 2                           │  │ 3                           │ │
  │ Frieren                     │  │ Vinland Saga                │  │ Heavenly Delusion           │ │
- │ Slow-burn fantasy           │  │ 2019                        │  │ 2023                        │ │               E32 · Challengers…
- └─────────────────────────────┘  └─────────────────────────────┘  └─────────────────────────────┘ │               autoplay
-                                                                                                   │       ❀
-                                                                                                   │
-                                                                                                   │
-                                                                                                   │
-                                                                                                   │  ████████████┈┈┈┈┈┈┈┈ 7 / 12 · 58%
+ │ Slow-burn fantasy           │  │ 2019                        │  │ 2023                        │ │
+ └─────────────────────────────┘  └─────────────────────────────┘  └─────────────────────────────┘ │  ████████████┈┈┈┈┈┈┈┈ 7 / 12 · 58%
