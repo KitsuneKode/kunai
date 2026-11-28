@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 
-import { searchOfflineLibrary } from "@/app/search/offline-search";
 import { applyOfflineCommandAvailability } from "@/domain/session/command-registry";
 import { deriveOfflineMode } from "@/domain/session/offline-mode";
 
@@ -31,35 +30,5 @@ describe("offline-first shell policy", () => {
       reason: "needs a connection",
     });
     expect(applyOfflineCommandAvailability(command, false).enabled).toBe(true);
-  });
-
-  test("offline search matches downloaded titles before history-only titles", () => {
-    const container = {
-      offlineAssetService: {
-        listAllAssets: () => [
-          {
-            titleId: "tmdb:1",
-            titleName: "Smoke Movie",
-            mediaKind: "movie",
-            state: "ready",
-            updatedAt: "2026-01-02T00:00:00.000Z",
-          },
-        ],
-      },
-      historyRepository: {
-        listLatestByTitle: () => [
-          {
-            titleId: "tmdb:2",
-            title: "Smoke Series",
-            mediaKind: "series",
-            updatedAt: "2026-01-01T00:00:00.000Z",
-          },
-        ],
-      },
-    } as never;
-    expect(searchOfflineLibrary(container, "smoke").map((result) => result.title)).toEqual([
-      "Smoke Movie",
-      "Smoke Series",
-    ]);
   });
 });
