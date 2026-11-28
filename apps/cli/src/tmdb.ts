@@ -178,7 +178,9 @@ async function fetchEpisodesRaw(tmdbId: string, season: number): Promise<Episode
   try {
     const data = await fetchTmdbJsonCached(`/tv/${tmdbId}/season/${season}?language=en-US`);
     const payload = readRecord(data);
-    const episodes = Array.isArray(payload.episodes) ? payload.episodes.map(readRecord) : [];
+    // A 200 without an episodes array is a failed fetch, not an empty season.
+    if (!Array.isArray(payload.episodes)) return null;
+    const episodes = payload.episodes.map(readRecord);
     const eps = await enrichEpisodesWithOriginalLanguage(
       tmdbId,
       season,

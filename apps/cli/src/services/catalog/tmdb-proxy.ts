@@ -262,6 +262,12 @@ let halfOpenProbeInFlight = false;
  */
 const HALF_OPEN_PROBE_INTERVAL_MS = 30 * 1000;
 let nextHalfOpenProbeAt = 0;
+/**
+ * The previous half-open probe chose a direct host and that host failed.
+ * The next probe then uses earliest-window order so a recovered mirror can
+ * be tried while direct is still down. A successful probe clears it.
+ */
+let lastHalfOpenDirectProbeFailed = false;
 
 function sessionCacheWrite(key: string, entry: SessionCacheEntry): void {
   // Writes land after async fetches, so insertion order is not age order —
@@ -325,6 +331,7 @@ export function clearTmdbSessionCache(): void {
   rateLimitedUntil.clear();
   halfOpenProbeInFlight = false;
   nextHalfOpenProbeAt = 0;
+  lastHalfOpenDirectProbeFailed = false;
 }
 
 /** How long a host that answered 429 is rested (shorter than an outage breaker). */
@@ -485,11 +492,15 @@ async function fetchTmdbHostJson(
   });
 }
 
-function probeHost(probeable: readonly TmdbHost[], credentialKey: string): TmdbHost | undefined {
+function probeHost(
+  probeable: readonly TmdbHost[],
+  credentialKey: string,
+  preferDirect: boolean,
+): TmdbHost | undefined {
   const byWindow = [...probeable].sort(
     (left, right) => (hostRetryAfter.get(left.base) ?? 0) - (hostRetryAfter.get(right.base) ?? 0),
   );
-  if (credentialKey !== "") {
+  if (preferDirect && credentialKey !== "") {
     const direct = byWindow.find((host) => host.needsApiKey);
     if (direct) return direct;
   }
@@ -505,8 +516,9 @@ function probeHost(probeable: readonly TmdbHost[], credentialKey: string): TmdbH
  * - caller abort → not a host failure; rethrow without marking anything.
  * - a keyed 4xx, or a keyless JSON 400/404 → TMDB's own answer; rethrow.
  *
- * Keyless mirrors share a cold-start budget. Once it is spent the walk goes
- * straight to direct TMDB with whatever the caller still has left.
+ * Keyless mirrors share a cold-start budget counted only while a mirror
+ * attempt is in flight. Direct time does not spend it. Once it is spent the
+ * walk skips the remaining mirrors and uses the caller's remaining deadline.
  */
 export async function fetchTmdbJsonWithFallback(
   path: string,
@@ -521,6 +533,7 @@ export async function fetchTmdbJsonWithFallback(
   const startedAt = readNow();
   const callerDeadline = startedAt + timeoutMs;
   const now = startedAt;
+  let mirrorWaitMs = 0;
   let lastError: Error | null = null;
 
   const hosts = tmdbHostOrder(resolveCredential).filter(
@@ -535,14 +548,15 @@ export async function fetchTmdbJsonWithFallback(
   if (eligible.length === 0) {
     // Half-open: every host is inside its breaker window. One request probes
     // a host; concurrent requests fail fast instead of each sending their own
-    // probe. A credential prefers the direct host over a mirror whose window
-    // happens to end sooner. A rate-limited host keeps its rest.
+    // probe. A credential prefers the direct host, unless the previous probe
+    // was a direct host that failed; then the earliest window is used so a
+    // recovered mirror can answer. A rate-limited host keeps its rest.
     const probeable = hosts.filter((host) => !resting(host));
     if (probeable.length === 0) throw new Error("TMDB hosts rate limited");
     if (halfOpenProbeInFlight) throw new Error("TMDB hosts unavailable (recovery probe in flight)");
     if (now < nextHalfOpenProbeAt)
       throw new Error("TMDB hosts unavailable (next recovery probe pending)");
-    const chosen = probeHost(probeable, resolveCredential().key);
+    const chosen = probeHost(probeable, resolveCredential().key, !lastHalfOpenDirectProbeFailed);
     if (!chosen) throw new Error("no TMDB hosts available");
     probing = true;
     nextHalfOpenProbeAt = readNow() + HALF_OPEN_PROBE_INTERVAL_MS;
@@ -552,12 +566,11 @@ export async function fetchTmdbJsonWithFallback(
 
   /** Milliseconds this attempt may wait, or null when a mirror's budget is spent. */
   const attemptTimeout = (host: TmdbHost): number | null => {
-    const current = readNow();
-    const callerLeft = callerDeadline - current;
-    if (host.needsApiKey) return Math.max(0, callerLeft);
-    const budgetLeft = budget.maxTotalMirrorWaitMs - (current - startedAt);
-    if (budgetLeft <= 0) return null;
-    return Math.min(budget.perMirrorTimeoutMs, budgetLeft, Math.max(0, callerLeft));
+    const callerLeft = Math.max(0, callerDeadline - readNow());
+    if (host.needsApiKey) return callerLeft;
+    const mirrorBudgetLeft = budget.maxTotalMirrorWaitMs - mirrorWaitMs;
+    if (mirrorBudgetLeft <= 0) return null;
+    return Math.min(budget.perMirrorTimeoutMs, mirrorBudgetLeft, callerLeft);
   };
 
   /** A credential TMDB refused in this walk; another keyed host would refuse it too. */
@@ -573,6 +586,8 @@ export async function fetchTmdbJsonWithFallback(
       }
       const timeout = attemptTimeout(host);
       if (timeout === null) continue;
+      const countMirrorWait = !host.needsApiKey;
+      const mirrorStarted = countMirrorWait ? readNow() : 0;
       try {
         const value = await fetchTmdbHostJson(
           host,
@@ -582,10 +597,13 @@ export async function fetchTmdbJsonWithFallback(
           resolveCredential,
           deps.timers,
         );
+        if (countMirrorWait) mirrorWaitMs += readNow() - mirrorStarted;
         hostRetryAfter.delete(host.base);
         nextHalfOpenProbeAt = 0;
+        lastHalfOpenDirectProbeFailed = false;
         return value;
       } catch (error) {
+        if (countMirrorWait) mirrorWaitMs += readNow() - mirrorStarted;
         const normalizedError = error instanceof Error ? error : new Error(String(error));
         const kind = classifyTmdbHostError({
           host,
@@ -626,6 +644,7 @@ export async function fetchTmdbJsonWithFallback(
           throw normalizedError;
         }
         hostRetryAfter.set(host.base, readNow() + HOST_RETRY_AFTER_MS);
+        if (probing) lastHalfOpenDirectProbeFailed = host.needsApiKey;
         lastError = normalizedError;
       }
     }

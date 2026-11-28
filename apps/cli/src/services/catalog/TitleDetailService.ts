@@ -519,16 +519,16 @@ async function fetchTmdbDetail(
         ambiguousResults.forEach((result, idx) => {
           const entry = ambiguousSeasons[idx];
           if (!entry) return;
-          if (result.status !== "fulfilled" || !result.value) {
+          const sd =
+            result.status === "fulfilled" && result.value ? readRecord(result.value) : null;
+          if (!sd || !Array.isArray(sd.episodes)) {
             seasonsComplete = false;
             return;
           }
-
           const { seasonNum, seasonMeta } = entry;
           const posterPath = readString(seasonMeta.poster_path);
-          const sd = readRecord(result.value);
           fetchedSeasonPayloads.set(seasonNum, sd);
-          const episodes = Array.isArray(sd.episodes) ? sd.episodes.map(readRecord) : [];
+          const episodes = sd.episodes.map(readRecord);
           const playableEpisodes = filterPlayableEpisodes(
             episodes.map((ep) => ({
               number: Number(ep.episode_number),

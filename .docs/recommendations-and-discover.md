@@ -1,6 +1,6 @@
 ---
 status: current
-lastReviewed: "2026-11-28T12:30:00Z"
+lastReviewed: "2026-11-28T13:05:00Z"
 ---
 
 # Kunai — Recommendations And Discover
@@ -84,7 +84,9 @@ Trending walks a chain of sources per lane and remembers the last good answer:
   every upstream request failed never overwrites the last good answer. A
   discover call that loses either the movie half or the tv half is returned
   but not stored, so a partial list cannot sit for the 24-hour freshness window.
-  A caller that aborts does not write.
+  A history profile is the same: a rejected title resolve or genre fetch is
+  returned but not stored, while "no match" and a successful empty genre list
+  stay complete. A caller that aborts does not write.
 - **Fallbacks are stand-ins, not equivalents.** A saved primary list younger
   than 24 hours is shown (labelled) before any live fallback; Kitsu's list is
   labelled "Kitsu · popular this season". A fallback answer is reused for 60
@@ -98,22 +100,31 @@ Trending walks a chain of sources per lane and remembers the last good answer:
   that list and keeps filling the cache.
 - **TMDB hosts** use a half-open breaker: when every host is inside its
   5-minute failure window, one request at a time probes. If a direct credential
-  exists the probe is a direct host, not the mirror whose window ends first;
-  otherwise it is the host whose window ends first. A failed probe holds
-  further probes for 30 seconds, and a real answer (including a definitive 4xx)
-  closes the breaker. A **429** is not an answer: the host is rested for 30
-  seconds and the walk moves on (and, with every host rate limited, the saved
-  copy below answers). A mirror that replies HTTP 200 with TMDB's error
-  envelope (`success: false`) counts as that host failing. On a **keyless
-  mirror**, 401/403/405/410/451, any 3xx, and any non-JSON 4xx (an HTML 404
-  from a dead proxy) are that mirror failing: its breaker opens and the walk
-  moves on. Only a JSON 400 or 404 is TMDB's own answer. A keyed direct host
-  still treats 401 as a rejected credential and other 4xx as definitive.
-  Keyed and keyless requests both use `redirect: "manual"` so a redirect cannot
-  carry a credential and a 3xx is visible. Cold keyless mirrors share a budget
-  (`TmdbMirrorBudgetPolicy`, 1500 ms per mirror, 2500 ms total) and then the
-  walk goes straight to direct TMDB with the caller's remaining deadline.
-  Every non-ok body is cancelled. Credentials never go to a mirror.
+  exists the probe is a direct host, not the mirror whose window ends first,
+  unless the previous probe was a direct host that failed. The next probe then
+  uses the host whose window ends first, so a recovered mirror can answer
+  while direct is still down. A successful probe clears that memory.
+  Otherwise, with no credential, the probe is the host whose window ends
+  first. A failed probe holds further probes for 30 seconds, and a real answer
+  (including a definitive 4xx) closes the breaker. A **429** is not an answer:
+  the host is rested for 30 seconds and the walk moves on (and, with every
+  host rate limited, the saved copy below answers). A mirror that replies
+  HTTP 200 with TMDB's error envelope (`success: false`) counts as that host
+  failing. On a **keyless mirror**, 401/403/405/410/451, any 3xx, and any
+  non-JSON 4xx (an HTML 404 from a dead proxy) are that mirror failing: its
+  breaker opens and the walk moves on. Only a JSON 400 or 404 is TMDB's own
+  answer. A keyed direct host still treats 401 as a rejected credential and
+  other 4xx as definitive. Keyed and keyless requests both use
+  `redirect: "manual"` so a redirect cannot carry a credential and a 3xx is
+  visible. Cold keyless mirrors share a budget (`TmdbMirrorBudgetPolicy`,
+  1500 ms per mirror, 2500 ms total). Only time inside a mirror attempt
+  counts; a slow direct failure does not spend it. Each mirror waits the
+  minimum of its own cap, the mirror budget still left, and the caller's
+  remaining deadline. Direct hosts use the caller's remaining deadline. Once
+  the mirror budget is spent the walk skips the remaining mirrors. Every
+  non-ok body is cancelled. Credentials never go to a mirror. The normal
+  walk, when a host is eligible, still prefers direct whenever a credential
+  exists.
 - **Cancelled callers** never start a TMDB request, and every shared in-flight
   request has a handler, so a request that fails after all its callers left can
   never surface as an unhandled rejection (which `main.ts` treats as fatal).
@@ -156,9 +167,12 @@ The episode picker and season list (`tmdb.ts`) commit through the same session
 generation as `clearTmdbSessionCache`. A 503 while checking an undated season
 is not "no episodes": the season list is not cached, and a late list cannot
 overwrite a newer one, so the picker cannot show `Old` while SQLite holds
-`Fresh`. Title detail uses the same rule for its 5-minute cache: a transient
-TMDB or AniList failure, or a failed undated-season check, skips the write;
-a thumbnail failure does not. One title's failure does not affect another.
+`Fresh`. An HTTP 200 body with no `episodes` array is the same failure, in
+both the picker and title detail: it is not an empty season, and it is not
+cached. `{ episodes: [] }` is a real empty season and stays complete. Title
+detail uses the same rule for its 5-minute cache: a transient TMDB or AniList
+failure, or a failed undated-season check, skips the write; a thumbnail
+failure does not. One title's failure does not affect another.
 
 The saved copy is TMDB's own response, so numbering and identity are exactly
 what playback, downloads and history expect. A TVmaze fallback was built and

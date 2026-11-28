@@ -1088,6 +1088,54 @@ describe("title detail cache completeness and generation", () => {
     );
   });
 
+  test("an undated season body without an episodes array is not a complete detail", async () => {
+    mockFetch((url) => {
+      if (url.includes("/tv/8802/season/1")) return jsonResponse({});
+      if (url.includes("/tv/8802")) {
+        return jsonResponse(
+          seriesDetail(8802, "Shapeless Season", [
+            {
+              season_number: 1,
+              episode_count: 1,
+              name: "Season 1",
+              air_date: "",
+              poster_path: null,
+            },
+          ]),
+        );
+      }
+      return null;
+    });
+
+    const hidden = await fetchTitleDetail("tmdb:8802", "series");
+    expect(hidden.seasons?.map((season) => season.season) ?? []).not.toContain(1);
+    expect(peekTitleDetail("tmdb:8802", "series")).toBeUndefined();
+  });
+
+  test("an undated season with an empty episodes array is a complete empty answer", async () => {
+    mockFetch((url) => {
+      if (url.includes("/tv/8803/season/1")) return jsonResponse({ episodes: [] });
+      if (url.includes("/tv/8803")) {
+        return jsonResponse(
+          seriesDetail(8803, "Empty Season", [
+            {
+              season_number: 1,
+              episode_count: 1,
+              name: "Season 1",
+              air_date: "",
+              poster_path: null,
+            },
+          ]),
+        );
+      }
+      return null;
+    });
+
+    const detail = await fetchTitleDetail("tmdb:8803", "series");
+    expect(detail.seasons ?? []).toEqual([]);
+    expect(peekTitleDetail("tmdb:8803", "series")?.title).toBe("Empty Season");
+  });
+
   test("a thumbnail failure still caches the detail", async () => {
     mockFetch((url) => {
       if (url.includes("/tv/8801/season/")) return new Response("no stills", { status: 503 });

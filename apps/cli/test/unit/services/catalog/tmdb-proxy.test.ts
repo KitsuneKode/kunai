@@ -4,6 +4,7 @@ import {
   clearTmdbSessionCache,
   fetchTmdbJsonCached,
   fetchTmdbJsonWithFallback,
+  setTmdbUserKeySource,
   formatTmdbSearchError,
   isTmdbNetworkError,
   LEGACY_PUBLIC_TMDB_API_KEY,
@@ -355,6 +356,7 @@ describe("mirror host failures fall through to direct TMDB", () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    setTmdbUserKeySource(null);
     clearTmdbSessionCache();
   });
 
@@ -535,6 +537,92 @@ describe("mirror host failures fall through to direct TMDB", () => {
     expect(clock).toBeLessThanOrEqual(2_500);
     expect(urls.some((url) => isDirectHost(url))).toBe(true);
     expect(pending.size).toBe(0);
+  });
+
+  test("a slow keyed direct failure does not spend the mirror budget", async () => {
+    setTmdbUserKeySource(() => "0123456789abcdef0123456789abcdef");
+    let clock = 0;
+    const gate = Promise.withResolvers<void>();
+    const seen: string[] = [];
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request) => {
+        const url = String(input);
+        seen.push(url);
+        if (url.startsWith("https://api.themoviedb.org/")) {
+          await gate.promise;
+          throw new Error("direct slow");
+        }
+        if (isDirectHost(url)) throw new Error("direct down");
+        return Response.json({ via: "mirror" });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const timers = {
+      setTimeout(_callback: () => void, _ms: number) {
+        return 1;
+      },
+      clearTimeout(_id: number) {},
+    };
+    const pending = fetchTmdbJsonWithFallback("/movie/slow-direct", undefined, 6_000, undefined, {
+      now: () => clock,
+      timers,
+      budget: { maxTotalMirrorWaitMs: 2_500, perMirrorTimeoutMs: 1_500 },
+    });
+    for (let step = 0; step < 8; step += 1) await Promise.resolve();
+    clock = 3_000;
+    gate.resolve();
+    await expect(pending).resolves.toEqual({ via: "mirror" });
+    expect(seen.some((url) => !isDirectHost(url))).toBe(true);
+  });
+
+  test("after a failed direct half-open probe, the next probe can use a mirror", async () => {
+    let clock = 1_000_000;
+    const seen: string[] = [];
+    let phase: "trip" | "probe" = "trip";
+    globalThis.fetch = Object.assign(
+      async (input: string | URL | Request) => {
+        const url = String(input);
+        seen.push(url);
+        if (phase === "trip") {
+          clock += 1_000;
+          throw new Error("down");
+        }
+        if (isDirectHost(url)) throw new Error("direct still down");
+        return Response.json({ via: "mirror" });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const timers = {
+      setTimeout(_callback: () => void, _ms: number) {
+        return 1;
+      },
+      clearTimeout(_id: number) {},
+    };
+    const deps = {
+      now: () => clock,
+      timers,
+      budget: { maxTotalMirrorWaitMs: 2_500, perMirrorTimeoutMs: 1_500 },
+    };
+    await expect(
+      fetchTmdbJsonWithFallback("/movie/breakers", undefined, 6_000, undefined, deps),
+    ).rejects.toThrow();
+
+    setTmdbUserKeySource(() => "0123456789abcdef0123456789abcdef");
+    phase = "probe";
+    seen.length = 0;
+    await expect(
+      fetchTmdbJsonWithFallback("/movie/probe-direct", undefined, 6_000, undefined, deps),
+    ).rejects.toThrow();
+    expect(seen).toHaveLength(1);
+    expect(isDirectHost(seen[0] ?? "")).toBe(true);
+
+    clock += 30_000;
+    seen.length = 0;
+    await expect(
+      fetchTmdbJsonWithFallback("/movie/probe-mirror", undefined, 6_000, undefined, deps),
+    ).resolves.toEqual({ via: "mirror" });
+    expect(seen).toHaveLength(1);
+    expect(isDirectHost(seen[0] ?? "")).toBe(false);
   });
 
   test("half-open recovery prefers the direct host when a credential exists", async () => {

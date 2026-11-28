@@ -82,6 +82,25 @@ describe("TMDB season memory cache stays behind a failed or superseded fetch", (
     expect((await fetchEpisodes("901", 1))?.[0]?.name).toBe("Pilot");
   });
 
+  test("a season payload without an episodes array is a failed fetch, not an empty list", async () => {
+    let episodesBody: "missing" | "empty" = "missing";
+    install((url) => {
+      if (!url.includes("/tv/902/season/1")) {
+        return new Response("missing", {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return episodesBody === "missing" ? Response.json({}) : Response.json({ episodes: [] });
+    });
+
+    expect(await fetchEpisodes("902", 1)).toBeNull();
+    episodesBody = "empty";
+    clearTmdbSessionCache();
+    clearTmdbMemoryCachesForTest();
+    expect(await fetchEpisodes("902", 1)).toEqual([]);
+  });
+
   test("a late episode list does not overwrite a newer one while SQLite holds Fresh", async () => {
     const durable = realCache();
     setTmdbDurableCache(durable);

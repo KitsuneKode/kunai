@@ -676,6 +676,48 @@ describe("a late recommendation write cannot undo a refresh", () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  test("a rejected genre lookup is returned but not cached for 24 hours", async () => {
+    const originalFetch = globalThis.fetch;
+    setSystemTime(new Date(frozen));
+    const store = repository();
+    const service = new RecommendationServiceImpl(store);
+    const seed = [
+      {
+        title: "Arrival",
+        type: "movie" as const,
+        titleId: "1",
+        watchedAt: "2026-11-20T00:00:00.000Z",
+      },
+      {
+        title: "Dune",
+        type: "movie" as const,
+        titleId: "2",
+        watchedAt: "2026-11-19T00:00:00.000Z",
+      },
+    ];
+    globalThis.fetch = createFetchDouble(async (request) => {
+      const url = String(request);
+      if (url.includes("/movie/1")) return Response.json({ genres: [{ id: 18 }] });
+      if (url.includes("/movie/2")) {
+        return new Response("{}", { status: 404, headers: { "content-type": "application/json" } });
+      }
+      if (url.includes("/discover/tv")) return Response.json({ results: [] });
+      if (url.includes("/discover/movie")) {
+        return Response.json({ results: [titled("Interstellar", 3)] });
+      }
+      return new Response("{}", { status: 404, headers: { "content-type": "application/json" } });
+    });
+    try {
+      const section = await service.getPersonalizedByHistory(seed);
+      expect(section.items.map((item) => item.title)).toEqual(["Interstellar"]);
+      expect(
+        store.get(buildRecommendCacheKey("movie:1|movie:2", "genre-affinity")),
+      ).toBeUndefined();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
 
 type FetchHandler = (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>;

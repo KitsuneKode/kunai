@@ -264,16 +264,22 @@ export class RecommendationServiceImpl implements RecommendationService {
     const halfLifeMs = 30 * 24 * 60 * 60 * 1000;
 
     const seenTitleIds = new Set<string>();
+    let stagesComplete = true;
     const genreProfiles = await Promise.all(
       (recentUnique as readonly RecommendationHistorySeed[]).map(async (entry) => {
-        const resolved = await resolveHistoryTitle(entry, signal).catch(() => null);
+        const resolved = await resolveHistoryTitle(entry, signal).catch(() => {
+          stagesComplete = false;
+          return null;
+        });
         if (!resolved) return null;
         const dedupeKey = `${resolved.mediaType}:${resolved.id}`;
         if (seenTitleIds.has(dedupeKey)) return null;
         seenTitleIds.add(dedupeKey);
-        const genres = await fetchTmdbGenres(resolved.id, resolved.mediaType, signal).catch(
-          () => [],
-        );
+        const genres = await fetchTmdbGenres(resolved.id, resolved.mediaType, signal).catch(() => {
+          stagesComplete = false;
+          return null;
+        });
+        if (!genres) return null;
         return { entry, genres };
       }),
     );
@@ -322,7 +328,7 @@ export class RecommendationServiceImpl implements RecommendationService {
     const items = best.length > 0 ? best : scored.slice(0, 10).map((entry) => entry.item);
     this.commitCacheEntry(profileKey, token, items, {
       signal,
-      complete: movieCandidates !== null && tvCandidates !== null,
+      complete: stagesComplete && movieCandidates !== null && tvCandidates !== null,
     });
     return { label: "", reason: "genre-affinity", items };
   }

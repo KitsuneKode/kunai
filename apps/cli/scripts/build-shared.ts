@@ -604,7 +604,13 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // 3,432,355 bytes: +3,463 over the #857 merged-tree measurement of
 // 3,428,892. No dependency or asset. 3352 KiB is the smallest whole-KiB
 // budget over that measurement and leaves 93 bytes.
-export const NPM_BUNDLE_BUDGET_KB = 3_352;
+// Review round 2 (mirror wait counted only inside mirror attempts, a failed
+// direct half-open probe yielding to the earliest window, a season body
+// without an episodes array treated as a failed fetch, and a rejected
+// history genre lookup left uncached) measured 3,432,520 bytes: +165 over
+// 3,432,355. No dependency or asset. 3353 KiB is the smallest whole-KiB
+// budget over that measurement and leaves 952 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_353;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
