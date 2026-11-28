@@ -3,11 +3,13 @@ import { describe, expect, test } from "bun:test";
 import { HistoryShell } from "@/app-shell/history-shell";
 import type { HistoryView, HistoryViewRow } from "@/app-shell/history-view";
 import { KEYBINDINGS, bindingKeys, footerKeyFromBinding } from "@/app-shell/keybindings";
+import { ConfirmStrip } from "@/app-shell/primitives/ConfirmStrip";
 import { handleHistoryOverlayInput } from "@/app-shell/use-history-overlay-input";
 import type { HistoryProgress } from "@kunai/storage";
 import React from "react";
 
 import { captureFrame } from "../../harness/render-capture";
+import { armedConfirmStripHarness, createConfirmStripHarness } from "./history-confirm-test-utils";
 
 function history(overrides: Partial<HistoryProgress> = {}): HistoryProgress {
   return {
@@ -27,9 +29,12 @@ function history(overrides: Partial<HistoryProgress> = {}): HistoryProgress {
   };
 }
 
+const visibleIds = ["title:tmdb:1", "episode:tmdb:1:1:2"] as const;
+
 function baseCtx(
   overrides: Partial<Parameters<typeof handleHistoryOverlayInput>[2]> = {},
 ): Parameters<typeof handleHistoryOverlayInput>[2] {
+  const confirm = createConfirmStripHarness();
   return {
     container: {
       historyRepository: {
@@ -49,8 +54,9 @@ function baseCtx(
     setSelectedIndex: () => {},
     setOverlayStatus: () => {},
     onRedraw: () => {},
-    pendingDelete: null,
-    setPendingDelete: () => {},
+    confirmState: confirm.state,
+    transitionConfirm: confirm.transition,
+    confirmationVisibleIds: visibleIds,
     onHistoryMutated: () => {},
     onConfirmSelection: () => {},
     filterQuery: "",
@@ -61,86 +67,93 @@ function baseCtx(
 }
 
 describe("history delete UX", () => {
-  test("x arms episode delete confirm using progress key", () => {
-    const pending: Array<unknown> = [];
+  test("x arms episode delete with the stable progress key", () => {
+    const confirm = createConfirmStripHarness();
     handleHistoryOverlayInput(
       "x",
       {},
-      {
-        ...baseCtx(),
-        setPendingDelete: (next) => pending.push(next),
-      },
+      baseCtx({ confirmState: confirm.state, transitionConfirm: confirm.transition }),
     );
-    expect(pending[0]).toEqual({
-      kind: "episode",
-      key: "tmdb:1:1:2",
-      label: expect.any(String),
+    expect(confirm.state).toMatchObject({
+      kind: "armed",
+      targetId: "episode:tmdb:1:1:2",
+      verb: "delete",
     });
   });
 
-  test("Shift+X arms title delete confirm", () => {
-    const pending: Array<unknown> = [];
+  test("Shift+X arms title delete with the stable title id", () => {
+    const confirm = createConfirmStripHarness();
     handleHistoryOverlayInput(
       "X",
       { shift: true },
-      {
-        ...baseCtx(),
-        setPendingDelete: (next) => pending.push(next),
-      },
+      baseCtx({ confirmState: confirm.state, transitionConfirm: confirm.transition }),
     );
-    expect(pending[0]).toEqual({
-      kind: "title",
-      titleId: "tmdb:1",
-      label: "Demo",
-    });
+    expect(confirm.state).toMatchObject({ kind: "armed", targetId: "title:tmdb:1" });
   });
 
   test("y confirms episode delete via deleteProgressByKey only", () => {
     const calls: string[] = [];
+    const confirm = armedConfirmStripHarness();
     handleHistoryOverlayInput(
       "y",
       {},
-      {
-        ...baseCtx({
-          pendingDelete: { kind: "episode", key: "tmdb:1:1:2", label: "Demo · S01E02" },
-          container: {
-            historyRepository: {
-              deleteProgressByKey: (key: string) => calls.push(`episode:${key}`),
-              deleteTitle: (titleId: string) => calls.push(`title:${titleId}`),
-            },
-          } as never,
-          setPendingDelete: (next) => {
-            if (next === null) calls.push("cleared");
+      baseCtx({
+        confirmState: confirm.state,
+        transitionConfirm: confirm.transition,
+        container: {
+          historyRepository: {
+            deleteProgressByKey: (key: string) => calls.push(`episode:${key}`),
+            deleteTitle: (titleId: string) => calls.push(`title:${titleId}`),
           },
-          onHistoryMutated: () => calls.push("mutated"),
-        }),
-      },
+        } as never,
+        onHistoryMutated: () => calls.push("mutated"),
+      }),
     );
-    expect(calls).toEqual(["episode:tmdb:1:1:2", "cleared", "mutated"]);
+    expect(calls).toEqual(["episode:tmdb:1:1:2", "mutated"]);
+    expect(confirm.state).toEqual({ kind: "idle" });
+  });
+
+  test("a second x re-arms but never executes", () => {
+    const calls: string[] = [];
+    const confirm = armedConfirmStripHarness();
+    handleHistoryOverlayInput(
+      "x",
+      {},
+      baseCtx({
+        confirmState: confirm.state,
+        transitionConfirm: confirm.transition,
+        container: {
+          historyRepository: {
+            deleteProgressByKey: () => calls.push("episode"),
+            deleteTitle: () => calls.push("title"),
+          },
+        } as never,
+      }),
+    );
+    expect(calls).toEqual([]);
+    expect(confirm.state.kind).toBe("armed");
   });
 
   test("Esc cancels without mutating", () => {
     const calls: string[] = [];
+    const confirm = armedConfirmStripHarness();
     handleHistoryOverlayInput(
       "",
       { escape: true },
-      {
-        ...baseCtx({
-          pendingDelete: { kind: "episode", key: "tmdb:1:1:2", label: "Demo · S01E02" },
-          container: {
-            historyRepository: {
-              deleteProgressByKey: () => calls.push("episode"),
-              deleteTitle: () => calls.push("title"),
-            },
-          } as never,
-          setPendingDelete: (next) => {
-            if (next === null) calls.push("cleared");
+      baseCtx({
+        confirmState: confirm.state,
+        transitionConfirm: confirm.transition,
+        container: {
+          historyRepository: {
+            deleteProgressByKey: () => calls.push("episode"),
+            deleteTitle: () => calls.push("title"),
           },
-          onHistoryMutated: () => calls.push("mutated"),
-        }),
-      },
+        } as never,
+        onHistoryMutated: () => calls.push("mutated"),
+      }),
     );
-    expect(calls).toEqual(["cleared"]);
+    expect(calls).toEqual([]);
+    expect(confirm.state).toEqual({ kind: "idle" });
   });
 
   test("history delete keybindings register episode and title chords", () => {
@@ -157,7 +170,7 @@ describe("history delete UX", () => {
     expect(footerKeyFromBinding(episode!)).toBe("x");
   });
 
-  test("HistoryShell renders confirm banner for pending episode delete", () => {
+  test("HistoryShell hides the resume card while confirmation owns focus", () => {
     const row: HistoryViewRow = {
       titleId: "tmdb:1",
       title: "Demo",
@@ -187,42 +200,34 @@ describe("history delete UX", () => {
       items: [{ kind: "row", row, flatIndex: 0, selected: true }],
     };
     const frame = captureFrame(
-      <HistoryShell
-        view={view}
-        columns={120}
-        listWidth={80}
-        rowWidth={76}
-        pendingDelete={{ kind: "episode", key: "tmdb:1:1:2", label: "Demo · S01E02" }}
-      />,
+      <HistoryShell view={view} columns={120} listWidth={80} rowWidth={76} confirmationActive />,
       { columns: 120 },
     );
-    expect(frame).toContain("Delete episode progress for Demo · S01E02?");
-    expect(frame).toContain("y confirm");
-    expect(frame).toContain("Esc cancel");
+    expect(frame).not.toContain("resume where you left off");
+  });
+
+  test("ConfirmStrip renders the single destructive prompt", () => {
+    const confirm = armedConfirmStripHarness();
+    const frame = captureFrame(<ConfirmStrip state={confirm.state} width={80} />, { columns: 100 });
+    expect(frame).toContain("Delete Demo · S01E02?");
   });
 });
 
-/**
- * Neon features review #6: typing a title to filter used to run row actions
- * letter by letter — "spy x" armed a delete, "demon" opened the title menu.
- */
+/** Typing a title to filter must not run row actions letter by letter. */
 describe("history filter focus", () => {
   test("letters are text while a filter is in progress, actions otherwise", () => {
-    const pending: unknown[] = [];
-    const typing = handleHistoryOverlayInput(
-      "x",
-      {},
-      { ...baseCtx({ filterQuery: "spy " }), setPendingDelete: (next) => pending.push(next) },
-    );
+    const armed: string[] = [];
+    const typing = handleHistoryOverlayInput("x", {}, baseCtx({ filterQuery: "spy " }));
     expect(typing).toBe("not-handled");
-    expect(pending).toEqual([]);
 
+    const confirm = createConfirmStripHarness();
     handleHistoryOverlayInput(
       "x",
       {},
-      { ...baseCtx(), setPendingDelete: (next) => pending.push(next) },
+      baseCtx({ confirmState: confirm.state, transitionConfirm: confirm.transition }),
     );
-    expect(pending).toHaveLength(1);
+    if (confirm.state.kind === "armed") armed.push(confirm.state.targetId);
+    expect(armed).toEqual(["episode:tmdb:1:1:2"]);
   });
 
   test("Ctrl+F focuses an empty filter, after which action letters are text", () => {
@@ -235,13 +240,7 @@ describe("history filter focus", () => {
     expect(handleHistoryOverlayInput("f", { ctrl: true }, ctx)).toBe("handled");
     expect(focused).toBe(true);
 
-    const pending: unknown[] = [];
-    const result = handleHistoryOverlayInput(
-      "w",
-      {},
-      { ...ctx, filterFocused: true, setPendingDelete: (next) => pending.push(next) },
-    );
+    const result = handleHistoryOverlayInput("w", {}, { ...ctx, filterFocused: true });
     expect(result).toBe("not-handled");
-    expect(pending).toEqual([]);
   });
 });

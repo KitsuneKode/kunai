@@ -9,6 +9,8 @@ import { footerKeyFromBinding, formatChord, KEYBINDINGS } from "@/app-shell/keyb
 import { shouldHistoryOverlayAcceptFilterInput } from "@/app-shell/overlay-input-safety";
 import { handleHistoryOverlayInput } from "@/app-shell/use-history-overlay-input";
 
+import { armedConfirmStripHarness } from "./history-confirm-test-utils";
+
 describe("browse focus isolation", () => {
   test("formatChord uses glyphs for shift and ctrl", () => {
     expect(formatChord({ input: "x", shift: true })).toBe("⇧X");
@@ -49,12 +51,13 @@ describe("browse focus isolation", () => {
     expect(
       shouldHistoryOverlayAcceptFilterInput({
         overlayType: "history",
-        pendingDelete: { kind: "episode", key: "tmdb:1:1:2", label: "Demo · S01E02" },
+        confirmationActive: true,
         sourceChoiceTitleId: null,
       }),
     ).toBe(false);
 
     const filterMutations: string[] = [];
+    const confirm = armedConfirmStripHarness();
     const result = handleHistoryOverlayInput(
       "y",
       {},
@@ -94,8 +97,9 @@ describe("browse focus isolation", () => {
         setSelectedIndex: () => {},
         setOverlayStatus: () => {},
         onRedraw: () => {},
-        pendingDelete: { kind: "episode", key: "tmdb:1:1:2", label: "Demo · S01E02" },
-        setPendingDelete: () => {},
+        confirmState: confirm.state,
+        transitionConfirm: confirm.transition,
+        confirmationVisibleIds: ["title:tmdb:1", "episode:tmdb:1:1:2"],
         onHistoryMutated: () => filterMutations.push("mutated"),
         onConfirmSelection: () => {},
         filterQuery: "",

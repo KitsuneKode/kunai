@@ -5,6 +5,8 @@ import { handleHistoryOverlayInput } from "@/app-shell/use-history-overlay-input
 import type { ContinuationProjection } from "@/services/continuation/continuation-policy";
 import type { HistoryProgress } from "@kunai/storage";
 
+import { createConfirmStripHarness } from "./history-confirm-test-utils";
+
 function history(overrides: Partial<HistoryProgress> = {}): HistoryProgress {
   return {
     key: "tmdb:1:1:2",
@@ -36,6 +38,7 @@ const dualProjection: ContinuationProjection = {
 
 function baseCtx(overrides: Partial<Parameters<typeof handleHistoryOverlayInput>[2]> = {}) {
   const confirmations: Array<{ localJobId?: string }> = [];
+  const confirm = createConfirmStripHarness();
   return {
     ctx: {
       // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
@@ -52,8 +55,9 @@ function baseCtx(overrides: Partial<Parameters<typeof handleHistoryOverlayInput>
       setSelectedIndex: () => {},
       setOverlayStatus: () => {},
       onRedraw: () => {},
-      pendingDelete: null,
-      setPendingDelete: () => {},
+      confirmState: confirm.state,
+      transitionConfirm: confirm.transition,
+      confirmationVisibleIds: ["title:tmdb:1", "episode:tmdb:1:1:2"],
       onHistoryMutated: () => {},
       onConfirmSelection: (selection: RootHistorySelection | null) => {
         confirmations.push({ localJobId: selection?.localJobId });
@@ -97,6 +101,9 @@ describe("handleHistoryOverlayInput", () => {
       {},
       {
         // SAFETY: deliberately partial test stub — the test only exercises the members it defines.
+        confirmState: createConfirmStripHarness().state,
+        transitionConfirm: createConfirmStripHarness().transition,
+        confirmationVisibleIds: ["title:tmdb:1", "episode:tmdb:1:1:2"],
         container: container as never,
         historyView: { flatRows: [{ titleId: "tmdb:1", dualSourceAvailable: false }] },
         historySelections: [{ titleId: "tmdb:1", entry: history() }],
@@ -110,8 +117,6 @@ describe("handleHistoryOverlayInput", () => {
         setSelectedIndex: () => {},
         setOverlayStatus: (status) => calls.push(`status:${status}`),
         onRedraw: () => calls.push("redraw"),
-        pendingDelete: null,
-        setPendingDelete: () => {},
         onHistoryMutated: () => {},
         onConfirmSelection: () => {},
         filterQuery: "",

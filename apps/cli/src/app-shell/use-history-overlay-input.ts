@@ -4,6 +4,11 @@ import type { LineEditorKey } from "@/app-shell/line-editor";
 import { routeListFilterKey } from "@/app-shell/list-filter-keys";
 import type { HistoryPickerOptionsContext } from "@/app-shell/panel-data";
 import {
+  type ConfirmStripAction,
+  type ConfirmStripState,
+  type ConfirmStripTransition,
+} from "@/app-shell/primitives/ConfirmStrip.model";
+import {
   buildRootHistorySelection,
   type RootHistorySelection,
 } from "@/app-shell/root-history-bridge";
@@ -19,10 +24,6 @@ import {
 } from "@/services/continuation/continuation-source";
 import { historyEpisodeLabel, isFinished } from "@/services/continuation/history-progress";
 import { createContainerMediaActionRouter } from "@/services/media-actions/create-container-media-action-router";
-
-export type HistoryDeletePending =
-  | { readonly kind: "episode"; readonly key: string; readonly label: string }
-  | { readonly kind: "title"; readonly titleId: string; readonly label: string };
 
 export type HistoryOverlayInputContext = {
   readonly container: Container;
@@ -43,8 +44,10 @@ export type HistoryOverlayInputContext = {
   readonly setSelectedIndex: (update: (current: number) => number) => void;
   readonly setOverlayStatus: (status: string | null) => void;
   readonly onRedraw: () => void;
-  readonly pendingDelete: HistoryDeletePending | null;
-  readonly setPendingDelete: (next: HistoryDeletePending | null) => void;
+  readonly confirmState: ConfirmStripState;
+  readonly transitionConfirm: (action: ConfirmStripAction) => ConfirmStripTransition;
+  /** Stable confirmation-target ids in the rows' current visible order. */
+  readonly confirmationVisibleIds: readonly string[];
   readonly onHistoryMutated: () => void;
   /** The overlay's type-to-filter text, and whether the filter holds focus. */
   readonly filterQuery: string;
@@ -289,46 +292,57 @@ export function handleHistoryOverlayInput(
 ): HistoryOverlayInputResult {
   const { picked, selected } = selectedHistoryRow(ctx);
 
-  if (ctx.pendingDelete) {
-    if (input.toLowerCase() === "y") {
-      const pending = ctx.pendingDelete;
-      const undoBefore = ctx.container.sessionUndo?.captureHistory();
-      if (pending.kind === "episode") {
-        ctx.container.historyRepository.deleteProgressByKey(pending.key);
-      } else {
-        ctx.container.historyRepository.deleteTitle(pending.titleId);
-      }
-      if (undoBefore) {
-        ctx.container.sessionUndo?.recordHistoryChange(
-          pending.kind === "episode" ? "deleted episode progress" : "deleted title history",
-          "history delete",
-          undoBefore,
-        );
-      }
-      ctx.setPendingDelete(null);
-      ctx.setOverlayStatus(
-        pending.kind === "episode"
-          ? `Removed episode progress for ${pending.label}`
-          : `Removed all history for ${pending.label}`,
-      );
-      ctx.onHistoryMutated();
-      return "handled";
-    }
+  if (ctx.confirmState.kind !== "idle") {
+    if (ctx.confirmState.kind === "executing") return "handled";
     if (key.escape) {
-      ctx.setPendingDelete(null);
+      ctx.transitionConfirm({ type: "cancel" });
       ctx.setOverlayStatus(null);
       return "handled";
     }
-    if (
-      key.upArrow ||
-      key.downArrow ||
-      key.leftArrow ||
-      key.rightArrow ||
-      key.tab ||
-      input.length === 1
-    ) {
+    if (ctx.confirmState.kind === "armed" && input.toLowerCase() === "y") {
+      const confirmation = ctx.transitionConfirm({ type: "confirm" });
+      if (!confirmation.effect) return "handled";
+      const effect = confirmation.effect;
+      const undoBefore = ctx.container.sessionUndo?.captureHistory();
+      try {
+        if (effect.targetId.startsWith("episode:")) {
+          ctx.container.historyRepository.deleteProgressByKey(
+            effect.targetId.slice("episode:".length),
+          );
+        } else {
+          ctx.container.historyRepository.deleteTitle(effect.targetId.slice("title:".length));
+        }
+        if (undoBefore) {
+          ctx.container.sessionUndo?.recordHistoryChange(
+            effect.targetId.startsWith("episode:")
+              ? "deleted episode progress"
+              : "deleted title history",
+            "history delete",
+            undoBefore,
+          );
+        }
+        ctx.transitionConfirm({ type: "succeed" });
+        ctx.setOverlayStatus(
+          effect.targetId.startsWith("episode:")
+            ? `Removed episode progress for ${effect.label}`
+            : `Removed all history for ${effect.label}`,
+        );
+        ctx.onHistoryMutated();
+      } catch (error) {
+        ctx.transitionConfirm({
+          type: "fail",
+          message: error instanceof Error ? error.message : "Unable to delete history",
+        });
+      }
       return "handled";
     }
+    // Confirmation focus owns input. Arrow keys disarm rather than retargeting
+    // another row; they do not also navigate in the same keypress.
+    if (key.upArrow || key.downArrow || key.leftArrow || key.rightArrow || key.tab) {
+      ctx.transitionConfirm({ type: "cancel" });
+      return "handled";
+    }
+    return "handled";
   }
 
   if (ctx.sourceChoiceTitleId && picked === ctx.sourceChoiceTitleId && selected) {
@@ -487,23 +501,27 @@ export function handleHistoryOverlayInput(
     return "handled";
   }
   if (selected && input === "x" && !key.shift) {
-    ctx.setPendingDelete({
-      kind: "episode",
-      key: selected.entry.key,
+    ctx.transitionConfirm({
+      type: "arm",
+      targetId: `episode:${selected.entry.key}`,
       label: historyDeleteLabel(selected.entry),
+      verb: "delete",
+      executingLabel: `Removing episode progress for ${historyDeleteLabel(selected.entry)}`,
+      visibleIds: ctx.confirmationVisibleIds,
     });
-    ctx.setOverlayStatus(
-      `Delete episode progress for ${historyDeleteLabel(selected.entry)}? y confirm · Esc cancel`,
-    );
+    ctx.setOverlayStatus(null);
     return "handled";
   }
   if (selected && (input === "X" || input === "x") && key.shift) {
-    ctx.setPendingDelete({
-      kind: "title",
-      titleId: selected.titleId,
-      label: selected.entry.title,
+    ctx.transitionConfirm({
+      type: "arm",
+      targetId: `title:${selected.titleId}`,
+      label: `all history for ${selected.entry.title}`,
+      verb: "delete",
+      executingLabel: `Removing all history for ${selected.entry.title}`,
+      visibleIds: ctx.confirmationVisibleIds,
     });
-    ctx.setOverlayStatus(`Delete all history for ${selected.entry.title}? y confirm · Esc cancel`);
+    ctx.setOverlayStatus(null);
     return "handled";
   }
   return "not-handled";

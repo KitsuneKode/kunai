@@ -21,13 +21,13 @@ describe("overlay input safety", () => {
       isOverlayCancelActive({
         overlay: { type: "history" },
         pickerFilterQuery: "",
-        historyPendingDelete: { kind: "episode", key: "k", label: "Demo" },
+        historyConfirmationActive: true,
       }),
     ).toBe(true);
     expect(
       shouldHistoryOverlayAcceptFilterInput({
         overlayType: "history",
-        pendingDelete: { kind: "episode", key: "k", label: "Demo" },
+        confirmationActive: true,
         sourceChoiceTitleId: null,
       }),
     ).toBe(false);
