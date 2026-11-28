@@ -84,12 +84,98 @@ function inferredConfigKeys(row: ConfigurableRegistryRow): readonly string[] {
   return row.id in DEFAULT_CONFIG ? [row.id] : [];
 }
 
-function stripCommentOnlyLines(text: string): string {
-  return text
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .split("\n")
-    .filter((line) => !/^\s*\/\//.test(line))
-    .join("\n");
+/**
+ * Remove TypeScript comments with a small lexical scanner. Strings and
+ * template literals are tokenized so `//` inside a URL or template never
+ * starts a comment; interpolation is scanned as normal TypeScript so comments
+ * there cannot smuggle reader evidence into the audit either.
+ */
+function stripTypeScriptComments(text: string): string {
+  let output = "";
+
+  function scanQuoted(index: number, quote: "'" | '"'): number {
+    let cursor = index + 1;
+    while (cursor < text.length) {
+      const char = text[cursor];
+      if (char === "\\") cursor += 2;
+      else if (char === quote) return cursor + 1;
+      else cursor += 1;
+    }
+    return cursor;
+  }
+
+  function scanTemplate(index: number): number {
+    output += "`";
+    let cursor = index + 1;
+    while (cursor < text.length) {
+      const char = text[cursor];
+      if (char === "\\") {
+        output += text.slice(cursor, cursor + 2);
+        cursor += 2;
+      } else if (char === "`") {
+        output += "`";
+        return cursor + 1;
+      } else if (char === "$" && text[cursor + 1] === "{") {
+        output += "${";
+        cursor = scanNormal(cursor + 2, true);
+        if (text[cursor] === "}") {
+          output += "}";
+          cursor += 1;
+        }
+      } else {
+        output += char;
+        cursor += 1;
+      }
+    }
+    return cursor;
+  }
+
+  function scanNormal(start: number, stopAtCloseBrace: boolean): number {
+    let cursor = start;
+    let nestedBraces = 0;
+    while (cursor < text.length) {
+      const char = text[cursor];
+      if (char === "}") {
+        if (stopAtCloseBrace && nestedBraces === 0) return cursor;
+        if (nestedBraces > 0) nestedBraces -= 1;
+      } else if (char === "{") {
+        nestedBraces += 1;
+      }
+      if (char === "/" && text[cursor + 1] === "/") {
+        cursor += 2;
+        while (cursor < text.length && text[cursor] !== "\n") cursor += 1;
+        continue;
+      }
+      if (char === "/" && text[cursor + 1] === "*") {
+        cursor += 2;
+        while (cursor < text.length) {
+          if (text[cursor] === "*" && text[cursor + 1] === "/") {
+            cursor += 2;
+            break;
+          }
+          if (text[cursor] === "\n") output += "\n";
+          cursor += 1;
+        }
+        continue;
+      }
+      if (char === "'" || char === '"') {
+        const end = scanQuoted(cursor, char);
+        output += text.slice(cursor, end);
+        cursor = end;
+        continue;
+      }
+      if (char === "`") {
+        cursor = scanTemplate(cursor);
+        continue;
+      }
+      output += char;
+      cursor += 1;
+    }
+    return cursor;
+  }
+
+  scanNormal(0, false);
+  return output;
 }
 
 /**
@@ -131,8 +217,38 @@ function productionSources(): readonly { file: string; text: string }[] {
         file !== "apps/cli/src/app/bootstrap/apply-settings-to-runtime.ts"
       );
     })
-    .map((file) => ({ file, text: stripCommentOnlyLines(readRepoFile(file)) }));
+    .map((file) => ({ file, text: stripTypeScriptComments(readRepoFile(file)) }));
 }
+
+describe("stripTypeScriptComments", () => {
+  test("removes inline comment tails without treating URL schemes as comments", () => {
+    const stripped = stripTypeScriptComments(
+      'const url = "https://relay.example"; // providerDns\nconst ready = true;',
+    );
+
+    expect(stripped).toContain('"https://relay.example"');
+    expect(stripped).toContain("const ready = true;");
+    expect(stripped).not.toContain("providerDns");
+  });
+
+  test("removes comments inside template interpolation but keeps template text", () => {
+    const stripped = stripTypeScriptComments(
+      "const label = `relay ${enabled /* analyticsCohort */ ? 'on' : 'off'}`;",
+    );
+
+    expect(stripped).toContain("relay ${enabled");
+    expect(stripped).not.toContain("analyticsCohort");
+  });
+
+  test("tracks nested object braces while scanning template interpolation", () => {
+    const stripped = stripTypeScriptComments(
+      "const label = `${({ enabled /* providerDns */ }).enabled ? 'on' : 'off'}`;",
+    );
+
+    expect(stripped).toContain("({ enabled");
+    expect(stripped).not.toContain("providerDns");
+  });
+});
 
 describe("settings live-reader audit", () => {
   test("every configurable row declares effect timing and owned config keys", () => {
