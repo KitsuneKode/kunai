@@ -80,8 +80,11 @@ test("editable config metadata is represented by registry rows", () => {
     }
   }
 
+  // presenceDiscordOpenUrl remains readable for config compatibility but is
+  // deliberately hidden because no production payload consumes it.
+  const intentionallyHidden = new Set(["presenceDiscordOpenUrl"]);
   const missing = CONFIG_METADATA.filter((entry) => entry.editable).flatMap((entry) =>
-    coveredKeys.has(entry.key) ? [] : [entry.key],
+    coveredKeys.has(entry.key) || intentionallyHidden.has(entry.key) ? [] : [entry.key],
   );
 
   expect(missing).toEqual([]);

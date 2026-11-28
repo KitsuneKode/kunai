@@ -179,7 +179,10 @@ async function withSession(
 async function openSettingsPanel(s: AgentSession): Promise<void> {
   await s.waitForFrame((f) => f.includes("Search title"), "browse shell");
   s.press(SETTINGS_KEY);
-  await s.waitForFrame((f) => f.includes("command"), "command palette");
+  await s.waitForFrame(
+    (f) => f.includes("type a command") || f.includes("Command palette"),
+    "command palette",
+  );
   s.press("settings", K.enter);
   await s.waitForFrame(
     (f) => f.includes("Settings") && f.includes("next launch"),

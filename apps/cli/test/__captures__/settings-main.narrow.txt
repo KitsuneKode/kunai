@@ -8,18 +8,18 @@
  Startup, appearance, language, and discover preferences
 
  STARTUP & SHELL ──────────────────────────────────────────────────────
-   ▸ Default startup mode ·  Series mode
-   ▸ Footer hints ·  Detailed
-   ▸ Theme ·  Ember Dusk
-   ○ off   Plain / screen-reader mode
-   ● on    Mascot & tips
-   ● on    Shortcut tips
+   Default startup mode · Series mode
+   Footer hints · Detailed
+   Theme · Ember Dusk
+   Plain / screen-reader mode · ○ off
+   Mascot & tips · ● on
+   Shortcut tips · ● on
    Reset tips
 
  LANGUAGE & SUBTITLES ─────────────────────────────────────────────────
  Preferred audio/subtitle tracks when a provider exposes choices
-   ▸ Anime audio ·  Original
-   ▸ Anime subtitles ·  English
-   ▸ Anime quality ·  Best available
-   ▸ Series audio ·  Original
+   Anime audio · Original
+   Anime subtitles · English
+   Anime quality · Best available
+   Series audio · Original
   ▼ ...
