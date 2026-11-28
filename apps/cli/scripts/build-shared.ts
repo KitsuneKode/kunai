@@ -583,6 +583,11 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // With the dedicated profile checks, launchers, and review fixes (#860),
 // Bun 1.4.5 measured 3,421,461 bytes: +11,013 over #861.
 // 3342 KiB leaves 747 bytes.
+// Windows executable evidence classification (#864) measured 3,429,306 bytes
+// with Bun 1.4.5: +7,845 over #860. The classifier must keep ownership-root,
+// symlink, 8.3, exact-marker, bounded-manifest, and sibling-version evidence in
+// the Windows startup path; no dependency or asset was added. 3349 KiB leaves
+// 70 bytes.
 // Shell-v4 quick wins were measured on their pre-merge branch: narrow
 // browse/palette/playback layout 3,327,248 bytes, tracks panel recovery
 // grammar 3,330,345 bytes, clean details-sheet overlay 3,331,426 bytes,
@@ -591,8 +596,11 @@ export function totalMetafileInputBytes(metafile: BunBuildMetafile): number {
 // main-line measurement, all shell/onboarding surface code and copy plus the
 // doctor text-module split. No dependency or asset. 3349 KiB is the smallest
 // whole-KiB budget over that measurement and leaves 484 bytes; public
-// launcher budgets are unchanged.
-export const NPM_BUNDLE_BUDGET_KB = 3_349;
+// launcher budgets are unchanged. Merging #864's Windows executable evidence
+// classifier onto that shell tree measured 3,436,246 bytes with Bun 1.4.5:
+// +7,354, no dependency or asset. 3356 KiB is the smallest whole-KiB budget
+// over the merged measurement and leaves 298 bytes.
+export const NPM_BUNDLE_BUDGET_KB = 3_356;
 
 /** Packed-size ratchet for the public Node launcher manifest, script, and license. */
 export const NPM_PACK_PACKED_BUDGET_BYTES = 32 * 1024;
