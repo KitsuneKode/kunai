@@ -33,6 +33,8 @@ Product direction: [Stremio-like client and surface for everyone (with unmerged 
 
 Current execution: [v0.4.0 launch sequence and a reason to come back](./2026-11-27-launch-and-retention.md).
 
+After the 2026-11-28 merge train: [post-v0.4.0 program, merge order and release verification checklist](./2026-11-28-post-v040-program.md).
+
 Quality push: [road to 9.5 — every reviewed dimension, competitors, workstreams W1–W6](./2026-11-24-road-to-9-5.md).
 
 Players and mobile order: [VLC and IINA beside mpv, and the mobile sequence](./2026-11-24-players-vlc-iina-and-mobile-order.md).
