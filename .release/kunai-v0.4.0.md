@@ -290,6 +290,14 @@ persistence, downloads and native installation.
   checksum manifests and attestations through the protected release workflow.
 - Improve Windows helper discovery and verified provisioning, exact winget
   guidance, Flatpak mpv discovery and installer wording.
+- The installers run the new binary once before calling the install done. If it
+  cannot start, they keep your previous version active and print the fix for
+  your system, such as `apk add libstdc++ libgcc` on Alpine, which the musl
+  binary needs. `install.sh` no longer needs `awk`, works with the bash 3.2
+  that ships with macOS, and checks that npm, Bun and source installs land on
+  your PATH, including an npm global folder it cannot write to.
+  `kunai uninstall --purge` names your downloaded videos before deleting them,
+  and a plain uninstall on Windows keeps your data.
 - Add experimental Android Termux targets and guarded external-player handoff.
   This is not a supported full mobile application; accepted OS handoff does not
   prove decoded playback, progress, completion or autoplay. The launcher gets
