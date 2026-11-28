@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -88,10 +88,15 @@ const describePwsh = pwshAvailable() ? describe : describe.skip;
 // Tests that do not build their own sandbox still need install.ps1's Windows
 // default directories to resolve. Rooted in the OS temp dir so a stray write
 // under Linux pwsh lands somewhere disposable rather than in the repo.
+const DEFAULT_SHELL_ROOT = join(tmpdir(), "kunai-pwsh-default-env");
 const DEFAULT_SHELL_ENV: NodeJS.ProcessEnv = {
   ...process.env,
-  ...windowsShellEnvDefaults(join(tmpdir(), "kunai-pwsh-default-env")),
+  ...windowsShellEnvDefaults(DEFAULT_SHELL_ROOT),
 };
+
+afterAll(() => {
+  rmSync(DEFAULT_SHELL_ROOT, { recursive: true, force: true });
+});
 
 function runInstallPs1(
   args: string[],

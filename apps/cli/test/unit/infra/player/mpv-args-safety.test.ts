@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -73,41 +73,45 @@ describe("mpv URL safety", () => {
 
   test("sensitive options leave argv for an owner-only include file", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kunai-mpv-conf-test-"));
-    const endpoint = {
-      kind: "unix_socket" as const,
-      path: join(dir, "kunai-mpv-test.sock"),
-    };
-    const opts = {
-      url: "https://cdn.example/video.mp4",
-      headers: { Cookie: "CloudFront-Key-Pair-Id=K; CloudFront-Signature=S" },
-      subtitle: null,
-      displayTitle: "Credentialed stream",
-    };
-
-    const conf = await writeMpvSensitiveConf(opts, endpoint);
     try {
-      expect(conf).not.toBeNull();
-      const args = buildMpvArgs(opts, null, {
-        sensitiveOptionsPath: conf?.path,
-      });
+      const endpoint = {
+        kind: "unix_socket" as const,
+        path: join(dir, "kunai-mpv-test.sock"),
+      };
+      const opts = {
+        url: "https://cdn.example/video.mp4",
+        headers: { Cookie: "CloudFront-Key-Pair-Id=K; CloudFront-Signature=S" },
+        subtitle: null,
+        displayTitle: "Credentialed stream",
+      };
 
-      // argv carries only the include pointer — never the cookie.
-      expect(args).toContain(`--include=${conf?.path}`);
-      expect(args.some((arg) => arg.includes("CloudFront"))).toBe(false);
-      expect(args.some((arg) => arg.startsWith("--http-header-fields"))).toBe(false);
+      const conf = await writeMpvSensitiveConf(opts, endpoint);
+      try {
+        expect(conf).not.toBeNull();
+        const args = buildMpvArgs(opts, null, {
+          sensitiveOptionsPath: conf?.path,
+        });
 
-      const body = readFileSync(conf?.path ?? "", "utf8");
-      expect(body).toContain("http-header-fields=");
-      expect(body).toContain("Cookie: CloudFront-Key-Pair-Id=K");
-      if (process.platform !== "win32") {
-        expect(statSync(conf?.path ?? "").mode & 0o777).toBe(0o600);
+        // argv carries only the include pointer — never the cookie.
+        expect(args).toContain(`--include=${conf?.path}`);
+        expect(args.some((arg) => arg.includes("CloudFront"))).toBe(false);
+        expect(args.some((arg) => arg.startsWith("--http-header-fields"))).toBe(false);
+
+        const body = readFileSync(conf?.path ?? "", "utf8");
+        expect(body).toContain("http-header-fields=");
+        expect(body).toContain("Cookie: CloudFront-Key-Pair-Id=K");
+        if (process.platform !== "win32") {
+          expect(statSync(conf?.path ?? "").mode & 0o777).toBe(0o600);
+        }
+      } finally {
+        await conf?.cleanup();
       }
+      // Cleanup removed the file — the window where credentials exist on disk
+      // is bounded by mpv's startup parse, not by the whole playback session.
+      expect(() => statSync(join(dir, "kunai-mpv-test.sock.conf"))).toThrow();
     } finally {
-      await conf?.cleanup();
+      rmSync(dir, { recursive: true, force: true });
     }
-    // Cleanup removed the file — the window where credentials exist on disk
-    // is bounded by mpv's startup parse, not by the whole playback session.
-    expect(() => statSync(join(dir, "kunai-mpv-test.sock.conf"))).toThrow();
   });
 
   test("sensitive options still ride argv when no conf path exists", () => {
