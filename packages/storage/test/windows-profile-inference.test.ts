@@ -244,9 +244,11 @@ describe("classifyWindowsExecutableProfile", () => {
     const executable = addVersionedExecutable(fs, "C:\\tools\\kunai");
     addManifest(fs, {
       channel: "binary",
-      method: "binary",
       version: "1.2.3",
+      binPath: "C:\\tools\\kunai\\bin\\kunai.exe",
       versionPath: executable,
+      dlBase: "https://github.com/KitsuneKode/kunai/releases",
+      installedAt: "2026-01-01T00:00:00.000Z",
     });
 
     expect(classify(executable, fs)).toEqual({

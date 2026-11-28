@@ -1,8 +1,11 @@
 import {
+  closeSync,
   lstatSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
+  readSync,
   realpathSync,
   writeFileSync,
 } from "node:fs";
@@ -17,6 +20,21 @@ export const PROFILE_MARKER = ".kunai-profile";
 export const PROFILE_MARKER_CONTENT = "kunai-profile-v1\n";
 
 export type StoragePlatform = "linux" | "darwin" | "win32";
+
+export interface WindowsProfileFs {
+  readonly lstat: (
+    path: string,
+  ) => { isFile(): boolean; isDirectory(): boolean; isSymbolicLink(): boolean } | undefined;
+  readonly realpathNative: (path: string) => string;
+  /** Read a UTF-8 file, throwing when its byte length exceeds maxBytes. */
+  readonly readFileUtf8: (path: string, maxBytes: number) => string;
+}
+
+export type WindowsProfileInference =
+  | { readonly kind: "none"; readonly reason: "non-win32" | "env-override" | "non-matching-path" }
+  | { readonly kind: "profile"; readonly profileDir: string }
+  | { readonly kind: "normal-install"; readonly manifestPath: string }
+  | { readonly kind: "ambiguous"; readonly error: DesktopProfileError };
 
 export interface KunaiPathOptions {
   readonly platform?: StoragePlatform;
@@ -156,6 +174,55 @@ function physicalPath(path: string): string {
   return parent === path ? path : native.join(physicalPath(parent), native.basename(path));
 }
 
+type ProfileOwnershipFs = {
+  readonly lstat: WindowsProfileFs["lstat"];
+  readonly physicalPath: (path: string) => string;
+};
+
+const nodeProfileOwnershipFs: ProfileOwnershipFs = {
+  lstat: (path) => lstatSync(path, { throwIfNoEntry: false }),
+  physicalPath,
+};
+
+/** Validate the root shape shared by explicit desktop profiles and inferred Windows ones. */
+function assertProfileRootShape(
+  root: string,
+  displayRoot: string,
+  platform: StoragePlatform,
+  env: Readonly<Record<string, string | undefined>>,
+  fs: ProfileOwnershipFs,
+): ReturnType<WindowsProfileFs["lstat"]> {
+  const join = joinerFor(platform);
+  const home = profileHome(platform, env);
+  const defaults = defaultBaseDirs(platform, env, home);
+  const rootStat = fs.lstat(root);
+  if (rootStat?.isSymbolicLink()) {
+    throw new DesktopProfileError(displayRoot, "must not be a symlink");
+  }
+  if (rootStat && !rootStat.isDirectory()) {
+    throw new DesktopProfileError(displayRoot, "is not a regular directory");
+  }
+  assertDedicatedRoot(
+    platform,
+    fs.physicalPath(root),
+    fs.physicalPath(home),
+    {
+      configDir: fs.physicalPath(defaults.configDir),
+      dataDir: fs.physicalPath(defaults.dataDir),
+      cacheDir: fs.physicalPath(defaults.cacheDir),
+      tempDir: fs.physicalPath(defaults.tempDir),
+    },
+    displayRoot,
+  );
+  for (const child of ["config", "data", "cache", "tmp", "bin"]) {
+    const stat = fs.lstat(join(root, child));
+    if (stat && !stat.isDirectory()) {
+      throw new DesktopProfileError(displayRoot, `has a non-directory or symlink at ${child}`);
+    }
+  }
+  return rootStat;
+}
+
 /** Check on-disk ownership before using or purging a desktop override. */
 export function checkDesktopProfile(
   mode: "prepare" | "inspect" | "require",
@@ -186,37 +253,17 @@ function checkProfileOwnership(
   env: NodeJS.ProcessEnv,
 ): void {
   const join = joinerFor(platform);
-  const home = profileHome(platform, env);
   // Diagnostics name the spelling the user actually configured, not the
   // normalized path their shell resolved it to.
   const displayRoot = env.KUNAI_CONFIG_DIR ?? root;
   try {
-    const defaults = defaultBaseDirs(platform, env, home);
-    const rootStat = lstatSync(root, { throwIfNoEntry: false });
-    if (rootStat?.isSymbolicLink()) {
-      throw new DesktopProfileError(displayRoot, "must not be a symlink");
-    }
-    if (rootStat && !rootStat.isDirectory()) {
-      throw new DesktopProfileError(displayRoot, "is not a regular directory");
-    }
-    assertDedicatedRoot(
+    const rootStat = assertProfileRootShape(
+      root,
+      env.KUNAI_CONFIG_DIR ?? displayRoot,
       platform,
-      physicalPath(root),
-      physicalPath(home),
-      {
-        configDir: physicalPath(defaults.configDir),
-        dataDir: physicalPath(defaults.dataDir),
-        cacheDir: physicalPath(defaults.cacheDir),
-        tempDir: physicalPath(defaults.tempDir),
-      },
-      env.KUNAI_CONFIG_DIR,
+      env,
+      nodeProfileOwnershipFs,
     );
-    for (const child of ["config", "data", "cache", "tmp", "bin"]) {
-      const stat = lstatSync(join(root, child), { throwIfNoEntry: false });
-      if (stat && !stat.isDirectory()) {
-        throw new DesktopProfileError(displayRoot, `has a non-directory or symlink at ${child}`);
-      }
-    }
     const marker = join(root, PROFILE_MARKER);
     const ownsRoot = () =>
       lstatSync(marker, { throwIfNoEntry: false })?.isFile() &&
@@ -244,45 +291,295 @@ function checkProfileOwnership(
   }
 }
 
+const WINDOWS_VERSION_RE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+const WINDOWS_INSTALL_MANIFEST_MAX_BYTES = 64 * 1024;
+const WINDOWS_PROFILE_INFERENCE_HINT =
+  "Set KUNAI_CONFIG_DIR to a dedicated Kunai profile, or reinstall Kunai.";
+
+type WindowsVersionedExecutableLayout = {
+  readonly executablePath: string;
+  readonly root: string;
+  readonly versionsDir: string;
+  readonly versionDir: string;
+  readonly version: string;
+};
+
+function normalizeWindowsPath(path: string): string {
+  return win32Path.normalize(path).replaceAll("/", "\\");
+}
+
+function comparableWindowsPath(path: string): string {
+  return normalizeWindowsPath(path).toLowerCase();
+}
+
+function sameWindowsPath(left: string, right: string): boolean {
+  return comparableWindowsPath(left) === comparableWindowsPath(right);
+}
+
+function parseWindowsVersionedExecutable(
+  executablePath: string,
+): WindowsVersionedExecutableLayout | undefined {
+  const normalized = normalizeWindowsPath(executablePath);
+  if (!win32Path.isAbsolute(normalized) || win32Path.parse(normalized).root.length === 1) {
+    return undefined;
+  }
+  if (win32Path.basename(normalized).toLowerCase() !== "kunai.exe") return undefined;
+  const versionDir = win32Path.dirname(normalized);
+  const version = win32Path.basename(versionDir);
+  if (!WINDOWS_VERSION_RE.test(version)) return undefined;
+  const versionsDir = win32Path.dirname(versionDir);
+  if (win32Path.basename(versionsDir).toLowerCase() !== "versions") return undefined;
+  const dataDir = win32Path.dirname(versionsDir);
+  if (win32Path.basename(dataDir).toLowerCase() !== "data") return undefined;
+  return {
+    executablePath: normalized,
+    root: win32Path.dirname(dataDir),
+    versionsDir,
+    versionDir,
+    version,
+  };
+}
+
+function readUtf8Bounded(path: string, maxBytes: number): string {
+  const fd = openSync(path, "r");
+  try {
+    const buffer = Buffer.alloc(maxBytes + 1);
+    const bytesRead = readSync(fd, buffer, 0, maxBytes + 1, 0);
+    if (bytesRead > maxBytes) throw new Error(`file exceeds ${maxBytes} bytes`);
+    return buffer.toString("utf8", 0, bytesRead);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+const nodeWindowsProfileFs: WindowsProfileFs = {
+  lstat: (path) => lstatSync(path, { throwIfNoEntry: false }),
+  realpathNative: (path) => realpathSync.native(path),
+  readFileUtf8: readUtf8Bounded,
+};
+
+function windowsProfileAmbiguous(root: string, reason: string): DesktopProfileError {
+  return new DesktopProfileError(root, reason, WINDOWS_PROFILE_INFERENCE_HINT);
+}
+
+function physicalWindowsPath(fs: WindowsProfileFs, path: string): string {
+  const normalized = normalizeWindowsPath(path);
+  if (fs.lstat(normalized)) return normalizeWindowsPath(fs.realpathNative(normalized));
+  const parent = win32Path.dirname(normalized);
+  return parent === normalized
+    ? normalized
+    : win32Path.join(physicalWindowsPath(fs, parent), win32Path.basename(normalized));
+}
+
+function requireValidWindowsProfileRoot(
+  root: string,
+  env: Readonly<Record<string, string | undefined>>,
+  fs: WindowsProfileFs,
+): string {
+  const resolved = resolveDesktopProfileDirs("win32", root);
+  if (!resolved) throw new DesktopProfileError(root, "is not a dedicated profile root");
+  const profileDir = resolved.profileDir;
+  const rootStat = assertProfileRootShape(profileDir, root, "win32", env, {
+    lstat: (path) => fs.lstat(path),
+    physicalPath: (path) => physicalWindowsPath(fs, path),
+  });
+  if (!rootStat?.isDirectory()) {
+    throw new DesktopProfileError(root, "is not a regular directory");
+  }
+  return profileDir;
+}
+
+function realVersionedExecutableExists(
+  layout: WindowsVersionedExecutableLayout,
+  fs: WindowsProfileFs,
+): boolean {
+  const versions = fs.lstat(layout.versionsDir);
+  const version = fs.lstat(layout.versionDir);
+  const executable = fs.lstat(layout.executablePath);
+  return Boolean(
+    versions &&
+    !versions.isSymbolicLink() &&
+    versions.isDirectory() &&
+    version &&
+    !version.isSymbolicLink() &&
+    version.isDirectory() &&
+    executable &&
+    !executable.isSymbolicLink() &&
+    executable.isFile(),
+  );
+}
+
+function windowsMarkerState(
+  root: string,
+  fs: WindowsProfileFs,
+): "missing" | "invalid-type" | "invalid-bytes" | "valid" {
+  const marker = win32Path.join(root, PROFILE_MARKER);
+  const stat = fs.lstat(marker);
+  if (!stat) return "missing";
+  if (stat.isSymbolicLink() || !stat.isFile()) return "invalid-type";
+  try {
+    return fs.readFileUtf8(marker, Buffer.byteLength(PROFILE_MARKER_CONTENT, "utf8")) ===
+      PROFILE_MARKER_CONTENT
+      ? "valid"
+      : "invalid-bytes";
+  } catch {
+    return "invalid-bytes";
+  }
+}
+
+function classifyOwnedWindowsProfile(
+  layout: WindowsVersionedExecutableLayout,
+  env: Readonly<Record<string, string | undefined>>,
+  fs: WindowsProfileFs,
+): WindowsProfileInference {
+  const profileDir = requireValidWindowsProfileRoot(layout.root, env, fs);
+  const physicalRoot = physicalWindowsPath(fs, profileDir);
+  const physicalExecutable = physicalWindowsPath(fs, layout.executablePath);
+  const expected = win32Path.join(physicalRoot, "data", "versions", layout.version, "kunai.exe");
+  if (!sameWindowsPath(expected, physicalExecutable)) {
+    return {
+      kind: "ambiguous",
+      error: windowsProfileAmbiguous(
+        layout.root,
+        "has a valid profile marker, but this executable does not resolve inside its owned version store",
+      ),
+    };
+  }
+  return { kind: "profile", profileDir: physicalRoot };
+}
+
+function nonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function classifyDefaultWindowsInstall(
+  layout: WindowsVersionedExecutableLayout,
+  env: Readonly<Record<string, string | undefined>>,
+  fs: WindowsProfileFs,
+): WindowsProfileInference {
+  const home = profileHome("win32", env);
+  const manifestPath = win32Path.join(
+    defaultBaseDirs("win32", env, home).configDir,
+    "install.json",
+  );
+  const ambiguous = (detail: string): WindowsProfileInference => ({
+    kind: "ambiguous",
+    error: windowsProfileAmbiguous(
+      layout.root,
+      `has no ${PROFILE_MARKER} ownership marker, and the default install.json ${detail}`,
+    ),
+  });
+
+  const stat = fs.lstat(manifestPath);
+  if (!stat) return ambiguous("was not found");
+  if (stat.isSymbolicLink() || !stat.isFile()) return ambiguous("is not a regular file");
+
+  let text: string;
+  try {
+    text = fs.readFileUtf8(manifestPath, WINDOWS_INSTALL_MANIFEST_MAX_BYTES);
+  } catch {
+    return ambiguous("is unreadable or larger than 64 KiB");
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return ambiguous("is not valid JSON");
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return ambiguous("is not a JSON object");
+  }
+  const record = parsed as Record<string, unknown>;
+  const method = record.method ?? record.channel;
+  if (method !== "binary") return ambiguous("does not describe a binary install");
+  const versionedPath = nonEmptyString(record.versionedPath) ?? nonEmptyString(record.versionPath);
+  if (!versionedPath) return ambiguous("has no versionedPath or schema-1 versionPath");
+
+  const physicalExecutable = normalizeWindowsPath(fs.realpathNative(layout.executablePath));
+  const physicalVersioned = normalizeWindowsPath(fs.realpathNative(versionedPath));
+  if (sameWindowsPath(physicalVersioned, physicalExecutable)) {
+    return { kind: "normal-install", manifestPath };
+  }
+  // Installer smoke checks run the newly copied payload before install.json
+  // flips activeVersion. The old manifest still proves ownership of the shared
+  // physical versions directory, so a sibling new version is the same install.
+  const executableVersionsDir = win32Path.dirname(win32Path.dirname(physicalExecutable));
+  const manifestVersionsDir = win32Path.dirname(win32Path.dirname(physicalVersioned));
+  if (sameWindowsPath(executableVersionsDir, manifestVersionsDir)) {
+    return { kind: "normal-install", manifestPath };
+  }
+  return ambiguous("does not name this executable or a sibling in its versions directory");
+}
+
+/** Classify a Windows payload without mutating the environment or filesystem. */
+export function classifyWindowsExecutableProfile(input: {
+  readonly executablePath: string;
+  readonly platform?: NodeJS.Platform;
+  readonly env?: Readonly<Record<string, string | undefined>>;
+  readonly fs?: WindowsProfileFs;
+}): WindowsProfileInference {
+  const platform = input.platform ?? process.platform;
+  if (platform !== "win32") return { kind: "none", reason: "non-win32" };
+  const env = input.env ?? process.env;
+  if (env.KUNAI_CONFIG_DIR !== undefined) return { kind: "none", reason: "env-override" };
+  const layout = parseWindowsVersionedExecutable(input.executablePath);
+  if (!layout) return { kind: "none", reason: "non-matching-path" };
+  const fs = input.fs ?? nodeWindowsProfileFs;
+
+  try {
+    if (!realVersionedExecutableExists(layout, fs)) {
+      return {
+        kind: "ambiguous",
+        error: windowsProfileAmbiguous(
+          layout.root,
+          "has the shape of a Kunai version store, but versions, the version directory, or kunai.exe is missing, symlinked, or not the expected file type",
+        ),
+      };
+    }
+
+    const marker = windowsMarkerState(layout.root, fs);
+    if (marker === "invalid-type") {
+      return {
+        kind: "ambiguous",
+        error: windowsProfileAmbiguous(
+          layout.root,
+          `has a ${PROFILE_MARKER} entry, but it is not a regular file`,
+        ),
+      };
+    }
+    if (marker === "invalid-bytes") {
+      return {
+        kind: "ambiguous",
+        error: windowsProfileAmbiguous(
+          layout.root,
+          `has a ${PROFILE_MARKER} file, but its bytes do not match the Kunai profile ownership marker`,
+        ),
+      };
+    }
+    if (marker === "valid") return classifyOwnedWindowsProfile(layout, env, fs);
+    return classifyDefaultWindowsInstall(layout, env, fs);
+  } catch (error) {
+    if (error instanceof DesktopProfileError) return { kind: "ambiguous", error };
+    const detail = error instanceof Error ? error.message : String(error);
+    return {
+      kind: "ambiguous",
+      error: windowsProfileAmbiguous(
+        layout.root,
+        `could not be inspected safely as a profile or native install (${detail})`,
+      ),
+    };
+  }
+}
+
 /** Infer the Windows profile only from a real payload in its owned version store. */
 export function inferWindowsProfileFromExecutable(
   executablePath = process.execPath,
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
-  if (process.platform !== "win32" || env.KUNAI_CONFIG_DIR !== undefined) return;
-  const match = /^(.+[\\/])data[\\/]versions[\\/]([^\\/]+)[\\/]kunai\.exe$/i.exec(
-    win32Path.normalize(executablePath),
-  );
-  const root = match?.[1];
-  const version = match?.[2];
-  if (!root || !version) return;
-  const profileEnv = { ...env, KUNAI_CONFIG_DIR: root };
-  const badExecutable = () =>
-    new DesktopProfileError(root, "does not contain a regular versioned Kunai executable");
-  try {
-    if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version)) {
-      throw badExecutable();
-    }
-    const { profileDir } = getKunaiPaths({ platform: "win32", env: profileEnv });
-    if (!profileDir) throw badExecutable();
-    checkProfileOwnership(profileDir, "require", "win32", profileEnv);
-    const versions = win32Path.join(profileDir, "data", "versions");
-    if (
-      !lstatSync(versions).isDirectory() ||
-      !lstatSync(win32Path.join(versions, version)).isDirectory() ||
-      !lstatSync(executablePath).isFile()
-    )
-      throw badExecutable();
-    const physicalRoot = realpathSync.native(profileDir);
-    const expected = win32Path.join(physicalRoot, "data", "versions", version, "kunai.exe");
-    if (win32Path.relative(expected, realpathSync.native(executablePath)) !== "") {
-      throw badExecutable();
-    }
-    return physicalRoot;
-  } catch (error) {
-    if (error instanceof DesktopProfileError) throw error;
-    throw badExecutable();
-  }
+  const classification = classifyWindowsExecutableProfile({ executablePath, env });
+  if (classification.kind === "profile") return classification.profileDir;
+  if (classification.kind === "ambiguous") throw classification.error;
+  return undefined;
 }
 
 function normalizePlatform(platform: NodeJS.Platform): StoragePlatform {
